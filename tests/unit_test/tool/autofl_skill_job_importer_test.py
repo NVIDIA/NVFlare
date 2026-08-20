@@ -237,6 +237,25 @@ def test_import_marks_dynamic_metric_mode_unresolved(tmp_path):
     assert {item["field"] for item in config["unresolved"]} >= {"objective.mode"}
 
 
+@pytest.mark.parametrize("mode_literal", ['["min"]', '("min",)'])
+def test_import_marks_non_string_metric_mode_unresolved(tmp_path, mode_literal):
+    job_path = _write_recipe_job(tmp_path)
+    source = job_path.read_text(encoding="utf-8").replace(
+        "key_metric=args.key_metric,",
+        f"key_metric=args.key_metric,\n        key_metric_mode={mode_literal},",
+    )
+    job_path.write_text(source, encoding="utf-8")
+
+    config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+
+    assert config["objective"]["mode"] == "max"
+    assert config["objective"]["mode_contract_source"] == "unresolved"
+    assert any(
+        item["field"] == "objective.mode" and "invalid key_metric_mode" in item["reason"]
+        for item in config["unresolved"]
+    )
+
+
 def test_import_marks_conflicting_metric_direction_declarations_unresolved(tmp_path):
     job_path = _write_recipe_job(tmp_path)
     source = job_path.read_text(encoding="utf-8").replace(

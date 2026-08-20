@@ -1926,6 +1926,39 @@ def test_report_training_budget_vocabulary_matches_campaign_runner():
     assert reporter.FALLBACK_TRAINING_BUDGET_ARGS == expected
 
 
+@pytest.mark.parametrize(
+    ("score", "incumbent", "mode", "expected_better", "expected_improvement"),
+    [
+        (0.8, 0.7, "max", True, 0.1),
+        (0.6, 0.7, "min", True, 0.1),
+        (0.7, 0.7, "max", False, 0.0),
+    ],
+)
+def test_report_comparison_contract_matches_campaign_guard(
+    score, incumbent, mode, expected_better, expected_improvement
+):
+    reporter = _load_reporter()
+    guard = _load_autofl_script("campaign_guard")
+
+    assert reporter.CAMPAIGN_GUARD_CONTRACT is not None
+    assert reporter.validate_mode(mode) == guard.validate_mode(mode)
+    assert reporter.better(score, incumbent, mode) is expected_better
+    assert reporter.better(score, incumbent, mode) == guard.better(score, incumbent, mode)
+    assert reporter.improvement_amount(score, incumbent, mode) == pytest.approx(expected_improvement)
+    assert reporter.improvement_amount(score, incumbent, mode) == pytest.approx(
+        guard.improvement_over_baseline(incumbent, score, mode)
+    )
+
+
+def test_report_comparison_contract_has_standalone_fallback(monkeypatch):
+    reporter = _load_reporter()
+    monkeypatch.setattr(reporter, "CAMPAIGN_GUARD_CONTRACT", None)
+
+    assert reporter.validate_mode(" MIN ") == "min"
+    assert reporter.better(0.6, 0.7, "min") is True
+    assert reporter.improvement_amount(0.6, 0.7, "min") == pytest.approx(0.1)
+
+
 def test_report_training_budget_vocabulary_falls_back_when_runner_is_missing(tmp_path, monkeypatch):
     reporter = _load_reporter()
     monkeypatch.setattr(reporter, "product_autofl_script_path", lambda _name: tmp_path / "missing_runner.py")

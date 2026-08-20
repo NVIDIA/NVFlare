@@ -3718,12 +3718,16 @@ def candidate_campaign_config(
     recorded_objective = current_config.get("objective", {})
     if not isinstance(recorded_objective, dict):
         recorded_objective = {}
-    drift = [
-        field
-        for field in invariant_fields
-        if (field not in {"job_key_metric", "job_key_metric_mode"} or field in recorded_objective)
-        and candidate_objective.get(field) != current_objective.get(field)
-    ]
+    drift = []
+    for invariant_field in invariant_fields:
+        if invariant_field == "job_key_metric" and invariant_field not in recorded_objective:
+            continue
+        current_value = current_objective.get(invariant_field)
+        if invariant_field == "job_key_metric_mode" and invariant_field not in recorded_objective:
+            # Campaigns created before native direction support always used max for NVFlare job-key selection.
+            current_value = "max"
+        if candidate_objective.get(invariant_field) != current_value:
+            drift.append(invariant_field)
     if drift:
         raise ValueError(f"candidate changes objective metric invariants: {', '.join(drift)}")
     candidate_config["objective"] = dict(current_config.get("objective", {}))

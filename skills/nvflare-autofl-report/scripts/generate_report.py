@@ -127,7 +127,37 @@ def load_training_budget_args() -> set:
             sys.modules[module_name] = previous_module
 
 
+def load_campaign_guard_contract():
+    """Load product comparison semantics when the Auto-FL producer skill is installed."""
+
+    guard_path = product_autofl_script_path("campaign_guard.py")
+    if not guard_path.is_file():
+        return None
+    module_name = "nvflare_autofl_report_campaign_guard_contract"
+    spec = importlib.util.spec_from_file_location(module_name, guard_path)
+    if spec is None or spec.loader is None:
+        return None
+    module = importlib.util.module_from_spec(spec)
+    previous_module = sys.modules.get(module_name)
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+        if not all(
+            callable(getattr(module, name, None)) for name in ("validate_mode", "better", "improvement_over_baseline")
+        ):
+            return None
+        return module
+    except Exception:
+        return None
+    finally:
+        if previous_module is None:
+            sys.modules.pop(module_name, None)
+        else:
+            sys.modules[module_name] = previous_module
+
+
 TRAINING_BUDGET_ARGS = load_training_budget_args()
+CAMPAIGN_GUARD_CONTRACT = load_campaign_guard_contract()
 
 
 @dataclass(frozen=True)
@@ -395,12 +425,16 @@ def load_config(path: Path) -> Dict[str, Any]:
 
 def validate_mode(mode: str) -> str:
     mode = str(mode).strip().lower()
+    if CAMPAIGN_GUARD_CONTRACT is not None:
+        return CAMPAIGN_GUARD_CONTRACT.validate_mode(mode)
     if mode not in {"min", "max"}:
         raise ValueError(f"objective mode must be 'min' or 'max', but got {mode!r}")
     return mode
 
 
 def better(score: Optional[float], incumbent: Optional[float], mode: str = "max") -> bool:
+    if CAMPAIGN_GUARD_CONTRACT is not None:
+        return CAMPAIGN_GUARD_CONTRACT.better(score, incumbent, validate_mode(mode))
     mode = validate_mode(mode)
     if score is None:
         return False
@@ -624,6 +658,8 @@ def running_best_milestones(records: Sequence[RunRecord], limit: int, mode: str 
 
 
 def improvement_amount(score: float, incumbent: float, mode: str = "max") -> float:
+    if CAMPAIGN_GUARD_CONTRACT is not None:
+        return CAMPAIGN_GUARD_CONTRACT.improvement_over_baseline(incumbent, score, validate_mode(mode))
     return incumbent - score if validate_mode(mode) == "min" else score - incumbent
 
 

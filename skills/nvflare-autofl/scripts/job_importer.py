@@ -25,12 +25,13 @@ from __future__ import annotations
 import ast
 import hashlib
 import os
-import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 import yaml
+
+from nvflare.app_common.widgets.intime_model_selector import _looks_lower_is_better
 
 AUTOFL_CONFIG_SCHEMA_VERSION = "nvflare.autofl.config.v1"
 IMPORTER_VERSION = "nvflare-autofl-job-importer/v1"
@@ -44,19 +45,6 @@ METRIC_INVARIANTS = [
 ]
 METRIC_CHANGE_POLICY = "restart_campaign_with_repaired_baseline"
 SUPPORTED_OBJECTIVE_MODES = {"min", "max"}
-LOWER_IS_BETTER_METRIC_SUBSTRINGS = ("loss", "err")
-LOWER_IS_BETTER_METRIC_TOKENS = {
-    "bce",
-    "ce",
-    "cer",
-    "mae",
-    "mse",
-    "nll",
-    "perplexity",
-    "ppl",
-    "rmse",
-    "wer",
-}
 
 SUPPORTED_ENV_NAMES = {"PocEnv", "ProdEnv", "SimEnv"}
 NON_OPTIMIZATION_RECIPE_NAMES = {"FedEvalRecipe", "FedStatsRecipe", "NumpyCrossSiteEvalRecipe"}
@@ -432,7 +420,7 @@ class DeterministicJobImporter:
             if resolved.unresolved:
                 return "max", "unresolved", _unresolved("objective.mode", resolved.source)
             if resolved.value is not None:
-                if resolved.value not in SUPPORTED_OBJECTIVE_MODES:
+                if not isinstance(resolved.value, str) or resolved.value not in SUPPORTED_OBJECTIVE_MODES:
                     return (
                         "max",
                         "unresolved",
@@ -1210,14 +1198,7 @@ def _resolve_stop_condition_mode(
 def likely_lower_is_better_metric(metric: str) -> bool:
     """Return whether a metric name is an obvious lower-is-better objective."""
 
-    name = metric.lower()
-    tokens = re.split(r"[^a-z0-9]+", name)
-    if "neg" in tokens:
-        return False
-    # This standalone copy intentionally matches NVFlare core's best-effort heuristic.
-    if any(hint in name for hint in LOWER_IS_BETTER_METRIC_SUBSTRINGS):
-        return True
-    return any(token in LOWER_IS_BETTER_METRIC_TOKENS for token in tokens)
+    return _looks_lower_is_better(metric)
 
 
 def _resolve_path_call(

@@ -3849,6 +3849,42 @@ def test_candidate_import_tolerates_job_metric_mode_absent_from_legacy_campaign_
     assert "job_key_metric_mode" not in updated["objective"]
 
 
+def test_candidate_import_rejects_job_metric_mode_drift_from_legacy_max_campaign():
+    runner = _load_runner()
+    schema = {
+        "objective": {
+            "requested_metric": "val_loss",
+            "optimization_metric": "val_loss",
+            "mode": "min",
+        }
+    }
+    current = _campaign_config()
+    current["objective"].update(
+        {
+            "metric": "val_loss",
+            "requested_metric": "val_loss",
+            "optimization_metric": "val_loss",
+            "metric_extraction_order": ["val_loss"],
+            "mode": "min",
+            "mode_contract_source": "mutation_schema",
+        }
+    )
+    current["objective"].pop("job_key_metric")
+    current["objective"].pop("job_key_metric_mode")
+    current["objective"].pop("job_key_metric_mode_source")
+    candidate = deepcopy(current)
+    candidate["objective"].update(
+        {
+            "job_key_metric": "accuracy",
+            "job_key_metric_mode": "min",
+            "job_key_metric_mode_source": "job:key_metric_mode",
+        }
+    )
+
+    with pytest.raises(ValueError, match="objective metric invariants: job_key_metric_mode"):
+        runner.candidate_campaign_config(candidate, current, SimpleNamespace(metric="val_loss"), schema)
+
+
 def test_legacy_campaign_without_mode_still_rejects_candidate_direction_change():
     runner = _load_runner()
     current = _campaign_config()
