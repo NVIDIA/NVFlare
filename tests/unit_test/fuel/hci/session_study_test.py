@@ -23,6 +23,8 @@ from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import InternalCommands, ProtoKey
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.hci.server.sess import Session, SessionManager
+from nvflare.lighter.utils import Identity, generate_cert, generate_keys, serialize_cert, serialize_pri_key
+from nvflare.private.fed.utils.identity_utils import IdentityAsserter, TokenVerifier
 
 
 class _FakeIdAsserter:
@@ -75,6 +77,24 @@ def test_session_token_round_trip_preserves_study():
     assert restored.user_name == "admin@nvidia.com"
     assert restored.user_org == "nvidia"
     assert restored.user_role == "lead"
+
+
+def test_session_token_round_trip_with_real_signature(monkeypatch, tmp_path):
+    private_key, public_key = generate_keys()
+    identity = Identity("server")
+    cert = generate_cert(identity, identity, private_key, public_key, ca=True)
+    key_path = tmp_path / "server.key"
+    cert_path = tmp_path / "server.crt"
+    key_path.write_bytes(serialize_pri_key(private_key))
+    cert_path.write_bytes(serialize_cert(cert))
+    id_asserter = IdentityAsserter(str(key_path), str(cert_path))
+    monkeypatch.setattr("nvflare.fuel.hci.server.sess.TokenVerifier", TokenVerifier)
+    session = Session("session-id", "admin@nvidia.com", "nvidia", "lead", "origin")
+
+    restored = Session.decode_token(session.make_token(id_asserter), id_asserter)
+
+    assert restored.sess_id == session.sess_id
+    assert restored.user_name == session.user_name
 
 
 def test_session_token_uses_study_field_name():

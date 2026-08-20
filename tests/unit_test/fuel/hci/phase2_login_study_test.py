@@ -162,6 +162,21 @@ def test_handle_cert_login_rejects_missing_server_identity():
         session_mgr.shutdown()
 
 
+def test_handle_logout_ends_preverified_session_without_decoding_token():
+    session_mgr = SessionManager(_FakeCell(), idle_timeout=3600, monitor_interval=3600)
+    login = LoginModule(session_mgr)
+    session = session_mgr.create_session("admin@nvidia.com", "nvidia", "project_admin", "admin-client")
+    conn = _FakeConnection(props={ConnProps.SESSION: session})
+
+    try:
+        login.handle_logout(conn, ["logout"])
+
+        assert session_mgr.get_sessions() == []
+        assert conn.strings == [("OK", None)]
+    finally:
+        session_mgr.shutdown()
+
+
 def test_handle_cert_login_rejects_unknown_study_when_registry_exists(monkeypatch):
     _patch_cert_login(monkeypatch)
     monkeypatch.setattr(

@@ -174,11 +174,9 @@ class LoginModule(CommandModule, CommandFilter):
 
     def handle_logout(self, conn: Connection, args: List[str]):
         if self.session_mgr:
-            token = conn.get_prop(ConnProps.TOKEN)
-            if token:
-                hci = conn.get_prop(ConnProps.HCI_SERVER)
-                id_asserter = hci.get_id_asserter() if hci else None
-                self.session_mgr.end_session_by_token(token, id_asserter)
+            session = conn.get_prop(ConnProps.SESSION)
+            if session:
+                self.session_mgr.end_session_by_id(session.sess_id)
         conn.append_string("OK")
 
     def pre_command(self, conn: Connection, args: List[str]):

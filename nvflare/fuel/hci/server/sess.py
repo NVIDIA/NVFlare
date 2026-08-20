@@ -185,7 +185,7 @@ class SessionManager(CommandModule):
             self.sessions[sess.sess_id] = sess
         return sess
 
-    def get_session(self, token: str, id_asserter=None):
+    def get_session(self, token: str, id_asserter: IdentityAsserter):
         try:
             sess = Session.decode_token(token, id_asserter)
             if sess is None:
@@ -234,14 +234,6 @@ class SessionManager(CommandModule):
             for _, s in self.sessions.items():
                 result.append(s)
         return result
-
-    def end_session_by_token(self, token, id_asserter, reason=None):
-        try:
-            sess = Session.decode_token(token, id_asserter)
-        except Exception:
-            return
-        if sess:
-            self.end_session_by_id(sess.sess_id, reason)
 
     def end_session_by_id(self, sess_id: str, reason=None):
         with self.sess_update_lock:
