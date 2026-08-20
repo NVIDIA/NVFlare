@@ -267,10 +267,13 @@ nvflare/collab/
     └── lifecycle.py     init/main/final orchestration
 ```
 
-Examples are under [`examples/collab`](../../examples/collab/README.md). Each
-example owns the trainer, strategy, and utility modules that it uses;
-there is no shared `examples/collab/common` package. This keeps every example
-self-contained and makes its dependencies visible in one directory.
+The introductory example is under
+[`examples/hello-world/hello-collab`](../../examples/hello-world/hello-collab/README.md),
+with more complex workflows under
+[`examples/advanced/collab`](../../examples/advanced/collab/README.md). Each
+example owns the trainer, strategy, and utility modules that it uses; there is
+no shared example `common` package. This keeps every example self-contained and
+makes its dependencies visible in one directory.
 
 Each example executes its recipe with `SimEnv` directly. Applications select
 `SimEnv`, `PocEnv`, or `ProdEnv` from `nvflare.recipe`; there is no additional

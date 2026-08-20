@@ -97,6 +97,7 @@ class ReservedKey:
     EVENT_DATA = "__event_data__"
     EVENT_SCOPE = "__event_scope__"
     RUN_ABORT_SIGNAL = "__run_abort_signal__"
+    RUN_ABORT_REQUESTED = "__run_abort_requested__"
     SHAREABLE = "__shareable__"
     SHARED_FL_CONTEXT = "__shared_fl_context__"
     ARGS = "__args__"
@@ -143,6 +144,7 @@ class FLContextKey:
     WORKFLOW = ReservedKey.WORKFLOW
     SHAREABLE = ReservedKey.SHAREABLE
     RUN_ABORT_SIGNAL = ReservedKey.RUN_ABORT_SIGNAL
+    RUN_ABORT_REQUESTED = ReservedKey.RUN_ABORT_REQUESTED
     ARGS = ReservedKey.ARGS
     REPLY = ReservedKey.REPLY
     WORKSPACE_OBJECT = ReservedKey.WORKSPACE_OBJECT
@@ -566,6 +568,9 @@ class ConfigVarName:
 
     # server: require prior positive job observation before reporting "missing job on client" as dead-job
     SYNC_CLIENT_JOBS_REQUIRE_PREVIOUS_REPORT = "sync_client_jobs_require_previous_report"
+
+    # server: max time to wait for client terminal outcomes after the server process exits
+    CLIENT_OUTCOME_WAIT_TIMEOUT = "client_outcome_wait_timeout"
 
     # customized nvflare decomposers module name
     DECOMPOSER_MODULE = "nvflare_decomposers"

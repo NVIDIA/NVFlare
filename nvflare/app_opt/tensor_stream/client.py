@@ -21,7 +21,8 @@ from nvflare.client.config import ExchangeFormat
 
 from .receiver import TensorReceiver
 from .sender import TensorSender
-from .utils import clean_task_result
+from .types import TensorCustomKeys
+from .utils import clean_task_result, contains_lazy_download_ref
 
 
 class TensorClientStreamer(FLComponent):
@@ -75,6 +76,10 @@ class TensorClientStreamer(FLComponent):
         self.sender: TensorSender = None
         self.receiver: TensorReceiver = None
 
+    def requires_materialized_task_result(self, task_name: str) -> bool:
+        """Tell ClientAPIExecutor that tensor streaming consumes concrete result tensors."""
+        return task_name in self.tasks
+
     def initialize(self, fl_ctx: FLContext):
         """Initialize the TensorClientStreamer component.
         Args:
@@ -109,6 +114,9 @@ class TensorClientStreamer(FLComponent):
         if event_type == EventType.START_RUN:
             self.initialize(fl_ctx)
         elif event_type == EventType.BEFORE_TASK_DATA_FILTER:
+            task_name = fl_ctx.get_prop(FLContextKey.TASK_NAME)
+            if task_name not in self.tasks:
+                return
             task_id = fl_ctx.get_prop(FLContextKey.TASK_ID)
             peer_name = fl_ctx.get_peer_context().get_identity_name()
             try:
@@ -117,6 +125,9 @@ class TensorClientStreamer(FLComponent):
             except Exception as e:
                 self.system_panic(str(e), fl_ctx)
         elif event_type == EventType.AFTER_TASK_RESULT_FILTER:
+            task_name = fl_ctx.get_prop(FLContextKey.TASK_NAME)
+            if task_name not in self.tasks:
+                return
             try:
                 self.send_tensors_to_server(fl_ctx)
             except Exception as e:
@@ -128,6 +139,15 @@ class TensorClientStreamer(FLComponent):
         Args:
             fl_ctx (FLContext): The FLContext for the current operation.
         """
+        task_result = fl_ctx.get_prop(FLContextKey.TASK_RESULT)
+        if contains_lazy_download_ref(task_result):
+            task_result.set_header(TensorCustomKeys.TASK_RESULT_STREAMING_SKIPPED, True)
+            self.log_info(
+                fl_ctx,
+                "Skipping task-result tensor streaming because the result contains PASS_THROUGH download references.",
+            )
+            return
+
         self.sender = TensorSender(self.engine, FLContextKey.TASK_RESULT, self.format, self.tasks)
         self.sender.store_tensors(fl_ctx)
         try:

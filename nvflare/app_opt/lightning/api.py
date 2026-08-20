@@ -17,6 +17,7 @@ from typing import Dict
 
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import Callback
+from pytorch_lightning.trainer.states import TrainerFn
 from torch import Tensor
 
 from nvflare.app_common.abstract.fl_model import FLModel, MetaKey
@@ -59,6 +60,16 @@ def patch(
         and ``precision="32-true"`` or ``precision="bf16-mixed"``. Manual optimization and
         other precision modes are not supported by the patched path. Those clients must use
         an explicit receive/train/send loop and integrate ``PTScaffoldHelper`` directly.
+
+    FedProx:
+        When the received model contains a positive FedProx coefficient, ``patch`` automatically
+        adds the exact proximal gradient to optimizer-owned trainable parameters. FedProx composes
+        with automatic SCAFFOLD support. The proximal gradient is applied after gradient accumulation
+        and AMP unscaling and before gradient clipping. Consequently, a loss logged from
+        ``training_step`` excludes the injected proximal term even though optimization includes its
+        exact gradient. Automatic FedProx has the same one-optimizer, automatic-optimization, and
+        precision restrictions as automatic SCAFFOLD; closure-based LBFGS and sparse gradients are
+        also unsupported.
 
     Example:
 
@@ -223,23 +234,24 @@ class FLCallback(Callback):
                     else self._get_round_num_steps(trainer)
                 )
             model = FLModel(params=pl_module.cpu().state_dict(), meta=fl_meta)
-            if self.train_with_evaluation:
-                if self.metrics is None:
-                    raise RuntimeError(
-                        "train with evaluation missing training metrics, please remember to call validate."
-                    )
+            if self.train_with_evaluation and self.metrics is None:
+                raise RuntimeError("train with evaluation requires validation metrics; call validate before fit.")
+            if self.metrics is not None:
                 model.metrics = self.metrics
-            self._send_model(model)
+            if trainer.global_rank == 0:
+                self._send_model(model)
             self.reset_state(trainer)
 
     def on_validation_start(self, trainer, pl_module):
-        # receive the global model and update the local model with global model
-        # the 1st time validate() or train() is called.
-        # expect user will validate the global model first (i.e. validate()), once that's done.
-        # the metrics will be set.
-        # The subsequent validate() calls will not trigger the receive update model.
-        # Hence the validate() will be validating the local model.
-        if pl_module and self.metrics is None and not self._training_round_started:
+        # Only an explicit validation before fit evaluates the received global model for model selection.
+        # Lightning keeps trainer.state.fn at FITTING for both fit sanity checks and in-fit validation,
+        # so neither is eligible to become INITIAL_METRICS on the server.
+        if (
+            pl_module
+            and self.metrics is None
+            and not self._training_round_started
+            and trainer.state.fn == TrainerFn.VALIDATING
+        ):
             input_model = self._receive_and_update_model(trainer, pl_module)
             if input_model and self._is_training:
                 self._pending_train_model = input_model
@@ -258,10 +270,16 @@ class FLCallback(Callback):
         return completed_steps
 
     def on_validation_end(self, trainer, pl_module):
-        if pl_module and self.metrics is None:
+        if (
+            pl_module
+            and self.metrics is None
+            and not self._training_round_started
+            and trainer.state.fn == TrainerFn.VALIDATING
+        ):
             self.metrics = _extract_metrics(trainer.callback_metrics)
             if self._is_evaluation:
-                self._send_model(FLModel(metrics=self.metrics))
+                if trainer.global_rank == 0:
+                    self._send_model(FLModel(metrics=self.metrics))
                 self.reset_state(trainer)
 
     def _receive_and_update_model(self, trainer, pl_module):

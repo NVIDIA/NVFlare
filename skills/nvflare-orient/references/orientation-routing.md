@@ -5,17 +5,28 @@ turn project evidence and user intent into one narrow next action.
 
 ## Evidence Sources
 
-- `nvflare agent inspect <path> --format json` for framework routing, FLARE
-  usage, conversion state, safety findings, local readiness, and recommended
-  skills.
+- `nvflare agent inspect source <path> --format json` for ownership,
+  integration, scan findings, and source routing.
+- `nvflare agent inspect data <path> --format json` for dataset and data
+  routing.
 - User-provided target files, job folders, logs, or stated deployment context.
 
 ## Routing Rules
 
 - Existing PyTorch training loop needing FLARE conversion:
   `nvflare-convert-pytorch`.
+- Hugging Face `Trainer`, `Seq2SeqTrainer`, or TRL `SFTTrainer` owning
+  training: `nvflare-convert-huggingface`.
+- Lightning `Trainer` owning training: `nvflare-convert-lightning`.
+- Active Hugging Face and Lightning Trainers in the same inspected project:
+  ask the user to select one training-loop owner or split them into separate
+  entrypoints/jobs before handing off to a converter.
+- Hugging Face Trainer/configuration evidence whose `train()` ownership cannot
+  be resolved statically: ask the user to name the training entrypoint or
+  identify the Trainer construction that owns the call, then route to the
+  matching converter.
 - Statistics, data summaries, histograms, or quantiles across sites, or an
-  inspect result with `target_type` `tabular_dataset`/`image_dataset`
+  inspect result with `dataset.modality` `tabular`/`image`
   (data-only targets recommend `nvflare-fed-stats` directly):
   `nvflare-fed-stats`.
 - Generic "help me use FLARE here" with no clear workflow: inspect first, then

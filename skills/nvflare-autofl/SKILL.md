@@ -3,12 +3,12 @@ name: nvflare-autofl
 description: "Use for agent-assisted Auto-FL optimization of an existing NVFLARE job in simulation, POC, or production. Do not use for code conversion, diagnosis-only work, or deployment setup."
 license: Apache-2.0
 version: "0.1.0"
-compatibility: "Requires NVFLARE 2.8.0+, Python, and permission to run NVFLARE jobs in the selected environment."
+compatibility: "Requires NVFLARE 2.9.0+, Python, and permission to run NVFLARE jobs in the selected environment."
 metadata:
   author: "NVIDIA FLARE Team <federatedlearning@nvidia.com>"
-  tags: [nvflare, federated-learning, optimization]
-  min_flare_version: "2.8.0"
-  blast_radius: submits_production
+  tags: "nvflare, federated-learning, optimization"
+  min-flare-version: "2.9.0"
+  blast-radius: submits_production
   category: Optimization
 ---
 
@@ -100,28 +100,27 @@ locations, `objective.optimization_metric`, metric source, source hash, and impo
 - **Unresolved**: dynamic defaults, unsupported Python semantics, missing
 metric sources, unknown data paths, or any low-confidence fields.
 - **Allowed**: files the agent may edit, Python source it may create,
-fixed-budget fields it must preserve, and policy boundaries for the requested environment.
+fixed-budget fields and metric invariants it must preserve, and policy boundaries for the requested environment.
 
 Treat `autofl.yaml` as the human-reviewable campaign config, not a replacement for `job.py`, which stays the runnable
 entry point throughout the candidate loop. Ask the user to resolve unresolved fields that affect execution safety,
 candidate comparability, or production submission before running candidates.
 
 ## Requirements
-- Edit existing files only through candidate drafts and within
-`trust_contract.allowed_edit_paths`; new Python modules may match `trust_contract.allowed_create_patterns` under the
-job root.
-- Record every candidate in a ledger such as `results.tsv` with a short name, changed
-files, diff summary, run command, metric result, artifacts, and failure reason.
-- Use existing `mutation_schema.yaml` `preferred_targets` only after the runner
-reflects them in the trust contract; surface unresolved targets.
-- You may create and register new Python server aggregators through `job.py`;
-do not limit exploration to existing FedAvg/FedAvgM/FedAdam/FedOpt/SCAFFOLD choices.
-- Preserve `budget.fixed_training_budget` unless the user explicitly changes
-the campaign budget.
-- If the environment provides `PYTHON`, `VIRTUAL_ENV`, or a venv on `PATH`,
-treat that prepared runtime as authoritative: verify it, then use it for import, validation, execution, metric
-extraction, plotting, and reporting. Do not search for alternate interpreters or install dependencies unless the user
-explicitly asks you to prepare the environment.
+- Edit existing files only through candidate drafts and within `trust_contract.allowed_edit_paths`; new Python modules
+may match `trust_contract.allowed_create_patterns` under the job root.
+- Record every candidate in `results.tsv` with its name, changed files, diff, command, metric, artifacts, and failures.
+- Use `mutation_schema.yaml` `preferred_targets` only after the runner reflects them in the trust contract; surface unresolved targets.
+- You may create and register new Python server aggregators through `job.py`; do not limit exploration to existing
+FedAvg/FedAvgM/FedAdam/FedOpt/SCAFFOLD choices.
+- Preserve `budget.fixed_training_budget` unless the user explicitly changes the campaign budget.
+- Preserve `objective.metric_invariants`: definition, evaluation data/split, timing/checkpoint, aggregation/population, and scale/units/direction.
+- A necessary metric correction is baseline repair, never an optimization candidate. Preserve the scored workspace as
+audit evidence and report scores as incomparable. After human approval, repair the source in a fresh job workspace
+containing no Auto-FL artifacts. Never run `initialize` in the scored workspace; it resumes old evidence.
+- If the environment provides `PYTHON`, `VIRTUAL_ENV`, or a venv on `PATH`, treat that prepared runtime as authoritative:
+verify it, then use it for import, validation, execution, metric extraction, plotting, and reporting. Do not search for
+alternate interpreters unless the user explicitly asks you to prepare the environment; if that requires installation, load `../nvflare-shared/references/dependency-install.md` first.
 - Treat generated `autofl.yaml`, task-local `mutation_schema.yaml`, and
 existing NVFLARE job/runtime configuration as authoritative; the default simulation flow needs no prose profiles,
 branch setup, or harness initialization before invoking the runner.
@@ -166,14 +165,15 @@ whether to continue; continue unless the user explicitly interrupts or the code-
 not invent a replacement campaign or new objective after a recoverable failure; keep the campaign identity and
 artifacts coherent unless the human explicitly requests a new campaign.
 
-If the user provides an `N`-candidate budget, pass it only through the runner's explicit `--max-candidates` argument;
-the cap counts comparable evaluated candidate attempts (keep/discard/crash) after and excluding the baseline. Never
-infer a cap from an inherited environment variable. Do not count import, validation, smoke runs, plotting, reporting,
-baseline, or infrastructure-only retries; count a real candidate crash after execution starts. Runner state must
-report `candidate_cap_source=explicit` or `uncapped`, plus `remaining_candidates`, `baseline_status`,
-`baseline_score`, `improvement`, and `abandoned_candidates`; cap changes append to `cap_changes` in campaign metadata.
-A persisted cap change refreshes `campaign_state.json` before action gating, so raising `--max-candidates` reopens a
-cap-exhausted campaign.
+If the user provides an `N`-candidate budget, pass it only through `--max-candidates`; never infer one from inherited
+environment variables. It counts keep/discard/crash after baseline. Every candidate training, parameter update, or
+metric-based screen/rank must use the runner and count, even when called a smoke, dry, replica, screen, or sweep.
+Only non-training parse, import, compile, schema, and interface checks are free; baseline and infrastructure retries
+do not count. Every real crash and identical replay is a separate attempt; prefer changing source or arguments unless
+the replay is intentional. Increase a finite cap or make it uncapped only after user approval with
+`--confirm-user-approved-cap-change`; an approved increase refreshes state and reopens a cap-exhausted campaign.
+State reports the cap, remaining attempts, baseline, improvement, abandoned candidates, and accounting instruction;
+approved cap changes stay in campaign metadata.
 
 Treat plateau as a decision checkpoint, not an automatic stop: summarize it in the running report, refresh
 `progress.png`, run the runner's `status` action to refresh `.nvflare/autofl/campaign_state.json`, choose the returned

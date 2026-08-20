@@ -206,16 +206,16 @@ class Proxy:
         Returns: result of the function, or None when an optional call fails.
 
         """
+        p = self
         try:
             if call_opt.target:
-                p = self.get_child(call_opt.target)
-                if not p:
+                child = self.get_child(call_opt.target)
+                if not child:
                     raise RuntimeError(
                         f"site {self.name} does not have collab target named '{call_opt.target}': "
                         f"make sure to use correct target when calling '{func_name}'."
                     )
-            else:
-                p = self
+                p = child
 
             p, func_itf, call_args, call_kwargs = p.adjust_func_args(func_name, args, kwargs)
             with p.app.new_context(self.caller_name, self.name) as ctx:
@@ -234,7 +234,7 @@ class Proxy:
             if isinstance(ex, CollabCallError):
                 call_error = ex
             else:
-                call_error = CollabCallError(self.name, func_name, ex)
+                call_error = CollabCallError(p.target_name, func_name, ex)
             if call_opt.optional:
                 self.logger.warning(f"optional {call_error}")
                 return None

@@ -21,21 +21,24 @@ import pytest
 
 from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import FLContextKey, JobConstants, RunProcessKey
+from nvflare.apis.fl_constant import FLContextKey, FLMetaKey, JobConstants, RunProcessKey
 from nvflare.apis.job_def import JobMetaKey
-from nvflare.apis.job_launcher_spec import JobReturnCode
+from nvflare.apis.job_launcher_spec import JobHandleSpec, JobReturnCode
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.core_cell import FQCN
+from nvflare.fuel.f3.cellnet.defs import ReturnCode
 from nvflare.private.defs import CellChannel, CellChannelTopic, JobFailureMsgKey
 from nvflare.private.fed.client.client_engine import ClientEngine
-from nvflare.private.fed.client.client_executor import REPORTABLE_JOB_FAILURES, JobExecutor
+from nvflare.private.fed.client.client_executor import REPORTABLE_JOB_FAILURES, JobExecutor, _PendingJobHandle
 from nvflare.private.fed.client.client_status import ClientStatus
+from nvflare.private.fed.client.communicator import Communicator
 
 EXPECTED_REPORTABLE_JOB_FAILURES = {
     ProcessExitCode.EXCEPTION: "exception",
     ProcessExitCode.UNSAFE_COMPONENT: "unsafe component",
     ProcessExitCode.CONFIG_ERROR: "config error",
+    ProcessExitCode.INFRASTRUCTURE_ERROR: "infrastructure error",
     JobReturnCode.ABORTED: "aborted",
 }
 
@@ -57,6 +60,94 @@ def test_abort_app_terminates_starting_job_without_worker_command():
 
     job_handle.terminate.assert_called_once_with()
     client.cell.fire_and_forget.assert_not_called()
+
+
+@pytest.mark.parametrize("heartbeat_cleanup", [False, True], ids=["admin_abort", "server_cleanup"])
+def test_abort_app_terminates_registered_stopped_job_without_worker_command(heartbeat_cleanup):
+    client = MagicMock()
+    job_executor = JobExecutor(client=client, startup="startup")
+    job_handle = MagicMock()
+    job_executor.run_processes["job-1"] = {
+        RunProcessKey.JOB_HANDLE: job_handle,
+        RunProcessKey.STATUS: ClientStatus.STOPPED,
+    }
+
+    with patch.object(job_executor, "_terminate_job") as terminate_job:
+        ClientEngine.abort_app(
+            SimpleNamespace(client_executor=job_executor), "job-1", heartbeat_cleanup=heartbeat_cleanup
+        )
+
+    terminate_job.assert_called_once_with(job_handle, "job-1", heartbeat_cleanup)
+    job_handle.terminate.assert_not_called()
+    client.cell.fire_and_forget.assert_not_called()
+
+
+def test_abort_app_does_not_terminate_unregistered_stopped_job():
+    job_executor = MagicMock()
+    job_executor.get_status.return_value = ClientStatus.STOPPED
+    job_executor.get_run_processes_keys.return_value = []
+
+    result = ClientEngine.abort_app(SimpleNamespace(client_executor=job_executor), "job-1")
+
+    assert result == "Client app already stopped."
+    job_executor.abort_app.assert_not_called()
+
+
+def test_terminate_job_gives_stopped_worker_bounded_cleanup_grace():
+    job_executor = JobExecutor(client=MagicMock(), startup="startup")
+    job_executor.logger = MagicMock()
+    job_handle = MagicMock()
+    job_executor.run_processes["job-1"] = {
+        RunProcessKey.JOB_HANDLE: job_handle,
+        RunProcessKey.STATUS: ClientStatus.STOPPED,
+    }
+
+    with (
+        patch("nvflare.private.fed.client.client_executor.time.time", side_effect=[10.0, 10.0, 20.1]),
+        patch("nvflare.private.fed.client.client_executor.time.sleep") as sleep,
+    ):
+        job_executor._terminate_job(job_handle, "job-1", heartbeat_cleanup=True)
+
+    sleep.assert_called_once_with(0.05)
+    job_handle.terminate.assert_called_once_with(heartbeat_cleanup=True)
+
+
+def test_terminate_job_allows_stopped_worker_to_finish_during_cleanup_grace():
+    job_executor = JobExecutor(client=MagicMock(), startup="startup")
+    job_handle = MagicMock()
+    job_executor.run_processes["job-1"] = {
+        RunProcessKey.JOB_HANDLE: job_handle,
+        RunProcessKey.STATUS: ClientStatus.STOPPED,
+    }
+
+    def finish_worker(_):
+        job_executor.run_processes.pop("job-1")
+
+    with patch("nvflare.private.fed.client.client_executor.time.sleep", side_effect=finish_worker) as sleep:
+        job_executor._terminate_job(job_handle, "job-1", heartbeat_cleanup=True)
+
+    sleep.assert_called_once_with(0.05)
+    job_handle.terminate.assert_not_called()
+
+
+def test_terminate_job_does_not_signal_handle_after_worker_was_reaped():
+    job_executor = JobExecutor(client=MagicMock(), startup="startup")
+    job_handle = MagicMock()
+
+    job_executor._terminate_job(job_handle, "job-1")
+
+    job_handle.terminate.assert_not_called()
+
+
+def test_heartbeat_cleanup_propagates_non_user_abort_intent():
+    job_executor = MagicMock()
+    job_executor.get_status.return_value = ClientStatus.STARTED
+    engine = SimpleNamespace(client_executor=job_executor)
+    engine.abort_app = ClientEngine.abort_app.__get__(engine)
+
+    Communicator(client_config={"client_name": "site-1"})._clean_up_runs(engine, ["job-1"])
+
+    job_executor.abort_app.assert_called_once_with("job-1", heartbeat_cleanup=True)
 
 
 def _write_deployed_meta(tmp_path, job_id, deployed_meta):
@@ -115,7 +206,8 @@ def test_start_app_pending_handle_operations_before_launcher_returns(tmp_path):
         )
 
 
-def test_start_app_applies_abort_while_launcher_is_running(tmp_path):
+@pytest.mark.parametrize("heartbeat_cleanup", [False, True], ids=["user_abort", "heartbeat_cleanup"])
+def test_start_app_preserves_abort_intent_while_launcher_is_running(tmp_path, heartbeat_cleanup):
     job_id = "job-1"
     job_meta, workspace, client, fl_ctx = _make_start_app_inputs(tmp_path, job_id)
     executor = JobExecutor(client=client, startup=workspace.get_startup_kit_dir())
@@ -125,7 +217,7 @@ def test_start_app_applies_abort_while_launcher_is_running(tmp_path):
 
     def launch_job(*_args):
         assert executor.get_status(job_id) == ClientStatus.STARTING
-        ClientEngine.abort_app(SimpleNamespace(client_executor=executor), job_id)
+        ClientEngine.abort_app(SimpleNamespace(client_executor=executor), job_id, heartbeat_cleanup=heartbeat_cleanup)
         return job_handle
 
     launcher.launch_job.side_effect = launch_job
@@ -146,7 +238,12 @@ def test_start_app_applies_abort_while_launcher_is_running(tmp_path):
         )
 
     pending_handle = executor.run_processes[job_id][RunProcessKey.JOB_HANDLE]
-    job_handle.terminate.assert_called_once_with()
+    if heartbeat_cleanup:
+        job_handle._terminate_for_heartbeat_cleanup.assert_called_once_with()
+        job_handle.terminate.assert_not_called()
+    else:
+        job_handle.terminate.assert_called_once_with()
+        job_handle._terminate_for_heartbeat_cleanup.assert_not_called()
     client.cell.fire_and_forget.assert_not_called()
     assert pending_handle.poll() == JobReturnCode.ABORTED
     pending_handle.wait()
@@ -206,6 +303,16 @@ def test_start_app_removes_pending_handle_when_launcher_returns_no_handle(tmp_pa
         )
 
     assert job_id not in executor.run_processes
+
+
+def test_pending_handle_heartbeat_cleanup_falls_back_to_terminate():
+    job_handle = MagicMock(spec=JobHandleSpec)
+    pending_handle = _PendingJobHandle()
+    pending_handle.attach(job_handle)
+
+    pending_handle.terminate(heartbeat_cleanup=True)
+
+    job_handle.terminate.assert_called_once_with()
 
 
 def test_start_app_does_not_replace_existing_launch_registration(tmp_path):
@@ -433,6 +540,7 @@ def test_start_app_rejects_launch_metadata_drift(tmp_path, deployed_meta, start_
 def test_wait_child_process_reports_failure_return_code_to_server(return_code, reason):
     client = MagicMock()
     client.client_name = "site-1"
+    client.send_request_before_shutdown.return_value.get_header.return_value = ReturnCode.OK
     job_executor = JobExecutor(client=client, startup="startup")
 
     job_handle = MagicMock()
@@ -454,15 +562,15 @@ def test_wait_child_process_reports_failure_return_code_to_server(return_code, r
         )
 
     job_handle.wait.assert_called_once()
-    client.cell.fire_and_forget.assert_called_once()
+    client.send_request_before_shutdown.assert_called_once()
 
-    call_kwargs = client.cell.fire_and_forget.call_args.kwargs
-    assert call_kwargs["targets"] == [FQCN.ROOT_SERVER]
+    call_kwargs = client.send_request_before_shutdown.call_args.kwargs
+    assert call_kwargs["target"] == FQCN.ROOT_SERVER
     assert call_kwargs["channel"] == CellChannel.SERVER_MAIN
     assert call_kwargs["topic"] == CellChannelTopic.REPORT_JOB_FAILURE
     assert call_kwargs["optional"] is True
 
-    payload = call_kwargs["message"].payload
+    payload = call_kwargs["request"].payload
     assert payload[JobFailureMsgKey.JOB_ID] == "job-1"
     assert payload[JobFailureMsgKey.CODE] == return_code
     assert payload[JobFailureMsgKey.REASON] == reason
@@ -473,14 +581,57 @@ def test_wait_child_process_reports_failure_return_code_to_server(return_code, r
     engine.fire_event.assert_called_once_with(EventType.JOB_COMPLETED, fl_ctx)
 
 
-@pytest.mark.parametrize("return_code", [JobReturnCode.SUCCESS, JobReturnCode.UNKNOWN, JobReturnCode.EXECUTION_ERROR])
-def test_wait_child_process_does_not_report_non_failure_return_code(return_code):
+def test_wait_child_process_preserves_launcher_infrastructure_error_over_rc_file(tmp_path):
     client = MagicMock()
     client.client_name = "site-1"
+    client.send_request_before_shutdown.return_value.get_header.return_value = ReturnCode.OK
+    job_executor = JobExecutor(client=client, startup="startup")
+    job_handle = MagicMock()
+    job_handle.poll.return_value = ProcessExitCode.INFRASTRUCTURE_ERROR
+    job_executor.run_processes = {"job-1": {RunProcessKey.JOB_HANDLE: job_handle}}
+    run_dir = tmp_path / "job-1"
+    run_dir.mkdir()
+    rc_file = run_dir / FLMetaKey.PROCESS_RC_FILE
+    rc_file.write_text("0\n", encoding="utf-8")
+    fl_ctx = MagicMock()
+
+    job_executor._wait_child_process_finish(
+        client=client,
+        job_id="job-1",
+        allocated_resource=None,
+        token=None,
+        resource_manager=MagicMock(),
+        workspace=str(tmp_path),
+        fl_ctx=fl_ctx,
+    )
+
+    payload = client.send_request_before_shutdown.call_args.kwargs["request"].payload
+    assert payload[JobFailureMsgKey.CODE] == ProcessExitCode.INFRASTRUCTURE_ERROR
+    assert not rc_file.exists()
+
+
+@pytest.mark.parametrize(
+    ("return_code", "process_status", "expected_code"),
+    [
+        (JobReturnCode.SUCCESS, ClientStatus.STARTING, JobReturnCode.SUCCESS),
+        (JobReturnCode.UNKNOWN, ClientStatus.STARTING, JobReturnCode.UNKNOWN),
+        (JobReturnCode.EXECUTION_ERROR, ClientStatus.STARTED, JobReturnCode.EXECUTION_ERROR),
+        (JobReturnCode.EXECUTION_ERROR, ClientStatus.STARTING, ProcessExitCode.INFRASTRUCTURE_ERROR),
+    ],
+)
+def test_wait_child_process_reports_terminal_return_code(return_code, process_status, expected_code):
+    client = MagicMock()
+    client.client_name = "site-1"
+    client.send_request_before_shutdown.return_value.get_header.return_value = ReturnCode.OK
     job_executor = JobExecutor(client=client, startup="startup")
 
     job_handle = MagicMock()
-    job_executor.run_processes = {"job-1": {RunProcessKey.JOB_HANDLE: job_handle}}
+    job_executor.run_processes = {
+        "job-1": {
+            RunProcessKey.JOB_HANDLE: job_handle,
+            RunProcessKey.STATUS: process_status,
+        }
+    }
 
     engine = MagicMock()
     fl_ctx = MagicMock()
@@ -497,6 +648,65 @@ def test_wait_child_process_does_not_report_non_failure_return_code(return_code)
             fl_ctx=fl_ctx,
         )
 
-    client.cell.fire_and_forget.assert_not_called()
+    client.send_request_before_shutdown.assert_called_once()
+    payload = client.send_request_before_shutdown.call_args.kwargs["request"].payload
+    assert payload[JobFailureMsgKey.CODE] == expected_code
+    assert "job-1" not in job_executor.run_processes
+    engine.fire_event.assert_called_once_with(EventType.JOB_COMPLETED, fl_ctx)
+
+
+def test_wait_child_process_cleans_up_when_terminal_outcome_report_fails():
+    client = MagicMock()
+    client.client_name = "site-1"
+    client.send_request_before_shutdown.side_effect = RuntimeError("network unavailable")
+    job_executor = JobExecutor(client=client, startup="startup")
+
+    job_handle = MagicMock()
+    job_executor.run_processes = {"job-1": {RunProcessKey.JOB_HANDLE: job_handle}}
+
+    engine = MagicMock()
+    fl_ctx = MagicMock()
+    fl_ctx.get_engine.return_value = engine
+
+    with patch("nvflare.private.fed.client.client_executor.get_return_code", return_value=JobReturnCode.SUCCESS):
+        job_executor._wait_child_process_finish(
+            client=client,
+            job_id="job-1",
+            allocated_resource=None,
+            token=None,
+            resource_manager=MagicMock(),
+            workspace="/tmp/workspace",
+            fl_ctx=fl_ctx,
+        )
+
+    client.send_request_before_shutdown.assert_called_once()
+    assert "job-1" not in job_executor.run_processes
+    engine.fire_event.assert_called_once_with(EventType.JOB_COMPLETED, fl_ctx)
+
+
+def test_wait_child_process_skips_terminal_outcome_after_client_communication_stops():
+    client = MagicMock()
+    client.client_name = "site-1"
+    client.send_request_before_shutdown.return_value = None
+    job_executor = JobExecutor(client=client, startup="startup")
+    job_handle = MagicMock()
+    job_executor.run_processes = {"job-1": {RunProcessKey.JOB_HANDLE: job_handle}}
+
+    engine = MagicMock()
+    fl_ctx = MagicMock()
+    fl_ctx.get_engine.return_value = engine
+
+    with patch("nvflare.private.fed.client.client_executor.get_return_code", return_value=JobReturnCode.SUCCESS):
+        job_executor._wait_child_process_finish(
+            client=client,
+            job_id="job-1",
+            allocated_resource=None,
+            token=None,
+            resource_manager=MagicMock(),
+            workspace="/tmp/workspace",
+            fl_ctx=fl_ctx,
+        )
+
+    client.send_request_before_shutdown.assert_called_once()
     assert "job-1" not in job_executor.run_processes
     engine.fire_event.assert_called_once_with(EventType.JOB_COMPLETED, fl_ctx)

@@ -18,7 +18,14 @@ from nvflare.collab.api.call_opt import CallOption
 from nvflare.collab.api.context import get_call_context, set_call_context
 from nvflare.collab.api.exceptions import CollabCallError
 from nvflare.collab.api.group_call_context import GroupCallContext
-from nvflare.collab.runtime.defs import MSG_CHANNEL, MSG_TOPIC, CallReplyKey, ObjectCallKey
+from nvflare.collab.runtime.defs import (
+    CALL_PROTOCOL_VERSION,
+    MSG_CHANNEL,
+    MSG_TOPIC,
+    CallHeaderKey,
+    CallReplyKey,
+    ObjectCallKey,
+)
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.f3.message import Message
@@ -36,6 +43,10 @@ class CellDispatcher(_InvocationDispatcher):
         self.target_fqcn = target_fqcn
         self.thread_executor = thread_executor
 
+    def _check_secure_call_supported(self, call_opt: CallOption):
+        if call_opt.secure and not self.cell.core_cell.supports_secure_messages():
+            raise RuntimeError("secure Collab call requires a Cell configured with certificates")
+
     def _call_target(
         self,
         context,
@@ -47,6 +58,8 @@ class CellDispatcher(_InvocationDispatcher):
     ):
         set_call_context(context)
 
+        self._check_secure_call_supported(call_opt)
+
         payload = {
             ObjectCallKey.CALLER: self.caller,
             ObjectCallKey.TARGET_NAME: target_name,
@@ -54,7 +67,14 @@ class CellDispatcher(_InvocationDispatcher):
             ObjectCallKey.ARGS: args,
             ObjectCallKey.KWARGS: kwargs,
         }
-        request = new_cell_message({}, payload)
+        request = new_cell_message(
+            {
+                CallHeaderKey.PROTOCOL_VERSION: CALL_PROTOCOL_VERSION,
+                CallHeaderKey.TARGET_NAME: target_name,
+                CallHeaderKey.METHOD_NAME: func_name,
+            },
+            payload,
+        )
 
         timeout = call_opt.timeout
         if call_opt.expect_result:
@@ -86,6 +106,7 @@ class CellDispatcher(_InvocationDispatcher):
                     error = reply.payload.get(CallReplyKey.ERROR)
                     error_type = reply.payload.get(CallReplyKey.ERROR_TYPE)
                     error_traceback = reply.payload.get(CallReplyKey.ERROR_TRACEBACK)
+                error = error or reply.get_header(MessageHeaderKey.ERROR)
                 cause = error or f"remote call returned {rc=}"
                 raise CollabCallError(
                     target_name,
@@ -125,6 +146,10 @@ class CellDispatcher(_InvocationDispatcher):
             return None
 
     def call_target_in_group(self, gcc: GroupCallContext, func_name: str, *args, **kwargs):
+        # Validate local preconditions before handing work to the executor. In
+        # particular, fire-and-forget calls return before worker failures can
+        # be observed, so an invalid secure configuration must fail here.
+        self._check_secure_call_supported(gcc.call_opt)
         future = self.thread_executor.submit(self._run_func, gcc, func_name, args, kwargs)
         future.add_done_callback(lambda done: self._group_call_done(done, gcc, func_name))
 

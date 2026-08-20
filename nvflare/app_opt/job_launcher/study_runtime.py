@@ -52,7 +52,7 @@ _STUDY_KEYS = {
 _MOUNT_DATASET_KEYS = {"type", "source", "mode"}
 _SECRET_ENV_KEYS = {"source", "key"}
 _SECRET_MOUNT_KEYS = {"source", "mount_path", "mode", "items"}
-_SLURM_KEYS = {"sandbox", "setup", "partition", "account", "qos"}
+_SLURM_KEYS = {"sandbox", "python_path", "setup", "partition", "account", "qos"}
 SLURM_SANDBOXES = frozenset({"apptainer", "pyxis", "none"})
 _VALID_LAUNCHER_MODES = {"process", "docker", "k8s", "slurm"}
 
@@ -401,6 +401,8 @@ def _parse_slurm(study: str, entry, file_path: str) -> dict:
         if key == "sandbox":
             if not isinstance(value, str) or value not in SLURM_SANDBOXES:
                 raise _error(file_path, f"{key_label} must be one of {sorted(SLURM_SANDBOXES)}.")
+        elif key == "python_path":
+            value = _require_slurm_absolute_path(value, key_label, file_path)
         elif key == "setup":
             value = _require_utf8_text(value, key_label, file_path, allow_empty=True)
         else:

@@ -208,7 +208,9 @@ Each leaf of clients (edge devices) only connect to its server, where this serve
 One potential use case is with global studies, where the client machine may be located across different regions.
 Rather than requiring every region's client machines connect to only a single FL server in that region, the FL HUB could enable a more performant tiered multi-server setup.
 
-Learn more about the FL Hub in the :ref:`Hierarchy Unification Bridge <hierarchy_unification_bridge>` documentation and the :github_nvflare_link:`code <nvflare/app_common/hub>`.
+Learn more about the FL Hub in the
+`Hierarchy Unification Bridge documentation <https://github.com/NVIDIA/NVFlare/blob/2.4.0/docs/user_guide/hierarchy_unification_bridge.rst>`__
+and the `source code <https://github.com/NVIDIA/NVFlare/tree/2.4.0/nvflare/app_common/hub>`__ for NVFlare 2.4.0.
 
 Misc. Features
 --------------

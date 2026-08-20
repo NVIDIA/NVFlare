@@ -98,7 +98,10 @@ class ServerRunner(TBI):
         self.config = config
         self.engine = engine
         self.abort_signal = Signal()
-        self.wf_lock = threading.Lock()
+        # Submission admission and workflow teardown share this gate. It is
+        # reentrant because process_submission delegates to existing workflow
+        # processing that already takes the same lock.
+        self.wf_lock = threading.RLock()
         self.current_wf = None
         self.current_wf_index = 0
         self.status = "init"
@@ -201,9 +204,9 @@ class ServerRunner(TBI):
             with self.engine.new_context() as fl_ctx:
                 self.log_exception(fl_ctx, f"Error executing RUN: {secure_format_exception(e)}")
         finally:
-            # use wf_lock to ensure state of current_wf!
-            self.status = "done"
+            # Close submission admission atomically with workflow teardown.
             with self.wf_lock:
+                self.status = "done"
                 with self.engine.new_context() as fl_ctx:
                     self.fire_event(EventType.ABOUT_TO_END_RUN, fl_ctx)
                     self.log_info(fl_ctx, "ABOUT_TO_END_RUN fired")
@@ -330,7 +333,13 @@ class ServerRunner(TBI):
             try:
                 filter_name = Scope.TASK_DATA_FILTERS_NAME
                 task_data = apply_filters(
-                    filter_name, task_data, fl_ctx, self.config.task_data_filters, task_name, FilterKey.OUT
+                    filter_name,
+                    task_data,
+                    fl_ctx,
+                    self.config.task_data_filters,
+                    task_name,
+                    FilterKey.OUT,
+                    abort_signal=self.abort_signal,
                 )
             except Exception as e:
                 self.log_exception(
@@ -448,6 +457,20 @@ class ServerRunner(TBI):
             result: task result
             fl_ctx: FLContext
         """
+        # A streamed result callback can be queued before teardown and execute
+        # after END_RUN. Keep the admission decision and all downstream state
+        # access under the same lock used to close the workflow.
+        with self.wf_lock:
+            if self.status != "started" or self.current_wf is None:
+                self.log_info(
+                    fl_ctx,
+                    f"ignored result submission since server runner status is {self.status} "
+                    f"and current workflow is {self.current_wf}",
+                )
+                return
+            return self._process_submission(client, task_name, task_id, result, fl_ctx)
+
+    def _process_submission(self, client: Client, task_name: str, task_id: str, result: Shareable, fl_ctx: FLContext):
         self.log_info(fl_ctx, f"got result from client {client.name} for task: name={task_name}, id={task_id}")
         self._report_client_active("submitTaskResult", fl_ctx)
 
@@ -463,10 +486,6 @@ class ServerRunner(TBI):
         add_job_audit_event(
             fl_ctx=fl_ctx, ref=client_audit_event_id, msg=f"received result from client '{client.name}'"
         )
-
-        if self.status != "started":
-            self.log_info(fl_ctx, "ignored result submission since server runner's status is {}".format(self.status))
-            return
 
         peer_ctx = fl_ctx.get_peer_context()
         if not isinstance(peer_ctx, FLContext):
@@ -515,7 +534,13 @@ class ServerRunner(TBI):
                 try:
                     filter_name = Scope.TASK_RESULT_FILTERS_NAME
                     result = apply_filters(
-                        filter_name, result, fl_ctx, self.config.task_result_filters, task_name, FilterKey.IN
+                        filter_name,
+                        result,
+                        fl_ctx,
+                        self.config.task_result_filters,
+                        task_name,
+                        FilterKey.IN,
+                        abort_signal=self.abort_signal,
                     )
                 except Exception as e:
                     self.log_exception(

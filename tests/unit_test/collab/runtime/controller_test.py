@@ -38,6 +38,22 @@ def test_control_flow_returns_when_start_did_not_create_server_app():
         controller.stop_controller(fl_ctx)
 
 
+def test_control_flow_panics_when_server_cell_is_unavailable():
+    controller = CollabController()
+    controller.server_app = MagicMock()
+    controller.system_panic = MagicMock()
+    fl_ctx = MagicMock()
+    fl_ctx.get_engine.return_value.get_cell.return_value = None
+
+    try:
+        controller.control_flow(abort_signal=MagicMock(), fl_ctx=fl_ctx)
+
+        controller.system_panic.assert_called_once_with("server communication cell is unavailable", fl_ctx)
+        controller.server_app.get_collab_interface.assert_not_called()
+    finally:
+        controller.stop_controller(fl_ctx)
+
+
 def test_fractional_sync_timeout_rounds_up(monkeypatch):
     task_class = MagicMock()
     monkeypatch.setattr(controller_module, "Task", task_class)

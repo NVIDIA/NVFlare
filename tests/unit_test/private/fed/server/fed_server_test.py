@@ -21,16 +21,345 @@ from nvflare.apis.fl_constant import ConnPropKey, RunProcessKey
 from nvflare.apis.job_def import JobMetaKey, RunStatus
 from nvflare.apis.job_launcher_spec import JobReturnCode
 from nvflare.apis.shareable import Shareable
+from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
-from nvflare.private.defs import CellMessageHeaderKeys, ClientRegMsgKey, JobFailureMsgKey, new_cell_message
+from nvflare.fuel.f3.cellnet.identity import ADMIN_LISTENER_KEY
+from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, ClientRegMsgKey, JobFailureMsgKey, new_cell_message
 from nvflare.private.fed.authenticator import MISSING_CLIENT_FQCN
-from nvflare.private.fed.server.fed_server import FederatedServer
-from nvflare.private.fed.server.server_state import DEFAULT_SERVICE_SESSION_ID, HotState
+from nvflare.private.fed.server.fed_server import BaseServer, FederatedServer
+from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
+from nvflare.private.fed.server.server_engine import ServerEngine
+from nvflare.private.fed.server.server_state import DEFAULT_SERVICE_SESSION_ID, HotState, ServerState
+
+
+def assert_client_outcome_unresolved(job_runner):
+    job_runner.resolve_client_outcome.assert_not_called()
+
+
+class _TestServer(BaseServer):
+    def remove_client_data(self, token):
+        pass
+
+
+@pytest.mark.parametrize(
+    "enable_admin_listener, admin_port, admin_host, expected_root_urls",
+    [
+        (True, 8003, None, ["tcp://127.0.0.1:8002", f"tcp://127.0.0.1:8003?{ADMIN_LISTENER_KEY}=true"]),
+        (True, 8003, "127.0.0.2", ["tcp://127.0.0.1:8002", f"tcp://127.0.0.2:8003?{ADMIN_LISTENER_KEY}=true"]),
+        (True, 8003, "::1", ["tcp://127.0.0.1:8002", f"tcp://127.0.0.1:8003?{ADMIN_LISTENER_KEY}=true"]),
+        (True, 8003, "admin.example", ["tcp://127.0.0.1:8002", f"tcp://admin.example:8003?{ADMIN_LISTENER_KEY}=true"]),
+        (True, 8003, " 192.0.2.1 ", ["tcp://127.0.0.1:8002", f"tcp://192.0.2.1:8003?{ADMIN_LISTENER_KEY}=true"]),
+        (
+            True,
+            8003,
+            " admin.example ",
+            ["tcp://127.0.0.1:8002", f"tcp://admin.example:8003?{ADMIN_LISTENER_KEY}=true"],
+        ),
+        (True, None, None, [f"tcp://127.0.0.1:8002?{ADMIN_LISTENER_KEY}=true"]),
+        (False, 8003, "admin.example", ["tcp://127.0.0.1:8002"]),
+    ],
+)
+def test_base_server_deploy_admin_listener(enable_admin_listener, admin_port, admin_host, expected_root_urls):
+    server = _TestServer()
+    server_config = {"service": {"target": "localhost:8002", "scheme": "tcp"}}
+    if admin_port is not None:
+        server_config["admin_port"] = admin_port
+    if admin_host is not None:
+        server_config["admin_host"] = admin_host
+
+    with (
+        patch("nvflare.private.fed.server.fed_server.Cell") as cell_cls,
+        patch("nvflare.private.fed.server.fed_server.mpm.add_cleanup_cb"),
+        patch("nvflare.private.fed.server.fed_server.threading.Thread"),
+    ):
+        server.deploy(
+            args=MagicMock(),
+            grpc_args=server_config,
+            enable_admin_listener=enable_admin_listener,
+        )
+
+    cell_args = cell_cls.call_args.kwargs
+    assert cell_args["root_url"] == expected_root_urls
+    assert cell_args["internal_listener_host"] == "127.0.0.1"
+
+
+def test_insecure_non_loopback_admin_listener_emits_warning():
+    server = _TestServer()
+
+    with (
+        patch("nvflare.private.fed.server.fed_server.Cell"),
+        patch("nvflare.private.fed.server.fed_server.mpm.add_cleanup_cb"),
+        patch("nvflare.private.fed.server.fed_server.threading.Thread"),
+        patch.object(server.logger, "warning") as warning,
+    ):
+        server.deploy(
+            args=MagicMock(),
+            grpc_args={
+                "service": {"target": "server.example:8002", "scheme": "tcp"},
+                "admin_host": "admin.example",
+                "admin_port": 8003,
+            },
+            secure_train=False,
+        )
+
+    warning.assert_called_once()
+
+
+def test_advertised_admin_server_is_not_used_as_bind_host():
+    server = _TestServer()
+
+    with (
+        patch("nvflare.private.fed.server.fed_server.Cell") as cell_cls,
+        patch("nvflare.private.fed.server.fed_server.mpm.add_cleanup_cb"),
+        patch("nvflare.private.fed.server.fed_server.threading.Thread"),
+    ):
+        server.deploy(
+            args=MagicMock(),
+            grpc_args={
+                "service": {"target": "server.example:8002", "scheme": "tcp"},
+                "admin_server": "admin.example",
+                "admin_port": 8003,
+            },
+            secure_train=False,
+        )
+
+    assert cell_cls.call_args.kwargs["root_url"] == [
+        "tcp://0:8002",
+        f"tcp://0:8003?{ADMIN_LISTENER_KEY}=true",
+    ]
+
+
+def test_non_loopback_ipv6_admin_host_is_rejected():
+    server = _TestServer()
+
+    with pytest.raises(ConfigError, match="IPv6 admin_host is not supported: 2001:db8::1"):
+        server.deploy(
+            args=MagicMock(),
+            grpc_args={
+                "service": {"target": "server.example:8002", "scheme": "tcp"},
+                "admin_host": "2001:db8::1",
+                "admin_port": 8003,
+            },
+            secure_train=False,
+        )
+
+
+def test_whitespace_padded_non_loopback_ipv6_admin_host_is_rejected():
+    server = _TestServer()
+
+    with pytest.raises(ConfigError, match="IPv6 admin_host is not supported"):
+        server.deploy(
+            args=MagicMock(),
+            grpc_args={
+                "service": {"target": "server.example:8002", "scheme": "tcp"},
+                "admin_host": "  [2001:db8::1]  ",
+                "admin_port": 8003,
+            },
+            secure_train=False,
+        )
+
+
+def test_admin_host_requires_distinct_port_when_fl_listener_is_external():
+    server = _TestServer()
+
+    with pytest.raises(ConfigError, match="admin_port must differ from the FL service port"):
+        server.deploy(
+            args=MagicMock(),
+            grpc_args={
+                "service": {"target": "server.example:8002", "scheme": "tcp"},
+                "admin_host": "127.0.0.1",
+            },
+            secure_train=False,
+        )
+
+
+@pytest.mark.parametrize("admin_host", ["", "   "])
+def test_empty_admin_host_is_rejected(admin_host):
+    server = _TestServer()
+
+    with pytest.raises(ConfigError, match="admin_host must not be empty"):
+        server.deploy(
+            args=MagicMock(),
+            grpc_args={
+                "service": {"target": "localhost:8002", "scheme": "tcp"},
+                "admin_host": admin_host,
+                "admin_port": 8003,
+            },
+            secure_train=False,
+        )
+
+
+def test_non_string_admin_host_is_rejected_as_config_error():
+    server = _TestServer()
+
+    with pytest.raises(ConfigError, match="admin_host must be a string"):
+        server.deploy(
+            args=MagicMock(),
+            grpc_args={
+                "service": {"target": "localhost:8002", "scheme": "tcp"},
+                "admin_host": 8003,
+                "admin_port": 8003,
+            },
+            secure_train=False,
+        )
+
+
+def test_ipv6_loopback_admin_host_coercion_emits_warning():
+    server = _TestServer()
+
+    with (
+        patch("nvflare.private.fed.server.fed_server.Cell"),
+        patch("nvflare.private.fed.server.fed_server.mpm.add_cleanup_cb"),
+        patch("nvflare.private.fed.server.fed_server.threading.Thread"),
+        patch.object(server.logger, "warning") as warning,
+    ):
+        server.deploy(
+            args=MagicMock(),
+            grpc_args={
+                "service": {"target": "localhost:8002", "scheme": "tcp"},
+                "admin_host": "::1",
+                "admin_port": 8003,
+            },
+            secure_train=False,
+        )
+
+    warning.assert_called_once_with(
+        "IPv6 loopback admin_host '::1' is bound as '127.0.0.1' "
+        "because F3 listeners do not yet support IPv6 end to end"
+    )
+
+
+def test_configured_ipv4_loopback_service_host_is_preserved():
+    server = _TestServer()
+
+    with (
+        patch("nvflare.private.fed.server.fed_server.Cell") as cell_cls,
+        patch("nvflare.private.fed.server.fed_server.mpm.add_cleanup_cb"),
+        patch("nvflare.private.fed.server.fed_server.threading.Thread"),
+    ):
+        server.deploy(
+            args=MagicMock(),
+            grpc_args={"service": {"target": "127.0.0.2:8002", "scheme": "tcp"}},
+            enable_admin_listener=False,
+        )
+
+    cell_args = cell_cls.call_args.kwargs
+    assert cell_args["root_url"] == ["tcp://127.0.0.2:8002"]
+    assert cell_args["internal_listener_host"] == "127.0.0.2"
+
+
+def test_empty_service_host_preserves_wildcard_binding():
+    server = _TestServer()
+
+    with (
+        patch("nvflare.private.fed.server.fed_server.Cell") as cell_cls,
+        patch("nvflare.private.fed.server.fed_server.mpm.add_cleanup_cb"),
+        patch("nvflare.private.fed.server.fed_server.threading.Thread"),
+    ):
+        server.deploy(
+            args=MagicMock(),
+            grpc_args={"service": {"target": ":8002", "scheme": "tcp"}},
+            enable_admin_listener=False,
+        )
+
+    cell_args = cell_cls.call_args.kwargs
+    assert cell_args["root_url"] == ["tcp://0:8002"]
+    assert cell_args["internal_listener_host"] is None
+
+
+def test_abbreviated_ipv4_loopback_service_host_is_not_exposed():
+    server = _TestServer()
+
+    with (
+        patch("nvflare.private.fed.server.fed_server.Cell") as cell_cls,
+        patch("nvflare.private.fed.server.fed_server.mpm.add_cleanup_cb"),
+        patch("nvflare.private.fed.server.fed_server.threading.Thread"),
+    ):
+        server.deploy(
+            args=MagicMock(),
+            grpc_args={"service": {"target": "127.1:8002", "scheme": "tcp"}},
+            enable_admin_listener=False,
+        )
+
+    cell_args = cell_cls.call_args.kwargs
+    assert cell_args["root_url"] == ["tcp://127.0.0.1:8002"]
+    assert cell_args["internal_listener_host"] == "127.0.0.1"
+
+
+def test_ipv4_mapped_ipv6_loopback_admin_host_is_normalized_consistently():
+    server = _TestServer()
+
+    with (
+        patch("nvflare.private.fed.server.fed_server.Cell") as cell_cls,
+        patch("nvflare.private.fed.server.fed_server.mpm.add_cleanup_cb"),
+        patch("nvflare.private.fed.server.fed_server.threading.Thread"),
+    ):
+        server.deploy(
+            args=MagicMock(),
+            grpc_args={
+                "service": {"target": "localhost:8002", "scheme": "tcp"},
+                "admin_host": "::ffff:127.0.0.2",
+                "admin_port": 8003,
+            },
+            secure_train=False,
+        )
+
+    assert cell_cls.call_args.kwargs["root_url"][-1] == "tcp://127.0.0.2:8003?admin_listener=true"
 
 
 class TestFederatedServer:
+    def test_production_listener_bindings_remain_wildcard_by_default(self):
+        server = object.__new__(FederatedServer)
+        server.logger = MagicMock()
+
+        with (
+            patch("nvflare.private.fed.server.fed_server.Cell") as cell_cls,
+            patch("nvflare.private.fed.server.fed_server.mpm.add_cleanup_cb"),
+            patch("nvflare.private.fed.server.fed_server.threading.Thread"),
+        ):
+            BaseServer.deploy(
+                server,
+                args=MagicMock(),
+                grpc_args={
+                    "service": {"target": "server.example:8002", "scheme": "tcp"},
+                    "admin_port": 8003,
+                },
+            )
+
+        cell_args = cell_cls.call_args.kwargs
+        assert cell_args["root_url"] == ["tcp://0:8002", "tcp://0:8003?admin_listener=true"]
+        assert cell_args["internal_listener_host"] is None
+        server.logger.warning.assert_not_called()
+
+    @staticmethod
+    def _create_job_cell_with_command_agent(server_state):
+        server = object.__new__(FederatedServer)
+        engine = ServerEngine.__new__(ServerEngine)
+        engine.server = server
+        engine.run_manager = None
+        server.engine = engine
+        server.server_state = server_state
+
+        with (
+            patch("nvflare.private.fed.server.fed_server.Cell") as cell_cls,
+            patch("nvflare.private.fed.server.fed_server.NetAgent"),
+            patch("nvflare.private.fed.server.fed_server.mpm.add_cleanup_cb"),
+        ):
+            cell = MagicMock()
+            cell_cls.return_value = cell
+            server.create_job_cell("job-1", "tcp://root", "tcp://parent", False, None)
+
+        engine.set_cell(cell)
+        aux_calls = [
+            call
+            for call in cell.register_request_cb.call_args_list
+            if call.kwargs["channel"] == CellChannel.AUX_COMMUNICATION and call.kwargs["topic"] == "*"
+        ]
+        assert len(aux_calls) == 1
+        return server, engine, cell, aux_calls[0].kwargs["cb"]
+
     def test_resolve_client_fqcn_for_auth_fails_closed_for_registered_client_with_missing_fqcn(self):
         server = object.__new__(FederatedServer)
         client = MagicMock()
@@ -40,6 +369,26 @@ class TestFederatedServer:
         server.client_manager.clients = {"token-a": client}
 
         assert server._resolve_client_fqcn_for_auth("site-a", "token-a") == MISSING_CLIENT_FQCN
+
+    def test_non_secure_server_registers_transit_header_sanitizer(self):
+        server = object.__new__(FederatedServer)
+        server.lock = MagicMock()
+        server.cell = MagicMock()
+        server.engine = MagicMock()
+        server._register_cellnet_cbs = MagicMock()
+
+        with patch("nvflare.private.fed.server.fed_server.BaseServer.deploy"):
+            server.deploy(
+                args=MagicMock(),
+                grpc_args={"service": {"target": "localhost:8002"}},
+                secure_train=False,
+            )
+
+        server.cell.core_cell.add_incoming_filter.assert_called_once_with(
+            channel="*",
+            topic="*",
+            cb=server._strip_peer_transit_headers,
+        )
 
     def test_create_job_cell_allows_missing_server_config_for_non_secure_cell(self):
         server = object.__new__(FederatedServer)
@@ -92,6 +441,39 @@ class TestFederatedServer:
         assert cell_cls.call_args.kwargs["auth_identity"] == "server-cn"
         assert cell_cls.call_args.kwargs["auth_identity_map"] == auth_identity_map
 
+    def test_set_cell_preserves_server_command_agent_aux_callback(self):
+        server, engine, cell, aux_callback = self._create_job_cell_with_command_agent(HotState(ssid="ssid"))
+
+        assert engine.cell is cell
+        assert aux_callback.__self__ is server.command_agent
+        assert aux_callback.__func__ is ServerCommandAgent.aux_communicate
+
+    @pytest.mark.parametrize(
+        "server_state,request_ssid",
+        [
+            (HotState(ssid="expected-ssid"), "wrong-ssid"),
+            (ServerState(ssid="expected-ssid"), "expected-ssid"),
+        ],
+    )
+    def test_server_job_aux_callback_rejects_invalid_ssid_or_state(self, server_state, request_ssid):
+        _, engine, _, aux_callback = self._create_job_cell_with_command_agent(server_state)
+        fl_ctx = MagicMock()
+        fl_ctx.get_engine.return_value = engine
+        engine.new_context = MagicMock(return_value=nullcontext(fl_ctx))
+        engine.dispatch = MagicMock()
+        request = new_cell_message(
+            {
+                MessageHeaderKey.TOPIC: "test_topic",
+                CellMessageHeaderKeys.SSID: request_ssid,
+            },
+            Shareable(),
+        )
+
+        result = aux_callback(request)
+
+        assert result.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.AUTHENTICATION_ERROR
+        engine.dispatch.assert_not_called()
+
     def test_hot_state_defaults_to_non_empty_session_id(self):
         assert HotState().ssid == DEFAULT_SERVICE_SESSION_ID
 
@@ -123,6 +505,49 @@ class TestFederatedServer:
 
             result = server.client_heartbeat(request)
             assert result.get_header(CellMessageHeaderKeys.ABORT_JOBS, []) == expected
+
+    @pytest.mark.parametrize(
+        "run_processes, exception_run_processes, expected",
+        [
+            ({"job1": {}}, {}, []),
+            ({}, {}, []),
+            ({}, {"job1": {}}, ["job1"]),
+        ],
+        ids=["server-running", "awaiting-client-outcome", "server-failed"],
+    )
+    def test_sync_client_jobs_keeps_outcome_barrier_only_without_terminal_server_failure(
+        self, run_processes, exception_run_processes, expected
+    ):
+        with (
+            patch("nvflare.private.fed.server.fed_server.ServerEngine"),
+            patch("nvflare.private.fed.server.fed_server.ConfigService.get_bool_var", return_value=True),
+        ):
+            server = FederatedServer(
+                project_name="project_name",
+                min_num_clients=1,
+                max_num_clients=10,
+                cmd_modules=None,
+                heart_beat_timeout=600,
+                args=MagicMock(),
+                secure_train=False,
+                snapshot_persistor=MagicMock(),
+            )
+            server.engine.run_processes = run_processes
+            server.engine.exception_run_processes = exception_run_processes
+            server.engine.job_runner.get_client_outcome_jobs.return_value = {"job1"}
+            request = new_cell_message({CellMessageHeaderKeys.JOB_IDS: ["job1"]}, Shareable())
+
+            assert server._sync_client_jobs(request, "token-1") == expected
+            if exception_run_processes:
+                client = MagicMock()
+                client.name = "C1"
+                server.client_manager.clients = {"token-1": client}
+                server.engine.job_runner.is_client_outcome_pending.return_value = True
+                request = new_cell_message({CellMessageHeaderKeys.JOB_IDS: []}, Shareable())
+
+                assert server._sync_client_jobs(request, "token-1") == []
+                server.engine.job_runner.fail_run.assert_not_called()
+                server.engine.job_runner.resolve_client_outcome.assert_called_once_with("job1", "C1")
 
     def test_set_job_aborted_marks_runner_without_publishing_status(self):
         server = object.__new__(FederatedServer)
@@ -304,6 +729,18 @@ class TestFederatedServer:
             server._sync_client_jobs(other_request, token)
             assert "job1" not in server._job_reported_clients
 
+            # A client that no longer has a barrier-only job cannot report again.
+            server.client_manager.clients = {token: client}
+            server.engine.job_runner.get_client_outcome_jobs.return_value = {"job1"}
+            server.engine.job_runner.is_client_outcome_pending.return_value = True
+            fl_ctx = MagicMock()
+            server.engine.new_context.return_value = nullcontext(fl_ctx)
+            server._sync_client_jobs(other_request, token)
+            server.engine.job_runner.fail_run.assert_called_once_with(
+                "job1", ProcessExitCode.INFRASTRUCTURE_ERROR, fl_ctx
+            )
+            server.engine.job_runner.resolve_client_outcome.assert_called_once_with("job1", "C1")
+
     def test_disabled_client_heartbeat_is_rejected(self, tmp_path):
         with patch("nvflare.private.fed.server.fed_server.ServerEngine"):
             args = MagicMock()
@@ -338,8 +775,7 @@ class TestFederatedServer:
             assert "disabled" in result.get_header(MessageHeaderKey.ERROR)
             assert "token" not in server.client_manager.clients
 
-    @pytest.mark.parametrize("failure_code", [JobReturnCode.ABORTED, ProcessExitCode.UNSAFE_COMPONENT])
-    def test_process_job_failure_stops_run_for_reported_abort_client_failures(self, failure_code):
+    def test_process_job_failure_stops_run_for_reported_unsafe_client_failure(self):
         with patch("nvflare.private.fed.server.fed_server.ServerEngine"):
             server = FederatedServer(
                 project_name="project_name",
@@ -353,6 +789,9 @@ class TestFederatedServer:
             )
 
             server.client_manager.is_from_authorized_client = MagicMock(return_value=True)
+            server.client_manager.clients = {"token-1": MagicMock(name="site-1")}
+            server.client_manager.clients["token-1"].name = "site-1"
+            server.engine.job_runner.is_client_outcome_pending.return_value = True
             fl_ctx = MagicMock()
             server.engine.new_context.return_value = nullcontext(fl_ctx)
             server.engine.job_runner.stop_run = MagicMock()
@@ -365,7 +804,7 @@ class TestFederatedServer:
                 },
                 {
                     JobFailureMsgKey.JOB_ID: "job-1",
-                    JobFailureMsgKey.CODE: failure_code,
+                    JobFailureMsgKey.CODE: ProcessExitCode.UNSAFE_COMPONENT,
                     JobFailureMsgKey.REASON: "fatal client failure",
                 },
             )
@@ -374,12 +813,18 @@ class TestFederatedServer:
 
             server.engine.job_runner.stop_run.assert_called_once_with("job-1", fl_ctx)
             server.engine.job_runner.fail_run.assert_not_called()
+            server.engine.job_runner.resolve_client_outcome.assert_called_once_with("job-1", "site-1")
 
     @pytest.mark.parametrize(
-        "failure_code",
-        [ProcessExitCode.CONFIG_ERROR, ProcessExitCode.EXCEPTION],
+        "failure_code, expected_code",
+        [
+            (ProcessExitCode.CONFIG_ERROR, ProcessExitCode.EXCEPTION),
+            (ProcessExitCode.EXCEPTION, ProcessExitCode.EXCEPTION),
+            (ProcessExitCode.INFRASTRUCTURE_ERROR, ProcessExitCode.INFRASTRUCTURE_ERROR),
+            (JobReturnCode.ABORTED, JobReturnCode.ABORTED),
+        ],
     )
-    def test_process_job_failure_fails_run_for_reported_exception_client_failures(self, failure_code):
+    def test_process_job_failure_fails_run_for_reported_client_failures(self, failure_code, expected_code):
         with patch("nvflare.private.fed.server.fed_server.ServerEngine"):
             server = FederatedServer(
                 project_name="project_name",
@@ -393,10 +838,16 @@ class TestFederatedServer:
             )
 
             server.client_manager.is_from_authorized_client = MagicMock(return_value=True)
+            server.client_manager.clients = {"token-1": MagicMock(name="site-1")}
+            server.client_manager.clients["token-1"].name = "site-1"
+            server.engine.job_runner.is_client_outcome_pending.return_value = True
             fl_ctx = MagicMock()
             server.engine.new_context.return_value = nullcontext(fl_ctx)
             server.engine.job_runner.stop_run = MagicMock()
             server.engine.job_runner.fail_run = MagicMock()
+            server.engine.job_runner.fail_run.side_effect = lambda *_: assert_client_outcome_unresolved(
+                server.engine.job_runner
+            )
 
             request = new_cell_message(
                 {
@@ -412,8 +863,9 @@ class TestFederatedServer:
 
             server.process_job_failure(request)
 
-            server.engine.job_runner.fail_run.assert_called_once_with("job-1", ProcessExitCode.EXCEPTION, fl_ctx)
+            server.engine.job_runner.fail_run.assert_called_once_with("job-1", expected_code, fl_ctx)
             server.engine.job_runner.stop_run.assert_not_called()
+            server.engine.job_runner.resolve_client_outcome.assert_called_once_with("job-1", "site-1")
 
     def test_process_job_failure_ignores_generic_launcher_execution_error(self):
         with patch("nvflare.private.fed.server.fed_server.ServerEngine"):
@@ -429,6 +881,9 @@ class TestFederatedServer:
             )
 
             server.client_manager.is_from_authorized_client = MagicMock(return_value=True)
+            server.client_manager.clients = {"token-1": MagicMock(name="site-1")}
+            server.client_manager.clients["token-1"].name = "site-1"
+            server.engine.job_runner.is_client_outcome_pending.return_value = True
             server.engine.job_runner.stop_run = MagicMock()
             server.engine.job_runner.fail_run = MagicMock()
 
@@ -448,6 +903,27 @@ class TestFederatedServer:
 
             server.engine.job_runner.fail_run.assert_not_called()
             server.engine.job_runner.stop_run.assert_not_called()
+            server.engine.job_runner.is_client_outcome_pending.return_value = False
+            result = server.process_job_failure(request)
+            assert result.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.OK
+            server.engine.job_runner.resolve_client_outcome.assert_called_once_with("job-1", "site-1")
+
+    def test_notify_dead_client_fails_barrier_only_job(self):
+        server = object.__new__(FederatedServer)
+        server.logger = MagicMock()
+        server.engine = MagicMock()
+        server.engine.run_processes = {}
+        server.engine.job_runner.get_client_outcome_jobs.return_value = {"job-1"}
+        server.engine.job_runner.is_client_outcome_pending.return_value = True
+        fl_ctx = MagicMock()
+        server.engine.new_context.return_value = nullcontext(fl_ctx)
+        client = MagicMock()
+        client.name = "site-1"
+
+        server.notify_dead_client(client)
+
+        server.engine.job_runner.fail_run.assert_called_once_with("job-1", ProcessExitCode.INFRASTRUCTURE_ERROR, fl_ctx)
+        server.engine.job_runner.resolve_client_outcome.assert_called_once_with("job-1", "site-1")
 
 
 class TestGetValidatedSiteConfig:

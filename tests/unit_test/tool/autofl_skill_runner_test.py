@@ -375,6 +375,8 @@ def test_runner_applies_schema_metric_contract():
             "requested_metric": "accuracy",
             "optimization_metric": "accuracy",
             "metric_extraction_order": ["accuracy"],
+            "metric_invariants": ["definition", "evaluation_timing_and_checkpoint"],
+            "metric_change_policy": "restart_campaign_with_repaired_baseline",
         }
     }
     schema = {
@@ -393,6 +395,8 @@ def test_runner_applies_schema_metric_contract():
     assert updated["objective"]["optimization_metric"] == "test_accuracy"
     assert updated["objective"]["metric_extraction_order"] == ["test_accuracy", "accuracy"]
     assert updated["objective"]["metric_source"] == "held-out CIFAR-10 test set"
+    assert updated["objective"]["metric_invariants"] == ["definition", "evaluation_timing_and_checkpoint"]
+    assert updated["objective"]["metric_change_policy"] == "restart_campaign_with_repaired_baseline"
 
 
 def test_schema_metric_contract_rejects_minimization_objective():
@@ -578,6 +582,138 @@ def test_run_terminates_inherited_stdout_descendant_after_leader_exits(tmp_path)
         runner.time.sleep(0.05)
     else:
         pytest.fail(f"descendant process {child_pid} survived process-group cleanup")
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="escaped-process cleanup uses Linux /proc ownership")
+@pytest.mark.parametrize("ignore_sigterm", [False, True], ids=["sigterm_honored", "sigterm_ignored"])
+def test_run_terminates_detached_descendant_that_escapes_process_group(tmp_path, ignore_sigterm):
+    runner = _load_runner()
+    child_pid_path = tmp_path / "detached.pid"
+    signal_setup = "signal.signal(signal.SIGTERM, signal.SIG_IGN); " if ignore_sigterm else ""
+    child_code = (
+        "import os, pathlib, signal, time; "
+        f"{signal_setup}"
+        f"pathlib.Path({str(child_pid_path)!r}).write_text(str(os.getpid())); "
+        "print('detached descendant started', flush=True); time.sleep(90)"
+    )
+    parent_code = (
+        "import subprocess, sys; "
+        f"subprocess.Popen([sys.executable, '-c', {child_code!r}], start_new_session=True); "
+        "print('leader exits', flush=True)"
+    )
+
+    rc, output, runtime = runner.run(
+        [sys.executable, "-c", parent_code],
+        tmp_path,
+        timeout=2 if ignore_sigterm else 1,
+        log_path=tmp_path / "run.log",
+    )
+
+    assert rc == 124
+    assert runtime < (25 if ignore_sigterm else 5)
+    assert "leader exits" in output
+    child_pid = int(child_pid_path.read_text(encoding="utf-8"))
+    deadline = runner.time.monotonic() + 5
+    while runner.time.monotonic() < deadline:
+        try:
+            os.kill(child_pid, 0)
+        except ProcessLookupError:
+            break
+        proc_stat = Path(f"/proc/{child_pid}/stat")
+        if proc_stat.is_file() and proc_stat.read_text(encoding="utf-8").split()[2] == "Z":
+            break
+        runner.time.sleep(0.05)
+    else:
+        pytest.fail(f"detached descendant process {child_pid} survived trial-token cleanup")
+
+
+def test_signal_trial_processes_uses_pidfds_and_revalidates_identity(monkeypatch):
+    runner = _load_runner()
+    identities = {10: [123, 123], 11: [456, -1]}
+    sent = []
+    closed = []
+
+    monkeypatch.setattr(runner, "trial_process_ids", lambda _token: [123, 456])
+    monkeypatch.setattr(runner, "process_has_trial_token", lambda _process_id, _marker: True)
+    monkeypatch.setattr(runner, "pidfd_process_id", lambda pidfd: identities[pidfd].pop(0))
+    monkeypatch.setattr(
+        runner.os, "pidfd_open", lambda process_id, _flags: {123: 10, 456: 11}[process_id], raising=False
+    )
+    monkeypatch.setattr(runner.os, "close", closed.append)
+    monkeypatch.setattr(runner.signal, "pidfd_send_signal", lambda pidfd, sig: sent.append((pidfd, sig)), raising=False)
+
+    runner.signal_trial_processes("trial-token", runner.signal.SIGTERM)
+
+    assert sent == [(10, runner.signal.SIGTERM)]
+    assert closed == [10, 11]
+
+
+def test_signal_trial_processes_reports_pidfd_open_failure(monkeypatch):
+    runner = _load_runner()
+
+    monkeypatch.setattr(runner, "trial_process_ids", lambda _token: [123])
+    monkeypatch.setattr(
+        runner.os,
+        "pidfd_open",
+        lambda _process_id, _flags: (_ for _ in ()).throw(PermissionError("pidfd denied")),
+        raising=False,
+    )
+    monkeypatch.setattr(runner.signal, "pidfd_send_signal", lambda _pidfd, _sig: None, raising=False)
+
+    with pytest.raises(runner.TrialProcessCleanupError, match="cannot open pidfd for trial process 123"):
+        runner.signal_trial_processes("trial-token", runner.signal.SIGTERM)
+
+
+def test_terminate_process_retries_pidfd_failure_with_sigkill(monkeypatch):
+    runner = _load_runner()
+    signals = []
+    waits = iter([False, True])
+
+    class ExitedProcess:
+        @staticmethod
+        def poll():
+            return 0
+
+    def signal_trial_processes(_trial_token, sig):
+        signals.append(sig)
+        if sig == runner.signal.SIGTERM:
+            raise runner.TrialProcessCleanupError("temporary pidfd failure")
+
+    monkeypatch.setattr(runner, "signal_trial_processes", signal_trial_processes)
+    monkeypatch.setattr(runner, "wait_for_process_tree", lambda *_args, **_kwargs: next(waits))
+    monkeypatch.setattr(runner, "trial_process_ids", lambda _trial_token: [])
+
+    runner.terminate_process(ExitedProcess(), trial_token="trial-token")
+
+    assert signals == [runner.signal.SIGTERM, runner.signal.SIGKILL]
+
+
+def test_run_requires_pidfds_before_starting_linux_process(tmp_path, monkeypatch):
+    runner = _load_runner()
+    started = False
+
+    def fail_start(*_args, **_kwargs):
+        nonlocal started
+        started = True
+        raise AssertionError("process must not start without race-safe cleanup support")
+
+    monkeypatch.setattr(runner.sys, "platform", "linux")
+    monkeypatch.setattr(
+        runner,
+        "ensure_trial_process_pidfd_support",
+        lambda: (_ for _ in ()).throw(runner.TrialProcessCleanupError("pidfds unavailable")),
+    )
+    monkeypatch.setattr(runner.subprocess, "Popen", fail_start)
+
+    with pytest.raises(runner.TrialProcessCleanupError, match="pidfds unavailable"):
+        runner.run(
+            [sys.executable, "-c", "print('must not run')"],
+            tmp_path,
+            timeout=10,
+            log_path=tmp_path / "run.log",
+        )
+
+    assert not started
 
 
 @pytest.mark.skipif(os.name == "nt", reason="process-group cleanup uses POSIX process groups")
@@ -1833,6 +1969,207 @@ def test_baseline_crash_is_not_counted_as_candidate_attempt():
     )
 
 
+def test_candidate_execution_fingerprint_uses_existing_comparison_provenance():
+    runner = _load_runner()
+    manifest = {
+        "base_source_sha256": "a" * 64,
+        "fixed_budget_sha256": "b" * 64,
+        "run_args": ["--lr", "0.1"],
+    }
+    fingerprint = runner.candidate_execution_fingerprint(manifest, "c" * 64)
+
+    assert runner.candidate_execution_fingerprint(deepcopy(manifest), "c" * 64) == fingerprint
+    for field, value in (
+        ("base_source_sha256", "d" * 64),
+        ("fixed_budget_sha256", "e" * 64),
+        ("run_args", ["--lr", "0.2"]),
+    ):
+        changed = deepcopy(manifest)
+        changed[field] = value
+        assert runner.candidate_execution_fingerprint(changed, "c" * 64) != fingerprint
+    assert runner.candidate_execution_fingerprint(manifest, "f" * 64) != fingerprint
+
+
+def test_identical_crashed_candidate_replay_is_counted_and_records_outcome(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch, baseline_score=0.8)
+    assert runner.main(["status", str(job), "--max-candidates", "2"]) == 0
+    calls = []
+
+    outcomes = iter([("crash", None), ("candidate", 0.9)])
+
+    def replay_run(run_def, **kwargs):
+        calls.append(run_def.name)
+        status, score = next(outcomes)
+        return runner.RunRecord(
+            status, run_def.name, score, 1.0, "none", run_def.description, "python job.py", "/tmp/run"
+        )
+
+    monkeypatch.setattr(runner, "run_job", replay_run)
+    for candidate in ("first_crash", "same_after_crash"):
+        assert runner.main(["prepare", str(job), "--name", candidate, "--hypothesis", "same candidate"]) == 0
+        source = tmp_path / ".nvflare" / "autofl" / "candidates" / candidate / "source" / "client.py"
+        source.write_text("ALGORITHM = 'crashing_candidate'\n", encoding="utf-8")
+        if candidate == "first_crash":
+            assert runner.main(["evaluate", str(job)]) == 0
+
+    second_manifest_path = tmp_path / ".nvflare/autofl/candidates/same_after_crash/candidate_manifest.json"
+    assert runner.main(["evaluate", str(job), "--manifest", str(second_manifest_path)]) == 0
+    first_manifest = json.loads(
+        tmp_path.joinpath(".nvflare/autofl/candidates/first_crash/candidate_manifest.json").read_text(encoding="utf-8")
+    )
+    second_manifest = json.loads(second_manifest_path.read_text(encoding="utf-8"))
+    replay = second_manifest["crash_replay"]
+    assert second_manifest["status"] == "keep"
+    assert second_manifest["execution_fingerprint"] == first_manifest["execution_fingerprint"]
+    assert replay["execution_fingerprint"] == first_manifest["execution_fingerprint"]
+    assert replay["prior_candidate"] == "first_crash"
+    assert replay["outcome_status"] == "keep"
+    assert replay["recorded_at"]
+    assert "crash_repeat_approval" not in second_manifest
+    assert calls == ["first_crash", "same_after_crash"]
+    records = runner.load_results(tmp_path / "results.tsv")
+    assert runner.candidate_attempts(records) == 2
+    state = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign_state.json").read_text(encoding="utf-8"))
+    assert state["accounting_instruction"] == runner.ACCOUNTING_INSTRUCTION
+    assert state["candidate_cap"] == 2
+    assert state["remaining_candidates"] == 0
+    assert state["final_response_allowed"] is True
+    assert state["reason"] == "candidate_cap_exhausted"
+
+
+def test_crash_replay_provenance_is_not_stamped_for_infrastructure_retry_or_changed_rerun(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch, baseline_score=0.8)
+    assert runner.main(["status", str(job), "--max-candidates", "2"]) == 0
+
+    monkeypatch.setattr(
+        runner,
+        "run_job",
+        lambda run_def, **kwargs: runner.RunRecord(
+            "crash", run_def.name, None, 1.0, "none", run_def.description, "python job.py", "/tmp/crash"
+        ),
+    )
+    assert runner.main(["prepare", str(job), "--name", "first_crash", "--hypothesis", "same candidate"]) == 0
+    tmp_path.joinpath(".nvflare/autofl/candidates/first_crash/source/client.py").write_text(
+        "ALGORITHM = 'crashing_candidate'\n", encoding="utf-8"
+    )
+    assert runner.main(["evaluate", str(job)]) == 0
+
+    assert runner.main(["prepare", str(job), "--name", "retry", "--hypothesis", "same candidate"]) == 0
+    retry_manifest = tmp_path / ".nvflare/autofl/candidates/retry/candidate_manifest.json"
+    retry_source = retry_manifest.parent / "source/client.py"
+    retry_source.write_text("ALGORITHM = 'crashing_candidate'\n", encoding="utf-8")
+    monkeypatch.setattr(
+        runner,
+        "run_job",
+        lambda run_def, **kwargs: runner.RunRecord(
+            runner.INFRASTRUCTURE_RETRY,
+            run_def.name,
+            None,
+            1.0,
+            "none",
+            run_def.description,
+            "python job.py",
+            "/tmp/infrastructure",
+            failure_reason="socket unavailable",
+        ),
+    )
+    assert runner.main(["evaluate", str(job), "--manifest", str(retry_manifest)]) == 75
+    manifest = json.loads(retry_manifest.read_text(encoding="utf-8"))
+    assert manifest["status"] == "prepared"
+    assert "crash_replay" not in manifest
+
+    retry_source.write_text("ALGORITHM = 'fixed_candidate'\n", encoding="utf-8")
+    monkeypatch.setattr(
+        runner,
+        "run_job",
+        lambda run_def, **kwargs: runner.RunRecord(
+            "candidate", run_def.name, 0.9, 1.0, "none", run_def.description, "python job.py", "/tmp/success"
+        ),
+    )
+    assert runner.main(["evaluate", str(job), "--manifest", str(retry_manifest)]) == 0
+    manifest = json.loads(retry_manifest.read_text(encoding="utf-8"))
+    assert manifest["status"] == "keep"
+    assert "crash_replay" not in manifest
+    assert runner.candidate_attempts(runner.load_results(tmp_path / "results.tsv")) == 2
+
+
+def test_invalid_crashed_sibling_does_not_block_candidate_evaluation(tmp_path, monkeypatch, capsys):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch, baseline_score=0.8)
+    assert runner.main(["prepare", str(job), "--name", "valid", "--hypothesis", "valid candidate"]) == 0
+    valid_manifest = tmp_path / ".nvflare/autofl/candidates/valid/candidate_manifest.json"
+    valid_manifest.parent.joinpath("source/client.py").write_text("ALGORITHM = 'valid'\n", encoding="utf-8")
+
+    broken_manifest = tmp_path / ".nvflare/autofl/candidates/broken_crash/candidate_manifest.json"
+    broken_manifest.parent.mkdir(parents=True)
+    broken_manifest.write_text(
+        json.dumps(
+            {
+                "schema_version": runner.CANDIDATE_MANIFEST_SCHEMA_VERSION,
+                "candidate_id": "broken_crash",
+                "workspace_root": str(tmp_path),
+                "status": "crash",
+                "patch_sha256": "a" * 64,
+                "run_args": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        runner,
+        "run_job",
+        lambda run_def, **kwargs: runner.RunRecord(
+            "candidate", run_def.name, 0.9, 1.0, "none", run_def.description, "python job.py", "/tmp/success"
+        ),
+    )
+
+    assert runner.main(["evaluate", str(job), "--manifest", str(valid_manifest)]) == 0
+    warning = capsys.readouterr().err
+    assert "ignoring invalid sibling candidate manifest" in warning
+    assert str(broken_manifest) in warning
+    assert json.loads(valid_manifest.read_text(encoding="utf-8"))["status"] == "keep"
+
+
+def test_changed_candidate_after_crash_is_allowed(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch, baseline_score=0.8)
+
+    monkeypatch.setattr(
+        runner,
+        "run_job",
+        lambda run_def, **kwargs: runner.RunRecord(
+            "crash", run_def.name, None, 1.0, "none", run_def.description, "python job.py", "/tmp/crash"
+        ),
+    )
+    assert runner.main(["prepare", str(job), "--name", "crash", "--hypothesis", "first candidate"]) == 0
+    tmp_path.joinpath(".nvflare/autofl/candidates/crash/source/client.py").write_text(
+        "ALGORITHM = 'first'\n", encoding="utf-8"
+    )
+    assert runner.main(["evaluate", str(job)]) == 0
+
+    assert runner.main(["prepare", str(job), "--name", "changed", "--hypothesis", "changed candidate"]) == 0
+    tmp_path.joinpath(".nvflare/autofl/candidates/changed/source/client.py").write_text(
+        "ALGORITHM = 'second'\n", encoding="utf-8"
+    )
+    monkeypatch.setattr(
+        runner,
+        "run_job",
+        lambda run_def, **kwargs: runner.RunRecord(
+            "candidate", run_def.name, 0.9, 1.0, "none", run_def.description, "python job.py", "/tmp/success"
+        ),
+    )
+
+    assert runner.main(["evaluate", str(job)]) == 0
+    assert (
+        json.loads(
+            tmp_path.joinpath(".nvflare/autofl/candidates/changed/candidate_manifest.json").read_text(encoding="utf-8")
+        )["status"]
+        == "keep"
+    )
+
+
 def test_code_candidate_keeps_improvement_and_restores_discard_without_git(tmp_path, monkeypatch):
     runner = _load_runner()
     job, client, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
@@ -2675,7 +3012,7 @@ def test_explicit_mutable_campaign_settings_persist_and_uncapped_removes_cap(tmp
     assert metadata["settings"]["max_candidates"] == 7
     assert metadata["settings"]["timeout"] == 123
 
-    assert runner.main(["status", str(job), "--uncapped"]) == 0
+    assert runner.main(["status", str(job), "--uncapped", "--confirm-user-approved-cap-change"]) == 0
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     assert metadata["settings"]["max_candidates"] is None
 
@@ -2690,14 +3027,99 @@ def test_effective_cap_changes_append_audit_records_to_campaign_metadata(tmp_pat
 
     assert runner.main(["status", str(job), "--max-candidates", "7"]) == 0
     assert runner.main(["status", str(job), "--max-candidates", "7"]) == 0
-    assert runner.main(["status", str(job), "--uncapped"]) == 0
+    assert runner.main(["status", str(job), "--uncapped", "--confirm-user-approved-cap-change"]) == 0
+    after_approval = metadata_path.read_bytes()
+    assert runner.main(["status", str(job), "--uncapped", "--confirm-user-approved-cap-change"]) == 0
+    assert metadata_path.read_bytes() == after_approval
 
     cap_changes = json.loads(metadata_path.read_text(encoding="utf-8"))["cap_changes"]
-    assert [(entry["old"], entry["new"], entry["source"]) for entry in cap_changes] == [
-        (None, 7, "explicit"),
-        (7, None, "uncapped"),
+    assert [(entry["old"], entry["new"], entry["source"], entry["user_approved"]) for entry in cap_changes] == [
+        (None, 7, "explicit", False),
+        (7, None, "uncapped", True),
     ]
     assert all(entry["changed_at"] for entry in cap_changes)
+
+
+def test_cap_expansion_requires_specific_user_approval_and_is_write_free_when_rejected(tmp_path, monkeypatch, capsys):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
+    metadata_path = tmp_path / ".nvflare/autofl/campaign.json"
+
+    assert runner.main(["status", str(job), "--max-candidates", "2"]) == 0
+    before = metadata_path.read_bytes()
+
+    assert runner.main(["status", str(job), "--max-candidates", "3"]) == 2
+    assert "requires explicit user approval" in capsys.readouterr().err
+    assert metadata_path.read_bytes() == before
+
+    assert runner.main(["status", str(job), "--uncapped"]) == 2
+    assert "requires explicit user approval" in capsys.readouterr().err
+    assert metadata_path.read_bytes() == before
+
+    assert (
+        runner.main(
+            [
+                "status",
+                str(job),
+                "--max-candidates",
+                "3",
+                "--confirm-user-approved-cap-change",
+            ]
+        )
+        == 0
+    )
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    assert metadata["settings"]["max_candidates"] == 3
+    assert [(entry["old"], entry["new"], entry["user_approved"]) for entry in metadata["cap_changes"]] == [
+        (None, 2, False),
+        (2, 3, True),
+    ]
+    after_approval = metadata_path.read_bytes()
+    assert (
+        runner.main(
+            [
+                "status",
+                str(job),
+                "--max-candidates",
+                "3",
+                "--confirm-user-approved-cap-change",
+            ]
+        )
+        == 0
+    )
+    assert metadata_path.read_bytes() == after_approval
+
+
+def test_runner_rejects_abbreviated_lifecycle_options(capsys):
+    runner = _load_runner()
+
+    with pytest.raises(SystemExit) as error:
+        runner.parse_args(["status", "job.py", "--max-cand", "5"])
+
+    assert error.value.code == 2
+    assert "unrecognized arguments: --max-cand 5" in capsys.readouterr().err
+
+
+def test_cap_confirmation_is_rejected_when_no_expansion_requires_it(tmp_path, monkeypatch, capsys):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
+
+    assert runner.main(["status", str(job), "--max-candidates", "3"]) == 0
+    assert (
+        runner.main(
+            [
+                "status",
+                str(job),
+                "--max-candidates",
+                "2",
+                "--confirm-user-approved-cap-change",
+            ]
+        )
+        == 2
+    )
+    assert "only valid for a candidate-cap increase" in capsys.readouterr().err
+    metadata = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign.json").read_text(encoding="utf-8"))
+    assert metadata["settings"]["max_candidates"] == 3
 
 
 def test_raising_cap_reopens_exhausted_campaign_with_consistent_state(tmp_path, monkeypatch):
@@ -2717,7 +3139,17 @@ def test_raising_cap_reopens_exhausted_campaign_with_consistent_state(tmp_path, 
 
     assert (
         runner.main(
-            ["prepare", str(job), "--name", "reopened", "--hypothesis", "resume search", "--max-candidates", "2"]
+            [
+                "prepare",
+                str(job),
+                "--name",
+                "reopened",
+                "--hypothesis",
+                "resume search",
+                "--max-candidates",
+                "2",
+                "--confirm-user-approved-cap-change",
+            ]
         )
         == 0
     )

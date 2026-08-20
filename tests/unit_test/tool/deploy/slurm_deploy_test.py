@@ -134,7 +134,14 @@ def test_render_template_rejects_unresolved_placeholder(tmp_path, monkeypatch):
 def test_prepare_slurm_generates_runtime_artifacts(tmp_path, capsys):
     kit = _make_client_kit(tmp_path)
     output = tmp_path / "site-1-slurm"
-    config = _slurm_config(tmp_path, internal_port=9210, forward_env=["HTTP_PROXY"])
+    config = _slurm_config(
+        tmp_path,
+        internal_port=9210,
+        forward_env=["HTTP_PROXY"],
+        submit_timeout=47,
+        query_timeout=23,
+        cancel_timeout=19,
+    )
 
     _run_prepare(kit, output, config)
     capsys.readouterr()
@@ -157,6 +164,9 @@ def test_prepare_slurm_generates_runtime_artifacts(tmp_path, capsys):
         },
         "forward_env": ["HTTP_PROXY"],
         "parent_host": None,
+        "submit_timeout": 47.0,
+        "query_timeout": 23.0,
+        "cancel_timeout": 19.0,
         "poll_interval": 10,
         "pending_timeout": 600,
     }
@@ -167,8 +177,10 @@ def test_prepare_slurm_generates_runtime_artifacts(tmp_path, capsys):
     comm_config = json.loads((output / "local" / "comm_config.json").read_text())
     assert comm_config["internal"] == {
         "scheme": "tcp",
-        "resources": {"host": "0.0.0.0", "port": 9210, "connection_security": "clear"},
+        "resources": {"host": "0.0.0.0", "port": 9210, "connection_security": "mtls"},
     }
+    for name in ("client.crt", "client.key", "rootCA.pem"):
+        assert (output / "startup" / name).is_file()
     assert (output / "startup" / "sub_start.sh").exists()
     start_script = output / "startup" / "start_slurm.sh"
     start_text = start_script.read_text()
@@ -259,14 +271,27 @@ def test_prepare_slurm_start_script_uses_output_as_workspace(tmp_path, capsys):
     assert marker.read_text(encoding="utf-8") == f"{output}|{output}|--once"
 
 
-def test_prepare_slurm_rejects_configurable_connection_security(tmp_path, capsys):
+def test_prepare_slurm_accepts_clear_internal_connection_security(tmp_path, capsys):
     kit = _make_client_kit(tmp_path)
-    config = _slurm_config(tmp_path, connection_security="clear")
+    output = tmp_path / "site-1-slurm"
+
+    _run_prepare(kit, output, _slurm_config(tmp_path, internal_connection_security="clear"))
+    capsys.readouterr()
+
+    comm_config = json.loads((output / "local" / "comm_config.json").read_text())
+    assert comm_config["internal"]["resources"]["connection_security"] == "clear"
+
+
+@pytest.mark.parametrize("connection_security", ["tls", "MTLS", "", None, 7, True])
+def test_prepare_slurm_rejects_invalid_internal_connection_security(tmp_path, capsys, connection_security):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-slurm"
 
     with pytest.raises(SystemExit):
-        _run_prepare(kit, tmp_path / "site-1-slurm", config)
+        _run_prepare(kit, output, _slurm_config(tmp_path, internal_connection_security=connection_security))
 
-    assert "Unknown keys" in capsys.readouterr().err
+    assert "job_launcher.internal_connection_security" in capsys.readouterr().err
+    assert not output.exists()
 
 
 def test_prepare_slurm_client_parent_scripts_use_validated_values(tmp_path, capsys):
@@ -379,6 +404,8 @@ def test_prepare_slurm_server_relocates_storage_and_rejects_parent(tmp_path, cap
     assert _component(resources, "slurm_launcher")["path"].endswith("ServerSlurmJobLauncher")
     assert resources["snapshot_persistor"]["args"]["storage"]["args"]["root_dir"] == (f"{output}/snapshot-storage")
     assert _component(resources, "job_manager")["args"]["uri_root"] == f"{output}/jobs-storage"
+    for name in ("server.crt", "server.key", "rootCA.pem"):
+        assert (output / "startup" / name).is_file()
 
     config["parent"] = {}
     with pytest.raises(SystemExit):
@@ -405,3 +432,18 @@ def test_prepare_slurm_rejects_legacy_workspace_path_and_unsafe_output(tmp_path,
     with pytest.raises(SystemExit):
         _run_prepare(kit, tmp_path / "unsafe:path-list-slurm", _slurm_config(tmp_path))
     assert "must not contain the path-list separator ':'" in capsys.readouterr().err
+
+
+def test_prepare_slurm_preserves_multi_node_port_range(tmp_path, capsys):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-slurm"
+    config = _slurm_config(tmp_path, multi_node_port_range="29400-29499")
+
+    _run_prepare(kit, output, config)
+    capsys.readouterr()
+
+    resources = json.loads((output / "local" / "resources.json.default").read_text())
+    launcher_args = _component(resources, "slurm_launcher")["args"]
+    assert launcher_args["multi_node_port_range"] == [29400, 29499]
+    launcher = ClientSlurmJobLauncher(**launcher_args)
+    assert launcher.config.multi_node_port_range == (29400, 29499)

@@ -21,6 +21,7 @@ import shlex
 from pathlib import Path
 from typing import Any
 
+from nvflare.apis.fl_constant import ConnectionSecurity
 from nvflare.app_opt.job_launcher.slurm.config import (
     SlurmLauncherError,
     normalize_slurm_directives,
@@ -60,12 +61,17 @@ def prepare(kit_info: KitInfo, final_output: Path, config: dict[str, Any]) -> di
     _validate_role_config(config, kit_info.role)
     workspace_path = _workspace_path(final_output)
     job_launcher = config["job_launcher"]
+    connection_security = job_launcher.get("internal_connection_security", ConnectionSecurity.MTLS)
 
     launcher_path = SLURM_SERVER_LAUNCHER if kit_info.role == ROLE_SERVER else SLURM_CLIENT_LAUNCHER
     launcher_args = _normalize_job_launcher(job_launcher)
+    if "multi_node_port_range" not in job_launcher:
+        # Keep the default out of kit artifacts: older launchers reject the kwarg
+        # and a frozen default would never follow a future default change.
+        launcher_args.pop("multi_node_port_range", None)
     launcher_args["workspace_path"] = workspace_path
     _patch_resources(kit_info.kit_dir, "slurm_launcher", launcher_path, launcher_args)
-    _patch_comm_config(kit_info.kit_dir, port=launcher_args["internal_port"])
+    _patch_comm_config(kit_info.kit_dir, launcher_args["internal_port"], connection_security)
     _ensure_study_runtime_template(kit_info.kit_dir)
     if kit_info.role == ROLE_SERVER:
         _relocate_server_storage_to_workspace(kit_info.kit_dir, workspace_path)
@@ -129,17 +135,30 @@ def validate_config(config: dict[str, Any]) -> None:
             "sandbox",
             "image",
             "internal_port",
+            "internal_connection_security",
             "sbatch_directives",
             "setup",
             "python_path",
             "executables",
             "forward_env",
             "parent_host",
+            "submit_timeout",
+            "query_timeout",
+            "cancel_timeout",
             "poll_interval",
             "pending_timeout",
+            "multi_node_port_range",
         },
         "job_launcher",
     )
+
+    connection_security = job_launcher.get("internal_connection_security", ConnectionSecurity.MTLS)
+    if connection_security not in (ConnectionSecurity.CLEAR, ConnectionSecurity.MTLS):
+        _fail(
+            "INVALID_CONFIG",
+            "job_launcher.internal_connection_security must be 'clear' or 'mtls'.",
+            "Set job_launcher.internal_connection_security to 'clear' or 'mtls'.",
+        )
 
     _normalize_job_launcher(job_launcher)
 
@@ -176,15 +195,19 @@ def _normalize_job_launcher(job_launcher: dict[str, Any]) -> dict:
             setup=job_launcher.get("setup"),
             forward_env=job_launcher.get("forward_env"),
             parent_host=job_launcher.get("parent_host"),
+            submit_timeout=job_launcher.get("submit_timeout", 30),
+            query_timeout=job_launcher.get("query_timeout", 10),
+            cancel_timeout=job_launcher.get("cancel_timeout", 10),
             poll_interval=job_launcher.get("poll_interval", 10),
             pending_timeout=job_launcher.get("pending_timeout", 600),
             require_image_file=True,
+            multi_node_port_range=job_launcher.get("multi_node_port_range"),
         )
     except SlurmLauncherError as ex:
         _fail("INVALID_CONFIG", str(ex), "Fix slurm config.job_launcher.")
 
 
-def _patch_comm_config(kit_dir: Path, port: int) -> None:
+def _patch_comm_config(kit_dir: Path, port: int, connection_security: str = ConnectionSecurity.MTLS) -> None:
     comm_config_path = kit_dir / "local" / COMM_CONFIG_JSON
     comm_config = _load_or_default_comm_config(comm_config_path)
     internal = comm_config.setdefault("internal", {})
@@ -200,7 +223,7 @@ def _patch_comm_config(kit_dir: Path, port: int) -> None:
         {
             "host": "0.0.0.0",
             "port": port,
-            "connection_security": "clear",
+            "connection_security": connection_security,
         }
     )
     _write_json(comm_config_path, comm_config)

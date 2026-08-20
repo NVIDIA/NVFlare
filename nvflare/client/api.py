@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import logging
+import os
 from threading import Lock
 from typing import Any, Dict, Optional, Union
 
@@ -62,14 +63,14 @@ def init(rank: Optional[Union[str, int]] = None, config_file: Optional[str] = No
         APIContext
     """
 
-    # subsequent logic assumes rank is a string
-    if rank is not None:
-        if isinstance(rank, int):
-            rank = str(rank)
-        elif isinstance(rank, str):
-            pass
-        else:
-            raise ValueError(f"rank must be a string or an integer but got {type(rank)}")
+    # Cache contexts by the same effective rank that API engines use. This makes an
+    # omitted rank equivalent to an explicit RANK value (or rank 0 by default).
+    if rank is None:
+        rank = os.environ.get("RANK", "0")
+    elif isinstance(rank, int):
+        rank = str(rank)
+    elif not isinstance(rank, str):
+        raise ValueError(f"rank must be a string or an integer but got {type(rank)}")
 
     with global_context_lock:
         global context_dict

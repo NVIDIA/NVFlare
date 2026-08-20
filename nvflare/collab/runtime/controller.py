@@ -32,7 +32,7 @@ from nvflare.fuel.utils.import_utils import optional_import
 
 from .adaptor import CollabAdaptor
 from .defs import SETUP_TASK_NAME, SYNC_TASK_NAME, SyncKey
-from .dispatch import prepare_for_remote_call
+from .dispatch import make_participant_map, prepare_for_remote_call
 
 
 class _ClientInfo:
@@ -196,6 +196,9 @@ class CollabController(Controller, CollabAdaptor):
         # configure all sites
         engine = fl_ctx.get_engine()
         self.cell = engine.get_cell()
+        if self.cell is None:
+            self.system_panic("server communication cell is unavailable", fl_ctx)
+            return
         server_collab_interface = self.server_app.get_collab_interface()
         task = Task(
             name=SYNC_TASK_NAME,
@@ -259,11 +262,19 @@ class CollabController(Controller, CollabAdaptor):
             self.system_panic(f"failed to set up clients {failed_setup}", fl_ctx)
             return
 
+        job_id = fl_ctx.get_job_id()
+        participants = make_participant_map(self.cell.get_fqcn(), job_id, all_clients)
+
         # register msg CB for processing object calls
-        prepare_for_remote_call(self.cell, self.server_app, self.logger, self.inbound_executor)
+        prepare_for_remote_call(
+            self.cell,
+            self.server_app,
+            self.logger,
+            self.inbound_executor,
+            participants,
+        )
 
         # prepare proxies and backends
-        job_id = fl_ctx.get_job_id()
         server_proxy = self._prepare_server_proxy(job_id, abort_signal, server_collab_interface, fl_ctx)
         client_proxies = []
         for c in all_clients:

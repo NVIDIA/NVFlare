@@ -34,6 +34,14 @@ import yaml
 AUTOFL_CONFIG_SCHEMA_VERSION = "nvflare.autofl.config.v1"
 IMPORTER_VERSION = "nvflare-autofl-job-importer/v1"
 ALLOWED_CREATE_PATTERNS = ["**/*.py"]
+METRIC_INVARIANTS = [
+    "definition",
+    "evaluation_data_and_split",
+    "evaluation_timing_and_checkpoint",
+    "aggregation_and_population",
+    "scale_units_and_direction",
+]
+METRIC_CHANGE_POLICY = "restart_campaign_with_repaired_baseline"
 # Keep this text aligned with campaign_guard.MODE_MAX_ONLY_MESSAGE; the importer stays standalone.
 MODE_MAX_ONLY_MESSAGE = (
     "Auto-FL campaigns only support mode 'max'; minimization is not supported because NVFLARE "
@@ -1249,6 +1257,8 @@ def _objective_contract(metric_name: str, source: str) -> Dict[str, Any]:
         # Constant for schema stability: campaigns always maximize the optimization metric.
         "mode": "max",
         "metric_contract_source": source,
+        "metric_invariants": list(METRIC_INVARIANTS),
+        "metric_change_policy": METRIC_CHANGE_POLICY,
     }
 
 

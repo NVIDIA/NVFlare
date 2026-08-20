@@ -1,4 +1,4 @@
-nvflare~=2.8.0rc
+nvflare~=2.9.0rc
 flwr>=1.26
 torch
 torchvision

@@ -33,12 +33,18 @@ from nvflare.app_opt.job_launcher.study_runtime import (
 CONTROL_DIR = ".nvflare_slurm"
 SECRET_FILE = "secret.env"
 BATCH_FILE = "batch.sh"
+NODE_FILE = "node.sh"
 SANDBOX_ROOT = "sandbox_root"
 SLURM_CHILD_PROCESS_ENV = "NVFLARE_SLURM_CHILD_PROCESS"
 CONTAINER_RESOLV_CONF = "/etc/resolv.conf"
+JOB_SPEC_ADDITIONAL_NODE_COMMAND = "additional_node_command"
+
+# The node-group environment is exported to every task of a launcher-owned
+# multi-node job. Sites can override the rendezvous port range.
+DEFAULT_MULTINODE_PORT_RANGE = (29400, 30399)
 
 SQUEUE_FORMAT = "%i|%T|%U|%k|%j"
-SACCT_FORMAT = "JobIDRaw%32,JobName%128,User%64,State%64,ExitCode%32"
+SACCT_FORMAT = "JobIDRaw%32,JobName%128,User%64,State%64,ExitCode%32,DerivedExitCode%32"
 
 _MAX_STDOUT_BYTES = 16 * 1024 * 1024
 _MAX_STDERR_BYTES = 64 * 1024
@@ -49,7 +55,16 @@ SLURM_SBATCH_DIRECTIVES = ("partition", "account", "qos", "time", "constraint", 
 SLURM_PARENT_EXECUTABLES = ("sbatch", "squeue", "sacct", "scancel")
 SLURM_COMPUTE_EXECUTABLES = ("apptainer", "srun")
 
-_JOB_SLURM_KEYS = {"image", "nodes", "gpus_per_node", "cpus_per_node", "mem_per_node", "time", "pending_timeout"}
+_JOB_SLURM_KEYS = {
+    "image",
+    "nodes",
+    "gpus_per_node",
+    "cpus_per_node",
+    "mem_per_node",
+    "time",
+    "pending_timeout",
+    JOB_SPEC_ADDITIONAL_NODE_COMMAND,
+}
 
 _PENDING_STATES = {"PENDING", "CONFIGURING", "REQUEUE_HOLD", "RESV_DEL_HOLD", "SPECIAL_EXIT"}
 _APPLICATION_TERMINAL_STATES = {"COMPLETED", "FAILED"}
@@ -92,8 +107,12 @@ class SlurmConfig:
     setup: str = ""
     forward_env: tuple = ()
     parent_host: Optional[str] = None
+    submit_timeout: float = 30.0
+    query_timeout: float = 10.0
+    cancel_timeout: float = 10.0
     poll_interval: float = 10.0
     pending_timeout: float = 600.0
+    multi_node_port_range: tuple = DEFAULT_MULTINODE_PORT_RANGE
 
 
 @dataclass(frozen=True)
@@ -134,6 +153,7 @@ class SlurmRecord:
     state: str
     exit_status: int = 0
     exit_signal: int = 0
+    derived_exit_status: int = 0
 
 
 @dataclass(frozen=True)
@@ -305,6 +325,24 @@ def normalize_slurm_image(
     return real_path
 
 
+def normalize_multi_node_port_range(value, internal_port: int) -> tuple:
+    """Normalize a site-owned rendezvous port range ('START-END' or a 2-item pair)."""
+    if isinstance(value, str):
+        parts = value.split("-", maxsplit=1)
+        if len(parts) != 2 or any(not part.isascii() or not part.isdigit() for part in parts):
+            raise SlurmLauncherError("multi_node_port_range must have the form 'START-END'")
+        value = tuple(map(int, parts))
+    if not isinstance(value, (list, tuple)) or len(value) != 2:
+        raise SlurmLauncherError("multi_node_port_range must have the form 'START-END'")
+    start = _require_int(value[0], "multi_node_port_range start", 1024)
+    end = _require_int(value[1], "multi_node_port_range end", 1024)
+    if end > 65535 or start > end:
+        raise SlurmLauncherError("multi_node_port_range must be within 1024..65535 with START <= END")
+    if start <= internal_port <= end:
+        raise SlurmLauncherError("multi_node_port_range must not contain internal_port")
+    return start, end
+
+
 def normalize_slurm_workspace_path(value: str) -> str:
     value = os.path.normpath(_validate_absolute_path(value, "workspace_path"))
     if os.pathsep in value:
@@ -325,15 +363,22 @@ def normalize_slurm_launcher_settings(
     setup: Optional[str],
     forward_env: Optional[list],
     parent_host: Optional[str],
+    submit_timeout: float,
+    query_timeout: float,
+    cancel_timeout: float,
     poll_interval: float,
     pending_timeout: float,
     require_image_file: bool = False,
+    multi_node_port_range=None,
 ) -> dict:
     sandbox = _require_string(sandbox, "sandbox")
     python_path = _validate_absolute_path(python_path, "python_path")
     internal_port = _require_int(internal_port, "internal_port")
     if internal_port > 65535:
         raise SlurmLauncherError("internal_port must be at most 65535")
+    submit_timeout = _require_positive_number(submit_timeout, "submit_timeout")
+    query_timeout = _require_positive_number(query_timeout, "query_timeout")
+    cancel_timeout = _require_positive_number(cancel_timeout, "cancel_timeout")
     poll_interval = _require_positive_number(poll_interval, "poll_interval")
     pending_timeout = _require_positive_number(pending_timeout, "pending_timeout")
     setup = "" if setup is None else setup
@@ -342,6 +387,12 @@ def normalize_slurm_launcher_settings(
     if not isinstance(forward_env, (list, tuple)):
         raise SlurmLauncherError("forward_env must be a list")
     validated_forward = tuple(_validate_env_name(name, "forward_env entry") for name in forward_env)
+    if multi_node_port_range is None:
+        multi_node_port_range = DEFAULT_MULTINODE_PORT_RANGE
+        start, end = multi_node_port_range
+        if start <= internal_port <= end:
+            width = end - start + 1
+            multi_node_port_range = (end + 1, end + width)
     return {
         "sandbox": sandbox,
         "python_path": python_path,
@@ -352,8 +403,15 @@ def normalize_slurm_launcher_settings(
         "setup": setup,
         "forward_env": validated_forward,
         "parent_host": None if parent_host is None else _require_string(parent_host, "parent_host"),
+        "submit_timeout": submit_timeout,
+        "query_timeout": query_timeout,
+        "cancel_timeout": cancel_timeout,
         "poll_interval": poll_interval,
         "pending_timeout": pending_timeout,
+        "multi_node_port_range": normalize_multi_node_port_range(
+            multi_node_port_range,
+            internal_port=internal_port,
+        ),
     }
 
 
@@ -375,3 +433,5 @@ class LaunchPlan:
     python_path: str
     python_env: str
     forward_env: tuple
+    additional_node_command: tuple = ()
+    node_app_dir: Optional[str] = None

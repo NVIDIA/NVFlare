@@ -68,6 +68,8 @@ from nvflare.fuel.hci.server.binary_transfer import BinaryTransfer
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.utils.argument_utils import SafeArgumentParser
 from nvflare.fuel.utils.log_utils import get_obj_logger
+from nvflare.private.admin_defs import MsgHeader
+from nvflare.private.admin_defs import ReturnCode as AdminReturnCode
 from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.server.admin import new_message
 from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
@@ -396,6 +398,28 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             message.set_header(RequestHeader.JOB_ID, str(job_id))
             replies = self.send_request_to_clients(conn, message)
             self.process_replies_to_table(conn, replies)
+
+            client_errors = []
+            client_replies = replies or []
+            received_tokens = {client_reply.client_token for client_reply in client_replies}
+            expected_clients = conn.get_prop(self.TARGET_CLIENTS, {}) or {}
+            for client_token, client_name in expected_clients.items():
+                if client_token not in received_tokens:
+                    client_errors.append(f"{client_name or client_token}: no reply")
+
+            for client_reply in client_replies:
+                client_name = client_reply.client_name or client_reply.client_token or "client"
+                if client_reply.reply is None:
+                    client_errors.append(f"{client_name}: no reply")
+                    continue
+
+                return_code = client_reply.reply.get_header(MsgHeader.RETURN_CODE, AdminReturnCode.OK)
+                if return_code != AdminReturnCode.OK:
+                    detail = client_reply.reply.body or f"return code {return_code}"
+                    client_errors.append(f"{client_name}: {detail}")
+
+            if client_errors:
+                conn.update_meta(make_meta(MetaStatusValue.ERROR, info="\n".join(client_errors)))
 
         if target_type not in [self.TARGET_TYPE_ALL, self.TARGET_TYPE_CLIENT, self.TARGET_TYPE_SERVER]:
             conn.append_error(
@@ -1528,12 +1552,13 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
     def _set_duration(job):
         if job.meta.get(JobMetaKey.STATUS) == RunStatus.RUNNING.value:
             try:
-                start_time = datetime.datetime.strptime(
-                    job.meta.get(JobMetaKey.START_TIME.value), "%Y-%m-%d %H:%M:%S.%f"
-                )
+                start_time = datetime.datetime.fromisoformat(job.meta.get(JobMetaKey.START_TIME.value))
             except (TypeError, ValueError):
                 return
-            duration = datetime.datetime.now() - start_time
+            if start_time.tzinfo is not None:
+                duration = datetime.datetime.now(datetime.timezone.utc) - start_time.astimezone(datetime.timezone.utc)
+            else:
+                duration = datetime.datetime.now() - start_time
             job.meta[JobMetaKey.DURATION.value] = str(duration)
 
     def submit_job(self, conn: Connection, args: List[str]):
@@ -1560,10 +1585,6 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     conn.append_error(error, meta=make_meta(MetaStatusValue.INVALID_JOB_DEFINITION, error))
                     return
 
-                # Strip privileged meta keys that must only be set by internal server components.
-                # A user-submitted job is never "from hub site" — only HubAppDeployer sets this flag
-                # after verifying the job, and it operates on the server side.
-                meta.pop(JobMetaKey.FROM_HUB_SITE.value, None)
                 # Submit-token is server-owned submission metadata. User job metadata must not expose it.
                 meta.pop(SubmitRecordKey.SUBMIT_TOKEN.value, None)
 

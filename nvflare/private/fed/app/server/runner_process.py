@@ -22,7 +22,7 @@ import threading
 from nvflare.apis.fl_constant import ConfigVarName, JobConstants, SiteType, SystemConfigs
 from nvflare.apis.job_launcher_spec import JobProcessEnv, pop_credential_env
 from nvflare.apis.workspace import Workspace
-from nvflare.app_opt.job_launcher.workspace_cell_transfer import download_workspace, upload_results_safely
+from nvflare.app_opt.job_launcher.workspace_cell_transfer import download_workspace, upload_results_on_shutdown
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.sec.authn import set_add_auth_headers_filters
@@ -31,6 +31,7 @@ from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.log_utils import configure_logging, get_script_logger
 from nvflare.private.defs import AUTH_CLIENT_NAME_FOR_SJ, AppFolderConstants
 from nvflare.private.fed.app.fl_conf import FLServerStarterConfiger
+from nvflare.private.fed.app.job_process_cleanup import shutdown_job_process_runtime
 from nvflare.private.fed.app.utils import monitor_parent_process
 from nvflare.private.fed.server.server_app_runner import ServerAppRunner
 from nvflare.private.fed.server.server_state import HotState
@@ -38,7 +39,6 @@ from nvflare.private.fed.utils.fed_utils import (
     create_stats_pool_files_for_job,
     fobs_initialize,
     register_ext_decomposers,
-    security_close,
     security_init_for_job,
     set_stats_pool_config_for_job,
 )
@@ -70,6 +70,8 @@ def main(args):
     refresh_custom_dir_import_path(workspace.get_app_custom_dir(args.job_id))
     set_stats_pool_config_for_job(workspace, args.job_id)
 
+    server = None
+    logger = None
     try:
         os.chdir(args.workspace)
         fobs_initialize(workspace=workspace, job_id=args.job_id)
@@ -102,6 +104,7 @@ def main(args):
             server.cell = server.create_job_cell(
                 args.job_id, args.root_url, args.parent_url, secure_train, server_config
             )
+            server.engine.set_cell(server.cell)
 
             # set filter to add additional auth headers
             set_add_auth_headers_filters(
@@ -127,15 +130,27 @@ def main(args):
                 workspace, args, args.app_root, args.job_id, snapshot, logger, args.set, event_handlers=event_handlers
             )
         finally:
-            if deployer:
-                deployer.close()
-            stop_event.set()
-            security_close()
-            err = create_stats_pool_files_for_job(workspace, args.job_id)
-            if err:
-                if logger:
+            command_agent = getattr(server, "command_agent", None)
+            cell = getattr(server, "cell", None)
+
+            def _archive_results():
+                err = create_stats_pool_files_for_job(workspace, args.job_id)
+                if err and logger:
                     logger.warning(err)
-            upload_results_safely(args, secure_train, log=logger)
+                upload_results_on_shutdown(args, secure_train, log=logger)
+
+            try:
+                shutdown_job_process_runtime(
+                    stop_command_admission=command_agent.shutdown if command_agent else None,
+                    wait_for_command_callbacks=command_agent.wait_for_callbacks if command_agent else None,
+                    stop_cell=cell.stop if cell else None,
+                    logger=logger,
+                    before_streaming_shutdown=_archive_results,
+                )
+            finally:
+                if deployer:
+                    deployer.close()
+                stop_event.set()
 
     except ConfigError as e:
         logger = get_script_logger()

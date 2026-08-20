@@ -81,6 +81,7 @@ studies:
 
     slurm:                              # Slurm only; site-owned study override
       sandbox: apptainer                # apptainer | pyxis | none
+      python_path: /opt/nvflare/bin/python3
       setup: "source /opt/studies/lung-cancer.sh"
       partition: fl-gpu
       account: lung-cancer-project

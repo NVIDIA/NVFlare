@@ -175,7 +175,8 @@ docker run ... -e NVFL_DOCKER_WORKSPACE="$HOST_WORKSPACE" ...
 SP/CP container (site admin grants via start_docker.sh)
   ├── /var/run/docker.sock mounted            ← can create job containers
   ├── --user $(id -u):$(id -g)               ← runs as calling user (workspace files not root-owned)
-  ├── --group-add <docker-socket-gid>         ← grants socket access; omitted when GID is 0 or unavailable (macOS Docker Desktop)
+  ├── --group-add <docker-socket-gid>         ← grants access using the local stat or daemon-host probe
+  ├── --group-add 0 when needed               ← handles sockets that appear root-owned
   ├── workspace bind mount at /var/tmp/nvflare/workspace
   ├── nvflare-network                         ← intra-site: SP↔SJ / CP↔CJ (PARENT_URL, Docker DNS)
   └── host network (-p fed_learn_port)        ← cross-site: CP→SP over HTTPS, same as process mode
@@ -212,8 +213,7 @@ A complete example:
     "site-1": {
       "docker": {
         "image": "nvflare-pt:latest",
-        "shm_size": "8g",
-        "ipc_mode": "host"
+        "shm_size": "8g"
       }
     }
   },
@@ -236,17 +236,16 @@ The `image` field in `launcher_spec[site][docker]` specifies the Docker image fo
 - The site admin must pull or build the image before the job runs. The launcher does not pull images.
 - If no `image` is resolvable for a site that has `DockerJobLauncher` configured, the job fails immediately with a clear error. There is no silent fallback to process mode.
 
-### GPU and Additional Container Flags
+### GPU and Job-Controlled Container Options
 
-Docker-specific runtime flags live under `launcher_spec[site][docker]`. Resource requests such as `num_of_gpus` remain in `resource_spec`, the same as process-mode jobs. Docker SDK keys use underscores, not hyphens:
+Allowlisted job-controlled Docker options live under `launcher_spec[site][docker]`. Resource requests such as `num_of_gpus` remain in `resource_spec`, the same as process-mode jobs. Docker SDK keys use underscores, not hyphens:
 
 ```json
 "launcher_spec": {
   "site-1": {
     "docker": {
       "image": "nvflare-pt:latest",
-      "shm_size": "8g",
-      "ipc_mode": "host"
+      "shm_size": "8g"
     }
   }
 },
@@ -257,11 +256,13 @@ Docker-specific runtime flags live under `launcher_spec[site][docker]`. Resource
 }
 ```
 
-`DockerJobLauncher` translates the flat `resource_spec[site].num_of_gpus` field to `device_requests: [{"Count": N, "Capabilities": [["gpu"]]}]` before calling `docker run`. For fine-grained control (specific GPU UUIDs, driver constraints), set `device_requests` directly in the Docker launcher spec.
+`DockerJobLauncher` translates the flat `resource_spec[site].num_of_gpus` field to `device_requests: [{"Count": N, "Capabilities": [["gpu"]]}]` before calling `docker run`. Fine-grained `device_requests` are site-owned and can be configured in `default_job_container_kwargs` or the study's `docker_kwargs`.
 
 New jobs should put launcher/container settings in `launcher_spec` and scheduler resource requests such as `num_of_gpus` in `resource_spec`. Do not use `resource_spec[site][docker]` for new metadata; that shape mixes scheduler resources with launcher settings and was only part of earlier migration experiments.
 
-Job-level `launcher_spec[site][docker]` is merged with site-level defaults from `default_job_container_kwargs` in `local/resources.json` and the study's `docker_kwargs` from `local/study_runtime.yaml` (precedence: site defaults → study → job; job wins on conflict). Reserved keys controlled by the launcher (`volumes`, `mounts`, `network`, `environment`, `command`, `name`, `detach`, `auto_remove`, `user`, `working_dir`, and — outside job specs — `image`) cannot be overridden; a site default job image belongs in `studies.<study>.container.image` in `local/study_runtime.yaml`.
+Job-controlled Docker options use an explicit allowlist: `image`, `python_path`, `entrypoint`, `num_of_gpus`, and `shm_size`. Selecting `image`, `python_path`, or `entrypoint` requires BYOC authorization at each receiving site. In particular, `entrypoint` is rejected at launch unless deployment recorded a locally authorized BYOC decision.
+
+All other Docker SDK options are site-owned. This includes namespaces, privileges, capabilities, devices, mounts, networks, and security options such as `ipc_mode`, `pid_mode`, `privileged`, `cap_add`, `devices`, `device_requests`, and `security_opt`. Site administrators can set these through `default_job_container_kwargs` in `local/resources.json` or the study's `docker_kwargs` in `local/study_runtime.yaml`. Allowlisted job options are merged with those site/study defaults (precedence: site defaults → study → job).
 
 Site-level default environment variables can be set with `default_job_env` in `local/resources.json`. Launcher-controlled variables like `USER`, `HOME`, and `PYTHONPATH` still take precedence.
 
@@ -423,12 +424,13 @@ On the server machine:
 cd workspace/server/startup
 nohup ./start_docker.sh > server.log 2>&1 &
 # → creates nvflare-network if it doesn't exist
-# → docker run --name server \
+# → docker [--host unix://$DOCKER_SOCK] run --name server \
 #              --user "$(id -u):$(id -g)" \
+#              --group-add 0 (on macOS or when the socket GID is 0) \
 #              --group-add <docker-socket-gid> (if non-zero) \
 #              --network nvflare-network \
 #              -v $HOST_WORKSPACE:/var/tmp/nvflare/workspace \
-#              -v /var/run/docker.sock:/var/run/docker.sock \
+#              --mount type=bind,src=$DOCKER_SOCK,dst=/var/run/docker.sock \
 #              -e NVFL_DOCKER_WORKSPACE=$HOST_WORKSPACE \
 #              -p 8002:8002 \
 #              --rm nvflare-site:latest \
@@ -445,6 +447,30 @@ To use a different image without re-provisioning:
 ```bash
 NVFL_P_IMAGE=nvflare-site:2.7.2 ./start_docker.sh
 ```
+
+By default, `start_docker.sh` uses `/var/run/docker.sock` and resolves that path when it is a symlink. To select a
+different Docker socket explicitly:
+
+```bash
+NVFL_DOCKER_SOCK=/path/to/docker.sock ./start_docker.sh
+```
+
+For a local Unix endpoint, the script pins all outer Docker CLI commands to the selected socket. This ensures the
+parent, its network, and the job containers all use the same daemon when `NVFL_DOCKER_SOCK` overrides the default.
+
+For a remote endpoint such as a DinD sidecar, the Docker CLI continues to use the caller's `DOCKER_HOST` or Docker
+context, while `NVFL_DOCKER_SOCK` is interpreted as a bind-mount source path on the daemon host. The script starts a
+short-lived container from the configured parent image to verify that the mounted path is a socket and discover its
+numeric GID. The parent receives that GID through `--group-add`, so its non-root process can access the socket.
+
+An administrator can bypass the remote probe by supplying a verified numeric GID explicitly:
+
+```bash
+NVFL_DOCKER_SOCK=/var/run/docker.sock NVFL_DOCKER_SOCK_GID=999 ./start_docker.sh
+```
+
+This override trusts the administrator's daemon-host path and GID. The socket uses Docker's `--mount` syntax so a
+missing bind source is rejected instead of being silently created as a directory.
 
 ### Step 4 — Configure site data (optional)
 

@@ -88,6 +88,7 @@ studies:
         mount_path: /run/secrets/pathology
     slurm:
       sandbox: apptainer
+      python_path: /opt/nvflare/bin/python3
       setup: |
         module load cuda
       partition: gpu
@@ -132,6 +133,7 @@ class TestLoadStudyRuntimeFile:
         assert runtime.secret_mounts[0].source == "/lustre/secrets/pathology"
         assert runtime.slurm == {
             "sandbox": "apptainer",
+            "python_path": "/opt/nvflare/bin/python3",
             "setup": "module load cuda\n",
             "partition": "gpu",
             "account": 1234,
@@ -405,6 +407,7 @@ class TestLoadStudyRuntimeFile:
             ("backend: apptainer", "unknown key"),
             ("sandbox: docker", "must be one of"),
             ("sandbox: {name: none}", "must be one of"),
+            ("python_path: relative/python3", "absolute path"),
             ("partition: true", "non-empty string or integer"),
             ('partition: "gpu debug"', "must not contain whitespace"),
             ("partition: |\n        gpu\n        debug", "must not contain whitespace"),

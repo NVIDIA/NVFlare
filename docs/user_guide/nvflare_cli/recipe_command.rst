@@ -98,6 +98,9 @@ Algorithm values:
    * - ``fedavg_logistic_regression``
      - ``numpy``
      - ``nvflare recipe list --filter algorithm=fedavg_logistic_regression``
+   * - ``fedce``
+     - ``pytorch``
+     - ``nvflare recipe list --filter algorithm=fedce``
    * - ``fedeval``
      - ``pytorch``
      - ``nvflare recipe list --filter algorithm=fedeval``
@@ -105,7 +108,7 @@ Algorithm values:
      - ``pytorch``, ``tensorflow``
      - ``nvflare recipe list --filter algorithm=fedopt``
    * - ``fedprox``
-     - ``pytorch``, ``tensorflow``
+     - ``pytorch``
      - ``nvflare recipe list --filter algorithm=fedprox``
    * - ``fedstats``
      - ``core``
@@ -144,6 +147,9 @@ Aggregation values:
    * - ``cluster_centers``
      - ``sklearn``
      - ``nvflare recipe list --filter framework=sklearn --filter aggregation=cluster_centers``
+   * - ``contribution_weighted_average``
+     - ``pytorch``
+     - ``nvflare recipe list --filter framework=pytorch --filter aggregation=contribution_weighted_average``
    * - ``server_optimizer``
      - ``pytorch``, ``tensorflow``
      - ``nvflare recipe list --filter aggregation=server_optimizer``

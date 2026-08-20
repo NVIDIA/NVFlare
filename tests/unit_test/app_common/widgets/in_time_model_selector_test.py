@@ -103,6 +103,17 @@ class TestInTimeModelSelector:
             ("val_loss", True, False),
             ("val_accuracy", False, False),
             ("dice", False, False),
+            # A client-negated metric is higher-is-better. "neg_<key_metric>" is the exact
+            # remedy this warning recommends, so following the advice must silence it
+            # rather than repeat it and suggest "neg_neg_val_loss".
+            ("neg_loss", False, False),
+            ("neg_val_loss", False, False),
+            ("eval_neg_loss", False, False),
+            ("neg_wer", False, False),
+            ("neg_error_rate", False, False),
+            # "negative" is not a "neg" token, so genuinely lower-is-better names that
+            # merely begin with those letters are still caught.
+            ("negative_class_loss", False, True),
         ],
     )
     def test_loss_like_key_metric_warning(self, caplog, key_metric, negate_key_metric, expect_warning):
@@ -111,6 +122,19 @@ class TestInTimeModelSelector:
             IntimeModelSelector(key_metric=key_metric, negate_key_metric=negate_key_metric)
         warned = any("looks like a lower-is-better metric" in record.getMessage() for record in caplog.records)
         assert warned == expect_warning
+
+    def test_loss_like_key_metric_warning_recommends_configuration_api(self, caplog):
+        logger_name = f"{IntimeModelSelector.__module__}.{IntimeModelSelector.__qualname__}"
+        with caplog.at_level(logging.WARNING, logger=logger_name):
+            IntimeModelSelector(key_metric="val_loss")
+
+        message = next(
+            record.getMessage()
+            for record in caplog.records
+            if "looks like a lower-is-better metric" in record.getMessage()
+        )
+        assert "key_metric_mode='min' when using the Recipe API" in message
+        assert "negate_key_metric=True when configuring IntimeModelSelector directly" in message
 
     def test_model_selection_publishes_metrics_selection_info(self):
         handler = IntimeModelSelector(key_metric="loss", negate_key_metric=True)

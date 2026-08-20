@@ -36,8 +36,6 @@ def define_parser():
         action="store_true",
         help="Disable server-side tracking (by default, server-side tracking is enabled)",
     )
-    parser.add_argument("--export_config", action="store_true", help="Export config without running")
-
     return parser.parse_args()
 
 
@@ -84,20 +82,14 @@ def main():
         server_side=not args.disable_server_tracking,
     )
 
-    # Run or export
-    if args.export_config:
-        export_dir = "/tmp/nvflare/jobs/job_config"
-        print(f"job exported to {export_dir}")
-        recipe.export(export_dir)
-    else:
-        from nvflare.recipe import SimEnv
+    from nvflare.recipe import SimEnv
 
-        env = SimEnv(num_clients=args.n_clients, workspace_root="/tmp/nvflare/jobs/workdir")
-        run = recipe.execute(env)
-        print()
-        print("Result:", run.get_result())
-        print("Status:", run.get_status())
-        print()
+    env = SimEnv(num_clients=args.n_clients, workspace_root="/tmp/nvflare/jobs/workdir")
+    run = recipe.execute(env)
+    print()
+    print("Result:", run.get_result())
+    print("Status:", run.get_status())
+    print()
 
 
 if __name__ == "__main__":

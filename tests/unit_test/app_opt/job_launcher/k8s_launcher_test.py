@@ -71,6 +71,7 @@ from nvflare.app_opt.job_launcher.k8s_launcher import (
     uuid4_to_rfc1123,
 )
 from nvflare.app_opt.job_launcher.workspace_cell_transfer import ENV_WORKSPACE_OWNER_FQCN, ENV_WORKSPACE_TRANSFER_TOKEN
+from nvflare.fuel.common.exit_codes import ProcessExitCode
 
 _DEFAULT_DATA_VOLUME_NAME = study_dataset_volume_name("study-a", "training")
 
@@ -124,6 +125,12 @@ def _make_waiting_container_status(reason, message=None):
     state.waiting = waiting
     container_status = Mock()
     container_status.state = state
+    return container_status
+
+
+def _make_terminated_container_status(name, exit_code):
+    container_status = Mock(state=Mock(terminated=Mock(exit_code=exit_code)))
+    container_status.name = name
     return container_status
 
 
@@ -761,6 +768,36 @@ class TestK8sJobHandle:
         handle = _make_handle(api=api)
         handle.wait()
         assert handle.terminal_state == JobState.TERMINATED
+
+    @pytest.mark.parametrize(
+        "exit_code",
+        [ProcessExitCode.EXCEPTION, ProcessExitCode.UNSAFE_COMPONENT, ProcessExitCode.CONFIG_ERROR],
+    )
+    def test_wait_preserves_deliberate_process_exit_code(self, exit_code):
+        api = _make_api_instance()
+        resp = _make_pod_response(
+            phase=PodPhase.FAILED.value,
+            container_statuses=[_make_terminated_container_status("container-test-job-123", exit_code)],
+        )
+        api.read_namespaced_pod.return_value = resp
+        handle = _make_handle(api=api)
+
+        handle.wait()
+
+        assert handle.poll() == exit_code
+
+    def test_wait_keeps_sigkill_exit_aborted(self):
+        api = _make_api_instance()
+        resp = _make_pod_response(
+            phase=PodPhase.FAILED.value,
+            container_statuses=[_make_terminated_container_status("container-test-job-123", 137)],
+        )
+        api.read_namespaced_pod.return_value = resp
+        handle = _make_handle(api=api)
+
+        handle.wait()
+
+        assert handle.poll() == JobReturnCode.ABORTED
 
     def test_wait_poll_consistent_after_wait(self):
         api = _make_api_instance()
@@ -1567,12 +1604,16 @@ class TestClientK8sJobLauncherGetModuleArgs:
             job_args = {
                 JobProcessArgs.WORKSPACE: ("-w", "/workspace"),
                 JobProcessArgs.JOB_ID: ("-j", "job-1"),
+                JobProcessArgs.PARENT_URL: ("-p", "stcp://site-1:8102"),
+                JobProcessArgs.PARENT_CONN_SEC: ("--parent_conn_sec", "mtls"),
             }
             fl_ctx.set_prop(FLContextKey.JOB_PROCESS_ARGS, job_args, private=True, sticky=False)
 
             result = launcher.get_module_args("job-1", fl_ctx)
             assert isinstance(result, dict)
             assert result.get("-w") == "/workspace"
+            assert result["-p"] == "stcp://site-1:8102"
+            assert result["--parent_conn_sec"] == "mtls"
         finally:
             _exit_patches(patches)
 
@@ -1606,12 +1647,16 @@ class TestServerK8sJobLauncherGetModuleArgs:
                 JobProcessArgs.WORKSPACE: ("-w", "/workspace"),
                 JobProcessArgs.JOB_ID: ("-j", "job-1"),
                 JobProcessArgs.ROOT_URL: ("--root_url", "https://server:8003"),
+                JobProcessArgs.PARENT_URL: ("-p", "stcp://nvflare-server:8102"),
+                JobProcessArgs.PARENT_CONN_SEC: ("--parent_conn_sec", "mtls"),
             }
             fl_ctx.set_prop(FLContextKey.JOB_PROCESS_ARGS, job_args, private=True, sticky=False)
 
             result = launcher.get_module_args("job-1", fl_ctx)
             assert isinstance(result, dict)
             assert result.get("-w") == "/workspace"
+            assert result["-p"] == "stcp://nvflare-server:8102"
+            assert result["--parent_conn_sec"] == "mtls"
         finally:
             _exit_patches(patches)
 
@@ -3075,6 +3120,25 @@ spec:
         finally:
             _exit_patches(patches)
 
+    def test_pod_manifest_portable_cpu_memory_request_and_limit(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        self._prime_running(mock_api)
+        try:
+            meta = _make_launch_job_meta()
+            meta[JobMetaKey.RESOURCE_SPEC.value] = {
+                "@default": {"num_of_cpus": 2, "memory": "8Gi"},
+                "site-1": {"num_of_cpus": 4},
+            }
+            launcher.launch_job(meta, _make_launch_fl_ctx())
+            resources = mock_api.create_namespaced_pod.call_args.kwargs["body"]["spec"]["containers"][0]["resources"]
+            assert resources["requests"]["cpu"] == "4"
+            assert resources["limits"]["cpu"] == "4"
+            assert resources["requests"]["memory"] == "8Gi"
+            assert resources["limits"]["memory"] == "8Gi"
+        finally:
+            _exit_patches(patches)
+
     def test_pod_manifest_gpu_and_cpu_combined(self):
         patches = _make_k8s_launcher_patches()
         launcher, mock_api = self._setup(patches)
@@ -3445,6 +3509,22 @@ class TestK8sCredentialTransport:
         created_pod.metadata.uid = "pod-uid-123"
         mock_api.create_namespaced_pod.return_value = created_pod
         return launcher, mock_api
+
+    @pytest.mark.parametrize(("cert_name", "key_name"), [("client.crt", "client.key"), ("server.crt", "server.key")])
+    def test_startup_secret_contains_complete_participant_tls_credentials(self, tmp_path, cert_name, key_name):
+        from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
+
+        startup_dir = tmp_path / "startup"
+        startup_dir.mkdir()
+        for name in ("rootCA.pem", cert_name, key_name):
+            (startup_dir / name).write_text(name)
+        launcher = ClientK8sJobLauncher(config_file_path=None)
+        launcher.core_v1 = MagicMock()
+
+        launcher._ensure_startup_secret("site-1", str(startup_dir))
+
+        body = launcher.core_v1.create_namespaced_secret.call_args.kwargs["body"]
+        assert set(body["data"]) == {"rootCA.pem", cert_name, key_name}
 
     def test_secret_created_and_pod_references_it_without_values(self):
         patches = _make_k8s_launcher_patches()

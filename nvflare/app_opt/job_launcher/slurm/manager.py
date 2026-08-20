@@ -18,7 +18,6 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
-import re
 import shutil
 import stat
 import threading
@@ -28,7 +27,12 @@ from typing import Callable, Optional
 
 from nvflare.apis.fl_exception import UnsafeComponentError
 from nvflare.apis.job_launcher_spec import JobHandleSpec, JobReturnCode
-from nvflare.app_opt.job_launcher.slurm.batch import _render_batch_script, _render_secret_file, _submission_argv
+from nvflare.app_opt.job_launcher.slurm.batch import (
+    _render_batch_script,
+    _render_node_script,
+    _render_secret_file,
+    _submission_argv,
+)
 from nvflare.app_opt.job_launcher.slurm.config import (
     _APPLICATION_TERMINAL_STATES,
     _INFRASTRUCTURE_TERMINAL_STATES,
@@ -36,6 +40,7 @@ from nvflare.app_opt.job_launcher.slurm.config import (
     BATCH_FILE,
     CONTAINER_RESOLV_CONF,
     CONTROL_DIR,
+    NODE_FILE,
     SANDBOX_ROOT,
     SECRET_FILE,
     BindMount,
@@ -48,13 +53,10 @@ from nvflare.app_opt.job_launcher.slurm.config import (
     resolve_slurm_parent_executables,
 )
 from nvflare.app_opt.job_launcher.slurm.scheduler_client import _command_diagnostic, _SlurmCliAdapter
-from nvflare.fuel.common.exit_codes import ProcessExitCode
+from nvflare.fuel.common.exit_codes import PROCESS_EXIT_REASON, ProcessExitCode
 
 _HEALTHY_MISSES = 5
 _ACCOUNTING_RETRY_INTERVAL = 6.0
-_COMMAND_TIMEOUT = 10.0
-_MIN_SLURM_VERSION = (23, 2)
-_SLURM_VERSION_RE = re.compile(r"^slurm\s+(\d+)\.(\d+)", re.IGNORECASE)
 _JOB_NAME_SITE_LENGTH = 32
 
 
@@ -161,22 +163,11 @@ class SlurmJobManager:
                 except SlurmLauncherError as e:
                     raise UnsafeComponentError(str(e)) from e
                 adapter = _SlurmCliAdapter(executables, os.getuid(), self.logger)
-                self._require_slurm_version(adapter)
                 self.config = replace(self.config, executables=executables)
                 self.adapter = adapter
             self._require_accounting()
             self.jobs_dir = jobs_dir
             self._initialized = True
-
-    def _require_slurm_version(self, adapter=None) -> None:
-        message = "Slurm 23.02 or later is required"
-        result = (adapter or self.adapter).version_probe(timeout=2.0)
-        match = _SLURM_VERSION_RE.match(result.stdout.strip()) if result.available else None
-        if match and tuple(map(int, match.groups())) >= _MIN_SLURM_VERSION:
-            return
-        detail = _command_diagnostic(result) if not result.available else f"unexpected version output={result.stdout!r}"
-        self.logger.error("%s: %s", message, detail)
-        raise UnsafeComponentError(message)
 
     def _require_accounting(self) -> None:
         message = "Slurm accounting (slurmdbd) is required"
@@ -240,6 +231,9 @@ class SlurmJobManager:
                         "ro",
                     ),
                 )
+            if plan.sandbox == "pyxis" and plan.additional_node_command:
+                # srun starts node.sh inside the container, so its directory must be visible there.
+                launcher_mounts += (BindMount(job_dir, job_dir, "ro"),)
             plan = replace(plan, mounts=launcher_mounts + plan.mounts)
         script, secrets = _render_batch_script(
             plan=plan,
@@ -252,6 +246,9 @@ class SlurmJobManager:
             0o600,
         )
         _write_exclusive(os.path.join(job_dir, BATCH_FILE), script.encode("utf-8"), 0o700)
+        if plan.additional_node_command:
+            node_script = _render_node_script(plan, self.config)
+            _write_exclusive(os.path.join(job_dir, NODE_FILE), node_script.encode("utf-8"), 0o700)
 
     def launch(self, plan: LaunchPlan) -> "SlurmJobHandle":
         self._require_initialized()
@@ -274,7 +271,7 @@ class SlurmJobManager:
                             self._marker(plan.job_id),
                             self.config,
                         ),
-                        _COMMAND_TIMEOUT,
+                        self.config.submit_timeout,
                     )
                 except Exception as e:
                     raise SlurmLauncherError("sbatch submission failed") from e
@@ -287,7 +284,7 @@ class SlurmJobManager:
                         outcome = self.adapter.cancel_suffix(
                             submission.job_id,
                             submission.cluster,
-                            timeout=_COMMAND_TIMEOUT,
+                            timeout=self.config.cancel_timeout,
                         ).status.value
                     except Exception as e:
                         outcome = type(e).__name__
@@ -319,12 +316,16 @@ class SlurmJobManager:
 
     def _result_for(self, handle: "SlurmJobHandle", record: SlurmRecord) -> int:
         if record.state in _INFRASTRUCTURE_TERMINAL_STATES:
-            return ProcessExitCode.EXCEPTION
+            return ProcessExitCode.INFRASTRUCTURE_ERROR
         # Preserve user intent when cooperative abort completes before scancel wins the race.
         if handle.user_abort and record.state in {"CANCELLED", "COMPLETED"}:
             return JobReturnCode.ABORTED
         if record.state == "CANCELLED":
-            return ProcessExitCode.EXCEPTION
+            return ProcessExitCode.INFRASTRUCTURE_ERROR
+        if record.exit_status in PROCESS_EXIT_REASON:
+            return record.exit_status
+        if record.derived_exit_status in PROCESS_EXIT_REASON:
+            return record.derived_exit_status
         if record.exit_status or record.exit_signal:
             return JobReturnCode.EXECUTION_ERROR
         return JobReturnCode.SUCCESS if record.state == "COMPLETED" else JobReturnCode.EXECUTION_ERROR
@@ -351,7 +352,7 @@ class SlurmJobManager:
         result = self.adapter.accounting_by_id(
             handle.job_id,
             handle.job_name,
-            timeout=_COMMAND_TIMEOUT,
+            timeout=self.config.query_timeout,
         )
         if result.status == LookupStatus.UNAVAILABLE:
             return JobReturnCode.UNKNOWN
@@ -363,7 +364,7 @@ class SlurmJobManager:
                 "Slurm accounting has no record after five healthy retries: job_id=%s",
                 handle.job_id,
             )
-            return self._finish(handle, ProcessExitCode.EXCEPTION)
+            return self._finish(handle, ProcessExitCode.INFRASTRUCTURE_ERROR)
         handle.accounting_misses = 0
         record = result.records[0]
         if _is_terminal(record.state):
@@ -379,7 +380,7 @@ class SlurmJobManager:
                 handle.job_id,
                 handle.job_name,
                 self._marker(handle.nvflare_job_id),
-                timeout=_COMMAND_TIMEOUT,
+                timeout=self.config.query_timeout,
             )
             if active.status == LookupStatus.UNAVAILABLE:
                 return JobReturnCode.UNKNOWN
@@ -390,7 +391,7 @@ class SlurmJobManager:
             if _is_terminal(record.state):
                 return self._poll_accounting(handle)
             if handle.cancel_requested:
-                self.adapter.cancel(handle.job_id, timeout=_COMMAND_TIMEOUT)
+                self.adapter.cancel(handle.job_id, timeout=self.config.cancel_timeout)
                 return JobReturnCode.UNKNOWN
             if record.state in _PENDING_STATES:
                 now = self._monotonic()
@@ -400,12 +401,13 @@ class SlurmJobManager:
                     self.logger.warning("Slurm job %s exceeded pending_timeout", handle.job_id)
                     handle._request_cancel()
             if handle.cancel_requested:
-                self.adapter.cancel(handle.job_id, timeout=_COMMAND_TIMEOUT)
+                self.adapter.cancel(handle.job_id, timeout=self.config.cancel_timeout)
             return JobReturnCode.UNKNOWN
 
-    def _abort_handle(self, handle: "SlurmJobHandle") -> None:
-        self.logger.info("user abort requested for Slurm job %s", handle.job_id)
-        handle._request_cancel(user_abort=True)
+    def _abort_handle(self, handle: "SlurmJobHandle", user_abort: bool = True) -> None:
+        if user_abort:
+            self.logger.info("user abort requested for Slurm job %s", handle.job_id)
+        handle._request_cancel(user_abort=user_abort)
         try:
             self._poll_handle(handle)
         except SlurmProtocolError:
@@ -462,6 +464,10 @@ class SlurmJobHandle(JobHandleSpec):
     def terminate(self):
         if self.terminal_result is None:
             self.manager._abort_handle(self)
+
+    def _terminate_for_heartbeat_cleanup(self):
+        if self.terminal_result is None:
+            self.manager._abort_handle(self, user_abort=False)
 
     def poll(self):
         try:

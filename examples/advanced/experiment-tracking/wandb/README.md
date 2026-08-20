@@ -235,7 +235,12 @@ python job.py \
 - `--launch_external_process`: Run training in external process
 - `--streamed_to_clients`: Enable client-side tracking (default: disabled)
 - `--disable_server_tracking`: Disable server-side tracking (default: enabled)
-- `--export_config`: Export config without running
+
+To export the Recipe job without running it:
+
+```bash
+python job.py --export --export-dir /tmp/nvflare/jobs/job_config
+```
 
 ---
 

@@ -20,11 +20,25 @@ exists, `baseline_score` and `improvement` (best minus baseline; campaigns
 always maximize the metric, so positive always means better) report
 baseline-versus-best progress, and `abandoned_candidates` counts abandoned candidate manifests,
 which never count as candidate attempts. Changing the effective candidate cap
-between invocations appends `{changed_at, old, new, source}` to `cap_changes`
-in `.nvflare/autofl/campaign.json` so budget changes stay auditable. External
+between invocations appends `{changed_at, old, new, source, user_approved}` to
+`cap_changes` in `.nvflare/autofl/campaign.json` so budget changes stay
+auditable. Increasing a finite cap or making it uncapped requires specific user
+approval plus `--confirm-user-approved-cap-change`; initial caps and reductions
+do not. Retry of the same already-applied approved cap command is idempotent.
+Never infer an initial cap from inherited environment variables. An approved
+increase refreshes campaign state and reopens a cap-exhausted campaign. External
 judges should treat `cap_changes` as evidence for runner-mediated cap changes
 only: `campaign.json` carries no integrity hash, so direct metadata edits are
 not detectable.
+
+Every candidate training, parameter update, or metric-based screening or
+ranking execution must use the campaign runner and counts toward the cap,
+regardless of whether it is called a smoke test, dry run, replica, screen, or
+sweep. Only static parse, import, compile, schema, and interface validation is
+free. Every real crash and identical replay is a separate counted candidate
+attempt. Prefer changing candidate source or run arguments after a crash unless
+an identical replay is intentional; the manifest records matching crash
+provenance for auditability.
 
 Only one lifecycle action may own a job workspace at a time. A concurrent
 command exits with code 2 and an in-use message; wait for the active action to
@@ -66,7 +80,11 @@ text is only the interaction layer.
 Common next actions:
 
 - `repair_baseline`: fix the deterministic import, execution, or metric issue,
-  then retry initialization.
+  then retry initialization when no scored baseline exists. A semantic metric
+  correction after scoring requires preserving the old workspace for audit and
+  initializing repaired source in a fresh job workspace with no Auto-FL
+  artifacts. `initialize` resumes old evidence when campaign metadata exists,
+  so never use the scored workspace; old and new scores are not comparable.
 - `edit_candidate`: finish the pending candidate draft, then invoke the runner's
   `evaluate` lifecycle action.
 - `abandon_candidate`: abandon pending candidate work after a manual stop, then

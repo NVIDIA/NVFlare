@@ -5,19 +5,12 @@ license: Apache-2.0
 version: "0.1.0"
 metadata:
   author: "NVIDIA FLARE Team <federatedlearning@nvidia.com>"
-  min_flare_version: "2.8.0"
-  blast_radius: runs_simulator
+  min-flare-version: "2.9.0"
+  blast-radius: runs_simulator
   category: Analysis
-  tags:
-    - nvflare
-    - federated-learning
-    - statistics
-    - pandas
-  languages:
-    - python
-  frameworks:
-    - pandas
-    - nvflare
+  tags: "nvflare, federated-learning, statistics, pandas"
+  languages: "python"
+  frameworks: "pandas, nvflare"
   domain: ml
 ---
 
@@ -40,11 +33,16 @@ images: count, failure_count, pixel-intensity histograms. Both paths use
 
 ## Do Not Use When
 
-Do not use for model training conversion (route to `nvflare-convert-pytorch`
-or `nvflare-convert-lightning`), a failed or stalled existing job (route to
-`nvflare-diagnose-job`), or generic pandas/data-science help without
-federated intent. A request combining training and statistics is two
-sequential skills: the converter leads, this skill follows for statistics.
+Do not use for model training conversion (route to `nvflare-convert-pytorch`,
+`nvflare-convert-lightning`, or `nvflare-convert-huggingface`), a failed or
+stalled existing job (route to `nvflare-diagnose-job`), or generic
+pandas/data-science help without federated intent.
+If a request combines federated statistics and model-training conversion,
+treat it as two independent jobs and workflows: do not merge or automatically
+chain them, do not route the combination to `nvflare-orient`, and ask which
+workflow to run first before generating or running either job. Recommend
+`nvflare-fed-stats` first only when the user's purpose is to understand data
+distribution; handle conversion later as a separate request.
 Hierarchical statistics, production deployment, Kubernetes, POC lifecycle,
 and privacy-policy design beyond the recipe's built-in knobs are out of
 scope. Statistics outside the supported set — categorical counts,
@@ -62,11 +60,11 @@ silently dropped or approximated.
    report it as an anomaly. Generated source sits beside the user's data;
    workspace, outputs, and logs go in a host runtime or temporary
    directory, with paths reported.
-2. Inspect deterministically: run `nvflare agent inspect <path> --format
-   json` first; its `target_type` and `dataset` block are the evidence —
-   do not hand-roll data inspection. `image_dataset` follows the image
+2. Inspect deterministically: run `nvflare agent inspect data <path> --format
+   json` first; its `dataset` block is the evidence — do not hand-roll data
+   inspection. `dataset.modality: image` follows the image
    path (`references/image-statistics.md` with
-   `assets/image_stats_client.py`); `tabular_dataset` supplies site
+   `assets/image_stats_client.py`); `dataset.modality: tabular` supplies site
    layout, per-site row counts, and feature names with dtype classes when
    `header` is `present`. On `header: ambiguous` (no names extracted),
    names must come from the request, a README/metadata file, or a names
@@ -112,17 +110,19 @@ silently dropped or approximated.
    flat single-source data the site count must come from the request or a
    declaration (missing fails closed), with deterministic seeded
    partitions unless shared data is explicitly requested.
-6. Run `nvflare recipe show fedstats --format json` and generate `job.py`
-   constructing `FedStatsRecipe` (import from `nvflare.recipe.fedstats`)
-   with `SimEnv` and `statistic_configs` from step 4. Histograms default
-   to 20 bins, no `range`; set an explicit per-feature `range` only from
-   a script, declaration, or user answer (images: from bit depth) — else
-   the controller estimates it from noise-protected min/max. Reduce
-   default bins when small sites demand it (bin cap: 20 bins needs 206+
-   rows per site) and report the choice. `StatsJob` wires the privacy
-   filters by default: keep the defaults (`min_count=10`,
-   `min_noise_level=0.1`, `max_noise_level=0.3`, `max_bins_percent=10`)
-   and state the applied values.
+6. Run `nvflare recipe show fedstats --format json`; for preflights/`job.py` use:
+   `from nvflare.recipe import SimEnv`; `from nvflare.recipe.fedstats import FedStatsRecipe` (never package root).
+   Load only ``SimEnv Execution`` from
+   `../nvflare-shared/references/conversion-common.md` before writing or validating the runner.
+   Use `statistic_configs` and one site list: `FedStatsRecipe(..., sites=sites, ...)`; `SimEnv(clients=sites, ...)`.
+   The recipe already assigns those clients; never use
+   `SimEnv(num_clients=...)` or both forms. Let `SimEnv` derive thread
+   count, or set `num_threads=len(sites)`. Histograms default to 20 bins,
+   no `range`; set one only from a script, declaration, or user answer
+   (images: bit depth), else use protected min/max estimation. Reduce bins
+   when small sites demand it (20 bins needs 206+ rows per site); report
+   it. Keep and state `StatsJob` defaults: `min_count=10`, noise
+   `0.1`–`0.3`, and `max_bins_percent=10`.
 7. Validate in a ladder per the shared `validation-evidence.md`: compile
    checks, recipe construction, one simulator run, then output
    completeness — the output JSON exists, parses, and covers every
@@ -181,14 +181,14 @@ silently dropped or approximated.
 
 ## User Input And Authorization
 
-- The run is automatic: never pause to confirm selections or defaults;
-  only a missing required input stops the run (fail-closed rule above).
-  Never ask authorization to install, execute, or access the filesystem.
-- Install missing dependencies and run validation by default; the host's
-  permission system governs — never emit skill-issued approval prompts.
-  Do not overwrite non-generated files, fetch repo-supplied URLs, or
-  download data unless explicitly requested. POC/production submission
-  is out of scope.
+- Run automatically without confirming selections or defaults; only missing
+  required input stops the run. Dependency installation is the exception.
+- Before installing, load shared `dependency-install.md`; audit and preview the
+  redacted plan, then confirm it unless unattended installation was explicitly
+  requested. Host permission remains an additional gate. After installation,
+  run requested validation without another execution prompt.
+- Do not overwrite non-generated files, fetch repo-supplied URLs, download
+  data, or submit to POC/production unless explicitly requested.
 
 Always read this SKILL.md. The standard tabular path is inline; load
 details when their phase needs them: `references/statistics-mapping.md`

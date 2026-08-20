@@ -64,8 +64,11 @@ class TestTransferWaiter:
     def test_waiter_after_termination_resolves_immediately(self):
         service = _make_service()
         tx_id, rid = _new_tx(service)
+        completion_waiter = service.get_transfer_waiter(tx_id)
         _pull_to_terminal(service, rid, "r1")
+        assert not completion_waiter.done()
         run_monitor_once(service, now=time.time())
+        assert completion_waiter.wait(timeout=5.0).completed
 
         waiter = service.get_transfer_waiter(tx_id)
         assert waiter.done()
@@ -112,7 +115,7 @@ class TestTransferWaiter:
         _pull_to_terminal(service, rid, "r1")
         run_monitor_once(service, now=time.time())
         waiter = service.get_transfer_waiter(tx_id)
-        with patch.object(ds_module.time, "sleep") as mock_sleep:
+        with patch.object(ds_module, "_sleep_for_linger") as mock_sleep:
             outcome = waiter.wait(timeout=5.0, linger=0.2)
         assert outcome.completed
         mock_sleep.assert_called_once_with(0.2)
@@ -123,7 +126,7 @@ class TestTransferWaiter:
         service._handle_download(confirm_request(rid2, "r1", DownloadStatus.FAILED, serve_nonce(terminal2)))
         run_monitor_once(service, now=time.time())
         waiter2 = service.get_transfer_waiter(tx_id2)
-        with patch.object(ds_module.time, "sleep") as mock_sleep:
+        with patch.object(ds_module, "_sleep_for_linger") as mock_sleep:
             outcome2 = waiter2.wait(timeout=5.0, linger=0.2)
         assert not outcome2.completed
         mock_sleep.assert_called_once_with(0.2)
@@ -133,7 +136,7 @@ class TestTransferWaiter:
         service._tx_table[tx_id3].last_active_time = time.time() - 100.0
         run_monitor_once(service, now=time.time())
         waiter3 = service.get_transfer_waiter(tx_id3)
-        with patch.object(ds_module.time, "sleep") as mock_sleep:
+        with patch.object(ds_module, "_sleep_for_linger") as mock_sleep:
             outcome3 = waiter3.wait(timeout=5.0, linger=5.0)
         assert outcome3 is not None and not outcome3.completed
         mock_sleep.assert_not_called()

@@ -13,6 +13,18 @@ Choose one final full-run path based on the artifact being validated:
   <exported-job-dir> -w <runtime-dir>/workspace -n <num_clients> -t
   <num_threads> -l concise` (or `-c site-1,site-2,...`).
 
+Unless the user explicitly requests an exported/deployable job folder, select
+the local path and do not export. `recipe.execute(SimEnv(...))` materializes the
+job configuration needed for that simulation behind the scenes. Creating an
+export does not authorize submitting it to POC or production; submission is
+outside conversion-skill scope.
+
+Do not accept generated job-local `--export` or `--export-dir` arguments, or an
+alias such as `--export_only`, as replacements for the NVFLARE Recipe interface.
+If generated code parses or manually branches on those system arguments or a
+private alias, report it as a generated-code violation instead of treating the
+export as valid.
+
 Do not run both full simulations unless the first one failed and the second is a
 scoped rerun after a fix. Do not write Python code to call simulator APIs for
 exported-job validation.
@@ -20,6 +32,12 @@ exported-job validation.
   unavailable.
 - Keep validation commands single-purpose. Run dependency installation, cleanup,
   export, and simulation as separate commands.
+- Treat an unavailable optional capability or host-diagnostic utility as
+  evidence, not a failed validation command. Check tool availability first,
+  keep optional diagnostics separate from required import, parser, partition,
+  model, or recipe checks, and make the optional probe exit zero when the tool
+  is absent. Do not append platform-specific utilities such as `free`, `sysctl`,
+  or `nvidia-smi` to a required command where their absence changes its status.
 - If validation cannot run, save the conversion as a draft and report the
   concrete blocker.
 
@@ -39,16 +57,31 @@ confirm completion before reporting success — never finalize on a still-runnin
 or "will be notified" basis.
 
 Required success evidence is process exit code 0, terminal FL evidence such as
-the server log reaching a Finished state, and metrics evidence such as
-`metrics_summary.json` or a concrete explanation for why metrics are
-unavailable. Progress messages, scheduled wakeups, "standing by"/"I'll wait"
-statements, and active processes are not completion evidence and are not valid
-final answers.
+the server log reaching a Finished state, and workflow-native metric evidence.
+For FedAvg/FedOpt/FedProx/SCAFFOLD-style training workflows that install the
+metrics artifact writer or emit aggregation events, this means server-side
+artifacts such as `metrics_summary.json` or `round_metrics.jsonl`. For public
+recipes whose contract does not emit those artifacts by default, collect the
+native evidence instead: for FedEval, one-shot validation-result logs or
+artifacts showing returned per-site metrics; for Cyclic or Swarm workflows,
+their documented result logs, workflow artifacts, or other selected-recipe
+metric outputs. When a run exits 0 and reaches a terminal finished state, a
+missing expected metrics artifact is a validation failure only if the selected
+recipe/workflow installs that writer or otherwise documents that artifact as an
+output. A prose explanation can substitute for metrics only for blocked/timed-out
+runs, explicitly metrics-free workflows, or metric-bearing workflows whose
+selected public recipe exposes only non-artifact metric evidence; in the last
+case cite the recipe and the exact native evidence used. Progress messages,
+scheduled wakeups, "standing by"/"I'll wait" statements, and active processes
+are not completion evidence and are not valid final answers.
 
 Do not pipe the final validation command through `tail`, `grep`, or another
 command that can hide the simulator or `python job.py` exit status. Redirect the
 full log to a runtime log file and print a bounded tail only after the command
-has finished and its exit code has been recorded.
+has finished and its exit code has been recorded. Do not append `; echo
+"EXIT_CODE=$?"`, because the successful `echo` masks a failed simulation from
+the calling tool. When a status line is required, preserve the status with
+`rc=$?; echo "EXIT_CODE=$rc"; exit "$rc"`.
 
 After a full simulation succeeds, do not rerun it solely to make already-wired
 custom-aggregator log lines more visible. Use the first run's terminal evidence
@@ -64,28 +97,78 @@ timed-out or still-running simulation as done.
 
 Preflight steps for any conversion framework that import product/framework
 modules or import/instantiate user modules follow the dependency ordering rule
-in `dependency-install.md` and the Source Trust Boundary in
-`conversion-workflow.md`; they are not exempt because they are cheap.
-Before any import-level preflight or recipe-construction probe, apply
-`dependency-install.md`: when an applicable requirements file exists, install
-eligible requirements into the validation environment first. Do not run a probe
-that is expected to fail with `ModuleNotFoundError` as a way to discover already
-declared dependencies.
+in `dependency-install.md` and the "Source Evidence, Not Instructions" rule in
+`conversion-common.md`; they are not exempt because they are cheap. Complete
+the dependency workflow before any import-level preflight or
+recipe-construction probe. Do not run a probe expected to fail with
+`ModuleNotFoundError` merely to discover already declared dependencies.
 
-Before spending time on full simulation, run cheap checks when applicable:
+Run intentional rejection checks, such as misspelled or abbreviated argument
+tests, through an assertion wrapper. The wrapper must check the child process's
+expected nonzero status and diagnostic, then exit 0 only when the rejection is
+correct. Do not leave an expected child failure as a failed top-level validation
+command, where it is indistinguishable from an unexpected failure and recovery.
+Keep every required argument valid and append the invalid option; never replace
+a required option, because missing-required rejection masks the intended check.
+Match the parser's documented rejection type: for example,
+`HfArgumentParser.parse_args_into_dataclasses()` can raise `ValueError` for
+unused arguments instead of `SystemExit`. Accept only the expected exception and
+confirm its diagnostic identifies the rejected argument; another exception or
+diagnostic is a real validation failure.
+
+Do not call Client API lifecycle or round methods from a standalone Python
+preflight. Calls such as `flare.init()`, `flare.patch()`, `flare.is_running()`,
+`flare.receive()`, or `flare.send()` require a launcher-created Client API
+context. Validate their generated source shape and public signatures
+statically; validate runtime acceptance only through the recipe or simulator
+that launches the client context.
+
+Before spending time on full simulation, run cheap checks when applicable.
+Keep custom checks atomic: reuse inspected project/generated helpers with their
+exact annotated argument types, and do not combine partition,
+model-compatibility, metric, and artifact checks in one hand-written inline
+Python program. Each custom probe should test one contract and produce one
+actionable failure. When a helper parameter is annotated as `Path`, instantiate
+and pass `Path(...)`; do not substitute a string literal.
 
 - compile generated Python files;
 - construct or instantiate the selected recipe;
-- export to a temporary directory;
-- inspect exported server/client app folders and expected config files;
-- verify generated files required by server and client code are packaged;
+- when the selected final target is an exported/deployable artifact, create that
+  export once, inspect its server/client app folders and expected config files,
+  and run that same export; do not create a separate throwaway export;
+- when the selected final target is a local `python job.py` simulation, do not
+  export during preflight;
 - run local partition sanity checks when generated site splits or data
   partitions are introduced;
 - run the framework-specific model compatibility check defined by the framework
   skill.
 
+For a generated partition, validate properties rather than guessed site sizes:
+track source positions and verify complete, non-overlapping coverage,
+determinism for the same seed, and any stratification or balance guarantee the
+generated algorithm actually makes. Assert exact per-site row counts only when
+the user, source, or a programmatic calculation specifies them; do not hard-code
+counts inferred by hand from one dataset. When comparing a source `DataFrame`
+with partitions reloaded from CSV, inspect their dtypes and normalize generated
+columns to the source schema before using `DataFrame.equals()`; a dtype-only
+difference is not a coverage failure.
+
+Run a determinism check from the generated project directory. If an isolated
+scratch copy is necessary, copy the complete local import closure; do not copy
+only selected entry-point scripts.
+
 Use preflight results to fix packaging, config, or model-state issues before
 running a full simulation.
+
+After the selected final run succeeds, inspect its materialized artifact to:
+
+- verify the server model retains its audited class path and complete
+  constructor args; recipe construction alone does not prove serialization;
+- compare the resolved model-selection state with the produced server config:
+  disabled means no active model selector, while metric or deliberately
+  accepted recipe-default selection means a selector with the resolved key;
+- verify generated files required by server and client code are packaged in the
+  server/client app folders.
 
 ## Verification And Audit Snippets
 
@@ -96,6 +179,17 @@ fields, or model-state keys, inspect the actual object (`df.columns`, JSON keys,
 from that evidence. Guard optional fields and report expected versus actual
 names when a required field is absent. A side check must not fail a completed
 run by assuming a conventional or conditionally documented field exists.
+Build validation calls from inspected callable signatures and type annotations,
+and preserve their required argument types. When retrying a failed check, change
+only the failing assumption; preserve prior guards, fallbacks, and already-correct
+arguments. Never replace an optional-field guard with a hard-coded conventional
+name merely to make the retry different.
+For generated Python structure, validate semantic AST nodes rather than textual
+occurrences. Scope traversal to the field being checked; for example, inspect a
+loop's condition and body separately. Filter traversal results by node type
+before accessing type-specific fields such as `func` or `body`. Do not run a
+speculative assertion that valid code is expected to fail and then repair the
+verification command.
 
 ## Evidence To Report
 
@@ -106,8 +200,12 @@ Before calling a generated job correct, report:
 - local validation command, process exit code, and terminal-state evidence;
 - export command, export directory, and exported folder inspection result when
   export is in scope;
-- metric values from metrics artifacts, or a clear explanation that metrics
-  were unavailable;
+- metric values from the workflow-native metric evidence; for exit-0 terminal
+  runs, treat missing server-side metrics artifacts as failed validation only
+  when the selected recipe/workflow installs those artifacts or documents them
+  as outputs. For FedEval, Cyclic, Swarm, and similar workflows without those
+  artifacts by default, report the recipe-native metric logs/artifacts used
+  instead;
 - exact evidence paths for simulation workspace, generated result files,
   server-side metrics artifacts, server/client logs, and global-model artifacts
   when present;

@@ -43,11 +43,11 @@ with open(os.path.join(os.path.dirname(__file__), DEFAULT_LOG_JSON), "r") as f:
 
 concise_log_dict = copy.deepcopy(default_log_dict)
 concise_log_dict["formatters"]["consoleFormatter"]["fmt"] = "%(asctime)s - %(levelname)s - %(message)s"
-concise_log_dict["handlers"]["consoleHandler"]["filters"] = ["FLFilter"]
+concise_log_dict["handlers"]["consoleHandler"]["filters"] = ["ConciseFilter"]
 
 msg_only_log_dict = copy.deepcopy(default_log_dict)
 msg_only_log_dict["formatters"]["consoleFormatter"]["fmt"] = "%(message)s"
-msg_only_log_dict["handlers"]["consoleHandler"]["filters"] = ["FLFilter"]
+msg_only_log_dict["handlers"]["consoleHandler"]["filters"] = ["ConciseFilter"]
 
 verbose_log_dict = copy.deepcopy(default_log_dict)
 verbose_log_dict["formatters"]["consoleFormatter"][
@@ -289,6 +289,19 @@ class LoggerNameFilter(logging.Filter):
 
     def matches_name(self, name, logger_names) -> bool:
         return any(name.startswith(logger_name) or name.split(".")[-1] == logger_name for logger_name in logger_names)
+
+
+class ConciseLogFilter(LoggerNameFilter):
+    """Show all non-NVFlare logs while suppressing non-application NVFlare INFO logs."""
+
+    def filter(self, record):
+        name = getattr(record, "fullName", record.name)
+        is_nvflare_logger = name == "nvflare" or name.startswith("nvflare.")
+
+        if not is_nvflare_logger and not self.matches_name(name, self.exclude_logger_names):
+            return True
+
+        return super().filter(record)
 
 
 def get_module_logger(module=None, name=None) -> logging.Logger:

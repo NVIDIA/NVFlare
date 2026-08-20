@@ -109,6 +109,10 @@ RESERVED_CANDIDATE_PATH_PARTS = {
 
 INFRASTRUCTURE_RETRY = "infrastructure_retry"
 SIMULATION_APPROVAL_ACTION = "await_simulation_runner_approval"
+ACCOUNTING_INSTRUCTION = (
+    "Run every candidate training, parameter update, or metric-based screening through this runner. "
+    "Real candidate crashes and crash replays count; expanding the candidate cap requires explicit user approval."
+)
 SIMULATOR_STALL_EXIT_CODE = 125
 SIMULATOR_STALL_PATTERNS = (
     "Failed to create connection to the child process in SimulatorClientRunner",
@@ -135,6 +139,7 @@ DEFAULT_SIMULATOR_NO_PROGRESS_TIMEOUT = 240
 DEFAULT_JOB_HELP_TIMEOUT = 30
 MAX_CAPTURED_PROCESS_OUTPUT = 1024 * 1024
 SIMULATOR_WORKSPACE_ROOT_ENV_VAR = "NVFLARE_SIMULATOR_WORKSPACE_ROOT"
+TRIAL_PROCESS_TOKEN_ENV_VAR = "NVFLARE_AUTOFL_TRIAL_TOKEN"
 SIMULATOR_WORKSPACE_OVERRIDE_MIN_NVFLARE_VERSION = "2.9.0"
 DEFAULT_WORKSPACE_OVERRIDE_PROBE_TIMEOUT = 30
 CAMPAIGN_LOCK_PATH = ".nvflare/autofl/campaign.lock"
@@ -264,7 +269,7 @@ def env_float(name: str, default: float) -> float:
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     guard = load_campaign_guard()
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument(
         "action",
         choices=["initialize", "prepare", "evaluate", "abandon", "suggest", "record", "status"],
@@ -358,6 +363,11 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--failure-reason", default="", help="external execution failure")
     parser.add_argument("--baseline", action="store_true", help="record an externally executed baseline")
     parser.add_argument("--literature", action="store_true", help="record a literature-review checkpoint")
+    parser.add_argument(
+        "--confirm-user-approved-cap-change",
+        action="store_true",
+        help="confirm that the user explicitly approved increasing the candidate cap or making it uncapped",
+    )
     parser.add_argument("--limit", type=int, default=10, help="maximum fallback suggestions")
     args = parser.parse_args(argv)
     tokens = list(argv) if argv is not None else sys.argv[1:]
@@ -387,18 +397,159 @@ def process_group_exists(process_group_id: int) -> bool:
     return True
 
 
-def wait_for_process_tree(process: subprocess.Popen, process_group_id: Optional[int], timeout: float) -> bool:
+class TrialProcessCleanupError(RuntimeError):
+    pass
+
+
+def pidfd_functions():
+    pidfd_open = getattr(os, "pidfd_open", None)
+    pidfd_send_signal = getattr(signal, "pidfd_send_signal", None)
+    if not callable(pidfd_open) or not callable(pidfd_send_signal):
+        raise TrialProcessCleanupError(
+            "Linux pidfd_open and pidfd_send_signal support is required for race-safe trial cleanup"
+        )
+    return pidfd_open, pidfd_send_signal
+
+
+def ensure_trial_process_pidfd_support() -> None:
+    if not sys.platform.startswith("linux"):
+        return
+    pidfd_open, pidfd_send_signal = pidfd_functions()
+    try:
+        pidfd = pidfd_open(os.getpid(), 0)
+    except OSError as e:
+        raise TrialProcessCleanupError(f"cannot open the Linux pidfd required for race-safe trial cleanup: {e}") from e
+    try:
+        while True:
+            try:
+                pidfd_send_signal(pidfd, 0)
+                break
+            except InterruptedError:
+                continue
+            except OSError as e:
+                raise TrialProcessCleanupError(
+                    f"cannot signal through the Linux pidfd required for race-safe trial cleanup: {e}"
+                ) from e
+    finally:
+        os.close(pidfd)
+
+
+def trial_process_ids(trial_token: Optional[str]) -> List[int]:
+    """Return Linux processes that inherited this runner-owned trial token."""
+    if not trial_token or not sys.platform.startswith("linux"):
+        return []
+    marker = f"{TRIAL_PROCESS_TOKEN_ENV_VAR}={trial_token}".encode("utf-8")
+    process_ids = []
+    for environ_path in Path("/proc").glob("[0-9]*/environ"):
+        try:
+            process_id = int(environ_path.parent.name)
+            environ = environ_path.read_bytes().split(b"\0")
+        except (OSError, ValueError):
+            continue
+        if process_id != os.getpid() and marker in environ:
+            process_ids.append(process_id)
+    return sorted(process_ids)
+
+
+def pidfd_process_id(pidfd: int) -> Optional[int]:
+    try:
+        lines = Path(f"/proc/self/fdinfo/{pidfd}").read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    for line in lines:
+        if line.startswith("Pid:"):
+            try:
+                return int(line.partition(":")[2].strip())
+            except ValueError:
+                return None
+    return None
+
+
+def process_has_trial_token(process_id: int, marker: bytes) -> bool:
+    try:
+        return marker in Path(f"/proc/{process_id}/environ").read_bytes().split(b"\0")
+    except OSError:
+        return False
+
+
+def open_trial_process_pidfd(process_id: int, marker: bytes) -> Optional[int]:
+    pidfd_open, _ = pidfd_functions()
+    while True:
+        try:
+            pidfd = pidfd_open(process_id, 0)
+            break
+        except ProcessLookupError:
+            return None
+        except InterruptedError:
+            continue
+        except OSError as e:
+            raise TrialProcessCleanupError(f"cannot open pidfd for trial process {process_id}: {e}") from e
+    if (
+        pidfd_process_id(pidfd) != process_id
+        or not process_has_trial_token(process_id, marker)
+        or pidfd_process_id(pidfd) != process_id
+    ):
+        os.close(pidfd)
+        return None
+    return pidfd
+
+
+def signal_trial_processes(trial_token: Optional[str], sig: int) -> None:
+    if not trial_token:
+        return
+    process_ids = trial_process_ids(trial_token)
+    if not process_ids:
+        return
+    _, pidfd_send_signal = pidfd_functions()
+    marker = f"{TRIAL_PROCESS_TOKEN_ENV_VAR}={trial_token}".encode("utf-8")
+    errors = []
+    for process_id in process_ids:
+        try:
+            pidfd = open_trial_process_pidfd(process_id, marker)
+        except TrialProcessCleanupError as e:
+            errors.append(str(e))
+            continue
+        if pidfd is None:
+            continue
+        try:
+            while True:
+                try:
+                    pidfd_send_signal(pidfd, sig)
+                    break
+                except ProcessLookupError:
+                    break
+                except InterruptedError:
+                    continue
+                except OSError as e:
+                    errors.append(f"cannot signal trial process {process_id} through pidfd: {e}")
+                    break
+        finally:
+            os.close(pidfd)
+    if errors:
+        raise TrialProcessCleanupError("; ".join(errors))
+
+
+def wait_for_process_tree(
+    process: subprocess.Popen, process_group_id: Optional[int], timeout: float, trial_token: Optional[str] = None
+) -> bool:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         leader_exited = process.poll() is not None
         group_exited = process_group_id is None or not process_group_exists(process_group_id)
-        if leader_exited and group_exited:
+        if leader_exited and group_exited and not trial_process_ids(trial_token):
             return True
         time.sleep(0.05)
-    return process.poll() is not None and (process_group_id is None or not process_group_exists(process_group_id))
+    return (
+        process.poll() is not None
+        and (process_group_id is None or not process_group_exists(process_group_id))
+        and not trial_process_ids(trial_token)
+    )
 
 
-def terminate_process(process: subprocess.Popen, process_group_id: Optional[int] = None) -> None:
+def terminate_process(
+    process: subprocess.Popen, process_group_id: Optional[int] = None, trial_token: Optional[str] = None
+) -> None:
+    cleanup_errors = []
     if os.name != "nt" and process_group_id is not None:
         try:
             os.killpg(process_group_id, signal.SIGTERM)
@@ -410,23 +561,37 @@ def terminate_process(process: subprocess.Popen, process_group_id: Optional[int]
                 process.terminate()
     elif process.poll() is None:
         process.terminate()
-    else:
-        return
+    try:
+        signal_trial_processes(trial_token, signal.SIGTERM)
+    except TrialProcessCleanupError as e:
+        cleanup_errors.append(str(e))
 
-    if wait_for_process_tree(process, process_group_id, timeout=10):
+    if wait_for_process_tree(process, process_group_id, timeout=10, trial_token=trial_token):
         return
 
     if os.name != "nt" and process_group_id is not None:
         try:
             os.killpg(process_group_id, signal.SIGKILL)
         except ProcessLookupError:
-            return
+            pass
         except Exception:
             if process.poll() is None:
                 process.kill()
     elif process.poll() is None:
         process.kill()
-    wait_for_process_tree(process, process_group_id, timeout=10)
+    try:
+        signal_trial_processes(trial_token, signal.SIGKILL)
+    except TrialProcessCleanupError as e:
+        cleanup_errors.append(str(e))
+    tree_exited = wait_for_process_tree(process, process_group_id, timeout=10, trial_token=trial_token)
+    remaining_trial_processes = trial_process_ids(trial_token)
+    if remaining_trial_processes:
+        detail = f"; pidfd errors: {'; '.join(cleanup_errors)}" if cleanup_errors else ""
+        raise TrialProcessCleanupError(
+            f"trial cleanup could not terminate detached processes {remaining_trial_processes}{detail}"
+        )
+    if not tree_exited and cleanup_errors:
+        raise TrialProcessCleanupError(f"trial cleanup did not complete: {'; '.join(cleanup_errors)}")
 
 
 def append_output_tail(current: str, value: str) -> str:
@@ -544,6 +709,7 @@ def run(
     simulator_no_progress_timeout: int = DEFAULT_SIMULATOR_NO_PROGRESS_TIMEOUT,
     env: Optional[Dict[str, str]] = None,
 ) -> Tuple[int, str, float]:
+    ensure_trial_process_pidfd_support()
     started = time.monotonic()
     next_stall_check = started
     last_progress_check = started
@@ -553,6 +719,9 @@ def run(
     last_partial_aggregation_signature = ""
     log_path.parent.mkdir(parents=True, exist_ok=True)
     output_tail = ""
+    run_env = dict(env) if env is not None else dict(os.environ)
+    trial_token = uuid.uuid4().hex
+    run_env[TRIAL_PROCESS_TOKEN_ENV_VAR] = trial_token
     with log_path.open("w", encoding="utf-8") as log_file:
         process = subprocess.Popen(
             argv,
@@ -562,7 +731,7 @@ def run(
             text=False,
             bufsize=0,
             start_new_session=os.name != "nt",
-            env=env,
+            env=run_env,
         )
         process_group_id = process.pid if os.name != "nt" else None
         assert process.stdout is not None
@@ -607,12 +776,12 @@ def run(
                 now = time.monotonic()
                 if not timed_out and timeout and now - started > timeout:
                     timed_out = True
-                    terminate_process(process, process_group_id)
+                    terminate_process(process, process_group_id, trial_token)
                 if not timed_out and not stall_message and simulator_stall_roots and now >= next_stall_check:
                     stall_message = simulator_stall_message(simulator_stall_roots) or ""
                     next_stall_check = now + stall_check_interval
                     if stall_message:
-                        terminate_process(process, process_group_id)
+                        terminate_process(process, process_group_id, trial_token)
                     elif simulator_no_progress_timeout:
                         partial_aggregation_signature = simulator_partial_aggregation_signature_for_roots(
                             simulator_stall_roots
@@ -631,7 +800,7 @@ def run(
                                 "partial simulator aggregation made no server-side progress for "
                                 f"{int(now - last_partial_aggregation_seen)}s: {last_partial_aggregation_signature}"
                             )
-                            terminate_process(process, process_group_id)
+                            terminate_process(process, process_group_id, trial_token)
                         progress_signature = simulator_progress_signature_for_roots(simulator_stall_roots)
                         if stall_message:
                             pass
@@ -647,7 +816,7 @@ def run(
                                 f"no simulator progress markers changed for {int(now - last_progress_seen)}s "
                                 f"across {', '.join(str(root) for root in simulator_stall_roots)}"
                             )
-                            terminate_process(process, process_group_id)
+                            terminate_process(process, process_group_id, trial_token)
                         last_progress_check = now
                 try:
                     raw_chunk = output_queue.get(timeout=0.2)
@@ -680,7 +849,7 @@ def run(
                 return SIMULATOR_STALL_EXIT_CODE, output_tail, time.monotonic() - started
             return process.returncode or 0, output_tail, time.monotonic() - started
         finally:
-            terminate_process(process, process_group_id)
+            terminate_process(process, process_group_id, trial_token)
             reader_deadline = time.monotonic() + 10
             while (reader.is_alive() or not output_queue.empty()) and time.monotonic() < reader_deadline:
                 try:
@@ -2476,6 +2645,7 @@ def write_state(
     )
     # Abandoned manifests are workspace-derived; the ledger-only guard cannot count them.
     state["abandoned_candidates"] = abandoned_candidate_count
+    state["accounting_instruction"] = ACCOUNTING_INSTRUCTION
     if records and records[-1].status == INFRASTRUCTURE_RETRY:
         attempts = len(
             [
@@ -2733,6 +2903,10 @@ def campaign_settings(args: argparse.Namespace) -> Dict[str, Any]:
     return {name: getattr(args, name) for name in CAMPAIGN_SETTING_NAMES}
 
 
+def cap_change_requires_approval(previous: Optional[int], requested: Optional[int]) -> bool:
+    return previous is not None and (requested is None or requested > previous)
+
+
 def restore_campaign_settings(args: argparse.Namespace, metadata: Dict[str, Any]) -> bool:
     """Restore persisted settings onto args; persist explicit mutable changes.
 
@@ -2762,6 +2936,7 @@ def restore_campaign_settings(args: argparse.Namespace, metadata: Dict[str, Any]
         )
     explicit = getattr(args, "_explicit_settings", set())
     changed = False
+    cap_confirmation_valid = False
     for name in CAMPAIGN_SETTING_NAMES:
         if name not in settings:
             continue
@@ -2770,17 +2945,34 @@ def restore_campaign_settings(args: argparse.Namespace, metadata: Dict[str, Any]
             if name in MUTABLE_CAMPAIGN_SETTING_NAMES:
                 if settings.get(name) != requested:
                     if name == "max_candidates":
+                        previous = settings.get(name)
+                        approval_required = cap_change_requires_approval(previous, requested)
+                        if approval_required and not args.confirm_user_approved_cap_change:
+                            raise ValueError(
+                                "increasing the candidate cap or making a finite campaign uncapped requires "
+                                "explicit user approval and --confirm-user-approved-cap-change"
+                            )
+                        if args.confirm_user_approved_cap_change and not approval_required:
+                            raise ValueError(
+                                "--confirm-user-approved-cap-change is only valid for a candidate-cap increase "
+                                "or a finite-to-uncapped change"
+                            )
+                        cap_confirmation_valid = approval_required
                         # Audit trail: mid-campaign budget changes must stay detectable by external judges.
                         metadata.setdefault("cap_changes", []).append(
                             {
                                 "changed_at": utc_now(),
-                                "old": settings.get(name),
+                                "old": previous,
                                 "new": requested,
                                 "source": "uncapped" if requested is None else "explicit",
+                                "user_approved": approval_required,
                             }
                         )
                     settings[name] = requested
                     changed = True
+                elif name == "max_candidates" and args.confirm_user_approved_cap_change:
+                    # Retrying an already-applied approved command is an idempotent success.
+                    cap_confirmation_valid = True
                 continue
             if requested != settings[name]:
                 raise ValueError(
@@ -2788,6 +2980,11 @@ def restore_campaign_settings(args: argparse.Namespace, metadata: Dict[str, Any]
                     f"configured={settings[name]!r}, requested={requested!r}"
                 )
         setattr(args, name, settings[name])
+    if args.confirm_user_approved_cap_change and not cap_confirmation_valid:
+        raise ValueError(
+            "--confirm-user-approved-cap-change requires an explicit candidate-cap increase or finite-to-uncapped "
+            "change"
+        )
     if changed:
         metadata["updated_at"] = utc_now()
         workspace_value = metadata.get("workspace_root")
@@ -3035,6 +3232,9 @@ def initialize_campaign(args: argparse.Namespace, job: Path) -> int:
             return 0 if baseline.score is not None else 1
         print_campaign_result(paths, records, read_json(paths["state"]), initialized=False)
         return 0
+
+    if args.confirm_user_approved_cap_change:
+        raise ValueError("--confirm-user-approved-cap-change is not valid for an initial campaign cap")
 
     paths = campaign_paths(args, job)
     paths["output_root"].mkdir(parents=True, exist_ok=True)
@@ -3284,6 +3484,55 @@ def validate_candidate_for_evaluation(
     return manifest, config, best_source, best_files, changed, created, patch
 
 
+def candidate_execution_fingerprint(manifest: Dict[str, Any], patch_sha256: str) -> str:
+    run_args = manifest.get("run_args")
+    if not isinstance(run_args, list) or not all(isinstance(item, str) for item in run_args):
+        raise ValueError("candidate manifest run_args must be a list of strings")
+    fields = {
+        "base_source_sha256": str(manifest.get("base_source_sha256") or ""),
+        "fixed_budget_sha256": str(manifest.get("fixed_budget_sha256") or ""),
+        "patch_sha256": patch_sha256,
+        "run_args": run_args,
+    }
+    if not all(fields[name] for name in ("base_source_sha256", "fixed_budget_sha256", "patch_sha256")):
+        raise ValueError("candidate manifest is missing execution fingerprint provenance")
+    return sha256_json(fields)
+
+
+def matching_crashed_candidate(
+    workspace: Path, fingerprint: str, current_manifest_path: Path
+) -> Optional[Tuple[Path, Dict[str, Any]]]:
+    root = workspace / CANDIDATE_ROOT
+    if not root.exists():
+        return None
+    for path in sorted(root.glob("*/candidate_manifest.json")):
+        if path.resolve() == current_manifest_path.resolve():
+            continue
+        try:
+            manifest = read_json(path)
+            validate_candidate_manifest_identity(path, manifest)
+            if manifest.get("status") != "crash":
+                continue
+            patch_sha256 = str(manifest.get("patch_sha256") or "")
+            if patch_sha256 and candidate_execution_fingerprint(manifest, patch_sha256) == fingerprint:
+                return path, manifest
+        except (OSError, ValueError) as error:
+            print(f"Warning: ignoring invalid sibling candidate manifest {path}: {error}", file=sys.stderr)
+    return None
+
+
+def crash_replay_provenance(workspace: Path, fingerprint: str, current_manifest_path: Path) -> Optional[Dict[str, Any]]:
+    prior_crash = matching_crashed_candidate(workspace, fingerprint, current_manifest_path)
+    if prior_crash is None:
+        return None
+    prior_path, prior_manifest = prior_crash
+    return {
+        "execution_fingerprint": fingerprint,
+        "prior_candidate": prior_manifest.get("candidate_id"),
+        "prior_manifest": str(prior_path.resolve()),
+    }
+
+
 def update_config_for_kept_sources(config: Dict[str, Any], created: Sequence[str]) -> None:
     if not created:
         return
@@ -3321,6 +3570,7 @@ def finalize_candidate_result(
     created: List[str],
     patch: str,
     record: RunRecord,
+    crash_replay: Optional[Dict[str, Any]],
 ) -> Tuple[List[RunRecord], Dict[str, Any]]:
     rollback_files: Dict[Path, Optional[bytes]] = {}
     staged_snapshot = None
@@ -3393,6 +3643,13 @@ def finalize_candidate_result(
                 },
             }
         )
+        manifest.pop("crash_replay", None)
+        if crash_replay:
+            manifest["crash_replay"] = {
+                **crash_replay,
+                "recorded_at": utc_now(),
+                "outcome_status": record.status,
+            }
         write_json(manifest_path, manifest)
         write_json(campaign_metadata_path(job.parent), metadata)
         records.append(record)
@@ -3440,13 +3697,18 @@ def evaluate_candidate(args: argparse.Namespace, job: Path) -> int:
     managed_paths = [path.relative_to(workspace).as_posix() for path in managed_versions]
     patch_path = manifest_path.parent / "candidate.patch"
     atomic_write_text(patch_path, patch)
+    patch_sha256 = sha256_bytes(patch.encode("utf-8"))
+    execution_fingerprint = candidate_execution_fingerprint(manifest, patch_sha256)
+    crash_replay = crash_replay_provenance(workspace, execution_fingerprint, manifest_path)
+    manifest.pop("crash_replay", None)
     manifest.update(
         {
             "updated_at": utc_now(),
             "changed_files": changed,
             "created_files": created,
-            "patch_sha256": sha256_bytes(patch.encode("utf-8")),
+            "patch_sha256": patch_sha256,
             "candidate_source_sha256": source_hash(file_map(manifest_path.parent / "source")),
+            "execution_fingerprint": execution_fingerprint,
         }
     )
     write_json(manifest_path, manifest)
@@ -3582,6 +3844,7 @@ def evaluate_candidate(args: argparse.Namespace, job: Path) -> int:
         created,
         patch,
         run_record,
+        crash_replay,
     )
     print_campaign_result(paths, records, state, candidate_manifest=str(manifest_path.resolve()))
     return 0
@@ -3798,6 +4061,10 @@ def record_external_result(args: argparse.Namespace, job: Path) -> int:
         metric_source=evidence.source if evidence else "",
         metric_artifact=evidence.artifact if evidence else "",
     )
+    execution_fingerprint = str(manifest.get("execution_fingerprint") or "")
+    crash_replay = (
+        crash_replay_provenance(workspace, execution_fingerprint, manifest_path) if execution_fingerprint else None
+    )
     records, state = finalize_candidate_result(
         args,
         job,
@@ -3812,6 +4079,7 @@ def record_external_result(args: argparse.Namespace, job: Path) -> int:
         created,
         patch,
         record,
+        crash_replay,
     )
     updated_manifest = read_json(manifest_path)
     updated_manifest.setdefault("artifacts", {})["job_id"] = args.job_id

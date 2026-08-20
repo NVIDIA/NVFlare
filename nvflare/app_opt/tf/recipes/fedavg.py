@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional, Union
+from typing import Any, Literal, Optional, Union
 
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.abstract.aggregator import Aggregator
@@ -69,17 +69,20 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             ``set_per_site_config(recipe, config)`` immediately after construction. Each config dict can
             contain optional overrides:
             train_script, train_args, launch_external_process, command, framework,
-            server_expected_format, params_transfer_type, launch_once, shutdown_timeout.
+            server_expected_format, params_transfer_type, launch_once, launch_timeout, shutdown_timeout.
             Nested values become part of the generated job definition and must not contain secrets.
             If not provided, the same configuration will be used for all clients.
         launch_once: Whether the external process will be launched only once at the beginning
             or on each task. Only used if `launch_external_process` is True. Defaults to True.
+        launch_timeout: Seconds to wait for an external process to launch and establish its
+            Client API session. ``None`` disables this timeout. Defaults to 300.0.
         shutdown_timeout: If provided, will wait for this number of seconds before shutdown.
             Only used if `launch_external_process` is True. Defaults to 0.0.
         key_metric: Metric used to determine if the model is globally best. If validation metrics are a dict,
             key_metric selects the metric used for global model selection by the IntimeModelSelector.
-            Higher values must indicate a better model; for lower-is-better metrics such as a loss,
-            report a negated value from the client (e.g., "neg_loss"). Defaults to "accuracy".
+            Defaults to "accuracy".
+        key_metric_mode: One of "min" or "max". Use "min" when lower key_metric values are better,
+            such as for loss, and "max" when higher values are better. Defaults to "max".
         best_model_filename: Filename for saving the best model. Accepted for API compatibility.
             The default TensorFlow persistor does not currently create a separate best-model artifact.
         save_filename: Deprecated alias for best_model_filename. If both are specified, they must match.
@@ -127,8 +130,10 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         model_persistor: Optional[ModelPersistor] = None,
         per_site_config: Optional[dict[str, dict]] = None,
         launch_once: bool = True,
+        launch_timeout: Optional[float] = 300.0,
         shutdown_timeout: float = 0.0,
         key_metric: str = "accuracy",
+        key_metric_mode: Literal["min", "max"] = "max",
         best_model_filename: Optional[str] = None,
         save_filename: Optional[str] = None,
         server_memory_gc_rounds: int = 0,
@@ -153,8 +158,10 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             model_persistor=model_persistor,
             per_site_config=per_site_config,
             launch_once=launch_once,
+            launch_timeout=launch_timeout,
             shutdown_timeout=shutdown_timeout,
             key_metric=key_metric,
+            key_metric_mode=key_metric_mode,
             best_model_filename=best_model_filename,
             save_filename=save_filename,
             server_memory_gc_rounds=server_memory_gc_rounds,

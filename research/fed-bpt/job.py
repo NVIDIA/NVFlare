@@ -14,36 +14,16 @@
 
 import argparse
 import os
-import shlex
 import sys
-from contextlib import contextmanager
-from typing import Iterable
 
 FEDBPT_DIR = os.path.abspath(os.path.dirname(__file__))
 REPO_ROOT = os.path.abspath(os.path.join(FEDBPT_DIR, os.pardir, os.pardir))
-SRC_DIR = os.path.join(FEDBPT_DIR, "src")
-TRAIN_SCRIPT = os.path.join(SRC_DIR, "fedbpt_train.py")
 DEFAULT_WORKSPACE = "/tmp/nvflare/fedbpt"
 
+if FEDBPT_DIR not in sys.path:
+    sys.path.insert(0, FEDBPT_DIR)
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
-
-from nvflare.client.config import ExchangeFormat, TransferType  # noqa: E402
-from nvflare.fuel.utils.constants import FrameworkType  # noqa: E402
-from nvflare.job_config.api import FedJob  # noqa: E402
-from nvflare.job_config.script_runner import BaseScriptRunner  # noqa: E402
-
-
-@contextmanager
-def _temporary_sys_path(path: str):
-    added_path = path not in sys.path
-    if added_path:
-        sys.path.insert(0, path)
-    try:
-        yield
-    finally:
-        if added_path:
-            sys.path.remove(path)
 
 
 def define_parser():
@@ -89,122 +69,39 @@ def define_parser():
     return parser
 
 
-def _quote_args(args: Iterable[object]) -> str:
-    args = list(args)
-    if any(arg is None for arg in args):
-        raise ValueError(f"None value encountered in train args list: {args}")
-    return " ".join(shlex.quote(str(arg)) for arg in args)
+def create_recipe(args, extra_train_args=None):
+    # Import only after the entrypoint has parsed its own export flags. Recipe's
+    # module initialization consumes those flags from sys.argv for execute().
+    from fedbpt_recipe import FedBPTRecipe
 
-
-def _make_train_args(args, extra_train_args: list[str]) -> str:
-    num_users = args.num_users if args.num_users is not None else args.num_clients
-    train_args = [
-        "--task_name",
-        args.task_name,
-        "--n_prompt_tokens",
-        args.n_prompt_tokens,
-        "--intrinsic_dim",
-        args.intrinsic_dim,
-        "--k_shot",
-        args.k_shot,
-        "--device",
-        args.device,
-        "--seed",
-        args.seed,
-        "--loss_type",
-        args.loss_type,
-        "--cat_or_add",
-        args.cat_or_add,
-        "--local_iter",
-        args.local_iter,
-        "--num_users",
-        num_users,
-        "--iid",
-        args.iid,
-        "--local_popsize",
-        args.local_popsize,
-        "--perturb",
-        args.perturb,
-        "--model_name",
-        args.model_name,
-        "--eval_clients",
-        args.eval_clients,
-        "--llama_causal",
-        args.llama_causal,
-    ]
-    if args.batch_size is not None:
-        train_args.extend(["--batch_size", args.batch_size])
-    if args.train_args:
-        train_args.extend(shlex.split(args.train_args))
-    train_args.extend(extra_train_args)
-    return _quote_args(train_args)
-
-
-def _load_fedbpt_components():
-    with _temporary_sys_path(SRC_DIR):
-        from decomposer_widget import RegisterDecomposer
-        from global_es import GlobalES
-
-    return GlobalES, RegisterDecomposer
-
-
-def _create_fedbpt_recipe(job):
-    from nvflare.recipe.spec import Recipe
-
-    class FedBPTRecipe(Recipe):
-        def export(self, *args, **kwargs):
-            with _temporary_sys_path(SRC_DIR):
-                return super().export(*args, **kwargs)
-
-        def run(self, *args, **kwargs):
-            with _temporary_sys_path(SRC_DIR):
-                return super().run(*args, **kwargs)
-
-    return FedBPTRecipe(job)
-
-
-def create_recipe(args, extra_train_args: list[str] | None = None):
-    from nvflare.app_common.launchers.subprocess_launcher import SubprocessLauncher
-    from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
-
-    GlobalES, RegisterDecomposer = _load_fedbpt_components()
-
-    extra_train_args = extra_train_args or []
-    min_clients = args.min_clients if args.min_clients is not None else args.num_clients
-    train_args = _make_train_args(args, extra_train_args)
-
-    job = FedJob(name=args.job_name, min_clients=min_clients)
-    job.to_server(
-        GlobalES(
-            num_clients=args.num_clients,
-            num_rounds=args.num_rounds,
-            frac=args.frac,
-            sigma=args.sigma,
-            intrinsic_dim=args.intrinsic_dim,
-            seed=args.seed,
-            bound=args.bound,
-        ),
-        id="global_es",
+    return FedBPTRecipe(
+        name=args.job_name,
+        num_clients=args.num_clients,
+        min_clients=args.min_clients,
+        num_rounds=args.num_rounds,
+        seed=args.seed,
+        frac=args.frac,
+        sigma=args.sigma,
+        intrinsic_dim=args.intrinsic_dim,
+        bound=args.bound,
+        task_name=args.task_name,
+        n_prompt_tokens=args.n_prompt_tokens,
+        k_shot=args.k_shot,
+        batch_size=args.batch_size,
+        device=args.device,
+        loss_type=args.loss_type,
+        cat_or_add=args.cat_or_add,
+        local_iter=args.local_iter,
+        num_users=args.num_users,
+        iid=args.iid,
+        local_popsize=args.local_popsize,
+        perturb=args.perturb,
+        model_name=args.model_name,
+        eval_clients=args.eval_clients,
+        llama_causal=args.llama_causal,
+        train_args=args.train_args,
+        extra_train_args=extra_train_args,
     )
-    job.to_server(TBAnalyticsReceiver(events=["fed.analytix_log_stats"]), id="receiver")
-    job.to_server(RegisterDecomposer(), id="register_decomposer")
-
-    launcher = SubprocessLauncher(
-        script=f"python3 -u custom/fedbpt_train.py {train_args}",
-        launch_once=True,
-        shutdown_timeout=10.0,
-    )
-    runner = BaseScriptRunner(
-        script=TRAIN_SCRIPT,
-        launch_external_process=True,
-        framework=FrameworkType.NUMPY,
-        server_expected_format=ExchangeFormat.NUMPY,
-        params_transfer_type=TransferType.FULL,
-        launcher=launcher,
-    )
-    job.to_clients(runner, tasks=["train"])
-    job.to_clients(RegisterDecomposer(), id="register_decomposer")
-    return _create_fedbpt_recipe(job)
 
 
 def main():

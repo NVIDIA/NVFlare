@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from typing import Optional
-from unittest.mock import Mock
+from unittest.mock import ANY, Mock
 
 import pytest
 
@@ -26,6 +26,7 @@ from nvflare.apis.job_scheduler_spec import DispatchInfo
 from nvflare.apis.resource_manager_spec import ResourceManagerSpec
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.app_common.job_schedulers.job_scheduler import DefaultJobScheduler
+from nvflare.app_common.resource_managers.gpu_resource_manager import GPUResourceManager
 from nvflare.app_common.resource_managers.list_resource_manager import ListResourceManager
 
 
@@ -398,6 +399,67 @@ class TestDefaultJobScheduler:
             )
         assert job is None
 
+    def test_require_sites_duplicate_entries_are_treated_as_one(self, setup_and_teardown):
+        servers, scheduler, num_sites, job_manager = setup_and_teardown
+        candidate = create_job(
+            job_id="job",
+            resource_spec={},
+            deploy_map={"app5": ["server", "site0"]},
+            min_sites=1,
+            required_sites=["site0", "site0"],
+        )
+        with servers[0].new_context() as fl_ctx:
+            job, dispatch_info = scheduler.schedule_job(
+                job_manager=job_manager, job_candidates=[candidate], fl_ctx=fl_ctx
+            )
+        assert job is candidate
+        assert set(dispatch_info) == {"server", "site0"}
+
+    @pytest.mark.parametrize(
+        "required_sites",
+        [
+            pytest.param(1, id="invalid-container"),
+            pytest.param([["site0"]], id="invalid-entry"),
+        ],
+    )
+    def test_require_sites_invalid_metadata_does_not_interrupt_scheduling(
+        self, monkeypatch, setup_and_teardown, required_sites
+    ):
+        servers, scheduler, num_sites, job_manager = setup_and_teardown
+        monkeypatch.setattr(job_scheduler_module, "StudyRegistryService", _FakeStudyRegistryService, raising=False)
+        monkeypatch.setattr(
+            _FakeStudyRegistryService,
+            "registry",
+            _FakeStudyRegistry(sites={"cancer-research": {"site0"}}),
+            raising=False,
+        )
+        malformed_candidate = create_job(
+            job_id="malformed_job",
+            resource_spec={},
+            deploy_map={"app5": [ALL_SITES]},
+            min_sites=1,
+            required_sites=required_sites,
+        )
+        valid_candidate = create_job(
+            job_id="valid_job",
+            resource_spec={},
+            deploy_map={"app5": ["server", "site0"]},
+            min_sites=1,
+        )
+        malformed_candidate.meta[JobMetaKey.STUDY.value] = "cancer-research"
+        valid_candidate.meta[JobMetaKey.STUDY.value] = "cancer-research"
+        with servers[0].new_context() as fl_ctx:
+            job, dispatch_info = scheduler.schedule_job(
+                job_manager=job_manager,
+                job_candidates=[malformed_candidate, valid_candidate],
+                fl_ctx=fl_ctx,
+            )
+        assert job is valid_candidate
+        assert set(dispatch_info) == {"server", "site0"}
+        job_manager.set_status.assert_called_once_with(
+            malformed_candidate.job_id, RunStatus.FINISHED_CANT_SCHEDULE, ANY
+        )
+
     def test_require_sites_not_enough_resource(self, setup_and_teardown):
         servers, scheduler, num_sites, job_manager = setup_and_teardown
         candidate = create_job(
@@ -412,6 +474,11 @@ class TestDefaultJobScheduler:
                 job_manager=job_manager, job_candidates=[candidate], fl_ctx=fl_ctx
             )
         assert job is None
+        assert candidate.meta[JobMetaKey.SCHEDULE_COUNT.value] == 1
+        assert (
+            "required sites: ['site2'] don't have enough resources"
+            in candidate.meta[JobMetaKey.SCHEDULE_HISTORY.value][0]
+        )
 
     def test_not_enough_sites_has_enough_resource(self, setup_and_teardown):
         servers, scheduler, num_sites, job_manager = setup_and_teardown
@@ -428,6 +495,25 @@ class TestDefaultJobScheduler:
             )
         assert job is None
 
+    def test_resource_manager_error_is_recorded_in_schedule_history(self):
+        resource_manager = Mock(spec=ResourceManagerSpec)
+        resource_manager.check_resources.return_value = (False, "resource check failed: unsupported license")
+        candidate = create_job(
+            job_id="job",
+            resource_spec={"site1": {"license": 2}},
+            deploy_map={"app": [ALL_SITES]},
+            min_sites=1,
+        )
+        scheduler = DefaultJobScheduler(max_jobs=1, min_schedule_interval=0)
+
+        with create_servers(1, [Site("site1", {}, resource_manager)])[0].new_context() as fl_ctx:
+            job, _ = scheduler.schedule_job(Mock(spec=JobDefManagerSpec), [candidate], fl_ctx)
+
+        assert job is None
+        assert (
+            "site1: resource check failed: unsupported license" in candidate.meta[JobMetaKey.SCHEDULE_HISTORY.value][0]
+        )
+
     @pytest.mark.parametrize("job_candidates,sites,expected_job,expected_dispatch_info", TEST_CASES)
     def test_normal_case(self, job_candidates, sites, expected_job, expected_dispatch_info):
         servers = create_servers(server_num=1, sites=sites)
@@ -439,6 +525,87 @@ class TestDefaultJobScheduler:
             )
         assert job == expected_job
         assert dispatch_info == expected_dispatch_info
+
+    def test_portable_cpu_and_memory_bypass_gpu_resource_manager(self):
+        sites = [
+            Site(
+                name="site1",
+                resources={},
+                resource_manager=GPUResourceManager(num_of_gpus=0, mem_per_gpu_in_GiB=0, ignore_host=True),
+            ),
+            Site(
+                name="site2",
+                resources={},
+                resource_manager=GPUResourceManager(num_of_gpus=0, mem_per_gpu_in_GiB=0, ignore_host=True),
+            ),
+        ]
+        candidate = create_job(
+            job_id="portable",
+            resource_spec={
+                "@default": {"num_of_cpus": 2, "memory": "4Gi"},
+                "site1": {"num_of_cpus": 4},
+            },
+            deploy_map={"app": [ALL_SITES]},
+            min_sites=2,
+        )
+        scheduler = DefaultJobScheduler(max_jobs=1, min_schedule_interval=0)
+        job_manager = Mock(spec=JobDefManagerSpec)
+
+        with create_servers(1, sites)[0].new_context() as fl_ctx:
+            job, dispatch_info = scheduler.schedule_job(job_manager, [candidate], fl_ctx)
+
+        assert job == candidate
+        assert dispatch_info["site1"].resource_requirements == {}
+        assert dispatch_info["site2"].resource_requirements == {}
+
+    def test_zero_gpu_with_gpu_memory_bypasses_gpu_resource_manager(self):
+        sites = [
+            Site(
+                name="site1",
+                resources={},
+                resource_manager=GPUResourceManager(num_of_gpus=0, mem_per_gpu_in_GiB=0, ignore_host=True),
+            )
+        ]
+        candidate = create_job(
+            job_id="cpu-only",
+            resource_spec={"site1": {"num_of_gpus": 0, "mem_per_gpu_in_GiB": 8}},
+            deploy_map={"app": [ALL_SITES]},
+            min_sites=1,
+        )
+        scheduler = DefaultJobScheduler(max_jobs=1, min_schedule_interval=0)
+
+        with create_servers(1, sites)[0].new_context() as fl_ctx:
+            job, dispatch_info = scheduler.schedule_job(Mock(spec=JobDefManagerSpec), [candidate], fl_ctx)
+
+        assert job == candidate
+        assert dispatch_info["site1"].resource_requirements == {}
+
+    def test_cancellation_uses_resource_manager_requirements(self):
+        sites = [
+            Site(name="site1", resources={"license": 8}),
+            Site(name="site2", resources={"license": 1}),
+        ]
+        candidate = create_job(
+            job_id="portable-cancel",
+            resource_spec={
+                "@default": {"num_of_cpus": 2},
+                "site1": {"license": 4},
+                "site2": {"license": 2},
+            },
+            deploy_map={"app": [ALL_SITES]},
+            min_sites=2,
+        )
+        scheduler = DefaultJobScheduler(max_jobs=1, min_schedule_interval=0)
+        scheduler._cancel_resources = Mock()
+
+        with create_servers(1, sites)[0].new_context() as fl_ctx:
+            job, _ = scheduler.schedule_job(Mock(spec=JobDefManagerSpec), [candidate], fl_ctx)
+
+        assert job is None
+        assert scheduler._cancel_resources.call_args.kwargs["resource_reqs"] == {
+            "site1": {"license": 4},
+            "site2": {"license": 2},
+        }
 
     @pytest.mark.parametrize("add_first_job", [True, False])
     def test_a_list_of_jobs(self, add_first_job):
@@ -534,7 +701,7 @@ class TestDefaultJobScheduler:
 
         candidate = create_job(
             job_id="study_job",
-            resource_spec={},
+            resource_spec={"@default": {"num_of_cpus": 2}},
             deploy_map={"app5": [ALL_SITES]},
             min_sites=2,
         )
@@ -547,6 +714,8 @@ class TestDefaultJobScheduler:
 
         assert job == candidate
         assert set(dispatch_info) == {"server", "site0", "site2"}
+        assert dispatch_info["site0"].resource_requirements == {}
+        assert dispatch_info["site2"].resource_requirements == {}
 
     def test_required_out_of_study_site_blocks_job(self, monkeypatch, setup_and_teardown):
         servers, scheduler, num_sites, job_manager = setup_and_teardown

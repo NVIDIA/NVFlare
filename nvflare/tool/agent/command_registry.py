@@ -27,8 +27,15 @@ AGENT_COMMANDS = (
         "streaming": False,
     },
     {
-        "name": "inspect",
-        "command": "nvflare agent inspect",
+        "name": "inspect source",
+        "command": "nvflare agent inspect source",
+        "status": "available",
+        "mutating": False,
+        "streaming": False,
+    },
+    {
+        "name": "inspect data",
+        "command": "nvflare agent inspect data",
         "status": "available",
         "mutating": False,
         "streaming": False,

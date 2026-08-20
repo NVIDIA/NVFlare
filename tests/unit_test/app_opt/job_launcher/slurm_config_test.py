@@ -19,8 +19,10 @@ from nvflare.app_opt.job_launcher.slurm.config import (
     _require_int,
     _require_positive_number,
     _validate_mount_source,
+    normalize_multi_node_port_range,
     normalize_slurm_executables,
     normalize_slurm_image,
+    normalize_slurm_launcher_settings,
 )
 
 
@@ -53,3 +55,40 @@ def test_positive_number_rejects_non_finite_values_and_boolean(value):
 def test_image_requires_existing_file_when_requested(tmp_path):
     with pytest.raises(SlurmLauncherError, match="not an existing regular file"):
         normalize_slurm_image(str(tmp_path / "missing.sif"), "apptainer", require_file=True)
+
+
+def test_multi_node_port_range_is_normalized():
+    assert normalize_multi_node_port_range("29400-29499", internal_port=8102) == (29400, 29499)
+    assert normalize_multi_node_port_range((29400, 29499), internal_port=8102) == (29400, 29499)
+
+
+@pytest.mark.parametrize("value", ["invalid", "900-1000", "30000-29999", "29400-70000"])
+def test_multi_node_port_range_rejects_invalid_values(value):
+    with pytest.raises(SlurmLauncherError, match="multi_node_port_range"):
+        normalize_multi_node_port_range(value, internal_port=8102)
+
+
+def test_multi_node_port_range_must_not_overlap_internal_port():
+    with pytest.raises(SlurmLauncherError, match="internal_port"):
+        normalize_multi_node_port_range("8000-8200", internal_port=8102)
+
+
+def test_implicit_multi_node_port_range_moves_around_existing_internal_port():
+    settings = normalize_slurm_launcher_settings(
+        sandbox="none",
+        python_path="/usr/bin/python3",
+        executables={},
+        image=None,
+        internal_port=29400,
+        sbatch_directives=None,
+        setup="",
+        forward_env=None,
+        parent_host="parent",
+        submit_timeout=10,
+        query_timeout=10,
+        cancel_timeout=10,
+        poll_interval=10,
+        pending_timeout=600,
+    )
+
+    assert settings["multi_node_port_range"] == (30400, 31399)

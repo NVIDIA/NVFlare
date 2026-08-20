@@ -64,6 +64,7 @@ class _FakeDecomposer(ViaDownloaderDecomposer):
         optional=False,
         abort_signal=None,
         progress_cb=None,
+        fobs_ctx=None,
     ):
         return None, {}
 

@@ -91,20 +91,22 @@ def test_group_send_completion_is_idempotent():
 def test_group_result_callback_has_isolated_kwargs_and_restores_thread_context():
     app = MagicMock()
     previous_ctx = Context(app=app, caller="previous", callee="previous", abort_signal=Signal())
-    call_ctx = Context(app=app, caller="server", callee="site-1", abort_signal=Signal())
+    call_ctx = Context(app=app, caller="server", callee="site-1.client", abort_signal=Signal())
     callback_contexts = []
     shared_kwargs = {"marker": "value"}
 
     def process_result(_gcc, result, marker, context=None):
         assert marker == "value"
         assert get_call_context() is context
+        assert context.caller == "site-1"
+        assert context.callee == "server"
         callback_contexts.append(context)
         return f"processed {result}"
 
     waiter = ResultWaiter(["site-1"])
     gcc = GroupCallContext(
         app=app,
-        target_name="site-1",
+        target_name="site-1.client",
         call_opt=CallOption(),
         func_name="train",
         process_cb=process_result,
@@ -123,6 +125,7 @@ def test_group_result_callback_has_isolated_kwargs_and_restores_thread_context()
     assert gcc.cb_kwargs is not shared_kwargs
     assert CollabMethodArgName.CONTEXT not in shared_kwargs
     assert len(callback_contexts) == 1
+    assert gcc.target_name == "site-1.client"
     assert next(iter(waiter.results)) == ("site-1", "processed raw")
 
 

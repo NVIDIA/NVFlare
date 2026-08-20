@@ -7,26 +7,26 @@ the tabular template.
 
 ## Detection
 
-`nvflare agent inspect <path> --format json` classifies image data:
-`target_type: image_dataset` with a `dataset` block carrying the extension
+`nvflare agent inspect data <path> --format json` classifies image data:
+`dataset.modality: image` with a `dataset` block carrying the extension
 census, per-site file counts, per-site `image_formats` (pick the loader
 from these), and a sampled `pixel_depth` (e.g. `uint8`; stays null for
 DICOM/NIfTI, where depth must come from the format-specific loader). For
 `.dcm`/`.nii` sites the generated client must extend the template's
 discovery extensions and swap `_load_image` for the preflighted loader.
-Route on that output rather than re-deriving it; `counts_approximate:
+Select the image/tabular path from `dataset.modality` rather than re-deriving
+it; `counts_approximate:
 true` means the walk hit its file limit — verify site counts directly
-before bin-cap decisions. Datalist-JSON layouts may classify as
-`unknown_target`; read the datalist as declared layout evidence in that
-case. Companion tabular metadata (a `labels.csv` beside the scans) keeps
+before bin-cap decisions. Datalist-JSON layouts may return `dataset: null`;
+read the datalist as declared layout evidence in that case. Companion tabular
+metadata (a `labels.csv` beside the scans) keeps
 the dataset `image` and appears per site as `tabular_companions`: mention
 it in the report, never treat it as a statistics target — but offer a
 follow-up tabular statistics run over the labels (label shift across
 sites is a classic QA question). Genuinely mixed
 data — an image-only site among tabular sites, or materially both
-modalities — reports `modality: mixed` without routing (`target_type`
-stays `unknown_target`): read the dataset block, report the split, and
-run the two modalities as two separate jobs.
+modalities — reports `modality: mixed`: read the dataset block, report the
+split, and run the two modalities as two separate jobs.
 
 ## Supported Statistics (Image)
 
