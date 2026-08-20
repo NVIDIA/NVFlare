@@ -15,7 +15,10 @@ Use this path for plain PyTorch conversion:
    `FLModel(params=...)` as the model exchange path.
 4. Generate `job.py` that builds the selected recipe and calls
    `recipe.execute(SimEnv(...))`.
-5. Validate with `python job.py`, inspect terminal evidence, then export.
+5. Select exactly one final target: run `python job.py` and inspect its
+   materialized simulation workspace for local validation, or, only when the
+   user requests an exported/deployable artifact, export and run that folder
+   with the simulator CLI. Do not run both targets after one succeeds.
 
 HE is not supported at steps 4–5: follow the HE-not-supported rule in
 `../../nvflare-shared/references/pytorch-family-recipe-selection.md`.
@@ -81,15 +84,15 @@ let every simulated site train on the full source training set unless the user
 explicitly asks for shared training data or the source already provides
 site-specific data that resolves to that behavior. Validation/test loaders may
 remain shared only when that matches the source's validation/test semantics.
-For generated Pandas partition code, follow "Site Data Partitioning" in
-`../../nvflare-shared/references/conversion-workflow.md`.
+For generated Pandas partition code, follow
+`../../nvflare-shared/references/site-data-and-paths.md`.
 
 ## Model Construction Consistency
 
 Follow the shared model-config and construction-consistency rule in
 `../../nvflare-shared/references/conversion-workflow.md` ("Recipe Model Config"):
-same class and constructor args on server and client, an allowed recipe model
-form, and derive-or-ask/fail-closed for required values.
+same class and constructor args on server and client, explicit config whenever
+reconstruction needs a constructor value, and derive-or-ask/fail-closed for it.
 
 PyTorch-specific delta: the client loads `input_model.params` into the model
 with `load_state_dict`, so the server-initial model and the client model must

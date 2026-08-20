@@ -30,8 +30,11 @@ module/class attribute checks for capability discovery.
 `recipe show` validates only the selected recipe's module, class, and listed
 constructor parameters. It does not advertise other symbols from
 `nvflare.recipe` or define a separate export environment. For supported local
-conversion validation, use `SimEnv` with `recipe.execute(...)`; export through
-`python job.py --export --export-dir <dir>`.
+conversion validation, use `SimEnv` with `recipe.execute(...)`; it materializes
+the simulator job configuration without a separate export step. Export through
+`python job.py --export --export-dir <dir>` only when the user requests an
+exported/deployable job folder. System-argument ownership and parser rules are
+defined in `conversion-common.md`.
 
 Do not guess or directly import additional recipe-adjacent symbols. When the
 selected public workflow genuinely requires another symbol, first use a
@@ -39,10 +42,17 @@ non-failing module attribute check such as `hasattr`; if it is absent, report a
 version or skill-contract gap. Do not replace a failed local public check with
 web search or SDK-source discovery.
 
-Validate a recipe model's `class_path` through the public recipe construction,
-export inspection, and bounded execution path. Do not import internal class
-loader helpers, guess helper names, or inspect implementation source to build a
-parallel validation path.
+For ordinary PyTorch-family `SimEnv` execution, do not import or introspect a
+`Run` class, probe its module location, signature, or docstring, or add lifecycle
+calls by guess. `recipe.execute(env)` is sufficient unless a selected maintained
+asset or the public recipe documentation already defines use of its returned
+handle. In that case, preserve the known pattern instead of rediscovering it.
+
+Validate a recipe model's `class_path` through public recipe construction and
+the artifact produced by the selected bounded validation path: the exported
+configuration for an export target, or the materialized simulation
+configuration for a local target. Do not import internal class loader helpers,
+guess helper names, or inspect implementation source to build a parallel path.
 
 ## Client Argument Transport
 
@@ -61,6 +71,39 @@ surface:
 Do not import or call internal command-splitting helpers to predict argument
 delivery. Validate the exact generated `train_args` end to end through the
 selected recipe path and the generated client's actual parser.
+
+### Per-Site Argument Overrides
+
+Follow the single-topology-owner rule in `conversion-common.md`. For generated
+partitions, derive the site index from `flare.get_site_name()` after
+`flare.init()` rather than creating one recipe target per partition. Use
+`per_site_config` only for genuinely different site paths or arguments.
+
+Treat `per_site_config[site]["train_args"]` as the site's complete argument
+string. When present, it replaces the recipe-level `train_args`; the recipe does
+not merge shared arguments into the site override. Compose every site value from
+the shared and site-specific arguments before calling `set_per_site_config(...)`:
+
+```python
+shared_train_args = f"--epochs {epochs} --batch-size {batch_size}"
+per_site_config = {
+    site: {"train_args": f"{shared_train_args} --data-dir {data_dir}"}
+    for site, data_dir in site_data_dirs.items()
+}
+set_per_site_config(recipe, per_site_config)
+```
+
+Recipe-level `train_args` is only the fallback for a site without its own
+`train_args` entry. Use the same mapping for Recipe and `SimEnv` construction so
+both use the same target names. Before a full simulation, inspect each composed
+site value
+and verify that it contains the full expected argument set. For an exported-job
+validation target, also inspect each site's exported client configuration and
+verify that `task_script_args` contains the full expected argument set. For a
+local-only `python job.py` target, let that selected run validate argument
+delivery end to end; do not create an export only for this inspection. A partial
+site override is a construction failure; do not discover it through repeated
+full simulations.
 
 ## Tensor-Native Transport
 
@@ -169,20 +212,19 @@ delivery. If delivery is unavailable or unverified, do not pass a source-derived
 limitation instead. The Lightning conversion guidance documents the explicit
 training-result metric bridge and its DDP validation requirements.
 
-When both preconditions hold, select a source-backed metric whose larger value
-means a better model. Its name must exactly match one key delivered by the
-client in `FLModel.metrics` (or by the Lightning integration). For example, a
-delivered client metric named `f1` uses `key_metric="f1"`.
+When both preconditions hold, select a source-backed metric and its direction.
+Its name must exactly match one key delivered by the client in
+`FLModel.metrics` (or by the Lightning integration). For example, a delivered
+client metric named `f1` uses `key_metric="f1", key_metric_mode="max"` when the
+resolved recipe exposes the mode parameter.
 
-When best-model selection is requested for a lower-is-better source metric, send
-its negated value under a clear key and select that key. This applies to loss in
-every framework, whether the client computes it or the framework's own
-evaluation call emits it: send `metrics={"neg_loss": -loss}` and use
-`key_metric="neg_loss"`. When the loss is produced by a framework integration
-rather than user code, add the negated companion through that framework's
-documented metric hook before the value is delivered — the framework skill
-names the hook. Never select a raw loss key as though larger values were better,
-and do not fail closed merely because loss is the only available metric.
+When best-model selection is requested for a lower-is-better source metric and
+the recipe exposes `key_metric_mode`, preserve the source value and pass
+`key_metric_mode="min"`; for example, use `key_metric="val_loss"`. Only when a
+resolved recipe lacks a direction parameter, send a clearly named negated
+compatibility metric and select that key. Never select a raw loss key with max
+direction, and do not fail closed merely because loss is the only available
+metric.
 
 Do not rely on a recipe default when explicitly selecting a source metric unless
 the client emits that exact metric, and ask or fail closed when the metric
@@ -196,13 +238,15 @@ Resolve model selection to exactly one state before constructing the recipe:
   Omitting the argument is not disabling when the recipe has a non-empty
   default. If the selected recipe cannot disable selection, report the
   capability gap.
-- **Metric:** Best-model selection is requested and an exact higher-is-better
-  client metric is available. Pass that non-empty key.
+- **Metric:** Best-model selection is requested and an exact client metric with
+  known direction is available. Pass that non-empty key and the supported
+  direction parameter.
 - **Recipe default:** Accept the documented default only deliberately, when the
   client delivers that exact key. Omit `key_metric` and report the resolved
   default; never use this state as a fallback for an unavailable metric.
 
-After export, inspect the server configuration. The disabled state must contain
-no active model-selector component. The metric and recipe-default states must
-contain a selector with the resolved key. Treat a mismatch, or missing-metric
-warnings from a supposedly disabled job, as validation failure.
+Inspect the server configuration produced by the selected validation target.
+The disabled state must contain no active model-selector component. The metric
+and recipe-default states must contain a selector with the resolved key. Treat a
+mismatch, or missing-metric warnings from a supposedly disabled job, as
+validation failure.
