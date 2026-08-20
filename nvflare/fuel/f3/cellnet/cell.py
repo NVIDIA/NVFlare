@@ -16,7 +16,6 @@ import concurrent.futures
 import copy
 import os
 import threading
-import time
 import uuid
 from typing import Dict, List, Union
 
@@ -128,23 +127,15 @@ class Adapter:
 
         req_id = request.get_header(MessageHeaderKey.REQ_ID, "")
         secure = request.get_header(MessageHeaderKey.SECURE, False)
-        request_timeout = request.get_header(StreamHeaderKey.REQUEST_TIMEOUT)
-        response_deadline = (
-            time.monotonic() + request_timeout
-            if isinstance(request_timeout, (int, float)) and request_timeout > 0
-            else None
-        )
         self.logger.debug(f"{stream_req_id=}: on {channel=}, {topic=}")
         response = self.cb(request, *args, **kwargs)
         if isinstance(response, concurrent.futures.Future):
             response.add_done_callback(
-                lambda done: self._send_async_response(
-                    done, stream_req_id, req_id, channel, topic, origin, secure, response_deadline
-                )
+                lambda done: self._send_async_response(done, stream_req_id, req_id, channel, topic, origin, secure)
             )
             return
 
-        self._send_response(response, stream_req_id, req_id, channel, topic, origin, secure, response_deadline)
+        self._send_response(response, stream_req_id, req_id, channel, topic, origin, secure)
 
     def _send_async_response(self, response_future, *reply_args):
         try:
@@ -154,7 +145,7 @@ class Adapter:
             response = make_reply(ReturnCode.PROCESS_EXCEPTION)
         self._send_response(response, *reply_args)
 
-    def _handle_reply_stream_done(self, reply_future, response_was_late=False):
+    def _handle_reply_stream_done(self, reply_future, transport_optional=False):
         error = reply_future.exception()
         if not error:
             return
@@ -166,9 +157,10 @@ class Adapter:
             )
             os._exit(1)
 
-        if response_was_late and isinstance(error, StreamTargetUnreachable):
-            # A response produced after the request's wait budget can outlive its requester or job cell. The
-            # requester already owns the timeout outcome, so an unreachable late target is diagnostic only.
+        if transport_optional and isinstance(error, StreamTargetUnreachable):
+            # The response transport is optional because it can outlive its requester or job cell. This callback
+            # cannot determine remote waiter state; request-level failures surface at the requester through its
+            # correlated stream error or timeout, so an unreachable optional response is diagnostic only.
             self.logger.debug(
                 f"streamed response from {self.my_info.fqcn} was not delivered: {secure_format_exception(error)}"
             )
@@ -178,7 +170,7 @@ class Adapter:
             f"streamed response from {self.my_info.fqcn} failed asynchronously: {secure_format_exception(error)}"
         )
 
-    def _send_response(self, response, stream_req_id, req_id, channel, topic, origin, secure, response_deadline):
+    def _send_response(self, response, stream_req_id, req_id, channel, topic, origin, secure):
         self.logger.debug(f"response available: {stream_req_id=}: on {channel=}, {topic=}")
         if not stream_req_id:
             # no need to reply!
@@ -203,13 +195,14 @@ class Adapter:
             # Response production is asynchronous and can outlive the request timeout. Mark its transport frames
             # optional so a stale destination is dropped without ERROR-level routing noise. Reliable delivery and
             # receiver-side stream errors still settle reply_future and the original request waiter when present.
+            transport_optional = True
             reply_future = self.cell.send_blob(
                 CellChannel.RETURN_ONLY,
                 f"{channel}:{topic}",
                 origin,
                 response,
                 secure,
-                optional=True,
+                optional=transport_optional,
                 reliable=True,
             )
         except BlobSizeError as ex:
@@ -220,8 +213,7 @@ class Adapter:
                 )
                 os._exit(1)
             raise
-        response_was_late = response_deadline is not None and time.monotonic() >= response_deadline
-        reply_future.add_done_callback(self._handle_reply_stream_done, reply_future, response_was_late)
+        reply_future.add_done_callback(self._handle_reply_stream_done, reply_future, transport_optional)
         self.logger.debug(f"Done sending: {stream_req_id=}: {reply_future=}")
 
 
@@ -509,10 +501,7 @@ class Cell(StreamCell):
         progress_wait_cb=None,
     ):
         req_id = str(uuid.uuid4())
-        request_headers = {StreamHeaderKey.STREAM_REQ_ID: req_id}
-        if progress_wait_cb is None and isinstance(timeout, (int, float)) and timeout > 0:
-            request_headers[StreamHeaderKey.REQUEST_TIMEOUT] = timeout
-        request.add_headers(request_headers)
+        request.add_headers({StreamHeaderKey.STREAM_REQ_ID: req_id})
 
         # this future can be used to check sending progress, but not for checking return blob
         self.logger.debug(f"{req_id=}, {channel=}, {topic=}, {target=}, {timeout=}: send_request about to send_blob")

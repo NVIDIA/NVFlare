@@ -342,7 +342,7 @@ def test_stream_adapter_logs_undeliverable_late_response_at_debug():
     reply_future = Future()
     reply_future.set_exception(StreamTargetUnreachable("requester is gone"))
 
-    adapter._handle_reply_stream_done(reply_future, response_was_late=True)
+    adapter._handle_reply_stream_done(reply_future, transport_optional=True)
 
     adapter.logger.debug.assert_called_once()
     adapter.logger.error.assert_not_called()
@@ -354,7 +354,7 @@ def test_stream_adapter_logs_required_target_unreachable_at_error():
     reply_future = Future()
     reply_future.set_exception(StreamTargetUnreachable("requester route failed"))
 
-    adapter._handle_reply_stream_done(reply_future, response_was_late=False)
+    adapter._handle_reply_stream_done(reply_future, transport_optional=False)
 
     adapter.logger.error.assert_called_once()
     adapter.logger.debug.assert_not_called()
@@ -370,7 +370,6 @@ def test_stream_adapter_downgrades_late_default_request_failure():
     incoming = MagicMock()
     incoming.headers = {
         StreamHeaderKey.STREAM_REQ_ID: "stream-1",
-        StreamHeaderKey.REQUEST_TIMEOUT: 10.0,
         StreamHeaderKey.CHANNEL: "collab",
         StreamHeaderKey.TOPIC: "call",
         MessageHeaderKey.ORIGIN: "server",
@@ -382,7 +381,6 @@ def test_stream_adapter_downgrades_late_default_request_failure():
     with (
         patch("nvflare.fuel.f3.cellnet.cell.decode_payload"),
         patch("nvflare.fuel.f3.cellnet.cell.encode_payload"),
-        patch("nvflare.fuel.f3.cellnet.cell.time.monotonic", side_effect=[100.0, 111.0]),
     ):
         adapter.call(incoming)
 

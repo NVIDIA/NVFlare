@@ -47,7 +47,7 @@ def test_oversized_server_job_response_exits_job_process(monkeypatch):
 
     with pytest.raises(SystemExit) as exc_info:
         adapter._send_response(
-            Message(payload=b"payload"), "stream-id", "request-id", "channel", "topic", "client", False, False
+            Message(payload=b"payload"), "stream-id", "request-id", "channel", "topic", "client", False
         )
 
     assert exc_info.value.code == 1
@@ -59,7 +59,7 @@ def test_oversized_non_server_job_response_propagates_error(monkeypatch):
 
     with pytest.raises(BlobSizeError, match=r"limit 4 \(streaming_max_blob_size\)"):
         adapter._send_response(
-            Message(payload=b"payload"), "stream-id", "request-id", "channel", "topic", "peer", False, False
+            Message(payload=b"payload"), "stream-id", "request-id", "channel", "topic", "peer", False
         )
 
 
@@ -69,9 +69,7 @@ def test_asymmetric_receiver_limit_exits_server_job_after_async_rejection(monkey
     monkeypatch.setattr(cell_module, "encode_payload", lambda *args, **kwargs: None)
     monkeypatch.setattr(cell_module.os, "_exit", lambda code: (_ for _ in ()).throw(SystemExit(code)))
 
-    adapter._send_response(
-        Message(payload=b"payload"), "stream-id", "request-id", "channel", "topic", "client", False, False
-    )
+    adapter._send_response(Message(payload=b"payload"), "stream-id", "request-id", "channel", "topic", "client", False)
 
     with pytest.raises(SystemExit) as exc_info:
         reply_future.set_exception(BlobSizeError("receiver limit 4 is smaller than response size 5"))
@@ -86,9 +84,7 @@ def test_async_stream_error_does_not_exit_non_server_job(monkeypatch):
     exit_calls = []
     monkeypatch.setattr(cell_module.os, "_exit", exit_calls.append)
 
-    adapter._send_response(
-        Message(payload=b"payload"), "stream-id", "request-id", "channel", "topic", "peer", False, False
-    )
+    adapter._send_response(Message(payload=b"payload"), "stream-id", "request-id", "channel", "topic", "peer", False)
     reply_future.set_exception(StreamError("receiver stopped stream"))
 
     assert exit_calls == []
