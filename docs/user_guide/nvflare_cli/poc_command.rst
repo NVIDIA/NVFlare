@@ -261,11 +261,11 @@ Examples:
    nvflare poc stop -ex site-2
    nvflare poc stop --no-wait
 
-Stopping the server path uses coordinated system shutdown logic. Stopping a
-subset of services or excluding a server/client participant uses the local stop
-script flow. By default, the server path waits for shutdown completion before
-returning ``status: stopped``. With ``--no-wait``, it returns immediately with
-``status: shutdown_initiated``.
+A default stop or an explicit server-only selection uses coordinated system
+shutdown logic. Any other explicit participant selection or exclusion uses the
+local stop script flow. By default, coordinated shutdown waits for completion
+before returning ``status: stopped``. With ``--no-wait``, it returns immediately
+with ``status: shutdown_initiated``.
 
 ****************
 Clean Workspace

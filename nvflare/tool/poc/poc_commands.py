@@ -2004,6 +2004,10 @@ def _stop_poc(
     project_admin = service_config[SC.FLARE_PROJ_ADMIN]
     if project_admin not in excluded:
         excluded.append(project_admin)
+    other_admins = list(service_config.get(SC.FLARE_OTHER_ADMINS, []))
+    for admin in other_admins:
+        if admin not in services_list and admin not in excluded:
+            excluded.append(admin)
 
     validate_services(project_config, services_list, excluded)
 
@@ -2012,9 +2016,11 @@ def _stop_poc(
     project_name = project_config.get("name")
     prod_dir = get_prod_dir(poc_workspace, project_name)
 
-    admin_services = {project_admin, *service_config.get(SC.FLARE_OTHER_ADMINS, [])}
+    admin_services = {project_admin, *other_admins}
     has_service_exclusions = any(service not in admin_services for service in user_excluded)
-    if not has_service_exclusions and (not services_list or service_config[SC.FLARE_SERVER] in services_list):
+    server = service_config[SC.FLARE_SERVER]
+    server_only_selection = bool(services_list) and all(service == server for service in services_list)
+    if not has_service_exclusions and (not services_list or server_only_selection):
         from nvflare.tool.cli_output import print_human
 
         with _quiet_cli_streams(True):
@@ -2559,8 +2565,8 @@ def define_stop_parser(poc_parser):
         nargs="?",
         default=None,
         help=(
-            "participant to stop; repeat for multiple participants. Default stops the running POC system; project "
-            "admin console is not a default managed service"
+            "participant to stop; repeat for multiple participants. Default and server-only selections stop the "
+            "running POC system; project admin console is not a default managed service"
         ),
     )
     stop_parser.add_argument(

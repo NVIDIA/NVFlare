@@ -1314,10 +1314,10 @@ configured endpoint.
 | `-debug`, `--debug` | flag | No | — | Debug mode |
 | `--schema` | flag | No | — | Print command schema and exit |
 
-When stopping the server path, `poc stop` uses coordinated system shutdown logic. By
-default it waits until shutdown completes and returns `status: stopped`; with
-`--no-wait`, it returns after requesting shutdown with `status: shutdown_initiated`.
-Selecting a subset or excluding a server/client participant uses the local stop-script path.
+A default stop or an explicit server-only selection uses coordinated system shutdown logic.
+By default it waits until shutdown completes and returns `status: stopped`; with `--no-wait`,
+it returns after requesting shutdown with `status: shutdown_initiated`. Any other explicit
+participant selection or exclusion uses the local stop-script path.
 
 #### `nvflare poc clean`
 
