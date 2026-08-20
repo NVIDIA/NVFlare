@@ -34,8 +34,7 @@ class TestAuxCommunicateAuthCheck:
         mock_engine.server.server_state.aux_communicate.return_value = "state_ok"
         mock_engine.server.authentication_check.return_value = "auth_failed"
 
-        agent = ServerCommandAgent.__new__(ServerCommandAgent)
-        agent.engine = mock_engine
+        agent = ServerCommandAgent(engine=mock_engine, cell=MagicMock())
 
         request = CellMessage()
         request.payload = {"test": "data"}
@@ -45,3 +44,17 @@ class TestAuxCommunicateAuthCheck:
         assert not mock_engine.dispatch.called, "engine.dispatch should NOT be called when authentication fails"
         assert result is not None, "aux_communicate should return an error reply, not None"
         assert result.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.AUTHENTICATION_ERROR
+
+
+def test_stopped_server_command_agent_rejects_requests_without_engine_access():
+    engine = MagicMock()
+    agent = ServerCommandAgent(engine=engine, cell=MagicMock())
+    agent.shutdown()
+    request = CellMessage()
+
+    execute_reply = agent.execute_command(request)
+    aux_reply = agent.aux_communicate(request)
+
+    assert execute_reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.SERVICE_UNAVAILABLE
+    assert aux_reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.SERVICE_UNAVAILABLE
+    engine.new_context.assert_not_called()

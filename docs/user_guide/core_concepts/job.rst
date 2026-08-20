@@ -88,9 +88,9 @@ Additional optional configuration parameters:
 
     - stats_pool_config: configure statistics pool saving for post-job analysis
     - launcher_spec: launcher-specific job execution settings such as Docker
-      or Kubernetes job image, Python executable, and container options. Keep
-      resource requests such as ``num_of_gpus`` in ``resource_spec``. See
-      :ref:`launcher_spec`.
+      or Kubernetes container settings and Slurm topology, time, and pending
+      timeout. Keep portable GPU, CPU, and host-memory requests in
+      ``resource_spec``. See :ref:`launcher_spec`.
 
 The system also keeps additional information about the job such as:
 
@@ -102,17 +102,56 @@ The system also keeps additional information about the job such as:
 
 Resources
 =========
-For a job to be runnable, the system must have sufficient resources: all relevant sites of the job must be able to
-support the job's specified resource requirements. Since resource is a generic concept - anything could be regarded
-as a resource - NVIDIA FLARE 2.1.0 itself does not define any specific resources. Instead, NVIDIA FLARE provides a general
-framework for resource definition and interpretation.
+For a job to be runnable, all relevant sites must be able to support its resource requirements. NVIDIA FLARE centrally
+defines only three portable fields: ``num_of_gpus`` (integer >= 0), ``num_of_cpus`` (integer >= 1), and ``memory``
+(a positive integer followed by ``Mi``, ``Gi``, or ``Ti``). ``num_of_cpus`` means whole schedulable CPU units, not
+physical cores, and ``memory`` means host memory per job worker.
+
+These three names are reserved portable fields in flat site specifications and must use the documented types.
+CPU and memory are enforced by the selected job launcher rather than reserved by the site's NVIDIA FLARE resource
+manager. Positive GPU requests and additional site-specific fields continue through resource-manager admission.
+
+``resource_spec["@default"]`` applies to every targeted site, including the server. A named client or ``server`` block
+can override individual fields; fields it omits continue to inherit the default. For example:
+
+.. code-block:: json
+
+    {
+        "resource_spec": {
+            "@default": {
+                "num_of_gpus": 0,
+                "num_of_cpus": 4,
+                "memory": "8Gi"
+            },
+            "site-2": {
+                "num_of_gpus": 8,
+                "num_of_cpus": 16,
+                "mem_per_gpu_in_GiB": 16
+            },
+            "server": {
+                "num_of_cpus": 16,
+                "memory": "32Gi"
+            }
+        }
+    }
+
+Here, other clients use the default values, ``site-2`` inherits the default memory while overriding its GPU and CPU
+requirements, and the server inherits zero GPUs while overriding its CPU and memory requirements. An inherited field
+can be replaced but not removed by a site block.
+
+Docker enforces these as GPU device requests, CPU quota, and a memory limit. Kubernetes sets equal requests and limits
+for GPUs, CPU, and memory. Slurm maps them to ``--gres``, ``--cpus-per-task``, and ``--mem``. The portable ``memory``
+field is host memory. The existing ``mem_per_gpu_in_GiB`` field is a per-site GPU-memory requirement used only when that
+site configures ``GPUResourceManager``; it is not portable and is not allowed under ``@default``. MIG, device-plugin
+sharing, and typed GRES also remain site-specific. Site-specific resource managers may continue to use additional
+fields in per-site blocks, but ``@default`` accepts only the three portable fields.
 
 .. _launcher_spec:
 
 Launcher-Specific Execution Settings
 ====================================
 
-Docker and Kubernetes launchers read job runtime settings from
+Docker, Kubernetes, and Slurm launchers read job runtime settings from
 ``launcher_spec`` in ``meta.json``. Launcher selection is site policy, configured
 in the site's prepared startup kit. A job can carry settings for multiple
 launcher modes without choosing which mode a site uses.
@@ -126,9 +165,12 @@ launcher modes without choosing which mode a site uses.
                     "image": "registry.example.com/nvflare-job:2.8"
                 },
                 "k8s": {
-                    "image": "registry.example.com/nvflare-job:2.8",
-                    "cpu": "2",
-                    "memory": "8Gi"
+                    "image": "registry.example.com/nvflare-job:2.8"
+                },
+                "slurm": {
+                    "image": "/shared/images/nvflare-job.sif",
+                    "time": "02:00:00",
+                    "pending_timeout": 300
                 }
             },
             "site-1": {
@@ -137,21 +179,42 @@ launcher modes without choosing which mode a site uses.
                 },
                 "k8s": {
                     "ephemeral_storage": "8Gi"
+                },
+                "slurm": {
+                    "nodes": 2,
+                    "gpus_per_node": 4
                 }
             }
         },
         "resource_spec": {
+            "@default": {
+                "num_of_gpus": 1,
+                "num_of_cpus": 4,
+                "memory": "8Gi"
+            },
             "site-1": {
-                "num_of_gpus": 1
+                "num_of_gpus": 8
             }
         }
     }
 
 Use ``launcher_spec["default"][mode]`` for shared settings and
 ``launcher_spec[site][mode]`` for site-specific overrides. Keep
-``resource_spec`` for scheduler-facing resource requirements such as
-``num_of_gpus``. Docker and Kubernetes launchers use those resource requests
-when they need to request GPUs for a launched container or pod.
+``resource_spec`` for portable GPU, CPU, and memory requirements enforced by the selected job launcher.
+Use ``launcher_spec`` for backend-specific topology and policy.
+
+The Slurm job block accepts ``image``, ``nodes``, ``gpus_per_node``,
+``cpus_per_node``, ``mem_per_node`` (MiB), ``time``, and
+``pending_timeout``. A job cannot select a Slurm partition, account, QOS,
+sandbox, setup command, or raw scheduler flags; those are site-owned and may
+be overridden per study. A job image requires BYOC authorization and overrides
+study/site image defaults. It must be an absolute site-visible existing file.
+A job may override ``pending_timeout`` only with a smaller positive value than
+the site's configured timeout; it cannot increase the site limit. Multi-node
+jobs require effective ``sandbox: none`` and must omit ``image``. A positive
+multi-node ``num_of_gpus`` requires explicit ``gpus_per_node``; whenever both
+are supplied, ``num_of_gpus`` must equal ``nodes * gpus_per_node``. See
+:ref:`slurm_job_launcher` for the deployment contract.
 
 .. _deploy_map:
 

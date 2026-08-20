@@ -80,6 +80,14 @@ RESULT_FIELDS = [
     "literature_event_id",
 ]
 
+# Marker shared by every server-side global-model entry in cross_val_results.json: the legacy
+# CrossSiteModelEval workflow prefixes SRV_ (SRV_FL_global_model, SRV_best_FL_global_model.pt)
+# while the ModelController CrossSiteEval records the raw checkpoint name (FL_global_model.pt).
+SERVER_GLOBAL_MODEL_KEY_MARKER = "FL_global_model"
+# Sub-marker for best-checkpoint global-model entries (SRV_best_FL_global_model.pt,
+# best_FL_global_model.pt) as opposed to final-checkpoint entries.
+SERVER_BEST_GLOBAL_MODEL_KEY_MARKER = "best_FL_global_model"
+
 CANDIDATE_MANIFEST_SCHEMA_VERSION = "nvflare.autofl.candidate.v1"
 CANDIDATE_MANIFEST_STATUSES = {"prepared", "ready_for_external_execution", "keep", "discard", "crash", "abandoned"}
 CAMPAIGN_METADATA_SCHEMA_VERSION = "nvflare.autofl.campaign.v1"
@@ -101,6 +109,10 @@ RESERVED_CANDIDATE_PATH_PARTS = {
 
 INFRASTRUCTURE_RETRY = "infrastructure_retry"
 SIMULATION_APPROVAL_ACTION = "await_simulation_runner_approval"
+ACCOUNTING_INSTRUCTION = (
+    "Run every candidate training, parameter update, or metric-based screening through this runner. "
+    "Real candidate crashes and crash replays count; expanding the candidate cap requires explicit user approval."
+)
 SIMULATOR_STALL_EXIT_CODE = 125
 SIMULATOR_STALL_PATTERNS = (
     "Failed to create connection to the child process in SimulatorClientRunner",
@@ -127,7 +139,52 @@ DEFAULT_SIMULATOR_NO_PROGRESS_TIMEOUT = 240
 DEFAULT_JOB_HELP_TIMEOUT = 30
 MAX_CAPTURED_PROCESS_OUTPUT = 1024 * 1024
 SIMULATOR_WORKSPACE_ROOT_ENV_VAR = "NVFLARE_SIMULATOR_WORKSPACE_ROOT"
+TRIAL_PROCESS_TOKEN_ENV_VAR = "NVFLARE_AUTOFL_TRIAL_TOKEN"
+SIMULATOR_WORKSPACE_OVERRIDE_MIN_NVFLARE_VERSION = "2.9.0"
+DEFAULT_WORKSPACE_OVERRIDE_PROBE_TIMEOUT = 30
 CAMPAIGN_LOCK_PATH = ".nvflare/autofl/campaign.lock"
+SIMULATOR_ENV_PASSTHROUGH_CONFIG_KEY = "simulator_env_passthrough"
+SIMULATOR_ENV_ALLOWLIST = (
+    "PATH",
+    "PYTHONPATH",
+    "PYTHONHOME",
+    "VIRTUAL_ENV",
+    "CONDA_PREFIX",
+    "CONDA_DEFAULT_ENV",
+    "PYENV_VERSION",
+    "HOME",
+    "TMPDIR",
+    "TEMP",
+    "TMP",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "NO_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "no_proxy",
+    "REQUESTS_CA_BUNDLE",
+    "SSL_CERT_FILE",
+    "CURL_CA_BUNDLE",
+    "OMP_NUM_THREADS",
+    "MKL_NUM_THREADS",
+    "OPENBLAS_NUM_THREADS",
+    "NUMEXPR_NUM_THREADS",
+    "CUDA_VISIBLE_DEVICES",
+    "NVIDIA_VISIBLE_DEVICES",
+    "LD_LIBRARY_PATH",
+    "DYLD_LIBRARY_PATH",
+    "USERPROFILE",
+    "APPDATA",
+    "LOCALAPPDATA",
+    "SYSTEMROOT",
+    "WINDIR",
+    "COMSPEC",
+    "PATHEXT",
+)
+ENV_VAR_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 FIXED_BUDGET_TO_CLI = {
     "num_clients": "n_clients",
@@ -212,7 +269,7 @@ def env_float(name: str, default: float) -> float:
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     guard = load_campaign_guard()
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument(
         "action",
         choices=["initialize", "prepare", "evaluate", "abandon", "suggest", "record", "status"],
@@ -220,13 +277,16 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     )
     parser.add_argument("job", help="NVFlare job.py to optimize")
     parser.add_argument("--metric", help="optimization metric; omit to use job.py key_metric")
-    parser.add_argument("--mode", choices=["max", "min"], default="max")
     parser.add_argument("--env", dest="target_env", choices=["sim", "poc", "prod"], default="sim")
     cap_group = parser.add_mutually_exclusive_group()
     cap_group.add_argument(
         "--max-candidates",
         type=int,
-        help="optional candidate cap; omit to continue until interrupted or blocked",
+        help=(
+            "optional cap on comparable candidate attempts (evaluated candidates: keep/discard/crash), "
+            "counted after and excluding the baseline; omit to run an uncapped continuous campaign "
+            "until interrupted or blocked"
+        ),
     )
     cap_group.add_argument("--uncapped", action="store_true", help="remove a previously configured candidate cap")
     parser.add_argument("--autofl-yaml", default="autofl.yaml")
@@ -291,9 +351,6 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument("--python", default=os.environ.get("PYTHON") or sys.executable)
-    parser.add_argument("--prefer-synthetic", action=argparse.BooleanOptionalAction, default=True)
-    parser.add_argument("--synthetic-train-size", type=int, default=2048)
-    parser.add_argument("--synthetic-test-size", type=int, default=256)
     parser.add_argument("--name", help="candidate name for prepare")
     parser.add_argument("--hypothesis", help="candidate hypothesis for prepare")
     parser.add_argument("--family", help="algorithm family slug for prepare or record --literature")
@@ -306,6 +363,11 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--failure-reason", default="", help="external execution failure")
     parser.add_argument("--baseline", action="store_true", help="record an externally executed baseline")
     parser.add_argument("--literature", action="store_true", help="record a literature-review checkpoint")
+    parser.add_argument(
+        "--confirm-user-approved-cap-change",
+        action="store_true",
+        help="confirm that the user explicitly approved increasing the candidate cap or making it uncapped",
+    )
     parser.add_argument("--limit", type=int, default=10, help="maximum fallback suggestions")
     args = parser.parse_args(argv)
     tokens = list(argv) if argv is not None else sys.argv[1:]
@@ -319,6 +381,9 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     if args.uncapped:
         args.max_candidates = None
         args._explicit_settings.add("max_candidates")
+    # No CLI surface: campaigns always maximize. The constant keeps the persisted
+    # settings/state schema stable and lets the legacy-campaign gate compare against it.
+    args.mode = "max"
     return args
 
 
@@ -332,18 +397,159 @@ def process_group_exists(process_group_id: int) -> bool:
     return True
 
 
-def wait_for_process_tree(process: subprocess.Popen, process_group_id: Optional[int], timeout: float) -> bool:
+class TrialProcessCleanupError(RuntimeError):
+    pass
+
+
+def pidfd_functions():
+    pidfd_open = getattr(os, "pidfd_open", None)
+    pidfd_send_signal = getattr(signal, "pidfd_send_signal", None)
+    if not callable(pidfd_open) or not callable(pidfd_send_signal):
+        raise TrialProcessCleanupError(
+            "Linux pidfd_open and pidfd_send_signal support is required for race-safe trial cleanup"
+        )
+    return pidfd_open, pidfd_send_signal
+
+
+def ensure_trial_process_pidfd_support() -> None:
+    if not sys.platform.startswith("linux"):
+        return
+    pidfd_open, pidfd_send_signal = pidfd_functions()
+    try:
+        pidfd = pidfd_open(os.getpid(), 0)
+    except OSError as e:
+        raise TrialProcessCleanupError(f"cannot open the Linux pidfd required for race-safe trial cleanup: {e}") from e
+    try:
+        while True:
+            try:
+                pidfd_send_signal(pidfd, 0)
+                break
+            except InterruptedError:
+                continue
+            except OSError as e:
+                raise TrialProcessCleanupError(
+                    f"cannot signal through the Linux pidfd required for race-safe trial cleanup: {e}"
+                ) from e
+    finally:
+        os.close(pidfd)
+
+
+def trial_process_ids(trial_token: Optional[str]) -> List[int]:
+    """Return Linux processes that inherited this runner-owned trial token."""
+    if not trial_token or not sys.platform.startswith("linux"):
+        return []
+    marker = f"{TRIAL_PROCESS_TOKEN_ENV_VAR}={trial_token}".encode("utf-8")
+    process_ids = []
+    for environ_path in Path("/proc").glob("[0-9]*/environ"):
+        try:
+            process_id = int(environ_path.parent.name)
+            environ = environ_path.read_bytes().split(b"\0")
+        except (OSError, ValueError):
+            continue
+        if process_id != os.getpid() and marker in environ:
+            process_ids.append(process_id)
+    return sorted(process_ids)
+
+
+def pidfd_process_id(pidfd: int) -> Optional[int]:
+    try:
+        lines = Path(f"/proc/self/fdinfo/{pidfd}").read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    for line in lines:
+        if line.startswith("Pid:"):
+            try:
+                return int(line.partition(":")[2].strip())
+            except ValueError:
+                return None
+    return None
+
+
+def process_has_trial_token(process_id: int, marker: bytes) -> bool:
+    try:
+        return marker in Path(f"/proc/{process_id}/environ").read_bytes().split(b"\0")
+    except OSError:
+        return False
+
+
+def open_trial_process_pidfd(process_id: int, marker: bytes) -> Optional[int]:
+    pidfd_open, _ = pidfd_functions()
+    while True:
+        try:
+            pidfd = pidfd_open(process_id, 0)
+            break
+        except ProcessLookupError:
+            return None
+        except InterruptedError:
+            continue
+        except OSError as e:
+            raise TrialProcessCleanupError(f"cannot open pidfd for trial process {process_id}: {e}") from e
+    if (
+        pidfd_process_id(pidfd) != process_id
+        or not process_has_trial_token(process_id, marker)
+        or pidfd_process_id(pidfd) != process_id
+    ):
+        os.close(pidfd)
+        return None
+    return pidfd
+
+
+def signal_trial_processes(trial_token: Optional[str], sig: int) -> None:
+    if not trial_token:
+        return
+    process_ids = trial_process_ids(trial_token)
+    if not process_ids:
+        return
+    _, pidfd_send_signal = pidfd_functions()
+    marker = f"{TRIAL_PROCESS_TOKEN_ENV_VAR}={trial_token}".encode("utf-8")
+    errors = []
+    for process_id in process_ids:
+        try:
+            pidfd = open_trial_process_pidfd(process_id, marker)
+        except TrialProcessCleanupError as e:
+            errors.append(str(e))
+            continue
+        if pidfd is None:
+            continue
+        try:
+            while True:
+                try:
+                    pidfd_send_signal(pidfd, sig)
+                    break
+                except ProcessLookupError:
+                    break
+                except InterruptedError:
+                    continue
+                except OSError as e:
+                    errors.append(f"cannot signal trial process {process_id} through pidfd: {e}")
+                    break
+        finally:
+            os.close(pidfd)
+    if errors:
+        raise TrialProcessCleanupError("; ".join(errors))
+
+
+def wait_for_process_tree(
+    process: subprocess.Popen, process_group_id: Optional[int], timeout: float, trial_token: Optional[str] = None
+) -> bool:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         leader_exited = process.poll() is not None
         group_exited = process_group_id is None or not process_group_exists(process_group_id)
-        if leader_exited and group_exited:
+        if leader_exited and group_exited and not trial_process_ids(trial_token):
             return True
         time.sleep(0.05)
-    return process.poll() is not None and (process_group_id is None or not process_group_exists(process_group_id))
+    return (
+        process.poll() is not None
+        and (process_group_id is None or not process_group_exists(process_group_id))
+        and not trial_process_ids(trial_token)
+    )
 
 
-def terminate_process(process: subprocess.Popen, process_group_id: Optional[int] = None) -> None:
+def terminate_process(
+    process: subprocess.Popen, process_group_id: Optional[int] = None, trial_token: Optional[str] = None
+) -> None:
+    cleanup_errors = []
     if os.name != "nt" and process_group_id is not None:
         try:
             os.killpg(process_group_id, signal.SIGTERM)
@@ -355,23 +561,37 @@ def terminate_process(process: subprocess.Popen, process_group_id: Optional[int]
                 process.terminate()
     elif process.poll() is None:
         process.terminate()
-    else:
-        return
+    try:
+        signal_trial_processes(trial_token, signal.SIGTERM)
+    except TrialProcessCleanupError as e:
+        cleanup_errors.append(str(e))
 
-    if wait_for_process_tree(process, process_group_id, timeout=10):
+    if wait_for_process_tree(process, process_group_id, timeout=10, trial_token=trial_token):
         return
 
     if os.name != "nt" and process_group_id is not None:
         try:
             os.killpg(process_group_id, signal.SIGKILL)
         except ProcessLookupError:
-            return
+            pass
         except Exception:
             if process.poll() is None:
                 process.kill()
     elif process.poll() is None:
         process.kill()
-    wait_for_process_tree(process, process_group_id, timeout=10)
+    try:
+        signal_trial_processes(trial_token, signal.SIGKILL)
+    except TrialProcessCleanupError as e:
+        cleanup_errors.append(str(e))
+    tree_exited = wait_for_process_tree(process, process_group_id, timeout=10, trial_token=trial_token)
+    remaining_trial_processes = trial_process_ids(trial_token)
+    if remaining_trial_processes:
+        detail = f"; pidfd errors: {'; '.join(cleanup_errors)}" if cleanup_errors else ""
+        raise TrialProcessCleanupError(
+            f"trial cleanup could not terminate detached processes {remaining_trial_processes}{detail}"
+        )
+    if not tree_exited and cleanup_errors:
+        raise TrialProcessCleanupError(f"trial cleanup did not complete: {'; '.join(cleanup_errors)}")
 
 
 def append_output_tail(current: str, value: str) -> str:
@@ -489,6 +709,7 @@ def run(
     simulator_no_progress_timeout: int = DEFAULT_SIMULATOR_NO_PROGRESS_TIMEOUT,
     env: Optional[Dict[str, str]] = None,
 ) -> Tuple[int, str, float]:
+    ensure_trial_process_pidfd_support()
     started = time.monotonic()
     next_stall_check = started
     last_progress_check = started
@@ -498,6 +719,9 @@ def run(
     last_partial_aggregation_signature = ""
     log_path.parent.mkdir(parents=True, exist_ok=True)
     output_tail = ""
+    run_env = dict(env) if env is not None else dict(os.environ)
+    trial_token = uuid.uuid4().hex
+    run_env[TRIAL_PROCESS_TOKEN_ENV_VAR] = trial_token
     with log_path.open("w", encoding="utf-8") as log_file:
         process = subprocess.Popen(
             argv,
@@ -507,7 +731,7 @@ def run(
             text=False,
             bufsize=0,
             start_new_session=os.name != "nt",
-            env=env,
+            env=run_env,
         )
         process_group_id = process.pid if os.name != "nt" else None
         assert process.stdout is not None
@@ -552,12 +776,12 @@ def run(
                 now = time.monotonic()
                 if not timed_out and timeout and now - started > timeout:
                     timed_out = True
-                    terminate_process(process, process_group_id)
+                    terminate_process(process, process_group_id, trial_token)
                 if not timed_out and not stall_message and simulator_stall_roots and now >= next_stall_check:
                     stall_message = simulator_stall_message(simulator_stall_roots) or ""
                     next_stall_check = now + stall_check_interval
                     if stall_message:
-                        terminate_process(process, process_group_id)
+                        terminate_process(process, process_group_id, trial_token)
                     elif simulator_no_progress_timeout:
                         partial_aggregation_signature = simulator_partial_aggregation_signature_for_roots(
                             simulator_stall_roots
@@ -576,7 +800,7 @@ def run(
                                 "partial simulator aggregation made no server-side progress for "
                                 f"{int(now - last_partial_aggregation_seen)}s: {last_partial_aggregation_signature}"
                             )
-                            terminate_process(process, process_group_id)
+                            terminate_process(process, process_group_id, trial_token)
                         progress_signature = simulator_progress_signature_for_roots(simulator_stall_roots)
                         if stall_message:
                             pass
@@ -592,7 +816,7 @@ def run(
                                 f"no simulator progress markers changed for {int(now - last_progress_seen)}s "
                                 f"across {', '.join(str(root) for root in simulator_stall_roots)}"
                             )
-                            terminate_process(process, process_group_id)
+                            terminate_process(process, process_group_id, trial_token)
                         last_progress_check = now
                 try:
                     raw_chunk = output_queue.get(timeout=0.2)
@@ -625,7 +849,7 @@ def run(
                 return SIMULATOR_STALL_EXIT_CODE, output_tail, time.monotonic() - started
             return process.returncode or 0, output_tail, time.monotonic() - started
         finally:
-            terminate_process(process, process_group_id)
+            terminate_process(process, process_group_id, trial_token)
             reader_deadline = time.monotonic() + 10
             while (reader.is_alive() or not output_queue.empty()) and time.monotonic() < reader_deadline:
                 try:
@@ -1272,6 +1496,13 @@ def apply_metric_contract(
     objective = objective_contract(config, requested_metric)
     schema_objective = (schema or {}).get("objective", {})
     if isinstance(schema_objective, dict):
+        schema_mode = schema_objective.get("mode")
+        # Deliberate leniency: an explicit `mode: null` is tolerated and treated as max.
+        if schema_mode is not None and schema_mode != "max":
+            raise ValueError(
+                f"mutation_schema.yaml declares objective.mode={schema_mode!r}, which is not supported. "
+                f"{load_campaign_guard().MODE_MAX_ONLY_MESSAGE}"
+            )
         schema_requested = schema_objective.get("requested_metric") or schema_objective.get("metric")
         if not schema_requested or schema_requested == objective["requested_metric"]:
             for key in ("optimization_metric", "metric_extraction_order", "metric_source"):
@@ -1346,6 +1577,34 @@ def metric_from_list(items: Any, metric: str) -> Optional[float]:
     return None
 
 
+def server_global_model_metric_values(payload: Any, metric: str) -> Tuple[List[float], List[float]]:
+    """Collect per-site metric values for server-side global-model entries in a cross-site payload.
+
+    Returns (final_values, best_values): entries whose key contains the best-checkpoint marker
+    (SRV_best_FL_global_model.pt, best_FL_global_model.pt) land in best_values; the remaining
+    global-model entries are final-checkpoint values.
+    """
+    final_values: List[float] = []
+    best_values: List[float] = []
+    if isinstance(payload, dict):
+        for key, entry in payload.items():
+            if isinstance(key, str) and SERVER_GLOBAL_MODEL_KEY_MARKER in key:
+                value = find_metric_value(entry, [metric])
+                if value is not None:
+                    target = best_values if SERVER_BEST_GLOBAL_MODEL_KEY_MARKER in key else final_values
+                    target.append(value)
+            else:
+                nested_final, nested_best = server_global_model_metric_values(entry, metric)
+                final_values.extend(nested_final)
+                best_values.extend(nested_best)
+    elif isinstance(payload, list):
+        for item in payload:
+            nested_final, nested_best = server_global_model_metric_values(item, metric)
+            final_values.extend(nested_final)
+            best_values.extend(nested_best)
+    return final_values, best_values
+
+
 def text_metric_matches(text: str, metric: str) -> List[Tuple[int, float]]:
     number = r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?"
     context = r"(?:(?:final|test|validation|cross[-_ ]site)\s+)*"
@@ -1411,6 +1670,21 @@ def extract_metric_evidence(artifact_root: Path, metrics: Sequence[str] | str) -
         payloads.append((path, payload))
     for metric in metric_order:
         for path, payload in payloads:
+            if path.name == "cross_val_results.json":
+                # Cross-site payloads score every site/model pair; prefer the server global
+                # model over whichever entry happens to appear first, and final-checkpoint
+                # entries over best_-checkpoint entries. Per-site sample counts are not
+                # recorded in the payload, so the defined reducer is the unweighted mean
+                # across evaluating sites (a max/min would just pick the easiest site).
+                final_values, best_values = server_global_model_metric_values(payload, metric)
+                server_values = final_values or best_values
+                if server_values:
+                    return MetricEvidence(
+                        score=sum(server_values) / len(server_values),
+                        metric_name=metric,
+                        source=f"structured:{path.name}#server_final",
+                        artifact=str(path.resolve()),
+                    )
             score = find_metric_value(payload, [metric])
             if score is not None:
                 return MetricEvidence(
@@ -1705,13 +1979,6 @@ def build_base_args(args: argparse.Namespace, help_text: str, schema: Dict[str, 
     budget_args = build_comparison_budget_args(schema, help_text)
     if budget_args:
         base.extend(budget_args)
-    if args.prefer_synthetic and supports_flag(help_text, "--synthetic_data"):
-        if "--synthetic_data" not in base:
-            base.append("--synthetic_data")
-        if supports_flag(help_text, "--train_size") and "--train_size" not in base:
-            base.extend(["--train_size", str(args.synthetic_train_size)])
-        if supports_flag(help_text, "--test_size") and "--test_size" not in base:
-            base.extend(["--test_size", str(args.synthetic_test_size)])
     return base
 
 
@@ -2030,6 +2297,144 @@ def changed_simulator_roots(simulator_base: Path, before: Dict[Path, int]) -> Li
     return sorted(path for path, modified in after.items() if before.get(path) != modified)
 
 
+def last_json_object_line(text: str) -> Optional[Dict[str, Any]]:
+    for line in reversed(text.splitlines()):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            payload = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(payload, dict):
+            return payload
+    return None
+
+
+def probe_simulator_workspace_override_support(
+    python: str, cwd: Path, timeout: int = DEFAULT_WORKSPACE_OVERRIDE_PROBE_TIMEOUT
+) -> Dict[str, Any]:
+    """Ask the campaign interpreter whether the installed package supports the simulator workspace override.
+
+    Returns ``supported`` as True/False when ``nvflare.recipe.sim_env`` is importable, and None when the
+    probe is inconclusive (package missing, import error, timeout); ``version`` is "" when unknown.
+    ``version`` is read from the imported package's ``__version__`` so it describes the same package the
+    capability check (and the job) resolves; distribution metadata is only a fallback when the import fails.
+    """
+
+    script = (
+        "import json\n"
+        "try:\n"
+        "    import nvflare\n"
+        "    version = str(getattr(nvflare, '__version__', '') or '')\n"
+        "except Exception:\n"
+        "    version = ''\n"
+        "if not version:\n"
+        "    try:\n"
+        "        from importlib import metadata\n"
+        "        version = metadata.version('nvflare')\n"
+        "    except Exception:\n"
+        "        version = ''\n"
+        "try:\n"
+        "    from nvflare.recipe import sim_env\n"
+        f"    supported = getattr(sim_env, 'SIMULATOR_WORKSPACE_ROOT_ENV_VAR', '') == {SIMULATOR_WORKSPACE_ROOT_ENV_VAR!r}\n"
+        "except Exception:\n"
+        "    supported = None\n"
+        "print(json.dumps({'version': version, 'supported': supported}))\n"
+    )
+    try:
+        with tempfile.TemporaryDirectory(prefix="nvflare-autofl-probe-") as probe_dir:
+            rc, stdout, _runtime = run(
+                [python, "-c", script],
+                cwd,
+                timeout,
+                Path(probe_dir) / "probe.log",
+                env=simulator_child_env(Path(probe_dir)),
+                simulator_no_progress_timeout=0,
+            )
+        if rc != 0:
+            return {"version": "", "supported": None}
+        payload = last_json_object_line(stdout)
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return {"version": "", "supported": None}
+    if not isinstance(payload, dict):
+        return {"version": "", "supported": None}
+    version = payload.get("version")
+    supported = payload.get("supported")
+    return {
+        "version": version.strip() if isinstance(version, str) else "",
+        "supported": supported if isinstance(supported, bool) else None,
+    }
+
+
+def nvflare_version_predates_workspace_override(version: str) -> bool:
+    match = re.match(r"(\d+)\.(\d+)", version or "")
+    if not match:
+        return False
+    minimum = tuple(int(part) for part in SIMULATOR_WORKSPACE_OVERRIDE_MIN_NVFLARE_VERSION.split(".")[:2])
+    return (int(match.group(1)), int(match.group(2))) < minimum
+
+
+def discovered_environment_name(config: Dict[str, Any]) -> str:
+    environment = config.get("environment", {})
+    discovered = environment.get("discovered", {}) if isinstance(environment, dict) else {}
+    name = discovered.get("name") if isinstance(discovered, dict) else None
+    return name if isinstance(name, str) else ""
+
+
+def unresolved_result_dir_failure_reason(python: str, cwd: Path, config: Dict[str, Any]) -> str:
+    generic_reason = (
+        "job exited successfully but no deterministic NVFlare result directory was resolved; "
+        "expose a literal job name, support --name, or print the direct simulator result directory"
+    )
+    # Only the recipe SimEnv honors the workspace override; FedJob.simulator_run and other job
+    # surfaces ignore it on every release, so the upgrade advice below would misdirect them.
+    if discovered_environment_name(config) != "SimEnv":
+        return generic_reason
+    probe = probe_simulator_workspace_override_support(python, cwd)
+    supported = probe["supported"]
+    version = probe["version"]
+    outdated = supported is False or (supported is None and nvflare_version_predates_workspace_override(version))
+    if outdated:
+        return (
+            f"job exited successfully but the installed nvflare ({version or 'unknown version'}) does not honor "
+            f"{SIMULATOR_WORKSPACE_ROOT_ENV_VAR}, so simulator results were written outside the isolated trial "
+            f"workspace; upgrade to nvflare>={SIMULATOR_WORKSPACE_OVERRIDE_MIN_NVFLARE_VERSION}"
+        )
+    return generic_reason
+
+
+def simulator_env_passthrough_names(config: Dict[str, Any]) -> List[str]:
+    environment = config.get("environment", {})
+    if not isinstance(environment, dict):
+        return []
+    values = environment.get(SIMULATOR_ENV_PASSTHROUGH_CONFIG_KEY, []) or []
+    if not isinstance(values, list):
+        raise ValueError(f"autofl.yaml environment.{SIMULATOR_ENV_PASSTHROUGH_CONFIG_KEY} must be a list")
+    names = []
+    for value in values:
+        if not isinstance(value, str):
+            raise ValueError(f"autofl.yaml environment.{SIMULATOR_ENV_PASSTHROUGH_CONFIG_KEY} must contain only names")
+        name = value.strip()
+        if not ENV_VAR_NAME_RE.fullmatch(name):
+            raise ValueError(
+                f"autofl.yaml environment.{SIMULATOR_ENV_PASSTHROUGH_CONFIG_KEY} contains invalid name: {value!r}"
+            )
+        if name not in names:
+            names.append(name)
+    return names
+
+
+def simulator_child_env(simulator_base: Path, extra_names: Sequence[str] = ()) -> Dict[str, str]:
+    run_env: Dict[str, str] = {}
+    for name in (*SIMULATOR_ENV_ALLOWLIST, *extra_names):
+        value = os.environ.get(name)
+        if value is not None:
+            run_env[name] = value
+    run_env[SIMULATOR_WORKSPACE_ROOT_ENV_VAR] = str(simulator_base)
+    return run_env
+
+
 def run_job(
     run_def: JobRun,
     *,
@@ -2056,8 +2461,7 @@ def run_job(
         simulator_roots = expected_simulator_roots(
             config, run_name if name_args else None, cwd, simulator_base=simulator_base
         )
-        run_env = os.environ.copy()
-        run_env[SIMULATOR_WORKSPACE_ROOT_ENV_VAR] = str(simulator_base)
+        run_env = simulator_child_env(simulator_base, simulator_env_passthrough_names(config))
         unnamed_root_snapshot = simulator_root_snapshot(simulator_base) if not simulator_roots else {}
         rc, stdout, runtime = run(
             command,
@@ -2107,10 +2511,7 @@ def run_job(
             run_def.failure_reason = f"exit_code={rc}"
     elif result_dir is None:
         run_def.status = "crash"
-        run_def.failure_reason = (
-            "job exited successfully but no deterministic NVFlare result directory was resolved; "
-            "expose a literal job name, support --name, or print the direct simulator result directory"
-        )
+        run_def.failure_reason = unresolved_result_dir_failure_reason(python, cwd, config)
     else:
         artifact_root = artifact_dir.parent
         evidence = extract_metric_evidence(artifact_root, metrics)
@@ -2203,8 +2604,8 @@ def load_results(path: Path) -> List[RunRecord]:
     return records
 
 
-def better(new_score: Optional[float], old_score: Optional[float], mode: str) -> bool:
-    return load_campaign_guard().better(new_score, old_score, mode)
+def better(new_score: Optional[float], old_score: Optional[float]) -> bool:
+    return load_campaign_guard().better(new_score, old_score)
 
 
 def write_state(
@@ -2213,7 +2614,6 @@ def write_state(
     records: List[RunRecord],
     max_candidates: Optional[int],
     *,
-    mode: str = "max",
     stop_files: Optional[List[str]] = None,
     plateau_threshold: Optional[int] = None,
     plateau_min_delta: Optional[float] = None,
@@ -2221,6 +2621,7 @@ def write_state(
     exploration_batch_size: Optional[int] = None,
     family_repeat_limit: Optional[int] = None,
     pending_manifest_count: int = 0,
+    abandoned_candidate_count: int = 0,
     persist: bool = True,
 ) -> Dict[str, Any]:
     guard = load_campaign_guard()
@@ -2238,11 +2639,13 @@ def write_state(
         plateau_threshold=plateau_threshold,
         min_delta=plateau_min_delta,
         hard_crash_threshold=hard_crash_threshold,
-        mode=mode,
         pending_manifest_count=pending_manifest_count,
         exploration_batch_size=exploration_batch_size,
         family_repeat_limit=family_repeat_limit,
     )
+    # Abandoned manifests are workspace-derived; the ledger-only guard cannot count them.
+    state["abandoned_candidates"] = abandoned_candidate_count
+    state["accounting_instruction"] = ACCOUNTING_INSTRUCTION
     if records and records[-1].status == INFRASTRUCTURE_RETRY:
         attempts = len(
             [
@@ -2254,6 +2657,7 @@ def write_state(
         state.update(
             {
                 "candidate_attempts": attempts,
+                "remaining_candidates": max(0, max_candidates - attempts) if max_candidates is not None else None,
                 "decision": "retry_infrastructure",
                 "reason": "infrastructure_retry",
                 "next_action": SIMULATION_APPROVAL_ACTION,
@@ -2284,7 +2688,7 @@ def load_progress_plotter():
     return load_sibling_module("plot_progress.py", "nvflare_autofl_plot_progress")
 
 
-def write_progress_fallback(path: Path, records: List[RunRecord], mode: str, metric_label: str) -> None:
+def write_progress_fallback(path: Path, records: List[RunRecord], metric_label: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
         from PIL import Image, ImageDraw, ImageFont
@@ -2324,7 +2728,7 @@ def write_progress_fallback(path: Path, records: List[RunRecord], mode: str, met
             color = (40, 160, 90) if record.status in {"baseline", "keep"} else (150, 150, 150)
             draw.ellipse((x - 5, y - 5, x + 5, y + 5), fill=color, outline="black")
             draw.text((x + 6, y - 14), f"{record.name}: {record.score:.3f}", fill=color, font=font)
-            if better(record.score, running_best, mode):
+            if better(record.score, running_best):
                 running_best = record.score
             if running_best == record.score:
                 if last_point:
@@ -2333,19 +2737,19 @@ def write_progress_fallback(path: Path, records: List[RunRecord], mode: str, met
     image.save(path)
 
 
-def write_progress(path: Path, records: List[RunRecord], mode: str, metric_label: str) -> None:
+def write_progress(path: Path, records: List[RunRecord], metric_label: str) -> None:
     plotter = load_progress_plotter()
     try:
-        plotter.plot_progress(records, path, mode, metric_label)
+        plotter.plot_progress(records, path, metric_label)
     except (plotter.NoScoredResultsError, plotter.PlotDependencyError):
-        write_progress_fallback(path, records, mode, metric_label)
+        write_progress_fallback(path, records, metric_label)
 
 
 def write_report(path: Path, config: Dict[str, Any], records: List[RunRecord], args: argparse.Namespace) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     best = None
     for record in records:
-        if record.status in {"baseline", "keep"} and better(record.score, best.score if best else None, args.mode):
+        if record.status in {"baseline", "keep"} and better(record.score, best.score if best else None):
             best = record
     candidate_budget = (
         str(args.max_candidates) if args.max_candidates is not None else "uncapped; runs until manual interruption"
@@ -2432,6 +2836,11 @@ def campaign_summary(
             "final_response_allowed",
             "candidate_cap",
             "candidate_cap_source",
+            "remaining_candidates",
+            "baseline_status",
+            "baseline_score",
+            "improvement",
+            "abandoned_candidates",
             "agent_instruction",
             "required_exploration",
         ]:
@@ -2475,9 +2884,6 @@ CAMPAIGN_SETTING_NAMES = (
     "timeout",
     "simulator_no_progress_timeout",
     "python",
-    "prefer_synthetic",
-    "synthetic_train_size",
-    "synthetic_test_size",
 )
 
 MUTABLE_CAMPAIGN_SETTING_NAMES = {
@@ -2497,12 +2903,40 @@ def campaign_settings(args: argparse.Namespace) -> Dict[str, Any]:
     return {name: getattr(args, name) for name in CAMPAIGN_SETTING_NAMES}
 
 
-def restore_campaign_settings(args: argparse.Namespace, metadata: Dict[str, Any]) -> None:
+def cap_change_requires_approval(previous: Optional[int], requested: Optional[int]) -> bool:
+    return previous is not None and (requested is None or requested > previous)
+
+
+def restore_campaign_settings(args: argparse.Namespace, metadata: Dict[str, Any]) -> bool:
+    """Restore persisted settings onto args; persist explicit mutable changes.
+
+    Returns True when a mutable-settings change was persisted to campaign.json, so
+    callers can refresh the authoritative campaign state under the new settings
+    before any preflight gate reads it.
+    """
     settings = metadata.get("settings")
     if not isinstance(settings, dict):
         raise ValueError("campaign metadata is missing settings")
+    if settings.get("prefer_synthetic"):
+        # Pre-removal campaigns scored their baseline and prior candidates on injected
+        # synthetic data; new runs use real data, so ledger comparisons cross a data regime.
+        print(
+            "Warning: prior scores in this campaign were computed on synthetic data "
+            "(legacy prefer_synthetic setting); new runs use the job's real data, so ledger "
+            "comparisons mix data regimes. Consider re-initializing the campaign.",
+            file=sys.stderr,
+        )
+    persisted_mode = settings.get("mode", "max")
+    if persisted_mode != "max":
+        raise ValueError(
+            f"campaign was initialized with mode={persisted_mode!r}, which is no longer supported. "
+            f"{load_campaign_guard().MODE_MAX_ONLY_MESSAGE} Delete the campaign's .nvflare/autofl "
+            "directory (or start in a fresh workspace) and initialize again with a metric whose "
+            "higher values are better."
+        )
     explicit = getattr(args, "_explicit_settings", set())
     changed = False
+    cap_confirmation_valid = False
     for name in CAMPAIGN_SETTING_NAMES:
         if name not in settings:
             continue
@@ -2510,8 +2944,35 @@ def restore_campaign_settings(args: argparse.Namespace, metadata: Dict[str, Any]
             requested = getattr(args, name)
             if name in MUTABLE_CAMPAIGN_SETTING_NAMES:
                 if settings.get(name) != requested:
+                    if name == "max_candidates":
+                        previous = settings.get(name)
+                        approval_required = cap_change_requires_approval(previous, requested)
+                        if approval_required and not args.confirm_user_approved_cap_change:
+                            raise ValueError(
+                                "increasing the candidate cap or making a finite campaign uncapped requires "
+                                "explicit user approval and --confirm-user-approved-cap-change"
+                            )
+                        if args.confirm_user_approved_cap_change and not approval_required:
+                            raise ValueError(
+                                "--confirm-user-approved-cap-change is only valid for a candidate-cap increase "
+                                "or a finite-to-uncapped change"
+                            )
+                        cap_confirmation_valid = approval_required
+                        # Audit trail: mid-campaign budget changes must stay detectable by external judges.
+                        metadata.setdefault("cap_changes", []).append(
+                            {
+                                "changed_at": utc_now(),
+                                "old": previous,
+                                "new": requested,
+                                "source": "uncapped" if requested is None else "explicit",
+                                "user_approved": approval_required,
+                            }
+                        )
                     settings[name] = requested
                     changed = True
+                elif name == "max_candidates" and args.confirm_user_approved_cap_change:
+                    # Retrying an already-applied approved command is an idempotent success.
+                    cap_confirmation_valid = True
                 continue
             if requested != settings[name]:
                 raise ValueError(
@@ -2519,6 +2980,11 @@ def restore_campaign_settings(args: argparse.Namespace, metadata: Dict[str, Any]
                     f"configured={settings[name]!r}, requested={requested!r}"
                 )
         setattr(args, name, settings[name])
+    if args.confirm_user_approved_cap_change and not cap_confirmation_valid:
+        raise ValueError(
+            "--confirm-user-approved-cap-change requires an explicit candidate-cap increase or finite-to-uncapped "
+            "change"
+        )
     if changed:
         metadata["updated_at"] = utc_now()
         workspace_value = metadata.get("workspace_root")
@@ -2526,6 +2992,7 @@ def restore_campaign_settings(args: argparse.Namespace, metadata: Dict[str, Any]
             raise ValueError("campaign metadata is missing workspace_root")
         workspace = Path(workspace_value)
         write_json(campaign_metadata_path(workspace), metadata)
+    return changed
 
 
 def campaign_timeout(args: argparse.Namespace, schema: Dict[str, Any]) -> Tuple[int, int]:
@@ -2568,7 +3035,6 @@ def import_job_config(
         str(job),
         workspace_root=str(job.parent),
         metric=args.metric,
-        mode=args.mode,
         target_env=args.target_env,
         max_candidates=args.max_candidates,
         job_args=shlex.split(args.base_args),
@@ -2614,10 +3080,10 @@ def campaign_admission_errors(config: Dict[str, Any]) -> List[str]:
     return errors
 
 
-def best_retained_record(records: Sequence[RunRecord], mode: str) -> Optional[RunRecord]:
+def best_retained_record(records: Sequence[RunRecord]) -> Optional[RunRecord]:
     best = None
     for record in records:
-        if record.status in {"baseline", "keep"} and better(record.score, best.score if best else None, mode):
+        if record.status in {"baseline", "keep"} and better(record.score, best.score if best else None):
             best = record
     return best
 
@@ -2642,7 +3108,6 @@ def refresh_campaign_artifacts(
         paths["results"],
         records,
         args.max_candidates,
-        mode=args.mode,
         stop_files=resolve_stop_files(paths["workspace"], args.stop_file),
         plateau_threshold=args.plateau_threshold,
         plateau_min_delta=args.plateau_min_delta,
@@ -2650,6 +3115,7 @@ def refresh_campaign_artifacts(
         exploration_batch_size=args.exploration_batch_size,
         family_repeat_limit=args.family_repeat_limit,
         pending_manifest_count=len(pending_manifests),
+        abandoned_candidate_count=count_abandoned_candidates(paths["workspace"]),
     )
     if state.get("next_action") == "abandon_candidate":
         next_action = "abandon_candidate"
@@ -2674,7 +3140,7 @@ def refresh_campaign_artifacts(
         }
     )
     write_json(paths["state"], state)
-    write_progress(paths["progress"], records, args.mode, optimization_metric(config, args.metric))
+    write_progress(paths["progress"], records, optimization_metric(config, args.metric))
     write_report(paths["report"], config, records, args)
     return state
 
@@ -2726,8 +3192,10 @@ def initialize_campaign(args: argparse.Namespace, job: Path) -> int:
     metadata_path = campaign_metadata_path(workspace)
     if metadata_path.exists():
         metadata = load_campaign_metadata(workspace, job)
-        restore_campaign_settings(args, metadata)
+        settings_changed = restore_campaign_settings(args, metadata)
         paths = campaign_paths(args, job)
+        if settings_changed:
+            refresh_campaign_state(args, job, metadata, paths)
         records = load_results(paths["results"])
         if args.target_env == "sim" and not any(
             record.status == "baseline" and record.score is not None for record in records
@@ -2764,6 +3232,9 @@ def initialize_campaign(args: argparse.Namespace, job: Path) -> int:
             return 0 if baseline.score is not None else 1
         print_campaign_result(paths, records, read_json(paths["state"]), initialized=False)
         return 0
+
+    if args.confirm_user_approved_cap_change:
+        raise ValueError("--confirm-user-approved-cap-change is not valid for an initial campaign cap")
 
     paths = campaign_paths(args, job)
     paths["output_root"].mkdir(parents=True, exist_ok=True)
@@ -2836,12 +3307,59 @@ def pending_candidate_manifests(workspace: Path) -> List[Path]:
     return pending
 
 
+def count_abandoned_candidates(workspace: Path) -> int:
+    root = workspace / CANDIDATE_ROOT
+    if not root.exists():
+        return 0
+    count = 0
+    for path in sorted(root.glob("*/candidate_manifest.json")):
+        manifest = read_json(path)
+        validate_candidate_manifest_identity(path, manifest)
+        if manifest.get("status") == "abandoned":
+            count += 1
+    return count
+
+
+def refresh_campaign_state(
+    args: argparse.Namespace, job: Path, metadata: Dict[str, Any], paths: Dict[str, Path]
+) -> Tuple[List[RunRecord], Dict[str, Any]]:
+    """Recompute and persist campaign_state.json under the current effective settings without running a job."""
+    records = load_results(paths["results"])
+    pending = pending_candidate_manifests(job.parent)
+    state = write_state(
+        paths["state"],
+        paths["results"],
+        records,
+        args.max_candidates,
+        stop_files=resolve_stop_files(job.parent, args.stop_file),
+        plateau_threshold=args.plateau_threshold,
+        plateau_min_delta=args.plateau_min_delta,
+        hard_crash_threshold=args.hard_crash_threshold,
+        exploration_batch_size=args.exploration_batch_size,
+        family_repeat_limit=args.family_repeat_limit,
+        pending_manifest_count=len(pending),
+        abandoned_candidate_count=count_abandoned_candidates(job.parent),
+        persist=False,
+    )
+    state.update(
+        {
+            "best_candidate": metadata.get("best_candidate"),
+            "best_source_sha256": metadata.get("best_source_sha256"),
+            "pending_candidate_manifest": str(pending[0].resolve()) if pending else None,
+        }
+    )
+    write_state_if_changed(paths["state"], state)
+    return records, state
+
+
 def prepare_candidate(args: argparse.Namespace, job: Path) -> int:
     workspace = job.parent
     metadata = load_campaign_metadata(workspace, job)
-    restore_campaign_settings(args, metadata)
-    ensure_campaign_not_stopped(workspace, args, action="prepare a candidate")
+    settings_changed = restore_campaign_settings(args, metadata)
     paths = campaign_paths(args, job)
+    if settings_changed:
+        refresh_campaign_state(args, job, metadata, paths)
+    ensure_campaign_not_stopped(workspace, args, action="prepare a candidate")
     records = load_results(paths["results"])
     if not any(record.status == "baseline" and record.score is not None for record in records):
         raise ValueError("a scored baseline is required before preparing candidates")
@@ -2887,7 +3405,8 @@ def prepare_candidate(args: argparse.Namespace, job: Path) -> int:
         "base_candidate": metadata.get("best_candidate"),
         "base_source_sha256": source_hash(best_files),
         "fixed_budget_sha256": metadata.get("fixed_budget_sha256"),
-        "objective": {"metric": args.metric, "mode": args.mode},
+        # mode is a constant for schema stability: campaigns always maximize the metric.
+        "objective": {"metric": args.metric, "mode": "max"},
         "environment": args.target_env,
         "run_args": shlex.split(args.run_args),
         "changed_files": [],
@@ -2965,6 +3484,55 @@ def validate_candidate_for_evaluation(
     return manifest, config, best_source, best_files, changed, created, patch
 
 
+def candidate_execution_fingerprint(manifest: Dict[str, Any], patch_sha256: str) -> str:
+    run_args = manifest.get("run_args")
+    if not isinstance(run_args, list) or not all(isinstance(item, str) for item in run_args):
+        raise ValueError("candidate manifest run_args must be a list of strings")
+    fields = {
+        "base_source_sha256": str(manifest.get("base_source_sha256") or ""),
+        "fixed_budget_sha256": str(manifest.get("fixed_budget_sha256") or ""),
+        "patch_sha256": patch_sha256,
+        "run_args": run_args,
+    }
+    if not all(fields[name] for name in ("base_source_sha256", "fixed_budget_sha256", "patch_sha256")):
+        raise ValueError("candidate manifest is missing execution fingerprint provenance")
+    return sha256_json(fields)
+
+
+def matching_crashed_candidate(
+    workspace: Path, fingerprint: str, current_manifest_path: Path
+) -> Optional[Tuple[Path, Dict[str, Any]]]:
+    root = workspace / CANDIDATE_ROOT
+    if not root.exists():
+        return None
+    for path in sorted(root.glob("*/candidate_manifest.json")):
+        if path.resolve() == current_manifest_path.resolve():
+            continue
+        try:
+            manifest = read_json(path)
+            validate_candidate_manifest_identity(path, manifest)
+            if manifest.get("status") != "crash":
+                continue
+            patch_sha256 = str(manifest.get("patch_sha256") or "")
+            if patch_sha256 and candidate_execution_fingerprint(manifest, patch_sha256) == fingerprint:
+                return path, manifest
+        except (OSError, ValueError) as error:
+            print(f"Warning: ignoring invalid sibling candidate manifest {path}: {error}", file=sys.stderr)
+    return None
+
+
+def crash_replay_provenance(workspace: Path, fingerprint: str, current_manifest_path: Path) -> Optional[Dict[str, Any]]:
+    prior_crash = matching_crashed_candidate(workspace, fingerprint, current_manifest_path)
+    if prior_crash is None:
+        return None
+    prior_path, prior_manifest = prior_crash
+    return {
+        "execution_fingerprint": fingerprint,
+        "prior_candidate": prior_manifest.get("candidate_id"),
+        "prior_manifest": str(prior_path.resolve()),
+    }
+
+
 def update_config_for_kept_sources(config: Dict[str, Any], created: Sequence[str]) -> None:
     if not created:
         return
@@ -3002,16 +3570,17 @@ def finalize_candidate_result(
     created: List[str],
     patch: str,
     record: RunRecord,
+    crash_replay: Optional[Dict[str, Any]],
 ) -> Tuple[List[RunRecord], Dict[str, Any]]:
     rollback_files: Dict[Path, Optional[bytes]] = {}
     staged_snapshot = None
     previous_snapshot = None
     try:
         records = load_results(paths["results"])
-        previous_best = best_retained_record(records, args.mode)
+        previous_best = best_retained_record(records)
         if record.status == "candidate":
             record.status = (
-                "keep" if better(record.score, previous_best.score if previous_best else None, args.mode) else "discard"
+                "keep" if better(record.score, previous_best.score if previous_best else None) else "discard"
             )
         patch_path = manifest_path.parent / "candidate.patch"
         rollback_files = capture_file_versions(
@@ -3074,6 +3643,13 @@ def finalize_candidate_result(
                 },
             }
         )
+        manifest.pop("crash_replay", None)
+        if crash_replay:
+            manifest["crash_replay"] = {
+                **crash_replay,
+                "recorded_at": utc_now(),
+                "outcome_status": record.status,
+            }
         write_json(manifest_path, manifest)
         write_json(campaign_metadata_path(job.parent), metadata)
         records.append(record)
@@ -3103,9 +3679,11 @@ def finalize_candidate_result(
 def evaluate_candidate(args: argparse.Namespace, job: Path) -> int:
     workspace = job.parent
     metadata = load_campaign_metadata(workspace, job)
-    restore_campaign_settings(args, metadata)
-    ensure_campaign_not_stopped(workspace, args, action="evaluate a candidate")
+    settings_changed = restore_campaign_settings(args, metadata)
     paths = campaign_paths(args, job)
+    if settings_changed:
+        refresh_campaign_state(args, job, metadata, paths)
+    ensure_campaign_not_stopped(workspace, args, action="evaluate a candidate")
     manifest_path = Path(args.manifest).resolve() if args.manifest else None
     if manifest_path is None:
         pending = pending_candidate_manifests(workspace)
@@ -3119,13 +3697,18 @@ def evaluate_candidate(args: argparse.Namespace, job: Path) -> int:
     managed_paths = [path.relative_to(workspace).as_posix() for path in managed_versions]
     patch_path = manifest_path.parent / "candidate.patch"
     atomic_write_text(patch_path, patch)
+    patch_sha256 = sha256_bytes(patch.encode("utf-8"))
+    execution_fingerprint = candidate_execution_fingerprint(manifest, patch_sha256)
+    crash_replay = crash_replay_provenance(workspace, execution_fingerprint, manifest_path)
+    manifest.pop("crash_replay", None)
     manifest.update(
         {
             "updated_at": utc_now(),
             "changed_files": changed,
             "created_files": created,
-            "patch_sha256": sha256_bytes(patch.encode("utf-8")),
+            "patch_sha256": patch_sha256,
             "candidate_source_sha256": source_hash(file_map(manifest_path.parent / "source")),
+            "execution_fingerprint": execution_fingerprint,
         }
     )
     write_json(manifest_path, manifest)
@@ -3261,6 +3844,7 @@ def evaluate_candidate(args: argparse.Namespace, job: Path) -> int:
         created,
         patch,
         run_record,
+        crash_replay,
     )
     print_campaign_result(paths, records, state, candidate_manifest=str(manifest_path.resolve()))
     return 0
@@ -3269,8 +3853,10 @@ def evaluate_candidate(args: argparse.Namespace, job: Path) -> int:
 def abandon_candidate(args: argparse.Namespace, job: Path) -> int:
     workspace = job.parent
     metadata = load_campaign_metadata(workspace, job)
-    restore_campaign_settings(args, metadata)
+    settings_changed = restore_campaign_settings(args, metadata)
     paths = campaign_paths(args, job)
+    if settings_changed:
+        refresh_campaign_state(args, job, metadata, paths)
     manifest_path = Path(args.manifest).resolve() if args.manifest else None
     if manifest_path is None:
         pending = pending_candidate_manifests(workspace)
@@ -3318,10 +3904,13 @@ def abandon_candidate(args: argparse.Namespace, job: Path) -> int:
 
 def suggest_candidates(args: argparse.Namespace, job: Path) -> int:
     metadata = load_campaign_metadata(job.parent, job)
-    restore_campaign_settings(args, metadata)
+    settings_changed = restore_campaign_settings(args, metadata)
+    paths = campaign_paths(args, job)
+    if settings_changed:
+        refresh_campaign_state(args, job, metadata, paths)
     if args.limit < 1:
         raise ValueError("--limit must be positive")
-    config = read_yaml(campaign_paths(args, job)["autofl_yaml"])
+    config = read_yaml(paths["autofl_yaml"])
     help_text = job_help(args.python, job, job.parent)
     suggestions = [
         {"name": candidate.name, "run_args": candidate.args, "hypothesis": candidate.description}
@@ -3339,8 +3928,10 @@ def suggest_candidates(args: argparse.Namespace, job: Path) -> int:
 def record_external_result(args: argparse.Namespace, job: Path) -> int:
     workspace = job.parent
     metadata = load_campaign_metadata(workspace, job)
-    restore_campaign_settings(args, metadata)
+    settings_changed = restore_campaign_settings(args, metadata)
     paths = campaign_paths(args, job)
+    if settings_changed:
+        refresh_campaign_state(args, job, metadata, paths)
     config = read_yaml(paths["autofl_yaml"])
     artifact_path = Path(args.external_artifacts).resolve() if args.external_artifacts else None
     score = parse_finite_metric_value(args.score) if args.score is not None else None
@@ -3470,6 +4061,10 @@ def record_external_result(args: argparse.Namespace, job: Path) -> int:
         metric_source=evidence.source if evidence else "",
         metric_artifact=evidence.artifact if evidence else "",
     )
+    execution_fingerprint = str(manifest.get("execution_fingerprint") or "")
+    crash_replay = (
+        crash_replay_provenance(workspace, execution_fingerprint, manifest_path) if execution_fingerprint else None
+    )
     records, state = finalize_candidate_result(
         args,
         job,
@@ -3484,6 +4079,7 @@ def record_external_result(args: argparse.Namespace, job: Path) -> int:
         created,
         patch,
         record,
+        crash_replay,
     )
     updated_manifest = read_json(manifest_path)
     updated_manifest.setdefault("artifacts", {})["job_id"] = args.job_id
@@ -3496,31 +4092,7 @@ def show_campaign_status(args: argparse.Namespace, job: Path) -> int:
     metadata = load_campaign_metadata(job.parent, job)
     restore_campaign_settings(args, metadata)
     paths = campaign_paths(args, job)
-    records = load_results(paths["results"])
-    pending = pending_candidate_manifests(job.parent)
-    state = write_state(
-        paths["state"],
-        paths["results"],
-        records,
-        args.max_candidates,
-        mode=args.mode,
-        stop_files=resolve_stop_files(job.parent, args.stop_file),
-        plateau_threshold=args.plateau_threshold,
-        plateau_min_delta=args.plateau_min_delta,
-        hard_crash_threshold=args.hard_crash_threshold,
-        exploration_batch_size=args.exploration_batch_size,
-        family_repeat_limit=args.family_repeat_limit,
-        pending_manifest_count=len(pending),
-        persist=False,
-    )
-    state.update(
-        {
-            "best_candidate": metadata.get("best_candidate"),
-            "best_source_sha256": metadata.get("best_source_sha256"),
-            "pending_candidate_manifest": str(pending[0].resolve()) if pending else None,
-        }
-    )
-    write_state_if_changed(paths["state"], state)
+    records, state = refresh_campaign_state(args, job, metadata, paths)
     print_campaign_result(paths, records, state, campaign=metadata)
     return 0
 

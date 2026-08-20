@@ -12,8 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from collections import OrderedDict
+
 import torch
-from peft import LoraConfig, get_peft_model
+from peft import LoraConfig, get_peft_model, get_peft_model_state_dict, set_peft_model_state_dict
+from torch.nn.modules.module import _IncompatibleKeys
 from transformers import AutoModelForCausalLM
 
 
@@ -45,3 +48,25 @@ class CausalLMPEFTModel(torch.nn.Module):
     def forward(self, input_id):
         output = self.model(input_ids=input_id, return_dict=False)
         return output
+
+    def state_dict(self, *args, destination=None, prefix="", keep_vars=False, **kwargs):
+        """Return only LoRA adapter weights with the wrapper prefix used by the server."""
+        adapter_state = get_peft_model_state_dict(self.model)
+        if destination is None:
+            destination = OrderedDict()
+        for key, value in adapter_state.items():
+            destination[prefix + "model." + key] = value if keep_vars else value.detach()
+        return destination
+
+    def load_state_dict(self, state_dict, strict=True, assign=False):
+        """Load an adapter-only server state into the wrapped PEFT model."""
+        adapter_state = {
+            key.removeprefix("model."): value for key, value in state_dict.items() if key.startswith("model.")
+        }
+        if not adapter_state:
+            if strict:
+                raise RuntimeError("No LoRA adapter keys found in provided state_dict.")
+            return _IncompatibleKeys([], list(state_dict.keys()))
+
+        set_peft_model_state_dict(self.model, adapter_state)
+        return _IncompatibleKeys([], [])

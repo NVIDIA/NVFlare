@@ -22,7 +22,9 @@ import stat
 from pathlib import Path
 from typing import Any
 
+from nvflare.apis.fl_constant import ConnectionSecurity
 from nvflare.app_opt.job_launcher.study_runtime import RESERVED_DOCKER_KWARGS
+from nvflare.fuel.f3.drivers.file_driver import SCHEME as SHARED_FILE_SCHEME
 from nvflare.tool.deploy.deploy_common import (
     COMM_CONFIG_JSON,
     DOCKER_CLIENT_LAUNCHER,
@@ -59,13 +61,20 @@ def validate_config(config: dict[str, Any]) -> None:
     _validate_allowed_keys(config, {"runtime", "parent", "job_launcher"}, "docker config")
     parent = _mapping(config.get("parent"), "parent")
     job_launcher = _mapping(config.get("job_launcher", {}), "job_launcher")
-    _validate_allowed_keys(parent, {"docker_image", "network"}, "parent")
+    _validate_allowed_keys(parent, {"docker_image", "network", "internal_connection_security"}, "parent")
     _validate_allowed_keys(
         job_launcher,
         {"default_python_path", "default_job_env", "default_job_container_kwargs"},
         "job_launcher",
     )
     _required_str(parent, "docker_image", "parent")
+    connection_security = parent.get("internal_connection_security", ConnectionSecurity.MTLS)
+    if connection_security not in (ConnectionSecurity.CLEAR, ConnectionSecurity.MTLS):
+        _fail(
+            "INVALID_CONFIG",
+            "parent.internal_connection_security must be 'clear' or 'mtls'.",
+            "Set parent.internal_connection_security to 'clear' or 'mtls'.",
+        )
     if "network" in parent:
         _required_str(parent, "network", "parent")
     _optional_str(job_launcher, "default_python_path", "job_launcher")
@@ -87,6 +96,7 @@ def prepare(kit_info: KitInfo, final_output: Path, config: dict[str, Any]) -> di
     job_launcher = config.get("job_launcher") or {}
     docker_image = parent["docker_image"]
     network = parent.get("network", "nvflare-network")
+    connection_security = parent.get("internal_connection_security", ConnectionSecurity.MTLS)
 
     launcher_path = DOCKER_SERVER_LAUNCHER if kit_info.role == ROLE_SERVER else DOCKER_CLIENT_LAUNCHER
     launcher_args = {
@@ -98,7 +108,7 @@ def prepare(kit_info: KitInfo, final_output: Path, config: dict[str, Any]) -> di
     _patch_resources(kit_info.kit_dir, "docker_launcher", launcher_path, launcher_args)
     if kit_info.role == ROLE_SERVER:
         _relocate_server_storage_to_workspace(kit_info.kit_dir, WORKSPACE_MOUNT_PATH)
-    _patch_comm_config_for_docker(kit_info.kit_dir)
+    _patch_comm_config_for_docker(kit_info.kit_dir, connection_security)
     _ensure_study_runtime_template(kit_info.kit_dir)
     _remove_start_scripts(kit_info.kit_dir, keep={DOCKER_START_SH})
     start_script = _write_docker_start_script(kit_info, docker_image=docker_image, network=network)
@@ -115,14 +125,20 @@ def prepare(kit_info: KitInfo, final_output: Path, config: dict[str, Any]) -> di
     }
 
 
-def _patch_comm_config_for_docker(kit_dir: Path) -> None:
+def _patch_comm_config_for_docker(kit_dir: Path, connection_security: str = ConnectionSecurity.MTLS) -> None:
     comm_config_path = kit_dir / "local" / COMM_CONFIG_JSON
     comm_config = _load_or_default_comm_config(comm_config_path)
     internal = comm_config.setdefault("internal", {})
+    if isinstance(internal, dict) and internal.get("scheme") == SHARED_FILE_SCHEME:
+        _fail(
+            "INVALID_KIT",
+            f"Docker runtime does not support internal.scheme '{SHARED_FILE_SCHEME}'.",
+            "Use internal.scheme 'tcp', run the original kit in process mode, or choose the Slurm runtime.",
+        )
     internal["scheme"] = "tcp"
     resources = _internal_resources(comm_config)
     resources["host"] = "0.0.0.0"
-    resources.setdefault("connection_security", "clear")
+    resources["connection_security"] = connection_security
     _write_json(comm_config_path, comm_config)
 
 

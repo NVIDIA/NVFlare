@@ -13,7 +13,7 @@ Claude Code:
 
 .. code-block:: shell
 
-   npx skills add ./skills -a codex -a claude-code
+   npx skills add ./skills --skill '*' -a codex -a claude-code -y
 
 The standard Agent Skills installer places the complete skill set, including
 Auto-FL's deterministic helper scripts, in each selected agent's managed skill
@@ -51,6 +51,7 @@ scripts, and common argparse tunables.
 The result is a reviewable ``autofl.yaml`` containing:
 
 - the optimization metric, direction, environment, and candidate budget;
+- the metric semantics that every comparable candidate must preserve;
 - the fixed comparison budget that candidates must preserve;
 - ``trust_contract.allowed_edit_paths`` and allowed Python creation patterns;
 - source and importer provenance;
@@ -59,6 +60,18 @@ The result is a reviewable ``autofl.yaml`` containing:
 When the user does not name a metric, a deterministic ``key_metric`` extracted
 from ``job.py`` takes precedence. The default user experience does not require
 editing ``autofl.yaml``.
+
+The objective's ``metric_invariants`` cover the metric definition, evaluation
+data and split, timing and checkpoint, aggregation and evaluated population,
+and scale, units, and direction. A candidate is not comparable merely because
+it emits the same metric name. If the metric implementation needs correction,
+the agent abandons that candidate, reports prior scores as incomparable, and
+preserves the scored workspace as audit evidence. After human approval, the
+source is repaired in a fresh job workspace containing no prior Auto-FL
+campaign metadata or generated artifacts, and a new baseline is initialized
+there. Running ``initialize`` in the scored workspace resumes its old evidence
+instead of creating a new baseline. The correction is never credited as an
+optimization gain.
 
 Simulation Execution Permission
 ===============================
@@ -82,6 +95,8 @@ Candidate Lifecycle
 The coding agent forms a hypothesis and asks the private skill runner to create
 an isolated candidate source tree. The agent may edit allowed existing files or
 add Python modules, including new client algorithms and server aggregators.
+Before evaluation, the agent reviews the candidate intent and diff against the
+objective's metric invariants.
 
 For every candidate, NVFlare-owned helper code:
 
@@ -124,3 +139,66 @@ and NVFlare-distributed classes ending in ``Job``. Generic, local, and
 non-NVFlare job or recipe classes remain unresolved. Ambiguous scripts and
 dynamic safety-critical comparison fields block baseline execution rather than
 being guessed.
+
+Final Report After Stop
+=======================
+
+After a campaign stops cleanly, reaches its explicit cap, or ends at a hard
+blocker, select the companion report skill:
+
+.. code-block:: text
+
+   Select: NVFlare Auto-FL Report skill
+   Prompt: Generate the final report for the stopped campaign in ./job.
+
+The report skill verifies that authoritative campaign state allows a final
+response and that no ledger row or candidate manifest remains pending. For an
+abrupt interruption, the human must first confirm that no campaign process is
+running; this confirmation bypasses stale stop state only and never unfinished
+candidate evidence. An available candidate manifest is complete only with
+``keep``, ``discard``, ``crash``, or ``abandoned`` status; missing, unknown, or
+unreadable status blocks reporting.
+
+Report generation holds the same campaign lifecycle lock as the active Auto-FL
+runner. It refuses concurrent lifecycle activity and rejects custom plot,
+Markdown, or JSON output paths that alias campaign evidence, ``job.py``,
+trust-contract source paths, or one another. Outputs within the campaign
+directory must not match the trust contract's allowed source-creation patterns.
+The persisted POSIX lock file does not by itself mean a campaign is active, so
+a read-only campaign archive can be reported when that lock file already exists
+and the three output paths are explicitly writable.
+
+The skill refreshes ``progress.png`` when plotting is available and generates:
+
+- ``autofl_final_report.md`` with a selected-candidate rationale, concise
+  summaries of what helped and what did not help, the major trajectory,
+  retained-best provenance, lineage, literature outcomes, grouped failures,
+  commands, and comparability warnings;
+- ``autofl_report_summary.json`` with the same evidence under the skill-local
+  ``nvflare.autofl.report.v1`` schema.
+
+Literature outcomes use the ``literature_event_id`` written by the campaign
+runner rather than inferring relationships from ledger position. Baselines are
+identified strictly by ``status=baseline``; ``best`` includes only a scored
+baseline or ``keep`` row, while a better unretained ``discard`` is reported as
+``best_observed``. If a valid plot cannot be produced, the Markdown and JSON
+reports are still generated with an explicit plot-availability warning.
+An exploration batch stopped before its required candidate count is reported
+as incomplete, and the Markdown report references ``progress.png`` relatively
+so the two artifacts can be moved together.
+
+The concise synthesis follows the same evidence rules. "What helped" contains
+only strict improvements that were retained. "What did not help" presents
+representative scored discards by their recorded algorithm family and
+literature event, plus grouped crashes. Missing family metadata stays
+``unclassified``; the report does not guess mechanisms from candidate names.
+The trajectory keeps the first and final running best and the largest measured
+objective improvements rather than evenly sampling the campaign.
+
+The product campaign and report contracts support metric maximization only.
+The report also surfaces abandoned-candidate state and warns if the state's
+ledger pointer, candidate-attempt, baseline, or improvement accounting
+disagrees with the ledger.
+
+As with active Auto-FL, users invoke the skill through their coding agent and
+do not run scripts from the installed skill directory themselves.

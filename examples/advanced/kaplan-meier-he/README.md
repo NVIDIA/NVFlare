@@ -203,7 +203,9 @@ Each client generates:
 
 ### Job Recipe
 
-**Configuration**: `job.py` using NVFlare Recipe API
+**Configuration**: `job.py` creates a concrete `KaplanMeierRecipe` from
+`km_recipe.py`, then exports or executes it through the NVFlare Recipe API.
+The lower-level job assembly remains encapsulated in the dedicated recipe.
 
 **Key Parameters**:
 - `--encryption`: Enable/disable Homomorphic Encryption (HE)

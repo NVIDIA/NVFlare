@@ -77,8 +77,13 @@ python job.py -n 3 -t "file:///my/custom/mlruns" -l verbose
 - `-n, --n_clients`: Number of clients (default: 2)
 - `-t, --tracking_uri`: MLflow tracking URI
 - `-w, --work_dir`: Working directory
-- `-e, --export_config`: Export config only (don't run)
 - `-l, --log_config`: Log level (concise/verbose)
+
+To export the Recipe job without running it:
+
+```bash
+python job.py --export --export-dir /tmp/nvflare/jobs
+```
 
 ---
 

@@ -33,6 +33,7 @@ import posixpath
 import secrets
 import shutil
 import stat
+import sys
 import tempfile
 import threading
 import time
@@ -637,7 +638,7 @@ def upload_results(args, secure_mode: bool) -> None:
 
     run_dir = os.path.join(args.workspace, args.job_id)
     if not os.path.isdir(run_dir):
-        return
+        raise RuntimeError(f"results workspace does not exist for {args.job_id}: {run_dir}")
 
     temp_bundle = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
     temp_bundle.close()
@@ -707,8 +708,14 @@ def upload_results(args, secure_mode: bool) -> None:
         _close_bootstrap_cell()
 
 
-def upload_results_safely(args, secure_mode: bool, log=None) -> None:
+def upload_results_on_shutdown(args, secure_mode: bool, log=None) -> None:
+    has_primary_error = sys.exc_info()[0] is not None
     try:
         upload_results(args, secure_mode)
     except Exception as e:
-        (log or logger).warning(f"failed to upload job results for {args.job_id}: {secure_format_exception(e)}")
+        if not has_primary_error:
+            raise
+        (log or logger).error(
+            f"failed to upload job results for {args.job_id} while handling another error: "
+            f"{secure_format_exception(e)}"
+        )

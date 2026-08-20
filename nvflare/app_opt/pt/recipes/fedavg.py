@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional, Union
+from typing import Any, Literal, Optional, Union
 
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.abstract.aggregator import Aggregator
@@ -70,8 +70,13 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         per_site_config: Deprecated constructor form. New code should call
             ``set_per_site_config(recipe, config)`` immediately after construction.
         launch_once: Whether external process is launched once or per task. Defaults to True.
+        launch_timeout: Seconds to wait for an external process to launch and establish its
+            Client API session. ``None`` disables this timeout. Defaults to 300.0.
         shutdown_timeout: Seconds to wait before shutdown. Defaults to 0.0.
         key_metric: Metric used to determine if the model is globally best. Defaults to "accuracy".
+        key_metric_mode: One of "min" or "max". Use "min" when lower key_metric values are better
+            and "max" when higher values are better. If omitted and stop_cond uses the same metric,
+            the mode is inferred from its comparison operator; otherwise it defaults to "max".
         stop_cond: Early stopping condition based on metric. String literal in the format of
             '<key> <op> <value>' (e.g. "accuracy >= 80"). If None, early stopping is disabled.
         patience: Number of rounds with no improvement after which FL will be stopped.
@@ -81,7 +86,6 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         exclude_vars: Regex pattern for variables to exclude from aggregation.
         aggregation_weights: Per-client aggregation weights dict. Defaults to equal weights.
         enable_tensor_disk_offload: Enable disk-backed tensor offload for incoming streamed payloads.
-
     Example:
         Basic usage with early stopping:
 
@@ -124,8 +128,10 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         model_locator: Optional[ModelLocator] = None,
         per_site_config: Optional[dict[str, dict]] = None,
         launch_once: bool = True,
+        launch_timeout: Optional[float] = 300.0,
         shutdown_timeout: float = 0.0,
         key_metric: str = "accuracy",
+        key_metric_mode: Optional[Literal["min", "max"]] = None,
         # New FedAvg features
         stop_cond: Optional[str] = None,
         patience: Optional[int] = None,
@@ -160,8 +166,10 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             model_persistor=model_persistor,
             per_site_config=per_site_config,
             launch_once=launch_once,
+            launch_timeout=launch_timeout,
             shutdown_timeout=shutdown_timeout,
             key_metric=key_metric,
+            key_metric_mode=key_metric_mode,
             stop_cond=stop_cond,
             patience=patience,
             best_model_filename=best_model_filename,

@@ -15,10 +15,12 @@ NVIDIA FLARE system with various conditions on the network bandwidth.
 The Azure VM size of the NVIDIA FLARE server was M32-8ms, which has 875GB memory.  The AWS EC2 instance type of NVIDIA FLARE clients was r5a.16xlarge with 512GB memory.  We also enabled
 128GB swap space on all machines.
 
-For PyTorch FedAvg jobs that use ``enable_tensor_disk_offload=True``, server memory reduction depends on the FL
-server temporary directory being backed by disk. The server IT administrator should set and verify ``TMPDIR`` for the
-server process before starting the server, and should not rely on a RAM-backed ``/tmp`` such as ``tmpfs`` or
-``ramfs``. See :ref:`Starting Federated Learning Servers <starting_fl_servers>` for the server setup note.
+For PyTorch jobs that use ``enable_tensor_disk_offload=True``, memory reduction depends on the receiving process
+temporary directory being backed by disk. For FedAvg this is the FL server; for Swarm it is each client that can be
+selected as an aggregator. The site administrator should set and verify ``TMPDIR`` before starting the applicable
+server or client, and should not rely on a RAM-backed ``/tmp`` such as ``tmpfs`` or ``ramfs``. See
+:ref:`Starting Federated Learning Servers <starting_fl_servers>` and
+:ref:`Starting Federated Learning Clients <starting_fl_clients>` for deployment setup.
 
 Job of 128GB Models
 *******************

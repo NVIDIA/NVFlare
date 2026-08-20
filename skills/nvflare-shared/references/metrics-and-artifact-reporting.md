@@ -54,6 +54,11 @@ the artifact path. Do not hide the concern just because the final metric exists.
 
 ## Final Response Expectations
 
+When an artifact or bounded log contains the primary metric scalar, report it
+as `<metric-name> = <numeric-value> (<source>)`. Naming the metric without its
+numeric value, or merely saying that the value is available, is incomplete
+evidence.
+
 Report:
 
 - final metric values, metric names, and where they came from;

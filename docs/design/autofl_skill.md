@@ -2,20 +2,22 @@
 
 ## Summary
 
-Auto-FL should enter NVFlare as a skill-first product experience. Users select
+Auto-FL is implemented in NVFlare as a skill-first product experience. Users select
 an official NVFlare Auto-FL skill in a coding agent, point it at an existing
 `job.py`, and state the optimization objective, environment, and budget. NVFlare
 owns deterministic import of campaign-relevant settings, execution truth, policy
 boundaries, artifacts, and reproducibility. The agent owns candidate planning,
 code edits within allowed paths, experiment execution through the existing
-`job.py`, comparison, and narrative reporting.
+`job.py`, and hypothesis-driven exploration. The companion report skill turns
+the recorded evidence into deterministic final artifacts for the agent to
+summarize.
 
-This avoids introducing a new public Auto-FL command tree while still making
+This design avoids introducing a new public Auto-FL command tree while making
 Auto-FL an NVFlare-owned feature.
 
 ## Product Boundary
 
-The first production-oriented slice includes:
+The product boundary comprises:
 
 - A root `skills/nvflare-autofl` agent skill that follows the NVFLARE skills
   layout used by the general agent-skills work.
@@ -26,6 +28,9 @@ The first production-oriented slice includes:
 - A skill-local candidate lifecycle that snapshots the current best source,
   gives the agent an isolated draft, validates the resulting patch, and keeps or
   restores source according to the campaign metric.
+- This follow-up's companion `skills/nvflare-autofl-report` skill, which
+  deterministically turns a stopped campaign ledger, state, config, and
+  manifests into human- and machine-readable final report artifacts.
 - Documentation for using the skill with simulation, POC, and production
   environments through existing NVFlare surfaces.
 
@@ -46,7 +51,8 @@ and submission artifacts.
 The purpose of `autofl.yaml` is to expose the human-reviewable Auto-FL campaign
 layer:
 
-- Objective metric, requested environment, and candidate budget.
+- Objective metric, requested environment, candidate budget, and semantic
+  metric invariants.
 - Editable search-space settings discovered from `job.py` and related train
   scripts.
 - Fixed-budget constraints that must remain comparable across candidates.
@@ -76,6 +82,8 @@ on campaign-relevant settings rather than duplicating the full exported job:
   unambiguous NVFlare `ScriptRunner(script=...)` call.
 - Objective metric from user request, `key_metric`, or explicit unresolved
   default.
+- Metric invariants covering definition, evaluation data/split,
+  timing/checkpoint, aggregation/population, and scale/units/direction.
 - Fixed-budget fields such as rounds, clients, and candidate budget.
 - Common argparse tunables from `job.py` and the resolved train script.
 
@@ -108,6 +116,17 @@ Every import result includes:
 The skill must present editable, unresolved, and allowed sections before it runs
 candidates. This is the core product guardrail: NVFlare makes the campaign
 reviewable and reproducible; the agent makes it interactive and exploratory.
+Candidate comparison also depends on the objective's declared
+`metric_invariants`. The agent reviews hypotheses and diffs against this
+contract because deterministic static analysis cannot prove arbitrary
+measurement equivalence. If a scored campaign needs a metric implementation
+correction, the candidate is abandoned, prior scores are declared incomparable,
+and the scored workspace is preserved as audit evidence. After human approval,
+the source is repaired in a fresh job workspace with no Auto-FL campaign
+metadata or generated artifacts, and a new baseline is initialized there.
+Calling `initialize` in a scored workspace resumes its existing evidence; it
+does not establish a repaired baseline. A metric correction is never retained
+as an optimization improvement.
 During campaign initialization, the runner merges existing, workspace-local
 `mutation_schema.yaml` `preferred_targets` into
 `trust_contract.allowed_edit_paths`. Missing, symlinked, reserved, or
@@ -244,16 +263,115 @@ This placement deliberately keeps the unreleased `autofl.yaml` contract out of
 contract command should be considered only after another concrete workflow
 needs the same interface and the schema has proved stable. The general,
 read-only `nvflare agent inspect` surface does not acquire an Auto-FL-specific
-profile in this proposal.
+profile in this implementation.
 
-## Review Questions
+## Stopped-Campaign Reporting
 
-- Are the supported `job.py` patterns sufficient for an initial prototype?
-- Are the edit and creation permissions in `autofl.yaml` appropriate for
-  algorithm-level candidates while preserving candidate comparability?
-- Which exported-job fields should be used as validation evidence versus static
-  `job.py` parsing for authoring intent?
-- Does the Auto-FL skill pass the general NVFLARE skill frontmatter, trigger,
-  and eval checks after it lands under `skills/nvflare-autofl`?
-- Which candidate-manifest and metric/artifact fields should become stable
-  NVFlare APIs after the skill-local contract proves itself?
+Reporting is a separate skill boundary because its trigger and safety posture
+differ from active optimization. `nvflare-autofl` must continue an active,
+uncapped campaign while state has `final_response_allowed=false`.
+`nvflare-autofl-report` operates only after a clean stop, explicit cap, hard
+blocker, or independently confirmed interruption.
+
+The report helper consumes `results.tsv`, `autofl.yaml`, campaign state, and
+candidate manifests. It attempts to refresh the shared `progress.png` and
+writes:
+
+- `autofl_final_report.md`, a concise review artifact with executive summary,
+  selected-candidate rationale, what-helped/what-did-not-help synthesis, major
+  trajectory, best-candidate lineage, exact commands, reliability, and
+  reproduction guidance;
+- `autofl_report_summary.json`, a machine-readable
+  `nvflare.autofl.report.v1` summary for tools and future automation.
+
+When campaign state records an unfinished literature exploration batch, the
+report marks that checkpoint as incomplete instead of treating the partial
+evidence as a confirmed negative result. The Markdown report uses a relative
+reference for `progress.png` so the report and plot remain portable together.
+
+The helper does not edit source, ledger, manifests, or campaign state and does
+not require Git. If an abrupt interruption leaves state active, the human must
+confirm interruption after execution is independently checked; the report
+records that assertion without rewriting history. This confirmation bypasses
+only stale stop state. Pending state, `candidate` ledger rows, or manifests
+without a recognized terminal status (`keep`, `discard`, `crash`, or
+`abandoned`) block finalization until the active skill finalizes or abandons
+them. Missing, unknown, or unreadable manifest status blocks as well because
+report generation cannot prove that the candidate was finalized.
+
+Report finalization acquires the same nonblocking campaign lifecycle lock as
+the active runner and holds it across evidence reads, plotting, and report
+writes. A concurrent lifecycle action therefore causes a clean refusal rather
+than a stale or mixed report. Before any artifact write, the helper also rejects
+canonical or filesystem aliases between writable outputs and campaign evidence,
+`job.py`, or trust-contract source paths; outputs may not match the trust
+contract's allowed source-creation patterns. It also requires the plot,
+Markdown, and JSON destinations to be distinct. A persisted POSIX lock file is
+a stable lock target, not proof of a live owner. A read-only archive remains
+reportable only when that lock file already exists and outputs point to writable
+locations. Case-folded collision checks keep output configurations safe on
+case-insensitive filesystems.
+
+Relative report-helper paths, including an overridden plotter, resolve from
+the campaign directory so agent execution is independent of shell location.
+
+Plotting is optional report evidence. A missing plotting dependency or invalid
+PNG does not suppress the Markdown and JSON artifacts: the helper preserves the
+failed artifact, emits a warning, omits the Markdown image, and records
+`artifacts.progress_plot_available=false`.
+
+Literature reporting follows measured evidence rather than agent narrative.
+Each checkpoint's `literature_event_id` links it to candidates developed from
+that review, including candidates recorded after a newer checkpoint. Candidates
+without an event ID are not attributed by ledger position. Their best result is
+compared with the retained incumbent immediately before the review and
+classified as helped, matched, not confirmed, failed, or not evaluated.
+Recorded `[src: ...]` markers are preserved as campaign provenance, not
+presented as independently verified citations.
+
+The report's concise outcome synthesis builds on those same semantics. A
+candidate appears under "What Helped" only when a scored `keep` row strictly
+improved the retained incumbent. Representative scored discards are grouped by
+their explicit algorithm family and literature event, while crashes and
+unscored discards are grouped by recorded failure reason. Family outcomes can
+be helped, mixed, not confirmed, or failed; missing family metadata remains
+unclassified rather than being inferred from candidate names. The selected
+candidate is explained as the best scored retained result with its baseline
+delta, hypothesis, kind, family, and lineage.
+
+For long campaigns, the trajectory retains the first and final running best
+and selects the largest measured objective improvements for the remaining
+milestone slots. This preserves the important optimization story without
+weakening the underlying retained-best and literature-event contracts.
+
+The report distinguishes retained and observed evidence. `best` is limited to
+scored baseline and `keep` rows, while `best_observed` may expose an unretained
+scored `discard`. Pending candidates and crashes remain attempt/failure
+evidence and cannot become milestones or literature improvements. The
+objective also separates measurement provenance (`metric_source`) from the
+importer's metric-contract provenance (`metric_contract_source`). Per-run
+metric name, extraction source and artifact, candidate kind, algorithm family,
+and literature event linkage flow from the final `results.tsv` contract into
+the JSON summary and best-candidate report.
+
+The merged Auto-FL producer supports maximization only, so the report rejects
+obsolete minimization contracts. It derives candidate attempts, baseline, and
+improvement from the ledger, cross-checks those values against authoritative
+campaign state, verifies the state's authoritative ledger pointer, and
+preserves the state-derived abandoned-candidate count.
+
+Finally, the report compares the declarative/imported budget with exact
+baseline and best-candidate commands. It highlights changed compute or data
+arguments, aggregation, cross-site evaluation, or final-evaluation populations,
+incomplete lineage, and repeated selection on test-like metrics.
+This makes the report a trust artifact rather than a polished restatement of
+the agent's conclusions.
+
+## Follow-Up Review Questions
+
+- Is `nvflare.autofl.report.v1` sufficient for downstream review and automation
+  while remaining explicitly skill-local in this follow-up?
+- Which report, candidate-manifest, and metric/artifact fields should become
+  stable NVFlare APIs after these skill-local contracts prove themselves?
+- Which additional POC and production campaign fixtures should be added once
+  externally recorded campaigns are available?

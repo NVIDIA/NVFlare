@@ -15,12 +15,130 @@
 import importlib.util
 import logging
 import sys
+from copy import deepcopy
 
+import pytest
+
+from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.fl_context import FLContext
+from nvflare.apis.job_launcher_spec import JobProcessArgs, JobProcessEnv
+from nvflare.app_common.resource_managers.gpu_resource_manager import GPUResourceManager
+from nvflare.app_common.resource_managers.list_resource_manager import ListResourceManager
 from nvflare.utils.job_launcher_utils import (
     _validate_launcher_spec,
+    generate_client_command,
+    generate_server_command,
+    get_credential_env,
     get_job_launcher_spec,
+    get_portable_resource_spec,
+    get_resource_manager_spec,
+    portable_memory_to_bytes,
+    portable_memory_to_mib,
     refresh_custom_dir_import_path,
+    resolve_site_resource_spec,
+    validate_docker_job_launcher_spec,
+    validate_portable_resource_conflicts,
+    validate_portable_resource_spec,
 )
+
+_CREDENTIAL_JOB_ARGS = {
+    JobProcessArgs.AUTH_TOKEN: ("-t", "secret-token"),
+    JobProcessArgs.TOKEN_SIGNATURE: ("-ts", "secret-signature"),
+    JobProcessArgs.SSID: ("-d", "secret-ssid"),
+}
+
+
+class TestCredentialEnv:
+    def test_maps_credentials_to_env_names(self):
+        assert get_credential_env(_CREDENTIAL_JOB_ARGS) == {
+            JobProcessEnv.AUTH_TOKEN: "secret-token",
+            JobProcessEnv.TOKEN_SIGNATURE: "secret-signature",
+            JobProcessEnv.SSID: "secret-ssid",
+        }
+
+    def test_missing_credentials_skipped_and_values_stringified(self):
+        assert get_credential_env({JobProcessArgs.SSID: ("-d", 12345)}) == {JobProcessEnv.SSID: "12345"}
+
+    def test_empty_and_none_credential_values_skipped(self):
+        # empty creds must stay missing so the job process parser fails at startup
+        job_args = {JobProcessArgs.AUTH_TOKEN: ("-t", ""), JobProcessArgs.SSID: ("-d", None)}
+        assert get_credential_env(job_args) == {}
+
+    @pytest.mark.parametrize("generate", [generate_client_command, generate_server_command])
+    def test_generated_commands_exclude_credential_values(self, generate):
+        fl_ctx = FLContext()
+        job_args = {
+            JobProcessArgs.EXE_MODULE: ("-m", "some.module"),
+            JobProcessArgs.WORKSPACE: ("-w", "/ws"),
+            **_CREDENTIAL_JOB_ARGS,
+        }
+        fl_ctx.set_prop(FLContextKey.JOB_PROCESS_ARGS, job_args, private=True, sticky=False)
+        command = generate(fl_ctx)
+        assert "secret-" not in command
+        assert "/ws" in command
+
+
+class TestValidateDockerJobLauncherSpec:
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("image", None),
+            ("shm_size", 0),
+            ("shm_size", 1024),
+            ("shm_size", (1 << 63) - 1),
+            ("shm_size", "8g"),
+            ("shm_size", "8gb"),
+            ("shm_size", "8B"),
+            ("shm_size", "8.5g"),
+            ("shm_size", "0.5gb"),
+            ("entrypoint", "/usr/bin/env"),
+            ("entrypoint", ["/usr/bin/env"]),
+            ("entrypoint", ["/bin/sh", "-c"]),
+        ],
+    )
+    def test_accepts_valid_container_option_value(self, field, value):
+        validate_docker_job_launcher_spec({field: value}, "docker spec")
+
+    @pytest.mark.parametrize(
+        "shm_size",
+        [
+            {"unexpected": 1},
+            ["8g"],
+            "abc",
+            "8.",
+            ".5g",
+            "8bb",
+            "8BB",
+            str(1 << 63),
+            "9" * 400,
+            -1,
+            1 << 63,
+            True,
+        ],
+    )
+    def test_rejects_invalid_shm_size(self, shm_size):
+        with pytest.raises(ValueError, match="field 'shm_size'"):
+            validate_docker_job_launcher_spec({"shm_size": shm_size}, "docker spec")
+
+    @pytest.mark.parametrize(
+        "entrypoint",
+        [{"unexpected": 1}, 123, [["/usr/bin/env"]], "", "   ", ["/bin/sh", "   "]],
+    )
+    def test_rejects_invalid_entrypoint(self, entrypoint):
+        with pytest.raises(ValueError, match="field 'entrypoint'"):
+            validate_docker_job_launcher_spec({"entrypoint": entrypoint}, "docker spec")
+
+    @pytest.mark.parametrize(
+        ("field", "value", "message"),
+        [
+            ("image", 123, "must be a string or null"),
+            ("python_path", "", "must be a non-empty string"),
+            ("python_path", "   ", "must be a non-empty string"),
+        ],
+    )
+    def test_rejects_invalid_launcher_value(self, field, value, message):
+        with pytest.raises(ValueError, match=message):
+            validate_docker_job_launcher_spec({field: value}, "docker spec")
 
 
 class TestGetJobLauncherSpec:
@@ -84,6 +202,244 @@ class TestGetJobLauncherSpec:
         }
         assert get_job_launcher_spec(meta, "site-1", "docker") == {"image": "legacy/img:v1"}
 
+    def test_slurm_falls_back_to_resource_spec(self):
+        meta = {"resource_spec": {"site-1": {"slurm": {"nodes": 2}}}}
+        assert get_job_launcher_spec(meta, "site-1", "slurm") == {"nodes": 2}
+
+
+class TestPortableResourceSpec:
+    def test_resolves_default_and_site_override_without_mutation(self):
+        meta = {
+            "resource_spec": {
+                "@default": {"num_of_gpus": 1, "num_of_cpus": 4, "memory": "8Gi"},
+                "site-1": {"num_of_gpus": 2, "custom": 3},
+            }
+        }
+        original = deepcopy(meta)
+
+        assert resolve_site_resource_spec(meta, "site-1") == {
+            "num_of_gpus": 2,
+            "num_of_cpus": 4,
+            "memory": "8Gi",
+            "custom": 3,
+        }
+        assert get_portable_resource_spec(meta, "site-1") == {
+            "num_of_gpus": 2,
+            "num_of_cpus": 4,
+            "memory": "8Gi",
+        }
+        assert meta == original
+
+    def test_default_is_a_normal_site_name(self):
+        meta = {"resource_spec": {"@default": {"num_of_cpus": 2}, "default": {"num_of_cpus": 8}}}
+        assert get_portable_resource_spec(meta, "default") == {"num_of_cpus": 8}
+        assert get_portable_resource_spec(meta, "site-1") == {"num_of_cpus": 2}
+        assert get_portable_resource_spec(meta, "server") == {"num_of_cpus": 2}
+
+    def test_resource_manager_gets_positive_gpu_and_gpu_memory(self):
+        meta = {
+            "resource_spec": {
+                "@default": {"num_of_gpus": 1, "num_of_cpus": 4, "memory": "8Gi"},
+                "site-1": {"mem_per_gpu_in_GiB": 16},
+            }
+        }
+        assert get_resource_manager_spec(meta, "site-1") == {"num_of_gpus": 1, "mem_per_gpu_in_GiB": 16}
+
+    def test_resource_manager_ignores_zero_gpu(self):
+        meta = {"resource_spec": {"@default": {"num_of_gpus": 0, "num_of_cpus": 4, "memory": "8Gi"}}}
+        assert get_resource_manager_spec(meta, "site-1") == {}
+
+    def test_resource_manager_normalizes_zero_gpu_pair_and_preserves_custom_resources(self):
+        meta = {
+            "resource_spec": {
+                "site-1": {
+                    "num_of_gpus": 0,
+                    "mem_per_gpu_in_GiB": 0,
+                    "license": 2,
+                }
+            }
+        }
+
+        resource_spec = get_resource_manager_spec(meta, "site-1")
+        resource_manager = ListResourceManager(resources={"license": ["a", "b"]})
+
+        assert resource_spec == {"license": 2}
+        enough, token = resource_manager.check_resources(resource_spec, FLContext())
+        assert enough
+        assert resource_manager.reserved_resources[token][0] == {"license": ["a", "b"]}
+        allocated = resource_manager.allocate_resources(resource_spec, token, FLContext())
+        assert allocated == {"license": ["a", "b"]}
+        resource_manager.free_resources(allocated, token, FLContext())
+        assert set(resource_manager.resources["license"]) == {"a", "b"}
+
+    @pytest.mark.parametrize(
+        "site_spec",
+        [
+            {"num_of_gpus": 0, "mem_per_gpu_in_GiB": 8},
+            {"process": {"num_of_gpus": 0, "mem_per_gpu_in_GiB": 8}, "docker": {"image": "x"}},
+        ],
+    )
+    def test_resource_manager_ignores_zero_gpu_with_nonzero_gpu_memory(self, site_spec):
+        meta = {"resource_spec": {"site-1": site_spec}}
+        original = deepcopy(meta)
+        resource_spec = get_resource_manager_spec(meta, "site-1")
+        resource_manager = GPUResourceManager(num_of_gpus=2, mem_per_gpu_in_GiB=16, ignore_host=True)
+
+        assert resource_spec == {}
+        enough, token = resource_manager.check_resources(resource_spec, FLContext())
+        assert enough
+        assert resource_manager.reserved_resources[token][0] == {}
+        assert all(resource.memory == 16 for resource in resource_manager.resources.values())
+        assert resource_manager.allocate_resources(resource_spec, token, FLContext()) == {}
+        assert meta == original
+
+    def test_legacy_nested_spec_is_not_reinterpreted_without_default(self):
+        meta = {"resource_spec": {"site-1": {"process": {"num_of_cpus": 4}, "docker": {"image": "x"}}}}
+        validate_portable_resource_spec(meta["resource_spec"])
+        assert resolve_site_resource_spec(meta, "site-1") == {"num_of_cpus": 4}
+        assert get_portable_resource_spec(meta, "site-1") == {}
+        assert get_resource_manager_spec(meta, "site-1") == {"num_of_cpus": 4}
+
+    @pytest.mark.parametrize(
+        "spec",
+        [
+            {"num_of_gpus": -1},
+            {"num_of_gpus": True},
+            {"num_of_gpus": None},
+            {"num_of_cpus": 0},
+            {"num_of_cpus": 1.5},
+            {"num_of_cpus": None},
+            {"memory": "8G"},
+            {"memory": "1.5Gi"},
+            {"memory": "0Gi"},
+            {"memory": None},
+        ],
+    )
+    def test_rejects_invalid_portable_value(self, spec):
+        with pytest.raises(ValueError):
+            validate_portable_resource_spec({"@default": spec})
+
+    @pytest.mark.parametrize("key", ["num_of_gpus", "num_of_cpus", "memory"])
+    def test_rejects_null_site_override(self, key):
+        with pytest.raises(ValueError):
+            validate_portable_resource_spec({"@default": {}, "site-1": {key: None}})
+
+    def test_rejects_unknown_default_field(self):
+        with pytest.raises(ValueError, match="unsupported field"):
+            validate_portable_resource_spec({"@default": {"gpu_memory": "8Gi"}})
+
+    def test_converts_memory_exactly(self):
+        validate_portable_resource_spec({"@default": {"num_of_gpus": 0, "num_of_cpus": 1, "memory": "1Mi"}})
+        assert portable_memory_to_mib("2Gi") == 2048
+        assert portable_memory_to_mib("1Ti") == 1024 * 1024
+        assert portable_memory_to_bytes("3Mi") == 3 * 1024 * 1024
+        with pytest.raises(ValueError, match="positive integer"):
+            portable_memory_to_mib("8G")
+
+    @pytest.mark.parametrize(
+        ("portable", "mode", "native"),
+        [
+            ({"num_of_gpus": 1}, "docker", {"num_of_gpus": 2}),
+            ({"num_of_gpus": 1}, "docker", {"device_requests": [{"Count": 2}]}),
+            ({"num_of_gpus": 1}, "k8s", {"num_of_gpus": 2}),
+            ({"num_of_cpus": 2}, "docker", {"nano_cpus": 2_000_000_000}),
+            ({"num_of_cpus": 2}, "k8s", {"cpu": "2"}),
+            ({"num_of_cpus": 2}, "slurm", {"cpus_per_node": 2}),
+            ({"memory": "8Gi"}, "docker", {"mem_limit": 8 * 1024**3}),
+            ({"memory": "8Gi"}, "k8s", {"memory": "8Gi", "memory_request": "4Gi"}),
+            ({"memory": "8Gi"}, "slurm", {"mem_per_node": 8192}),
+        ],
+    )
+    def test_rejects_portable_native_default_conflict(self, portable, mode, native):
+        meta = {
+            "resource_spec": {"@default": portable},
+            "launcher_spec": {"default": {mode: native}},
+        }
+        with pytest.raises(ValueError, match="conflicts"):
+            validate_portable_resource_conflicts(meta)
+
+    def test_allows_slurm_topology_matching_portable_gpu_total(self):
+        meta = {
+            "resource_spec": {"@default": {"num_of_gpus": 8}},
+            "launcher_spec": {"default": {"slurm": {"nodes": 2, "gpus_per_node": 4}}},
+        }
+
+        validate_portable_resource_conflicts(meta)
+
+    @pytest.mark.parametrize(
+        ("mode", "launcher_spec"),
+        [
+            ("docker", {"num_of_gpus": 8}),
+            ("k8s", {"num_of_gpus": 8}),
+            ("slurm", {"nodes": 2, "gpus_per_node": 4}),
+        ],
+    )
+    @pytest.mark.parametrize("default_spec", [{}, {"@default": {"num_of_cpus": 4}}])
+    def test_rejects_legacy_nested_gpu_count_mismatch(self, mode, launcher_spec, default_spec):
+        meta = {
+            "resource_spec": {
+                **default_spec,
+                "site-1": {
+                    "process": {"num_of_gpus": 1},
+                    mode: launcher_spec,
+                },
+            }
+        }
+
+        with pytest.raises(ValueError, match="legacy process num_of_gpus"):
+            validate_portable_resource_conflicts(meta)
+
+    @pytest.mark.parametrize(
+        ("mode", "launcher_spec"),
+        [
+            ("docker", {"num_of_gpus": 2}),
+            ("k8s", {"num_of_gpus": 2}),
+            ("slurm", {"nodes": 2, "gpus_per_node": 1}),
+        ],
+    )
+    @pytest.mark.parametrize("default_spec", [{}, {"@default": {"num_of_cpus": 4}}])
+    def test_allows_matching_legacy_nested_gpu_count(self, mode, launcher_spec, default_spec):
+        meta = {
+            "resource_spec": {
+                **default_spec,
+                "site-1": {
+                    "process": {"num_of_gpus": 2},
+                    mode: launcher_spec,
+                },
+            }
+        }
+
+        validate_portable_resource_conflicts(meta)
+
+    def test_rejects_legacy_process_gpu_with_docker_device_requests(self):
+        meta = {
+            "resource_spec": {
+                "site-1": {
+                    "process": {"num_of_gpus": 1},
+                    "docker": {"device_requests": [{"Count": 1}]},
+                }
+            }
+        }
+
+        with pytest.raises(ValueError, match="device_requests"):
+            validate_portable_resource_conflicts(meta)
+
+    def test_rejects_legacy_process_gpu_mismatch_from_launcher_spec(self):
+        meta = {
+            "resource_spec": {"site-1": {"process": {"num_of_gpus": 1}}},
+            "launcher_spec": {"site-1": {"docker": {"num_of_gpus": 8}}},
+        }
+
+        with pytest.raises(ValueError, match="legacy process num_of_gpus"):
+            validate_portable_resource_conflicts(meta)
+
+    def test_legacy_launcher_only_gpu_and_flat_sibling_remain_unchanged(self):
+        launcher_only = {"resource_spec": {"site-1": {"docker": {"num_of_gpus": 8}}}}
+        ignored_flat_sibling = {"resource_spec": {"site-1": {"num_of_gpus": 1, "docker": {"num_of_gpus": 8}}}}
+
+        validate_portable_resource_conflicts(launcher_only)
+        validate_portable_resource_conflicts(ignored_flat_sibling)
+
 
 class TestValidateLauncherSpec:
     def test_clean_spec_returns_empty(self):
@@ -100,6 +456,10 @@ class TestValidateLauncherSpec:
     def test_typo_defaul_flagged(self):
         spec = {"defaul": {"docker": {"image": "repo/img:v1"}}}
         assert "defaul" in _validate_launcher_spec(spec)
+
+    def test_typo_defaults_with_slurm_flagged(self):
+        spec = {"defaults": {"slurm": {"nodes": 2}}}
+        assert "defaults" in _validate_launcher_spec(spec)
 
     def test_exact_reserved_key_not_flagged(self):
         spec = {"default": {"docker": {"image": "repo/img:v1"}}}

@@ -43,7 +43,6 @@ lightning/
 | `--n_clients` | Number of clients | 2 |
 | `--num_rounds` | Number of training rounds | 5 |
 | `--use_tracking` | Enable TensorBoard tracking | False |
-| `--export_config` | Export job config only | False |
 
 ## Examples
 
@@ -58,7 +57,7 @@ python job.py --n_clients 3 --num_rounds 10
 python job.py --use_tracking
 
 # Export config for deployment
-python job.py --export_config
+python job.py --export --export-dir /tmp/nvflare/jobs/job_config
 ```
 
 ## Requirements

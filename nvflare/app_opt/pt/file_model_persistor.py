@@ -12,9 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import errno
 import json
 import os
 import re
+import stat
+import uuid
 from collections import OrderedDict
 from typing import Any, Dict, Optional, Union
 
@@ -303,8 +306,57 @@ class PTFileModelPersistor(ModelPersistor):
             self.save_model_file(self._best_ckpt_save_path)
 
     def save_model_file(self, save_path: str):
+        """Atomically save a PyTorch checkpoint.
+
+        The temporary file is created in the checkpoint directory so ``os.replace``
+        is atomic on filesystems that provide atomic same-filesystem replacement.
+        Remote filesystems may provide weaker guarantees. Directory fsync is skipped
+        when the platform or filesystem does not support it. New checkpoints honor
+        the process umask, and replacements preserve the existing file mode.
+        """
         save_dict = self.persistence_manager.to_persistence_dict()
-        torch.save(save_dict, save_path)
+        save_dir = os.path.dirname(os.path.abspath(save_path))
+        temp_path = None
+        try:
+            save_mode = stat.S_IMODE(os.stat(save_path).st_mode)
+        except FileNotFoundError:
+            save_mode = None
+
+        try:
+            candidate_path = os.path.join(save_dir, f".{os.path.basename(save_path)}.{uuid.uuid4().hex}.tmp")
+            with open(candidate_path, "xb") as temp_file:
+                temp_path = candidate_path
+                if save_mode is not None:
+                    os.chmod(temp_path, save_mode)
+                torch.save(save_dict, temp_file)
+                temp_file.flush()
+                os.fsync(temp_file.fileno())
+
+            os.replace(temp_path, save_path)
+            temp_path = None
+            self._fsync_directory(save_dir)
+        finally:
+            if temp_path:
+                try:
+                    os.remove(temp_path)
+                except OSError:
+                    pass
+
+    @staticmethod
+    def _fsync_directory(directory: str):
+        if os.name == "nt":
+            return
+
+        directory_fd = None
+        try:
+            directory_fd = os.open(directory, os.O_RDONLY)
+            os.fsync(directory_fd)
+        except OSError as e:
+            if e.errno not in (errno.EACCES, errno.EBADF, errno.EINVAL, errno.ENOTSUP, errno.EPERM):
+                raise
+        finally:
+            if directory_fd is not None:
+                os.close(directory_fd)
 
     def save_model(self, ml: ModelLearnable, fl_ctx: FLContext):
         self._get_persistence_manager(fl_ctx).update(ml)

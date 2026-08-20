@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import json
+import logging
 from typing import List
 
 from nvflare.apis.event_type import EventType
@@ -25,6 +26,8 @@ from nvflare.private.fed.client.admin import RequestProcessor
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
 from nvflare.private.scheduler_constants import ShareableHeader
 from nvflare.security.logging import secure_format_exception
+
+logger = logging.getLogger(__name__)
 
 
 def _get_resource_manager(engine: ClientEngineInternalSpec):
@@ -80,8 +83,9 @@ class CheckResourceProcessor(RequestProcessor):
                     is_resource_enough, token = resource_manager.check_resources(
                         resource_requirement=resource_spec, fl_ctx=fl_ctx
                     )
-            except Exception:
-                result.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
+            except Exception as e:
+                logger.error(f"Job {job_id}: resource check failed: {secure_format_exception(e)}")
+                token = "resource manager raised an exception; see site log"
 
         result.set_header(ShareableHeader.IS_RESOURCE_ENOUGH, is_resource_enough)
         result.set_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, token)

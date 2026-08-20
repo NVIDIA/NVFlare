@@ -216,6 +216,32 @@ def test_uses_default_allow_list_when_resources_are_not_initialized():
     authorizer.handle_event(EventType.BEFORE_BUILD_COMPONENT, fl_ctx)
 
 
+def test_default_allow_list_allows_metrics_artifact_writer():
+    component_path = "nvflare.app_common.widgets.metrics_artifact_writer.MetricsArtifactWriter"
+    authorizer = ComponentPathAuthorizer()
+    fl_ctx = _make_fl_ctx({"path": component_path})
+
+    authorizer.handle_event(EventType.BEFORE_BUILD_COMPONENT, fl_ctx)
+
+
+@pytest.mark.parametrize(
+    "component_path",
+    [
+        "nvflare.app_common.aggregators.collect_and_assemble_aggregator.CollectAndAssembleAggregator",
+        "nvflare.app_common.ccwf.client_controller_executor.ClientControllerExecutor",
+        "nvflare.app_common.ccwf.server_ctl.ServerSideController",
+        "nvflare.app_common.executors.model_learner_executor.ModelLearnerExecutor",
+        "nvflare.app_common.utils.json_utils.ObjectEncoder",
+        "nvflare.app_opt.pt.fedopt_ctl.FedOpt",
+    ],
+)
+def test_default_allow_list_allows_components_used_by_shipped_job_templates(component_path):
+    authorizer = ComponentPathAuthorizer()
+    fl_ctx = _make_fl_ctx({"path": component_path, "args": {}}, job_meta={AppValidationKey.BYOC: False})
+
+    authorizer.handle_event(EventType.BEFORE_BUILD_COMPONENT, fl_ctx)
+
+
 def test_implicit_default_allow_list_is_audited_and_warned_once_per_job(monkeypatch, caplog):
     audit = MagicMock(return_value="event-id")
     monkeypatch.setattr(AuditService, "add_event", audit)

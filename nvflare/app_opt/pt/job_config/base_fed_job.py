@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from torch import nn as nn
 
@@ -42,7 +42,7 @@ class BaseFedJob(UnifiedBaseFedJob):
         mandatory_clients (list[str] | None, optional): mandatory clients to run the job. Default None.
         key_metric (str, optional): Metric used to determine if the model is globally best.
             if metrics are a `dict`, `key_metric` can select the metric used for global model selection.
-            Defaults to "accuracy".
+            Defaults to "accuracy". Only used if model_selector is not provided.
         validation_json_generator (ValidationJsonGenerator | None, optional): A component for generating validation results.
             if not provided, a ValidationJsonGenerator will be configured.
         model_selector: (FLComponent | None, optional): A component for selecting the best model during training.
@@ -56,6 +56,9 @@ class BaseFedJob(UnifiedBaseFedJob):
             explicitly pass a TBAnalyticsReceiver instance.
         model_persistor (ModelPersistor | None, optional): how to persist the model.
         model_locator (ModelLocator | None, optional): how to locate the model.
+        key_metric_mode (str, optional): One of "min" or "max". Use "min" when lower key_metric values
+            are better, such as for loss, and "max" when higher values are better. Defaults to "max".
+            Only used if model_selector is not provided.
     """
 
     def __init__(
@@ -72,6 +75,7 @@ class BaseFedJob(UnifiedBaseFedJob):
         metrics_artifact_writer: Optional[MetricsArtifactWriter] = None,
         model_persistor: Optional[ModelPersistor] = None,
         model_locator: Optional[ModelLocator] = None,
+        key_metric_mode: Literal["min", "max"] = "max",
     ):
         # Call the unified BaseFedJob
         super().__init__(
@@ -79,6 +83,7 @@ class BaseFedJob(UnifiedBaseFedJob):
             min_clients=min_clients,
             mandatory_clients=mandatory_clients,
             key_metric=key_metric,
+            key_metric_mode=key_metric_mode,
             validation_json_generator=validation_json_generator,
             model_selector=model_selector,
             convert_to_fed_event=convert_to_fed_event,

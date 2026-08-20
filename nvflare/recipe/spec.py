@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import sys
+import warnings
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from typing import Dict, List, Optional, Union
@@ -47,6 +48,7 @@ def _consume_recipe_args() -> tuple:
     argv = sys.argv[1:]
     export = False
     export_dir = DEFAULT_EXPORT_DIR
+    export_dir_seen = False
     remaining = []
     i = 0
     while i < len(argv):
@@ -64,13 +66,29 @@ def _consume_recipe_args() -> tuple:
                 _CONSUMED = True
                 return False, DEFAULT_EXPORT_DIR
             export_dir = argv[i + 1]
+            export_dir_seen = True
             i += 2
         elif argv[i].startswith("--export-dir="):
             export_dir = argv[i].split("=", 1)[1]
+            export_dir_seen = True
             i += 1
         else:
             remaining.append(argv[i])
             i += 1
+
+    if export or export_dir_seen:
+        message = (
+            "NVFlare reserves '--export' and '--export-dir' as system-level recipe arguments and consumes them "
+            "before the script's argument parser runs. Rename any script-defined arguments that use these names."
+        )
+        if export_dir_seen and not export:
+            message += " '--export-dir' was provided without '--export', so the directory will not be used."
+        warnings.warn(
+            message,
+            UserWarning,
+            stacklevel=2,
+        )
+
     sys.argv[1:] = remaining
     _CONSUMED = True
     return export, export_dir
@@ -535,6 +553,14 @@ class Recipe(ABC):
             for client in clients:
                 self._job.to(obj, client, **kwargs)
 
+    def finalize(self):
+        """Called to finalize the setup of the recipe.
+
+        Returns:
+
+        """
+        pass
+
     def add_client_input_filter(
         self, filter: Filter, tasks: Optional[List[str]] = None, clients: Optional[List[str]] = None
     ):
@@ -848,6 +874,7 @@ class Recipe(ABC):
         """
         self._validate_before_use()
         self._ensure_client_apps_prepared()
+        self.finalize()
         self._warn_potential_secrets_in_params()
         with self._temporary_exec_params(server_exec_params=server_exec_params, client_exec_params=client_exec_params):
             if env is not None:
@@ -870,6 +897,7 @@ class Recipe(ABC):
         """
         self._validate_before_use()
         self._ensure_client_apps_prepared()
+        self.finalize()
         self._warn_potential_secrets_in_params()
         with self._temporary_exec_params(server_exec_params=server_exec_params, client_exec_params=client_exec_params):
             self.process_env(env)

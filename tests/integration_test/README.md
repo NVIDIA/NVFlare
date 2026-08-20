@@ -33,7 +33,9 @@ through `ci/run_integration.sh slow`. For direct local pytest runs, install the 
 Run one direct pytest suite:
 
 ```bash
+python -m pytest -v --log-cli-level=INFO --capture=no fast/client_api_attach_e2e_test.py
 python -m pytest -v --log-cli-level=INFO --capture=no fast/study_session_test.py
+python -m pytest -v --log-cli-level=INFO --capture=no slow/external_process_e2e_test.py
 python -m pytest -v --log-cli-level=INFO --capture=no slow/preflight_check_test.py
 python -m pytest -v --log-cli-level=INFO --capture=no slow/experiment_tracking_recipes_test.py
 python -m pytest -v --log-cli-level=INFO --capture=no slow/distributed_provisioning_test.py
@@ -43,9 +45,14 @@ python -m pytest -v --log-cli-level=INFO --capture=no slow/xgb_histogram_recipe_
 
 Run config-driven system tests by selecting a `test_configs.yml` group:
 
+The `xgboost` group requires an extracted HIGGS dataset. Follow the
+[XGBoost dataset download instructions](../../examples/advanced/xgboost/README.md#datasets), then place
+`HIGGS.csv` at `/tmp/nvflare/dataset/HIGGS.csv` before running the command below.
+
 ```bash
 NVFLARE_TEST_FRAMEWORK=numpy python -m pytest -v --log-cli-level=INFO --capture=no system_test.py
 NVFLARE_TEST_FRAMEWORK=pytorch python -m pytest -v --log-cli-level=INFO --capture=no system_test.py
+NVFLARE_TEST_FRAMEWORK=xgboost python -m pytest -v --log-cli-level=INFO --capture=no system_test.py
 NVFLARE_TEST_FRAMEWORK=client_api python -m pytest -v --log-cli-level=INFO --capture=no system_test.py
 ```
 
@@ -207,8 +214,10 @@ tests/integration_test/
   README.md
   test_configs.yml
   fast/
+    client_api_attach_e2e_test.py
     study_session_test.py
   slow/
+    external_process_e2e_test.py
     preflight_check_test.py
     experiment_tracking_recipes_test.py
     distributed_provisioning_test.py

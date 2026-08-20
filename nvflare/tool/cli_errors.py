@@ -321,7 +321,8 @@ _ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
     },
     "UNSIGNED_JOB_REJECTED": {
         "message": "Unsigned job rejected — require_signed_jobs is enabled.",
-        "hint": "Sign the job with an admin cert, or disable require_signed_jobs in fed_server.json.",
+        "hint": "Sign the job with an admin cert, or disable require_signed_jobs in fed_server.json and each "
+        "participating fed_client.json.",
     },
     "CERT_CHAIN_INVALID": {
         "message": "Certificate {cert} is not signed by root CA {rootca}.",

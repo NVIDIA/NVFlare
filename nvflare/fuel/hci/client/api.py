@@ -346,6 +346,8 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
 
         self.server_sess_active = False
         self.shutdown_asked = False
+        self.session_expired_reason = None
+        self.session_abort_signal = Signal()
 
         self.sess_monitor_thread = None
         self.sess_monitor_active = False
@@ -493,8 +495,14 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             ref_id=ref_id,
             from_fqcn=source_fqcn,
             per_request_timeout=self.file_download_progress_timeout,
+            abort_signal=self.session_abort_signal,
         )
         if err:
+            if file_path:
+                try:
+                    Path(file_path).unlink(missing_ok=True)
+                except OSError as ex:
+                    self.logger.error(f"failed to remove partial download: {secure_format_exception(ex)}")
             self._print_hci(f"failed to receive file {file_name}: {err}")
             return None
 
@@ -509,6 +517,8 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
 
     def _handle_session_expired(self, message: CellMessage):
         self.debug("received session timeout from server")
+        self.session_expired_reason = str(message.payload or "session expired")
+        self.session_abort_signal.trigger(self.session_expired_reason)
         self.close()
         self.fire_session_event(EventType.SESSION_TIMEOUT, message.payload)
 
@@ -606,6 +616,8 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
 
     def logout(self):
         """Send logout command to server."""
+        if self.closed:
+            return None
         if self.in_logout:
             return None
 
@@ -625,6 +637,8 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         self.closed = True
         self.server_sess_active = False
         self.shutdown_asked = True
+        if not self.session_abort_signal.triggered:
+            self.session_abort_signal.trigger("session closed")
         self.shutdown_streamer()
         if self.cell:
             self.cell.stop()

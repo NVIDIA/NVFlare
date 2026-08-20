@@ -72,7 +72,6 @@ class JobMetaKey(str, Enum):
     LAST_SCHEDULE_TIME = "last_schedule_time"
     SCHEDULE_HISTORY = "schedule_history"
     STATS_POOL_CONFIG = "stats_pool_config"
-    FROM_HUB_SITE = "from_hub_site"
     CUSTOM_PROPS = "custom_props"
     EDGE_METHOD = "edge_method"
     JOB_CLIENTS = "job_clients"  # clients that participated the job

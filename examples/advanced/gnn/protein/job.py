@@ -59,12 +59,6 @@ def main():
         help="Work directory for simulator runs (default: /tmp/nvflare/gnn/protein_fl_workspace)",
     )
     parser.add_argument(
-        "--job_dir",
-        type=str,
-        default="/tmp/nvflare/jobs/gnn_protein",
-        help="Directory for job export (default: /tmp/nvflare/jobs/gnn_protein)",
-    )
-    parser.add_argument(
         "--threads",
         type=int,
         default=None,
@@ -125,10 +119,6 @@ def main():
         key_metric="validation_f1",
     )
     set_per_site_config(recipe, per_site_config)
-
-    # Export job
-    print(f"Exporting job to {args.job_dir}")
-    recipe.export(args.job_dir)
 
     # Run recipe
     client_names = [f"site-{i}" for i in range(1, args.num_clients + 1)]

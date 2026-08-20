@@ -387,15 +387,19 @@ class ClientEngine(ClientEngineInternalSpec, StreamableEngine):
     def get_client_name(self):
         return self.client.client_name
 
-    def abort_app(self, job_id: str) -> str:
+    def abort_app(self, job_id: str, heartbeat_cleanup: bool = False) -> str:
         status = self.client_executor.get_status(job_id)
-        if status == ClientStatus.STOPPED:
+        # A CJ reports STOPPED after its runner returns, before process-local
+        # archival and communication teardown finish.  Keep treating it as a
+        # live job while the executor still owns its handle so a server-side
+        # failure can reclaim a CJ that hangs in that final teardown window.
+        if status == ClientStatus.STOPPED and job_id not in self.client_executor.get_run_processes_keys():
             return "Client app already stopped."
 
         if status == ClientStatus.NOT_STARTED:
             return "Client app has not started."
 
-        self.client_executor.abort_app(job_id)
+        self.client_executor.abort_app(job_id, heartbeat_cleanup=heartbeat_cleanup)
 
         return "Abort signal has been sent to the client App."
 

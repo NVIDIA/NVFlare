@@ -64,6 +64,7 @@ from .api_spec import (
     NoReply,
     ServerInfo,
     SessionClosed,
+    SessionExpired,
     SessionSpec,
     SubmitTokenConflict,
     SubmitTokenJobDeleted,
@@ -196,7 +197,13 @@ class Session(SessionSpec):
         """Close the session."""
         self.api.logout()
 
+    def _raise_if_session_expired(self):
+        session_expired_reason = getattr(self.api, "session_expired_reason", None)
+        if isinstance(session_expired_reason, str) and session_expired_reason:
+            raise SessionExpired(session_expired_reason)
+
     def try_connect(self, timeout):
+        self._raise_if_session_expired()
         if self.api.closed:
             raise SessionClosed("session closed")
 
@@ -221,12 +228,14 @@ class Session(SessionSpec):
         raise InternalError(details or f"login failed: {status}")
 
     def _do_command(self, command: str, enforce_meta=True, props=None):
+        self._raise_if_session_expired()
         if self.api.closed:
             raise SessionClosed("session closed")
 
         result = None
         for attempt in range(_CONNECTION_RETRY_ATTEMPTS):
             result = self.api.do_command(command, props=props)
+            self._raise_if_session_expired()
             if not _should_retry_connection_failure(command, result) or attempt >= _CONNECTION_RETRY_ATTEMPTS - 1:
                 break
             time.sleep(_CONNECTION_RETRY_BACKOFF * (attempt + 1))
@@ -1475,7 +1484,7 @@ class Session(SessionSpec):
 
         Args:
             job_id (str): ID of the job (must be RUNNING)
-            config: str (level or LogMode), dict (dictConfig), or file path
+            config: str log level or built-in LogMode
             target (str): "all", "server", or a client site name. Any value
                 other than "all" or "server" is sent through the client-targeted
                 admin command path.
@@ -1568,7 +1577,7 @@ class Session(SessionSpec):
         """Get running environment values for specified clients. The env includes values of client name,
         workspace directory, root url of the FL server, and secure mode or not.
 
-        These values can be used for 3rd-party system configuration (e.g. CellPipe to connect to the FLARE system).
+        These values can be used for third-party system configuration.
 
         Args:
             client_names: clients to get env from. None means all clients.

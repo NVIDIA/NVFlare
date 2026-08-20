@@ -15,8 +15,8 @@
 """Contract tests for the agent-facing ``--format json`` CLI outputs.
 
 Packaged agent skills consume the JSON shapes of ``nvflare recipe list``,
-``nvflare recipe show``, and ``nvflare agent inspect`` as product API
-contracts, not incidental CLI formatting. These golden-field tests fail if a
+``nvflare recipe show``, and the ``nvflare agent inspect source``/``data``
+capabilities as product API contracts, not incidental CLI formatting. These golden-field tests fail if a
 field the skills depend on is renamed or dropped, forcing an explicit,
 versioned migration instead of a silent break in shipped skills.
 
@@ -38,8 +38,17 @@ import pytest
 RECIPE_LIST_ENTRY_CONTRACT = {"name", "framework", "algorithm", "aggregation", "state_exchange", "privacy"}
 RECIPE_SHOW_DETAIL_CONTRACT = {"name", "framework", "parameters"}
 RECIPE_SHOW_PARAMETER_CONTRACT = {"name", "type", "required", "default"}
-AGENT_INSPECT_TOP_CONTRACT = {"frameworks", "conversion_state", "skill_selection", "schema_version", "static_only"}
-AGENT_INSPECT_SKILL_SELECTION_CONTRACT = {"detected_framework", "conversion_state", "recommended_skills"}
+AGENT_INSPECT_COMMON_CONTRACT = {
+    "capability",
+    "limits",
+    "path",
+    "routing",
+    "scan",
+    "schema_version",
+    "static_only",
+}
+AGENT_INSPECT_SOURCE_CONTRACT = AGENT_INSPECT_COMMON_CONTRACT | {"integration", "ownership"}
+AGENT_INSPECT_DATA_CONTRACT = AGENT_INSPECT_COMMON_CONTRACT | {"dataset"}
 
 _SAMPLE_CATALOG = [
     {
@@ -150,37 +159,29 @@ def test_recipe_show_json_contract(monkeypatch, capsys):
 
 
 def test_agent_inspect_json_contract(tmp_path):
-    from nvflare.tool.agent.inspector import inspect_path
+    from nvflare.tool.agent.inspector import inspect_source
 
     (tmp_path / "train.py").write_text(
-        "import torch\n\nclass Net(torch.nn.Module):\n    pass\n",
+        "from torch.optim import Adam\noptimizer = Adam(params)\noptimizer.step()\n",
         encoding="utf-8",
     )
 
-    data = inspect_path(tmp_path)
+    data = inspect_source(tmp_path)
 
-    top_missing = AGENT_INSPECT_TOP_CONTRACT - data.keys()
+    top_missing = AGENT_INSPECT_SOURCE_CONTRACT - data.keys()
     assert not top_missing, f"agent inspect output missing contract fields: {top_missing}"
+    assert set(data) == AGENT_INSPECT_SOURCE_CONTRACT
+    assert data["schema_version"] == "3"
+    assert data["capability"] == "source"
     assert data["static_only"] is True
-
-    selection = data["skill_selection"]
-    selection_missing = AGENT_INSPECT_SKILL_SELECTION_CONTRACT - selection.keys()
-    assert not selection_missing, f"agent inspect skill_selection missing contract fields: {selection_missing}"
-    # Assert membership, not exact equality: the inspector may append an
-    # orientation skill for findings; the contract is that the framework
-    # conversion skill is recommended.
-    assert isinstance(selection["recommended_skills"], list)
-    assert "nvflare-convert-pytorch" in selection["recommended_skills"]
-
-    assert isinstance(data["frameworks"], list) and data["frameworks"]
-    framework = data["frameworks"][0]
-    assert {"name", "confidence", "evidence"} <= framework.keys()
+    assert data["routing"] == {"recommended_skill": "nvflare-convert-pytorch", "reason": "clear_owner"}
+    assert data["ownership"]["framework"] == "pytorch"
 
 
 def test_agent_inspect_exported_job_recommends_no_skill(tmp_path):
     # Lifecycle skills are out of scope and not planned; exported jobs must not
     # route to a dropped/nonexistent skill name.
-    from nvflare.tool.agent.inspector import inspect_path
+    from nvflare.tool.agent.inspector import inspect_source
 
     app_cfg = tmp_path / "app" / "config"
     app_cfg.mkdir(parents=True)
@@ -188,9 +189,21 @@ def test_agent_inspect_exported_job_recommends_no_skill(tmp_path):
     (app_cfg / "config_fed_client.json").write_text("{}", encoding="utf-8")
     (tmp_path / "meta.json").write_text("{}", encoding="utf-8")
 
-    data = inspect_path(tmp_path)
+    data = inspect_source(tmp_path)
 
     # Assert the classification unconditionally so the contract cannot pass
     # vacuously if exported-job detection drifts.
-    assert data["conversion_state"] == "exported_job"
-    assert data["skill_selection"]["recommended_skills"] == []
+    assert data["routing"] == {"recommended_skill": None, "reason": "existing_job"}
+
+
+def test_agent_inspect_data_json_contract(tmp_path):
+    from nvflare.tool.agent.inspector import inspect_data
+
+    (tmp_path / "data.csv").write_text("age,income\n1,2\n", encoding="utf-8")
+
+    data = inspect_data(tmp_path)
+
+    assert set(data) == AGENT_INSPECT_DATA_CONTRACT
+    assert data["capability"] == "data"
+    assert data["dataset"]["modality"] == "tabular"
+    assert data["routing"] == {"recommended_skill": "nvflare-fed-stats", "reason": "dataset"}

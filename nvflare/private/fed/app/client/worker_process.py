@@ -20,13 +20,15 @@ import sys
 import threading
 
 from nvflare.apis.fl_constant import ConfigVarName, FLContextKey, JobConstants, SiteType, SystemConfigs
+from nvflare.apis.job_launcher_spec import JobProcessEnv, pop_credential_env
 from nvflare.apis.workspace import Workspace
-from nvflare.app_opt.job_launcher.workspace_cell_transfer import download_workspace, upload_results_safely
+from nvflare.app_opt.job_launcher.workspace_cell_transfer import download_workspace, upload_results_on_shutdown
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.log_utils import configure_logging, get_script_logger
 from nvflare.private.fed.app.fl_conf import FLClientStarterConfiger
+from nvflare.private.fed.app.job_process_cleanup import shutdown_job_process_runtime
 from nvflare.private.fed.app.utils import monitor_parent_process
 from nvflare.private.fed.client.client_app_runner import ClientAppRunner
 from nvflare.private.fed.client.client_status import ClientStatus
@@ -34,7 +36,6 @@ from nvflare.private.fed.utils.fed_utils import (
     create_stats_pool_files_for_job,
     fobs_initialize,
     register_ext_decomposers,
-    security_close,
     security_init_for_job,
     set_stats_pool_config_for_job,
 )
@@ -82,6 +83,7 @@ def main(args):
     deployer = None
     client_app_runner = None
     federated_client = None
+    logger = None
 
     app_root = workspace.get_app_dir(str(args.job_id))
 
@@ -127,31 +129,49 @@ def main(args):
             logger.error(f"FL client execution exception: {secure_format_exception(e)}")
         raise e
     finally:
-        if client_app_runner:
-            client_app_runner.close()
-        if deployer:
-            deployer.close()
-        if federated_client:
-            federated_client.terminate()
-        stop_event.set()
-        if thread and thread.is_alive():
-            thread.join()
-        security_close()
-        err = create_stats_pool_files_for_job(workspace, args.job_id)
-        if err:
-            if logger:
+
+        def _archive_results():
+            err = create_stats_pool_files_for_job(workspace, args.job_id)
+            if err and logger:
                 logger.warning(err)
-        upload_results_safely(args, secure_train, log=logger)
+            upload_results_on_shutdown(args, secure_train, log=logger)
+
+        try:
+            shutdown_job_process_runtime(
+                stop_command_admission=client_app_runner.close if client_app_runner else None,
+                wait_for_command_callbacks=client_app_runner.wait_for_command_callbacks if client_app_runner else None,
+                stop_cell=federated_client.stop_cell if federated_client else None,
+                logger=logger,
+                before_streaming_shutdown=_archive_results,
+            )
+        finally:
+            # Preserve the upload exception, but never let it bypass the remaining
+            # process-local ownership cleanup.
+            if deployer:
+                deployer.close()
+            if federated_client:
+                federated_client.terminate()
+            stop_event.set()
+            if thread and thread.is_alive():
+                thread.join()
 
 
 def parse_arguments():
     """Worker process start program."""
+    # Credentials may arrive via the environment; a CLI-supplied value wins.
+    creds = pop_credential_env()
+    token = creds[JobProcessEnv.AUTH_TOKEN]
+    ts = creds[JobProcessEnv.TOKEN_SIGNATURE]
+    ssid = creds[JobProcessEnv.SSID]
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", "-m", type=str, help="WORKSPACE folder", required=True)
     parser.add_argument("--startup", "-w", type=str, help="startup folder", required=True)
-    parser.add_argument("--token", "-t", type=str, help="auth token", required=True)
-    parser.add_argument("--token_signature", "-ts", type=str, help="auth token signature", required=True)
-    parser.add_argument("--ssid", "-d", type=str, help="ssid", required=True)
+    parser.add_argument("--token", "-t", type=str, help="auth token", default=token, required=token is None)
+    parser.add_argument(
+        "--token_signature", "-ts", type=str, help="auth token signature", default=ts, required=ts is None
+    )
+    parser.add_argument("--ssid", "-d", type=str, help="ssid", default=ssid, required=ssid is None)
     parser.add_argument("--job_id", "-n", type=str, help="job_id", required=True)
     parser.add_argument("--client_name", "-c", type=str, help="client name", required=True)
     # parser.add_argument("--listen_port", "-p", type=str, help="listen port", required=True)
