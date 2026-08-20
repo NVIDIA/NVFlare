@@ -265,10 +265,9 @@ the framework references show the concrete placement.
 
 ## Recipe Model Config
 
-When a recipe needs a model, use a model form accepted by the selected recipe.
-The two supported forms are explicit model config and a directly constructed
-model instance. Prefer explicit config when it makes a reusable or
-parameterized definition clearer:
+Apply the mandatory framework-neutral "Model Constructor Serialization" rule.
+Whenever identical reconstruction needs any constructor value, use explicit
+model config:
 
 ```python
 recipe = FedAvgRecipe(
@@ -280,16 +279,14 @@ recipe = FedAvgRecipe(
 )
 ```
 
-```python
-recipe = FedAvgRecipe(model=MyModel(num_classes=10), ...)
-```
-
-A direct instance is allowed only when the selected recipe accepts it and its
-construction is local, deterministic, and free of material side effects. Do
-not construct it through downloads, checkpoint loading, private or
-runtime-dependent data, external services, environment lookups, or unavailable
-runtime configuration. Prefer the `class_path` key over `path` for explicit
-config; `path` is the normalized job-config key.
+A direct instance is allowed only when the selected recipe accepts it,
+zero-argument construction with unchanged defaults reproduces the required
+architecture, and construction is local, deterministic, and free of material
+side effects. Never use a live instance to carry required or overridden
+constructor values. Do not construct it through downloads, checkpoint loading,
+private or runtime-dependent data, external services, environment lookups, or
+unavailable runtime configuration. Prefer the `class_path` key over `path` for
+explicit config; `path` is the normalized job-config key.
 
 Treat model constructor args as statically clear only when the class path is an
 importable class or direct local class definition and the constructor values
@@ -425,13 +422,10 @@ reconstruct either contract from this broad workflow reference.
 
 ## Execution Environment And Local Validation
 
-Conversion validation uses `SimEnv` from `nvflare.recipe`. Build the recipe and
-call `recipe.execute(env)` from `job.py`:
-
-```python
-env = SimEnv(num_clients=num_clients, num_threads=num_clients, workspace_root=workspace_root)
-recipe.execute(env)
-```
+Conversion validation uses `SimEnv` from `nvflare.recipe`; build the environment
+under the canonical single-topology-owner rule in the always-loaded common
+conversion reference, then call `recipe.execute(env)` from `job.py`. Do not
+reconstruct that topology policy from this broad workflow reference.
 
 For normal first-user simulation, `python job.py` is the intended local
 experience because no exported job folder may exist yet. The exported job folder
@@ -501,20 +495,11 @@ draft with that real failure as the blocker rather than looping on it.
 
 ## Export
 
-- Use `python job.py --export --export-dir <dir>` to export a generated job.
-  These are NVFLARE job system arguments across recipes, algorithms, and
-  frameworks. Do not declare them as generated job-local arguments, and do not
-  invent alternate export flags such as `--export_only`.
-- If a generated `job.py` defines local command-line options, import the
-  NVFLARE recipe API before local argument parsing. The recipe import removes
-  `--export` and `--export-dir` from `sys.argv`, so `parse_known_args()` is not
-  needed for NVFLARE flags and must not be used. Construct the local parser with
-  `argparse.ArgumentParser(allow_abbrev=False)` and call strict `parse_args()` so
-  unknown and abbreviated options fail. Do not add local `--export` or
-  `--export-dir` arguments or consume them in generated code. Treat this as a
-  generation-time requirement; validation should confirm a standard export
-  invocation plus rejection of both a misspelled option and a unique-prefix
-  abbreviation.
+- The common conversion rules own the canonical Recipe system arguments,
+  generated-parser boundary, and local-versus-exported target selection.
+- When an exported artifact was explicitly requested, validation should confirm
+  the standard export invocation plus rejection of both a misspelled local
+  option and a unique-prefix abbreviation.
 - Default `<dir>` according to `runtime-output-guidance.md` unless the user
   provides an export directory.
 - If writing explicit Job API code without a recipe execution helper, call
