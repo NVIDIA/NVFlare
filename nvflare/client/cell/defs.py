@@ -20,6 +20,9 @@ CHANNEL = "client_api"
 # managed external-process sessions. HELLO carries it for future negotiation.
 PROTOCOL_VERSION = 1
 
+# Session-scale budget shared by trainer control requests and backend result-source reaping.
+SESSION_CONTROL_TIMEOUT = 30.0
+
 
 class Topic:
     """Cell protocol topics.
