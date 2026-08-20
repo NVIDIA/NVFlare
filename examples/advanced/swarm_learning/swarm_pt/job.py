@@ -42,6 +42,16 @@ MODEL_SIZES = {
 }
 
 
+def positive_int(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{value!r} is not a valid integer") from None
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("must be greater than 0")
+    return parsed
+
+
 def define_parser():
     parser = argparse.ArgumentParser(description="Swarm LoRA fine-tuning job")
     parser.add_argument("--n_clients", type=int, default=2, help="Number of clients")
@@ -60,7 +70,9 @@ def define_parser():
         help="Root workspace directory for SimEnv (job results written to <workspace>/<job_name>)",
     )
     parser.add_argument("--local_steps", type=int, default=10, help="Gradient steps per client per round")
-    parser.add_argument("--validation_steps", type=int, default=10, help="Validation batches per client per round")
+    parser.add_argument(
+        "--validation_steps", type=positive_int, default=10, help="Validation batches per client per round"
+    )
     parser.add_argument("--batch_size", type=int, default=4, help="Training batch size")
     parser.add_argument("--max_seq_len", type=int, default=128, help="Maximum tokenized sequence length")
     parser.add_argument(

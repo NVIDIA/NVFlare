@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import math
 import re
 
 import numpy as np
@@ -163,7 +164,19 @@ class IntimeModelSelector(Widget):
                 )
                 return False
 
-        validation_metric = float(validation_metric)
+        try:
+            validation_metric = float(validation_metric)
+        except (TypeError, ValueError):
+            self.log_warning(
+                fl_ctx, f"validation metric {validation_metric!r} from {client_name} is not a number; skipping"
+            )
+            return False
+        if not math.isfinite(validation_metric):
+            self.log_warning(
+                fl_ctx, f"validation metric {validation_metric!r} from {client_name} is not finite; skipping"
+            )
+            return False
+
         raw_validation_metric = validation_metric
         if self.negate_key_metric:
             validation_metric = -1.0 * validation_metric

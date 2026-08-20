@@ -54,6 +54,11 @@ A CUDA-capable GPU is strongly recommended. The base model is loaded in `bfloat1
 
 This example uses the [wikitext-2-raw-v1](https://huggingface.co/datasets/wikitext) dataset (Apache-2.0, no license acceptance required). The training split is partitioned into disjoint shards — one per client — to simulate real-world data silos where each participant trains only on their own local data.
 
+When `--data_dir` is supplied, the directory must contain both each site's local
+training dataset at `<data_dir>/<site>/train` and a shared validation dataset at
+`<data_dir>/validation`. Custom corpora must provide the same layout; they do not
+need to be regenerated with this example's `prepare_data.py`.
+
 ## Model
 
 [Qwen2.5-0.5B](https://huggingface.co/Qwen/Qwen2.5-0.5B) (Apache-2.0, default) or [Qwen2.5-1.5B](https://huggingface.co/Qwen/Qwen2.5-1.5B) is used as the base model, selectable via `--model_size`. LoRA adapters are attached to the query and value projection layers of every attention block:
@@ -78,27 +83,31 @@ flare.init()                          # 1. Initialize NVFlare Client API
 input_model = flare.receive()         # 2. Receive global LoRA adapter from the workflow
 apply_global_adapter(model, input_model.params)  # 3. Apply global adapter weights
 
-val_loss = evaluate_loss(model, validation_dataloader, validation_steps)
-adapter_diff = local_train(model, dataloader, steps)  # local fine-tuning
+metrics = {}
+if round_num > 0:
+    val_loss = evaluate_loss(model, validation_dataloader, validation_steps)
+    metrics = {"val_loss": val_loss}
+adapter_diff = local_train(model, train_dataloader, local_steps)  # local fine-tuning
 
 flare.send(flare.FLModel(             # 4. Send LoRA adapter diff back
     params_type=ParamsType.DIFF,
     params=adapter_diff,
-    metrics={"val_loss": val_loss},
+    metrics=metrics,
 ))
 ```
 
-Each client first evaluates the received global adapter on the validation split, then fine-tunes for a fixed number of gradient steps and returns the adapter weight **diff** (after − before). The selected Swarm aggregation client averages both the pre-training `val_loss` values and the model diffs. Because the metric describes the received global model rather than a locally updated model, it can be used safely for global best-model selection.
+Starting in round 1, each client first evaluates the received global adapter on the validation split, then fine-tunes for a fixed number of gradient steps and returns the adapter weight **diff** (after − before). Round 0 skips validation because no aggregated global adapter exists yet. The selected Swarm aggregation client averages both the pre-training `val_loss` values and the model diffs. Because the metric describes the received global model rather than a locally updated model, it can be used safely for global best-model selection.
 
 ## Peer-to-Peer Workflow
 
 This example uses [Swarm Learning](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_common.ccwf.html), a decentralized federated workflow where clients act as both trainers and aggregators in a peer-to-peer fashion — there is no central aggregation server. The workflow proceeds as follows:
 
 1. A designated starting client scatters the global LoRA adapter to all peers.
-2. Each client trains locally and submits its adapter diff to a designated aggregator.
-3. The aggregator accumulates diffs and produces a new global adapter.
-4. The updated adapter is scattered to the next round of trainers.
-5. This repeats for `num_rounds` rounds.
+2. Starting in round 1, each client validates the received global adapter before training.
+3. Each client trains locally and submits its adapter diff to a designated aggregator.
+4. The aggregator accumulates diffs and produces a new global adapter.
+5. The updated adapter is scattered to the next round of trainers.
+6. This repeats for `num_rounds` rounds.
 
 ## Job Recipe Code
 
@@ -144,6 +153,10 @@ recipe = SwarmLearningRecipe(
 - `InTimeAccumulateWeightedAggregator` for peer-to-peer adapter aggregation
 - `SimpleModelShareableGenerator` for model ↔ shareable conversion
 - `IntimeModelSelector` for client-side best-model selection using pre-training `val_loss`
+
+Because `key_metric_mode="min"` converts loss into a higher-is-better comparison
+value, Swarm best-metric logs and records display the negated loss. For example,
+an actual `val_loss` of 2.31 is displayed as -2.31.
 
 ## Step-by-Step Instructions
 
@@ -257,11 +270,11 @@ This writes a standard NVFlare job folder that can be submitted to a production 
 
 #### Each Round
 - **Scatter**: Starting client sends global LoRA adapter to all trainers.
-- **Validate**: Each client scores the received global adapter on the shared validation split before training.
+- **Validate**: Starting in round 1, each client scores the received global adapter on the shared validation split before training.
 - **Local training**: Each client fine-tunes for `local_steps` gradient steps on its data shard, reporting loss every 5 steps.
-- **Submit**: Each client sends its pre-training `val_loss` and LoRA adapter diff to the designated aggregator.
+- **Submit**: Each client sends its LoRA adapter diff and, starting in round 1, its pre-training `val_loss` to the designated aggregator.
 - **Aggregate**: Aggregator accumulates metrics and diffs, produces the updated global adapter, and records a new best model when `val_loss` improves.
 
 #### Completion
-- Final and best-scoring global LoRA adapters are distributed and persisted to the simulation workspace.
+- Final and best-scoring global LoRA adapters are distributed and persisted to the simulation workspace. Best-model selection starts after round 0, so at least two rounds are required to create a best-model checkpoint.
 - Results available at `<workspace>/ccwf_swarm_pt_lora/`.

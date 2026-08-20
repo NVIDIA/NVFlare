@@ -120,4 +120,11 @@ Compatibility and Migration Notes
   a pre-training validation metric with the configured name for selection to
   occur; jobs without that metric continue to persist the last global model but
   do not create ``best_FL_global_model.pt``. Set ``key_metric=None`` to opt out
-  and preserve the pre-2.9 last-model-only behavior.
+  and preserve the pre-2.9 last-model-only behavior. Selection skips round 0,
+  so a one-round job does not create a best-model checkpoint. With
+  ``key_metric_mode="min"``, Swarm best-metric logs and records expose the
+  negated comparison value (for example, a loss of 2.31 is shown as -2.31).
+  ``client_config_overrides`` can no longer replace ``model_selector``: migrate
+  the former ``{"model_selector": None}`` opt-out to ``key_metric=None``, and
+  use ``BaseSwarmLearningRecipe`` with an explicit ``SwarmClientConfig`` for a
+  custom selector.

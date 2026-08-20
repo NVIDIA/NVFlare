@@ -51,6 +51,16 @@ DEFAULT_LOCAL_STEPS = 10
 DEFAULT_VALIDATION_STEPS = 10
 
 
+def positive_int(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{value!r} is not a valid integer") from None
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("must be greater than 0")
+    return parsed
+
+
 def build_lora_model(model_path: str):
     """Load the base model and attach LoRA adapters."""
     tokenizer = AutoTokenizer.from_pretrained(model_path)
@@ -84,6 +94,7 @@ def build_dataloader(
     max_seq_len: int = MAX_SEQ_LEN,
     batch_size: int = BATCH_SIZE,
     split: str = "train",
+    max_steps: int | None = None,
 ) -> DataLoader:
     """Build a DataLoader for this site's training shard or the validation split.
 
@@ -101,8 +112,9 @@ def build_dataloader(
         dataset_path = os.path.join(data_dir, site_name, "train") if split == "train" else os.path.join(data_dir, split)
         if not os.path.isdir(dataset_path):
             raise FileNotFoundError(
-                f"Prepared {split} data not found at '{dataset_path}'. "
-                f"Run prepare_data.py --n_clients <N> --output_dir {data_dir} first."
+                f"Required {split} data not found at '{dataset_path}'. When --data_dir is set, provide each site's "
+                f"training dataset under '<data_dir>/<site>/train' and the shared validation dataset under "
+                f"'<data_dir>/validation'."
             )
         print(f"[{site_name}] Loading prepared {split} data from {dataset_path}")
         dataset = load_from_disk(dataset_path)
@@ -117,6 +129,11 @@ def build_dataloader(
                 site_idx = 0
             dataset = dataset.shard(num_shards=n_shards, index=site_idx % n_shards)
 
+    if split == "validation" and max_steps is not None:
+        if max_steps < 1:
+            raise ValueError("max_steps must be greater than 0")
+        dataset = dataset.select(range(min(len(dataset), max_steps * batch_size)))
+
     def tokenize(batch):
         enc = tokenizer(
             batch["text"],
@@ -124,12 +141,15 @@ def build_dataloader(
             max_length=max_seq_len,
             padding="max_length",
         )
-        enc["labels"] = enc["input_ids"].copy()
+        enc["labels"] = [
+            [token_id if attention else -100 for token_id, attention in zip(input_ids, attention_mask)]
+            for input_ids, attention_mask in zip(enc["input_ids"], enc["attention_mask"])
+        ]
         return enc
 
     dataset = dataset.map(tokenize, batched=True, remove_columns=["text"])
     dataset.set_format("torch")
-    return DataLoader(dataset, batch_size=batch_size, shuffle=split == "train", drop_last=True)
+    return DataLoader(dataset, batch_size=batch_size, shuffle=split == "train", drop_last=split == "train")
 
 
 def apply_global_adapter(model, global_params: dict):
@@ -201,7 +221,7 @@ def evaluate_loss(model, dataloader: DataLoader, steps: int) -> float:
             losses.append(loss.item())
 
     if not losses:
-        raise ValueError("validation dataloader produced no complete batches")
+        raise ValueError("validation dataloader produced no batches")
     return sum(losses) / len(losses)
 
 
@@ -219,7 +239,7 @@ def main():
         "(e.g. /tmp/swarm_data). If omitted, falls back to in-memory shard.",
     )
     parser.add_argument("--local_steps", type=int, default=DEFAULT_LOCAL_STEPS)
-    parser.add_argument("--validation_steps", type=int, default=DEFAULT_VALIDATION_STEPS)
+    parser.add_argument("--validation_steps", type=positive_int, default=DEFAULT_VALIDATION_STEPS)
     parser.add_argument("--batch_size", type=int, default=BATCH_SIZE)
     parser.add_argument("--max_seq_len", type=int, default=MAX_SEQ_LEN)
     parser.add_argument(
@@ -252,6 +272,7 @@ def main():
         max_seq_len=args.max_seq_len,
         batch_size=args.batch_size,
         split="validation",
+        max_steps=args.validation_steps,
     )
 
     print(
@@ -268,8 +289,13 @@ def main():
         print(f"[{site_name}] Round {round_num}: applying global LoRA adapter")
         apply_global_adapter(model, input_model.params)
 
-        val_loss = evaluate_loss(model, validation_dataloader, args.validation_steps)
-        print(f"[{site_name}] Round {round_num}: received global adapter val_loss={val_loss:.4f}")
+        metrics = {}
+        if round_num == 0:
+            print(f"[{site_name}] Round 0: skipping validation because no aggregated global adapter exists yet")
+        else:
+            val_loss = evaluate_loss(model, validation_dataloader, args.validation_steps)
+            metrics = {"val_loss": val_loss}
+            print(f"[{site_name}] Round {round_num}: received global adapter val_loss={val_loss:.4f}")
 
         print(f"[{site_name}] Round {round_num}: local training for {args.local_steps} steps")
         diff = local_train(model, train_dataloader, args.local_steps)
@@ -278,7 +304,7 @@ def main():
             flare.FLModel(
                 params_type=ParamsType.DIFF,
                 params=diff,
-                metrics={"val_loss": val_loss},
+                metrics=metrics,
                 meta={"NUM_STEPS_CURRENT_ROUND": args.local_steps},
             )
         )

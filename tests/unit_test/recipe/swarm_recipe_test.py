@@ -146,6 +146,20 @@ class TestSwarmLearningRecipe:
                 key_metric_mode="median",
             )
 
+    @pytest.mark.parametrize("key_metric", ("", "   "))
+    def test_rejects_empty_key_metric(self, mock_file_system, simple_pt_model, key_metric):
+        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
+
+        with pytest.raises(ValueError, match="key_metric must be a non-empty string or None"):
+            SwarmLearningRecipe(
+                name="test_swarm_empty_metric",
+                model=simple_pt_model,
+                num_rounds=5,
+                train_script="train.py",
+                min_clients=2,
+                key_metric=key_metric,
+            )
+
     def test_key_metric_none_disables_client_side_best_model_selection(self, mock_file_system, simple_pt_model):
         from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
 
@@ -160,6 +174,32 @@ class TestSwarmLearningRecipe:
 
         client_components = recipe._job._deploy_map[ALL_SITES].app_config.components
         assert "model_selector" not in client_components
+
+    def test_base_recipe_accepts_custom_model_selector(self, mock_file_system, simple_pt_model):
+        from nvflare.app_common.aggregators.intime_accumulate_model_aggregator import InTimeAccumulateWeightedAggregator
+        from nvflare.app_common.ccwf.ccwf_job import SwarmClientConfig, SwarmServerConfig
+        from nvflare.app_common.ccwf.comps.simple_model_shareable_generator import SimpleModelShareableGenerator
+        from nvflare.app_opt.pt.recipes.swarm import BaseSwarmLearningRecipe
+        from nvflare.job_config.script_runner import ScriptRunner
+
+        selector = IntimeModelSelector(key_metric="custom_score")
+        client_config = SwarmClientConfig(
+            executor=ScriptRunner(script="train.py"),
+            aggregator=InTimeAccumulateWeightedAggregator(),
+            persistor=PTFileModelPersistor(model=simple_pt_model),
+            shareable_generator=SimpleModelShareableGenerator(),
+            model_selector=selector,
+            min_responses_required=2,
+        )
+        recipe = BaseSwarmLearningRecipe(
+            name="test_custom_swarm_selector",
+            server_config=SwarmServerConfig(num_rounds=5, min_clients=2),
+            client_config=client_config,
+            min_clients=2,
+        )
+
+        client_components = recipe._job._deploy_map[ALL_SITES].app_config.components
+        assert client_components["model_selector"] is selector
 
     def test_weight_diff_with_default_transfer_is_valid(self, mock_file_system, simple_pt_model):
         from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe

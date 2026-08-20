@@ -552,14 +552,16 @@ Use ``SwarmLearningRecipe`` for a streamlined swarm learning setup:
 The named parameters are the preferred API. For less common
 ``SwarmServerConfig`` or ``SwarmClientConfig`` fields, pass
 ``server_config_overrides`` or ``client_config_overrides``. The dictionaries are
-shallow-merged last, so an overlapping dictionary value intentionally wins over
-the named parameter. ``round_timeout`` remains available as a compatibility
-shortcut for setting both acknowledgment timeouts when their explicit parameters
-are omitted. ``client_config_overrides`` cannot replace the recipe-managed
-executor, aggregator, persistor, shareable generator, or
-``min_responses_required``; use ``BaseSwarmLearningRecipe`` for custom components
-or quorum settings. Set ``min_clients`` only through the named parameter so the
-scheduler, server controller, and client aggregation quorums remain aligned.
+shallow-merged last, so an overlapping dictionary value for a non-recipe-managed
+field intentionally wins over the named parameter. ``round_timeout`` remains
+available as a compatibility shortcut for setting both acknowledgment timeouts
+when their explicit parameters are omitted. ``client_config_overrides`` cannot
+replace the recipe-managed executor, aggregator, persistor, shareable generator,
+model selector, or ``min_responses_required``. Use ``key_metric=None`` to disable
+selection; for a custom selector or other custom components, use
+``BaseSwarmLearningRecipe`` with an explicit ``SwarmClientConfig`` as shown below.
+Set ``min_clients`` only through the named parameter so the scheduler, server
+controller, and client aggregation quorums remain aligned.
 For large PyTorch models, use
 ``aggregation_format=ExchangeFormat.PYTORCH`` together with
 ``enable_tensor_disk_offload=True``. The first keeps CCWF payloads on the

@@ -192,8 +192,42 @@ class TestInTimeModelSelector:
         handler.handle_event(AppEventType.BEFORE_CONTRIBUTION_ACCEPT, fl_ctx)
         handler.handle_event(AppEventType.BEFORE_AGGREGATION, fl_ctx)
 
-        assert isinstance(handler.val_metric, float)
+        assert type(handler.val_metric) is float
         assert handler.val_metric == pytest.approx(-0.2)
-        assert isinstance(handler.raw_val_metric, float)
+        assert type(handler.raw_val_metric) is float
         assert handler.raw_val_metric == pytest.approx(0.2)
-        assert isinstance(fl_ctx.get_prop(AppConstants.VALIDATION_RESULT), float)
+        assert type(fl_ctx.get_prop(AppConstants.VALIDATION_RESULT)) is float
+
+    @pytest.mark.parametrize("metric", ([0.5, 0.6], "N/A", None))
+    def test_non_numeric_metric_is_skipped(self, caplog, metric):
+        handler = IntimeModelSelector(key_metric="loss")
+        engine = MockSimpleEngine()
+        peer_ctx = FLContext()
+        dxo = DXO(DataKind.WEIGHT_DIFF, data=dict(), meta={MetaKey.INITIAL_METRICS: {"loss": metric}})
+        shareable = dxo.to_shareable()
+        shareable.add_cookie(AppConstants.CONTRIBUTION_ROUND, 1)
+        peer_ctx.set_prop(FLContextKey.SHAREABLE, shareable, private=True)
+        fl_ctx = engine.fl_ctx_mgr.new_context()
+        fl_ctx.set_prop(AppConstants.CURRENT_ROUND, 1, private=True, sticky=False)
+        fl_ctx.set_peer_context(peer_ctx)
+
+        assert handler._before_accept(fl_ctx) is False
+        assert handler.validation_metric_sum_of_weights == 0
+        assert "is not a number; skipping" in caplog.text
+
+    @pytest.mark.parametrize("metric", (float("nan"), float("inf"), float("-inf")))
+    def test_non_finite_metric_is_skipped(self, caplog, metric):
+        handler = IntimeModelSelector(key_metric="loss")
+        engine = MockSimpleEngine()
+        peer_ctx = FLContext()
+        dxo = DXO(DataKind.WEIGHT_DIFF, data=dict(), meta={MetaKey.INITIAL_METRICS: {"loss": metric}})
+        shareable = dxo.to_shareable()
+        shareable.add_cookie(AppConstants.CONTRIBUTION_ROUND, 1)
+        peer_ctx.set_prop(FLContextKey.SHAREABLE, shareable, private=True)
+        fl_ctx = engine.fl_ctx_mgr.new_context()
+        fl_ctx.set_prop(AppConstants.CURRENT_ROUND, 1, private=True, sticky=False)
+        fl_ctx.set_peer_context(peer_ctx)
+
+        assert handler._before_accept(fl_ctx) is False
+        assert handler.validation_metric_sum_of_weights == 0
+        assert "is not finite; skipping" in caplog.text
