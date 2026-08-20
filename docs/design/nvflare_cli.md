@@ -1273,7 +1273,7 @@ activates the first Project Admin kit. The JSON success payload includes:
 
 | Argument | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `-p`, `--service` | str... | No | `None` | Participant to start; repeat to select multiple participants. Defaults to the server and clients. Do not combine `all` with named `-p`/`--service` values |
+| `-p`, `--service` | str... | No | `None` | Participant to start; repeat to select multiple participants. By default, starts the server and clients |
 | `-ex`, `--exclude` | str... | No | `None` | Participant to exclude; repeat to exclude multiple participants |
 | `-gpu`, `--gpu` | int... | No | `None` | GPU device IDs |
 | `--no-wait` | flag | No | — | Return after process start without readiness wait |
@@ -1308,7 +1308,7 @@ configured endpoint.
 
 | Argument | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `-p`, `--service` | str... | No | `None` | Participant to stop; repeat to select multiple participants. Defaults to the server and clients. Do not combine `all` with named `-p`/`--service` values |
+| `-p`, `--service` | str... | No | `None` | Participant to stop; repeat to select multiple participants. By default, stops the server and clients |
 | `-ex`, `--exclude` | str... | No | `None` | Participant to exclude; repeat to exclude multiple participants |
 | `--no-wait` | flag | No | — | Request shutdown and return without waiting for completion |
 | `-debug`, `--debug` | flag | No | — | Debug mode |

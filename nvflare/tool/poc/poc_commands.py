@@ -1889,8 +1889,8 @@ def _start_poc(poc_workspace: str, gpu_ids: List[int], excluded=None, services_l
 def validate_services(project_config, services_list: List, excluded: List):
     if "all" in services_list:
         raise CLIException(
-            "'all' cannot be combined with other -p/--service values; "
-            "use '-p all' without another -p/--service value, or list only named participants"
+            "'-p all' cannot be combined with another -p/--service value. "
+            "Omit -p to select the default server and clients, or list only named participants."
         )
     participant_names = [p["name"] for p in project_config["participants"]]
     validate_participants(participant_names, services_list)
@@ -2576,9 +2576,8 @@ def define_start_parser(poc_parser):
         nargs="?",
         default=None,
         help=(
-            "participant to start; repeat for multiple participants. Do not combine 'all' with named "
-            "-p/--service values. Default starts server and client services only; admin consoles are excluded unless "
-            "explicitly selected"
+            "participant to start; repeat for multiple participants. Default starts server and client services only; "
+            "admin consoles are excluded unless explicitly selected"
         ),
     )
 
@@ -2633,9 +2632,8 @@ def define_stop_parser(poc_parser):
         nargs="?",
         default=None,
         help=(
-            "participant to stop; repeat for multiple participants. Do not combine 'all' with named -p/--service "
-            "values. Default and server-only selections stop the running POC system; project admin console is not a "
-            "default managed service"
+            "participant to stop; repeat for multiple participants. Default and server-only selections stop the "
+            "running POC system; project admin console is not a default managed service"
         ),
     )
     stop_parser.add_argument(

@@ -1257,7 +1257,7 @@ class TestPocOutput:
             ["poc", subcommand, "-p", "site-1", "-p", "all"],
         ):
             args = root.parse_args(mixed_args)
-            with pytest.raises(CLIException, match="'all' cannot be combined"):
+            with pytest.raises(CLIException, match="'-p all' cannot be combined"):
                 validate_services({"participants": [{"name": "site-1"}]}, get_service_list(args), [])
 
     @pytest.mark.parametrize(

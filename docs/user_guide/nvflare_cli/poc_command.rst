@@ -171,8 +171,7 @@ Options:
 
 - ``-p, --service``: participant to start. Repeat the option to select multiple
   participants. By default, starts the server and clients; admin consoles are
-  excluded unless explicitly requested. Do not combine ``all`` with named
-  ``-p`` or ``--service`` values.
+  excluded unless explicitly requested.
 - ``-ex, --exclude``: participant to exclude from startup. Repeat the option to
   exclude multiple participants.
 - ``-gpu, --gpu``: GPU device IDs to use as ``CUDA_VISIBLE_DEVICES``.
@@ -244,8 +243,7 @@ Options:
 
 - ``-p, --service``: participant to stop. Repeat the option to select multiple
   participants. By default, stops the server and clients; the project admin
-  console is managed separately. Do not combine ``all`` with named ``-p`` or
-  ``--service`` values.
+  console is managed separately.
 - ``-ex, --exclude``: participant to exclude from stop handling. Repeat the
   option to exclude multiple participants.
 - ``--no-wait``: return after requesting shutdown without waiting for completion.
