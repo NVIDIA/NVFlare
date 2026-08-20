@@ -477,10 +477,22 @@ class ClientSideController(Executor, TaskController):
                         # expected to raise and is not a job failure.
                         self.update_status(action="do_learn_task", error=ReturnCode.EXECUTION_EXCEPTION)
                 finally:
-                    # force garbage collection
-                    gc.collect()
-                self.learn_task = None
+                    # Drop all references to the finished task before reclaiming
+                    # memory: `t` and self.learn_task would otherwise pin the
+                    # (possibly multi-GB) task payload until the next task arrives.
+                    self.learn_task = None
+                    t = None
+                    self._cleanup_learn_task_memory()
             time.sleep(self.learn_task_check_interval)
+
+    def _cleanup_learn_task_memory(self):
+        """Reclaim memory after a learn task finishes.
+
+        The base behavior is Python-level garbage collection only. Subclasses
+        may override with allocator-aware cleanup that also returns freed
+        native heap pages to the OS.
+        """
+        gc.collect()
 
     def update_status(self, last_round=None, action=None, error=None, all_done=False):
         with self.status_lock:
