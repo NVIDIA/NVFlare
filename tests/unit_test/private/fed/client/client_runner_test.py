@@ -13,13 +13,14 @@
 # limitations under the License.
 
 import threading
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReservedTopic, ReturnCode
+from nvflare.apis.fl_constant import FilterKey, FLContextKey, ReservedKey, ReservedTopic, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.apis.signal import Signal
@@ -47,6 +48,7 @@ def _runner():
     runner.job_id = "job-1"
     runner.engine = MagicMock()
     runner.run_abort_signal = Signal()
+    runner._run_abort_requested = False
     runner.task_lock = threading.Lock()
     runner.running_tasks = {}
     runner.task_check_timeout = 5.0
@@ -108,6 +110,24 @@ def test_client_runner_init_registers_aux_and_event_handlers(monkeypatch):
     assert {EventType.TASK_ASSIGNMENT_SENT, EventType.TASK_RESULT_RECEIVED}.issubset(event_types)
 
 
+def test_init_run_registers_download_source_failure_receiver_before_start(monkeypatch):
+    runner = _runner()
+    cell = MagicMock()
+    runner.engine.get_cell.return_value = cell
+    runner.engine.send_aux_request.return_value = {"server": make_reply(ReturnCode.OK)}
+    runner.engine.new_context.return_value.__enter__.return_value = FLContext()
+    monkeypatch.setattr(runner, "get_positive_float_var", lambda var_name, default: default)
+    monkeypatch.setattr("nvflare.private.fed.client.client_runner.time.sleep", MagicMock())
+    monkeypatch.setattr("nvflare.private.fed.client.client_runner.ReliableMessage.enable", MagicMock())
+    initialize = MagicMock()
+    monkeypatch.setattr("nvflare.private.fed.client.client_runner.DownloadService.initialize", initialize)
+
+    runner.init_run("/app", SimpleNamespace())
+
+    initialize.assert_called_once_with(cell)
+    assert runner.fire_event.call_args_list[-1].args[0] == EventType.START_RUN
+
+
 def test_process_task_preserves_cookie_and_assignment_headers():
     runner = _runner()
     task = _task()
@@ -166,7 +186,35 @@ def test_do_task_validates_assignment_context(task_data, peer_ctx, peer_job_id, 
     with patch("nvflare.private.fed.client.client_runner.add_job_audit_event", return_value="audit-id"):
         reply = runner._do_task(_task(data=task_data), fl_ctx, Signal())
 
-    assert reply.get_return_code() == expected
+        assert reply.get_return_code() == expected
+
+
+@pytest.mark.parametrize("filter_direction", [FilterKey.IN, FilterKey.OUT])
+def test_do_task_reports_abort_during_filter_materialization(filter_direction):
+    runner = _runner()
+    executor = MagicMock()
+    executor.execute.return_value = Shareable()
+    runner.task_router.add_executor(["train"], executor)
+    peer_ctx = FLContext()
+    peer_ctx.set_prop(ReservedKey.RUN_NUM, "job-1", private=False, sticky=False)
+    fl_ctx = FLContext()
+    fl_ctx.set_peer_context(peer_ctx)
+    abort_signal = Signal()
+
+    def apply_or_abort(_filter_name, filter_data, _fl_ctx, _filters, _task_name, direction, **_kwargs):
+        if direction == filter_direction:
+            abort_signal.trigger(True)
+            raise RuntimeError("download aborted")
+        return filter_data
+
+    with (
+        patch("nvflare.private.fed.client.client_runner.add_job_audit_event", return_value="audit-id"),
+        patch("nvflare.private.fed.client.client_runner.apply_filters", side_effect=apply_or_abort),
+    ):
+        reply = runner._do_task(_task(), fl_ctx, abort_signal)
+
+    assert reply.get_return_code() == ReturnCode.TASK_ABORTED
+    runner.log_exception.assert_not_called()
 
 
 @pytest.mark.parametrize(
@@ -226,6 +274,36 @@ def test_try_send_result_once_sends_after_task_check(monkeypatch):
     assert result.get_header(ReservedHeaderKey.MSG_ROOT_ID)
 
 
+def test_send_task_result_retries_after_transport_failure(monkeypatch):
+    runner = _runner()
+    call_order = []
+    send_results = iter([False, True])
+
+    def check_task(*_args, **_kwargs):
+        call_order.append("check")
+        return _TASK_CHECK_RESULT_OK
+
+    def send_result(*_args, **_kwargs):
+        call_order.append("send")
+        return next(send_results)
+
+    runner._check_task_once = MagicMock(side_effect=check_task)
+    # Cell._send_one_request maps a failed StreamFuture to a timeout reply,
+    # which send_task_result reports as False.
+    runner.engine.send_task_result.side_effect = send_result
+    monkeypatch.setattr("nvflare.private.fed.client.client_runner.time.sleep", MagicMock())
+    monkeypatch.setattr("nvflare.private.fed.client.client_runner.delete_msg_root", MagicMock())
+    result = Shareable()
+
+    assert runner._send_task_result(result, "task-1", FLContext()) is True
+
+    assert runner._check_task_once.call_count == 2
+    assert runner.engine.send_task_result.call_count == 2
+    assert call_order == ["check", "send", "check", "send"]
+    assert all(call.args[0] is result for call in runner.engine.send_task_result.call_args_list)
+    runner.log_error.assert_called_once()
+
+
 def test_task_check_and_control_handlers():
     runner = _runner()
     fl_ctx = FLContext()
@@ -242,6 +320,20 @@ def test_task_check_and_control_handlers():
 
     assert runner._handle_end_run("topic", Shareable(), fl_ctx).get_return_code() == ReturnCode.OK
     assert runner.run_abort_signal.triggered
+
+
+def test_explicit_abort_fires_abort_task_without_a_running_task():
+    runner = _runner()
+    fl_ctx = FLContext()
+    runner.engine.new_context.return_value.__enter__.return_value = fl_ctx
+    runner.check_end_run_readiness = MagicMock()
+
+    runner.abort("abort job")
+    runner.end_run_events_sequence()
+
+    abort_calls = [call for call in runner.fire_event.call_args_list if call.args[0] == EventType.ABORT_TASK]
+    assert len(abort_calls) == 1
+    assert abort_calls[0].args[1].get_prop(FLContextKey.RUN_ABORT_REQUESTED) is True
 
 
 def test_handle_event_reports_running_tasks_and_aborts_on_fatal_error():

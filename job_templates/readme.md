@@ -37,7 +37,6 @@ View all the available job templates with the following command:
 | [sag_gnn](./sag_gnn)                                       | server          | client_api         | scatter & gather workflow for gnn learning                          |
 | [sag_nemo](./sag_nemo)                                     | server          | client_api         | Scatter and Gather Workflow for NeMo                                |
 | [sag_np](./sag_np)                                         | server          | client_api         | scatter & gather workflow using numpy                               |
-| [sag_np_cell_pipe](./sag_np_cell_pipe)                     | server          | client_api         | scatter & gather workflow using numpy                               |
 | [sag_np_metrics](./sag_np_metrics)                         | server          | client_api         | scatter & gather workflow using numpy                               |
 | [sag_pt](./sag_pt)                                         | server          | client_api         | scatter & gather workflow using pytorch                             |
 | [sag_pt_deploy_map](./sag_pt_deploy_map)                   | server          | client_api         | SAG workflow with pytorch, deploy_map, site-specific configs        |

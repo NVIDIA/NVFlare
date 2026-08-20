@@ -35,13 +35,21 @@ class FedCEConstants:
     CONTRIBUTION_WEIGHTS = "fedce_coef"
 
 
+def _get_unseen_client_weight(weights: Dict[str, float]) -> float:
+    return 1.0 / (len(weights) + 1) if weights else 0.0
+
+
 class PTFedCEHelper:
     """Client-side utilities for the FedCE-specific training contract."""
 
     @staticmethod
-    def get_contribution_weight(global_model: FLModel, client_name: str, default: float = 0.0) -> float:
+    def get_contribution_weight(global_model: FLModel, client_name: str, default: Optional[float] = None) -> float:
         weights = (global_model.meta or {}).get(FedCEConstants.CONTRIBUTION_WEIGHTS, {})
-        return float(weights.get(client_name, default))
+        if client_name in weights:
+            return float(weights[client_name])
+        if default is not None:
+            return float(default)
+        return _get_unseen_client_weight(weights)
 
     @staticmethod
     def make_minus_model(global_model, previous_local_state: Dict, contribution_weight: float):
@@ -102,6 +110,10 @@ class FedCEModelAggregator(ModelAggregator):
     shapes. Contribution scores are computed from the configured trainable
     parameter subset, while the resulting contribution weights are applied to
     every returned parameter, including non-trainable buffers.
+
+    FedCE assumes full client participation. If the participating client set
+    changes, the aggregator logs a warning, uses a uniform prior for new
+    clients, and carries forward the last weights of absent clients.
     """
 
     MODES = ("plus", "times")
@@ -159,6 +171,13 @@ class FedCEModelAggregator(ModelAggregator):
             raise ValueError("FedCE cannot aggregate an empty result set")
 
         clients = sorted(self._results)
+        known_clients = set(self._contribution_weights)
+        if known_clients and set(clients) != known_clients:
+            self.warning(
+                "FedCE detected partial participation or a changing client set. "
+                f"Current clients: {clients}; clients with prior contribution weights: {sorted(known_clients)}. "
+                "Using a uniform prior for new clients and carrying forward weights for absent clients."
+            )
         param_names = self._get_cosine_param_names(clients)
         prior_weights = self._get_prior_weights(clients)
         consensus = self._weighted_vector(clients, prior_weights, param_names)
@@ -187,7 +206,7 @@ class FedCEModelAggregator(ModelAggregator):
         else:
             combined = [cosine * minus for cosine, minus in zip(cosine_weights, minus_weights)]
         normalized = _normalize(combined, self.epsilon)
-        self._contribution_weights = dict(zip(clients, normalized))
+        self._contribution_weights.update(zip(clients, normalized))
 
         params_helper = WeightedAggregationHelper()
         metrics_helper = WeightedAggregationHelper()
@@ -259,8 +278,15 @@ class FedCEModelAggregator(ModelAggregator):
         return sorted(common)
 
     def _get_prior_weights(self, clients: List[str]) -> Dict[str, float]:
-        values = [self._contribution_weights.get(client, 1.0) for client in clients]
-        return dict(zip(clients, _normalize(values, self.epsilon)))
+        if not self._contribution_weights:
+            uniform_weight = 1.0 / len(clients)
+            return dict.fromkeys(clients, uniform_weight)
+
+        # Keep the server prior identical to the coefficient an unseen client
+        # used for its minus model. Normalization is unnecessary because these
+        # weights are used only to derive cosine directions.
+        unseen_client_weight = _get_unseen_client_weight(self._contribution_weights)
+        return {client: self._contribution_weights.get(client, unseen_client_weight) for client in clients}
 
     def _weighted_vector(self, clients: List[str], weights: Dict[str, float], param_names: List[str]):
         result = None

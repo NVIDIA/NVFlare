@@ -28,6 +28,7 @@ Tests verify:
 """
 
 import json
+import logging
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -40,8 +41,8 @@ from nvflare.fuel.utils.fobs.decomposers.via_downloader import (
     LazyDownloadRef,
     _CtxKey,
     _LazyBatchInfo,
-    _LazyRelayDownloadable,
     _RefKey,
+    contains_lazy_download_ref,
 )
 
 # ---------------------------------------------------------------------------
@@ -93,7 +94,6 @@ class TestLazyDownloadRef:
         assert lazy.fqcn == _SERVER_FQCN
         assert lazy.ref_id == _REF_ID
         assert lazy.item_id == _ITEM_ID_0
-        assert lazy.relay is False
 
     def test_slots_prevent_arbitrary_attributes(self):
         lazy = LazyDownloadRef(fqcn=_SERVER_FQCN, ref_id=_REF_ID, item_id=_ITEM_ID_0)
@@ -109,6 +109,88 @@ class TestLazyDownloadRef:
         assert a.ref_id == b.ref_id
 
 
+def test_contains_lazy_download_ref_scans_dict_keys_and_values():
+    lazy = LazyDownloadRef(fqcn=_SERVER_FQCN, ref_id=_REF_ID, item_id=_ITEM_ID_0)
+    assert contains_lazy_download_ref({lazy: "value"})
+    assert contains_lazy_download_ref({"key": lazy})
+
+
+def test_contains_lazy_download_ref_scans_object_attributes_and_slots():
+    class ObjectWrapper:
+        def __init__(self, value):
+            self.value = value
+
+    class SlottedWrapper:
+        __slots__ = ("value",)
+
+        def __init__(self, value):
+            self.value = value
+
+    lazy = LazyDownloadRef(fqcn=_SERVER_FQCN, ref_id=_REF_ID, item_id=_ITEM_ID_0)
+
+    assert contains_lazy_download_ref(ObjectWrapper(lazy))
+    assert contains_lazy_download_ref(SlottedWrapper(lazy))
+
+
+def test_contains_lazy_download_ref_skips_excluded_dictionary_values():
+    lazy = LazyDownloadRef(fqcn=_SERVER_FQCN, ref_id=_REF_ID, item_id=_ITEM_ID_0)
+
+    assert not contains_lazy_download_ref(
+        {"payload": "value", "framework_context": lazy},
+        excluded_dict_keys={"framework_context"},
+    )
+
+
+def test_contains_lazy_download_ref_treats_logging_objects_as_leaves():
+    logger = logging.getLogger(__name__ + ".graph_leaf")
+    lazy = LazyDownloadRef(fqcn=_SERVER_FQCN, ref_id=_REF_ID, item_id=_ITEM_ID_0)
+    logger.graph_test_value = lazy
+    try:
+        assert not contains_lazy_download_ref(logger)
+    finally:
+        del logger.graph_test_value
+
+
+def test_contains_lazy_download_ref_after_nested_fobs_recompose():
+    import numpy as np
+
+    from nvflare.apis.dxo import DXO, DataKind
+    from nvflare.apis.shareable import Shareable
+    from nvflare.apis.utils.decomposers.flare_decomposers import DXODecomposer
+    from nvflare.app_common.abstract.fl_model import FLModel
+    from nvflare.app_common.decomposers.common_decomposers import FLModelDecomposer
+    from nvflare.app_common.decomposers.numpy_decomposers import NumpyArrayDecomposer
+    from nvflare.fuel.utils import fobs
+    from nvflare.fuel.utils.fobs.decomposer import DictDecomposer
+    from nvflare.fuel.utils.fobs.decomposers.via_downloader import ViaDownloaderDecomposer
+
+    # Register the exact dependencies instead of using the guarded module-level
+    # helpers. Other tests can call fobs.reset() without resetting those guards.
+    fobs.register(DictDecomposer(Shareable))
+    fobs.register(FLModelDecomposer)
+    fobs.register(DXODecomposer)
+    fobs.register(NumpyArrayDecomposer)
+    payload = Shareable(
+        {
+            "model": FLModel(
+                params={
+                    "wrapped": DXO(
+                        data_kind=DataKind.WEIGHTS,
+                        data={"weight": np.arange(512, dtype=np.float32)},
+                    )
+                }
+            )
+        }
+    )
+
+    with patch.object(ViaDownloaderDecomposer, "_finalize_download_tx", lambda _self, _manager: None):
+        encoded = fobs.dumps(payload, fobs_ctx={FOBSContextKey.CELL: _FakeCell()}, max_value_size=1024)
+    decoded = fobs.loads(encoded, fobs_ctx={FOBSContextKey.PASS_THROUGH: True})
+
+    assert isinstance(decoded["model"].params["wrapped"].data["weight"], LazyDownloadRef)
+    assert contains_lazy_download_ref(decoded)
+
+
 # ---------------------------------------------------------------------------
 # 2. _LazyBatchInfo
 # ---------------------------------------------------------------------------
@@ -119,7 +201,6 @@ class TestLazyBatchInfo:
         info = _LazyBatchInfo(fqcn=_SERVER_FQCN, ref_id=_REF_ID)
         assert info.fqcn == _SERVER_FQCN
         assert info.ref_id == _REF_ID
-        assert info.relay is False
 
     def test_slots_prevent_arbitrary_attributes(self):
         info = _LazyBatchInfo(fqcn=_SERVER_FQCN, ref_id=_REF_ID)
@@ -157,20 +238,6 @@ class TestProcessDatumPassThrough:
         ), f"Expected _LazyBatchInfo in fobs_ctx[{decomposer.items_key!r}], got {type(items)}"
         assert items.fqcn == _SERVER_FQCN
         assert items.ref_id == _REF_ID
-        assert items.relay is False
-
-    def test_relay_pass_through_marks_lazy_batch_info(self):
-        decomposer = _make_decomposer()
-        fobs_ctx = {FOBSContextKey.PASS_THROUGH: True, FOBSContextKey.RELAY_PASS_THROUGH: True}
-        mgr = _make_manager(fobs_ctx)
-
-        with patch.object(decomposer, "_download_from_remote_cell") as mock_dl:
-            decomposer.process_datum(_ref_datum(), mgr)
-            mock_dl.assert_not_called()
-
-        items = fobs_ctx.get(decomposer.items_key)
-        assert isinstance(items, _LazyBatchInfo)
-        assert items.relay is True
 
     def test_does_not_store_raw_tuple(self):
         """items_key must never hold a plain tuple — that was the fragile old design."""
@@ -231,7 +298,6 @@ class TestRecomposePassThrough:
 
         assert result.fqcn == _SERVER_FQCN
         assert result.ref_id == _REF_ID
-        assert result.relay is False
 
     def test_lazy_ref_carries_correct_item_id(self):
         decomposer, fobs_ctx = self._ctx_with_lazy_batch()
@@ -353,25 +419,6 @@ class TestDecomposeWithLazyDownloadRef:
         ref = json.loads(datums[0].value)
         assert ref[_RefKey.FQCN] == _SERVER_FQCN
         assert ref[_RefKey.REF_ID] == _REF_ID
-
-    def test_finalize_relay_lazy_batch_creates_local_ref_without_materializing(self):
-        decomposer = _make_decomposer()
-        mgr = _make_manager({FOBSContextKey.CELL: _FakeCell()})
-        lazy = LazyDownloadRef(fqcn=_SERVER_FQCN, ref_id=_REF_ID, item_id=_ITEM_ID_0, relay=True)
-
-        decomposer.decompose(lazy, mgr)
-        with patch.object(decomposer, "_finalize_download_tx") as finalize_download_tx:
-            mgr.post_process()
-
-        finalize_download_tx.assert_called_once_with(mgr)
-        datums = list(mgr.get_datums().values())
-        assert len(datums) == 1
-        ref = json.loads(datums[0].value)
-        assert ref[_RefKey.FQCN] == _CJ_FQCN
-        assert ref[_RefKey.REF_ID] != _REF_ID
-        objects = mgr.fobs_ctx[_CtxKey.OBJECTS]
-        assert len(objects) == 1
-        assert isinstance(objects[0][1], _LazyRelayDownloadable)
 
     def test_finalize_lazy_batch_datum_dot_matches_decomposer(self):
         """The datum DOT must equal the decomposer's download DOT."""

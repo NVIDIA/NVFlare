@@ -13,6 +13,7 @@ traversal paths.
 import argparse
 import math
 import os
+import tempfile
 from contextlib import contextmanager
 from numbers import Integral, Real
 from pathlib import Path
@@ -33,6 +34,13 @@ def _source_directory():
         yield
     finally:
         os.chdir(original_cwd)
+
+
+def _simulation_workspace(workspace_root):
+    """Return an explicit workspace or a private one that preserves run results."""
+    if workspace_root is not None:
+        return workspace_root
+    return Path(tempfile.mkdtemp(prefix="nvflare-hf-trainer-"))
 
 
 def _token(value, name: str) -> str:
@@ -111,7 +119,7 @@ def build_recipe(
     data_root: str,
     num_clients: int,
     num_rounds: int,
-    key_metric: str,
+    key_metric: str = "",
     max_steps: int | None = None,
     num_train_epochs: float | None = None,
     preserve_source_budget: bool = False,
@@ -163,6 +171,27 @@ def build_recipe(
     return recipe
 
 
+def build_sim_env(
+    num_clients: int,
+    workspace_root: Path,
+    *,
+    per_site_config: dict[str, dict] | None = None,
+) -> SimEnv:
+    """Build a simulator environment with exactly one client-topology owner."""
+    if per_site_config is None:
+        return SimEnv(
+            num_clients=num_clients,
+            workspace_root=str(workspace_root),
+        )
+
+    clients = list(per_site_config)
+    return SimEnv(
+        num_clients=num_clients,
+        clients=clients,
+        workspace_root=str(workspace_root),
+    )
+
+
 def main():
     # Importing the Recipe API before parsing lets it consume --export and
     # --export-dir; this parser owns only the generated job's local options.
@@ -176,8 +205,17 @@ def main():
     budget.add_argument("--max_steps", type=_positive_int_arg)
     budget.add_argument("--num_train_epochs", type=_positive_float_arg)
     budget.add_argument("--preserve_source_budget", action="store_true")
-    parser.add_argument("--key_metric", required=True)
-    parser.add_argument("--workspace_root", type=Path, default=Path("/tmp/nvflare/hf-trainer"))
+    parser.add_argument(
+        "--key_metric",
+        default="",
+        help="exact higher-is-better server metric key; leave empty to disable best-model selection",
+    )
+    parser.add_argument(
+        "--workspace_root",
+        type=Path,
+        default=None,
+        help="simulation workspace; defaults to a new private temporary directory retained for result inspection",
+    )
     args = parser.parse_args()
 
     recipe = build_recipe(
@@ -191,13 +229,8 @@ def main():
         preserve_source_budget=args.preserve_source_budget,
         key_metric=args.key_metric,
     )
-    run = recipe.execute(
-        SimEnv(
-            num_clients=args.num_clients,
-            num_threads=args.num_clients,
-            workspace_root=str(args.workspace_root),
-        )
-    )
+    workspace_root = _simulation_workspace(args.workspace_root)
+    run = recipe.execute(build_sim_env(args.num_clients, workspace_root))
     print("Job Status is:", run.get_status())
     print("Result can be found in:", run.get_result())
 

@@ -37,16 +37,16 @@ versioneer = load_local_versioneer()
 # read the contents of your README file
 
 versions = versioneer.get_versions()
-base_version = os.environ.get("NVFL_BASE_VERSION")
 if versions["error"]:
-    today = datetime.date.today().timetuple()
-    year = today[0] % 1000
-    month = today[1]
-    day = today[2]
-    if base_version:
-        version = f"{base_version}.dev{year:02d}{month:02d}{day:02d}"
-    else:
-        version = f"2.6.0.dev{year:02d}{month:02d}{day:02d}"
+    base_version = os.environ.get("NVFL_BASE_VERSION")
+    if not base_version:
+        raise RuntimeError(
+            "Versioneer could not determine the NVFlare package version. "
+            "Build from a source tree with Git or embedded Versioneer metadata, "
+            "or set NVFL_BASE_VERSION explicitly."
+        )
+    date_suffix = datetime.date.today().strftime("%y%m%d")
+    version = f"{base_version}.dev{date_suffix}"
 else:
     version = versions["version"]
 
@@ -110,6 +110,7 @@ setup(
         "nvflare.dashboard.application": extra_files,
         "nvflare.tool.job": job_templates,
         "nvflare.tool.deploy": deploy_templates,
+        "nvflare.tool.recipe": ["recipe_catalog.json"],
     },
     include_package_data=True,
 )

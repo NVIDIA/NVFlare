@@ -69,7 +69,6 @@ def define_parser():
     parser.add_argument("--n_clients", type=int, default=2)
     parser.add_argument("--num_rounds", type=int, default=3)
     parser.add_argument("--update_type", choices=["full", "diff"], default="full")
-    parser.add_argument("--export_config", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument(
         "--log_config",
         type=str,
@@ -95,12 +94,6 @@ def make_recipe(args):
 def main():
     args = define_parser()
     recipe = make_recipe(args)
-
-    if args.export_config:
-        job_dir = "/tmp/nvflare/jobs/job_config"
-        recipe.export(job_dir)
-        print(f"Job config exported to {job_dir}")
-        return
 
     env = SimEnv(num_clients=args.n_clients, log_config=args.log_config)
     run = recipe.execute(env)

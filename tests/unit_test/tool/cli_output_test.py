@@ -603,10 +603,15 @@ class TestSensitiveOutputRedaction:
             ("--client-secret='alpha beta gamma' --verbose", "--client-secret='<redacted>' --verbose"),
             ("Authorization: 'alpha beta gamma'", "Authorization: '<redacted>'"),
             ("Authorization: Basic dXNlcjpwYXNz", "Authorization: <redacted>"),
+            ('Authorization = "Bearer sample-token-123"', 'Authorization = "Bearer <redacted>"'),
+            ("Authorization = 'Bearer sample-token-123'", "Authorization = 'Bearer <redacted>'"),
+            ('Authorization="Bearer sample-token-123"', 'Authorization="Bearer <redacted>"'),
+            ("Authorization=Bearer sample-token-123", "Authorization=Bearer <redacted>"),
             (
                 '{"Authorization": "Bearer sk-live-abc123"}',
                 '{"Authorization": "Bearer <redacted>"}',
             ),
+            ('password="sample secret fragment\nsafe diagnostic', 'password="<redacted>\nsafe diagnostic'),
         ],
     )
     def test_redacts_sensitive_text_values(self, text, expected):

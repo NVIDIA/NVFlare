@@ -27,11 +27,9 @@ test_configs:
     - ./data/test_configs/standalone_job/client_api_poc.yml
     - ./data/test_configs/standalone_job/client_api_prod.yml
     - ./data/test_configs/standalone_job/ext_process_streaming.yml
-    - ./data/test_configs/standalone_job/swarm_external_process_relay.yml
+    - ./data/test_configs/standalone_job/swarm_external_process_pass_through.yml
     - ./data/test_configs/standalone_job/swarm_tensor_disk_offload.yml
+    - ./data/test_configs/standalone_job/client_api_attach_ccwf.yml
+    - ./data/test_configs/standalone_job/model_controller_api.yml
   client_api_qa:
     - ./data/test_configs/standalone_job/client_api_qa.yml
-  model_controller_api:
-    - ./data/test_configs/standalone_job/model_controller_api.yml
-  ext_process_streaming:
-    - ./data/test_configs/standalone_job/ext_process_streaming.yml

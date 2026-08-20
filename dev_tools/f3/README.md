@@ -154,7 +154,10 @@ with all available options. Key defaults:
 | `streaming_chunk_size` | 1 MiB |
 | `streaming_window_size` | 64 MiB (64 chunks) |
 | `streaming_ack_interval` | 16 MiB |
-| `streaming_max_out_seq_chunks` | 16 |
 | `streaming_retry_max_pending_bytes` | 128 MiB |
+
+The receiver's out-of-sequence chunk limit is left unset so it is derived from
+the effective window and chunk sizes. For these benchmark defaults, the derived
+limit is 65 chunks.
 
 Byte-size fields accept integer bytes or binary suffixes (`1K`, `1M`, `1G`).

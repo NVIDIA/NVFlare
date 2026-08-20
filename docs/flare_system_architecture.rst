@@ -44,14 +44,16 @@ Primary System Modules
      - Core federated learning orchestration and execution
    * - Job Management
      - Job definition, storage, scheduling
+     - Job lifecycle, resource management, and deployment
    * - Communication
      - Cell, CoreCell, StreamCell, Pipe
      - Secure inter-party communication with streaming support
    * - Client Integration
-     - ClientAPI (flare.receive(), flare.send()), LauncherExecutor
-     - ML framework integration and external process management
+     - Client API (``flare.receive()``, ``flare.send()``), ``ClientAPIExecutor``
+     - In-process, NVFLARE-managed external-process, and Attach execution modes
    * - Administration
-     - Dashboard and Programmatic and GUI-based system management
+     - Dashboard, Admin Console
+     - Programmatic and GUI-based system management
    * - Deployment
      - ProvisionerSpec, WorkspaceBuilder
      - Certificate generation, configuration, and secure deployment
@@ -88,15 +90,17 @@ Process Responsibilities
 
 - Runs ClientRunner 
 - Pulls tasks from server via Cell network
-- Launches training processes using JobExecutor
-- Routes task data to/from training process via Pipe
+- Delegates Client API tasks through ``ClientAPIExecutor``
+- Runs training in the CJ, launches an owned trainer process, or accepts an
+  independently managed trainer through Attach mode
 
 
 **Training Process**
 
 - User's ML training script
 - Uses Client API: flare.init(), flare.receive(), flare.send()
-- Communicates with CJ via FilePipe (file-based) or CellPipe (network-based)
+- Is either owned by NVFLARE (in-process or external-process mode) or by an
+  external system (Attach mode)
 
 Communication Mechanisms
 ########################
@@ -108,10 +112,13 @@ Communication Mechanisms
 - Secure, encrypted messaging with authentication
 - Streaming support for large data transfers
   
-**Pipe Abstraction**: CJ-to-training-process communication uses Pipe interface:
-
-- FilePipe: File system-based IPC for same-machine processes
-- CellPipe: Network-based IPC allowing training process on different machine
+**Client API Backends**: ``ClientAPIExecutor`` selects the communication and
+lifecycle backend for ``in_process``, ``external_process``, or ``attach`` mode.
+For network Attach, the external trainer connects to the site's existing Client
+Parent endpoint, which routes the Attach session to the per-job Client Job.
+Only protected shared-file Attach creates a separate listener: a job-specific
+FileDriver listener owned by the Client Job and secured by filesystem
+permissions.
 
 Deployment Modes
 ################

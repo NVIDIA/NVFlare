@@ -229,9 +229,11 @@ recipe = XGBVerticalRecipe(
 set_per_site_config(recipe, per_site_config)
 
 # Run simulation with the clients configured on the recipe
-env = SimEnv(clients=recipe.configured_sites())
-run = recipe.execute(env)
-run.simulator_run("/tmp/nvflare/workspace/works/vertical_secure")
+env = SimEnv(
+    clients=recipe.configured_sites(),
+    workspace_root="/tmp/nvflare/workspace/fedxgb_secure/train_fl/works",
+)
+recipe.execute(env)
 ```
 
 #### Horizontal Federated Learning
@@ -283,9 +285,11 @@ recipe = XGBHorizontalRecipe(
 set_per_site_config(recipe, per_site_config)
 
 # Export job (simulator run requires additional context setup for secure horizontal)
-env = SimEnv(clients=recipe.configured_sites())
-run = recipe.execute(env)
-run.export_job("/tmp/nvflare/workspace/jobs/horizontal_secure")
+env = SimEnv(
+    clients=recipe.configured_sites(),
+    workspace_root="/tmp/nvflare/workspace/fedxgb_secure/train_fl/works",
+)
+recipe.export("/tmp/nvflare/workspace/fedxgb_secure/train_fl/jobs", env=env)
 ```
 
 #### Secure Horizontal Training - Additional Setup Required

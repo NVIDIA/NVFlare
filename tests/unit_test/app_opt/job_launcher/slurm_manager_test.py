@@ -68,7 +68,6 @@ class Adapter:
         self.live = _query(LookupStatus.NOT_FOUND)
         self.accounting_id = _query(LookupStatus.NOT_FOUND)
         self.cancel_result = _query(LookupStatus.FOUND)
-        self.version_result = _command(stdout="slurm 23.02.0\n")
         self.probes = [_command(stdout="")]
         self.calls = []
 
@@ -100,10 +99,6 @@ class Adapter:
     def accounting_probe(self, timeout):
         self.calls.append(("probe", timeout))
         return self._take(self.probes)
-
-    def version_probe(self, timeout):
-        self.calls.append(("version", timeout))
-        return self.version_result
 
 
 def _record(job_id="42", state="RUNNING", **kwargs):
@@ -193,7 +188,6 @@ def _runtime_config(workspace, executables):
 
 def _bootstrap_adapter(monkeypatch):
     adapter = MagicMock()
-    adapter.version_probe.return_value = _command(stdout="slurm 23.02.5\n")
     adapter.accounting_probe.return_value = _command(stdout="")
     factory = MagicMock(return_value=adapter)
     monkeypatch.setattr(manager_module, "_SlurmCliAdapter", factory)
@@ -359,6 +353,7 @@ def test_pyxis_node_group_writes_node_script_and_mounts_job_artifacts(tmp_path):
     assert "python3 -m trainer" in node_script.read_text(encoding="utf-8")
     batch = Path(handle.job_dir, "batch.sh").read_text(encoding="utf-8")
     assert f"{handle.job_dir}:{handle.job_dir}:ro" in batch
+    assert f"{tmp_path / 'startup'}:{tmp_path / 'startup'}:ro" in batch
 
 
 def test_submission_uses_site_timeout(tmp_path):
@@ -540,6 +535,18 @@ def test_infrastructure_terminal_state_is_an_infrastructure_error(tmp_path):
     assert handle.poll() == ProcessExitCode.INFRASTRUCTURE_ERROR
 
 
+def test_reportable_derived_step_exit_code_is_preserved(tmp_path):
+    adapter = Adapter()
+    adapter.live = _query(LookupStatus.NOT_FOUND)
+    adapter.accounting_id = _query(
+        LookupStatus.FOUND,
+        _record(state="FAILED", exit_status=15, derived_exit_status=ProcessExitCode.EXCEPTION),
+    )
+    handle = _manager(tmp_path, adapter).launch(_plan(tmp_path))
+
+    assert handle.poll() == ProcessExitCode.EXCEPTION
+
+
 def test_terminal_cleanup_restores_access_to_pyxis_mount_directories(tmp_path):
     adapter = Adapter()
     adapter.live = _query(LookupStatus.NOT_FOUND)
@@ -556,7 +563,7 @@ def test_terminal_cleanup_restores_access_to_pyxis_mount_directories(tmp_path):
     assert not os.path.exists(handle.job_dir)
 
 
-def test_apptainer_resolver_mount_uses_compute_node_path(tmp_path, monkeypatch):
+def test_apptainer_startup_and_resolver_mounts_use_compute_node_paths(tmp_path, monkeypatch):
     parent_target = "/run/parent-specific/resolv.conf"
     realpath = os.path.realpath
 
@@ -569,6 +576,7 @@ def test_apptainer_resolver_mount_uses_compute_node_path(tmp_path, monkeypatch):
 
     manager.launch(_plan(tmp_path, sandbox="apptainer", image="/image.sif"))
 
+    assert f"{tmp_path / 'startup'}:{tmp_path / 'startup'}:ro" in adapter.submitted_batch
     assert f"{CONTAINER_RESOLV_CONF}:{CONTAINER_RESOLV_CONF}:ro" in adapter.submitted_batch
     assert parent_target not in adapter.submitted_batch
 
@@ -588,18 +596,27 @@ def test_terminal_squeue_row_moves_directly_to_accounting(tmp_path):
     assert not any(call[0] == "cancel" for call in adapter.calls)
 
 
-def test_clean_completion_after_user_abort_remains_aborted(tmp_path):
+@pytest.mark.parametrize(
+    ("stop_method", "expected_result"),
+    [("terminate", JobReturnCode.ABORTED), ("_terminate_for_heartbeat_cleanup", JobReturnCode.SUCCESS)],
+    ids=["user_abort", "heartbeat_cleanup"],
+)
+def test_clean_completion_preserves_stop_intent(tmp_path, stop_method, expected_result):
+    clock = Clock()
     adapter = Adapter()
     adapter.live = _query(LookupStatus.NOT_FOUND)
+    adapter.accounting_id = _query(LookupStatus.NOT_FOUND)
+    manager = _manager(tmp_path, adapter, monotonic=clock)
+    handle = manager.launch(_plan(tmp_path))
+    getattr(handle, stop_method)()
+
     adapter.accounting_id = _query(
         LookupStatus.FOUND,
         _record(state="COMPLETED", exit_status=0, exit_signal=0),
     )
-    manager = _manager(tmp_path, adapter)
-    handle = manager.launch(_plan(tmp_path))
-    handle._request_cancel(user_abort=True)
+    clock.value = 7
 
-    assert handle.poll() == JobReturnCode.ABORTED
+    assert handle.poll() == expected_result
     assert not os.path.exists(handle.job_dir)
 
 
@@ -654,7 +671,7 @@ def test_requeued_job_is_refused_by_batch_guard(tmp_path):
     assert "SLURM_RESTART_COUNT" in adapter.submitted_batch
     assert handle.poll() == JobReturnCode.UNKNOWN
     assert not any(call[0] == "cancel" for call in adapter.calls)
-    assert handle.poll() == JobReturnCode.EXECUTION_ERROR
+    assert handle.poll() == ProcessExitCode.EXCEPTION
 
 
 def test_framework_termination_path_handles_job_without_slurm_system_end_sweep(tmp_path):
@@ -777,20 +794,3 @@ def test_accounting_probe_is_required_and_briefly_retried(tmp_path, monkeypatch,
     else:
         with pytest.raises(UnsafeComponentError, match="slurmdbd"):
             manager._require_accounting()
-
-
-@pytest.mark.parametrize("version", ["slurm 23.02.0\n", "slurm 26.05.1\n"])
-def test_supported_slurm_version_passes_bootstrap_check(tmp_path, version):
-    adapter = Adapter()
-    adapter.version_result = _command(stdout=version)
-
-    _manager(tmp_path, adapter)._require_slurm_version()
-
-
-@pytest.mark.parametrize("result", [_command(stdout="slurm 22.05.9\n"), _command(stdout="unexpected\n"), _command(1)])
-def test_unsupported_or_unreadable_slurm_version_fails_bootstrap(tmp_path, result):
-    adapter = Adapter()
-    adapter.version_result = result
-
-    with pytest.raises(UnsafeComponentError, match="23.02 or later"):
-        _manager(tmp_path, adapter)._require_slurm_version()

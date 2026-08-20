@@ -1,13 +1,13 @@
 ---
 name: nvflare-convert-pytorch
-description: "Convert existing PyTorch training code into an NVFLARE federated job using Client API model exchange, local validation, and job export; do not use for other frameworks, deployment, POC/production lifecycle, or experiment workflows."
+description: "Convert existing plain or manual PyTorch training code into an NVFLARE federated job using Client API model exchange, local validation, and job export; use when the user names plain PyTorch or preliminary source inspection identifies one plain-PyTorch owner, and not for Lightning, other frameworks, deployment, POC/production lifecycle, or experiment workflows."
 license: Apache-2.0
+version: "0.1.0"
 metadata:
   author: "NVIDIA FLARE Team <federatedlearning@nvidia.com>"
-  min_flare_version: "2.9.0"
-  blast_radius: runs_simulator
+  min-flare-version: "2.9.0"
+  blast-radius: runs_simulator
   category: Conversion
-  version: "0.1.0"
   tags: "nvflare, federated-learning, pytorch, conversion"
   languages: "python"
   frameworks: "pytorch, nvflare"
@@ -45,9 +45,11 @@ distribution; handle conversion later as a separate request.
 1. Load `../nvflare-shared/references/conversion-common.md` and apply it for the
    whole conversion; this SKILL.md states only the framework-specific deltas.
    Load `../nvflare-shared/references/conversion-workflow.md` only for a non-standard
-   case that needs its detailed rerun, data-location, authorization, or
-   missing-semantics guidance.
-2. Inspect before editing with `nvflare agent inspect <path> --format json`
+   rerun, authorization, or missing-semantics case; it no longer holds the
+   data-location or partitioning contracts, whose invariants `conversion-common.md`
+   owns. Load `../nvflare-shared/references/site-data-and-paths.md` for generated
+   partitions, relative paths, or per-site data locations.
+2. Inspect before editing with `nvflare agent inspect source <path> --format json`
    plus direct reading. Fact extraction is static; do not import or execute
    user training modules to discover fields. Extract: training entrypoint,
    model class path and constructor args, checkpoint behavior, train/eval
@@ -76,17 +78,21 @@ distribution; handle conversion later as a separate request.
 5. Convert training and evaluation as a pair using
    `references/pytorch-client-api-conversion.md`: initialize FLARE, receive an
    `FLModel`, load `params`, evaluate the received global model, train, and
-   send an `FLModel` with updated `params` and `metrics`. Adapt the user's
+   send an `FLModel` with updated `params`, `metrics`, and the actual completed
+   local optimizer-step count in `NUM_STEPS_CURRENT_ROUND`. Adapt the user's
    evaluation code into the packaged evaluation template; if evaluation is
-   required but missing, ask or fail closed. Partition site data per the "Site
-   Data Partitioning" rule in `../nvflare-shared/references/conversion-common.md`.
-6. Add or update `job.py` with explicit model config (never a live model),
-   requested `aggregator=` wiring, and the metric, tensor-transport, server
-   offload, and execution settings derived from the shared PyTorch-family
-   construction profile.
+   required but missing, ask or fail closed. Apply the step-1 data-location
+   rules to the generated client's data argument.
+6. Add or update `job.py` under the shared constructor-serialization rule:
+   use explicit `class_path` (or documented `path` alias) plus complete `args`
+   whenever reconstruction needs values. Add requested `aggregator=` wiring,
+   metric, tensor-transport, server offload, and execution settings derived
+   from the shared PyTorch-family construction profile.
 7. Validate in a ladder per `../nvflare-shared/references/validation-evidence.md`:
    compile checks, recipe construction, one final full-run path chosen by the
-   artifact being validated, and export inspection; use
+   artifact being validated, with export and package inspection only for the
+   selected exported-artifact path. For a local target, inspect the materialized
+   configs and packaging evidence after that run. Use
    `references/job-validation.md` for PyTorch-specific failures. Stop at the
    first failed rung and report the product error. Use the environment and
    permission mechanisms supplied by the agent host; do not inspect or enforce
@@ -101,10 +107,12 @@ distribution; handle conversion later as a separate request.
 - Must audit model constructor arguments before writing `job.py` by reading the
   model module's `__init__` and the selected recipe's `model` parameter from
   `nvflare recipe show <recipe-name> --format json`, not by reading NVFLARE
-  library source. Emit explicit recipe model config with `class_path` and
-  `args` only when the values are statically clear from literal source,
-  configuration, or supplied metadata; otherwise ask one semantic question when
-  an answer channel exists or fail closed on that missing value.
+  library source. Emit the selected recipe's documented `class_path` or `path`
+  key plus complete `args` for every required or overridden constructor value;
+  a direct `torch.nn.Module` is allowed only when
+  unchanged zero-argument defaults reconstruct it. Values must be statically
+  clear from literal source, configuration, or supplied metadata. Otherwise ask
+  one semantic question when an answer channel exists or fail closed.
 - Must follow `../nvflare-shared/references/pytorch-model-exchange.md` and
   `references/pytorch-client-api-conversion.md` for the canonical plain-PyTorch
   payload and round-loop pattern.
@@ -117,6 +125,10 @@ distribution; handle conversion later as a separate request.
 - Must convert source evaluation alongside training and return metrics through
   `FLModel.metrics`; must not synthesize metric semantics without source
   evidence.
+- Must count completed local optimizer steps in each generated training round
+  and send that positive value as `MetaKey.NUM_STEPS_CURRENT_ROUND`. This is the
+  FedAvg aggregation weight; do not omit it, reuse a cumulative count, or
+  invent a value when the source loop cannot establish it.
 - Must load checkpoints with `torch.load(..., weights_only=True)`; a
   checkpoint that needs full unpickling is ask/fail, per
   `references/pytorch-client-api-conversion.md`.
@@ -136,6 +148,8 @@ their phase needs them. Load other detailed references only for exceptions:
 
 - `../nvflare-shared/references/conversion-workflow.md` for the full conversion
   contract when a case is non-standard;
+- `../nvflare-shared/references/site-data-and-paths.md` only for generated site
+  partitions, relative-path resolution, or per-site data locations;
 - `../nvflare-shared/references/pytorch-family-recipe-selection.md` only for
   ambiguous or non-FedAvg algorithms, and `references/recipe-selection.md` only
   for non-FedAvg or execution-mode construction details not supplied by

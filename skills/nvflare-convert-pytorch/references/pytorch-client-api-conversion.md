@@ -9,13 +9,16 @@ tensor payload rules before changing model exchange code.
 
 Use this path for plain PyTorch conversion:
 
-1. Confirm PyTorch routing with `nvflare agent inspect`.
+1. Confirm PyTorch routing with `nvflare agent inspect source`.
 2. Select a PyTorch-family recipe with `nvflare recipe list/show`.
 3. Generate `client.py` with `nvflare.client` `receive` / `send` and
    `FLModel(params=...)` as the model exchange path.
 4. Generate `job.py` that builds the selected recipe and calls
    `recipe.execute(SimEnv(...))`.
-5. Validate with `python job.py`, inspect terminal evidence, then export.
+5. Select exactly one final target: run `python job.py` and inspect its
+   materialized simulation workspace for local validation, or, only when the
+   user requests an exported/deployable artifact, export and run that folder
+   with the simulator CLI. Do not run both targets after one succeeds.
 
 HE is not supported at steps 4–5: follow the HE-not-supported rule in
 `../../nvflare-shared/references/pytorch-family-recipe-selection.md`.
@@ -37,6 +40,9 @@ FL-only Client API entry point, not a standalone/FL auto-detecting launcher.
 - Call `flare.receive()` to get the incoming `FLModel`.
 - Load `input_model.params` into the PyTorch model with `load_state_dict`.
 - Train or evaluate using the user's existing data loader and optimizer.
+- Count only optimizer steps completed in the current round. The generated
+  `train_one_round` helper must return this positive count; do not use an
+  estimated, cumulative, or default value.
 - Send the trained weights with the canonical plain-PyTorch payload pattern in
   `../../nvflare-shared/references/pytorch-model-exchange.md`. Do not call
   `model.cpu()`, which moves the persistent model off the training device.
@@ -78,16 +84,15 @@ let every simulated site train on the full source training set unless the user
 explicitly asks for shared training data or the source already provides
 site-specific data that resolves to that behavior. Validation/test loaders may
 remain shared only when that matches the source's validation/test semantics.
-For generated Pandas partition code, follow "Site Data Partitioning" in
-`../../nvflare-shared/references/conversion-workflow.md`.
+For generated Pandas partition code, follow
+`../../nvflare-shared/references/site-data-and-paths.md`.
 
 ## Model Construction Consistency
 
 Follow the shared model-config and construction-consistency rule in
 `../../nvflare-shared/references/conversion-workflow.md` ("Recipe Model Config"):
-same class and constructor args on server and client, explicit
-`{"class_path": ..., "args": ...}` config (no live `nn.Module` instance), and
-derive-or-ask/fail-closed for required values.
+same class and constructor args on server and client, explicit config whenever
+reconstruction needs a constructor value, and derive-or-ask/fail-closed for it.
 
 PyTorch-specific delta: the client loads `input_model.params` into the model
 with `load_state_dict`, so the server-initial model and the client model must
@@ -129,8 +134,10 @@ The self-contained runnable template ships at
 `../assets/client_with_eval.py`; adapt it rather than duplicating its code here
 or depending on repository `examples/`. It initializes setup once, receives and
 loads the global model, evaluates that received model, handles evaluation-only
-tasks, trains, and sends the canonical model payload plus the source-backed
-metric.
+tasks, trains, and sends the canonical model payload, source-backed metric, and
+the actual completed optimizer-step count for FedAvg weighting. If the source
+loop cannot establish that count, ask in interactive mode or fail closed in
+unattended mode instead of silently using equal client weights.
 
 The round `FLModel.metrics` is this pre-training evaluation of the received
 global model, not a post-training metric — see

@@ -67,7 +67,7 @@ For example, send model differences or export the job configuration with:
 
 ```bash
 python job.py --update_type diff
-python job.py --export_config
+python job.py --export --export-dir /tmp/nvflare/jobs/job_config
 ```
 
 Other options are `--n_clients`, `--num_rounds`, and `--log_config`. After

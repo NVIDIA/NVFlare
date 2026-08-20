@@ -23,8 +23,8 @@ def make_hf_argument_parser(dataclass_types):
     return HfArgumentParser(dataclass_types, allow_abbrev=False)
 
 
-def main(trainer_factory, rank=0, evaluate_before_train=True):
-    """Run one persistent patched Trainer across federated rounds."""
+def main(trainer_factory, *, rank, evaluate_before_train=True):
+    """Run one persistent patched Trainer using the caller's resolved global rank."""
     flare.init(rank=rank)
     trainer = trainer_factory()
     flare.patch(trainer)

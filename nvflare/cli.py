@@ -505,6 +505,7 @@ def parse_args(prog_name: str):
         ns.deploy_sub_cmd = sub_sub
         ns.deploy_k8_sub_cmd = positionals[2] if len(positionals) > 2 else None
         ns.agent_sub_cmd = sub_sub
+        ns.agent_inspect_capability = positionals[2] if len(positionals) > 2 else None
         ns.format = global_args.format
         ns.connect_timeout = global_args.connect_timeout
         ns.version = global_args.version

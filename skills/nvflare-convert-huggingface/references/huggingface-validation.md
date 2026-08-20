@@ -41,28 +41,60 @@ reaches the applicable phase, and stop at the first failure.
 
 ## Hugging Face Artifacts And Compatibility
 
-- Before constructing a model, tokenizer/processor, or dataset, resolve its
-  configured identifier to an existing local path or verify that every required
-  file is present in the intended cache. Without download authorization, probe
-  remote-style identifiers with `local_files_only=True` or the existing offline
-  environment. An error that mentions `https://huggingface.co` during an offline
-  probe can mean only that the local cache entry is missing; it is not evidence
-  of a network request.
-- When the user authorizes downloading a public checkpoint if it is not cached,
-  invoke the selected library's normal cache-aware load or download once. Do
-  not first run an unguarded
-  `snapshot_download(..., local_files_only=True)` probe: a normal cache miss
-  raises and creates false recovery evidence. When validation must remain
-  cache-only, catch `LocalEntryNotFoundError` inside an exit-zero wrapper,
-  report the miss as a blocker, and do not download without authorization.
+- Before constructing a model or tokenizer/processor, run the maintained
+  `../scripts/resolve_model_snapshot.py` with `--source local` for a configured
+  path or `--source hub` for a Hub repository ID. Never infer the source type
+  from slash syntax: `models/checkpoint` and `org/model` are intentionally
+  distinguished by that required option. The cache-only Hub path catches
+  `LocalEntryNotFoundError`, emits a structured `missing` result, and exits zero;
+  report that result as a blocker.
+- Use the identifier as the positional argument; do not invent a `--model`
+  option. These are the canonical invocations:
+
+  ```bash
+  python <skill-dir>/scripts/resolve_model_snapshot.py --source local --source-root <absolute-source-root> <configured-path>
+  python <skill-dir>/scripts/resolve_model_snapshot.py --source hub <org/model>
+  python <skill-dir>/scripts/resolve_model_snapshot.py --source hub --repo-type dataset <org/dataset>
+  ```
+
+  A relative local identifier requires the absolute original source-project
+  root so resolution never depends on the validation command's working
+  directory. An absolute local identifier must omit `--source-root`; the option
+  resolves relative identifiers and is not a sandbox boundary.
+- Only when the user authorizes downloading the specific public Hub artifact if
+  uncached, rerun its resolver once with the matching canonical invocation:
+
+  ```bash
+  python <skill-dir>/scripts/resolve_model_snapshot.py --source hub --allow-download <org/model>
+  python <skill-dir>/scripts/resolve_model_snapshot.py --source hub --repo-type dataset --allow-download <org/dataset>
+  ```
+
+  In that authorized invocation, the resolver uses the matching public
+  `HfApi().model_info(...).sha` or
+  `HfApi().dataset_info(...).sha` result, validates the full immutable
+  40-character commit SHA, and passes it to `snapshot_download`. An already
+  audited full SHA may instead be supplied with `--revision`. For a model
+  repository, use the returned immutable `revision` and `resolved_path` for the
+  server and every client. For a dataset repository, pass `resolved_path` only
+  to a source-compatible local dataset loader; if the source cannot load that
+  snapshot layout, ask or fail closed rather than inventing a loader. Do not run
+  a preceding `snapshot_download(..., local_files_only=True)` probe, copy
+  resolver logic into generated `job.py`, or download without authorization.
+  For a configured Hub dataset ID, use the same resolver with
+  `--repo-type dataset`; for a source-prescribed local dataset path, use the
+  existing local path without a Hub lookup.
 - Never recover from an offline/cache-only miss by removing
   `HF_HUB_OFFLINE`/`TRANSFORMERS_OFFLINE`, dropping `local_files_only=True`, or
   rerunning online unless the user explicitly requested the download. Do not
   substitute another local checkpoint. Keep the job as a draft and report
   full-model validation blocked when the required artifact is unavailable.
-- Pass the same resolved local model path and cache configuration to the server
-  model and every client. Do not validate with a cached Hub identifier and
-  export a job that depends on an unverified online lookup.
+  A cache-only Hugging Face error can mention `huggingface.co` while reporting
+  a local cache miss; that URL alone is not evidence that a network request was
+  attempted. Judge the configured offline flags, `local_files_only` setting,
+  and exception/result type instead.
+- Pass the same resolved local model path and cache configuration from the
+  resolver to the server model and every client. Do not validate with a cached
+  Hub identifier and export a job that depends on an unverified online lookup.
 - Do not call `flare.init()`, `flare.patch()`, `flare.is_running()`, or patched
   Trainer methods in a standalone preflight; they require the Client API context
   created by the recipe or simulator launcher. Construct the Trainer without
@@ -75,10 +107,28 @@ reaches the applicable phase, and stop at the first failure.
 ## Parameter Checks
 
 - Instantiate the adapted `server_model.ServerModel` and the source Trainer
-  model factory with the same local constructor values, then compare their
-  state-dict key sets and shapes without training. Do not inspect NVFLARE
-  persistors or class loaders; the exported job and final simulation validate
-  product-side construction.
+  model through the same importable factory path and with the same local
+  constructor arguments. Always compare state-dict key sets, shapes, and dtypes
+  without training. Do not inspect NVFLARE persistors or class loaders; the
+  exported job and final simulation validate product-side construction.
+- Before comparing values, classify checkpoint-loaded versus missing or newly
+  initialized parameters from source evidence and the available model load
+  report/loading information. Loading the same fixed checkpoint proves value
+  determinism only for parameters actually loaded from it; a checkpoint that
+  omits a task head or other exchanged parameters does not prove deterministic
+  construction of the complete model.
+- For checkpoint-loaded parameters, or when the factory explicitly resets all
+  initialization seeds/state on every call, require exact per-tensor equality
+  or an equivalent stable state hash between independently constructed source
+  and server models. A single coincidentally equal run is not proof. For keys
+  reported as missing/newly initialized without a deterministic reset, require
+  matching keys, shapes, and dtypes, record their names and provenance, and do
+  not require their independently initialized values to match. If per-key
+  provenance is unavailable, treat the factory as nondeterministic rather than
+  assuming the entire fixed-checkpoint construction is deterministic.
+- Determine this comparison policy before asserting values. Do not first run an
+  unconditional full-state equality assertion and then recover by excluding
+  newly initialized keys after it fails.
 - Require exact full-model key agreement after any documented prefix
   transformation. For PEFT or auxiliary trainable models, load
   `huggingface-state-and-distributed.md` and run its adapter/ownership checks.
@@ -111,6 +161,10 @@ reaches the applicable phase, and stop at the first failure.
 - For non-default checkpoint/restore behavior, PEFT, auxiliary trainable
   models, or DDP, load `huggingface-state-and-distributed.md` and run only its
   applicable checks.
+- Do not report DDP validated from a single-process or rank-zero-only
+  simulation. A DDP validation claim requires a two-process `torchrun` case in
+  which each process records its resolved global rank and the rank passed to
+  `flare.init()`, and the observed ranks are exactly `{0, 1}`.
 
 ## Report
 

@@ -12,7 +12,7 @@ System Architecture
 ===================
 
 - :doc:`System Architecture Overview <programming_guide/system_architecture>`
-- :doc:`FLARE System Architecture <flare_system_architecture>`
+- :doc:`Detailed FLARE Architecture and Job Workflow <system_architecture/system_architecture>`
 - :doc:`CellNet Architecture <system_architecture/cellnet_architecture>`
 
 .. toctree::
@@ -143,16 +143,16 @@ Hierarchical Architecture
    programming_guide/hierarchical_architecture
    programming_guide/hierarchical_communication
 
-3rd-Party Integration
-=====================
+Client API Attach Mode
+======================
 
-- :doc:`3rd-Party Integration <programming_guide/execution_api_type/3rd_party_integration>`
+- :doc:`Connect an Independently Managed Trainer <programming_guide/execution_api_type/client_api_attach>`
 
 .. toctree::
    :maxdepth: 1
    :hidden:
 
-   programming_guide/execution_api_type/3rd_party_integration
+   programming_guide/execution_api_type/client_api_attach
 
 Low-Level APIs
 ==============

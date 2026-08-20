@@ -138,7 +138,7 @@ encryption, or custom privacy filters are out of scope.
   treating it as a header leaks cell values as feature names. Anything
   short of the full rule is AMBIGUOUS: do not guess — require declared
   names or an explicit "first row is the header" statement, else fail
-  closed. `nvflare agent inspect` implements this rule and emits it as
+  closed. `nvflare agent inspect data` implements this rule and emits it as
   the dataset block's `header: present|ambiguous`; consume that output
   instead of re-deriving it.
 - `columns_truncated: true` (schema wider than the 512-column cap): the
@@ -148,7 +148,7 @@ encryption, or custom privacy filters are out of scope.
 - `feature_names_invalid` (parquet with duplicate or empty column names):
   downstream readers mangle such names — fail closed and report them.
 - Cross-site schema agreement is a generation precondition, not just a
-  validation failure: `nvflare agent inspect` emits `schema_agreement`,
+  validation failure: `nvflare agent inspect data` emits `schema_agreement`,
   comparing feature names, column counts, AND dtype classes across sites
   (same names with drifting dtypes is `dtypes_differ`; shards disagreeing
   inside one site is `shards_differ` — neither is analysis-ready for

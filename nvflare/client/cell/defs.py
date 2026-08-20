@@ -32,13 +32,21 @@ class Topic:
     # Semantic handshake rejection, distinct from transport/protocol ERROR.
     HELLO_REJECTED = "client_api.hello_rejected"
 
+    # Attach session setup (CJ initiated)
+    SESSION_OPEN = "client_api.session_open"
+    SESSION_ACCEPTED = "client_api.session_accepted"
+    SESSION_REJECTED = "client_api.session_rejected"
+
     # Per task (every round)
     TASK_READY = "client_api.task_ready"
     TASK_ACCEPTED = "client_api.task_accepted"
     TASK_FAILED = "client_api.task_failed"
+    TASK_STATUS = "client_api.task_status"
     RESULT_READY = "client_api.result_ready"
     RESULT_ACCEPTED = "client_api.result_accepted"
     RESULT_REJECTED = "client_api.result_rejected"
+    RESULT_STATUS = "client_api.result_status"
+    RESULT_SOURCE_SETTLED = "client_api.result_source_settled"
 
     # Throughout the session
     LOG = "client_api.log"
@@ -61,17 +69,48 @@ class MsgKey:
     PROTOCOL_VERSION = "protocol_version"
     PROOF = "proof"
     REASON = "reason"
+    ATTACH_ID = "attach_id"
+    CONNECT_URL = "connect_url"
+    CONNECTION_SECURITY = "connection_security"
+    # Secure managed external-process jobs temporarily delegate the site's bearer
+    # credential after HELLO. These values are never launch-profile fields.
+    SECURE_MODE = "secure_mode"
+    AUTH_TOKEN = "auth_token"
+    AUTH_TOKEN_SIGNATURE = "auth_token_signature"
     TASK_ID = "task_id"
+    TASK_SEQ = "task_seq"
+    ATTEMPT_ID = "attempt_id"
     TASK_NAME = "task_name"
+    TASK_STATE = "task_state"
     # Task Shareable; FOBS chooses inline or ViaDownloader encoding.
     MODEL = "model"
     # Result Shareable with the same FOBS encoding policy.
     RESULT = "result"
+    RESULT_ID = "result_id"
+    RESULT_STATE = "result_state"
+    ACCEPTED_ATTEMPT_ID = "accepted_attempt_id"
     # True while send() owns an accepted source, including the RESULT_ACCEPTED race;
     # SHUTDOWN may stop the process only after this becomes False.
     RESULT_SOURCE_LIVE = "result_source_live"
     # A zero timeout disables heartbeat lease enforcement for legacy compatibility.
     HEARTBEAT_INTERVAL = "heartbeat_interval"
     HEARTBEAT_TIMEOUT = "heartbeat_timeout"
+    TASK_EXCHANGE = "task_exchange"
+    MEMORY_GC_ROUNDS = "memory_gc_rounds"
+    CUDA_EMPTY_CACHE = "cuda_empty_cache"
     # Identifies the protocol reply carried inside a Cell reply body.
     REPLY_TOPIC = "reply_topic"
+
+
+class TaskState:
+    UNKNOWN = "UNKNOWN"
+    QUEUED = "QUEUED"
+    DELIVERED = "DELIVERED"
+    RESULT_PUBLISHING = "RESULT_PUBLISHING"
+    COMPLETE = "COMPLETE"
+
+
+class ResultState:
+    UNKNOWN = "UNKNOWN"
+    ACCEPTED = "ACCEPTED"
+    REJECTED = "REJECTED"

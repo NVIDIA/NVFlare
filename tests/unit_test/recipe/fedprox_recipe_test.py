@@ -81,6 +81,14 @@ class TestFedProxRecipe:
         assert recipe.fedprox_mu == 0.2
         assert _get_controller(recipe).fedprox_mu == 0.2
 
+    def test_key_metric_mode_is_forwarded(self, mock_file_system):
+        recipe = _make_recipe(key_metric="loss", key_metric_mode="min")
+
+        assert recipe.key_metric_mode == "min"
+        selector = recipe._job._deploy_map[SERVER_SITE_NAME].app_config.components.get("model_selector")
+        assert selector.key_metric == "loss"
+        assert selector.negate_key_metric is True
+
     @pytest.mark.parametrize("fedprox_mu", [None, 0.0, -0.1, float("inf"), float("nan"), True, "0.1"])
     def test_invalid_mu_is_rejected(self, mock_file_system, fedprox_mu):
         with pytest.raises((TypeError, ValueError), match="finite positive number"):

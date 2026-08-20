@@ -19,6 +19,7 @@ import pytest
 torch = pytest.importorskip("torch")
 from torch import nn
 
+from nvflare.apis.job_def import SERVER_SITE_NAME
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_opt.pt.fedce import FedCEConstants
 from nvflare.app_opt.pt.recipes.fedce import FedCERecipe
@@ -30,6 +31,33 @@ def test_fedce_recipe_uses_fedavg_with_contribution_aggregator():
 
     assert recipe.params_transfer_type.value == ParamsType.DIFF.value
     assert recipe.server_expected_format == ExchangeFormat.PYTORCH
+
+
+def test_fedce_recipe_forwards_key_metric_mode():
+    recipe = FedCERecipe(
+        model=nn.Linear(2, 1),
+        min_clients=2,
+        train_script=__file__,
+        key_metric="loss",
+        key_metric_mode="min",
+    )
+
+    server_app = recipe._job._deploy_map[SERVER_SITE_NAME]
+    selector = server_app.app_config.components.get("model_selector")
+    assert recipe.key_metric_mode == "min"
+    assert selector.key_metric == "loss"
+    assert selector.negate_key_metric is True
+
+
+@pytest.mark.parametrize("min_clients", [0, 1])
+def test_fedce_recipe_requires_at_least_two_clients(min_clients):
+    with pytest.raises(ValueError, match="requires min_clients >= 2"):
+        FedCERecipe(model=nn.Linear(2, 1), min_clients=min_clients, train_script=__file__)
+
+
+def test_fedce_recipe_requires_integer_min_clients():
+    with pytest.raises(TypeError, match="min_clients must be int"):
+        FedCERecipe(model=nn.Linear(2, 1), min_clients=2.0, train_script=__file__)
 
 
 def test_fedce_recipe_rejects_non_pytorch_exchange():

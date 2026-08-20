@@ -2,15 +2,14 @@
 
 Use this reference to decide whether to apply the Lightning conversion pattern or
 hand off to another framework skill. It covers **how to use and when to override**
-`nvflare agent inspect`, not a second copy of its detection rules.
+`nvflare agent inspect source`, not a second copy of its detection rules.
 
 ## Default Evidence Source
 
-`nvflare agent inspect <path> --format json` is the default detection source. It
-enumerates Lightning framework evidence (imports, `LightningModule` /
-`LightningDataModule` subclasses, and `Trainer` usage, including aliased and
-submodule import forms) and reports `conversion_state`. Trust its `frameworks`
-and `conversion_state` by default.
+`nvflare agent inspect source <path> --format json` is the default detection
+source. It reports supported direct Trainer ownership and routing; direct
+reading supplies imports and module evidence outside those closed forms. Trust
+its result by default.
 
 At a high level, a Lightning project uses a `LightningModule` /
 `LightningDataModule` and a `Trainer` fit/validate/test loop. Do not maintain a

@@ -35,7 +35,31 @@ Before using the local-cluster scripts, install Red Hat OpenShift Local so the
 `https://console.redhat.com/openshift/create/local`, enable host hardware
 virtualization, and make sure the host has enough CPU, memory, and disk for
 OpenShift plus the NVFlare test pods. The create script defaults to 6 vCPUs,
-24576 MiB memory, and 120 GiB disk.
+24576 MiB memory, and 120 GiB disk. The deployment scripts make that local
+configuration practical by requesting `500m` CPU and `1Gi` memory for each of
+the three parent pods. Override `PARENT_CPU` and `PARENT_MEMORY` if the parent
+workload needs more resources; increase `CRC_CPUS` and `CRC_MEMORY` to match.
+If parent resources are omitted from a general `nvflare deploy prepare`
+configuration, the generated Helm chart requests `2` CPU and `8Gi` memory per
+parent pod, which does not fit this three-parent example on the default CRC
+size after OpenShift overhead.
+
+As a verified alternative for parent pods that need the generated `2` CPU and
+`8Gi` memory requests, or for heavier workloads, resize an existing CRC cluster
+before restarting it:
+
+```bash
+crc stop
+crc config set cpus 14
+crc config set memory 65536
+bash examples/devops/openshift/scripts/start_openshift_cluster.sh
+bash examples/devops/openshift/scripts/k8s_e2e.sh
+```
+
+This `14` vCPU / `65536` MiB configuration was verified with the complete
+example: after the restart, rerunning `k8s_e2e.sh` allowed the submitted job to
+reach `FINISHED:COMPLETED`. Make sure the host has enough capacity before using
+these settings.
 
 Use `scripts/create_openshift_cluster.sh` for first-time local CRC setup. It
 validates that `crc` exists, requires `PULL_SECRET_FILE` when the cluster will
@@ -61,11 +85,24 @@ PULL_SECRET_FILE="$HOME/Downloads/pull-secret.txt" \
 bash examples/devops/openshift/scripts/start_openshift_cluster.sh
 ```
 
-Run scripts from the repository root. Build the maintained images from `docker/Dockerfile.parent` and `docker/Dockerfile.job`, push them to a registry the cluster can pull from, then set `IMAGE` to the parent image and `JOB_IMAGE` to the workload image. `ADMIN_IMAGE` defaults to `IMAGE`, so the parent image can also be used for the temporary admin pod. The parent image needs NVFlare with the `K8S` extra/Kubernetes Python client. A custom `COPY_IMAGE` needs `sh`, `sleep`, and `tar`; `JOB_IMAGE` only needs `tar` when the job workload itself needs it.
+Run scripts from the repository root. Build the maintained images from `docker/Dockerfile.parent` and `docker/Dockerfile.job`, push them to a registry the cluster can pull from, then set `IMAGE` to the parent image and `JOB_IMAGE` to the workload image. Podman is supported for these build and push steps and is typically available by default on RHEL OpenShift hosts; Docker can be used instead by setting `CONTAINER_TOOL=docker`, and some RHEL installations provide `docker` as a Podman alias. A Docker daemon is not required. `ADMIN_IMAGE` defaults to `IMAGE`, so the parent image can also be used for the temporary admin pod. The parent image needs NVFlare with the `K8S` extra/Kubernetes Python client. A custom `COPY_IMAGE` needs `sh`, `sleep`, and `tar`; `JOB_IMAGE` only needs `tar` when the job workload itself needs it.
 
 ```bash
-export IMAGE=registry.example.com/nvflare-parent:dev
-export JOB_IMAGE=registry.example.com/nvflare-job:dev
+export PARENT_IMAGE=registry.example.com/nvflare-parent:dev
+export WORKLOAD_IMAGE=registry.example.com/nvflare-job:dev
+export CONTAINER_TOOL="${CONTAINER_TOOL:-podman}"
+
+"$CONTAINER_TOOL" build -t "$PARENT_IMAGE" -f docker/Dockerfile.parent .
+"$CONTAINER_TOOL" build -t "$WORKLOAD_IMAGE" -f docker/Dockerfile.job .
+"$CONTAINER_TOOL" push "$PARENT_IMAGE"
+"$CONTAINER_TOOL" push "$WORKLOAD_IMAGE"
+```
+
+After the images are pushed, keep `PARENT_IMAGE` and `WORKLOAD_IMAGE` in the same shell and map them to the variables consumed by `k8s_e2e.sh`:
+
+```bash
+export IMAGE="$PARENT_IMAGE"
+export JOB_IMAGE="$WORKLOAD_IMAGE"
 export NAMESPACE=nvflare-e2e
 
 bash examples/devops/openshift/scripts/k8s_e2e.sh

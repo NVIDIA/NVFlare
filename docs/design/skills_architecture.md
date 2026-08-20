@@ -125,32 +125,34 @@ flowchart TB
 
 | Layer | When | Implemented pieces | Purpose |
 | --- | --- | --- | --- |
-| Authoring source | Dev-time | `skills/`, `SKILL.md`, `references/` (runtime); `dev_tools/agent/skill_evals/<skill>/` (repo-only eval suites) | Human-readable skill instructions and supporting evidence; eval suites live outside the shipped skill tree. |
+| Authoring source | Dev-time | `skills/`, `SKILL.md`, `references/` (runtime); `skills/<skill>/evals/` (evaluation suites) | Human-readable skill instructions and supporting evidence; eval suites are co-located with their skill but are not runtime guidance. |
 | Engineering lint tool | Dev-time / CI | `dev_tools/agent/skills/checks`, `python dev_tools/agent/skills/checks/cli.py`, pytest coverage | Deterministic admission checks for frontmatter, triggers, command drift, policy coverage, fixtures, and process metrics. This is a repo-local tool validated by pytest; it is not shipped in the wheel. |
-| Skill install | Install-time bridge | `npx skills add ./skills -a claude-code -a codex` (local) or `npx skills add NVIDIA/<skills-repo> -a claude-code -a codex` (published) | Standard [agentskills.io](https://agentskills.io) installer that copies the `skills/` tree into the Codex and Claude skill directories. Install the whole set together so cross-skill references (`nvflare-shared/`) resolve. NVFLARE ships no custom installer command. |
-| Runtime agent surface | Runtime | Codex/Claude skill loading, `nvflare agent inspect`, recipe/job CLI | The agent reads skill instructions and uses NVFLARE commands to inspect, convert, validate, or diagnose. `nvflare agent inspect` also reports installed skills discovered from the agent skill directories. |
+| Skill install | Install-time bridge | `npx skills add ./skills -a claude-code -a codex` (local) or `npx skills add NVIDIA/<skills-repo> -a claude-code -a codex` (published) | Standard [agentskills.io](https://agentskills.io) installer that copies the complete `skills/` tree, including each skill's co-located `evals/` evaluation metadata, into the Codex and Claude skill directories. `SKILL.md` remains the instruction entry point; `evals/` is not runtime guidance. Install the whole set together so cross-skill references (`nvflare-shared/`) resolve. NVFLARE ships no custom installer command. |
+| Runtime agent surface | Runtime | Codex/Claude skill loading, `nvflare agent inspect source|data`, recipe/job CLI | The agent reads skill instructions and uses NVFLARE commands to inspect, convert, validate, or diagnose. Source and data inspection are separate static capabilities. |
 | Benchmark harness | Separate | Follow-up work outside this PR | Separate architecture for measuring skill impact with Docker, SDK profiles, agent plugins, and reporting. |
 
 ## Lint Engine Independence (Design Invariant)
 
 The engineering lint tool (`dev_tools/agent/skills/checks/lints.py`) is
 **independent of `docs/design/` and offline catalog docs**. Its intentional
-inputs are the runtime `skills/` tree and the repo-only eval suites under
-`dev_tools/agent/skill_evals/<skill>/` (via `evals_root` / `--evals-root`). This
-is a deliberate invariant, not an accident of the current code:
+inputs are the `skills/` tree and each skill's co-located eval suite at
+`skills/<skill>/evals/`. This is a deliberate invariant, not an accident of the
+current code:
 
 - The lint engine MUST NOT read `docs/design/*.md`. Those are human planning
   docs; there is no `docs_root` parameter and no `--docs-root` flag. It MAY read
-  the repo-only eval suites under `evals_root` — those are dev/QA tooling input,
+  the co-located eval suites — those are dev/QA tooling input,
   explicitly distinct from the forbidden `docs_root`.
 - Separate the two input surfaces by check type: **runtime-boundary checks**
   validate shippable artifacts only (`skills/`, `SKILL.md`, `references/`,
-  `assets/`, and the internal `skills/nvflare-shared/` skill) and reject embedded
-  `evals/` directories, while
+  `assets/`, and the internal `skills/nvflare-shared/` skill), omitting each
+  co-located `evals/` suite from runtime-guidance scanning, while
   **trigger, coverage, process-metric, and fixture checks** deliberately consume
-  the repo-only eval suites under `evals_root` to verify positive/negative
+  the co-located eval suites under `skills/<skill>/evals/` to verify positive/negative
   trigger coverage, global-negative coverage, policy coverage behavior IDs, and
-  fixtures. Eval suites are never shipped in the wheel.
+  fixtures. The standard skills installer includes these co-located suites as
+  evaluation metadata; they are not part of the Python wheel and are not
+  runtime guidance.
 - `SKILL.md` is a **runtime artifact** loaded by the agent. Frontmatter fields
   must be runtime or public skill metadata. Do not add offline-lint-only fields
   to its frontmatter.
@@ -190,7 +192,7 @@ flowchart TB
     subgraph NVFLARESurface["NVFLARE command surface"]
         direction TB
         AgentCLI["nvflare agent runtime commands"] --> Info["info: command surface metadata"]
-        AgentCLI --> Inspect["inspect: static AST scan + installed-skill discovery"]
+        AgentCLI --> Inspect["inspect source/data: bounded static evidence"]
         Recipes["recipes / job.py / simulator / job CLI"]
     end
 
@@ -198,7 +200,7 @@ flowchart TB
     Agent -->|skill-guided calls| AgentCLI
     Agent -->|normal NVFLARE work| Recipes
 
-    Inspect --> Project["Local training code / FLARE job artifacts"]
+    Inspect --> Project["Local training source / FLARE artifacts / data directories"]
 
     style SkillDelivery fill:#f8fbff,stroke:#4f7fb8,stroke-width:2px
     style AgentRuntime fill:#fafbfc,stroke:#334155,stroke-width:3px
@@ -215,7 +217,7 @@ flowchart TD
 
     SkillsRoot --> Install["npx skills add ./skills -a claude-code -a codex"]
     Install --> Target["Agent skill dirs (.claude/skills, .agents/skills, ~/.claude/skills, ~/.codex/skills)"]
-    Target --> Discover["nvflare agent inspect installed_skills discovery"]
+    Target --> Discover["Codex/Claude load installed skills"]
 
     Install --> WholeSet["Install the whole set together so nvflare-shared relative refs resolve"]
 ```
@@ -258,11 +260,10 @@ Runtime (installed on the user's machine):
 
 - Agent-facing CLI: `nvflare/tool/agent/agent_cli.py`
 - Command surface metadata: `nvflare/tool/agent/command_registry.py`
-- Static inspection engine: `nvflare/tool/agent/inspector.py` (framework-agnostic
-  AST walk and evidence ranking; also reports installed skills discovered from
-  agent skill directories)
-- Per-framework detectors: `nvflare/tool/agent/frameworks/` (one module per
-  framework; add a framework here, not in the engine)
+- Static inspection facade: `nvflare/tool/agent/inspector.py`
+- Bounded source/data inspection core: `nvflare/tool/agent/inspection/` (one
+  source walk and fact pass, one forward authority graph, fixed owner tables,
+  pure routing, and the existing dataset adapter)
 - Implemented skills: `nvflare-orient`, `nvflare-convert-pytorch`, `nvflare-convert-lightning`,
   `nvflare-convert-huggingface`, and `nvflare-diagnose-job`
 

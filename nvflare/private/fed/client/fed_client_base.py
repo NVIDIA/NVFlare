@@ -94,6 +94,7 @@ class FederatedClientBase:
             timeout=client_args.get("communication_timeout", 300.0),
             maint_msg_timeout=client_args.get("maint_msg_timeout", 30.0),
         )
+        self._shutdown_lock = threading.Lock()
 
         self.secure_train = secure_train
         self.handlers = handlers
@@ -419,16 +420,27 @@ class FederatedClientBase:
         if self.communicator.cell:
             self.communicator.cell.stop()
 
+    def send_request_before_shutdown(self, **kwargs):
+        """Send an authenticated request unless client shutdown has started."""
+        with self._shutdown_lock:
+            if self.communicator.heartbeat_done:
+                return None
+            return self.cell.send_request(**kwargs)
+
     def close(self):
         """Quit the remote federated server, close the local session."""
-        self.terminate()
+        with self._shutdown_lock:
+            # Serialize token retirement/logout after any in-flight terminal
+            # report that still uses this authenticated client session.
+            self.communicator.heartbeat_done = True
+            self.terminate()
 
-        if self.engine:
-            fl_ctx = self.engine.new_context()
-        else:
-            fl_ctx = FLContext()
-        self.logout_client(fl_ctx)
-        self.logger.info(f"Logout client: {self.client_name} from server.")
+            if self.engine:
+                fl_ctx = self.engine.new_context()
+            else:
+                fl_ctx = FLContext()
+            self.logout_client(fl_ctx)
+            self.logger.info(f"Logout client: {self.client_name} from server.")
 
         return 0
 

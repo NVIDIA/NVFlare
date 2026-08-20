@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Trainer-side Cell Client API for ``external_process`` execution.
+"""Trainer-side Cell Client API for ``external_process`` and ``attach`` execution.
 
 Rank 0 exchanges materialized tasks and results with ExternalProcessBackend. ``send()``
 keeps the trainer available until all downstream result transfers settle; other ranks are
@@ -22,6 +22,7 @@ passive and rely on their training framework's collectives.
 import copy
 import math
 import os
+import signal as process_signal
 import threading
 import time
 from queue import Empty, Queue
@@ -34,8 +35,11 @@ from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.client.api_spec import APISpec
+from nvflare.client.cell.attach_session import AttachTrainerSession, TrainerSessionError
 from nvflare.client.cell.bootstrap import (
+    ATTACH_EXECUTION_MODE,
     BOOTSTRAP_FILE_ENV_VAR,
+    EXTERNAL_PROCESS_EXECUTION_MODE,
     BootstrapKey,
     get_bootstrap_client_api_type,
     read_bootstrap_config,
@@ -50,10 +54,10 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.cellnet.utils import make_reply as make_cell_reply
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
-from nvflare.fuel.f3.streaming.byte_streamer import reliable_retry_scheduler
 from nvflare.fuel.f3.streaming.download_service import DownloadService
-from nvflare.fuel.f3.streaming.stream_utils import stream_shutdown
+from nvflare.fuel.f3.streaming.shutdown import shutdown_f3_streaming
 from nvflare.fuel.f3.streaming.transfer_progress import DEFAULT_STREAMING_IDLE_TIMEOUT, TransferProgressState
+from nvflare.fuel.sec.authn import set_add_auth_headers_filters
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import (
     RESULT_UPLOAD_PROGRESS_CTX_KEY,
@@ -67,32 +71,17 @@ _HELLO_RETRY_INTERVAL = 1.0
 # Queue polling bounds abort/stop detection latency.
 _RECEIVE_POLL_INTERVAL = 0.5
 _HEARTBEAT_JOIN_TIMEOUT = 1.0
-
-
-class TrainerSessionError(RuntimeError):
-    """The trainer's Client API session ended (SHUTDOWN, ABORT, or CJ/cell loss)."""
+_OWNER_WATCHDOG_INTERVAL = 0.5
+_CJ_TIMEOUT_ABORT_GRACE = 1.0
+_OWNER_TERM_GRACE = 5.0
+_RESULT_SOURCE_SETTLED_TIMEOUT = 1.0
+_RESULT_SOURCE_SETTLED_ATTEMPTS = 3
+_RESULT_SOURCE_SETTLED_RETRY_BACKOFF = 0.1
 
 
 def _shutdown_f3_streaming() -> None:
-    """Stop process-global F3 services owned by the standalone trainer.
-
-    External trainers do not run under MainProcessMonitor. Keep this order aligned with
-    F3 cleanup: stop transaction ownership and retry dispatch before their executors.
-    Each operation is idempotent and every stage is attempted.
-    """
-    errors = []
-    for name, shutdown in (
-        ("download service", DownloadService.shutdown),
-        ("reliable retry scheduler", reliable_retry_scheduler.shutdown),
-        ("stream executors", stream_shutdown),
-    ):
-        try:
-            shutdown()
-        except Exception as e:
-            errors.append((name, e))
-    if errors:
-        names = ", ".join(name for name, _ in errors)
-        raise RuntimeError(f"failed to stop F3 streaming services: {names}") from errors[0][1]
+    """Stop process-global F3 services owned by the standalone trainer."""
+    shutdown_f3_streaming()
 
 
 def _to_python_scalar(v: Any) -> Any:
@@ -104,7 +93,7 @@ def _to_python_scalar(v: Any) -> Any:
 
 
 class CellClientAPI(APISpec):
-    """Client API implementation that speaks the external_process Cell protocol to the CJ.
+    """Client API implementation that speaks a Cell protocol to the CJ.
 
     The control-rank task-state API is single-threaded: ``receive()``, ``send()``, and
     ``clear()`` must not be called concurrently.
@@ -117,22 +106,34 @@ class CellClientAPI(APISpec):
         self._bootstrap_file = bootstrap_file or os.environ.get(BOOTSTRAP_FILE_ENV_VAR)
         if not self._bootstrap_file:
             raise RuntimeError(
-                f"no Client API bootstrap config: set {BOOTSTRAP_FILE_ENV_VAR} or pass bootstrap_file "
-                f"(the external_process backend writes it on the launched trainer)"
+                f"no Client API Cell profile: set {BOOTSTRAP_FILE_ENV_VAR} or pass bootstrap_file "
+                "(external_process receives a launch bootstrap; attach uses a pre-provisioned profile)"
             )
         self._config = read_bootstrap_config(self._bootstrap_file)
         # Legacy untyped files retain environment selection; typed envelopes must validate.
         get_bootstrap_client_api_type(self._config, self._bootstrap_file)
+        self._execution_mode = self._config.get(
+            BootstrapKey.EXECUTION_MODE,
+            EXTERNAL_PROCESS_EXECUTION_MODE,
+        )
+        self._is_attach = self._execution_mode == ATTACH_EXECUTION_MODE
 
         self._rank: Optional[str] = None
         self._is_control_rank = False
         self._cell: Optional[Cell] = None
         self._session_id: Optional[str] = None
-        self._cj_fqcn: str = self._config[BootstrapKey.CJ_FQCN]
-        self._trainer_fqcn: str = self._config[BootstrapKey.TRAINER_FQCN]
-        self._job_id: str = self._config[BootstrapKey.JOB_ID]
+        self._cj_fqcn: Optional[str] = self._config.get(BootstrapKey.CJ_FQCN)
+        self._cj_pid: Optional[int] = self._config.get(BootstrapKey.CJ_PID)
         self._site_name: str = self._config[BootstrapKey.SITE_NAME]
-        self._secure_mode = bool(self._config.get(BootstrapKey.SECURE_MODE, False))
+        self._attach = AttachTrainerSession(self) if self._is_attach else None
+        self._trainer_fqcn = self._attach.trainer_fqcn if self._attach else self._config[BootstrapKey.TRAINER_FQCN]
+        self._job_id: Optional[str] = self._config.get(BootstrapKey.JOB_ID)
+        # This flag controls delegated FL auth headers. Attach never receives
+        # the site's FL bearer credential; its separate profile SECURE_MODE
+        # controls Cell identity protection in AttachTrainerSession.
+        self._secure_mode = False if self._is_attach else bool(self._config.get(BootstrapKey.SECURE_MODE, False))
+        self._protocol_secure = False
+        self._session_security_configured = False
         self._task_exchange: dict = self._config.get(BootstrapKey.TASK_EXCHANGE, {})
         # Typed files predating LAUNCH_ONCE default to persistent; one-shot close is irreversible.
         self._launch_once = bool(self._task_exchange.get(ConfigKey.LAUNCH_ONCE, True))
@@ -162,7 +163,12 @@ class CellClientAPI(APISpec):
         self._last_cj_activity: Optional[float] = None
         self._heartbeat_stop = threading.Event()
         self._heartbeat_thread: Optional[threading.Thread] = None
+        self._owner_watchdog_stop = threading.Event()
+        self._owner_watchdog_thread: Optional[threading.Thread] = None
         self._initialized = False
+        # An external-process trainer owns its standalone F3 runtime. Attach owns
+        # only this Cell session and must not tear down process-global services.
+        self._owns_f3_runtime = not self._is_attach
         # send() owns transaction metadata; heartbeat only observes stable transfer handles.
         self._result_transfer_waiters = ()
         # Under _lock, this tells SHUTDOWN whether send() still owns a live result source.
@@ -203,6 +209,8 @@ class CellClientAPI(APISpec):
 
             # A failed attempt may be retried on the same API object.
             self._session_id = None
+            self._protocol_secure = False
+            self._session_security_configured = False
             self._heartbeat_interval = 0.0
             self._heartbeat_timeout = 0.0
             self._heartbeat_stop.clear()
@@ -210,30 +218,52 @@ class CellClientAPI(APISpec):
             with self._liveness_lock:
                 self._last_cj_activity = None
 
-            connect_url = self._config[BootstrapKey.CONNECT_URL]
+            connect_url = self._attach.prepare_connection() if self._attach else self._config[BootstrapKey.CONNECT_URL]
+            credentials = {}
+            secure = False
+            parent_resources = None
+            if self._attach:
+                secure, credentials = self._attach.cell_security()
+                parent_resources = self._attach.connection_resources()
+                self._protocol_secure = secure
             self._cell = Cell(
                 fqcn=self._trainer_fqcn,
                 root_url=None,
-                secure=False,  # V1 trusted-host: the CJ's internal listener is a local connection
-                credentials={},
+                # Launched mode uses the CJ's trusted local listener. Attach uses
+                # the independently provisioned site connection profile.
+                secure=secure,
+                credentials=credentials,
                 parent_url=connect_url,
+                parent_resources=parent_resources,
                 create_internal_listener=False,
+                auth_identity_map=self._attach.auth_identity_map() if self._attach else None,
             )
             try:
+                if self._attach:
+                    self._attach.install_pre_decode_guard(self._cell)
                 # Propagate concurrent ABORT/SHUTDOWN into nested task-payload downloads.
                 self._cell.update_fobs_context({FOBSContextKey.ABORT_SIGNAL: self._abort_signal})
                 self._register_control_cbs(self._cell)
                 self._cell.start()
-                self._hello()
+                if self._attach:
+                    self._attach.wait_for_open()
+                else:
+                    self._hello()
+                self._start_owner_watchdog()
                 self._start_heartbeat()
             except Exception:
+                self._stop_owner_watchdog()
                 self._stop_heartbeat()
                 self._stop_cell()
                 raise
             self._initialized = True
+            if self._attach:
+                self._attach.register_cleanup()
             self.logger.info(f"trainer session established: fqcn={self._trainer_fqcn} session_id={self._session_id}")
 
     def _register_control_cbs(self, cell: Cell) -> None:
+        if self._attach:
+            self._attach.register_callbacks(cell)
         cell.register_request_cb(channel=CHANNEL, topic=Topic.TASK_READY, cb=self._handle_task_ready)
         cell.register_request_cb(channel=CHANNEL, topic=Topic.ABORT, cb=self._handle_abort)
         cell.register_request_cb(channel=CHANNEL, topic=Topic.SHUTDOWN, cb=self._handle_shutdown)
@@ -275,25 +305,65 @@ class CellClientAPI(APISpec):
         if not isinstance(body, dict) or body.get(MsgKey.REPLY_TOPIC) != Topic.HELLO_ACCEPTED:
             reason = body.get(MsgKey.REASON) if isinstance(body, dict) else body
             raise TrainerSessionError(f"HELLO not accepted: {reason}")
-        self._session_id = body.get(MsgKey.SESSION_ID)
-        if not self._session_id:
+        session_id = body.get(MsgKey.SESSION_ID)
+        if not session_id:
             raise TrainerSessionError("HELLO_ACCEPTED carried no session id")
-        self._heartbeat_interval = self._valid_heartbeat_number(
+        heartbeat_interval = self._valid_heartbeat_number(
             MsgKey.HEARTBEAT_INTERVAL, body.get(MsgKey.HEARTBEAT_INTERVAL), positive=True
         )
-        self._heartbeat_timeout = self._valid_heartbeat_number(
+        heartbeat_timeout = self._valid_heartbeat_number(
             MsgKey.HEARTBEAT_TIMEOUT, body.get(MsgKey.HEARTBEAT_TIMEOUT), positive=False
         )
-        if 0 < self._heartbeat_timeout <= self._heartbeat_interval:
+        if 0 < heartbeat_timeout <= heartbeat_interval:
             raise TrainerSessionError(
-                f"invalid heartbeat policy: interval {self._heartbeat_interval} must be less than "
-                f"timeout {self._heartbeat_timeout}"
+                f"invalid heartbeat policy: interval {heartbeat_interval} must be less than "
+                f"timeout {heartbeat_timeout}"
             )
+        self._install_site_auth_headers(
+            # SECURE_MODE was added without changing protocol v1. Preserve
+            # compatibility with an earlier non-secure CJ that omitted it;
+            # a secure bootstrap still rejects False as a mismatch.
+            secure_mode=body.get(MsgKey.SECURE_MODE, False),
+            auth_token=body.get(MsgKey.AUTH_TOKEN),
+            token_signature=body.get(MsgKey.AUTH_TOKEN_SIGNATURE),
+        )
+        self._session_id = session_id
+        self._heartbeat_interval = heartbeat_interval
+        self._heartbeat_timeout = heartbeat_timeout
         self._note_cj_activity()
+
+    def _install_site_auth_headers(self, secure_mode, auth_token=None, token_signature=None) -> None:
+        if type(secure_mode) is not bool:
+            raise TrainerSessionError(f"session secure_mode must be a bool, got {secure_mode!r}")
+        if self._session_security_configured:
+            if secure_mode != self._secure_mode:
+                raise TrainerSessionError("session secure_mode changed after authentication")
+            return
+        if not self._is_attach and secure_mode != self._secure_mode:
+            raise TrainerSessionError("HELLO_ACCEPTED secure_mode disagrees with the launch bootstrap")
+        if secure_mode:
+            if not isinstance(auth_token, str) or not auth_token or auth_token == "NA":
+                raise TrainerSessionError("secure session carried no site auth token")
+            if not isinstance(token_signature, str) or not token_signature or token_signature == "NA":
+                raise TrainerSessionError("secure session carried no site auth token signature")
+            set_add_auth_headers_filters(
+                self._cell,
+                client_name=self._site_name,
+                auth_token=auth_token,
+                token_signature=token_signature,
+            )
+        self._secure_mode = secure_mode
+        self._session_security_configured = True
 
     # ------------------------------------------------------------------ receive
 
     def receive(self, timeout: Optional[float] = None) -> Optional[FLModel]:
+        model = self._receive_internal(timeout)
+        if model is not None:
+            self._receive_called = True
+        return model
+
+    def _receive_internal(self, timeout: Optional[float] = None) -> Optional[FLModel]:
         if not self._is_control_rank or self._closed:
             return None
         if self._abort:
@@ -319,9 +389,10 @@ class CellClientAPI(APISpec):
 
         task = entry["task"]
         self._current_task = task
+        if self._attach:
+            self._attach.mark_task_delivered(task.get(MsgKey.TASK_ID))
         self._result_receiver_ids = entry.get("result_receiver_ids")
         self._fl_model = entry["model"]
-        self._receive_called = True
         return self._fl_model
 
     def _await_task(self, timeout: Optional[float]) -> Optional[dict]:
@@ -381,15 +452,6 @@ class CellClientAPI(APISpec):
         def _on_result_progress(**_kwargs):
             return None
 
-        request_headers = {MessageHeaderKey.PASS_THROUGH: True}
-        request = new_cell_message(
-            request_headers,
-            {
-                MsgKey.SESSION_ID: self._session_id,
-                MsgKey.TASK_ID: task.get(MsgKey.TASK_ID),
-                MsgKey.RESULT: shareable,
-            },
-        )
         fobs_ctx_props = {
             FOBSContextKey.STREAM_PROGRESS_CB: _on_result_progress,
             RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY: _on_transaction_created,
@@ -399,31 +461,54 @@ class CellClientAPI(APISpec):
                 ResultUploadProgressContextKey.STREAMING_IDLE_TIMEOUT: DEFAULT_STREAMING_IDLE_TIMEOUT,
             },
         }
-        source_receiver_ids = (self._cj_fqcn,) if self._secure_mode else self._result_receiver_ids
+        # Attach follows the IPC boundary: its CJ is the terminal receiver and
+        # materializes the result. A managed external trainer remains the source
+        # for the ultimate server/peer receivers propagated with TASK_READY.
+        source_receiver_ids = (self._cj_fqcn,) if self._attach else self._result_receiver_ids
 
         result_accepted = False
+        result_id = self._attach.mark_result_publishing(task.get(MsgKey.TASK_ID)) if self._attach else None
         # Serialize publication with SHUTDOWN; an admitted send owns the transfer barrier.
         with self._lock:
             self._check_session_alive()
             self._result_send_active = True
         try:
             self._clear_result_transfer_waiters()
-            reply = self._cell.send_request(
-                channel=CHANNEL,
-                topic=Topic.RESULT_READY,
-                target=self._cj_fqcn,
-                request=request,
-                timeout=_HELLO_TIMEOUT,
-                abort_signal=self._result_abort_signal,
-                progress_wait_cb=self._has_pending_result_transfer,
-                num_receivers=len(source_receiver_ids) if source_receiver_ids else 1,
-                receiver_ids=source_receiver_ids,
-                fobs_ctx_props=fobs_ctx_props,
-            )
-            self._check_result_accepted(reply)
+            if self._attach:
+                self._attach.publish_result(
+                    task_id=task.get(MsgKey.TASK_ID),
+                    result_id=result_id,
+                    shareable=shareable,
+                    source_receiver_ids=source_receiver_ids,
+                    fobs_ctx_props=fobs_ctx_props,
+                )
+            else:
+                request = new_cell_message(
+                    {MessageHeaderKey.PASS_THROUGH: True},
+                    {
+                        MsgKey.SESSION_ID: self._session_id,
+                        MsgKey.TASK_ID: task.get(MsgKey.TASK_ID),
+                        MsgKey.RESULT: shareable,
+                    },
+                )
+                reply = self._cell.send_request(
+                    channel=CHANNEL,
+                    topic=Topic.RESULT_READY,
+                    target=self._cj_fqcn,
+                    request=request,
+                    timeout=_HELLO_TIMEOUT,
+                    abort_signal=self._result_abort_signal,
+                    progress_wait_cb=self._has_pending_result_transfer,
+                    num_receivers=len(source_receiver_ids) if source_receiver_ids else 1,
+                    receiver_ids=source_receiver_ids,
+                    fobs_ctx_props=fobs_ctx_props,
+                )
+                self._check_result_accepted(reply)
             result_accepted = True
             self._note_cj_activity()
             self._wait_for_result_transfers(self._snapshot_result_transfer_waiters())
+            if self._attach:
+                self._attach.mark_task_complete(task.get(MsgKey.TASK_ID))
             if clear_cache:
                 # Acceptance and all downstream transfers succeeded; submitted and
                 # received parameters plus task-scoped state can now be released.
@@ -436,6 +521,8 @@ class CellClientAPI(APISpec):
                     received_model.optimizer_params = None
                 self._receive_called = False
                 self._current_task = None
+                if self._attach:
+                    self._attach.clear_result()
                 self._result_receiver_ids = None
         except BaseException:
             self._delete_result_transfers(self._snapshot_result_transfer_waiters())
@@ -444,6 +531,8 @@ class CellClientAPI(APISpec):
                 # inspection, but do not admit a duplicate submission.
                 self._receive_called = False
                 self._current_task = None
+                if self._attach:
+                    self._attach.clear_result()
                 self._result_receiver_ids = None
             raise
         finally:
@@ -451,14 +540,48 @@ class CellClientAPI(APISpec):
                 self._clear_result_transfer_waiters()
                 self._maybe_cleanup_memory()
             finally:
-                # Clear ownership under the lock read by SHUTDOWN. If SHUTDOWN won, this
-                # thread closes after settlement; otherwise SHUTDOWN observes no live source.
+                # Keep send ownership while publishing settlement. A concurrent SHUTDOWN
+                # must defer Cell teardown until the CJ has observed that this source is done.
+                if result_accepted:
+                    self._notify_result_source_settled(task.get(MsgKey.TASK_ID))
                 with self._lock:
                     self._result_send_active = False
                     should_shutdown = self._stopped or (result_accepted and not self._launch_once)
                 # One-shot sessions close only after acceptance and downstream settlement.
                 if should_shutdown:
                     self.shutdown()
+
+    def _notify_result_source_settled(self, task_id: str) -> None:
+        """Publish the send-barrier transition before a one-shot trainer closes its Cell."""
+        request = new_cell_message({}, {MsgKey.SESSION_ID: self._session_id, MsgKey.TASK_ID: task_id})
+        for attempt in range(_RESULT_SOURCE_SETTLED_ATTEMPTS):
+            try:
+                reply = self._cell.send_request(
+                    channel=CHANNEL,
+                    topic=Topic.RESULT_SOURCE_SETTLED,
+                    target=self._cj_fqcn,
+                    request=request,
+                    timeout=_RESULT_SOURCE_SETTLED_TIMEOUT,
+                    optional=True,
+                    secure=self._protocol_secure,
+                )
+                body = reply.payload if reply is not None else None
+                if (
+                    reply is not None
+                    and reply.get_header(MessageHeaderKey.RETURN_CODE) == CellReturnCode.OK
+                    and isinstance(body, dict)
+                    and body.get(MsgKey.REPLY_TOPIC) == Topic.RESULT_SOURCE_SETTLED
+                    and body.get(MsgKey.TASK_ID) == task_id
+                ):
+                    return
+            except Exception as e:
+                # The CJ keeps the source live until it receives this explicit
+                # acknowledgement. A process exit without it is treated as source
+                # loss, even when a launcher masks a wrapped worker failure with rc=0.
+                self.logger.debug(f"result-source settlement notification failed: {e}")
+            if attempt + 1 < _RESULT_SOURCE_SETTLED_ATTEMPTS:
+                time.sleep(_RESULT_SOURCE_SETTLED_RETRY_BACKOFF)
+        self.logger.debug("result-source settlement was not acknowledged")
 
     def _wait_for_result_transfers(self, result_waiters) -> None:
         """Wait for strict terminal success of every result DownloadService transaction."""
@@ -469,6 +592,13 @@ class CellClientAPI(APISpec):
                 if outcome is not None:
                     break
                 if waiter.done():
+                    # The timed wait may decide to return None just before the transfer
+                    # records its outcome and sets the event. Re-read the outcome after
+                    # observing done so a successful completion is not mistaken for a
+                    # terminal resolution without an outcome.
+                    outcome = waiter.outcome
+                    if outcome is not None:
+                        break
                     raise TrainerSessionError(f"result transfer {transaction_id} ended without a terminal outcome")
                 if self._abort:
                     raise TrainerSessionError(f"session aborted while serving result: {self._abort_reason}")
@@ -538,6 +668,7 @@ class CellClientAPI(APISpec):
                     },
                 ),
                 optional=True,
+                secure=self._protocol_secure,
             )
         except Exception as e:
             self.logger.warning(f"failed to send LOG '{key}': {e}")
@@ -576,7 +707,7 @@ class CellClientAPI(APISpec):
             self.shutdown()
             return False
         try:
-            return self.receive() is not None
+            return self._receive_internal() is not None
         except TrainerSessionError:
             self.shutdown()
             return False
@@ -597,10 +728,31 @@ class CellClientAPI(APISpec):
         self._fl_model = None
         self._receive_called = False
         self._current_task = None
+        if self._attach:
+            self._attach.clear_result()
         self._result_receiver_ids = None
 
     def shutdown(self):
-        """Stop this one-session trainer and its process-global F3 runtime."""
+        """Stop this trainer session and any process-global F3 runtime it owns.
+
+        External-process mode owns its dedicated F3 runtime and shuts it down.
+        Attach mode stops only the session Cell because the externally managed
+        process may share the process-global runtime with other work.
+        """
+        # Stop new task admission immediately, but do not tear down the Cell or
+        # process-global streaming while send() still owns an accepted lazy
+        # result source. send() observes _stopped and performs this shutdown
+        # after its receiver-confirmed transfer barrier settles.
+        with self._lock:
+            self._stopped = True
+            defer_for_result = self._result_send_active
+        if defer_for_result:
+            self._abort_signal.trigger("client api shutdown")
+            return
+        if self._attach:
+            # Wake init() if it is waiting for a future job before taking the
+            # lifecycle lock that init() holds.
+            self._attach.close()
         with self._lifecycle_lock:
             with self._lock:
                 close_resources = not self._closed
@@ -610,13 +762,19 @@ class CellClientAPI(APISpec):
             if close_resources:
                 self._abort_signal.trigger("client api shutdown")
                 self._result_abort_signal.trigger("client api shutdown")
+                self._stop_owner_watchdog()
                 self._stop_heartbeat()
+            if self._owns_f3_runtime:
+                try:
+                    # Keep the Cell alive until DownloadService and all retry/stream
+                    # work have drained. An admitted reliable retry can otherwise
+                    # enter Cell after its transport executors are shut down.
+                    # Retry partial process-global cleanup; each operation is idempotent.
+                    _shutdown_f3_streaming()
+                except Exception as e:
+                    self.logger.warning(f"failed to stop trainer streaming services: {e}")
+            if close_resources:
                 self._stop_cell()
-            try:
-                # Retry partial process-global cleanup; each operation is idempotent.
-                _shutdown_f3_streaming()
-            except Exception as e:
-                self.logger.warning(f"failed to stop trainer streaming services: {e}")
 
     # ------------------------------------------------------------------ control handlers
 
@@ -628,16 +786,26 @@ class CellClientAPI(APISpec):
         if reject_reason:
             return self._reply(Topic.TASK_FAILED, **{MsgKey.REASON: reject_reason})
         task_id = payload.get(MsgKey.TASK_ID)
+        attempt_id = payload.get(MsgKey.ATTEMPT_ID)
+        task_sequence = payload.get(MsgKey.TASK_SEQ)
+        # Any authenticated task delivery proves that the CJ is alive. Record
+        # activity before attach deduplication can return an idempotent reply.
+        self._note_cj_activity()
+        if self._attach:
+            duplicate_reply = self._attach.reserve_task(task_id, attempt_id, task_sequence)
+            if duplicate_reply is not None:
+                return duplicate_reply
         with self._lock:
             terminal_reason = self._session_end_reason()
         if terminal_reason:
+            self._forget_reserved_task(task_id, attempt_id)
             return self._reply(
                 Topic.TASK_FAILED,
                 **{MsgKey.TASK_ID: task_id, MsgKey.REASON: terminal_reason},
             )
-        self._note_cj_activity()
         shareable = payload.get(MsgKey.MODEL)
         if not isinstance(shareable, Shareable):
+            self._forget_reserved_task(task_id, attempt_id)
             return self._reply(
                 Topic.TASK_FAILED,
                 **{
@@ -655,6 +823,7 @@ class CellClientAPI(APISpec):
                 self.logger,
             )
         except Exception as e:
+            self._forget_reserved_task(task_id, attempt_id)
             return self._reply(
                 Topic.TASK_FAILED,
                 **{MsgKey.TASK_ID: task_id, MsgKey.REASON: f"invalid task model: {e}"},
@@ -664,12 +833,19 @@ class CellClientAPI(APISpec):
             terminal_reason = self._session_end_reason()
             if terminal_reason is None:
                 self._task_queue.put({"task": payload, "model": model, "result_receiver_ids": result_receiver_ids})
+                if self._attach:
+                    self._attach.commit_reserved_task_locked(task_id, attempt_id)
         if terminal_reason:
+            self._forget_reserved_task(task_id, attempt_id)
             return self._reply(
                 Topic.TASK_FAILED,
                 **{MsgKey.TASK_ID: task_id, MsgKey.REASON: terminal_reason},
             )
         return self._reply(Topic.TASK_ACCEPTED, **{MsgKey.TASK_ID: task_id})
+
+    def _forget_reserved_task(self, task_id, attempt_id) -> None:
+        if self._attach:
+            self._attach.forget_reserved_task(task_id, attempt_id)
 
     def _handle_abort(self, request):
         payload = request.payload if isinstance(request.payload, dict) else {}
@@ -734,6 +910,19 @@ class CellClientAPI(APISpec):
             return "session stopped"
         return None
 
+    def _result_publication_end_reason(self) -> Optional[str]:
+        """Return only terminal conditions that may revoke an admitted result send.
+
+        Routine SHUTDOWN sets ``_stopped`` to prevent new work, but the Cell stays
+        alive until an already-admitted result resolves its canonical attempt and
+        finishes serving lazy transfers.
+        """
+        if self._abort:
+            return f"session aborted: {self._abort_reason}"
+        if self._closed:
+            return "session closed"
+        return None
+
     def _validate_cj_control(self, request, payload: dict) -> Optional[str]:
         origin = request.get_header(MessageHeaderKey.ORIGIN) or ""
         if origin != self._cj_fqcn:
@@ -764,18 +953,95 @@ class CellClientAPI(APISpec):
         self._heartbeat_thread = thread
         thread.start()
 
+    def _start_owner_watchdog(self) -> None:
+        """Terminate a launched trainer group if its owning CJ process disappears."""
+        if self._is_attach or self._cj_pid is None:
+            return
+        if not self._owner_process_alive():
+            # A containerized trainer can connect to its CJ while the host CJ PID is
+            # outside the trainer's PID namespace. Since HELLO already succeeded,
+            # absence on this initial probe means PID liveness is not authoritative;
+            # retain the Cell heartbeat/session timeout as the owner-death backstop.
+            self.logger.warning(
+                f"owning CJ process {self._cj_pid} is not visible from the trainer at session start; "
+                "disabling PID-based owner monitoring"
+            )
+            return
+        self._owner_watchdog_stop.clear()
+        thread = threading.Thread(
+            target=self._owner_watchdog_loop,
+            name="client_api_owner_watchdog",
+            daemon=True,
+        )
+        self._owner_watchdog_thread = thread
+        thread.start()
+
+    def _owner_watchdog_loop(self) -> None:
+        while not self._owner_watchdog_stop.wait(_OWNER_WATCHDOG_INTERVAL):
+            if self._owner_process_alive():
+                continue
+            self.logger.error(f"owning CJ process {self._cj_pid} exited; terminating external trainer process group")
+            self._terminate_orphaned_process_group()
+            return
+
+    def _owner_process_alive(self) -> bool:
+        try:
+            os.kill(self._cj_pid, 0)
+            return True
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            # The process still exists even if a platform denies the probe.
+            return True
+
+    def _terminate_orphaned_process_group(self) -> None:
+        """Terminate this owned process group; hard-stop it if SIGTERM is ignored."""
+        if os.name != "posix":
+            os._exit(1)
+        pgid = os.getpgrp()
+        try:
+            os.killpg(pgid, process_signal.SIGTERM)
+        except ProcessLookupError:
+            return
+        except Exception as e:
+            self.logger.error(f"failed to terminate orphaned trainer process group {pgid}: {e}")
+            os._exit(1)
+        time.sleep(_OWNER_TERM_GRACE)
+        try:
+            os.killpg(pgid, process_signal.SIGKILL)
+        except ProcessLookupError:
+            return
+        os._exit(1)
+
+    def _stop_owner_watchdog(self) -> None:
+        self._owner_watchdog_stop.set()
+        thread = self._owner_watchdog_thread
+        if thread is not None and thread is not threading.current_thread() and thread.is_alive():
+            thread.join(timeout=_HEARTBEAT_JOIN_TIMEOUT)
+
     def _heartbeat_loop(self) -> None:
         while not self._heartbeat_stop.wait(self._heartbeat_interval):
-            if self._closed or self._stopped or self._abort:
+            with self._lock:
+                session_ended = self._closed or self._abort or (self._stopped and not self._result_send_active)
+            if session_ended:
                 return
             try:
+                with self._lock:
+                    result_source_live = self._result_send_active
                 reply = self._cell.send_request(
                     channel=CHANNEL,
                     topic=Topic.HEARTBEAT,
                     target=self._cj_fqcn,
-                    request=new_cell_message({}, {MsgKey.SESSION_ID: self._session_id}),
+                    request=new_cell_message(
+                        {},
+                        {
+                            MsgKey.SESSION_ID: self._session_id,
+                            MsgKey.RESULT_SOURCE_LIVE: result_source_live,
+                        },
+                    ),
                     timeout=min(self._heartbeat_interval, self._heartbeat_timeout),
                     abort_signal=self._heartbeat_cancel,
+                    secure=self._protocol_secure,
                 )
                 if self._heartbeat_reply_valid(reply):
                     self._note_cj_activity()
@@ -783,6 +1049,7 @@ class CellClientAPI(APISpec):
                 self.logger.debug(f"heartbeat to CJ failed: {e}")
 
             if self._abort_if_cj_timed_out():
+                self._terminate_after_cj_timeout()
                 return
 
     def _heartbeat_reply_valid(self, reply) -> bool:
@@ -806,6 +1073,10 @@ class CellClientAPI(APISpec):
     def _clear_result_transfer_waiters(self) -> None:
         with self._liveness_lock:
             self._result_transfer_waiters = ()
+
+    def _replace_result_transfer_waiters(self, result_waiters) -> None:
+        with self._liveness_lock:
+            self._result_transfer_waiters = tuple(result_waiters)
 
     def _snapshot_result_transfer_waiters(self):
         with self._liveness_lock:
@@ -836,6 +1107,15 @@ class CellClientAPI(APISpec):
         self._heartbeat_stop.set()
         self.logger.error(reason)
         return True
+
+    def _terminate_after_cj_timeout(self) -> None:
+        """Escalate a lost launched session after cooperative abort has had a chance to finish."""
+        if self._is_attach:
+            return
+        if self._owner_watchdog_stop.wait(_CJ_TIMEOUT_ABORT_GRACE):
+            return
+        self.logger.error("CJ heartbeat timeout did not stop the trainer; terminating its process group")
+        self._terminate_orphaned_process_group()
 
     def _stop_heartbeat(self) -> None:
         self._heartbeat_stop.set()

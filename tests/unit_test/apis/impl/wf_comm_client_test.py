@@ -22,6 +22,7 @@ from nvflare.apis.fl_constant import ReturnCode, SiteType
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.wf_comm_client import WFCommClient
 from nvflare.apis.shareable import Shareable, make_reply
+from nvflare.apis.signal import Signal
 from tests.unit_test.fl_context_helper import make_fl_context
 
 
@@ -66,7 +67,7 @@ def test_broadcast_and_wait_processes_callbacks_filters_and_replies():
     comm.fire_event = MagicMock()
     comm.fire_event_with_data = MagicMock()
 
-    with patch("nvflare.apis.impl.wf_comm_client.apply_filters", side_effect=lambda *args: args[1]):
+    with patch("nvflare.apis.impl.wf_comm_client.apply_filters", side_effect=lambda *args, **_kwargs: args[1]):
         with patch("nvflare.apis.impl.wf_comm_client.delete_msg_root") as delete_msg_root:
             replies = comm.broadcast(task, _context(engine), targets=engine.all_clients)
 
@@ -82,6 +83,22 @@ def test_broadcast_and_wait_processes_callbacks_filters_and_replies():
     assert engine.send_aux_request.call_args.kwargs["secure"] is True
 
 
+def test_broadcast_and_wait_propagates_abort_signal_to_filters():
+    engine = _engine()
+    engine.send_aux_request.return_value = {"site-1": _ok_reply("site-1")}
+    task = Task("train", Shareable(), timeout=1)
+    comm = WFCommClient()
+    comm.fire_event = MagicMock()
+    comm.fire_event_with_data = MagicMock()
+    abort_signal = Signal()
+
+    with patch("nvflare.apis.impl.wf_comm_client.apply_filters", side_effect=lambda *args, **_kwargs: args[1]) as apply:
+        comm.broadcast_and_wait(task, _context(engine), ["site-1"], abort_signal=abort_signal)
+
+    assert apply.call_count == 2
+    assert all(call.kwargs["abort_signal"] is abort_signal for call in apply.call_args_list)
+
+
 def test_broadcast_uses_all_clients_and_rejects_invalid_targets():
     engine = _engine()
     engine.send_aux_request.return_value = {}
@@ -89,13 +106,13 @@ def test_broadcast_uses_all_clients_and_rejects_invalid_targets():
     comm.fire_event = MagicMock()
     comm.fire_event_with_data = MagicMock()
 
-    with patch("nvflare.apis.impl.wf_comm_client.apply_filters", side_effect=lambda *args: args[1]):
+    with patch("nvflare.apis.impl.wf_comm_client.apply_filters", side_effect=lambda *args, **_kwargs: args[1]):
         comm.broadcast_and_wait(Task("train", Shareable(), timeout=1), _context(engine), targets=None)
 
     assert len(engine.send_aux_request.call_args.kwargs["targets"]) == 2
 
     engine.validate_targets.return_value = ([], ["missing"])
-    with patch("nvflare.apis.impl.wf_comm_client.apply_filters", side_effect=lambda *args: args[1]):
+    with patch("nvflare.apis.impl.wf_comm_client.apply_filters", side_effect=lambda *args, **_kwargs: args[1]):
         with pytest.raises(ValueError, match="invalid target"):
             comm.broadcast_and_wait(Task("train", Shareable(), timeout=1), _context(engine), ["missing"])
 
@@ -123,7 +140,7 @@ def test_broadcast_handles_result_filter_and_task_done_errors():
 
     calls = 0
 
-    def filter_data(*args):
+    def filter_data(*args, **_kwargs):
         nonlocal calls
         calls += 1
         if calls == 2:
@@ -149,7 +166,7 @@ def test_callback_errors_mark_task_failed(callback_name):
     comm.fire_event = MagicMock()
     comm.fire_event_with_data = MagicMock()
 
-    with patch("nvflare.apis.impl.wf_comm_client.apply_filters", side_effect=lambda *args: args[1]):
+    with patch("nvflare.apis.impl.wf_comm_client.apply_filters", side_effect=lambda *args, **_kwargs: args[1]):
         replies = comm.broadcast_and_wait(task, _context(engine), ["site-1"])
 
     assert replies["site-1"].get_return_code() == ReturnCode.ERROR
@@ -163,7 +180,7 @@ def test_negative_timeout_is_rejected_after_task_setup():
     comm = WFCommClient()
     comm.fire_event_with_data = MagicMock()
 
-    with patch("nvflare.apis.impl.wf_comm_client.apply_filters", side_effect=lambda *args: args[1]):
+    with patch("nvflare.apis.impl.wf_comm_client.apply_filters", side_effect=lambda *args, **_kwargs: args[1]):
         with pytest.raises(ValueError, match="timeout must"):
             comm.broadcast_and_wait(task, _context(engine), ["site-1"])
 
@@ -230,7 +247,7 @@ def test_send_failover_scopes_replies_and_callbacks_to_current_attempt():
     comm.fire_event = MagicMock()
     comm.fire_event_with_data = MagicMock()
 
-    with patch("nvflare.apis.impl.wf_comm_client.apply_filters", side_effect=lambda *args: args[1]):
+    with patch("nvflare.apis.impl.wf_comm_client.apply_filters", side_effect=lambda *args, **_kwargs: args[1]):
         replies = comm.send(task, _context(engine), ["site-1", "site-2"])
 
     # the failover attempt must not leak site-1's stale result or re-fire its callback

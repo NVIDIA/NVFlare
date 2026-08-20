@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import copy
+import os
 import random
 import shutil
 import tempfile
@@ -22,7 +23,7 @@ from typing import Optional
 from nvflare.apis.controller_spec import Task
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, ReservedTopic, ReturnCode
+from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.apis.signal import Signal
@@ -43,8 +44,14 @@ from nvflare.fuel.utils.validation_utils import (
     check_positive_int,
     check_positive_number,
 )
-from nvflare.private.defs import CellChannel
 from nvflare.security.logging import secure_format_traceback
+
+
+def _cleanup_active_disk_tensor_downloads(reason: str, root_dir: str):
+    # Keep PyTorch optional until disk-backed tensor cleanup is actually needed.
+    from nvflare.app_opt.pt.tensor_downloader import cleanup_active_disk_tensor_downloads
+
+    cleanup_active_disk_tensor_downloads(reason=reason, root_dir=root_dir)
 
 
 class _TrainerStatus:
@@ -331,10 +338,11 @@ class SwarmClientController(ClientSideController):
                 Since submission req is a tiny message, this timeout value should be small.
             request_to_submit_result_interval: interval between requests to submit result.
             max_concurrent_submissions: max number of concurrent submissions allowed on the aggregation client.
-            memory_gc_rounds: run gc.collect() + malloc_trim on the aggregator every N FL rounds.
-                Defaults to 1 (every round) to match legacy behavior where gc.collect() was called
-                unconditionally after each trainer submission. Set to 0 to disable.
-            cuda_empty_cache: also call torch.cuda.empty_cache() during aggregator-side cleanup.
+            memory_gc_rounds: run allocator-aware memory cleanup (gc.collect() + malloc_trim) after every
+                N completed learn tasks in each client job, and independently after every N aggregations
+                in the aggregation client job. Defaults to 1. Set to 0 to disable allocator-aware cleanup.
+                A plain gc.collect() still runs after every learn task regardless of this value.
+            cuda_empty_cache: also call torch.cuda.empty_cache() during memory cleanup.
                 In swarm learning the aggregator runs on the same client as the trainer, so GPU
                 memory may be relevant. Defaults to False.
             enable_tensor_disk_offload: download incoming streamed PyTorch tensors to temporary disk files
@@ -402,11 +410,11 @@ class SwarmClientController(ClientSideController):
         self.last_aggr_round_done = -1
         self.enable_tensor_disk_offload = enable_tensor_disk_offload
         self._tensor_disk_offload_root_dir = None
-        self._owned_tensor_forward_relay_route = None
         self._aggr_thread = None
         self.memory_gc_rounds = memory_gc_rounds
         self.cuda_empty_cache = cuda_empty_cache
         self._aggr_round_count = 0
+        self._learn_task_count = 0
 
     def process_config(self, fl_ctx: FLContext):
         all_clients = self.get_config_prop(Constant.CLIENTS)
@@ -445,17 +453,13 @@ class SwarmClientController(ClientSideController):
             if cell:
                 job_id = fl_ctx.get_job_id("job")
                 self._tensor_disk_offload_root_dir = tempfile.mkdtemp(prefix=f"nvflare_tensor_offload_{job_id}_")
+                self.log_info(fl_ctx, f"created tensor disk-offload root {self._tensor_disk_offload_root_dir}")
             else:
                 self.log_warning(
                     fl_ctx,
                     "enable_tensor_disk_offload=True but no active cell is available; "
                     "falling back to in-memory tensor download",
                 )
-        if self.enable_tensor_disk_offload and cell and fl_ctx.get_prop(FLContextKey.SECURE_MODE, False) is True:
-            route = (CellChannel.AUX_COMMUNICATION, ReservedTopic.DO_TASK)
-            if route not in cell.decode_pass_through_relay_topics:
-                cell.decode_pass_through_relay_topics.add(route)
-                self._owned_tensor_forward_relay_route = route
         self.aggregator = self.engine.get_component(self.aggregator_id)
         if not isinstance(self.aggregator, Aggregator):
             self.system_panic(
@@ -485,23 +489,26 @@ class SwarmClientController(ClientSideController):
     def _cleanup_tensor_disk_offload(self, fl_ctx: FLContext):
         root_dir = self._tensor_disk_offload_root_dir
         self._tensor_disk_offload_root_dir = None
-        route = self._owned_tensor_forward_relay_route
-        self._owned_tensor_forward_relay_route = None
+        if not root_dir:
+            return
+
         try:
-            if route:
-                cell = self.engine.get_cell()
-                if cell:
-                    cell.decode_pass_through_relay_topics.discard(route)
-        except Exception:
-            self.log_warning(fl_ctx, f"failed to remove tensor forwarding relay route: {secure_format_traceback()}")
-        try:
-            if root_dir:
-                try:
-                    self._drain_tensor_disk_offload_threads(root_dir, fl_ctx)
-                finally:
-                    shutil.rmtree(root_dir, ignore_errors=True)
+            try:
+                _cleanup_active_disk_tensor_downloads(
+                    reason="Swarm workflow ended before tensor download completed",
+                    root_dir=root_dir,
+                )
+            except Exception:
+                self.log_warning(fl_ctx, f"failed to cancel tensor disk offload: {secure_format_traceback()}")
+            self._drain_tensor_disk_offload_threads(root_dir, fl_ctx)
         except Exception:
             self.log_warning(fl_ctx, f"failed to clean up tensor disk offload: {secure_format_traceback()}")
+        finally:
+            shutil.rmtree(root_dir, ignore_errors=True)
+            if os.path.exists(root_dir):
+                self.log_warning(fl_ctx, f"tensor disk-offload root still exists after cleanup: {root_dir}")
+            else:
+                self.log_info(fl_ctx, f"removed tensor disk-offload root {root_dir}")
 
     def _drain_tensor_disk_offload_threads(self, root_dir: str, fl_ctx: FLContext):
         deadline = time.monotonic() + self.learn_task_abort_timeout
@@ -622,11 +629,12 @@ class SwarmClientController(ClientSideController):
                 fl_ctx,
                 f"broadcasting learn task of round {for_round} to {remote_targets}; aggregation happens on {aggr}",
             )
-            if getattr(self, "enable_tensor_disk_offload", False):
-                # Keep the client job as a forwarding hop. The external trainer
-                # downloads tensors from the originating source instead of
-                # receiving process-local disk refs from the client job.
-                task_data.set_header(ReservedHeaderKey.PASS_THROUGH, True)
+            # Keep the receiving client job a forwarding hop: decode the
+            # streamed tensors into lazy refs so only their terminal consumer
+            # (external trainer, in-process learner, or aggregation controller)
+            # materializes them. Whether that consumer materializes to memory
+            # or to disk is controlled separately by enable_tensor_disk_offload.
+            task_data.set_header(ReservedHeaderKey.PASS_THROUGH, True)
             if not self.send_learn_task(targets=remote_targets, request=task_data, fl_ctx=fl_ctx):
                 return False
 
@@ -706,6 +714,24 @@ class SwarmClientController(ClientSideController):
 
                 cleanup_memory(cuda_empty_cache=self.cuda_empty_cache)
                 self.log_info(fl_ctx, f"Swarm aggregator memory cleanup at round {self._aggr_round_count}")
+
+    def _cleanup_learn_task_memory(self):
+        """Run allocator-aware cleanup on the configured learn-task cadence.
+
+        A non-aggregation client never runs _end_gather(), so this is the only
+        point where its client job returns the freed learn-task payload from
+        the allocator to the OS. Between cadence points, and when allocator-aware
+        cleanup is disabled, the base hook still runs gc.collect().
+        """
+        if self.memory_gc_rounds > 0:
+            self._learn_task_count += 1
+            if self._learn_task_count % self.memory_gc_rounds == 0:
+                from nvflare.fuel.utils.memory_utils import cleanup_memory
+
+                cleanup_memory(cuda_empty_cache=self.cuda_empty_cache)
+                self.logger.info(f"Swarm client job memory cleanup after learn task {self._learn_task_count}")
+                return
+        super()._cleanup_learn_task_memory()
 
     def _ask_to_share_best_result(self, client: str, metric, fl_ctx: FLContext):
         # other client has best model - ask it to distribute its result
@@ -806,7 +832,7 @@ class SwarmClientController(ClientSideController):
         return False
 
     def _learn_executor_accepts_lazy_refs(self) -> bool:
-        """Whether the learner has another Cell hop that can materialize transport refs."""
+        """Whether the learner may consume original transport refs directly."""
         return (
             isinstance(self.learn_executor, ClientAPIExecutor)
             and self.learn_executor.execution_mode == ExecutionMode.EXTERNAL_PROCESS
@@ -815,12 +841,12 @@ class SwarmClientController(ClientSideController):
     def _prepare_learn_task_data(self, task_data: Shareable, fl_ctx: FLContext) -> tuple[Shareable, Shareable]:
         """Prepare the controller and learner views of an incoming learn task.
 
-        An external-process trainer on a non-aggregation client is the sole
-        consumer of the incoming transport refs, so both views remain lazy. If
-        this client is the aggregator, the controller needs an in-memory base
-        model and resolves the task once; the external trainer receives that same
-        resolved payload instead of trying to consume the source refs a second
-        time. All other executors are treated as in-process and receive the
+        A managed external trainer on a non-aggregation client is the sole
+        consumer of the incoming transport refs, so both views remain lazy. An
+        attached trainer must not receive remote source refs: its CJ resolves
+        them before task delivery and owns any new trainer-facing transaction.
+        If this client is the aggregator, the controller also needs an in-memory
+        base model and resolves the task once. All other executors receive the
         resolved in-memory view.
         """
         if not self._has_lazy_refs(task_data):
@@ -855,8 +881,7 @@ class SwarmClientController(ClientSideController):
 
         Uses an FOBS round-trip:
           encode: LazyDownloadRefDecomposer.decompose() re-emits the original source
-                  datum (fqcn + ref_id) as a TEXT datum. Relay refs require the CELL
-                  in this context to create a download transaction on the client job.
+                  datum (fqcn + ref_id) as a TEXT datum.
           decode: process_datum() with PASS_THROUGH=False calls _download_from_remote_cell()
                   which downloads tensors through that transaction. A fresh FOBS
                   context prevents encode-only state from leaking into decode and
@@ -886,6 +911,9 @@ class SwarmClientController(ClientSideController):
         decode_props = {
             fobs.FOBSContextKey.PASS_THROUGH: False,
             fobs.FOBSContextKey.TENSOR_DISK_OFFLOAD: enable_tensor_disk_offload,
+            # This explicit FOBS round-trip happens outside Cell.decode_payload(),
+            # so propagate cancellation that Cell would normally add for us.
+            fobs.FOBSContextKey.ABORT_SIGNAL: fl_ctx.get_run_abort_signal(),
         }
         if root_dir:
             # The terminal aggregation download may use a different Cell
@@ -949,10 +977,10 @@ class SwarmClientController(ClientSideController):
             current_round = request.get_header(AppConstants.CURRENT_ROUND)
             self.log_info(fl_ctx, f"got training result from {client_name} for round {current_round}")
 
-            # With disk offload enabled, the sending Swarm controller stamps
-            # PASS_THROUGH so this aggregation controller—not the Cell receive
-            # callback—is the terminal consumer. The local self-submit path also
-            # enters here after resolving explicitly.
+            # The sending Swarm controller stamps PASS_THROUGH so this
+            # aggregation controller—not the Cell receive callback—is the
+            # terminal consumer. The local self-submit path also enters here
+            # after resolving explicitly.
             if self._has_lazy_refs(request):
                 request = self._resolve_lazy_refs(request, fl_ctx)
             # PASS_THROUGH is a transport instruction for this one hop, not
@@ -1148,7 +1176,7 @@ class SwarmClientController(ClientSideController):
                 # Avoid synchronous self-message path through CoreCell._send_direct_message.
                 self.log_info(fl_ctx, "submitting training result locally (aggregation client is self)")
                 # An external-process result arrives at CJ as LazyDownloadRef
-                # (subprocess-side CellPipe has pass_through_on_send=True), so
+                # (the trainer-side Client API marks lazy result payloads), so
                 # resolve it before local aggregation. An in-process result is
                 # already materialized in CJ memory and must not take a full
                 # FOBS serialization round-trip.
@@ -1161,11 +1189,11 @@ class SwarmClientController(ClientSideController):
             else:
                 self.log_info(fl_ctx, f"sending training result to aggregation client {aggr}")
 
-                if getattr(self, "enable_tensor_disk_offload", False):
-                    # The aggregation client is the terminal consumer. Preserve
-                    # tensor transport refs through AUX decoding so its
-                    # controller can resolve them with its own offload root.
-                    result.set_header(ReservedHeaderKey.PASS_THROUGH, True)
+                # The aggregation client is the terminal consumer. Preserve
+                # tensor transport refs through AUX decoding so its controller
+                # resolves them with its own offload setting instead of the
+                # Cell receive callback materializing them.
+                result.set_header(ReservedHeaderKey.PASS_THROUGH, True)
 
                 task = Task(
                     name=self.report_learn_result_task_name,

@@ -33,6 +33,10 @@ class SessionClosed(Exception):
     pass
 
 
+class SessionExpired(SessionClosed):
+    pass
+
+
 class InvalidArgumentError(Exception):
     pass
 
@@ -332,7 +336,7 @@ class SessionSpec(ABC):
 
         Args:
             job_id: ID of the running job
-            config: log level, log mode, file path, or dictConfig payload
+            config: log level or built-in log mode
             target: ``all``, ``server``, or a client site name
 
         Returns: None

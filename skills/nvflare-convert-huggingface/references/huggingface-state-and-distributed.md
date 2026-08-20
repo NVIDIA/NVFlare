@@ -56,7 +56,10 @@ optimizer/scheduler state.
 Initialize `torch.distributed` before `flare.patch(trainer)` whenever
 `WORLD_SIZE` or `LOCAL_WORLD_SIZE` is greater than one. Resolve global rank from
 the initialized process group or global `RANK`, not `LOCAL_RANK`. Pass that rank
-to `flare.init()` if Client API context is needed before patching.
+to the generated client's required `rank` argument and then to
+`flare.init(rank=rank)`. `LOCAL_RANK` selects the local device and may differ
+from global `RANK` on multi-node launches; do not pass it as the FLARE rank.
+Reject a multi-process launch when global rank cannot be resolved.
 
 Every rank must execute the same generated sequence of patched methods. If the
 source-backed loop evaluates before training, all ranks call
@@ -74,4 +77,7 @@ API version. Preserve a source-provided `torchrun`/scheduler launcher; do not
 invent node counts, ranks, rendezvous settings, or scheduler commands. When the
 selected recipe exposes a command prefix, carry the observed `torchrun` command
 through that product parameter; use per-site configuration when launcher values
-differ by site.
+differ by site. Before reporting DDP validated, run a two-process `torchrun`
+conversion case and verify that both processes reach the patched lifecycle with
+distinct global ranks `0` and `1`, and that each passes that same global rank to
+`flare.init()`.

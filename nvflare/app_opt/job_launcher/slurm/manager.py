@@ -18,7 +18,6 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
-import re
 import shutil
 import stat
 import threading
@@ -54,12 +53,10 @@ from nvflare.app_opt.job_launcher.slurm.config import (
     resolve_slurm_parent_executables,
 )
 from nvflare.app_opt.job_launcher.slurm.scheduler_client import _command_diagnostic, _SlurmCliAdapter
-from nvflare.fuel.common.exit_codes import ProcessExitCode
+from nvflare.fuel.common.exit_codes import PROCESS_EXIT_REASON, ProcessExitCode
 
 _HEALTHY_MISSES = 5
 _ACCOUNTING_RETRY_INTERVAL = 6.0
-_MIN_SLURM_VERSION = (23, 2)
-_SLURM_VERSION_RE = re.compile(r"^slurm\s+(\d+)\.(\d+)", re.IGNORECASE)
 _JOB_NAME_SITE_LENGTH = 32
 
 
@@ -166,22 +163,11 @@ class SlurmJobManager:
                 except SlurmLauncherError as e:
                     raise UnsafeComponentError(str(e)) from e
                 adapter = _SlurmCliAdapter(executables, os.getuid(), self.logger)
-                self._require_slurm_version(adapter)
                 self.config = replace(self.config, executables=executables)
                 self.adapter = adapter
             self._require_accounting()
             self.jobs_dir = jobs_dir
             self._initialized = True
-
-    def _require_slurm_version(self, adapter=None) -> None:
-        message = "Slurm 23.02 or later is required"
-        result = (adapter or self.adapter).version_probe(timeout=2.0)
-        match = _SLURM_VERSION_RE.match(result.stdout.strip()) if result.available else None
-        if match and tuple(map(int, match.groups())) >= _MIN_SLURM_VERSION:
-            return
-        detail = _command_diagnostic(result) if not result.available else f"unexpected version output={result.stdout!r}"
-        self.logger.error("%s: %s", message, detail)
-        raise UnsafeComponentError(message)
 
     def _require_accounting(self) -> None:
         message = "Slurm accounting (slurmdbd) is required"
@@ -336,6 +322,10 @@ class SlurmJobManager:
             return JobReturnCode.ABORTED
         if record.state == "CANCELLED":
             return ProcessExitCode.INFRASTRUCTURE_ERROR
+        if record.exit_status in PROCESS_EXIT_REASON:
+            return record.exit_status
+        if record.derived_exit_status in PROCESS_EXIT_REASON:
+            return record.derived_exit_status
         if record.exit_status or record.exit_signal:
             return JobReturnCode.EXECUTION_ERROR
         return JobReturnCode.SUCCESS if record.state == "COMPLETED" else JobReturnCode.EXECUTION_ERROR
@@ -414,9 +404,10 @@ class SlurmJobManager:
                 self.adapter.cancel(handle.job_id, timeout=self.config.cancel_timeout)
             return JobReturnCode.UNKNOWN
 
-    def _abort_handle(self, handle: "SlurmJobHandle") -> None:
-        self.logger.info("user abort requested for Slurm job %s", handle.job_id)
-        handle._request_cancel(user_abort=True)
+    def _abort_handle(self, handle: "SlurmJobHandle", user_abort: bool = True) -> None:
+        if user_abort:
+            self.logger.info("user abort requested for Slurm job %s", handle.job_id)
+        handle._request_cancel(user_abort=user_abort)
         try:
             self._poll_handle(handle)
         except SlurmProtocolError:
@@ -473,6 +464,10 @@ class SlurmJobHandle(JobHandleSpec):
     def terminate(self):
         if self.terminal_result is None:
             self.manager._abort_handle(self)
+
+    def _terminate_for_heartbeat_cleanup(self):
+        if self.terminal_result is None:
+            self.manager._abort_handle(self, user_abort=False)
 
     def poll(self):
         try:

@@ -5,9 +5,10 @@ turn project evidence and user intent into one narrow next action.
 
 ## Evidence Sources
 
-- `nvflare agent inspect <path> --format json` for framework routing, FLARE
-  usage, conversion state, safety findings, local readiness, and recommended
-  skills.
+- `nvflare agent inspect source <path> --format json` for ownership,
+  integration, scan findings, and source routing.
+- `nvflare agent inspect data <path> --format json` for dataset and data
+  routing.
 - User-provided target files, job folders, logs, or stated deployment context.
 
 ## Routing Rules
@@ -25,7 +26,7 @@ turn project evidence and user intent into one narrow next action.
   identify the Trainer construction that owns the call, then route to the
   matching converter.
 - Statistics, data summaries, histograms, or quantiles across sites, or an
-  inspect result with `target_type` `tabular_dataset`/`image_dataset`
+  inspect result with `dataset.modality` `tabular`/`image`
   (data-only targets recommend `nvflare-fed-stats` directly):
   `nvflare-fed-stats`.
 - Generic "help me use FLARE here" with no clear workflow: inspect first, then

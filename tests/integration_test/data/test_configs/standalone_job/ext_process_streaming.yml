@@ -2,10 +2,11 @@
 # np_loop_external_process is the small-payload launch-once control, while
 # pt_large_model_pass_through exercises DownloadService-backed tensors. Both
 # jobs use the ClientAPIExecutor external-process backend. This file is the only
-# home of these two test cases; test_configs.yml lists it under both the
-# client_api group and the ext_process_streaming group, so the streaming path
-# can also be exercised on its own:
-#   NVFLARE_TEST_FRAMEWORK=ext_process_streaming pytest system_test.py
+# home of these two test cases; test_configs.yml includes it in the client_api
+# group so the streaming path runs in the standard Client API integration stage.
+# The project is provisioned secure. The large-model case therefore also gates
+# post-HELLO site credential delegation to the descendant trainer Cell: a trainer
+# missing those auth headers fails the existing "unauthenticated msg" validator.
 project_yaml: ./data/projects/client_api.yml
 jobs_root_dir: ./data/jobs
 cleanup: True

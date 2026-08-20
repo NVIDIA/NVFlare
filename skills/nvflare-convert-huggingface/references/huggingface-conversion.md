@@ -4,7 +4,7 @@
 
 Use this path for a standard Trainer conversion:
 
-1. Confirm Hugging Face Trainer ownership with `nvflare agent inspect`.
+1. Confirm Hugging Face Trainer ownership with `nvflare agent inspect source`.
 2. Run `nvflare recipe show` and apply the shared PyTorch-family construction
    profile.
 3. Adapt `../assets/client_with_eval.py` into `client.py`, preserving the
@@ -34,9 +34,9 @@ path behind an entry point that passes `federated=False` explicitly.
 
 When the source has no valid evaluation dataset or metric and neither per-round
 evaluation nor best-model selection is requested, adapt the asset with
-`evaluate_before_train=False` and leave `key_metric` unspecified so the recipe's
-documented default remains active. Do not add a skill-specific sentinel or claim
-that the model selector was disabled. See the Best-Model Metric section of
+`evaluate_before_train=False` and `key_metric=""` so model selection is disabled.
+Do not omit `key_metric`: `FedAvgRecipe` otherwise activates its documented
+default selector. See the Best-Model Metric section of
 `../../nvflare-shared/references/pytorch-family-recipe-construction.md`.
 
 Import the Client API as `import nvflare.client.hf as flare`, as the asset does,
@@ -130,6 +130,11 @@ Every site uses the same packaged `client.py`; do not include `train_script` in
 the per-site mapping. The asset rejects both relative and absolute site-specific
 script overrides because it cannot package them while preserving one portable
 app-local runtime path.
+Pass that same mapping to the asset's `build_sim_env(...)`, which implements the
+single-topology-owner rule from
+`../../nvflare-shared/references/conversion-common.md`. Leave the mapping unset
+for ordinary generated partitions, and derive their indices from the initialized
+`site-N` name.
 Follow the shared construction reference's client-argument transport rule.
 `train_args` is not necessarily shell parsed: use unquoted whitespace-free
 tokens for the default in-process executor, and use shell quoting only for a
@@ -140,11 +145,14 @@ internal command-splitting helpers.
 `train_script` names the primary client entry point in the runtime config; it
 does not provide a separate source root for caller-cwd-independent packaging.
 Use its portable app-local name in the constructor and add the resolved source
-once with `recipe.add_client_file(...)`. Export and inspect the job before
-simulation. Reject absolute `task_script_path` values in generated configs
-because exported apps must launch their packaged client script portably.
+once with `recipe.add_client_file(...)`. For an exported-artifact target, export
+and inspect that job before running it with the simulator CLI. For a local
+`python job.py` target, do not export; after the run, inspect the materialized
+simulation workspace for the same config and packaging evidence. Reject
+absolute `task_script_path` values in generated configs because runtime apps
+must launch their packaged client script portably.
 
-Exported app layout is owned by
+For an exported-artifact target, exported app layout is owned by
 `../../nvflare-shared/references/conversion-workflow.md`: inspect the exported
 job root and enumerate the app directories it actually contains before asserting
 any path.
@@ -161,10 +169,11 @@ import/preflight checks.
 
 ## Data And Model Selection
 
-Follow the "Site Data Partitioning" rule in
-`../../nvflare-shared/references/conversion-common.md`. Pass data roots through
-client arguments or per-site configuration; never copy private site data into
-the job.
+Follow `../../nvflare-shared/references/site-data-and-paths.md` when generated
+site partitions, relative-path resolution, or per-site data locations are
+involved. Pass data roots through client arguments or per-site configuration —
+never a path hardcoded in the generated client, and never copy private site data
+into the job.
 
 Prefer preserving source metric names in the client metrics output. If the
 generated evaluation call emits `accuracy`, configure `key_metric="accuracy"`.

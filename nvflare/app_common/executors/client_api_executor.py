@@ -14,8 +14,8 @@
 
 """Client API executor with mode-specific trainer backends.
 
-``in_process`` and ``external_process`` are supported; ``attach`` is reserved. Parameter
-conversion and FULL/DIFF state are handled by the trainer-side Client API.
+All three execution modes are supported. Parameter conversion and FULL/DIFF state
+are handled by the trainer-side Client API.
 """
 
 import math
@@ -25,17 +25,20 @@ from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
 from nvflare.apis.dxo import DXO
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
-from nvflare.apis.fl_constant import ReturnCode
+from nvflare.apis.fl_constant import FilterKey, FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeJobError
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.analytix_utils import send_analytic_dxo
+from nvflare.apis.utils.task_utils import contains_lazy_download_ref, get_filters, materialize_lazy_download_refs
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.executors.client_api.backend_spec import ClientAPIBackendContext, ClientAPIBackendSpec
 from nvflare.app_common.widgets.convert_to_fed_event import FED_EVENT_PREFIX
 from nvflare.client.config import ExchangeFormat, TransferType, normalize_exchange_format
 from nvflare.client.converter_utils import validate_format_pair
+from nvflare.fuel.utils.fobs import FOBSContextKey
+from nvflare.private.privacy_manager import Scope
 from nvflare.security.logging import secure_format_exception, secure_format_traceback
 
 
@@ -85,8 +88,10 @@ class ClientAPIExecutor(Executor):
         params_transfer_type: TransferType = TransferType.FULL,
         memory_gc_rounds: int = 0,
         cuda_empty_cache: bool = False,
+        attach_id: Optional[str] = None,
         attach_timeout: Optional[float] = None,
         allow_reconnect: bool = False,
+        allow_insecure_attach: bool = False,
     ):
         """Initializes the ClientAPIExecutor.
 
@@ -109,7 +114,7 @@ class ClientAPIExecutor(Executor):
             launch_timeout (Optional[float]): external_process only. Bound for the launched
                 trainer to complete its HELLO/session setup (this replaces the legacy
                 external_pre_init_timeout). Defaults to 300 seconds for compatibility with
-                ClientAPILauncherExecutor; an explicit None means no timeout.
+                prior releases; an explicit None means no timeout.
             shutdown_timeout (Optional[float]): external_process only. How long to wait for the
                 trainer to exit naturally after an orderly SHUTDOWN before starting forced
                 process-tree termination. None means the backend default.
@@ -120,9 +125,12 @@ class ClientAPIExecutor(Executor):
                 (seconds) for session heartbeats.
             heartbeat_timeout (float): out-of-process only (external_process/attach). Session lease
                 timeout (seconds) on missed heartbeats. An in-flight payload transfer keeps the
-                lease alive (design: "Heartbeat and Liveness").
+                lease alive (design: "Heartbeat and Liveness"). Zero disables heartbeat checks
+                for external_process but is invalid for attach, whose external trainer requires
+                heartbeat liveness as the fallback for a lost terminal SHUTDOWN.
             task_wait_timeout (Optional[float]): Bound for the trainer to accept a delivered
-                task. None means no timeout.
+                task. None means no timeout for external_process; attach applies a 600-second
+                task-delivery budget when unset.
             result_wait_timeout (Optional[float]): Control-side bound for retrieving the task
                 result. Payload transfer completion is governed by the shared transfer layer,
                 not by this value. None means no timeout.
@@ -132,8 +140,9 @@ class ClientAPIExecutor(Executor):
                 Defaults to AppConstants.TASK_VALIDATION.
             submit_model_task_name (str): Task name treated as "submit_model" by
                 flare.is_submit_model(). Defaults to AppConstants.TASK_SUBMIT_MODEL.
-            train_with_evaluation (bool): Whether the trainer also returns evaluation metrics with
-                the trained model.
+            train_with_evaluation (bool): Whether a training result is required to include pre-training
+                evaluation metrics. When False, metrics are optional; metrics supplied by the trainer
+                or a framework integration are still returned.
             params_exchange_format (ExchangeFormat): Framework-native parameter representation
                 exposed by ``flare.receive()`` and accepted by ``flare.send()``. The declaration
                 is transported to the trainer in ``TASK_EXCHANGE``; the executor does not perform
@@ -145,10 +154,15 @@ class ClientAPIExecutor(Executor):
                 model state and is independent of framework representation conversion.
             memory_gc_rounds (int): Force a GC cycle every N rounds (0 disables).
             cuda_empty_cache (bool): Whether to also empty the CUDA cache during memory cleanup.
+            attach_id (Optional[str]): attach only. Pre-provisioned rendezvous ID shared with
+                exactly one externally started trainer. It is a routing name, not a secret.
             attach_timeout (Optional[float]): attach only. Bound for the externally started
                 trainer to attach. None means no timeout.
             allow_reconnect (bool): attach only. Whether a trainer may re-attach to an existing
                 session after a disconnect.
+            allow_insecure_attach (bool): attach only. Deprecated compatibility argument with
+                no effect. Network Attach uses the site's existing CP trust model; a CJ-owned
+                shared-file route must always satisfy its filesystem protection checks.
         """
         super().__init__()
 
@@ -221,12 +235,25 @@ class ClientAPIExecutor(Executor):
             )
 
         # --- attach-only knobs ---
-        if not is_attach:
+        if is_attach:
+            from nvflare.client.cell.attach import validate_attach_id
+
+            attach_id = validate_attach_id(attach_id)
+            if heartbeat_timeout == 0:
+                raise ValueError(
+                    "attach mode requires heartbeat_timeout > 0 because heartbeat liveness is the terminal fallback "
+                    "when protocol SHUTDOWN is lost"
+                )
+        else:
+            if attach_id is not None:
+                raise self._wrong_mode_error("attach_id", attach_id, "'attach'", execution_mode)
             if attach_timeout is not None:
                 raise self._wrong_mode_error("attach_timeout", attach_timeout, "'attach'", execution_mode)
             # Treat False and other falsy values as the unset default.
             if allow_reconnect:
                 raise self._wrong_mode_error("allow_reconnect", allow_reconnect, "'attach'", execution_mode)
+            if allow_insecure_attach:
+                raise self._wrong_mode_error("allow_insecure_attach", allow_insecure_attach, "'attach'", execution_mode)
 
         # Reject invalid bounds before they reach threading/subprocess primitives. In
         # particular, a negative Lock.acquire(timeout=...) can mean "wait forever",
@@ -273,8 +300,10 @@ class ClientAPIExecutor(Executor):
             ) from e
         self._memory_gc_rounds = memory_gc_rounds
         self._cuda_empty_cache = cuda_empty_cache
+        self._attach_id = attach_id
         self._attach_timeout = attach_timeout
         self._allow_reconnect = bool(allow_reconnect)
+        self._allow_insecure_attach = bool(allow_insecure_attach)
 
         self._backend: Optional[ClientAPIBackendSpec] = None
 
@@ -301,6 +330,14 @@ class ClientAPIExecutor(Executor):
                     f"'{self._execution_mode}' failed to initialize: {secure_format_exception(e)}",
                     fl_ctx,
                 )
+        elif event_type == EventType.ABORT_TASK:
+            backend = self._backend
+            if backend is not None:
+                try:
+                    backend.abort(fl_ctx)
+                except Exception:
+                    self.log_error(fl_ctx, secure_format_traceback(), fire_event=False)
+            super().handle_event(event_type, fl_ctx)
         elif event_type == EventType.END_RUN:
             backend = self._backend
             self._backend = None
@@ -324,7 +361,16 @@ class ClientAPIExecutor(Executor):
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
         try:
+            materialize_result = (
+                self._execution_mode != ExecutionMode.IN_PROCESS
+                and self._requires_materialized_result(task_name, fl_ctx)
+            )
+            result_cell = None
+            if materialize_result:
+                result_cell = self._route_result_to_cj(shareable, fl_ctx)
             result = backend.execute(task_name, shareable, fl_ctx, abort_signal)
+            if isinstance(result, Shareable) and materialize_result and contains_lazy_download_ref(result):
+                result = self._materialize_result(result, result_cell, abort_signal)
         except UnsafeJobError:
             # ClientRunner has dedicated handling for UnsafeJobError (client_runner.py maps it
             # to ReturnCode.UNSAFE_JOB and marks the job unsafe). Do NOT swallow it into a
@@ -340,6 +386,51 @@ class ClientAPIExecutor(Executor):
             self.log_error(fl_ctx, f"bad result from backend: expected Shareable but got {type(result)}")
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
         return result
+
+    @staticmethod
+    def _requires_materialized_result(task_name: str, fl_ctx: FLContext) -> bool:
+        """Whether the active ClientRunner pipeline consumes the concrete Client API result."""
+        if fl_ctx.get_prop(FLContextKey.TASK_NAME) != task_name:
+            return False
+
+        runner = fl_ctx.get_prop(FLContextKey.RUNNER)
+        config_filters = getattr(runner, "task_result_filters", None)
+        if isinstance(config_filters, dict) and get_filters(
+            Scope.TASK_RESULT_FILTERS_NAME, fl_ctx, config_filters, task_name, FilterKey.OUT
+        ):
+            return True
+
+        engine = fl_ctx.get_engine()
+        get_all_components = getattr(engine, "get_all_components", None) if engine is not None else None
+        components = get_all_components() if callable(get_all_components) else None
+        if not isinstance(components, dict):
+            return False
+
+        for component in components.values():
+            requirement = getattr(component, "requires_materialized_task_result", None)
+            if callable(requirement) and requirement(task_name) is True:
+                return True
+        return False
+
+    @staticmethod
+    def _route_result_to_cj(shareable: Shareable, fl_ctx: FLContext):
+        """Make the CJ the terminal receiver for a result that a local component consumes."""
+        engine = fl_ctx.get_engine()
+        get_cell = getattr(engine, "get_cell", None) if engine is not None else None
+        cell = get_cell() if callable(get_cell) else None
+        cj_fqcn = cell.get_fqcn() if cell is not None else None
+        if not cj_fqcn:
+            raise RuntimeError("cannot materialize Client API result: CJ Cell identity is unavailable")
+        shareable.set_header(FOBSContextKey.RECEIVER_IDS, [cj_fqcn])
+        return cell
+
+    @staticmethod
+    def _materialize_result(result: Shareable, cell, abort_signal: Signal) -> Shareable:
+        """Resolve a pass-through result at the CJ for a declared local consumer."""
+        materialized = materialize_lazy_download_refs(result, cell, abort_signal)
+        if not isinstance(materialized, Shareable):
+            raise TypeError(f"materialized Client API result must be Shareable but got {type(materialized)}")
+        return materialized
 
     def set_analytics_fire_fed_event(self, enabled: bool) -> None:
         """Select direct federation events instead of the local ConvertToFedEvent path."""
@@ -410,6 +501,10 @@ class ClientAPIExecutor(Executor):
             heartbeat_timeout=self._heartbeat_timeout,
             task_wait_timeout=self._task_wait_timeout,
             result_wait_timeout=self._result_wait_timeout,
+            attach_id=self._attach_id,
+            attach_timeout=self._attach_timeout,
+            allow_reconnect=self._allow_reconnect,
+            allow_insecure_attach=self._allow_insecure_attach,
             train_task_name=self._train_task_name,
             evaluate_task_name=self._evaluate_task_name,
             submit_model_task_name=self._submit_model_task_name,
@@ -427,7 +522,7 @@ class ClientAPIExecutor(Executor):
         if self._execution_mode == ExecutionMode.EXTERNAL_PROCESS:
             return self._create_external_process_backend()
         if self._execution_mode == ExecutionMode.ATTACH:
-            raise NotImplementedError("attach execution mode is not yet implemented in this release")
+            return self._create_attach_backend()
 
         raise ValueError(f"unexpected execution_mode {self._execution_mode!r}")
 
@@ -440,3 +535,8 @@ class ClientAPIExecutor(Executor):
         from nvflare.app_common.executors.client_api.external_process_backend import ExternalProcessBackend
 
         return ExternalProcessBackend()
+
+    def _create_attach_backend(self) -> ClientAPIBackendSpec:
+        from nvflare.app_common.executors.client_api.attach_backend import AttachBackend
+
+        return AttachBackend()

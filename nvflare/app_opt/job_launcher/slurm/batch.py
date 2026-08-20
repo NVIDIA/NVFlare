@@ -38,6 +38,8 @@ _ENV_MASTER_ADDR = "NVFL_MASTER_ADDR"
 _ENV_MASTER_PORT = "NVFL_MASTER_PORT"
 _ENV_RUN_ID = "NVFL_RUN_ID"
 _MULTINODE_BATCH_ENV = (_ENV_NNODES, _ENV_MASTER_ADDR, _ENV_MASTER_PORT, _ENV_RUN_ID)
+_SLURM_GPU_ENV = ("CUDA_VISIBLE_DEVICES", "GPU_DEVICE_ORDINAL", "ROCR_VISIBLE_DEVICES")
+_APPTAINER_HOST_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 _TEMPLATE_TOKEN_PATTERN = re.compile(r"@@NVFLARE_[A-Z0-9_]+@@")
 
@@ -95,6 +97,8 @@ def _tool_assignment(variable: str, configured: str | None, default: str) -> str
 
 def _common_environment(plan: LaunchPlan, config: SlurmConfig) -> list[str]:
     lines = ['[[ -r "${_nvfl_secret}" ]] || { echo "NVFlare Slurm secret file is unavailable" >&2; exit 100; }']
+    if plan.sandbox == "apptainer":
+        lines.append(f"export PATH={_APPTAINER_HOST_PATH}")
     if plan.setup:
         lines.extend(["export SLURM_EXPORT_ENV=ALL", plan.setup])
     lines.extend(
@@ -134,6 +138,14 @@ def _apptainer_environment(plan: LaunchPlan, config: SlurmConfig) -> list[str]:
     return environment
 
 
+def _apptainer_gpu_environment() -> list[str]:
+    mirrors = " ".join(f"APPTAINERENV_{name}" for name in _SLURM_GPU_ENV)
+    environment = [f"unset {mirrors}"]
+    for name in _SLURM_GPU_ENV:
+        environment.append(f'if [[ ${{{name}+x}} ]]; then export APPTAINERENV_{name}="${{{name}}}"; fi')
+    return environment
+
+
 def _apptainer_exec_words(plan: LaunchPlan, pwd: str) -> list[str]:
     command = ['"${NVFL_APPTAINER}"']
     command.extend(
@@ -157,7 +169,8 @@ def _apptainer_exec_words(plan: LaunchPlan, pwd: str) -> list[str]:
 
 
 def _apptainer_parts(plan: LaunchPlan, config: SlurmConfig, worker_words: list[str]) -> tuple[list[str], list[str]]:
-    return _apptainer_environment(plan, config), _apptainer_exec_words(plan, plan.run_dir) + worker_words
+    environment = _apptainer_environment(plan, config) + _apptainer_gpu_environment()
+    return environment, _apptainer_exec_words(plan, plan.run_dir) + worker_words
 
 
 def _multinode_srun_words(plan: LaunchPlan) -> list[str]:
@@ -215,6 +228,7 @@ def _render_node_script(plan: LaunchPlan, config: SlurmConfig) -> str:
         backend_setup = "\n".join(
             (
                 _tool_assignment("NVFL_APPTAINER", config.executables.get("apptainer"), "apptainer"),
+                *_apptainer_gpu_environment(),
                 f'export APPTAINERENV_{_ENV_NODE_RANK}="${{{_ENV_NODE_RANK}}}"',
             )
         )

@@ -39,6 +39,7 @@ git clone https://github.com/NVIDIA/NVFlare.git
 Then navigate to the `hello-huggingface` directory:
 
 ```
+cd NVFlare
 git switch <release branch>
 cd examples/hello-world/hello-huggingface
 ```

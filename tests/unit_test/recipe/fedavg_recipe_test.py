@@ -12,9 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import importlib.util
 import inspect
 import json
+import sys
 import warnings
+from pathlib import Path
+from types import ModuleType
 from unittest.mock import patch
 
 import pytest
@@ -33,11 +37,14 @@ from nvflare.app_common.np.recipes import NumpyFedAvgRecipe
 from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_common.widgets.metrics_artifact_writer import MetricsArtifactWriter
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.app_opt.sklearn.recipes import KMeansFedAvgRecipe, SklearnFedAvgRecipe, SVMFedAvgRecipe
 from nvflare.client.config import TransferType
 from nvflare.fuel.utils.secret_utils import UnsupportedSecretRefWarning
 from nvflare.job_config.base_fed_job import BaseFedJob
 from nvflare.recipe import set_per_site_config, set_recipe_meta
 from nvflare.recipe.fedavg import FedAvgRecipe as BaseFedAvgRecipe
+
+_TF_FEDAVG_RECIPE_MODULE = "_nvflare_tf_fedavg_recipe_for_test"
 
 
 class SimpleTestModel(nn.Module):
@@ -186,6 +193,20 @@ def get_client_executor(recipe, site_name):
     return client_app.app_config.executors[0].executor
 
 
+def load_tf_fedavg_recipe(monkeypatch):
+    """Load only tf/recipes/fedavg.py so this unit test does not require TensorFlow."""
+    fake_tf_model_module = ModuleType("nvflare.app_opt.tf.job_config.model")
+    fake_tf_model_module.TFModel = object
+    monkeypatch.setitem(sys.modules, "nvflare.app_opt.tf.job_config.model", fake_tf_model_module)
+
+    module_path = Path(__file__).parents[3] / "nvflare" / "app_opt" / "tf" / "recipes" / "fedavg.py"
+    spec = importlib.util.spec_from_file_location(_TF_FEDAVG_RECIPE_MODULE, module_path)
+    module = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, _TF_FEDAVG_RECIPE_MODULE, module)
+    spec.loader.exec_module(module)
+    return module.FedAvgRecipe
+
+
 def _get_train_executor_config(client_config):
     for executor_entry in client_config.get("executors", []):
         executor = executor_entry["executor"]
@@ -291,6 +312,21 @@ class TestFedAvgRecipe:
 
         assert get_client_executor(recipe, "site-1")._task_script_args == "--epochs 1"
 
+    def test_per_site_launch_timeout_none_disables_timeout(self, mock_file_system, base_recipe_params, simple_model):
+        recipe = FedAvgRecipe(
+            name="test_per_site_launch_timeout",
+            model=simple_model,
+            launch_external_process=True,
+            launch_timeout=120.0,
+            **base_recipe_params,
+        )
+        set_per_site_config(recipe, {"site-1": {"launch_timeout": None}, "site-2": {}})
+
+        recipe._ensure_client_apps_prepared()
+
+        assert get_client_executor(recipe, "site-1")._launch_timeout is None
+        assert get_client_executor(recipe, "site-2")._launch_timeout == 120.0
+
     def test_legacy_constructor_config_delegates_to_helper(self, mock_file_system, base_recipe_params, simple_model):
         config = {"site-1": {"train_args": "--epochs 1"}, "site-2": {}}
 
@@ -349,9 +385,86 @@ class TestFedAvgRecipe:
         model_selector = get_model_selector(recipe)
         assert isinstance(model_selector, IntimeModelSelector)
         assert model_selector.key_metric == key_metric
+        assert model_selector.negate_key_metric is False
+        assert recipe.key_metric_mode == "max"
         metrics_writer = get_server_component(recipe, "metrics_artifact_writer")
         assert isinstance(metrics_writer, MetricsArtifactWriter)
         assert not hasattr(metrics_writer, "key_metric")
+
+    def test_key_metric_mode_min_pt(self, mock_file_system, base_recipe_params, simple_model):
+        recipe = FedAvgRecipe(
+            name="test_fedavg_key_metric_mode_min",
+            model=simple_model,
+            key_metric="eval_loss",
+            key_metric_mode="min",
+            **base_recipe_params,
+        )
+
+        model_selector = get_model_selector(recipe)
+        assert isinstance(model_selector, IntimeModelSelector)
+        assert model_selector.key_metric == "eval_loss"
+        assert model_selector.negate_key_metric is True
+        assert recipe.key_metric_mode == "min"
+
+    def test_key_metric_mode_rejects_invalid_value(self, mock_file_system, base_recipe_params, simple_model):
+        with pytest.raises(ValueError, match="key_metric_mode"):
+            FedAvgRecipe(
+                name="test_fedavg_invalid_key_metric_mode",
+                model=simple_model,
+                key_metric_mode="median",
+                **base_recipe_params,
+            )
+
+    def test_key_metric_mode_is_inferred_from_matching_stop_condition(
+        self, mock_file_system, base_recipe_params, simple_model
+    ):
+        recipe = FedAvgRecipe(
+            name="test_fedavg_inferred_key_metric_mode",
+            model=simple_model,
+            key_metric="loss",
+            stop_cond="loss <= 0.2",
+            **base_recipe_params,
+        )
+
+        model_selector = get_model_selector(recipe)
+        assert recipe.key_metric_mode == "min"
+        assert model_selector.negate_key_metric is True
+
+    def test_matching_stop_condition_rejects_conflicting_key_metric_mode(
+        self, mock_file_system, base_recipe_params, simple_model
+    ):
+        with pytest.raises(ValueError, match="both use metric 'loss'.*implies mode 'min'"):
+            FedAvgRecipe(
+                name="test_fedavg_conflicting_key_metric_mode",
+                model=simple_model,
+                key_metric="loss",
+                key_metric_mode="max",
+                stop_cond="loss <= 0.2",
+                **base_recipe_params,
+            )
+
+    def test_different_selection_and_stop_metrics_are_supported(
+        self, mock_file_system, base_recipe_params, simple_model
+    ):
+        recipe = FedAvgRecipe(
+            name="test_fedavg_different_selection_and_stop_metrics",
+            model=simple_model,
+            key_metric="accuracy",
+            key_metric_mode="max",
+            stop_cond="loss <= 0.2",
+            **base_recipe_params,
+        )
+
+        model_selector = get_model_selector(recipe)
+        controller = get_server_controller(recipe)
+        assert recipe.key_metric_mode == "max"
+        assert model_selector.key_metric == "accuracy"
+        assert model_selector.negate_key_metric is False
+        assert controller.stop_condition[0] == "loss"
+
+    def test_base_fed_job_rejects_invalid_key_metric_mode(self):
+        with pytest.raises(ValueError, match="key_metric_mode must be 'min' or 'max'"):
+            BaseFedJob(key_metric_mode="median")
 
     def test_metrics_writer_does_not_copy_policy_from_custom_selector(self):
         key_metric = "custom_score"
@@ -415,10 +528,7 @@ class TestFedAvgRecipe:
         from nvflare.fuel.utils.constants import FrameworkType
         from nvflare.recipe import FedAvgRecipe as UnifiedFedAvgRecipe
 
-        with (
-            patch("nvflare.job_config.script_runner.optional_import", return_value=(None, True)),
-            pytest.warns(UserWarning, match="default persistors do not currently create"),
-        ):
+        with pytest.warns(UserWarning, match="default persistors do not currently create"):
             recipe = UnifiedFedAvgRecipe(
                 name="test_tf_best_filename_warning",
                 framework=FrameworkType.TENSORFLOW,
@@ -478,7 +588,7 @@ class TestFedAvgRecipe:
 
 
 class TestFedAvgRecipeKeyMetricVariants:
-    """Test key_metric passthrough for NumPy FedAvg recipes."""
+    """Test key_metric passthrough for framework recipe variants."""
 
     def test_key_metric_passthrough_numpy(self, mock_file_system):
         key_metric = "val_loss"
@@ -493,6 +603,88 @@ class TestFedAvgRecipeKeyMetricVariants:
         model_selector = get_model_selector(recipe)
         assert isinstance(model_selector, IntimeModelSelector)
         assert model_selector.key_metric == key_metric
+        assert model_selector.negate_key_metric is False
+        assert recipe.key_metric_mode == "max"
+
+    def test_key_metric_mode_min_numpy(self, mock_file_system):
+        recipe = NumpyFedAvgRecipe(
+            name="test_numpy_key_metric_mode_min",
+            model=[1.0, 2.0, 3.0],
+            min_clients=2,
+            train_script="mock_train_script.py",
+            key_metric="val_loss",
+            key_metric_mode="min",
+        )
+
+        model_selector = get_model_selector(recipe)
+        assert isinstance(model_selector, IntimeModelSelector)
+        assert model_selector.key_metric == "val_loss"
+        assert model_selector.negate_key_metric is True
+        assert recipe.key_metric_mode == "min"
+
+    def test_key_metric_mode_min_sklearn(self, mock_file_system):
+        recipe = SklearnFedAvgRecipe(
+            name="test_sklearn_key_metric_mode_min",
+            min_clients=2,
+            model_params={"n_classes": 2},
+            train_script="mock_train_script.py",
+            key_metric="val_loss",
+            key_metric_mode="min",
+        )
+
+        model_selector = get_model_selector(recipe)
+        assert isinstance(model_selector, IntimeModelSelector)
+        assert model_selector.key_metric == "val_loss"
+        assert model_selector.negate_key_metric is True
+        assert recipe.key_metric_mode == "min"
+
+    def test_key_metric_mode_min_kmeans(self, mock_file_system):
+        recipe = KMeansFedAvgRecipe(
+            name="test_kmeans_key_metric_mode_min",
+            min_clients=2,
+            n_clusters=3,
+            train_script="mock_train_script.py",
+            key_metric="inertia",
+            key_metric_mode="min",
+        )
+
+        model_selector = get_model_selector(recipe)
+        assert isinstance(model_selector, IntimeModelSelector)
+        assert model_selector.key_metric == "inertia"
+        assert model_selector.negate_key_metric is True
+        assert recipe.key_metric_mode == "min"
+
+    def test_key_metric_mode_min_svm(self, mock_file_system):
+        recipe = SVMFedAvgRecipe(
+            name="test_svm_key_metric_mode_min",
+            min_clients=2,
+            train_script="mock_train_script.py",
+            key_metric="hinge_loss",
+            key_metric_mode="min",
+        )
+
+        model_selector = get_model_selector(recipe)
+        assert isinstance(model_selector, IntimeModelSelector)
+        assert model_selector.key_metric == "hinge_loss"
+        assert model_selector.negate_key_metric is True
+        assert recipe.key_metric_mode == "min"
+
+    def test_key_metric_mode_min_tf(self, mock_file_system, monkeypatch):
+        TFFedAvgRecipe = load_tf_fedavg_recipe(monkeypatch)
+        recipe = TFFedAvgRecipe(
+            name="test_tf_key_metric_mode_min",
+            min_clients=2,
+            train_script="mock_train_script.py",
+            model_persistor=DummyPersistor(),
+            key_metric="val_loss",
+            key_metric_mode="min",
+        )
+
+        model_selector = get_model_selector(recipe)
+        assert isinstance(model_selector, IntimeModelSelector)
+        assert model_selector.key_metric == "val_loss"
+        assert model_selector.negate_key_metric is True
+        assert recipe.key_metric_mode == "min"
 
 
 class TestNumpyFedAvgRecipe:
@@ -1202,10 +1394,9 @@ class TestFedAvgRecipeExternalProcessStartup:
 
         assert train_executor["path"].endswith(".ClientAPIExecutor")
         assert train_executor_args["execution_mode"] == expected_mode
-        assert not any(
-            "LauncherExecutor" in component.get("path", "") or "Pipe" in component.get("path", "")
-            for component in client_config.get("components", [])
-        )
+        component_ids = {component["id"] for component in client_config.get("components", [])}
+        assert "launcher" not in component_ids
+        assert "pipe" not in component_ids
         if launch_external_process:
             assert train_executor_args["command"][:2] == ["python3", "-u"]
             assert train_executor_args["command"][-2:] == ["--epochs", "1"]

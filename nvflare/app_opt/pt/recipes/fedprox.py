@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional, Union
+from typing import Any, Literal, Optional, Union
 
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.abstract.aggregator import Aggregator
@@ -53,8 +53,12 @@ class FedProxRecipe(FedAvgRecipe):
         model_locator: Optional custom model locator.
         per_site_config: Deprecated per-site constructor configuration.
         launch_once: Whether an external client process is launched once.
+        launch_timeout: Seconds to wait for an external client process to connect.
         shutdown_timeout: Seconds to wait for client shutdown.
         key_metric: Metric used for best-model selection.
+        key_metric_mode: Whether the key metric should be minimized ("min") or maximized ("max").
+            If omitted and stop_cond uses the same metric, the mode is inferred from its comparison operator;
+            otherwise it defaults to "max".
         stop_cond: Optional early-stopping condition.
         patience: Optional early-stopping patience.
         best_model_filename: Optional best-model filename.
@@ -88,8 +92,10 @@ class FedProxRecipe(FedAvgRecipe):
         model_locator: Optional[ModelLocator] = None,
         per_site_config: Optional[dict[str, dict]] = None,
         launch_once: bool = True,
+        launch_timeout: Optional[float] = 300.0,
         shutdown_timeout: float = 0.0,
         key_metric: str = "accuracy",
+        key_metric_mode: Optional[Literal["min", "max"]] = None,
         stop_cond: Optional[str] = None,
         patience: Optional[int] = None,
         best_model_filename: Optional[str] = None,
@@ -122,8 +128,10 @@ class FedProxRecipe(FedAvgRecipe):
             model_locator=model_locator,
             per_site_config=per_site_config,
             launch_once=launch_once,
+            launch_timeout=launch_timeout,
             shutdown_timeout=shutdown_timeout,
             key_metric=key_metric,
+            key_metric_mode=key_metric_mode,
             stop_cond=stop_cond,
             patience=patience,
             best_model_filename=best_model_filename,
