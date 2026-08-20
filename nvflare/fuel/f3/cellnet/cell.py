@@ -101,6 +101,9 @@ class Adapter:
         # decode so tensors are not downloaded at this hop.
         channel = request.get_header(StreamHeaderKey.CHANNEL)
         topic = request.get_header(StreamHeaderKey.TOPIC)
+        req_id = request.get_header(MessageHeaderKey.REQ_ID, "")
+        secure = request.get_header(MessageHeaderKey.SECURE, False)
+        optional = request.get_header(MessageHeaderKey.OPTIONAL, False)
         passthrough = bool(request.get_header(MessageHeaderKey.PASS_THROUGH, False))
         if channel in self.cell.decode_pass_through_channels:
             passthrough = True
@@ -120,13 +123,26 @@ class Adapter:
                     f"exiting job process to fail the job: {secure_format_exception(ex)}"
                 )
                 os._exit(1)
+            if stream_req_id:
+                self.logger.error(
+                    f"failed to decode streamed request on {channel=}, {topic=}: {secure_format_exception(ex)}"
+                )
+                self._send_response(
+                    make_reply(ReturnCode.PROCESS_EXCEPTION, error="failed to decode streamed request payload"),
+                    stream_req_id,
+                    req_id,
+                    channel,
+                    topic,
+                    origin,
+                    secure,
+                    optional,
+                )
+                return
             raise
         request.set_header(MessageHeaderKey.CHANNEL, channel)
         request.set_header(MessageHeaderKey.TOPIC, topic)
         self.logger.debug(f"Call back on {stream_req_id=}: {channel=}, {topic=}")
 
-        req_id = request.get_header(MessageHeaderKey.REQ_ID, "")
-        secure = request.get_header(MessageHeaderKey.SECURE, False)
         self.logger.debug(f"{stream_req_id=}: on {channel=}, {topic=}")
         response = self.cb(request, *args, **kwargs)
         if isinstance(response, concurrent.futures.Future):

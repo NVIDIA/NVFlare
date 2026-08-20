@@ -2313,10 +2313,11 @@ class TestExecute:
         [
             lambda: None,
             lambda: make_cell_reply(CellReturnCode.TIMEOUT),
+            lambda: make_cell_reply(CellReturnCode.PROCESS_EXCEPTION),
             lambda: make_cell_reply(CellReturnCode.OK, body={MsgKey.REPLY_TOPIC: Topic.TASK_FAILED}),
             lambda: make_cell_reply(CellReturnCode.OK, body="bad-body"),
         ],
-        ids=["no_reply", "cell_timeout", "not_accepted", "bad_body"],
+        ids=["no_reply", "cell_timeout", "decode_failure", "not_accepted", "bad_body"],
     )
     def test_task_ready_not_accepted_returns_execution_exception(self, env, reply_factory):
         backend, fl_ctx = _initialized_backend(env)

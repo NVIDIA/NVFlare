@@ -16,15 +16,17 @@ import multiprocessing
 import threading
 import time
 import traceback
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
+import nvflare.fuel.f3.cellnet.cell as cell_module
+from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell, make_reply
-from nvflare.fuel.f3.cellnet.defs import ReturnCode
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.stream_cell import StreamCell
-from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL, STREAM_DATA_TOPIC
+from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL, STREAM_DATA_TOPIC, StreamHeaderKey
 from nvflare.fuel.f3.streaming.stream_types import StreamError, StreamFuture
 from nvflare.fuel.f3.streaming.tools.utils import TEST_CHANNEL, TEST_TOPIC, make_buffer
 
@@ -134,6 +136,50 @@ def test_incoming_filter_rejection_fails_stream_sender_immediately():
 
         with pytest.raises(StreamError, match="missing client name"):
             future.result(timeout=2.0)
+    finally:
+        sender.stop()
+        server.stop()
+
+
+def test_streamed_request_decode_failure_returns_process_exception(monkeypatch):
+    port = get_open_ports(1)[0]
+    server_name = "stream_decode_failure_server"
+    sender_name = "stream_decode_failure_sender"
+    root_url = f"tcp://localhost:{port}"
+    server = Cell(server_name, root_url, secure=False, credentials={})
+    sender = Cell(sender_name, root_url, secure=False, credentials={})
+    topic = "decode_failure"
+    callback = MagicMock(return_value=make_reply(ReturnCode.OK))
+    server.register_request_cb(channel=TEST_CHANNEL, topic=topic, cb=callback)
+    original_decode_payload = cell_module.decode_payload
+
+    def fail_request_decode(message, encoding_key, fobs_ctx):
+        if (
+            message.get_header(StreamHeaderKey.CHANNEL) == TEST_CHANNEL
+            and message.get_header(StreamHeaderKey.TOPIC) == topic
+        ):
+            raise RuntimeError("nested DownloadService request failed")
+        return original_decode_payload(message, encoding_key, fobs_ctx)
+
+    monkeypatch.setattr(cell_module, "decode_payload", fail_request_decode)
+    server.start()
+    sender.start()
+    try:
+        _wait_for_connection(sender, server_name)
+        started = time.monotonic()
+        reply = sender.send_request(
+            channel=TEST_CHANNEL,
+            topic=topic,
+            target=server_name,
+            request=Message({}, {"task": "payload"}),
+            timeout=2.0,
+            reliable=True,
+        )
+
+        assert time.monotonic() - started < 2.0
+        assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.PROCESS_EXCEPTION
+        assert reply.get_header(MessageHeaderKey.ERROR) == "failed to decode streamed request payload"
+        callback.assert_not_called()
     finally:
         sender.stop()
         server.stop()
