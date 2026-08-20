@@ -250,6 +250,25 @@ def test_configured_ipv4_loopback_service_host_is_preserved():
     assert cell_args["internal_listener_host"] == "127.0.0.2"
 
 
+def test_empty_service_host_preserves_wildcard_binding():
+    server = _TestServer()
+
+    with (
+        patch("nvflare.private.fed.server.fed_server.Cell") as cell_cls,
+        patch("nvflare.private.fed.server.fed_server.mpm.add_cleanup_cb"),
+        patch("nvflare.private.fed.server.fed_server.threading.Thread"),
+    ):
+        server.deploy(
+            args=MagicMock(),
+            grpc_args={"service": {"target": ":8002", "scheme": "tcp"}},
+            enable_admin_listener=False,
+        )
+
+    cell_args = cell_cls.call_args.kwargs
+    assert cell_args["root_url"] == ["tcp://0:8002"]
+    assert cell_args["internal_listener_host"] is None
+
+
 def test_abbreviated_ipv4_loopback_service_host_is_not_exposed():
     server = _TestServer()
 

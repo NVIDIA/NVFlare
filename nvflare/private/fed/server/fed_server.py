@@ -97,8 +97,8 @@ def _parse_ip_address(host: str):
 
 
 def _normalize_loopback_host(host: str) -> str:
-    """Return a loopback bind address for localhost and loopback IP literals."""
-    if not host:
+    """Return a loopback bind address, preserving an empty host as wildcard shorthand."""
+    if host == "":
         return host
     if host.rstrip(".").lower() == "localhost":
         return "127.0.0.1"
