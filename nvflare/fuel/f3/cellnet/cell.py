@@ -24,7 +24,6 @@ from nvflare.apis.signal import Signal
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell, TargetMessage
 from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey, MessagePropKey, MessageType, ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
-from nvflare.fuel.f3.cellnet.registry import Callback, Registry
 from nvflare.fuel.f3.cellnet.utils import decode_payload, encode_payload, make_reply
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.stream_cell import StreamCell
@@ -128,18 +127,15 @@ class Adapter:
 
         req_id = request.get_header(MessageHeaderKey.REQ_ID, "")
         secure = request.get_header(MessageHeaderKey.SECURE, False)
-        optional = request.get_header(MessageHeaderKey.OPTIONAL, False)
         self.logger.debug(f"{stream_req_id=}: on {channel=}, {topic=}")
         response = self.cb(request, *args, **kwargs)
         if isinstance(response, concurrent.futures.Future):
             response.add_done_callback(
-                lambda done: self._send_async_response(
-                    done, stream_req_id, req_id, channel, topic, origin, secure, optional
-                )
+                lambda done: self._send_async_response(done, stream_req_id, req_id, channel, topic, origin, secure)
             )
             return
 
-        self._send_response(response, stream_req_id, req_id, channel, topic, origin, secure, optional)
+        self._send_response(response, stream_req_id, req_id, channel, topic, origin, secure)
 
     def _send_async_response(self, response_future, *reply_args):
         try:
@@ -174,7 +170,7 @@ class Adapter:
             f"streamed response from {self.my_info.fqcn} failed asynchronously: {secure_format_exception(error)}"
         )
 
-    def _send_response(self, response, stream_req_id, req_id, channel, topic, origin, secure, optional):
+    def _send_response(self, response, stream_req_id, req_id, channel, topic, origin, secure):
         self.logger.debug(f"response available: {stream_req_id=}: on {channel=}, {topic=}")
         if not stream_req_id:
             # no need to reply!
@@ -232,24 +228,6 @@ class Cell(StreamCell):
         self.core_cell.update_fobs_context({FOBSContextKey.CELL: self})
         self.decode_pass_through_channels: set = set()  # per-channel opt-in for receiver-side PASS_THROUGH
         self.decode_pass_through_topics: set = set()  # exact (channel, topic) receiver-side opt-in
-        self.streamed_response_error_reg = Registry()
-
-    def register_streamed_response_error_cb(self, channel: str, topic: str, cb, *args, **kwargs):
-        """Register the owner notified when an asynchronous response stream fails."""
-        if not callable(cb):
-            raise ValueError(f"specified streamed response error callback {type(cb)} is not callable")
-        self.streamed_response_error_reg.set(channel, topic, Callback(cb, args, kwargs))
-
-    def handle_streamed_response_error(self, channel: str, topic: str, request: Message, error: Exception):
-        callback = self.streamed_response_error_reg.find(channel, topic)
-        if not callback:
-            return
-        try:
-            callback.cb(request, error, *callback.args, **callback.kwargs)
-        except Exception as ex:
-            self.logger.error(
-                f"streamed response error callback failed on {channel=}, {topic=}: {secure_format_exception(ex)}"
-            )
 
     def update_fobs_context(self, props: dict):
         self.core_cell.update_fobs_context(props)

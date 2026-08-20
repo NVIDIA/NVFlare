@@ -1166,13 +1166,6 @@ class DownloadService:
                     topic=SOURCE_FAILURE_TOPIC,
                     cb=cls._handle_source_failure,
                 )
-                response_error_registrar = getattr(cell, "register_streamed_response_error_cb", None)
-                if callable(response_error_registrar):
-                    response_error_registrar(
-                        channel=OBJ_DOWNLOADER_CHANNEL,
-                        topic=OBJ_DOWNLOADER_TOPIC,
-                        cb=cls._handle_download_response_stream_error,
-                    )
                 cls._initialized_cells[cell] = True
 
     @classmethod
@@ -1850,30 +1843,6 @@ class DownloadService:
         if accepted:
             cls._finish_transaction_if_complete(ref.tx)
         return make_reply(ReturnCode.OK)
-
-    @classmethod
-    def _handle_download_response_stream_error(cls, request: Message, error: Exception) -> None:
-        """Fail the source transaction when a receiver rejects its streamed reply.
-
-        A streamed response is asynchronous relative to ``_handle_download``. If its
-        TxTask fails after the callback returns, the requester cannot send the usual
-        cancel/failed confirmation, so the source transaction must consume that
-        transport failure as terminal receiver truth.
-        """
-        requester = request.get_header(MessageHeaderKey.ORIGIN)
-        payload = request.payload
-        if not requester or not isinstance(payload, dict):
-            return
-        if payload.get(_PropKey.CONFIRM) is not None or payload.get(_PropKey.CANCEL) is True:
-            return
-        rid = payload.get(_PropKey.REF_ID)
-        if not rid:
-            return
-
-        cls._logger.error(
-            f"download response stream for ref {rid} to {requester} failed: {secure_format_exception(error)}"
-        )
-        cls._handle_cancel(rid, requester)
 
     @classmethod
     def _monitor_tx(cls):

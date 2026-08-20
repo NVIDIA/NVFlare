@@ -90,32 +90,6 @@ def test_async_stream_error_does_not_exit_non_server_job(monkeypatch):
     assert exit_calls == []
 
 
-def test_async_stream_error_notifies_response_owner(monkeypatch):
-    reply_future = StreamFuture(stream_id=3)
-    response_error_cb = MagicMock()
-    cell = _async_response_cell(reply_future)
-    cell.handle_streamed_response_error = response_error_cb
-    adapter = Adapter(None, SimpleNamespace(fqcn="site-1.job-id"), cell)
-    request = Message({MessageHeaderKey.ORIGIN: "peer"}, {"ref_id": "ref-1"})
-    monkeypatch.setattr(cell_module, "encode_payload", lambda *args, **kwargs: None)
-
-    adapter._send_response(
-        Message(payload=b"payload"),
-        "stream-id",
-        "request-id",
-        "download",
-        "chunk",
-        "peer",
-        False,
-        False,
-        request,
-    )
-    error = StreamError("receiver stopped stream")
-    reply_future.set_exception(error)
-
-    response_error_cb.assert_called_once_with("download", "chunk", request, error)
-
-
 def test_uncorrelated_blob_size_stream_error_does_not_exit_server_job(monkeypatch):
     sender_cell = MagicMock()
     sender_cell.my_info.fqcn = "server.job-id"
