@@ -119,4 +119,5 @@ Compatibility and Migration Notes
   and ``key_metric_mode="min"`` for lower-is-better metrics. Clients must report
   a pre-training validation metric with the configured name for selection to
   occur; jobs without that metric continue to persist the last global model but
-  do not create ``best_FL_global_model.pt``.
+  do not create ``best_FL_global_model.pt``. Set ``key_metric=None`` to opt out
+  and preserve the pre-2.9 last-model-only behavior.

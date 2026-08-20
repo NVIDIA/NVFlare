@@ -146,6 +146,21 @@ class TestSwarmLearningRecipe:
                 key_metric_mode="median",
             )
 
+    def test_key_metric_none_disables_client_side_best_model_selection(self, mock_file_system, simple_pt_model):
+        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
+
+        recipe = SwarmLearningRecipe(
+            name="test_swarm_without_model_selection",
+            model=simple_pt_model,
+            num_rounds=5,
+            train_script="train.py",
+            min_clients=2,
+            key_metric=None,
+        )
+
+        client_components = recipe._job._deploy_map[ALL_SITES].app_config.components
+        assert "model_selector" not in client_components
+
     def test_weight_diff_with_default_transfer_is_valid(self, mock_file_system, simple_pt_model):
         from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
 
@@ -403,6 +418,8 @@ class TestSwarmLearningRecipeControllerConfig:
             SwarmLearningRecipe(**defaults, client_config_overrides={"executor": object()})
         with pytest.raises(ValueError, match="cannot override recipe-managed fields: min_responses_required"):
             SwarmLearningRecipe(**defaults, client_config_overrides={"min_responses_required": 5})
+        with pytest.raises(ValueError, match="cannot override recipe-managed fields: model_selector"):
+            SwarmLearningRecipe(**defaults, client_config_overrides={"model_selector": None})
         with pytest.raises(TypeError, match="server_config_overrides must be a dict"):
             SwarmLearningRecipe(**defaults, server_config_overrides=[])
         with pytest.raises(TypeError, match="server_config_overrides keys must be strings"):
@@ -600,6 +617,29 @@ class TestSwarmLearningRecipeExport:
         assert selector["path"].endswith(".IntimeModelSelector")
         assert selector["args"]["key_metric"] == "val_loss"
         assert selector["args"]["negate_key_metric"] is True
+
+    def test_export_omits_client_side_best_model_selector_when_disabled(self, tmp_path):
+        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
+
+        train_script = tmp_path / "train.py"
+        train_script.write_text("print('train')\n")
+        recipe = SwarmLearningRecipe(
+            name="swarm_without_best_model",
+            model={"class_path": "torch.nn.Linear", "args": {"in_features": 2, "out_features": 2}},
+            num_rounds=2,
+            train_script=str(train_script),
+            min_clients=2,
+            key_metric=None,
+        )
+
+        export_dir = tmp_path / "job"
+        recipe.export(str(export_dir))
+
+        client_config_path = export_dir / "swarm_without_best_model" / "app" / "config" / "config_fed_client.json"
+        with open(client_config_path, "r") as f:
+            client_config = json.load(f)
+
+        assert all(component["id"] != "model_selector" for component in client_config["components"])
 
     def test_export_nested_relative_ckpt_uses_configured_basename(self, tmp_path, monkeypatch):
         """A nested relative checkpoint is flattened into each client app."""

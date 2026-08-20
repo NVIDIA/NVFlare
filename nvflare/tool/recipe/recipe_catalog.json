@@ -4095,7 +4095,7 @@
           },
           {
             "name": "key_metric",
-            "type": "str",
+            "type": "Optional[str]",
             "required": false,
             "default": "accuracy",
             "kind": "positional_or_keyword"

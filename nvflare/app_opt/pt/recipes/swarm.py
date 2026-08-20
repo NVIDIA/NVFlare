@@ -37,13 +37,13 @@ from nvflare.recipe.utils import merge_config_overrides, validate_aggregator_dat
 
 _RECIPE_MANAGED_SERVER_CONFIG_KEYS = frozenset({"min_clients"})
 _RECIPE_MANAGED_CLIENT_CONFIG_KEYS = frozenset(
-    {"executor", "aggregator", "persistor", "shareable_generator", "min_responses_required"}
+    {"executor", "aggregator", "persistor", "shareable_generator", "model_selector", "min_responses_required"}
 )
 
 
 class _SwarmValidator(BaseModel):
     initial_ckpt: Optional[str] = None
-    key_metric: str = "accuracy"
+    key_metric: Optional[str] = "accuracy"
     key_metric_mode: Literal["min", "max"] = "max"
 
     @field_validator("initial_ckpt")
@@ -168,7 +168,7 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
             This dictionary is stored in the job definition and must not contain secrets.
         client_config_overrides: Advanced shallow overrides for ``SwarmClientConfig``.
             Values here take precedence over named constructor parameters. Recipe-managed
-            fields (executor, aggregator, persistor, shareable generator, and
+            fields (executor, aggregator, persistor, shareable generator, model selector, and
             ``min_responses_required``) cannot be replaced through this dictionary; use
             ``BaseSwarmLearningRecipe`` for custom components or quorum settings.
             This dictionary is stored in the job definition and must not contain secrets.
@@ -181,9 +181,9 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
             ``aggregation_format=ExchangeFormat.PYTORCH`` to take effect. Defaults to False.
         key_metric: Metric used to determine the best global model. If validation metrics are
             a dictionary, this selects the metric used by the client-side model selector.
-            Defaults to "accuracy".
+            Set to ``None`` to disable best-model selection. Defaults to "accuracy".
         key_metric_mode: Whether lower ("min") or higher ("max") values of ``key_metric``
-            indicate a better model. Defaults to "max".
+            indicate a better model. Ignored when ``key_metric`` is ``None``. Defaults to "max".
 
     Example:
         Using nn.Module instance:
@@ -241,7 +241,7 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
         client_config_overrides: Optional[Dict[str, Any]] = None,
         aggregation_format: ExchangeFormat = ExchangeFormat.NUMPY,
         enable_tensor_disk_offload: bool = False,
-        key_metric: str = "accuracy",
+        key_metric: Optional[str] = "accuracy",
         key_metric_mode: Literal["min", "max"] = "max",
     ):
         _SwarmValidator(
@@ -380,10 +380,6 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
                 allow_numpy_conversion=aggregation_format != ExchangeFormat.PYTORCH,
             ),
             "shareable_generator": SimpleModelShareableGenerator(),
-            "model_selector": IntimeModelSelector(
-                key_metric=key_metric,
-                negate_key_metric=key_metric_mode == "min",
-            ),
             "enable_tensor_disk_offload": enable_tensor_disk_offload,
             "memory_gc_rounds": memory_gc_rounds,
             "cuda_empty_cache": cuda_empty_cache,
@@ -395,6 +391,11 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
                 round_timeout if final_result_ack_timeout is None else final_result_ack_timeout
             ),
         }
+        if key_metric is not None:
+            client_config_args["model_selector"] = IntimeModelSelector(
+                key_metric=key_metric,
+                negate_key_metric=key_metric_mode == "min",
+            )
         if learn_task_abort_timeout is not None:
             client_config_args["learn_task_abort_timeout"] = learn_task_abort_timeout
         client_config_args = merge_config_overrides(
