@@ -1878,6 +1878,13 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             # cannot find next leg endpoint
             self.log_error(f"cannot forward {msg_type}: no path", message)
 
+        channel = message.get_header(MessageHeaderKey.CHANNEL, "")
+        topic = message.get_header(MessageHeaderKey.TOPIC, "")
+        error_handler = self.error_handler_reg.find(channel, topic)
+        if error_handler:
+            assert isinstance(error_handler, Callback)
+            self._try_cb(message, error_handler.cb, err, *error_handler.args, **error_handler.kwargs)
+
         if msg_type == MessageType.REQ:
             reply_expected = message.get_header(MessageHeaderKey.REPLY_EXPECTED, False)
             if not reply_expected:
