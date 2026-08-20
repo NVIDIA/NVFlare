@@ -949,6 +949,63 @@ class ExplicitMetadata(Recipe):
     assert entry["privacy"] == ["a_privacy", "z_privacy"]
 
 
+def test_recipe_catalog_generation_infers_only_unresolved_core_metadata(tmp_path, monkeypatch):
+    from nvflare.tool.recipe import recipe_cli
+
+    package_root = tmp_path / "nvflare" / "fake" / "recipes"
+    package_root.mkdir(parents=True)
+    (package_root / "kmeans_with_he_dynamic.py").write_text(
+        """from nvflare.recipe.spec import Recipe
+
+class DynamicMetadata(Recipe):
+    algorithm = compute_algorithm()
+    aggregation = compute_aggregation()
+    state_exchange = compute_state_exchange()
+    privacy = compute_privacy()
+""",
+        encoding="utf-8",
+    )
+    (package_root / "kmeans_with_he_none.py").write_text(
+        """from nvflare.recipe.spec import Recipe
+
+class ExplicitNoneMetadata(Recipe):
+    recipe_algorithm = None
+    recipe_aggregation = None
+    recipe_state_exchange = None
+    recipe_privacy = None
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(recipe_cli, "_NVFLARE_PACKAGE_ROOT", tmp_path / "nvflare")
+    monkeypatch.setattr(
+        recipe_cli,
+        "_RECIPE_PACKAGE_ROOTS",
+        [{"package": "nvflare.fake.recipes", "framework": "sklearn"}],
+    )
+    monkeypatch.setattr(recipe_cli, "_DOCUMENTED_RECIPE_SPECS", {})
+
+    catalog = {entry["name"]: entry for entry in recipe_cli._discover_recipe_catalog()}
+
+    assert {
+        key: catalog["kmeans-with-he-dynamic-sklearn"][key]
+        for key in ("algorithm", "aggregation", "state_exchange", "privacy")
+    } == {
+        "algorithm": "kmeans",
+        "aggregation": "cluster_centers",
+        "state_exchange": "cluster_centers",
+        "privacy": ["homomorphic_encryption"],
+    }
+    assert {
+        key: catalog["kmeans-with-he-none-sklearn"][key]
+        for key in ("algorithm", "aggregation", "state_exchange", "privacy")
+    } == {
+        "algorithm": None,
+        "aggregation": None,
+        "state_exchange": None,
+        "privacy": [],
+    }
+
+
 def test_documented_recipe_specs_do_not_clear_omitted_discovered_metadata(monkeypatch):
     from nvflare.tool.recipe import recipe_cli
 

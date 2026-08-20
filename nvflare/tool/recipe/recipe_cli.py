@@ -104,6 +104,7 @@ _CORE_FRAMEWORK_SUPPORT = {
 _NVFLARE_PACKAGE_ROOT = Path(__file__).resolve().parents[2]
 _RECIPE_BASE_CLASS = ("nvflare.recipe.spec", "Recipe")
 _STATIC_ATTR_MISSING = object()
+_STATIC_ATTR_UNRESOLVED = object()
 _DOCUMENTED_RECIPE_SPECS = {
     "fedavg-pt": {
         "module": "nvflare.app_opt.pt.recipes.fedavg",
@@ -559,28 +560,29 @@ def _static_class_attr(class_node: ast.ClassDef, *names):
             continue
         value_node = assignments[name]
         try:
-            value = ast.literal_eval(value_node)
-            if value is not None:
-                return value
-            unresolved = True
+            return ast.literal_eval(value_node)
         except (ValueError, TypeError):
             unresolved = True
             continue
-    return None if unresolved else _STATIC_ATTR_MISSING
+    return _STATIC_ATTR_UNRESOLVED if unresolved else _STATIC_ATTR_MISSING
 
 
 def _static_recipe_attrs(module_name: str, class_name: str, attr_aliases: dict = None) -> dict:
     attr_aliases = _RECIPE_DETAIL_ATTR_ALIASES if attr_aliases is None else attr_aliases
     attrs = {}
+    resolved_attrs = set()
     for mro_module, mro_class in _static_class_mro(module_name, class_name):
         _, _, class_node = _static_class_node(mro_module, mro_class)
         if class_node is None:
             continue
         for name, aliases in attr_aliases.items():
-            if name in attrs:
+            if name in resolved_attrs:
                 continue
             value = _static_class_attr(class_node, *aliases)
-            if value is not _STATIC_ATTR_MISSING:
+            if value is _STATIC_ATTR_MISSING:
+                continue
+            resolved_attrs.add(name)
+            if value is not _STATIC_ATTR_UNRESOLVED:
                 attrs[name] = _json_safe_value(value)
     return {name: attrs[name] for name in attr_aliases if name in attrs}
 
