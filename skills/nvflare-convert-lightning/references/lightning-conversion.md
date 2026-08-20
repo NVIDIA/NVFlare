@@ -214,6 +214,34 @@ unless the user explicitly requests one global training policy. Do not move
 those values into recipe `model` args just because architecture args must be
 shared.
 
+If such a local value is a persistent model parameter or buffer, recomputing it
+before the round loop does not keep it local: the patched trainer sends its full
+`state_dict()` and the received model can overwrite the value. The FedAvg recipe
+`exclude_vars` argument is only an aggregation rule; it is not a bidirectional
+payload filter and is not a locality or privacy control.
+
+For a FedAvg `train` task, keep an explicitly named state key local only by
+filtering both network directions with separate filters:
+
+```python
+from nvflare.app_common.filters import ExcludeVars
+
+recipe.add_server_output_filter(ExcludeVars([local_key]), tasks=["train"])
+recipe.add_client_output_filter(ExcludeVars([local_key]), tasks=["train"])
+```
+
+Pair those filters with
+`flare.patch(trainer, load_state_dict_strict=False)`, because each received
+global model intentionally omits the local key. Non-strict loading does not
+suppress outbound state by itself. Apply the same two-direction rule to every
+model-bearing task selected by a different recipe. Verify exported server and
+client filter configuration, then verify that the exact key is absent from both
+directions—including the initial and later server-to-client payloads—and the
+site-computed value is not overwritten in the first or later rounds. If the
+selected recipe does not expose supported filters for every
+model-bearing direction, ask or fail closed. Do not substitute aggregation-only
+`exclude_vars` or silently exchange the value.
+
 Report the split policy, seed, and where local training-policy values are
 computed.
 
@@ -228,8 +256,8 @@ remain shared only when that matches the source's validation/test semantics.
 
 Follow the shared model-config and construction-consistency rule in
 `../../nvflare-shared/references/conversion-workflow.md` ("Recipe Model Config"):
-same class and constructor args on server and client, an allowed recipe model
-form, and derive-or-ask/fail-closed for required values.
+same class and constructor args on server and client, explicit config whenever
+reconstruction needs a constructor value, and derive-or-ask/fail-closed for it.
 
 Lightning-specific delta: the exchanged unit is the whole `LightningModule`
 managed by the patched trainer, so construct the identical `LightningModule` on
