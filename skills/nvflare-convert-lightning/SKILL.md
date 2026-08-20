@@ -18,12 +18,12 @@ metadata:
 
 ## Use When
 
-Use when the user asks to convert PyTorch Lightning code into an NVFLARE
-federated training job: a `LightningModule`, `LightningDataModule`, a `Trainer`
-fit/validate/test loop, Lightning callbacks, checkpointing, or loggers.
-Supported: the PyTorch recipe family with `flare.patch(trainer)` as the model
-exchange integration, Lightning-native evaluation, custom aggregation through
-the same recipe `aggregator=` hook, and local validation and export.
+Use when the user asks to convert PyTorch Lightning code into an NVFLARE federated
+training job: a `LightningModule`, `LightningDataModule`, a `Trainer` fit/validate/test
+loop, Lightning callbacks, checkpointing, or loggers. Supported: the PyTorch recipe
+family with `flare.patch(trainer)` as the model exchange integration, Lightning-native
+evaluation, custom aggregation through the same recipe `aggregator=` hook, and local
+validation and export.
 
 ## Do Not Use When
 
