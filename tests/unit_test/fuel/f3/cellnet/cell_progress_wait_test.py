@@ -13,20 +13,13 @@
 # limitations under the License.
 
 import logging
-import time
 from unittest.mock import MagicMock
 
-import pytest
-
 import nvflare.fuel.f3.cellnet.cell as cell_module
-import nvflare.fuel.f3.streaming.byte_streamer as byte_streamer_module
 from nvflare.apis.signal import Signal
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
-from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.message import Message
-from nvflare.fuel.f3.streaming.byte_streamer import ByteStreamer, TxTask
-from nvflare.fuel.f3.streaming.stream_types import Stream
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY
 from nvflare.fuel.utils.waiter_utils import WaiterRC
@@ -38,16 +31,6 @@ class _ReplyFuture:
 
     def result(self):
         return None
-
-
-class _OneByteStream(Stream):
-    def __init__(self):
-        super().__init__(size=1, headers={})
-        self.data = b"x"
-
-    def read(self, _size):
-        data, self.data = self.data, b""
-        return data
 
 
 def _make_cell():
@@ -344,79 +327,3 @@ def test_remote_processing_wait_aborted_does_not_call_progress_callback(monkeypa
     assert result.get_header(cell_module.MessageHeaderKey.RETURN_CODE) == ReturnCode.TIMEOUT
     assert progress_wait_cb.call_count == 0
     assert cell.requests_dict == {}
-
-
-@pytest.mark.parametrize("abort", [False, True], ids=["timeout", "abort"])
-def test_unfinished_reliable_request_is_terminal_before_caller_returns(monkeypatch, abort):
-    monkeypatch.setattr(byte_streamer_module.reliable_retry_scheduler, "register", MagicMock())
-    unregister = MagicMock()
-    monkeypatch.setattr(byte_streamer_module.reliable_retry_scheduler, "unregister", unregister)
-    monkeypatch.setattr(byte_streamer_module.reliable_retry_scheduler, "wakeup", MagicMock())
-    monkeypatch.setattr(CommConfigurator, "get_streaming_retry_wait", lambda self, default: 0.01)
-
-    wire_cell = MagicMock()
-    wire_cell.fire_and_forget.return_value = {}
-    task = TxTask(
-        cell=wire_cell,
-        chunk_size=4,
-        channel="task",
-        topic="result_ready",
-        target="site-1",
-        headers={},
-        stream=_OneByteStream(),
-        reliable=True,
-        secure=False,
-        optional=False,
-    )
-    with ByteStreamer.map_lock:
-        ByteStreamer.tx_task_map[task.sid] = task
-
-    try:
-        task.send_loop()
-        assert not task.stream_future.done()
-        assert wire_cell.fire_and_forget.call_count == 1
-
-        cell = _make_cell()
-        cell.send_blob.return_value = task.stream_future
-        cell._future_wait = Cell._future_wait.__get__(cell, Cell)
-        original_cancel = task.cancel
-
-        def cancel_while_waiter_is_owned():
-            if not task.stopped:
-                assert cell.requests_dict
-            original_cancel()
-
-        task.cancel = cancel_while_waiter_is_owned
-        abort_signal = Signal()
-        timeout = 0.01
-        if abort:
-            abort_signal.trigger("stop")
-            timeout = 1.0
-
-        result = cell._send_one_request(
-            channel="task",
-            target="site-1",
-            topic="result_ready",
-            request=Message(headers={}, payload=None),
-            timeout=timeout,
-            abort_signal=abort_signal,
-            reliable=True,
-        )
-
-        assert result.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.TIMEOUT
-        assert task.stopped is True
-        assert task.stream_future.cancelled() is True
-        assert task.pending_messages == {}
-        assert cell.requests_dict == {}
-        with ByteStreamer.map_lock:
-            assert task.sid not in ByteStreamer.tx_task_map
-        unregister.assert_called_once_with(task)
-
-        wire_sends_at_return = wire_cell.fire_and_forget.call_count
-        time.sleep(0.02)
-        assert task.retry_task() is None
-        assert wire_cell.fire_and_forget.call_count == wire_sends_at_return
-    finally:
-        task.cancel()
-        with ByteStreamer.map_lock:
-            ByteStreamer.tx_task_map.pop(task.sid, None)

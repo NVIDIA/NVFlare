@@ -347,7 +347,6 @@ class CellClientAPI(APISpec):
                 target=self._cj_fqcn,
                 request=new_cell_message({}, {MsgKey.SESSION_ID: self._session_id}),
                 timeout=min(_HELLO_RETRY_INTERVAL, remaining),
-                reliable=True,
             )
             rc = None if reply is None else reply.get_header(MessageHeaderKey.RETURN_CODE)
             body = None if reply is None else reply.payload
@@ -533,7 +532,6 @@ class CellClientAPI(APISpec):
                     num_receivers=len(source_receiver_ids) if source_receiver_ids else 1,
                     receiver_ids=source_receiver_ids,
                     fobs_ctx_props=fobs_ctx_props,
-                    reliable=True,
                 )
                 self._check_result_accepted(reply)
             result_accepted = True

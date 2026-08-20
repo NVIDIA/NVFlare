@@ -684,8 +684,7 @@ class _ScriptedCell:
     def register_request_cb(self, channel, topic, cb):
         self.callbacks[(channel, topic)] = cb
 
-    def send_request(self, channel, target, topic, request, timeout, secure, optional, abort_signal, reliable=None):
-        assert reliable is True
+    def send_request(self, channel, target, topic, request, timeout, secure, optional, abort_signal):
         self.requests.append(request.payload)
         if not self._replies:
             raise AssertionError("scripted cell ran out of replies")

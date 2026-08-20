@@ -17,7 +17,7 @@ import copy
 import os
 import threading
 import uuid
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Union
 
 from nvflare.apis.fl_constant import ServerCommandNames
 from nvflare.apis.signal import Signal
@@ -380,10 +380,7 @@ class Cell(StreamCell):
 
         return result
 
-    def _get_result(self, req_id, send_future=None):
-        """Release a request waiter only after its unfinished transmit is terminal."""
-        if send_future is not None and not send_future.done():
-            send_future.cancel()
+    def _get_result(self, req_id):
         waiter = self.requests_dict.pop(req_id)
         return waiter.result
 
@@ -462,7 +459,6 @@ class Cell(StreamCell):
         num_receivers=1,
         receiver_ids=None,
         fobs_ctx_props: dict = None,
-        reliable: Optional[bool] = None,
     ):
         """Stream one request to the target
 
@@ -477,8 +473,6 @@ class Cell(StreamCell):
             abort_signal: signal to abort the message
             fobs_ctx_props: optional call-scoped FOBS context properties used only
                 while serializing this request
-            reliable: whether the request stream requires receiver acknowledgements
-                and retry. If not specified, use the streaming configuration.
 
         Returns: reply data
 
@@ -491,16 +485,7 @@ class Cell(StreamCell):
             fobs_ctx_props=fobs_ctx_props,
         )
         return self._send_one_request(
-            channel,
-            target,
-            topic,
-            request,
-            timeout,
-            secure,
-            optional,
-            abort_signal,
-            progress_wait_cb,
-            reliable=reliable,
+            channel, target, topic, request, timeout, secure, optional, abort_signal, progress_wait_cb
         )
 
     def _send_one_request(
@@ -514,7 +499,6 @@ class Cell(StreamCell):
         optional=False,
         abort_signal=None,
         progress_wait_cb=None,
-        reliable: Optional[bool] = None,
     ):
         req_id = str(uuid.uuid4())
         request.add_headers({StreamHeaderKey.STREAM_REQ_ID: req_id})
@@ -524,18 +508,10 @@ class Cell(StreamCell):
 
         waiter = SimpleWaiter(req_id=req_id, target=target, result=make_reply(ReturnCode.TIMEOUT))
         self.requests_dict[req_id] = waiter
-        future = None
-        sending_complete = False
 
         try:
             future = self.send_blob(
-                channel=channel,
-                topic=topic,
-                target=target,
-                message=request,
-                secure=secure,
-                optional=optional,
-                reliable=reliable,
+                channel=channel, topic=topic, target=target, message=request, secure=secure, optional=optional
             )
 
             self.logger.debug(f"{req_id=}: Waiting starts")
@@ -553,7 +529,7 @@ class Cell(StreamCell):
                     self.logger.debug(f"{req_id=}: receiver rejected stream: {stream_error}")
                 else:
                     self.logger.debug(f"{req_id=}: sending timeout {timeout=}")
-                return self._get_result(req_id, future)
+                return self._get_result(req_id)
 
             self.logger.debug(f"{req_id=}: sending complete")
 
@@ -634,8 +610,6 @@ class Cell(StreamCell):
             return self._get_result(req_id)
         except Exception as ex:
             self.logger.error(f"exception sending request: {secure_format_exception(ex)}")
-            if future is not None and not sending_complete and not future.done():
-                future.cancel()
             self.requests_dict.pop(req_id, None)
             raise ex
 

@@ -1177,8 +1177,6 @@ class TestInit:
             session_ready = [r for r in env.requests if r[0] == Topic.SESSION_READY][0]
             assert session_ready[1] == CJ_FQCN
             assert session_ready[2] == {MsgKey.SESSION_ID: SESSION_ID}
-            session_ready_index = next(i for i, request in enumerate(env.requests) if request[0] == Topic.SESSION_READY)
-            assert env.request_kwargs[session_ready_index]["reliable"] is True
             assert api._session_id == SESSION_ID
             assert api._memory_gc_rounds == 3
             assert api._cuda_empty_cache is True

@@ -114,7 +114,6 @@ class TestDownloadObject:
         assert not consumer.failed
         assert consumer.consumed_data == [b"chunk1"]
         assert cell.send_request.call_count == 2
-        assert all(call.kwargs["reliable"] is True for call in cell.send_request.call_args_list)
 
     def test_multi_chunk_download(self, cell, consumer):
         """Test download with multiple chunks before EOF."""

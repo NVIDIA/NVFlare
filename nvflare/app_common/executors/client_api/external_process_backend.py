@@ -1276,7 +1276,6 @@ class ExternalProcessBackend(CellBackendBase):
                     FOBSContextKey.STREAM_PROGRESS_CB: lambda **_kwargs: None,
                     RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY: _on_transaction_created,
                 },
-                reliable=True,
             )
         except BaseException:
             cause = cancel.value

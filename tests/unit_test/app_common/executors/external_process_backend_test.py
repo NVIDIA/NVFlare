@@ -1655,7 +1655,6 @@ class TestExecute:
             # the direct task Shareable; there is no second payload-attempt envelope.
             assert env.cell.sent_kwargs[0]["receiver_ids"] == (trainer.trainer_fqcn,)
             assert "fobs_ctx_props" in env.cell.sent_kwargs[0]
-            assert env.cell.sent_kwargs[0]["reliable"] is True
             assert task.get_header(FLMetaKey.JOB_ID) == "job-1"
             assert task.get_header(FLMetaKey.SITE_NAME) == "site-1"
             # RESULT_READY carried a direct Shareable and was control-acked.
