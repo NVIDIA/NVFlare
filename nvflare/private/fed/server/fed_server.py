@@ -214,7 +214,7 @@ class BaseServer(ABC):
         if enable_admin_listener:
             admin_port = int(grpc_args.get("admin_port", fl_port))
             configured_admin_host = grpc_args.get("admin_host")
-            admin_host = _normalize_admin_host(configured_admin_host) if configured_admin_host else url_host
+            admin_host = url_host if configured_admin_host is None else _normalize_admin_host(configured_admin_host)
             if admin_port == fl_port and admin_host != url_host:
                 raise ValueError(
                     "admin_port must differ from the FL service port when admin_host uses a different bind host"

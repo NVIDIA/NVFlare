@@ -174,7 +174,8 @@ def test_admin_host_requires_distinct_port_when_fl_listener_is_external():
         )
 
 
-def test_whitespace_only_admin_host_is_rejected():
+@pytest.mark.parametrize("admin_host", ["", "   "])
+def test_empty_admin_host_is_rejected(admin_host):
     server = _TestServer()
 
     with pytest.raises(ValueError, match="admin_host must not be empty"):
@@ -182,7 +183,7 @@ def test_whitespace_only_admin_host_is_rejected():
             args=MagicMock(),
             grpc_args={
                 "service": {"target": "localhost:8002", "scheme": "tcp"},
-                "admin_host": "   ",
+                "admin_host": admin_host,
                 "admin_port": 8003,
             },
             secure_train=False,
