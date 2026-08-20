@@ -39,6 +39,7 @@ VALIDATION_FREQUENCY = 1_000
 LOG_FREQUENCY = 100
 CALL_TIMEOUT = 600.0
 TRAINING_SEED = 42
+MODEL_FILE_NAMES = {"image": "bottom_model.pt", "label": "top_model.pt"}
 
 
 def _seed_everything(seed: int) -> None:
@@ -51,11 +52,21 @@ def _seed_everything(seed: int) -> None:
     torch.backends.cudnn.benchmark = False
 
 
+def _to_wire(tensor: torch.Tensor) -> torch.Tensor:
+    """Encode a tensor once for cross-site transfer."""
+    return tensor.detach().to(device="cpu", dtype=torch.float16)
+
+
+def _from_wire(tensor: torch.Tensor, device: torch.device) -> torch.Tensor:
+    """Restore a transferred tensor to the local training precision."""
+    return tensor.to(device=device, dtype=torch.float32)
+
+
 class SplitNNClient:
     """Run the model half assigned to this site.
 
-    ``site-1`` is configured with the image role and ``site-2`` with the label
-    role. The methods are deliberately ordinary tensor-in/tensor-out methods;
+    The recipe assigns one site the image role and another the label role.
+    The methods are deliberately ordinary tensor-in/tensor-out methods;
     Collab API publishes them without application-level message conversion.
     """
 
@@ -66,6 +77,7 @@ class SplitNNClient:
         self.logger = get_obj_logger(self)
 
         self.role = None
+        self.label_site = None
         self.model = None
         self.optimizer = None
         self.criterion = None
@@ -81,6 +93,7 @@ class SplitNNClient:
         self.dataset_root = collab.get_app_prop("dataset_root")
         self.intersection_file = collab.get_app_prop("intersection_file")
         self.role = collab.get_app_prop("role")
+        self.label_site = collab.get_app_prop("label_site")
         if self.role not in ("image", "label"):
             raise ValueError(f"[{collab.site_name}] expected configured role 'image' or 'label', got {self.role!r}")
 
@@ -108,24 +121,21 @@ class SplitNNClient:
             raise RuntimeError(f"[{collab.site_name}] operation requires role {expected!r}, got {self.role!r}")
 
     def _get_label_client(self):
-        # collab.clients contains callable proxies for the participating sites.
-        # Calling one invokes a published method on that remote client.
-        clients = {client.name: client for client in collab.clients}
-        label_client = clients.get("site-2")
-        if label_client is None:
-            raise RuntimeError("SplitNN requires label-side client 'site-2'")
-        return label_client
+        # get_clients validates the configured site name and returns its proxy.
+        # Calling the proxy invokes a published method on that remote client.
+        return collab.get_clients([self.label_site])[0]
 
-    def _validate_splitnn(self, label_client, step, test_size, batch_size, call_timeout, writer):
+    def _validate_splitnn(self, label_client, step, writer):
         loss_sum = 0.0
         correct = 0
         count = 0
-        num_batches = math.ceil(test_size / batch_size)
+        test_size = len(self.valid_dataset)
+        num_batches = math.ceil(test_size / BATCH_SIZE)
         for batch_indices in np.array_split(np.arange(test_size), num_batches):
             activations = self._validation_forward(batch_indices)
             # Native tensors, indices, and dict results need no application-level
             # DXO, Shareable, or serialization conversion.
-            metrics = label_client(timeout=call_timeout).validation_metrics(batch_indices, activations)
+            metrics = label_client(timeout=CALL_TIMEOUT).validation_metrics(batch_indices, activations)
             loss_sum += metrics["loss"] * metrics["count"]
             correct += metrics["correct"]
             count += metrics["count"]
@@ -139,17 +149,10 @@ class SplitNNClient:
         return result
 
     # @collab.publish exposes this method to remote Collab callers. The
-    # server invokes it on site-1, which then owns the complete training loop.
+    # server invokes it on the image site, which then owns the complete training loop.
     @collab.publish
     def run_splitnn(self):
         train_size = len(self.train_dataset)
-        test_size = len(self.valid_dataset)
-        num_steps = NUM_STEPS
-        batch_size = BATCH_SIZE
-        validation_frequency = VALIDATION_FREQUENCY
-        call_timeout = CALL_TIMEOUT
-        seed = TRAINING_SEED
-        log_frequency = LOG_FREQUENCY
         self._require_role("image")
         label_client = self._get_label_client()
         # The Collab context provides the current job ID and its site-local run directory.
@@ -157,17 +160,17 @@ class SplitNNClient:
         tensorboard_dir = os.path.join(run_dir, "tensorboard")
         os.makedirs(tensorboard_dir, exist_ok=True)
         writer = SummaryWriter(log_dir=tensorboard_dir)
-        rng = np.random.RandomState(seed)
+        rng = np.random.RandomState(TRAINING_SEED)
         gradients = None
         last_metrics = None
         steps_completed = 0
 
         self.logger.info(
-            f"starting image-side SplitNN loop for {num_steps} steps with batch size {batch_size}; "
+            f"starting image-side SplitNN loop for {NUM_STEPS} steps with batch size {BATCH_SIZE}; "
             f"TensorBoard logs: {tensorboard_dir}"
         )
         try:
-            for step in range(num_steps):
+            for step in range(NUM_STEPS):
                 # is_aborted lets long-running published methods stop cooperatively.
                 if collab.is_aborted:
                     self.logger.info("SplitNN run aborted")
@@ -175,45 +178,40 @@ class SplitNNClient:
 
                 if gradients is not None:
                     self._backward(gradients)
-                batch_indices = rng.randint(0, train_size, size=batch_size)
+                batch_indices = rng.randint(0, train_size, size=BATCH_SIZE)
                 activations = self._forward(batch_indices)
                 if activations is None:
                     self.logger.info("SplitNN run aborted during image-side forward pass")
                     break
-                # This is the key client-to-client interaction: site-1 directly
-                # consumes the tensor tuple returned by site-2.
-                gradients, metrics = label_client(timeout=call_timeout).compute_loss(batch_indices, activations)
+                # This is the key client-to-client interaction: the image site directly
+                # consumes the tensor tuple returned by the label site.
+                gradients, metrics = label_client(timeout=CALL_TIMEOUT).compute_loss(batch_indices, activations)
                 last_metrics = metrics
                 steps_completed = step + 1
                 writer.add_scalar("train_loss", metrics["loss"], step)
                 writer.add_scalar("train_accuracy", metrics["accuracy"], step)
-                if step % log_frequency == 0:
+                if step % LOG_FREQUENCY == 0:
                     self.logger.info(
-                        f"step {step + 1}/{num_steps}: train loss={metrics['loss']:.4f}, "
+                        f"step {step + 1}/{NUM_STEPS}: train loss={metrics['loss']:.4f}, "
                         f"accuracy={metrics['accuracy']:.4f}"
                     )
-                if validation_frequency > 0 and step % validation_frequency == 0:
-                    self._validate_splitnn(label_client, step, test_size, batch_size, call_timeout, writer)
+                if step % VALIDATION_FREQUENCY == 0:
+                    self._validate_splitnn(label_client, step, writer)
 
             if collab.is_aborted:
                 return {
                     "steps_completed": steps_completed,
-                    "model_path": None,
+                    "model_paths": None,
                     "last_metrics": last_metrics,
                 }
 
-            models = {
-                "bottom_model": self.get_model(),
-                "top_model": label_client(timeout=call_timeout).get_model(),
+            model_paths = {
+                "bottom_model": self._save_model(),
+                "top_model": label_client(timeout=CALL_TIMEOUT).save_model(),
             }
-            model_dir = os.path.join(run_dir, "final_model")
-            os.makedirs(model_dir, exist_ok=True)
-            model_path = os.path.join(model_dir, "splitnn_model.pt")
-            torch.save(models, model_path)
-            self.logger.info(f"saved trained SplitNN model to {model_path}")
             return {
                 "steps_completed": steps_completed,
-                "model_path": model_path,
+                "model_paths": model_paths,
                 "last_metrics": last_metrics,
             }
         finally:
@@ -228,11 +226,10 @@ class SplitNNClient:
         self.model.train()
         inputs = self.train_dataset.get_batch(batch_indices).to(self.device)
         self._train_activations = self.model(inputs)
-        cut_activations = self._train_activations.detach().flatten(start_dim=1)
-        cut_activations = cut_activations.to(dtype=torch.float16)
-        return cut_activations.cpu()
+        cut_activations = self._train_activations.flatten(start_dim=1)
+        return _to_wire(cut_activations)
 
-    # Published because site-1 calls this method on label-side site-2.
+    # Published because the image site calls this method on the label site.
     @collab.publish
     def compute_loss(self, batch_indices, activations):
         """Update the label-side model and return cut-layer gradients."""
@@ -243,19 +240,18 @@ class SplitNNClient:
         self.model.train()
         self.optimizer.zero_grad(set_to_none=True)
         labels = self.train_dataset.get_batch(batch_indices).to(self.device)
-        activations = activations.to(device=self.device, dtype=torch.float32).detach().requires_grad_(True)
+        activations = _from_wire(activations, self.device).detach().requires_grad_(True)
         predictions = self.model(activations)
         loss = self.criterion(predictions, labels)
         loss.backward()
 
         if activations.grad is None:
             raise RuntimeError("label-side backward pass did not produce cut-layer gradients")
-        gradients = activations.grad.detach()
+        gradients = activations.grad
         accuracy = predictions.detach().argmax(dim=1).eq(labels).float().mean().item()
         self.optimizer.step()
 
-        gradients = gradients.to(dtype=torch.float16)
-        return gradients.cpu(), {"loss": loss.item(), "accuracy": accuracy}
+        return _to_wire(gradients), {"loss": loss.item(), "accuracy": accuracy}
 
     def _backward(self, gradients):
         """Apply label-side cut-layer gradients to the image-side model."""
@@ -264,7 +260,7 @@ class SplitNNClient:
             raise RuntimeError("backward() called before a successful forward()")
 
         self.optimizer.zero_grad(set_to_none=True)
-        gradients = gradients.to(device=self.device, dtype=torch.float32)
+        gradients = _from_wire(gradients, self.device)
         self._train_activations.backward(gradients.reshape(self._train_activations.shape))
         self.optimizer.step()
         self._train_activations = None
@@ -276,8 +272,7 @@ class SplitNNClient:
         with torch.no_grad():
             inputs = self.valid_dataset.get_batch(batch_indices).to(self.device)
             activations = self.model(inputs).flatten(start_dim=1)
-        activations = activations.to(dtype=torch.float16)
-        return activations.cpu()
+        return _to_wire(activations)
 
     # Published because validation also crosses from site-1 to site-2.
     @collab.publish
@@ -287,14 +282,24 @@ class SplitNNClient:
         self.model.eval()
         with torch.no_grad():
             labels = self.valid_dataset.get_batch(batch_indices).to(self.device)
-            activations = activations.to(device=self.device, dtype=torch.float32)
+            activations = _from_wire(activations, self.device)
             predictions = self.model(activations)
             loss = self.criterion(predictions, labels).item()
             correct = predictions.argmax(dim=1).eq(labels).sum().item()
         return {"loss": loss, "correct": correct, "count": len(labels)}
 
-    # Published so site-1 can collect site-2's final model state.
+    def _save_model(self) -> str:
+        """Persist this site's model half without transferring its parameters."""
+        run_dir = collab.workspace.get_run_dir(collab.fl_ctx.get_job_id())
+        model_dir = os.path.join(run_dir, "final_model")
+        os.makedirs(model_dir, exist_ok=True)
+        model_path = os.path.join(model_dir, MODEL_FILE_NAMES[self.role])
+        torch.save(self.model.state_dict(), model_path)
+        self.logger.info(f"saved trained {self.role}-side model to {model_path}")
+        return model_path
+
+    # Published so the image-side coordinator can request site-local persistence.
     @collab.publish
-    def get_model(self):
-        """Return this site's trained model parameters."""
-        return {name: value.detach().cpu().clone() for name, value in self.model.state_dict().items()}
+    def save_model(self):
+        """Save this site's model half locally and return only its path."""
+        return self._save_model()

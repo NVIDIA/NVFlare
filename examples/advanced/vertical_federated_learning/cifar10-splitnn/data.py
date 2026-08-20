@@ -14,6 +14,8 @@
 
 """Role-specific CIFAR-10 views aligned by prepared PSI artifacts."""
 
+from pathlib import Path
+
 import numpy as np
 import torch
 from torchvision import datasets, transforms
@@ -34,6 +36,13 @@ _TRAIN_TRANSFORM = transforms.Compose(
 )
 _VALID_TRANSFORM = transforms.Compose([transforms.ToTensor(), _NORMALIZE])
 
+INTERSECTION_DIR_NAME = "intersections"
+
+
+def get_intersection_file(split_dir: str | Path, site_name: str) -> Path:
+    """Return the stable prepared intersection path for a site."""
+    return Path(split_dir) / INTERSECTION_DIR_NAME / f"{site_name}.txt"
+
 
 class Cifar10SplitDataset:
     """Expose either images or labels for the same prepared sample indices."""
@@ -45,8 +54,12 @@ class Cifar10SplitDataset:
         dataset = datasets.CIFAR10(root=dataset_root, train=train, download=False)
         indices = np.arange(len(dataset))
         if train:
-            indices = np.loadtxt(intersection_file)
-            indices = np.sort(indices).astype(np.int64)
+            if Path(intersection_file).stat().st_size == 0:
+                raise ValueError(f"PSI intersection file is empty: {intersection_file}")
+            indices = np.loadtxt(intersection_file, dtype=np.int64, ndmin=1)
+            if indices.size == 0:
+                raise ValueError(f"PSI intersection file is empty: {intersection_file}")
+            indices = np.sort(indices)
 
         self.role = role
         self.size = len(indices)

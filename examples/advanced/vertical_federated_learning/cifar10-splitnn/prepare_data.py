@@ -16,9 +16,11 @@
 
 import argparse
 import json
+import shutil
 from pathlib import Path
 
 import numpy as np
+from data import get_intersection_file
 from local_psi import Cifar10LocalPSI
 from torchvision import datasets
 
@@ -29,6 +31,7 @@ DEFAULT_DATASET_ROOT = "/tmp/cifar10"
 DEFAULT_SPLIT_DIR = "/tmp/cifar10_vert_splits"
 DEFAULT_PSI_WORKSPACE = "/tmp/nvflare/cifar10_psi"
 SITE_NAMES = ("site-1", "site-2")
+PSI_OUTPUT_PATH = "psi/intersection.txt"
 
 
 def define_parser() -> argparse.ArgumentParser:
@@ -82,15 +85,41 @@ def _prepare_vertical_split(dataset_root: Path, split_dir: Path, overlap: int, s
     print(f"Prepared vertical split written to {split_dir}")
 
 
+def _find_psi_output(run_root: Path, site_name: str) -> Path:
+    suffix = (site_name, *Path(PSI_OUTPUT_PATH).parts)
+    matches = [path for path in run_root.rglob(Path(PSI_OUTPUT_PATH).name) if path.parts[-len(suffix) :] == suffix]
+    if len(matches) != 1:
+        raise RuntimeError(f"Expected one PSI output for {site_name} under {run_root}, found {matches}")
+    return matches[0]
+
+
+def _stage_and_verify_intersections(run_root: Path, split_dir: Path) -> None:
+    expected = np.sort(np.load(split_dir / "overlap.npy").astype(np.int64))
+    for site_name in SITE_NAMES:
+        target = get_intersection_file(split_dir, site_name)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(_find_psi_output(run_root, site_name), target)
+
+        actual = np.sort(np.loadtxt(target, dtype=np.int64, ndmin=1))
+        if not np.array_equal(actual, expected):
+            raise RuntimeError(f"PSI result for {site_name} does not match the prepared overlap")
+
+    intersection_dir = get_intersection_file(split_dir, SITE_NAMES[0]).parent
+    print(f"Verified PSI intersections written to {intersection_dir}")
+
+
 def _run_psi(split_dir: Path, psi_workspace: Path) -> None:
     recipe = DhPSIRecipe(
         name=psi_workspace.name,
         min_clients=len(SITE_NAMES),
         local_psi=Cifar10LocalPSI(split_dir=str(split_dir)),
+        output_path=PSI_OUTPUT_PATH,
     )
     env = SimEnv(clients=list(SITE_NAMES), workspace_root=str(psi_workspace.parent), log_config="ERROR")
     run = recipe.execute(env)
-    print(f"PSI artifacts written to {run.get_result()}")
+    run_root = Path(run.get_result()).resolve()
+    _stage_and_verify_intersections(run_root, split_dir)
+    print(f"PSI simulation workspace: {run_root}")
 
 
 def prepare_data(args) -> None:
@@ -102,7 +131,7 @@ def prepare_data(args) -> None:
 
     _prepare_vertical_split(dataset_root, split_dir, args.overlap, args.seed)
     _run_psi(split_dir, psi_workspace)
-    print(f"Next: python job.py --dataset-root {dataset_root} --psi-workspace {psi_workspace}")
+    print(f"Next: python job.py --dataset-root {dataset_root} --split-dir {split_dir}")
 
 
 def main() -> None:
