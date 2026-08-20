@@ -417,6 +417,55 @@ def test_recipe_show_unknown_recipe_errors(monkeypatch, capsys):
     assert "nvflare recipe list --format json" in captured.out
 
 
+def test_recipe_list_reports_missing_generated_catalog(monkeypatch, capsys, tmp_path):
+    from nvflare.tool import cli_output
+    from nvflare.tool.recipe import recipe_cli
+
+    monkeypatch.setattr(cli_output, "_output_format", "json")
+    monkeypatch.setattr(recipe_cli, "_RECIPE_CATALOG_PATH", tmp_path / "missing.json")
+
+    with pytest.raises(SystemExit) as exc_info:
+        recipe_cli.cmd_recipe_list(Namespace(framework=None, filters=[]))
+
+    assert exc_info.value.code == 5
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert captured.err == ""
+    assert payload["error_code"] == "INTERNAL_ERROR"
+    assert payload["exit_code"] == 5
+    assert "Unable to load recipe metadata" in payload["message"]
+    assert "regenerate the catalog" in payload["hint"]
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        [],
+        {"schema_version": 999, "recipes": []},
+        {"schema_version": 1, "recipes": [{}]},
+    ],
+)
+def test_recipe_show_reports_invalid_generated_catalog(payload, monkeypatch, capsys, tmp_path):
+    from nvflare.tool import cli_output
+    from nvflare.tool.recipe import recipe_cli
+
+    invalid_catalog = tmp_path / "invalid.json"
+    invalid_catalog.write_text(json.dumps(payload), encoding="utf-8")
+    monkeypatch.setattr(cli_output, "_output_format", "json")
+    monkeypatch.setattr(recipe_cli, "_RECIPE_CATALOG_PATH", invalid_catalog)
+
+    with pytest.raises(SystemExit) as exc_info:
+        recipe_cli.cmd_recipe_show(Namespace(name="fedavg-pt"))
+
+    assert exc_info.value.code == 5
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert captured.err == ""
+    assert payload["error_code"] == "INTERNAL_ERROR"
+    assert payload["exit_code"] == 5
+    assert "invalid generated recipe catalog" in payload["message"]
+
+
 def test_recipe_show_schema_succeeds_without_name(capsys):
     from unittest.mock import patch
 
@@ -674,6 +723,76 @@ class FinalWorkflow(BaseRecipe):
 
     assert catalog[0]["class"] == "FinalWorkflow"
     assert catalog[0]["description"] == "Concrete exported recipe."
+
+
+def test_recipe_catalog_generation_resolves_imported_recipe_base_alias(tmp_path, monkeypatch):
+    from nvflare.tool.recipe import recipe_cli
+
+    package_root = tmp_path / "nvflare" / "fake" / "recipes"
+    package_root.mkdir(parents=True)
+    (package_root / "alias.py").write_text(
+        """from nvflare.recipe.fedavg import FedAvgRecipe as UnifiedBase
+
+class AliasWorkflow(UnifiedBase):
+    \"\"\"Recipe with an imported base alias.\"\"\"
+
+    def __init__(self):
+        pass
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(recipe_cli, "_NVFLARE_PACKAGE_ROOT", tmp_path / "nvflare")
+    monkeypatch.setattr(
+        recipe_cli,
+        "_RECIPE_PACKAGE_ROOTS",
+        [{"package": "nvflare.fake.recipes", "framework": "pytorch"}],
+    )
+    monkeypatch.setattr(recipe_cli, "_DOCUMENTED_RECIPE_SPECS", {})
+
+    catalog = recipe_cli._discover_recipe_catalog()
+
+    assert catalog[0]["class"] == "AliasWorkflow"
+    assert catalog[0]["description"] == "Recipe with an imported base alias."
+
+
+def test_recipe_catalog_generation_preserves_static_recipe_attributes(tmp_path, monkeypatch):
+    from nvflare.tool.recipe import recipe_cli
+
+    package_root = tmp_path / "nvflare" / "fake" / "recipes"
+    package_root.mkdir(parents=True)
+    (package_root / "metadata.py").write_text(
+        """class MetadataRecipe(Recipe):
+    \"\"\"Recipe with explicit metadata.\"\"\"
+
+    recipe_framework_support = [\"pytorch\", \"numpy\"]
+    recipe_optional_dependencies = [\"pip install demo-framework\"]
+    recipe_heterogeneity_support = [\"non_iid\"]
+    recipe_privacy_compatible = [\"differential_privacy\"]
+    recipe_notes = [\"Custom recipe note.\"]
+    recipe_template_references = [\"nvflare/example/template\"]
+
+    def __init__(self):
+        pass
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(recipe_cli, "_NVFLARE_PACKAGE_ROOT", tmp_path / "nvflare")
+    monkeypatch.setattr(
+        recipe_cli,
+        "_RECIPE_PACKAGE_ROOTS",
+        [{"package": "nvflare.fake.recipes", "framework": "pytorch"}],
+    )
+    monkeypatch.setattr(recipe_cli, "_DOCUMENTED_RECIPE_SPECS", {})
+
+    generated = recipe_cli._generate_recipe_catalog()["recipes"][0]
+
+    assert "_recipe_attrs" not in generated["summary"]
+    assert generated["detail"]["framework_support"] == ["pytorch", "numpy"]
+    assert generated["detail"]["optional_dependencies"] == ["pip install demo-framework"]
+    assert generated["detail"]["heterogeneity_support"] == ["non_iid"]
+    assert generated["detail"]["privacy_compatible"] == ["differential_privacy"]
+    assert generated["detail"]["notes"] == ["Custom recipe note."]
+    assert generated["detail"]["template_references"] == ["nvflare/example/template"]
 
 
 def test_generated_recipe_catalog_is_current():

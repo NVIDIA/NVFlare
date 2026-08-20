@@ -33,8 +33,29 @@ _JSON_OUTPUT_MODES = ["json"]
 _NO_RETRY_TOKEN_SCHEMA = {"supported": False}
 _LIST_METADATA_KEYS = {"privacy"}
 _CATALOG_RECIPE_CLASS_KEY = "_recipe_cls"
+_CATALOG_RECIPE_ATTRS_KEY = "_recipe_attrs"
 _RECIPE_CATALOG_PATH = Path(__file__).with_name("recipe_catalog.json")
 _RECIPE_CATALOG_SCHEMA_VERSION = 1
+_RECIPE_DETAIL_ATTR_NAMES = (
+    "recipe_framework_support",
+    "framework_support",
+    "recipe_frameworks",
+    "frameworks",
+    "recipe_supported_frameworks",
+    "supported_frameworks",
+    "recipe_optional_dependencies",
+    "optional_dependencies",
+    "recipe_heterogeneity_support",
+    "heterogeneity_support",
+    "recipe_supported_heterogeneity",
+    "supported_heterogeneity",
+    "recipe_privacy_compatible",
+    "privacy_compatible",
+    "recipe_notes",
+    "notes",
+    "recipe_template_references",
+    "template_references",
+)
 _CORE_FRAMEWORK_SUPPORT = {
     "cyclic": ["pytorch", "tensorflow", "numpy", "raw"],
     "fedavg": ["pytorch", "tensorflow", "sklearn", "numpy", "raw"],
@@ -264,6 +285,12 @@ def _normalize_recipe_name(value: str) -> str:
 
 
 def _recipe_attr(recipe_cls, name: str, default=None):
+    if isinstance(recipe_cls, dict):
+        value = recipe_cls.get(f"recipe_{name}")
+        if value is None:
+            value = recipe_cls.get(name)
+        return default if value is None else value
+
     value = getattr(recipe_cls, f"recipe_{name}", None)
     if value is None:
         value = getattr(recipe_cls, name, None)
@@ -325,6 +352,7 @@ def _static_recipe_class(module_name: str):
     except (OSError, SyntaxError, UnicodeDecodeError):
         return None
 
+    imports = _static_imports(tree)
     class_nodes = [node for node in tree.body if isinstance(node, ast.ClassDef) and node.name != "Recipe"]
     candidate_names = set()
     while True:
@@ -332,7 +360,9 @@ def _static_recipe_class(module_name: str):
             node.name
             for node in class_nodes
             if any(
-                _ast_base_name(base).endswith("Recipe") or _ast_base_name(base) in candidate_names
+                _ast_base_name(base).endswith("Recipe")
+                or (imports.get(_ast_base_name(base), (None, ""))[1]).endswith("Recipe")
+                or _ast_base_name(base) in candidate_names
                 for base in node.bases
             )
         }
@@ -368,6 +398,15 @@ def _static_class_attr(class_node: ast.ClassDef, *names):
         except (ValueError, TypeError):
             return None
     return None
+
+
+def _static_recipe_attrs(class_node: ast.ClassDef) -> dict:
+    attrs = {}
+    for name in _RECIPE_DETAIL_ATTR_NAMES:
+        value = _static_class_attr(class_node, name)
+        if value is not None:
+            attrs[name] = value
+    return attrs
 
 
 def _infer_algorithm(cli_name: str, class_name: str, module_name: str) -> str:
@@ -711,6 +750,7 @@ def _client_requirements(entry: dict, parameters: list) -> dict:
 
 def _recipe_detail(entry: dict) -> dict:
     recipe_cls = entry.get(_CATALOG_RECIPE_CLASS_KEY)
+    recipe_metadata = recipe_cls or entry.get(_CATALOG_RECIPE_ATTRS_KEY)
     parameters = _entry_parameters(entry, recipe_cls)
     detail = {
         "name": entry.get("name"),
@@ -723,14 +763,14 @@ def _recipe_detail(entry: dict) -> dict:
         "state_exchange": entry.get("state_exchange"),
         "privacy": entry.get("privacy"),
         "client_requirements": _client_requirements(entry, parameters),
-        "framework_support": _framework_support(entry, recipe_cls),
-        "heterogeneity_support": _heterogeneity_support(entry, recipe_cls),
-        "privacy_compatible": _privacy_compatible(entry, parameters, recipe_cls),
-        "notes": _as_preserved_string_list(entry.get("notes") or _recipe_attr(recipe_cls, "notes")),
+        "framework_support": _framework_support(entry, recipe_metadata),
+        "heterogeneity_support": _heterogeneity_support(entry, recipe_metadata),
+        "privacy_compatible": _privacy_compatible(entry, parameters, recipe_metadata),
+        "notes": _as_preserved_string_list(entry.get("notes") or _recipe_attr(recipe_metadata, "notes")),
         "parameters": parameters,
-        "optional_dependencies": _optional_dependencies(entry, recipe_cls),
+        "optional_dependencies": _optional_dependencies(entry, recipe_metadata),
         "template_references": _as_preserved_string_list(
-            entry.get("template_references") or _recipe_attr(recipe_cls, "template_references")
+            entry.get("template_references") or _recipe_attr(recipe_metadata, "template_references")
         ),
     }
     return detail
@@ -891,6 +931,9 @@ def _discover_recipe_catalog() -> list:
                 "class": recipe_class.name,
             }
             entry.update(_static_recipe_metadata(cli_name, module_name, recipe_class))
+            recipe_attrs = _static_recipe_attrs(recipe_class)
+            if recipe_attrs:
+                entry[_CATALOG_RECIPE_ATTRS_KEY] = recipe_attrs
             results.append(entry)
     return _apply_documented_recipe_specs(results)
 
@@ -899,18 +942,36 @@ def _generate_recipe_catalog() -> dict:
     discovered = _discover_recipe_catalog()
     return {
         "schema_version": _RECIPE_CATALOG_SCHEMA_VERSION,
-        "recipes": [{"summary": entry, "detail": _recipe_detail(entry)} for entry in discovered],
+        "recipes": [
+            {
+                "summary": {key: value for key, value in entry.items() if not key.startswith("_")},
+                "detail": _recipe_detail(entry),
+            }
+            for entry in discovered
+        ],
     }
 
 
 def _read_recipe_catalog() -> list:
     try:
         payload = json.loads(_RECIPE_CATALOG_PATH.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as e:
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as e:
         raise RuntimeError(f"unable to read generated recipe catalog at {_RECIPE_CATALOG_PATH}: {e}") from e
-    if payload.get("schema_version") != _RECIPE_CATALOG_SCHEMA_VERSION or not isinstance(payload.get("recipes"), list):
+    if not isinstance(payload, dict):
         raise RuntimeError(f"invalid generated recipe catalog at {_RECIPE_CATALOG_PATH}")
-    return payload["recipes"]
+    recipes = payload.get("recipes")
+    if (
+        payload.get("schema_version") != _RECIPE_CATALOG_SCHEMA_VERSION
+        or not isinstance(recipes, list)
+        or any(
+            not isinstance(entry, dict)
+            or not isinstance(entry.get("summary"), dict)
+            or not isinstance(entry.get("detail"), dict)
+            for entry in recipes
+        )
+    ):
+        raise RuntimeError(f"invalid generated recipe catalog at {_RECIPE_CATALOG_PATH}")
+    return recipes
 
 
 def _load_catalog(framework: str = None, include_recipe_detail: bool = False) -> list:
@@ -922,6 +983,29 @@ def _load_catalog(framework: str = None, include_recipe_detail: bool = False) ->
     entry_type = "detail" if include_recipe_detail else "summary"
     recipes = [entry[entry_type] for entry in _read_recipe_catalog()]
     return [entry for entry in recipes if not framework or entry.get("framework") == framework]
+
+
+def _load_catalog_for_cli(framework: str = None, include_recipe_detail: bool = False) -> list:
+    from nvflare.tool.cli_output import output_error_message
+
+    try:
+        kwargs = {}
+        if framework is not None:
+            kwargs["framework"] = framework
+        if include_recipe_detail:
+            kwargs["include_recipe_detail"] = True
+        return _load_catalog(**kwargs)
+    except RuntimeError as e:
+        output_error_message(
+            "INTERNAL_ERROR",
+            "Unable to load recipe metadata.",
+            "Reinstall NVFLARE. For a source checkout, regenerate the catalog with "
+            "'python -m nvflare.tool.recipe.generate_recipe_catalog'.",
+            None,
+            exit_code=5,
+            detail=str(e),
+        )
+        raise SystemExit(5)
 
 
 def cmd_recipe_list(cmd_args):
@@ -972,7 +1056,7 @@ def cmd_recipe_list(cmd_args):
     if not is_json_mode() and not is_jsonl_mode():
         print_human("Loading installed recipe catalog...", flush=True)
 
-    catalog = _load_catalog(framework=framework)
+    catalog = _load_catalog_for_cli(framework=framework)
 
     if framework and not catalog:
         output_error_message(
@@ -1042,7 +1126,7 @@ def cmd_recipe_show(cmd_args):
     if not is_json_mode() and not is_jsonl_mode():
         print_human(f"Loading installed recipe metadata for '{getattr(cmd_args, 'name', '')}'...", flush=True)
 
-    catalog = _load_catalog(include_recipe_detail=True)
+    catalog = _load_catalog_for_cli(include_recipe_detail=True)
     entry = next((e for e in catalog if _normalize_recipe_name(e["name"]) == requested_name), None)
     if entry is None:
         output_error_message(
