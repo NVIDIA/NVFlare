@@ -13,9 +13,8 @@
 # limitations under the License.
 
 import ast
-import importlib
 import inspect
-import pkgutil
+import json
 import sys
 from enum import Enum
 from pathlib import Path
@@ -34,7 +33,8 @@ _JSON_OUTPUT_MODES = ["json"]
 _NO_RETRY_TOKEN_SCHEMA = {"supported": False}
 _LIST_METADATA_KEYS = {"privacy"}
 _CATALOG_RECIPE_CLASS_KEY = "_recipe_cls"
-_RECIPE_BASE_CLASS = None
+_RECIPE_CATALOG_PATH = Path(__file__).with_name("recipe_catalog.json")
+_RECIPE_CATALOG_SCHEMA_VERSION = 1
 _CORE_FRAMEWORK_SUPPORT = {
     "cyclic": ["pytorch", "tensorflow", "numpy", "raw"],
     "fedavg": ["pytorch", "tensorflow", "sklearn", "numpy", "raw"],
@@ -299,96 +299,79 @@ def _module_source_path(module_name: str):
     return _NVFLARE_PACKAGE_ROOT.joinpath(*parts[1:]).with_suffix(".py")
 
 
-def _import_module(module_name: str):
-    return importlib.import_module(module_name)
-
-
-def _ast_default_value(node):
-    if node is None:
+def _package_source_path(package_name: str):
+    if not package_name:
         return None
-    try:
-        return _json_safe_value(ast.literal_eval(node))
-    except (ValueError, TypeError):
-        try:
-            return ast.unparse(node)
-        except Exception:
-            return None
-
-
-def _ast_annotation_to_string(node):
-    if node is None:
+    parts = package_name.split(".")
+    if not parts or parts[0] != "nvflare":
         return None
-    try:
-        return ast.unparse(node)
-    except Exception:
-        return None
+    return _NVFLARE_PACKAGE_ROOT.joinpath(*parts[1:])
 
 
-def _ast_parameter(name: str, annotation, default_node, kind: str, required: bool) -> dict:
-    return {
-        "name": name,
-        "type": _ast_annotation_to_string(annotation),
-        "required": required,
-        "default": _ast_default_value(default_node),
-        "kind": kind,
-    }
+def _ast_base_name(node) -> str:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    return ""
 
 
-def _static_recipe_parameters(module_name: str, class_name: str) -> list:
+def _static_recipe_class(module_name: str):
     path = _module_source_path(module_name)
     if not path or not path.is_file():
-        return []
+        return None
     try:
         tree = ast.parse(path.read_text(encoding="utf-8"))
     except (OSError, SyntaxError, UnicodeDecodeError):
-        return []
-
-    class_node = next((node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == class_name), None)
-    if class_node is None:
-        return []
-    init_node = next(
-        (
-            node
-            for node in class_node.body
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "__init__"
-        ),
-        None,
-    )
-    if init_node is None:
-        return []
-
-    params = []
-    args = init_node.args
-    positional = list(args.posonlyargs) + list(args.args)
-    positional_defaults = [None] * (len(positional) - len(args.defaults)) + list(args.defaults)
-    for index, (arg, default_node) in enumerate(zip(positional, positional_defaults)):
-        if arg.arg == "self":
-            continue
-        kind = "positional_only" if index < len(args.posonlyargs) else "positional_or_keyword"
-        params.append(_ast_parameter(arg.arg, arg.annotation, default_node, kind, default_node is None))
-
-    if args.vararg is not None:
-        params.append(_ast_parameter(args.vararg.arg, args.vararg.annotation, None, "var_positional", False))
-
-    for arg, default_node in zip(args.kwonlyargs, args.kw_defaults):
-        params.append(_ast_parameter(arg.arg, arg.annotation, default_node, "keyword_only", default_node is None))
-
-    if args.kwarg is not None:
-        params.append(_ast_parameter(args.kwarg.arg, args.kwarg.annotation, None, "var_keyword", False))
-
-    return params
-
-
-def _try_import_recipe_class(module_name: str, class_name: str):
-    try:
-        module = _import_module(module_name)
-    except (ImportError, SyntaxError):
         return None
-    return getattr(module, class_name, None)
+
+    class_nodes = [node for node in tree.body if isinstance(node, ast.ClassDef) and node.name != "Recipe"]
+    candidate_names = set()
+    while True:
+        discovered_names = {
+            node.name
+            for node in class_nodes
+            if any(
+                _ast_base_name(base).endswith("Recipe") or _ast_base_name(base) in candidate_names
+                for base in node.bases
+            )
+        }
+        if discovered_names <= candidate_names:
+            break
+        candidate_names.update(discovered_names)
+    candidates = [node for node in class_nodes if node.name in candidate_names]
+    if not candidates:
+        return None
+
+    inherited_names = {_ast_base_name(base) for candidate in candidates for base in candidate.bases}
+    leaf_candidates = [candidate for candidate in candidates if candidate.name not in inherited_names]
+    recipe_class = leaf_candidates[0] if leaf_candidates else candidates[0]
+    doc = ast.get_docstring(recipe_class) or ""
+    description = next((line.strip() for line in doc.splitlines() if line.strip()), f"{recipe_class.name} recipe")
+    return recipe_class, description
 
 
-def _infer_algorithm(cli_name: str, recipe_cls) -> str:
-    text = _normalize_filter_value(f"{cli_name} {recipe_cls.__name__} {recipe_cls.__module__}")
+def _static_class_attr(class_node: ast.ClassDef, *names):
+    for node in class_node.body:
+        value_node = None
+        target_names = []
+        if isinstance(node, ast.Assign):
+            value_node = node.value
+            target_names = [target.id for target in node.targets if isinstance(target, ast.Name)]
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            value_node = node.value
+            target_names = [node.target.id]
+        if value_node is None or not set(names).intersection(target_names):
+            continue
+        try:
+            return ast.literal_eval(value_node)
+        except (ValueError, TypeError):
+            return None
+    return None
+
+
+def _infer_algorithm(cli_name: str, class_name: str, module_name: str) -> str:
+    text = _normalize_filter_value(f"{cli_name} {class_name} {module_name}")
     algorithm_markers = [
         ("kmeans", "kmeans"),
         ("svm", "svm"),
@@ -442,8 +425,8 @@ def _infer_state_exchange(algorithm: str) -> str:
     return None
 
 
-def _infer_privacy(cli_name: str, recipe_cls) -> list:
-    text = _normalize_filter_value(f"{cli_name} {recipe_cls.__name__} {recipe_cls.__module__}")
+def _infer_privacy(cli_name: str, class_name: str, module_name: str) -> list:
+    text = _normalize_filter_value(f"{cli_name} {class_name} {module_name}")
     privacy = []
     if "_he" in text or "he_" in text or "withhe" in text or "homomorphic" in text:
         privacy.append("homomorphic_encryption")
@@ -452,17 +435,145 @@ def _infer_privacy(cli_name: str, recipe_cls) -> list:
     return privacy
 
 
-def _recipe_metadata(cli_name: str, recipe_cls) -> dict:
-    algorithm = _recipe_attr(recipe_cls, "algorithm") or _infer_algorithm(cli_name, recipe_cls)
-    aggregation = _recipe_attr(recipe_cls, "aggregation") or _infer_aggregation(algorithm)
-    state_exchange = _recipe_attr(recipe_cls, "state_exchange") or _infer_state_exchange(algorithm)
-    privacy = _as_string_list(_recipe_attr(recipe_cls, "privacy")) or _infer_privacy(cli_name, recipe_cls)
+def _static_recipe_metadata(cli_name: str, module_name: str, class_node: ast.ClassDef) -> dict:
+    algorithm = _static_class_attr(class_node, "recipe_algorithm", "algorithm") or _infer_algorithm(
+        cli_name, class_node.name, module_name
+    )
+    aggregation = _static_class_attr(class_node, "recipe_aggregation", "aggregation") or _infer_aggregation(algorithm)
+    state_exchange = _static_class_attr(class_node, "recipe_state_exchange", "state_exchange") or _infer_state_exchange(
+        algorithm
+    )
+    privacy = _as_string_list(_static_class_attr(class_node, "recipe_privacy", "privacy")) or _infer_privacy(
+        cli_name, class_node.name, module_name
+    )
     return {
         "algorithm": _normalize_filter_value(algorithm) if algorithm else None,
         "aggregation": _normalize_filter_value(aggregation) if aggregation else None,
         "state_exchange": _normalize_filter_value(state_exchange) if state_exchange else None,
         "privacy": privacy,
     }
+
+
+def _static_imports(tree: ast.Module) -> dict:
+    imports = {}
+    for node in tree.body:
+        if isinstance(node, ast.ImportFrom) and node.module:
+            for imported in node.names:
+                imports[imported.asname or imported.name] = (node.module, imported.name)
+    return imports
+
+
+def _static_member_value(module_name: str, class_name: str, member_name: str):
+    path = _module_source_path(module_name)
+    if not path or not path.is_file():
+        return None
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+    except (OSError, SyntaxError, UnicodeDecodeError):
+        return None
+
+    class_node = next((node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == class_name), None)
+    if class_node is None:
+        return None
+    for node in class_node.body:
+        if isinstance(node, ast.Assign) and any(
+            isinstance(target, ast.Name) and target.id == member_name for target in node.targets
+        ):
+            try:
+                return ast.literal_eval(node.value)
+            except (ValueError, TypeError):
+                return None
+        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.target.id == member_name:
+            try:
+                return ast.literal_eval(node.value)
+            except (ValueError, TypeError):
+                return None
+    return None
+
+
+def _ast_default_value(node, imports: dict = None):
+    if node is None:
+        return None
+    try:
+        return _json_safe_value(ast.literal_eval(node))
+    except (ValueError, TypeError):
+        if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
+            imported = (imports or {}).get(node.value.id)
+            if imported:
+                value = _static_member_value(imported[0], imported[1], node.attr)
+                if value is not None:
+                    return _json_safe_value(value)
+        try:
+            return ast.unparse(node)
+        except Exception:
+            return None
+
+
+def _ast_annotation_to_string(node):
+    if node is None:
+        return None
+    try:
+        return ast.unparse(node)
+    except Exception:
+        return None
+
+
+def _ast_parameter(name: str, annotation, default_node, kind: str, required: bool, imports: dict) -> dict:
+    return {
+        "name": name,
+        "type": _ast_annotation_to_string(annotation),
+        "required": required,
+        "default": _ast_default_value(default_node, imports),
+        "kind": kind,
+    }
+
+
+def _static_recipe_parameters(module_name: str, class_name: str) -> list:
+    path = _module_source_path(module_name)
+    if not path or not path.is_file():
+        return []
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+    except (OSError, SyntaxError, UnicodeDecodeError):
+        return []
+
+    class_node = next((node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == class_name), None)
+    if class_node is None:
+        return []
+    init_node = next(
+        (
+            node
+            for node in class_node.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "__init__"
+        ),
+        None,
+    )
+    if init_node is None:
+        return []
+
+    imports = _static_imports(tree)
+    params = []
+    args = init_node.args
+    positional = list(args.posonlyargs) + list(args.args)
+    positional_defaults = [None] * (len(positional) - len(args.defaults)) + list(args.defaults)
+    for index, (arg, default_node) in enumerate(zip(positional, positional_defaults)):
+        if arg.arg == "self":
+            continue
+        kind = "positional_only" if index < len(args.posonlyargs) else "positional_or_keyword"
+        params.append(_ast_parameter(arg.arg, arg.annotation, default_node, kind, default_node is None, imports))
+
+    if args.vararg is not None:
+        params.append(_ast_parameter(args.vararg.arg, args.vararg.annotation, None, "var_positional", False, imports))
+
+    for arg, default_node in zip(args.kwonlyargs, args.kw_defaults):
+        params.append(
+            _ast_parameter(arg.arg, arg.annotation, default_node, "keyword_only", default_node is None, imports)
+        )
+
+    if args.kwarg is not None:
+        params.append(_ast_parameter(args.kwarg.arg, args.kwarg.annotation, None, "var_keyword", False, imports))
+
+    return params
 
 
 def _json_safe_value(value):
@@ -675,7 +786,7 @@ def _filter_catalog(catalog: list, filters: dict) -> list:
     return [entry for entry in catalog if _entry_matches_filters(entry, filters)]
 
 
-def _documented_recipe_entry(name: str, spec: dict, include_recipe_class: bool = False) -> dict:
+def _documented_recipe_entry(name: str, spec: dict) -> dict:
     entry = {
         "name": name,
         "description": spec.get("description"),
@@ -698,31 +809,7 @@ def _documented_recipe_entry(name: str, spec: dict, include_recipe_class: bool =
         if key in spec:
             entry[key] = spec[key]
 
-    if include_recipe_class:
-        recipe_cls = _try_import_recipe_class(spec.get("module"), spec.get("class"))
-        if recipe_cls is not None:
-            entry[_CATALOG_RECIPE_CLASS_KEY] = recipe_cls
     return entry
-
-
-def _apply_documented_recipe_specs(catalog: list, include_recipe_class: bool = False) -> list:
-    by_name = {_normalize_recipe_name(entry["name"]): entry for entry in catalog}
-    for name, spec in _DOCUMENTED_RECIPE_SPECS.items():
-        normalized_name = _normalize_recipe_name(name)
-        spec_entry = _documented_recipe_entry(name, spec, include_recipe_class=include_recipe_class)
-        if normalized_name in by_name:
-            existing = by_name[normalized_name]
-            recipe_cls = existing.get(_CATALOG_RECIPE_CLASS_KEY)
-            existing.update({k: v for k, v in spec_entry.items() if v is not None})
-            if recipe_cls is not None:
-                existing[_CATALOG_RECIPE_CLASS_KEY] = recipe_cls
-            elif include_recipe_class and spec_entry.get(_CATALOG_RECIPE_CLASS_KEY) is not None:
-                existing[_CATALOG_RECIPE_CLASS_KEY] = spec_entry[_CATALOG_RECIPE_CLASS_KEY]
-        else:
-            catalog.append(spec_entry)
-            by_name[normalized_name] = spec_entry
-    catalog.sort(key=lambda entry: entry["name"])
-    return catalog
 
 
 def _framework_install_hint(framework: str = None) -> list[str]:
@@ -763,101 +850,78 @@ def _recipe_cli_name(module_name: str, framework: str) -> str:
     return stem
 
 
-def _recipe_description(recipe_cls) -> str:
-    doc = inspect.getdoc(recipe_cls) or ""
-    if not doc:
-        return f"{recipe_cls.__name__} recipe"
-    return next((line.strip() for line in doc.splitlines() if line.strip()), f"{recipe_cls.__name__} recipe")
+def _apply_documented_recipe_specs(catalog: list) -> list:
+    by_name = {_normalize_recipe_name(entry["name"]): entry for entry in catalog}
+    for name, spec in _DOCUMENTED_RECIPE_SPECS.items():
+        normalized_name = _normalize_recipe_name(name)
+        spec_entry = _documented_recipe_entry(name, spec)
+        if normalized_name in by_name:
+            by_name[normalized_name].update(spec_entry)
+        else:
+            catalog.append(spec_entry)
+            by_name[normalized_name] = spec_entry
+    return sorted(catalog, key=lambda entry: entry["name"])
 
 
-def _recipe_base_class():
-    global _RECIPE_BASE_CLASS
-    if _RECIPE_BASE_CLASS is None:
-        from nvflare.recipe.spec import Recipe
-
-        _RECIPE_BASE_CLASS = Recipe
-    return _RECIPE_BASE_CLASS
-
-
-def _iter_recipe_classes(module):
-    recipe_base = _recipe_base_class()
-    for _name, obj in inspect.getmembers(module, inspect.isclass):
-        if obj.__module__ != module.__name__:
-            continue
-        if obj is recipe_base:
-            continue
-        if issubclass(obj, recipe_base):
-            yield obj
-
-
-def _select_recipe_class(module):
-    """Select the single CLI-exposed recipe class for a module.
-
-    Recipe discovery is module-oriented: the CLI name comes from the module name, so a
-    module contributes at most one catalog entry. If a module defines both a reusable base
-    recipe and a concrete subclass, prefer the leaf subclass.
-    """
-
-    classes = list(_iter_recipe_classes(module))
-    if not classes:
-        return None
-    if len(classes) == 1:
-        return classes[0]
-
-    leaf_classes = [cls for cls in classes if not any(cls is not other and issubclass(other, cls) for other in classes)]
-    return leaf_classes[0] if leaf_classes else classes[0]
-
-
-def _load_catalog(framework: str = None, include_recipe_class: bool = False) -> list:
-    """Return available recipes, filtered by framework if given.
-
-    Dynamically discovered recipes are supplemented with documented recipe
-    metadata so recipes remain queryable before optional dependencies are installed.
-    """
+def _discover_recipe_catalog() -> list:
+    """Discover recipe metadata from source without importing recipe modules."""
     results = []
     seen = set()
     for root in _RECIPE_PACKAGE_ROOTS:
-        if framework and root["framework"] != framework:
+        package_path = _package_source_path(root["package"])
+        if not package_path or not package_path.is_dir():
             continue
-        try:
-            package = _import_module(root["package"])
-        except (ImportError, SyntaxError):
-            pass
+        for module_path in sorted(package_path.glob("*.py")):
+            if module_path.name == "__init__.py":
+                continue
+            module_name = f"{root['package']}.{module_path.stem}"
+            recipe_info = _static_recipe_class(module_name)
+            if recipe_info is None:
+                continue
+            recipe_class, description = recipe_info
+            cli_name = _recipe_cli_name(module_name, root["framework"])
+            if cli_name in seen:
+                continue
+            seen.add(cli_name)
+            entry = {
+                "name": cli_name,
+                "description": description,
+                "framework": root["framework"],
+                "module": module_name,
+                "class": recipe_class.name,
+            }
+            entry.update(_static_recipe_metadata(cli_name, module_name, recipe_class))
+            results.append(entry)
+    return _apply_documented_recipe_specs(results)
 
-        else:
-            for _finder, module_name, _is_pkg in pkgutil.iter_modules(package.__path__, package.__name__ + "."):
-                if module_name.endswith(".__init__"):
-                    continue
-                try:
-                    mod = _import_module(module_name)
-                except (ImportError, SyntaxError):
-                    continue
 
-                recipe_cls = _select_recipe_class(mod)
-                if recipe_cls is None:
-                    continue
+def _generate_recipe_catalog() -> dict:
+    discovered = _discover_recipe_catalog()
+    return {
+        "schema_version": _RECIPE_CATALOG_SCHEMA_VERSION,
+        "recipes": [{"summary": entry, "detail": _recipe_detail(entry)} for entry in discovered],
+    }
 
-                cli_name = _recipe_cli_name(module_name, root["framework"])
-                if cli_name in seen:
-                    continue
-                seen.add(cli_name)
-                entry = {
-                    "name": cli_name,
-                    "description": _recipe_description(recipe_cls),
-                    "framework": root["framework"],
-                    "module": module_name,
-                    "class": recipe_cls.__name__,
-                }
-                entry.update(_recipe_metadata(cli_name, recipe_cls))
-                if include_recipe_class:
-                    entry[_CATALOG_RECIPE_CLASS_KEY] = recipe_cls
-                results.append(entry)
 
-    results.sort(key=lambda entry: entry["name"])
-    results = _apply_documented_recipe_specs(results, include_recipe_class=include_recipe_class)
-    if framework:
-        results = [entry for entry in results if entry.get("framework") == framework]
-    return results
+def _read_recipe_catalog() -> list:
+    try:
+        payload = json.loads(_RECIPE_CATALOG_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
+        raise RuntimeError(f"unable to read generated recipe catalog at {_RECIPE_CATALOG_PATH}: {e}") from e
+    if payload.get("schema_version") != _RECIPE_CATALOG_SCHEMA_VERSION or not isinstance(payload.get("recipes"), list):
+        raise RuntimeError(f"invalid generated recipe catalog at {_RECIPE_CATALOG_PATH}")
+    return payload["recipes"]
+
+
+def _load_catalog(framework: str = None, include_recipe_detail: bool = False) -> list:
+    """Return generated recipe metadata, filtered by framework if given.
+
+    Runtime catalog loading only reads JSON. Source discovery and AST inspection
+    are reserved for catalog generation and freshness tests.
+    """
+    entry_type = "detail" if include_recipe_detail else "summary"
+    recipes = [entry[entry_type] for entry in _read_recipe_catalog()]
+    return [entry for entry in recipes if not framework or entry.get("framework") == framework]
 
 
 def cmd_recipe_list(cmd_args):
@@ -978,7 +1042,7 @@ def cmd_recipe_show(cmd_args):
     if not is_json_mode() and not is_jsonl_mode():
         print_human(f"Loading installed recipe metadata for '{getattr(cmd_args, 'name', '')}'...", flush=True)
 
-    catalog = _load_catalog(include_recipe_class=True)
+    catalog = _load_catalog(include_recipe_detail=True)
     entry = next((e for e in catalog if _normalize_recipe_name(e["name"]) == requested_name), None)
     if entry is None:
         output_error_message(
@@ -991,7 +1055,7 @@ def cmd_recipe_show(cmd_args):
         )
         raise SystemExit(4)
 
-    detail = _recipe_detail(entry)
+    detail = entry
     if is_json_mode():
         output_ok(detail)
         return

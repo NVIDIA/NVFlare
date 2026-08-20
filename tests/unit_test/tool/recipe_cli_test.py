@@ -16,7 +16,6 @@ import importlib
 import json
 import sys
 from argparse import ArgumentParser, Namespace
-from types import ModuleType
 
 import pytest
 
@@ -303,7 +302,7 @@ def test_recipe_show_returns_queryable_metadata(monkeypatch, capsys):
 
     from nvflare.recipe.spec import Recipe
     from nvflare.tool import cli_output
-    from nvflare.tool.recipe.recipe_cli import _CATALOG_RECIPE_CLASS_KEY, cmd_recipe_show
+    from nvflare.tool.recipe.recipe_cli import _CATALOG_RECIPE_CLASS_KEY, _recipe_detail, cmd_recipe_show
 
     class FakeRecipe(Recipe):
         """Fake detailed recipe."""
@@ -323,22 +322,23 @@ def test_recipe_show_returns_queryable_metadata(monkeypatch, capsys):
             pass
 
     monkeypatch.setattr(cli_output, "_output_format", "json")
+    detail = _recipe_detail(
+        {
+            "name": "fake-pt",
+            "description": "Fake detailed recipe.",
+            "framework": "pytorch",
+            "module": "fake.recipes.fake",
+            "class": "FakeRecipe",
+            "algorithm": "fedavg",
+            "aggregation": "weighted_average",
+            "state_exchange": "full_model",
+            "privacy": [],
+            _CATALOG_RECIPE_CLASS_KEY: FakeRecipe,
+        }
+    )
     monkeypatch.setattr(
         "nvflare.tool.recipe.recipe_cli._load_catalog",
-        lambda include_recipe_class=False, framework=None: [
-            {
-                "name": "fake-pt",
-                "description": "Fake detailed recipe.",
-                "framework": "pytorch",
-                "module": "fake.recipes.fake",
-                "class": "FakeRecipe",
-                "algorithm": "fedavg",
-                "aggregation": "weighted_average",
-                "state_exchange": "full_model",
-                "privacy": [],
-                _CATALOG_RECIPE_CLASS_KEY: FakeRecipe,
-            }
-        ],
+        lambda include_recipe_detail=False, framework=None: [detail],
     )
 
     cmd_recipe_show(Namespace(name="fake-pt"))
@@ -362,29 +362,30 @@ def test_recipe_show_returns_queryable_metadata(monkeypatch, capsys):
 def test_recipe_show_human_output_reports_loading_status(monkeypatch, capsys):
     from nvflare.recipe.spec import Recipe
     from nvflare.tool import cli_output
-    from nvflare.tool.recipe.recipe_cli import _CATALOG_RECIPE_CLASS_KEY, cmd_recipe_show
+    from nvflare.tool.recipe.recipe_cli import _CATALOG_RECIPE_CLASS_KEY, _recipe_detail, cmd_recipe_show
 
     class FakeRecipe(Recipe):
         def __init__(self, *, params_transfer_type: str = "FULL"):
             pass
 
     monkeypatch.setattr(cli_output, "_output_format", "txt")
+    detail = _recipe_detail(
+        {
+            "name": "fedavg",
+            "description": "FedAvg recipe.",
+            "framework": "core",
+            "module": "nvflare.recipe.fedavg",
+            "class": "FedAvgRecipe",
+            "algorithm": "fedavg",
+            "aggregation": "weighted_average",
+            "state_exchange": "full_model",
+            "privacy": [],
+            _CATALOG_RECIPE_CLASS_KEY: FakeRecipe,
+        }
+    )
     monkeypatch.setattr(
         "nvflare.tool.recipe.recipe_cli._load_catalog",
-        lambda include_recipe_class=False, framework=None: [
-            {
-                "name": "fedavg",
-                "description": "FedAvg recipe.",
-                "framework": "core",
-                "module": "nvflare.recipe.fedavg",
-                "class": "FedAvgRecipe",
-                "algorithm": "fedavg",
-                "aggregation": "weighted_average",
-                "state_exchange": "full_model",
-                "privacy": [],
-                _CATALOG_RECIPE_CLASS_KEY: FakeRecipe,
-            }
-        ],
+        lambda include_recipe_detail=False, framework=None: [detail],
     )
 
     cmd_recipe_show(Namespace(name="fedavg"))
@@ -404,7 +405,7 @@ def test_recipe_show_unknown_recipe_errors(monkeypatch, capsys):
     from nvflare.tool.recipe.recipe_cli import cmd_recipe_show
 
     monkeypatch.setattr(cli_output, "_output_format", "json")
-    monkeypatch.setattr("nvflare.tool.recipe.recipe_cli._load_catalog", lambda include_recipe_class=False: [])
+    monkeypatch.setattr("nvflare.tool.recipe.recipe_cli._load_catalog", lambda include_recipe_detail=False: [])
 
     with pytest.raises(SystemExit) as exc_info:
         cmd_recipe_show(Namespace(name="missing"))
@@ -460,18 +461,16 @@ def test_recipe_list_schema_includes_command_contract_metadata(capsys):
     assert schema["retry_token"] == {"supported": False}
 
 
-def test_recipe_detail_can_be_built_for_each_discovered_recipe():
-    from nvflare.tool.recipe.recipe_cli import _load_catalog, _recipe_detail
+def test_recipe_detail_is_available_for_each_catalog_recipe():
+    from nvflare.tool.recipe.recipe_cli import _load_catalog
 
-    catalog = _load_catalog(include_recipe_class=True)
+    catalog = _load_catalog(include_recipe_detail=True)
     assert catalog
 
     for entry in catalog:
-        detail = _recipe_detail(entry)
-        assert detail["name"] == entry["name"]
-        assert "parameters" in detail
-        assert "framework_support" in detail
-        assert "privacy_compatible" in detail
+        assert "parameters" in entry
+        assert "framework_support" in entry
+        assert "privacy_compatible" in entry
 
 
 def test_recipe_catalog_includes_all_documented_recipe_variants():
@@ -508,16 +507,6 @@ def test_recipe_show_fedprox_uses_concrete_recipe(monkeypatch, capsys):
     from nvflare.tool.recipe import recipe_cli
 
     monkeypatch.setattr(cli_output, "_output_format", "json")
-    monkeypatch.setattr(
-        recipe_cli,
-        "_RECIPE_PACKAGE_ROOTS",
-        [{"package": "nvflare.app_opt.pt.recipes", "framework": "pytorch"}],
-    )
-    monkeypatch.setattr(
-        recipe_cli,
-        "_DOCUMENTED_RECIPE_SPECS",
-        {"fedprox-pt": recipe_cli._DOCUMENTED_RECIPE_SPECS["fedprox-pt"]},
-    )
 
     recipe_cli.cmd_recipe_show(Namespace(name="fedprox-pt"))
 
@@ -534,13 +523,55 @@ def test_recipe_show_fedprox_uses_concrete_recipe(monkeypatch, capsys):
     assert "Lightning" in data["notes"][0]
 
 
+def test_recipe_list_uses_generated_catalog_without_importing_recipe_modules(monkeypatch, capsys):
+    import importlib
+    import json
+
+    from nvflare.tool import cli_output
+    from nvflare.tool.recipe.recipe_cli import _RECIPE_PACKAGE_ROOTS, cmd_recipe_list
+
+    monkeypatch.setattr(cli_output, "_output_format", "json")
+    real_import_module = importlib.import_module
+    recipe_packages = tuple(root["package"] for root in _RECIPE_PACKAGE_ROOTS)
+
+    def reject_recipe_import(name, *args, **kwargs):
+        if name.startswith(recipe_packages):
+            raise AssertionError(f"recipe listing unexpectedly imported {name}")
+        return real_import_module(name, *args, **kwargs)
+
+    monkeypatch.setattr(importlib, "import_module", reject_recipe_import)
+
+    cmd_recipe_list(Namespace(framework=None, filters=[]))
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "ok"
+    assert len(payload["data"]) == 25
+
+
 def test_recipe_show_uses_static_metadata_when_optional_dependency_is_missing(monkeypatch, capsys):
+    import builtins
+    import importlib
     import json
 
     from nvflare.tool import cli_output
     from nvflare.tool.recipe.recipe_cli import cmd_recipe_show
 
     monkeypatch.setattr(cli_output, "_output_format", "json")
+    real_import = builtins.__import__
+    real_import_module = importlib.import_module
+
+    def reject_xgboost_import(name, *args, **kwargs):
+        if name == "xgboost" or name.startswith("nvflare.app_opt.xgboost"):
+            raise AssertionError(f"recipe metadata unexpectedly imported {name}")
+        return real_import(name, *args, **kwargs)
+
+    def reject_xgboost_import_module(name, *args, **kwargs):
+        if name == "xgboost" or name.startswith("nvflare.app_opt.xgboost"):
+            raise AssertionError(f"recipe metadata unexpectedly imported {name}")
+        return real_import_module(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", reject_xgboost_import)
+    monkeypatch.setattr(importlib, "import_module", reject_xgboost_import_module)
 
     cmd_recipe_show(Namespace(name="xgb-horizontal"))
 
@@ -556,272 +587,102 @@ def test_recipe_show_uses_static_metadata_when_optional_dependency_is_missing(mo
     assert data["parameters"]
 
 
-def test_recipe_catalog_is_discovered_from_package_modules(monkeypatch):
-    from nvflare.recipe.spec import Recipe
-    from nvflare.tool.recipe.recipe_cli import _load_catalog
+def test_recipe_catalog_generation_discovers_source_without_importing_optional_dependencies(tmp_path, monkeypatch):
+    from nvflare.tool.recipe import recipe_cli
 
-    class FakeRecipe(Recipe):
-        """Demo discovered recipe."""
+    package_root = tmp_path / "nvflare" / "fake" / "recipes"
+    package_root.mkdir(parents=True)
+    (package_root / "kmeans.py").write_text(
+        """import unavailable_optional_dependency
 
-        def __init__(self):
-            pass
+class KMeansFedAvgRecipe(Recipe):
+    \"\"\"KMeans recipe.\"\"\"
 
-    fake_package = ModuleType("fake.recipes")
-    fake_package.__path__ = ["fake/recipes"]
-
-    fake_module = ModuleType("fake.recipes.fedavg")
-    FakeRecipe.__module__ = "fake.recipes.fedavg"
-    setattr(fake_module, "FakeRecipe", FakeRecipe)
-
-    monkeypatch.setattr(
-        "nvflare.tool.recipe.recipe_cli._RECIPE_PACKAGE_ROOTS",
-        [{"package": "fake.recipes", "framework": "pytorch"}],
+    def __init__(self, *, num_rounds: int = 2):
+        pass
+""",
+        encoding="utf-8",
     )
-    monkeypatch.setattr("nvflare.tool.recipe.recipe_cli._DOCUMENTED_RECIPE_SPECS", {})
-
-    def fake_import_module(name):
-        if name == "fake.recipes":
-            return fake_package
-        if name == "fake.recipes.fedavg":
-            return fake_module
-        raise ImportError(name)
-
-    monkeypatch.setattr("nvflare.tool.recipe.recipe_cli._import_module", fake_import_module)
+    monkeypatch.setattr(recipe_cli, "_NVFLARE_PACKAGE_ROOT", tmp_path / "nvflare")
     monkeypatch.setattr(
-        "nvflare.tool.recipe.recipe_cli.pkgutil.iter_modules",
-        lambda path, prefix="": [(None, "fake.recipes.fedavg", False)],
+        recipe_cli,
+        "_RECIPE_PACKAGE_ROOTS",
+        [{"package": "nvflare.fake.recipes", "framework": "sklearn"}],
     )
+    monkeypatch.setattr(recipe_cli, "_DOCUMENTED_RECIPE_SPECS", {})
 
-    catalog = _load_catalog(framework="pytorch")
+    catalog = recipe_cli._discover_recipe_catalog()
 
     assert catalog == [
         {
-            "name": "fedavg-pt",
-            "description": "Demo discovered recipe.",
-            "framework": "pytorch",
-            "module": "fake.recipes.fedavg",
-            "class": "FakeRecipe",
-            "algorithm": "fedavg",
-            "aggregation": "weighted_average",
-            "state_exchange": "full_model",
+            "name": "kmeans-sklearn",
+            "description": "KMeans recipe.",
+            "framework": "sklearn",
+            "module": "nvflare.fake.recipes.kmeans",
+            "class": "KMeansFedAvgRecipe",
+            "algorithm": "kmeans",
+            "aggregation": "cluster_centers",
+            "state_exchange": "cluster_centers",
             "privacy": [],
         }
     ]
 
 
-def test_recipe_catalog_prefers_specific_algorithm_marker_over_fedavg_class_name(monkeypatch):
-    from nvflare.recipe.spec import Recipe
-    from nvflare.tool.recipe.recipe_cli import _load_catalog
+def test_recipe_catalog_generation_skips_syntax_errors(tmp_path, monkeypatch):
+    from nvflare.tool.recipe import recipe_cli
 
-    class KMeansFedAvgRecipe(Recipe):
-        """KMeans recipe."""
-
-        def __init__(self):
-            pass
-
-    fake_package = ModuleType("fake.recipes")
-    fake_package.__path__ = ["fake/recipes"]
-
-    fake_module = ModuleType("fake.recipes.kmeans")
-    KMeansFedAvgRecipe.__module__ = "fake.recipes.kmeans"
-    setattr(fake_module, "KMeansFedAvgRecipe", KMeansFedAvgRecipe)
-
+    package_root = tmp_path / "nvflare" / "fake" / "recipes"
+    package_root.mkdir(parents=True)
+    (package_root / "broken.py").write_text("class BrokenRecipe(Recipe)\n    pass", encoding="utf-8")
+    monkeypatch.setattr(recipe_cli, "_NVFLARE_PACKAGE_ROOT", tmp_path / "nvflare")
     monkeypatch.setattr(
-        "nvflare.tool.recipe.recipe_cli._RECIPE_PACKAGE_ROOTS",
-        [{"package": "fake.recipes", "framework": "sklearn"}],
+        recipe_cli,
+        "_RECIPE_PACKAGE_ROOTS",
+        [{"package": "nvflare.fake.recipes", "framework": "pytorch"}],
     )
-    monkeypatch.setattr("nvflare.tool.recipe.recipe_cli._DOCUMENTED_RECIPE_SPECS", {})
+    monkeypatch.setattr(recipe_cli, "_DOCUMENTED_RECIPE_SPECS", {})
 
-    def fake_import_module(name):
-        if name == "fake.recipes":
-            return fake_package
-        if name == "fake.recipes.kmeans":
-            return fake_module
-        raise ImportError(name)
+    assert recipe_cli._discover_recipe_catalog() == []
 
-    monkeypatch.setattr("nvflare.tool.recipe.recipe_cli._import_module", fake_import_module)
+
+def test_recipe_catalog_generation_prefers_leaf_recipe_class(tmp_path, monkeypatch):
+    from nvflare.tool.recipe import recipe_cli
+
+    package_root = tmp_path / "nvflare" / "fake" / "recipes"
+    package_root.mkdir(parents=True)
+    (package_root / "swarm.py").write_text(
+        """class BaseRecipe(Recipe):
+    \"\"\"Base helper recipe.\"\"\"
+
+class FinalWorkflow(BaseRecipe):
+    \"\"\"Concrete exported recipe.\"\"\"
+
+    def __init__(self):
+        pass
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(recipe_cli, "_NVFLARE_PACKAGE_ROOT", tmp_path / "nvflare")
     monkeypatch.setattr(
-        "nvflare.tool.recipe.recipe_cli.pkgutil.iter_modules",
-        lambda path, prefix="": [(None, "fake.recipes.kmeans", False)],
+        recipe_cli,
+        "_RECIPE_PACKAGE_ROOTS",
+        [{"package": "nvflare.fake.recipes", "framework": "pytorch"}],
     )
+    monkeypatch.setattr(recipe_cli, "_DOCUMENTED_RECIPE_SPECS", {})
 
-    catalog = _load_catalog(framework="sklearn")
+    catalog = recipe_cli._discover_recipe_catalog()
 
-    assert catalog[0]["algorithm"] == "kmeans"
-    assert catalog[0]["aggregation"] == "cluster_centers"
-    assert catalog[0]["state_exchange"] == "cluster_centers"
-
-
-def test_recipe_catalog_core_framework_is_not_special_catch_all(monkeypatch):
-    from nvflare.recipe.spec import Recipe
-    from nvflare.tool.recipe.recipe_cli import _load_catalog
-
-    class CoreRecipe(Recipe):
-        """Core recipe."""
-
-        def __init__(self):
-            pass
-
-    core_package = ModuleType("fake.core")
-    core_package.__path__ = ["fake/core"]
-
-    core_module = ModuleType("fake.core.fedavg")
-    CoreRecipe.__module__ = "fake.core.fedavg"
-    setattr(core_module, "CoreRecipe", CoreRecipe)
-
-    monkeypatch.setattr(
-        "nvflare.tool.recipe.recipe_cli._RECIPE_PACKAGE_ROOTS",
-        [
-            {"package": "fake.core", "framework": "core"},
-            {"package": "fake.pt", "framework": "pytorch"},
-        ],
-    )
-    monkeypatch.setattr("nvflare.tool.recipe.recipe_cli._DOCUMENTED_RECIPE_SPECS", {})
-
-    def fake_import_module(name):
-        if name == "fake.core":
-            return core_package
-        if name == "fake.core.fedavg":
-            return core_module
-        raise ModuleNotFoundError(name)
-
-    monkeypatch.setattr("nvflare.tool.recipe.recipe_cli._import_module", fake_import_module)
-    monkeypatch.setattr(
-        "nvflare.tool.recipe.recipe_cli.pkgutil.iter_modules",
-        lambda path, prefix="": [(None, "fake.core.fedavg", False)],
-    )
-
-    assert _load_catalog(framework="pytorch") == []
-    assert _load_catalog(framework="core") == [
-        {
-            "name": "fedavg",
-            "description": "Core recipe.",
-            "framework": "core",
-            "module": "fake.core.fedavg",
-            "class": "CoreRecipe",
-            "algorithm": "fedavg",
-            "aggregation": "weighted_average",
-            "state_exchange": "full_model",
-            "privacy": [],
-        }
-    ]
+    assert catalog[0]["class"] == "FinalWorkflow"
+    assert catalog[0]["description"] == "Concrete exported recipe."
 
 
-def test_recipe_catalog_skips_plain_import_errors_from_optional_recipes(monkeypatch):
-    from nvflare.tool.recipe.recipe_cli import _load_catalog
+def test_generated_recipe_catalog_is_current():
+    from nvflare.tool.recipe.generate_recipe_catalog import _render_catalog
+    from nvflare.tool.recipe.recipe_cli import _RECIPE_CATALOG_PATH
 
-    fake_package = ModuleType("fake.recipes")
-    fake_package.__path__ = ["fake/recipes"]
-
-    monkeypatch.setattr(
-        "nvflare.tool.recipe.recipe_cli._RECIPE_PACKAGE_ROOTS",
-        [{"package": "fake.recipes", "framework": "pytorch"}],
-    )
-    monkeypatch.setattr("nvflare.tool.recipe.recipe_cli._DOCUMENTED_RECIPE_SPECS", {})
-
-    def fake_import_module(name):
-        if name == "fake.recipes":
-            return fake_package
-        if name == "fake.recipes.broken":
-            raise ImportError("broken recipe import")
-        raise ModuleNotFoundError(name)
-
-    monkeypatch.setattr("nvflare.tool.recipe.recipe_cli._import_module", fake_import_module)
-    monkeypatch.setattr(
-        "nvflare.tool.recipe.recipe_cli.pkgutil.iter_modules",
-        lambda path, prefix="": [(None, "fake.recipes.broken", False)],
-    )
-
-    assert _load_catalog(framework="pytorch") == []
-
-
-def test_recipe_catalog_skips_syntax_errors_from_optional_recipes(monkeypatch):
-    from nvflare.tool.recipe.recipe_cli import _load_catalog
-
-    fake_package = ModuleType("fake.recipes")
-    fake_package.__path__ = ["fake/recipes"]
-
-    monkeypatch.setattr(
-        "nvflare.tool.recipe.recipe_cli._RECIPE_PACKAGE_ROOTS",
-        [{"package": "fake.recipes", "framework": "pytorch"}],
-    )
-    monkeypatch.setattr("nvflare.tool.recipe.recipe_cli._DOCUMENTED_RECIPE_SPECS", {})
-
-    def fake_import_module(name):
-        if name == "fake.recipes":
-            return fake_package
-        if name == "fake.recipes.broken":
-            raise SyntaxError("invalid syntax")
-        raise ModuleNotFoundError(name)
-
-    monkeypatch.setattr("nvflare.tool.recipe.recipe_cli._import_module", fake_import_module)
-    monkeypatch.setattr(
-        "nvflare.tool.recipe.recipe_cli.pkgutil.iter_modules",
-        lambda path, prefix="": [(None, "fake.recipes.broken", False)],
-    )
-
-    assert _load_catalog(framework="pytorch") == []
-
-
-def test_recipe_catalog_prefers_leaf_recipe_class_when_module_has_base_and_subclass(monkeypatch):
-    from nvflare.recipe.spec import Recipe
-    from nvflare.tool.recipe.recipe_cli import _load_catalog
-
-    class BaseRecipe(Recipe):
-        """Base helper recipe."""
-
-        def __init__(self):
-            pass
-
-    class FinalRecipe(BaseRecipe):
-        """Concrete exported recipe."""
-
-        def __init__(self):
-            pass
-
-    fake_package = ModuleType("fake.recipes")
-    fake_package.__path__ = ["fake/recipes"]
-
-    fake_module = ModuleType("fake.recipes.swarm")
-    BaseRecipe.__module__ = "fake.recipes.swarm"
-    FinalRecipe.__module__ = "fake.recipes.swarm"
-    setattr(fake_module, "BaseRecipe", BaseRecipe)
-    setattr(fake_module, "FinalRecipe", FinalRecipe)
-
-    monkeypatch.setattr(
-        "nvflare.tool.recipe.recipe_cli._RECIPE_PACKAGE_ROOTS",
-        [{"package": "fake.recipes", "framework": "pytorch"}],
-    )
-    monkeypatch.setattr("nvflare.tool.recipe.recipe_cli._DOCUMENTED_RECIPE_SPECS", {})
-
-    def fake_import_module(name):
-        if name == "fake.recipes":
-            return fake_package
-        if name == "fake.recipes.swarm":
-            return fake_module
-        raise ImportError(name)
-
-    monkeypatch.setattr("nvflare.tool.recipe.recipe_cli._import_module", fake_import_module)
-    monkeypatch.setattr(
-        "nvflare.tool.recipe.recipe_cli.pkgutil.iter_modules",
-        lambda path, prefix="": [(None, "fake.recipes.swarm", False)],
-    )
-
-    catalog = _load_catalog(framework="pytorch")
-
-    assert catalog == [
-        {
-            "name": "swarm-pt",
-            "description": "Concrete exported recipe.",
-            "framework": "pytorch",
-            "module": "fake.recipes.swarm",
-            "class": "FinalRecipe",
-            "algorithm": "swarm",
-            "aggregation": None,
-            "state_exchange": "full_model",
-            "privacy": [],
-        }
-    ]
+    assert (
+        _RECIPE_CATALOG_PATH.read_text(encoding="utf-8") == _render_catalog()
+    ), "recipe catalog is stale; run 'python -m nvflare.tool.recipe.generate_recipe_catalog'"
 
 
 def test_recipe_cli_import_does_not_consume_recipe_export_args(monkeypatch):
