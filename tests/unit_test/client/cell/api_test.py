@@ -1185,6 +1185,43 @@ class TestInit:
         finally:
             api.shutdown()
 
+    def test_session_ready_gets_fresh_budget_after_slow_hello(self, bootstrap_path, env, monkeypatch):
+        clock = [100.0]
+        monkeypatch.setattr(cell_api.time, "monotonic", lambda: clock[0])
+
+        def delayed_hello(topic, _target, _request):
+            if topic == Topic.HELLO:
+                clock[0] += cell_api._HELLO_TIMEOUT
+                return _hello_accepted_reply()
+            return make_cell_reply(CellReturnCode.OK)
+
+        env.on_request = delayed_hello
+        api = _init_api(bootstrap_path, env)
+        try:
+            assert [request[0] for request in env.requests].count(Topic.SESSION_READY) == 1
+            assert api._session_id == SESSION_ID
+        finally:
+            api.shutdown()
+
+    def test_session_ready_timeout_reports_attempts_and_elapsed(self, bootstrap_path, env, monkeypatch):
+        clock = [100.0]
+        monkeypatch.setattr(cell_api, "_HELLO_TIMEOUT", 2.0)
+        monkeypatch.setattr(cell_api.time, "monotonic", lambda: clock[0])
+
+        def advance_clock(seconds):
+            clock[0] += seconds
+
+        monkeypatch.setattr(cell_api.time, "sleep", advance_clock)
+        env.on_session_ready = lambda _topic, _target, _request: make_cell_reply(CellReturnCode.TIMEOUT)
+        api = CellClientAPI(bootstrap_file=bootstrap_path)
+        api._cell = env
+        api._session_id = SESSION_ID
+
+        with pytest.raises(TrainerSessionError, match=r"after 2 attempts over 2\.0s"):
+            api._confirm_session_ready()
+
+        assert [request[0] for request in env.requests] == [Topic.SESSION_READY, Topic.SESSION_READY]
+
     def test_init_raises_on_hello_rejected(self, bootstrap_path, env):
         env.on_request = lambda topic, target, request: make_cell_reply(
             CellReturnCode.OK, body={MsgKey.REPLY_TOPIC: Topic.HELLO_REJECTED, MsgKey.REASON: "bad token"}

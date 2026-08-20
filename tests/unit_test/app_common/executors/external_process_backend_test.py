@@ -434,6 +434,39 @@ class TestInitializeAndFinalize:
         # launch-token file is removed after teardown
         assert not os.path.exists(os.path.join(env.app_dir, bootstrap_file_name(1)))
 
+    def test_cleanup_clears_session_under_launch_lock(self, env):
+        backend, _ = _initialized_backend(env)
+        trainer = backend._active_launch
+        session_id = trainer.session_id
+        original_lock = backend._launch_lock
+        entering_lock = threading.Event()
+
+        class ObservedLock:
+            def __enter__(self):
+                entering_lock.set()
+                original_lock.acquire()
+                return self
+
+            def __exit__(self, exc_type, exc_value, traceback):
+                original_lock.release()
+
+        backend._launch_lock = ObservedLock()
+        original_lock.acquire()
+        cleanup_thread = threading.Thread(target=backend._cleanup_trainer, args=(trainer,))
+        try:
+            entering_lock.clear()
+            cleanup_thread.start()
+            assert entering_lock.wait(timeout=1.0)
+            assert trainer.session_id == session_id
+        finally:
+            original_lock.release()
+
+        cleanup_thread.join(timeout=1.0)
+        backend._launch_lock = original_lock
+        assert not cleanup_thread.is_alive()
+        assert trainer.session_id is None
+        backend.finalize(FLContext())
+
     def test_initialize_preserves_pass_through_refs_in_secure_mode(self, env):
         backend = ExternalProcessBackend()
         fl_ctx = _make_fl_ctx(_make_engine(env.cell), env.app_dir, secure_mode=True)
@@ -1266,6 +1299,69 @@ class TestHello:
         finally:
             backend.finalize(FLContext())
             init_thread.join(timeout=1.0)
+
+    def test_session_ready_reply_uses_locked_session_snapshot(self, env):
+        backend, _ = _initialized_backend(env)
+        trainer = backend._active_launch
+        session_id = trainer.session_id
+        original_lock = backend._launch_lock
+
+        class ClearSessionAfterUnlock:
+            def __enter__(self):
+                original_lock.acquire()
+                return self
+
+            def __exit__(self, exc_type, exc_value, traceback):
+                original_lock.release()
+                trainer.session_id = None
+
+        backend._launch_lock = ClearSessionAfterUnlock()
+        try:
+            reply = env.cell.deliver(
+                Topic.SESSION_READY,
+                trainer.trainer_fqcn,
+                {MsgKey.SESSION_ID: session_id},
+            )
+            assert reply.payload == {
+                MsgKey.REPLY_TOPIC: Topic.SESSION_READY,
+                MsgKey.SESSION_ID: session_id,
+            }
+        finally:
+            backend._launch_lock = original_lock
+            backend.finalize(FLContext())
+
+    @pytest.mark.parametrize(
+        "bad_header",
+        [
+            CellMessageAuthHeaderKey.CLIENT_NAME,
+            CellMessageAuthHeaderKey.TOKEN,
+            CellMessageAuthHeaderKey.TOKEN_SIGNATURE,
+        ],
+    )
+    def test_session_ready_with_non_ascii_auth_header_rejects_cleanly(self, env, bad_header):
+        backend = ExternalProcessBackend()
+        fl_ctx = _make_fl_ctx(_make_engine(env.cell), env.app_dir, secure_mode=True)
+        backend.initialize(_make_context(), fl_ctx)
+        try:
+            trainer = backend._active_launch
+            headers = {
+                CellMessageAuthHeaderKey.CLIENT_NAME: "site-1",
+                CellMessageAuthHeaderKey.TOKEN: "site-auth-token",
+                CellMessageAuthHeaderKey.TOKEN_SIGNATURE: "site-auth-signature",
+            }
+            headers[bad_header] = "non-ascii-\N{SNOWMAN}"
+            reply = env.cell.deliver(
+                Topic.SESSION_READY,
+                trainer.trainer_fqcn,
+                {MsgKey.SESSION_ID: trainer.session_id},
+                headers=headers,
+            )
+            assert reply.payload == {
+                MsgKey.REPLY_TOPIC: Topic.ERROR,
+                MsgKey.REASON: "delegated site authentication headers are not installed",
+            }
+        finally:
+            backend.finalize(FLContext())
 
     def test_stale_process_hello_is_rejected_without_failing_session(self, env):
         backend, _ = _initialized_backend(env)

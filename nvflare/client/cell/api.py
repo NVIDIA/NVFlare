@@ -330,17 +330,20 @@ class CellClientAPI(APISpec):
         self._session_id = session_id
         self._heartbeat_interval = heartbeat_interval
         self._heartbeat_timeout = heartbeat_timeout
-        self._confirm_session_ready(deadline)
+        self._confirm_session_ready()
         self._note_cj_activity()
 
-    def _confirm_session_ready(self, deadline: float) -> None:
+    def _confirm_session_ready(self) -> None:
         """Tell the CJ that HELLO_ACCEPTED processing and auth-filter setup are complete."""
+        started = time.monotonic()
+        deadline = started + _HELLO_TIMEOUT
         attempt = 0
         while True:
-            attempt += 1
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                raise TrainerSessionError(f"no SESSION_READY confirmation from the CJ after {_HELLO_TIMEOUT}s")
+                elapsed = time.monotonic() - started
+                raise TrainerSessionError(f"no SESSION_READY confirmation after {attempt} attempts over {elapsed:.1f}s")
+            attempt += 1
             reply = self._cell.send_request(
                 channel=CHANNEL,
                 topic=Topic.SESSION_READY,

@@ -773,13 +773,13 @@ class ExternalProcessBackend(CellBackendBase):
         except Exception:
             self.logger.error(secure_format_traceback())
         trainer.token = ""
-        trainer.session_id = None
         try:
             if trainer.bootstrap_path and os.path.exists(trainer.bootstrap_path):
                 os.remove(trainer.bootstrap_path)
         except Exception as e:
             self.logger.debug(f"failed to remove {trainer.bootstrap_path}: {e}")
         with self._launch_lock:
+            trainer.session_id = None
             self._protocol_sessions.pop(trainer.trainer_fqcn, None)
             if self._active_launch is trainer:
                 self._active_launch = None
@@ -1403,10 +1403,11 @@ class ExternalProcessBackend(CellBackendBase):
                     f"HELLO accepted from {origin} (session_id={trainer.session_id}); awaiting SESSION_READY"
                 )
             trainer.touch_peer_activity()
+            session_id = trainer.session_id
         return self._protocol_reply(
             Topic.HELLO_ACCEPTED,
             **{
-                MsgKey.SESSION_ID: trainer.session_id,
+                MsgKey.SESSION_ID: session_id,
                 MsgKey.JOB_ID: self._job_id,
                 MsgKey.SITE_NAME: self._site_name,
                 MsgKey.HEARTBEAT_INTERVAL: self._context.heartbeat_interval,
@@ -1424,6 +1425,7 @@ class ExternalProcessBackend(CellBackendBase):
             return make_cell_reply(CellReturnCode.INVALID_REQUEST, error="SESSION_READY payload must be a dict")
 
         origin = request.get_header(MessageHeaderKey.ORIGIN) or ""
+        session_id = None
         with self._launch_lock:
             trainer = self._active_launch
             if trainer is None or trainer.session_id is None:
@@ -1436,15 +1438,16 @@ class ExternalProcessBackend(CellBackendBase):
                 reason = "delegated site authentication headers are not installed"
             else:
                 reason = None
+                session_id = trainer.session_id
                 trainer.touch_peer_activity()
                 if not trainer.ready.is_set():
                     trainer.ready.set()
-                    self.logger.info(f"trainer readiness confirmed from {origin} (session_id={trainer.session_id})")
+                    self.logger.info(f"trainer readiness confirmed from {origin} (session_id={session_id})")
 
         if reason:
             self.logger.warning(f"rejecting SESSION_READY: {reason}")
             return self._protocol_reply(Topic.ERROR, **{MsgKey.REASON: reason})
-        return self._protocol_reply(Topic.SESSION_READY, **{MsgKey.SESSION_ID: trainer.session_id})
+        return self._protocol_reply(Topic.SESSION_READY, **{MsgKey.SESSION_ID: session_id})
 
     def _delegated_auth_headers_match(self, request) -> bool:
         expected = (
@@ -1454,7 +1457,9 @@ class ExternalProcessBackend(CellBackendBase):
         )
         for key, value in expected:
             actual = request.get_header(key)
-            if not isinstance(actual, str) or not isinstance(value, str) or not secrets.compare_digest(actual, value):
+            if not isinstance(actual, str) or not isinstance(value, str):
+                return False
+            if not secrets.compare_digest(actual.encode("utf-8"), value.encode("utf-8")):
                 return False
         return True
 
