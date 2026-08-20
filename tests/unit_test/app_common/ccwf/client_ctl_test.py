@@ -12,11 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import gc
 import threading
+import weakref
 from unittest.mock import MagicMock
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import ReturnCode
+from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
@@ -108,6 +110,79 @@ def test_do_learn_records_failure_when_abort_races_exception_logging():
     assert not learn_thread.is_alive()
     assert ctl.learn_task is None
     assert ctl.current_status.error == ReturnCode.EXECUTION_EXCEPTION
+
+
+def test_about_to_end_run_aborts_active_background_learn_before_readiness_checks():
+    ctl = _FailingClientSideController()
+    ctl.learn_task = _LearnTask("train", Shareable(), FLContext())
+    ctl.fire_event = MagicMock()
+    ctl.finalize = MagicMock()
+    fl_ctx = FLContext()
+
+    ctl.handle_event(EventType.ABOUT_TO_END_RUN, fl_ctx)
+
+    assert ctl.asked_to_stop is True
+    assert ctl.learn_task.abort_signal.triggered
+    ctl.fire_event.assert_called_once_with(EventType.ABORT_TASK, fl_ctx)
+    ctl.finalize.assert_called_once_with(fl_ctx)
+
+
+def test_abort_current_task_never_clears_latched_run_abort():
+    ctl = _FailingClientSideController()
+    ctl.learn_task = _LearnTask("train", Shareable(), FLContext())
+    ctl.fire_event = MagicMock()
+    fl_ctx = FLContext()
+    fl_ctx.set_prop(FLContextKey.RUN_ABORT_REQUESTED, True, private=True, sticky=False)
+
+    ctl._abort_current_task(fl_ctx)
+
+    assert fl_ctx.get_prop(FLContextKey.RUN_ABORT_REQUESTED) is True
+    assert ctl.learn_task.abort_signal.triggered
+    ctl.fire_event.assert_called_once_with(EventType.ABORT_TASK, fl_ctx)
+
+
+def test_about_to_end_run_preserves_completed_workflow():
+    ctl = _FailingClientSideController()
+    ctl.workflow_done = True
+    ctl._abort_current_task = MagicMock()
+    ctl.finalize = MagicMock()
+
+    ctl.handle_event(EventType.ABOUT_TO_END_RUN, FLContext())
+
+    ctl._abort_current_task.assert_not_called()
+    ctl.finalize.assert_not_called()
+
+
+class _SucceedingClientSideController(_FailingClientSideController):
+    def __init__(self):
+        super().__init__()
+        self.task_alive_at_cleanup = None
+        self.task_ref = None
+
+    def do_learn_task(self, name: str, data: Shareable, fl_ctx: FLContext, abort_signal: Signal):
+        self.asked_to_stop = True
+
+    def _cleanup_learn_task_memory(self):
+        # By cleanup time the finished task must already be unreferenced by
+        # the learn loop (both self.learn_task and its loop-local alias), so
+        # the collection below can actually free a multi-GB payload.
+        gc.collect()
+        self.task_alive_at_cleanup = self.task_ref() is not None
+        super()._cleanup_learn_task_memory()
+
+
+def test_do_learn_drops_task_refs_before_memory_cleanup():
+    ctl = _SucceedingClientSideController()
+    ctl.logger = MagicMock()
+    task = _LearnTask("train", Shareable(), FLContext())
+    ctl.task_ref = weakref.ref(task)
+    ctl.learn_task = task
+    del task
+
+    ctl._do_learn()
+
+    assert ctl.learn_task is None
+    assert ctl.task_alive_at_cleanup is False
 
 
 def test_no_report_after_workflow_done():

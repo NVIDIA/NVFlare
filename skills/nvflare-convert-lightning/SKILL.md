@@ -1,6 +1,6 @@
 ---
 name: nvflare-convert-lightning
-description: "Convert existing PyTorch Lightning training code into an NVFLARE federated job using the Lightning Client API patch, local validation, and job export; do not use for plain PyTorch, other frameworks, deployment, POC/production lifecycle, or experiment workflows."
+description: "Convert existing PyTorch Lightning training code into an NVFLARE federated job using the Lightning Client API patch, local validation, and job export; use when the user names PyTorch Lightning or preliminary source inspection identifies one Lightning owner, and not for plain PyTorch, other frameworks, deployment, POC/production lifecycle, or experiment workflows."
 license: Apache-2.0
 version: "0.1.0"
 metadata:
@@ -80,8 +80,7 @@ distribution; handle conversion later as a separate request.
 5. Reuse the PyTorch recipe family; Lightning is not a separate recipe family.
    For the standard case — the user explicitly requests FedAvg and inspection
    identifies Lightning — run `nvflare recipe show fedavg-pt --format json`
-   directly and construct it. Use the returned module, class, and parameters;
-   for `fedavg-pt`, import `FedAvgRecipe` from
+   directly and construct it. For `fedavg-pt`, import `FedAvgRecipe` only from
    `nvflare.app_opt.pt.recipes.fedavg`, never from `nvflare.recipe`. Load
    `../nvflare-shared/references/pytorch-family-recipe-selection.md` (discovery,
    algorithm guide, catalog-based selection, HE-not-supported rule; FedAvg,
@@ -89,9 +88,10 @@ distribution; handle conversion later as a separate request.
    non-FedAvg algorithms, reserving `nvflare recipe list` for those cases. Use
    FedEval for evaluation-only. After every `recipe show`, load
    `../nvflare-shared/references/pytorch-family-recipe-construction.md` and
-   derive the recipe's construction capabilities. Do not inspect recipe source,
-   signatures, or docstrings to rediscover parameters already returned by
-   `recipe show`.
+   derive its construction capabilities. After `recipe show` succeeds, use that documented
+   path: do not run exploratory NVFLARE imports or use `inspect`, `hasattr`, constant
+   discovery, SDK source/docstring reads, or lifecycle probes. If a required detail is absent,
+   report a skill gap or fail closed instead of guessing. Call `recipe.execute(SimEnv(...))`.
 6. Convert the training entry point to the Lightning Client API: build the
    `Trainer`, call `flare.patch(trainer)`, and let the patched trainer own
    model exchange. Keep evaluation inside Lightning per
@@ -101,16 +101,16 @@ distribution; handle conversion later as a separate request.
    "cyclic"`: Cyclic persists only its final sequential model; every other
    algorithm uses explicit validation for server metrics and, for training,
    best-model selection. Verify the key in server evidence or fail closed.
-7. Add or update `job.py` under the shared "Recipe Model Config" policy. A
-   direct instance, when allowed by that policy, must be the complete
-   `LightningModule`, not its inner network. Add the requested `aggregator=`
-   wiring and the metric, tensor-transport, server
+7. Add or update `job.py` under the shared constructor-serialization rule. Use
+   the recipe's `class_path` or `path` key plus complete `args` when values are
+   needed; a permitted zero-argument instance is the complete module. Add
+   requested `aggregator=` wiring and the metric, tensor-transport, server
    offload, and execution settings derived from the shared PyTorch-family
    construction profile. If sites need distinct `train_args`, make every site
    override the complete argument string; never split shared arguments and a
    site-specific data path across recipe-level and per-site values expecting a
    merge.
-8. Only after generated files exist, load
+8. Immediately after generated files exist and before any preflight, smoke test, cleanup, validation, or execution command, load
    `../nvflare-shared/references/validation-evidence.md`, then
    `references/lightning-validation.md`. Before executing a full run, select and
    record exactly one final validation target:
@@ -152,11 +152,11 @@ distribution; handle conversion later as a separate request.
 - Must audit model constructor arguments before writing `job.py` by reading the
   `LightningModule.__init__` signature and the selected recipe's `model`
   parameter from `nvflare recipe show <recipe-name> --format json`, not by
-  reading NVFLARE library source. The shared "Recipe Model Config" policy
-  governs whether to emit `class_path`/`args` config or a direct
-  `LightningModule`; required values must be statically clear from literal
-  source, configuration, or supplied metadata. Otherwise ask one semantic
-  question when an answer channel exists or fail closed on that missing value.
+  reading NVFLARE library source. Emit the recipe-documented `class_path` or
+  `path` key plus complete `args` for every required or overridden value. Direct
+  `LightningModule` use is allowed only when unchanged zero-argument defaults reconstruct it. Values
+  must be clear from source, configuration, or supplied metadata. Otherwise ask
+  one semantic question when an answer channel exists or fail closed.
 - Must use the PyTorch recipe family; must not invent a Lightning-only recipe.
 - Must apply
   `../nvflare-shared/references/pytorch-family-recipe-construction.md` after

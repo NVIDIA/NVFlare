@@ -25,8 +25,15 @@ from unittest.mock import MagicMock, Mock
 import pytest
 
 from nvflare.apis.analytix import AnalyticsDataType
-from nvflare.apis.dxo import DXO, DataKind
-from nvflare.apis.fl_constant import FLContextKey, FLMetaKey, ReservedKey, ReturnCode, ServerCommandNames
+from nvflare.apis.dxo import DXO, DataKind, from_shareable
+from nvflare.apis.fl_constant import (
+    ConnectionSecurity,
+    FLContextKey,
+    FLMetaKey,
+    ReservedKey,
+    ReturnCode,
+    ServerCommandNames,
+)
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeJobError
 from nvflare.apis.shareable import Shareable
@@ -46,16 +53,28 @@ from nvflare.client.cell.bootstrap import (
 )
 from nvflare.client.cell.defs import CHANNEL, PROTOCOL_VERSION, MsgKey, Topic
 from nvflare.client.config import ConfigKey, ExchangeFormat, TransferType
+from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.data_event.utils import set_scope_property
 from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.cellnet.utils import make_reply as make_cell_reply
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
+from nvflare.fuel.f3.drivers.driver_params import DriverParams
+from nvflare.fuel.f3.streaming.download_service import SOURCE_FAILURE_TOPIC
+from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef
 
 CJ_FQCN = "site-1.job-1"
 
-PROTOCOL_TOPICS = (Topic.HELLO, Topic.RESULT_READY, Topic.LOG, Topic.HEARTBEAT)
+PROTOCOL_TOPICS = (Topic.HELLO, Topic.RESULT_READY, Topic.RESULT_SOURCE_SETTLED, Topic.LOG, Topic.HEARTBEAT)
+
+
+@pytest.fixture(autouse=True)
+def client_job_exit(monkeypatch):
+    """Keep fatal-source tests from terminating the pytest worker."""
+    exit_process = MagicMock()
+    monkeypatch.setattr(ebp.os, "_exit", exit_process)
+    return exit_process
 
 
 def _task_accepted_reply():
@@ -113,6 +132,13 @@ class FakeCell:
         self.decode_pass_through_channels = set()
         self.decode_pass_through_topics = set()
         self.listener_url = "tcp://127.0.0.1:56789"
+        self.listener_params = {
+            DriverParams.SCHEME.value: "tcp",
+            DriverParams.HOST.value: "127.0.0.1",
+            DriverParams.CONNECTION_SECURITY.value: ConnectionSecurity.CLEAR,
+        }
+        self.configured_listener_url = None
+        self.listener_args = None
         self.internal_listener_made = False
         self.cbs = {}
         self.sent = []  # (topic, target, payload, timeout)
@@ -129,14 +155,26 @@ class FakeCell:
     def is_cell_connected(self, target_fqcn):
         return target_fqcn not in self.disconnected
 
-    def make_internal_listener(self):
+    def make_internal_listener(self, scheme=None, resources=None):
         self.internal_listener_made = True
+        self.listener_args = (scheme, resources)
+        if self.configured_listener_url and scheme is None and resources is None:
+            self.listener_url = self.configured_listener_url
+        elif scheme == "tcp" and resources:
+            self.listener_url = "tcp://localhost:56789"
+            self.listener_params = {
+                DriverParams.SCHEME.value: "tcp",
+                DriverParams.HOST.value: resources[DriverParams.LISTEN_HOST.value],
+                DriverParams.CONNECTION_SECURITY.value: resources[DriverParams.CONNECTION_SECURITY.value],
+            }
 
     def get_internal_listener_url(self):
         return self.listener_url
 
+    def get_internal_listener_params(self):
+        return self.listener_params
+
     def register_request_cb(self, channel, topic, cb):
-        assert channel == CHANNEL
         self.cbs[topic] = cb
 
     def send_request(self, channel, topic, target, request, timeout=None, **kwargs):
@@ -230,6 +268,10 @@ def env(tmp_path, monkeypatch):
     # late-bound so a test may swap harness.popen (e.g. multi-HELLO launch sequences)
     monkeypatch.setattr(ebp.subprocess, "Popen", lambda *args, **kwargs: harness.popen(*args, **kwargs))
     monkeypatch.setattr(ebp, "log_subprocess_output", lambda process, logger: None)
+    # Keep forced-cleanup tests fast while preserving the production ratio between
+    # settled natural-exit time and the reserved TERM grace.
+    monkeypatch.setattr(ebp, "_RESULT_REAPER_MAX_TOTAL_TIMEOUT", 0.5)
+    monkeypatch.setattr(ebp, "_RESULT_REAPER_FORCE_TERM_GRACE", 0.1)
     # start_new_session gives pgid == pid; route group signals to the fake process table
     monkeypatch.setattr(ebp.os, "killpg", harness.killpg, raising=False)
     return holder
@@ -251,6 +293,7 @@ def _make_fl_ctx(engine, app_dir, secure_mode=False):
     fl_ctx.put(key=ReservedKey.RUN_NUM, value="job-1", private=False, sticky=False)
     fl_ctx.put(key=ReservedKey.IDENTITY_NAME, value="site-1", private=False, sticky=False)
     workspace = Mock()
+    workspace.get_run_dir.return_value = app_dir
     workspace.get_app_dir.return_value = app_dir
     workspace.get_app_custom_dir.return_value = app_dir
     fl_ctx.put(key=FLContextKey.WORKSPACE_OBJECT, value=workspace, private=True, sticky=False)
@@ -442,6 +485,69 @@ class TestInitializeAndFinalize:
         finally:
             backend.finalize(FLContext())
 
+    @pytest.mark.parametrize(
+        "parent_scheme,parent_security",
+        [
+            ("tcp", ConnectionSecurity.CLEAR),
+            ("stcp", ConnectionSecurity.MTLS),
+        ],
+    )
+    def test_trainer_listener_is_independent_from_fixed_parent_listener(self, env, parent_scheme, parent_security):
+        fixed_parent_url = f"{parent_scheme}://localhost:8102"
+        env.cell.parent_url = fixed_parent_url
+        env.cell.parent_resources = {DriverParams.CONNECTION_SECURITY.value: parent_security}
+        env.cell.configured_listener_url = fixed_parent_url
+        original_parent_resources = dict(env.cell.parent_resources)
+
+        backend, fl_ctx = _initialized_backend(env)
+        try:
+            trainer = backend._active_launch
+            assert trainer is not None and trainer.ready.is_set() and trainer.session_id
+            assert env.cell.listener_args == (
+                "tcp",
+                {
+                    DriverParams.HOST.value: "localhost",
+                    DriverParams.LISTEN_HOST.value: "127.0.0.1",
+                    DriverParams.CONNECTION_SECURITY.value: ConnectionSecurity.CLEAR,
+                },
+            )
+            assert env.cell.listener_url == "tcp://localhost:56789"
+            assert env.cell.listener_url != fixed_parent_url
+
+            bootstrap_path = env.harness.processes[0].kwargs["env"][BOOTSTRAP_FILE_ENV_VAR]
+            bootstrap = read_bootstrap_config(bootstrap_path)
+            assert bootstrap[BootstrapKey.CONNECT_URL] == env.cell.listener_url
+            for field in ("connection_security", "ca_cert", "client_cert", "client_key"):
+                assert field not in bootstrap
+
+            seen = _install_auto_result(env)
+            result = backend.execute("train", _result_shareable(), fl_ctx, Signal())
+            assert from_shareable(result).data == {"w": [1.0]}
+            assert seen.task_payloads
+        finally:
+            backend.finalize(FLContext())
+
+        assert env.cell.parent_url == fixed_parent_url
+        assert env.cell.parent_resources == original_parent_resources
+
+    def test_initialize_rejects_preexisting_mtls_listener_before_launch(self, env):
+        env.cell.listener_url = "stcp://localhost:8102"
+        env.cell.listener_params = {
+            DriverParams.SCHEME.value: "stcp",
+            DriverParams.HOST.value: "127.0.0.1",
+            DriverParams.CONNECTION_SECURITY.value: ConnectionSecurity.MTLS,
+        }
+        # CoreCell retains an internal listener that another component created first.
+        env.cell.make_internal_listener = MagicMock()
+        backend = ExternalProcessBackend()
+        fl_ctx = _make_fl_ctx(_make_engine(env.cell), env.app_dir)
+
+        with pytest.raises(RuntimeError, match="listener_scheme='stcp'.*connection_security='mtls'"):
+            backend.initialize(_make_context(), fl_ctx)
+
+        env.cell.make_internal_listener.assert_called_once()
+        assert not env.harness.processes
+
     def test_initialize_unwinds_when_hello_never_arrives(self, env):
         env.harness.auto_hello = False
         backend = ExternalProcessBackend()
@@ -470,17 +576,42 @@ class TestInitializeAndFinalize:
             backend.initialize(_make_context(launch_timeout=30.0), fl_ctx)
         assert time.monotonic() - start < 5.0
 
-    def test_initialize_fails_fast_when_hello_is_rejected(self, env):
+    def test_invalid_token_hello_does_not_reject_legitimate_trainer(self, env):
         def bad_token(payload):
             payload[MsgKey.PROOF] = "wrong-token"
 
         env.harness.hello_mutator = bad_token
-        backend = ExternalProcessBackend()
-        fl_ctx = _make_fl_ctx(_make_engine(env.cell), env.app_dir)
+        original_popen = env.harness.popen
+        legitimate_replies = []
 
-        with pytest.raises(RuntimeError, match="rejected.*launch token mismatch"):
-            backend.initialize(_make_context(launch_timeout=30.0), fl_ctx)
-        assert env.harness.processes[0].returncode is not None
+        def popen_with_attacker_hello(args, **kwargs):
+            process = original_popen(args, **kwargs)
+            config = env.harness.bootstrap_configs[-1]
+            legitimate_replies.append(
+                env.cell.deliver(
+                    Topic.HELLO,
+                    config[BootstrapKey.TRAINER_FQCN],
+                    {
+                        MsgKey.TRAINER_FQCN: config[BootstrapKey.TRAINER_FQCN],
+                        MsgKey.PROOF: config[BootstrapKey.LAUNCH_TOKEN],
+                        MsgKey.PROTOCOL_VERSION: PROTOCOL_VERSION,
+                        MsgKey.JOB_ID: "job-1",
+                        MsgKey.SITE_NAME: "site-1",
+                        MsgKey.RANK: 0,
+                    },
+                )
+            )
+            return process
+
+        env.harness.popen = popen_with_attacker_hello
+        backend, _ = _initialized_backend(env)
+        try:
+            assert env.harness.hello_replies[0].payload[MsgKey.REPLY_TOPIC] == Topic.HELLO_REJECTED
+            assert legitimate_replies[0].payload[MsgKey.REPLY_TOPIC] == Topic.HELLO_ACCEPTED
+            assert backend._active_launch.ready.is_set()
+            assert backend._active_launch.reject_reason is None
+        finally:
+            backend.finalize(FLContext())
 
     def test_finalize_idempotent_and_stops_process_tree(self, env):
         backend, _ = _initialized_backend(env)
@@ -532,6 +663,33 @@ class TestInitializeAndFinalize:
         assert env.harness.signals_sent() == [(process.pid, signal.SIGTERM)]
         execute_gate.release.assert_called_once_with()
 
+    def test_abort_does_not_preserve_accepted_lazy_result_source(self, env):
+        backend, _ = _initialized_backend(env, shutdown_timeout=30.0)
+        process = env.harness.processes[0]
+        trainer = backend._active_launch
+        trainer.result_source_live.set()
+
+        backend.abort(FLContext())
+        backend.finalize(FLContext())
+
+        assert backend._abort is True
+        assert process.wait_timeouts == []
+        assert process.returncode is not None
+        assert backend._result_reapers == set()
+        assert env.harness.signals_sent() == [(process.pid, signal.SIGTERM)]
+
+    def test_task_only_abort_does_not_poison_later_external_process_tasks(self, env):
+        backend, _ = _initialized_backend(env)
+        fl_ctx = FLContext()
+        fl_ctx.set_prop(FLContextKey.RUN_ABORT_REQUESTED, False, private=True, sticky=False)
+
+        backend.abort(fl_ctx)
+
+        assert backend._abort is False
+        assert backend._terminal_intent is None
+        assert env.cell.fired[-1][0] == Topic.ABORT
+        backend.finalize(FLContext())
+
     def test_finalize_does_not_kill_an_accepted_lazy_result_source(self, env):
         backend, _ = _initialized_backend(env, shutdown_timeout=0.2)
         process = env.harness.processes[0]
@@ -564,13 +722,87 @@ class TestInitializeAndFinalize:
         finalize_thread.join(timeout=1.0)
         assert finalize_done.is_set()
         assert backend._active_launch is None
+        assert not trainer.result_source_live.is_set()
         assert trainer.token == ""
+
+    def test_finalize_reaps_sigkilled_accepted_result_source_without_more_signals(self, env):
+        backend, _ = _initialized_backend(env, shutdown_timeout=0.2)
+        process = env.harness.processes[0]
+        trainer = backend._active_launch
+        trainer.result_source_live.set()
+        process.exit(-signal.SIGKILL)
+
+        backend.finalize(FLContext())
+
+        assert process.returncode == -signal.SIGKILL
+        assert env.harness.signals_sent() == []
+        assert backend._result_reapers == set()
+        assert backend._active_launch is None
+        assert not trainer.result_source_live.is_set()
+        assert trainer.token == ""
+
+    def test_finalize_lets_registered_settled_result_reaper_own_natural_exit(self, env, monkeypatch):
+        monkeypatch.setattr(ebp, "_NATURAL_EXIT_REAP_INTERVAL", 0.005)
+        backend, _ = _initialized_backend(env, shutdown_timeout=0.2)
+        process = env.harness.processes[0]
+        trainer = backend._active_launch
+        trainer.result_source_live.set()
+        trainer.result_accepted.set()
+        backend._reap_trainer_after_result(trainer)
+        trainer.result_source_live.clear()
+        threading.Timer(0.03, process.exit, args=[0]).start()
+
+        backend.finalize(FLContext())
+
+        assert process.returncode == 0
+        assert [request for request in env.cell.sent if request[0] == Topic.SHUTDOWN] == []
+        assert env.harness.signals_sent() == []
+        assert backend._result_reapers == set()
+        assert backend._active_launch is None
+
+    def test_settled_result_reaper_is_not_cut_off_by_live_source_deadline(self, env, monkeypatch):
+        monkeypatch.setattr(ebp, "_LIVE_RESULT_SHUTDOWN_ACK_TIMEOUT", 0.01)
+        monkeypatch.setattr(ebp, "_NATURAL_EXIT_REAP_INTERVAL", 0.005)
+        backend, _ = _initialized_backend(env, shutdown_timeout=0.2, stop_grace_period=0.05)
+        process = env.harness.processes[0]
+        trainer = backend._active_launch
+        trainer.result_source_live.set()
+        trainer.result_accepted.set()
+        backend._reap_trainer_after_result(trainer)
+        trainer.result_source_live.clear()
+        threading.Timer(0.05, process.exit, args=[0]).start()
+
+        backend.finalize(FLContext())
+
+        assert process.returncode == 0
+        assert env.harness.signals_sent() == []
+        assert backend._result_reapers == set()
+
+    def test_abort_stops_registered_result_reaper_without_shutdown_ack_wait(self, env, monkeypatch):
+        monkeypatch.setattr(ebp, "_NATURAL_EXIT_REAP_INTERVAL", 0.005)
+        backend, _ = _initialized_backend(env, shutdown_timeout=30.0)
+        process = env.harness.processes[0]
+        trainer = backend._active_launch
+        trainer.result_source_live.set()
+        trainer.result_accepted.set()
+        backend._reap_trainer_after_result(trainer)
+
+        backend._latch_abort("job aborted")
+        backend.finalize(FLContext())
+
+        assert [request for request in env.cell.sent if request[0] == Topic.SHUTDOWN] == []
+        assert process.wait_timeouts == []
+        assert process.returncode is not None
+        assert env.harness.signals_sent() == [(process.pid, signal.SIGTERM)]
+        assert backend._result_reapers == set()
+        assert backend._active_launch is None
 
     def test_finalize_stops_source_when_shutdown_ack_says_send_already_settled(self, env):
         backend, _ = _initialized_backend(env, shutdown_timeout=0.2)
         process = env.harness.processes[0]
         trainer = backend._active_launch
         trainer.result_source_live.set()
+        trainer.result_source_task_id = "task-1"
 
         def settled_shutdown(topic, target, message):
             if topic == Topic.SHUTDOWN:
@@ -581,6 +813,7 @@ class TestInitializeAndFinalize:
         backend.finalize(FLContext())
 
         assert not trainer.result_source_live.is_set()
+        assert trainer.result_source_task_id is None
         assert process.returncode is not None
         assert backend._active_launch is None
         assert trainer.token == ""
@@ -595,7 +828,7 @@ class TestInitializeAndFinalize:
 
         def natural_wait(timeout=None):
             wait_entered.set()
-            assert ebp._DEFAULT_SHUTDOWN_TIMEOUT - 1.0 < timeout <= ebp._DEFAULT_SHUTDOWN_TIMEOUT
+            assert timeout == 0.1
             release_exit.wait()
             process.exit(0)
             return 0
@@ -678,7 +911,6 @@ class TestInitializeAndFinalize:
         assert backend._active_launch is None
 
     def test_finalize_bounds_connected_wedged_result_source(self, env, monkeypatch, caplog):
-        monkeypatch.setattr(ebp, "DEFAULT_STREAMING_IDLE_TIMEOUT", 0.02)
         monkeypatch.setattr(ebp, "_LIVE_RESULT_SHUTDOWN_ACK_TIMEOUT", 0.01)
         monkeypatch.setattr(ebp, "_NATURAL_EXIT_REAP_INTERVAL", 0.005)
         backend, _ = _initialized_backend(
@@ -1837,11 +2069,14 @@ class TestExecute:
             assert result.get_return_code() == ReturnCode.TASK_ABORTED
             assert elapsed < 10.0, "abort must not wait out the result bound"
             assert [f for f in env.cell.fired if f[0] == Topic.ABORT]
+            assert backend._abort is False
+            assert backend._terminal_intent is None
+            assert backend._active_launch is not None
         finally:
             backend.finalize(FLContext())
 
     @pytest.mark.skipif(os.name != "posix", reason="process-group semantics are POSIX")
-    def test_launch_once_abort_after_result_stops_owned_trainer_before_execute_returns(self, env):
+    def test_launch_once_task_abort_after_result_preserves_owned_trainer_for_later_tasks(self, env):
         backend, fl_ctx = _initialized_backend(env, result_wait_timeout=30.0)
         abort_signal = Signal()
         task_count = 0
@@ -1851,13 +2086,15 @@ class TestExecute:
             task_count += 1
             if task_count == 1:
                 task_payload = request.payload
+                result = _result_shareable()
+                result["lazy"] = LazyDownloadRef(target, "round-0-ref", "T0")
                 env.cell.deliver(
                     Topic.RESULT_READY,
                     target,
                     {
                         MsgKey.SESSION_ID: task_payload[MsgKey.SESSION_ID],
                         MsgKey.TASK_ID: task_payload[MsgKey.TASK_ID],
-                        MsgKey.RESULT: _result_shareable(),
+                        MsgKey.RESULT: result,
                     },
                 )
             else:
@@ -1880,9 +2117,20 @@ class TestExecute:
 
             assert second.get_return_code() == ReturnCode.TASK_ABORTED
             assert len(env.harness.processes) == 1, "launch_once must reuse the round-0 trainer"
-            assert process.returncode == -signal.SIGTERM
-            assert env.harness.signals_sent() == [(process.pid, signal.SIGTERM)]
-            assert backend._active_launch is None
+            assert process.returncode is None
+            assert env.harness.signals_sent() == []
+            assert backend._active_launch is not None
+            assert backend._abort is False
+            assert backend._terminal_intent is None
+
+            # The task-only signal must not disarm fatal detection for the already
+            # accepted round-0 source.
+            process.exit(-signal.SIGKILL)
+            deadline = time.monotonic() + 1.0
+            while not backend._context.executor.system_panic.called and time.monotonic() < deadline:
+                time.sleep(0.005)
+            backend._context.executor.system_panic.assert_called_once()
+            assert backend._terminal_intent == ebp._TERMINAL_INTENT_FAILURE
         finally:
             backend.finalize(FLContext())
 
@@ -1896,8 +2144,10 @@ class TestExecute:
             assert result.get_return_code() == ReturnCode.TASK_ABORTED
             # the trainer was told the task is aborted
             assert [f for f in env.cell.fired if f[0] == Topic.ABORT]
-            assert backend._active_launch is None
-            assert env.harness.processes[0].returncode is not None
+            assert backend._active_launch is not None
+            assert env.harness.processes[0].returncode is None
+            assert backend._abort is False
+            assert backend._terminal_intent is None
         finally:
             backend.finalize(FLContext())
 
@@ -2096,7 +2346,7 @@ class TestResultReadyHandler:
     def test_accepted_result_marks_the_trainer_send_as_pending(self, env):
         backend, _ = _initialized_backend(env)
         try:
-            self._task(backend)
+            task = self._task(backend)
             reply = env.cell.deliver(
                 Topic.RESULT_READY,
                 backend._active_launch.trainer_fqcn,
@@ -2105,9 +2355,42 @@ class TestResultReadyHandler:
 
             assert reply.payload[MsgKey.REPLY_TOPIC] == Topic.RESULT_ACCEPTED
             assert backend._active_launch.result_source_live.is_set()
+            assert backend._active_launch.result_accepted.is_set()
+            assert backend._active_launch.result_source_task_id == task.task_id
         finally:
             # This test does not model the trainer's send-completion acknowledgement.
             backend._active_launch.result_source_live.clear()
+            backend.finalize(FLContext())
+
+    def test_result_source_settlement_is_task_correlated(self, env):
+        backend, _ = _initialized_backend(env)
+        trainer = backend._active_launch
+        try:
+            task = self._task(backend)
+            accepted = env.cell.deliver(Topic.RESULT_READY, trainer.trainer_fqcn, self._payload(backend))
+            assert accepted.payload[MsgKey.REPLY_TOPIC] == Topic.RESULT_ACCEPTED
+
+            stale = env.cell.deliver(
+                Topic.RESULT_SOURCE_SETTLED,
+                trainer.trainer_fqcn,
+                {MsgKey.SESSION_ID: trainer.session_id, MsgKey.TASK_ID: "previous-task"},
+            )
+            assert stale.payload[MsgKey.REPLY_TOPIC] == Topic.ERROR
+            assert trainer.result_source_live.is_set()
+
+            settled = env.cell.deliver(
+                Topic.RESULT_SOURCE_SETTLED,
+                trainer.trainer_fqcn,
+                {MsgKey.SESSION_ID: trainer.session_id, MsgKey.TASK_ID: task.task_id},
+            )
+            assert settled.payload == {
+                MsgKey.REPLY_TOPIC: Topic.RESULT_SOURCE_SETTLED,
+                MsgKey.TASK_ID: task.task_id,
+            }
+            assert not trainer.result_source_live.is_set()
+            assert trainer.result_accepted.is_set()
+            assert trainer.result_source_task_id is None
+        finally:
             backend.finalize(FLContext())
 
     @pytest.mark.parametrize(
@@ -2130,6 +2413,264 @@ class TestResultReadyHandler:
             assert reply.payload[MsgKey.REPLY_TOPIC] == Topic.RESULT_REJECTED
             assert expect in reply.payload[MsgKey.REASON]
             assert not task.result_ready.is_set()
+        finally:
+            backend.finalize(FLContext())
+
+
+class TestAcceptedResultSourceFailure:
+    @staticmethod
+    def _accept_lazy_result(backend, env, receiver_ids=("server.job-1",), source_fqcn=None):
+        task = ebp._TaskContext(task_id="task-1")
+        task.result_receiver_ids = receiver_ids
+        with backend._task_lock:
+            backend._current_task = task
+        trainer = backend._active_launch
+        result = _result_shareable()
+        result["nested"] = [{"tensor": LazyDownloadRef(source_fqcn or trainer.trainer_fqcn, "ref-1", "T0")}]
+        reply = env.cell.deliver(
+            Topic.RESULT_READY,
+            trainer.trainer_fqcn,
+            {
+                MsgKey.SESSION_ID: trainer.session_id,
+                MsgKey.TASK_ID: task.task_id,
+                MsgKey.RESULT: result,
+            },
+        )
+        assert reply.payload[MsgKey.REPLY_TOPIC] == Topic.RESULT_ACCEPTED
+        return task, trainer
+
+    @staticmethod
+    def _wait_for_source_failure(cell, timeout=1.0):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            failures = [message for message in cell.sent if message[0] == SOURCE_FAILURE_TOPIC]
+            if failures:
+                return failures
+            time.sleep(0.005)
+        return []
+
+    @staticmethod
+    def _wait_for_job_failure(backend, timeout=1.0):
+        executor = backend._context.executor
+        deadline = time.monotonic() + timeout
+        while not executor.system_panic.called and time.monotonic() < deadline:
+            time.sleep(0.005)
+        return executor
+
+    def test_launch_once_trainer_death_notifies_exact_result_receiver(self, env, monkeypatch, client_job_exit):
+        monkeypatch.setattr(ebp, "_RESULT_POLL_INTERVAL", 0.005)
+        backend, _ = _initialized_backend(env, launch_once=True)
+        backend._run_abort_signal = Signal()
+        try:
+            task, trainer = self._accept_lazy_result(backend, env)
+
+            trainer.process.exit(-signal.SIGKILL)
+            failures = self._wait_for_source_failure(env.cell)
+
+            assert len(failures) == 1
+            topic, target, payload, timeout = failures[0]
+            assert topic == SOURCE_FAILURE_TOPIC
+            assert target == "server.job-1"
+            assert timeout == 3.0
+            assert payload["source_fqcn"] == trainer.trainer_fqcn
+            assert payload["ref_ids"] == ("ref-1",)
+            assert "rc=-9" in payload["reason"]
+            assert trainer.result_failure_notified
+            assert not trainer.result_source_live.is_set()
+            assert trainer.result_source_task_id is None
+            executor = self._wait_for_job_failure(backend)
+            executor.system_panic.assert_called_once()
+            client_job_exit.assert_not_called()
+            assert backend._run_abort_signal.triggered
+            with open(os.path.join(env.app_dir, FLMetaKey.PROCESS_RC_FILE), encoding="utf-8") as f:
+                assert int(f.read()) == ProcessExitCode.EXCEPTION
+
+            backend._fail_accepted_result_source(trainer, task.task_id, "duplicate")
+            backend._fail_job_for_lost_result_source("duplicate")
+            assert len([message for message in env.cell.sent if message[0] == SOURCE_FAILURE_TOPIC]) == 1
+            executor.system_panic.assert_called_once()
+        finally:
+            backend.finalize(FLContext())
+
+    def test_explicit_abort_wins_before_accepted_source_death(self, env, monkeypatch, client_job_exit):
+        monkeypatch.setattr(ebp, "_RESULT_POLL_INTERVAL", 0.005)
+        backend, _ = _initialized_backend(env, launch_once=True)
+        try:
+            _, trainer = self._accept_lazy_result(backend, env)
+
+            backend.abort(FLContext())
+            trainer.process.exit(-signal.SIGKILL)
+            trainer.source_monitor_thread.join(timeout=1.0)
+
+            assert not trainer.source_monitor_thread.is_alive()
+            backend._context.executor.system_panic.assert_not_called()
+            client_job_exit.assert_not_called()
+            assert not os.path.exists(os.path.join(env.app_dir, FLMetaKey.PROCESS_RC_FILE))
+        finally:
+            backend.finalize(FLContext())
+
+    def test_accepted_source_failure_wins_before_late_abort(self, env, monkeypatch, client_job_exit):
+        monkeypatch.setattr(ebp, "_RESULT_POLL_INTERVAL", 0.005)
+        backend, _ = _initialized_backend(env, launch_once=True)
+        delivery_started = threading.Event()
+        release_delivery = threading.Event()
+
+        def blocked_source_failure(**_kwargs):
+            delivery_started.set()
+            assert release_delivery.wait(timeout=1.0)
+            return {}
+
+        monkeypatch.setattr(ebp.DownloadService, "notify_source_failure", blocked_source_failure)
+        try:
+            _, trainer = self._accept_lazy_result(backend, env)
+
+            trainer.process.exit(-signal.SIGKILL)
+            assert delivery_started.wait(timeout=1.0)
+            backend.abort(FLContext())
+            release_delivery.set()
+
+            executor = self._wait_for_job_failure(backend)
+            executor.system_panic.assert_called_once()
+            client_job_exit.assert_not_called()
+            with open(os.path.join(env.app_dir, FLMetaKey.PROCESS_RC_FILE), encoding="utf-8") as f:
+                assert int(f.read()) == ProcessExitCode.EXCEPTION
+        finally:
+            release_delivery.set()
+            backend.finalize(FLContext())
+
+    def test_per_task_trainer_death_notifies_swarm_aggregation_receiver_once(self, env, monkeypatch, client_job_exit):
+        monkeypatch.setattr(ebp, "_RESULT_POLL_INTERVAL", 0.005)
+        monkeypatch.setattr(ebp, "_NATURAL_EXIT_REAP_INTERVAL", 0.005)
+        backend, fl_ctx = _initialized_backend(env, launch_once=False)
+        try:
+            _install_auto_result(env, lazy_result=True)
+            task_data = Shareable()
+            task_data.set_header(FOBSContextKey.RECEIVER_IDS, ["site-4.job-1"])
+
+            result = backend.execute("train", task_data, fl_ctx, Signal())
+            trainer = backend._active_launch
+            trainer.process.exit(-signal.SIGKILL)
+            failures = self._wait_for_source_failure(env.cell)
+
+            assert result.get_return_code() == ReturnCode.OK
+            assert len(failures) == 1
+            assert failures[0][1] == "site-4.job-1"
+            assert failures[0][2]["source_fqcn"] == trainer.trainer_fqcn
+            assert failures[0][2]["ref_ids"] == ("result-ref",)
+            executor = self._wait_for_job_failure(backend)
+            executor.system_panic.assert_called_once()
+            client_job_exit.assert_not_called()
+        finally:
+            backend.finalize(FLContext())
+
+    def test_result_settlement_before_exit_suppresses_source_failure(self, env, monkeypatch):
+        monkeypatch.setattr(ebp, "_RESULT_POLL_INTERVAL", 0.005)
+        backend, _ = _initialized_backend(env, launch_once=True)
+        try:
+            task, trainer = self._accept_lazy_result(backend, env)
+            settled = env.cell.deliver(
+                Topic.RESULT_SOURCE_SETTLED,
+                trainer.trainer_fqcn,
+                {MsgKey.SESSION_ID: trainer.session_id, MsgKey.TASK_ID: task.task_id},
+            )
+            assert settled.payload[MsgKey.REPLY_TOPIC] == Topic.RESULT_SOURCE_SETTLED
+
+            trainer.process.exit(0)
+            deadline = time.monotonic() + 0.2
+            while trainer.source_monitor_thread.is_alive() and time.monotonic() < deadline:
+                time.sleep(0.005)
+
+            assert not [message for message in env.cell.sent if message[0] == SOURCE_FAILURE_TOPIC]
+        finally:
+            backend.finalize(FLContext())
+
+    @pytest.mark.skipif(os.name != "posix", reason="process-group semantics are POSIX")
+    def test_rc_zero_launcher_cannot_mask_unsettled_worker_group_death(self, env, monkeypatch, client_job_exit):
+        monkeypatch.setattr(ebp, "_RESULT_POLL_INTERVAL", 0.005)
+        backend, _ = _initialized_backend(env, launch_once=True)
+        try:
+            _, trainer = self._accept_lazy_result(backend, env)
+            trainer.process.exit(0)
+            trainer.process.extra_group_members = True
+
+            time.sleep(0.03)
+            assert backend._context.executor.system_panic.call_count == 0
+            assert not [message for message in env.cell.sent if message[0] == SOURCE_FAILURE_TOPIC]
+
+            trainer.process.extra_group_members = False
+            failures = self._wait_for_source_failure(env.cell)
+
+            assert len(failures) == 1
+            assert "rc=0" in failures[0][2]["reason"]
+            self._wait_for_job_failure(backend).system_panic.assert_called_once()
+            client_job_exit.assert_not_called()
+        finally:
+            backend.finalize(FLContext())
+
+    def test_only_refs_owned_by_the_launched_trainer_are_reported(self, env, monkeypatch):
+        monkeypatch.setattr(ebp, "_RESULT_POLL_INTERVAL", 0.005)
+        backend, _ = _initialized_backend(env, launch_once=True)
+        try:
+            _, trainer = self._accept_lazy_result(backend, env, source_fqcn="site-3.job-1.other-trainer")
+            trainer.process.exit(-signal.SIGKILL)
+            deadline = time.monotonic() + 0.2
+            while backend._active_launch is not None and time.monotonic() < deadline:
+                time.sleep(0.005)
+
+            assert not [message for message in env.cell.sent if message[0] == SOURCE_FAILURE_TOPIC]
+        finally:
+            backend.finalize(FLContext())
+
+    def test_live_group_with_dead_source_session_is_bounded(self, env, monkeypatch, client_job_exit):
+        monkeypatch.setattr(ebp, "_RESULT_POLL_INTERVAL", 0.005)
+        backend, _ = _initialized_backend(env, launch_once=True, heartbeat_timeout=0.0)
+        monkeypatch.setattr(backend, "_result_source_disconnect_grace", lambda: 0.01)
+        try:
+            _, trainer = self._accept_lazy_result(backend, env)
+            env.cell.disconnected.add(trainer.trainer_fqcn)
+
+            failures = self._wait_for_source_failure(env.cell)
+
+            assert len(failures) == 1
+            assert "disconnected" in failures[0][2]["reason"]
+            assert trainer.process.returncode == -signal.SIGTERM
+            executor = self._wait_for_job_failure(backend)
+            executor.system_panic.assert_called_once()
+            client_job_exit.assert_not_called()
+        finally:
+            backend.finalize(FLContext())
+
+    def test_source_heartbeat_timeout_is_bounded_while_process_group_survives(self, env, monkeypatch, client_job_exit):
+        monkeypatch.setattr(ebp, "_RESULT_POLL_INTERVAL", 0.005)
+        backend, _ = _initialized_backend(env, launch_once=True, heartbeat_timeout=0.01)
+        try:
+            _, trainer = self._accept_lazy_result(backend, env)
+            monkeypatch.setattr(trainer, "peer_silent_for", lambda: 1.0)
+
+            failures = self._wait_for_source_failure(env.cell)
+
+            assert len(failures) == 1
+            assert "heartbeat timed out" in failures[0][2]["reason"]
+            assert trainer.process.returncode == -signal.SIGTERM
+            executor = self._wait_for_job_failure(backend)
+            executor.system_panic.assert_called_once()
+            client_job_exit.assert_not_called()
+        finally:
+            backend.finalize(FLContext())
+
+    def test_fedavg_fallback_and_swarm_header_select_the_downstream_receiver(self, env):
+        backend, fl_ctx = _initialized_backend(env, launch_once=True)
+        try:
+            assert SOURCE_FAILURE_TOPIC in env.cell.cbs
+            assert backend._get_result_receiver_ids(Shareable(), fl_ctx) == ("server.job-1",)
+
+            swarm_task = Shareable()
+            swarm_task.set_header(FOBSContextKey.RECEIVER_IDS, ["site-1.job-1", "site-1.job-1"])
+            assert backend._get_result_receiver_ids(swarm_task, fl_ctx) == ("site-1.job-1",)
+
+            string_receiver_task = Shareable()
+            string_receiver_task.set_header(FOBSContextKey.RECEIVER_IDS, "site-3.job-1")
+            assert backend._get_result_receiver_ids(string_receiver_task, fl_ctx) == ("site-3.job-1",)
         finally:
             backend.finalize(FLContext())
 
@@ -2169,6 +2710,8 @@ class TestLaunchPerTask:
 
             config_1, config_2 = env.harness.bootstrap_configs
             assert config_1[BootstrapKey.LAUNCH_TOKEN] != config_2[BootstrapKey.LAUNCH_TOKEN]
+            assert config_1[BootstrapKey.CJ_PID] == os.getpid()
+            assert config_2[BootstrapKey.CJ_PID] == os.getpid()
             assert config_1[BootstrapKey.TRAINER_FQCN].endswith("_1")
             assert config_2[BootstrapKey.TRAINER_FQCN].endswith("_2")
             assert config_1[BootstrapKey.TASK_EXCHANGE][ConfigKey.LAUNCH_ONCE] is False
@@ -2279,6 +2822,105 @@ class TestLaunchPerTask:
             env.cell.disconnected.update((retired_trainer.trainer_fqcn, current_trainer.trainer_fqcn))
             finalize_thread.join(timeout=1.0)
 
+    def test_retired_result_source_can_heartbeat_and_settle_after_next_launch(self, env, client_job_exit):
+        backend, fl_ctx = _initialized_backend(env, launch_once=False, heartbeat_timeout=0.1)
+        _install_auto_result(env, lazy_result=True)
+
+        first = backend.execute("train", Shareable(), fl_ctx, Signal())
+        retired_trainer = backend._active_launch
+        second = backend.execute("train", Shareable(), fl_ctx, Signal())
+        current_trainer = backend._active_launch
+        assert first.get_return_code() == ReturnCode.OK
+        assert second.get_return_code() == ReturnCode.OK
+        assert retired_trainer is not current_trainer
+
+        heartbeat = env.cell.deliver(
+            Topic.HEARTBEAT,
+            retired_trainer.trainer_fqcn,
+            {MsgKey.SESSION_ID: retired_trainer.session_id, MsgKey.RESULT_SOURCE_LIVE: True},
+        )
+        assert heartbeat.payload == {
+            MsgKey.REPLY_TOPIC: Topic.HEARTBEAT,
+            MsgKey.SESSION_ID: retired_trainer.session_id,
+        }
+
+        retired_task_id = retired_trainer.result_source_task_id
+        settled = env.cell.deliver(
+            Topic.RESULT_SOURCE_SETTLED,
+            retired_trainer.trainer_fqcn,
+            {MsgKey.SESSION_ID: retired_trainer.session_id, MsgKey.TASK_ID: retired_task_id},
+        )
+        assert settled.payload == {MsgKey.REPLY_TOPIC: Topic.RESULT_SOURCE_SETTLED, MsgKey.TASK_ID: retired_task_id}
+        assert not retired_trainer.result_source_live.is_set()
+
+        retired_trainer.process.exit(0)
+        deadline = time.monotonic() + 1.0
+        while retired_trainer.trainer_fqcn in backend._protocol_sessions and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert retired_trainer.trainer_fqcn not in backend._protocol_sessions
+        client_job_exit.assert_not_called()
+
+        current_trainer.result_source_live.clear()
+        current_trainer.process.exit(0)
+        backend.finalize(FLContext())
+        assert backend._protocol_sessions == {}
+
+    def test_clean_launcher_exit_without_settle_ack_fails_result_source(self, env, monkeypatch, client_job_exit):
+        monkeypatch.setattr(ebp, "_RESULT_POLL_INTERVAL", 0.005)
+        backend, fl_ctx = _initialized_backend(env, launch_once=False)
+        _install_auto_result(env, lazy_result=True)
+
+        result = backend.execute("train", Shareable(), fl_ctx, Signal())
+        trainer = backend._active_launch
+        trainer.process.exit(0)
+        trainer.reaper_thread.join(timeout=1.0)
+
+        assert result.get_return_code() == ReturnCode.OK
+        assert not trainer.reaper_thread.is_alive()
+        assert not trainer.result_source_live.is_set()
+        failures = [message for message in env.cell.sent if message[0] == SOURCE_FAILURE_TOPIC]
+        assert len(failures) == 1
+        assert "rc=0" in failures[0][2]["reason"]
+        executor = backend._context.executor
+        deadline = time.monotonic() + 1.0
+        while not executor.system_panic.called and time.monotonic() < deadline:
+            time.sleep(0.005)
+        executor.system_panic.assert_called_once()
+        client_job_exit.assert_not_called()
+        backend.finalize(FLContext())
+
+    def test_finalize_force_stops_connected_late_result_sources_within_end_run_budget(self, env, monkeypatch, caplog):
+        """Late results that nobody consumes must not outlive their owning CJ."""
+        monkeypatch.setattr(ebp, "_LIVE_RESULT_SHUTDOWN_ACK_TIMEOUT", 0.02)
+        monkeypatch.setattr(ebp, "_NATURAL_EXIT_REAP_INTERVAL", 0.005)
+        backend, fl_ctx = _initialized_backend(
+            env,
+            launch_once=False,
+            stop_grace_period=30.0,
+        )
+        _install_auto_result(env, lazy_result=True)
+
+        first = backend.execute("train", Shareable(), fl_ctx, Signal())
+        retired_trainer = backend._active_launch
+        second = backend.execute("train", Shareable(), fl_ctx, Signal())
+        current_trainer = backend._active_launch
+
+        assert first.get_return_code() == ReturnCode.OK
+        assert second.get_return_code() == ReturnCode.OK
+        assert retired_trainer is not current_trainer
+        assert all(process.returncode is None for process in env.harness.processes)
+        assert all(trainer.result_source_live.is_set() for trainer in (retired_trainer, current_trainer))
+
+        start = time.monotonic()
+        backend.finalize(FLContext())
+        elapsed = time.monotonic() - start
+
+        assert elapsed < 0.5
+        assert all(process.returncode is not None for process in env.harness.processes)
+        assert backend._result_reapers == set()
+        assert backend._active_launch is None
+        assert "forcing trainer cleanup" in caplog.text
+
     def test_abort_during_per_task_launch_returns_task_aborted(self, env):
         """Abort is the only bound when launch_timeout is unset and HELLO never arrives."""
         env.harness.auto_hello = False
@@ -2314,6 +2956,8 @@ class TestLaunchPerTask:
         assert [request for request in env.cell.sent if request[0] == Topic.SHUTDOWN] == []
         assert len([message for message in env.cell.fired if message[0] == Topic.SHUTDOWN]) == 1
         assert env.harness.signals_sent() == [(process.pid, signal.SIGTERM)]
+        assert backend._abort is False
+        assert backend._terminal_intent is None
 
     def test_abort_finalize_waits_for_mid_popen_launch_cleanup(self, env):
         """Abort finalize must not return while Popen has created an unowned process."""

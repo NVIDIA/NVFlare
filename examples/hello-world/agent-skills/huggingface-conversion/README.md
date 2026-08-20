@@ -44,7 +44,9 @@ Open this directory in Codex or Claude Code and use this prompt:
 
 ```text
 I have an existing Hugging Face Trainer project in ./source. Convert it to
-federated learning and validate it locally.
+federated learning and validate it locally. You may download any required
+public model artifacts, including tokenizer and configuration files, if they
+are not already cached. Proceed without asking for additional confirmation.
 ```
 
 ## Run the Starting Project
