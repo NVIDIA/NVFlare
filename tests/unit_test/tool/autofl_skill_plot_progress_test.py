@@ -14,6 +14,7 @@
 
 import csv
 import importlib.util
+import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -257,3 +258,34 @@ def test_plot_cli_supports_min_mode(tmp_path, capsys):
     assert plotter.main([str(ledger), "--output", str(tmp_path / "progress.png"), "--mode", "min"]) == 0
 
     assert "improvement=+0.000000" in capsys.readouterr().out
+
+
+def test_plot_cli_derives_min_mode_from_sibling_campaign_state(tmp_path, capsys):
+    plotter = _load_plotter()
+    ledger = tmp_path / "results.tsv"
+    ledger.write_text("status\tname\tscore\nbaseline\tbaseline\t1.0\nkeep\tlower_loss\t0.6\n", encoding="utf-8")
+    state_path = tmp_path / ".nvflare/autofl/campaign_state.json"
+    state_path.parent.mkdir(parents=True)
+    state_path.write_text(json.dumps({"mode": "min"}), encoding="utf-8")
+
+    assert plotter.main([str(ledger), "--output", str(tmp_path / "progress.png")]) == 0
+
+    output = capsys.readouterr().out
+    assert "best=0.600000" in output
+    assert "improvement=+0.400000" in output
+
+
+@pytest.mark.parametrize("state_payload", [None, {}, {"mode": "sideways"}])
+def test_plot_cli_requires_direction_when_campaign_state_cannot_supply_it(tmp_path, capsys, state_payload):
+    plotter = _load_plotter()
+    ledger = tmp_path / "results.tsv"
+    ledger.write_text("status\tname\tscore\nbaseline\tbaseline\t0.5\n", encoding="utf-8")
+    if state_payload is not None:
+        state_path = tmp_path / ".nvflare/autofl/campaign_state.json"
+        state_path.parent.mkdir(parents=True)
+        state_path.write_text(json.dumps(state_payload), encoding="utf-8")
+
+    with pytest.raises(SystemExit, match="2"):
+        plotter.main([str(ledger), "--output", str(tmp_path / "progress.png")])
+
+    assert "pass --mode explicitly or repair campaign state" in capsys.readouterr().err

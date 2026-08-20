@@ -178,8 +178,8 @@ approved cap changes stay in campaign metadata.
 Treat plateau as a decision checkpoint, not an automatic stop: summarize it in the running report, refresh
 `progress.png`, run the runner's `status` action to refresh `.nvflare/autofl/campaign_state.json`, choose the returned
 next mode, and continue unless the state reports `final_response_allowed=true`. Use `campaign_guard.py` only for
-read-only diagnostics; it never writes state. It derives direction from sibling state; otherwise pass `--mode min` for min campaigns. After a source-backed review, record it
-with `record --literature --hypothesis "<sources and decision>"`. Each review gets a persistent
+read-only diagnostics; it never writes state. Both `campaign_guard.py` and `plot_progress.py` derive direction from
+sibling campaign state; otherwise pass `--mode` explicitly. After a source-backed review, record it with `record --literature --hypothesis "<sources and decision>"`. Each review gets a persistent
 `literature_event_id` and requires an exploration batch before normal flow resumes: `exploration_batch_size` (default
 3) scored source-backed candidates linked via `prepare --literature-event <id>` — a faithful implementation, a tuned
 variant, and an ablation. The plateau clock resets when that batch completes, not when the review is recorded;

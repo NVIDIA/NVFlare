@@ -171,7 +171,7 @@ def better(value: float, incumbent: Optional[float], mode: str = "max") -> bool:
     return load_campaign_guard().better(value, incumbent, mode)
 
 
-def improvement_amount(baseline: float, best: float, mode: str = "max") -> float:
+def improvement_over_baseline(baseline: float, best: float, mode: str = "max") -> float:
     return load_campaign_guard().improvement_over_baseline(baseline, best, mode)
 
 
@@ -498,7 +498,7 @@ def plot_progress(
     summary_lines = [
         f"Baseline: {baseline:.6f}",
         f"Best: {best_score:.6f}",
-        f"Improvement: {improvement_amount(baseline, best_score, mode):+.6f}",
+        f"Improvement: {improvement_over_baseline(baseline, best_score, mode):+.6f}",
     ]
     if total_runtime:
         summary_lines.append(f"Runtime: {format_runtime(total_runtime)}")
@@ -562,18 +562,25 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("path", nargs="?", default="results.tsv", help="path to the Auto-FL TSV ledger")
     parser.add_argument("--output", default="progress.png", help="output PNG path")
     parser.add_argument("--metric", default="score", help="metric label shown in the plot")
-    parser.add_argument("--mode", choices=["max", "min"], default="max")
+    parser.add_argument("--mode", choices=["max", "min"])
     parser.add_argument("--max-labels", type=int, default=6)
     parser.add_argument("--max-literature-labels", type=int, default=4)
     parser.add_argument("--full-y-range", action="store_true")
     args = parser.parse_args(argv)
 
-    records = load_results(Path(args.path))
+    results_path = Path(args.path).resolve()
+    mode = args.mode
+    if mode is None:
+        try:
+            mode = load_campaign_guard().campaign_mode_for_results(results_path)
+        except ValueError as exc:
+            parser.error(str(exc))
+    records = load_results(results_path)
     baseline, best = plot_progress(
         records,
         Path(args.output),
         args.metric,
-        mode=args.mode,
+        mode=mode,
         max_labels=args.max_labels,
         max_literature_labels=args.max_literature_labels,
         full_y_range=args.full_y_range,
@@ -581,7 +588,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     print(f"Saved {args.output}")
     print(f"baseline={baseline:.6f}")
     print(f"best={best:.6f}")
-    print(f"improvement={improvement_amount(baseline, best, args.mode):+.6f}")
+    print(f"improvement={improvement_over_baseline(baseline, best, mode):+.6f}")
     return 0
 
 
