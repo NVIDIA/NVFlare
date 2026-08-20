@@ -47,8 +47,8 @@ env = SimEnv(num_clients=num_clients, workspace_root=workspace_root)
 run = recipe.execute(env)
 ```
 
-Prefer a recipe model dict with the same constructor arguments used by the
-client-side model:
+Use a recipe model dict with the same constructor arguments used by the
+client-side model whenever reconstruction depends on any constructor value:
 
 ```python
 model={"class_path": "model.ModelClass", "args": model_args}
