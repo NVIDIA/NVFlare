@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from typing import Callable, Optional
 
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
-from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.mpm import MainProcessMonitor
@@ -36,7 +36,14 @@ from nvflare.fuel.f3.streaming.stream_const import (
     StreamDataType,
     StreamHeaderKey,
 )
-from nvflare.fuel.f3.streaming.stream_types import BlobSizeError, Stream, StreamError, StreamFuture, StreamTaskSpec
+from nvflare.fuel.f3.streaming.stream_types import (
+    BlobSizeError,
+    Stream,
+    StreamError,
+    StreamFuture,
+    StreamTargetUnreachable,
+    StreamTaskSpec,
+)
 from nvflare.fuel.f3.streaming.stream_utils import (
     ONE_MB,
     CheckedExecutor,
@@ -277,16 +284,36 @@ class TxTask(StreamTaskSpec):
 
         if self.reliable:
             self.pending_messages = {}
+            self.pending_send_errors = {}
             self.pending_message_bytes = 0
             self.retry_lock = threading.RLock()
             reliable_retry_scheduler.register(self)
         else:
             self.pending_messages = None
+            self.pending_send_errors = None
             self.pending_message_bytes = 0
             self.retry_lock = None
 
     def __str__(self):
         return f"Tx[SID:{self.sid} to {self.target} for {self.channel}/{self.topic}]"
+
+    @staticmethod
+    def _new_send_error(msg: str, send_error=None) -> StreamError:
+        if send_error == ReturnCode.TARGET_UNREACHABLE:
+            return StreamTargetUnreachable(msg)
+        return StreamError(msg)
+
+    def _new_pending_error(self, msg: str, seq=None) -> StreamError:
+        if not self.reliable:
+            return StreamError(msg)
+        with self.retry_lock:
+            if seq is not None:
+                return self._new_send_error(msg, self.pending_send_errors.get(seq))
+            if self.pending_send_errors and all(
+                error == ReturnCode.TARGET_UNREACHABLE for error in self.pending_send_errors.values()
+            ):
+                return StreamTargetUnreachable(msg)
+        return StreamError(msg)
 
     def send_loop(self):
         """Read/send loop to transmit the whole stream with flow control"""
@@ -320,12 +347,16 @@ class TxTask(StreamTaskSpec):
 
                     now = time.monotonic()
                     if now - self.last_ack_progress_ts >= self.ack_progress_timeout:
-                        self.stop(StreamError(f"{self} ACK made no progress for {self.ack_progress_timeout} seconds"))
+                        self.stop(
+                            self._new_pending_error(
+                                f"{self} ACK made no progress for {self.ack_progress_timeout} seconds"
+                            )
+                        )
                         return
 
                     elapsed = now - wait_start
                     if elapsed >= self.ack_wait:
-                        self.stop(StreamError(f"{self} ACK timeouts after {self.ack_wait} seconds"))
+                        self.stop(self._new_pending_error(f"{self} ACK timeouts after {self.ack_wait} seconds"))
                         return
 
                     self.ack_waiter.clear()
@@ -404,9 +435,11 @@ class TxTask(StreamTaskSpec):
 
                     pending_message_size = _payload_size(message.payload)
                     self.pending_messages[self.seq] = None, curr_time, message
+                    self.pending_send_errors[self.seq] = None
                     self.pending_message_bytes += pending_message_size
                     if self.retry_max_pending_bytes > 0 and self.pending_message_bytes > self.retry_max_pending_bytes:
                         self.pending_messages.pop(self.seq, None)
+                        self.pending_send_errors.pop(self.seq, None)
                         self.pending_message_bytes -= pending_message_size
                         msg = (
                             f"{self} has too many retry messages "
@@ -435,12 +468,17 @@ class TxTask(StreamTaskSpec):
             )
         errors = errors or {}
         error = errors.get(self.target)
+        if self.reliable:
+            with self.retry_lock:
+                if self.seq in self.pending_messages:
+                    self.pending_send_errors[self.seq] = error
         if error:
             msg = f"{self} Message sending error to target {self.target}: {error}"
             if self.reliable:
-                log.error(f"{msg}, will retry in {self.retry_wait} seconds")
+                log_fn = log.debug if self.optional and error == ReturnCode.TARGET_UNREACHABLE else log.error
+                log_fn(f"{msg}, will retry in {self.retry_wait} seconds")
             else:
-                self.stop(StreamError(msg))
+                self.stop(self._new_send_error(msg, error))
                 return False
 
         # Update state
@@ -523,6 +561,7 @@ class TxTask(StreamTaskSpec):
             self.stopping = False
             if error:
                 self.pending_messages.clear()
+                self.pending_send_errors.clear()
                 self.pending_message_bytes = 0
             return True
 
@@ -562,6 +601,7 @@ class TxTask(StreamTaskSpec):
                     for seq in list(self.pending_messages):
                         if seq <= ack_seq:
                             _retry_start_time, _last_retry, message = self.pending_messages.pop(seq)
+                            self.pending_send_errors.pop(seq, None)
                             self.pending_message_bytes -= _payload_size(message.payload)
 
                 should_stop = self.stopping and not self.pending_messages
@@ -614,8 +654,13 @@ class TxTask(StreamTaskSpec):
                         retry_time = curr_time - retry_start_time
                         if retry_time > self.retry_timeout:
                             msg = f"{self} seq {seq} retry failed after {retry_time:.2f} seconds from first retry"
-                            log.error(msg)
-                            retry_error = StreamError(msg)
+                            retry_error = self._new_pending_error(msg, seq)
+                            log_fn = (
+                                log.debug
+                                if self.optional and isinstance(retry_error, StreamTargetUnreachable)
+                                else log.error
+                            )
+                            log_fn(msg)
                             break
                         remaining_retry_timeout = self.retry_timeout - retry_time
                         wait_time = min(wait_time, remaining_retry_timeout)
@@ -658,8 +703,12 @@ class TxTask(StreamTaskSpec):
                     )
                     errors = errors or {}
                     error = errors.get(self.target)
+                    with self.retry_lock:
+                        if seq in self.pending_messages:
+                            self.pending_send_errors[seq] = error
                     if error:
-                        log.error(
+                        log_fn = log.debug if self.optional and error == ReturnCode.TARGET_UNREACHABLE else log.error
+                        log_fn(
                             f"{self} message retry error for target {self.target} seq {seq}: "
                             f"{error}, will retry again in {self.retry_wait} seconds"
                         )
@@ -692,9 +741,44 @@ class ByteStreamer:
     def __init__(self, cell: CoreCell):
         self.cell = cell
         self.error_callbacks = []
+        self.cell.add_error_handler(STREAM_CHANNEL, STREAM_DATA_TOPIC, self._forward_error_handler)
         self.cell.register_request_cb(channel=STREAM_CHANNEL, topic=STREAM_ACK_TOPIC, cb=self._ack_handler)
         self.cell.register_request_cb(channel=STREAM_CHANNEL, topic=STREAM_ERROR_TOPIC, cb=self._error_handler)
         self.chunk_size = CommConfigurator().get_streaming_chunk_size(STREAM_CHUNK_SIZE)
+
+    def _forward_error_handler(self, message: Message, error: str):
+        """Report a downstream routing failure to the original stream sender."""
+        if not message.get_header(MessageHeaderKey.OPTIONAL, False):
+            # Required reliable streams own their retry policy. A transient downstream
+            # routing failure must not bypass retry_timeout by settling the sender early.
+            return
+
+        sender = message.get_header(MessageHeaderKey.ORIGIN)
+        failed_destination = message.get_header(MessageHeaderKey.DESTINATION)
+        if not sender or not failed_destination:
+            return
+
+        error_class = StreamTargetUnreachable if error == ReturnCode.TARGET_UNREACHABLE else StreamError
+        headers = {
+            StreamHeaderKey.STREAM_ID: message.get_header(StreamHeaderKey.STREAM_ID),
+            StreamHeaderKey.DATA_TYPE: StreamDataType.ERROR,
+            StreamHeaderKey.ERROR_MSG: f"stream forwarding to {failed_destination} failed: {error}",
+            StreamHeaderKey.ERROR_TYPE: error_class.__name__,
+            StreamHeaderKey.FAILED_DESTINATION: failed_destination,
+            StreamHeaderKey.CHANNEL: message.get_header(StreamHeaderKey.CHANNEL),
+            StreamHeaderKey.TOPIC: message.get_header(StreamHeaderKey.TOPIC),
+        }
+        req_id = message.get_header(StreamHeaderKey.STREAM_REQ_ID)
+        if req_id:
+            headers[StreamHeaderKey.STREAM_REQ_ID] = req_id
+
+        errors = self.cell.fire_and_forget(STREAM_CHANNEL, STREAM_ERROR_TOPIC, sender, Message(headers), optional=True)
+        send_error = (errors or {}).get(sender)
+        if send_error:
+            log.debug(
+                f"failed to report stream routing error: stream_id={headers[StreamHeaderKey.STREAM_ID]} "
+                f"sender={sender} failed_destination={failed_destination}: {send_error}"
+            )
 
     def register_error_callback(self, callback: Callable):
         if not callable(callback):
@@ -731,8 +815,11 @@ class ByteStreamer:
 
     @staticmethod
     def _matches_error_context(message: Message, context: _TxTaskContext) -> bool:
+        origin = message.get_header(MessageHeaderKey.ORIGIN)
+        failed_destination = message.get_header(StreamHeaderKey.FAILED_DESTINATION, origin)
         return (
-            message.get_header(MessageHeaderKey.ORIGIN) == context.target
+            failed_destination == context.target
+            and (origin == context.target or message.get_header(StreamHeaderKey.FAILED_DESTINATION) == context.target)
             and message.get_header(StreamHeaderKey.CHANNEL) == context.channel
             and message.get_header(StreamHeaderKey.TOPIC) == context.topic
             and message.get_header(StreamHeaderKey.STREAM_REQ_ID) == context.req_id
@@ -818,8 +905,13 @@ class ByteStreamer:
         topic = message.get_header(StreamHeaderKey.TOPIC)
         error = message.get_header(StreamHeaderKey.ERROR_MSG, "stream rejected by receiver")
         error_type = message.get_header(StreamHeaderKey.ERROR_TYPE)
-        error_class = BlobSizeError if error_type == BlobSizeError.__name__ else StreamError
+        error_classes = {
+            BlobSizeError.__name__: BlobSizeError,
+            StreamTargetUnreachable.__name__: StreamTargetUnreachable,
+        }
+        error_class = error_classes.get(error_type, StreamError)
         sender = self.cell.my_info.fqcn
+        failed_destination = message.get_header(StreamHeaderKey.FAILED_DESTINATION, origin)
 
         with ByteStreamer.map_lock:
             tx_task = ByteStreamer.tx_task_map.get(sid)
@@ -834,13 +926,13 @@ class ByteStreamer:
             if not context or not self._matches_error_context(message, context):
                 log.warning(
                     f"Ignored uncorrelated stream error: stream_id={sid} channel={channel} topic={topic} "
-                    f"sender={sender} receiver={origin}: {error}"
+                    f"sender={sender} failed_destination={failed_destination}: {error}"
                 )
                 return
 
             log.warning(
                 f"Late stream error: stream_id={sid} channel={channel} topic={topic} "
-                f"sender={sender} receiver={origin}: {error}"
+                f"sender={sender} failed_destination={failed_destination}: {error}"
             )
             self._notify_error_callbacks(message)
             return
@@ -856,7 +948,7 @@ class ByteStreamer:
         if not self._matches_error_context(message, active_context):
             log.warning(
                 f"Ignored stream error with unexpected context: stream_id={sid} channel={channel} topic={topic} "
-                f"sender={sender} expected_receiver={tx_task.target} receiver={origin}"
+                f"sender={sender} expected_destination={tx_task.target} failed_destination={failed_destination}"
             )
             return
 
@@ -864,7 +956,7 @@ class ByteStreamer:
         tx_task.stop(
             error_class(
                 f"Stream rejected: stream_id={sid} channel={tx_task.channel} topic={tx_task.topic} "
-                f"sender={sender} receiver={origin}: {error}"
+                f"sender={sender} failed_destination={failed_destination}: {error}"
             ),
             notify=False,
         )
