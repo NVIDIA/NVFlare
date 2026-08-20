@@ -24,6 +24,7 @@ from nvflare.fuel.hci.base64_utils import b64str_to_str, str_to_b64str
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import InternalCommands, ReplyKeyword
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
+from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.time_utils import time_to_string
 from nvflare.private.fed.utils.identity_utils import IdentityAsserter, TokenVerifier
@@ -315,7 +316,9 @@ class SessionManager(CommandModule):
             conn.append_error("invalid_session")
             return
 
-        sess = self.get_session(token)
+        hci = conn.get_prop(ConnProps.HCI_SERVER)
+        id_asserter = hci.get_id_asserter() if hci else None
+        sess = self.get_session(token, id_asserter)
         if sess:
             conn.append_string("OK")
         else:

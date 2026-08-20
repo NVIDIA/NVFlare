@@ -213,10 +213,14 @@ class BaseServer(ABC):
             admin_port = int(grpc_args.get("admin_port", fl_port))
             configured_admin_host = grpc_args.get("admin_host")
             admin_host = _normalize_admin_host(configured_admin_host) if configured_admin_host else url_host
+            if admin_port == fl_port and admin_host != url_host:
+                raise ValueError(
+                    "admin_port must differ from the FL service port when admin_host uses a different bind host"
+                )
             if not secure_train and not _is_loopback_host(admin_host):
                 self.logger.warning(
                     f"insecure admin listener is exposed on non-loopback host '{admin_host}'; "
-                    "set secure_train=true or configure admin_host as a loopback address"
+                    "set secure_train=true or configure admin_host as a loopback address with a distinct admin_port"
                 )
             admin_url = f"{scheme}://{admin_host}:{admin_port}?{ADMIN_LISTENER_KEY}=true"
             if admin_port == fl_port:

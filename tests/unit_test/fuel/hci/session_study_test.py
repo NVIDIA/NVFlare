@@ -19,6 +19,9 @@ import pytest
 
 from nvflare.apis.job_def import DEFAULT_STUDY
 from nvflare.fuel.hci.base64_utils import b64str_to_str, str_to_b64str
+from nvflare.fuel.hci.conn import Connection
+from nvflare.fuel.hci.proto import InternalCommands, ProtoKey
+from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.hci.server.sess import Session, SessionManager
 
 
@@ -42,6 +45,12 @@ class _FakeTokenVerifier:
 
 class _FakeCell:
     pass
+
+
+class _FakeHciServer:
+    @staticmethod
+    def get_id_asserter():
+        return _FakeIdAsserter()
 
 
 @pytest.fixture(autouse=True)
@@ -148,5 +157,25 @@ def test_recreate_session_rejects_token_without_identity_asserter():
         with pytest.raises(ValueError, match="identity asserter"):
             session_mgr.recreate_session(token, "attacker", None)
         assert session_mgr.sessions == {}
+    finally:
+        session_mgr.shutdown()
+
+
+def test_registered_check_session_command_accepts_signed_live_token():
+    session_mgr = SessionManager(_FakeCell(), idle_timeout=3600, monitor_interval=3600)
+    session = session_mgr.create_session("admin@nvidia.com", "nvidia", "lead", "origin")
+    token = session.make_token(_FakeIdAsserter())
+    conn = Connection(props={ConnProps.HCI_SERVER: _FakeHciServer()})
+    conn.request = {ProtoKey.DATA: [{ProtoKey.TYPE: ProtoKey.TOKEN, ProtoKey.DATA: token}]}
+
+    try:
+        check_session = next(
+            command.handler_func
+            for command in session_mgr.get_spec().cmd_specs
+            if command.name == InternalCommands.CHECK_SESSION
+        )
+        check_session(conn, [InternalCommands.CHECK_SESSION])
+
+        assert conn.buffer.data == [{ProtoKey.TYPE: ProtoKey.STRING, ProtoKey.DATA: "OK"}]
     finally:
         session_mgr.shutdown()
