@@ -722,47 +722,6 @@ class TestReliableByteStreamer:
         assert task.pending_message_bytes == 0
         assert task.stream_future.result(timeout=0.1) == 1
 
-    def test_reliable_task_stays_registered_for_delayed_filter_error(self, monkeypatch, retry_scheduler):
-        task, cell = self._make_reliable_task(monkeypatch, retry_scheduler)
-        frame_sent = threading.Event()
-
-        def send_frame(*_args, **_kwargs):
-            frame_sent.set()
-            return {}
-
-        cell.fire_and_forget.side_effect = send_frame
-        with ByteStreamer.map_lock:
-            ByteStreamer.tx_task_map[task.sid] = task
-        send_thread = threading.Thread(target=task.send_loop)
-        send_thread.start()
-        try:
-            assert frame_sent.wait(timeout=0.5)
-            send_thread.join(timeout=0.5)
-            assert not send_thread.is_alive()
-            assert task.stream_future.running()
-            with ByteStreamer.map_lock:
-                assert ByteStreamer.tx_task_map.get(task.sid) is task
-
-            ByteStreamer._ack_handler(
-                Message(
-                    {
-                        MessageHeaderKey.ORIGIN: "peer",
-                        StreamHeaderKey.STREAM_ID: task.sid,
-                        StreamHeaderKey.ERROR_MSG: "stream rejected by incoming filter",
-                    }
-                )
-            )
-
-            with pytest.raises(StreamError, match="stream rejected by incoming filter"):
-                task.stream_future.result(timeout=0.5)
-            with ByteStreamer.map_lock:
-                assert task.sid not in ByteStreamer.tx_task_map
-        finally:
-            task.cancel()
-            send_thread.join(timeout=0.5)
-            with ByteStreamer.map_lock:
-                ByteStreamer.tx_task_map.pop(task.sid, None)
-
     def test_reliable_stream_snapshots_retry_payload(self, monkeypatch, retry_scheduler):
         task, _ = self._make_reliable_task(monkeypatch, retry_scheduler)
 

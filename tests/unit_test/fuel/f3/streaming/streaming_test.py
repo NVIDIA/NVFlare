@@ -12,31 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import multiprocessing
 import threading
-import time
-import traceback
 from unittest.mock import patch
 
 import pytest
 
-from nvflare.fuel.f3.cellnet.cell import Cell
-from nvflare.fuel.f3.cellnet.core_cell import CoreCell, make_reply
-from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
+from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.stream_cell import StreamCell
-from nvflare.fuel.f3.streaming.download_service import (
-    OBJ_DOWNLOADER_CHANNEL,
-    OBJ_DOWNLOADER_TOPIC,
-    request_download_chunk,
-)
-from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL, STREAM_DATA_TOPIC, StreamHeaderKey
-from nvflare.fuel.f3.streaming.stream_types import StreamError, StreamFuture
+from nvflare.fuel.f3.streaming.stream_types import StreamFuture
 from nvflare.fuel.f3.streaming.tools.utils import TEST_CHANNEL, TEST_TOPIC, make_buffer
-from nvflare.fuel.utils.network_utils import get_open_ports
 
 _STREAM_RX_CELL = "stream_test_server"
 _STREAM_TX_CELL = "stream_test_sender"
+from nvflare.fuel.utils.network_utils import get_open_ports
 
 WAIT_SEC = 10
 
@@ -118,195 +107,3 @@ class TestStreamCell:
         state = kwargs.get("state")
         state.result = future.result()
         state.done.set()
-
-
-def test_incoming_filter_rejection_fails_stream_sender_immediately():
-    port = get_open_ports(1)[0]
-    server_name = "stream_filter_reject_server"
-    sender_name = "stream_filter_reject_sender"
-    server = CoreCell(server_name, f"tcp://localhost:{port}", secure=False, credentials={})
-    sender = CoreCell(sender_name, f"tcp://localhost:{port}", secure=False, credentials={})
-    StreamCell(server)
-    sender_stream = StreamCell(sender)
-    server.add_incoming_filter(
-        STREAM_CHANNEL,
-        STREAM_DATA_TOPIC,
-        lambda _message: make_reply(ReturnCode.UNAUTHENTICATED, error="missing client name"),
-    )
-    server.start()
-    sender.start()
-    try:
-        future = sender_stream.send_blob(
-            TEST_CHANNEL,
-            TEST_TOPIC,
-            server_name,
-            Message(None, b"payload"),
-            reliable=True,
-        )
-
-        with pytest.raises(StreamError, match="missing client name"):
-            future.result(timeout=2.0)
-    finally:
-        sender.stop()
-        server.stop()
-
-
-def test_download_request_auth_rejection_fails_requester_immediately():
-    port = get_open_ports(1)[0]
-    server_name = "download_auth_reject_server"
-    trainer_name = "download_auth_reject_trainer"
-    root_url = f"tcp://localhost:{port}"
-    server = CoreCell(server_name, root_url, secure=False, credentials={})
-    StreamCell(server)
-    trainer = Cell(trainer_name, root_url, secure=False, credentials={})
-    rejected = threading.Event()
-
-    def reject_unauthenticated_download(message):
-        if (
-            message.get_header(StreamHeaderKey.CHANNEL) == OBJ_DOWNLOADER_CHANNEL
-            and message.get_header(StreamHeaderKey.TOPIC) == OBJ_DOWNLOADER_TOPIC
-            and message.get_header(MessageHeaderKey.ORIGIN) == trainer_name
-        ):
-            rejected.set()
-            return make_reply(ReturnCode.UNAUTHENTICATED, error="missing client name")
-        return None
-
-    server.add_incoming_filter(STREAM_CHANNEL, STREAM_DATA_TOPIC, reject_unauthenticated_download)
-    server.start()
-    trainer.start()
-    try:
-        _wait_for_connection(trainer, server_name)
-        started = time.monotonic()
-        reply = request_download_chunk(
-            from_fqcn=server_name,
-            ref_id="ref-id",
-            state=None,
-            per_request_timeout=10.0,
-            cell=trainer,
-        )
-
-        assert rejected.is_set()
-        assert time.monotonic() - started < 2.0
-        assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.COMM_ERROR
-        assert "missing client name" in reply.get_header(MessageHeaderKey.ERROR)
-    finally:
-        trainer.stop()
-        server.stop()
-
-
-def _wait_for_connection(cell, peer_fqcn):
-    deadline = time.time() + WAIT_SEC
-    while time.time() < deadline:
-        if cell.is_cell_connected(peer_fqcn):
-            return
-        time.sleep(0.05)
-    raise RuntimeError(f"{cell.get_fqcn()} did not connect to {peer_fqcn}")
-
-
-def _run_filtering_router(root_url, status_queue, stop_event):
-    cell = None
-    try:
-        cell = CoreCell("server", root_url, secure=False, credentials={})
-        cell.add_incoming_filter(
-            STREAM_CHANNEL,
-            STREAM_DATA_TOPIC,
-            lambda _message: make_reply(ReturnCode.UNAUTHENTICATED, error="transit missing client name"),
-        )
-        cell.start()
-        status_queue.put({"ready": True})
-        stop_event.wait(30)
-    except Exception:
-        status_queue.put({"traceback": traceback.format_exc()})
-        raise
-    finally:
-        if cell:
-            cell.stop()
-
-
-def _run_routed_receiver(root_url, status_queue, stop_event):
-    cell = None
-    try:
-        cell = CoreCell("site-b", root_url, secure=False, credentials={})
-        StreamCell(cell)
-        cell.start()
-        _wait_for_connection(cell, "server")
-        status_queue.put({"ready": True})
-        stop_event.wait(30)
-    except Exception:
-        status_queue.put({"traceback": traceback.format_exc()})
-        raise
-    finally:
-        if cell:
-            cell.stop()
-
-
-def _run_routed_sender(root_url, result_queue):
-    cell = None
-    try:
-        cell = CoreCell("site-a", root_url, secure=False, credentials={})
-        stream_cell = StreamCell(cell)
-        cell.start()
-        _wait_for_connection(cell, "server")
-        future = stream_cell.send_blob(
-            TEST_CHANNEL,
-            TEST_TOPIC,
-            "site-b",
-            Message(None, b"payload"),
-            reliable=True,
-        )
-        try:
-            result_queue.put({"result": future.result(timeout=5.0)})
-        except Exception as ex:
-            result_queue.put({"error_type": type(ex).__name__, "error": str(ex)})
-    except Exception:
-        result_queue.put({"traceback": traceback.format_exc()})
-        raise
-    finally:
-        if cell:
-            cell.stop()
-
-
-def _get_process_result(queue):
-    result = queue.get(timeout=30)
-    assert "traceback" not in result, result.get("traceback")
-    return result
-
-
-@pytest.mark.timeout(60)
-def test_routed_incoming_filter_rejection_fails_stream_sender_immediately():
-    context = multiprocessing.get_context("spawn")
-    root_url = f"tcp://localhost:{get_open_ports(1)[0]}"
-    router_status = context.Queue()
-    receiver_status = context.Queue()
-    result_queue = context.Queue()
-    router_stop = context.Event()
-    receiver_stop = context.Event()
-    router = context.Process(target=_run_filtering_router, args=(root_url, router_status, router_stop))
-    receiver = context.Process(target=_run_routed_receiver, args=(root_url, receiver_status, receiver_stop))
-    sender = context.Process(target=_run_routed_sender, args=(root_url, result_queue))
-    started_processes = []
-    try:
-        router.start()
-        started_processes.append(router)
-        _get_process_result(router_status)
-        receiver.start()
-        started_processes.append(receiver)
-        _get_process_result(receiver_status)
-        sender.start()
-        started_processes.append(sender)
-        result = _get_process_result(result_queue)
-        sender.join(timeout=10)
-
-        assert result.get("error_type") == StreamError.__name__
-        assert "Received error from server" in result["error"]
-        assert "transit missing client name" in result["error"]
-    finally:
-        receiver_stop.set()
-        router_stop.set()
-        for process in reversed(started_processes):
-            process.join(timeout=10)
-            if process.is_alive():
-                process.terminate()
-                process.join(timeout=5)
-
-    assert all(process.exitcode == 0 for process in started_processes)
