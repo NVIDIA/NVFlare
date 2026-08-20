@@ -557,12 +557,12 @@ def test_data_location_invariants_stay_on_the_always_loaded_path():
 
 
 def test_pytorch_recipe_capability_profiles_match_tensor_disk_offload_support():
-    from nvflare.tool.recipe.recipe_cli import _load_catalog, _recipe_detail
+    from nvflare.tool.recipe.recipe_cli import _load_catalog
 
-    catalog = {entry["name"]: entry for entry in _load_catalog()}
+    catalog = {entry["name"]: entry for entry in _load_catalog(include_recipe_detail=True)}
     parameter_names = {}
     for recipe_name in ("fedavg-pt", "cyclic-pt", "fedeval-pt", "swarm-pt"):
-        detail = _recipe_detail(catalog[recipe_name])
+        detail = catalog[recipe_name]
         parameter_names[recipe_name] = {parameter["name"] for parameter in detail["parameters"]}
 
     assert {"server_expected_format", "enable_tensor_disk_offload"} <= parameter_names["fedavg-pt"]

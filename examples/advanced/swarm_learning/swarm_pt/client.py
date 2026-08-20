@@ -20,7 +20,8 @@ parameters (~0.4 % of total weights) are exchanged each round, keeping
 communication cost low regardless of base-model size.
 
 Dataset heterogeneity: the training split is partitioned by site index so each
-participant trains on a disjoint shard, simulating real-world data silos.
+participant trains on a disjoint shard, simulating real-world data silos. A
+shared validation split scores each received global adapter before local training.
 """
 
 import argparse
@@ -47,6 +48,17 @@ MAX_SEQ_LEN = 128
 BATCH_SIZE = 4
 LEARNING_RATE = 3e-4
 DEFAULT_LOCAL_STEPS = 10
+DEFAULT_VALIDATION_STEPS = 10
+
+
+def positive_int(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{value!r} is not a valid integer") from None
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("must be greater than 0")
+    return parsed
 
 
 def build_lora_model(model_path: str):
@@ -81,34 +93,46 @@ def build_dataloader(
     n_shards: int = 4,
     max_seq_len: int = MAX_SEQ_LEN,
     batch_size: int = BATCH_SIZE,
+    split: str = "train",
+    max_steps: int | None = None,
 ) -> DataLoader:
-    """Build a DataLoader for this site's training shard.
+    """Build a DataLoader for this site's training shard or the validation split.
 
-    If data_dir is given, loads the pre-split Arrow dataset written by
-    prepare_data.py from {data_dir}/{site_name}/train.  Otherwise falls back
-    to an in-memory shard of the full wikitext-2 train split (useful for
-    quick runs without running prepare_data.py first).
+    If data_dir is given, loads the Arrow dataset written by prepare_data.py.
+    Otherwise falls back to the matching in-memory wikitext-2 split. Only the
+    training split is sharded; validation is shared so every site scores the
+    same received global model on the same examples.
     """
+    if split not in ("train", "validation"):
+        raise ValueError(f"split must be 'train' or 'validation', but got {split!r}")
+
     if data_dir is not None:
         from datasets import load_from_disk
 
-        shard_path = os.path.join(data_dir, site_name, "train")
-        if not os.path.isdir(shard_path):
+        dataset_path = os.path.join(data_dir, site_name, "train") if split == "train" else os.path.join(data_dir, split)
+        if not os.path.isdir(dataset_path):
             raise FileNotFoundError(
-                f"Pre-split data not found at '{shard_path}'. "
-                f"Run prepare_data.py --n_clients <N> --output_dir {data_dir} first."
+                f"Required {split} data not found at '{dataset_path}'. When --data_dir is set, provide each site's "
+                f"training dataset under '<data_dir>/<site>/train' and the shared validation dataset under "
+                f"'<data_dir>/validation'."
             )
-        print(f"[{site_name}] Loading pre-split data from {shard_path}")
-        dataset = load_from_disk(shard_path)
+        print(f"[{site_name}] Loading prepared {split} data from {dataset_path}")
+        dataset = load_from_disk(dataset_path)
     else:
-        print(f"[{site_name}] No --data_dir given; using in-memory shard of wikitext-2")
-        dataset = load_dataset("wikitext", "wikitext-2-raw-v1", split="train")
+        print(f"[{site_name}] No --data_dir given; loading in-memory wikitext-2 {split} split")
+        dataset = load_dataset("wikitext", "wikitext-2-raw-v1", split=split)
         dataset = dataset.filter(lambda x: len(x["text"].strip()) > 0)
-        try:
-            site_idx = int(site_name.rsplit("-", 1)[-1]) - 1
-        except ValueError:
-            site_idx = 0
-        dataset = dataset.shard(num_shards=n_shards, index=site_idx % n_shards)
+        if split == "train":
+            try:
+                site_idx = int(site_name.rsplit("-", 1)[-1]) - 1
+            except ValueError:
+                site_idx = 0
+            dataset = dataset.shard(num_shards=n_shards, index=site_idx % n_shards)
+
+    if split == "validation" and max_steps is not None:
+        if max_steps < 1:
+            raise ValueError("max_steps must be greater than 0")
+        dataset = dataset.select(range(min(len(dataset), max_steps * batch_size)))
 
     def tokenize(batch):
         enc = tokenizer(
@@ -117,12 +141,15 @@ def build_dataloader(
             max_length=max_seq_len,
             padding="max_length",
         )
-        enc["labels"] = enc["input_ids"].copy()
+        enc["labels"] = [
+            [token_id if attention else -100 for token_id, attention in zip(input_ids, attention_mask)]
+            for input_ids, attention_mask in zip(enc["input_ids"], enc["attention_mask"])
+        ]
         return enc
 
     dataset = dataset.map(tokenize, batched=True, remove_columns=["text"])
     dataset.set_format("torch")
-    return DataLoader(dataset, batch_size=batch_size, shuffle=True, drop_last=True)
+    return DataLoader(dataset, batch_size=batch_size, shuffle=split == "train", drop_last=split == "train")
 
 
 def apply_global_adapter(model, global_params: dict):
@@ -177,6 +204,27 @@ def local_train(model, dataloader: DataLoader, steps: int) -> dict:
     return diff
 
 
+def evaluate_loss(model, dataloader: DataLoader, steps: int) -> float:
+    """Evaluate the received global adapter before local training."""
+    device = next(model.parameters()).device
+    losses = []
+    model.eval()
+    with torch.no_grad():
+        for step, batch in enumerate(dataloader):
+            if step >= steps:
+                break
+            loss = model(
+                input_ids=batch["input_ids"].to(device),
+                attention_mask=batch["attention_mask"].to(device),
+                labels=batch["labels"].to(device),
+            ).loss
+            losses.append(loss.item())
+
+    if not losses:
+        raise ValueError("validation dataloader produced no batches")
+    return sum(losses) / len(losses)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -191,6 +239,7 @@ def main():
         "(e.g. /tmp/swarm_data). If omitted, falls back to in-memory shard.",
     )
     parser.add_argument("--local_steps", type=int, default=DEFAULT_LOCAL_STEPS)
+    parser.add_argument("--validation_steps", type=positive_int, default=DEFAULT_VALIDATION_STEPS)
     parser.add_argument("--batch_size", type=int, default=BATCH_SIZE)
     parser.add_argument("--max_seq_len", type=int, default=MAX_SEQ_LEN)
     parser.add_argument(
@@ -207,7 +256,7 @@ def main():
     print(f"[{site_name}] Loading model from '{args.model_path}'")
 
     model, tokenizer = build_lora_model(args.model_path)
-    dataloader = build_dataloader(
+    train_dataloader = build_dataloader(
         tokenizer,
         site_name,
         data_dir=args.data_dir,
@@ -215,30 +264,57 @@ def main():
         max_seq_len=args.max_seq_len,
         batch_size=args.batch_size,
     )
+    validation_dataloader = build_dataloader(
+        tokenizer,
+        site_name,
+        data_dir=args.data_dir,
+        n_shards=args.n_shards,
+        max_seq_len=args.max_seq_len,
+        batch_size=args.batch_size,
+        split="validation",
+        max_steps=args.validation_steps,
+    )
 
-    print(f"[{site_name}] Dataset ready ({len(dataloader)} batches/round)")
+    print(
+        f"[{site_name}] Datasets ready "
+        f"({len(train_dataloader)} training batches, {len(validation_dataloader)} validation batches)"
+    )
 
-    round_num = 0
+    fallback_round = 0
     while flare.is_running():
         input_model = flare.receive()
         if input_model is None:
             break
 
-        print(f"[{site_name}] Round {round_num}: applying global LoRA adapter")
+        workflow_round = getattr(input_model, "current_round", None)
+        if workflow_round is None:
+            workflow_round = fallback_round
+            print(f"[{site_name}] Received model without current_round; using fallback round {workflow_round}")
+
+        print(f"[{site_name}] Round {workflow_round}: applying global LoRA adapter")
         apply_global_adapter(model, input_model.params)
 
-        print(f"[{site_name}] Round {round_num}: local training for {args.local_steps} steps")
-        diff = local_train(model, dataloader, args.local_steps)
+        metrics = {}
+        if workflow_round == 0:
+            print(f"[{site_name}] Round 0: skipping validation because no aggregated global adapter exists yet")
+        else:
+            val_loss = evaluate_loss(model, validation_dataloader, args.validation_steps)
+            metrics = {"val_loss": val_loss}
+            print(f"[{site_name}] Round {workflow_round}: received global adapter val_loss={val_loss:.4f}")
+
+        print(f"[{site_name}] Round {workflow_round}: local training for {args.local_steps} steps")
+        diff = local_train(model, train_dataloader, args.local_steps)
 
         flare.send(
             flare.FLModel(
                 params_type=ParamsType.DIFF,
                 params=diff,
+                metrics=metrics,
                 meta={"NUM_STEPS_CURRENT_ROUND": args.local_steps},
             )
         )
-        print(f"[{site_name}] Round {round_num}: submitted LoRA adapter diff")
-        round_num += 1
+        print(f"[{site_name}] Round {workflow_round}: submitted LoRA adapter diff")
+        fallback_round = workflow_round + 1
 
 
 if __name__ == "__main__":

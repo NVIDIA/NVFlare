@@ -28,7 +28,7 @@ from nvflare.fuel.f3.cellnet.utils import decode_payload, encode_payload, make_r
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.stream_cell import StreamCell
 from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
-from nvflare.fuel.f3.streaming.stream_types import BlobSizeError, StreamFuture
+from nvflare.fuel.f3.streaming.stream_types import BlobSizeError, StreamFuture, StreamTargetUnreachable
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.waiter_utils import WaiterRC, conditional_wait
@@ -127,18 +127,15 @@ class Adapter:
 
         req_id = request.get_header(MessageHeaderKey.REQ_ID, "")
         secure = request.get_header(MessageHeaderKey.SECURE, False)
-        optional = request.get_header(MessageHeaderKey.OPTIONAL, False)
         self.logger.debug(f"{stream_req_id=}: on {channel=}, {topic=}")
         response = self.cb(request, *args, **kwargs)
         if isinstance(response, concurrent.futures.Future):
             response.add_done_callback(
-                lambda done: self._send_async_response(
-                    done, stream_req_id, req_id, channel, topic, origin, secure, optional
-                )
+                lambda done: self._send_async_response(done, stream_req_id, req_id, channel, topic, origin, secure)
             )
             return
 
-        self._send_response(response, stream_req_id, req_id, channel, topic, origin, secure, optional)
+        self._send_response(response, stream_req_id, req_id, channel, topic, origin, secure)
 
     def _send_async_response(self, response_future, *reply_args):
         try:
@@ -148,7 +145,7 @@ class Adapter:
             response = make_reply(ReturnCode.PROCESS_EXCEPTION)
         self._send_response(response, *reply_args)
 
-    def _handle_reply_stream_done(self, reply_future):
+    def _handle_reply_stream_done(self, reply_future, transport_optional=False):
         error = reply_future.exception()
         if not error:
             return
@@ -160,11 +157,20 @@ class Adapter:
             )
             os._exit(1)
 
+        if transport_optional and isinstance(error, StreamTargetUnreachable):
+            # The response transport is optional because it can outlive its requester or job cell. This callback
+            # cannot determine remote waiter state; request-level failures surface at the requester through its
+            # correlated stream error or timeout, so an unreachable optional response is diagnostic only.
+            self.logger.debug(
+                f"streamed response from {self.my_info.fqcn} was not delivered: {secure_format_exception(error)}"
+            )
+            return
+
         self.logger.error(
             f"streamed response from {self.my_info.fqcn} failed asynchronously: {secure_format_exception(error)}"
         )
 
-    def _send_response(self, response, stream_req_id, req_id, channel, topic, origin, secure, optional):
+    def _send_response(self, response, stream_req_id, req_id, channel, topic, origin, secure):
         self.logger.debug(f"response available: {stream_req_id=}: on {channel=}, {topic=}")
         if not stream_req_id:
             # no need to reply!
@@ -186,13 +192,17 @@ class Adapter:
         encode_payload(response, StreamHeaderKey.PAYLOAD_ENCODING, fobs_ctx=self.cell.get_fobs_context())
         self.logger.debug(f"sending: {stream_req_id=}: {response.headers=}, target={origin}")
         try:
+            # Response production is asynchronous and can outlive the request timeout. Mark its transport frames
+            # optional so a stale destination is dropped without ERROR-level routing noise. Reliable delivery and
+            # receiver-side stream errors still settle reply_future and the original request waiter when present.
+            transport_optional = True
             reply_future = self.cell.send_blob(
                 CellChannel.RETURN_ONLY,
                 f"{channel}:{topic}",
                 origin,
                 response,
                 secure,
-                optional,
+                optional=transport_optional,
                 reliable=True,
             )
         except BlobSizeError as ex:
@@ -203,7 +213,7 @@ class Adapter:
                 )
                 os._exit(1)
             raise
-        reply_future.add_done_callback(self._handle_reply_stream_done, reply_future)
+        reply_future.add_done_callback(self._handle_reply_stream_done, reply_future, transport_optional)
         self.logger.debug(f"Done sending: {stream_req_id=}: {reply_future=}")
 
 
@@ -624,9 +634,11 @@ class Cell(StreamCell):
             waiter = self.requests_dict.get(req_id)
             if waiter:
                 origin = message.get_header(MessageHeaderKey.ORIGIN)
-                if origin != waiter.target:
+                failed_destination = message.get_header(StreamHeaderKey.FAILED_DESTINATION, origin)
+                forwarded_error = message.get_header(StreamHeaderKey.FAILED_DESTINATION) == waiter.target
+                if origin != waiter.target and not forwarded_error:
                     self.logger.warning(
-                        f"ignored stream error for {req_id=} from unexpected receiver {origin}; "
+                        f"ignored stream error for {req_id=} with unexpected failed destination {failed_destination}; "
                         f"expected {waiter.target}"
                     )
                     return
