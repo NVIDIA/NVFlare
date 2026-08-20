@@ -336,16 +336,28 @@ def test_stream_adapter_sends_future_response_asynchronously():
     assert cell.send_blob.call_args.kwargs["optional"] is True
 
 
-def test_stream_adapter_logs_undeliverable_late_response_at_debug():
+def test_stream_adapter_logs_undeliverable_optional_response_at_debug():
     adapter = Adapter(MagicMock(), MagicMock(fqcn="site-1.job"), MagicMock())
     adapter.logger = MagicMock()
     reply_future = Future()
     reply_future.set_exception(StreamTargetUnreachable("requester is gone"))
 
-    adapter._handle_reply_stream_done(reply_future)
+    adapter._handle_reply_stream_done(reply_future, optional=True)
 
     adapter.logger.debug.assert_called_once()
     adapter.logger.error.assert_not_called()
+
+
+def test_stream_adapter_logs_required_target_unreachable_at_error():
+    adapter = Adapter(MagicMock(), MagicMock(fqcn="site-1.job"), MagicMock())
+    adapter.logger = MagicMock()
+    reply_future = Future()
+    reply_future.set_exception(StreamTargetUnreachable("requester route failed"))
+
+    adapter._handle_reply_stream_done(reply_future, optional=False)
+
+    adapter.logger.error.assert_called_once()
+    adapter.logger.debug.assert_not_called()
 
 
 def test_stream_adapter_logs_active_stream_failure_at_error():

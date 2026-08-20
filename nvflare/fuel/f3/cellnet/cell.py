@@ -148,7 +148,7 @@ class Adapter:
             response = make_reply(ReturnCode.PROCESS_EXCEPTION)
         self._send_response(response, *reply_args)
 
-    def _handle_reply_stream_done(self, reply_future):
+    def _handle_reply_stream_done(self, reply_future, optional=False):
         error = reply_future.exception()
         if not error:
             return
@@ -160,9 +160,9 @@ class Adapter:
             )
             os._exit(1)
 
-        if isinstance(error, StreamTargetUnreachable):
-            # A response can finish after the requester has timed out and removed its waiter or job cell. The
-            # requester already owns the request outcome, so an unreachable target is diagnostic only.
+        if optional and isinstance(error, StreamTargetUnreachable):
+            # An optional response can finish after its requester has removed the waiter or job cell. The requester
+            # already owns the request outcome, so an unreachable optional target is diagnostic only.
             self.logger.debug(
                 f"streamed response from {self.my_info.fqcn} was not delivered: {secure_format_exception(error)}"
             )
@@ -214,7 +214,7 @@ class Adapter:
                 )
                 os._exit(1)
             raise
-        reply_future.add_done_callback(self._handle_reply_stream_done, reply_future)
+        reply_future.add_done_callback(self._handle_reply_stream_done, reply_future, optional)
         self.logger.debug(f"Done sending: {stream_req_id=}: {reply_future=}")
 
 

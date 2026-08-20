@@ -135,7 +135,7 @@ def _run_sender(root_url, result_queue):
             reliable=True,
         )
         adapter = Adapter(lambda _request: None, cell.my_info, stream_cell)
-        future.add_done_callback(adapter._handle_reply_stream_done, future)
+        future.add_done_callback(adapter._handle_reply_stream_done, future, True)
         error = future.exception(timeout=10)
         result_queue.put(
             {
