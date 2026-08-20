@@ -1493,6 +1493,35 @@ def test_report_supports_native_minimization_contract(tmp_path, monkeypatch):
     assert "objective improvement `+0.400000`" in report
 
 
+def test_report_keeps_strict_improvement_independent_of_plateau_tolerance(tmp_path, monkeypatch):
+    reporter = _load_reporter()
+    _write_campaign(tmp_path)
+    _write_rows(
+        tmp_path,
+        [
+            _row("baseline", "baseline", "0.5000"),
+            _row("keep", "small_retained_gain", "0.5002", base_candidate="baseline"),
+        ],
+    )
+    state_path = tmp_path / ".nvflare/autofl/campaign_state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state.update(
+        {
+            "baseline_score": 0.5,
+            "best_score": 0.5002,
+            "improvement": 0.0002,
+            "plateau": {"min_delta": 0.0005},
+        }
+    )
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+
+    summary = _generate(reporter, tmp_path, monkeypatch)
+
+    assert summary["best"]["name"] == "small_retained_gain"
+    assert summary["selection"]["improvement_from_baseline"] == pytest.approx(0.0002)
+    assert [item["name"] for item in summary["outcome_summary"]["helped"]] == ["small_retained_gain"]
+
+
 def test_report_rejects_legacy_minimization_without_provenance(tmp_path, monkeypatch):
     reporter = _load_reporter()
     _write_campaign(tmp_path)

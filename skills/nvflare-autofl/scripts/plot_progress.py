@@ -171,6 +171,10 @@ def better(value: float, incumbent: Optional[float], mode: str = "max") -> bool:
     return load_campaign_guard().better(value, incumbent, mode)
 
 
+def improvement_amount(baseline: float, best: float, mode: str = "max") -> float:
+    return load_campaign_guard().improvement_over_baseline(baseline, best, mode)
+
+
 def cumulative_best(values: Sequence[float], mode: str = "max") -> List[float]:
     incumbent = None
     result = []
@@ -494,7 +498,7 @@ def plot_progress(
     summary_lines = [
         f"Baseline: {baseline:.6f}",
         f"Best: {best_score:.6f}",
-        f"Improvement: {baseline - best_score if mode == 'min' else best_score - baseline:+.6f}",
+        f"Improvement: {improvement_amount(baseline, best_score, mode):+.6f}",
     ]
     if total_runtime:
         summary_lines.append(f"Runtime: {format_runtime(total_runtime)}")
@@ -577,7 +581,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     print(f"Saved {args.output}")
     print(f"baseline={baseline:.6f}")
     print(f"best={best:.6f}")
-    print(f"improvement={baseline - best if args.mode == 'min' else best - baseline:+.6f}")
+    print(f"improvement={improvement_amount(baseline, best, args.mode):+.6f}")
     return 0
 
 

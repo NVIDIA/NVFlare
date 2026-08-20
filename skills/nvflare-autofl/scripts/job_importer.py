@@ -1211,11 +1211,10 @@ def likely_lower_is_better_metric(metric: str) -> bool:
     """Return whether a metric name is an obvious lower-is-better objective."""
 
     name = metric.lower()
-    tokens = [token for token in re.split(r"[^a-z0-9]+", name) if token]
-    if not tokens or "neg" in tokens:
+    tokens = re.split(r"[^a-z0-9]+", name)
+    if "neg" in tokens:
         return False
-    # Keep this standalone skill heuristic aligned with
-    # nvflare.app_common.widgets.intime_model_selector._looks_lower_is_better.
+    # This standalone copy intentionally matches NVFlare core's best-effort heuristic.
     if any(hint in name for hint in LOWER_IS_BETTER_METRIC_SUBSTRINGS):
         return True
     return any(token in LOWER_IS_BETTER_METRIC_TOKENS for token in tokens)

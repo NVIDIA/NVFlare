@@ -224,6 +224,25 @@ def improvement_over_baseline(baseline: Optional[float], best: Optional[float], 
     return baseline - best if mode == "min" else best - baseline
 
 
+def campaign_mode_for_results(results_path: Path) -> str:
+    """Read the authoritative objective mode associated with a campaign ledger."""
+
+    state_path = results_path.parent / ".nvflare/autofl/campaign_state.json"
+    try:
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ValueError(
+            f"cannot determine objective mode from {state_path}; pass --mode explicitly or repair campaign state"
+        ) from exc
+    state_mode = state.get("mode") if isinstance(state, dict) else None
+    if state_mode not in {"max", "min"}:
+        raise ValueError(
+            f"campaign state {state_path} does not contain a valid objective mode; "
+            "pass --mode explicitly or repair campaign state"
+        )
+    return state_mode
+
+
 def plateau_status(
     rows: List[Dict[str, str]],
     threshold: int,
@@ -527,13 +546,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     results_path = Path(args.results).resolve()
     mode = args.mode
     if mode is None:
-        state_path = results_path.parent / ".nvflare/autofl/campaign_state.json"
         try:
-            state = json.loads(state_path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeError, json.JSONDecodeError):
-            state = {}
-        state_mode = state.get("mode") if isinstance(state, dict) else None
-        mode = state_mode if state_mode in {"max", "min"} else "max"
+            mode = campaign_mode_for_results(results_path)
+        except ValueError as exc:
+            parser.error(str(exc))
     stop_files = args.stop_file if args.stop_file is not None else list(DEFAULT_STOP_FILES)
     resolved_stop_files = [
         str(path if path.is_absolute() else results_path.parent / path) for path in map(Path, stop_files)

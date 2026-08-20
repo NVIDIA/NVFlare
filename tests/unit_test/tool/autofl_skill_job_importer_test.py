@@ -19,6 +19,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from nvflare.app_common.widgets.intime_model_selector import _looks_lower_is_better
+
 
 def _load_importer():
     repo_root = Path(__file__).parents[3]
@@ -1090,17 +1092,22 @@ def main():
 
 
 @pytest.mark.parametrize(
-    ("metric", "expected"),
+    "metric",
     [
-        ("trainingloss", True),
-        ("val_mseloss", True),
-        ("neg_loss", False),
-        ("negative_class_loss", True),
-        ("dice", False),
+        "trainingloss",
+        "val_mseloss",
+        "neg_loss",
+        "negative_class_loss",
+        "dice",
+        "-mse",
+        "neg.mse",
+        "cost",
+        "divergence",
+        "energy",
     ],
 )
-def test_lower_is_better_metric_heuristic_matches_nvflare_core(metric, expected):
-    assert job_importer.likely_lower_is_better_metric(metric) is expected
+def test_lower_is_better_metric_heuristic_matches_nvflare_core(metric):
+    assert job_importer.likely_lower_is_better_metric(metric) is _looks_lower_is_better(metric)
 
 
 def test_train_script_outside_workspace_is_not_admitted_to_trust_contract(tmp_path):

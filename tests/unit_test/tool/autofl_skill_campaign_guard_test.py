@@ -193,6 +193,22 @@ def test_guard_cli_derives_mode_from_sibling_campaign_state(tmp_path, capsys):
     assert state["best_score"] == pytest.approx(0.6)
 
 
+@pytest.mark.parametrize("state_payload", [None, {}, {"mode": "sideways"}])
+def test_guard_cli_requires_direction_when_campaign_state_cannot_supply_it(tmp_path, capsys, state_payload):
+    guard = _load_guard()
+    results = tmp_path / "results.tsv"
+    _write_results(results, [_row("baseline", "baseline", "0.85")])
+    if state_payload is not None:
+        state_path = tmp_path / ".nvflare/autofl/campaign_state.json"
+        state_path.parent.mkdir(parents=True)
+        state_path.write_text(json.dumps(state_payload), encoding="utf-8")
+
+    with pytest.raises(SystemExit, match="2"):
+        guard.main([str(results), "--format", "json"])
+
+    assert "pass --mode explicitly or repair campaign state" in capsys.readouterr().err
+
+
 def test_min_mode_plateau_resets_on_lower_score():
     guard = _load_guard()
     rows = [
@@ -387,6 +403,8 @@ def test_guard_cli_is_diagnostic_only(tmp_path):
             sys.executable,
             str(guard_path),
             str(results_path),
+            "--mode",
+            "max",
             "--plateau-threshold",
             "2",
             "--format",
@@ -410,7 +428,7 @@ def test_guard_resolves_default_and_custom_stop_files_from_results_directory(tmp
     tmp_path.joinpath("STOP_AUTOFL").touch()
 
     default_proc = subprocess.run(
-        [sys.executable, str(guard_path), str(results_path), "--format", "json"],
+        [sys.executable, str(guard_path), str(results_path), "--mode", "max", "--format", "json"],
         cwd=repo_root,
         text=True,
         capture_output=True,
@@ -421,6 +439,8 @@ def test_guard_resolves_default_and_custom_stop_files_from_results_directory(tmp
             sys.executable,
             str(guard_path),
             str(results_path),
+            "--mode",
+            "max",
             "--stop-file",
             "CUSTOM_STOP",
             "--format",
