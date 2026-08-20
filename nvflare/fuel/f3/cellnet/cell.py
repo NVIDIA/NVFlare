@@ -634,11 +634,11 @@ class Cell(StreamCell):
             waiter = self.requests_dict.get(req_id)
             if waiter:
                 origin = message.get_header(MessageHeaderKey.ORIGIN)
-                receiver = message.get_header(StreamHeaderKey.ERROR_RECEIVER, origin)
-                forwarded_error = message.get_header(StreamHeaderKey.ERROR_RECEIVER) == waiter.target
+                failed_destination = message.get_header(StreamHeaderKey.FAILED_DESTINATION, origin)
+                forwarded_error = message.get_header(StreamHeaderKey.FAILED_DESTINATION) == waiter.target
                 if origin != waiter.target and not forwarded_error:
                     self.logger.warning(
-                        f"ignored stream error for {req_id=} from unexpected receiver {receiver}; "
+                        f"ignored stream error for {req_id=} with unexpected failed destination {failed_destination}; "
                         f"expected {waiter.target}"
                     )
                     return

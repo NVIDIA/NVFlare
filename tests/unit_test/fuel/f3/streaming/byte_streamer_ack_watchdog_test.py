@@ -136,7 +136,7 @@ class TestByteStreamerAckWatchdog:
 
         streamer._error_handler(message)
 
-        assert "sender=sender receiver=receiver" in str(task.stream_future.exception(timeout=0.1))
+        assert "sender=sender failed_destination=receiver" in str(task.stream_future.exception(timeout=0.1))
         error_callback.assert_called_once_with(message)
 
     def test_forwarded_comm_error_fails_correlated_active_stream(self):
@@ -167,7 +167,7 @@ class TestByteStreamerAckWatchdog:
                 StreamHeaderKey.TOPIC: "tp",
                 StreamHeaderKey.ERROR_MSG: "downstream connection failed",
                 StreamHeaderKey.ERROR_TYPE: StreamError.__name__,
-                StreamHeaderKey.ERROR_RECEIVER: "receiver",
+                StreamHeaderKey.FAILED_DESTINATION: "receiver",
             }
         )
 
@@ -175,7 +175,7 @@ class TestByteStreamerAckWatchdog:
 
         error = task.stream_future.exception(timeout=0.1)
         assert type(error) is StreamError
-        assert "sender=sender receiver=receiver" in str(error)
+        assert "sender=sender failed_destination=receiver" in str(error)
         error_callback.assert_called_once_with(message)
 
     def test_non_optional_forward_error_does_not_bypass_reliable_retry(self):

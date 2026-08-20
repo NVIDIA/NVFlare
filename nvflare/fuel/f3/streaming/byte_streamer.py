@@ -754,17 +754,17 @@ class ByteStreamer:
             return
 
         sender = message.get_header(MessageHeaderKey.ORIGIN)
-        receiver = message.get_header(MessageHeaderKey.DESTINATION)
-        if not sender or not receiver:
+        failed_destination = message.get_header(MessageHeaderKey.DESTINATION)
+        if not sender or not failed_destination:
             return
 
         error_class = StreamTargetUnreachable if error == ReturnCode.TARGET_UNREACHABLE else StreamError
         headers = {
             StreamHeaderKey.STREAM_ID: message.get_header(StreamHeaderKey.STREAM_ID),
             StreamHeaderKey.DATA_TYPE: StreamDataType.ERROR,
-            StreamHeaderKey.ERROR_MSG: f"stream forwarding to {receiver} failed: {error}",
+            StreamHeaderKey.ERROR_MSG: f"stream forwarding to {failed_destination} failed: {error}",
             StreamHeaderKey.ERROR_TYPE: error_class.__name__,
-            StreamHeaderKey.ERROR_RECEIVER: receiver,
+            StreamHeaderKey.FAILED_DESTINATION: failed_destination,
             StreamHeaderKey.CHANNEL: message.get_header(StreamHeaderKey.CHANNEL),
             StreamHeaderKey.TOPIC: message.get_header(StreamHeaderKey.TOPIC),
         }
@@ -777,7 +777,7 @@ class ByteStreamer:
         if send_error:
             log.debug(
                 f"failed to report stream routing error: stream_id={headers[StreamHeaderKey.STREAM_ID]} "
-                f"sender={sender} receiver={receiver}: {send_error}"
+                f"sender={sender} failed_destination={failed_destination}: {send_error}"
             )
 
     def register_error_callback(self, callback: Callable):
@@ -816,10 +816,10 @@ class ByteStreamer:
     @staticmethod
     def _matches_error_context(message: Message, context: _TxTaskContext) -> bool:
         origin = message.get_header(MessageHeaderKey.ORIGIN)
-        receiver = message.get_header(StreamHeaderKey.ERROR_RECEIVER, origin)
+        failed_destination = message.get_header(StreamHeaderKey.FAILED_DESTINATION, origin)
         return (
-            receiver == context.target
-            and (origin == context.target or message.get_header(StreamHeaderKey.ERROR_RECEIVER) == context.target)
+            failed_destination == context.target
+            and (origin == context.target or message.get_header(StreamHeaderKey.FAILED_DESTINATION) == context.target)
             and message.get_header(StreamHeaderKey.CHANNEL) == context.channel
             and message.get_header(StreamHeaderKey.TOPIC) == context.topic
             and message.get_header(StreamHeaderKey.STREAM_REQ_ID) == context.req_id
@@ -911,7 +911,7 @@ class ByteStreamer:
         }
         error_class = error_classes.get(error_type, StreamError)
         sender = self.cell.my_info.fqcn
-        receiver = message.get_header(StreamHeaderKey.ERROR_RECEIVER, origin)
+        failed_destination = message.get_header(StreamHeaderKey.FAILED_DESTINATION, origin)
 
         with ByteStreamer.map_lock:
             tx_task = ByteStreamer.tx_task_map.get(sid)
@@ -926,13 +926,13 @@ class ByteStreamer:
             if not context or not self._matches_error_context(message, context):
                 log.warning(
                     f"Ignored uncorrelated stream error: stream_id={sid} channel={channel} topic={topic} "
-                    f"sender={sender} receiver={receiver}: {error}"
+                    f"sender={sender} failed_destination={failed_destination}: {error}"
                 )
                 return
 
             log.warning(
                 f"Late stream error: stream_id={sid} channel={channel} topic={topic} "
-                f"sender={sender} receiver={receiver}: {error}"
+                f"sender={sender} failed_destination={failed_destination}: {error}"
             )
             self._notify_error_callbacks(message)
             return
@@ -948,7 +948,7 @@ class ByteStreamer:
         if not self._matches_error_context(message, active_context):
             log.warning(
                 f"Ignored stream error with unexpected context: stream_id={sid} channel={channel} topic={topic} "
-                f"sender={sender} expected_receiver={tx_task.target} receiver={receiver}"
+                f"sender={sender} expected_destination={tx_task.target} failed_destination={failed_destination}"
             )
             return
 
@@ -956,7 +956,7 @@ class ByteStreamer:
         tx_task.stop(
             error_class(
                 f"Stream rejected: stream_id={sid} channel={tx_task.channel} topic={tx_task.topic} "
-                f"sender={sender} receiver={receiver}: {error}"
+                f"sender={sender} failed_destination={failed_destination}: {error}"
             ),
             notify=False,
         )
