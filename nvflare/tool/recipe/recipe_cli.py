@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import ast
-import inspect
 import json
 import sys
 from enum import Enum
@@ -32,30 +31,29 @@ _FILTER_KEYS = {"framework", "privacy", "algorithm", "aggregation", "state_excha
 _JSON_OUTPUT_MODES = ["json"]
 _NO_RETRY_TOKEN_SCHEMA = {"supported": False}
 _LIST_METADATA_KEYS = {"privacy"}
-_CATALOG_RECIPE_CLASS_KEY = "_recipe_cls"
 _CATALOG_RECIPE_ATTRS_KEY = "_recipe_attrs"
 _RECIPE_CATALOG_PATH = Path(__file__).with_name("recipe_catalog.json")
 _RECIPE_CATALOG_SCHEMA_VERSION = 1
-_RECIPE_DETAIL_ATTR_NAMES = (
-    "recipe_framework_support",
-    "framework_support",
-    "recipe_frameworks",
-    "frameworks",
-    "recipe_supported_frameworks",
-    "supported_frameworks",
-    "recipe_optional_dependencies",
-    "optional_dependencies",
-    "recipe_heterogeneity_support",
-    "heterogeneity_support",
-    "recipe_supported_heterogeneity",
-    "supported_heterogeneity",
-    "recipe_privacy_compatible",
-    "privacy_compatible",
-    "recipe_notes",
-    "notes",
-    "recipe_template_references",
-    "template_references",
-)
+_RECIPE_DETAIL_ATTR_ALIASES = {
+    "framework_support": (
+        "recipe_framework_support",
+        "framework_support",
+        "recipe_frameworks",
+        "frameworks",
+        "recipe_supported_frameworks",
+        "supported_frameworks",
+    ),
+    "optional_dependencies": ("recipe_optional_dependencies", "optional_dependencies"),
+    "heterogeneity_support": (
+        "recipe_heterogeneity_support",
+        "heterogeneity_support",
+        "recipe_supported_heterogeneity",
+        "supported_heterogeneity",
+    ),
+    "privacy_compatible": ("recipe_privacy_compatible", "privacy_compatible"),
+    "notes": ("recipe_notes", "notes"),
+    "template_references": ("recipe_template_references", "template_references"),
+}
 _CATALOG_SUMMARY_REQUIRED_FIELDS = {
     "name": str,
     "description": str,
@@ -98,6 +96,7 @@ _CORE_FRAMEWORK_SUPPORT = {
     "fedstats": ["framework_agnostic"],
 }
 _NVFLARE_PACKAGE_ROOT = Path(__file__).resolve().parents[2]
+_RECIPE_BASE_CLASS = ("nvflare.recipe.spec", "Recipe")
 _DOCUMENTED_RECIPE_SPECS = {
     "fedavg-pt": {
         "module": "nvflare.app_opt.pt.recipes.fedavg",
@@ -320,17 +319,12 @@ def _normalize_recipe_name(value: str) -> str:
     return str(value).strip().lower().replace("_", "-")
 
 
-def _recipe_attr(recipe_cls, name: str, default=None):
-    if isinstance(recipe_cls, dict):
-        value = recipe_cls.get(f"recipe_{name}")
-        if value is None:
-            value = recipe_cls.get(name)
-        return default if value is None else value
-
-    value = getattr(recipe_cls, f"recipe_{name}", None)
-    if value is None:
-        value = getattr(recipe_cls, name, None)
-    return default if value is None else value
+def _recipe_metadata_attr(metadata: dict, name: str, default=None):
+    for alias in _RECIPE_DETAIL_ATTR_ALIASES[name]:
+        value = (metadata or {}).get(alias)
+        if value is not None:
+            return value
+    return default
 
 
 def _as_string_list(value) -> list:
@@ -363,7 +357,12 @@ def _module_source_path(module_name: str):
     parts = module_name.split(".")
     if not parts or parts[0] != "nvflare":
         return None
-    return _NVFLARE_PACKAGE_ROOT.joinpath(*parts[1:]).with_suffix(".py")
+    path = _NVFLARE_PACKAGE_ROOT.joinpath(*parts[1:])
+    module_path = path.with_suffix(".py")
+    if module_path.is_file():
+        return module_path
+    package_path = path / "__init__.py"
+    return package_path if package_path.is_file() else module_path
 
 
 def _package_source_path(package_name: str):
@@ -375,53 +374,147 @@ def _package_source_path(package_name: str):
     return _NVFLARE_PACKAGE_ROOT.joinpath(*parts[1:])
 
 
-def _ast_base_name(node) -> str:
-    if isinstance(node, ast.Name):
-        return node.id
-    if isinstance(node, ast.Attribute):
-        return node.attr
-    return ""
-
-
-def _static_recipe_class(module_name: str):
+def _static_module_tree(module_name: str):
     path = _module_source_path(module_name)
     if not path or not path.is_file():
         return None
     try:
-        tree = ast.parse(path.read_text(encoding="utf-8"))
+        return ast.parse(path.read_text(encoding="utf-8"))
     except (OSError, SyntaxError, UnicodeDecodeError):
         return None
 
-    imports = _static_imports(tree)
+
+def _resolve_import_from_module(module_name: str, node: ast.ImportFrom):
+    if not node.level:
+        return node.module
+    path = _module_source_path(module_name)
+    package_parts = module_name.split(".")
+    if not path or path.name != "__init__.py":
+        package_parts = package_parts[:-1]
+    parent_levels = node.level - 1
+    if parent_levels > len(package_parts):
+        return None
+    base_parts = package_parts[: len(package_parts) - parent_levels]
+    if node.module:
+        base_parts.extend(node.module.split("."))
+    return ".".join(base_parts)
+
+
+def _static_imports(tree: ast.Module, module_name: str = None) -> dict:
+    imports = {}
+    for node in tree.body:
+        if isinstance(node, ast.ImportFrom):
+            imported_module = _resolve_import_from_module(module_name, node) if module_name else node.module
+            if not imported_module:
+                continue
+            for imported in node.names:
+                imports[imported.asname or imported.name] = (imported_module, imported.name)
+        elif isinstance(node, ast.Import):
+            for imported in node.names:
+                local_name = imported.asname or imported.name.split(".", 1)[0]
+                imports[local_name] = (imported.name, None)
+    return imports
+
+
+def _static_base_references(module_name: str, tree: ast.Module, class_node: ast.ClassDef) -> list:
+    imports = _static_imports(tree, module_name)
+    local_classes = {node.name for node in tree.body if isinstance(node, ast.ClassDef)}
+    references = []
+    for base in class_node.bases:
+        if isinstance(base, ast.Name):
+            if base.id in local_classes:
+                references.append((module_name, base.id))
+            elif base.id in imports and imports[base.id][1]:
+                references.append(imports[base.id])
+        elif isinstance(base, ast.Attribute) and isinstance(base.value, ast.Name):
+            imported = imports.get(base.value.id)
+            if imported and imported[1] is None:
+                references.append((imported[0], base.attr))
+    return references
+
+
+def _static_class_node(module_name: str, class_name: str, visiting=None):
+    reference = (module_name, class_name)
+    visiting = set(visiting or ())
+    if reference in visiting:
+        return module_name, None, None
+    visiting.add(reference)
+
+    tree = _static_module_tree(module_name)
+    if tree is None:
+        return module_name, None, None
+    class_node = next((node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == class_name), None)
+    if class_node is not None:
+        return module_name, tree, class_node
+    imported = _static_imports(tree, module_name).get(class_name)
+    if imported and imported[1]:
+        return _static_class_node(imported[0], imported[1], visiting)
+    return module_name, tree, None
+
+
+def _static_class_is_recipe(module_name: str, class_name: str, visiting=None) -> bool:
+    reference = (module_name, class_name)
+    if reference == _RECIPE_BASE_CLASS:
+        return True
+    visiting = set(visiting or ())
+    if reference in visiting:
+        return False
+    visiting.add(reference)
+
+    resolved_module, tree, class_node = _static_class_node(module_name, class_name)
+    if tree is None or class_node is None:
+        return False
+    return any(
+        _static_class_is_recipe(*base, visiting) for base in _static_base_references(resolved_module, tree, class_node)
+    )
+
+
+def _static_class_doc(module_name: str, class_name: str, visiting=None) -> str:
+    reference = (module_name, class_name)
+    visiting = set(visiting or ())
+    if reference in visiting:
+        return ""
+    visiting.add(reference)
+
+    resolved_module, tree, class_node = _static_class_node(module_name, class_name)
+    if tree is None or class_node is None:
+        return ""
+    doc = ast.get_docstring(class_node)
+    if doc:
+        return doc
+    for base in _static_base_references(resolved_module, tree, class_node):
+        doc = _static_class_doc(*base, visiting)
+        if doc:
+            return doc
+    return ""
+
+
+def _static_recipe_class(module_name: str):
+    tree = _static_module_tree(module_name)
+    if tree is None:
+        return None
+
     class_nodes = [node for node in tree.body if isinstance(node, ast.ClassDef) and node.name != "Recipe"]
-    candidate_names = set()
-    while True:
-        discovered_names = {
-            node.name
-            for node in class_nodes
-            if any(
-                _ast_base_name(base).endswith("Recipe")
-                or (imports.get(_ast_base_name(base), (None, ""))[1]).endswith("Recipe")
-                or _ast_base_name(base) in candidate_names
-                for base in node.bases
-            )
-        }
-        if discovered_names <= candidate_names:
-            break
-        candidate_names.update(discovered_names)
+    candidate_names = {node.name for node in class_nodes if _static_class_is_recipe(module_name, node.name)}
     candidates = [node for node in class_nodes if node.name in candidate_names]
     if not candidates:
         return None
 
-    inherited_names = {_ast_base_name(base) for candidate in candidates for base in candidate.bases}
+    inherited_names = {
+        base_name
+        for candidate in candidates
+        for base_module, base_name in _static_base_references(module_name, tree, candidate)
+        if base_module == module_name and base_name in candidate_names
+    }
     leaf_candidates = [candidate for candidate in candidates if candidate.name not in inherited_names]
     recipe_class = leaf_candidates[0] if leaf_candidates else candidates[0]
-    doc = ast.get_docstring(recipe_class) or ""
+    doc = _static_class_doc(module_name, recipe_class.name)
     description = next((line.strip() for line in doc.splitlines() if line.strip()), f"{recipe_class.name} recipe")
     return recipe_class, description
 
 
 def _static_class_attr(class_node: ast.ClassDef, *names):
+    assignments = {}
     for node in class_node.body:
         value_node = None
         target_names = []
@@ -431,21 +524,41 @@ def _static_class_attr(class_node: ast.ClassDef, *names):
         elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
             value_node = node.value
             target_names = [node.target.id]
-        if value_node is None or not set(names).intersection(target_names):
+        if value_node is None:
+            continue
+        for target_name in target_names:
+            if target_name in names:
+                assignments[target_name] = value_node
+
+    for name in names:
+        value_node = assignments.get(name)
+        if value_node is None:
             continue
         try:
             return ast.literal_eval(value_node)
         except (ValueError, TypeError):
-            return None
+            continue
     return None
 
 
-def _static_recipe_attrs(class_node: ast.ClassDef) -> dict:
+def _static_recipe_attrs(module_name: str, class_name: str, visiting=None) -> dict:
+    reference = (module_name, class_name)
+    visiting = set(visiting or ())
+    if reference in visiting:
+        return {}
+    visiting.add(reference)
+
+    resolved_module, tree, class_node = _static_class_node(module_name, class_name)
+    if tree is None or class_node is None:
+        return {}
     attrs = {}
-    for name in _RECIPE_DETAIL_ATTR_NAMES:
-        value = _static_class_attr(class_node, name)
-        if value is not None:
-            attrs[name] = _json_safe_value(value)
+    for base in _static_base_references(resolved_module, tree, class_node):
+        attrs.update(_static_recipe_attrs(*base, visiting))
+    for aliases in _RECIPE_DETAIL_ATTR_ALIASES.values():
+        for name in aliases:
+            value = _static_class_attr(class_node, name)
+            if value is not None:
+                attrs[name] = _json_safe_value(value)
     return attrs
 
 
@@ -533,25 +646,8 @@ def _static_recipe_metadata(cli_name: str, module_name: str, class_node: ast.Cla
     }
 
 
-def _static_imports(tree: ast.Module) -> dict:
-    imports = {}
-    for node in tree.body:
-        if isinstance(node, ast.ImportFrom) and node.module:
-            for imported in node.names:
-                imports[imported.asname or imported.name] = (node.module, imported.name)
-    return imports
-
-
 def _static_member_value(module_name: str, class_name: str, member_name: str):
-    path = _module_source_path(module_name)
-    if not path or not path.is_file():
-        return None
-    try:
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-    except (OSError, SyntaxError, UnicodeDecodeError):
-        return None
-
-    class_node = next((node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == class_name), None)
+    _, _, class_node = _static_class_node(module_name, class_name)
     if class_node is None:
         return None
     for node in class_node.body:
@@ -607,30 +703,40 @@ def _ast_parameter(name: str, annotation, default_node, kind: str, required: boo
     }
 
 
-def _static_recipe_parameters(module_name: str, class_name: str) -> list:
-    path = _module_source_path(module_name)
-    if not path or not path.is_file():
-        return []
-    try:
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-    except (OSError, SyntaxError, UnicodeDecodeError):
-        return []
+def _static_class_function(module_name: str, class_name: str, function_name: str, visiting=None):
+    reference = (module_name, class_name)
+    visiting = set(visiting or ())
+    if reference in visiting:
+        return None, None
+    visiting.add(reference)
 
-    class_node = next((node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == class_name), None)
-    if class_node is None:
-        return []
-    init_node = next(
+    resolved_module, tree, class_node = _static_class_node(module_name, class_name)
+    if tree is None or class_node is None:
+        return None, None
+    function_node = next(
         (
             node
             for node in class_node.body
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "__init__"
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == function_name
         ),
         None,
     )
+    if function_node is not None:
+        return resolved_module, function_node
+    for base in _static_base_references(resolved_module, tree, class_node):
+        function_module, function_node = _static_class_function(*base, function_name, visiting)
+        if function_node is not None:
+            return function_module, function_node
+    return None, None
+
+
+def _static_recipe_parameters(module_name: str, class_name: str) -> list:
+    init_module, init_node = _static_class_function(module_name, class_name, "__init__")
     if init_node is None:
         return []
 
-    imports = _static_imports(tree)
+    tree = _static_module_tree(init_module)
+    imports = _static_imports(tree, init_module)
     params = []
     args = init_node.args
     positional = list(args.posonlyargs) + list(args.args)
@@ -656,8 +762,6 @@ def _static_recipe_parameters(module_name: str, class_name: str) -> list:
 
 
 def _json_safe_value(value):
-    if value is inspect.Signature.empty or value is inspect.Parameter.empty:
-        return None
     if isinstance(value, Enum):
         return value.value
     if value is None or isinstance(value, (str, int, float, bool)):
@@ -672,53 +776,12 @@ def _json_safe_value(value):
     return repr(value)
 
 
-def _annotation_to_string(annotation) -> str:
-    if annotation is inspect.Signature.empty or annotation is inspect.Parameter.empty:
-        return None
-    return inspect.formatannotation(annotation).replace("typing.", "")
-
-
-def _recipe_parameters(recipe_cls) -> list:
-    try:
-        signature = inspect.signature(recipe_cls.__init__)
-    except (TypeError, ValueError):
-        return []
-
-    parameters = []
-    for name, param in signature.parameters.items():
-        if name == "self":
-            continue
-        required = param.default is inspect.Parameter.empty and param.kind not in (
-            inspect.Parameter.VAR_POSITIONAL,
-            inspect.Parameter.VAR_KEYWORD,
-        )
-        parameters.append(
-            {
-                "name": name,
-                "type": _annotation_to_string(param.annotation),
-                "required": required,
-                "default": _json_safe_value(param.default),
-                "kind": param.kind.name.lower(),
-            }
-        )
-    return parameters
-
-
-def _entry_parameters(entry: dict, recipe_cls) -> list:
-    if recipe_cls:
-        params = _recipe_parameters(recipe_cls)
-        if params:
-            return params
+def _entry_parameters(entry: dict) -> list:
     return _static_recipe_parameters(entry.get("module"), entry.get("class"))
 
 
-def _framework_support(entry: dict, recipe_cls) -> list:
-    explicit = _as_string_list(
-        entry.get("framework_support")
-        or _recipe_attr(recipe_cls, "framework_support")
-        or _recipe_attr(recipe_cls, "frameworks")
-        or _recipe_attr(recipe_cls, "supported_frameworks")
-    )
+def _framework_support(entry: dict, metadata: dict) -> list:
+    explicit = _as_string_list(entry.get("framework_support") or _recipe_metadata_attr(metadata, "framework_support"))
     if explicit:
         return explicit
 
@@ -728,8 +791,8 @@ def _framework_support(entry: dict, recipe_cls) -> list:
     return [framework] if framework else []
 
 
-def _optional_dependencies(entry: dict, recipe_cls) -> list:
-    explicit = entry.get("optional_dependencies") or _recipe_attr(recipe_cls, "optional_dependencies")
+def _optional_dependencies(entry: dict, metadata: dict) -> list:
+    explicit = entry.get("optional_dependencies") or _recipe_metadata_attr(metadata, "optional_dependencies")
     if explicit is not None:
         return _as_preserved_string_list(explicit)
 
@@ -739,11 +802,9 @@ def _optional_dependencies(entry: dict, recipe_cls) -> list:
     return []
 
 
-def _heterogeneity_support(entry: dict, recipe_cls) -> list:
+def _heterogeneity_support(entry: dict, metadata: dict) -> list:
     explicit = _as_string_list(
-        _recipe_attr(recipe_cls, "heterogeneity_support")
-        or _recipe_attr(recipe_cls, "supported_heterogeneity")
-        or entry.get("heterogeneity_support")
+        entry.get("heterogeneity_support") or _recipe_metadata_attr(metadata, "heterogeneity_support")
     )
     if explicit:
         return explicit
@@ -760,10 +821,10 @@ def _heterogeneity_support(entry: dict, recipe_cls) -> list:
     return ["horizontal"]
 
 
-def _privacy_compatible(entry: dict, parameters: list, recipe_cls) -> list:
+def _privacy_compatible(entry: dict, parameters: list, metadata: dict) -> list:
     privacy = set(_as_string_list(entry.get("privacy")))
     privacy.update(_as_string_list(entry.get("privacy_compatible")))
-    privacy.update(_as_string_list(_recipe_attr(recipe_cls, "privacy_compatible")))
+    privacy.update(_as_string_list(_recipe_metadata_attr(metadata, "privacy_compatible")))
     parameter_names = {p["name"] for p in parameters}
     if "secure" in parameter_names:
         privacy.add("homomorphic_encryption")
@@ -791,10 +852,9 @@ def _client_requirements(entry: dict, parameters: list) -> dict:
     return requirements
 
 
-def _recipe_detail(entry: dict) -> dict:
-    recipe_cls = entry.get(_CATALOG_RECIPE_CLASS_KEY)
-    recipe_metadata = recipe_cls or entry.get(_CATALOG_RECIPE_ATTRS_KEY)
-    parameters = _entry_parameters(entry, recipe_cls)
+def _generate_recipe_detail(entry: dict) -> dict:
+    recipe_metadata = entry.get(_CATALOG_RECIPE_ATTRS_KEY)
+    parameters = _entry_parameters(entry)
     detail = {
         "name": entry.get("name"),
         "description": entry.get("description"),
@@ -809,11 +869,11 @@ def _recipe_detail(entry: dict) -> dict:
         "framework_support": _framework_support(entry, recipe_metadata),
         "heterogeneity_support": _heterogeneity_support(entry, recipe_metadata),
         "privacy_compatible": _privacy_compatible(entry, parameters, recipe_metadata),
-        "notes": _as_preserved_string_list(entry.get("notes") or _recipe_attr(recipe_metadata, "notes")),
+        "notes": _as_preserved_string_list(entry.get("notes") or _recipe_metadata_attr(recipe_metadata, "notes")),
         "parameters": parameters,
         "optional_dependencies": _optional_dependencies(entry, recipe_metadata),
         "template_references": _as_preserved_string_list(
-            entry.get("template_references") or _recipe_attr(recipe_metadata, "template_references")
+            entry.get("template_references") or _recipe_metadata_attr(recipe_metadata, "template_references")
         ),
     }
     return detail
@@ -870,18 +930,15 @@ def _filter_catalog(catalog: list, filters: dict) -> list:
 
 
 def _documented_recipe_entry(name: str, spec: dict) -> dict:
-    entry = {
-        "name": name,
-        "description": spec.get("description"),
-        "framework": spec.get("framework"),
-        "module": spec.get("module"),
-        "class": spec.get("class"),
-        "algorithm": spec.get("algorithm"),
-        "aggregation": spec.get("aggregation"),
-        "state_exchange": spec.get("state_exchange"),
-        "privacy": _as_string_list(spec.get("privacy")),
-    }
+    entry = {"name": name}
     for key in (
+        "description",
+        "framework",
+        "module",
+        "class",
+        "algorithm",
+        "aggregation",
+        "state_exchange",
         "framework_support",
         "heterogeneity_support",
         "privacy_compatible",
@@ -891,6 +948,8 @@ def _documented_recipe_entry(name: str, spec: dict) -> dict:
     ):
         if key in spec:
             entry[key] = spec[key]
+    if "privacy" in spec:
+        entry["privacy"] = _as_string_list(spec["privacy"])
 
     return entry
 
@@ -941,6 +1000,20 @@ def _apply_documented_recipe_specs(catalog: list) -> list:
         if normalized_name in by_name:
             by_name[normalized_name].update(spec_entry)
         else:
+            core_keys = (
+                "name",
+                "description",
+                "framework",
+                "module",
+                "class",
+                "algorithm",
+                "aggregation",
+                "state_exchange",
+            )
+            completed_entry = {key: spec_entry.get(key) for key in core_keys}
+            completed_entry["privacy"] = spec_entry.get("privacy", [])
+            completed_entry.update({key: value for key, value in spec_entry.items() if key not in completed_entry})
+            spec_entry = completed_entry
             catalog.append(spec_entry)
             by_name[normalized_name] = spec_entry
     return sorted(catalog, key=lambda entry: entry["name"])
@@ -974,7 +1047,7 @@ def _discover_recipe_catalog() -> list:
                 "class": recipe_class.name,
             }
             entry.update(_static_recipe_metadata(cli_name, module_name, recipe_class))
-            recipe_attrs = _static_recipe_attrs(recipe_class)
+            recipe_attrs = _static_recipe_attrs(module_name, recipe_class.name)
             if recipe_attrs:
                 entry[_CATALOG_RECIPE_ATTRS_KEY] = recipe_attrs
             results.append(entry)
@@ -988,7 +1061,7 @@ def _generate_recipe_catalog() -> dict:
         "recipes": [
             {
                 "summary": {key: value for key, value in entry.items() if not key.startswith("_")},
-                "detail": _recipe_detail(entry),
+                "detail": _generate_recipe_detail(entry),
             }
             for entry in discovered
         ],

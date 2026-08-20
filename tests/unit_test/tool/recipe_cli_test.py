@@ -300,42 +300,31 @@ def test_recipe_list_empty_framework_catalog_still_exits_when_output_error_is_mo
 def test_recipe_show_returns_queryable_metadata(monkeypatch, capsys):
     import json
 
-    from nvflare.recipe.spec import Recipe
     from nvflare.tool import cli_output
-    from nvflare.tool.recipe.recipe_cli import _CATALOG_RECIPE_CLASS_KEY, _recipe_detail, cmd_recipe_show
-
-    class FakeRecipe(Recipe):
-        """Fake detailed recipe."""
-
-        optional_dependencies = ["pip install fake-framework"]
-        template_references = ["nvflare/agent/templates/fake"]
-
-        def __init__(
-            self,
-            *,
-            min_clients: int,
-            num_rounds: int = 2,
-            train_script: str = "client.py",
-            per_site_config: dict = None,
-            secure: bool = False,
-        ):
-            pass
+    from nvflare.tool.recipe.recipe_cli import cmd_recipe_show
 
     monkeypatch.setattr(cli_output, "_output_format", "json")
-    detail = _recipe_detail(
-        {
-            "name": "fake-pt",
-            "description": "Fake detailed recipe.",
-            "framework": "pytorch",
-            "module": "fake.recipes.fake",
-            "class": "FakeRecipe",
-            "algorithm": "fedavg",
-            "aggregation": "weighted_average",
-            "state_exchange": "full_model",
-            "privacy": [],
-            _CATALOG_RECIPE_CLASS_KEY: FakeRecipe,
-        }
-    )
+    detail = {
+        "name": "fake-pt",
+        "description": "Fake detailed recipe.",
+        "framework": "pytorch",
+        "module": "fake.recipes.fake",
+        "class": "FakeRecipe",
+        "algorithm": "fedavg",
+        "aggregation": "weighted_average",
+        "state_exchange": "full_model",
+        "privacy": [],
+        "client_requirements": {
+            "min_clients": {"required": True, "default": None},
+            "requires_training_script": True,
+            "requires_per_site_config": False,
+        },
+        "framework_support": ["pytorch"],
+        "privacy_compatible": ["homomorphic_encryption"],
+        "parameters": [{"name": "num_rounds", "type": "int", "required": False, "default": 2, "kind": "keyword_only"}],
+        "optional_dependencies": ["pip install fake-framework"],
+        "template_references": ["nvflare/agent/templates/fake"],
+    }
     monkeypatch.setattr(
         "nvflare.tool.recipe.recipe_cli._load_catalog",
         lambda include_recipe_detail=False, framework=None: [detail],
@@ -360,29 +349,29 @@ def test_recipe_show_returns_queryable_metadata(monkeypatch, capsys):
 
 
 def test_recipe_show_human_output_reports_loading_status(monkeypatch, capsys):
-    from nvflare.recipe.spec import Recipe
     from nvflare.tool import cli_output
-    from nvflare.tool.recipe.recipe_cli import _CATALOG_RECIPE_CLASS_KEY, _recipe_detail, cmd_recipe_show
-
-    class FakeRecipe(Recipe):
-        def __init__(self, *, params_transfer_type: str = "FULL"):
-            pass
+    from nvflare.tool.recipe.recipe_cli import cmd_recipe_show
 
     monkeypatch.setattr(cli_output, "_output_format", "txt")
-    detail = _recipe_detail(
-        {
-            "name": "fedavg",
-            "description": "FedAvg recipe.",
-            "framework": "core",
-            "module": "nvflare.recipe.fedavg",
-            "class": "FedAvgRecipe",
-            "algorithm": "fedavg",
-            "aggregation": "weighted_average",
-            "state_exchange": "full_model",
-            "privacy": [],
-            _CATALOG_RECIPE_CLASS_KEY: FakeRecipe,
-        }
-    )
+    detail = {
+        "name": "fedavg",
+        "description": "FedAvg recipe.",
+        "algorithm": "fedavg",
+        "aggregation": "weighted_average",
+        "state_exchange": "full_model",
+        "framework_support": ["pytorch", "tensorflow", "sklearn"],
+        "privacy": [],
+        "privacy_compatible": [],
+        "parameters": [
+            {
+                "name": "params_transfer_type",
+                "type": "str",
+                "required": False,
+                "default": "FULL",
+                "kind": "keyword_only",
+            }
+        ],
+    }
     monkeypatch.setattr(
         "nvflare.tool.recipe.recipe_cli._load_catalog",
         lambda include_recipe_detail=False, framework=None: [detail],
@@ -704,6 +693,7 @@ def test_recipe_catalog_generation_discovers_source_without_importing_optional_d
     package_root.mkdir(parents=True)
     (package_root / "kmeans.py").write_text(
         """import unavailable_optional_dependency
+from nvflare.recipe.spec import Recipe
 
 class KMeansFedAvgRecipe(Recipe):
     \"\"\"KMeans recipe.\"\"\"
@@ -761,7 +751,9 @@ def test_recipe_catalog_generation_prefers_leaf_recipe_class(tmp_path, monkeypat
     package_root = tmp_path / "nvflare" / "fake" / "recipes"
     package_root.mkdir(parents=True)
     (package_root / "swarm.py").write_text(
-        """class BaseRecipe(Recipe):
+        """from nvflare.recipe.spec import Recipe
+
+class BaseRecipe(Recipe):
     \"\"\"Base helper recipe.\"\"\"
 
 class FinalWorkflow(BaseRecipe):
@@ -792,7 +784,7 @@ def test_recipe_catalog_generation_resolves_imported_recipe_base_alias(tmp_path,
     package_root = tmp_path / "nvflare" / "fake" / "recipes"
     package_root.mkdir(parents=True)
     (package_root / "alias.py").write_text(
-        """from nvflare.recipe.fedavg import FedAvgRecipe as UnifiedBase
+        """from nvflare.recipe.spec import Recipe as UnifiedBase
 
 class AliasWorkflow(UnifiedBase):
     \"\"\"Recipe with an imported base alias.\"\"\"
@@ -816,13 +808,128 @@ class AliasWorkflow(UnifiedBase):
     assert catalog[0]["description"] == "Recipe with an imported base alias."
 
 
+def test_recipe_catalog_generation_resolves_recipe_ancestry_and_inherited_metadata(tmp_path, monkeypatch):
+    from nvflare.tool.recipe import recipe_cli
+
+    package_root = tmp_path / "nvflare" / "fake" / "recipes"
+    package_root.mkdir(parents=True)
+    (package_root / "base.py").write_text(
+        """from nvflare.recipe.spec import Recipe
+
+class Workflow(Recipe):
+    \"\"\"Inherited recipe description.\"\"\"
+
+    recipe_notes = [\"Inherited note.\"]
+
+    def __init__(self, *, num_rounds: int = 2):
+        pass
+""",
+        encoding="utf-8",
+    )
+    (package_root / "child.py").write_text(
+        """from .base import Workflow as Parent
+
+class ConcreteWorkflow(Parent):
+    pass
+""",
+        encoding="utf-8",
+    )
+    (package_root / "unrelated.py").write_text(
+        """class LooksLikeRecipe:
+    \"\"\"Not an NVFLARE recipe.\"\"\"
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(recipe_cli, "_NVFLARE_PACKAGE_ROOT", tmp_path / "nvflare")
+
+    recipe_class, description = recipe_cli._static_recipe_class("nvflare.fake.recipes.child")
+
+    assert recipe_class.name == "ConcreteWorkflow"
+    assert description == "Inherited recipe description."
+    assert recipe_cli._static_recipe_class("nvflare.fake.recipes.unrelated") is None
+    assert recipe_cli._static_recipe_attrs("nvflare.fake.recipes.child", "ConcreteWorkflow") == {
+        "recipe_notes": ["Inherited note."]
+    }
+    assert {
+        parameter["name"]
+        for parameter in recipe_cli._static_recipe_parameters("nvflare.fake.recipes.child", "ConcreteWorkflow")
+    } == {"num_rounds"}
+
+
+def test_recipe_catalog_generation_prefers_explicit_literal_metadata_after_dynamic_alias(tmp_path, monkeypatch):
+    from nvflare.tool.recipe import recipe_cli
+
+    package_root = tmp_path / "nvflare" / "fake" / "recipes"
+    package_root.mkdir(parents=True)
+    (package_root / "explicit.py").write_text(
+        """from nvflare.recipe.spec import Recipe
+
+class ExplicitMetadata(Recipe):
+    algorithm = compute_algorithm()
+    recipe_algorithm = \"kmeans\"
+    aggregation = compute_aggregation()
+    recipe_aggregation = \"cluster_centers\"
+    state_exchange = compute_state_exchange()
+    recipe_state_exchange = \"cluster_centers\"
+    privacy = compute_privacy()
+    recipe_privacy = {\"z_privacy\", \"a_privacy\"}
+
+    def __init__(self):
+        pass
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(recipe_cli, "_NVFLARE_PACKAGE_ROOT", tmp_path / "nvflare")
+    monkeypatch.setattr(
+        recipe_cli,
+        "_RECIPE_PACKAGE_ROOTS",
+        [{"package": "nvflare.fake.recipes", "framework": "pytorch"}],
+    )
+    monkeypatch.setattr(recipe_cli, "_DOCUMENTED_RECIPE_SPECS", {})
+
+    entry = recipe_cli._discover_recipe_catalog()[0]
+
+    assert entry["algorithm"] == "kmeans"
+    assert entry["aggregation"] == "cluster_centers"
+    assert entry["state_exchange"] == "cluster_centers"
+    assert entry["privacy"] == ["a_privacy", "z_privacy"]
+
+
+def test_documented_recipe_specs_do_not_clear_omitted_discovered_metadata(monkeypatch):
+    from nvflare.tool.recipe import recipe_cli
+
+    discovered = [
+        {
+            "name": "demo-pt",
+            "description": "Discovered description.",
+            "framework": "pytorch",
+            "module": "nvflare.fake.demo",
+            "class": "DemoWorkflow",
+            "algorithm": "fedavg",
+            "aggregation": "weighted_average",
+            "state_exchange": "full_model",
+            "privacy": ["differential_privacy"],
+        }
+    ]
+    monkeypatch.setattr(recipe_cli, "_DOCUMENTED_RECIPE_SPECS", {"demo-pt": {"description": "Documented."}})
+
+    entry = recipe_cli._apply_documented_recipe_specs(discovered)[0]
+
+    assert entry["description"] == "Documented."
+    assert entry["framework"] == "pytorch"
+    assert entry["algorithm"] == "fedavg"
+    assert entry["privacy"] == ["differential_privacy"]
+
+
 def test_recipe_catalog_generation_preserves_static_recipe_attributes(tmp_path, monkeypatch):
     from nvflare.tool.recipe import recipe_cli
 
     package_root = tmp_path / "nvflare" / "fake" / "recipes"
     package_root.mkdir(parents=True)
     (package_root / "metadata.py").write_text(
-        """class MetadataRecipe(Recipe):
+        """from nvflare.recipe.spec import Recipe
+
+class MetadataRecipe(Recipe):
     \"\"\"Recipe with explicit metadata.\"\"\"
 
     recipe_framework_support = {\"pytorch\", \"numpy\"}
