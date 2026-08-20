@@ -138,9 +138,12 @@ The launched trainer reads the bootstrap, creates `CellClientAPI`, and sends `HE
 validates the launch identity, rank, protocol version, origin FQCN, job/site scope, and current
 launch token before returning `HELLO_ACCEPTED` with the session and heartbeat policy. In a secure
 FL job, that accepted reply also carries the site's `AUTH_TOKEN` and `AUTH_TOKEN_SIGNATURE`; the
-trainer then installs the normal outgoing site authentication-header filters on its Cell. The
-launch token only proves possession of this launch's bootstrap. It is not the FL authentication
-credential and is never used as an auth header.
+trainer then installs the normal outgoing site authentication-header filters on its Cell and sends
+`SESSION_READY`. The backend does not expose the trainer to task execution until that acknowledgement
+arrives, so a streamed `TASK_READY` payload cannot trigger a server request before authentication is
+installed. This mandatory acknowledgement is part of the initial Client API Cell protocol v1 contract.
+The launch token only proves possession of this launch's bootstrap. It is not the FL authentication credential
+and is never used as an auth header.
 
 The managed trainer connects to the CJ's local listener with Cell transport security disabled.
 Consequently, `HELLO_ACCEPTED` is authenticated by the launch token but its delegated site
@@ -149,7 +152,7 @@ boundary and the owner-only launch bootstrap. Unlike the 2.8 external-process co
 site credential is not written to the launch file. The scoped-identity work targeted for 2.10 also
 removes this full bearer-token handoff.
 
-V1 assumes a trusted host for launch availability. A same-host process that can claim the
+The managed protocol assumes a trusted host for launch availability. A same-host process that can claim the
 prescribed trainer FQCN can race the real trainer with a bogus token and cause that launch to fail.
 The process cannot authenticate the session or access task/result data; this is a bounded launch
 denial-of-service risk, not an authentication or data-disclosure bypass.
