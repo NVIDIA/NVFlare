@@ -85,6 +85,7 @@ POC_KEY = "poc"
 STARTUP_KIT_KEY = "startup_kit"
 WORKSPACE_KEY = "workspace"
 POC_START_READY_TIMEOUT = 30
+POC_STOP_TIMEOUT = 30
 POC_DEFAULT_FED_LEARN_PORT = 8002
 POC_DEFAULT_ADMIN_PORT = 8003
 POC_LOCAL_HOST = "localhost"
@@ -1886,6 +1887,11 @@ def _start_poc(poc_workspace: str, gpu_ids: List[int], excluded=None, services_l
 
 
 def validate_services(project_config, services_list: List, excluded: List):
+    if "all" in services_list:
+        raise CLIException(
+            "'all' cannot be combined with other -p/--service values; "
+            "use '-p all' without another -p/--service value, or list only named participants"
+        )
     participant_names = [p["name"] for p in project_config["participants"]]
     validate_participants(participant_names, services_list)
     validate_participants(participant_names, excluded)
@@ -2032,7 +2038,7 @@ def _stop_poc(
     else:
         from nvflare.tool.cli_output import print_human
 
-        print_human(f"Starting shutdown of {services_list} using the stop_fl.sh script")
+        print_human(f"Starting local shutdown of {services_list or 'default services'}")
 
         _run_poc(
             SC.CMD_STOP,
@@ -2042,6 +2048,7 @@ def _stop_poc(
             project_config,
             excluded=excluded,
             services_list=services_list,
+            wait=wait,
         )
         return {"services": services_list}
 
@@ -2175,6 +2182,47 @@ def sync_process(service_name, cmd_path):
         raise PocServiceStartError(f"service '{service_name}' exited with code {completed.returncode}: {cmd_path}")
 
 
+def _run_stop_command(service_name: str, cmd_path: str, timeout: float):
+    try:
+        completed = subprocess.run(
+            cmd_path.split(" "),
+            env=_env_with_cli_python_path(),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as e:
+        raise TimeoutError(f"shutdown command for service '{service_name}' did not finish before the timeout") from e
+
+    if completed.returncode != 0:
+        output = (completed.stderr or completed.stdout or "").strip()
+        detail = f": {output}" if output else ""
+        raise RuntimeError(
+            f"shutdown command for service '{service_name}' exited with code {completed.returncode}{detail}"
+        )
+
+
+def _wait_for_poc_services_stopped(
+    prod_dir: str, service_names: List[str], deadline: float, poll_interval: float = 1.0
+):
+    while True:
+        running_services = []
+        for service_name in service_names:
+            service_dir = os.path.join(prod_dir, service_name)
+            if _is_live_pid_file(os.path.join(service_dir, "pid.fl")) or _is_live_pid_file(
+                os.path.join(service_dir, "daemon_pid.fl")
+            ):
+                running_services.append(service_name)
+
+        if not running_services:
+            return
+
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError(f"POC services did not stop before the timeout: {', '.join(running_services)}")
+        time.sleep(min(poll_interval, remaining))
+
+
 def _run_poc(
     cmd_type: str,
     poc_workspace: str,
@@ -2184,12 +2232,31 @@ def _run_poc(
     excluded: list,
     services_list=None,
     study: Optional[str] = None,
+    wait: bool = False,
 ):
     if services_list is None:
         services_list = []
     service_commands = _build_commands(
         cmd_type, poc_workspace, service_config, project_config, excluded, services_list, study=study
     )
+
+    if cmd_type == SC.CMD_STOP and wait:
+        deadline = time.monotonic() + POC_STOP_TIMEOUT
+        for service_name, cmd_path in service_commands:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError(f"POC services did not stop before the timeout: {service_name}")
+            _run_stop_command(service_name, cmd_path, timeout=remaining)
+
+        if not service_config.get(SC.IS_DOCKER_RUN):
+            managed_services = {service_config[SC.FLARE_SERVER], *service_config.get(SC.FLARE_CLIENTS, [])}
+            service_names = [name for name, _ in service_commands if name in managed_services]
+            if service_names:
+                project_name = project_config.get("name")
+                prod_dir = get_prod_dir(poc_workspace, project_name)
+                _wait_for_poc_services_stopped(prod_dir, service_names, deadline=deadline)
+        return
+
     clients = _get_clients(service_commands, service_config)
     gpu_assignments: Dict[str, List[int]] = client_gpu_assignments(clients, gpu_ids)
     for service_name, cmd_path in service_commands:
@@ -2509,8 +2576,9 @@ def define_start_parser(poc_parser):
         nargs="?",
         default=None,
         help=(
-            "participant to start; repeat for multiple participants. Default starts server and client services only; "
-            "admin consoles are excluded unless explicitly selected"
+            "participant to start; repeat for multiple participants. Do not combine 'all' with named "
+            "-p/--service values. Default starts server and client services only; admin consoles are excluded unless "
+            "explicitly selected"
         ),
     )
 
@@ -2565,8 +2633,9 @@ def define_stop_parser(poc_parser):
         nargs="?",
         default=None,
         help=(
-            "participant to stop; repeat for multiple participants. Default and server-only selections stop the "
-            "running POC system; project admin console is not a default managed service"
+            "participant to stop; repeat for multiple participants. Do not combine 'all' with named -p/--service "
+            "values. Default and server-only selections stop the running POC system; project admin console is not a "
+            "default managed service"
         ),
     )
     stop_parser.add_argument(

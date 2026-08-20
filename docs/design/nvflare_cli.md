@@ -1273,7 +1273,7 @@ activates the first Project Admin kit. The JSON success payload includes:
 
 | Argument | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `-p`, `--service` | str... | No | `None` | Participant to start; repeat to select multiple participants. By default, starts the server and clients |
+| `-p`, `--service` | str... | No | `None` | Participant to start; repeat to select multiple participants. Defaults to the server and clients. Do not combine `all` with named `-p`/`--service` values |
 | `-ex`, `--exclude` | str... | No | `None` | Participant to exclude; repeat to exclude multiple participants |
 | `-gpu`, `--gpu` | int... | No | `None` | GPU device IDs |
 | `--no-wait` | flag | No | — | Return after process start without readiness wait |
@@ -1308,16 +1308,17 @@ configured endpoint.
 
 | Argument | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `-p`, `--service` | str... | No | `None` | Participant to stop; repeat to select multiple participants. By default, stops the running system |
+| `-p`, `--service` | str... | No | `None` | Participant to stop; repeat to select multiple participants. Defaults to the server and clients. Do not combine `all` with named `-p`/`--service` values |
 | `-ex`, `--exclude` | str... | No | `None` | Participant to exclude; repeat to exclude multiple participants |
 | `--no-wait` | flag | No | — | Request shutdown and return without waiting for completion |
 | `-debug`, `--debug` | flag | No | — | Debug mode |
 | `--schema` | flag | No | — | Print command schema and exit |
 
 A default stop or an explicit server-only selection uses coordinated system shutdown logic.
-By default it waits until shutdown completes and returns `status: stopped`; with `--no-wait`,
-it returns after requesting shutdown with `status: shutdown_initiated`. Any other explicit
-participant selection or exclusion uses the local stop-script path.
+Any other effective managed-service selection or exclusion uses the local service shutdown path.
+By default, both paths wait for the selected server and client services to stop and return `status: stopped`;
+with `--no-wait`, either path returns after requesting shutdown with
+`status: shutdown_initiated`.
 
 #### `nvflare poc clean`
 
