@@ -1515,12 +1515,22 @@ def objective_contract(config: Dict[str, Any], requested_metric: Optional[str]) 
     }
 
 
+def job_key_metric_is_resolved(objective: Dict[str, Any]) -> bool:
+    """Return whether the job key metric has a trustworthy static identity."""
+
+    return objective.get("job_key_metric_source") in {"literal", "arg:key_metric", "core_default"}
+
+
+def requested_metric_differs_from_job(objective: Dict[str, Any]) -> bool:
+    job_metric = str(objective.get("job_key_metric") or objective["metric"])
+    return not job_key_metric_is_resolved(objective) or objective["requested_metric"] != job_metric
+
+
 def apply_metric_contract(
     config: Dict[str, Any], requested_metric: Optional[str], schema: Optional[Dict[str, Any]]
 ) -> Dict[str, Any]:
     objective = objective_contract(config, requested_metric)
-    job_metric = str(objective.get("job_key_metric") or objective["metric"])
-    requested_differs = objective["requested_metric"] != job_metric
+    requested_differs = requested_metric_differs_from_job(objective)
     if requested_differs:
         # Direction belongs to the requested metric. A different job key metric
         # cannot supply it, so begin with NVFlare's default until the bridge says otherwise.
@@ -3146,8 +3156,7 @@ def write_import_artifacts(config: Dict[str, Any], job: Path, output: Path, log_
 
 def mutation_schema_declares_metric_bridge(config: Dict[str, Any], schema: Dict[str, Any]) -> bool:
     objective = objective_contract(config, None)
-    job_metric = str(objective.get("job_key_metric") or objective["metric"])
-    if objective["requested_metric"] == job_metric:
+    if not requested_metric_differs_from_job(objective):
         return True
     schema_objective = schema.get("objective")
     if not isinstance(schema_objective, dict):
@@ -3187,10 +3196,9 @@ def campaign_admission_errors(config: Dict[str, Any], schema: Optional[Dict[str,
         and objective.get("mode_contract_source") == "core_default"
         and importer.likely_lower_is_better_metric(objective["optimization_metric"])
     ):
-        job_metric = str(objective.get("job_key_metric") or objective["metric"])
         guidance = (
             "declare objective.mode='min' in the mutation_schema.yaml metric bridge"
-            if objective["requested_metric"] != job_metric
+            if requested_metric_differs_from_job(objective)
             else "set key_metric_mode='min' in job.py"
         )
         errors.append(
@@ -3697,6 +3705,20 @@ def update_config_for_kept_sources(config: Dict[str, Any], created: Sequence[str
             trust_paths.append(relative)
 
 
+def assumed_job_key_metric_mode(recorded_objective: Dict[str, Any], current_objective: Dict[str, Any]) -> str:
+    """Backfill a missing job-key mode without fabricating metric identity.
+
+    Campaigns from the max-only era used ``max``. Intermediate native-direction
+    campaigns may omit the field but can reuse their recorded mode when job
+    provenance proves the requested metric was the resolved job key metric.
+    """
+
+    directly_imported_mode = str(recorded_objective.get("mode_contract_source") or "").startswith("job:")
+    if directly_imported_mode and not requested_metric_differs_from_job(recorded_objective):
+        return current_objective["mode"]
+    return "max"
+
+
 def candidate_campaign_config(
     candidate_config: Dict[str, Any], current_config: Dict[str, Any], args: argparse.Namespace, schema: Dict[str, Any]
 ) -> Dict[str, Any]:
@@ -3724,14 +3746,7 @@ def candidate_campaign_config(
             continue
         current_value = current_objective.get(invariant_field)
         if invariant_field == "job_key_metric_mode" and invariant_field not in recorded_objective:
-            recorded_requested_metric = recorded_objective.get("requested_metric") or recorded_objective.get("metric")
-            recorded_job_metric = recorded_objective.get("job_key_metric") or recorded_objective.get("metric")
-            directly_imported_mode = str(recorded_objective.get("mode_contract_source") or "").startswith("job:")
-            current_value = (
-                current_objective["mode"]
-                if directly_imported_mode and recorded_requested_metric == recorded_job_metric
-                else "max"
-            )
+            current_value = assumed_job_key_metric_mode(recorded_objective, current_objective)
         if candidate_objective.get(invariant_field) != current_value:
             drift.append(invariant_field)
     if drift:

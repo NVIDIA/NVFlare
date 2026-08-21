@@ -25,13 +25,17 @@ from __future__ import annotations
 import ast
 import hashlib
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 import yaml
 
-from nvflare.app_common.widgets.intime_model_selector import _looks_lower_is_better
+try:
+    from nvflare.app_common.widgets.intime_model_selector import _looks_lower_is_better as _core_looks_lower_is_better
+except ImportError:
+    _core_looks_lower_is_better = None
 
 AUTOFL_CONFIG_SCHEMA_VERSION = "nvflare.autofl.config.v1"
 IMPORTER_VERSION = "nvflare-autofl-job-importer/v1"
@@ -45,6 +49,19 @@ METRIC_INVARIANTS = [
 ]
 METRIC_CHANGE_POLICY = "restart_campaign_with_repaired_baseline"
 SUPPORTED_OBJECTIVE_MODES = {"min", "max"}
+LOWER_IS_BETTER_METRIC_SUBSTRINGS = ("loss", "err")
+LOWER_IS_BETTER_METRIC_TOKENS = {
+    "bce",
+    "ce",
+    "cer",
+    "mae",
+    "mse",
+    "nll",
+    "perplexity",
+    "ppl",
+    "rmse",
+    "wer",
+}
 
 SUPPORTED_ENV_NAMES = {"PocEnv", "ProdEnv", "SimEnv"}
 NON_OPTIMIZATION_RECIPE_NAMES = {"FedEvalRecipe", "FedStatsRecipe", "NumpyCrossSiteEvalRecipe"}
@@ -1061,8 +1078,10 @@ def _arg_spec_from_call(node: ast.Call, function_name: Optional[str]) -> Optiona
     keywords = {keyword.arg: keyword.value for keyword in node.keywords if keyword.arg}
     if "dest" in keywords:
         dest_is_literal, name = _literal_value(keywords["dest"])
-        if not dest_is_literal or not isinstance(name, str):
+        if dest_is_literal and not isinstance(name, str):
             return None
+        if not dest_is_literal:
+            name = _name_from_flags(flags) if flags else positional_names[0]
     else:
         name = _name_from_flags(flags) if flags else positional_names[0]
     if not name:
@@ -1209,7 +1228,19 @@ def _resolve_stop_condition_mode(
 def likely_lower_is_better_metric(metric: str) -> bool:
     """Return whether a metric name is an obvious lower-is-better objective."""
 
-    return _looks_lower_is_better(metric)
+    if _core_looks_lower_is_better is not None:
+        return _core_looks_lower_is_better(metric)
+    return _fallback_looks_lower_is_better(metric)
+
+
+def _fallback_looks_lower_is_better(metric: str) -> bool:
+    name = metric.lower()
+    tokens = re.split(r"[^a-z0-9]+", name)
+    if "neg" in tokens:
+        return False
+    if any(hint in name for hint in LOWER_IS_BETTER_METRIC_SUBSTRINGS):
+        return True
+    return any(token in LOWER_IS_BETTER_METRIC_TOKENS for token in tokens)
 
 
 def _resolve_path_call(

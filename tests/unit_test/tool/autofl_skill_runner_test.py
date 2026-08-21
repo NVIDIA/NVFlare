@@ -47,6 +47,7 @@ def _campaign_config():
             "mode": "max",
             "mode_contract_source": "core_default",
             "job_key_metric": "accuracy",
+            "job_key_metric_source": "core_default",
             "job_key_metric_mode": "max",
             "job_key_metric_mode_source": "core_default",
         },
@@ -464,6 +465,7 @@ def test_schema_cannot_override_direction_for_job_key_metric():
             "mode": "min",
             "mode_contract_source": "job:key_metric_mode",
             "job_key_metric": "loss",
+            "job_key_metric_source": "literal",
         }
     }
     schema = {"objective": {"metric": "loss", "mode": "max"}}
@@ -482,6 +484,7 @@ def test_schema_mode_conflict_with_implicit_job_default_has_actionable_error():
             "mode": "max",
             "mode_contract_source": "core_default",
             "job_key_metric": "loss",
+            "job_key_metric_source": "core_default",
         }
     }
 
@@ -3062,6 +3065,8 @@ def test_omitted_metric_uses_imported_job_metric(tmp_path, monkeypatch):
         "requested_metric": "auc",
         "optimization_metric": "auc",
         "metric_extraction_order": ["auc"],
+        "job_key_metric": "auc",
+        "job_key_metric_source": "arg:key_metric",
         "metric_contract_source": "arg:key_metric",
     }
     monkeypatch.setattr(runner, "import_job_config", lambda *args, **kwargs: deepcopy(config))
@@ -3670,15 +3675,10 @@ def test_initialize_rejects_implicit_max_loss_without_writing_campaign_files(tmp
     assert not tmp_path.joinpath("autofl_runs").exists()
 
 
-@pytest.mark.parametrize(("explicit_metric", "expected_code"), [(False, 2), (True, 0)])
-def test_initialize_handles_dynamic_job_metric_when_user_metric_is_explicit(
-    tmp_path, monkeypatch, explicit_metric, expected_code
-):
-    runner = _load_runner()
-    workspace = tmp_path / ("explicit" if explicit_metric else "implicit")
+def _write_dynamic_metric_job(workspace):
     workspace.mkdir()
-    job = workspace / "job.py"
     workspace.joinpath("client.py").write_text("print('train')\n", encoding="utf-8")
+    job = workspace / "job.py"
     job.write_text(
         """
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
@@ -3690,12 +3690,21 @@ def compute_metric():
 
 
 recipe = FedAvgRecipe(
-    name="dynamic_metric", min_clients=2, num_rounds=1, train_script="client.py", key_metric=compute_metric()
+    name="dynamic_metric",
+    min_clients=2,
+    num_rounds=1,
+    train_script="client.py",
+    key_metric=compute_metric(),
+    key_metric_mode="min",
 )
 recipe.execute(SimEnv(num_clients=2))
 """.lstrip(),
         encoding="utf-8",
     )
+    return job
+
+
+def _mock_successful_baseline(runner, monkeypatch):
     monkeypatch.setattr(runner, "write_progress", lambda path, *args: path.write_bytes(b"progress"))
     monkeypatch.setattr(
         runner,
@@ -3704,16 +3713,77 @@ recipe.execute(SimEnv(num_clients=2))
             "baseline", run_def.name, 0.5, 1.0, "none", "baseline", "python job.py", "/tmp/baseline"
         ),
     )
-    argv = ["initialize", str(job)]
-    if explicit_metric:
-        argv.extend(["--metric", "accuracy"])
 
-    assert runner.main(argv) == expected_code
-    if explicit_metric:
-        config = runner.read_yaml(workspace / "autofl.yaml")
-        assert any(item["field"] == "objective.job_key_metric" for item in config["unresolved"])
-    else:
-        assert not workspace.joinpath(".nvflare").exists()
+
+def test_initialize_rejects_explicit_metric_matching_unresolved_job_metric_placeholder(tmp_path, capsys):
+    runner = _load_runner()
+    workspace = tmp_path / "explicit-unbridged"
+    job = _write_dynamic_metric_job(workspace)
+
+    assert runner.main(["initialize", str(job), "--metric", "accuracy"]) == 2
+
+    error = capsys.readouterr().err
+    assert "AUTOFL_METRIC_NOT_DECLARED" in error
+    assert not workspace.joinpath(".nvflare").exists()
+
+
+def test_initialize_admits_explicit_metric_bridge_for_unresolved_job_metric(tmp_path, monkeypatch):
+    runner = _load_runner()
+    workspace = tmp_path / "explicit-bridged"
+    job = _write_dynamic_metric_job(workspace)
+    workspace.joinpath("mutation_schema.yaml").write_text(
+        """
+objective:
+  requested_metric: accuracy
+  optimization_metric: accuracy
+  mode: max
+""".lstrip(),
+        encoding="utf-8",
+    )
+    _mock_successful_baseline(runner, monkeypatch)
+
+    assert runner.main(["initialize", str(job), "--metric", "accuracy"]) == 0
+
+    config = runner.read_yaml(workspace / "autofl.yaml")
+    assert config["objective"]["mode"] == "max"
+    assert config["objective"]["mode_contract_source"] == "mutation_schema"
+
+
+def test_initialize_rejects_unresolved_job_metric_without_user_metric(tmp_path, capsys):
+    runner = _load_runner()
+    workspace = tmp_path / "implicit"
+    job = _write_dynamic_metric_job(workspace)
+
+    assert runner.main(["initialize", str(job)]) == 2
+
+    assert "objective.metric" in capsys.readouterr().err
+    assert not workspace.joinpath(".nvflare").exists()
+
+
+def test_initialize_treats_core_default_accuracy_as_resolved_job_metric(tmp_path, monkeypatch):
+    runner = _load_runner()
+    workspace = tmp_path / "core-default"
+    workspace.mkdir()
+    workspace.joinpath("client.py").write_text("print('train')\n", encoding="utf-8")
+    job = workspace / "job.py"
+    job.write_text(
+        """
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv
+
+
+recipe = FedAvgRecipe(name="default_metric", min_clients=2, num_rounds=1, train_script="client.py")
+recipe.execute(SimEnv(num_clients=2))
+""".lstrip(),
+        encoding="utf-8",
+    )
+    _mock_successful_baseline(runner, monkeypatch)
+
+    assert runner.main(["initialize", str(job), "--metric", "accuracy"]) == 0
+
+    config = runner.read_yaml(workspace / "autofl.yaml")
+    assert config["objective"]["job_key_metric_source"] == "core_default"
+    assert config["objective"]["mode_contract_source"] == "core_default"
 
 
 def test_campaign_admission_allows_unknown_metric_with_core_default_max():
@@ -3731,6 +3801,31 @@ def test_campaign_admission_allows_unknown_metric_with_core_default_max():
     )
 
     assert runner.campaign_admission_errors(config) == []
+
+
+@pytest.mark.parametrize(
+    ("source", "requested_metric", "job_metric", "expected"),
+    [
+        ("literal", "accuracy", "accuracy", False),
+        ("arg:key_metric", "accuracy", "accuracy", False),
+        ("core_default", "accuracy", "accuracy", False),
+        ("default", "accuracy", "accuracy", True),
+        (None, "accuracy", "accuracy", True),
+        ("literal", "accuracy", "val_accuracy", True),
+    ],
+)
+def test_requested_metric_identity_requires_resolved_job_metric(source, requested_metric, job_metric, expected):
+    runner = _load_runner()
+    objective = _campaign_config()["objective"]
+    objective.update(
+        {
+            "requested_metric": requested_metric,
+            "job_key_metric": job_metric,
+            "job_key_metric_source": source,
+        }
+    )
+
+    assert runner.requested_metric_differs_from_job(objective) is expected
 
 
 def test_campaign_admission_requires_schema_for_metric_bridge():

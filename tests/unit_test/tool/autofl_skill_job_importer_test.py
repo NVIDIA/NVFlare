@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import builtins
 import importlib.util
 import sys
 from pathlib import Path
@@ -1104,6 +1105,39 @@ def main():
     assert config["import"]["support"]["status"] == "supported"
 
 
+def test_import_keeps_flags_derived_name_for_dynamic_argparse_dest(tmp_path):
+    tmp_path.joinpath("client.py").write_text("print('train')\n", encoding="utf-8")
+    job_path = tmp_path / "job.py"
+    job_path.write_text(
+        """
+import argparse
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv
+
+
+def make_name():
+    return "num_rounds"
+
+
+def define_parser():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--num_rounds", dest=make_name(), type=int, default=3)
+    return parser.parse_args()
+
+
+def main():
+    args = define_parser()
+    recipe = FedAvgRecipe(name="demo", min_clients=2, num_rounds=args.num_rounds, train_script="client.py")
+    recipe.execute(SimEnv(num_clients=2))
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+
+    assert config["budget"]["fixed_training_budget"]["num_rounds"] == 3
+
+
 def test_dynamic_key_metric_uses_documented_fallback_until_explicitly_overridden(tmp_path):
     tmp_path.joinpath("client.py").write_text("print('train')\n", encoding="utf-8")
     job_path = tmp_path / "job.py"
@@ -1161,8 +1195,28 @@ def main():
         "energy",
     ],
 )
-def test_lower_is_better_metric_heuristic_matches_nvflare_core(metric):
+def test_lower_is_better_metric_heuristic_matches_nvflare_core(metric, monkeypatch):
     assert job_importer.likely_lower_is_better_metric(metric) is _looks_lower_is_better(metric)
+    monkeypatch.setattr(job_importer, "_core_looks_lower_is_better", None)
+    assert job_importer.likely_lower_is_better_metric(metric) is _looks_lower_is_better(metric)
+
+
+def test_importer_loads_and_imports_job_without_nvflare_in_agent_environment(tmp_path, monkeypatch):
+    original_import = builtins.__import__
+
+    def isolated_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "nvflare.app_common.widgets.intime_model_selector":
+            raise ImportError("NVFlare is unavailable in the agent environment")
+        return original_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", isolated_import)
+    isolated_importer = _load_importer()
+    job_path = _write_recipe_job(tmp_path)
+
+    config = isolated_importer.import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+
+    assert isolated_importer._core_looks_lower_is_better is None
+    assert config["import"]["support"]["status"] == "supported"
 
 
 def test_train_script_outside_workspace_is_not_admitted_to_trust_contract(tmp_path):
