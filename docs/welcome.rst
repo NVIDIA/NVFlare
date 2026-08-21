@@ -143,7 +143,7 @@ multimodal and research examples.
 - **Live Log Streaming**: client job logs stream to the server while jobs are
   running, shortening remote debugging loops
 
-See :doc:`release_notes/flare_280` for full release notes.
+See :doc:`release_notes/flare_290` for full release notes.
 See :doc:`release_notes/previous` for previous releases.
 
 Real-World Use Cases & FLARE Day
