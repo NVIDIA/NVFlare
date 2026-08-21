@@ -134,6 +134,7 @@ class CallInfo:
     source: str
     function_name: Optional[str] = None
     branch_conditions: Tuple[Tuple[ast.AST, bool], ...] = ()
+    has_keyword_splat: bool = False
 
 
 class JobImportError(ValueError):
@@ -410,6 +411,16 @@ class DeterministicJobImporter:
         parser_args: Dict[str, ArgSpec],
         source_text: str,
     ) -> Tuple[str, str, Optional[Dict[str, str]]]:
+        if job_call and job_call.has_keyword_splat and "key_metric" not in job_call.keywords:
+            return (
+                "accuracy",
+                "default",
+                _unresolved(
+                    "objective.metric",
+                    "job call passes **kwargs; key_metric may be supplied dynamically; "
+                    "write key_metric explicitly in the job call",
+                ),
+            )
         if job_call and "key_metric" in job_call.keywords:
             resolved = _resolve_value(job_call.keywords["key_metric"], job_call.assignments, parser_args, source_text)
             if isinstance(resolved.value, str) and not resolved.unresolved:
@@ -432,6 +443,18 @@ class DeterministicJobImporter:
     ) -> Tuple[str, str, Optional[Dict[str, str]]]:
         if not job_call:
             return "max", "unresolved", _unresolved("objective.mode", "job metric direction is unknown")
+
+        direction_keywords = {"key_metric_mode", "model_selector", "stop_cond"}
+        if job_call.has_keyword_splat and not direction_keywords.issubset(job_call.keywords):
+            return (
+                "max",
+                "unresolved",
+                _unresolved(
+                    "objective.mode",
+                    "job call passes **kwargs; key_metric_mode, model_selector, or stop_cond may be supplied "
+                    "dynamically; write all three direction-relevant keywords explicitly in the job call",
+                ),
+            )
 
         model_selector = job_call.keywords.get("model_selector")
         if model_selector is not None:
@@ -783,6 +806,7 @@ class _ImportIndex(ast.NodeVisitor):
                 source=_source_segment(self.source_text, node),
                 function_name=self._function_stack[-1] if self._function_stack else None,
                 branch_conditions=tuple(self._branch_conditions),
+                has_keyword_splat=any(keyword.arg is None for keyword in node.keywords),
             )
             if is_environment:
                 self.env_calls.append(call_info)

@@ -3859,6 +3859,40 @@ def test_initialize_rejects_implicit_max_loss_without_writing_campaign_files(tmp
     assert not tmp_path.joinpath("autofl_runs").exists()
 
 
+def test_initialize_rejects_splatted_job_contract_without_writing_campaign_files(tmp_path, capsys):
+    tmp_path.joinpath("client.py").write_text("print('train')\n", encoding="utf-8")
+    job = tmp_path / "job.py"
+    job.write_text(
+        """
+import argparse
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--key_metric", default="val_loss")
+args = parser.parse_args()
+tuning = {"key_metric": args.key_metric, "key_metric_mode": "min"}
+recipe = FedAvgRecipe(
+    name="splatted-contract", min_clients=2, num_rounds=1, train_script="client.py", **tuning
+)
+recipe.execute(SimEnv(num_clients=2))
+""".lstrip(),
+        encoding="utf-8",
+    )
+    runner = _load_runner()
+
+    assert runner.main(["initialize", str(job)]) == 2
+
+    error = capsys.readouterr().err
+    assert "objective.metric" in error
+    assert "objective.mode" in error
+    assert "job call passes **kwargs" in error
+    assert not tmp_path.joinpath(".nvflare").exists()
+    assert not tmp_path.joinpath("autofl.yaml").exists()
+    assert not tmp_path.joinpath("autofl_runs").exists()
+
+
 def _write_dynamic_metric_job(workspace):
     workspace.mkdir()
     workspace.joinpath("client.py").write_text("print('train')\n", encoding="utf-8")
