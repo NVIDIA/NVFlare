@@ -74,15 +74,16 @@ class ProxyList:
         """This is called to define the behavior (Call Option) of the group call.
 
         Args:
-            blocking:
-            expect_result:
-            timeout:
-            optional:
-            secure:
-            target:
+            blocking: whether to wait for all outcomes and return re-iterable results. If False, return a live,
+                single-pass result stream.
+            expect_result: whether results are expected from the remote objects.
+            timeout: maximum number of seconds to wait for each result.
+            optional: whether the calls are optional.
+            secure: whether to use P2P secure messaging.
+            target: name of the Collab object to call at each site.
             parallel: maximum number of calls that may remain in flight at once.
-            process_resp_cb:
-            **cb_kwargs:
+            process_resp_cb: callback for processing each response.
+            **cb_kwargs: keyword arguments passed to process_resp_cb.
 
         Returns:
 

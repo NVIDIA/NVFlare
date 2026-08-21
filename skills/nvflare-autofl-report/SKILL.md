@@ -147,8 +147,8 @@ The report must distinguish imported/declared budget from executed command
 arguments. It must warn when the best candidate changed training compute or
 comparison population, when authoritative state disagrees with ledger-derived
 accounting, or when repeated selection used a test-like metric. Product Auto-FL
-campaigns maximize their metric; the report rejects obsolete minimization
-contracts. It must not add PR-specific sections such as "Product Findings"
+campaigns retain the imported `min` or `max` direction; the report rejects
+legacy minimization evidence without direction provenance. It must not add PR-specific sections such as "Product Findings"
 unless the user explicitly requests them.
 `best` means a scored retained baseline or `keep` row; an unretained scored
 `discard` may appear only as `best_observed`. Candidate and crash rows never

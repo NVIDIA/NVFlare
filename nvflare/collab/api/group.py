@@ -98,14 +98,13 @@ class Group:
 
         If expect_result is False, then the call immediately returns None.
 
-        If expect_result is True, a ResultQueue object is returned. Successful results are appended to the queue
-        as (site_name, result) tuples when they become available. Per-site failures are available in
-        ResultQueue.failures as a mapping from site name to CollabCallError.
+        If expect_result is True, successful results are returned as (site_name, result) tuples. Per-site failures
+        are available in the result collection's failures mapping from site name to CollabCallError.
 
         The blocking flag is only meaningful when expect_result is True. If blocking is True, the call does not
-        return until results are received from all sites (or timed out). If blocking is False, the call immediately
-        returns. In both cases, the ResultQueue object is returned, and the application should iterate through it
-        to process site results.
+        return until results are received from all sites (or timed out), and returns a re-iterable frozen snapshot.
+        If blocking is False, the call immediately returns a live, single-pass ResultQueue that the application
+        should iterate to process results as they arrive.
 
         """
 
@@ -118,7 +117,7 @@ class Group:
                     )
 
                     assert isinstance(self._app, App)
-                    waiter = ResultWaiter([p.name for p in self._proxies])
+                    waiter = ResultWaiter([p.name for p in self._proxies], retain_history=self._call_opt.blocking)
                     max_parallel = self._call_opt.parallel
                     if max_parallel <= 0:
                         max_parallel = len(self._proxies)
@@ -168,7 +167,7 @@ class Group:
 
                     # wait for responses
                     waiter.wait_for_responses(self._abort_signal)
-                    return waiter.results
+                    return waiter.results.freeze()
             except Exception as ex:
                 self._logger.error(f"exception {type(ex)} occurred: {ex}")
                 raise
