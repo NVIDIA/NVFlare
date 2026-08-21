@@ -179,12 +179,9 @@ def normalize_records(records: Iterable[Any]) -> List[ProgressRecord]:
     return normalized
 
 
-def better(value: float, incumbent: Optional[float], mode: str = "max") -> bool:
-    return load_campaign_guard().better(value, incumbent, mode)
-
-
-def improvement_over_baseline(baseline: float, best: float, mode: str = "max") -> float:
-    return load_campaign_guard().improvement_over_baseline(baseline, best, mode)
+_CAMPAIGN_GUARD = load_campaign_guard()
+better = _CAMPAIGN_GUARD.better
+improvement_over_baseline = _CAMPAIGN_GUARD.improvement_over_baseline
 
 
 def cumulative_best(values: Sequence[float], mode: str = "max") -> List[float]:

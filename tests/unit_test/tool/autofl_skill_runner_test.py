@@ -294,6 +294,12 @@ def test_structured_metric_extraction_rejects_boolean_values():
     assert runner.find_metric_value({"metrics": [{"name": "accuracy", "value": False}]}, ["accuracy"]) is None
 
 
+def test_runner_uses_campaign_guard_score_comparison():
+    runner = _load_runner()
+
+    assert runner.better is runner.load_campaign_guard().better
+
+
 @pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
 def test_metric_paths_reject_non_finite_values(tmp_path, value):
     runner = _load_runner()

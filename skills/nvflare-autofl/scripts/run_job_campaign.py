@@ -2745,8 +2745,7 @@ def load_results(path: Path) -> List[RunRecord]:
     return records
 
 
-def better(new_score: Optional[float], old_score: Optional[float], mode: str = "max") -> bool:
-    return load_campaign_guard().better(new_score, old_score, mode)
+better = load_campaign_guard().better
 
 
 def write_state(

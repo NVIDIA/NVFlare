@@ -140,6 +140,17 @@ class JobImportError(ValueError):
     """Raised when the importer cannot read or parse a job file."""
 
 
+class _NoAliasSafeDumper(yaml.SafeDumper):
+    def ignore_aliases(self, data):
+        return True
+
+
+def dump_autofl_yaml(config: Dict[str, Any]) -> str:
+    """Return deterministic YAML for an imported Auto-FL config."""
+
+    return yaml.dump(config, Dumper=_NoAliasSafeDumper, sort_keys=False)
+
+
 class DeterministicJobImporter:
     """Rule-based importer for supported NVFlare Recipe and FedJob scripts."""
 
@@ -331,10 +342,7 @@ class DeterministicJobImporter:
         }
         return config
 
-    def dump_yaml(self, config: Dict[str, Any]) -> str:
-        """Return deterministic YAML for an imported Auto-FL config."""
-
-        return dump_autofl_yaml(config)
+    dump_yaml = staticmethod(dump_autofl_yaml)
 
     def _resolve_job_path(self, job_path: str) -> Path:
         path = Path(job_path)
@@ -648,17 +656,6 @@ def inspect_job_cli_flags(job_path: str, job_args: Optional[Sequence[str]] = Non
         raise JobImportError(f"failed to parse {path}: {e}") from e
     parser_args, _ = _reachable_parser_args(tree, index, job_args or [])
     return sorted({flag for spec in parser_args.values() for flag in spec.flags if flag.startswith("--")})
-
-
-def dump_autofl_yaml(config: Dict[str, Any]) -> str:
-    """Return deterministic YAML for an imported Auto-FL config."""
-
-    return yaml.dump(config, Dumper=_NoAliasSafeDumper, sort_keys=False)
-
-
-class _NoAliasSafeDumper(yaml.SafeDumper):
-    def ignore_aliases(self, data):
-        return True
 
 
 class _ImportIndex(ast.NodeVisitor):
