@@ -250,10 +250,10 @@ def test_frozen_result_queue_is_reiterable_and_preserves_partial_results():
     result_queue.append(expected[1])
     result_queue.append(expected[2])
 
-    assert result_queue.freeze() is result_queue
-    assert list(result_queue) == expected
-    assert list(result_queue) == expected
-    assert len(result_queue) == 2
+    frozen_results = result_queue.freeze()
+    assert list(frozen_results) == expected
+    assert list(frozen_results) == expected
+    assert len(frozen_results) == 2
 
 
 def test_frozen_result_queue_preserves_previously_consumed_results():
@@ -264,19 +264,19 @@ def test_frozen_result_queue_preserves_previously_consumed_results():
     assert next(result_queue) == expected[0]
 
     result_queue.append(expected[1])
-    result_queue.freeze()
+    frozen_results = result_queue.freeze()
 
-    assert list(result_queue) == expected
-    assert list(result_queue) == expected
+    assert list(frozen_results) == expected
+    assert list(frozen_results) == expected
 
 
-def test_frozen_result_queue_rejects_direct_next():
+def test_frozen_result_queue_is_not_an_iterator():
     result_queue = ResultQueue(limit=1)
     result_queue.append(("site-1", "result"))
-    result_queue.freeze()
+    frozen_results = result_queue.freeze()
 
-    with pytest.raises(TypeError, match="use iter"):
-        next(result_queue)
+    with pytest.raises(TypeError, match="not an iterator"):
+        next(frozen_results)
 
 
 def test_frozen_result_queue_preserves_failures_without_yielding_markers():
@@ -285,11 +285,24 @@ def test_frozen_result_queue_preserves_failures_without_yielding_markers():
     result_queue.append_failure("site-1", error)
     result_queue.append(("site-2", "result"))
 
-    result_queue.freeze()
+    frozen_results = result_queue.freeze()
 
-    assert list(result_queue) == [("site-2", "result")]
-    assert list(result_queue) == [("site-2", "result")]
-    assert result_queue.failures == {"site-1": error}
+    assert list(frozen_results) == [("site-2", "result")]
+    assert list(frozen_results) == [("site-2", "result")]
+    assert frozen_results.failures == {"site-1": error}
+
+
+def test_freezing_does_not_change_existing_live_iterator():
+    result_queue = ResultQueue(limit=2)
+    expected = [("site-1", "first"), ("site-2", "second")]
+    live_iterator = iter(result_queue)
+    result_queue.append(expected[0])
+    result_queue.append(expected[1])
+
+    frozen_results = result_queue.freeze()
+
+    assert list(live_iterator) == expected
+    assert list(frozen_results) == expected
 
 
 def test_result_queue_rejects_freeze_before_completion():

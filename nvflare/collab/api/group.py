@@ -98,14 +98,13 @@ class Group:
 
         If expect_result is False, then the call immediately returns None.
 
-        If expect_result is True, a ResultQueue object is returned. Successful results are appended to the queue
-        as (site_name, result) tuples when they become available. Per-site failures are available in
-        ResultQueue.failures as a mapping from site name to CollabCallError.
+        If expect_result is True, successful results are returned as (site_name, result) tuples. Per-site failures
+        are available in the result collection's failures mapping from site name to CollabCallError.
 
         The blocking flag is only meaningful when expect_result is True. If blocking is True, the call does not
-        return until results are received from all sites (or timed out), and the returned ResultQueue is frozen into
-        a re-iterable snapshot. If blocking is False, the call immediately returns a live, single-pass ResultQueue
-        that the application should iterate to process results as they arrive.
+        return until results are received from all sites (or timed out), and returns a re-iterable frozen snapshot.
+        If blocking is False, the call immediately returns a live, single-pass ResultQueue that the application
+        should iterate to process results as they arrive.
 
         """
 

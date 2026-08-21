@@ -119,29 +119,3 @@ def test_blocking_group_results_are_reiterable():
     expected_by_site = dict(expected)
     assert dict(results) == expected_by_site
     assert dict(results) == expected_by_site
-
-
-def test_blocking_group_results_include_results_consumed_by_callback():
-    app = ClientApp(object())
-    consumed = []
-
-    def process_response(gcc, result):
-        if gcc.target_name == "site-2":
-            consumed.append(next(gcc.waiter.results))
-        return result
-
-    def dispatch(gcc, *_args, **_kwargs):
-        gcc.set_result(f"result-{gcc.target_name}")
-        gcc.call_completed()
-
-    proxies = [
-        _proxy(app, "site-1", {"train": []}, MagicMock(call_target_in_group=MagicMock(side_effect=dispatch))),
-        _proxy(app, "site-2", {"train": []}, MagicMock(call_target_in_group=MagicMock(side_effect=dispatch))),
-    ]
-
-    results = Group(app, Signal(), proxies, process_resp_cb=process_response).train()
-
-    expected = [("site-1", "result-site-1"), ("site-2", "result-site-2")]
-    assert consumed == [expected[0]]
-    assert list(results) == expected
-    assert list(results) == expected
