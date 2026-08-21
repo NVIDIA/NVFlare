@@ -43,6 +43,17 @@ workflows: do not merge or automatically chain them, do not route the combinatio
 workflow to run first before generating or running either job. Recommend `nvflare-fed-stats` first only when the
 user's purpose is to understand data distribution; handle conversion later as a separate request.
 
+## Available Scripts
+
+| Script | Purpose | Arguments |
+| --- | --- | --- |
+| `scripts/resolve_model_snapshot.py` | Resolve a local or Hub model/dataset snapshot and emit JSON evidence. | Identifier; required `--source`; optional source-root, download, revision, cache, and repository-type flags. |
+
+Use `run_script()` only during the validation phase after loading `references/huggingface-validation.md`. For example:
+
+- `run_script("scripts/resolve_model_snapshot.py", ["--source", "local", "--source-root", "<absolute-source-root>", "<configured-path>"])`
+- `run_script("scripts/resolve_model_snapshot.py", ["--source", "hub", "<org/model>"])`
+
 ## Workflow
 
 1. Load `../nvflare-shared/references/conversion-common.md` and apply it for the
@@ -182,19 +193,8 @@ user's purpose is to understand data distribution; handle conversion later as a 
 - Site partitioning, custom aggregation, the Source Of Truth Boundary, and user
   input/authorization follow `../nvflare-shared/references/conversion-common.md`.
 
-Always read this converter SKILL.md together with
-`../nvflare-shared/references/conversion-common.md`. Complete each workflow
-phase before loading the next phase's reference. Do not preload validation,
-state/DDP, broad workflow, dependency, or reporting references. The standard
-FedAvg path loads, in order:
-`../nvflare-shared/references/conversion-common.md`,
-`references/huggingface-detection.md`,
-`../nvflare-shared/references/site-data-and-paths.md` only when generated
-splits, relative-path resolution, or per-site data locations are involved,
-`../nvflare-shared/references/pytorch-family-recipe-construction.md`,
-`references/huggingface-conversion.md`,
-`../nvflare-shared/references/pytorch-model-exchange.md`,
-`../nvflare-shared/references/validation-evidence.md`, and
-`references/huggingface-validation.md`. Load
-`references/huggingface-state-and-distributed.md` and other shared references
-only under the triggers above. Do not depend on repository examples.
+Always read this converter SKILL.md together with `../nvflare-shared/references/conversion-common.md`. Complete each workflow phase before loading the next phase's reference.
+Do not preload validation, state/DDP, broad workflow, dependency, or reporting references. The standard FedAvg path loads, in order:
+`../nvflare-shared/references/conversion-common.md`, `references/huggingface-detection.md`, and `../nvflare-shared/references/site-data-and-paths.md` only for its stated triggers;
+`../nvflare-shared/references/pytorch-family-recipe-construction.md`, `references/huggingface-conversion.md`, and `../nvflare-shared/references/pytorch-model-exchange.md`;
+then `../nvflare-shared/references/validation-evidence.md` and `references/huggingface-validation.md`; load `references/huggingface-state-and-distributed.md` and other shared references only under the triggers above. Do not depend on repository examples.
