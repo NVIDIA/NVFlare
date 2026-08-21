@@ -13,7 +13,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Generate a readable Auto-FL progress plot from the campaign ledger."""
+"""Generate a readable Auto-FL progress plot from the campaign ledger.
+
+Usage:
+    ``python plot_progress.py [RESULTS] [--output PATH] [options]``
+Arguments:
+    ``RESULTS`` is the campaign TSV ledger; options select the output PNG,
+    metric label, label limits, and y-axis behavior.
+Output:
+    Atomically writes the PNG and prints baseline, best, and delta values.
+Exit codes:
+    0 when plotting succeeds; argparse uses 2 for invalid CLI syntax and data
+    or dependency failures return a nonzero process status.
+"""
 
 from __future__ import annotations
 

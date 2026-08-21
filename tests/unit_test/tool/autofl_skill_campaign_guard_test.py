@@ -529,6 +529,56 @@ def test_autofl_skill_requires_human_scoped_simulation_approval():
     assert "rerun_with_escalated_execution" not in skill_text
 
 
+def test_autofl_skill_has_explicit_routing_io_and_script_contracts():
+    repo_root = Path(__file__).parents[3]
+    skill_text = repo_root.joinpath("skills/nvflare-autofl/SKILL.md").read_text(encoding="utf-8")
+    normalized = " ".join(skill_text.split())
+
+    for heading in (
+        "## Purpose",
+        "## Inputs",
+        "## Instructions",
+        "## Output Format",
+        "## Examples",
+        "## Permissions and Production Safety",
+        "## Limitations",
+    ):
+        assert heading in skill_text
+    assert "existing NVFLARE `job.py` and the user requested an optimization objective" in normalized
+    assert "do not invoke the runner" in normalized
+    assert "no NVFLARE or agent `run_script()` helper" in normalized
+    assert "Run the bundled CLIs directly with Python" in normalized
+    assert "Each runner action prints a JSON envelope" in normalized
+
+
+def test_autofl_skill_requires_distinct_poc_and_production_submission_confirmation():
+    repo_root = Path(__file__).parents[3]
+    skill_text = repo_root.joinpath("skills/nvflare-autofl/SKILL.md").read_text(encoding="utf-8")
+    normalized = " ".join(skill_text.split())
+
+    assert "WARNING — POC/production submission" in normalized
+    assert "Before each exact `nvflare job submit`" in normalized
+    assert "Require explicit human authorization for that submission" in normalized
+    assert "may incur compute cost" in normalized
+    assert "real participating clients and data policy" in normalized
+    assert "prior POC/production approval" in normalized
+    assert "never authorizes a new submission" in normalized
+
+
+def test_autofl_skill_keeps_detailed_metric_and_permission_guidance_canonical():
+    repo_root = Path(__file__).parents[3]
+    skill_root = repo_root / "skills" / "nvflare-autofl"
+    skill_text = skill_root.joinpath("SKILL.md").read_text(encoding="utf-8")
+    comparability_text = skill_root.joinpath("references/experiment-comparability.md").read_text(encoding="utf-8")
+    continuous_text = skill_root.joinpath("references/continuous-campaigns.md").read_text(encoding="utf-8")
+
+    assert "Use the ledger score extracted per `objective.metric_extraction_order`" in skill_text
+    assert "The `cross_val_results.json` fallback score is the unweighted mean" not in skill_text
+    assert "the score is the unweighted mean of the server" in comparability_text
+    assert "Use the top-level skill's **Permissions and Production Safety** contract" in continuous_text
+    assert "ask the human once for a command-scoped grant" not in continuous_text
+
+
 def test_autofl_skill_requires_semantic_metric_comparability():
     repo_root = Path(__file__).parents[3]
     skill_text = repo_root.joinpath("skills/nvflare-autofl/SKILL.md").read_text(encoding="utf-8")

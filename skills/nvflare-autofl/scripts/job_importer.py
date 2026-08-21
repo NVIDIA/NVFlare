@@ -14,10 +14,18 @@
 
 """Deterministically import supported NVFlare job scripts into ``autofl.yaml``.
 
-The Auto-FL skill uses this module as its trust layer.  The importer parses
+Usage:
+    Import this library through ``run_job_campaign.py``; it is not a standalone
+    CLI and intentionally has no shebang or process exit-code contract.
+Arguments:
+    Public helpers accept a job source path plus optional static job arguments
+    and requested campaign settings.
+Output:
+    Returns a reviewable Auto-FL configuration mapping; dynamic or unsupported
+    fields are surfaced under ``unresolved``.
+
+The Auto-FL skill uses this module as its trust layer. The importer parses
 Python source with ``ast``; it never imports or executes the user's ``job.py``.
-Supported Recipe/FedJob patterns are converted into a reviewable config, while
-dynamic or unsupported fields are surfaced under ``unresolved``.
 """
 
 from __future__ import annotations

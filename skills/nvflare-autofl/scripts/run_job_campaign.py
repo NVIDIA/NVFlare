@@ -15,6 +15,19 @@
 
 """Manage agent-authored Auto-FL candidates for an existing NVFlare job.py.
 
+Usage:
+    ``python run_job_campaign.py ACTION JOB [options]``
+Arguments:
+    ``ACTION`` selects the lifecycle operation; ``JOB`` is the existing
+    NVFLARE ``job.py``; remaining options are action-specific.
+Output:
+    Writes campaign configuration, state, ledger, candidate, plot, and report
+    artifacts and prints a machine-readable JSON action envelope.
+Exit codes:
+    0 for success, 1 when an execution completes without a score, 2 for a
+    rejected contract or invalid request, and 75 when simulation needs the
+    existing human-approved execution scope.
+
 The coding agent owns hypotheses and source edits. This helper snapshots the
 current best source, validates and evaluates candidate manifests, restores
 discarded candidates, and records reproducible campaign state and artifacts.
@@ -46,7 +59,7 @@ import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
-from typing import Any, Dict, Iterable, Iterator, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, Iterator, List, Mapping, Optional, Sequence, Tuple
 
 try:
     import fcntl
@@ -700,16 +713,50 @@ def simulator_partial_aggregation_signature_for_roots(simulator_stall_roots: Seq
     return "\n".join(markers)
 
 
-def run(
-    argv: Sequence[str],
+def resolve_python_interpreter(python: str, env: Mapping[str, str]) -> str:
+    """Resolve the configured Python interpreter without dereferencing virtual-environment symlinks."""
+    if not isinstance(python, str) or not python or "\x00" in python:
+        raise ValueError("python interpreter must be a non-empty string without NUL characters")
+
+    expanded = os.path.expanduser(python)
+    if os.path.dirname(expanded) or os.path.isabs(expanded):
+        resolved = os.path.abspath(expanded)
+    else:
+        resolved = shutil.which(expanded, path=env.get("PATH", os.defpath)) or ""
+    if not resolved or not Path(resolved).is_file():
+        raise ValueError(f"python interpreter does not exist: {python}")
+    if os.name != "nt" and not os.access(resolved, os.X_OK):
+        raise ValueError(f"python interpreter is not executable: {python}")
+    return resolved
+
+
+def python_command(python: str, arguments: Sequence[str], env: Mapping[str, str]) -> List[str]:
+    """Build a validated Python argv list; argument values are never interpreted by a shell."""
+    if not arguments:
+        raise ValueError("python command requires at least one argument")
+    validated_arguments = []
+    for argument in arguments:
+        if not isinstance(argument, str):
+            raise ValueError("python command arguments must be strings")
+        if "\x00" in argument:
+            raise ValueError("python command arguments must not contain NUL characters")
+        validated_arguments.append(argument)
+    return [resolve_python_interpreter(python, env), *validated_arguments]
+
+
+def run_python(
+    python: str,
+    arguments: Sequence[str],
+    *,
     cwd: Path,
     timeout: int,
     log_path: Path,
+    env: Mapping[str, str],
     simulator_stall_roots: Sequence[Path] = (),
     stall_check_interval: float = 5.0,
     simulator_no_progress_timeout: int = DEFAULT_SIMULATOR_NO_PROGRESS_TIMEOUT,
-    env: Optional[Dict[str, str]] = None,
 ) -> Tuple[int, str, float]:
+    argv = python_command(python, arguments, env)
     ensure_trial_process_pidfd_support()
     started = time.monotonic()
     next_stall_check = started
@@ -720,7 +767,7 @@ def run(
     last_partial_aggregation_signature = ""
     log_path.parent.mkdir(parents=True, exist_ok=True)
     output_tail = ""
-    run_env = dict(env) if env is not None else dict(os.environ)
+    run_env = dict(env)
     trial_token = uuid.uuid4().hex
     run_env[TRIAL_PROCESS_TOKEN_ENV_VAR] = trial_token
     with log_path.open("w", encoding="utf-8") as log_file:
@@ -733,6 +780,7 @@ def run(
             bufsize=0,
             start_new_session=os.name != "nt",
             env=run_env,
+            shell=False,
         )
         process_group_id = process.pid if os.name != "nt" else None
         assert process.stdout is not None
@@ -2428,11 +2476,12 @@ def probe_simulator_workspace_override_support(
     )
     try:
         with tempfile.TemporaryDirectory(prefix="nvflare-autofl-probe-") as probe_dir:
-            rc, stdout, _runtime = run(
-                [python, "-c", script],
-                cwd,
-                timeout,
-                Path(probe_dir) / "probe.log",
+            rc, stdout, _runtime = run_python(
+                python,
+                ["-c", script],
+                cwd=cwd,
+                timeout=timeout,
+                log_path=Path(probe_dir) / "probe.log",
                 env=simulator_child_env(Path(probe_dir)),
                 simulator_no_progress_timeout=0,
             )
@@ -2538,20 +2587,22 @@ def run_job(
     log_path = output_root / run_def.name / "run.log"
     run_name = simulator_run_name(run_def.name, cwd)
     name_args = ["--name", run_name] if supports_flag(help_text, "--name") else []
-    command = [python, str(job), *fixed_args, *base_args, *name_args, *run_def.args]
-    run_def.command = command
+    arguments = [str(job), *fixed_args, *base_args, *name_args, *run_def.args]
     with tempfile.TemporaryDirectory(prefix="nvflare-autofl-sim-") as trial_workspace:
         simulator_base = Path(trial_workspace).resolve()
         simulator_roots = expected_simulator_roots(
             config, run_name if name_args else None, cwd, simulator_base=simulator_base
         )
         run_env = simulator_child_env(simulator_base, simulator_env_passthrough_names(config))
+        command = python_command(python, arguments, run_env)
+        run_def.command = command
         unnamed_root_snapshot = simulator_root_snapshot(simulator_base) if not simulator_roots else {}
-        rc, stdout, runtime = run(
-            command,
-            cwd,
-            timeout,
-            log_path,
+        rc, stdout, runtime = run_python(
+            command[0],
+            command[1:],
+            cwd=cwd,
+            timeout=timeout,
+            log_path=log_path,
             env=run_env,
             simulator_stall_roots=simulator_roots,
             simulator_no_progress_timeout=simulator_no_progress_timeout,
