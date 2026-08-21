@@ -9,7 +9,7 @@ NVIDIA <br>
 ### License/Terms of Use: <br>
 Apache 2.0 <br>
 ## Use Case: <br>
-Developers and engineers use this skill to iteratively optimize NVFLARE federated learning jobs through agent-assisted candidate evaluation in simulation, proof-of-concept, or production environments. <br>
+Developers and ML engineers use this skill to iteratively optimize federated learning jobs through reproducible candidate campaigns managed by an automated campaign runner. <br>
 
 ### Deployment Geography for Use: <br>
 Global <br>
@@ -25,19 +25,19 @@ Risk: Review before execution as proposals could introduce incorrect or misleadi
 Mitigation: Review and scan skill before deployment. <br>
 
 ## Reference(s): <br>
-- [Job Import Contract](references/job-import-contract.md) <br>
+- [Bounded Campaign Example](references/bounded-campaign-example.md) <br>
 - [Continuous Campaigns](references/continuous-campaigns.md) <br>
 - [Experiment Comparability](references/experiment-comparability.md) <br>
-- [Bounded Campaign Example](references/bounded-campaign-example.md) <br>
-- [NVFlare Documentation](https://nvflare.readthedocs.io/en/main) <br>
-- [NVFlare: Federated Learning from Simulation to Real-World](https://arxiv.org/abs/2210.13291) <br>
+- [Job Import Contract](references/job-import-contract.md) <br>
+- [NVIDIA FLARE Documentation](https://nvflare.readthedocs.io/en/main) <br>
+- [NVIDIA FLARE Paper](https://arxiv.org/abs/2210.13291) <br>
 
 
 ## Skill Output: <br>
-**Output Type(s):** [Analysis, Shell commands, Configuration instructions, Files] <br>
-**Output Format:** [JSON envelopes, YAML configuration, TSV ledger, and Markdown reports] <br>
+**Output Type(s):** [Shell commands, Analysis, Files, Configuration instructions] <br>
+**Output Format:** [JSON envelopes with Markdown summaries and shell command sequences] <br>
 **Output Parameters:** [1D] <br>
-**Other Properties Related to Output:** [None] <br>
+**Other Properties Related to Output:** [Persists campaign state, results ledger (TSV), candidate manifests, progress plots, and final reports] <br>
 
 ## Evaluation Agents Used: <br>
 - Claude Code (`aws/anthropic/bedrock-claude-opus-4-8`) <br>
@@ -46,14 +46,14 @@ Mitigation: Review and scan skill before deployment. <br>
 
 
 ## Evaluation Tasks: <br>
-7 evaluation tasks (7 positive) against skill-evaluator-dataset-snapshot/1. <br>
+7 evaluation tasks (7 positive) from skill-evaluator-dataset-snapshot/1. <br>
 
 ## Evaluation Metrics Used: <br>
 Reported benchmark dimensions: <br>
 - Security: Checks for unsafe operations, secret leakage, and unauthorized access. <br>
 - Correctness: Checks final-answer correctness against the reference answer. <br>
 - Discoverability: Checks whether the expected skill was found and executed when needed. <br>
-- Effectiveness: Checks whether the user's goal was achieved and the expected workflow behavior was followed. <br>
+- Effectiveness: Checks goal completion and expected workflow adherence. <br>
 - Efficiency: Checks routing quality, workspace-aware skill reads, and productive tool use. <br>
 
 Underlying evaluation signals used in this run: <br>
@@ -62,19 +62,19 @@ Underlying evaluation signals used in this run: <br>
 - `skill_execution`: Verifies whether the expected skill was found and executed. <br>
 - `goal_accuracy`: Verifies whether the user's goal was achieved. <br>
 - `behavior_check`: Verifies whether the expected workflow behavior was followed. <br>
-- `skill_efficiency`: Verifies routing quality and productive tool use. <br>
+- `skill_efficiency`: Verifies routing quality, workspace-aware skill reads, and productive tool use. <br>
 
 
 
 ## Evaluation Results: <br>
-| Measure | Claude Code (Baseline → Skill Uplift) | Codex (Baseline → Skill Uplift) |
-|---|---:|---:|
-| Overall | 61% → 78% (+17 points) | Not available |
-| Security | 100% → 100% (±0 points) | Not available |
-| Correctness | 60% → 86% (+26 points) | Not available |
-| Discoverability | 48% → 77% (+29 points) | Not available |
-| Effectiveness | 55% → 58% (+3 points) | Not available |
-| Efficiency | 43% → 71% (+28 points) | Not available |
+| Measure | Codex (Baseline → Skill Uplift) |
+|---|---:|
+| Overall | 59% → 70% (+11 points) |
+| Security | 86% → 86% (±0 points) |
+| Correctness | 71% → 77% (+6 points) |
+| Discoverability | 43% → 70% (+27 points) |
+| Effectiveness | 46% → 48% (+2 points) |
+| Efficiency | 47% → 69% (+22 points) |
 
 ## Skill Version(s): <br>
 0.1.0 (source: frontmatter) <br>

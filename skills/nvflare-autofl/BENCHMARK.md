@@ -45,12 +45,12 @@ The three-tier evaluation checks whether the skill:
 
 | Measure | Claude Code (Baseline → Skill Uplift) | Codex (Baseline → Skill Uplift) |
 |---|---:|---:|
-| Overall | 61% → 78% (+17 points) | Not available |
-| Security | 100% → 100% (±0 points) | Not available |
-| Correctness | 60% → 86% (+26 points) | Not available |
-| Discoverability | 48% → 77% (+29 points) | Not available |
-| Effectiveness | 55% → 58% (+3 points) | Not available |
-| Efficiency | 43% → 71% (+28 points) | Not available |
+| Overall | Not available | 59% → 70% (+11 points) |
+| Security | Not available | 86% → 86% (±0 points) |
+| Correctness | Not available | 71% → 77% (+6 points) |
+| Discoverability | Not available | 43% → 70% (+27 points) |
+| Effectiveness | Not available | 46% → 48% (+2 points) |
+| Efficiency | Not available | 47% → 69% (+22 points) |
 
 **How to read this table:** baseline is the same task attempted without the target skill. Uplift is `skill score - baseline score`, shown in percentage points.
 
@@ -70,7 +70,7 @@ Example: `47% → 92% (+45 points)` means the skill-assisted run scored 92%, 45 
 <summary>Show detailed findings and successful checks</summary>
 
 - Schema & Repository Governance: Found skill manifest: SKILL.md
-- AGENT_EVAL: Tier 3 evaluation complete: verdict PASS; best agent claude-code
+- AGENT_EVAL: Tier 3 evaluation complete: verdict PASS; best agent codex
 
 </details>
 
