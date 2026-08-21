@@ -2,8 +2,8 @@
 name: nvflare-shared
 description: Internal NVFLARE conversion references and templates. Use only when another NVFLARE skill directs you to a shared workflow, policy, or asset.
 license: Apache-2.0
-version: "0.1.0"
 metadata:
+  version: "0.1.0"
   author: "NVIDIA FLARE Team <federatedlearning@nvidia.com>"
   min-flare-version: "2.9.0"
   blast-radius: read_only
@@ -18,10 +18,9 @@ metadata:
 
 ## Purpose
 
-Internal, non-triggered skill that holds guidance and templates shared by the
-NVFLARE conversion skills so the same rules are authored once. It is installed
-alongside every NVFLARE skill and referenced by relative path; it is not
-selected or invoked on its own.
+Use this internal, non-triggered skill only to load guidance and templates named
+by an NVFLARE conversion skill. Resolve its references by relative path from the
+consuming skill. Do not select or invoke it independently.
 
 ## Instructions
 
