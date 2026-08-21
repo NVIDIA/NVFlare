@@ -118,7 +118,7 @@ class Group:
                     )
 
                     assert isinstance(self._app, App)
-                    waiter = ResultWaiter([p.name for p in self._proxies])
+                    waiter = ResultWaiter([p.name for p in self._proxies], retain_history=self._call_opt.blocking)
                     max_parallel = self._call_opt.parallel
                     if max_parallel <= 0:
                         max_parallel = len(self._proxies)

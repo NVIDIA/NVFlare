@@ -34,7 +34,7 @@ def _get_site_name(target_name: str):
 
 
 class ResultQueue:
-    def __init__(self, limit: int):
+    def __init__(self, limit: int, retain_history=True):
         if limit <= 0:
             raise ValueError(f"bad queue limit {limit}: must be > 0")
 
@@ -47,9 +47,8 @@ class ResultQueue:
         self.num_successes = 0
         self.failures = {}
         self.update_lock = threading.Lock()
-        self._iteration_started = False
+        self._items = [] if retain_history else None
         self._frozen_items = None
-        self._frozen_next_index = 0
 
     def append(self, item, is_whole=True):
         """Append an item to the result queue.
@@ -63,6 +62,8 @@ class ResultQueue:
         with self.update_lock:
             if self.num_whole_items_received < self.limit:
                 self.q.put_nowait(item)
+                if self._items is not None:
+                    self._items.append(item)
                 if is_whole:
                     # increment num_whole_items_received only if the item is whole!
                     # note: num_whole_items_received is not the number of all items received.
@@ -98,12 +99,7 @@ class ResultQueue:
             # Check the queue and completion count atomically with append().
             with self.update_lock:
                 if self._frozen_items is not None:
-                    if self._frozen_next_index >= len(self._frozen_items):
-                        raise StopIteration()
-                    item = self._frozen_items[self._frozen_next_index]
-                    self._frozen_next_index += 1
-                    return item
-                self._iteration_started = True
+                    raise TypeError("frozen results are re-iterable; use iter(results) before calling next()")
                 try:
                     item = self.q.get_nowait()
                 except queue.Empty:
@@ -124,22 +120,14 @@ class ResultQueue:
                 return item
 
     def freeze(self):
-        """Freeze a completed, unconsumed queue into a re-iterable snapshot."""
+        """Freeze a completed queue into a re-iterable snapshot."""
         with self.update_lock:
             if self.num_whole_items_received < self.limit:
                 raise RuntimeError("cannot freeze result queue before all outcomes are received")
-            if self._iteration_started:
-                raise RuntimeError("cannot freeze result queue after iteration has started")
+            if self._items is None:
+                raise RuntimeError("cannot freeze result queue without retained history")
             if self._frozen_items is None:
-                items = []
-                while True:
-                    try:
-                        item = self.q.get_nowait()
-                    except queue.Empty:
-                        break
-                    if item is not _FAILURE_MARKER:
-                        items.append(item)
-                self._frozen_items = tuple(items)
+                self._frozen_items = tuple(self._items)
             return self
 
     def __len__(self):
@@ -153,7 +141,7 @@ class ResultQueue:
 
 class ResultWaiter(threading.Event):
 
-    def __init__(self, sites: list[str]):
+    def __init__(self, sites: list[str], retain_history=True):
         super().__init__()
         self.sites = sites
         self._expected_sites = {_get_site_name(site) for site in sites}
@@ -161,7 +149,7 @@ class ResultWaiter(threading.Event):
             raise ValueError(f"sites must be unique but got {sites}")
         self._received_sites = set()
         self._result_lock = threading.Lock()
-        self.results = ResultQueue(len(self._expected_sites))
+        self.results = ResultQueue(len(self._expected_sites), retain_history=retain_history)
         self.standing_call_count = 0
         self.call_count_decreased = threading.Condition(threading.Lock())
         self.logger = get_obj_logger(self)

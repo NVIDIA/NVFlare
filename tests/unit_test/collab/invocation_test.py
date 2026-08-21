@@ -256,6 +256,29 @@ def test_frozen_result_queue_is_reiterable_and_preserves_partial_results():
     assert len(result_queue) == 2
 
 
+def test_frozen_result_queue_preserves_previously_consumed_results():
+    result_queue = ResultQueue(limit=2)
+    expected = [("site-1", "first"), ("site-2", "second")]
+    result_queue.append(expected[0])
+
+    assert next(result_queue) == expected[0]
+
+    result_queue.append(expected[1])
+    result_queue.freeze()
+
+    assert list(result_queue) == expected
+    assert list(result_queue) == expected
+
+
+def test_frozen_result_queue_rejects_direct_next():
+    result_queue = ResultQueue(limit=1)
+    result_queue.append(("site-1", "result"))
+    result_queue.freeze()
+
+    with pytest.raises(TypeError, match="use iter"):
+        next(result_queue)
+
+
 def test_frozen_result_queue_preserves_failures_without_yielding_markers():
     result_queue = ResultQueue(limit=2)
     error = CollabCallError("site-1", "train", TimeoutError("timed out"))
@@ -269,14 +292,13 @@ def test_frozen_result_queue_preserves_failures_without_yielding_markers():
     assert result_queue.failures == {"site-1": error}
 
 
-def test_result_queue_rejects_freeze_before_completion_or_after_consumption():
+def test_result_queue_rejects_freeze_before_completion():
     incomplete_queue = ResultQueue(limit=2)
     incomplete_queue.append(("site-1", "first"))
     with pytest.raises(RuntimeError, match="before all outcomes"):
         incomplete_queue.freeze()
 
-    consumed_queue = ResultQueue(limit=1)
-    consumed_queue.append(("site-1", "first"))
-    assert next(consumed_queue) == ("site-1", "first")
-    with pytest.raises(RuntimeError, match="after iteration has started"):
-        consumed_queue.freeze()
+    live_queue = ResultQueue(limit=1, retain_history=False)
+    live_queue.append(("site-1", "result"))
+    with pytest.raises(RuntimeError, match="without retained history"):
+        live_queue.freeze()
