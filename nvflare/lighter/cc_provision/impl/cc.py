@@ -148,11 +148,14 @@ class CCBuilder(Builder):
 
         all_cc_authorizers = ctx.get(CC_AUTHORIZERS_KEY, [])
         cc_verifier_ids = set([])
+        attestation_config = cc_config.get(CCConfigKey.CC_ATTESTATION_CONFIG)
+        if attestation_config:
+            cc_mgr_args[CCManagerArgs.VERIFY_FREQUENCY] = attestation_config.get("check_frequency", 600)
+            if "get_site_request_timeout" in attestation_config:
+                cc_mgr_args[CCManagerArgs.GET_SITE_REQUEST_TIMEOUT] = attestation_config["get_site_request_timeout"]
+            if "get_token_request_timeout" in attestation_config:
+                cc_mgr_args[CCManagerArgs.GET_TOKEN_REQUEST_TIMEOUT] = attestation_config["get_token_request_timeout"]
         for authorizer in all_cc_authorizers:
-            attestation_config = cc_config.get(CCConfigKey.CC_ATTESTATION_CONFIG)
-            if attestation_config:
-                cc_mgr_args[CCManagerArgs.VERIFY_FREQUENCY] = attestation_config.get("check_frequency", 600)
-
             cc_verifier_ids.add(authorizer.get(CCIssuerConfig.ID))
 
         # TODO our fl_ctx.get_identity_name always return "server"

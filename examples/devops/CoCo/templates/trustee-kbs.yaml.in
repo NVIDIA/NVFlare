@@ -1,0 +1,94 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kbs-config
+  namespace: @@NAMESPACE@@
+data:
+  kbs-config.toml: |
+    [http_server]
+    sockets = ["0.0.0.0:8080"]
+    insecure_http = true
+    [attestation_token]
+    insecure_key = true
+    [attestation_service]
+    type = "coco_as_builtin"
+    [attestation_service.attestation_token_broker]
+    duration_min = 5
+    [attestation_service.rvps_config]
+    type = "BuiltIn"
+    [admin]
+    type = "DenyAll"
+    insecure_api = false
+    [[plugins]]
+    name = "resource"
+    type = "kvstorage"
+    [storage_backend]
+    storage_type = "LocalFs"
+    [storage_backend.backends.local_fs]
+    dir_path = "/opt/confidential-containers/kbs"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kbs-resource-policy
+  namespace: @@NAMESPACE@@
+data:
+  policy.rego: |
+    package policy
+    default allow = false
+    allow if {
+      data.plugin == "resource"
+      not input["submods"]["cpu0"]["ear.veraison.annotated-evidence"]["sample"]
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: @@SERVICE@@
+  namespace: @@NAMESPACE@@
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: @@SERVICE@@}
+  template:
+    metadata:
+      labels: {app: @@SERVICE@@}
+    spec:
+      containers:
+        - name: kbs
+          image: @@TRUSTEE_IMAGE@@
+          command: ["/usr/local/bin/kbs", "--config-file", "/etc/kbs/kbs-config.toml"]
+          ports:
+            - {name: http, containerPort: 8080}
+          readinessProbe:
+            tcpSocket: {port: http}
+            initialDelaySeconds: 5
+          volumeMounts:
+            - {name: kbs-config, mountPath: /etc/kbs}
+            - {name: kbs-state, mountPath: /opt/confidential-containers/kbs}
+            - {name: resource-policy, mountPath: /opt/confidential-containers/kbs/policy.rego, subPath: policy.rego, readOnly: true}
+            - {name: verification-resources, mountPath: /opt/confidential-containers/kbs/repository, readOnly: true}
+      volumes:
+        - name: kbs-config
+          configMap: {name: kbs-config}
+        - name: resource-policy
+          configMap: {name: kbs-resource-policy}
+        - name: kbs-state
+          emptyDir: {}
+        - name: verification-resources
+          secret:
+            secretName: coco-image-verification-resources
+            items:
+              - {key: security-policy, path: default/security-policy/coco}
+              - {key: cosign-public-key, path: default/cosign-public-key/coco}
+              - {key: registry-ca, path: default/registry-ca/coco}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: @@SERVICE@@
+  namespace: @@NAMESPACE@@
+spec:
+  selector: {app: @@SERVICE@@}
+  ports:
+    - {name: http, port: 8080, targetPort: http}

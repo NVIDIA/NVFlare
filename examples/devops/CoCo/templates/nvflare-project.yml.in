@@ -1,0 +1,45 @@
+api_version: 3
+name: @@PROJECT_NAME@@
+description: NVFlare server and client in Kata Confidential Containers
+
+participants:
+  - name: @@SERVER_NAME@@
+    type: server
+    org: @@ORG@@
+    default_host: "@@SERVER_NAME@@"
+    host_names:
+      - "@@SERVER_NAME@@"
+      - "@@SERVER_NAME@@.@@NAMESPACE@@"
+      - "@@SERVER_NAME@@.@@NAMESPACE@@.svc"
+      - "@@SERVER_NAME@@.@@NAMESPACE@@.svc.cluster.local"
+      # Stage 60 terminates no TLS: it tunnels host loopback to this server.
+      # The IP SAN lets gRPC verify that loopback endpoint without disabling
+      # certificate hostname verification or changing server_identity.
+      - "127.0.0.1"
+    fed_learn_port: 8002
+    admin_port: 8003
+    cc_config: "@@SERVER_CC_CONFIG@@"
+  - name: @@CLIENT_NAME@@
+    type: client
+    org: @@ORG@@
+    capacity:
+      num_of_gpus: @@CLIENT_GPU_COUNT@@
+      mem_per_gpu_in_GiB: 0
+    cc_config: "@@CLIENT_CC_CONFIG@@"
+  - name: @@ADMIN_NAME@@
+    type: admin
+    org: @@ORG@@
+    role: project_admin
+
+builders:
+  - path: nvflare.lighter.impl.workspace.WorkspaceBuilder
+    args:
+      template_file:
+        - master_template.yml
+  - path: nvflare.lighter.impl.static_file.StaticFileBuilder
+    args:
+      config_folder: config
+      scheme: grpc
+  - path: nvflare.lighter.impl.cert.CertBuilder
+  - path: nvflare.lighter.cc_provision.impl.cc.CCBuilder
+  - path: nvflare.lighter.impl.signature.SignatureBuilder
