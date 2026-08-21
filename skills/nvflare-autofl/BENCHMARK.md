@@ -45,12 +45,12 @@ The three-tier evaluation checks whether the skill:
 
 | Measure | Claude Code (Baseline → Skill Uplift) | Codex (Baseline → Skill Uplift) |
 |---|---:|---:|
-| Overall | 61% → 84% (+23 points) | Not available |
-| Security | 100% → 100% (±0 points) | Not available |
-| Correctness | 66% → 100% (+34 points) | Not available |
-| Discoverability | 48% → 77% (+29 points) | Not available |
-| Effectiveness | 50% → 73% (+23 points) | Not available |
-| Efficiency | 43% → 70% (+27 points) | Not available |
+| Overall | 58% → 77% (+20 points) | 48% → 70% (+22 points) |
+| Security | 100% → 100% (±0 points) | 71% → 86% (+14 points) |
+| Correctness | 57% → 86% (+29 points) | 57% → 74% (+17 points) |
+| Discoverability | 46% → 77% (+31 points) | 39% → 74% (+35 points) |
+| Effectiveness | 45% → 54% (+9 points) | 38% → 48% (+10 points) |
+| Efficiency | 39% → 70% (+31 points) | 36% → 69% (+32 points) |
 
 **How to read this table:** baseline is the same task attempted without the target skill. Uplift is `skill score - baseline score`, shown in percentage points.
 
@@ -60,7 +60,7 @@ Example: `47% → 92% (+45 points)` means the skill-assisted run scored 92%, 45 
 
 | Tier | Purpose | Status | Evidence |
 |---|---|---|---|
-| Tier 1 | Static validation | **PASSED WITH OBSERVATIONS** | 1 validator(s); 1 finding(s) |
+| Tier 1 | Static validation | **PASSED** | 1 validator(s); 0 finding(s) |
 | Tier 2 | Semantic deduplication | **NOT RUN** | No result was recorded |
 | Tier 3 | Live agent evaluation | **PASS** | 2 agent(s); 7 task(s) |
 
@@ -69,7 +69,8 @@ Example: `47% → 92% (+45 points)` means the skill-assisted run scored 92%, 45 
 <details>
 <summary>Show detailed findings and successful checks</summary>
 
-- **MEDIUM** SCHEMA/frontmatter_field_placement: Root field 'version' is ignored; use 'metadata.version' (`skills/nvflare-autofl/SKILL.md`)
+- Schema & Repository Governance: Found skill manifest: SKILL.md
+- AGENT_EVAL: Tier 3 evaluation complete: verdict PASS; best agent claude-code
 
 </details>
 
