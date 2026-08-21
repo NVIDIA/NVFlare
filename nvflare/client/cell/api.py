@@ -330,7 +330,40 @@ class CellClientAPI(APISpec):
         self._session_id = session_id
         self._heartbeat_interval = heartbeat_interval
         self._heartbeat_timeout = heartbeat_timeout
+        self._confirm_session_ready()
         self._note_cj_activity()
+
+    def _confirm_session_ready(self) -> None:
+        """Tell the CJ that HELLO_ACCEPTED processing and auth-filter setup are complete."""
+        started = time.monotonic()
+        deadline = started + _HELLO_TIMEOUT
+        attempt = 0
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                elapsed = time.monotonic() - started
+                raise TrainerSessionError(f"no SESSION_READY confirmation after {attempt} attempts over {elapsed:.1f}s")
+            attempt += 1
+            reply = self._cell.send_request(
+                channel=CHANNEL,
+                topic=Topic.SESSION_READY,
+                target=self._cj_fqcn,
+                request=new_cell_message({}, {MsgKey.SESSION_ID: self._session_id}),
+                timeout=min(_HELLO_RETRY_INTERVAL, remaining),
+            )
+            rc = None if reply is None else reply.get_header(MessageHeaderKey.RETURN_CODE)
+            body = None if reply is None else reply.payload
+            if (
+                rc == CellReturnCode.OK
+                and isinstance(body, dict)
+                and body.get(MsgKey.REPLY_TOPIC) == Topic.SESSION_READY
+                and body.get(MsgKey.SESSION_ID) == self._session_id
+            ):
+                return
+            if rc == CellReturnCode.OK and isinstance(body, dict) and body.get(MsgKey.REPLY_TOPIC) == Topic.ERROR:
+                raise TrainerSessionError(f"SESSION_READY rejected: {body.get(MsgKey.REASON)}")
+            self.logger.debug(f"SESSION_READY attempt {attempt} not confirmed (rc={rc}); retrying")
+            time.sleep(min(_HELLO_RETRY_INTERVAL, max(0.0, deadline - time.monotonic())))
 
     def _install_site_auth_headers(self, secure_mode, auth_token=None, token_signature=None) -> None:
         if type(secure_mode) is not bool:
