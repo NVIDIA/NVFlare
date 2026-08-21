@@ -40,10 +40,8 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 import yaml
 
-try:
-    from nvflare.app_common.widgets.intime_model_selector import _looks_lower_is_better as _core_looks_lower_is_better
-except ImportError:
-    _core_looks_lower_is_better = None
+_UNRESOLVED = object()
+_core_looks_lower_is_better = _UNRESOLVED
 
 AUTOFL_CONFIG_SCHEMA_VERSION = "nvflare.autofl.config.v1"
 IMPORTER_VERSION = "nvflare-autofl-job-importer/v1"
@@ -70,6 +68,7 @@ LOWER_IS_BETTER_METRIC_TOKENS = {
     "rmse",
     "wer",
 }
+ALREADY_NEGATED_METRIC_TOKEN = "neg"
 
 SUPPORTED_ENV_NAMES = {"PocEnv", "ProdEnv", "SimEnv"}
 NON_OPTIMIZATION_RECIPE_NAMES = {"FedEvalRecipe", "FedStatsRecipe", "NumpyCrossSiteEvalRecipe"}
@@ -1230,18 +1229,32 @@ def _resolve_stop_condition_mode(
     return None, None
 
 
+def _resolve_core_heuristic():
+    global _core_looks_lower_is_better
+
+    if _core_looks_lower_is_better is _UNRESOLVED:
+        try:
+            from nvflare.app_common.widgets.intime_model_selector import _looks_lower_is_better
+        except Exception:  # Core initialization failures must preserve the standalone fallback.
+            _core_looks_lower_is_better = None
+        else:
+            _core_looks_lower_is_better = _looks_lower_is_better
+    return _core_looks_lower_is_better
+
+
 def likely_lower_is_better_metric(metric: str) -> bool:
     """Return whether a metric name is an obvious lower-is-better objective."""
 
-    if _core_looks_lower_is_better is not None:
-        return _core_looks_lower_is_better(metric)
+    core_heuristic = _resolve_core_heuristic()
+    if core_heuristic is not None:
+        return core_heuristic(metric)
     return _fallback_looks_lower_is_better(metric)
 
 
 def _fallback_looks_lower_is_better(metric: str) -> bool:
     name = metric.lower()
     tokens = re.split(r"[^a-z0-9]+", name)
-    if "neg" in tokens:
+    if ALREADY_NEGATED_METRIC_TOKEN in tokens:
         return False
     if any(hint in name for hint in LOWER_IS_BETTER_METRIC_SUBSTRINGS):
         return True

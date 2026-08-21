@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from nvflare.app_common.widgets.intime_model_selector import _looks_lower_is_better
+from nvflare.app_common.widgets import intime_model_selector as ims
 
 
 def _load_importer():
@@ -1198,17 +1198,24 @@ def main():
     ],
 )
 def test_lower_is_better_metric_heuristic_matches_nvflare_core(metric, monkeypatch):
-    assert job_importer.likely_lower_is_better_metric(metric) is _looks_lower_is_better(metric)
+    assert job_importer.likely_lower_is_better_metric(metric) is ims._looks_lower_is_better(metric)
     monkeypatch.setattr(job_importer, "_core_looks_lower_is_better", None)
-    assert job_importer.likely_lower_is_better_metric(metric) is _looks_lower_is_better(metric)
+    assert job_importer.likely_lower_is_better_metric(metric) is ims._looks_lower_is_better(metric)
 
 
-def test_importer_loads_and_imports_job_without_nvflare_in_agent_environment(tmp_path, monkeypatch):
+def test_fallback_lower_is_better_metric_hints_match_nvflare_core():
+    assert set(job_importer.LOWER_IS_BETTER_METRIC_SUBSTRINGS) == set(ims._LOWER_IS_BETTER_SUBSTRING_HINTS)
+    assert job_importer.LOWER_IS_BETTER_METRIC_TOKENS == ims._LOWER_IS_BETTER_TOKEN_HINTS
+    assert job_importer.ALREADY_NEGATED_METRIC_TOKEN == ims._ALREADY_NEGATED_TOKEN
+
+
+@pytest.mark.parametrize("import_error", [ImportError, RuntimeError])
+def test_importer_loads_and_imports_job_without_nvflare_in_agent_environment(tmp_path, monkeypatch, import_error):
     original_import = builtins.__import__
 
     def isolated_import(name, globals=None, locals=None, fromlist=(), level=0):
         if name == "nvflare.app_common.widgets.intime_model_selector":
-            raise ImportError("NVFlare is unavailable in the agent environment")
+            raise import_error("NVFlare is unavailable in the agent environment")
         return original_import(name, globals, locals, fromlist, level)
 
     monkeypatch.setattr(builtins, "__import__", isolated_import)
@@ -1217,6 +1224,8 @@ def test_importer_loads_and_imports_job_without_nvflare_in_agent_environment(tmp
 
     config = isolated_importer.import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
 
+    assert isolated_importer._core_looks_lower_is_better is isolated_importer._UNRESOLVED
+    assert isolated_importer.likely_lower_is_better_metric("val_loss") is True
     assert isolated_importer._core_looks_lower_is_better is None
     assert config["import"]["support"]["status"] == "supported"
 
