@@ -91,6 +91,7 @@ SERVER_BEST_GLOBAL_MODEL_KEY_MARKER = "best_FL_global_model"
 CANDIDATE_MANIFEST_SCHEMA_VERSION = "nvflare.autofl.candidate.v1"
 CANDIDATE_MANIFEST_STATUSES = {"prepared", "ready_for_external_execution", "keep", "discard", "crash", "abandoned"}
 CAMPAIGN_METADATA_SCHEMA_VERSION = "nvflare.autofl.campaign.v1"
+METRIC_DIRECTION_CONTRACT_VERSION = 1
 CAMPAIGN_METADATA_PATH = ".nvflare/autofl/campaign.json"
 CANDIDATE_ROOT = ".nvflare/autofl/candidates"
 BEST_SNAPSHOT_ROOT = ".nvflare/autofl/snapshots/best"
@@ -381,8 +382,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     if args.uncapped:
         args.max_candidates = None
         args._explicit_settings.add("max_candidates")
-    # No CLI surface: campaigns always maximize. The constant keeps the persisted
-    # settings/state schema stable and lets the legacy-campaign gate compare against it.
+    # Objective direction has no runner CLI surface; initialize imports it from job.py,
+    # while later actions restore the persisted campaign contract.
     args.mode = "max"
     return args
 
@@ -964,6 +965,16 @@ def allowed_create_patterns(config: Dict[str, Any]) -> List[str]:
     return list(dict.fromkeys(values))
 
 
+def admitted_source_hashes(config: Dict[str, Any], workspace: Path) -> Dict[str, Optional[str]]:
+    hashes = {}
+    for relative in allowed_edit_paths(config, workspace):
+        path = workspace / relative
+        if path.is_symlink() or (path.exists() and not path.is_file()):
+            raise ValueError(f"campaign source path is not a regular file: {path}")
+        hashes[relative] = sha256_bytes(path.read_bytes()) if path.is_file() else None
+    return hashes
+
+
 def is_allowed_new_source(path: str, patterns: Sequence[str]) -> bool:
     relative = Path(path)
     if (
@@ -1268,6 +1279,16 @@ def load_campaign_metadata(workspace: Path, job: Path) -> Dict[str, Any]:
         raise ValueError("unsupported Auto-FL campaign metadata schema")
     if Path(str(metadata.get("job") or "")).resolve() != job.resolve():
         raise ValueError("campaign metadata belongs to a different job.py")
+    settings = metadata.get("settings")
+    if isinstance(settings, dict):
+        persisted_mode = settings.get("mode", "max")
+        legacy_min = (
+            persisted_mode == "min"
+            and metadata.get("metric_direction_contract_version") != METRIC_DIRECTION_CONTRACT_VERSION
+        )
+        if not legacy_min:
+            config_path = resolve_output_path(workspace, str(settings.get("autofl_yaml") or "autofl.yaml"))
+            campaign_contract_mode(metadata, read_yaml(config_path), settings.get("metric"))
     return metadata
 
 
@@ -1481,30 +1502,70 @@ def objective_contract(config: Dict[str, Any], requested_metric: Optional[str]) 
     extraction_order = [str(item) for item in extraction_order if item]
     if optimization not in extraction_order:
         extraction_order.insert(0, optimization)
+    mode = str(objective.get("mode") or "max").strip().lower()
+    if mode not in {"min", "max"}:
+        raise ValueError(f"objective.mode must be 'min' or 'max', but got {mode!r}")
     return {
         **objective,
         "metric": metric,
         "requested_metric": requested,
         "optimization_metric": optimization,
         "metric_extraction_order": extraction_order,
+        "mode": mode,
     }
+
+
+def job_key_metric_is_resolved(objective: Dict[str, Any]) -> bool:
+    """Return whether the job key metric has a trustworthy static identity."""
+
+    return objective.get("job_key_metric_source") != "default"
+
+
+def requested_metric_differs_from_job(objective: Dict[str, Any]) -> bool:
+    job_metric = objective.get("job_key_metric") or objective.get("metric")
+    requested_metric = objective.get("requested_metric") or objective.get("metric")
+    if not job_metric or not requested_metric:
+        return True
+    return not job_key_metric_is_resolved(objective) or str(requested_metric) != str(job_metric)
 
 
 def apply_metric_contract(
     config: Dict[str, Any], requested_metric: Optional[str], schema: Optional[Dict[str, Any]]
 ) -> Dict[str, Any]:
     objective = objective_contract(config, requested_metric)
+    requested_differs = requested_metric_differs_from_job(objective)
+    if requested_differs:
+        # Direction belongs to the requested metric. A different job key metric
+        # cannot supply it, so begin with NVFlare's default until the bridge says otherwise.
+        objective["mode"] = "max"
+        objective["mode_contract_source"] = "core_default"
     schema_objective = (schema or {}).get("objective", {})
     if isinstance(schema_objective, dict):
-        schema_mode = schema_objective.get("mode")
-        # Deliberate leniency: an explicit `mode: null` is tolerated and treated as max.
-        if schema_mode is not None and schema_mode != "max":
-            raise ValueError(
-                f"mutation_schema.yaml declares objective.mode={schema_mode!r}, which is not supported. "
-                f"{load_campaign_guard().MODE_MAX_ONLY_MESSAGE}"
-            )
         schema_requested = schema_objective.get("requested_metric") or schema_objective.get("metric")
-        if not schema_requested or schema_requested == objective["requested_metric"]:
+        schema_applies = schema_requested == objective["requested_metric"] or (
+            not schema_requested and not requested_differs
+        )
+        if schema_applies:
+            schema_mode = schema_objective.get("mode")
+            if schema_mode is not None:
+                schema_mode = str(schema_mode).strip().lower()
+                if schema_mode not in {"min", "max"}:
+                    raise ValueError(
+                        f"mutation_schema.yaml objective.mode must be 'min' or 'max', but got {schema_mode!r}"
+                    )
+                if not requested_differs and schema_mode != objective["mode"]:
+                    if objective.get("mode_contract_source") == "core_default":
+                        raise ValueError(
+                            "mutation_schema.yaml objective.mode conflicts with NVFlare's implicit 'max' default for "
+                            f"the job key metric; set key_metric_mode={schema_mode!r} in job.py and initialize again"
+                        )
+                    raise ValueError(
+                        "mutation_schema.yaml objective.mode conflicts with job.py key_metric_mode; "
+                        "job.py is authoritative for its key metric"
+                    )
+                if requested_differs:
+                    objective["mode"] = schema_mode
+                    objective["mode_contract_source"] = "mutation_schema"
             for key in ("optimization_metric", "metric_extraction_order", "metric_source"):
                 if key in schema_objective:
                     objective[key] = schema_objective[key]
@@ -1518,6 +1579,29 @@ def metric_extraction_order(config: Dict[str, Any], requested_metric: Optional[s
 
 def optimization_metric(config: Dict[str, Any], requested_metric: Optional[str]) -> str:
     return str(objective_contract(config, requested_metric)["optimization_metric"])
+
+
+def objective_mode(config: Dict[str, Any], requested_metric: Optional[str] = None) -> str:
+    return str(objective_contract(config, requested_metric)["mode"])
+
+
+def campaign_contract_mode(
+    metadata: Dict[str, Any], config: Dict[str, Any], requested_metric: Optional[str] = None
+) -> str:
+    settings = metadata.get("settings")
+    if not isinstance(settings, dict):
+        raise ValueError("campaign metadata is missing settings")
+    persisted_mode = settings.get("mode", "max")
+    if persisted_mode not in {"min", "max"}:
+        raise ValueError(f"campaign metadata has invalid objective mode {persisted_mode!r}")
+    config_mode = objective_mode(config, requested_metric)
+    if persisted_mode != config_mode:
+        raise ValueError(
+            "campaign metric direction disagrees between campaign.json settings.mode "
+            f"({persisted_mode!r}) and autofl.yaml objective.mode ({config_mode!r}); "
+            "restore the admitted campaign artifacts before continuing"
+        )
+    return config_mode
 
 
 def metric_source(config: Dict[str, Any]) -> str:
@@ -2604,8 +2688,8 @@ def load_results(path: Path) -> List[RunRecord]:
     return records
 
 
-def better(new_score: Optional[float], old_score: Optional[float]) -> bool:
-    return load_campaign_guard().better(new_score, old_score)
+def better(new_score: Optional[float], old_score: Optional[float], mode: str = "max") -> bool:
+    return load_campaign_guard().better(new_score, old_score, mode)
 
 
 def write_state(
@@ -2614,6 +2698,7 @@ def write_state(
     records: List[RunRecord],
     max_candidates: Optional[int],
     *,
+    mode: str = "max",
     stop_files: Optional[List[str]] = None,
     plateau_threshold: Optional[int] = None,
     plateau_min_delta: Optional[float] = None,
@@ -2639,6 +2724,7 @@ def write_state(
         plateau_threshold=plateau_threshold,
         min_delta=plateau_min_delta,
         hard_crash_threshold=hard_crash_threshold,
+        mode=mode,
         pending_manifest_count=pending_manifest_count,
         exploration_batch_size=exploration_batch_size,
         family_repeat_limit=family_repeat_limit,
@@ -2688,7 +2774,7 @@ def load_progress_plotter():
     return load_sibling_module("plot_progress.py", "nvflare_autofl_plot_progress")
 
 
-def write_progress_fallback(path: Path, records: List[RunRecord], metric_label: str) -> None:
+def write_progress_fallback(path: Path, records: List[RunRecord], metric_label: str, mode: str = "max") -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
         from PIL import Image, ImageDraw, ImageFont
@@ -2728,7 +2814,7 @@ def write_progress_fallback(path: Path, records: List[RunRecord], metric_label: 
             color = (40, 160, 90) if record.status in {"baseline", "keep"} else (150, 150, 150)
             draw.ellipse((x - 5, y - 5, x + 5, y + 5), fill=color, outline="black")
             draw.text((x + 6, y - 14), f"{record.name}: {record.score:.3f}", fill=color, font=font)
-            if better(record.score, running_best):
+            if better(record.score, running_best, mode):
                 running_best = record.score
             if running_best == record.score:
                 if last_point:
@@ -2737,19 +2823,20 @@ def write_progress_fallback(path: Path, records: List[RunRecord], metric_label: 
     image.save(path)
 
 
-def write_progress(path: Path, records: List[RunRecord], metric_label: str) -> None:
+def write_progress(path: Path, records: List[RunRecord], metric_label: str, mode: str = "max") -> None:
     plotter = load_progress_plotter()
     try:
-        plotter.plot_progress(records, path, metric_label)
+        plotter.plot_progress(records, path, metric_label, mode=mode)
     except (plotter.NoScoredResultsError, plotter.PlotDependencyError):
-        write_progress_fallback(path, records, metric_label)
+        write_progress_fallback(path, records, metric_label, mode)
 
 
 def write_report(path: Path, config: Dict[str, Any], records: List[RunRecord], args: argparse.Namespace) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    mode = objective_mode(config, args.metric)
     best = None
     for record in records:
-        if record.status in {"baseline", "keep"} and better(record.score, best.score if best else None):
+        if record.status in {"baseline", "keep"} and better(record.score, best.score if best else None, mode):
             best = record
     candidate_budget = (
         str(args.max_candidates) if args.max_candidates is not None else "uncapped; runs until manual interruption"
@@ -2758,7 +2845,7 @@ def write_report(path: Path, config: Dict[str, Any], records: List[RunRecord], a
     lines = [
         "# Auto-FL Report",
         "",
-        f"Objective: optimize `{objective['optimization_metric']}` in `{args.target_env}`.",
+        f"Objective: optimize `{objective['optimization_metric']}` ({mode}) in `{args.target_env}`.",
         f"Requested metric: `{objective['requested_metric']}`.",
         f"Metric source: `{metric_source(config)}`.",
         f"Metric extraction order: `{', '.join(objective['metric_extraction_order'])}`.",
@@ -2927,12 +3014,15 @@ def restore_campaign_settings(args: argparse.Namespace, metadata: Dict[str, Any]
             file=sys.stderr,
         )
     persisted_mode = settings.get("mode", "max")
-    if persisted_mode != "max":
+    if persisted_mode not in {"min", "max"}:
+        raise ValueError(f"campaign metadata has invalid objective mode {persisted_mode!r}")
+    if (
+        persisted_mode == "min"
+        and metadata.get("metric_direction_contract_version") != METRIC_DIRECTION_CONTRACT_VERSION
+    ):
         raise ValueError(
-            f"campaign was initialized with mode={persisted_mode!r}, which is no longer supported. "
-            f"{load_campaign_guard().MODE_MAX_ONLY_MESSAGE} Delete the campaign's .nvflare/autofl "
-            "directory (or start in a fresh workspace) and initialize again with a metric whose "
-            "higher values are better."
+            "campaign was initialized with legacy mode='min' without native metric-direction provenance. "
+            "Delete the campaign's .nvflare/autofl directory or start in a fresh workspace, then initialize again."
         )
     explicit = getattr(args, "_explicit_settings", set())
     changed = False
@@ -3028,6 +3118,8 @@ def import_job_config(
     output: Path,
     log_path: Path,
     timeout: int,
+    *,
+    persist: bool = True,
 ) -> Dict[str, Any]:
     del timeout
     importer = load_job_importer()
@@ -3039,6 +3131,13 @@ def import_job_config(
         max_candidates=args.max_candidates,
         job_args=shlex.split(args.base_args),
     )
+    if persist:
+        write_import_artifacts(config, job, output, log_path)
+    return config
+
+
+def write_import_artifacts(config: Dict[str, Any], job: Path, output: Path, log_path: Path) -> None:
+    importer = load_job_importer()
     atomic_write_bytes(output, importer.dump_autofl_yaml(config).encode("utf-8"))
     atomic_write_bytes(
         log_path,
@@ -3056,10 +3155,20 @@ def import_job_config(
             + "\n"
         ).encode("utf-8"),
     )
-    return config
 
 
-def campaign_admission_errors(config: Dict[str, Any]) -> List[str]:
+def mutation_schema_declares_metric_bridge(config: Dict[str, Any], schema: Dict[str, Any]) -> bool:
+    objective = objective_contract(config, None)
+    if not requested_metric_differs_from_job(objective):
+        return True
+    schema_objective = schema.get("objective")
+    if not isinstance(schema_objective, dict):
+        return False
+    schema_requested = schema_objective.get("requested_metric") or schema_objective.get("metric")
+    return schema_requested == objective["requested_metric"] and bool(schema_objective.get("optimization_metric"))
+
+
+def campaign_admission_errors(config: Dict[str, Any], schema: Optional[Dict[str, Any]] = None) -> List[str]:
     errors = []
     support = config.get("import", {}).get("support", {})
     if not isinstance(support, dict) or support.get("status") != "supported":
@@ -3073,17 +3182,40 @@ def campaign_admission_errors(config: Dict[str, Any]) -> List[str]:
         critical_fields = []
         for item in unresolved:
             field = item.get("field", "") if isinstance(item, dict) else ""
-            if field == "objective.metric" or field.startswith("budget.fixed_training_budget"):
+            if field in {"objective.metric", "objective.mode"} or field.startswith("budget.fixed_training_budget"):
                 critical_fields.append(field)
         if critical_fields:
             errors.append(f"safety-critical fields are unresolved: {', '.join(sorted(set(critical_fields)))}")
+    objective = objective_contract(config, None)
+    schema = schema or {}
+    if not mutation_schema_declares_metric_bridge(config, schema):
+        errors.append(
+            "AUTOFL_METRIC_NOT_DECLARED: the requested metric differs from job.py key_metric; "
+            "declare the requested and optimization metrics in mutation_schema.yaml"
+        )
+    importer = load_job_importer()
+    if (
+        objective["mode"] == "max"
+        and objective.get("mode_contract_source") == "core_default"
+        and importer.likely_lower_is_better_metric(objective["optimization_metric"])
+    ):
+        guidance = (
+            "declare objective.mode='min' in the mutation_schema.yaml metric bridge"
+            if requested_metric_differs_from_job(objective)
+            else "set key_metric_mode='min' in job.py"
+        )
+        errors.append(
+            "AUTOFL_METRIC_DIRECTION_CONFLICT: the lower-is-better metric "
+            f"{objective['optimization_metric']!r} would use NVFlare's implicit 'max' default; "
+            f"{guidance} and initialize again"
+        )
     return errors
 
 
-def best_retained_record(records: Sequence[RunRecord]) -> Optional[RunRecord]:
+def best_retained_record(records: Sequence[RunRecord], mode: str = "max") -> Optional[RunRecord]:
     best = None
     for record in records:
-        if record.status in {"baseline", "keep"} and better(record.score, best.score if best else None):
+        if record.status in {"baseline", "keep"} and better(record.score, best.score if best else None, mode):
             best = record
     return best
 
@@ -3103,11 +3235,13 @@ def refresh_campaign_artifacts(
     if pending_manifest is not None and pending_manifest not in pending_manifests:
         pending_manifests.append(pending_manifest)
     write_results(paths["results"], records)
+    mode = objective_mode(config, args.metric)
     state = write_state(
         paths["state"],
         paths["results"],
         records,
         args.max_candidates,
+        mode=mode,
         stop_files=resolve_stop_files(paths["workspace"], args.stop_file),
         plateau_threshold=args.plateau_threshold,
         plateau_min_delta=args.plateau_min_delta,
@@ -3140,7 +3274,7 @@ def refresh_campaign_artifacts(
         }
     )
     write_json(paths["state"], state)
-    write_progress(paths["progress"], records, optimization_metric(config, args.metric))
+    write_progress(paths["progress"], records, optimization_metric(config, args.metric), mode)
     write_report(paths["report"], config, records, args)
     return state
 
@@ -3185,6 +3319,50 @@ def execute_sim_baseline(
         metrics=metric_extraction_order(config, args.metric),
         config=config,
     )
+
+
+def prepare_initial_campaign(args: argparse.Namespace, job: Path) -> None:
+    """Build and admit a new campaign contract without writing campaign artifacts."""
+
+    if args.confirm_user_approved_cap_change:
+        raise ValueError("--confirm-user-approved-cap-change is not valid for an initial campaign cap")
+    paths = campaign_paths(args, job)
+    schema = load_mutation_schema(job.parent)
+    timeout, _ = campaign_timeout(args, schema)
+    config = import_job_config(
+        args,
+        job,
+        paths["autofl_yaml"],
+        paths["output_root"] / "import.log",
+        timeout,
+        persist=False,
+    )
+    config = apply_metric_contract(config, args.metric, schema)
+    args.metric = str(config.get("objective", {}).get("requested_metric") or config["objective"]["metric"])
+    args.mode = objective_mode(config, args.metric)
+    config = apply_mutation_schema_contract(config, schema, job.parent)
+    config.setdefault("trust_contract", {})["allowed_create_patterns"] = list(ALLOWED_CREATE_PATTERNS)
+    admission_errors = campaign_admission_errors(config, schema)
+    if admission_errors:
+        raise ValueError(
+            "baseline execution is unsafe: "
+            f"{'; '.join(admission_errors)}. Repair the job metric contract and initialize again."
+        )
+    args._initial_config = config
+    args._initial_source_hashes = admitted_source_hashes(config, job.parent)
+    args._initial_schema_sha256 = sha256_json(schema)
+
+
+def admitted_initial_campaign(args: argparse.Namespace, job: Path) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    config = getattr(args, "_initial_config", None)
+    if not isinstance(config, dict):
+        raise ValueError("new campaign initialization was not admitted before acquiring the workspace lock")
+    if getattr(args, "_initial_source_hashes", None) != admitted_source_hashes(config, job.parent):
+        raise ValueError("campaign source changed after metric-contract admission; retry initialization")
+    schema = load_mutation_schema(job.parent)
+    if getattr(args, "_initial_schema_sha256", None) != sha256_json(schema):
+        raise ValueError("mutation_schema.yaml changed after metric-contract admission; retry initialization")
+    return config, schema
 
 
 def initialize_campaign(args: argparse.Namespace, job: Path) -> int:
@@ -3233,25 +3411,10 @@ def initialize_campaign(args: argparse.Namespace, job: Path) -> int:
         print_campaign_result(paths, records, read_json(paths["state"]), initialized=False)
         return 0
 
-    if args.confirm_user_approved_cap_change:
-        raise ValueError("--confirm-user-approved-cap-change is not valid for an initial campaign cap")
-
     paths = campaign_paths(args, job)
+    config, schema = admitted_initial_campaign(args, job)
     paths["output_root"].mkdir(parents=True, exist_ok=True)
-    schema = load_mutation_schema(workspace)
-    timeout, _ = campaign_timeout(args, schema)
-    config = import_job_config(args, job, paths["autofl_yaml"], paths["output_root"] / "import.log", timeout)
-    config = apply_metric_contract(config, args.metric, schema)
-    args.metric = str(config.get("objective", {}).get("requested_metric") or config["objective"]["metric"])
-    config = apply_mutation_schema_contract(config, schema, workspace)
-    config.setdefault("trust_contract", {})["allowed_create_patterns"] = list(ALLOWED_CREATE_PATTERNS)
-    write_yaml(paths["autofl_yaml"], config)
-    admission_errors = campaign_admission_errors(config)
-    if admission_errors:
-        raise ValueError(
-            f"autofl.yaml was generated at {paths['autofl_yaml']}, but baseline execution is unsafe: "
-            f"{'; '.join(admission_errors)}. Resolve these fields and initialize again."
-        )
+    write_import_artifacts(config, job, paths["autofl_yaml"], paths["output_root"] / "import.log")
     snapshot_files = create_best_snapshot(workspace, config, paths["snapshot_root"])
     metadata = {
         "schema_version": CAMPAIGN_METADATA_SCHEMA_VERSION,
@@ -3264,6 +3427,7 @@ def initialize_campaign(args: argparse.Namespace, job: Path) -> int:
         "best_score": None,
         "best_source_sha256": source_hash(snapshot_files),
         "fixed_budget_sha256": fixed_budget_hash(config),
+        "metric_direction_contract_version": METRIC_DIRECTION_CONTRACT_VERSION,
     }
     write_json(metadata_path, metadata)
 
@@ -3326,11 +3490,13 @@ def refresh_campaign_state(
     """Recompute and persist campaign_state.json under the current effective settings without running a job."""
     records = load_results(paths["results"])
     pending = pending_candidate_manifests(job.parent)
+    mode = campaign_contract_mode(metadata, read_yaml(paths["autofl_yaml"]), args.metric)
     state = write_state(
         paths["state"],
         paths["results"],
         records,
         args.max_candidates,
+        mode=mode,
         stop_files=resolve_stop_files(job.parent, args.stop_file),
         plateau_threshold=args.plateau_threshold,
         plateau_min_delta=args.plateau_min_delta,
@@ -3391,6 +3557,8 @@ def prepare_candidate(args: argparse.Namespace, job: Path) -> int:
 
     draft_source = candidate_dir / "source"
     shutil.copytree(best_source, draft_source)
+    config = read_yaml(paths["autofl_yaml"])
+    objective = objective_contract(config, args.metric)
     manifest = {
         "schema_version": CANDIDATE_MANIFEST_SCHEMA_VERSION,
         "candidate_id": candidate_id,
@@ -3405,8 +3573,7 @@ def prepare_candidate(args: argparse.Namespace, job: Path) -> int:
         "base_candidate": metadata.get("best_candidate"),
         "base_source_sha256": source_hash(best_files),
         "fixed_budget_sha256": metadata.get("fixed_budget_sha256"),
-        # mode is a constant for schema stability: campaigns always maximize the metric.
-        "objective": {"metric": args.metric, "mode": "max"},
+        "objective": {"metric": objective["optimization_metric"], "mode": objective["mode"]},
         "environment": args.target_env,
         "run_args": shlex.split(args.run_args),
         "changed_files": [],
@@ -3421,7 +3588,6 @@ def prepare_candidate(args: argparse.Namespace, job: Path) -> int:
         "result": {},
     }
     write_json(manifest_path, manifest)
-    config = read_yaml(paths["autofl_yaml"])
     state = refresh_campaign_artifacts(
         args,
         paths,
@@ -3542,10 +3708,58 @@ def update_config_for_kept_sources(config: Dict[str, Any], created: Sequence[str
             trust_paths.append(relative)
 
 
+def assumed_job_key_metric_mode(recorded_objective: Dict[str, Any], current_objective: Dict[str, Any]) -> str:
+    """Backfill a missing job-key mode without fabricating metric identity.
+
+    Campaigns from the max-only era used ``max``. Intermediate native-direction
+    campaigns may omit the field but can reuse their recorded mode when job
+    provenance proves the requested metric was the resolved job key metric.
+    """
+
+    directly_imported_mode = str(recorded_objective.get("mode_contract_source") or "").startswith("job:")
+    if directly_imported_mode and not requested_metric_differs_from_job(recorded_objective):
+        return current_objective["mode"]
+    return "max"
+
+
 def candidate_campaign_config(
     candidate_config: Dict[str, Any], current_config: Dict[str, Any], args: argparse.Namespace, schema: Dict[str, Any]
 ) -> Dict[str, Any]:
     candidate_config = apply_metric_contract(candidate_config, args.metric, schema)
+    candidate_errors = campaign_admission_errors(candidate_config, schema)
+    if candidate_errors:
+        raise ValueError(f"candidate changes the admitted metric contract: {'; '.join(candidate_errors)}")
+    candidate_objective = objective_contract(candidate_config, args.metric)
+    current_objective = objective_contract(current_config, args.metric)
+    invariant_fields = (
+        "requested_metric",
+        "optimization_metric",
+        "metric_extraction_order",
+        "metric_source",
+        "mode",
+        "job_key_metric",
+        "job_key_metric_mode",
+    )
+    recorded_objective = current_config.get("objective", {})
+    if not isinstance(recorded_objective, dict):
+        recorded_objective = {}
+    drift = []
+    for invariant_field in invariant_fields:
+        if invariant_field == "job_key_metric" and invariant_field not in recorded_objective:
+            continue
+        current_value = current_objective.get(invariant_field)
+        if invariant_field == "job_key_metric_mode" and invariant_field not in recorded_objective:
+            current_value = assumed_job_key_metric_mode(recorded_objective, current_objective)
+        if candidate_objective.get(invariant_field) != current_value:
+            drift.append(invariant_field)
+    if drift:
+        message = f"candidate changes objective metric invariants: {', '.join(drift)}"
+        if {"mode", "job_key_metric_mode"} & set(drift):
+            message += (
+                "; the direction contract changed, so delete the campaign's .nvflare/autofl directory "
+                "(or start in a fresh workspace) and initialize again"
+            )
+        raise ValueError(message)
     candidate_config["objective"] = dict(current_config.get("objective", {}))
     current_paths = current_config.get("trust_contract", {}).get("allowed_edit_paths", []) or []
     trust_paths = candidate_config.setdefault("trust_contract", {}).setdefault("allowed_edit_paths", [])
@@ -3577,10 +3791,11 @@ def finalize_candidate_result(
     previous_snapshot = None
     try:
         records = load_results(paths["results"])
-        previous_best = best_retained_record(records)
+        mode = objective_mode(config, args.metric)
+        previous_best = best_retained_record(records, mode)
         if record.status == "candidate":
             record.status = (
-                "keep" if better(record.score, previous_best.score if previous_best else None) else "discard"
+                "keep" if better(record.score, previous_best.score if previous_best else None, mode) else "discard"
             )
         patch_path = manifest_path.parent / "candidate.patch"
         rollback_files = capture_file_versions(
@@ -4128,6 +4343,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             "record": record_external_result,
             "status": show_campaign_status,
         }
+        if args.action == "initialize" and not campaign_metadata_path(job.parent).exists():
+            prepare_initial_campaign(args, job)
         with locked_campaign_workspace(job.parent, args.action):
             return actions[args.action](args, job)
     except (OSError, RuntimeError, ValueError) as e:
