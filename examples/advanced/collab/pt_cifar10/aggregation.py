@@ -17,20 +17,15 @@
 from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
 
 
-def materialize_results(client_results) -> dict:
-    """Reject failed calls and materialize the single-pass result queue."""
+def aggregate_result(client_results, result_key: str, round_number: int, weight_by_steps: bool = True):
+    """Aggregate one tensor dictionary from each client result."""
 
     # Group calls expose failures separately, so stop before aggregating a partial round.
     if client_results.failures:
         raise next(iter(client_results.failures.values()))
-    return dict(client_results)
-
-
-def aggregate_result(client_results: dict, result_key: str, round_number: int, weight_by_steps: bool = True):
-    """Aggregate one tensor dictionary from each client result."""
 
     helper = WeightedAggregationHelper()
-    for site_name, result in client_results.items():
+    for site_name, result in client_results:
         helper.add(
             data=result[result_key],
             weight=result["num_steps"] if weight_by_steps else 1,

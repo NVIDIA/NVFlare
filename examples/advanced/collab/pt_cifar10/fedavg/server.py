@@ -18,7 +18,7 @@ import torch
 
 from nvflare.collab import collab
 
-from ..aggregation import aggregate_result, materialize_results
+from ..aggregation import aggregate_result
 from ..loader import make_data_loader
 from ..model import SimpleNetwork, get_model_state
 from .client import BATCH_SIZE
@@ -53,8 +53,8 @@ class FedAvgServer:
         global_weights = get_model_state(model)
 
         for round_number in range(self.num_rounds):
-            # Group calls return successes plus failures; materialize_results rejects any failed client.
-            client_results = materialize_results(collab.clients(timeout=TRAIN_TIMEOUT).train(global_weights))
+            # Blocking group calls return replayable successful results plus any per-client failures.
+            client_results = collab.clients(timeout=TRAIN_TIMEOUT).train(global_weights)
             global_weights = aggregate_result(client_results, "weights", round_number)
             model.load_state_dict(global_weights)
             accuracy = self.evaluate(model, test_loader)

@@ -126,15 +126,15 @@ with the Collab API:
 @collab.main
 def run(self):
     ...
-    # The group call returns successful results plus failures for every client.
-    client_results = materialize_results(
-        collab.clients(timeout=TRAIN_TIMEOUT).train(global_weights)
-    )
+    # A blocking group call returns replayable results plus per-client failures.
+    client_results = collab.clients(timeout=TRAIN_TIMEOUT).train(global_weights)
+    global_weights = aggregate_result(client_results, "weights", round_number)
 ```
 
 The SCAFFOLD server follows the same round loop and also exchanges global and
-local control variates. Model weights are weighted by local steps, while control
-deltas are averaged uniformly across clients.
+local control variates. Blocking group-call results are replayable, so the same
+results feed both aggregation passes. Model weights are weighted by local steps,
+while control deltas are averaged uniformly across clients.
 
 ## Job Recipe Code
 

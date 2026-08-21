@@ -18,7 +18,7 @@ import torch
 
 from nvflare.collab import collab
 
-from ..aggregation import aggregate_result, materialize_results
+from ..aggregation import aggregate_result
 from ..fedavg.client import BATCH_SIZE
 from ..fedavg.server import TRAIN_TIMEOUT, FedAvgServer
 from ..loader import make_data_loader
@@ -39,11 +39,9 @@ class ScaffoldServer(FedAvgServer):
 
         for round_number in range(self.num_rounds):
             # The call maps to ScaffoldClient.train and sends both model and control state.
-            client_results = materialize_results(
-                collab.clients(timeout=TRAIN_TIMEOUT).train(global_weights, global_controls)
-            )
+            client_results = collab.clients(timeout=TRAIN_TIMEOUT).train(global_weights, global_controls)
             global_weights = aggregate_result(client_results, "weights", round_number)
-            # SCAFFOLD averages control deltas uniformly across participating clients.
+            # Blocking results are replayable; SCAFFOLD averages their control deltas uniformly.
             control_delta = aggregate_result(client_results, "control_delta", round_number, weight_by_steps=False)
             for name, delta in control_delta.items():
                 global_controls[name].add_(delta)
