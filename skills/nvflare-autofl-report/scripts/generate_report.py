@@ -19,7 +19,9 @@ from __future__ import annotations
 
 import argparse
 import csv
+import functools
 import importlib.util
+import inspect
 import json
 import math
 import os
@@ -86,44 +88,72 @@ def product_autofl_script_path(name: str) -> Path:
     return Path(__file__).resolve().parents[2] / "nvflare-autofl" / "scripts" / name
 
 
-def load_training_budget_args() -> set:
-    """Use the installed producer's comparison vocabulary when it is available."""
-
-    runner_path = product_autofl_script_path("run_job_campaign.py")
-    if not runner_path.is_file():
-        return set(FALLBACK_TRAINING_BUDGET_ARGS)
-    module_name = "nvflare_autofl_report_runner_contract"
-    spec = importlib.util.spec_from_file_location(module_name, runner_path)
+def _load_product_module(script_name: str, module_name: str, *, catch_system_exit: bool = False):
+    module_path = product_autofl_script_path(script_name)
+    if not module_path.is_file():
+        return None
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
     if spec is None or spec.loader is None:
-        return set(FALLBACK_TRAINING_BUDGET_ARGS)
+        return None
     module = importlib.util.module_from_spec(spec)
     previous_module = sys.modules.get(module_name)
     sys.modules[module_name] = module
     try:
         spec.loader.exec_module(module)
-        mapping = getattr(module, "COMPARISON_BUDGET_TO_CLI", None)
-        fixed_mapping = getattr(module, "FIXED_BUDGET_TO_CLI", None)
-        mappings = (mapping, fixed_mapping)
-        if not all(
-            isinstance(candidate, dict)
-            and all(isinstance(key, str) and isinstance(value, str) for key, value in candidate.items())
-            for candidate in mappings
-        ):
-            return set(FALLBACK_TRAINING_BUDGET_ARGS)
-        return (
-            set(mapping)
-            | set(mapping.values())
-            | set(fixed_mapping)
-            | set(fixed_mapping.values())
-            | SPECIAL_COMPARISON_BUDGET_ARGS
-        )
+        return module
+    except SystemExit:
+        if not catch_system_exit:
+            raise
+        return None
     except Exception:
-        return set(FALLBACK_TRAINING_BUDGET_ARGS)
+        return None
     finally:
         if previous_module is None:
             sys.modules.pop(module_name, None)
         else:
             sys.modules[module_name] = previous_module
+
+
+def load_training_budget_args() -> set:
+    """Use the installed producer's comparison vocabulary when it is available."""
+
+    module = _load_product_module("run_job_campaign.py", "nvflare_autofl_report_runner_contract")
+    if module is None:
+        return set(FALLBACK_TRAINING_BUDGET_ARGS)
+    mapping = getattr(module, "COMPARISON_BUDGET_TO_CLI", None)
+    fixed_mapping = getattr(module, "FIXED_BUDGET_TO_CLI", None)
+    mappings = (mapping, fixed_mapping)
+    if not all(
+        isinstance(candidate, dict)
+        and all(isinstance(key, str) and isinstance(value, str) for key, value in candidate.items())
+        for candidate in mappings
+    ):
+        return set(FALLBACK_TRAINING_BUDGET_ARGS)
+    return (
+        set(mapping)
+        | set(mapping.values())
+        | set(fixed_mapping)
+        | set(fixed_mapping.values())
+        | SPECIAL_COMPARISON_BUDGET_ARGS
+    )
+
+
+def load_campaign_guard_contract():
+    """Load product comparison semantics when the Auto-FL producer skill is installed."""
+
+    module = _load_product_module(
+        "campaign_guard.py", "nvflare_autofl_report_campaign_guard_contract", catch_system_exit=True
+    )
+    if module is None or not all(
+        callable(getattr(module, name, None)) for name in ("validate_mode", "better", "improvement_over_baseline")
+    ):
+        return None
+    return module
+
+
+@functools.lru_cache(maxsize=1)
+def campaign_guard_contract():
+    return load_campaign_guard_contract()
 
 
 TRAINING_BUDGET_ARGS = load_training_budget_args()
@@ -392,12 +422,26 @@ def load_config(path: Path) -> Dict[str, Any]:
     return value
 
 
-def better(score: Optional[float], incumbent: Optional[float]) -> bool:
+def validate_mode(mode: str) -> str:
+    mode = str(mode).strip().lower()
+    contract = campaign_guard_contract()
+    if contract is not None:
+        return contract.validate_mode(mode)
+    if mode not in {"min", "max"}:
+        raise ValueError(f"objective mode must be 'min' or 'max', but got {mode!r}")
+    return mode
+
+
+def better(score: Optional[float], incumbent: Optional[float], mode: str = "max") -> bool:
+    contract = campaign_guard_contract()
+    if contract is not None:
+        return contract.better(score, incumbent, validate_mode(mode))
+    mode = validate_mode(mode)
     if score is None:
         return False
     if incumbent is None:
         return True
-    return score > incumbent
+    return score < incumbent if mode == "min" else score > incumbent
 
 
 def normalize_contract_sections(config: Dict[str, Any]) -> Tuple[Dict[str, Any], List[str]]:
@@ -429,17 +473,30 @@ def metric_contract(
     return str(metric), str(requested), str(measurement_source), str(contract_source)
 
 
-def validate_maximization(config: Dict[str, Any], state: Dict[str, Any]) -> str:
+def metric_mode(config: Dict[str, Any], state: Dict[str, Any]) -> str:
     objective = config.get("objective") if isinstance(config.get("objective"), dict) else {}
+    direction = objective.get("direction")
+    if direction is not None:
+        direction = {"maximize": "max", "minimize": "min"}.get(str(direction).strip().lower(), direction)
     declared = [
         ("autofl.yaml objective.mode", objective.get("mode")),
-        ("autofl.yaml objective.direction", objective.get("direction")),
+        ("autofl.yaml objective.direction", direction),
         ("campaign state mode", state.get("mode")),
     ]
+    resolved = []
     for source, value in declared:
-        if value is not None and str(value).strip().lower() != "max":
-            raise ValueError(f"{source}={value!r} is unsupported; product Auto-FL campaigns maximize their metric")
-    return "max"
+        if value is not None:
+            resolved.append((source, validate_mode(value)))
+    modes = {value for _, value in resolved}
+    if len(modes) > 1:
+        details = ", ".join(f"{source}={value!r}" for source, value in resolved)
+        raise ValueError(f"metric direction disagrees across campaign artifacts: {details}")
+    mode = next(iter(modes), "max")
+    if mode == "min" and not objective.get("mode_contract_source"):
+        raise ValueError(
+            "legacy minimization campaign lacks native metric-direction provenance; initialize a fresh campaign"
+        )
+    return mode
 
 
 def verify_stopped(state_path: Path, confirm_interrupted: bool) -> Tuple[Dict[str, Any], str, List[str]]:
@@ -545,7 +602,7 @@ def select_baseline(records: Sequence[RunRecord]) -> Optional[RunRecord]:
     )
 
 
-def select_best(records: Sequence[RunRecord], retained_only: bool = False) -> Optional[RunRecord]:
+def select_best(records: Sequence[RunRecord], retained_only: bool = False, mode: str = "max") -> Optional[RunRecord]:
     candidates = [
         record
         for record in records
@@ -554,14 +611,15 @@ def select_best(records: Sequence[RunRecord], retained_only: bool = False) -> Op
     ]
     if not candidates:
         return None
-    return max(candidates, key=lambda record: record.score)
+    selector = min if validate_mode(mode) == "min" else max
+    return selector(candidates, key=lambda record: record.score)
 
 
-def running_best_milestones(records: Sequence[RunRecord], limit: int) -> List[Dict[str, Any]]:
+def running_best_milestones(records: Sequence[RunRecord], limit: int, mode: str = "max") -> List[Dict[str, Any]]:
     milestones = []
     incumbent = None
     for record in records:
-        if not is_finalized_scored_record(record) or not better(record.score, incumbent):
+        if not is_finalized_scored_record(record) or not better(record.score, incumbent, mode):
             continue
         previous = incumbent
         incumbent = record.score
@@ -573,7 +631,7 @@ def running_best_milestones(records: Sequence[RunRecord], limit: int) -> List[Di
                 "score": record.score,
                 "delta_from_previous_best": None if previous is None else record.score - previous,
                 "improvement_from_previous_best": (
-                    None if previous is None else improvement_amount(record.score, previous)
+                    None if previous is None else improvement_amount(record.score, previous, mode)
                 ),
                 "hypothesis": record.diff_summary,
                 "changed_files": split_files(record.changed_files),
@@ -600,8 +658,11 @@ def running_best_milestones(records: Sequence[RunRecord], limit: int) -> List[Di
     return milestones
 
 
-def improvement_amount(score: float, incumbent: float) -> float:
-    return score - incumbent
+def improvement_amount(score: float, incumbent: float, mode: str = "max") -> float:
+    contract = campaign_guard_contract()
+    if contract is not None:
+        return contract.improvement_over_baseline(incumbent, score, validate_mode(mode))
+    return incumbent - score if validate_mode(mode) == "min" else score - incumbent
 
 
 def split_files(value: str) -> List[str]:
@@ -771,6 +832,7 @@ def literature_outcomes(
     records: Sequence[RunRecord],
     exploration_batch: Optional[Dict[str, Any]] = None,
     termination_reason: Optional[str] = None,
+    mode: str = "max",
 ) -> List[Dict[str, Any]]:
     events = []
     for index, record in enumerate(records):
@@ -779,7 +841,7 @@ def literature_outcomes(
     outcomes = []
     validated_batch = validated_exploration_batch(exploration_batch)
     for start, event, event_id in events:
-        before = select_best(records[:start], retained_only=True)
+        before = select_best(records[:start], retained_only=True, mode=mode)
         attempts = [
             record
             for index, record in enumerate(records)
@@ -790,7 +852,7 @@ def literature_outcomes(
             and record.literature_event_id == event_id
         ]
         scored = [record for record in attempts if is_finalized_scored_record(record)]
-        segment_best = select_best(scored)
+        segment_best = select_best(scored, mode=mode)
         completion = None
         if validated_batch and bool(event_id) and validated_batch[0] == event_id:
             _, completed, required = validated_batch
@@ -806,7 +868,7 @@ def literature_outcomes(
         elif segment_best is None:
             outcome = "failed" if attempts else "not_evaluated"
             delta = None
-        elif before is None or better(segment_best.score, before.score):
+        elif before is None or better(segment_best.score, before.score, mode):
             outcome = "helped"
             delta = None if before is None else segment_best.score - before.score
         elif segment_best.score == before.score:
@@ -875,7 +937,7 @@ def literature_completion_warnings(
     return warnings
 
 
-def candidate_outcome_payload(record: RunRecord, incumbent: Optional[RunRecord]) -> Dict[str, Any]:
+def candidate_outcome_payload(record: RunRecord, incumbent: Optional[RunRecord], mode: str = "max") -> Dict[str, Any]:
     delta = None if incumbent is None or record.score is None else record.score - incumbent.score
     return {
         "row": record.index + 1,
@@ -886,7 +948,9 @@ def candidate_outcome_payload(record: RunRecord, incumbent: Optional[RunRecord])
         "incumbent_score": None if incumbent is None else incumbent.score,
         "delta_from_incumbent": delta,
         "improvement_from_incumbent": (
-            None if incumbent is None or record.score is None else improvement_amount(record.score, incumbent.score)
+            None
+            if incumbent is None or record.score is None
+            else improvement_amount(record.score, incumbent.score, mode)
         ),
         "hypothesis": record.diff_summary,
         "changed_files": split_files(record.changed_files),
@@ -971,7 +1035,7 @@ def failure_outcomes(items: Sequence[Dict[str, Any]], limit: int) -> List[Dict[s
     return outcomes[: max(0, limit)]
 
 
-def family_outcomes(records: Sequence[RunRecord], helped_rows: set[int]) -> List[Dict[str, Any]]:
+def family_outcomes(records: Sequence[RunRecord], helped_rows: set[int], mode: str = "max") -> List[Dict[str, Any]]:
     families: Dict[str, List[RunRecord]] = {}
     for record in records:
         if record.status not in {"keep", "discard", "crash"}:
@@ -996,8 +1060,10 @@ def family_outcomes(records: Sequence[RunRecord], helped_rows: set[int]) -> List
             outcome = "not_confirmed"
         else:
             outcome = "failed"
-        retained = select_best([record for record in attempts if record.status == "keep"], retained_only=True)
-        observed = select_best(attempts)
+        retained = select_best(
+            [record for record in attempts if record.status == "keep"], retained_only=True, mode=mode
+        )
+        observed = select_best(attempts, mode=mode)
         outcomes.append(
             {
                 "algorithm_family": family,
@@ -1018,7 +1084,7 @@ def family_outcomes(records: Sequence[RunRecord], helped_rows: set[int]) -> List
     return sorted(outcomes, key=lambda item: (order[item["outcome"]], item["algorithm_family"]))
 
 
-def literature_digest(reviews: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+def literature_digest(reviews: Sequence[Dict[str, Any]], mode: str = "max") -> Dict[str, Any]:
     counts = dict(sorted(Counter(review["outcome"] for review in reviews).items()))
     helped = [review for review in reviews if review["outcome"] == "helped"]
     strongest = None
@@ -1027,7 +1093,7 @@ def literature_digest(reviews: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
         def improvement(review: Dict[str, Any]) -> float:
             if review["best_score"] is None or review["incumbent_score"] is None:
                 return -math.inf
-            return improvement_amount(review["best_score"], review["incumbent_score"])
+            return improvement_amount(review["best_score"], review["incumbent_score"], mode)
 
         strongest = max(
             helped,
@@ -1049,6 +1115,7 @@ def outcome_summary(
     reviews: Sequence[Dict[str, Any]],
     max_milestones: int,
     max_non_improvements: int,
+    mode: str = "max",
 ) -> Dict[str, Any]:
     incumbent = None
     helped = []
@@ -1056,34 +1123,34 @@ def outcome_summary(
     failures = []
     for record in records:
         if record.status in RETAINED_STATUSES and record.score is not None:
-            if record.status == "keep" and incumbent is not None and better(record.score, incumbent.score):
-                helped.append(candidate_outcome_payload(record, incumbent))
-            if incumbent is None or better(record.score, incumbent.score):
+            if record.status == "keep" and incumbent is not None and better(record.score, incumbent.score, mode):
+                helped.append(candidate_outcome_payload(record, incumbent, mode))
+            if incumbent is None or better(record.score, incumbent.score, mode):
                 incumbent = record
             continue
         if record.status == "discard":
-            payload = candidate_outcome_payload(record, incumbent)
+            payload = candidate_outcome_payload(record, incumbent, mode)
             (non_improvements if record.score is not None else failures).append(payload)
         elif record.status == "crash":
-            failures.append(candidate_outcome_payload(record, incumbent))
+            failures.append(candidate_outcome_payload(record, incumbent, mode))
     helped_rows = {item["row"] - 1 for item in helped}
     return {
         "helped": helped,
         "major_helped": select_major_improvements(helped, max_milestones),
         "not_confirmed": representative_non_improvements(non_improvements, max_non_improvements),
         "failures": failure_outcomes(failures, max_non_improvements),
-        "families": family_outcomes(records, helped_rows),
-        "literature": literature_digest(reviews),
+        "families": family_outcomes(records, helped_rows, mode),
+        "literature": literature_digest(reviews, mode),
     }
 
 
 def selection_summary(
-    best: Optional[RunRecord], baseline: Optional[RunRecord], lineage: Dict[str, Any]
+    best: Optional[RunRecord], baseline: Optional[RunRecord], lineage: Dict[str, Any], mode: str = "max"
 ) -> Optional[Dict[str, Any]]:
     if best is None:
         return None
     delta = None if baseline is None else best.score - baseline.score
-    improvement = None if baseline is None else improvement_amount(best.score, baseline.score)
+    improvement = None if baseline is None else improvement_amount(best.score, baseline.score, mode)
     return {
         "candidate": best.name,
         "score": best.score,
@@ -1096,7 +1163,7 @@ def selection_summary(
         "literature_event_id": best.literature_event_id,
         "lineage": lineage,
         "reason": (
-            "It is the best scored retained result under the maximization objective."
+            f"It is the best scored retained result under the {mode} objective."
             if best.status != "baseline"
             else "No retained candidate improved on the scored baseline."
         ),
@@ -1210,9 +1277,12 @@ def state_accounting(
     best: Optional[RunRecord],
     results_path: Path,
     campaign_root: Path,
+    mode: str = "max",
 ) -> Tuple[Dict[str, Any], List[str]]:
     ledger_baseline = None if baseline is None else baseline.score
-    ledger_improvement = None if baseline is None or best is None else best.score - baseline.score
+    ledger_improvement = (
+        None if baseline is None or best is None else improvement_amount(best.score, baseline.score, mode)
+    )
     ledger_values = {
         "candidate_attempts": candidate_attempts,
         "baseline_score": ledger_baseline,
@@ -1288,7 +1358,7 @@ def default_plotter_path() -> Path:
     return product_autofl_script_path("plot_progress.py")
 
 
-def refresh_plot(results: Path, output: Path, metric: str, plotter_path: Path) -> Optional[str]:
+def refresh_plot(results: Path, output: Path, metric: str, plotter_path: Path, mode: str = "max") -> Optional[str]:
     if not plotter_path.is_file():
         return f"Auto-FL progress plotter not found at {plotter_path}; existing plot was preserved."
     spec = importlib.util.spec_from_file_location("nvflare_autofl_report_plotter", plotter_path)
@@ -1299,7 +1369,19 @@ def refresh_plot(results: Path, output: Path, metric: str, plotter_path: Path) -
     sys.modules[spec.name] = module
     try:
         spec.loader.exec_module(module)
-        module.plot_progress(module.load_results(results), output, metric_label=metric)
+        parameters = inspect.signature(module.plot_progress).parameters
+        accepts_mode = "mode" in parameters or any(
+            parameter.kind == inspect.Parameter.VAR_KEYWORD for parameter in parameters.values()
+        )
+        if mode == "min" and not accepts_mode:
+            return (
+                f"Progress plotter at {plotter_path} cannot represent mode='min'; existing plot was preserved. "
+                "Use the current nvflare-autofl plotter to refresh this campaign."
+            )
+        kwargs = {"metric_label": metric}
+        if accepts_mode:
+            kwargs["mode"] = mode
+        module.plot_progress(module.load_results(results), output, **kwargs)
     except Exception as exc:  # plotting should not destroy an otherwise useful stopped-campaign report
         return f"Could not refresh progress plot ({type(exc).__name__}: {exc}); existing plot was preserved."
     finally:
@@ -1445,18 +1527,23 @@ def report_markdown(summary: Dict[str, Any], records: Sequence[RunRecord]) -> st
         "",
         "## Executive Summary",
         "",
-        f"The stopped campaign optimized `{summary['objective']['optimization_metric']}` in "
-        f"`{summary['environment']}` mode. It evaluated `{summary['candidate_attempts']}` candidate attempts "
+        f"The stopped campaign optimized `{summary['objective']['optimization_metric']}` with "
+        f"`{summary['objective']['mode']}` direction in the `{summary['environment']}` environment. "
+        f"It evaluated `{summary['candidate_attempts']}` candidate attempts "
         f"across `{len(records)}` ledger rows in `{runtime_label}`.",
         "",
     ]
     if best:
         baseline_score = baseline["score"] if baseline else None
-        delta = None if baseline_score is None else best["score"] - baseline_score
+        improvement = (
+            None
+            if baseline_score is None
+            else improvement_amount(best["score"], baseline_score, summary["objective"]["mode"])
+        )
         lines.append(
             f"Best retained candidate: `{best['name']}` at "
             f"`{summary['objective']['optimization_metric']}={format_score(best['score'])}` "
-            f"(baseline `{format_score(baseline_score)}`, delta `{format_delta(delta)}`)."
+            f"(baseline `{format_score(baseline_score)}`, objective improvement `{format_delta(improvement)}`)."
         )
     else:
         observed = summary["best_observed"]
@@ -1807,11 +1894,11 @@ def generate_locked(args: argparse.Namespace, root: Path) -> Dict[str, Any]:
     validate_output_paths(outputs, protected_paths)
     validate_output_create_patterns(outputs, root, allowed_create_patterns)
     verify_no_pending_candidates(root, state, records)
-    mode = validate_maximization(config, state)
+    mode = metric_mode(config, state)
     metric, requested_metric, metric_source, metric_contract_source = metric_contract(config, state, args)
     baseline = select_baseline(records)
-    best = select_best(records, retained_only=True)
-    observed_best = select_best(records)
+    best = select_best(records, retained_only=True, mode=mode)
+    observed_best = select_best(records, mode=mode)
     if best is None and observed_best is not None:
         warnings.append(
             f"Best observed row {observed_best.name} was not retained; no scored baseline or kept candidate is available."
@@ -1826,6 +1913,7 @@ def generate_locked(args: argparse.Namespace, root: Path) -> Dict[str, Any]:
         progress_path,
         metric,
         plotter_path,
+        mode,
     )
     if plot_warning:
         warnings.append(plot_warning)
@@ -1850,6 +1938,7 @@ def generate_locked(args: argparse.Namespace, root: Path) -> Dict[str, Any]:
         best,
         results_path,
         root,
+        mode,
     )
     warnings.extend(accounting_warnings)
     environment = config.get("environment") if isinstance(config.get("environment"), dict) else {}
@@ -1862,6 +1951,7 @@ def generate_locked(args: argparse.Namespace, root: Path) -> Dict[str, Any]:
         records,
         exploration_batch=state.get("exploration_batch"),
         termination_reason=termination_reason,
+        mode=mode,
     )
     warnings.extend(
         literature_completion_warnings(
@@ -1884,6 +1974,7 @@ def generate_locked(args: argparse.Namespace, root: Path) -> Dict[str, Any]:
             "metric_source": metric_source,
             "metric_contract_source": metric_contract_source,
             "mode": mode,
+            "mode_contract_source": str(config.get("objective", {}).get("mode_contract_source") or "not recorded"),
         },
         "environment": str(environment.get("requested") or state.get("environment") or "not declared"),
         "candidate_cap": cap_label,
@@ -1901,13 +1992,14 @@ def generate_locked(args: argparse.Namespace, root: Path) -> Dict[str, Any]:
         "best_lineage": lineage,
         "best_manifest": manifest_summary(best, root),
         "best_command_changes": changes,
-        "milestones": running_best_milestones(records, args.max_milestones),
-        "selection": selection_summary(best, baseline, lineage),
+        "milestones": running_best_milestones(records, args.max_milestones, mode),
+        "selection": selection_summary(best, baseline, lineage, mode),
         "outcome_summary": outcome_summary(
             records,
             reviews,
             args.max_milestones,
             args.max_non_improvements,
+            mode,
         ),
         "literature_reviews": reviews,
         "warnings": warnings,

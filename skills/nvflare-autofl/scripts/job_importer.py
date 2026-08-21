@@ -25,11 +25,17 @@ from __future__ import annotations
 import ast
 import hashlib
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 import yaml
+
+try:
+    from nvflare.app_common.widgets.intime_model_selector import _looks_lower_is_better as _core_looks_lower_is_better
+except ImportError:
+    _core_looks_lower_is_better = None
 
 AUTOFL_CONFIG_SCHEMA_VERSION = "nvflare.autofl.config.v1"
 IMPORTER_VERSION = "nvflare-autofl-job-importer/v1"
@@ -42,13 +48,20 @@ METRIC_INVARIANTS = [
     "scale_units_and_direction",
 ]
 METRIC_CHANGE_POLICY = "restart_campaign_with_repaired_baseline"
-# Keep this text aligned with campaign_guard.MODE_MAX_ONLY_MESSAGE; the importer stays standalone.
-MODE_MAX_ONLY_MESSAGE = (
-    "Auto-FL campaigns only support mode 'max'; minimization is not supported because NVFLARE "
-    "best-model selection treats higher key_metric values as better. Report a negated metric "
-    "from the job (for example neg_val_loss) so that higher is better, matching the "
-    "IntimeModelSelector negate_key_metric guidance."
-)
+SUPPORTED_OBJECTIVE_MODES = {"min", "max"}
+LOWER_IS_BETTER_METRIC_SUBSTRINGS = ("loss", "err")
+LOWER_IS_BETTER_METRIC_TOKENS = {
+    "bce",
+    "ce",
+    "cer",
+    "mae",
+    "mse",
+    "nll",
+    "perplexity",
+    "ppl",
+    "rmse",
+    "wer",
+}
 
 SUPPORTED_ENV_NAMES = {"PocEnv", "ProdEnv", "SimEnv"}
 NON_OPTIMIZATION_RECIPE_NAMES = {"FedEvalRecipe", "FedStatsRecipe", "NumpyCrossSiteEvalRecipe"}
@@ -130,7 +143,6 @@ class DeterministicJobImporter:
         job_path: str,
         *,
         metric: Optional[str] = None,
-        mode: str = "max",
         target_env: Optional[str] = None,
         max_candidates: Optional[int] = None,
         job_args: Optional[Sequence[str]] = None,
@@ -141,7 +153,6 @@ class DeterministicJobImporter:
             return self._import_job(
                 job_path,
                 metric=metric,
-                mode=mode,
                 target_env=target_env,
                 max_candidates=max_candidates,
                 job_args=job_args,
@@ -156,7 +167,6 @@ class DeterministicJobImporter:
         job_path: str,
         *,
         metric: Optional[str] = None,
-        mode: str = "max",
         target_env: Optional[str] = None,
         max_candidates: Optional[int] = None,
         job_args: Optional[Sequence[str]] = None,
@@ -166,8 +176,6 @@ class DeterministicJobImporter:
         Args:
             job_path: Path to ``job.py`` or a directory containing ``job.py``.
             metric: Optional optimization metric requested by the user.
-            mode: Objective direction; only ``max`` is supported. Kept for command-shape
-                compatibility so callers report negated metrics instead of minimizing.
             target_env: Optional target environment, such as ``sim`` or ``prod``.
             max_candidates: Optional fixed candidate budget.
             job_args: Optional job CLI arguments used to resolve argparse defaults
@@ -176,9 +184,6 @@ class DeterministicJobImporter:
         Returns:
             A deterministic, YAML-serializable mapping.
         """
-
-        if mode != "max":
-            raise JobImportError(MODE_MAX_ONLY_MESSAGE)
 
         source_path = self._resolve_job_path(job_path)
         try:
@@ -212,10 +217,27 @@ class DeterministicJobImporter:
         if not train_script:
             unresolved.append(_unresolved("job.train_script", "no train_script was found or resolved"))
 
-        metric_name, metric_source, metric_issue = self._resolve_metric(metric, job_call, parser_args)
-        objective = _objective_contract(metric_name, metric_source)
+        job_metric, job_metric_source, metric_issue = self._resolve_job_metric(job_call, parser_args, source_text)
+        metric_name = metric or job_metric
+        metric_source = "user_request" if metric else job_metric_source
+        mode_name, mode_source, mode_issue = self._resolve_metric_mode(job_metric, job_call, parser_args, source_text)
+        objective = _objective_contract(
+            metric_name,
+            metric_source,
+            mode_name,
+            mode_source,
+            job_metric,
+            job_metric_source,
+        )
         if metric_issue:
+            mode_uses_job_metric = mode_source == "job:stop_cond" or (
+                job_call is not None and "stop_cond" in job_call.keywords and "key_metric_mode" not in job_call.keywords
+            )
+            if metric and not mode_issue and not mode_uses_job_metric:
+                metric_issue = {**metric_issue, "field": "objective.job_key_metric"}
             unresolved.append(metric_issue)
+        if mode_issue:
+            unresolved.append(mode_issue)
 
         budget, budget_issues = self._resolve_budget(max_candidates, job_call, env_call, parser_args, source_text)
         unresolved.extend(budget_issues)
@@ -366,30 +388,82 @@ class DeterministicJobImporter:
             return None
         return _existing_path(path)
 
-    def _resolve_metric(
+    def _resolve_job_metric(
         self,
-        requested_metric: Optional[str],
         job_call: Optional[CallInfo],
         parser_args: Dict[str, ArgSpec],
+        source_text: str,
     ) -> Tuple[str, str, Optional[Dict[str, str]]]:
-        if requested_metric:
-            return requested_metric, "user_request", None
         if job_call and "key_metric" in job_call.keywords:
-            resolved = _resolve_value(job_call.keywords["key_metric"], job_call.assignments, parser_args, "")
+            resolved = _resolve_value(job_call.keywords["key_metric"], job_call.assignments, parser_args, source_text)
             if isinstance(resolved.value, str) and not resolved.unresolved:
                 return resolved.value, resolved.source, None
             return "accuracy", "default", _unresolved("objective.metric", resolved.source)
-        if "key_metric" in parser_args:
-            metric_arg = parser_args["key_metric"]
-            if isinstance(metric_arg.default, str) and not metric_arg.default_unresolved:
-                return metric_arg.default, "arg:key_metric", None
-            if metric_arg.default_unresolved:
-                return "accuracy", "default", _unresolved("objective.metric", metric_arg.default_source)
+        if job_call:
+            return "accuracy", "core_default", None
         return (
             "accuracy",
             "default",
             _unresolved("objective.metric", "metric defaulted to accuracy; validation metric source is unknown"),
         )
+
+    def _resolve_metric_mode(
+        self,
+        job_metric: str,
+        job_call: Optional[CallInfo],
+        parser_args: Dict[str, ArgSpec],
+        source_text: str,
+    ) -> Tuple[str, str, Optional[Dict[str, str]]]:
+        if not job_call:
+            return "max", "unresolved", _unresolved("objective.mode", "job metric direction is unknown")
+
+        model_selector = job_call.keywords.get("model_selector")
+        if model_selector is not None:
+            resolved_selector = _resolve_value(model_selector, job_call.assignments, parser_args, source_text)
+            if resolved_selector.unresolved or resolved_selector.value:
+                return (
+                    "max",
+                    "unresolved",
+                    _unresolved(
+                        "objective.mode",
+                        "custom model_selector controls checkpoint selection, so key_metric_mode is not effective "
+                        "and selector direction cannot be imported deterministically",
+                    ),
+                )
+
+        explicit_mode = job_call.keywords.get("key_metric_mode")
+        if explicit_mode is not None:
+            resolved = _resolve_value(explicit_mode, job_call.assignments, parser_args, source_text)
+            if resolved.unresolved:
+                return "max", "unresolved", _unresolved("objective.mode", resolved.source)
+            if resolved.value is not None:
+                if not isinstance(resolved.value, str) or resolved.value not in SUPPORTED_OBJECTIVE_MODES:
+                    return (
+                        "max",
+                        "unresolved",
+                        _unresolved("objective.mode", f"invalid key_metric_mode: {resolved.value!r}"),
+                    )
+                mode_source = "job:key_metric_mode" if resolved.source == "literal" else resolved.source
+                stop_mode, stop_issue = _resolve_stop_condition_mode(job_metric, job_call, parser_args, source_text)
+                if stop_issue:
+                    return resolved.value, mode_source, stop_issue
+                if stop_mode and stop_mode != resolved.value:
+                    return (
+                        resolved.value,
+                        mode_source,
+                        _unresolved(
+                            "objective.mode",
+                            "key_metric_mode conflicts with same-metric stop_cond",
+                        ),
+                    )
+                return resolved.value, mode_source, None
+
+        stop_mode, stop_issue = _resolve_stop_condition_mode(job_metric, job_call, parser_args, source_text)
+        if stop_issue:
+            return "max", "unresolved", stop_issue
+        if stop_mode:
+            return stop_mode, "job:stop_cond", None
+        return "max", "core_default", None
 
     def _resolve_budget(
         self,
@@ -538,7 +612,6 @@ def import_job_to_autofl_config(
     *,
     workspace_root: Optional[str] = None,
     metric: Optional[str] = None,
-    mode: str = "max",
     target_env: Optional[str] = None,
     max_candidates: Optional[int] = None,
     job_args: Optional[Sequence[str]] = None,
@@ -549,7 +622,6 @@ def import_job_to_autofl_config(
     return importer.import_job(
         job_path,
         metric=metric,
-        mode=mode,
         target_env=target_env,
         max_candidates=max_candidates,
         job_args=job_args,
@@ -1004,11 +1076,24 @@ def _arg_spec_from_call(node: ast.Call, function_name: Optional[str]) -> Optiona
         return None
 
     keywords = {keyword.arg: keyword.value for keyword in node.keywords if keyword.arg}
-    name = _literal_keyword_value(keywords.get("dest")) or (_name_from_flags(flags) if flags else positional_names[0])
+    if "dest" in keywords:
+        dest_is_literal, name = _literal_value(keywords["dest"])
+        if dest_is_literal and not isinstance(name, str):
+            return None
+        if not dest_is_literal:
+            name = _name_from_flags(flags) if flags else positional_names[0]
+    else:
+        name = _name_from_flags(flags) if flags else positional_names[0]
     if not name:
         return None
 
-    action = _literal_keyword_value(keywords.get("action"))
+    action = None
+    if "action" in keywords:
+        action_is_literal, action_value = _literal_value(keywords["action"])
+        if action_is_literal:
+            if not isinstance(action_value, str):
+                return None
+            action = action_value
     default, default_source, default_unresolved = _arg_default_from_keywords(keywords)
     if not flags and "default" not in keywords:
         default_source = "required_positional"
@@ -1105,6 +1190,57 @@ def _resolve_arg_default(name: str, arg_spec: ArgSpec) -> ResolvedValue:
     if arg_spec.default_unresolved:
         return ResolvedValue(arg_spec.default, f"arg:{name}:{arg_spec.default_source}", "low", True)
     return ResolvedValue(arg_spec.default, f"arg:{name}")
+
+
+def _resolve_stop_condition_mode(
+    job_metric: str,
+    job_call: CallInfo,
+    parser_args: Dict[str, ArgSpec],
+    source_text: str,
+) -> Tuple[Optional[str], Optional[Dict[str, str]]]:
+    stop_condition = job_call.keywords.get("stop_cond")
+    if stop_condition is None:
+        return None, None
+    resolved = _resolve_value(stop_condition, job_call.assignments, parser_args, source_text)
+    if resolved.unresolved:
+        return None, _unresolved("objective.mode", f"stop_cond is dynamic: {resolved.source}")
+    if resolved.value is None:
+        return None, None
+    if not isinstance(resolved.value, str):
+        return None, _unresolved("objective.mode", "stop_cond is not a string")
+    tokens = resolved.value.split(" ")
+    if len(tokens) != 3 or tokens[1] not in {"<", "<=", "=", ">", ">="}:
+        return None, _unresolved("objective.mode", f"invalid stop_cond: {resolved.value!r}")
+    try:
+        float(tokens[2])
+    except (TypeError, ValueError):
+        return None, _unresolved("objective.mode", f"invalid stop_cond: {resolved.value!r}")
+    stop_metric, operator = tokens[:2]
+    if stop_metric != job_metric:
+        return None, None
+    if operator in {"<", "<="}:
+        return "min", None
+    if operator in {">", ">="}:
+        return "max", None
+    return None, None
+
+
+def likely_lower_is_better_metric(metric: str) -> bool:
+    """Return whether a metric name is an obvious lower-is-better objective."""
+
+    if _core_looks_lower_is_better is not None:
+        return _core_looks_lower_is_better(metric)
+    return _fallback_looks_lower_is_better(metric)
+
+
+def _fallback_looks_lower_is_better(metric: str) -> bool:
+    name = metric.lower()
+    tokens = re.split(r"[^a-z0-9]+", name)
+    if "neg" in tokens:
+        return False
+    if any(hint in name for hint in LOWER_IS_BETTER_METRIC_SUBSTRINGS):
+        return True
+    return any(token in LOWER_IS_BETTER_METRIC_TOKENS for token in tokens)
 
 
 def _resolve_path_call(
@@ -1241,6 +1377,7 @@ def _trust_extracted(
         extracted.append({"field": "job.train_script", "value": train_script.name})
     extracted.append({"field": "objective.metric", "value": objective["metric"]})
     extracted.append({"field": "objective.optimization_metric", "value": objective["optimization_metric"]})
+    extracted.append({"field": "objective.mode", "value": objective["mode"]})
     if "fixed_training_budget" in budget:
         extracted.append({"field": "budget.fixed_training_budget", "value": budget["fixed_training_budget"]})
     if search_space:
@@ -1248,14 +1385,25 @@ def _trust_extracted(
     return extracted
 
 
-def _objective_contract(metric_name: str, source: str) -> Dict[str, Any]:
+def _objective_contract(
+    metric_name: str,
+    source: str,
+    mode: str,
+    mode_source: str,
+    job_metric: str,
+    job_metric_source: str,
+) -> Dict[str, Any]:
     return {
         "metric": metric_name,
         "requested_metric": metric_name,
         "optimization_metric": metric_name,
         "metric_extraction_order": [metric_name],
-        # Constant for schema stability: campaigns always maximize the optimization metric.
-        "mode": "max",
+        "mode": mode,
+        "mode_contract_source": mode_source,
+        "job_key_metric": job_metric,
+        "job_key_metric_source": job_metric_source,
+        "job_key_metric_mode": mode,
+        "job_key_metric_mode_source": mode_source,
         "metric_contract_source": source,
         "metric_invariants": list(METRIC_INVARIANTS),
         "metric_change_policy": METRIC_CHANGE_POLICY,

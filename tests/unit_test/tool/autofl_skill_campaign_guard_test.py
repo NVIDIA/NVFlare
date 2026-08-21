@@ -165,18 +165,63 @@ def test_guard_improvement_is_best_minus_baseline():
     assert guard.guard_state_for_rows(regressed)["improvement"] == pytest.approx(0.0)
 
 
-def test_guard_cli_has_no_mode_flag(tmp_path, capsys):
+def test_guard_cli_supports_min_mode(tmp_path, capsys):
+    guard = _load_guard()
+    results = tmp_path / "results.tsv"
+    _write_results(results, [_row("baseline", "baseline", "0.85"), _row("keep", "lower_loss", "0.6")])
+
+    assert guard.main([str(results), "--mode", "min", "--format", "json"]) == 0
+    state = json.loads(capsys.readouterr().out)
+
+    assert state["mode"] == "min"
+    assert state["best_score"] == pytest.approx(0.6)
+    assert state["improvement"] == pytest.approx(0.25)
+
+
+def test_guard_cli_derives_mode_from_sibling_campaign_state(tmp_path, capsys):
+    guard = _load_guard()
+    results = tmp_path / "results.tsv"
+    _write_results(results, [_row("baseline", "baseline", "0.85"), _row("keep", "lower_loss", "0.6")])
+    state_path = tmp_path / ".nvflare/autofl/campaign_state.json"
+    state_path.parent.mkdir(parents=True)
+    state_path.write_text(json.dumps({"mode": "min"}), encoding="utf-8")
+
+    assert guard.main([str(results), "--format", "json"]) == 0
+    state = json.loads(capsys.readouterr().out)
+
+    assert state["mode"] == "min"
+    assert state["best_score"] == pytest.approx(0.6)
+
+
+@pytest.mark.parametrize("state_payload", [None, {}, {"mode": "sideways"}])
+def test_guard_cli_requires_direction_when_campaign_state_cannot_supply_it(tmp_path, capsys, state_payload):
     guard = _load_guard()
     results = tmp_path / "results.tsv"
     _write_results(results, [_row("baseline", "baseline", "0.85")])
+    if state_payload is not None:
+        state_path = tmp_path / ".nvflare/autofl/campaign_state.json"
+        state_path.parent.mkdir(parents=True)
+        state_path.write_text(json.dumps(state_payload), encoding="utf-8")
 
-    with pytest.raises(SystemExit) as excinfo:
-        guard.main([str(results), "--mode", "min"])
+    with pytest.raises(SystemExit, match="2"):
+        guard.main([str(results), "--format", "json"])
 
-    assert excinfo.value.code == 2
-    assert "unrecognized arguments: --mode" in capsys.readouterr().err
+    assert "pass --mode explicitly or repair campaign state" in capsys.readouterr().err
 
-    assert guard.main([str(results)]) == 0
+
+def test_min_mode_plateau_resets_on_lower_score():
+    guard = _load_guard()
+    rows = [
+        _row("baseline", "baseline", "1.0"),
+        _row("keep", "small_improvement", "0.9998"),
+        _row("discard", "regression", "1.1"),
+    ]
+
+    state = guard.guard_state_for_rows(rows, mode="min", plateau_threshold=1, min_delta=0.0005)
+
+    assert state["best_score"] == pytest.approx(0.9998)
+    assert state["improvement"] == pytest.approx(0.0002)
+    assert state["plateau"]["recommendation"] == "literature"
 
 
 def test_guard_finalization_instruction_enumerates_report_artifacts():
@@ -358,6 +403,8 @@ def test_guard_cli_is_diagnostic_only(tmp_path):
             sys.executable,
             str(guard_path),
             str(results_path),
+            "--mode",
+            "max",
             "--plateau-threshold",
             "2",
             "--format",
@@ -381,7 +428,7 @@ def test_guard_resolves_default_and_custom_stop_files_from_results_directory(tmp
     tmp_path.joinpath("STOP_AUTOFL").touch()
 
     default_proc = subprocess.run(
-        [sys.executable, str(guard_path), str(results_path), "--format", "json"],
+        [sys.executable, str(guard_path), str(results_path), "--mode", "max", "--format", "json"],
         cwd=repo_root,
         text=True,
         capture_output=True,
@@ -392,6 +439,8 @@ def test_guard_resolves_default_and_custom_stop_files_from_results_directory(tmp
             sys.executable,
             str(guard_path),
             str(results_path),
+            "--mode",
+            "max",
             "--stop-file",
             "CUSTOM_STOP",
             "--format",
