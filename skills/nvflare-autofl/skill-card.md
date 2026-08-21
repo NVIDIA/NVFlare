@@ -9,7 +9,7 @@ NVIDIA <br>
 ### License/Terms of Use: <br>
 Apache 2.0 <br>
 ## Use Case: <br>
-Developers and ML engineers use this skill to iteratively optimize NVFLARE federated learning jobs through isolated, reproducible candidate campaigns that preserve metric semantics and comparison budgets. <br>
+Developers and engineers use this skill to iteratively optimize NVFLARE federated learning jobs through agent-assisted candidate evaluation in simulation, proof-of-concept, or production environments. <br>
 
 ### Deployment Geography for Use: <br>
 Global <br>
@@ -30,12 +30,12 @@ Mitigation: Review and scan skill before deployment. <br>
 - [Experiment Comparability](references/experiment-comparability.md) <br>
 - [Bounded Campaign Example](references/bounded-campaign-example.md) <br>
 - [NVFlare Documentation](https://nvflare.readthedocs.io/en/main) <br>
-- [NVFlare Paper (arXiv:2210.13291)](https://arxiv.org/abs/2210.13291) <br>
+- [NVFlare: Federated Learning from Simulation to Real-World](https://arxiv.org/abs/2210.13291) <br>
 
 
 ## Skill Output: <br>
-**Output Type(s):** [JSON, Configuration files, Shell commands, Analysis] <br>
-**Output Format:** [JSON envelopes, TSV ledger, YAML configuration, and Markdown reports] <br>
+**Output Type(s):** [Analysis, Shell commands, Configuration instructions, Files] <br>
+**Output Format:** [JSON envelopes, YAML configuration, TSV ledger, and Markdown reports] <br>
 **Output Parameters:** [1D] <br>
 **Other Properties Related to Output:** [None] <br>
 
@@ -46,35 +46,35 @@ Mitigation: Review and scan skill before deployment. <br>
 
 
 ## Evaluation Tasks: <br>
-7 evaluation tasks (7 positive) from skill-evaluator-dataset-snapshot/1. <br>
+7 evaluation tasks (7 positive) against skill-evaluator-dataset-snapshot/1. <br>
 
 ## Evaluation Metrics Used: <br>
 Reported benchmark dimensions: <br>
 - Security: Checks for unsafe operations, secret leakage, and unauthorized access. <br>
 - Correctness: Checks final-answer correctness against the reference answer. <br>
 - Discoverability: Checks whether the expected skill was found and executed when needed. <br>
-- Effectiveness: Checks whether the skill helps the agent complete the user's goal and expected workflow. <br>
+- Effectiveness: Checks whether the user's goal was achieved and the expected workflow behavior was followed. <br>
 - Efficiency: Checks routing quality, workspace-aware skill reads, and productive tool use. <br>
 
 Underlying evaluation signals used in this run: <br>
-- `security`: Unsafe operations, secret leakage, and unauthorized access. <br>
-- `accuracy`: Final-answer correctness against the reference answer. <br>
-- `skill_execution`: Whether the expected skill was found and executed. <br>
-- `goal_accuracy`: Whether the user's goal was achieved. <br>
-- `behavior_check`: Whether the expected workflow behavior was followed. <br>
-- `skill_efficiency`: Routing quality, workspace-aware skill reads, and productive tool use. <br>
+- `security`: Verifies absence of unsafe operations, secret leakage, and unauthorized access. <br>
+- `accuracy`: Verifies final-answer correctness against the reference answer. <br>
+- `skill_execution`: Verifies whether the expected skill was found and executed. <br>
+- `goal_accuracy`: Verifies whether the user's goal was achieved. <br>
+- `behavior_check`: Verifies whether the expected workflow behavior was followed. <br>
+- `skill_efficiency`: Verifies routing quality and productive tool use. <br>
 
 
 
 ## Evaluation Results: <br>
 | Measure | Claude Code (Baseline → Skill Uplift) | Codex (Baseline → Skill Uplift) |
 |---|---:|---:|
-| Overall | 58% → 77% (+20 points) | 48% → 70% (+22 points) |
-| Security | 100% → 100% (±0 points) | 71% → 86% (+14 points) |
-| Correctness | 57% → 86% (+29 points) | 57% → 74% (+17 points) |
-| Discoverability | 46% → 77% (+31 points) | 39% → 74% (+35 points) |
-| Effectiveness | 45% → 54% (+9 points) | 38% → 48% (+10 points) |
-| Efficiency | 39% → 70% (+31 points) | 36% → 69% (+32 points) |
+| Overall | 61% → 78% (+17 points) | Not available |
+| Security | 100% → 100% (±0 points) | Not available |
+| Correctness | 60% → 86% (+26 points) | Not available |
+| Discoverability | 48% → 77% (+29 points) | Not available |
+| Effectiveness | 55% → 58% (+3 points) | Not available |
+| Efficiency | 43% → 71% (+28 points) | Not available |
 
 ## Skill Version(s): <br>
 0.1.0 (source: frontmatter) <br>

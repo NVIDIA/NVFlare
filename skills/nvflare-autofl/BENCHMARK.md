@@ -45,12 +45,12 @@ The three-tier evaluation checks whether the skill:
 
 | Measure | Claude Code (Baseline → Skill Uplift) | Codex (Baseline → Skill Uplift) |
 |---|---:|---:|
-| Overall | 58% → 77% (+20 points) | 48% → 70% (+22 points) |
-| Security | 100% → 100% (±0 points) | 71% → 86% (+14 points) |
-| Correctness | 57% → 86% (+29 points) | 57% → 74% (+17 points) |
-| Discoverability | 46% → 77% (+31 points) | 39% → 74% (+35 points) |
-| Effectiveness | 45% → 54% (+9 points) | 38% → 48% (+10 points) |
-| Efficiency | 39% → 70% (+31 points) | 36% → 69% (+32 points) |
+| Overall | 61% → 78% (+17 points) | Not available |
+| Security | 100% → 100% (±0 points) | Not available |
+| Correctness | 60% → 86% (+26 points) | Not available |
+| Discoverability | 48% → 77% (+29 points) | Not available |
+| Effectiveness | 55% → 58% (+3 points) | Not available |
+| Efficiency | 43% → 71% (+28 points) | Not available |
 
 **How to read this table:** baseline is the same task attempted without the target skill. Uplift is `skill score - baseline score`, shown in percentage points.
 
