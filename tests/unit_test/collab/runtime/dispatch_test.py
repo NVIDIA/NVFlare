@@ -109,8 +109,8 @@ def test_prepare_for_remote_call_registers_blob_callback():
     assert registration["logger"] is logger
     assert registration["executor"] is executor
     assert "preflight_cb" not in registration
-    cell.core_cell.add_incoming_filter.assert_called_once()
-    filter_registration = cell.core_cell.add_incoming_filter.call_args.args
+    cell.core_cell.add_incoming_request_filter.assert_called_once()
+    filter_registration = cell.core_cell.add_incoming_request_filter.call_args.args
     assert filter_registration[:2] == (STREAM_CHANNEL, STREAM_DATA_TOPIC)
     assert callable(filter_registration[2])
 
@@ -138,31 +138,13 @@ def test_collab_stream_filter_rejects_before_receive_state_is_created():
     byte_receiver.reject.assert_called_once_with(message, rejection)
 
 
-def test_collab_stream_filter_ignores_transit_streams():
-    authorizer = MagicMock(local_fqcn="server")
-    byte_receiver = MagicMock()
-    stream_filter = _CollabStreamFilter(authorizer, byte_receiver)
-    message = Message(
-        {
-            MessageHeaderKey.ORIGIN: "site-1.job",
-            MessageHeaderKey.DESTINATION: "site-2.job",
-            StreamHeaderKey.STREAM_ID: 123,
-            StreamHeaderKey.CHANNEL: MSG_CHANNEL,
-            StreamHeaderKey.TOPIC: MSG_TOPIC,
-        }
-    )
-
-    assert stream_filter.filter(message) is None
-    authorizer.authorize.assert_not_called()
-    byte_receiver.reject.assert_not_called()
-
-
 def test_collab_stream_filter_ignores_other_streams():
-    authorizer = MagicMock()
+    authorizer = MagicMock(local_fqcn="site-1.job")
     byte_receiver = MagicMock()
     stream_filter = _CollabStreamFilter(authorizer, byte_receiver)
     message = Message(
         {
+            MessageHeaderKey.DESTINATION: "site-1.job",
             StreamHeaderKey.CHANNEL: "other-channel",
             StreamHeaderKey.TOPIC: "other-topic",
         }
