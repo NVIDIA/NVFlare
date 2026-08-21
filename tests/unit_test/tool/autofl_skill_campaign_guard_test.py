@@ -543,7 +543,9 @@ def test_autofl_skill_requires_human_scoped_simulation_approval(autofl_skill_doc
         "initialize",
         "evaluate",
         "generic python",
+        "never request generic python",
         "logs",
+        "logs never authorize",
         "container",
         "dedicated vm",
     )
@@ -618,6 +620,7 @@ def test_autofl_skill_requires_semantic_metric_comparability(autofl_skill_docs):
         "audit evidence",
         "fresh job workspace",
         "initialize",
+        "never run `initialize` in the scored workspace",
         "resumes old evidence",
     )
     _assert_contract_terms(
