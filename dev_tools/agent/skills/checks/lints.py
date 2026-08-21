@@ -1199,6 +1199,8 @@ _BENIGN_EVALUATOR_METADATA_LINE_RE = re.compile(
     r"(?:"
     r"- Evaluator version: `[0-9]+(?:\.[0-9]+){1,3}(?:[-+][0-9A-Za-z.-]+)?`"
     r"|- Dataset digest: `sha256:[0-9a-f]{64}` \(skill-evaluator-dataset-snapshot/\d+\)"
+    r"|- AGENT_EVAL: Tier 3 evaluation complete: verdict (?:PASS|FAIL); best agent [A-Za-z0-9._-]+"
+    r"|\d+ evaluation tasks \(\d+ positive\) from skill-evaluator-dataset-snapshot/\d+\. <br>"
     r"|Regenerate this benchmark when the skill, evaluation dataset, target agent/model, evaluator version, "
     r"environment, or scoring policy changes\."
     r")"
