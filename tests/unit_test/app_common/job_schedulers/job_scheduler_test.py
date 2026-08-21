@@ -19,6 +19,8 @@ import pytest
 
 import nvflare.app_common.job_schedulers.job_scheduler as job_scheduler_module
 from nvflare.apis.client import Client
+from nvflare.apis.event_type import EventType
+from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.job_def import ALL_SITES, Job, JobMetaKey, RunStatus
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
@@ -513,6 +515,82 @@ class TestDefaultJobScheduler:
         assert (
             "site1: resource check failed: unsupported license" in candidate.meta[JobMetaKey.SCHEDULE_HISTORY.value][0]
         )
+
+    def test_unexpected_admission_error_cancels_resources_and_continues(self, monkeypatch):
+        resource_manager = Mock(spec=ResourceManagerSpec)
+        resource_manager.check_resources.side_effect = [(True, "first-token"), (True, "second-token")]
+        server = create_servers(1, [Site("site1", {}, resource_manager)])[0]
+        failed_candidate = create_job(
+            job_id="failed-job",
+            resource_spec={},
+            deploy_map={"app": ["server", "site1"]},
+            min_sites=1,
+        )
+        valid_candidate = create_job(
+            job_id="valid-job",
+            resource_spec={},
+            deploy_map={"app": ["server", "site1"]},
+            min_sites=1,
+        )
+        scheduler = DefaultJobScheduler(max_jobs=1, min_schedule_interval=0)
+        job_manager = Mock(spec=JobDefManagerSpec)
+
+        def fail_first_candidate(event_type, fl_ctx):
+            if (
+                event_type == EventType.AFTER_CHECK_CLIENT_RESOURCES
+                and fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID) == failed_candidate.job_id
+            ):
+                raise RuntimeError("unexpected admission failure")
+
+        monkeypatch.setattr(server, "fire_event", fail_first_candidate)
+
+        with server.new_context() as fl_ctx:
+            job, dispatch_info = scheduler.schedule_job(
+                job_manager=job_manager,
+                job_candidates=[failed_candidate, valid_candidate],
+                fl_ctx=fl_ctx,
+            )
+
+        assert job is valid_candidate
+        assert dispatch_info["site1"].token == "second-token"
+        resource_manager.cancel_resources.assert_called_once_with(
+            resource_requirement={}, token="first-token", fl_ctx=ANY
+        )
+        assert failed_candidate.meta[JobMetaKey.SCHEDULE_COUNT.value] == 1
+        assert JobMetaKey.LAST_SCHEDULE_TIME.value in failed_candidate.meta
+        assert (
+            "unexpected admission error: RuntimeError: unexpected admission failure"
+            in failed_candidate.meta[JobMetaKey.SCHEDULE_HISTORY.value][0]
+        )
+        job_manager.refresh_meta.assert_called_once_with(failed_candidate, scheduler._get_update_meta_keys(), ANY)
+
+    def test_unexpected_admission_error_honors_max_schedule_count(self, monkeypatch):
+        resource_manager = Mock(spec=ResourceManagerSpec)
+        resource_manager.check_resources.return_value = (True, "reservation-token")
+        server = create_servers(1, [Site("site1", {}, resource_manager)])[0]
+        candidate = create_job(
+            job_id="failed-job",
+            resource_spec={},
+            deploy_map={"app": ["server", "site1"]},
+            min_sites=1,
+        )
+        scheduler = DefaultJobScheduler(max_jobs=1, max_schedule_count=1, min_schedule_interval=0)
+        job_manager = Mock(spec=JobDefManagerSpec)
+
+        def fail_admission(event_type, fl_ctx):
+            if event_type == EventType.AFTER_CHECK_CLIENT_RESOURCES:
+                raise RuntimeError("unexpected admission failure")
+
+        monkeypatch.setattr(server, "fire_event", fail_admission)
+
+        for _ in range(2):
+            with server.new_context() as fl_ctx:
+                job, dispatch_info = scheduler.schedule_job(job_manager, [candidate], fl_ctx)
+
+        assert job is None
+        assert dispatch_info is None
+        assert resource_manager.check_resources.call_count == 1
+        job_manager.set_status.assert_called_once_with(candidate.job_id, RunStatus.FINISHED_CANT_SCHEDULE, ANY)
 
     @pytest.mark.parametrize("job_candidates,sites,expected_job,expected_dispatch_info", TEST_CASES)
     def test_normal_case(self, job_candidates, sites, expected_job, expected_dispatch_info):
