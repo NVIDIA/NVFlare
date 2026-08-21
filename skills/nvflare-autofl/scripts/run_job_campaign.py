@@ -1518,12 +1518,15 @@ def objective_contract(config: Dict[str, Any], requested_metric: Optional[str]) 
 def job_key_metric_is_resolved(objective: Dict[str, Any]) -> bool:
     """Return whether the job key metric has a trustworthy static identity."""
 
-    return objective.get("job_key_metric_source") in {"literal", "arg:key_metric", "core_default"}
+    return objective.get("job_key_metric_source") != "default"
 
 
 def requested_metric_differs_from_job(objective: Dict[str, Any]) -> bool:
-    job_metric = str(objective.get("job_key_metric") or objective["metric"])
-    return not job_key_metric_is_resolved(objective) or objective["requested_metric"] != job_metric
+    job_metric = objective.get("job_key_metric") or objective.get("metric")
+    requested_metric = objective.get("requested_metric") or objective.get("metric")
+    if not job_metric or not requested_metric:
+        return True
+    return not job_key_metric_is_resolved(objective) or str(requested_metric) != str(job_metric)
 
 
 def apply_metric_contract(

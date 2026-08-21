@@ -3786,6 +3786,37 @@ recipe.execute(SimEnv(num_clients=2))
     assert config["objective"]["mode_contract_source"] == "core_default"
 
 
+def test_initialize_accepts_resolved_job_metric_from_noncanonical_arg_name(tmp_path, monkeypatch):
+    runner = _load_runner()
+    workspace = tmp_path / "noncanonical-arg"
+    workspace.mkdir()
+    workspace.joinpath("client.py").write_text("print('train')\n", encoding="utf-8")
+    job = workspace / "job.py"
+    job.write_text(
+        """
+import argparse
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--model_metric", default="accuracy")
+args = parser.parse_args()
+recipe = FedAvgRecipe(
+    name="arg_metric", min_clients=2, num_rounds=1, train_script="client.py", key_metric=args.model_metric
+)
+recipe.execute(SimEnv(num_clients=2))
+""".lstrip(),
+        encoding="utf-8",
+    )
+    _mock_successful_baseline(runner, monkeypatch)
+
+    assert runner.main(["initialize", str(job)]) == 0
+
+    config = runner.read_yaml(workspace / "autofl.yaml")
+    assert config["objective"]["job_key_metric_source"] == "arg:model_metric"
+
+
 def test_campaign_admission_allows_unknown_metric_with_core_default_max():
     runner = _load_runner()
     config = _campaign_config()
@@ -3808,9 +3839,10 @@ def test_campaign_admission_allows_unknown_metric_with_core_default_max():
     [
         ("literal", "accuracy", "accuracy", False),
         ("arg:key_metric", "accuracy", "accuracy", False),
+        ("arg:model_metric", "accuracy", "accuracy", False),
         ("core_default", "accuracy", "accuracy", False),
         ("default", "accuracy", "accuracy", True),
-        (None, "accuracy", "accuracy", True),
+        (None, "accuracy", "accuracy", False),
         ("literal", "accuracy", "val_accuracy", True),
     ],
 )
@@ -3826,6 +3858,20 @@ def test_requested_metric_identity_requires_resolved_job_metric(source, requeste
     )
 
     assert runner.requested_metric_differs_from_job(objective) is expected
+
+
+def test_requested_metric_identity_handles_incomplete_raw_objective():
+    runner = _load_runner()
+
+    assert runner.requested_metric_differs_from_job({}) is True
+    assert runner.requested_metric_differs_from_job({"requested_metric": "accuracy"}) is True
+    assert (
+        runner.assumed_job_key_metric_mode(
+            {"mode_contract_source": "job:key_metric_mode"},
+            {"mode": "min"},
+        )
+        == "max"
+    )
 
 
 def test_campaign_admission_requires_schema_for_metric_bridge():
@@ -3952,6 +3998,7 @@ def test_candidate_import_backfills_missing_job_metric_mode_from_native_min_cont
             "mode": "min",
             "mode_contract_source": "job:key_metric_mode",
             "job_key_metric": "accuracy",
+            "job_key_metric_source": "arg:model_metric",
         }
     )
     current["objective"].pop("job_key_metric_mode")
