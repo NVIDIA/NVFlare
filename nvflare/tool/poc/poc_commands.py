@@ -2247,6 +2247,11 @@ def _run_poc(
     )
 
     if cmd_type == SC.CMD_STOP and wait:
+        if service_config.get(SC.IS_DOCKER_RUN):
+            for service_name, cmd_path in service_commands:
+                _run_stop_command(service_name, cmd_path, timeout=POC_STOP_TIMEOUT)
+            return
+
         deadline = time.monotonic() + POC_STOP_TIMEOUT
         for service_name, cmd_path in service_commands:
             remaining = deadline - time.monotonic()
@@ -2254,13 +2259,12 @@ def _run_poc(
                 raise TimeoutError(f"POC services did not stop before the timeout: {service_name}")
             _run_stop_command(service_name, cmd_path, timeout=remaining)
 
-        if not service_config.get(SC.IS_DOCKER_RUN):
-            managed_services = {service_config[SC.FLARE_SERVER], *service_config.get(SC.FLARE_CLIENTS, [])}
-            service_names = [name for name, _ in service_commands if name in managed_services]
-            if service_names:
-                project_name = project_config.get("name")
-                prod_dir = get_prod_dir(poc_workspace, project_name)
-                _wait_for_poc_services_stopped(prod_dir, service_names, deadline=deadline)
+        managed_services = {service_config[SC.FLARE_SERVER], *service_config.get(SC.FLARE_CLIENTS, [])}
+        service_names = [name for name, _ in service_commands if name in managed_services]
+        if service_names:
+            project_name = project_config.get("name")
+            prod_dir = get_prod_dir(poc_workspace, project_name)
+            _wait_for_poc_services_stopped(prod_dir, service_names, deadline=deadline)
         return
 
     clients = _get_clients(service_commands, service_config)

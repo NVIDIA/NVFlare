@@ -1379,6 +1379,34 @@ class TestPocOutput:
             assert [call.args[:2] for call in async_process.call_args_list] == service_commands
             wait_for_stopped.assert_not_called()
 
+    def test_run_poc_gives_each_docker_stop_its_full_timeout(self):
+        from nvflare.tool.poc.poc_commands import POC_STOP_TIMEOUT, _run_poc
+        from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
+
+        service_commands = [
+            ("site-1", "docker stop site-1"),
+            ("server", "docker stop server"),
+        ]
+
+        with (
+            patch("nvflare.tool.poc.poc_commands._build_commands", return_value=service_commands),
+            patch("nvflare.tool.poc.poc_commands._run_stop_command") as run_stop_command,
+            patch("nvflare.tool.poc.poc_commands.time.monotonic", side_effect=[0, 10, 25]),
+        ):
+            _run_poc(
+                SC.CMD_STOP,
+                "/tmp/poc",
+                [],
+                {SC.IS_DOCKER_RUN: True},
+                {"name": "example_project"},
+                excluded=[],
+                services_list=["site-1", "server"],
+                wait=True,
+            )
+
+        assert [call.args[:2] for call in run_stop_command.call_args_list] == service_commands
+        assert [call.kwargs["timeout"] for call in run_stop_command.call_args_list] == [POC_STOP_TIMEOUT] * 2
+
     def test_wait_for_poc_services_stopped_reports_lingering_services(self):
         from nvflare.tool.poc.poc_commands import _wait_for_poc_services_stopped
 
