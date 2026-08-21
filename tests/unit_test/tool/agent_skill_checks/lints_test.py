@@ -1481,7 +1481,7 @@ def test_run_v1_lints_allows_benign_evaluator_publication_metadata(tmp_path):
         encoding="utf-8",
     )
     skill_dir.joinpath("skill-card.md").write_text(
-        "7 evaluation tasks (7 positive) from skill-evaluator-dataset-snapshot/1. <br>\n",
+        "7 evaluation tasks (7 positive) against skill-evaluator-dataset-snapshot/1. <br>\n",
         encoding="utf-8",
     )
 
