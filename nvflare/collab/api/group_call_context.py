@@ -47,6 +47,9 @@ class ResultQueue:
         self.num_successes = 0
         self.failures = {}
         self.update_lock = threading.Lock()
+        self._iteration_started = False
+        self._frozen_items = None
+        self._frozen_next_index = 0
 
     def append(self, item, is_whole=True):
         """Append an item to the result queue.
@@ -85,12 +88,22 @@ class ResultQueue:
             return self.num_whole_items_received == self.limit
 
     def __iter__(self):
+        with self.update_lock:
+            if self._frozen_items is not None:
+                return iter(self._frozen_items)
         return self
 
     def __next__(self):
         while True:
             # Check the queue and completion count atomically with append().
             with self.update_lock:
+                if self._frozen_items is not None:
+                    if self._frozen_next_index >= len(self._frozen_items):
+                        raise StopIteration()
+                    item = self._frozen_items[self._frozen_next_index]
+                    self._frozen_next_index += 1
+                    return item
+                self._iteration_started = True
                 try:
                     item = self.q.get_nowait()
                 except queue.Empty:
@@ -109,6 +122,25 @@ class ResultQueue:
             item = self.q.get(block=True)
             if item is not _FAILURE_MARKER:
                 return item
+
+    def freeze(self):
+        """Freeze a completed, unconsumed queue into a re-iterable snapshot."""
+        with self.update_lock:
+            if self.num_whole_items_received < self.limit:
+                raise RuntimeError("cannot freeze result queue before all outcomes are received")
+            if self._iteration_started:
+                raise RuntimeError("cannot freeze result queue after iteration has started")
+            if self._frozen_items is None:
+                items = []
+                while True:
+                    try:
+                        item = self.q.get_nowait()
+                    except queue.Empty:
+                        break
+                    if item is not _FAILURE_MARKER:
+                        items.append(item)
+                self._frozen_items = tuple(items)
+            return self
 
     def __len__(self):
         """Return the number of successful whole results received.

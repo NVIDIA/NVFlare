@@ -16,6 +16,8 @@ import queue
 import threading
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from nvflare.apis.signal import Signal
 from nvflare.collab.api._invocation import _InvocationDispatcher
 from nvflare.collab.api.call_opt import CallOption
@@ -235,3 +237,46 @@ def test_result_queue_does_not_drop_last_concurrent_item():
 
     assert not consumer.is_alive()
     assert outcome == [("result", item)]
+
+
+def test_frozen_result_queue_is_reiterable_and_preserves_partial_results():
+    result_queue = ResultQueue(limit=2)
+    expected = [
+        ("site-1", "partial"),
+        ("site-1", "first"),
+        ("site-2", "second"),
+    ]
+    result_queue.append(expected[0], is_whole=False)
+    result_queue.append(expected[1])
+    result_queue.append(expected[2])
+
+    assert result_queue.freeze() is result_queue
+    assert list(result_queue) == expected
+    assert list(result_queue) == expected
+    assert len(result_queue) == 2
+
+
+def test_frozen_result_queue_preserves_failures_without_yielding_markers():
+    result_queue = ResultQueue(limit=2)
+    error = CollabCallError("site-1", "train", TimeoutError("timed out"))
+    result_queue.append_failure("site-1", error)
+    result_queue.append(("site-2", "result"))
+
+    result_queue.freeze()
+
+    assert list(result_queue) == [("site-2", "result")]
+    assert list(result_queue) == [("site-2", "result")]
+    assert result_queue.failures == {"site-1": error}
+
+
+def test_result_queue_rejects_freeze_before_completion_or_after_consumption():
+    incomplete_queue = ResultQueue(limit=2)
+    incomplete_queue.append(("site-1", "first"))
+    with pytest.raises(RuntimeError, match="before all outcomes"):
+        incomplete_queue.freeze()
+
+    consumed_queue = ResultQueue(limit=1)
+    consumed_queue.append(("site-1", "first"))
+    assert next(consumed_queue) == ("site-1", "first")
+    with pytest.raises(RuntimeError, match="after iteration has started"):
+        consumed_queue.freeze()

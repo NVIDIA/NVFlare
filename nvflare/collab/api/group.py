@@ -103,9 +103,9 @@ class Group:
         ResultQueue.failures as a mapping from site name to CollabCallError.
 
         The blocking flag is only meaningful when expect_result is True. If blocking is True, the call does not
-        return until results are received from all sites (or timed out). If blocking is False, the call immediately
-        returns. In both cases, the ResultQueue object is returned, and the application should iterate through it
-        to process site results.
+        return until results are received from all sites (or timed out), and the returned ResultQueue is frozen into
+        a re-iterable snapshot. If blocking is False, the call immediately returns a live, single-pass ResultQueue
+        that the application should iterate to process results as they arrive.
 
         """
 
@@ -168,7 +168,7 @@ class Group:
 
                     # wait for responses
                     waiter.wait_for_responses(self._abort_signal)
-                    return waiter.results
+                    return waiter.results.freeze()
             except Exception as ex:
                 self._logger.error(f"exception {type(ex)} occurred: {ex}")
                 raise
