@@ -2,9 +2,9 @@
 name: nvflare-autofl
 description: "Use for agent-assisted Auto-FL optimization of an existing NVFLARE job in simulation, POC, or production. Do not use for code conversion, diagnosis-only work, or deployment setup."
 license: Apache-2.0
-version: "0.1.0"
 compatibility: "Requires NVFLARE 2.9.0+, Python, and permission to run NVFLARE jobs in the selected environment."
 metadata:
+  version: "0.1.0"
   author: "NVIDIA FLARE Team <federatedlearning@nvidia.com>"
   tags: "nvflare, federated-learning, optimization"
   min-flare-version: "2.9.0"
@@ -26,8 +26,8 @@ Do not use for converting non-FL training code into NVFLARE, diagnosing failed j
 | Script | Purpose | Arguments |
 | --- | --- | --- |
 | `scripts/run_job_campaign.py` | Authoritative campaign lifecycle runner | `ACTION JOB` plus action-specific flags |
-| `scripts/campaign_guard.py` | Read-only ledger diagnostics | `[RESULTS]` and diagnostic thresholds |
-| `scripts/plot_progress.py` | Render campaign progress | `[RESULTS]`, `--output`, `--metric` |
+| `scripts/campaign_guard.py` | Read-only ledger diagnostics | `[RESULTS]`, `--mode`, and diagnostic thresholds |
+| `scripts/plot_progress.py` | Render campaign progress | `[RESULTS]`, `--output`, `--metric`, `--mode` |
 | `scripts/job_importer.py` | Import library used by the campaign runner | Not a standalone CLI |
 
 ## Workflow
@@ -43,8 +43,8 @@ Resolve [run_job_campaign.py](scripts/run_job_campaign.py) relative to this `SKI
 python "$RUNNER" initialize ./job.py [--metric <metric>] --env <sim|poc|prod> [--max-candidates <n>]
 ```
 
-Campaigns always maximize the optimization metric — matching NVFLARE best-model selection — so loss-like objectives
-must be reported by the job as negated metrics (for example `neg_val_loss`) where higher is better. For conditional
+Campaign direction comes from `job.py` `key_metric_mode` or a same-metric `stop_cond`; NVFLARE defaults to `max`.
+Declare raw loss metrics with `key_metric_mode="min"`; explicitly negated metrics remain ordinary `max` metrics. For conditional
 recipes, safe refusals, and unnamed simulator roots, read the [job import contract](references/job-import-contract.md).
 
 Read `autofl.yaml` and the JSON response, then prepare an agent-authored candidate with a short hypothesis and
@@ -178,8 +178,8 @@ approved cap changes stay in campaign metadata.
 Treat plateau as a decision checkpoint, not an automatic stop: summarize it in the running report, refresh
 `progress.png`, run the runner's `status` action to refresh `.nvflare/autofl/campaign_state.json`, choose the returned
 next mode, and continue unless the state reports `final_response_allowed=true`. Use `campaign_guard.py` only for
-read-only ledger diagnostics; it never updates authoritative campaign state. After a source-backed review, record it
-with `record --literature --hypothesis "<sources and decision>"`. Each review gets a persistent
+read-only diagnostics; it never writes state. Both `campaign_guard.py` and `plot_progress.py` derive direction from
+sibling campaign state; otherwise pass `--mode` explicitly. After a source-backed review, record it with `record --literature --hypothesis "<sources and decision>"`. Each review gets a persistent
 `literature_event_id` and requires an exploration batch before normal flow resumes: `exploration_batch_size` (default
 3) scored source-backed candidates linked via `prepare --literature-event <id>` — a faithful implementation, a tuned
 variant, and an ablation. The plateau clock resets when that batch completes, not when the review is recorded;

@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,7 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import os.path
+
+"""Load each site's prepared CIFAR-10 sample IDs for private set intersection."""
+
+from pathlib import Path
 
 import numpy as np
 
@@ -19,17 +22,15 @@ from nvflare.app_common.psi.psi_spec import PSI
 
 
 class Cifar10LocalPSI(PSI):
-    def __init__(self, psi_writer_id: str, data_path: str = "/tmp/data.csv"):
+    def __init__(self, split_dir: str, psi_writer_id: str = "psi_writer"):
         super().__init__(psi_writer_id)
-        self.data_path = data_path
-        self.data = {}
-
-        if not os.path.isfile(self.data_path):
-            raise RuntimeError(f"invalid data path {data_path}")
+        self.split_dir = split_dir
 
     def load_items(self) -> list[str]:
-        _ext = os.path.splitext(self.data_path)[1]
+        site_name = self.fl_ctx.get_identity_name()
+        data_path = Path(self.split_dir) / f"{site_name}.npy"
+        if not data_path.is_file():
+            raise FileNotFoundError(f"Prepared site indices not found at {data_path}")
 
-        items = np.load(self.data_path)
-
-        return [str(i) for i in items]
+        # DH-PSI accepts unique string items and keeps the raw sample IDs private.
+        return [str(index) for index in np.load(data_path)]

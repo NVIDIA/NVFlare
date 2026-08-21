@@ -43,7 +43,7 @@ from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey, ReturnCo
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL, STREAM_DATA_TOPIC, StreamHeaderKey
-from nvflare.fuel.f3.streaming.stream_types import StreamError
+from nvflare.fuel.f3.streaming.stream_types import StreamError, StreamFuture, StreamTargetUnreachable
 
 
 class _FailingClient:
@@ -109,14 +109,14 @@ def test_prepare_for_remote_call_registers_blob_callback():
     assert registration["logger"] is logger
     assert registration["executor"] is executor
     assert "preflight_cb" not in registration
-    cell.core_cell.add_incoming_filter.assert_called_once()
-    filter_registration = cell.core_cell.add_incoming_filter.call_args.args
+    cell.core_cell.add_incoming_request_filter.assert_called_once()
+    filter_registration = cell.core_cell.add_incoming_request_filter.call_args.args
     assert filter_registration[:2] == (STREAM_CHANNEL, STREAM_DATA_TOPIC)
     assert callable(filter_registration[2])
 
 
 def test_collab_stream_filter_rejects_before_receive_state_is_created():
-    authorizer = MagicMock()
+    authorizer = MagicMock(local_fqcn="site-1.job")
     rejection = StreamError("Collab call rejected")
     authorizer.authorize.return_value = rejection
     byte_receiver = MagicMock()
@@ -124,6 +124,7 @@ def test_collab_stream_filter_rejects_before_receive_state_is_created():
     message = Message(
         {
             MessageHeaderKey.ORIGIN: "server.other-job",
+            MessageHeaderKey.DESTINATION: "site-1.job",
             StreamHeaderKey.STREAM_ID: 123,
             StreamHeaderKey.CHANNEL: MSG_CHANNEL,
             StreamHeaderKey.TOPIC: MSG_TOPIC,
@@ -138,11 +139,12 @@ def test_collab_stream_filter_rejects_before_receive_state_is_created():
 
 
 def test_collab_stream_filter_ignores_other_streams():
-    authorizer = MagicMock()
+    authorizer = MagicMock(local_fqcn="site-1.job")
     byte_receiver = MagicMock()
     stream_filter = _CollabStreamFilter(authorizer, byte_receiver)
     message = Message(
         {
+            MessageHeaderKey.DESTINATION: "site-1.job",
             StreamHeaderKey.CHANNEL: "other-channel",
             StreamHeaderKey.TOPIC: "other-topic",
         }
@@ -333,6 +335,73 @@ def test_stream_adapter_sends_future_response_asynchronously():
 
     cell.send_blob.assert_called_once()
     assert cell.send_blob.call_args.args[0] == CellChannel.RETURN_ONLY
+    assert cell.send_blob.call_args.kwargs["optional"] is True
+
+
+def test_stream_adapter_logs_undeliverable_late_response_at_debug():
+    adapter = Adapter(MagicMock(), MagicMock(fqcn="site-1.job"), MagicMock())
+    adapter.logger = MagicMock()
+    reply_future = Future()
+    reply_future.set_exception(StreamTargetUnreachable("requester is gone"))
+
+    adapter._handle_reply_stream_done(reply_future, transport_optional=True)
+
+    adapter.logger.debug.assert_called_once()
+    adapter.logger.error.assert_not_called()
+
+
+def test_stream_adapter_logs_required_target_unreachable_at_error():
+    adapter = Adapter(MagicMock(), MagicMock(fqcn="site-1.job"), MagicMock())
+    adapter.logger = MagicMock()
+    reply_future = Future()
+    reply_future.set_exception(StreamTargetUnreachable("requester route failed"))
+
+    adapter._handle_reply_stream_done(reply_future, transport_optional=False)
+
+    adapter.logger.error.assert_called_once()
+    adapter.logger.debug.assert_not_called()
+
+
+def test_stream_adapter_downgrades_late_default_request_failure():
+    reply_future = StreamFuture(stream_id=1)
+    cell = MagicMock()
+    cell.get_fobs_context.return_value = {}
+    cell.send_blob.return_value = reply_future
+    adapter = Adapter(lambda _request: new_cell_message({}, {"result": "done"}), MagicMock(fqcn="site-1"), cell)
+    adapter.logger = MagicMock()
+    incoming = MagicMock()
+    incoming.headers = {
+        StreamHeaderKey.STREAM_REQ_ID: "stream-1",
+        StreamHeaderKey.CHANNEL: "collab",
+        StreamHeaderKey.TOPIC: "call",
+        MessageHeaderKey.ORIGIN: "server",
+        MessageHeaderKey.REQ_ID: "request-1",
+        MessageHeaderKey.OPTIONAL: False,
+    }
+    incoming.result.return_value = {}
+
+    with (
+        patch("nvflare.fuel.f3.cellnet.cell.decode_payload"),
+        patch("nvflare.fuel.f3.cellnet.cell.encode_payload"),
+    ):
+        adapter.call(incoming)
+
+    reply_future.set_exception(StreamTargetUnreachable("requester is gone"))
+
+    adapter.logger.debug.assert_called()
+    adapter.logger.error.assert_not_called()
+
+
+def test_stream_adapter_logs_active_stream_failure_at_error():
+    adapter = Adapter(MagicMock(), MagicMock(fqcn="site-1.job"), MagicMock())
+    adapter.logger = MagicMock()
+    reply_future = Future()
+    reply_future.set_exception(StreamError("ACK timed out"))
+
+    adapter._handle_reply_stream_done(reply_future)
+
+    adapter.logger.error.assert_called_once()
+    adapter.logger.debug.assert_not_called()
 
 
 @pytest.mark.parametrize("secure", [False, True])

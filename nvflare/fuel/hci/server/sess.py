@@ -24,6 +24,7 @@ from nvflare.fuel.hci.base64_utils import b64str_to_str, str_to_b64str
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import InternalCommands, ReplyKeyword
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
+from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.time_utils import time_to_string
 from nvflare.private.fed.utils.identity_utils import IdentityAsserter, TokenVerifier
@@ -73,9 +74,11 @@ class Session(object):
         return f"{bds}:{signature}"
 
     @staticmethod
-    def decode_token(token: str, id_asserter: IdentityAsserter = None):
+    def decode_token(token: str, id_asserter: IdentityAsserter):
         if not isinstance(token, str):
             raise ValueError(f"token must be str but got {type(token)}")
+        if not id_asserter:
+            raise ValueError("cannot decode session token without an identity asserter")
 
         parts = token.split(":")
         if len(parts) != 2:
@@ -84,11 +87,10 @@ class Session(object):
         bds = parts[0]
         signature = parts[1]
         ds = b64str_to_str(bds)
-        if id_asserter:
-            token_verifier = TokenVerifier(id_asserter.cert)
-            is_valid = token_verifier.verify("", ds, signature)
-            if not is_valid:
-                return None
+        token_verifier = TokenVerifier(id_asserter.cert)
+        is_valid = token_verifier.verify("", ds, signature)
+        if not is_valid:
+            return None
 
         user = json.loads(ds)
         return Session(
@@ -174,6 +176,8 @@ class SessionManager(CommandModule):
 
     def recreate_session(self, token: str, origin_fqcn, id_asserter: IdentityAsserter):
         sess = Session.decode_token(token, id_asserter)
+        if not sess:
+            raise ValueError("invalid session token")
         if sess.is_cert_expired():
             raise ValueError("admin certificate for session token is expired")
         sess.origin_fqcn = origin_fqcn
@@ -181,7 +185,7 @@ class SessionManager(CommandModule):
             self.sessions[sess.sess_id] = sess
         return sess
 
-    def get_session(self, token: str, id_asserter=None):
+    def get_session(self, token: str, id_asserter: IdentityAsserter):
         try:
             sess = Session.decode_token(token, id_asserter)
             if sess is None:
@@ -230,13 +234,6 @@ class SessionManager(CommandModule):
             for _, s in self.sessions.items():
                 result.append(s)
         return result
-
-    def end_session_by_token(self, token, reason=None):
-        try:
-            sess = Session.decode_token(token)
-        except:
-            return
-        self.end_session_by_id(sess.sess_id, reason)
 
     def end_session_by_id(self, sess_id: str, reason=None):
         with self.sess_update_lock:
@@ -311,7 +308,9 @@ class SessionManager(CommandModule):
             conn.append_error("invalid_session")
             return
 
-        sess = self.get_session(token)
+        hci = conn.get_prop(ConnProps.HCI_SERVER)
+        id_asserter = hci.get_id_asserter() if hci else None
+        sess = self.get_session(token, id_asserter)
         if sess:
             conn.append_string("OK")
         else:

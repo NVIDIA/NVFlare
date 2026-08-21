@@ -91,6 +91,13 @@ def _result_accepted_reply():
     return make_cell_reply(CellReturnCode.OK, body={MsgKey.REPLY_TOPIC: Topic.RESULT_ACCEPTED})
 
 
+def _session_ready_reply():
+    return make_cell_reply(
+        CellReturnCode.OK,
+        body={MsgKey.REPLY_TOPIC: Topic.SESSION_READY, MsgKey.SESSION_ID: SESSION_ID},
+    )
+
+
 class FakeCell:
     """The CJ cell as seen from the trainer: records the trainer's outbound requests/messages
     and lets a test deliver CJ->trainer control messages (TASK_READY/ABORT/SHUTDOWN)."""
@@ -106,6 +113,7 @@ class FakeCell:
         self.request_kwargs = []
         self.fired = []  # (topic, targets, payload)
         self.on_request = None
+        self.on_session_ready = None
         self.fobs_context = {}
         self.heartbeat_interval = 0.05
         self.heartbeat_timeout = 0.0
@@ -132,6 +140,10 @@ class FakeCell:
         self.requests.append((topic, target, request.payload))
         self.request_messages.append(request)
         self.request_kwargs.append(kwargs)
+        if topic == Topic.SESSION_READY:
+            if self.on_session_ready is not None:
+                return self.on_session_ready(topic, target, request)
+            return _session_ready_reply()
         if self.on_request is not None:
             reply = self.on_request(topic, target, request)
             # Most test hooks predate the correlated settlement reply and return a
@@ -1162,6 +1174,9 @@ class TestInit:
             assert payload[MsgKey.PROTOCOL_VERSION] == PROTOCOL_VERSION
             assert payload[MsgKey.JOB_ID] == "job-1"
             assert payload[MsgKey.RANK] == "0"
+            session_ready = [r for r in env.requests if r[0] == Topic.SESSION_READY][0]
+            assert session_ready[1] == CJ_FQCN
+            assert session_ready[2] == {MsgKey.SESSION_ID: SESSION_ID}
             assert api._session_id == SESSION_ID
             assert api._memory_gc_rounds == 3
             assert api._cuda_empty_cache is True
@@ -1169,6 +1184,43 @@ class TestInit:
                 assert topic in env.cbs
         finally:
             api.shutdown()
+
+    def test_session_ready_gets_fresh_budget_after_slow_hello(self, bootstrap_path, env, monkeypatch):
+        clock = [100.0]
+        monkeypatch.setattr(cell_api.time, "monotonic", lambda: clock[0])
+
+        def delayed_hello(topic, _target, _request):
+            if topic == Topic.HELLO:
+                clock[0] += cell_api._HELLO_TIMEOUT
+                return _hello_accepted_reply()
+            return make_cell_reply(CellReturnCode.OK)
+
+        env.on_request = delayed_hello
+        api = _init_api(bootstrap_path, env)
+        try:
+            assert [request[0] for request in env.requests].count(Topic.SESSION_READY) == 1
+            assert api._session_id == SESSION_ID
+        finally:
+            api.shutdown()
+
+    def test_session_ready_timeout_reports_attempts_and_elapsed(self, bootstrap_path, env, monkeypatch):
+        clock = [100.0]
+        monkeypatch.setattr(cell_api, "_HELLO_TIMEOUT", 2.0)
+        monkeypatch.setattr(cell_api.time, "monotonic", lambda: clock[0])
+
+        def advance_clock(seconds):
+            clock[0] += seconds
+
+        monkeypatch.setattr(cell_api.time, "sleep", advance_clock)
+        env.on_session_ready = lambda _topic, _target, _request: make_cell_reply(CellReturnCode.TIMEOUT)
+        api = CellClientAPI(bootstrap_file=bootstrap_path)
+        api._cell = env
+        api._session_id = SESSION_ID
+
+        with pytest.raises(TrainerSessionError, match=r"after 2 attempts over 2\.0s"):
+            api._confirm_session_ready()
+
+        assert [request[0] for request in env.requests] == [Topic.SESSION_READY, Topic.SESSION_READY]
 
     def test_init_raises_on_hello_rejected(self, bootstrap_path, env):
         env.on_request = lambda topic, target, request: make_cell_reply(
@@ -1190,6 +1242,39 @@ class TestInit:
             api.init(rank="0")
 
         assert api._session_id is None
+        assert env.stopped
+
+    def test_secure_init_installs_auth_before_session_ready(self, bootstrap_path, env):
+        _set_secure_mode(bootstrap_path, True)
+        env.secure_mode = True
+
+        def confirm_ready(_topic, _target, request):
+            env.auth_filter.assert_called_once_with(
+                env,
+                client_name="site-1",
+                auth_token="site-auth-token",
+                token_signature="site-auth-signature",
+            )
+            assert request.payload == {MsgKey.SESSION_ID: SESSION_ID}
+            return _session_ready_reply()
+
+        env.on_session_ready = confirm_ready
+        api = _init_api(bootstrap_path, env)
+        try:
+            assert api._session_id == SESSION_ID
+        finally:
+            api.shutdown()
+
+    def test_init_fails_fast_when_session_ready_is_rejected(self, bootstrap_path, env):
+        env.on_session_ready = lambda _topic, _target, _request: make_cell_reply(
+            CellReturnCode.OK,
+            body={MsgKey.REPLY_TOPIC: Topic.ERROR, MsgKey.REASON: "stale session"},
+        )
+        api = CellClientAPI(bootstrap_file=bootstrap_path)
+
+        with pytest.raises(TrainerSessionError, match="SESSION_READY rejected: stale session"):
+            api.init(rank="0")
+
         assert env.stopped
 
     def test_non_secure_init_accepts_protocol_v1_reply_without_secure_mode(self, bootstrap_path, env):
