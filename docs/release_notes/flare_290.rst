@@ -123,7 +123,10 @@ Compatibility and Migration Notes
   ``key_metric`` with ``key_metric_mode``, or declare the alternate metric
   bridge, before initializing a campaign. Experimental legacy minimization
   campaigns without direction provenance must be re-initialized in a fresh
-  workspace.
+  workspace. Job constructor calls that pass ``**kwargs`` now also fail closed
+  when the splat could hide ``key_metric``, ``key_metric_mode``,
+  ``model_selector``, or ``stop_cond``; spell out the safety-critical keywords
+  in the call before initializing.
 - In external-process Client API mode, losing a trainer after its lazy result
   envelope has been accepted now fails the run as ``EXECUTION_EXCEPTION`` even
   if a controller's ``min_responses`` threshold could otherwise tolerate a

@@ -26,6 +26,13 @@ importer preserves that native direction separately as `job_key_metric_mode`
 so candidate validation can detect changes hidden by an alternate metric
 bridge. A custom `model_selector` makes direction unresolved because it
 supersedes `key_metric_mode` and its behavior cannot be imported statically.
+A job constructor that passes `**kwargs` also leaves `key_metric` unresolved
+unless that keyword is explicit in the call. Its direction remains unresolved
+unless `key_metric_mode`, `model_selector`, and `stop_cond` are all explicit,
+because any omitted value may be supplied by the splat. Rewrite the call to
+spell out these safety-critical keywords before initializing. A mutation-schema
+bridge may declare the direction of a differing requested metric, but the job
+key metric's own direction can only be declared explicitly in `job.py`.
 
 For a new campaign, import and admission complete in memory before the runner
 creates campaign files or acquires the workspace lock. An obvious

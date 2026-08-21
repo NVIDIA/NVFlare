@@ -333,6 +333,103 @@ runner = ScriptRunner(script="train.py")
     assert config["objective"]["mode_contract_source"] == "job:key_metric_mode"
 
 
+def test_import_marks_splatted_key_metric_unresolved(tmp_path):
+    tmp_path.joinpath("client.py").write_text("print('train')\n", encoding="utf-8")
+    job_path = tmp_path / "job.py"
+    job_path.write_text(
+        """
+import argparse
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--key_metric", default="val_loss")
+args = parser.parse_args()
+tuning = {"key_metric": args.key_metric}
+recipe = FedAvgRecipe(
+    name="splatted-metric", min_clients=2, num_rounds=1, train_script="client.py", **tuning
+)
+recipe.execute(SimEnv(num_clients=2))
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+
+    assert config["objective"]["metric"] == "accuracy"
+    assert config["objective"]["metric_contract_source"] == "default"
+    assert any(
+        item["field"] == "objective.metric" and "job call passes **kwargs" in item["reason"]
+        for item in config["unresolved"]
+    )
+
+
+def test_import_marks_splatted_direction_keywords_unresolved_with_explicit_metric(tmp_path):
+    tmp_path.joinpath("train.py").write_text("print('train')\n", encoding="utf-8")
+    job_path = tmp_path / "job.py"
+    job_path.write_text(
+        """
+from nvflare.app_common.executors.script_runner import ScriptRunner
+from nvflare.job_config.base_fed_job import BaseFedJob
+from nvflare.widgets.widget import Widget
+
+
+class CustomSelector(Widget):
+    pass
+
+
+extra = {"model_selector": CustomSelector(), "key_metric_mode": "min"}
+job = BaseFedJob(name="splatted-direction", min_clients=2, key_metric="brier", **extra)
+runner = ScriptRunner(script="train.py")
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+
+    assert config["objective"]["metric"] == "brier"
+    assert config["objective"]["metric_contract_source"] == "literal"
+    assert config["objective"]["mode"] == "max"
+    assert config["objective"]["mode_contract_source"] == "unresolved"
+    assert any(
+        item["field"] == "objective.mode" and "job call passes **kwargs" in item["reason"]
+        for item in config["unresolved"]
+    )
+    assert not any(item["field"] == "objective.metric" for item in config["unresolved"])
+
+
+def test_import_resolves_explicit_direction_keywords_despite_unrelated_splat(tmp_path):
+    tmp_path.joinpath("train.py").write_text("print('train')\n", encoding="utf-8")
+    job_path = tmp_path / "job.py"
+    job_path.write_text(
+        """
+from nvflare.app_common.executors.script_runner import ScriptRunner
+from nvflare.job_config.base_fed_job import BaseFedJob
+
+
+other = {"description": "unrelated"}
+job = BaseFedJob(
+    name="explicit-direction",
+    min_clients=2,
+    key_metric="loss",
+    key_metric_mode="min",
+    model_selector=None,
+    stop_cond=None,
+    **other,
+)
+runner = ScriptRunner(script="train.py")
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+
+    assert config["objective"]["mode"] == "min"
+    assert config["objective"]["mode_contract_source"] == "job:key_metric_mode"
+    assert not any(item["field"] == "objective.mode" for item in config["unresolved"])
+
+
 def test_import_marks_malformed_stop_condition_unresolved(tmp_path):
     job_path = _write_recipe_job(tmp_path)
     source = job_path.read_text(encoding="utf-8").replace(
