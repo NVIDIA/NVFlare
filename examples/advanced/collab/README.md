@@ -27,6 +27,7 @@ python -m collab.swarm.swarm --num-clients 3
 | `async_aggregation` | In-time aggregation with a response callback |
 | `swarm` | Decentralized swarm learning with client-to-client calls |
 | [`pt_async_cifar10`](pt_async_cifar10/README.md) | Asynchronous PyTorch CIFAR-10 training with prepared logical-client shards |
+| [CIFAR-10 SplitNN](../vertical_federated_learning/cifar10-splitnn/README.md) | Two-party SplitNN with direct activation and gradient return values |
 | [`pt_llm_sft`](pt_llm_sft/README.md) | Full-parameter Hugging Face SFT with frequent direct PyTorch tensor exchange and server-side FedAvg |
 
 Every server object or module must define exactly one `@collab.main` entry
@@ -48,6 +49,9 @@ The NumPy examples run in a base installation; `hello_fedavg` needs PyTorch.
 its first run.
 `pt_async_cifar10` additionally needs TensorBoard; follow its
 [setup and prepared-data workflow](pt_async_cifar10/README.md).
+The [CIFAR-10 SplitNN example](../vertical_federated_learning/cifar10-splitnn/README.md)
+needs PyTorch, torchvision, TensorBoard, and PSI and follows a
+prepare-data-first workflow.
 `pt_llm_sft` has additional Hugging Face dependencies and a
 [prepare-data-first workflow](pt_llm_sft/README.md).
 

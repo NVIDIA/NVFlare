@@ -1723,6 +1723,7 @@ def _write_skill(
         f"name: {name}\n"
         f"description: {description}\n"
         "metadata:\n"
+        '  version: "0.1.0"\n'
         '  author: "Test Author <test-author@nvidia.com>"\n'
         '  min-flare-version: "2.8.0"\n'
         "  blast-radius: edits_files\n"
