@@ -100,6 +100,13 @@ class _CollabStreamFilter:
         ):
             return None
 
+        # CoreCell invokes incoming filters before it decides whether to
+        # deliver or forward a message. Only authorize streams addressed to
+        # this job cell; a transit stream will be authorized by its final
+        # destination before receiver state is allocated there.
+        if message.get_header(MessageHeaderKey.DESTINATION) != self.authorizer.local_fqcn:
+            return None
+
         rejection = self.authorizer.authorize(message.headers)
         if rejection:
             self.byte_receiver.reject(message, rejection)

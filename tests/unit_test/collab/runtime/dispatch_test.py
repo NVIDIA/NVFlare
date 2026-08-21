@@ -116,7 +116,7 @@ def test_prepare_for_remote_call_registers_blob_callback():
 
 
 def test_collab_stream_filter_rejects_before_receive_state_is_created():
-    authorizer = MagicMock()
+    authorizer = MagicMock(local_fqcn="site-1.job")
     rejection = StreamError("Collab call rejected")
     authorizer.authorize.return_value = rejection
     byte_receiver = MagicMock()
@@ -124,6 +124,7 @@ def test_collab_stream_filter_rejects_before_receive_state_is_created():
     message = Message(
         {
             MessageHeaderKey.ORIGIN: "server.other-job",
+            MessageHeaderKey.DESTINATION: "site-1.job",
             StreamHeaderKey.STREAM_ID: 123,
             StreamHeaderKey.CHANNEL: MSG_CHANNEL,
             StreamHeaderKey.TOPIC: MSG_TOPIC,
@@ -135,6 +136,25 @@ def test_collab_stream_filter_rejects_before_receive_state_is_created():
     assert isinstance(response, Message)
     authorizer.authorize.assert_called_once_with(message.headers)
     byte_receiver.reject.assert_called_once_with(message, rejection)
+
+
+def test_collab_stream_filter_ignores_transit_streams():
+    authorizer = MagicMock(local_fqcn="server")
+    byte_receiver = MagicMock()
+    stream_filter = _CollabStreamFilter(authorizer, byte_receiver)
+    message = Message(
+        {
+            MessageHeaderKey.ORIGIN: "site-1.job",
+            MessageHeaderKey.DESTINATION: "site-2.job",
+            StreamHeaderKey.STREAM_ID: 123,
+            StreamHeaderKey.CHANNEL: MSG_CHANNEL,
+            StreamHeaderKey.TOPIC: MSG_TOPIC,
+        }
+    )
+
+    assert stream_filter.filter(message) is None
+    authorizer.authorize.assert_not_called()
+    byte_receiver.reject.assert_not_called()
 
 
 def test_collab_stream_filter_ignores_other_streams():
