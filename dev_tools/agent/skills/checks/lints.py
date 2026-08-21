@@ -1195,16 +1195,20 @@ _EVALUATOR_HOOK_RE = re.compile(
     r")",
     re.IGNORECASE,
 )
+_BENIGN_EVALUATOR_METADATA_LINE_RE = re.compile(
+    r"(?:"
+    r"- Evaluator version: `[0-9]+(?:\.[0-9]+){1,3}(?:[-+][0-9A-Za-z.-]+)?`"
+    r"|- Dataset digest: `sha256:[0-9a-f]{64}` \(skill-evaluator-dataset-snapshot/\d+\)"
+    r"|Regenerate this benchmark when the skill, evaluation dataset, target agent/model, evaluator version, "
+    r"environment, or scoring policy changes\."
+    r")"
+)
 # Names excluded from runtime-guidance scanning. ``evals`` is co-located
 # evaluation metadata, which the standard installer copies with the complete
 # skill directory but which is not runtime guidance. Byte-code artifacts and
 # ``__pycache__`` are likewise not meaningful skill guidance. This controls
 # lint traversal only; it does not configure the external skills installer.
 SKILL_RUNTIME_GUIDANCE_EXCLUDE_NAMES = frozenset({"__pycache__", "*.pyc", "*.pyo", "evals"})
-# Evaluator publication artifacts are attached at the skill root after a
-# successful NVSkills CI run. They describe validation results and signatures;
-# they are not instructions consumed by the skill at runtime.
-SKILL_RUNTIME_GUIDANCE_EXCLUDE_TOP_LEVEL_FILES = frozenset({"BENCHMARK.md", "skill-card.md", "skill.oms.sig"})
 # Directory-name subset of SKILL_RUNTIME_GUIDANCE_EXCLUDE_NAMES (byte-code file
 # globs are not directory names). The runtime-boundary lint uses this to prune
 # its guidance scan.
@@ -1391,8 +1395,6 @@ def _iter_packaged_runtime_text_paths(skill_dir: Path) -> Iterable[Path]:
     if not skill_dir.is_dir():
         return
     for path in _iter_files_no_follow(skill_dir, excluded_dir_names=_RUNTIME_BOUNDARY_EXCLUDED_DIRS):
-        if path.parent == skill_dir and path.name in SKILL_RUNTIME_GUIDANCE_EXCLUDE_TOP_LEVEL_FILES:
-            continue
         if path.suffix.lower() in _RUNTIME_TEXT_SUFFIXES:
             yield path
 
@@ -1422,7 +1424,7 @@ def _scan_runtime_boundary(context: LintContext, file_path: Path, text: str, *, 
                     global_finding=skill is None,
                 )
             )
-        if _EVALUATOR_HOOK_RE.search(line):
+        if _EVALUATOR_HOOK_RE.search(line) and not _BENIGN_EVALUATOR_METADATA_LINE_RE.fullmatch(line):
             context.findings.append(
                 _finding(
                     LINT_SKILL_RUNTIME_BOUNDARY,

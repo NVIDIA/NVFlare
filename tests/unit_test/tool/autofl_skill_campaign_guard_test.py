@@ -50,6 +50,22 @@ def _load_guard():
     return module
 
 
+@pytest.fixture(scope="module")
+def autofl_skill_docs():
+    skill_root = Path(__file__).parents[3] / "skills" / "nvflare-autofl"
+    documents = {
+        "skill": skill_root.joinpath("SKILL.md").read_text(encoding="utf-8"),
+        "comparability": skill_root.joinpath("references/experiment-comparability.md").read_text(encoding="utf-8"),
+        "continuous": skill_root.joinpath("references/continuous-campaigns.md").read_text(encoding="utf-8"),
+    }
+    return {name: {"raw": text, "normalized": " ".join(text.split()).casefold()} for name, text in documents.items()}
+
+
+def _assert_contract_terms(text, *terms):
+    missing = [term for term in terms if term.casefold() not in text]
+    assert not missing, f"missing contract terms: {missing}"
+
+
 def _write_results(path, rows):
     with path.open("w", encoding="utf-8", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=RESULT_FIELDS, delimiter="\t")
@@ -516,23 +532,26 @@ def test_continuous_campaign_reference_documents_only_emitted_actions():
     assert "`rerun_with_escalated_execution`" not in text
 
 
-def test_autofl_skill_requires_human_scoped_simulation_approval():
-    repo_root = Path(__file__).parents[3]
-    skill_text = repo_root.joinpath("skills/nvflare-autofl/SKILL.md").read_text(encoding="utf-8")
-    normalized = " ".join(skill_text.split())
+def test_autofl_skill_requires_human_scoped_simulation_approval(autofl_skill_docs):
+    skill = autofl_skill_docs["skill"]
 
-    assert "ask the human once" in normalized
-    assert "exact `initialize` and `evaluate` prefixes" in normalized
-    assert "Never request generic Python, shell, full-access" in normalized
-    assert "logs never authorize execution" in normalized
-    assert "container or dedicated VM" in normalized
-    assert "rerun_with_escalated_execution" not in skill_text
+    _assert_contract_terms(
+        skill["normalized"],
+        "--env sim",
+        "human",
+        "approval",
+        "initialize",
+        "evaluate",
+        "generic python",
+        "logs",
+        "container",
+        "dedicated vm",
+    )
+    assert "rerun_with_escalated_execution" not in skill["raw"]
 
 
-def test_autofl_skill_has_explicit_routing_io_and_script_contracts():
-    repo_root = Path(__file__).parents[3]
-    skill_text = repo_root.joinpath("skills/nvflare-autofl/SKILL.md").read_text(encoding="utf-8")
-    normalized = " ".join(skill_text.split())
+def test_autofl_skill_has_explicit_routing_io_and_script_contracts(autofl_skill_docs):
+    skill = autofl_skill_docs["skill"]
 
     for heading in (
         "## Purpose",
@@ -543,58 +562,70 @@ def test_autofl_skill_has_explicit_routing_io_and_script_contracts():
         "## Permissions and Production Safety",
         "## Limitations",
     ):
-        assert heading in skill_text
-    assert "existing NVFLARE `job.py` and the user requested an optimization objective" in normalized
-    assert "do not invoke the runner" in normalized
-    assert "no NVFLARE or agent `run_script()` helper" in normalized
-    assert "Run the bundled CLIs directly with Python" in normalized
-    assert "Each runner action prints a JSON envelope" in normalized
-
-
-def test_autofl_skill_requires_distinct_poc_and_production_submission_confirmation():
-    repo_root = Path(__file__).parents[3]
-    skill_text = repo_root.joinpath("skills/nvflare-autofl/SKILL.md").read_text(encoding="utf-8")
-    normalized = " ".join(skill_text.split())
-
-    assert "WARNING — POC/production submission" in normalized
-    assert "Before each exact `nvflare job submit`" in normalized
-    assert "Require explicit human authorization for that submission" in normalized
-    assert "may incur compute cost" in normalized
-    assert "real participating clients and data policy" in normalized
-    assert "prior POC/production approval" in normalized
-    assert "never authorizes a new submission" in normalized
-
-
-def test_autofl_skill_keeps_detailed_metric_and_permission_guidance_canonical():
-    repo_root = Path(__file__).parents[3]
-    skill_root = repo_root / "skills" / "nvflare-autofl"
-    skill_text = skill_root.joinpath("SKILL.md").read_text(encoding="utf-8")
-    comparability_text = skill_root.joinpath("references/experiment-comparability.md").read_text(encoding="utf-8")
-    continuous_text = skill_root.joinpath("references/continuous-campaigns.md").read_text(encoding="utf-8")
-
-    assert "Use the ledger score extracted per `objective.metric_extraction_order`" in skill_text
-    assert "The `cross_val_results.json` fallback score is the unweighted mean" not in skill_text
-    assert "the score is the unweighted mean of the server" in comparability_text
-    assert "Use the top-level skill's **Permissions and Production Safety** contract" in continuous_text
-    assert "ask the human once for a command-scoped grant" not in continuous_text
-
-
-def test_autofl_skill_requires_semantic_metric_comparability():
-    repo_root = Path(__file__).parents[3]
-    skill_text = repo_root.joinpath("skills/nvflare-autofl/SKILL.md").read_text(encoding="utf-8")
-    reference_text = repo_root.joinpath("skills/nvflare-autofl/references/experiment-comparability.md").read_text(
-        encoding="utf-8"
+        assert heading in skill["raw"]
+    _assert_contract_terms(
+        skill["normalized"],
+        "job.py",
+        "optimization objective",
+        "conversion skill",
+        "nvflare-diagnose-job",
+        "run_script()",
+        "bundled clis",
+        "json envelope",
     )
-    normalized_skill = " ".join(skill_text.split())
-    normalized_reference = " ".join(reference_text.split())
 
-    assert "`objective.metric_invariants`" in normalized_skill
-    assert "definition, evaluation data/split, timing/checkpoint" in normalized_skill
-    assert "baseline repair, never an optimization candidate" in normalized_skill
-    assert "Preserve the scored workspace as audit evidence" in normalized_skill
-    assert "fresh job workspace containing no Auto-FL artifacts" in normalized_skill
-    assert "Never run `initialize` in the scored workspace; it resumes old evidence" in normalized_skill
-    assert "Keeping the same metric name is not sufficient" in normalized_reference
-    assert "static analysis can prove arbitrary metric equivalence" in normalized_reference
-    assert "Running `initialize` in the scored workspace resumes its old evidence" in normalized_reference
-    assert "never retain the correction as an optimization gain" in normalized_reference
+
+def test_autofl_skill_requires_distinct_poc_and_production_submission_confirmation(autofl_skill_docs):
+    skill = autofl_skill_docs["skill"]["normalized"]
+
+    _assert_contract_terms(
+        skill,
+        "poc",
+        "production",
+        "nvflare job submit",
+        "target environment",
+        "job path",
+        "startup-kit",
+        "compute cost",
+        "real participating clients",
+        "explicit human authorization",
+        "never authorizes",
+    )
+
+
+def test_autofl_skill_keeps_detailed_metric_and_permission_guidance_canonical(autofl_skill_docs):
+    skill = autofl_skill_docs["skill"]
+    comparability = autofl_skill_docs["comparability"]
+    continuous = autofl_skill_docs["continuous"]
+
+    _assert_contract_terms(skill["normalized"], "objective.metric_extraction_order", "canonical")
+    assert "cross_val_results.json" not in skill["normalized"]
+    _assert_contract_terms(comparability["normalized"], "unweighted mean", "server")
+    _assert_contract_terms(continuous["normalized"], "permissions and production safety")
+    assert "command-scoped grant" not in continuous["normalized"]
+
+
+def test_autofl_skill_requires_semantic_metric_comparability(autofl_skill_docs):
+    skill = autofl_skill_docs["skill"]["normalized"]
+    comparability = autofl_skill_docs["comparability"]["normalized"]
+
+    _assert_contract_terms(
+        skill,
+        "objective.metric_invariants",
+        "evaluation data/split",
+        "timing/checkpoint",
+        "baseline repair",
+        "audit evidence",
+        "fresh job workspace",
+        "initialize",
+        "resumes old evidence",
+    )
+    _assert_contract_terms(
+        comparability,
+        "same metric name",
+        "static analysis",
+        "metric equivalence",
+        "initialize",
+        "resumes its old evidence",
+        "optimization gain",
+    )

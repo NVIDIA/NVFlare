@@ -713,16 +713,22 @@ def simulator_partial_aggregation_signature_for_roots(simulator_stall_roots: Seq
     return "\n".join(markers)
 
 
-def resolve_python_interpreter(python: str, env: Mapping[str, str]) -> str:
+def resolve_python_interpreter(python: str, env: Mapping[str, str], *, cwd: Path) -> str:
     """Resolve the configured Python interpreter without dereferencing virtual-environment symlinks."""
     if not isinstance(python, str) or not python or "\x00" in python:
         raise ValueError("python interpreter must be a non-empty string without NUL characters")
 
+    absolute_cwd = os.path.abspath(os.fspath(cwd))
     expanded = os.path.expanduser(python)
     if os.path.dirname(expanded) or os.path.isabs(expanded):
-        resolved = os.path.abspath(expanded)
+        resolved = os.path.abspath(expanded if os.path.isabs(expanded) else os.path.join(absolute_cwd, expanded))
     else:
-        resolved = shutil.which(expanded, path=env.get("PATH", os.defpath)) or ""
+        search_entries = []
+        for entry in env.get("PATH", os.defpath).split(os.pathsep):
+            search_entries.append(entry if os.path.isabs(entry) else os.path.join(absolute_cwd, entry or os.curdir))
+        resolved = shutil.which(expanded, path=os.pathsep.join(search_entries)) or ""
+        if resolved:
+            resolved = os.path.abspath(resolved)
     if not resolved or not Path(resolved).is_file():
         raise ValueError(f"python interpreter does not exist: {python}")
     if os.name != "nt" and not os.access(resolved, os.X_OK):
@@ -730,7 +736,7 @@ def resolve_python_interpreter(python: str, env: Mapping[str, str]) -> str:
     return resolved
 
 
-def python_command(python: str, arguments: Sequence[str], env: Mapping[str, str]) -> List[str]:
+def python_command(python: str, arguments: Sequence[str], env: Mapping[str, str], *, cwd: Path) -> List[str]:
     """Build a validated Python argv list; argument values are never interpreted by a shell."""
     if not arguments:
         raise ValueError("python command requires at least one argument")
@@ -741,7 +747,7 @@ def python_command(python: str, arguments: Sequence[str], env: Mapping[str, str]
         if "\x00" in argument:
             raise ValueError("python command arguments must not contain NUL characters")
         validated_arguments.append(argument)
-    return [resolve_python_interpreter(python, env), *validated_arguments]
+    return [resolve_python_interpreter(python, env, cwd=cwd), *validated_arguments]
 
 
 def run_python(
@@ -755,8 +761,9 @@ def run_python(
     simulator_stall_roots: Sequence[Path] = (),
     stall_check_interval: float = 5.0,
     simulator_no_progress_timeout: int = DEFAULT_SIMULATOR_NO_PROGRESS_TIMEOUT,
-) -> Tuple[int, str, float]:
-    argv = python_command(python, arguments, env)
+) -> Tuple[int, str, float, List[str]]:
+    """Run a validated Python child and return its exit status, output tail, runtime, and exact argv."""
+    argv = python_command(python, arguments, env, cwd=cwd)
     ensure_trial_process_pidfd_support()
     started = time.monotonic()
     next_stall_check = started
@@ -889,14 +896,14 @@ def run_python(
                 output_tail = append_output_tail(output_tail, timeout_msg)
                 log_file.write(timeout_msg)
                 log_file.flush()
-                return 124, output_tail, time.monotonic() - started
+                return 124, output_tail, time.monotonic() - started, argv
             if stall_message:
                 stall_text = f"\nSIMULATOR_STALL: {stall_message}\n"
                 output_tail = append_output_tail(output_tail, stall_text)
                 log_file.write(stall_text)
                 log_file.flush()
-                return SIMULATOR_STALL_EXIT_CODE, output_tail, time.monotonic() - started
-            return process.returncode or 0, output_tail, time.monotonic() - started
+                return SIMULATOR_STALL_EXIT_CODE, output_tail, time.monotonic() - started, argv
+            return process.returncode or 0, output_tail, time.monotonic() - started, argv
         finally:
             terminate_process(process, process_group_id, trial_token)
             reader_deadline = time.monotonic() + 10
@@ -2476,7 +2483,7 @@ def probe_simulator_workspace_override_support(
     )
     try:
         with tempfile.TemporaryDirectory(prefix="nvflare-autofl-probe-") as probe_dir:
-            rc, stdout, _runtime = run_python(
+            rc, stdout, _runtime, _command = run_python(
                 python,
                 ["-c", script],
                 cwd=cwd,
@@ -2594,12 +2601,10 @@ def run_job(
             config, run_name if name_args else None, cwd, simulator_base=simulator_base
         )
         run_env = simulator_child_env(simulator_base, simulator_env_passthrough_names(config))
-        command = python_command(python, arguments, run_env)
-        run_def.command = command
         unnamed_root_snapshot = simulator_root_snapshot(simulator_base) if not simulator_roots else {}
-        rc, stdout, runtime = run_python(
-            command[0],
-            command[1:],
+        rc, stdout, runtime, command = run_python(
+            python,
+            arguments,
             cwd=cwd,
             timeout=timeout,
             log_path=log_path,
@@ -2607,6 +2612,7 @@ def run_job(
             simulator_stall_roots=simulator_roots,
             simulator_no_progress_timeout=simulator_no_progress_timeout,
         )
+        run_def.command = command
         run_def.runtime_seconds = runtime
         printed_result_dir, sandbox_socket_failure = scan_run_log(log_path, cwd)
         existing_roots = [root.resolve() for root in simulator_roots if root.exists()]
