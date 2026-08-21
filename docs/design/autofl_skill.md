@@ -354,11 +354,22 @@ metric name, extraction source and artifact, candidate kind, algorithm family,
 and literature event linkage flow from the final `results.tsv` contract into
 the JSON summary and best-candidate report.
 
-The merged Auto-FL producer supports maximization only, so the report rejects
-obsolete minimization contracts. It derives candidate attempts, baseline, and
-improvement from the ledger, cross-checks those values against authoritative
-campaign state, verifies the state's authoritative ledger pointer, and
-preserves the state-derived abandoned-candidate count.
+The producer imports NVFlare's native `key_metric_mode` contract from the job:
+an explicit mode wins, a same-metric `stop_cond` can establish direction, and
+otherwise NVFlare's `max` default applies. New-campaign admission happens in
+memory before campaign files or locks are created. An obvious lower-is-better
+metric using only the implicit default fails closed, while unknown custom
+metrics retain the framework default. The report preserves the imported
+direction, rejects legacy minimization evidence without provenance, and makes
+improvement positive in either direction while keeping raw ledger scores. It
+preserves the job's native `job_key_metric_mode` separately from any alternate
+metric bridge so candidate edits cannot change checkpoint-selection direction
+undetected. Jobs with a custom `model_selector` leave direction unresolved
+because that component supersedes `key_metric_mode`. The report
+derives candidate attempts, baseline, and improvement from the ledger,
+cross-checks those values against authoritative campaign state, verifies the
+state's authoritative ledger pointer, and preserves the state-derived
+abandoned-candidate count.
 
 Finally, the report compares the declarative/imported budget with exact
 baseline and best-candidate commands. It highlights changed compute or data
