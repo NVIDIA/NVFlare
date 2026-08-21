@@ -1201,6 +1201,10 @@ _EVALUATOR_HOOK_RE = re.compile(
 # ``__pycache__`` are likewise not meaningful skill guidance. This controls
 # lint traversal only; it does not configure the external skills installer.
 SKILL_RUNTIME_GUIDANCE_EXCLUDE_NAMES = frozenset({"__pycache__", "*.pyc", "*.pyo", "evals"})
+# Evaluator publication artifacts are attached at the skill root after a
+# successful NVSkills CI run. They describe validation results and signatures;
+# they are not instructions consumed by the skill at runtime.
+SKILL_RUNTIME_GUIDANCE_EXCLUDE_TOP_LEVEL_FILES = frozenset({"BENCHMARK.md", "skill-card.md", "skill.oms.sig"})
 # Directory-name subset of SKILL_RUNTIME_GUIDANCE_EXCLUDE_NAMES (byte-code file
 # globs are not directory names). The runtime-boundary lint uses this to prune
 # its guidance scan.
@@ -1387,6 +1391,8 @@ def _iter_packaged_runtime_text_paths(skill_dir: Path) -> Iterable[Path]:
     if not skill_dir.is_dir():
         return
     for path in _iter_files_no_follow(skill_dir, excluded_dir_names=_RUNTIME_BOUNDARY_EXCLUDED_DIRS):
+        if path.parent == skill_dir and path.name in SKILL_RUNTIME_GUIDANCE_EXCLUDE_TOP_LEVEL_FILES:
+            continue
         if path.suffix.lower() in _RUNTIME_TEXT_SUFFIXES:
             yield path
 

@@ -1469,6 +1469,31 @@ def test_run_v1_lints_allows_top_level_eval_dir_inside_skill(tmp_path):
     assert result["findings"] == []
 
 
+def test_run_v1_lints_ignores_top_level_evaluator_publication_artifacts(tmp_path):
+    skill_dir = _write_skill(tmp_path / "skills", "nvflare-valid-skill")
+    skill_dir.joinpath("BENCHMARK.md").write_text("Regenerate this benchmark with the evaluator.\n", encoding="utf-8")
+    skill_dir.joinpath("skill-card.md").write_text("Evaluation results from the grader.\n", encoding="utf-8")
+    skill_dir.joinpath("skill.oms.sig").write_text("signed-evaluation-record\n", encoding="utf-8")
+
+    result = run_v1_lints(
+        tmp_path / "skills",
+        checks=[LINT_SKILL_RUNTIME_BOUNDARY, LINT_SKILL_DEPENDENCY_INSTALL_SAFETY],
+    )
+
+    assert result["findings"] == []
+
+
+def test_run_v1_lints_scans_nested_file_named_like_publication_artifact(tmp_path):
+    skill_dir = _write_skill(tmp_path / "skills", "nvflare-valid-skill")
+    references = skill_dir / "references"
+    references.mkdir()
+    references.joinpath("BENCHMARK.md").write_text("Regenerate this benchmark with the evaluator.\n", encoding="utf-8")
+
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_RUNTIME_BOUNDARY])
+
+    assert _has_finding(result, LINT_SKILL_RUNTIME_BOUNDARY, "skill-runtime-evaluator-hook")
+
+
 def test_run_v1_lints_flags_nested_eval_dir_inside_skill(tmp_path):
     # Only <skill>/evals is supported. A nested references/evals/ suite must be
     # flagged rather than treated as the skill's evaluation metadata.
