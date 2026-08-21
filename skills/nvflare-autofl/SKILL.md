@@ -32,8 +32,8 @@ Do not use for converting non-FL training code into NVFLARE, diagnosing failed j
 
 ## Workflow
 Use this skill to optimize an existing NVFLARE `job.py` without asking the user to learn a new Auto-FL command tree.
-The user selects this skill, points to a job, and states the objective, environment, and optional budget. NVFLARE
-provides the deterministic campaign import, execution substrate, policy boundaries, artifacts, and machine-readable
+The user selects this skill, points to a job, and states the objective, environment,
+and optional budget. NVFLARE provides the deterministic campaign import, execution substrate, policy boundaries, artifacts, and machine-readable
 contracts. The coding agent owns hypotheses, source edits, new algorithm implementations, and candidate choice.
 
 Resolve [run_job_campaign.py](scripts/run_job_campaign.py) relative to this `SKILL.md`, store its absolute path as
