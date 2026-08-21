@@ -1308,7 +1308,7 @@ configured endpoint.
 
 | Argument | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `-p`, `--service` | str... | No | `None` | Participant to stop; repeat to select multiple participants. By default, stops the server and clients |
+| `-p`, `--service` | str... | No | `None` | Server or client to stop; repeat to select multiple services. By default, stops the server and clients. Close admin consoles by entering `bye` in the console |
 | `-ex`, `--exclude` | str... | No | `None` | Participant to exclude; repeat to exclude multiple participants |
 | `--no-wait` | flag | No | — | Request shutdown and return without waiting for completion |
 | `-debug`, `--debug` | flag | No | — | Debug mode |

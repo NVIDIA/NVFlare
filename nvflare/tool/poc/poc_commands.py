@@ -2016,13 +2016,19 @@ def _stop_poc(
             excluded.append(admin)
 
     validate_services(project_config, services_list, excluded)
+    admin_services = {project_admin, *other_admins}
+    selected_admins = [service for service in services_list if service in admin_services]
+    if selected_admins:
+        raise CLIException(
+            f"'nvflare poc stop' cannot stop admin consoles: {', '.join(selected_admins)}. "
+            "Type 'bye' in each admin console instead."
+        )
 
     validate_poc_workspace(poc_workspace, service_config, project_config)
     gpu_ids: List[int] = []
     project_name = project_config.get("name")
     prod_dir = get_prod_dir(poc_workspace, project_name)
 
-    admin_services = {project_admin, *other_admins}
     has_service_exclusions = any(service not in admin_services for service in user_excluded)
     server = service_config[SC.FLARE_SERVER]
     server_only_selection = bool(services_list) and all(service == server for service in services_list)
@@ -2632,8 +2638,8 @@ def define_stop_parser(poc_parser):
         nargs="?",
         default=None,
         help=(
-            "participant to stop; repeat for multiple participants. Default and server-only selections stop the "
-            "running POC system; project admin console is not a default managed service"
+            "server or client to stop; repeat for multiple services. Default and server-only selections stop the "
+            "running POC system; admin consoles cannot be stopped with this command"
         ),
     )
     stop_parser.add_argument(

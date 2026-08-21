@@ -1436,6 +1436,43 @@ class TestPocOutput:
             wait=True,
         )
 
+    @pytest.mark.parametrize("selected_admin", ["admin@nvidia.com", "bob@nvidia.com"])
+    def test_stop_poc_rejects_selected_admin_consoles(self, selected_admin):
+        from nvflare.tool.poc.poc_commands import _stop_poc
+        from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
+
+        project_config = {
+            "name": "example_project",
+            "participants": [
+                {"name": "server"},
+                {"name": "site-1"},
+                {"name": "admin@nvidia.com"},
+                {"name": "bob@nvidia.com"},
+            ],
+        }
+        service_config = {
+            SC.FLARE_SERVER: "server",
+            SC.FLARE_CLIENTS: ["site-1"],
+            SC.FLARE_PROJ_ADMIN: "admin@nvidia.com",
+            SC.FLARE_OTHER_ADMINS: ["bob@nvidia.com"],
+        }
+
+        with (
+            patch("nvflare.tool.poc.poc_commands.shutdown_system") as shutdown_system,
+            patch("nvflare.tool.poc.poc_commands._run_poc") as run_poc,
+        ):
+            with pytest.raises(CLIException, match="cannot stop admin consoles"):
+                _stop_poc(
+                    "/tmp/poc",
+                    excluded=[],
+                    services_list=["site-1", selected_admin],
+                    project_config=project_config,
+                    service_config=service_config,
+                )
+
+        shutdown_system.assert_not_called()
+        run_poc.assert_not_called()
+
     def test_stop_poc_invalid_service_name_exits_4(self, capsys, tmp_path):
         """stop_poc with an unknown -p/--service name exits 4 (structured error), not 1."""
         from nvflare.tool.poc.poc_commands import stop_poc

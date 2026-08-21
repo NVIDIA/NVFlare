@@ -241,9 +241,9 @@ Use ``nvflare poc stop`` to stop running POC services:
 
 Options:
 
-- ``-p, --service``: participant to stop. Repeat the option to select multiple
-  participants. By default, stops the server and clients; the project admin
-  console is managed separately.
+- ``-p, --service``: server or client to stop. Repeat the option to select
+  multiple services. By default, stops the server and clients. Admin consoles
+  must be closed by entering ``bye`` in the console.
 - ``-ex, --exclude``: participant to exclude from stop handling. Repeat the
   option to exclude multiple participants.
 - ``--no-wait``: return after requesting shutdown without waiting for completion.
