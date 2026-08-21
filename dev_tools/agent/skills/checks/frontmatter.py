@@ -32,7 +32,7 @@ YAML_ANCHOR_OR_ALIAS_RE = re.compile(r"(^|[:\s\[{,])([&*])[A-Za-z0-9_-]+(?=\s|$|
 REQUIRED_FRONTMATTER_FIELDS = ("name", "description")
 # `author` (name plus NVIDIA email inside the spec `metadata` map) is required
 # by the company skills guideline (NVCARPS).
-REQUIRED_METADATA_FIELDS = ("author", "min-flare-version", "blast-radius")
+REQUIRED_METADATA_FIELDS = ("author", "version", "min-flare-version", "blast-radius")
 # The NVIDIA skills catalog uses a team identity, never an individual: once
 # `npx skills add` copies the frontmatter out of the repo, `author` acts as the
 # support contact, and a personal inbox goes stale when people change teams.
@@ -40,11 +40,10 @@ AUTHOR_RE = re.compile(r"^[^<>@]+ <[A-Za-z0-9._%+-]+@nvidia\.com>$")
 REQUIRED_PUBLIC_METADATA_FIELDS = ("category",)
 # The only frontmatter keys agentskills.io permits at the top level, plus
 # `title`, an optional display-name field the company skills guideline
-# (NVCARPS) allows at the top level, and `version`, which the NVIDIA skills
-# catalog (github.com/NVIDIA/skills) declares at the top level. Everything
-# else (NVFLARE custom fields) must be nested under `metadata`.
+# (NVCARPS) allows at the top level. The Agent Skills Specification treats
+# `version` as additional metadata, so it must be nested under `metadata`.
 SPEC_TOP_LEVEL_FIELDS = frozenset(
-    {"name", "title", "description", "license", "compatibility", "metadata", "allowed-tools", "version"}
+    {"name", "title", "description", "license", "compatibility", "metadata", "allowed-tools"}
 )
 PUBLIC_EXEMPT_STATUS = {"draft", "internal", "private"}
 # Company skills guideline (NVCARPS) constraints, enforced on top of the
