@@ -3179,13 +3179,20 @@ def campaign_admission_errors(config: Dict[str, Any], schema: Optional[Dict[str,
         errors.append("fixed comparison budget is unresolved")
     unresolved = config.get("unresolved", [])
     if isinstance(unresolved, list):
-        critical_fields = []
+        critical_issues: Dict[str, List[str]] = {}
         for item in unresolved:
             field = item.get("field", "") if isinstance(item, dict) else ""
             if field in {"objective.metric", "objective.mode"} or field.startswith("budget.fixed_training_budget"):
-                critical_fields.append(field)
-        if critical_fields:
-            errors.append(f"safety-critical fields are unresolved: {', '.join(sorted(set(critical_fields)))}")
+                reasons = critical_issues.setdefault(field, [])
+                reason = item.get("reason", "") if isinstance(item, dict) else ""
+                if reason:
+                    reasons.append(reason)
+        if critical_issues:
+            details = []
+            for field, reasons in sorted(critical_issues.items()):
+                unique_reasons = sorted(set(reasons))
+                details.append(f"{field} ({'; '.join(unique_reasons)})" if unique_reasons else field)
+            errors.append(f"safety-critical fields are unresolved: {', '.join(details)}")
     objective = objective_contract(config, None)
     schema = schema or {}
     if not mutation_schema_declares_metric_bridge(config, schema):
