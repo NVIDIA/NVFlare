@@ -1273,8 +1273,8 @@ activates the first Project Admin kit. The JSON success payload includes:
 
 | Argument | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `-p`, `--service` | str | No | `"all"` | Participant to start |
-| `-ex`, `--exclude` | str | No | `""` | Exclude service directory |
+| `-p`, `--service` | str... | No | `None` | Participant to start; repeat to select multiple participants. By default, starts the server and clients |
+| `-ex`, `--exclude` | str... | No | `None` | Participant to exclude; repeat to exclude multiple participants |
 | `-gpu`, `--gpu` | int... | No | `None` | GPU device IDs |
 | `--no-wait` | flag | No | — | Return after process start without readiness wait |
 | `--timeout` | int | No | `POC_START_READY_TIMEOUT` | Seconds to wait for readiness |
@@ -1308,15 +1308,17 @@ configured endpoint.
 
 | Argument | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `-p`, `--service` | str | No | `"all"` | Participant to stop |
-| `-ex`, `--exclude` | str | No | `""` | Exclude service directory |
+| `-p`, `--service` | str... | No | `None` | Server or client to stop; repeat to select multiple services. By default, stops the server and clients. Close admin consoles by entering `bye` in the console |
+| `-ex`, `--exclude` | str... | No | `None` | Participant to exclude; repeat to exclude multiple participants |
 | `--no-wait` | flag | No | — | Request shutdown and return without waiting for completion |
 | `-debug`, `--debug` | flag | No | — | Debug mode |
 | `--schema` | flag | No | — | Print command schema and exit |
 
-When stopping the server path, `poc stop` uses coordinated system shutdown logic. By
-default it waits until shutdown completes and returns `status: stopped`; with
-`--no-wait`, it returns after requesting shutdown with `status: shutdown_initiated`.
+A default stop or an explicit server-only selection uses coordinated system shutdown logic.
+Any other effective managed-service selection or exclusion uses the local service shutdown path.
+By default, both paths wait for the selected server and client services to stop and return `status: stopped`;
+with `--no-wait`, either path returns after requesting shutdown with
+`status: shutdown_initiated`.
 
 #### `nvflare poc clean`
 
