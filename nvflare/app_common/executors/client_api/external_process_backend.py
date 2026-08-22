@@ -77,8 +77,8 @@ _HELLO_POLL_INTERVAL = 0.1
 
 _DEFAULT_SHUTDOWN_TIMEOUT = SESSION_CONTROL_TIMEOUT
 
-# The result reaper samples send() state throughout a session-scale interval and
-# makes one final bounded state probe before force-cleaning a live source.
+# The result reaper reserves TERM grace inside each session-scale cleanup budget
+# and makes one final bounded state probe before force-cleaning a live source.
 _LIVE_RESULT_SHUTDOWN_ACK_TIMEOUT = 5.0
 _RESULT_REAPER_MAX_TOTAL_TIMEOUT = SESSION_CONTROL_TIMEOUT
 _RESULT_REAPER_FORCE_TERM_GRACE = 5.0
@@ -659,9 +659,10 @@ class ExternalProcessBackend(CellBackendBase):
     def _wait_for_result_reapers(self) -> None:
         """Wait boundedly for result sources without preempting a settled trainer's final work."""
         started = time.monotonic()
-        live_deadline = started if self._abort else started + self._result_reaper_wait_bound()
         settled_wait, settled_term_grace = self._settled_result_reaper_budget()
-        settled_deadline = started if self._abort else started + settled_wait
+        live_wait = max(0.0, self._result_reaper_wait_bound() - settled_term_grace)
+        live_deadline = started if self._abort else started + live_wait
+        settled_deadlines = {}
         with self._result_reapers_lock:
             pending = set(self._result_reapers)
 
@@ -676,7 +677,17 @@ class ExternalProcessBackend(CellBackendBase):
                     continue
 
                 live = trainer.result_source_live.is_set()
-                deadline = live_deadline if live else settled_deadline
+                if live:
+                    # If a later probe reports the source live again, its next
+                    # settled observation must start a new natural-exit budget.
+                    settled_deadlines.pop(trainer, None)
+                    deadline = live_deadline
+                else:
+                    now = time.monotonic()
+                    deadline = settled_deadlines.setdefault(
+                        trainer,
+                        now if self._abort else now + settled_wait,
+                    )
                 remaining = deadline - time.monotonic()
                 if remaining > 0:
                     reaper.join(timeout=min(_NATURAL_EXIT_REAP_INTERVAL, remaining))
@@ -693,16 +704,17 @@ class ExternalProcessBackend(CellBackendBase):
                     )
                     live = trainer.result_source_live.is_set()
                     if not live:
+                        settled_deadlines[trainer] = time.monotonic() + settled_wait
                         continue
 
                 self.logger.warning(
                     f"timed out waiting for accepted result source {trainer.trainer_fqcn} "
                     f"(live={live}); forcing trainer cleanup"
                 )
-                # A live source gets only its short acknowledgement interval. A source
-                # already known to be settled receives the configured natural-exit budget
-                # plus a small TERM grace, all within the job-process cleanup hard cap.
-                grace = 0.0 if self._abort else min(settled_term_grace, self._remaining_result_reaper_budget(started))
+                # Reserve the capped TERM grace inside the live-source cleanup bound.
+                # A newly settled source instead receives its own natural-exit budget
+                # before the same TERM grace is applied.
+                grace = 0.0 if self._abort else settled_term_grace
                 self._stop_trainer(trainer, natural_exit_wait=0.0, termination_grace=grace)
                 reaper.join(timeout=_LOG_THREAD_JOIN_TIMEOUT)
                 if reaper.is_alive():
@@ -913,7 +925,7 @@ class ExternalProcessBackend(CellBackendBase):
         return shutdown_bound if shutdown_bound > 0 else _DEFAULT_SHUTDOWN_TIMEOUT
 
     def _result_reaper_wait_bound(self) -> float:
-        """Give a live result source a session-scale transfer interval.
+        """Return the session-scale cleanup bound for a live result source.
 
         A source transaction has its own streaming idle timeout, but END_RUN cannot
         wait for that independently long timeout: the outer job process may tear down
@@ -921,8 +933,8 @@ class ExternalProcessBackend(CellBackendBase):
         repeatedly samples whether send() still owns its transfer barrier, including
         one final sample at the deadline. This lets completed transfer cleanup settle
         the source even when its task-correlated settlement request is delayed. The
-        separately configured natural-exit grace is for sources already known to be
-        settled.
+        separately configured natural-exit grace starts when the source is first
+        observed settled.
         """
         return _RESULT_REAPER_MAX_TOTAL_TIMEOUT
 
@@ -939,10 +951,6 @@ class ExternalProcessBackend(CellBackendBase):
         # general trainer shutdown timeout is configured as fire-and-forget (zero).
         natural_wait = min(self._result_source_disconnect_grace(), natural_cap)
         return natural_wait, term_grace
-
-    @staticmethod
-    def _remaining_result_reaper_budget(started: float) -> float:
-        return max(0.0, _RESULT_REAPER_MAX_TOTAL_TIMEOUT - (time.monotonic() - started))
 
     def _unwind(self) -> None:
         """Releases partial setup after a failed initialize(). Best-effort per step."""
