@@ -37,8 +37,8 @@ from nvflare.app_opt.job_launcher.workspace_cell_transfer import (
     upload_results,
     upload_results_on_shutdown,
 )
-from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.utils import make_reply, new_cell_message
 
 JOB_ID = "abc12345-dead-beef-0000-111122223333"
