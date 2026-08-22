@@ -107,7 +107,11 @@ class ScriptRunner:
             params_transfer_type: Whether the trainer returns FULL parameters or a DIFF.
             launch_once: Launch once per job or once per task in ``external_process`` mode.
             launch_timeout: Maximum time for the external trainer to initialize and connect.
-            shutdown_timeout: Wait for orderly trainer exit before forced termination.
+            shutdown_timeout: External-process orderly-exit wait. This also feeds several
+                accepted-result cleanup bounds in ``ClientAPIExecutor``. The default zero skips
+                direct orderly-exit and finalize-gate waits, but maps to 30 seconds for accepted-
+                source disconnect and post-settlement group-exit waits and feeds the fixed settled-
+                reaper budget; see ``ClientAPIExecutor.shutdown_timeout`` for all roles.
             memory_gc_rounds: Force memory cleanup every N rounds; zero disables it.
             cuda_empty_cache: Empty the CUDA cache during configured memory cleanup.
             execution_mode: Optional explicit ``in_process`` or ``external_process`` mode.

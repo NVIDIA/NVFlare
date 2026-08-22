@@ -91,6 +91,13 @@ def _result_accepted_reply():
     return make_cell_reply(CellReturnCode.OK, body={MsgKey.REPLY_TOPIC: Topic.RESULT_ACCEPTED})
 
 
+def _session_ready_reply():
+    return make_cell_reply(
+        CellReturnCode.OK,
+        body={MsgKey.REPLY_TOPIC: Topic.SESSION_READY, MsgKey.SESSION_ID: SESSION_ID},
+    )
+
+
 class FakeCell:
     """The CJ cell as seen from the trainer: records the trainer's outbound requests/messages
     and lets a test deliver CJ->trainer control messages (TASK_READY/ABORT/SHUTDOWN)."""
@@ -104,8 +111,10 @@ class FakeCell:
         self.requests = []  # (topic, target, payload)
         self.request_messages = []
         self.request_kwargs = []
+        self.request_timeouts = []
         self.fired = []  # (topic, targets, payload)
         self.on_request = None
+        self.on_session_ready = None
         self.fobs_context = {}
         self.heartbeat_interval = 0.05
         self.heartbeat_timeout = 0.0
@@ -132,6 +141,11 @@ class FakeCell:
         self.requests.append((topic, target, request.payload))
         self.request_messages.append(request)
         self.request_kwargs.append(kwargs)
+        self.request_timeouts.append(timeout)
+        if topic == Topic.SESSION_READY:
+            if self.on_session_ready is not None:
+                return self.on_session_ready(topic, target, request)
+            return _session_ready_reply()
         if self.on_request is not None:
             reply = self.on_request(topic, target, request)
             # Most test hooks predate the correlated settlement reply and return a
@@ -1162,6 +1176,9 @@ class TestInit:
             assert payload[MsgKey.PROTOCOL_VERSION] == PROTOCOL_VERSION
             assert payload[MsgKey.JOB_ID] == "job-1"
             assert payload[MsgKey.RANK] == "0"
+            session_ready = [r for r in env.requests if r[0] == Topic.SESSION_READY][0]
+            assert session_ready[1] == CJ_FQCN
+            assert session_ready[2] == {MsgKey.SESSION_ID: SESSION_ID}
             assert api._session_id == SESSION_ID
             assert api._memory_gc_rounds == 3
             assert api._cuda_empty_cache is True
@@ -1169,6 +1186,43 @@ class TestInit:
                 assert topic in env.cbs
         finally:
             api.shutdown()
+
+    def test_session_ready_gets_fresh_budget_after_slow_hello(self, bootstrap_path, env, monkeypatch):
+        clock = [100.0]
+        monkeypatch.setattr(cell_api.time, "monotonic", lambda: clock[0])
+
+        def delayed_hello(topic, _target, _request):
+            if topic == Topic.HELLO:
+                clock[0] += cell_api._HELLO_TIMEOUT
+                return _hello_accepted_reply()
+            return make_cell_reply(CellReturnCode.OK)
+
+        env.on_request = delayed_hello
+        api = _init_api(bootstrap_path, env)
+        try:
+            assert [request[0] for request in env.requests].count(Topic.SESSION_READY) == 1
+            assert api._session_id == SESSION_ID
+        finally:
+            api.shutdown()
+
+    def test_session_ready_timeout_reports_attempts_and_elapsed(self, bootstrap_path, env, monkeypatch):
+        clock = [100.0]
+        monkeypatch.setattr(cell_api, "_HELLO_TIMEOUT", 2.0)
+        monkeypatch.setattr(cell_api.time, "monotonic", lambda: clock[0])
+
+        def advance_clock(seconds):
+            clock[0] += seconds
+
+        monkeypatch.setattr(cell_api.time, "sleep", advance_clock)
+        env.on_session_ready = lambda _topic, _target, _request: make_cell_reply(CellReturnCode.TIMEOUT)
+        api = CellClientAPI(bootstrap_file=bootstrap_path)
+        api._cell = env
+        api._session_id = SESSION_ID
+
+        with pytest.raises(TrainerSessionError, match=r"after 2 attempts over 2\.0s"):
+            api._confirm_session_ready()
+
+        assert [request[0] for request in env.requests] == [Topic.SESSION_READY, Topic.SESSION_READY]
 
     def test_init_raises_on_hello_rejected(self, bootstrap_path, env):
         env.on_request = lambda topic, target, request: make_cell_reply(
@@ -1190,6 +1244,39 @@ class TestInit:
             api.init(rank="0")
 
         assert api._session_id is None
+        assert env.stopped
+
+    def test_secure_init_installs_auth_before_session_ready(self, bootstrap_path, env):
+        _set_secure_mode(bootstrap_path, True)
+        env.secure_mode = True
+
+        def confirm_ready(_topic, _target, request):
+            env.auth_filter.assert_called_once_with(
+                env,
+                client_name="site-1",
+                auth_token="site-auth-token",
+                token_signature="site-auth-signature",
+            )
+            assert request.payload == {MsgKey.SESSION_ID: SESSION_ID}
+            return _session_ready_reply()
+
+        env.on_session_ready = confirm_ready
+        api = _init_api(bootstrap_path, env)
+        try:
+            assert api._session_id == SESSION_ID
+        finally:
+            api.shutdown()
+
+    def test_init_fails_fast_when_session_ready_is_rejected(self, bootstrap_path, env):
+        env.on_session_ready = lambda _topic, _target, _request: make_cell_reply(
+            CellReturnCode.OK,
+            body={MsgKey.REPLY_TOPIC: Topic.ERROR, MsgKey.REASON: "stale session"},
+        )
+        api = CellClientAPI(bootstrap_file=bootstrap_path)
+
+        with pytest.raises(TrainerSessionError, match="SESSION_READY rejected: stale session"):
+            api.init(rank="0")
+
         assert env.stopped
 
     def test_non_secure_init_accepts_protocol_v1_reply_without_secure_mode(self, bootstrap_path, env):
@@ -1523,10 +1610,29 @@ class TestReceiveSend:
         finally:
             api.shutdown()
 
+    @pytest.mark.parametrize("receiver_ids", [(), ["invalid/receiver", 42]])
+    def test_send_uses_count_tracking_when_no_valid_receiver_identity(self, bootstrap_path, env, receiver_ids):
+        api = _init_api(bootstrap_path, env)
+        try:
+            _deliver_task(env, result_receiver_ids=receiver_ids)
+            api.receive()
+
+            api.send(FLModel(params={"w": [2.0]}, params_type=ParamsType.FULL))
+
+            result_request = [m for m in env.request_messages if MsgKey.RESULT in m.payload][0]
+            result_kwargs = env.request_kwargs[env.request_messages.index(result_request)]
+            assert result_kwargs["receiver_ids"] is None
+            assert result_kwargs["num_receivers"] == 1
+        finally:
+            api.shutdown()
+
     def test_send_preserves_declared_ultimate_result_receivers(self, bootstrap_path, env):
         api = _init_api(bootstrap_path, env)
         try:
-            _deliver_task(env, result_receiver_ids=["server.job", "peer.job"])
+            _deliver_task(
+                env,
+                result_receiver_ids=["server.job", "server.job", "invalid/receiver", 42, "peer.job"],
+            )
             api.receive()
 
             api.send(FLModel(params={"w": [2.0]}, params_type=ParamsType.FULL))
@@ -1941,6 +2047,46 @@ class TestReceiveSend:
         finally:
             api.shutdown()
 
+    def test_shutdown_reports_transfer_settled_while_settlement_ack_is_pending(self, bootstrap_path, env):
+        settlement_started = threading.Event()
+        release_settlement = threading.Event()
+
+        def on_request(topic, target, request):
+            if topic == Topic.HELLO:
+                return _hello_accepted_reply()
+            if topic == Topic.RESULT_READY:
+                return _result_accepted_reply()
+            return make_cell_reply(CellReturnCode.OK)
+
+        env.on_request = on_request
+        api = _init_api(bootstrap_path, env)
+        errors = []
+        try:
+            _deliver_task(env)
+            api.receive()
+
+            def wait_for_settlement(_task_id):
+                settlement_started.set()
+                assert release_settlement.wait(1.0)
+
+            api._notify_result_source_settled = wait_for_settlement
+            sender = threading.Thread(target=lambda: _send_and_capture_error(api, FLModel(params={"w": [2.0]}), errors))
+            sender.start()
+            assert settlement_started.wait(0.5)
+
+            reply = env.deliver(Topic.SHUTDOWN, CJ_FQCN, {MsgKey.SESSION_ID: SESSION_ID})
+
+            assert reply.payload == {MsgKey.RESULT_SOURCE_LIVE: False}
+            assert sender.is_alive()
+            assert env.stopped is False
+            release_settlement.set()
+            sender.join(timeout=0.5)
+            assert not sender.is_alive()
+            assert errors == []
+        finally:
+            release_settlement.set()
+            api.shutdown()
+
     def test_result_source_settled_retries_until_task_correlated_ack(self, bootstrap_path, env, monkeypatch):
         monkeypatch.setattr(cell_api, "_RESULT_SOURCE_SETTLED_RETRY_BACKOFF", 0.0)
         attempts = 0
@@ -1976,6 +2122,40 @@ class TestReceiveSend:
             api.send(FLModel(params={"w": [2.0]}))
 
             assert attempts == 2
+            settlement_timeouts = [
+                timeout
+                for (topic, _, _), timeout in zip(env.requests, env.request_timeouts)
+                if topic == Topic.RESULT_SOURCE_SETTLED
+            ]
+            assert settlement_timeouts == [cell_api._HELLO_TIMEOUT, cell_api._HELLO_TIMEOUT]
+        finally:
+            api.shutdown()
+
+    def test_result_source_settled_give_up_is_warning(self, bootstrap_path, env, monkeypatch, caplog):
+        monkeypatch.setattr(cell_api, "_RESULT_SOURCE_SETTLED_RETRY_BACKOFF", 0.0)
+        attempts = 0
+
+        def on_request(topic, target, request):
+            nonlocal attempts
+            if topic == Topic.HELLO:
+                return _hello_accepted_reply()
+            if topic == Topic.RESULT_READY:
+                return _result_accepted_reply()
+            if topic == Topic.RESULT_SOURCE_SETTLED:
+                attempts += 1
+                return make_cell_reply(CellReturnCode.COMM_ERROR)
+            return make_cell_reply(CellReturnCode.OK)
+
+        env.on_request = on_request
+        api = _init_api(bootstrap_path, env)
+        try:
+            _deliver_task(env)
+            api.receive()
+
+            api.send(FLModel(params={"w": [2.0]}))
+
+            assert attempts == 3
+            assert "result-source settlement was not acknowledged after 3 attempts" in caplog.text
         finally:
             api.shutdown()
 

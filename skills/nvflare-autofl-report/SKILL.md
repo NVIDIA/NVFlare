@@ -2,9 +2,9 @@
 name: nvflare-autofl-report
 description: "Generate a reproducible final report, literature-outcome synthesis, JSON summary, and refreshed progress plot for a stopped or interrupted NVFLARE Auto-FL campaign."
 license: Apache-2.0
-version: "0.1.0"
 compatibility: "Requires NVFLARE 2.9.0+, Python, and artifacts from an NVFLARE Auto-FL campaign."
 metadata:
+  version: "0.1.0"
   author: "NVIDIA FLARE Team <federatedlearning@nvidia.com>"
   min-flare-version: "2.9.0"
   blast-radius: edits_files
@@ -147,8 +147,8 @@ The report must distinguish imported/declared budget from executed command
 arguments. It must warn when the best candidate changed training compute or
 comparison population, when authoritative state disagrees with ledger-derived
 accounting, or when repeated selection used a test-like metric. Product Auto-FL
-campaigns maximize their metric; the report rejects obsolete minimization
-contracts. It must not add PR-specific sections such as "Product Findings"
+campaigns retain the imported `min` or `max` direction; the report rejects
+legacy minimization evidence without direction provenance. It must not add PR-specific sections such as "Product Findings"
 unless the user explicitly requests them.
 `best` means a scored retained baseline or `keep` row; an unretained scored
 `discard` may appear only as `best_observed`. Candidate and crash rows never

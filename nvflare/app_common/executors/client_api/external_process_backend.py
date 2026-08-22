@@ -30,7 +30,14 @@ import time
 import uuid
 from typing import Any, Optional, Sequence, Tuple, Union
 
-from nvflare.apis.fl_constant import ConnectionSecurity, FLContextKey, FLMetaKey, ReturnCode, ServerCommandNames
+from nvflare.apis.fl_constant import (
+    CellMessageAuthHeaderKey,
+    ConnectionSecurity,
+    FLContextKey,
+    FLMetaKey,
+    ReturnCode,
+    ServerCommandNames,
+)
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeJobError
 from nvflare.apis.shareable import Shareable, make_reply
@@ -47,7 +54,7 @@ from nvflare.client.cell.bootstrap import (
     bootstrap_file_name,
     write_bootstrap_config,
 )
-from nvflare.client.cell.defs import CHANNEL, PROTOCOL_VERSION, MsgKey, Topic
+from nvflare.client.cell.defs import CHANNEL, PROTOCOL_VERSION, SESSION_CONTROL_TIMEOUT, MsgKey, Topic
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
@@ -68,11 +75,12 @@ _RESULT_POLL_INTERVAL = 0.5
 _RESULT_SOURCE_FAILURE_DELIVERY_WAIT = 14.0
 _HELLO_POLL_INTERVAL = 0.1
 
-_DEFAULT_SHUTDOWN_TIMEOUT = 30.0
+_DEFAULT_SHUTDOWN_TIMEOUT = SESSION_CONTROL_TIMEOUT
 
-# The result reaper retries SHUTDOWN when send() is still settling.
+# The result reaper samples send() state throughout a session-scale interval and
+# makes one final bounded state probe before force-cleaning a live source.
 _LIVE_RESULT_SHUTDOWN_ACK_TIMEOUT = 5.0
-_RESULT_REAPER_MAX_TOTAL_TIMEOUT = 30.0
+_RESULT_REAPER_MAX_TOTAL_TIMEOUT = SESSION_CONTROL_TIMEOUT
 _RESULT_REAPER_FORCE_TERM_GRACE = 5.0
 
 _LOG_THREAD_JOIN_TIMEOUT = 5.0
@@ -256,6 +264,7 @@ class ExternalProcessBackend(CellBackendBase):
             self._connect_url = connect_url
 
             cell.register_request_cb(channel=CHANNEL, topic=Topic.HELLO, cb=self._handle_hello)
+            cell.register_request_cb(channel=CHANNEL, topic=Topic.SESSION_READY, cb=self._handle_session_ready)
 
             if context.launch_once:
                 self._launch_trainer(timeout=context.launch_timeout)
@@ -571,13 +580,15 @@ class ExternalProcessBackend(CellBackendBase):
                 self.logger.error(secure_format_traceback())
             self._cleanup_trainer(trainer)
 
-    def _request_trainer_shutdown(self, trainer: _TrainerSession, wait_timeout: float) -> None:
-        """Send at most one orderly SHUTDOWN without taking ownership of process death."""
+    def _request_trainer_shutdown(
+        self, trainer: _TrainerSession, wait_timeout: float, force_probe: bool = False
+    ) -> None:
+        """Request orderly SHUTDOWN and sample an accepted result source until it settles."""
         with trainer._shutdown_request_lock:
             if trainer.shutdown_requested.is_set():
                 return
             now = time.monotonic()
-            if now < trainer._next_shutdown_retry:
+            if not force_probe and now < trainer._next_shutdown_retry:
                 return
             trainer._next_shutdown_retry = now + _SHUTDOWN_RETRY_INTERVAL
             if trainer.session_id is None or not self._process_group_alive(trainer):
@@ -602,6 +613,9 @@ class ExternalProcessBackend(CellBackendBase):
                         source_live = body.get(MsgKey.RESULT_SOURCE_LIVE)
                         if source_live is True:
                             trainer.result_source_live.set()
+                            # Keep probing: this acknowledgement describes the current
+                            # transfer barrier and is not a terminal SHUTDOWN acknowledgement.
+                            return
                         elif source_live is False:
                             trainer.result_source_live.clear()
                             trainer.result_source_task_id = None
@@ -667,6 +681,19 @@ class ExternalProcessBackend(CellBackendBase):
                 if remaining > 0:
                     reaper.join(timeout=min(_NATURAL_EXIT_REAP_INTERVAL, remaining))
                     continue
+
+                if live and not self._abort:
+                    # Close the polling race at the hard deadline. The trainer publishes
+                    # transfer-barrier completion before waiting for RESULT_SOURCE_SETTLED,
+                    # so this probe can observe a clean source even if that request is queued.
+                    self._request_trainer_shutdown(
+                        trainer,
+                        wait_timeout=_LIVE_RESULT_SHUTDOWN_ACK_TIMEOUT,
+                        force_probe=True,
+                    )
+                    live = trainer.result_source_live.is_set()
+                    if not live:
+                        continue
 
                 self.logger.warning(
                     f"timed out waiting for accepted result source {trainer.trainer_fqcn} "
@@ -765,13 +792,13 @@ class ExternalProcessBackend(CellBackendBase):
         except Exception:
             self.logger.error(secure_format_traceback())
         trainer.token = ""
-        trainer.session_id = None
         try:
             if trainer.bootstrap_path and os.path.exists(trainer.bootstrap_path):
                 os.remove(trainer.bootstrap_path)
         except Exception as e:
             self.logger.debug(f"failed to remove {trainer.bootstrap_path}: {e}")
         with self._launch_lock:
+            trainer.session_id = None
             self._protocol_sessions.pop(trainer.trainer_fqcn, None)
             if self._active_launch is trainer:
                 self._active_launch = None
@@ -886,16 +913,18 @@ class ExternalProcessBackend(CellBackendBase):
         return shutdown_bound if shutdown_bound > 0 else _DEFAULT_SHUTDOWN_TIMEOUT
 
     def _result_reaper_wait_bound(self) -> float:
-        """Bound live result sources to one END_RUN acknowledgement interval.
+        """Give a live result source a session-scale transfer interval.
 
         A source transaction has its own streaming idle timeout, but END_RUN cannot
         wait for that independently long timeout: the outer job process may tear down
-        the CJ first and orphan an owned per-task trainer. Give an admitted send one
-        SHUTDOWN acknowledgement interval, then force-clean every still-owned launch.
-        The separately configured natural-exit grace is for sources already known to
-        be settled, not for an unconsumed result at END_RUN.
+        the CJ first and orphan an owned per-task trainer. The short SHUTDOWN request
+        repeatedly samples whether send() still owns its transfer barrier, including
+        one final sample at the deadline. This lets completed transfer cleanup settle
+        the source even when its task-correlated settlement request is delayed. The
+        separately configured natural-exit grace is for sources already known to be
+        settled.
         """
-        return _LIVE_RESULT_SHUTDOWN_ACK_TIMEOUT
+        return _RESULT_REAPER_MAX_TOTAL_TIMEOUT
 
     def _settled_result_reaper_budget(self) -> Tuple[float, float]:
         """Return natural-exit and TERM budgets for a settled one-task trainer.
@@ -1384,17 +1413,22 @@ class ExternalProcessBackend(CellBackendBase):
         if str(rank) != "0":
             return self._hello_reject(trainer, origin, f"only rank 0 may connect (got rank {rank!r})", latch=False)
 
-        # Concurrent duplicate HELLOs must receive the same session id.
+        # Concurrent duplicate HELLOs must receive the same session id. Do not
+        # expose the trainer as ready yet: the reply carries delegated site
+        # authentication, and only SESSION_READY proves that the trainer has
+        # processed it and installed the outgoing auth-header filters.
         with self._launch_lock:
-            if not trainer.ready.is_set():
+            if trainer.session_id is None:
                 trainer.session_id = uuid.uuid4().hex
-                trainer.ready.set()
-                self.logger.info(f"HELLO accepted from {origin} (session_id={trainer.session_id})")
+                self.logger.info(
+                    f"HELLO accepted from {origin} (session_id={trainer.session_id}); awaiting SESSION_READY"
+                )
             trainer.touch_peer_activity()
+            session_id = trainer.session_id
         return self._protocol_reply(
             Topic.HELLO_ACCEPTED,
             **{
-                MsgKey.SESSION_ID: trainer.session_id,
+                MsgKey.SESSION_ID: session_id,
                 MsgKey.JOB_ID: self._job_id,
                 MsgKey.SITE_NAME: self._site_name,
                 MsgKey.HEARTBEAT_INTERVAL: self._context.heartbeat_interval,
@@ -1403,9 +1437,56 @@ class ExternalProcessBackend(CellBackendBase):
             },
         )
 
+    def _handle_session_ready(self, request):
+        """Complete HELLO only after the trainer has installed delegated authentication."""
+        if self._closed:
+            return self._protocol_reply(Topic.ERROR, **{MsgKey.REASON: "backend is closed"})
+        payload = request.payload
+        if not isinstance(payload, dict):
+            return make_cell_reply(CellReturnCode.INVALID_REQUEST, error="SESSION_READY payload must be a dict")
+
+        origin = request.get_header(MessageHeaderKey.ORIGIN) or ""
+        session_id = None
+        with self._launch_lock:
+            trainer = self._active_launch
+            if trainer is None or trainer.session_id is None:
+                reason = "no accepted trainer session"
+            elif origin != trainer.trainer_fqcn:
+                reason = f"unexpected origin {origin!r}"
+            elif payload.get(MsgKey.SESSION_ID) != trainer.session_id:
+                reason = "stale or unknown session id"
+            elif self._secure_mode and not self._delegated_auth_headers_match(request):
+                reason = "delegated site authentication headers are not installed"
+            else:
+                reason = None
+                session_id = trainer.session_id
+                trainer.touch_peer_activity()
+                if not trainer.ready.is_set():
+                    trainer.ready.set()
+                    self.logger.info(f"trainer readiness confirmed from {origin} (session_id={session_id})")
+
+        if reason:
+            self.logger.warning(f"rejecting SESSION_READY: {reason}")
+            return self._protocol_reply(Topic.ERROR, **{MsgKey.REASON: reason})
+        return self._protocol_reply(Topic.SESSION_READY, **{MsgKey.SESSION_ID: session_id})
+
+    def _delegated_auth_headers_match(self, request) -> bool:
+        expected = (
+            (CellMessageAuthHeaderKey.CLIENT_NAME, self._site_name),
+            (CellMessageAuthHeaderKey.TOKEN, self._site_auth_token),
+            (CellMessageAuthHeaderKey.TOKEN_SIGNATURE, self._site_auth_token_signature),
+        )
+        for key, value in expected:
+            actual = request.get_header(key)
+            if not isinstance(actual, str) or not isinstance(value, str):
+                return False
+            if not secrets.compare_digest(actual.encode("utf-8"), value.encode("utf-8")):
+                return False
+        return True
+
     def _hello_reject(self, trainer: Optional[_TrainerSession], origin: str, reason: str, latch: bool):
         self.logger.warning(f"rejecting HELLO from {origin!r}: {reason}")
-        if latch and trainer is not None and not trainer.ready.is_set() and trainer.reject_reason is None:
+        if latch and trainer is not None and trainer.session_id is None and trainer.reject_reason is None:
             trainer.reject_reason = reason
         return self._protocol_reply(Topic.HELLO_REJECTED, **{MsgKey.REASON: reason})
 

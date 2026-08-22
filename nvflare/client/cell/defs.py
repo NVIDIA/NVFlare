@@ -16,8 +16,12 @@
 # Frozen wire channel, namespaced away from legacy "flare_agent".
 CHANNEL = "client_api"
 
-# V1 supports one version; HELLO carries it for future negotiation.
+# V1 is the initial public protocol and makes SESSION_READY mandatory for
+# managed external-process sessions. HELLO carries it for future negotiation.
 PROTOCOL_VERSION = 1
+
+# Session-scale budget shared by trainer control requests and backend result-source reaping.
+SESSION_CONTROL_TIMEOUT = 30.0
 
 
 class Topic:
@@ -31,6 +35,9 @@ class Topic:
     HELLO_ACCEPTED = "client_api.hello_accepted"
     # Semantic handshake rejection, distinct from transport/protocol ERROR.
     HELLO_REJECTED = "client_api.hello_rejected"
+    # Trainer acknowledgement sent only after HELLO_ACCEPTED has been fully
+    # processed, including installation of delegated site authentication.
+    SESSION_READY = "client_api.session_ready"
 
     # Attach session setup (CJ initiated)
     SESSION_OPEN = "client_api.session_open"
