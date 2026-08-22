@@ -1072,6 +1072,66 @@ class TestInitializeAndFinalize:
         assert backend._active_launch is None
         client_job_exit.assert_not_called()
 
+    def test_late_settlement_gets_fresh_natural_exit_budget(self, env, monkeypatch, caplog):
+        monkeypatch.setattr(ebp, "_RESULT_REAPER_MAX_TOTAL_TIMEOUT", 0.2)
+        monkeypatch.setattr(ebp, "_RESULT_REAPER_FORCE_TERM_GRACE", 0.05)
+        monkeypatch.setattr(ebp, "_LIVE_RESULT_SHUTDOWN_ACK_TIMEOUT", 0.01)
+        monkeypatch.setattr(ebp, "_NATURAL_EXIT_REAP_INTERVAL", 0.005)
+        monkeypatch.setattr(ebp, "_SHUTDOWN_RETRY_INTERVAL", 0.01)
+        backend, _ = _initialized_backend(env, shutdown_timeout=0.0, stop_grace_period=0.05)
+        process = env.harness.processes[0]
+        trainer = backend._active_launch
+        trainer.result_source_live.set()
+        transfer_settled = threading.Event()
+
+        env.cell.on_shutdown = lambda *_args: make_cell_reply(
+            CellReturnCode.OK,
+            body={MsgKey.RESULT_SOURCE_LIVE: not transfer_settled.is_set()},
+        )
+        settlement_timer = threading.Timer(0.12, transfer_settled.set)
+        exit_timer = threading.Timer(0.18, process.exit, args=[0])
+        settlement_timer.start()
+        exit_timer.start()
+        try:
+            backend.finalize(FLContext())
+        finally:
+            settlement_timer.join(timeout=1.0)
+            exit_timer.join(timeout=1.0)
+
+        assert env.harness.signals_sent() == []
+        assert "forcing trainer cleanup" not in caplog.text
+        assert process.returncode == 0
+
+    @pytest.mark.skipif(os.name != "posix", reason="process-group semantics are POSIX")
+    def test_live_timeout_reserves_term_grace_before_hard_deadline(self, env, monkeypatch):
+        monkeypatch.setattr(ebp, "_RESULT_REAPER_MAX_TOTAL_TIMEOUT", 0.2)
+        monkeypatch.setattr(ebp, "_RESULT_REAPER_FORCE_TERM_GRACE", 0.05)
+        monkeypatch.setattr(ebp, "_LIVE_RESULT_SHUTDOWN_ACK_TIMEOUT", 0.01)
+        monkeypatch.setattr(ebp, "_NATURAL_EXIT_REAP_INTERVAL", 0.005)
+        monkeypatch.setattr(ebp, "_LOG_THREAD_JOIN_TIMEOUT", 0.0)
+        backend, _ = _initialized_backend(env, shutdown_timeout=0.0, stop_grace_period=0.05)
+        process = env.harness.processes[0]
+        trainer = backend._active_launch
+        trainer.result_source_live.set()
+        env.cell.on_shutdown = lambda *_args: make_cell_reply(CellReturnCode.OK, body={MsgKey.RESULT_SOURCE_LIVE: True})
+        monkeypatch.setattr(env.harness, "killpg", lambda pgid, sig: env.harness.killpg_calls.append((pgid, sig)))
+        monkeypatch.setattr(ebp.os, "killpg", env.harness.killpg, raising=False)
+        await_timeouts = []
+
+        def record_await_timeout(_trainer, timeout):
+            await_timeouts.append(timeout)
+            return False
+
+        monkeypatch.setattr(backend, "_await_group_exit", record_await_timeout)
+
+        backend.finalize(FLContext())
+
+        assert await_timeouts[0] == pytest.approx(0.05, abs=0.01)
+        assert env.harness.signals_sent() == [
+            (process.pid, signal.SIGTERM),
+            (process.pid, signal.SIGKILL),
+        ]
+
     def test_zero_shutdown_live_result_uses_backend_grace_and_releases_on_truth(self, env, monkeypatch):
         monkeypatch.setattr(ebp, "_DEFAULT_SHUTDOWN_TIMEOUT", 0.1)
         monkeypatch.setattr(ebp, "_NATURAL_EXIT_REAP_INTERVAL", 0.005)
