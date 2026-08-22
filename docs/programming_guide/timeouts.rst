@@ -466,8 +466,10 @@ modes. Heartbeats apply only to the out-of-process modes.
        Zero skips direct orderly-exit and finalize-gate waits but maps to 30
        seconds for accepted-source disconnect and post-settlement group-exit
        waits; that fallback also feeds the fixed settled-reaper budget. A
-       still-live accepted source receives a 30-second transfer-barrier interval
-       and one final bounded SHUTDOWN state probe before forced cleanup.
+       still-live accepted source receives a 30-second cleanup budget, with the
+       capped termination grace reserved at the end, and one final bounded
+       SHUTDOWN state probe. Observed settlement starts a fresh settled-reaper
+       budget.
    * - ``stop_grace_period``
      - ``external_process``
      - 30.0
@@ -1693,7 +1695,8 @@ process group and applies these shutdown bounds:
        disconnect fallback, post-settlement group-exit wait, and settled-result
        reaper budget. Zero maps to a 30-second disconnect grace for an accepted
        result source. A still-live accepted source also receives a fixed 30-second
-       settlement interval before forced cleanup.
+       cleanup budget with termination grace reserved at the end; observed
+       settlement starts a fresh settled-reaper budget.
    * - stop_grace_period
      - 30.0
      - Time between soft and hard process-group termination. Accepted-result
