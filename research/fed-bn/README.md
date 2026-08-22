@@ -39,13 +39,17 @@ Download the necessary datasets by running:
 ```
 
 # Run FedBN on different data splits
-We first set the job template path
-```commandline
-nvflare config -jt ../../job_templates
-```
-We will use the in-process client API; we choose the sag_pt job template and run the following command to create the job:
+The `job.py` Recipe builder configures FedAvg with the FedBN client training script. Export the job to
+`/tmp/nvflare/fed_bn/job` with:
+
 ```
 ./create_job.sh
+```
+
+The script runs the equivalent Recipe export command:
+
+```
+python3 job.py --export --export-dir /tmp/nvflare/fed_bn
 ```
 
 Execution
@@ -73,4 +77,3 @@ year={2021},
 url={https://openreview.net/pdf?id=6YEQUn0QICG}
 }
 ```
-
