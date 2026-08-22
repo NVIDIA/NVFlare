@@ -889,6 +889,11 @@ def literature_outcomes(
                 "best_candidate": None if segment_best is None else segment_best.name,
                 "best_score": None if segment_best is None else segment_best.score,
                 "delta_from_incumbent": delta,
+                "improvement_from_incumbent": (
+                    None
+                    if before is None or segment_best is None
+                    else improvement_amount(segment_best.score, before.score, mode)
+                ),
                 "candidate_attempts": [record.name for record in attempts],
                 "completion": completion,
                 "candidate_results": [
@@ -1104,7 +1109,9 @@ def literature_digest(reviews: Sequence[Dict[str, Any]], mode: str = "max") -> D
             "literature_event_id": strongest["literature_event_id"],
             "best_candidate": strongest["best_candidate"],
             "best_score": strongest["best_score"],
+            "incumbent_score": strongest["incumbent_score"],
             "delta_from_incumbent": strongest["delta_from_incumbent"],
+            "improvement_from_incumbent": strongest["improvement_from_incumbent"],
             "sources": strongest["sources"],
         }
     return {"counts": counts, "strongest_helped": strongest}
@@ -1747,8 +1754,8 @@ def report_markdown(summary: Dict[str, Any], records: Sequence[RunRecord]) -> st
         if strongest:
             lines.append(
                 f"Strongest literature-linked improvement: `{strongest['event']}` led to "
-                f"`{strongest['best_candidate']}` with delta "
-                f"`{format_delta(strongest['delta_from_incumbent'])}` versus its incumbent."
+                f"`{strongest['best_candidate']}` with objective improvement "
+                f"`{format_delta(strongest['improvement_from_incumbent'])}` versus its incumbent."
             )
         lines.extend(
             [

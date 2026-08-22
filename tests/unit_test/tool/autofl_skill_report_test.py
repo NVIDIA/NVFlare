@@ -773,6 +773,7 @@ def test_report_synthesizes_literature_against_checkpoint_incumbent(tmp_path, mo
     assert literature[0]["incumbent_score"] == 0.5
     assert literature[0]["best_candidate"] == "inherited_tuning"
     assert literature[0]["delta_from_incumbent"] == pytest.approx(0.15)
+    assert literature[0]["improvement_from_incumbent"] == pytest.approx(0.15)
     assert summary["outcome_summary"]["literature"] == {
         "counts": {"helped": 1},
         "strongest_helped": {
@@ -780,7 +781,9 @@ def test_report_synthesizes_literature_against_checkpoint_incumbent(tmp_path, mo
             "literature_event_id": "lit-0001",
             "best_candidate": "inherited_tuning",
             "best_score": 0.65,
+            "incumbent_score": 0.5,
             "delta_from_incumbent": pytest.approx(0.15),
+            "improvement_from_incumbent": pytest.approx(0.15),
             "sources": ["Li18 arXiv:1812.06127", "Karimireddy19"],
         },
     }
@@ -1463,8 +1466,9 @@ def test_report_supports_native_minimization_contract(tmp_path, monkeypatch):
         tmp_path,
         [
             _row("baseline", "baseline", "1.0"),
-            _row("keep", "lower_loss", "0.6", base_candidate="baseline"),
-            _row("discard", "higher_loss", "0.8", base_candidate="lower_loss"),
+            _row("literature", "loss_review", literature_event_id="lit-min"),
+            _row("keep", "lower_loss", "0.6", base_candidate="baseline", literature_event_id="lit-min"),
+            _row("discard", "higher_loss", "0.8", base_candidate="lower_loss", literature_event_id="lit-min"),
         ],
     )
     tmp_path.joinpath("autofl.yaml").write_text(
@@ -1489,8 +1493,16 @@ def test_report_supports_native_minimization_contract(tmp_path, monkeypatch):
     assert summary["best"]["name"] == "lower_loss"
     assert summary["selection"]["improvement_from_baseline"] == pytest.approx(0.4)
     assert summary["state_accounting"]["consistent"] is True
+    literature = summary["outcome_summary"]["literature"]["strongest_helped"]
+    assert literature["incumbent_score"] == pytest.approx(1.0)
+    assert literature["delta_from_incumbent"] == pytest.approx(-0.4)
+    assert literature["improvement_from_incumbent"] == pytest.approx(0.4)
     assert "`min` direction" in report
     assert "objective improvement `+0.400000`" in report
+    assert (
+        "Strongest literature-linked improvement: `loss_review` led to `lower_loss` with objective improvement "
+        "`+0.400000` versus its incumbent."
+    ) in report
 
 
 def test_report_keeps_strict_improvement_independent_of_plateau_tolerance(tmp_path, monkeypatch):
