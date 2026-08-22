@@ -354,6 +354,8 @@ def test_import_is_repeatable_and_yaml_round_trips(tmp_path):
     yaml_text = dump_autofl_yaml(first)
 
     assert first == second
+    assert DeterministicJobImporter.dump_yaml is dump_autofl_yaml
+    assert importer.dump_yaml(first) == yaml_text
     assert yaml.safe_load(yaml_text) == first
     assert "&id" not in yaml_text
     assert first["trust_contract"]["unresolved"] is not first["unresolved"]

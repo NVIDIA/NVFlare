@@ -15,9 +15,20 @@
 
 """Diagnose the product Auto-FL campaign continuation decision.
 
+Usage:
+    ``python campaign_guard.py [RESULTS] [options]``
+Arguments:
+    ``RESULTS`` is the campaign TSV ledger; options configure diagnostic caps,
+    stop files, plateau, crash, exploration, and family-repeat thresholds.
+Output:
+    Prints the read-only continuation decision as text or JSON. The campaign
+    runner remains the only writer of authoritative campaign state.
+Exit codes:
+    0 for a completed diagnostic; argparse uses 2 for invalid CLI syntax and
+    contract validation errors return a nonzero process status.
+
 The skill runner executes candidates and writes ``results.tsv``. This guard
-turns that ledger into a machine-readable decision. The campaign runner is the
-only writer of authoritative campaign state.
+turns that ledger into a machine-readable decision.
 """
 
 from __future__ import annotations

@@ -46,6 +46,14 @@ def _record(plotter, index, score, status="discard", name=None, runtime=300.0, k
     )
 
 
+def test_plotter_uses_campaign_guard_score_contract():
+    plotter = _load_plotter()
+    guard = plotter.load_campaign_guard()
+
+    assert plotter.better is guard.better
+    assert plotter.improvement_over_baseline is guard.improvement_over_baseline
+
+
 def test_robust_y_limits_focus_on_improvement_region():
     plotter = _load_plotter()
     scores = [0.50, 0.55, 0.687] + [0.70 + index * 0.002 for index in range(20)]
