@@ -111,6 +111,7 @@ class FakeCell:
         self.requests = []  # (topic, target, payload)
         self.request_messages = []
         self.request_kwargs = []
+        self.request_timeouts = []
         self.fired = []  # (topic, targets, payload)
         self.on_request = None
         self.on_session_ready = None
@@ -140,6 +141,7 @@ class FakeCell:
         self.requests.append((topic, target, request.payload))
         self.request_messages.append(request)
         self.request_kwargs.append(kwargs)
+        self.request_timeouts.append(timeout)
         if topic == Topic.SESSION_READY:
             if self.on_session_ready is not None:
                 return self.on_session_ready(topic, target, request)
@@ -1608,10 +1610,29 @@ class TestReceiveSend:
         finally:
             api.shutdown()
 
+    @pytest.mark.parametrize("receiver_ids", [(), ["invalid/receiver", 42]])
+    def test_send_uses_count_tracking_when_no_valid_receiver_identity(self, bootstrap_path, env, receiver_ids):
+        api = _init_api(bootstrap_path, env)
+        try:
+            _deliver_task(env, result_receiver_ids=receiver_ids)
+            api.receive()
+
+            api.send(FLModel(params={"w": [2.0]}, params_type=ParamsType.FULL))
+
+            result_request = [m for m in env.request_messages if MsgKey.RESULT in m.payload][0]
+            result_kwargs = env.request_kwargs[env.request_messages.index(result_request)]
+            assert result_kwargs["receiver_ids"] is None
+            assert result_kwargs["num_receivers"] == 1
+        finally:
+            api.shutdown()
+
     def test_send_preserves_declared_ultimate_result_receivers(self, bootstrap_path, env):
         api = _init_api(bootstrap_path, env)
         try:
-            _deliver_task(env, result_receiver_ids=["server.job", "peer.job"])
+            _deliver_task(
+                env,
+                result_receiver_ids=["server.job", "server.job", "invalid/receiver", 42, "peer.job"],
+            )
             api.receive()
 
             api.send(FLModel(params={"w": [2.0]}, params_type=ParamsType.FULL))
@@ -2026,6 +2047,46 @@ class TestReceiveSend:
         finally:
             api.shutdown()
 
+    def test_shutdown_reports_transfer_settled_while_settlement_ack_is_pending(self, bootstrap_path, env):
+        settlement_started = threading.Event()
+        release_settlement = threading.Event()
+
+        def on_request(topic, target, request):
+            if topic == Topic.HELLO:
+                return _hello_accepted_reply()
+            if topic == Topic.RESULT_READY:
+                return _result_accepted_reply()
+            return make_cell_reply(CellReturnCode.OK)
+
+        env.on_request = on_request
+        api = _init_api(bootstrap_path, env)
+        errors = []
+        try:
+            _deliver_task(env)
+            api.receive()
+
+            def wait_for_settlement(_task_id):
+                settlement_started.set()
+                assert release_settlement.wait(1.0)
+
+            api._notify_result_source_settled = wait_for_settlement
+            sender = threading.Thread(target=lambda: _send_and_capture_error(api, FLModel(params={"w": [2.0]}), errors))
+            sender.start()
+            assert settlement_started.wait(0.5)
+
+            reply = env.deliver(Topic.SHUTDOWN, CJ_FQCN, {MsgKey.SESSION_ID: SESSION_ID})
+
+            assert reply.payload == {MsgKey.RESULT_SOURCE_LIVE: False}
+            assert sender.is_alive()
+            assert env.stopped is False
+            release_settlement.set()
+            sender.join(timeout=0.5)
+            assert not sender.is_alive()
+            assert errors == []
+        finally:
+            release_settlement.set()
+            api.shutdown()
+
     def test_result_source_settled_retries_until_task_correlated_ack(self, bootstrap_path, env, monkeypatch):
         monkeypatch.setattr(cell_api, "_RESULT_SOURCE_SETTLED_RETRY_BACKOFF", 0.0)
         attempts = 0
@@ -2061,6 +2122,40 @@ class TestReceiveSend:
             api.send(FLModel(params={"w": [2.0]}))
 
             assert attempts == 2
+            settlement_timeouts = [
+                timeout
+                for (topic, _, _), timeout in zip(env.requests, env.request_timeouts)
+                if topic == Topic.RESULT_SOURCE_SETTLED
+            ]
+            assert settlement_timeouts == [cell_api._HELLO_TIMEOUT, cell_api._HELLO_TIMEOUT]
+        finally:
+            api.shutdown()
+
+    def test_result_source_settled_give_up_is_warning(self, bootstrap_path, env, monkeypatch, caplog):
+        monkeypatch.setattr(cell_api, "_RESULT_SOURCE_SETTLED_RETRY_BACKOFF", 0.0)
+        attempts = 0
+
+        def on_request(topic, target, request):
+            nonlocal attempts
+            if topic == Topic.HELLO:
+                return _hello_accepted_reply()
+            if topic == Topic.RESULT_READY:
+                return _result_accepted_reply()
+            if topic == Topic.RESULT_SOURCE_SETTLED:
+                attempts += 1
+                return make_cell_reply(CellReturnCode.COMM_ERROR)
+            return make_cell_reply(CellReturnCode.OK)
+
+        env.on_request = on_request
+        api = _init_api(bootstrap_path, env)
+        try:
+            _deliver_task(env)
+            api.receive()
+
+            api.send(FLModel(params={"w": [2.0]}))
+
+            assert attempts == 3
+            assert "result-source settlement was not acknowledged after 3 attempts" in caplog.text
         finally:
             api.shutdown()
 

@@ -14,6 +14,7 @@
 import logging
 import threading
 import time
+from collections import OrderedDict
 from concurrent.futures import TimeoutError, as_completed
 from dataclasses import dataclass
 from typing import Callable, Optional
@@ -727,7 +728,8 @@ class TxTask(StreamTaskSpec):
 class ByteStreamer:
 
     tx_task_map = {}
-    error_context_map = {}
+    # Contexts all have the same TTL, so insertion order is expiry order.
+    error_context_map = OrderedDict()
     map_lock = threading.Lock()
 
     sent_stream_counter_pool = StatsPoolManager.add_counter_pool(
@@ -796,7 +798,7 @@ class ByteStreamer:
     def _retain_error_context(cls, task: TxTask):
         now = time.monotonic()
         cls._purge_error_contexts(now)
-        cls.error_context_map[task.sid] = _TxTaskContext(
+        context = _TxTaskContext(
             cell=task.cell,
             target=task.target,
             channel=task.channel,
@@ -804,13 +806,18 @@ class ByteStreamer:
             req_id=(task.headers or {}).get(StreamHeaderKey.STREAM_REQ_ID),
             expires_at=now + STREAM_ERROR_CONTEXT_TTL,
         )
+        cls.error_context_map.pop(task.sid, None)
+        cls.error_context_map[task.sid] = context
         while len(cls.error_context_map) > MAX_STREAM_ERROR_CONTEXTS:
-            cls.error_context_map.pop(next(iter(cls.error_context_map)))
+            cls.error_context_map.popitem(last=False)
 
     @classmethod
     def _purge_error_contexts(cls, now: float):
-        expired = [sid for sid, context in cls.error_context_map.items() if context.expires_at <= now]
-        for sid in expired:
+        while cls.error_context_map:
+            sid = next(iter(cls.error_context_map))
+            context = cls.error_context_map[sid]
+            if context.expires_at > now:
+                break
             cls.error_context_map.pop(sid, None)
 
     @staticmethod

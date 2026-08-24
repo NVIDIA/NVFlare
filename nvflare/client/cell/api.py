@@ -44,7 +44,7 @@ from nvflare.client.cell.bootstrap import (
     get_bootstrap_client_api_type,
     read_bootstrap_config,
 )
-from nvflare.client.cell.defs import CHANNEL, PROTOCOL_VERSION, MsgKey, Topic
+from nvflare.client.cell.defs import CHANNEL, PROTOCOL_VERSION, SESSION_CONTROL_TIMEOUT, MsgKey, Topic
 from nvflare.client.config import ConfigKey, ExchangeFormat, TransferType
 from nvflare.client.converter_utils import convert_params
 from nvflare.client.decomposers import register_framework_decomposers
@@ -52,6 +52,7 @@ from nvflare.client.utils import DIFF_FUNCS
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.utils import make_reply as make_cell_reply
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.f3.streaming.download_service import DownloadService
@@ -66,7 +67,7 @@ from nvflare.fuel.utils.fobs.decomposers.via_downloader import (
 )
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
-_HELLO_TIMEOUT = 30.0
+_HELLO_TIMEOUT = SESSION_CONTROL_TIMEOUT
 _HELLO_RETRY_INTERVAL = 1.0
 # Queue polling bounds abort/stop detection latency.
 _RECEIVE_POLL_INTERVAL = 0.5
@@ -74,7 +75,7 @@ _HEARTBEAT_JOIN_TIMEOUT = 1.0
 _OWNER_WATCHDOG_INTERVAL = 0.5
 _CJ_TIMEOUT_ABORT_GRACE = 1.0
 _OWNER_TERM_GRACE = 5.0
-_RESULT_SOURCE_SETTLED_TIMEOUT = 1.0
+_RESULT_SOURCE_SETTLED_TIMEOUT = SESSION_CONTROL_TIMEOUT
 _RESULT_SOURCE_SETTLED_ATTEMPTS = 3
 _RESULT_SOURCE_SETTLED_RETRY_BACKOFF = 0.1
 
@@ -573,12 +574,14 @@ class CellClientAPI(APISpec):
                 self._clear_result_transfer_waiters()
                 self._maybe_cleanup_memory()
             finally:
-                # Keep send ownership while publishing settlement. A concurrent SHUTDOWN
-                # must defer Cell teardown until the CJ has observed that this source is done.
+                # Downstream transfer cleanup is the send barrier. Publish that transition
+                # before the separately acknowledged settlement request so a concurrent
+                # SHUTDOWN can report the source as settled even when that request is delayed.
+                with self._lock:
+                    self._result_send_active = False
                 if result_accepted:
                     self._notify_result_source_settled(task.get(MsgKey.TASK_ID))
                 with self._lock:
-                    self._result_send_active = False
                     should_shutdown = self._stopped or (result_accepted and not self._launch_once)
                 # One-shot sessions close only after acceptance and downstream settlement.
                 if should_shutdown:
@@ -614,7 +617,9 @@ class CellClientAPI(APISpec):
                 self.logger.debug(f"result-source settlement notification failed: {e}")
             if attempt + 1 < _RESULT_SOURCE_SETTLED_ATTEMPTS:
                 time.sleep(_RESULT_SOURCE_SETTLED_RETRY_BACKOFF)
-        self.logger.debug("result-source settlement was not acknowledged")
+        self.logger.warning(
+            f"result-source settlement was not acknowledged after {_RESULT_SOURCE_SETTLED_ATTEMPTS} attempts"
+        )
 
     def _wait_for_result_transfers(self, result_waiters) -> None:
         """Wait for strict terminal success of every result DownloadService transaction."""
@@ -919,17 +924,13 @@ class CellClientAPI(APISpec):
 
     @staticmethod
     def _normalize_result_receiver_ids(receiver_ids):
-        if receiver_ids is None:
-            return None
         if isinstance(receiver_ids, str):
-            values = [receiver_ids]
-        else:
-            try:
-                values = list(receiver_ids)
-            except TypeError:
-                return None
-        normalized = tuple(str(receiver_id) for receiver_id in values if receiver_id is not None and str(receiver_id))
-        return normalized or None
+            receiver_ids = (receiver_ids,)
+        if isinstance(receiver_ids, (list, tuple)):
+            valid = tuple(dict.fromkeys(r for r in receiver_ids if isinstance(r, str) and not FQCN.validate(r)))
+            if valid:
+                return valid
+        return None
 
     def _check_session_alive(self) -> None:
         reason = self._session_end_reason()

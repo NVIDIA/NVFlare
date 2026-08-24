@@ -422,49 +422,7 @@ reconstruct either contract from this broad workflow reference.
 
 ## Execution Environment And Local Validation
 
-Conversion validation uses `SimEnv` from `nvflare.recipe`; build the environment
-under the canonical single-topology-owner rule in the always-loaded common
-conversion reference, then call `recipe.execute(env)` from `job.py`. Do not
-reconstruct that topology policy from this broad workflow reference.
-
-For normal first-user simulation, `python job.py` is the intended local
-experience because no exported job folder may exist yet. The exported job folder
-is still the deployable artifact: POC or production submission uses the job
-folder with product submission commands such as `nvflare job submit -j`.
-
-Validate the artifact being claimed. If the final claim is that the recipe runs
-locally, use `python job.py`. If the final claim includes an exported,
-deployable job folder, create it with `python job.py --export --export-dir
-<runtime-dir>/job_config` and validate that exported folder with the product
-simulator CLI: `nvflare simulator <exported-job-dir> -w
-<runtime-dir>/workspace -n <num_clients> -t <num_threads> -l concise` (or `-c
-site-1,site-2,...`). Do not write Python code to call simulator APIs such as
-`simulator_run()` for exported-job validation.
-
-`PocEnv` and `ProdEnv` are outside conversion scope; do not generate or run
-them from a conversion skill. Homomorphic-encryption recipes reject `SimEnv` and
-require those provisioned environments, so HE is not supported by conversion.
-If any other selected recipe rejects `SimEnv`, follow the selecting reference's
-ask/fail-closed rule and report the job as unvalidated instead of switching
-recipes or environments to force a run.
-
-- Choose one final full-run path based on the artifact being validated. Use
-  `python job.py` for local recipe or first-user simulation validation. Use
-  `python job.py --export --export-dir <runtime-dir>/job_config` plus
-  `nvflare simulator <exported-job-dir> ...` when validating an exported,
-  deployable job folder. Do not run both full simulations unless the first one
-  failed and the second is a scoped rerun after a fix.
-- Prefer synthetic data flags or small fixtures when the original dataset is
-  unavailable.
-- Complete the dependency phase before Python import checks,
-  recipe-construction preflight, export, or simulation.
-- Follow `validation-evidence.md` for validation command isolation and terminal
-  evidence.
-- Never run destructive cleanup against the source tree or its git state, such
-  as git clean/reset/checkout operations or recursive deletion over source or
-  user files. Scope any cleanup to generated runtime or output directories under
-  the runtime location convention, never the user's project or working tree.
-- After successful simulation, follow `metrics-and-artifact-reporting.md`.
+Load `validation-evidence.md` for the complete local-validation path, command selection, simulation constraints, safety rules, and evidence requirements.
 
 ## Final Validation Run Must Finish Before You Finalize
 
