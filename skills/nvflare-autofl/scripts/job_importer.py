@@ -45,6 +45,7 @@ logger = logging.getLogger(__name__)
 
 _UNRESOLVED = object()
 _core_looks_lower_is_better = _UNRESOLVED
+_last_core_heuristic_warning = None
 
 AUTOFL_CONFIG_SCHEMA_VERSION = "nvflare.autofl.config.v1"
 IMPORTER_VERSION = "nvflare-autofl-job-importer/v1"
@@ -1235,17 +1236,20 @@ def _resolve_stop_condition_mode(
 def _resolve_core_heuristic():
     """Load and cache the core heuristic, retrying after transient import failures."""
 
-    global _core_looks_lower_is_better
+    global _core_looks_lower_is_better, _last_core_heuristic_warning
 
     if _core_looks_lower_is_better is _UNRESOLVED:
         try:
             from nvflare.app_common.widgets.intime_model_selector import _looks_lower_is_better
         except Exception as e:
-            logger.warning(
-                "Unable to load the NVFlare core metric heuristic (%s); using the local fallback and retrying "
-                "on the next check",
-                type(e).__name__,
-            )
+            warning = (type(e).__name__, str(e))
+            if warning != _last_core_heuristic_warning:
+                logger.warning(
+                    "Unable to load the NVFlare core metric heuristic (%s: %s); using the local fallback and "
+                    "retrying on the next check",
+                    *warning,
+                )
+                _last_core_heuristic_warning = warning
             return None
         else:
             _core_looks_lower_is_better = _looks_lower_is_better
