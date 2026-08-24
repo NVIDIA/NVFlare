@@ -215,6 +215,8 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
             self.fire_event(EventType.AFTER_CHECK_CLIENT_RESOURCES, fl_ctx)
 
             if not resource_check_results:
+                if resource_reqs:
+                    raise _UnsafeAdmissionError(f"resource check for job {job.job_id} returned no results")
                 self.log_debug(fl_ctx, f"Job {job.job_id} can't be scheduled: resource check results is None or empty.")
                 return SCHEDULE_RESULT_NO_RESOURCE, None, "error checking resources"
 
