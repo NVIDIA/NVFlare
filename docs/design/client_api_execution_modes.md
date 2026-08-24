@@ -303,11 +303,13 @@ trainer to stop and starts the natural-exit reaper. This also covers inline resu
 reply can race END_RUN even though they create no download transaction. Teardown cannot safely
 return with a daemon reaper because ClientRunner tears down streaming and the CJ Cell immediately
 after END_RUN. A result transfer retains its own `DownloadService` idle/receiver policy, but that
-longer data-transfer budget does not govern CJ process ownership. END_RUN gives a still-live result
-source one acknowledged SHUTDOWN interval, then force-stops every remaining owned process group.
-A source already known to be settled instead receives its configured natural-exit budget and a
-small configured TERM grace, both inside a 30-second cleanup cap, so normal post-send checkpoint
-work is not cut off at the live-source acknowledgement deadline. A run-abort-marked `ABORT_TASK`
+longer data-transfer budget does not govern CJ process ownership. END_RUN uses a short acknowledged
+SHUTDOWN request to sample send-barrier state throughout a 30-second session-scale interval. The
+trainer publishes transfer-barrier completion before waiting for `RESULT_SOURCE_SETTLED`, and the
+reaper makes a final SHUTDOWN probe at the deadline. Therefore a completed transfer is treated as
+settled even if its separate settlement acknowledgement is delayed. A source already known to be
+settled instead receives its configured natural-exit budget and a small configured TERM grace inside
+the cleanup budget. A run-abort-marked `ABORT_TASK`
 latches aborted teardown even when `execute()` already returned the lazy result, sends ABORT
 immediately, and bypasses the normal result-source drain interval. Task/workflow-only cancellation
 sends ABORT without poisoning later tasks, and normal END_RUN carries no run-abort marker. Other
@@ -320,9 +322,18 @@ For a per-task trainer whose accepted result already has a registered natural-ex
 
 Startup waits at most `launch_timeout` for the trainer to complete its HELLO handshake. The
 default is 300 seconds; callers may explicitly use `None` when an unbounded wait is required. For
-ordinary shutdown, a `shutdown_timeout` of zero is kept as zero and starts process-group termination
-immediately after the orderly SHUTDOWN notification. An accepted result whose publication is
-still live receives the short acknowledgement interval described above before process cleanup.
+ordinary teardown without a live accepted result source, a `shutdown_timeout` of zero is kept as
+zero and starts process-group termination immediately after the orderly SHUTDOWN notification. The
+same setting also bounds the finalize execute-gate wait, supplies the accepted-source disconnect
+grace, bounds the post-settlement process-group exit wait, and feeds the settled per-task reaper
+budget. Zero skips the direct orderly-exit and finalize-gate waits, but the accepted-source
+disconnect and post-settlement group-exit roles normalize it to the 30-second backend default. That
+fallback also feeds the fixed 30-second settled-reaper budget, which reserves up to 5 seconds for
+termination. This zero configuration is the live default for `ScriptRunner`.
+The accepted-result reaper caps `stop_grace_period` at 5 seconds inside its fixed 30-second cleanup
+budget, while ordinary forced teardown honors the full configured grace. An accepted result whose
+publication is still live receives the 30-second transfer-barrier interval described above and one
+final bounded SHUTDOWN state probe before process cleanup.
 
 The backend starts the command in an owned process group on POSIX, monitors process-group exit and
 the authenticated heartbeat lease, and rejects messages from stale sessions or unexpected Cell
@@ -331,13 +342,15 @@ trainer watches that owner and terminates its isolated process group if the CJ d
 normal finalization can reap it. Attach mode never receives or watches a CJ process ID because the
 attached process is externally owned. With a positive orderly-shutdown bound, shutdown sends a
 bounded Cell request and charges its acknowledgement time against that bound; a zero bound keeps the
-immediate fire-and-forget notification for ordinary teardown. A live accepted-result publication
+immediate fire-and-forget notification for ordinary teardown without a live accepted result. A live accepted-result publication
 always uses a short, acknowledged SHUTDOWN request because the trainer cannot be force-stopped
 before its send barrier settles; the source reaper retries transient control-path failures. Its
 acknowledgement also
 reports whether `send()` still owns that barrier. This state transition is serialized with
-SHUTDOWN: either `send()` sees the stop and closes after terminal settlement, or the backend learns
-that settlement already happened and can stop the persistent process. A standard trainer loop also releases its Cell
+SHUTDOWN: once downstream transfer cleanup releases the barrier, the backend can learn that the
+source is settled while the trainer is still waiting for the task-correlated settlement reply.
+Either `send()` then sees the stop and closes after the reply, or the backend can safely stop the
+persistent process without reporting the completed source as lost. A standard trainer loop also releases its Cell
 synchronously when `receive()` or `is_running()` observes the shutdown (or abort), so existing
 scripts do not need an explicit `flare.shutdown()` at loop exit. The backend then terminates any
 surviving owned POSIX process group with a bounded soft/hard stop sequence. Because a directly launched trainer does not run under

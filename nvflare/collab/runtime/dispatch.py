@@ -103,7 +103,7 @@ class _CollabStreamFilter:
         rejection = self.authorizer.authorize(message.headers)
         if rejection:
             self.byte_receiver.reject(message, rejection)
-            # Incoming filters stop delivery when they return a Message. The
+            # Incoming request filters stop delivery when they return a Message. The
             # stream rejection itself is reported on ByteStreamer's generic
             # error topics, so this outer fire-and-forget reply is discarded.
             return Message()
@@ -137,7 +137,9 @@ def prepare_for_remote_call(cell, app, logger, executor, participants: dict[str,
     authorizer = CollabCallAuthorizer(app, cell.get_fqcn(), participants, logger)
     adapter = Adapter(_submit_app_method, cell.core_cell.my_info, cell)
     stream_filter = _CollabStreamFilter(authorizer, cell.byte_receiver)
-    cell.core_cell.add_incoming_filter(STREAM_CHANNEL, STREAM_DATA_TOPIC, stream_filter.filter)
+    # Request filters run only after CoreCell has routed the frame to this
+    # destination, but before ByteReceiver allocates stream state.
+    cell.core_cell.add_incoming_request_filter(STREAM_CHANNEL, STREAM_DATA_TOPIC, stream_filter.filter)
     cell.register_blob_cb(
         channel=MSG_CHANNEL,
         topic=MSG_TOPIC,

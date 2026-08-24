@@ -16,8 +16,7 @@ tunable sweep is a checkpoint only. Execute `next_action` while
 Budget and baseline accounting is explicit in the state payload:
 `remaining_candidates` is `candidate_cap - candidate_attempts` (null when
 uncapped), `baseline_status` stays `pending` until a scored baseline ledger row
-exists, `baseline_score` and `improvement` (best minus baseline; campaigns
-always maximize the metric, so positive always means better) report
+exists, `baseline_score` and direction-adjusted `improvement` report
 baseline-versus-best progress, and `abandoned_candidates` counts abandoned candidate manifests,
 which never count as candidate attempts. Changing the effective candidate cap
 between invocations appends `{changed_at, old, new, source, user_approved}` to
@@ -44,14 +43,9 @@ Only one lifecycle action may own a job workspace at a time. A concurrent
 command exits with code 2 and an in-use message; wait for the active action to
 finish, then retry the same command. Different job workspaces remain independent.
 
-Before a simulation campaign starts, resolve the absolute Python interpreter,
-runner, and selected `job.py`, then ask the human once for a command-scoped grant
-covering only `initialize` and `evaluate` for those paths. Do not create agent
-permission rules, approve generic Python or shell execution, or extend this
-grant to another job, POC, or production. All other lifecycle actions use normal
-permissions. Simulation executes user and agent-authored Python with the
-runner's host privileges; use a disposable container or dedicated VM for
-autonomous campaigns.
+Use the top-level skill's **Permissions and Production Safety** contract before
+starting or submitting work. A long-running campaign never broadens or renews
+that command-scoped authority merely because it continues across checkpoints.
 
 A prepared manifest is pending work. Edit its candidate source and evaluate it,
 or abandon it explicitly; do not silently start another candidate. Invalid

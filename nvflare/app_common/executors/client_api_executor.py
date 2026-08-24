@@ -115,12 +115,18 @@ class ClientAPIExecutor(Executor):
                 trainer to complete its HELLO/session setup (this replaces the legacy
                 external_pre_init_timeout). Defaults to 300 seconds for compatibility with
                 prior releases; an explicit None means no timeout.
-            shutdown_timeout (Optional[float]): external_process only. How long to wait for the
-                trainer to exit naturally after an orderly SHUTDOWN before starting forced
-                process-tree termination. None means the backend default.
+            shutdown_timeout (Optional[float]): external_process only. Primarily the natural-exit
+                wait after orderly SHUTDOWN; it also bounds the finalize/execute gate, supplies the
+                accepted-source disconnect grace, bounds the post-settlement process-group exit
+                wait, and feeds the settled per-task reaper budget. None selects the 30-second
+                backend default. Zero skips the direct orderly-exit and finalize-gate waits. In the
+                accepted-source roles, zero is normalized to 30 seconds for disconnect and
+                post-settlement group-exit waits; that fallback also feeds the fixed 30-second
+                settled-reaper budget, which reserves up to 5 seconds for termination.
             stop_grace_period (float): external_process only. Grace period between SIGTERM and
                 SIGKILL when terminating the trainer process group (design: "Process-tree
-                termination").
+                termination"). The accepted-result reaper silently caps this phase at 5 seconds;
+                ordinary teardown honors the configured value.
             heartbeat_interval (float): out-of-process only (external_process/attach). Interval
                 (seconds) for session heartbeats.
             heartbeat_timeout (float): out-of-process only (external_process/attach). Session lease

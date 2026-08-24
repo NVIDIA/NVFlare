@@ -15,6 +15,21 @@ SP/CP containers are started manually; SJ/CJ containers are launched automatical
 bash build_docker.sh
 ```
 
+The recommended way to run this example is from a Git checkout. The build
+script derives the NVFlare base version from the nearest version tag, so no
+version environment variable is required.
+
+GitHub-generated source archives and other Git-less source copies do not contain
+the metadata needed to determine a version. If you intentionally use one, provide
+`NVFL_BASE_VERSION` as an advanced override:
+
+```bash
+NVFL_BASE_VERSION=2.9.0 bash build_docker.sh
+```
+
+Use only the base release number, such as `2.9.0`; the package build adds its
+development suffix when Git metadata is unavailable.
+
 This builds two images:
 - `nvflare-site:latest` — used by SP/CP containers (started by `start_docker.sh`),
   built from this example's `Dockerfile`

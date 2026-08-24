@@ -12,12 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import builtins
 import importlib.util
 import sys
 from pathlib import Path
 
 import pytest
 import yaml
+
+from nvflare.app_common.widgets.intime_model_selector import _looks_lower_is_better
 
 
 def _load_importer():
@@ -37,13 +40,28 @@ dump_autofl_yaml = job_importer.dump_autofl_yaml
 import_job_to_autofl_config = job_importer.import_job_to_autofl_config
 
 
-def _objective(metric, source="user_request"):
+def _objective(
+    metric,
+    source="user_request",
+    *,
+    mode="max",
+    mode_source="core_default",
+    job_metric=None,
+    job_metric_source=None,
+):
+    job_metric = job_metric or metric
+    job_metric_source = job_metric_source or source
     return {
         "metric": metric,
         "requested_metric": metric,
         "optimization_metric": metric,
         "metric_extraction_order": [metric],
-        "mode": "max",
+        "mode": mode,
+        "mode_contract_source": mode_source,
+        "job_key_metric": job_metric,
+        "job_key_metric_source": job_metric_source,
+        "job_key_metric_mode": mode,
+        "job_key_metric_mode_source": mode_source,
         "metric_contract_source": source,
         "metric_invariants": [
             "definition",
@@ -135,7 +153,7 @@ def test_import_recipe_job_extracts_trust_contract_without_executing_code(tmp_pa
     assert config["job"]["surface"] == "recipe"
     assert config["job"]["recipe"] == "FedAvgRecipe"
     assert config["job"]["train_script"] == "client.py"
-    assert config["objective"] == _objective("AUC")
+    assert config["objective"] == _objective("AUC", job_metric="accuracy", job_metric_source="arg:key_metric")
     assert config["budget"]["max_candidates"] == 8
     assert config["budget"]["fixed_training_budget"] == {
         "num_rounds": 5,
@@ -155,24 +173,176 @@ def test_import_recipe_job_extracts_trust_contract_without_executing_code(tmp_pa
     assert config["unresolved"] == []
 
 
-def test_import_rejects_minimization_mode(tmp_path):
+def test_import_resolves_explicit_minimization_mode(tmp_path):
     job_path = _write_recipe_job(tmp_path)
+    source = job_path.read_text(encoding="utf-8").replace(
+        "key_metric=args.key_metric,", 'key_metric=args.key_metric,\n        key_metric_mode="min",'
+    )
+    job_path.write_text(source, encoding="utf-8")
 
-    with pytest.raises(job_importer.JobImportError, match="minimization is not supported") as excinfo:
-        import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path), mode="min")
+    config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
 
-    assert "neg_val_loss" in str(excinfo.value)
+    assert config["objective"]["mode"] == "min"
+    assert config["objective"]["mode_contract_source"] == "job:key_metric_mode"
 
 
-def test_importer_mode_guidance_matches_campaign_guard():
-    repo_root = Path(__file__).parents[3]
-    guard_path = repo_root / "skills" / "nvflare-autofl" / "scripts" / "campaign_guard.py"
-    spec = importlib.util.spec_from_file_location("nvflare_autofl_skill_campaign_guard_for_importer", guard_path)
-    guard = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = guard
-    spec.loader.exec_module(guard)
+def test_import_infers_mode_from_same_metric_stop_condition(tmp_path):
+    job_path = _write_recipe_job(tmp_path)
+    source = job_path.read_text(encoding="utf-8").replace(
+        "key_metric=args.key_metric,", 'key_metric=args.key_metric,\n        stop_cond="accuracy <= 0.2",'
+    )
+    job_path.write_text(source, encoding="utf-8")
 
-    assert job_importer.MODE_MAX_ONLY_MESSAGE == guard.MODE_MAX_ONLY_MESSAGE
+    config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+
+    assert config["objective"]["mode"] == "min"
+    assert config["objective"]["mode_contract_source"] == "job:stop_cond"
+
+
+def test_import_resolves_argparse_metric_mode_override(tmp_path):
+    job_path = _write_recipe_job(tmp_path)
+    source = (
+        job_path.read_text(encoding="utf-8")
+        .replace(
+            'parser.add_argument("--key_metric", type=str, default="accuracy")',
+            'parser.add_argument("--key_metric", type=str, default="accuracy")\n'
+            '    parser.add_argument("--key_metric_mode", choices=["min", "max"], default="max")',
+        )
+        .replace(
+            "key_metric=args.key_metric,",
+            "key_metric=args.key_metric,\n        key_metric_mode=args.key_metric_mode,",
+        )
+    )
+    job_path.write_text(source, encoding="utf-8")
+
+    config = import_job_to_autofl_config(
+        str(job_path), workspace_root=str(tmp_path), job_args=["--key_metric_mode", "min"]
+    )
+
+    assert config["objective"]["mode"] == "min"
+    assert config["objective"]["mode_contract_source"] == "arg:key_metric_mode"
+
+
+def test_import_marks_dynamic_metric_mode_unresolved(tmp_path):
+    job_path = _write_recipe_job(tmp_path)
+    source = job_path.read_text(encoding="utf-8").replace(
+        "key_metric=args.key_metric,",
+        "key_metric=args.key_metric,\n        key_metric_mode=get_metric_mode(),",
+    )
+    job_path.write_text(source, encoding="utf-8")
+
+    config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+
+    assert config["objective"]["mode"] == "max"
+    assert config["objective"]["mode_contract_source"] == "unresolved"
+    assert {item["field"] for item in config["unresolved"]} >= {"objective.mode"}
+
+
+@pytest.mark.parametrize("mode_literal", ['["min"]', '("min",)'])
+def test_import_marks_non_string_metric_mode_unresolved(tmp_path, mode_literal):
+    job_path = _write_recipe_job(tmp_path)
+    source = job_path.read_text(encoding="utf-8").replace(
+        "key_metric=args.key_metric,",
+        f"key_metric=args.key_metric,\n        key_metric_mode={mode_literal},",
+    )
+    job_path.write_text(source, encoding="utf-8")
+
+    config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+
+    assert config["objective"]["mode"] == "max"
+    assert config["objective"]["mode_contract_source"] == "unresolved"
+    assert any(
+        item["field"] == "objective.mode" and "invalid key_metric_mode" in item["reason"]
+        for item in config["unresolved"]
+    )
+
+
+def test_import_marks_conflicting_metric_direction_declarations_unresolved(tmp_path):
+    job_path = _write_recipe_job(tmp_path)
+    source = job_path.read_text(encoding="utf-8").replace(
+        "key_metric=args.key_metric,",
+        'key_metric=args.key_metric,\n        key_metric_mode="max",\n        stop_cond="accuracy <= 0.2",',
+    )
+    job_path.write_text(source, encoding="utf-8")
+
+    config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+
+    assert config["objective"]["mode"] == "max"
+    assert any("conflicts" in item["reason"] for item in config["unresolved"] if item["field"] == "objective.mode")
+
+
+def test_import_marks_custom_model_selector_direction_unresolved(tmp_path):
+    (tmp_path / "train.py").write_text("print('train')\n", encoding="utf-8")
+    job_path = tmp_path / "job.py"
+    job_path.write_text(
+        """
+from nvflare.app_common.executors.script_runner import ScriptRunner
+from nvflare.job_config.base_fed_job import BaseFedJob
+from nvflare.widgets.widget import Widget
+
+
+class CustomSelector(Widget):
+    pass
+
+
+job = BaseFedJob(
+    name="custom-selector",
+    min_clients=2,
+    key_metric="loss",
+    key_metric_mode="min",
+    model_selector=CustomSelector(),
+)
+runner = ScriptRunner(script="train.py")
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+
+    assert config["objective"]["mode"] == "max"
+    assert config["objective"]["mode_contract_source"] == "unresolved"
+    assert any(
+        item["field"] == "objective.mode" and "custom model_selector" in item["reason"] for item in config["unresolved"]
+    )
+
+
+def test_import_allows_explicitly_absent_model_selector(tmp_path):
+    (tmp_path / "train.py").write_text("print('train')\n", encoding="utf-8")
+    job_path = tmp_path / "job.py"
+    job_path.write_text(
+        """
+from nvflare.app_common.executors.script_runner import ScriptRunner
+from nvflare.job_config.base_fed_job import BaseFedJob
+
+
+job = BaseFedJob(
+    name="default-selector",
+    min_clients=2,
+    key_metric="loss",
+    key_metric_mode="min",
+    model_selector=None,
+)
+runner = ScriptRunner(script="train.py")
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+
+    assert config["objective"]["mode"] == "min"
+    assert config["objective"]["mode_contract_source"] == "job:key_metric_mode"
+
+
+def test_import_marks_malformed_stop_condition_unresolved(tmp_path):
+    job_path = _write_recipe_job(tmp_path)
+    source = job_path.read_text(encoding="utf-8").replace(
+        "key_metric=args.key_metric,", 'key_metric=args.key_metric,\n        stop_cond="accuracy <= target",'
+    )
+    job_path.write_text(source, encoding="utf-8")
+
+    config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+
+    assert any("invalid stop_cond" in item["reason"] for item in config["unresolved"])
 
 
 def test_import_is_repeatable_and_yaml_round_trips(tmp_path):
@@ -184,6 +354,8 @@ def test_import_is_repeatable_and_yaml_round_trips(tmp_path):
     yaml_text = dump_autofl_yaml(first)
 
     assert first == second
+    assert DeterministicJobImporter.dump_yaml is dump_autofl_yaml
+    assert importer.dump_yaml(first) == yaml_text
     assert yaml.safe_load(yaml_text) == first
     assert "&id" not in yaml_text
     assert first["trust_contract"]["unresolved"] is not first["unresolved"]
@@ -485,7 +657,14 @@ from nvflare.app_common.executors.script_runner import ScriptRunner as Runner
 
 
 def main():
-    job = ImportedJob(name="fedavg-alias", n_clients=8, min_clients=4, num_rounds=10, key_metric="AUC")
+    job = ImportedJob(
+        name="fedavg-alias",
+        n_clients=8,
+        min_clients=4,
+        num_rounds=10,
+        key_metric="loss",
+        key_metric_mode="min",
+    )
     runner = Runner(script="train.py")
     return job, runner
 """.lstrip(),
@@ -498,7 +677,7 @@ def main():
     assert config["job"]["fed_job"] == "FedAvgJob"
     assert config["job"]["fed_job_class"] == "nvflare.app_common.workflows.fedavg.FedAvgJob"
     assert config["job"]["train_script"] == "train.py"
-    assert config["objective"] == _objective("AUC", source="literal")
+    assert config["objective"] == _objective("loss", source="literal", mode="min", mode_source="job:key_metric_mode")
     assert config["budget"]["fixed_training_budget"] == {
         "num_rounds": 10,
         "min_clients": 4,
@@ -829,7 +1008,7 @@ def test_import_selects_hello_lightning_algorithm_mode(algorithm, expected_recip
     assert config["import"]["support"]["status"] == "supported"
     assert config["job"]["recipe"] == expected_recipe
     assert config["job"]["train_script"] == "client.py"
-    assert config["objective"] == _objective("accuracy", source="default")
+    assert config["objective"] == _objective("accuracy", source="core_default")
 
 
 def test_import_selects_hello_numpy_cross_val_training_mode():
@@ -892,6 +1071,75 @@ def main():
     assert not any(item["field"] == "budget.fixed_training_budget.num_rounds" for item in explicit["unresolved"])
 
 
+@pytest.mark.parametrize(
+    ("argument", "job_args"),
+    [
+        ('parser.add_argument("--x", dest=["y"], default=1)', []),
+        ('parser.add_argument("--flagx", action=["store_true"])', ["--flagx"]),
+    ],
+)
+def test_import_ignores_malformed_argparse_dest_and_action_literals(tmp_path, argument, job_args):
+    tmp_path.joinpath("client.py").write_text("print('train')\n", encoding="utf-8")
+    job_path = tmp_path / "job.py"
+    job_path.write_text(
+        f"""
+import argparse
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv
+
+
+def define_parser():
+    parser = argparse.ArgumentParser()
+    {argument}
+    return parser.parse_args()
+
+
+def main():
+    define_parser()
+    recipe = FedAvgRecipe(name="demo", min_clients=2, num_rounds=1, train_script="client.py")
+    recipe.execute(SimEnv(num_clients=2))
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path), job_args=job_args)
+
+    assert config["import"]["support"]["status"] == "supported"
+
+
+def test_import_keeps_flags_derived_name_for_dynamic_argparse_dest(tmp_path):
+    tmp_path.joinpath("client.py").write_text("print('train')\n", encoding="utf-8")
+    job_path = tmp_path / "job.py"
+    job_path.write_text(
+        """
+import argparse
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv
+
+
+def make_name():
+    return "num_rounds"
+
+
+def define_parser():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--num_rounds", dest=make_name(), type=int, default=3)
+    return parser.parse_args()
+
+
+def main():
+    args = define_parser()
+    recipe = FedAvgRecipe(name="demo", min_clients=2, num_rounds=args.num_rounds, train_script="client.py")
+    recipe.execute(SimEnv(num_clients=2))
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+
+    assert config["budget"]["fixed_training_budget"]["num_rounds"] == 3
+
+
 def test_dynamic_key_metric_uses_documented_fallback_until_explicitly_overridden(tmp_path):
     tmp_path.joinpath("client.py").write_text("print('train')\n", encoding="utf-8")
     job_path = tmp_path / "job.py"
@@ -923,12 +1171,54 @@ def main():
     explicit = import_job_to_autofl_config(
         str(job_path), workspace_root=str(tmp_path), job_args=["--key_metric", "val_auc"]
     )
+    requested = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path), metric="accuracy")
 
     assert fallback["objective"]["metric"] == "accuracy"
     assert fallback["objective"]["metric_contract_source"] == "default"
     assert any(item["field"] == "objective.metric" for item in fallback["unresolved"])
     assert explicit["objective"]["metric"] == "val_auc"
     assert explicit["objective"]["metric_contract_source"] == "arg:key_metric"
+    assert any(item["field"] == "objective.job_key_metric" for item in requested["unresolved"])
+    assert not any(item["field"] == "objective.metric" for item in requested["unresolved"])
+
+
+@pytest.mark.parametrize(
+    "metric",
+    [
+        "trainingloss",
+        "val_mseloss",
+        "neg_loss",
+        "negative_class_loss",
+        "dice",
+        "-mse",
+        "neg.mse",
+        "cost",
+        "divergence",
+        "energy",
+    ],
+)
+def test_lower_is_better_metric_heuristic_matches_nvflare_core(metric, monkeypatch):
+    assert job_importer.likely_lower_is_better_metric(metric) is _looks_lower_is_better(metric)
+    monkeypatch.setattr(job_importer, "_core_looks_lower_is_better", None)
+    assert job_importer.likely_lower_is_better_metric(metric) is _looks_lower_is_better(metric)
+
+
+def test_importer_loads_and_imports_job_without_nvflare_in_agent_environment(tmp_path, monkeypatch):
+    original_import = builtins.__import__
+
+    def isolated_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "nvflare.app_common.widgets.intime_model_selector":
+            raise ImportError("NVFlare is unavailable in the agent environment")
+        return original_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", isolated_import)
+    isolated_importer = _load_importer()
+    job_path = _write_recipe_job(tmp_path)
+
+    config = isolated_importer.import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+
+    assert isolated_importer._core_looks_lower_is_better is None
+    assert config["import"]["support"]["status"] == "supported"
 
 
 def test_train_script_outside_workspace_is_not_admitted_to_trust_contract(tmp_path):

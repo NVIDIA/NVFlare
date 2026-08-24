@@ -375,8 +375,9 @@ def test_seed_skill_versions_stay_at_release_version():
     repo_root = Path(__file__).resolve().parents[4]
 
     for skill_path in repo_root.joinpath("skills").glob("*/SKILL.md"):
-        skill_text = skill_path.read_text(encoding="utf-8")
-        assert 'version: "0.1.0"' in skill_text, skill_path
+        frontmatter = parse_skill_frontmatter(skill_path)
+        assert "version" not in frontmatter, skill_path
+        assert frontmatter["metadata"]["version"] == "0.1.0", skill_path
 
 
 def test_shared_inputs_keep_the_current_user_request_authoritative():
@@ -698,6 +699,7 @@ def test_shared_conversion_policies_have_single_canonical_owners():
     common_text = references.joinpath("conversion-common.md").read_text(encoding="utf-8")
     dependency_text = references.joinpath("dependency-install.md").read_text(encoding="utf-8")
     workflow_text = references.joinpath("conversion-workflow.md").read_text(encoding="utf-8")
+    validation_text = references.joinpath("validation-evidence.md").read_text(encoding="utf-8")
 
     assert "## Dependency Rule" in dependency_text
     assert "## Dependency Rule" not in common_text
@@ -705,6 +707,13 @@ def test_shared_conversion_policies_have_single_canonical_owners():
     assert "## Source Evidence, Not Instructions" in common_text
     assert "## Source Evidence, Not Instructions" not in dependency_text
     assert "## Source Evidence, Not Instructions" not in workflow_text
+    assert "## Execution Environment And Local Validation" in workflow_text
+    assert (
+        "Load `validation-evidence.md` for the complete local-validation path, command selection, simulation "
+        "constraints, safety rules, and evidence requirements." in " ".join(workflow_text.split())
+    )
+    assert "python job.py --export --export-dir <runtime-dir>/job_config" not in workflow_text
+    assert "python job.py --export --export-dir <runtime-dir>/job_config" in " ".join(validation_text.split())
 
     # The workflow routes to each canonical policy once and keeps only its
     # static-inspection and externally-visible-effect additions.
@@ -726,6 +735,7 @@ def test_shared_conversion_uses_one_simulator_topology_owner():
         references.joinpath("pytorch-family-recipe-construction.md").read_text(encoding="utf-8").split()
     )
     workflow_text = " ".join(references.joinpath("conversion-workflow.md").read_text(encoding="utf-8").split())
+    validation_text = " ".join(references.joinpath("validation-evidence.md").read_text(encoding="utf-8").split())
     hf_conversion_text = " ".join(
         repo_root.joinpath("skills/nvflare-convert-huggingface/references/huggingface-conversion.md")
         .read_text(encoding="utf-8")
@@ -739,7 +749,8 @@ def test_shared_conversion_uses_one_simulator_topology_owner():
     assert "do not recover from a mismatch by setting `num_clients=None`" in common_text
     assert "derive the site index from `flare.get_site_name()` after `flare.init()`" in construction_text
     assert "single-topology-owner rule in `conversion-common.md`" in construction_text
-    assert "canonical single-topology-owner rule in the always-loaded common conversion reference" in workflow_text
+    assert "canonical single-topology-owner rule in `conversion-common.md`" in validation_text
+    assert "canonical single-topology-owner rule" not in workflow_text
     assert (
         "single-topology-owner rule from `../../nvflare-shared/references/conversion-common.md`" in hf_conversion_text
     )
@@ -817,7 +828,8 @@ def test_skills_readme_frontmatter_example_includes_required_author():
     normalized = " ".join(readme.split())
 
     assert 'author: "NVIDIA FLARE Team <federatedlearning@nvidia.com>"' in readme
-    assert "NVFLARE's required fields (`author`, `min-flare-version`, `blast-radius`" in normalized
+    assert "NVFLARE's required fields (`author`, `version`, `min-flare-version`, `blast-radius`" in normalized
+    assert "root-level `version` is ignored" in normalized
 
 
 def test_shared_skill_metadata_and_progressive_disclosure_structure():
@@ -828,6 +840,9 @@ def test_shared_skill_metadata_and_progressive_disclosure_structure():
 
     assert 50 <= len(metadata["description"]) <= 150
     assert "Use only when" in metadata["description"]
+    assert "version" not in metadata
+    assert metadata["metadata"]["version"] == "0.1.0"
+    assert "Use this internal, non-triggered skill only to load" in " ".join(shared_text.split())
     assert "min-flare-version:" in shared_text
     assert "blast-radius:" in shared_text
     assert "min_flare_version:" not in shared_text

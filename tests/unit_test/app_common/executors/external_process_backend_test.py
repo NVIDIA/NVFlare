@@ -847,6 +847,41 @@ class TestInitializeAndFinalize:
         assert env.harness.signals_sent() == []
         assert backend._result_reapers == set()
 
+    def test_live_result_reaper_allows_settlement_after_shutdown_ack_deadline(self, env, monkeypatch):
+        monkeypatch.setattr(ebp, "_LIVE_RESULT_SHUTDOWN_ACK_TIMEOUT", 0.01)
+        monkeypatch.setattr(ebp, "_NATURAL_EXIT_REAP_INTERVAL", 0.005)
+        backend, _ = _initialized_backend(env, shutdown_timeout=0.2, stop_grace_period=0.05)
+        process = env.harness.processes[0]
+        trainer = backend._active_launch
+        trainer.result_source_live.set()
+        trainer.result_accepted.set()
+        trainer.result_source_task_id = "task-1"
+        env.cell.on_shutdown = lambda *_args: make_cell_reply(CellReturnCode.OK, body={MsgKey.RESULT_SOURCE_LIVE: True})
+        backend._reap_trainer_after_result(trainer)
+        settlement_replies = []
+
+        def settle_source():
+            settlement_replies.append(
+                env.cell.deliver(
+                    Topic.RESULT_SOURCE_SETTLED,
+                    trainer.trainer_fqcn,
+                    {MsgKey.SESSION_ID: trainer.session_id, MsgKey.TASK_ID: "task-1"},
+                )
+            )
+
+        threading.Timer(0.05, settle_source).start()
+        threading.Timer(0.07, process.exit, args=[0]).start()
+
+        backend.finalize(FLContext())
+
+        assert settlement_replies[0].payload == {
+            MsgKey.REPLY_TOPIC: Topic.RESULT_SOURCE_SETTLED,
+            MsgKey.TASK_ID: "task-1",
+        }
+        assert process.returncode == 0
+        assert env.harness.signals_sent() == []
+        assert backend._result_reapers == set()
+
     def test_abort_stops_registered_result_reaper_without_shutdown_ack_wait(self, env, monkeypatch):
         monkeypatch.setattr(ebp, "_NATURAL_EXIT_REAP_INTERVAL", 0.005)
         backend, _ = _initialized_backend(env, shutdown_timeout=30.0)
@@ -997,10 +1032,45 @@ class TestInitializeAndFinalize:
         backend.finalize(FLContext())
         elapsed = time.monotonic() - start
 
-        assert elapsed < 0.5, "a connected but wedged trainer must not hang END_RUN forever"
+        assert elapsed < ebp._RESULT_REAPER_MAX_TOTAL_TIMEOUT + 0.2
         assert process.returncode is not None
         assert backend._result_reapers == set()
         assert "forcing trainer cleanup" in caplog.text
+
+    def test_finalize_reprobes_source_at_deadline_before_forced_cleanup(self, env, monkeypatch, client_job_exit):
+        monkeypatch.setattr(ebp, "_RESULT_REAPER_MAX_TOTAL_TIMEOUT", 0.08)
+        monkeypatch.setattr(ebp, "_LIVE_RESULT_SHUTDOWN_ACK_TIMEOUT", 0.01)
+        monkeypatch.setattr(ebp, "_NATURAL_EXIT_REAP_INTERVAL", 0.005)
+        backend, _ = _initialized_backend(env, shutdown_timeout=0.0, stop_grace_period=0.0)
+        process = env.harness.processes[0]
+        trainer = backend._active_launch
+        trainer.result_source_live.set()
+        transfer_settled = threading.Event()
+        shutdown_states = []
+
+        def on_shutdown(*_args):
+            source_live = not transfer_settled.is_set()
+            shutdown_states.append(source_live)
+            if not source_live:
+                process.exit(0)
+            return make_cell_reply(CellReturnCode.OK, body={MsgKey.RESULT_SOURCE_LIVE: source_live})
+
+        env.cell.on_shutdown = on_shutdown
+        settlement_timer = threading.Timer(0.04, transfer_settled.set)
+        settlement_timer.start()
+        try:
+            backend.finalize(FLContext())
+        finally:
+            settlement_timer.cancel()
+            settlement_timer.join(timeout=0.2)
+
+        assert shutdown_states[0] is True
+        assert shutdown_states[-1] is False
+        assert len(shutdown_states) >= 2
+        assert env.harness.signals_sent() == []
+        assert backend._result_reapers == set()
+        assert backend._active_launch is None
+        client_job_exit.assert_not_called()
 
     def test_zero_shutdown_live_result_uses_backend_grace_and_releases_on_truth(self, env, monkeypatch):
         monkeypatch.setattr(ebp, "_DEFAULT_SHUTDOWN_TIMEOUT", 0.1)
@@ -3104,7 +3174,7 @@ class TestLaunchPerTask:
         backend.finalize(FLContext())
         elapsed = time.monotonic() - start
 
-        assert elapsed < 0.5
+        assert elapsed < ebp._RESULT_REAPER_MAX_TOTAL_TIMEOUT + 0.2
         assert all(process.returncode is not None for process in env.harness.processes)
         assert backend._result_reapers == set()
         assert backend._active_launch is None

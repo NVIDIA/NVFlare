@@ -14,6 +14,8 @@
 
 import threading
 import time
+from collections import OrderedDict
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -62,6 +64,28 @@ class OversizedReadStream(Stream):
 
     def read(self, size):
         return b"x" * (size + 1)
+
+
+def test_error_context_expiry_cleanup_uses_queue_without_scanning_context_map(monkeypatch):
+    class NoScanDict(OrderedDict):
+        def items(self):
+            raise AssertionError("expiration cleanup must not scan every retained context")
+
+    now = [0.0]
+    monkeypatch.setattr(byte_streamer_module.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(ByteStreamer, "error_context_map", NoScanDict())
+
+    def task(sid):
+        return SimpleNamespace(sid=sid, cell=MagicMock(), target="receiver", channel="ch", topic="tp", headers={})
+
+    ByteStreamer._retain_error_context(task(1))
+    now[0] = byte_streamer_module.STREAM_ERROR_CONTEXT_TTL - 1
+    ByteStreamer._retain_error_context(task(2))
+    assert set(ByteStreamer.error_context_map) == {1, 2}
+
+    now[0] = byte_streamer_module.STREAM_ERROR_CONTEXT_TTL
+    ByteStreamer._retain_error_context(task(3))
+    assert set(ByteStreamer.error_context_map) == {2, 3}
 
 
 class TestByteStreamerAckWatchdog:

@@ -4,6 +4,10 @@ Use this reference before declaring a generated or exported NVFLARE job valid.
 
 ## Local Validation
 
+Build local simulations with `SimEnv` from `nvflare.recipe`. Apply the canonical
+single-topology-owner rule in `conversion-common.md`, then call
+`recipe.execute(env)` from `job.py`.
+
 Choose one final full-run path based on the artifact being validated:
 
 - Local recipe or first-user simulation validation: run `python job.py`.
@@ -19,6 +23,13 @@ job configuration needed for that simulation behind the scenes. Creating an
 export does not authorize submitting it to POC or production; submission is
 outside conversion-skill scope.
 
+Use `SimEnv` only. Do not generate or run `PocEnv` or `ProdEnv` from a
+conversion skill. Homomorphic-encryption recipes reject `SimEnv` and require
+those provisioned environments, so do not offer HE as a conversion capability.
+If another selected recipe rejects `SimEnv`, follow the selecting reference's
+ask-or-fail-closed rule and report the job as unvalidated; do not switch recipes
+or environments merely to force a run.
+
 Do not accept generated job-local `--export` or `--export-dir` arguments, or an
 alias such as `--export_only`, as replacements for the NVFLARE Recipe interface.
 If generated code parses or manually branches on those system arguments or a
@@ -30,6 +41,10 @@ scoped rerun after a fix. Do not write Python code to call simulator APIs for
 exported-job validation.
 - Prefer synthetic data flags or small fixtures when the original dataset is
   unavailable.
+- Never run destructive cleanup against the source tree or its Git state. Do
+  not use Git clean/reset/checkout operations or recursive deletion over source
+  or user files. Scope cleanup to generated runtime or output directories under
+  the runtime location convention.
 - Keep validation commands single-purpose. Run dependency installation, cleanup,
   export, and simulation as separate commands.
 - Treat an unavailable optional capability or host-diagnostic utility as
@@ -40,6 +55,7 @@ exported-job validation.
   or `nvidia-smi` to a required command where their absence changes its status.
 - If validation cannot run, save the conversion as a draft and report the
   concrete blocker.
+- After successful simulation, follow `metrics-and-artifact-reporting.md`.
 
 ## Terminal Simulation Evidence
 

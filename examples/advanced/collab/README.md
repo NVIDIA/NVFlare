@@ -15,7 +15,7 @@ python -m collab.hello_fedavg.hello_fedavg
 python -m collab.simple_split_learning.simple_split_learning
 python -m collab.async_aggregation.async_aggregation
 python -m collab.swarm.swarm --num-clients 3
-# pt_async_cifar10 and pt_llm_sft have prepare-data steps; see their READMEs.
+# pt_cifar10, pt_async_cifar10, and pt_llm_sft have prepare-data steps; see their READMEs.
 ```
 
 ## Examples
@@ -26,7 +26,11 @@ python -m collab.swarm.swarm --num-clients 3
 | `simple_split_learning` | Split learning on MNIST with client-side images and bottom model, server-side labels and top model, and direct activation/gradient exchange |
 | `async_aggregation` | In-time aggregation with a response callback |
 | `swarm` | Decentralized swarm learning with client-to-client calls |
+| [`pt_cifar10/fedavg`](pt_cifar10/README.md#algorithm-variants) | Synchronous PyTorch FedAvg with direct client calls |
+| [`pt_cifar10/fedprox`](pt_cifar10/README.md#algorithm-variants) | FedAvg client training extended with a proximal loss |
+| [`pt_cifar10/scaffold`](pt_cifar10/README.md#algorithm-variants) | Model and control-variate exchange with SCAFFOLD |
 | [`pt_async_cifar10`](pt_async_cifar10/README.md) | Asynchronous PyTorch CIFAR-10 training with prepared logical-client shards |
+| [CIFAR-10 SplitNN](../vertical_federated_learning/cifar10-splitnn/README.md) | Two-party SplitNN with direct activation and gradient return values |
 | [`pt_llm_sft`](pt_llm_sft/README.md) | Full-parameter Hugging Face SFT with frequent direct PyTorch tensor exchange and server-side FedAvg |
 
 Every server object or module must define exactly one `@collab.main` entry
@@ -46,8 +50,13 @@ abstraction.
 The NumPy examples run in a base installation; `hello_fedavg` needs PyTorch.
 `simple_split_learning` needs PyTorch and torchvision and downloads MNIST on
 its first run.
+`pt_cifar10` needs PyTorch and torchvision; follow its
+[prepared-data workflow](pt_cifar10/README.md#data).
 `pt_async_cifar10` additionally needs TensorBoard; follow its
 [setup and prepared-data workflow](pt_async_cifar10/README.md).
+The [CIFAR-10 SplitNN example](../vertical_federated_learning/cifar10-splitnn/README.md)
+needs PyTorch, torchvision, TensorBoard, and PSI and follows a
+prepare-data-first workflow.
 `pt_llm_sft` has additional Hugging Face dependencies and a
 [prepare-data-first workflow](pt_llm_sft/README.md).
 

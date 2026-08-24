@@ -198,14 +198,15 @@ launcher modes without choosing which mode a site uses.
         }
     }
 
-Use ``launcher_spec["default"][mode]`` for shared settings and
-``launcher_spec[site][mode]`` for site-specific overrides. Keep
+``launcher_spec["default"][mode]`` applies to every runtime site using that launcher mode, including the server.
+Use ``launcher_spec[site][mode]`` for site-specific overrides. Keep
 ``resource_spec`` for portable GPU, CPU, and memory requirements enforced by the selected job launcher.
 Use ``launcher_spec`` for backend-specific topology and policy.
 
 The Slurm job block accepts ``image``, ``nodes``, ``gpus_per_node``,
 ``cpus_per_node``, ``mem_per_node`` (MiB), ``time``, and
-``pending_timeout``. A job cannot select a Slurm partition, account, QOS,
+``pending_timeout``. Put client-only topology such as ``nodes`` and ``gpus_per_node`` in explicit client-site blocks
+rather than the default block, which the server job also inherits. A job cannot select a Slurm partition, account, QOS,
 sandbox, setup command, or raw scheduler flags; those are site-owned and may
 be overridden per study. A job image requires BYOC authorization and overrides
 study/site image defaults. It must be an absolute site-visible existing file.

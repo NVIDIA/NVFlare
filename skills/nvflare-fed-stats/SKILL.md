@@ -2,8 +2,8 @@
 name: nvflare-fed-stats
 description: "Compute federated statistics over tabular data (count, sum, mean, stddev, var, histogram, quantile, noise-protected min/max) and image data (count, failure_count, pixel-intensity histogram) across NVFLARE sites via FedStatsRecipe — automatic and non-interactive from the dataset, feature names (header or supplied), and optionally a README or notes declaring which statistics to compute; do not use for model training conversion, hierarchical statistics, deployment, POC/production lifecycle, or failed-job diagnosis."
 license: Apache-2.0
-version: "0.1.0"
 metadata:
+  version: "0.1.0"
   author: "NVIDIA FLARE Team <federatedlearning@nvidia.com>"
   min-flare-version: "2.9.0"
   blast-radius: runs_simulator
