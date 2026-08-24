@@ -564,6 +564,66 @@ class TestDefaultJobScheduler:
         )
         job_manager.refresh_meta.assert_called_once_with(failed_candidate, scheduler._get_update_meta_keys(), ANY)
 
+    @pytest.mark.parametrize(
+        "failure_mode, expected_history",
+        [
+            ("resource-check-error", "failed before reservation results were available"),
+            ("empty-results", "returned no results"),
+            ("cancellation-error", "failed to cancel resources"),
+        ],
+    )
+    def test_uncertain_admission_state_stops_candidate_scan(self, monkeypatch, failure_mode, expected_history):
+        server = create_servers(1, [Site("site1", {})])[0]
+        failed_candidate = create_job(
+            job_id="failed-job",
+            resource_spec={},
+            deploy_map={"app": ["server", "site1"]},
+            min_sites=1,
+        )
+        later_candidate = create_job(
+            job_id="later-job",
+            resource_spec={},
+            deploy_map={"app": ["server", "site1"]},
+            min_sites=1,
+        )
+        scheduler = DefaultJobScheduler(max_jobs=1, min_schedule_interval=0)
+        job_manager = Mock(spec=JobDefManagerSpec)
+
+        if failure_mode == "resource-check-error":
+            check_client_resources = Mock(side_effect=RuntimeError("resource check failed"))
+        elif failure_mode == "empty-results":
+            check_client_resources = Mock(return_value={})
+        else:
+            check_client_resources = Mock(return_value={"site1": (True, "reservation-token")})
+            monkeypatch.setattr(
+                server,
+                "cancel_client_resources",
+                Mock(side_effect=RuntimeError("resource cancellation failed")),
+            )
+
+            def fail_admission(event_type, fl_ctx):
+                if event_type == EventType.AFTER_CHECK_CLIENT_RESOURCES:
+                    raise RuntimeError("unexpected admission failure")
+
+            monkeypatch.setattr(server, "fire_event", fail_admission)
+
+        monkeypatch.setattr(server, "check_client_resources", check_client_resources)
+
+        with server.new_context() as fl_ctx:
+            job, dispatch_info = scheduler.schedule_job(
+                job_manager=job_manager,
+                job_candidates=[failed_candidate, later_candidate],
+                fl_ctx=fl_ctx,
+            )
+
+        assert job is None
+        assert dispatch_info is None
+        check_client_resources.assert_called_once()
+        assert failed_candidate.meta[JobMetaKey.SCHEDULE_COUNT.value] == 1
+        assert expected_history in failed_candidate.meta[JobMetaKey.SCHEDULE_HISTORY.value][0]
+        assert JobMetaKey.SCHEDULE_COUNT.value not in later_candidate.meta
+        job_manager.refresh_meta.assert_called_once_with(failed_candidate, scheduler._get_update_meta_keys(), ANY)
+
     def test_unexpected_admission_error_honors_max_schedule_count(self, monkeypatch):
         resource_manager = Mock(spec=ResourceManagerSpec)
         resource_manager.check_resources.return_value = (True, "reservation-token")
