@@ -10,7 +10,8 @@ if [[ -z "${NVFL_BASE_VERSION:-}" ]]; then
     if [[ "$VERSION_TAG" =~ ^([0-9]+\.[0-9]+\.[0-9]+) ]]; then
         NVFL_BASE_VERSION="${BASH_REMATCH[1]}"
     else
-        echo "Unable to determine NVFL_BASE_VERSION; set it explicitly before building." >&2
+        echo "Unable to determine NVFL_BASE_VERSION from Git metadata." >&2
+        echo "Build from a Git checkout (recommended), or set NVFL_BASE_VERSION explicitly." >&2
         exit 1
     fi
 fi
