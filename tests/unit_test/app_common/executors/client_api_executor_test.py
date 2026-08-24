@@ -574,6 +574,39 @@ class TestBackendPlumbing:
         assert backend.receiver_ids_during_execute == ["site-1.job-1"]
         resolve.assert_called_once_with(backend.result, cell, abort_signal)
 
+    def test_execute_materializes_result_for_declared_nested_executor(self):
+        backend = _StubBackend()
+        backend.result = Shareable({"weight": LazyDownloadRef("trainer", "ref-1", "T0")})
+        executor = ClientAPIExecutor(execution_mode="external_process", command="python custom/train.py")
+        executor._backend = backend
+        engine = Mock()
+        engine.get_all_components.return_value = {}
+        cell = engine.get_cell.return_value
+        cell.get_fqcn.return_value = "site-1.job-1"
+        outer_executor = Mock()
+        outer_executor.requires_materialized_task_result.side_effect = lambda task_name: task_name == "train"
+        runner = Mock()
+        runner.find_executor.return_value = outer_executor
+        fl_ctx = _make_fl_ctx(engine)
+        fl_ctx.set_prop(FLContextKey.TASK_NAME, "cyclic_learn", private=True, sticky=False)
+        fl_ctx.set_prop(FLContextKey.RUNNER, runner, private=True, sticky=False)
+        task = Shareable()
+        abort_signal = Signal()
+        materialized = Shareable({"weight": "concrete"})
+
+        with patch(
+            "nvflare.app_common.executors.client_api_executor.materialize_lazy_download_refs",
+            return_value=materialized,
+        ) as resolve:
+            reply = executor.execute("train", task, fl_ctx, abort_signal)
+
+        assert reply is materialized
+        assert task.get_header(FOBSContextKey.RECEIVER_IDS) == ["site-1.job-1"]
+        runner.find_executor.assert_called_once_with("cyclic_learn")
+        outer_executor.requires_materialized_task_result.assert_called_once_with("train")
+        engine.get_all_components.assert_not_called()
+        resolve.assert_called_once_with(backend.result, cell, abort_signal)
+
     def test_execute_materializes_result_for_configured_task_result_filter(self):
         backend = _StubBackend()
         backend.result = Shareable({"weight": LazyDownloadRef("trainer", "ref-1", "T0")})
@@ -685,8 +718,11 @@ class TestBackendPlumbing:
         component = Mock()
         component.requires_materialized_task_result.side_effect = lambda task_name: task_name == "train"
         engine.get_all_components.return_value = {"tensor_streamer": component}
+        runner = Mock()
+        runner.find_executor.return_value = object()
         fl_ctx = _make_fl_ctx(engine)
         fl_ctx.set_prop(FLContextKey.TASK_NAME, "swarm_learn", private=True, sticky=False)
+        fl_ctx.set_prop(FLContextKey.RUNNER, runner, private=True, sticky=False)
         task = Shareable()
         task.set_header(FOBSContextKey.RECEIVER_IDS, ["site-1.job-1"])
 
@@ -694,6 +730,7 @@ class TestBackendPlumbing:
 
         assert reply is backend.result
         assert task.get_header(FOBSContextKey.RECEIVER_IDS) == ["site-1.job-1"]
+        runner.find_executor.assert_called_once_with("swarm_learn")
         component.requires_materialized_task_result.assert_not_called()
         engine.get_cell.assert_not_called()
 

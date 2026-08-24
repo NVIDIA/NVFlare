@@ -58,11 +58,14 @@ def test_do_learn_materializes_external_result_for_local_cyclic_consumer():
     data.set_header(Constant.CLIENT_ORDER, ["site-1"])
 
     engine = MagicMock()
-    engine.get_all_components.return_value = {"cyclic_controller": controller}
+    engine.get_all_components.return_value = {}
     engine.get_cell.return_value.get_fqcn.return_value = "site-1.job-1"
+    runner = MagicMock()
+    runner.find_executor.return_value = controller
     workflow_fl_ctx = FLContext()
     workflow_fl_ctx.put(ReservedKey.ENGINE, engine, private=True, sticky=False)
     workflow_fl_ctx.set_prop(FLContextKey.TASK_NAME, "cyclic_learn", private=True, sticky=False)
+    workflow_fl_ctx.set_prop(FLContextKey.RUNNER, runner, private=True, sticky=False)
 
     with patch(
         "nvflare.app_common.executors.client_api_executor.materialize_lazy_download_refs",
@@ -71,9 +74,9 @@ def test_do_learn_materializes_external_result_for_local_cyclic_consumer():
         controller.do_learn_task("custom_train", data, workflow_fl_ctx, Signal())
 
     learn_fl_ctx = backend.execute.call_args.args[2]
-    assert learn_fl_ctx is not workflow_fl_ctx
-    assert learn_fl_ctx.get_prop(FLContextKey.TASK_NAME) == "custom_train"
+    assert learn_fl_ctx is workflow_fl_ctx
     assert workflow_fl_ctx.get_prop(FLContextKey.TASK_NAME) == "cyclic_learn"
     assert data.get_header(FLContextKey.TASK_NAME) == "custom_train"
     assert controller.shareable_generator.shareable_to_learnable.call_args_list[1].args[0] is materialized_result
+    runner.find_executor.assert_called_once_with("cyclic_learn")
     materialize.assert_called_once()
