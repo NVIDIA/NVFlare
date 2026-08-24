@@ -32,8 +32,10 @@ fixed training budget. A keyword splat leaves direction and budget unresolved
 even when some safety-critical keywords are also explicit, because the accepted
 direction controls differ between constructors. Rewrite the call with
 keyword-only arguments, no splats, and the applicable `key_metric`, direction,
-and budget keywords written directly before initializing. A `SimEnv` keyword
-splat must expose `num_clients` explicitly; positional `SimEnv` arguments are
+and budget keywords written directly before initializing. A `SimEnv` call pins
+a positive explicit `num_clients`; when `num_clients` is zero or omitted, the
+importer requires a non-empty static `clients` list and pins its length. A
+dynamic or splatted client-count source and positional `SimEnv` arguments are
 unresolved. A mutation-schema
 bridge may declare the direction of a differing requested metric, but it cannot
 resolve the job key metric's own identity or direction.

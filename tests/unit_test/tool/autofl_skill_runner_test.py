@@ -3901,6 +3901,40 @@ recipe.execute(SimEnv(num_clients=2))
     assert not tmp_path.joinpath("autofl_runs").exists()
 
 
+@pytest.mark.parametrize(
+    "sim_env_setup",
+    [
+        'sim_args = {"clients": ["site-1", "site-2"]}\nrecipe.execute(SimEnv(num_clients=0, **sim_args))',
+        'def get_clients():\n    return ["site-1", "site-2"]\n\n\nrecipe.execute(SimEnv(clients=get_clients()))',
+    ],
+)
+def test_initialize_rejects_unresolved_sim_env_clients_without_writing_campaign_files(tmp_path, capsys, sim_env_setup):
+    tmp_path.joinpath("client.py").write_text("print('train')\n", encoding="utf-8")
+    job = tmp_path / "job.py"
+    job.write_text(
+        f"""
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv
+
+
+recipe = FedAvgRecipe(
+    name="sim-clients", min_clients=2, num_rounds=1, train_script="client.py", key_metric_mode="max"
+)
+{sim_env_setup}
+""".lstrip(),
+        encoding="utf-8",
+    )
+    runner = _load_runner()
+
+    assert runner.main(["initialize", str(job)]) == 2
+
+    error = capsys.readouterr().err
+    assert "budget.fixed_training_budget.num_clients" in error
+    assert not tmp_path.joinpath(".nvflare").exists()
+    assert not tmp_path.joinpath("autofl.yaml").exists()
+    assert not tmp_path.joinpath("autofl_runs").exists()
+
+
 def test_initialize_rejects_splatted_metric_even_with_declared_bridge_and_explicit_direction(tmp_path, capsys):
     tmp_path.joinpath("train.py").write_text("print('train')\n", encoding="utf-8")
     job = tmp_path / "job.py"

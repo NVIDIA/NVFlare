@@ -136,7 +136,9 @@ Compatibility and Migration Notes
   metric, direction, or fixed training budget. Rewrite the call with
   keyword-only arguments, no splats, and the constructor's applicable
   safety-critical keywords spelled out before initializing. ``SimEnv`` calls
-  must expose ``num_clients`` explicitly when using a keyword splat. A declared
+  pin a positive explicit ``num_clients``; when it is zero or omitted, they
+  must expose a non-empty static ``clients`` list whose length is pinned.
+  Dynamic or splatted client-count sources fail closed. A declared
   alternate-metric bridge cannot override an unresolved native job metric.
 - In external-process Client API mode, losing a trainer after its lazy result
   envelope has been accepted now fails the run as ``EXECUTION_EXCEPTION`` even

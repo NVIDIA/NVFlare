@@ -584,29 +584,18 @@ class DeterministicJobImporter:
                 )
 
         if env_call and env_call.name == "SimEnv":
-            if "num_clients" in env_call.keywords:
-                resolved = _resolve_value(
-                    env_call.keywords["num_clients"], env_call.assignments, parser_args, source_text
-                )
-                if resolved.unresolved:
-                    unresolved.append(_unresolved("budget.fixed_training_budget.num_clients", resolved.source))
-                else:
-                    fixed_training_budget["num_clients"] = resolved.value
-            elif env_call.has_keyword_splat:
-                unresolved.append(
-                    _unresolved(
-                        "budget.fixed_training_budget.num_clients",
-                        "SimEnv call passes **kwargs; num_clients may be supplied dynamically; "
-                        "write num_clients explicitly in the SimEnv call",
-                    )
-                )
+            resolved = _resolve_sim_env_num_clients(env_call, parser_args, source_text)
+            if resolved.unresolved:
+                unresolved.append(_unresolved("budget.fixed_training_budget.num_clients", resolved.source))
+            else:
+                fixed_training_budget["num_clients"] = resolved.value
             if env_call.has_positional_args:
                 unresolved.append(
                     _unresolved(
                         "budget.fixed_training_budget.num_clients",
                         _positional_call_reason(
                             env_call,
-                            "num_clients may be supplied positionally; use keyword-only SimEnv arguments",
+                            "the client count may be supplied positionally; use keyword-only SimEnv arguments",
                         ),
                     )
                 )
@@ -628,12 +617,9 @@ class DeterministicJobImporter:
         environment: Dict[str, Any] = {"requested": requested, "profiles": {}, "simulator_env_passthrough": []}
         if env_call and env_call.name == "SimEnv":
             sim_profile: Dict[str, Any] = {}
-            if "num_clients" in env_call.keywords:
-                resolved = _resolve_value(
-                    env_call.keywords["num_clients"], env_call.assignments, parser_args, source_text
-                )
-                if not resolved.unresolved:
-                    sim_profile["num_clients"] = resolved.value
+            resolved = _resolve_sim_env_num_clients(env_call, parser_args, source_text)
+            if not resolved.unresolved:
+                sim_profile["num_clients"] = resolved.value
             environment["profiles"]["sim"] = sim_profile
         return environment
 
@@ -1282,6 +1268,48 @@ def _resolve_value(
             )
 
     return ResolvedValue(_source_segment(source_text, node) or type(node).__name__, "expression", "low", True)
+
+
+def _resolve_sim_env_num_clients(
+    env_call: CallInfo,
+    parser_args: Dict[str, ArgSpec],
+    source_text: str,
+) -> ResolvedValue:
+    """Resolve the effective client count using ``SimEnv`` runtime semantics."""
+
+    num_clients_node = env_call.keywords.get("num_clients")
+    if num_clients_node is not None:
+        num_clients = _resolve_value(num_clients_node, env_call.assignments, parser_args, source_text)
+        if num_clients.unresolved:
+            return ResolvedValue(None, f"num_clients is dynamic: {num_clients.source}", "low", True)
+        if isinstance(num_clients.value, bool) or not isinstance(num_clients.value, int):
+            return ResolvedValue(None, "num_clients must resolve to an integer", "low", True)
+        if num_clients.value > 0:
+            return num_clients
+
+    clients_node = env_call.keywords.get("clients")
+    if clients_node is not None:
+        clients = _resolve_value(clients_node, env_call.assignments, parser_args, source_text)
+        if clients.unresolved:
+            return ResolvedValue(None, f"clients is dynamic: {clients.source}", "low", True)
+        if not isinstance(clients.value, list) or not clients.value:
+            return ResolvedValue(None, "clients must resolve to a non-empty static list", "low", True)
+        return ResolvedValue(len(clients.value), f"len(clients):{clients.source}")
+
+    if env_call.has_keyword_splat:
+        return ResolvedValue(
+            None,
+            "SimEnv call passes **kwargs; num_clients or clients may be supplied dynamically; "
+            "write a positive num_clients or a non-empty static clients list explicitly in the SimEnv call",
+            "low",
+            True,
+        )
+    return ResolvedValue(
+        None,
+        "SimEnv client count is unresolved; write a positive num_clients or a non-empty static clients list",
+        "low",
+        True,
+    )
 
 
 def _resolve_arg_default(name: str, arg_spec: ArgSpec) -> ResolvedValue:

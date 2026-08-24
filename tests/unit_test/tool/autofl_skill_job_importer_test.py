@@ -520,6 +520,89 @@ recipe.execute(SimEnv(**sim_budget))
     )
 
 
+@pytest.mark.parametrize(
+    "sim_env_args",
+    [
+        'clients=["site-1", "site-2", "site-3"]',
+        'num_clients=0, clients=["site-1", "site-2", "site-3"]',
+    ],
+)
+def test_import_resolves_sim_env_client_budget_from_static_clients(tmp_path, sim_env_args):
+    tmp_path.joinpath("client.py").write_text("print('train')\n", encoding="utf-8")
+    job_path = tmp_path / "job.py"
+    job_path.write_text(
+        f"""
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv
+
+
+recipe = FedAvgRecipe(name="sim-budget", min_clients=2, num_rounds=1, train_script="client.py")
+recipe.execute(SimEnv({sim_env_args}))
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+
+    assert config["budget"]["fixed_training_budget"]["num_clients"] == 3
+    assert config["environment"]["profiles"]["sim"]["num_clients"] == 3
+    assert not any(item["field"] == "budget.fixed_training_budget.num_clients" for item in config["unresolved"])
+
+
+def test_import_rejects_zero_sim_env_client_count_with_splatted_clients(tmp_path):
+    tmp_path.joinpath("client.py").write_text("print('train')\n", encoding="utf-8")
+    job_path = tmp_path / "job.py"
+    job_path.write_text(
+        """
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv
+
+
+recipe = FedAvgRecipe(name="sim-budget", min_clients=2, num_rounds=1, train_script="client.py")
+sim_args = {"clients": ["site-1", "site-2"]}
+recipe.execute(SimEnv(num_clients=0, **sim_args))
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+
+    assert "num_clients" not in config["budget"]["fixed_training_budget"]
+    assert "num_clients" not in config["environment"]["profiles"]["sim"]
+    assert any(
+        item["field"] == "budget.fixed_training_budget.num_clients" and "SimEnv call passes **kwargs" in item["reason"]
+        for item in config["unresolved"]
+    )
+
+
+def test_import_rejects_dynamic_sim_env_clients(tmp_path):
+    tmp_path.joinpath("client.py").write_text("print('train')\n", encoding="utf-8")
+    job_path = tmp_path / "job.py"
+    job_path.write_text(
+        """
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv
+
+
+def get_clients():
+    return ["site-1", "site-2"]
+
+
+recipe = FedAvgRecipe(name="sim-budget", min_clients=2, num_rounds=1, train_script="client.py")
+recipe.execute(SimEnv(clients=get_clients()))
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+
+    assert "num_clients" not in config["budget"]["fixed_training_budget"]
+    assert any(
+        item["field"] == "budget.fixed_training_budget.num_clients" and "clients is dynamic" in item["reason"]
+        for item in config["unresolved"]
+    )
+
+
 def test_import_marks_malformed_stop_condition_unresolved(tmp_path):
     job_path = _write_recipe_job(tmp_path)
     source = job_path.read_text(encoding="utf-8").replace(
