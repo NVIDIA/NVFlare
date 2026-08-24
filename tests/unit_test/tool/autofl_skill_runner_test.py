@@ -34,6 +34,10 @@ def _load_runner():
     return module
 
 
+def _fake_python_result(python, arguments, *, rc=0, output="done\n", runtime=0.1):
+    return rc, output, runtime, [python, *arguments]
+
+
 def _campaign_config():
     return {
         "schema_version": "nvflare.autofl.config.v1",
@@ -288,6 +292,12 @@ def test_structured_metric_extraction_rejects_boolean_values():
 
     assert runner.find_metric_value({"accuracy": True}, ["accuracy"]) is None
     assert runner.find_metric_value({"metrics": [{"name": "accuracy", "value": False}]}, ["accuracy"]) is None
+
+
+def test_runner_uses_campaign_guard_score_comparison():
+    runner = _load_runner()
+
+    assert runner.better is runner.load_campaign_guard().better
 
 
 @pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
@@ -582,19 +592,134 @@ def test_campaign_timeout_rejects_malformed_schema_values(field, value):
         runner.campaign_timeout(args, schema)
 
 
+def test_python_command_keeps_configured_interpreter_and_literal_arguments(tmp_path):
+    runner = _load_runner()
+    marker = tmp_path / "must-not-exist"
+    arguments = ["-c", "print('ok')", ";", f"$(touch {marker})", "/bin/sh"]
+
+    command = runner.python_command(sys.executable, arguments, {}, cwd=tmp_path)
+
+    assert command[0] == os.path.abspath(sys.executable)
+    assert command[1:] == arguments
+
+
+def test_run_python_does_not_interpret_shell_metacharacters(tmp_path):
+    runner = _load_runner()
+    marker = tmp_path / "must-not-exist"
+    literal = f"$(touch {marker})"
+
+    rc, output, _, command = runner.run_python(
+        sys.executable,
+        ["-c", "import json, sys; print(json.dumps(sys.argv[1:]))", literal, "; touch ignored"],
+        cwd=tmp_path,
+        timeout=10,
+        log_path=tmp_path / "run.log",
+        env={},
+    )
+
+    assert rc == 0
+    assert command[0] == os.path.abspath(sys.executable)
+    assert command[1:] == ["-c", "import json, sys; print(json.dumps(sys.argv[1:]))", literal, "; touch ignored"]
+    assert json.loads(output.strip()) == [literal, "; touch ignored"]
+    assert not marker.exists()
+
+
+def test_run_python_uses_only_the_explicit_child_environment(tmp_path, monkeypatch):
+    runner = _load_runner()
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "host-secret")
+
+    rc, output, _, _command = runner.run_python(
+        sys.executable,
+        [
+            "-c",
+            (
+                "import json, os; "
+                "print(json.dumps({'safe': os.environ.get('SAFE_VALUE'), "
+                "'secret': os.environ.get('AWS_SECRET_ACCESS_KEY')}))"
+            ),
+        ],
+        cwd=tmp_path,
+        timeout=10,
+        log_path=tmp_path / "run.log",
+        env={"SAFE_VALUE": "forwarded"},
+    )
+
+    assert rc == 0
+    assert json.loads(output.strip()) == {"safe": "forwarded", "secret": None}
+
+
+@pytest.mark.parametrize(
+    ("python", "arguments", "message"),
+    [
+        ("/missing/python", ["-c", "print('no')"], "does not exist"),
+        (None, ["-c", "print('no')"], "non-empty string"),
+        (sys.executable, [], "at least one argument"),
+        (sys.executable, ["-c", 3], "must be strings"),
+        (sys.executable, ["bad\x00argument"], "NUL"),
+    ],
+)
+def test_python_command_rejects_invalid_executables_and_arguments(tmp_path, python, arguments, message):
+    runner = _load_runner()
+
+    with pytest.raises(ValueError, match=message):
+        runner.python_command(python, arguments, {}, cwd=tmp_path)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="symlinked virtual-environment interpreter test is POSIX-specific")
+def test_resolve_python_interpreter_preserves_virtualenv_symlink(tmp_path):
+    runner = _load_runner()
+    venv_bin = tmp_path / "venv" / "bin"
+    venv_bin.mkdir(parents=True)
+    venv_python = venv_bin / "campaign-python"
+    venv_python.symlink_to(sys.executable)
+
+    resolved = runner.resolve_python_interpreter(venv_python.name, {"PATH": str(venv_bin)}, cwd=tmp_path)
+
+    assert resolved == str(venv_python)
+    assert resolved != str(venv_python.resolve())
+
+
+@pytest.mark.skipif(os.name == "nt", reason="symlinked virtual-environment interpreter test is POSIX-specific")
+def test_resolve_python_interpreter_uses_child_cwd_for_relative_path(tmp_path):
+    runner = _load_runner()
+    job_dir = tmp_path / "job"
+    venv_python = job_dir / ".venv" / "bin" / "python"
+    venv_python.parent.mkdir(parents=True)
+    venv_python.symlink_to(sys.executable)
+
+    resolved = runner.resolve_python_interpreter(".venv/bin/python", {}, cwd=job_dir)
+
+    assert resolved == str(venv_python)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="relative PATH interpreter test is POSIX-specific")
+def test_resolve_python_interpreter_normalizes_relative_path_entry_against_child_cwd(tmp_path):
+    runner = _load_runner()
+    job_dir = tmp_path / "job"
+    venv_python = job_dir / "tools" / "campaign-python"
+    venv_python.parent.mkdir(parents=True)
+    venv_python.symlink_to(sys.executable)
+
+    resolved = runner.resolve_python_interpreter("campaign-python", {"PATH": "tools"}, cwd=job_dir)
+
+    assert resolved == str(venv_python)
+    assert os.path.isabs(resolved)
+
+
 def test_run_streams_output_before_timeout(tmp_path):
     runner = _load_runner()
     log_path = tmp_path / "run.log"
 
-    rc, output, _ = runner.run(
+    rc, output, _, _command = runner.run_python(
+        sys.executable,
         [
-            sys.executable,
             "-c",
             "import time; print('started', flush=True); time.sleep(2); print('finished', flush=True)",
         ],
-        tmp_path,
+        cwd=tmp_path,
         timeout=1,
         log_path=log_path,
+        env={},
     )
 
     log_text = log_path.read_text(encoding="utf-8")
@@ -608,15 +733,16 @@ def test_run_streams_partial_line_before_timeout(tmp_path):
     runner = _load_runner()
     log_path = tmp_path / "run.log"
 
-    rc, output, runtime = runner.run(
+    rc, output, runtime, _command = runner.run_python(
+        sys.executable,
         [
-            sys.executable,
             "-c",
             "import sys, time; sys.stdout.write('partial output'); sys.stdout.flush(); time.sleep(30)",
         ],
-        tmp_path,
+        cwd=tmp_path,
         timeout=1,
         log_path=log_path,
+        env={},
     )
 
     assert rc == 124
@@ -640,11 +766,13 @@ def test_run_terminates_inherited_stdout_descendant_after_leader_exits(tmp_path)
         "print('leader exits', flush=True)"
     )
 
-    rc, output, runtime = runner.run(
-        [sys.executable, "-c", parent_code],
-        tmp_path,
+    rc, output, runtime, _command = runner.run_python(
+        sys.executable,
+        ["-c", parent_code],
+        cwd=tmp_path,
         timeout=1,
         log_path=tmp_path / "run.log",
+        env={},
     )
 
     assert rc == 124
@@ -684,11 +812,13 @@ def test_run_terminates_detached_descendant_that_escapes_process_group(tmp_path,
         "print('leader exits', flush=True)"
     )
 
-    rc, output, runtime = runner.run(
-        [sys.executable, "-c", parent_code],
-        tmp_path,
+    rc, output, runtime, _command = runner.run_python(
+        sys.executable,
+        ["-c", parent_code],
+        cwd=tmp_path,
         timeout=2 if ignore_sigterm else 1,
         log_path=tmp_path / "run.log",
+        env={},
     )
 
     assert rc == 124
@@ -788,11 +918,13 @@ def test_run_requires_pidfds_before_starting_linux_process(tmp_path, monkeypatch
     monkeypatch.setattr(runner.subprocess, "Popen", fail_start)
 
     with pytest.raises(runner.TrialProcessCleanupError, match="pidfds unavailable"):
-        runner.run(
-            [sys.executable, "-c", "print('must not run')"],
-            tmp_path,
+        runner.run_python(
+            sys.executable,
+            ["-c", "print('must not run')"],
+            cwd=tmp_path,
             timeout=10,
             log_path=tmp_path / "run.log",
+            env={},
         )
 
     assert not started
@@ -819,15 +951,16 @@ def test_run_terminates_child_process_group_when_monitor_raises(tmp_path, monkey
 
     monkeypatch.setattr(runner, "simulator_stall_message", fail_monitor)
     with pytest.raises(type(monitor_error), match=str(monitor_error) if str(monitor_error) else None):
-        runner.run(
+        runner.run_python(
+            sys.executable,
             [
-                sys.executable,
                 "-c",
                 f"import os, pathlib, time; pathlib.Path({str(pid_path)!r}).write_text(str(os.getpid())); time.sleep(30)",
             ],
-            tmp_path,
+            cwd=tmp_path,
             timeout=0,
             log_path=tmp_path / "run.log",
+            env={},
             simulator_stall_roots=[tmp_path / "simulation"],
             stall_check_interval=0,
         )
@@ -848,11 +981,13 @@ def test_run_keeps_complete_log_but_only_bounded_output_tail(tmp_path):
         f"print('x' * {payload_size})"
     )
 
-    rc, output, _ = runner.run(
-        [sys.executable, "-c", script],
-        tmp_path,
+    rc, output, _, _command = runner.run_python(
+        sys.executable,
+        ["-c", script],
+        cwd=tmp_path,
         timeout=10,
         log_path=log_path,
+        env={},
     )
 
     printed_result, socket_failure = runner.scan_run_log(log_path, tmp_path)
@@ -869,15 +1004,15 @@ def test_socket_failure_marker_only_requests_human_runner_approval(tmp_path, mon
     job = tmp_path / "job.py"
     job.write_text("print('job')\n", encoding="utf-8")
 
-    def fake_run(_argv, _cwd, _timeout, log_path, **_kwargs):
+    def fake_run(_python, _arguments, *, log_path, **_kwargs):
         log_path.parent.mkdir(parents=True, exist_ok=True)
         log_path.write_text(
             "PermissionError\n[Errno 1] Operation not permitted\nsocket.bind\n",
             encoding="utf-8",
         )
-        return 1, "socket.bind failed\n", 0.1
+        return _fake_python_result(_python, _arguments, rc=1, output="socket.bind failed\n")
 
-    monkeypatch.setattr(runner, "run", fake_run)
+    monkeypatch.setattr(runner, "run_python", fake_run)
     record = runner.run_job(
         runner.JobRun("candidate", [], "candidate"),
         python=sys.executable,
@@ -904,6 +1039,42 @@ def test_socket_failure_marker_only_requests_human_runner_approval(tmp_path, mon
     assert state["next_action"] == runner.SIMULATION_APPROVAL_ACTION
     assert "Pause for human approval" in state["agent_instruction"]
     assert "Never request broader permission" in state["agent_instruction"]
+
+
+def test_run_job_uses_run_python_prepared_command_without_revalidating(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job = tmp_path / "job.py"
+    job.write_text("print('job')\n", encoding="utf-8")
+    prepared_command = ["/resolved/campaign-python", str(job), "--candidate-flag"]
+
+    def fake_run(_python, _arguments, *, log_path, **_kwargs):
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text("candidate failed\n", encoding="utf-8")
+        return 1, "candidate failed\n", 0.1, prepared_command
+
+    monkeypatch.setattr(runner, "run_python", fake_run)
+    monkeypatch.setattr(
+        runner,
+        "python_command",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("run_job must not revalidate argv")),
+    )
+
+    record = runner.run_job(
+        runner.JobRun("candidate", ["--candidate-flag"], "candidate"),
+        python="./.venv/bin/python",
+        job=job,
+        cwd=tmp_path,
+        help_text="",
+        fixed_args=[],
+        base_args=[],
+        output_root=tmp_path / "runs",
+        timeout=10,
+        simulator_no_progress_timeout=0,
+        metrics=["accuracy"],
+        config={"job": {}},
+    )
+
+    assert record.run_command == runner.shlex.join(prepared_command)
 
 
 def test_job_help_discovers_flags_without_executing_job(tmp_path):
@@ -1024,7 +1195,9 @@ def test_run_without_deterministic_result_root_records_actionable_failure(tmp_pa
     runner = _load_runner()
     job = tmp_path / "job.py"
     job.write_text("print('done')\n", encoding="utf-8")
-    monkeypatch.setattr(runner, "run", lambda *args, **kwargs: (0, "done\n", 0.1))
+    monkeypatch.setattr(
+        runner, "run_python", lambda python, arguments, **_kwargs: _fake_python_result(python, arguments)
+    )
 
     def probe_must_not_run(*args, **kwargs):
         raise AssertionError("probe must not run when no SimEnv environment was discovered")
@@ -1054,7 +1227,9 @@ def test_run_without_result_root_blames_nvflare_without_workspace_override(tmp_p
     runner = _load_runner()
     job = tmp_path / "job.py"
     job.write_text("print('done')\n", encoding="utf-8")
-    monkeypatch.setattr(runner, "run", lambda *args, **kwargs: (0, "done\n", 0.1))
+    monkeypatch.setattr(
+        runner, "run_python", lambda python, arguments, **_kwargs: _fake_python_result(python, arguments)
+    )
     monkeypatch.setattr(
         runner,
         "probe_simulator_workspace_override_support",
@@ -1086,7 +1261,9 @@ def test_run_without_result_root_keeps_generic_diagnosis_for_fed_job(tmp_path, m
     runner = _load_runner()
     job = tmp_path / "job.py"
     job.write_text("print('done')\n", encoding="utf-8")
-    monkeypatch.setattr(runner, "run", lambda *args, **kwargs: (0, "done\n", 0.1))
+    monkeypatch.setattr(
+        runner, "run_python", lambda python, arguments, **_kwargs: _fake_python_result(python, arguments)
+    )
 
     def probe_must_not_run(*args, **kwargs):
         raise AssertionError("probe must not run when the job does not use SimEnv")
@@ -1192,11 +1369,15 @@ def test_probe_simulator_workspace_override_support_uses_sanitized_env(tmp_path,
     monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "secret")
     monkeypatch.setenv("AUTOFL_TEST_TOKEN", "secret")
 
-    def fake_run(*args, **kwargs):
+    def fake_run(python, arguments, **kwargs):
         captured["env"] = kwargs["env"]
-        return 0, 'native warning\n{"version": "2.9.0", "supported": true}\nlate stderr warning\n', 0.1
+        return _fake_python_result(
+            python,
+            arguments,
+            output='native warning\n{"version": "2.9.0", "supported": true}\nlate stderr warning\n',
+        )
 
-    monkeypatch.setattr(runner, "run", fake_run)
+    monkeypatch.setattr(runner, "run_python", fake_run)
 
     probe = runner.probe_simulator_workspace_override_support(sys.executable, tmp_path)
 
@@ -1300,13 +1481,13 @@ def test_run_discovers_and_persists_printed_unnamed_simulator_root(tmp_path, mon
     simulator_base = tmp_path / "simulation"
     result = simulator_base / "recipe-default"
 
-    def fake_run(*args, **kwargs):
+    def fake_run(python, arguments, **kwargs):
         result = Path(kwargs["env"][runner.SIMULATOR_WORKSPACE_ROOT_ENV_VAR]) / "recipe-default"
         result.mkdir(parents=True)
         result.joinpath("metrics_summary.json").write_text(json.dumps({"accuracy": 0.81}), encoding="utf-8")
-        return 0, f"The simulation logs can be found at {result}\n", 0.1
+        return _fake_python_result(python, arguments, output=f"The simulation logs can be found at {result}\n")
 
-    monkeypatch.setattr(runner, "run", fake_run)
+    monkeypatch.setattr(runner, "run_python", fake_run)
     config = {
         "job": {},
         "artifacts": {},
@@ -1343,13 +1524,13 @@ def test_run_discovers_single_changed_unnamed_simulator_root(tmp_path, monkeypat
     simulator_base = tmp_path / "simulation"
     result = simulator_base / "recipe-default"
 
-    def fake_run(*args, **kwargs):
+    def fake_run(python, arguments, **kwargs):
         result = Path(kwargs["env"][runner.SIMULATOR_WORKSPACE_ROOT_ENV_VAR]) / "recipe-default"
         result.mkdir(parents=True)
         result.joinpath("metrics_summary.json").write_text(json.dumps({"val_acc": 0.73}), encoding="utf-8")
-        return 0, "job complete without a result message\n", 0.1
+        return _fake_python_result(python, arguments, output="job complete without a result message\n")
 
-    monkeypatch.setattr(runner, "run", fake_run)
+    monkeypatch.setattr(runner, "run_python", fake_run)
     config = {
         "job": {},
         "artifacts": {},
@@ -1384,15 +1565,15 @@ def test_run_rejects_ambiguous_changed_unnamed_simulator_roots(tmp_path, monkeyp
     job.write_text("print('job')\n", encoding="utf-8")
     simulator_base = tmp_path / "simulation"
 
-    def fake_run(*args, **kwargs):
+    def fake_run(python, arguments, **kwargs):
         simulator_base = Path(kwargs["env"][runner.SIMULATOR_WORKSPACE_ROOT_ENV_VAR])
         for name in ("first", "second"):
             result = simulator_base / name
             result.mkdir(parents=True)
             result.joinpath("metrics_summary.json").write_text(json.dumps({"accuracy": 0.5}), encoding="utf-8")
-        return 0, "ambiguous job complete\n", 0.1
+        return _fake_python_result(python, arguments, output="ambiguous job complete\n")
 
-    monkeypatch.setattr(runner, "run", fake_run)
+    monkeypatch.setattr(runner, "run_python", fake_run)
     record = runner.run_job(
         runner.JobRun("candidate", [], "candidate"),
         python=sys.executable,
@@ -1423,11 +1604,11 @@ def test_run_rejects_printed_result_outside_simulator_workspace(tmp_path, monkey
     job.write_text("print('job')\n", encoding="utf-8")
     outside = tmp_path / "outside"
 
-    def fake_run(*args, **kwargs):
+    def fake_run(python, arguments, **kwargs):
         outside.mkdir()
-        return 0, f"Result can be found in : {outside}\n", 0.1
+        return _fake_python_result(python, arguments, output=f"Result can be found in : {outside}\n")
 
-    monkeypatch.setattr(runner, "run", fake_run)
+    monkeypatch.setattr(runner, "run_python", fake_run)
     record = runner.run_job(
         runner.JobRun("candidate", [], "candidate"),
         python=sys.executable,
@@ -1550,15 +1731,15 @@ def test_run_job_uses_a_fresh_simulator_workspace_for_each_trial(tmp_path, monke
     job.write_text("print('job')\n", encoding="utf-8")
     workspaces = []
 
-    def fake_run(*args, **kwargs):
+    def fake_run(python, arguments, **kwargs):
         workspace = Path(kwargs["env"][runner.SIMULATOR_WORKSPACE_ROOT_ENV_VAR])
         workspaces.append(workspace)
         result = workspace / "fixed-job"
         result.mkdir(parents=True)
         result.joinpath("metrics_summary.json").write_text(json.dumps({"accuracy": 0.5}), encoding="utf-8")
-        return 0, f"Result can be found in : {result}\n", 0.1
+        return _fake_python_result(python, arguments, output=f"Result can be found in : {result}\n")
 
-    monkeypatch.setattr(runner, "run", fake_run)
+    monkeypatch.setattr(runner, "run_python", fake_run)
     config = {"job": {"recipe_args": {"name": {"value": "fixed-job", "confidence": "high"}}}}
     for name in ("candidate-one", "candidate-two"):
         record = runner.run_job(
@@ -1593,15 +1774,16 @@ def test_run_stops_on_nvflare_simulator_stall_log(tmp_path):
         encoding="utf-8",
     )
 
-    rc, output, runtime = runner.run(
+    rc, output, runtime, _command = runner.run_python(
+        sys.executable,
         [
-            sys.executable,
             "-c",
             "import time; print('started', flush=True); time.sleep(30)",
         ],
-        tmp_path,
+        cwd=tmp_path,
         timeout=30,
         log_path=log_path,
+        env={},
         simulator_stall_roots=[sim_root],
         stall_check_interval=0.01,
     )
@@ -1621,15 +1803,16 @@ def test_run_stops_on_nvflare_simulator_no_progress_log(tmp_path):
     server_log.parent.mkdir(parents=True)
     server_log.write_text("Round 0 started\n", encoding="utf-8")
 
-    rc, output, runtime = runner.run(
+    rc, output, runtime, _command = runner.run_python(
+        sys.executable,
         [
-            sys.executable,
             "-c",
             "import time; print('started', flush=True); time.sleep(30)",
         ],
-        tmp_path,
+        cwd=tmp_path,
         timeout=30,
         log_path=log_path,
+        env={},
         simulator_stall_roots=[sim_root],
         stall_check_interval=0.01,
         simulator_no_progress_timeout=1,
@@ -1656,9 +1839,9 @@ def test_run_stops_on_stale_partial_simulator_aggregation(tmp_path):
     )
     site_log.write_text("[site=site-1] round=0\n", encoding="utf-8")
 
-    rc, output, runtime = runner.run(
+    rc, output, runtime, _command = runner.run_python(
+        sys.executable,
         [
-            sys.executable,
             "-c",
             (
                 "import pathlib, time; "
@@ -1668,9 +1851,10 @@ def test_run_stops_on_stale_partial_simulator_aggregation(tmp_path):
                 "time.sleep(30)"
             ),
         ],
-        tmp_path,
+        cwd=tmp_path,
         timeout=30,
         log_path=log_path,
+        env={},
         simulator_stall_roots=[sim_root],
         stall_check_interval=0.01,
         simulator_no_progress_timeout=1,
