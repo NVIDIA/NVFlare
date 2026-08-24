@@ -3238,7 +3238,9 @@ def campaign_admission_errors(config: Dict[str, Any], schema: Optional[Dict[str,
         critical_issues: Dict[str, List[str]] = {}
         for item in unresolved:
             field = item.get("field", "") if isinstance(item, dict) else ""
-            if field in {"objective.metric", "objective.mode"} or field.startswith("budget.fixed_training_budget"):
+            if field in {"objective.metric", "objective.job_key_metric", "objective.mode"} or field.startswith(
+                "budget.fixed_training_budget"
+            ):
                 reasons = critical_issues.setdefault(field, [])
                 reason = item.get("reason", "") if isinstance(item, dict) else ""
                 if reason:

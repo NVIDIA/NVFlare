@@ -135,6 +135,8 @@ class CallInfo:
     function_name: Optional[str] = None
     branch_conditions: Tuple[Tuple[ast.AST, bool], ...] = ()
     has_keyword_splat: bool = False
+    has_positional_args: bool = False
+    has_positional_splat: bool = False
 
 
 class JobImportError(ValueError):
@@ -411,6 +413,18 @@ class DeterministicJobImporter:
         parser_args: Dict[str, ArgSpec],
         source_text: str,
     ) -> Tuple[str, str, Optional[Dict[str, str]]]:
+        if job_call and job_call.has_positional_args:
+            return (
+                "accuracy",
+                "default",
+                _unresolved(
+                    "objective.metric",
+                    _positional_call_reason(
+                        job_call,
+                        "key_metric may be supplied positionally; use keyword-only constructor arguments",
+                    ),
+                ),
+            )
         if job_call and job_call.has_keyword_splat and "key_metric" not in job_call.keywords:
             return (
                 "accuracy",
@@ -444,15 +458,27 @@ class DeterministicJobImporter:
         if not job_call:
             return "max", "unresolved", _unresolved("objective.mode", "job metric direction is unknown")
 
-        direction_keywords = {"key_metric_mode", "model_selector", "stop_cond"}
-        if job_call.has_keyword_splat and not direction_keywords.issubset(job_call.keywords):
+        if job_call.has_positional_args:
             return (
                 "max",
                 "unresolved",
                 _unresolved(
                     "objective.mode",
-                    "job call passes **kwargs; key_metric_mode, model_selector, or stop_cond may be supplied "
-                    "dynamically; write all three direction-relevant keywords explicitly in the job call",
+                    _positional_call_reason(
+                        job_call,
+                        "direction-relevant values may be supplied positionally; use keyword-only constructor arguments",
+                    ),
+                ),
+            )
+
+        if job_call.has_keyword_splat:
+            return (
+                "max",
+                "unresolved",
+                _unresolved(
+                    "objective.mode",
+                    "job call passes **kwargs; direction-relevant values may be supplied dynamically; "
+                    "remove **kwargs and write the applicable direction keyword explicitly in the job call",
                 ),
             )
 
@@ -537,12 +563,53 @@ class DeterministicJobImporter:
                 else:
                     fixed_training_budget["num_clients"] = resolved.value
 
-        if env_call and env_call.name == "SimEnv" and "num_clients" in env_call.keywords:
-            resolved = _resolve_value(env_call.keywords["num_clients"], env_call.assignments, parser_args, source_text)
-            if resolved.unresolved:
-                unresolved.append(_unresolved("budget.fixed_training_budget.num_clients", resolved.source))
-            else:
-                fixed_training_budget["num_clients"] = resolved.value
+            if job_call.has_positional_args:
+                unresolved.append(
+                    _unresolved(
+                        "budget.fixed_training_budget",
+                        _positional_call_reason(
+                            job_call,
+                            "fixed training budget values may be supplied positionally; "
+                            "use keyword-only constructor arguments",
+                        ),
+                    )
+                )
+            if job_call.has_keyword_splat:
+                unresolved.append(
+                    _unresolved(
+                        "budget.fixed_training_budget",
+                        "job call passes **kwargs; fixed training budget values may be supplied dynamically; "
+                        "remove **kwargs and write the applicable budget keywords explicitly in the job call",
+                    )
+                )
+
+        if env_call and env_call.name == "SimEnv":
+            if "num_clients" in env_call.keywords:
+                resolved = _resolve_value(
+                    env_call.keywords["num_clients"], env_call.assignments, parser_args, source_text
+                )
+                if resolved.unresolved:
+                    unresolved.append(_unresolved("budget.fixed_training_budget.num_clients", resolved.source))
+                else:
+                    fixed_training_budget["num_clients"] = resolved.value
+            elif env_call.has_keyword_splat:
+                unresolved.append(
+                    _unresolved(
+                        "budget.fixed_training_budget.num_clients",
+                        "SimEnv call passes **kwargs; num_clients may be supplied dynamically; "
+                        "write num_clients explicitly in the SimEnv call",
+                    )
+                )
+            if env_call.has_positional_args:
+                unresolved.append(
+                    _unresolved(
+                        "budget.fixed_training_budget.num_clients",
+                        _positional_call_reason(
+                            env_call,
+                            "num_clients may be supplied positionally; use keyword-only SimEnv arguments",
+                        ),
+                    )
+                )
 
         if fixed_training_budget:
             budget["fixed_training_budget"] = fixed_training_budget
@@ -807,6 +874,8 @@ class _ImportIndex(ast.NodeVisitor):
                 function_name=self._function_stack[-1] if self._function_stack else None,
                 branch_conditions=tuple(self._branch_conditions),
                 has_keyword_splat=any(keyword.arg is None for keyword in node.keywords),
+                has_positional_args=bool(node.args),
+                has_positional_splat=any(isinstance(arg, ast.Starred) for arg in node.args),
             )
             if is_environment:
                 self.env_calls.append(call_info)
@@ -1479,3 +1548,8 @@ def _overall_confidence(unresolved: List[Dict[str, str]], job_call: Optional[Cal
 
 def _unresolved(field: str, reason: str) -> Dict[str, str]:
     return {"field": field, "reason": reason}
+
+
+def _positional_call_reason(call_info: CallInfo, detail: str) -> str:
+    argument_kind = "*args" if call_info.has_positional_splat else "positional arguments"
+    return f"{call_info.name} call passes {argument_kind}; {detail}"

@@ -399,7 +399,7 @@ runner = ScriptRunner(script="train.py")
     assert not any(item["field"] == "objective.metric" for item in config["unresolved"])
 
 
-def test_import_resolves_explicit_direction_keywords_despite_unrelated_splat(tmp_path):
+def test_import_rejects_direction_contract_when_job_call_has_keyword_splat(tmp_path):
     tmp_path.joinpath("train.py").write_text("print('train')\n", encoding="utf-8")
     job_path = tmp_path / "job.py"
     job_path.write_text(
@@ -408,14 +408,13 @@ from nvflare.app_common.executors.script_runner import ScriptRunner
 from nvflare.job_config.base_fed_job import BaseFedJob
 
 
-other = {"description": "unrelated"}
+other = {"analytics_receiver": None}
 job = BaseFedJob(
     name="explicit-direction",
     min_clients=2,
     key_metric="loss",
     key_metric_mode="min",
     model_selector=None,
-    stop_cond=None,
     **other,
 )
 runner = ScriptRunner(script="train.py")
@@ -425,9 +424,100 @@ runner = ScriptRunner(script="train.py")
 
     config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
 
-    assert config["objective"]["mode"] == "min"
-    assert config["objective"]["mode_contract_source"] == "job:key_metric_mode"
-    assert not any(item["field"] == "objective.mode" for item in config["unresolved"])
+    assert config["objective"]["mode"] == "max"
+    assert config["objective"]["mode_contract_source"] == "unresolved"
+    assert any(
+        item["field"] == "objective.mode" and "remove **kwargs" in item["reason"] for item in config["unresolved"]
+    )
+
+
+@pytest.mark.parametrize(
+    "constructor_args",
+    [
+        '"positional", 2, None, "loss", "min"',
+        "*job_args",
+    ],
+)
+def test_import_marks_positional_job_arguments_unresolved(tmp_path, constructor_args):
+    tmp_path.joinpath("train.py").write_text("print('train')\n", encoding="utf-8")
+    job_path = tmp_path / "job.py"
+    job_path.write_text(
+        f"""
+from nvflare.app_common.executors.script_runner import ScriptRunner
+from nvflare.job_config.base_fed_job import BaseFedJob
+
+
+job_args = ("positional", 2, None, "loss", "min")
+job = BaseFedJob({constructor_args})
+runner = ScriptRunner(script="train.py")
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+
+    unresolved_fields = {item["field"] for item in config["unresolved"]}
+    assert {"objective.metric", "objective.mode", "budget.fixed_training_budget"} <= unresolved_fields
+    positional_reasons = " ".join(item["reason"] for item in config["unresolved"])
+    expected_argument_kind = "*args" if constructor_args.startswith("*") else "positional arguments"
+    assert expected_argument_kind in positional_reasons
+
+
+def test_import_marks_splatted_job_budget_unresolved(tmp_path):
+    tmp_path.joinpath("client.py").write_text("print('train')\n", encoding="utf-8")
+    job_path = tmp_path / "job.py"
+    job_path.write_text(
+        """
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv
+
+
+budget = {"num_rounds": 3}
+recipe = FedAvgRecipe(
+    name="splatted-budget",
+    min_clients=2,
+    train_script="client.py",
+    key_metric="accuracy",
+    key_metric_mode="max",
+    **budget,
+)
+recipe.execute(SimEnv(num_clients=2))
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+
+    assert "num_rounds" not in config["budget"]["fixed_training_budget"]
+    assert any(
+        item["field"] == "budget.fixed_training_budget" and "job call passes **kwargs" in item["reason"]
+        for item in config["unresolved"]
+    )
+
+
+def test_import_marks_splatted_sim_env_client_budget_unresolved(tmp_path):
+    tmp_path.joinpath("client.py").write_text("print('train')\n", encoding="utf-8")
+    job_path = tmp_path / "job.py"
+    job_path.write_text(
+        """
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv
+
+
+recipe = FedAvgRecipe(name="sim-budget", min_clients=2, num_rounds=1, train_script="client.py")
+sim_budget = {"num_clients": 3}
+recipe.execute(SimEnv(**sim_budget))
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+
+    assert "num_clients" not in config["budget"]["fixed_training_budget"]
+    assert any(
+        item["field"] == "budget.fixed_training_budget.num_clients" and "SimEnv call passes **kwargs" in item["reason"]
+        for item in config["unresolved"]
+    )
 
 
 def test_import_marks_malformed_stop_condition_unresolved(tmp_path):
