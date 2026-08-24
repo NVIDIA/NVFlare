@@ -1073,7 +1073,7 @@ class TestInitializeAndFinalize:
         client_job_exit.assert_not_called()
 
     def test_late_settlement_gets_fresh_natural_exit_budget(self, env, monkeypatch, caplog):
-        monkeypatch.setattr(ebp, "_RESULT_REAPER_MAX_TOTAL_TIMEOUT", 0.2)
+        monkeypatch.setattr(ebp, "_RESULT_REAPER_MAX_TOTAL_TIMEOUT", 0.4)
         monkeypatch.setattr(ebp, "_RESULT_REAPER_FORCE_TERM_GRACE", 0.05)
         monkeypatch.setattr(ebp, "_LIVE_RESULT_SHUTDOWN_ACK_TIMEOUT", 0.01)
         monkeypatch.setattr(ebp, "_NATURAL_EXIT_REAP_INTERVAL", 0.005)
@@ -1088,13 +1088,17 @@ class TestInitializeAndFinalize:
             CellReturnCode.OK,
             body={MsgKey.RESULT_SOURCE_LIVE: not transfer_settled.is_set()},
         )
-        settlement_timer = threading.Timer(0.12, transfer_settled.set)
-        exit_timer = threading.Timer(0.18, process.exit, args=[0])
+        # The natural-exit budget is 0.35s. Exit after the old deadline but
+        # comfortably before the fresh deadline that starts at settlement.
+        settlement_timer = threading.Timer(0.15, transfer_settled.set)
+        exit_timer = threading.Timer(0.43, process.exit, args=[0])
         settlement_timer.start()
         exit_timer.start()
         try:
             backend.finalize(FLContext())
         finally:
+            settlement_timer.cancel()
+            exit_timer.cancel()
             settlement_timer.join(timeout=1.0)
             exit_timer.join(timeout=1.0)
 
