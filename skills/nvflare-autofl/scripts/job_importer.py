@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import ast
 import hashlib
+import logging
 import os
 import re
 from dataclasses import dataclass
@@ -39,6 +40,8 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 import yaml
+
+logger = logging.getLogger(__name__)
 
 _UNRESOLVED = object()
 _core_looks_lower_is_better = _UNRESOLVED
@@ -1230,13 +1233,20 @@ def _resolve_stop_condition_mode(
 
 
 def _resolve_core_heuristic():
+    """Load and cache the core heuristic, retrying after transient import failures."""
+
     global _core_looks_lower_is_better
 
     if _core_looks_lower_is_better is _UNRESOLVED:
         try:
             from nvflare.app_common.widgets.intime_model_selector import _looks_lower_is_better
-        except Exception:  # Core initialization failures must preserve the standalone fallback.
-            _core_looks_lower_is_better = None
+        except Exception as e:
+            logger.warning(
+                "Unable to load the NVFlare core metric heuristic (%s); using the local fallback and retrying "
+                "on the next check",
+                type(e).__name__,
+            )
+            return None
         else:
             _core_looks_lower_is_better = _looks_lower_is_better
     return _core_looks_lower_is_better
