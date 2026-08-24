@@ -34,6 +34,10 @@ def _load_runner():
     return module
 
 
+def _fake_python_result(python, arguments, *, rc=0, output="done\n", runtime=0.1):
+    return rc, output, runtime, [python, *arguments]
+
+
 def _campaign_config():
     return {
         "schema_version": "nvflare.autofl.config.v1",
@@ -44,6 +48,12 @@ def _campaign_config():
             "requested_metric": "accuracy",
             "optimization_metric": "accuracy",
             "metric_extraction_order": ["accuracy"],
+            "mode": "max",
+            "mode_contract_source": "core_default",
+            "job_key_metric": "accuracy",
+            "job_key_metric_source": "core_default",
+            "job_key_metric_mode": "max",
+            "job_key_metric_mode_source": "core_default",
         },
         "budget": {"fixed_training_budget": {"num_clients": 2, "num_rounds": 1}},
         "environment": {"requested": "sim"},
@@ -284,6 +294,12 @@ def test_structured_metric_extraction_rejects_boolean_values():
     assert runner.find_metric_value({"metrics": [{"name": "accuracy", "value": False}]}, ["accuracy"]) is None
 
 
+def test_runner_uses_campaign_guard_score_comparison():
+    runner = _load_runner()
+
+    assert runner.better is runner.load_campaign_guard().better
+
+
 @pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
 def test_metric_paths_reject_non_finite_values(tmp_path, value):
     runner = _load_runner()
@@ -399,15 +415,91 @@ def test_runner_applies_schema_metric_contract():
     assert updated["objective"]["metric_change_policy"] == "restart_campaign_with_repaired_baseline"
 
 
-def test_schema_metric_contract_rejects_minimization_objective():
+def test_schema_metric_contract_accepts_minimization_objective():
     runner = _load_runner()
-    config = {"objective": {"metric": "val_loss"}}
-    schema = {"objective": {"metric": "val_loss", "mode": "min"}}
+    config = {
+        "objective": {
+            "metric": "val_loss",
+            "requested_metric": "val_loss",
+            "optimization_metric": "val_loss",
+            "mode": "max",
+            "mode_contract_source": "core_default",
+            "job_key_metric": "accuracy",
+        }
+    }
+    schema = {
+        "objective": {
+            "requested_metric": "val_loss",
+            "optimization_metric": "val_loss",
+            "mode": "min",
+        }
+    }
 
-    with pytest.raises(ValueError, match="minimization is not supported") as excinfo:
-        runner.apply_metric_contract(config, "val_loss", schema)
+    updated = runner.apply_metric_contract(config, "val_loss", schema)
 
-    assert "neg_val_loss" in str(excinfo.value)
+    assert updated["objective"]["mode"] == "min"
+    assert updated["objective"]["mode_contract_source"] == "mutation_schema"
+
+
+def test_schema_bridged_metric_does_not_inherit_job_direction():
+    runner = _load_runner()
+    config = {
+        "objective": {
+            "metric": "accuracy",
+            "requested_metric": "accuracy",
+            "optimization_metric": "accuracy",
+            "mode": "min",
+            "mode_contract_source": "job:key_metric_mode",
+            "job_key_metric": "val_loss",
+            "job_key_metric_mode": "min",
+            "job_key_metric_mode_source": "job:key_metric_mode",
+        }
+    }
+    schema = {"objective": {"requested_metric": "accuracy", "optimization_metric": "accuracy"}}
+
+    updated = runner.apply_metric_contract(config, "accuracy", schema)
+
+    assert updated["objective"]["mode"] == "max"
+    assert updated["objective"]["mode_contract_source"] == "core_default"
+    assert updated["objective"]["job_key_metric_mode"] == "min"
+    assert updated["objective"]["job_key_metric_mode_source"] == "job:key_metric_mode"
+
+
+def test_schema_cannot_override_direction_for_job_key_metric():
+    runner = _load_runner()
+    config = {
+        "objective": {
+            "metric": "loss",
+            "requested_metric": "loss",
+            "optimization_metric": "loss",
+            "mode": "min",
+            "mode_contract_source": "job:key_metric_mode",
+            "job_key_metric": "loss",
+            "job_key_metric_source": "literal",
+        }
+    }
+    schema = {"objective": {"metric": "loss", "mode": "max"}}
+
+    with pytest.raises(ValueError, match="job.py is authoritative"):
+        runner.apply_metric_contract(config, "loss", schema)
+
+
+def test_schema_mode_conflict_with_implicit_job_default_has_actionable_error():
+    runner = _load_runner()
+    config = {
+        "objective": {
+            "metric": "loss",
+            "requested_metric": "loss",
+            "optimization_metric": "loss",
+            "mode": "max",
+            "mode_contract_source": "core_default",
+            "job_key_metric": "loss",
+            "job_key_metric_source": "core_default",
+        }
+    }
+
+    with pytest.raises(ValueError, match="implicit 'max'.*set key_metric_mode='min' in job.py"):
+        runner.apply_metric_contract(config, "loss", {"objective": {"metric": "loss", "mode": "min"}})
 
 
 def test_comparison_budget_suppresses_duplicate_imported_fixed_budget_args():
@@ -500,19 +592,134 @@ def test_campaign_timeout_rejects_malformed_schema_values(field, value):
         runner.campaign_timeout(args, schema)
 
 
+def test_python_command_keeps_configured_interpreter_and_literal_arguments(tmp_path):
+    runner = _load_runner()
+    marker = tmp_path / "must-not-exist"
+    arguments = ["-c", "print('ok')", ";", f"$(touch {marker})", "/bin/sh"]
+
+    command = runner.python_command(sys.executable, arguments, {}, cwd=tmp_path)
+
+    assert command[0] == os.path.abspath(sys.executable)
+    assert command[1:] == arguments
+
+
+def test_run_python_does_not_interpret_shell_metacharacters(tmp_path):
+    runner = _load_runner()
+    marker = tmp_path / "must-not-exist"
+    literal = f"$(touch {marker})"
+
+    rc, output, _, command = runner.run_python(
+        sys.executable,
+        ["-c", "import json, sys; print(json.dumps(sys.argv[1:]))", literal, "; touch ignored"],
+        cwd=tmp_path,
+        timeout=10,
+        log_path=tmp_path / "run.log",
+        env={},
+    )
+
+    assert rc == 0
+    assert command[0] == os.path.abspath(sys.executable)
+    assert command[1:] == ["-c", "import json, sys; print(json.dumps(sys.argv[1:]))", literal, "; touch ignored"]
+    assert json.loads(output.strip()) == [literal, "; touch ignored"]
+    assert not marker.exists()
+
+
+def test_run_python_uses_only_the_explicit_child_environment(tmp_path, monkeypatch):
+    runner = _load_runner()
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "host-secret")
+
+    rc, output, _, _command = runner.run_python(
+        sys.executable,
+        [
+            "-c",
+            (
+                "import json, os; "
+                "print(json.dumps({'safe': os.environ.get('SAFE_VALUE'), "
+                "'secret': os.environ.get('AWS_SECRET_ACCESS_KEY')}))"
+            ),
+        ],
+        cwd=tmp_path,
+        timeout=10,
+        log_path=tmp_path / "run.log",
+        env={"SAFE_VALUE": "forwarded"},
+    )
+
+    assert rc == 0
+    assert json.loads(output.strip()) == {"safe": "forwarded", "secret": None}
+
+
+@pytest.mark.parametrize(
+    ("python", "arguments", "message"),
+    [
+        ("/missing/python", ["-c", "print('no')"], "does not exist"),
+        (None, ["-c", "print('no')"], "non-empty string"),
+        (sys.executable, [], "at least one argument"),
+        (sys.executable, ["-c", 3], "must be strings"),
+        (sys.executable, ["bad\x00argument"], "NUL"),
+    ],
+)
+def test_python_command_rejects_invalid_executables_and_arguments(tmp_path, python, arguments, message):
+    runner = _load_runner()
+
+    with pytest.raises(ValueError, match=message):
+        runner.python_command(python, arguments, {}, cwd=tmp_path)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="symlinked virtual-environment interpreter test is POSIX-specific")
+def test_resolve_python_interpreter_preserves_virtualenv_symlink(tmp_path):
+    runner = _load_runner()
+    venv_bin = tmp_path / "venv" / "bin"
+    venv_bin.mkdir(parents=True)
+    venv_python = venv_bin / "campaign-python"
+    venv_python.symlink_to(sys.executable)
+
+    resolved = runner.resolve_python_interpreter(venv_python.name, {"PATH": str(venv_bin)}, cwd=tmp_path)
+
+    assert resolved == str(venv_python)
+    assert resolved != str(venv_python.resolve())
+
+
+@pytest.mark.skipif(os.name == "nt", reason="symlinked virtual-environment interpreter test is POSIX-specific")
+def test_resolve_python_interpreter_uses_child_cwd_for_relative_path(tmp_path):
+    runner = _load_runner()
+    job_dir = tmp_path / "job"
+    venv_python = job_dir / ".venv" / "bin" / "python"
+    venv_python.parent.mkdir(parents=True)
+    venv_python.symlink_to(sys.executable)
+
+    resolved = runner.resolve_python_interpreter(".venv/bin/python", {}, cwd=job_dir)
+
+    assert resolved == str(venv_python)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="relative PATH interpreter test is POSIX-specific")
+def test_resolve_python_interpreter_normalizes_relative_path_entry_against_child_cwd(tmp_path):
+    runner = _load_runner()
+    job_dir = tmp_path / "job"
+    venv_python = job_dir / "tools" / "campaign-python"
+    venv_python.parent.mkdir(parents=True)
+    venv_python.symlink_to(sys.executable)
+
+    resolved = runner.resolve_python_interpreter("campaign-python", {"PATH": "tools"}, cwd=job_dir)
+
+    assert resolved == str(venv_python)
+    assert os.path.isabs(resolved)
+
+
 def test_run_streams_output_before_timeout(tmp_path):
     runner = _load_runner()
     log_path = tmp_path / "run.log"
 
-    rc, output, _ = runner.run(
+    rc, output, _, _command = runner.run_python(
+        sys.executable,
         [
-            sys.executable,
             "-c",
             "import time; print('started', flush=True); time.sleep(2); print('finished', flush=True)",
         ],
-        tmp_path,
+        cwd=tmp_path,
         timeout=1,
         log_path=log_path,
+        env={},
     )
 
     log_text = log_path.read_text(encoding="utf-8")
@@ -526,15 +733,16 @@ def test_run_streams_partial_line_before_timeout(tmp_path):
     runner = _load_runner()
     log_path = tmp_path / "run.log"
 
-    rc, output, runtime = runner.run(
+    rc, output, runtime, _command = runner.run_python(
+        sys.executable,
         [
-            sys.executable,
             "-c",
             "import sys, time; sys.stdout.write('partial output'); sys.stdout.flush(); time.sleep(30)",
         ],
-        tmp_path,
+        cwd=tmp_path,
         timeout=1,
         log_path=log_path,
+        env={},
     )
 
     assert rc == 124
@@ -558,11 +766,13 @@ def test_run_terminates_inherited_stdout_descendant_after_leader_exits(tmp_path)
         "print('leader exits', flush=True)"
     )
 
-    rc, output, runtime = runner.run(
-        [sys.executable, "-c", parent_code],
-        tmp_path,
+    rc, output, runtime, _command = runner.run_python(
+        sys.executable,
+        ["-c", parent_code],
+        cwd=tmp_path,
         timeout=1,
         log_path=tmp_path / "run.log",
+        env={},
     )
 
     assert rc == 124
@@ -602,11 +812,13 @@ def test_run_terminates_detached_descendant_that_escapes_process_group(tmp_path,
         "print('leader exits', flush=True)"
     )
 
-    rc, output, runtime = runner.run(
-        [sys.executable, "-c", parent_code],
-        tmp_path,
+    rc, output, runtime, _command = runner.run_python(
+        sys.executable,
+        ["-c", parent_code],
+        cwd=tmp_path,
         timeout=2 if ignore_sigterm else 1,
         log_path=tmp_path / "run.log",
+        env={},
     )
 
     assert rc == 124
@@ -706,11 +918,13 @@ def test_run_requires_pidfds_before_starting_linux_process(tmp_path, monkeypatch
     monkeypatch.setattr(runner.subprocess, "Popen", fail_start)
 
     with pytest.raises(runner.TrialProcessCleanupError, match="pidfds unavailable"):
-        runner.run(
-            [sys.executable, "-c", "print('must not run')"],
-            tmp_path,
+        runner.run_python(
+            sys.executable,
+            ["-c", "print('must not run')"],
+            cwd=tmp_path,
             timeout=10,
             log_path=tmp_path / "run.log",
+            env={},
         )
 
     assert not started
@@ -737,15 +951,16 @@ def test_run_terminates_child_process_group_when_monitor_raises(tmp_path, monkey
 
     monkeypatch.setattr(runner, "simulator_stall_message", fail_monitor)
     with pytest.raises(type(monitor_error), match=str(monitor_error) if str(monitor_error) else None):
-        runner.run(
+        runner.run_python(
+            sys.executable,
             [
-                sys.executable,
                 "-c",
                 f"import os, pathlib, time; pathlib.Path({str(pid_path)!r}).write_text(str(os.getpid())); time.sleep(30)",
             ],
-            tmp_path,
+            cwd=tmp_path,
             timeout=0,
             log_path=tmp_path / "run.log",
+            env={},
             simulator_stall_roots=[tmp_path / "simulation"],
             stall_check_interval=0,
         )
@@ -766,11 +981,13 @@ def test_run_keeps_complete_log_but_only_bounded_output_tail(tmp_path):
         f"print('x' * {payload_size})"
     )
 
-    rc, output, _ = runner.run(
-        [sys.executable, "-c", script],
-        tmp_path,
+    rc, output, _, _command = runner.run_python(
+        sys.executable,
+        ["-c", script],
+        cwd=tmp_path,
         timeout=10,
         log_path=log_path,
+        env={},
     )
 
     printed_result, socket_failure = runner.scan_run_log(log_path, tmp_path)
@@ -787,15 +1004,15 @@ def test_socket_failure_marker_only_requests_human_runner_approval(tmp_path, mon
     job = tmp_path / "job.py"
     job.write_text("print('job')\n", encoding="utf-8")
 
-    def fake_run(_argv, _cwd, _timeout, log_path, **_kwargs):
+    def fake_run(_python, _arguments, *, log_path, **_kwargs):
         log_path.parent.mkdir(parents=True, exist_ok=True)
         log_path.write_text(
             "PermissionError\n[Errno 1] Operation not permitted\nsocket.bind\n",
             encoding="utf-8",
         )
-        return 1, "socket.bind failed\n", 0.1
+        return _fake_python_result(_python, _arguments, rc=1, output="socket.bind failed\n")
 
-    monkeypatch.setattr(runner, "run", fake_run)
+    monkeypatch.setattr(runner, "run_python", fake_run)
     record = runner.run_job(
         runner.JobRun("candidate", [], "candidate"),
         python=sys.executable,
@@ -822,6 +1039,42 @@ def test_socket_failure_marker_only_requests_human_runner_approval(tmp_path, mon
     assert state["next_action"] == runner.SIMULATION_APPROVAL_ACTION
     assert "Pause for human approval" in state["agent_instruction"]
     assert "Never request broader permission" in state["agent_instruction"]
+
+
+def test_run_job_uses_run_python_prepared_command_without_revalidating(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job = tmp_path / "job.py"
+    job.write_text("print('job')\n", encoding="utf-8")
+    prepared_command = ["/resolved/campaign-python", str(job), "--candidate-flag"]
+
+    def fake_run(_python, _arguments, *, log_path, **_kwargs):
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text("candidate failed\n", encoding="utf-8")
+        return 1, "candidate failed\n", 0.1, prepared_command
+
+    monkeypatch.setattr(runner, "run_python", fake_run)
+    monkeypatch.setattr(
+        runner,
+        "python_command",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("run_job must not revalidate argv")),
+    )
+
+    record = runner.run_job(
+        runner.JobRun("candidate", ["--candidate-flag"], "candidate"),
+        python="./.venv/bin/python",
+        job=job,
+        cwd=tmp_path,
+        help_text="",
+        fixed_args=[],
+        base_args=[],
+        output_root=tmp_path / "runs",
+        timeout=10,
+        simulator_no_progress_timeout=0,
+        metrics=["accuracy"],
+        config={"job": {}},
+    )
+
+    assert record.run_command == runner.shlex.join(prepared_command)
 
 
 def test_job_help_discovers_flags_without_executing_job(tmp_path):
@@ -942,7 +1195,9 @@ def test_run_without_deterministic_result_root_records_actionable_failure(tmp_pa
     runner = _load_runner()
     job = tmp_path / "job.py"
     job.write_text("print('done')\n", encoding="utf-8")
-    monkeypatch.setattr(runner, "run", lambda *args, **kwargs: (0, "done\n", 0.1))
+    monkeypatch.setattr(
+        runner, "run_python", lambda python, arguments, **_kwargs: _fake_python_result(python, arguments)
+    )
 
     def probe_must_not_run(*args, **kwargs):
         raise AssertionError("probe must not run when no SimEnv environment was discovered")
@@ -972,7 +1227,9 @@ def test_run_without_result_root_blames_nvflare_without_workspace_override(tmp_p
     runner = _load_runner()
     job = tmp_path / "job.py"
     job.write_text("print('done')\n", encoding="utf-8")
-    monkeypatch.setattr(runner, "run", lambda *args, **kwargs: (0, "done\n", 0.1))
+    monkeypatch.setattr(
+        runner, "run_python", lambda python, arguments, **_kwargs: _fake_python_result(python, arguments)
+    )
     monkeypatch.setattr(
         runner,
         "probe_simulator_workspace_override_support",
@@ -1004,7 +1261,9 @@ def test_run_without_result_root_keeps_generic_diagnosis_for_fed_job(tmp_path, m
     runner = _load_runner()
     job = tmp_path / "job.py"
     job.write_text("print('done')\n", encoding="utf-8")
-    monkeypatch.setattr(runner, "run", lambda *args, **kwargs: (0, "done\n", 0.1))
+    monkeypatch.setattr(
+        runner, "run_python", lambda python, arguments, **_kwargs: _fake_python_result(python, arguments)
+    )
 
     def probe_must_not_run(*args, **kwargs):
         raise AssertionError("probe must not run when the job does not use SimEnv")
@@ -1110,11 +1369,15 @@ def test_probe_simulator_workspace_override_support_uses_sanitized_env(tmp_path,
     monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "secret")
     monkeypatch.setenv("AUTOFL_TEST_TOKEN", "secret")
 
-    def fake_run(*args, **kwargs):
+    def fake_run(python, arguments, **kwargs):
         captured["env"] = kwargs["env"]
-        return 0, 'native warning\n{"version": "2.9.0", "supported": true}\nlate stderr warning\n', 0.1
+        return _fake_python_result(
+            python,
+            arguments,
+            output='native warning\n{"version": "2.9.0", "supported": true}\nlate stderr warning\n',
+        )
 
-    monkeypatch.setattr(runner, "run", fake_run)
+    monkeypatch.setattr(runner, "run_python", fake_run)
 
     probe = runner.probe_simulator_workspace_override_support(sys.executable, tmp_path)
 
@@ -1218,13 +1481,13 @@ def test_run_discovers_and_persists_printed_unnamed_simulator_root(tmp_path, mon
     simulator_base = tmp_path / "simulation"
     result = simulator_base / "recipe-default"
 
-    def fake_run(*args, **kwargs):
+    def fake_run(python, arguments, **kwargs):
         result = Path(kwargs["env"][runner.SIMULATOR_WORKSPACE_ROOT_ENV_VAR]) / "recipe-default"
         result.mkdir(parents=True)
         result.joinpath("metrics_summary.json").write_text(json.dumps({"accuracy": 0.81}), encoding="utf-8")
-        return 0, f"The simulation logs can be found at {result}\n", 0.1
+        return _fake_python_result(python, arguments, output=f"The simulation logs can be found at {result}\n")
 
-    monkeypatch.setattr(runner, "run", fake_run)
+    monkeypatch.setattr(runner, "run_python", fake_run)
     config = {
         "job": {},
         "artifacts": {},
@@ -1261,13 +1524,13 @@ def test_run_discovers_single_changed_unnamed_simulator_root(tmp_path, monkeypat
     simulator_base = tmp_path / "simulation"
     result = simulator_base / "recipe-default"
 
-    def fake_run(*args, **kwargs):
+    def fake_run(python, arguments, **kwargs):
         result = Path(kwargs["env"][runner.SIMULATOR_WORKSPACE_ROOT_ENV_VAR]) / "recipe-default"
         result.mkdir(parents=True)
         result.joinpath("metrics_summary.json").write_text(json.dumps({"val_acc": 0.73}), encoding="utf-8")
-        return 0, "job complete without a result message\n", 0.1
+        return _fake_python_result(python, arguments, output="job complete without a result message\n")
 
-    monkeypatch.setattr(runner, "run", fake_run)
+    monkeypatch.setattr(runner, "run_python", fake_run)
     config = {
         "job": {},
         "artifacts": {},
@@ -1302,15 +1565,15 @@ def test_run_rejects_ambiguous_changed_unnamed_simulator_roots(tmp_path, monkeyp
     job.write_text("print('job')\n", encoding="utf-8")
     simulator_base = tmp_path / "simulation"
 
-    def fake_run(*args, **kwargs):
+    def fake_run(python, arguments, **kwargs):
         simulator_base = Path(kwargs["env"][runner.SIMULATOR_WORKSPACE_ROOT_ENV_VAR])
         for name in ("first", "second"):
             result = simulator_base / name
             result.mkdir(parents=True)
             result.joinpath("metrics_summary.json").write_text(json.dumps({"accuracy": 0.5}), encoding="utf-8")
-        return 0, "ambiguous job complete\n", 0.1
+        return _fake_python_result(python, arguments, output="ambiguous job complete\n")
 
-    monkeypatch.setattr(runner, "run", fake_run)
+    monkeypatch.setattr(runner, "run_python", fake_run)
     record = runner.run_job(
         runner.JobRun("candidate", [], "candidate"),
         python=sys.executable,
@@ -1341,11 +1604,11 @@ def test_run_rejects_printed_result_outside_simulator_workspace(tmp_path, monkey
     job.write_text("print('job')\n", encoding="utf-8")
     outside = tmp_path / "outside"
 
-    def fake_run(*args, **kwargs):
+    def fake_run(python, arguments, **kwargs):
         outside.mkdir()
-        return 0, f"Result can be found in : {outside}\n", 0.1
+        return _fake_python_result(python, arguments, output=f"Result can be found in : {outside}\n")
 
-    monkeypatch.setattr(runner, "run", fake_run)
+    monkeypatch.setattr(runner, "run_python", fake_run)
     record = runner.run_job(
         runner.JobRun("candidate", [], "candidate"),
         python=sys.executable,
@@ -1468,15 +1731,15 @@ def test_run_job_uses_a_fresh_simulator_workspace_for_each_trial(tmp_path, monke
     job.write_text("print('job')\n", encoding="utf-8")
     workspaces = []
 
-    def fake_run(*args, **kwargs):
+    def fake_run(python, arguments, **kwargs):
         workspace = Path(kwargs["env"][runner.SIMULATOR_WORKSPACE_ROOT_ENV_VAR])
         workspaces.append(workspace)
         result = workspace / "fixed-job"
         result.mkdir(parents=True)
         result.joinpath("metrics_summary.json").write_text(json.dumps({"accuracy": 0.5}), encoding="utf-8")
-        return 0, f"Result can be found in : {result}\n", 0.1
+        return _fake_python_result(python, arguments, output=f"Result can be found in : {result}\n")
 
-    monkeypatch.setattr(runner, "run", fake_run)
+    monkeypatch.setattr(runner, "run_python", fake_run)
     config = {"job": {"recipe_args": {"name": {"value": "fixed-job", "confidence": "high"}}}}
     for name in ("candidate-one", "candidate-two"):
         record = runner.run_job(
@@ -1511,15 +1774,16 @@ def test_run_stops_on_nvflare_simulator_stall_log(tmp_path):
         encoding="utf-8",
     )
 
-    rc, output, runtime = runner.run(
+    rc, output, runtime, _command = runner.run_python(
+        sys.executable,
         [
-            sys.executable,
             "-c",
             "import time; print('started', flush=True); time.sleep(30)",
         ],
-        tmp_path,
+        cwd=tmp_path,
         timeout=30,
         log_path=log_path,
+        env={},
         simulator_stall_roots=[sim_root],
         stall_check_interval=0.01,
     )
@@ -1539,15 +1803,16 @@ def test_run_stops_on_nvflare_simulator_no_progress_log(tmp_path):
     server_log.parent.mkdir(parents=True)
     server_log.write_text("Round 0 started\n", encoding="utf-8")
 
-    rc, output, runtime = runner.run(
+    rc, output, runtime, _command = runner.run_python(
+        sys.executable,
         [
-            sys.executable,
             "-c",
             "import time; print('started', flush=True); time.sleep(30)",
         ],
-        tmp_path,
+        cwd=tmp_path,
         timeout=30,
         log_path=log_path,
+        env={},
         simulator_stall_roots=[sim_root],
         stall_check_interval=0.01,
         simulator_no_progress_timeout=1,
@@ -1574,9 +1839,9 @@ def test_run_stops_on_stale_partial_simulator_aggregation(tmp_path):
     )
     site_log.write_text("[site=site-1] round=0\n", encoding="utf-8")
 
-    rc, output, runtime = runner.run(
+    rc, output, runtime, _command = runner.run_python(
+        sys.executable,
         [
-            sys.executable,
             "-c",
             (
                 "import pathlib, time; "
@@ -1586,9 +1851,10 @@ def test_run_stops_on_stale_partial_simulator_aggregation(tmp_path):
                 "time.sleep(30)"
             ),
         ],
-        tmp_path,
+        cwd=tmp_path,
         timeout=30,
         log_path=log_path,
+        env={},
         simulator_stall_roots=[sim_root],
         stall_check_interval=0.01,
         simulator_no_progress_timeout=1,
@@ -2983,6 +3249,8 @@ def test_omitted_metric_uses_imported_job_metric(tmp_path, monkeypatch):
         "requested_metric": "auc",
         "optimization_metric": "auc",
         "metric_extraction_order": ["auc"],
+        "job_key_metric": "auc",
+        "job_key_metric_source": "arg:key_metric",
         "metric_contract_source": "arg:key_metric",
     }
     monkeypatch.setattr(runner, "import_job_config", lambda *args, **kwargs: deepcopy(config))
@@ -3251,7 +3519,7 @@ def test_runner_state_reports_budget_and_baseline_accounting(tmp_path, monkeypat
     assert runner.main(["status", str(job), "--max-candidates", "3"]) == 0
     state = json.loads(state_path.read_text(encoding="utf-8"))
     assert state["remaining_candidates"] == 2
-    # improvement is best minus baseline; campaigns always maximize the metric.
+    # This campaign uses the default max direction, so improvement is best minus baseline.
     assert state["improvement"] == pytest.approx(0.3)
 
 
@@ -3291,7 +3559,7 @@ def test_initialize_has_no_mode_flag(tmp_path, capsys):
     job = tmp_path / "job.py"
     job.write_text("print('job')\n", encoding="utf-8")
 
-    # Campaigns always maximize; the direction flag is gone rather than vestigial.
+    # Direction comes from the imported job contract, not a runner override.
     with pytest.raises(SystemExit) as excinfo:
         runner.main(["initialize", str(job), "--mode", "min"])
 
@@ -3300,13 +3568,14 @@ def test_initialize_has_no_mode_flag(tmp_path, capsys):
     assert not tmp_path.joinpath(".nvflare").exists()
 
 
-def test_resuming_legacy_minimization_campaign_is_rejected_with_guidance(tmp_path, monkeypatch, capsys):
+def test_resuming_legacy_minimization_campaign_requires_fresh_initialization(tmp_path, monkeypatch, capsys):
     runner = _load_runner()
     job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
     metadata_path = tmp_path / ".nvflare/autofl/campaign.json"
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     assert metadata["settings"]["mode"] == "max"
     metadata["settings"]["mode"] = "min"
+    metadata.pop("metric_direction_contract_version")
     metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
     state_before = tmp_path.joinpath(".nvflare/autofl/campaign_state.json").read_bytes()
     capsys.readouterr()
@@ -3316,19 +3585,99 @@ def test_resuming_legacy_minimization_campaign_is_rejected_with_guidance(tmp_pat
         assert runner.main([action, str(job)]) == 2
         stderr = capsys.readouterr().err
         assert "mode='min'" in stderr
-        assert "minimization is not supported" in stderr
-        assert "neg_val_loss" in stderr
+        assert "native metric-direction provenance" in stderr
 
     # The recommended recovery must not be circular: initialize on the legacy campaign
     # is rejected too, but its message names the concrete escape hatch.
     assert runner.main(["initialize", str(job)]) == 2
     stderr = capsys.readouterr().err
-    assert "minimization is not supported" in stderr
+    assert "native metric-direction provenance" in stderr
     assert ".nvflare/autofl" in stderr
     assert "fresh workspace" in stderr
 
     # The campaign never silently flips to maximization: no state was rewritten.
     assert tmp_path.joinpath(".nvflare/autofl/campaign_state.json").read_bytes() == state_before
+
+
+def test_native_minimization_campaign_resumes_and_reports_direction(tmp_path, monkeypatch):
+    runner = _load_runner()
+    config = _campaign_config()
+    config["objective"].update(
+        {
+            "metric": "val_loss",
+            "requested_metric": "val_loss",
+            "optimization_metric": "val_loss",
+            "metric_extraction_order": ["val_loss"],
+            "mode": "min",
+            "mode_contract_source": "job:key_metric_mode",
+            "job_key_metric": "val_loss",
+        }
+    )
+    job = tmp_path / "job.py"
+    job.write_text("print('job')\n", encoding="utf-8")
+    tmp_path.joinpath("client.py").write_text("ALGORITHM = 'baseline'\n", encoding="utf-8")
+    monkeypatch.setattr(runner, "import_job_config", lambda *args, **kwargs: deepcopy(config))
+    monkeypatch.setattr(runner, "job_help", lambda *args, **kwargs: "")
+    monkeypatch.setattr(runner, "write_progress", lambda path, *args: path.write_bytes(b"progress"))
+    scores = {"baseline": 0.5, "lower_loss": 0.4, "higher_loss": 0.45}
+
+    def run_job(run_def, **kwargs):
+        return runner.RunRecord(
+            run_def.status,
+            run_def.name,
+            scores[run_def.name],
+            1.0,
+            "none",
+            run_def.description,
+            "python job.py",
+            f"/tmp/{run_def.name}",
+        )
+
+    monkeypatch.setattr(runner, "run_job", run_job)
+
+    assert runner.main(["initialize", str(job)]) == 0
+    assert runner.main(["prepare", str(job), "--name", "lower_loss", "--hypothesis", "reduce loss"]) == 0
+    lower_draft = tmp_path / ".nvflare/autofl/candidates/lower_loss/source/client.py"
+    lower_draft.write_text("ALGORITHM = 'lower-loss'\n", encoding="utf-8")
+    assert runner.main(["evaluate", str(job)]) == 0
+    assert runner.main(["prepare", str(job), "--name", "higher_loss", "--hypothesis", "test regression"]) == 0
+    higher_draft = tmp_path / ".nvflare/autofl/candidates/higher_loss/source/client.py"
+    higher_draft.write_text("ALGORITHM = 'higher-loss'\n", encoding="utf-8")
+    assert runner.main(["evaluate", str(job)]) == 0
+    assert runner.main(["status", str(job)]) == 0
+    metadata = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign.json").read_text(encoding="utf-8"))
+    state = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign_state.json").read_text(encoding="utf-8"))
+    records = runner.load_results(tmp_path / "results.tsv")
+    assert metadata["settings"]["mode"] == "min"
+    assert metadata["metric_direction_contract_version"] == runner.METRIC_DIRECTION_CONTRACT_VERSION
+    assert state["mode"] == "min"
+    assert state["best_score"] == pytest.approx(0.4)
+    assert state["improvement"] == pytest.approx(0.1)
+    assert [record.status for record in records] == ["baseline", "keep", "discard"]
+    assert tmp_path.joinpath("client.py").read_text(encoding="utf-8") == "ALGORITHM = 'lower-loss'\n"
+    raw_status_args = runner.parse_args(["status", str(job)])
+    assert raw_status_args.mode == "max"
+    _, refreshed = runner.refresh_campaign_state(
+        raw_status_args,
+        job,
+        runner.load_campaign_metadata(tmp_path, job),
+        runner.campaign_paths(raw_status_args, job),
+    )
+    assert refreshed["mode"] == "min"
+
+
+def test_initialize_revalidates_source_after_in_memory_admission(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job = tmp_path / "job.py"
+    job.write_text("print('job')\n", encoding="utf-8")
+    monkeypatch.setattr(runner, "import_job_config", lambda *args, **kwargs: deepcopy(_campaign_config()))
+    args = runner.parse_args(["initialize", str(job)])
+
+    runner.prepare_initial_campaign(args, job)
+    job.write_text("print('changed')\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="changed after metric-contract admission"):
+        runner.admitted_initial_campaign(args, job)
 
 
 def test_explicit_immutable_campaign_setting_change_is_rejected(tmp_path, monkeypatch):
@@ -3485,7 +3834,466 @@ def test_campaign_admission_rejects_unresolved_safety_contract(config, expected)
     assert expected in "; ".join(runner.campaign_admission_errors(config))
 
 
-def test_cli_lifecycle_runs_agent_code_candidate_end_to_end(tmp_path):
+def test_initialize_rejects_implicit_max_loss_without_writing_campaign_files(tmp_path, monkeypatch, capsys):
+    runner = _load_runner()
+    job = tmp_path / "job.py"
+    job.write_text("print('job')\n", encoding="utf-8")
+    config = _campaign_config()
+    config["objective"].update(
+        {
+            "metric": "val_loss",
+            "requested_metric": "val_loss",
+            "optimization_metric": "val_loss",
+            "metric_extraction_order": ["val_loss"],
+            "mode": "max",
+            "mode_contract_source": "core_default",
+            "job_key_metric": "val_loss",
+        }
+    )
+    monkeypatch.setattr(runner, "import_job_config", lambda *args, **kwargs: deepcopy(config))
+
+    assert runner.main(["initialize", str(job)]) == 2
+    assert "AUTOFL_METRIC_DIRECTION_CONFLICT" in capsys.readouterr().err
+    assert not tmp_path.joinpath(".nvflare").exists()
+    assert not tmp_path.joinpath("autofl.yaml").exists()
+    assert not tmp_path.joinpath("autofl_runs").exists()
+
+
+def _write_dynamic_metric_job(workspace):
+    workspace.mkdir()
+    workspace.joinpath("client.py").write_text("print('train')\n", encoding="utf-8")
+    job = workspace / "job.py"
+    job.write_text(
+        """
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv
+
+
+def compute_metric():
+    return "accuracy"
+
+
+recipe = FedAvgRecipe(
+    name="dynamic_metric",
+    min_clients=2,
+    num_rounds=1,
+    train_script="client.py",
+    key_metric=compute_metric(),
+    key_metric_mode="min",
+)
+recipe.execute(SimEnv(num_clients=2))
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return job
+
+
+def _mock_successful_baseline(runner, monkeypatch):
+    monkeypatch.setattr(runner, "write_progress", lambda path, *args: path.write_bytes(b"progress"))
+    monkeypatch.setattr(
+        runner,
+        "run_job",
+        lambda run_def, **kwargs: runner.RunRecord(
+            "baseline", run_def.name, 0.5, 1.0, "none", "baseline", "python job.py", "/tmp/baseline"
+        ),
+    )
+
+
+def test_initialize_rejects_explicit_metric_matching_unresolved_job_metric_placeholder(tmp_path, capsys):
+    runner = _load_runner()
+    workspace = tmp_path / "explicit-unbridged"
+    job = _write_dynamic_metric_job(workspace)
+
+    assert runner.main(["initialize", str(job), "--metric", "accuracy"]) == 2
+
+    error = capsys.readouterr().err
+    assert "AUTOFL_METRIC_NOT_DECLARED" in error
+    assert not workspace.joinpath(".nvflare").exists()
+
+
+def test_initialize_admits_explicit_metric_bridge_for_unresolved_job_metric(tmp_path, monkeypatch):
+    runner = _load_runner()
+    workspace = tmp_path / "explicit-bridged"
+    job = _write_dynamic_metric_job(workspace)
+    workspace.joinpath("mutation_schema.yaml").write_text(
+        """
+objective:
+  requested_metric: accuracy
+  optimization_metric: accuracy
+  mode: max
+""".lstrip(),
+        encoding="utf-8",
+    )
+    _mock_successful_baseline(runner, monkeypatch)
+
+    assert runner.main(["initialize", str(job), "--metric", "accuracy"]) == 0
+
+    config = runner.read_yaml(workspace / "autofl.yaml")
+    assert config["objective"]["mode"] == "max"
+    assert config["objective"]["mode_contract_source"] == "mutation_schema"
+
+
+def test_initialize_rejects_unresolved_job_metric_without_user_metric(tmp_path, capsys):
+    runner = _load_runner()
+    workspace = tmp_path / "implicit"
+    job = _write_dynamic_metric_job(workspace)
+
+    assert runner.main(["initialize", str(job)]) == 2
+
+    assert "objective.metric" in capsys.readouterr().err
+    assert not workspace.joinpath(".nvflare").exists()
+
+
+def test_initialize_treats_core_default_accuracy_as_resolved_job_metric(tmp_path, monkeypatch):
+    runner = _load_runner()
+    workspace = tmp_path / "core-default"
+    workspace.mkdir()
+    workspace.joinpath("client.py").write_text("print('train')\n", encoding="utf-8")
+    job = workspace / "job.py"
+    job.write_text(
+        """
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv
+
+
+recipe = FedAvgRecipe(name="default_metric", min_clients=2, num_rounds=1, train_script="client.py")
+recipe.execute(SimEnv(num_clients=2))
+""".lstrip(),
+        encoding="utf-8",
+    )
+    _mock_successful_baseline(runner, monkeypatch)
+
+    assert runner.main(["initialize", str(job), "--metric", "accuracy"]) == 0
+
+    config = runner.read_yaml(workspace / "autofl.yaml")
+    assert config["objective"]["job_key_metric_source"] == "core_default"
+    assert config["objective"]["mode_contract_source"] == "core_default"
+
+
+def test_initialize_accepts_resolved_job_metric_from_noncanonical_arg_name(tmp_path, monkeypatch):
+    runner = _load_runner()
+    workspace = tmp_path / "noncanonical-arg"
+    workspace.mkdir()
+    workspace.joinpath("client.py").write_text("print('train')\n", encoding="utf-8")
+    job = workspace / "job.py"
+    job.write_text(
+        """
+import argparse
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--model_metric", default="accuracy")
+args = parser.parse_args()
+recipe = FedAvgRecipe(
+    name="arg_metric", min_clients=2, num_rounds=1, train_script="client.py", key_metric=args.model_metric
+)
+recipe.execute(SimEnv(num_clients=2))
+""".lstrip(),
+        encoding="utf-8",
+    )
+    _mock_successful_baseline(runner, monkeypatch)
+
+    assert runner.main(["initialize", str(job)]) == 0
+
+    config = runner.read_yaml(workspace / "autofl.yaml")
+    assert config["objective"]["job_key_metric_source"] == "arg:model_metric"
+
+
+def test_campaign_admission_allows_unknown_metric_with_core_default_max():
+    runner = _load_runner()
+    config = _campaign_config()
+    config["objective"].update(
+        {
+            "metric": "custom_quality",
+            "requested_metric": "custom_quality",
+            "optimization_metric": "custom_quality",
+            "mode": "max",
+            "mode_contract_source": "core_default",
+            "job_key_metric": "custom_quality",
+        }
+    )
+
+    assert runner.campaign_admission_errors(config) == []
+
+
+@pytest.mark.parametrize(
+    ("source", "requested_metric", "job_metric", "expected"),
+    [
+        ("literal", "accuracy", "accuracy", False),
+        ("arg:key_metric", "accuracy", "accuracy", False),
+        ("arg:model_metric", "accuracy", "accuracy", False),
+        ("core_default", "accuracy", "accuracy", False),
+        ("default", "accuracy", "accuracy", True),
+        (None, "accuracy", "accuracy", False),
+        ("literal", "accuracy", "val_accuracy", True),
+    ],
+)
+def test_requested_metric_identity_requires_resolved_job_metric(source, requested_metric, job_metric, expected):
+    runner = _load_runner()
+    objective = _campaign_config()["objective"]
+    objective.update(
+        {
+            "requested_metric": requested_metric,
+            "job_key_metric": job_metric,
+            "job_key_metric_source": source,
+        }
+    )
+
+    assert runner.requested_metric_differs_from_job(objective) is expected
+
+
+def test_requested_metric_identity_handles_incomplete_raw_objective():
+    runner = _load_runner()
+
+    assert runner.requested_metric_differs_from_job({}) is True
+    assert runner.requested_metric_differs_from_job({"requested_metric": "accuracy"}) is True
+    assert (
+        runner.assumed_job_key_metric_mode(
+            {"mode_contract_source": "job:key_metric_mode"},
+            {"mode": "min"},
+        )
+        == "max"
+    )
+
+
+def test_campaign_admission_requires_schema_for_metric_bridge():
+    runner = _load_runner()
+    config = _campaign_config()
+    config["objective"].update(
+        {
+            "metric": "accuracy",
+            "requested_metric": "accuracy",
+            "optimization_metric": "accuracy",
+            "job_key_metric": "val_accuracy",
+        }
+    )
+
+    errors = runner.campaign_admission_errors(config)
+    assert any("AUTOFL_METRIC_NOT_DECLARED" in error for error in errors)
+
+    schema = {"objective": {"requested_metric": "accuracy", "optimization_metric": "test_accuracy"}}
+    config = runner.apply_metric_contract(config, "accuracy", schema)
+    assert runner.campaign_admission_errors(config, schema) == []
+
+
+def test_lower_is_better_metric_bridge_requires_explicit_schema_mode():
+    runner = _load_runner()
+    config = _campaign_config()
+    config["objective"].update(
+        {
+            "metric": "val_loss",
+            "requested_metric": "val_loss",
+            "optimization_metric": "val_loss",
+            "metric_extraction_order": ["val_loss"],
+            "mode": "min",
+            "mode_contract_source": "job:key_metric_mode",
+            "job_key_metric": "accuracy",
+        }
+    )
+    schema = {"objective": {"requested_metric": "val_loss", "optimization_metric": "val_loss"}}
+
+    updated = runner.apply_metric_contract(config, "val_loss", schema)
+    errors = runner.campaign_admission_errors(updated, schema)
+
+    assert updated["objective"]["mode"] == "max"
+    assert updated["objective"]["mode_contract_source"] == "core_default"
+    assert any("AUTOFL_METRIC_DIRECTION_CONFLICT" in error for error in errors)
+    assert any("mutation_schema.yaml metric bridge" in error for error in errors)
+
+
+def test_candidate_metric_direction_drift_is_rejected():
+    runner = _load_runner()
+    current = _campaign_config()
+    candidate = deepcopy(current)
+    candidate["objective"]["mode"] = "min"
+    candidate["objective"]["mode_contract_source"] = "job:key_metric_mode"
+
+    with pytest.raises(ValueError, match="objective metric invariants: mode"):
+        runner.candidate_campaign_config(candidate, current, SimpleNamespace(metric="accuracy"), {})
+
+
+def test_candidate_job_metric_direction_drift_is_rejected_for_bridged_metric():
+    runner = _load_runner()
+    schema = {
+        "objective": {
+            "requested_metric": "val_loss",
+            "optimization_metric": "val_loss",
+            "mode": "min",
+        }
+    }
+    current = _campaign_config()
+    current["objective"].update(
+        {
+            "metric": "val_loss",
+            "requested_metric": "val_loss",
+            "optimization_metric": "val_loss",
+            "metric_extraction_order": ["val_loss"],
+            "mode": "min",
+            "mode_contract_source": "mutation_schema",
+            "job_key_metric": "accuracy",
+            "job_key_metric_mode": "max",
+            "job_key_metric_mode_source": "core_default",
+        }
+    )
+    candidate = deepcopy(current)
+    candidate["objective"].update(
+        {
+            "mode": "min",
+            "mode_contract_source": "job:key_metric_mode",
+            "job_key_metric_mode": "min",
+            "job_key_metric_mode_source": "job:key_metric_mode",
+        }
+    )
+
+    with pytest.raises(ValueError, match="objective metric invariants: job_key_metric_mode"):
+        runner.candidate_campaign_config(candidate, current, SimpleNamespace(metric="val_loss"), schema)
+
+
+def test_candidate_import_tolerates_job_metric_absent_from_legacy_campaign_contract():
+    runner = _load_runner()
+    current = _campaign_config()
+    current["objective"].pop("job_key_metric")
+    candidate = _campaign_config()
+
+    updated = runner.candidate_campaign_config(candidate, current, SimpleNamespace(metric="accuracy"), {})
+
+    assert "job_key_metric" not in updated["objective"]
+
+
+def test_candidate_import_tolerates_job_metric_mode_absent_from_legacy_campaign_contract():
+    runner = _load_runner()
+    current = _campaign_config()
+    current["objective"].pop("job_key_metric_mode")
+    current["objective"].pop("job_key_metric_mode_source")
+    candidate = _campaign_config()
+
+    updated = runner.candidate_campaign_config(candidate, current, SimpleNamespace(metric="accuracy"), {})
+
+    assert "job_key_metric_mode" not in updated["objective"]
+
+
+def test_candidate_import_backfills_missing_job_metric_mode_from_native_min_contract():
+    runner = _load_runner()
+    current = _campaign_config()
+    current["objective"].update(
+        {
+            "mode": "min",
+            "mode_contract_source": "job:key_metric_mode",
+            "job_key_metric": "accuracy",
+            "job_key_metric_source": "arg:model_metric",
+        }
+    )
+    current["objective"].pop("job_key_metric_mode")
+    current["objective"].pop("job_key_metric_mode_source")
+    unchanged_candidate = deepcopy(current)
+    unchanged_candidate["objective"].update(
+        {
+            "job_key_metric_mode": "min",
+            "job_key_metric_mode_source": "job:key_metric_mode",
+        }
+    )
+
+    updated = runner.candidate_campaign_config(unchanged_candidate, current, SimpleNamespace(metric="accuracy"), {})
+
+    assert "job_key_metric_mode" not in updated["objective"]
+
+    changed_candidate = deepcopy(unchanged_candidate)
+    changed_candidate["objective"].update(
+        {
+            "mode": "max",
+            "job_key_metric_mode": "max",
+        }
+    )
+    with pytest.raises(ValueError, match="objective metric invariants: mode, job_key_metric_mode"):
+        runner.candidate_campaign_config(changed_candidate, current, SimpleNamespace(metric="accuracy"), {})
+
+
+def test_candidate_import_rejects_job_metric_mode_drift_from_legacy_max_campaign():
+    runner = _load_runner()
+    schema = {
+        "objective": {
+            "requested_metric": "val_loss",
+            "optimization_metric": "val_loss",
+            "mode": "min",
+        }
+    }
+    current = _campaign_config()
+    current["objective"].update(
+        {
+            "metric": "val_loss",
+            "requested_metric": "val_loss",
+            "optimization_metric": "val_loss",
+            "metric_extraction_order": ["val_loss"],
+            "mode": "min",
+            "mode_contract_source": "mutation_schema",
+        }
+    )
+    current["objective"].pop("job_key_metric")
+    current["objective"].pop("job_key_metric_mode")
+    current["objective"].pop("job_key_metric_mode_source")
+    candidate = deepcopy(current)
+    candidate["objective"].update(
+        {
+            "job_key_metric": "accuracy",
+            "job_key_metric_mode": "min",
+            "job_key_metric_mode_source": "job:key_metric_mode",
+        }
+    )
+
+    with pytest.raises(ValueError, match="objective metric invariants: job_key_metric_mode"):
+        runner.candidate_campaign_config(candidate, current, SimpleNamespace(metric="val_loss"), schema)
+
+
+def test_legacy_campaign_without_mode_still_rejects_candidate_direction_change():
+    runner = _load_runner()
+    current = _campaign_config()
+    current["objective"].pop("mode")
+    candidate = _campaign_config()
+    candidate["objective"].update({"mode": "min", "mode_contract_source": "job:key_metric_mode"})
+
+    with pytest.raises(ValueError, match="objective metric invariants: mode") as exc:
+        runner.candidate_campaign_config(candidate, current, SimpleNamespace(metric="accuracy"), {})
+
+    assert "delete the campaign's .nvflare/autofl directory" in str(exc.value)
+
+
+def test_evaluate_resumes_legacy_max_campaign_without_job_key_metric(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
+    config_path = tmp_path / "autofl.yaml"
+    config = runner.read_yaml(config_path)
+    config["objective"].pop("job_key_metric")
+    runner.write_yaml(config_path, config)
+
+    assert runner.main(["prepare", str(job), "--name", "legacy", "--hypothesis", "legacy candidate"]) == 0
+    draft = tmp_path / ".nvflare/autofl/candidates/legacy/source/client.py"
+    draft.write_text("ALGORITHM = 'legacy-candidate'\n", encoding="utf-8")
+
+    assert runner.main(["evaluate", str(job)]) == 0
+
+
+def test_status_rejects_campaign_direction_artifact_disagreement(tmp_path, monkeypatch, capsys):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
+    metadata_path = tmp_path / ".nvflare/autofl/campaign.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    metadata["settings"]["mode"] = "min"
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+    assert runner.main(["status", str(job)]) == 2
+    assert "campaign metric direction disagrees" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("metric", "mode", "baseline_score", "candidate_score"),
+    [
+        pytest.param("accuracy", "max", 0.5, 0.8, id="accuracy-max"),
+        pytest.param("loss", "min", 0.5, 0.2, id="loss-min"),
+    ],
+)
+def test_cli_lifecycle_runs_agent_code_candidate_end_to_end(tmp_path, metric, mode, baseline_score, candidate_score):
     repo_root = Path(__file__).parents[3]
     runner_path = repo_root / "skills" / "nvflare-autofl" / "scripts" / "run_job_campaign.py"
     job = tmp_path / "job.py"
@@ -3499,7 +4307,7 @@ from pathlib import Path
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe as ImportedFedAvgRecipe
 from nvflare.recipe import SimEnv as ImportedSimEnv
 
-SCORE = 0.5
+SCORE = {baseline_score}
 
 class FakeFedAvgRecipe:
     def __init__(self, **kwargs):
@@ -3518,11 +4326,17 @@ def main():
     parser.add_argument("--num_rounds", type=int, default=1)
     parser.add_argument("--n_clients", type=int, default=2)
     args = parser.parse_args()
-    ImportedFedAvgRecipe(model=object(), num_rounds=args.num_rounds, min_clients=args.n_clients)
+    ImportedFedAvgRecipe(
+        model=object(),
+        num_rounds=args.num_rounds,
+        min_clients=args.n_clients,
+        key_metric={metric!r},
+        key_metric_mode={mode!r},
+    )
     ImportedSimEnv(num_clients=args.n_clients, workspace_root={str(simulation_root)!r})
     result = Path(os.environ["NVFLARE_SIMULATOR_WORKSPACE_ROOT"]) / args.name
     result.mkdir(parents=True, exist_ok=True)
-    result.joinpath("metrics_summary.json").write_text(json.dumps({{"accuracy": SCORE}}))
+    result.joinpath("metrics_summary.json").write_text(json.dumps({{{metric!r}: SCORE}}))
     print(f"Result can be found in : {{result.resolve()}}")
 
 if __name__ == "__main__":
@@ -3539,8 +4353,6 @@ if __name__ == "__main__":
             str(runner_path),
             "initialize",
             str(job),
-            "--metric",
-            "accuracy",
         ],
         cwd=tmp_path,
         env=env,
@@ -3566,7 +4378,10 @@ if __name__ == "__main__":
         text=True,
     )
     draft_job = tmp_path / ".nvflare" / "autofl" / "candidates" / "code_candidate" / "source" / "job.py"
-    draft_job.write_text(draft_job.read_text(encoding="utf-8").replace("SCORE = 0.5", "SCORE = 0.8"), encoding="utf-8")
+    draft_job.write_text(
+        draft_job.read_text(encoding="utf-8").replace(f"SCORE = {baseline_score}", f"SCORE = {candidate_score}"),
+        encoding="utf-8",
+    )
     subprocess.run(
         [sys.executable, str(runner_path), "evaluate", str(job)],
         cwd=tmp_path,
@@ -3578,8 +4393,16 @@ if __name__ == "__main__":
 
     runner = _load_runner()
     records = runner.load_results(tmp_path / "results.tsv")
-    assert [(record.status, record.score) for record in records] == [("baseline", 0.5), ("keep", 0.8)]
-    assert "SCORE = 0.8" in job.read_text(encoding="utf-8")
+    config = runner.read_yaml(tmp_path / "autofl.yaml")
+    state = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign_state.json").read_text(encoding="utf-8"))
+    assert [(record.status, record.score) for record in records] == [
+        ("baseline", baseline_score),
+        ("keep", candidate_score),
+    ]
+    assert f"SCORE = {candidate_score}" in job.read_text(encoding="utf-8")
+    assert config["objective"]["mode"] == mode
+    assert state["mode"] == mode
+    assert state["improvement"] == pytest.approx(abs(candidate_score - baseline_score))
     manifest = json.loads(
         tmp_path.joinpath(".nvflare/autofl/candidates/code_candidate/candidate_manifest.json").read_text(
             encoding="utf-8"
