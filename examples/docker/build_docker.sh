@@ -13,6 +13,8 @@ if [[ -z "${NVFL_BASE_VERSION:-}" ]]; then
     fi
 fi
 
+echo "Building NVFlare Docker images with NVFL_BASE_VERSION=$NVFL_BASE_VERSION"
+
 docker build \
     --build-arg NVFL_BASE_VERSION="$NVFL_BASE_VERSION" \
     -t nvflare-site:latest \
