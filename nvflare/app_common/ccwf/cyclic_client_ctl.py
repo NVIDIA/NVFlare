@@ -51,6 +51,10 @@ class CyclicClientController(ClientSideController):
             allow_busy_task=False,
         )
 
+    def requires_materialized_task_result(self, task_name: str) -> bool:
+        """Tell ClientAPIExecutor that the cyclic workflow consumes the concrete learn result."""
+        return task_name == self.learn_task_name
+
     @staticmethod
     def _set_task_headers(task_data: Shareable, num_rounds, current_round, client_order):
         task_data.set_header(AppConstants.NUM_ROUNDS, num_rounds)
@@ -91,7 +95,12 @@ class CyclicClientController(ClientSideController):
         data.set_header(FLContextKey.TASK_NAME, name)
 
         # execute the task
-        result = self.execute_learn_task(data, fl_ctx, abort_signal)
+        # The learn executor is nested inside a cyclic workflow task. Give it its own
+        # task context so local-consumer materialization applies without overwriting
+        # the workflow context retained by the controller.
+        learn_fl_ctx = fl_ctx.clone()
+        learn_fl_ctx.set_prop(FLContextKey.TASK_NAME, name, private=True, sticky=False)
+        result = self.execute_learn_task(data, learn_fl_ctx, abort_signal)
 
         rc = result.get_return_code(ReturnCode.OK)
         if rc != ReturnCode.OK:
