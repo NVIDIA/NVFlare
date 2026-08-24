@@ -209,7 +209,7 @@ def _set_minimization_contract(tmp_path):
     )
     state_path = tmp_path / ".nvflare/autofl/campaign_state.json"
     state = json.loads(state_path.read_text(encoding="utf-8"))
-    state.update({"mode": "min", "baseline_score": 1.0, "best_score": 0.6, "improvement": 0.4})
+    state.update({"mode": "min", "baseline_score": 1.0, "improvement": 0.4})
     state_path.write_text(json.dumps(state), encoding="utf-8")
 
 
@@ -1523,7 +1523,6 @@ def test_report_adjusts_literature_improvement_for_minimization(tmp_path, monkey
     assert literature["incumbent_score"] == pytest.approx(1.0)
     assert literature["delta_from_incumbent"] == pytest.approx(-0.4)
     assert literature["improvement_from_incumbent"] == pytest.approx(0.4)
-    assert "objective improvement `+0.400000`" in report
     assert (
         "Strongest literature-linked improvement: `loss_review` led to `lower_loss` with objective improvement "
         "`+0.400000` versus its incumbent."
@@ -1536,9 +1535,9 @@ def test_report_omits_strongest_literature_headline_without_incumbent(tmp_path, 
     _write_rows(
         tmp_path,
         [
+            _row("baseline", "baseline"),
             _row("literature", "early_review", literature_event_id="lit-early"),
             _row("keep", "early_candidate", "0.7", literature_event_id="lit-early"),
-            _row("baseline", "baseline", "0.5"),
         ],
     )
 
