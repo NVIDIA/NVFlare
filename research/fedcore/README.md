@@ -6,6 +6,8 @@ public, end-to-end NVIDIA FLARE workflow using Qwen3-VL and generated image-plus
 
 The accompanying paper is available on arXiv: [FedCoRe: Target-Adaptive Completion for Missing Modalities in Healthcare Federated Learning](https://arxiv.org/abs/2608.18311).
 
+![Complete-modality evaluation assumptions contrasted with uneven modality availability across federated clients.](figures/fedcore_modality_gap.png)
+
 ## Objective
 
 Demonstrate the mechanics of federated cross-modal completion with public model weights and generated data: clients
