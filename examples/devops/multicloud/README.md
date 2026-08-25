@@ -82,7 +82,10 @@ The server cloud means the cloud where the FLARE server participant is
 deployed. For GCP, the server IP is a regional compute address; for AWS, it is
 an Elastic IP; for Azure, it is a Public IP in the configured resource group.
 When AWS is the server cloud, the deployer also needs permission to describe
-the EKS cluster and public subnets. When Azure is the server cloud,
+the EKS cluster and public subnets, plus read access to cluster-scoped
+PersistentVolumes (`kubectl get pv`) on the server cluster: on repeated `up`
+runs the tool reads the bound workspace volume's Availability Zone so the NLB
+subnet, server pod, and existing EBS volume stay co-located. When Azure is the server cloud,
 `clouds.azure.resource_group` and `clouds.azure.location` must identify where
 the Public IP is managed.
 

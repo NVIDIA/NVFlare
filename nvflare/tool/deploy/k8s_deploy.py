@@ -335,6 +335,7 @@ def _write_server_helm_chart(
         "parentPort": parent_port,
         "resources": parent.get("resources") or {"requests": {"cpu": "2", "memory": "8Gi"}},
         "securityContext": parent.get("pod_security_context") or {},
+        "nodeSelector": {},
         "hostPortEnabled": False,
         "tcpConfigMapEnabled": False,
         "service": {"type": "ClusterIP", "loadBalancerIP": None, "annotations": {}},

@@ -18,7 +18,9 @@ metadata:
 
 ## Purpose
 
-Improve a measured objective for an existing NVFLARE job through isolated, reproducible candidate changes while the campaign runner preserves the live best source, comparison budget, metric semantics, state, and evidence.
+Improve a measured objective for an existing NVFLARE job through isolated,
+reproducible candidate changes while the campaign runner preserves the live
+best source, comparison budget, metric semantics, state, and evidence.
 
 ## Available Scripts
 

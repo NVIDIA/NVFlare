@@ -396,7 +396,7 @@ def _dry_run_stdout(cmd: list[str]) -> str:
     if cmd[:3] == ["aws", "eks", "describe-cluster"]:
         return "<vpc-id>\n"
     if cmd[:3] == ["aws", "ec2", "describe-subnets"]:
-        return "<subnet-id>\n"
+        return json.dumps([{"SubnetId": "<subnet-id>", "AvailabilityZone": "<availability-zone>"}]) + "\n"
     if cmd[:4] == ["az", "network", "public-ip", "show"]:
         return "<server-ip>\n"
     return ""

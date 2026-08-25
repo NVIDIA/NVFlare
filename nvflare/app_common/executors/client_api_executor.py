@@ -396,10 +396,21 @@ class ClientAPIExecutor(Executor):
     @staticmethod
     def _requires_materialized_result(task_name: str, fl_ctx: FLContext) -> bool:
         """Whether the active ClientRunner pipeline consumes the concrete Client API result."""
-        if fl_ctx.get_prop(FLContextKey.TASK_NAME) != task_name:
-            return False
-
         runner = fl_ctx.get_prop(FLContextKey.RUNNER)
+        active_task_name = fl_ctx.get_prop(FLContextKey.TASK_NAME)
+        if active_task_name != task_name:
+            # A client-side workflow controller can call its learn executor directly.
+            # Ask the executor for the outer active task whether it consumes the nested
+            # result locally; unrelated nested workflows keep pass-through behavior.
+            find_executor = getattr(runner, "find_executor", None)
+            active_executor = (
+                find_executor(active_task_name)
+                if callable(find_executor) and isinstance(active_task_name, str)
+                else None
+            )
+            requirement = getattr(active_executor, "requires_materialized_task_result", None)
+            return callable(requirement) and requirement(task_name) is True
+
         config_filters = getattr(runner, "task_result_filters", None)
         if isinstance(config_filters, dict) and get_filters(
             Scope.TASK_RESULT_FILTERS_NAME, fl_ctx, config_filters, task_name, FilterKey.OUT

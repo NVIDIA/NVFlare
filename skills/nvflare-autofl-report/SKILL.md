@@ -17,9 +17,9 @@ metadata:
 
 ## Purpose
 
-Turn the recorded evidence from a stopped NVFLARE Auto-FL campaign into a
-reproducible Markdown report, machine-readable JSON summary, and refreshed
-progress plot without changing the campaign or its results.
+Turn the recorded evidence from a stopped NVFLARE Auto-FL campaign into a reproducible
+Markdown report, machine-readable JSON summary, and refreshed progress plot without
+changing the campaign or its results.
 
 ## Use When
 

@@ -1,4 +1,4 @@
-# Skill Benchmark: nvflare-autofl
+# Skill Benchmark: nvflare-autofl-report
 
 > ✅ **Overall verdict: PASS — Recommended for publication**
 
@@ -8,12 +8,12 @@ Recommended for publication based on the completed evaluation evidence in this r
 
 ## Evaluation Metadata
 
-- Skill: `nvflare-autofl`
+- Skill: `nvflare-autofl-report`
 - Evaluation date: 2026-08-25
 - Evaluator version: `1.3.2`
 - Agents: Claude Code (`aws/anthropic/bedrock-claude-opus-4-8`), Codex (`openai/openai/gpt-5.5`)
-- Tasks: 7 evaluation tasks (7 positive)
-- Dataset digest: `sha256:47bb5f4f9de5f1a56ecb009c45deee42349c7c12a196a16f05072e36e82b36ec` (skill-evaluator-dataset-snapshot/1)
+- Tasks: 4 evaluation tasks (4 positive)
+- Dataset digest: `sha256:c671db2ce45dc278f5a5da89828e94521cd5fc52f73156f263302bb4d43c6e43` (skill-evaluator-dataset-snapshot/1)
 - Attempts per task: 1
 - Environment: `local`
 - Tier 3 evidence: required for publication
@@ -45,12 +45,12 @@ The three-tier evaluation checks whether the skill:
 
 | Measure | Claude Code (Baseline → Skill Uplift) | Codex (Baseline → Skill Uplift) |
 |---|---:|---:|
-| Overall | 61% → 87% (+26 points) | 52% → 80% (+28 points) |
-| Security | 100% → 100% (±0 points) | 57% → 100% (+43 points) |
-| Correctness | 66% → 100% (+34 points) | 71% → 89% (+17 points) |
-| Discoverability | 49% → 81% (+33 points) | 42% → 77% (+35 points) |
-| Effectiveness | 54% → 74% (+21 points) | 41% → 56% (+15 points) |
-| Efficiency | 39% → 80% (+41 points) | 46% → 78% (+32 points) |
+| Overall | 59% → 88% (+29 points) | 55% → 76% (+21 points) |
+| Security | 100% → 100% (±0 points) | 75% → 100% (+25 points) |
+| Correctness | 40% → 100% (+60 points) | 70% → 65% (-5 points) |
+| Discoverability | 47% → 86% (+39 points) | 38% → 72% (+34 points) |
+| Effectiveness | 62% → 66% (+4 points) | 50% → 61% (+11 points) |
+| Efficiency | 48% → 88% (+40 points) | 43% → 82% (+39 points) |
 
 **How to read this table:** baseline is the same task attempted without the target skill. Uplift is `skill score - baseline score`, shown in percentage points.
 
@@ -60,17 +60,17 @@ Example: `47% → 92% (+45 points)` means the skill-assisted run scored 92%, 45 
 
 | Tier | Purpose | Status | Evidence |
 |---|---|---|---|
-| Tier 1 | Static validation | **PASSED** | 1 validator(s); 0 finding(s) |
+| Tier 1 | Static validation | **PASSED WITH OBSERVATIONS** | 1 validator(s); 2 finding(s) |
 | Tier 2 | Semantic deduplication | **NOT RUN** | No result was recorded |
-| Tier 3 | Live agent evaluation | **PASS** | 2 agent(s); 7 task(s) |
+| Tier 3 | Live agent evaluation | **PASS** | 2 agent(s); 4 task(s) |
 
 ## Findings and Observations
 
 <details>
 <summary>Show detailed findings and successful checks</summary>
 
-- Schema & Repository Governance: Found skill manifest: SKILL.md
-- AGENT_EVAL: Tier 3 evaluation complete: verdict PASS; best agent claude-code
+- **MEDIUM** SCHEMA/body_recommended_section: Missing recommended section: '## Instructions' (`skills/nvflare-autofl-report/SKILL.md`)
+- **MEDIUM** SCHEMA/body_recommended_section: Missing recommended section: '## Examples' (`skills/nvflare-autofl-report/SKILL.md`)
 
 </details>
 
