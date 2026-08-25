@@ -37,14 +37,17 @@ fi
 
 init_pipenv() {
     echo "initializing pip environment"
-    pipenv install -e .[dev]
+    rm -f Pipfile Pipfile.lock
+    # The environment is disposable and its lockfile is never reused, so skip the expensive lock step.
+    export PIPENV_SKIP_LOCK=1
+    pipenv install -e ".[dev]"
     export PYTHONPATH=$PWD
 }
 
 remove_pipenv() {
     echo "removing pip environment"
     pipenv --rm
-    rm Pipfile Pipfile.lock
+    rm -f Pipfile Pipfile.lock
 }
 
 add_dns_entries() {

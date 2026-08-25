@@ -45,14 +45,16 @@ init_pipenv() {
     rm -f Pipfile Pipfile.lock
     export PIPENV_INSTALL_TIMEOUT=9999
     export PIPENV_TIMEOUT=9999
-    pipenv install -e .[dev]
+    # The environment is disposable and its lockfile is never reused, so skip the expensive lock step.
+    export PIPENV_SKIP_LOCK=1
+    pipenv install -e ".[dev]"
     export PYTHONPATH=$PWD
 }
 
 remove_pipenv() {
     echo "removing pip environment"
     pipenv --rm
-    rm Pipfile Pipfile.lock
+    rm -f Pipfile Pipfile.lock
 }
 
 integration_test_tf() {
