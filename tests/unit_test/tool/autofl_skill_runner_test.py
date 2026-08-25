@@ -3826,6 +3826,14 @@ def test_import_job_config_forwards_job_args_without_direction_plumbing(tmp_path
             },
             "objective.metric",
         ),
+        (
+            {
+                "import": {"support": {"status": "supported"}},
+                "budget": {"fixed_training_budget": {"num_rounds": 1}},
+                "unresolved": [{"field": "objective.job_key_metric", "reason": "dynamic job metric"}],
+            },
+            "objective.job_key_metric",
+        ),
     ],
 )
 def test_campaign_admission_rejects_unresolved_safety_contract(config, expected):
@@ -3854,6 +3862,117 @@ def test_initialize_rejects_implicit_max_loss_without_writing_campaign_files(tmp
 
     assert runner.main(["initialize", str(job)]) == 2
     assert "AUTOFL_METRIC_DIRECTION_CONFLICT" in capsys.readouterr().err
+    assert not tmp_path.joinpath(".nvflare").exists()
+    assert not tmp_path.joinpath("autofl.yaml").exists()
+    assert not tmp_path.joinpath("autofl_runs").exists()
+
+
+def test_initialize_rejects_splatted_job_contract_without_writing_campaign_files(tmp_path, capsys):
+    tmp_path.joinpath("client.py").write_text("print('train')\n", encoding="utf-8")
+    job = tmp_path / "job.py"
+    job.write_text(
+        """
+import argparse
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--key_metric", default="val_loss")
+args = parser.parse_args()
+tuning = {"key_metric": args.key_metric, "key_metric_mode": "min"}
+recipe = FedAvgRecipe(
+    name="splatted-contract", min_clients=2, num_rounds=1, train_script="client.py", **tuning
+)
+recipe.execute(SimEnv(num_clients=2))
+""".lstrip(),
+        encoding="utf-8",
+    )
+    runner = _load_runner()
+
+    assert runner.main(["initialize", str(job)]) == 2
+
+    error = capsys.readouterr().err
+    assert "objective.metric" in error
+    assert "objective.mode" in error
+    assert "job call passes **kwargs" in error
+    assert not tmp_path.joinpath(".nvflare").exists()
+    assert not tmp_path.joinpath("autofl.yaml").exists()
+    assert not tmp_path.joinpath("autofl_runs").exists()
+
+
+@pytest.mark.parametrize(
+    "sim_env_setup",
+    [
+        'sim_args = {"clients": ["site-1", "site-2"]}\nrecipe.execute(SimEnv(num_clients=0, **sim_args))',
+        'def get_clients():\n    return ["site-1", "site-2"]\n\n\nrecipe.execute(SimEnv(clients=get_clients()))',
+    ],
+)
+def test_initialize_rejects_unresolved_sim_env_clients_without_writing_campaign_files(tmp_path, capsys, sim_env_setup):
+    tmp_path.joinpath("client.py").write_text("print('train')\n", encoding="utf-8")
+    job = tmp_path / "job.py"
+    job.write_text(
+        f"""
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv
+
+
+recipe = FedAvgRecipe(
+    name="sim-clients", min_clients=2, num_rounds=1, train_script="client.py", key_metric_mode="max"
+)
+{sim_env_setup}
+""".lstrip(),
+        encoding="utf-8",
+    )
+    runner = _load_runner()
+
+    assert runner.main(["initialize", str(job)]) == 2
+
+    error = capsys.readouterr().err
+    assert "budget.fixed_training_budget.num_clients" in error
+    assert not tmp_path.joinpath(".nvflare").exists()
+    assert not tmp_path.joinpath("autofl.yaml").exists()
+    assert not tmp_path.joinpath("autofl_runs").exists()
+
+
+def test_initialize_rejects_splatted_metric_even_with_declared_bridge_and_explicit_direction(tmp_path, capsys):
+    tmp_path.joinpath("train.py").write_text("print('train')\n", encoding="utf-8")
+    job = tmp_path / "job.py"
+    job.write_text(
+        """
+from nvflare.app_common.executors.script_runner import ScriptRunner
+from nvflare.job_config.base_fed_job import BaseFedJob
+
+
+metric = {"key_metric": "accuracy"}
+job = BaseFedJob(
+    name="splatted-bridge",
+    min_clients=2,
+    key_metric_mode="max",
+    model_selector=None,
+    **metric,
+)
+runner = ScriptRunner(script="train.py")
+""".lstrip(),
+        encoding="utf-8",
+    )
+    tmp_path.joinpath("mutation_schema.yaml").write_text(
+        """
+objective:
+  requested_metric: f1
+  optimization_metric: f1
+  mode: max
+""".lstrip(),
+        encoding="utf-8",
+    )
+    runner = _load_runner()
+
+    assert runner.main(["initialize", str(job), "--metric", "f1"]) == 2
+
+    error = capsys.readouterr().err
+    assert "objective.metric" in error
+    assert "objective.mode" in error
+    assert "job call passes **kwargs" in error
     assert not tmp_path.joinpath(".nvflare").exists()
     assert not tmp_path.joinpath("autofl.yaml").exists()
     assert not tmp_path.joinpath("autofl_runs").exists()
@@ -3911,7 +4030,7 @@ def test_initialize_rejects_explicit_metric_matching_unresolved_job_metric_place
     assert not workspace.joinpath(".nvflare").exists()
 
 
-def test_initialize_admits_explicit_metric_bridge_for_unresolved_job_metric(tmp_path, monkeypatch):
+def test_initialize_rejects_explicit_metric_bridge_for_unresolved_job_metric(tmp_path, capsys):
     runner = _load_runner()
     workspace = tmp_path / "explicit-bridged"
     job = _write_dynamic_metric_job(workspace)
@@ -3924,13 +4043,11 @@ objective:
 """.lstrip(),
         encoding="utf-8",
     )
-    _mock_successful_baseline(runner, monkeypatch)
 
-    assert runner.main(["initialize", str(job), "--metric", "accuracy"]) == 0
+    assert runner.main(["initialize", str(job), "--metric", "accuracy"]) == 2
 
-    config = runner.read_yaml(workspace / "autofl.yaml")
-    assert config["objective"]["mode"] == "max"
-    assert config["objective"]["mode_contract_source"] == "mutation_schema"
+    assert "objective.job_key_metric" in capsys.readouterr().err
+    assert not workspace.joinpath(".nvflare").exists()
 
 
 def test_initialize_rejects_unresolved_job_metric_without_user_metric(tmp_path, capsys):
