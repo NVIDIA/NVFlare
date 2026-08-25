@@ -20,16 +20,26 @@ from pathlib import Path
 import pytest
 import yaml
 
-from nvflare.app_common.widgets.intime_model_selector import _looks_lower_is_better
+from nvflare.app_common.widgets import intime_model_selector as ims
+
+IMPORTER_MODULE_NAME = "nvflare_autofl_skill_job_importer"
+_MISSING_MODULE = object()
 
 
 def _load_importer():
     repo_root = Path(__file__).parents[3]
     importer_path = repo_root / "skills" / "nvflare-autofl" / "scripts" / "job_importer.py"
-    spec = importlib.util.spec_from_file_location("nvflare_autofl_skill_job_importer", importer_path)
+    spec = importlib.util.spec_from_file_location(IMPORTER_MODULE_NAME, importer_path)
     module = importlib.util.module_from_spec(spec)
+    previous_module = sys.modules.get(spec.name, _MISSING_MODULE)
     sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        if previous_module is _MISSING_MODULE:
+            sys.modules.pop(spec.name, None)
+        else:
+            sys.modules[spec.name] = previous_module
     return module
 
 
@@ -38,6 +48,45 @@ AUTOFL_CONFIG_SCHEMA_VERSION = job_importer.AUTOFL_CONFIG_SCHEMA_VERSION
 DeterministicJobImporter = job_importer.DeterministicJobImporter
 dump_autofl_yaml = job_importer.dump_autofl_yaml
 import_job_to_autofl_config = job_importer.import_job_to_autofl_config
+
+
+def test_load_importer_removes_temporary_runner_module(monkeypatch):
+    monkeypatch.delitem(sys.modules, IMPORTER_MODULE_NAME, raising=False)
+
+    _load_importer()
+
+    assert IMPORTER_MODULE_NAME not in sys.modules
+
+
+def test_load_importer_restores_cached_runner_module(monkeypatch):
+    cached_module = object()
+    monkeypatch.setitem(sys.modules, IMPORTER_MODULE_NAME, cached_module)
+
+    loaded_importer = _load_importer()
+
+    assert loaded_importer is not cached_module
+    assert sys.modules[IMPORTER_MODULE_NAME] is cached_module
+
+
+def test_load_importer_restores_cached_runner_module_when_execution_fails(monkeypatch):
+    cached_module = object()
+    original_spec_from_file_location = importlib.util.spec_from_file_location
+
+    def failing_spec_from_file_location(*args, **kwargs):
+        spec = original_spec_from_file_location(*args, **kwargs)
+
+        def fail_execution(_module):
+            raise RuntimeError("importer execution failed")
+
+        spec.loader.exec_module = fail_execution
+        return spec
+
+    monkeypatch.setitem(sys.modules, IMPORTER_MODULE_NAME, cached_module)
+    monkeypatch.setattr(importlib.util, "spec_from_file_location", failing_spec_from_file_location)
+
+    with pytest.raises(RuntimeError, match="importer execution failed"):
+        _load_importer()
+    assert sys.modules[IMPORTER_MODULE_NAME] is cached_module
 
 
 def _objective(
@@ -1568,18 +1617,70 @@ def main():
         "energy",
     ],
 )
-def test_lower_is_better_metric_heuristic_matches_nvflare_core(metric, monkeypatch):
-    assert job_importer.likely_lower_is_better_metric(metric) is _looks_lower_is_better(metric)
+def test_lower_is_better_metric_heuristic_matches_nvflare_core(metric):
+    assert job_importer._fallback_looks_lower_is_better(metric) is ims._looks_lower_is_better(metric)
+
+
+def test_lower_is_better_metric_fallback_matches_core_across_token_boundaries():
+    metrics = {"mse2", "2mse", "neg_mse2", "negative_mse2"}
+    for token in ims._LOWER_IS_BETTER_TOKEN_HINTS:
+        metrics.update(
+            {
+                token,
+                f"val_{token}",
+                f"val-{token}",
+                f"{token}.score",
+                f"{token}2",
+                f"2{token}",
+                f"{token}_2",
+                f"2_{token}",
+                f"neg_{token}",
+                f"negative_{token}",
+            }
+        )
+
+    for metric in metrics:
+        assert job_importer._fallback_looks_lower_is_better(metric) is ims._looks_lower_is_better(metric), metric
+
+
+def test_core_lower_is_better_metric_heuristic_is_resolved_and_cached(monkeypatch):
+    calls = []
+
+    def core_heuristic(metric):
+        calls.append(metric)
+        return False
+
+    monkeypatch.setattr(ims, "_looks_lower_is_better", core_heuristic)
+    monkeypatch.setattr(job_importer, "_core_looks_lower_is_better", job_importer._UNRESOLVED)
+
+    assert job_importer.likely_lower_is_better_metric("val_loss") is False
+    assert job_importer._core_looks_lower_is_better is core_heuristic
+    assert job_importer.likely_lower_is_better_metric("val_loss") is False
+    assert calls == ["val_loss", "val_loss"]
+
+
+@pytest.mark.parametrize("metric", ["dice", "neg_loss"])
+def test_lower_is_better_dispatcher_uses_fallback_for_false_metrics(monkeypatch, metric):
     monkeypatch.setattr(job_importer, "_core_looks_lower_is_better", None)
-    assert job_importer.likely_lower_is_better_metric(metric) is _looks_lower_is_better(metric)
+
+    assert job_importer.likely_lower_is_better_metric(metric) is False
 
 
-def test_importer_loads_and_imports_job_without_nvflare_in_agent_environment(tmp_path, monkeypatch):
+def test_fallback_lower_is_better_metric_hints_match_nvflare_core():
+    assert set(job_importer.LOWER_IS_BETTER_METRIC_SUBSTRINGS) == set(ims._LOWER_IS_BETTER_SUBSTRING_HINTS)
+    assert job_importer.LOWER_IS_BETTER_METRIC_TOKENS == ims._LOWER_IS_BETTER_TOKEN_HINTS
+    assert job_importer.ALREADY_NEGATED_METRIC_TOKEN == ims._ALREADY_NEGATED_TOKEN
+
+
+@pytest.mark.parametrize("import_error", [ImportError, RuntimeError])
+def test_importer_loads_and_imports_job_without_nvflare_in_agent_environment(
+    tmp_path, monkeypatch, caplog, import_error
+):
     original_import = builtins.__import__
 
     def isolated_import(name, globals=None, locals=None, fromlist=(), level=0):
         if name == "nvflare.app_common.widgets.intime_model_selector":
-            raise ImportError("NVFlare is unavailable in the agent environment")
+            raise import_error("NVFlare is unavailable in the agent environment")
         return original_import(name, globals, locals, fromlist, level)
 
     monkeypatch.setattr(builtins, "__import__", isolated_import)
@@ -1588,8 +1689,50 @@ def test_importer_loads_and_imports_job_without_nvflare_in_agent_environment(tmp
 
     config = isolated_importer.import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
 
-    assert isolated_importer._core_looks_lower_is_better is None
+    assert isolated_importer._core_looks_lower_is_better is isolated_importer._UNRESOLVED
+    assert caplog.records == []
+    with caplog.at_level("WARNING", logger=isolated_importer.__name__):
+        assert isolated_importer.likely_lower_is_better_metric("val_loss") is True
+        assert isolated_importer.likely_lower_is_better_metric("val_loss") is True
+    assert isolated_importer._core_looks_lower_is_better is isolated_importer._UNRESOLVED
+    assert len(caplog.records) == 1
+    assert f"{import_error.__name__}: NVFlare is unavailable in the agent environment" in caplog.text
+    assert "retrying on the next check" in caplog.text
     assert config["import"]["support"]["status"] == "supported"
+
+
+def test_core_heuristic_resolution_retries_after_transient_import_failure(monkeypatch, caplog):
+    original_import = builtins.__import__
+    import_attempts = 0
+    core_calls = []
+
+    def core_heuristic(metric):
+        core_calls.append(metric)
+        return False
+
+    def flaky_import(name, globals=None, locals=None, fromlist=(), level=0):
+        nonlocal import_attempts
+        if name == "nvflare.app_common.widgets.intime_model_selector":
+            import_attempts += 1
+            if import_attempts == 1:
+                raise RuntimeError("transient NVFlare initialization failure")
+        return original_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(ims, "_looks_lower_is_better", core_heuristic)
+    monkeypatch.setattr(builtins, "__import__", flaky_import)
+    isolated_importer = _load_importer()
+
+    with caplog.at_level("WARNING", logger=isolated_importer.__name__):
+        assert isolated_importer.likely_lower_is_better_metric("val_loss") is True
+    assert isolated_importer._core_looks_lower_is_better is isolated_importer._UNRESOLVED
+    assert isolated_importer.likely_lower_is_better_metric("val_loss") is False
+    assert isolated_importer._core_looks_lower_is_better is core_heuristic
+    assert len(caplog.records) == 1
+    assert "RuntimeError: transient NVFlare initialization failure" in caplog.text
+    assert isolated_importer.likely_lower_is_better_metric("val_loss") is False
+    assert import_attempts == 2
+    assert len(caplog.records) == 1
+    assert core_calls == ["val_loss", "val_loss"]
 
 
 def test_train_script_outside_workspace_is_not_admitted_to_trust_contract(tmp_path):

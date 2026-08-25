@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import ast
 import hashlib
+import logging
 import os
 import re
 from dataclasses import dataclass
@@ -40,10 +41,11 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 import yaml
 
-try:
-    from nvflare.app_common.widgets.intime_model_selector import _looks_lower_is_better as _core_looks_lower_is_better
-except ImportError:
-    _core_looks_lower_is_better = None
+logger = logging.getLogger(__name__)
+
+_UNRESOLVED = object()
+_core_looks_lower_is_better = _UNRESOLVED
+_last_core_heuristic_warning = None
 
 AUTOFL_CONFIG_SCHEMA_VERSION = "nvflare.autofl.config.v1"
 IMPORTER_VERSION = "nvflare-autofl-job-importer/v1"
@@ -70,6 +72,7 @@ LOWER_IS_BETTER_METRIC_TOKENS = {
     "rmse",
     "wer",
 }
+ALREADY_NEGATED_METRIC_TOKEN = "neg"
 
 SUPPORTED_ENV_NAMES = {"PocEnv", "ProdEnv", "SimEnv"}
 NON_OPTIMIZATION_RECIPE_NAMES = {"FedEvalRecipe", "FedStatsRecipe", "NumpyCrossSiteEvalRecipe"}
@@ -1398,18 +1401,42 @@ def _resolve_stop_condition_mode(
     return None, None
 
 
+def _resolve_core_heuristic():
+    """Load and cache the core heuristic, retrying after transient import failures."""
+
+    global _core_looks_lower_is_better, _last_core_heuristic_warning
+
+    if _core_looks_lower_is_better is _UNRESOLVED:
+        try:
+            from nvflare.app_common.widgets.intime_model_selector import _looks_lower_is_better
+        except Exception as e:
+            warning = (type(e).__name__, str(e))
+            if warning != _last_core_heuristic_warning:
+                logger.warning(
+                    "Unable to load the NVFlare core metric heuristic (%s: %s); using the local fallback and "
+                    "retrying on the next check",
+                    *warning,
+                )
+                _last_core_heuristic_warning = warning
+            return None
+        else:
+            _core_looks_lower_is_better = _looks_lower_is_better
+    return _core_looks_lower_is_better
+
+
 def likely_lower_is_better_metric(metric: str) -> bool:
     """Return whether a metric name is an obvious lower-is-better objective."""
 
-    if _core_looks_lower_is_better is not None:
-        return _core_looks_lower_is_better(metric)
+    core_heuristic = _resolve_core_heuristic()
+    if core_heuristic is not None:
+        return core_heuristic(metric)
     return _fallback_looks_lower_is_better(metric)
 
 
 def _fallback_looks_lower_is_better(metric: str) -> bool:
     name = metric.lower()
     tokens = re.split(r"[^a-z0-9]+", name)
-    if "neg" in tokens:
+    if ALREADY_NEGATED_METRIC_TOKEN in tokens:
         return False
     if any(hint in name for hint in LOWER_IS_BETTER_METRIC_SUBSTRINGS):
         return True
