@@ -141,6 +141,10 @@ would be missed. Instead, `ABOUT_TO_END_RUN` only sets the stop signal.
 has drained and EOF has been sent, reducing the chance that later shutdown logic
 aborts the stream before the final bytes reach the server.
 
+On the server, `JobLogReceiver` participates in `CHECK_END_RUN_READINESS` and
+holds job shutdown while log streams for that job remain active. This ensures
+the completed logs are persisted before the server archives its job workspace.
+
 ## 9. Drain Behavior
 
 When the streamer sees a stop condition and no new data is immediately
