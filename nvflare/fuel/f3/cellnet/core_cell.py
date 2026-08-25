@@ -288,6 +288,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         bulk_check_interval=0.5,
         bulk_process_interval=0.5,
         max_bulk_size=100,
+        internal_listener_host: str = None,
     ):
         """
 
@@ -300,6 +301,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             create_internal_listener: whether to create an internal listener for child cells
             parent_url: url for connecting to parent cell
             parent_resources: extra resources for making connection to parent
+            internal_listener_host: host for the internal listener to advertise and bind to
 
         FQCN is the names of all ancestor, concatenated with dots.
 
@@ -407,7 +409,10 @@ class CoreCell(MessageReceiver, EndpointMonitor):
 
         self.endpoint = ep
         self.connector_manager = ConnectorManager(
-            communicator=self.communicator, secure=secure, comm_configurator=comm_configurator
+            communicator=self.communicator,
+            secure=secure,
+            comm_configurator=comm_configurator,
+            internal_listener_host=internal_listener_host,
         )
 
         self.communicator.register_message_receiver(app_id=self.APP_ID, receiver=self)

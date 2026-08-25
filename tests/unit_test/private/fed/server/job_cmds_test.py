@@ -36,6 +36,7 @@ from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.lighter.tool_consts import NVFLARE_SUBMITTER_CRT_FILE
+from nvflare.private.admin_defs import MsgHeader, error_reply, ok_reply
 from nvflare.private.fed.server import cmd_utils as cmd_utils_module
 from nvflare.private.fed.server import job_cmds as job_cmds_module
 from nvflare.private.fed.server.job_cmds import (
@@ -43,6 +44,7 @@ from nvflare.private.fed.server.job_cmds import (
     _create_get_job_log_cmd_parser,
     _create_list_job_cmd_parser,
 )
+from nvflare.private.fed.server.message_send import ClientReply
 
 TEST_CASES = [
     (
@@ -1652,7 +1654,7 @@ def test_configure_job_log_all_targets_server_and_clients(tmp_path, monkeypatch)
     engine.job_def_manager.get_job.return_value = _FakeListedJob({JobMetaKey.STATUS.value: RunStatus.RUNNING.value})
     conn = _MockConnection(app_ctx=engine)
     module = JobCommandModule()
-    client_replies = [object()]
+    client_replies = [ClientReply(client_token="token-a", client_name="site-a", req=None, reply=ok_reply())]
     monkeypatch.setattr(module, "send_request_to_clients", lambda conn, message: client_replies)
     processed = []
     monkeypatch.setattr(module, "process_replies_to_table", lambda conn, replies: processed.append(replies))
@@ -1662,6 +1664,7 @@ def test_configure_job_log_all_targets_server_and_clients(tmp_path, monkeypatch)
     engine.configure_job_log.assert_called_once_with("job-1", "DEBUG")
     assert processed == [client_replies]
     assert any("successfully configured server job job-1 log" in msg for msg, _meta in conn.strings)
+    assert not conn.errors
 
 
 def test_configure_job_log_specific_client_target_is_honored(tmp_path, monkeypatch):
@@ -1689,7 +1692,7 @@ def test_configure_job_log_specific_client_target_is_honored(tmp_path, monkeypat
     def _send_request_to_clients(conn, message):
         assert conn.get_prop(JobCommandModule.TARGET_CLIENT_TOKENS) == ["token-a"]
         assert conn.get_prop(JobCommandModule.TARGET_CLIENT_NAMES) == ["site-a"]
-        return [object()]
+        return [ClientReply(client_token="token-a", client_name="site-a", req=None, reply=ok_reply())]
 
     processed = []
     monkeypatch.setattr(module, "send_request_to_clients", _send_request_to_clients)
@@ -1699,6 +1702,48 @@ def test_configure_job_log_specific_client_target_is_honored(tmp_path, monkeypat
 
     engine.configure_job_log.assert_not_called()
     assert len(processed) == 1
+    assert not conn.errors
+
+
+def _reply_with_return_code(return_code, body):
+    reply = ok_reply(body=body)
+    reply.set_header(MsgHeader.RETURN_CODE, return_code)
+    return reply
+
+
+@pytest.mark.parametrize(
+    ("target_clients", "client_replies"),
+    [
+        (
+            {"token-a": "site-a"},
+            [ClientReply("token-a", "site-a", None, error_reply("log configuration refused"))],
+        ),
+        (
+            {"token-a": "site-a"},
+            [ClientReply("token-a", "site-a", None, _reply_with_return_code("timeout", "request timed out"))],
+        ),
+        ({"token-a": "site-a"}, [ClientReply("token-a", "site-a", None, None)]),
+        ({"token-a": "site-a"}, []),
+        (
+            {"token-a": "site-a", "token-b": "site-b"},
+            [ClientReply("token-a", "site-a", None, ok_reply())],
+        ),
+    ],
+    ids=["rejected", "timeout", "empty-reply", "no-responses", "partial-responses"],
+)
+def test_configure_job_log_client_failure_sets_error_meta(tmp_path, monkeypatch, target_clients, client_replies):
+    monkeypatch.setattr(job_cmds_module, "ServerEngine", _FakeServerEngine)
+    workspace = _FakeWorkspace(tmp_path)
+    engine = _FakeServerEngine(workspace)
+    engine.job_def_manager.get_job.return_value = _FakeListedJob({JobMetaKey.STATUS.value: RunStatus.RUNNING.value})
+    conn = _MockConnection(app_ctx=engine, props={JobCommandModule.TARGET_CLIENTS: target_clients})
+    module = JobCommandModule()
+    monkeypatch.setattr(module, "send_request_to_clients", lambda conn, message: client_replies)
+
+    args = ["configure_job_log", "job-1", "client", *target_clients.values(), "DEBUG"]
+    module.configure_job_log(conn, args)
+
+    assert conn.errors == [("one or more clients failed to configure job logging", None)]
 
 
 def test_authorize_job_id_hides_jobs_from_other_studies(monkeypatch):
