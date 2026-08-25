@@ -153,7 +153,10 @@ class SystemCommandModule(CommandModule, CommandUtil):
             workspace = engine.get_workspace()
             try:
                 dynamic_log_config(
-                    config=config, dir_path=workspace.get_root_dir(), reload_path=workspace.get_log_config_file_path()
+                    config=config,
+                    dir_path=workspace.get_root_dir(),
+                    reload_path=workspace.get_log_config_file_path(),
+                    allow_file_config=False,
                 )
             except Exception as e:
                 conn.append_error(

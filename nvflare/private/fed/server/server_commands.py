@@ -456,6 +456,7 @@ class ConfigureJobLogCommand(CommandProcessor):
                 config=config,
                 dir_path=workspace.get_run_dir(fl_ctx.get_job_id()),
                 reload_path=workspace.get_log_config_file_path(),
+                allow_file_config=False,
             )
         except Exception as e:
             return secure_format_exception(e)
