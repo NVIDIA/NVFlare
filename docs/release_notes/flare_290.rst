@@ -131,7 +131,15 @@ Compatibility and Migration Notes
   ``key_metric`` with ``key_metric_mode``, or declare the alternate metric
   bridge, before initializing a campaign. Experimental legacy minimization
   campaigns without direction provenance must be re-initialized in a fresh
-  workspace.
+  workspace. Job constructor calls that pass positional arguments, ``*args``,
+  or ``**kwargs`` now also fail closed when dynamic arguments could hide the
+  metric, direction, or fixed training budget. Rewrite the call with
+  keyword-only arguments, no splats, and the constructor's applicable
+  safety-critical keywords spelled out before initializing. ``SimEnv`` calls
+  pin a positive explicit ``num_clients``; when it is zero or omitted, they
+  must expose a non-empty static ``clients`` list whose length is pinned.
+  Dynamic or splatted client-count sources fail closed. A declared
+  alternate-metric bridge cannot override an unresolved native job metric.
 - In external-process Client API mode, losing a trainer after its lazy result
   envelope has been accepted now fails the run as ``EXECUTION_EXCEPTION`` even
   if a controller's ``min_responses`` threshold could otherwise tolerate a

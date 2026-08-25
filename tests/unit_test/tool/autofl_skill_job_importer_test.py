@@ -333,6 +333,377 @@ runner = ScriptRunner(script="train.py")
     assert config["objective"]["mode_contract_source"] == "job:key_metric_mode"
 
 
+def test_import_marks_splatted_key_metric_unresolved(tmp_path):
+    tmp_path.joinpath("client.py").write_text("print('train')\n", encoding="utf-8")
+    job_path = tmp_path / "job.py"
+    job_path.write_text(
+        """
+import argparse
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--key_metric", default="val_loss")
+args = parser.parse_args()
+tuning = {"key_metric": args.key_metric}
+recipe = FedAvgRecipe(
+    name="splatted-metric", min_clients=2, num_rounds=1, train_script="client.py", **tuning
+)
+recipe.execute(SimEnv(num_clients=2))
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+
+    assert config["objective"]["metric"] == "accuracy"
+    assert config["objective"]["metric_contract_source"] == "default"
+    assert any(
+        item["field"] == "objective.metric" and "job call passes **kwargs" in item["reason"]
+        for item in config["unresolved"]
+    )
+
+
+def test_import_marks_splatted_direction_keywords_unresolved_with_explicit_metric(tmp_path):
+    tmp_path.joinpath("train.py").write_text("print('train')\n", encoding="utf-8")
+    job_path = tmp_path / "job.py"
+    job_path.write_text(
+        """
+from nvflare.app_common.executors.script_runner import ScriptRunner
+from nvflare.job_config.base_fed_job import BaseFedJob
+from nvflare.widgets.widget import Widget
+
+
+class CustomSelector(Widget):
+    pass
+
+
+extra = {"model_selector": CustomSelector(), "key_metric_mode": "min"}
+job = BaseFedJob(name="splatted-direction", min_clients=2, key_metric="brier", **extra)
+runner = ScriptRunner(script="train.py")
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+
+    assert config["objective"]["metric"] == "brier"
+    assert config["objective"]["metric_contract_source"] == "literal"
+    assert config["objective"]["mode"] == "max"
+    assert config["objective"]["mode_contract_source"] == "unresolved"
+    assert any(
+        item["field"] == "objective.mode" and "job call passes **kwargs" in item["reason"]
+        for item in config["unresolved"]
+    )
+    assert not any(item["field"] == "objective.metric" for item in config["unresolved"])
+
+
+def test_import_rejects_direction_contract_when_job_call_has_keyword_splat(tmp_path):
+    tmp_path.joinpath("train.py").write_text("print('train')\n", encoding="utf-8")
+    job_path = tmp_path / "job.py"
+    job_path.write_text(
+        """
+from nvflare.app_common.executors.script_runner import ScriptRunner
+from nvflare.job_config.base_fed_job import BaseFedJob
+
+
+other = {"analytics_receiver": None}
+job = BaseFedJob(
+    name="explicit-direction",
+    min_clients=2,
+    key_metric="loss",
+    key_metric_mode="min",
+    model_selector=None,
+    **other,
+)
+runner = ScriptRunner(script="train.py")
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+
+    assert config["objective"]["mode"] == "max"
+    assert config["objective"]["mode_contract_source"] == "unresolved"
+    assert any(
+        item["field"] == "objective.mode" and "remove **kwargs" in item["reason"] for item in config["unresolved"]
+    )
+
+
+@pytest.mark.parametrize(
+    "constructor_args",
+    [
+        '"positional", 2, None, "loss", "min"',
+        "*job_args",
+    ],
+)
+def test_import_marks_positional_job_arguments_unresolved(tmp_path, constructor_args):
+    tmp_path.joinpath("train.py").write_text("print('train')\n", encoding="utf-8")
+    job_path = tmp_path / "job.py"
+    job_path.write_text(
+        f"""
+from nvflare.app_common.executors.script_runner import ScriptRunner
+from nvflare.job_config.base_fed_job import BaseFedJob
+
+
+job_args = ("positional", 2, None, "loss", "min")
+job = BaseFedJob({constructor_args})
+runner = ScriptRunner(script="train.py")
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+
+    unresolved_fields = {item["field"] for item in config["unresolved"]}
+    assert {"objective.metric", "objective.mode", "budget.fixed_training_budget"} <= unresolved_fields
+    positional_reasons = " ".join(item["reason"] for item in config["unresolved"])
+    expected_argument_kind = "*args" if constructor_args.startswith("*") else "positional arguments"
+    assert expected_argument_kind in positional_reasons
+
+
+def test_import_marks_splatted_job_budget_unresolved(tmp_path):
+    tmp_path.joinpath("client.py").write_text("print('train')\n", encoding="utf-8")
+    job_path = tmp_path / "job.py"
+    job_path.write_text(
+        """
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv
+
+
+budget = {"num_rounds": 3}
+recipe = FedAvgRecipe(
+    name="splatted-budget",
+    min_clients=2,
+    train_script="client.py",
+    key_metric="accuracy",
+    key_metric_mode="max",
+    **budget,
+)
+recipe.execute(SimEnv(num_clients=2))
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+
+    assert "num_rounds" not in config["budget"]["fixed_training_budget"]
+    assert any(
+        item["field"] == "budget.fixed_training_budget" and "job call passes **kwargs" in item["reason"]
+        for item in config["unresolved"]
+    )
+
+
+def test_import_marks_splatted_sim_env_client_budget_unresolved(tmp_path):
+    tmp_path.joinpath("client.py").write_text("print('train')\n", encoding="utf-8")
+    job_path = tmp_path / "job.py"
+    job_path.write_text(
+        """
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv
+
+
+recipe = FedAvgRecipe(name="sim-budget", min_clients=2, num_rounds=1, train_script="client.py")
+sim_budget = {"num_clients": 3}
+recipe.execute(SimEnv(**sim_budget))
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+
+    assert "num_clients" not in config["budget"]["fixed_training_budget"]
+    assert any(
+        item["field"] == "budget.fixed_training_budget.num_clients" and "SimEnv call passes **kwargs" in item["reason"]
+        for item in config["unresolved"]
+    )
+
+
+@pytest.mark.parametrize(
+    "sim_env_args",
+    [
+        'clients=["site-1", "site-2", "site-3"]',
+        'num_clients=0, clients=["site-1", "site-2", "site-3"]',
+    ],
+)
+def test_import_resolves_sim_env_client_budget_from_static_clients(tmp_path, sim_env_args):
+    tmp_path.joinpath("client.py").write_text("print('train')\n", encoding="utf-8")
+    job_path = tmp_path / "job.py"
+    job_path.write_text(
+        f"""
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv
+
+
+recipe = FedAvgRecipe(name="sim-budget", min_clients=2, num_rounds=1, train_script="client.py")
+recipe.execute(SimEnv({sim_env_args}))
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+
+    assert config["budget"]["fixed_training_budget"]["num_clients"] == 3
+    assert config["environment"]["profiles"]["sim"]["num_clients"] == 3
+    assert not any(item["field"] == "budget.fixed_training_budget.num_clients" for item in config["unresolved"])
+
+
+def test_import_selects_conditional_sim_env_from_job_args(tmp_path):
+    tmp_path.joinpath("client.py").write_text("print('train')\n", encoding="utf-8")
+    job_path = tmp_path / "job.py"
+    job_path.write_text(
+        """
+import argparse
+
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--environment", choices=["small", "large"], default="small")
+args = parser.parse_args()
+
+recipe = FedAvgRecipe(name="sim-budget", min_clients=2, num_rounds=1, train_script="client.py")
+if args.environment == "small":
+    recipe.execute(SimEnv(num_clients=2))
+else:
+    recipe.execute(SimEnv(num_clients=5))
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    default_config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+    large_config = import_job_to_autofl_config(
+        str(job_path), workspace_root=str(tmp_path), job_args=["--environment", "large"]
+    )
+
+    assert default_config["budget"]["fixed_training_budget"]["num_clients"] == 2
+    assert default_config["environment"]["profiles"]["sim"]["num_clients"] == 2
+    assert large_config["budget"]["fixed_training_budget"]["num_clients"] == 5
+    assert large_config["environment"]["profiles"]["sim"]["num_clients"] == 5
+
+
+@pytest.mark.parametrize(("job_args", "expected_num_clients"), [([], 1), (["--use-two-clients"], 2)])
+def test_import_resolves_sim_env_clients_from_selected_assignment_branch(tmp_path, job_args, expected_num_clients):
+    tmp_path.joinpath("client.py").write_text("print('train')\n", encoding="utf-8")
+    job_path = tmp_path / "job.py"
+    job_path.write_text(
+        """
+import argparse
+
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--use-two-clients", action="store_true")
+args = parser.parse_args()
+
+clients = ["site-1"]
+if args.use_two_clients:
+    clients = ["site-1", "site-2"]
+
+recipe = FedAvgRecipe(name="sim-budget", min_clients=1, num_rounds=1, train_script="client.py")
+recipe.execute(SimEnv(clients=clients))
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path), job_args=job_args)
+
+    assert config["budget"]["fixed_training_budget"]["num_clients"] == expected_num_clients
+    assert config["environment"]["profiles"]["sim"]["num_clients"] == expected_num_clients
+
+
+def test_import_rejects_sim_env_clients_from_unknown_assignment_branch(tmp_path):
+    tmp_path.joinpath("client.py").write_text("print('train')\n", encoding="utf-8")
+    job_path = tmp_path / "job.py"
+    job_path.write_text(
+        """
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv
+
+
+def use_two_clients():
+    return False
+
+
+clients = ["site-1"]
+if use_two_clients():
+    clients = ["site-1", "site-2"]
+
+recipe = FedAvgRecipe(name="sim-budget", min_clients=1, num_rounds=1, train_script="client.py")
+recipe.execute(SimEnv(clients=clients))
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+
+    assert "num_clients" not in config["budget"]["fixed_training_budget"]
+    assert "num_clients" not in config["environment"]["profiles"]["sim"]
+    assert any(
+        item["field"] == "budget.fixed_training_budget.num_clients"
+        and "conditional assignment for clients" in item["reason"]
+        for item in config["unresolved"]
+    )
+
+
+def test_import_rejects_zero_sim_env_client_count_with_splatted_clients(tmp_path):
+    tmp_path.joinpath("client.py").write_text("print('train')\n", encoding="utf-8")
+    job_path = tmp_path / "job.py"
+    job_path.write_text(
+        """
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv
+
+
+recipe = FedAvgRecipe(name="sim-budget", min_clients=2, num_rounds=1, train_script="client.py")
+sim_args = {"clients": ["site-1", "site-2"]}
+recipe.execute(SimEnv(num_clients=0, **sim_args))
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+
+    assert "num_clients" not in config["budget"]["fixed_training_budget"]
+    assert "num_clients" not in config["environment"]["profiles"]["sim"]
+    assert any(
+        item["field"] == "budget.fixed_training_budget.num_clients" and "SimEnv call passes **kwargs" in item["reason"]
+        for item in config["unresolved"]
+    )
+
+
+def test_import_rejects_dynamic_sim_env_clients(tmp_path):
+    tmp_path.joinpath("client.py").write_text("print('train')\n", encoding="utf-8")
+    job_path = tmp_path / "job.py"
+    job_path.write_text(
+        """
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv
+
+
+def get_clients():
+    return ["site-1", "site-2"]
+
+
+recipe = FedAvgRecipe(name="sim-budget", min_clients=2, num_rounds=1, train_script="client.py")
+recipe.execute(SimEnv(clients=get_clients()))
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+
+    assert "num_clients" not in config["budget"]["fixed_training_budget"]
+    assert any(
+        item["field"] == "budget.fixed_training_budget.num_clients" and "clients is dynamic" in item["reason"]
+        for item in config["unresolved"]
+    )
+
+
 def test_import_marks_malformed_stop_condition_unresolved(tmp_path):
     job_path = _write_recipe_job(tmp_path)
     source = job_path.read_text(encoding="utf-8").replace(
