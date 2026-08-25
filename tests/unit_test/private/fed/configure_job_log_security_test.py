@@ -54,41 +54,30 @@ def test_remote_job_log_accepts_safe_controls(tmp_path, command_class, dynamic_p
 
 
 @pytest.mark.parametrize(("command_class", "dynamic_path"), COMMANDS)
-def test_remote_job_log_rejects_inline_json(tmp_path, command_class, dynamic_path):
-    with patch(dynamic_path) as dynamic:
-        error = command_class().process('{"version": 1}', _log_command_context(tmp_path))
-
-    assert "only supports log levels and built-in log modes" in error
-    dynamic.assert_not_called()
-
-
-@pytest.mark.parametrize(("command_class", "dynamic_path"), COMMANDS)
-def test_remote_job_log_rejects_existing_file_path(tmp_path, command_class, dynamic_path):
-    config_path = tmp_path / "attacker-log-config.json"
-    config_path.write_text('{"version": 1}', encoding="utf-8")
-
-    with patch(dynamic_path) as dynamic:
-        error = command_class().process(str(config_path), _log_command_context(tmp_path))
-
-    assert "only supports log levels and built-in log modes" in error
-    dynamic.assert_not_called()
-
-
-@pytest.mark.parametrize("command_class", [ServerConfigureJobLogCommand, ClientConfigureJobLogCommand])
-def test_remote_job_log_rejects_dict_config_factory_before_execution(tmp_path, command_class):
+@pytest.mark.parametrize("config_type", ["inline-json", "file-path", "dict-factory"])
+def test_remote_job_log_rejects_unsafe_config(tmp_path, command_class, dynamic_path, config_type):
     factory_calls = []
 
     def harmless_factory():
         factory_calls.append(True)
         return logging.NullHandler()
 
-    config = {
-        "version": 1,
-        "handlers": {"factory": {"()": harmless_factory}},
-        "root": {"level": "INFO", "handlers": ["factory"]},
-    }
+    if config_type == "inline-json":
+        config = '{"version": 1}'
+    elif config_type == "file-path":
+        config_path = tmp_path / "attacker-log-config.json"
+        config_path.write_text('{"version": 1}', encoding="utf-8")
+        config = str(config_path)
+    else:
+        config = {
+            "version": 1,
+            "handlers": {"factory": {"()": harmless_factory}},
+            "root": {"level": "INFO", "handlers": ["factory"]},
+        }
 
-    error = command_class().process(config, _log_command_context(tmp_path))
+    with patch(dynamic_path) as dynamic:
+        error = command_class().process(config, _log_command_context(tmp_path))
 
     assert "only supports log levels and built-in log modes" in error
-    assert factory_calls == []
+    dynamic.assert_not_called()
+    assert not factory_calls
