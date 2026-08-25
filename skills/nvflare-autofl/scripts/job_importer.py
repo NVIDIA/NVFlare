@@ -124,13 +124,21 @@ class ResolvedValue:
 
 
 @dataclass(frozen=True)
+class AssignmentInfo:
+    """Assignment value with the branch conditions required to reach it."""
+
+    value: ast.AST
+    branch_conditions: Tuple[Tuple[ast.AST, bool], ...] = ()
+
+
+@dataclass(frozen=True)
 class CallInfo:
     """Supported call found in ``job.py`` with source-local resolution context."""
 
     name: str
     full_name: str
     keywords: Dict[str, ast.AST]
-    assignments: Dict[str, ast.AST]
+    assignments: Dict[str, Tuple[AssignmentInfo, ...]]
     source: str
     function_name: Optional[str] = None
     branch_conditions: Tuple[Tuple[ast.AST, bool], ...] = ()
@@ -217,7 +225,7 @@ class DeterministicJobImporter:
 
         parser_args, reachable_functions = _reachable_parser_args(tree, index, job_args or [])
         job_call = index.first_job_call(reachable_functions, parser_args)
-        env_call = index.first_env_call(reachable_functions)
+        env_call = index.first_env_call(reachable_functions, parser_args)
         train_script = self._resolve_train_script(
             source_path, job_call, index, parser_args, source_text, reachable_functions
         )
@@ -739,8 +747,8 @@ class _ImportIndex(ast.NodeVisitor):
         self.source_text = source_text
         self.imports: Dict[str, str] = {}
         self.parser_arg_definitions: Dict[str, List[ArgSpec]] = {}
-        self.module_assignments: Dict[str, ast.AST] = {}
-        self._local_assignments_stack: List[Dict[str, ast.AST]] = []
+        self.module_assignments: Dict[str, List[AssignmentInfo]] = {}
+        self._local_assignments_stack: List[Dict[str, List[AssignmentInfo]]] = []
         self._function_stack: List[str] = []
         self._branch_conditions: List[Tuple[ast.AST, bool]] = []
         self._argparse_parser_names: Set[Tuple[Optional[str], str]] = set()
@@ -763,8 +771,12 @@ class _ImportIndex(ast.NodeVisitor):
     ) -> Optional[CallInfo]:
         return _first_reachable_call(self.job_calls, reachable_functions, parser_args)
 
-    def first_env_call(self, reachable_functions: Optional[Set[str]] = None) -> Optional[CallInfo]:
-        return _first_reachable_call(self.env_calls, reachable_functions)
+    def first_env_call(
+        self,
+        reachable_functions: Optional[Set[str]] = None,
+        parser_args: Optional[Dict[str, ArgSpec]] = None,
+    ) -> Optional[CallInfo]:
+        return _first_reachable_call(self.env_calls, reachable_functions, parser_args)
 
     def first_unsupported_job_call(self) -> Optional[CallInfo]:
         return self.unsupported_job_calls[0] if self.unsupported_job_calls else None
@@ -808,13 +820,13 @@ class _ImportIndex(ast.NodeVisitor):
     def visit_Assign(self, node: ast.Assign) -> None:
         for target in node.targets:
             if isinstance(target, ast.Name):
-                self._current_assignments()[target.id] = node.value
+                self._record_assignment(target.id, node.value)
                 self._track_argparse_assignment(target.id, node.value)
         self.generic_visit(node)
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
         if isinstance(node.target, ast.Name) and node.value:
-            self._current_assignments()[node.target.id] = node.value
+            self._record_assignment(node.target.id, node.value)
             self._track_argparse_assignment(node.target.id, node.value)
         self.generic_visit(node)
 
@@ -823,7 +835,7 @@ class _ImportIndex(ast.NodeVisitor):
             # The result depends on runtime state. Preserve the expression so
             # downstream resolution marks the value as unresolved instead of
             # reusing an earlier static assignment.
-            self._current_assignments()[node.target.id] = node
+            self._record_assignment(node.target.id, node)
         self.generic_visit(node)
 
     def visit_If(self, node: ast.If) -> None:
@@ -904,15 +916,19 @@ class _ImportIndex(ast.NodeVisitor):
             return call_name
         return f"{imported}.{remainder}" if separator else imported
 
-    def _current_assignments(self) -> Dict[str, ast.AST]:
+    def _current_assignments(self) -> Dict[str, List[AssignmentInfo]]:
         if self._local_assignments_stack:
             return self._local_assignments_stack[-1]
         return self.module_assignments
 
-    def _resolution_assignments(self) -> Dict[str, ast.AST]:
-        assignments = dict(self.module_assignments)
+    def _record_assignment(self, name: str, value: ast.AST) -> None:
+        assignment = AssignmentInfo(value=value, branch_conditions=tuple(self._branch_conditions))
+        self._current_assignments().setdefault(name, []).append(assignment)
+
+    def _resolution_assignments(self) -> Dict[str, Tuple[AssignmentInfo, ...]]:
+        assignments = {name: tuple(history) for name, history in self.module_assignments.items()}
         if self._local_assignments_stack:
-            assignments.update(self._local_assignments_stack[-1])
+            assignments.update({name: tuple(history) for name, history in self._local_assignments_stack[-1].items()})
         return assignments
 
 
@@ -934,11 +950,20 @@ def _first_reachable_call(
 
 
 def _matches_static_branch_conditions(call: CallInfo, arg_values: Dict[str, Any]) -> bool:
-    for condition, expected in call.branch_conditions:
+    return _static_branch_conditions_match(call.branch_conditions, arg_values) is not False
+
+
+def _static_branch_conditions_match(
+    branch_conditions: Sequence[Tuple[ast.AST, bool]], arg_values: Dict[str, Any]
+) -> Optional[bool]:
+    unknown = False
+    for condition, expected in branch_conditions:
         value = _static_condition_value(condition, arg_values)
-        if value is not None and value != expected:
+        if value is None:
+            unknown = True
+        elif value != expected:
             return False
-    return True
+    return None if unknown else True
 
 
 def _arg_spec_signature(spec: ArgSpec) -> Tuple[Any, ...]:
@@ -1119,6 +1144,9 @@ def _static_condition_value(node: ast.AST, arg_values: Dict[str, Any]) -> Option
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
         value = _static_condition_value(node.operand, arg_values)
         return None if value is None else not value
+    known, value = _static_condition_operand(node, arg_values)
+    if known:
+        return bool(value)
     return None
 
 
@@ -1223,7 +1251,7 @@ def _name_from_flags(flags: Iterable[str]) -> Optional[str]:
 
 def _resolve_value(
     node: ast.AST,
-    assignments: Dict[str, ast.AST],
+    assignments: Dict[str, Tuple[AssignmentInfo, ...]],
     parser_args: Dict[str, ArgSpec],
     source_text: str,
     seen: Optional[set[str]] = None,
@@ -1245,7 +1273,10 @@ def _resolve_value(
         if node.id in parser_args:
             return _resolve_arg_default(node.id, parser_args[node.id])
         if node.id in assignments:
-            return _resolve_value(assignments[node.id], assignments, parser_args, source_text, seen | {node.id})
+            assignment, issue = _select_assignment(node.id, assignments[node.id], parser_args)
+            if issue:
+                return ResolvedValue(None, issue, "low", True)
+            return _resolve_value(assignment, assignments, parser_args, source_text, seen | {node.id})
         return ResolvedValue(node.id, f"name:{node.id}", "low", True)
 
     if isinstance(node, ast.Call):
@@ -1268,6 +1299,22 @@ def _resolve_value(
             )
 
     return ResolvedValue(_source_segment(source_text, node) or type(node).__name__, "expression", "low", True)
+
+
+def _select_assignment(
+    name: str,
+    history: Sequence[AssignmentInfo],
+    parser_args: Dict[str, ArgSpec],
+) -> Tuple[Optional[ast.AST], Optional[str]]:
+    arg_values = {key: spec.default for key, spec in parser_args.items() if not spec.default_unresolved}
+    for assignment in reversed(history):
+        branch_match = _static_branch_conditions_match(assignment.branch_conditions, arg_values)
+        if branch_match is False:
+            continue
+        if branch_match is None:
+            return None, f"conditional assignment for {name} cannot be resolved from job arguments"
+        return assignment.value, None
+    return None, f"no reachable assignment for {name}"
 
 
 def _resolve_sim_env_num_clients(
@@ -1372,7 +1419,7 @@ def _fallback_looks_lower_is_better(metric: str) -> bool:
 def _resolve_path_call(
     node: ast.Call,
     call_name: str,
-    assignments: Dict[str, ast.AST],
+    assignments: Dict[str, Tuple[AssignmentInfo, ...]],
     parser_args: Dict[str, ArgSpec],
     source_text: str,
 ) -> Optional[ResolvedValue]:

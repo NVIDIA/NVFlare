@@ -549,6 +549,107 @@ recipe.execute(SimEnv({sim_env_args}))
     assert not any(item["field"] == "budget.fixed_training_budget.num_clients" for item in config["unresolved"])
 
 
+def test_import_selects_conditional_sim_env_from_job_args(tmp_path):
+    tmp_path.joinpath("client.py").write_text("print('train')\n", encoding="utf-8")
+    job_path = tmp_path / "job.py"
+    job_path.write_text(
+        """
+import argparse
+
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--environment", choices=["small", "large"], default="small")
+args = parser.parse_args()
+
+recipe = FedAvgRecipe(name="sim-budget", min_clients=2, num_rounds=1, train_script="client.py")
+if args.environment == "small":
+    recipe.execute(SimEnv(num_clients=2))
+else:
+    recipe.execute(SimEnv(num_clients=5))
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    default_config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+    large_config = import_job_to_autofl_config(
+        str(job_path), workspace_root=str(tmp_path), job_args=["--environment", "large"]
+    )
+
+    assert default_config["budget"]["fixed_training_budget"]["num_clients"] == 2
+    assert default_config["environment"]["profiles"]["sim"]["num_clients"] == 2
+    assert large_config["budget"]["fixed_training_budget"]["num_clients"] == 5
+    assert large_config["environment"]["profiles"]["sim"]["num_clients"] == 5
+
+
+@pytest.mark.parametrize(("job_args", "expected_num_clients"), [([], 1), (["--use-two-clients"], 2)])
+def test_import_resolves_sim_env_clients_from_selected_assignment_branch(tmp_path, job_args, expected_num_clients):
+    tmp_path.joinpath("client.py").write_text("print('train')\n", encoding="utf-8")
+    job_path = tmp_path / "job.py"
+    job_path.write_text(
+        """
+import argparse
+
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--use-two-clients", action="store_true")
+args = parser.parse_args()
+
+clients = ["site-1"]
+if args.use_two_clients:
+    clients = ["site-1", "site-2"]
+
+recipe = FedAvgRecipe(name="sim-budget", min_clients=1, num_rounds=1, train_script="client.py")
+recipe.execute(SimEnv(clients=clients))
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path), job_args=job_args)
+
+    assert config["budget"]["fixed_training_budget"]["num_clients"] == expected_num_clients
+    assert config["environment"]["profiles"]["sim"]["num_clients"] == expected_num_clients
+
+
+def test_import_rejects_sim_env_clients_from_unknown_assignment_branch(tmp_path):
+    tmp_path.joinpath("client.py").write_text("print('train')\n", encoding="utf-8")
+    job_path = tmp_path / "job.py"
+    job_path.write_text(
+        """
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv
+
+
+def use_two_clients():
+    return False
+
+
+clients = ["site-1"]
+if use_two_clients():
+    clients = ["site-1", "site-2"]
+
+recipe = FedAvgRecipe(name="sim-budget", min_clients=1, num_rounds=1, train_script="client.py")
+recipe.execute(SimEnv(clients=clients))
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+
+    assert "num_clients" not in config["budget"]["fixed_training_budget"]
+    assert "num_clients" not in config["environment"]["profiles"]["sim"]
+    assert any(
+        item["field"] == "budget.fixed_training_budget.num_clients"
+        and "conditional assignment for clients" in item["reason"]
+        for item in config["unresolved"]
+    )
+
+
 def test_import_rejects_zero_sim_env_client_count_with_splatted_clients(tmp_path):
     tmp_path.joinpath("client.py").write_text("print('train')\n", encoding="utf-8")
     job_path = tmp_path / "job.py"
