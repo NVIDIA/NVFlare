@@ -665,7 +665,7 @@ sub_start_sh: |
   restart_count=0
 
   start_python() {
-    python3 -u -m nvflare.private.fed.app.{~~type~~}.{~~app_name~~} -m "$WORKSPACE" -s fed_{~~type~~}.json --set secure_train=true {~~cln_uid~~} org={~~org_name~~} config_folder={~~config_folder~~}
+    exec python3 -u -m nvflare.private.fed.app.{~~type~~}.{~~app_name~~} -m "$WORKSPACE" -s fed_{~~type~~}.json --set secure_train=true {~~cln_uid~~} org={~~org_name~~} config_folder={~~config_folder~~}
   }
 
   start_fl() {
@@ -680,8 +680,9 @@ sub_start_sh: |
       exit
     fi
     lst=$SECONDS
-    (start_python 2>&1 & echo $! >&3 ) 3>"$WORKSPACE/pid.fl"
-    pid=`cat "$WORKSPACE/pid.fl"`
+    start_python 2>&1 &
+    pid=$!
+    printf '%s\n' "$pid" > "$WORKSPACE/pid.fl"
     echo "new pid ${pid}"
   }
 
@@ -697,7 +698,8 @@ sub_start_sh: |
       echo "Process already terminated"
       return
     fi
-    kill -9 $pid
+    kill -9 "$pid"
+    wait "$pid" 2> /dev/null
     rm -f "$WORKSPACE/pid.fl" "$WORKSPACE/shutdown.fl" "$WORKSPACE/restart.fl" 2> /dev/null 1>&2
   }
 
