@@ -280,6 +280,16 @@ class TestStaticFileBuilder:
         assert sub_start.index(verify_cmd) < sub_start.index('mkdir -p "$WORKSPACE/transfer"')
         assert 'touch "$WORKSPACE/shutdown.fl"' in stop_fl
 
+    def test_master_template_sub_start_tracks_python_pid(self):
+        """The watchdog must record and reap the FL Python process, not a Bash wrapper."""
+        sub_start = _load_master_template()["sub_start_sh"]
+
+        assert "exec python3 -u -m nvflare.private.fed.app." in sub_start
+        assert "  start_python 2>&1 &\n  pid=$!\n" in sub_start
+        assert 'printf \'%s\\n\' "$pid" > "$WORKSPACE/pid.fl"' in sub_start
+        assert "(start_python 2>&1 & echo $! >&3 )" not in sub_start
+        assert 'wait "$pid" 2> /dev/null' in sub_start
+
     def test_master_template_class_allow_list_is_exact(self):
         """The provisioned allow list must match the curated component list exactly."""
         template = _load_master_template()
