@@ -104,7 +104,6 @@ class _MockConnection:
         self.successes = []
         self.dicts = []
         self.tables = []
-        self.meta = {}
 
     def get_prop(self, key, default=None):
         return self._props.get(key, default)
@@ -128,9 +127,6 @@ class _MockConnection:
         table = _MockTable(headers=headers, name=name)
         self.tables.append(table)
         return table
-
-    def update_meta(self, meta):
-        self.meta.update(meta)
 
 
 class _MockTable:
@@ -1668,7 +1664,7 @@ def test_configure_job_log_all_targets_server_and_clients(tmp_path, monkeypatch)
     engine.configure_job_log.assert_called_once_with("job-1", "DEBUG")
     assert processed == [client_replies]
     assert any("successfully configured server job job-1 log" in msg for msg, _meta in conn.strings)
-    assert not conn.meta
+    assert not conn.errors
 
 
 def test_configure_job_log_specific_client_target_is_honored(tmp_path, monkeypatch):
@@ -1706,7 +1702,7 @@ def test_configure_job_log_specific_client_target_is_honored(tmp_path, monkeypat
 
     engine.configure_job_log.assert_not_called()
     assert len(processed) == 1
-    assert not conn.meta
+    assert not conn.errors
 
 
 def _reply_with_return_code(return_code, body):
@@ -1747,10 +1743,7 @@ def test_configure_job_log_client_failure_sets_error_meta(tmp_path, monkeypatch,
     args = ["configure_job_log", "job-1", "client", *target_clients.values(), "DEBUG"]
     module.configure_job_log(conn, args)
 
-    assert conn.meta == {
-        MetaKey.STATUS: MetaStatusValue.ERROR,
-        MetaKey.INFO: "one or more clients failed to configure job logging",
-    }
+    assert conn.errors == [("one or more clients failed to configure job logging", None)]
 
 
 def test_authorize_job_id_hides_jobs_from_other_studies(monkeypatch):

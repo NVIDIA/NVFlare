@@ -407,9 +407,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 or client_reply.reply.get_header(MsgHeader.RETURN_CODE, AdminReturnCode.OK) != AdminReturnCode.OK
                 for client_reply in client_replies
             ):
-                conn.update_meta(
-                    make_meta(MetaStatusValue.ERROR, info="one or more clients failed to configure job logging")
-                )
+                conn.append_error("one or more clients failed to configure job logging")
 
         if target_type not in [self.TARGET_TYPE_ALL, self.TARGET_TYPE_CLIENT, self.TARGET_TYPE_SERVER]:
             conn.append_error(
