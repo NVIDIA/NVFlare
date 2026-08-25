@@ -4,7 +4,7 @@ FedCoRe is a research starter for learning a missing-modality completion operato
 supervision, then sharing that operator with clients that do not observe the modality. This project provides a small,
 public, end-to-end NVIDIA FLARE workflow using Qwen3-VL and generated image-plus-context data.
 
-The accompanying paper link will be added when the public preprint is available.
+The accompanying paper is available on arXiv: [FedCoRe: Target-Adaptive Completion for Missing Modalities in Healthcare Federated Learning](https://arxiv.org/abs/2608.18311).
 
 ## Objective
 
@@ -209,9 +209,9 @@ for clinical deployment.
 
 ## License
 
-The code in this directory is released under Apache License 2.0; see [`LICENSE`](LICENSE). Qwen3-VL model weights have
-separate terms; see [`NOTICE`](NOTICE) and the model card.
+The code in this directory follows NVFlare's Apache License 2.0; see the [repository license](../../LICENSE).
+Qwen3-VL model weights have separate terms; see [`NOTICE`](NOTICE) and the model card.
 
 ## Citation
 
-The FedCoRe paper citation and public preprint URL will be added after publication.
+Holger R. Roth, Ziyue Xu, and Peter Cnudde, "[FedCoRe: Target-Adaptive Completion for Missing Modalities in Healthcare Federated Learning](https://arxiv.org/abs/2608.18311)," arXiv:2608.18311, 2026.

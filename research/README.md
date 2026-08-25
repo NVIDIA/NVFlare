@@ -15,7 +15,7 @@ README in each subfolder for setup, data, and run instructions.
 
 | Project | Description |
 | --- | --- |
-| [FedCoRe: Federated Cross-Modal Representation Completion](./fedcore/README.md) | Missing-image completion with Qwen3-VL, valid-supervision aggregation, and a synthetic public quickstart (paper link forthcoming). |
+| [FedCoRe: Federated Cross-Modal Representation Completion](./fedcore/README.md) | Missing-image completion with Qwen3-VL, valid-supervision aggregation, and a synthetic public quickstart ([arXiv 2026](https://arxiv.org/abs/2608.18311)). |
 | [Privacy-Preserving Federated Fraud Detection in Payment Transactions with NVIDIA FLARE](./fsi-fraud-detection/README.md) | Payment fraud detection across heterogeneous financial institutions ([arXiv 2026](https://arxiv.org/abs/2603.13617)). |
 | [FedUMM: Federated Learning for Unified Multimodal Models](./fedumm/README.md) | Federated unified multimodal model training with parameter-efficient updates ([arXiv 2026](https://arxiv.org/abs/2601.15390)). |
 | [FedNCA - Equitable Federated Learning with NCA](./FedNCA/README.md) | Equitable federated learning with NCA ([MICCAI 2025](https://arxiv.org/abs/2506.21735)). |
