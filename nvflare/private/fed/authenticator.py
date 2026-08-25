@@ -19,6 +19,7 @@ from typing import Callable, Optional
 
 from cryptography.x509.oid import ExtendedKeyUsageOID
 
+import nvflare
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import FLCommunicationError
 from nvflare.apis.shareable import Shareable
@@ -249,6 +250,7 @@ class Authenticator:
             CellMessageHeaderKeys.CLIENT_IP: local_ip,
             CellMessageHeaderKeys.PROJECT_NAME: self.project_name,
             CellMessageHeaderKeys.FEDERATION_PROTOCOL_VERSION: private_defs.FEDERATION_PROTOCOL_VERSION,
+            CellMessageHeaderKeys.NVFLARE_VERSION: nvflare.__version__,
         }
         login_message = new_cell_message(headers, shareable)
 

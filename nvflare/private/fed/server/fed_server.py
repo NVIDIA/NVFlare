@@ -22,6 +22,7 @@ from abc import ABC, abstractmethod
 from threading import Lock
 from typing import Dict, List, Optional
 
+import nvflare
 from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
@@ -857,6 +858,7 @@ class FederatedServer(BaseServer):
                         CellMessageHeaderKeys.TOKEN_SIGNATURE: token_signature,
                         CellMessageHeaderKeys.SSID: self.server_state.ssid,
                         CellMessageHeaderKeys.FEDERATION_PROTOCOL_VERSION: private_defs.FEDERATION_PROTOCOL_VERSION,
+                        CellMessageHeaderKeys.NVFLARE_VERSION: nvflare.__version__,
                     }
 
                     # Add CC info if present
