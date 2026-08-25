@@ -19,6 +19,7 @@ from typing import Callable, Optional
 
 from cryptography.x509.oid import ExtendedKeyUsageOID
 
+import nvflare
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import FLCommunicationError
 from nvflare.apis.shareable import Shareable
@@ -32,6 +33,7 @@ from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.utils.log_utils import get_obj_logger
+from nvflare.private import defs as private_defs
 from nvflare.private.defs import CellChannel, CellChannelTopic, CellMessageHeaderKeys, ClientRegMsgKey, new_cell_message
 from nvflare.private.fed.utils.identity_utils import (
     IdentityAsserter,
@@ -247,6 +249,8 @@ class Authenticator:
             CellMessageHeaderKeys.CLIENT_TYPE: self.client_type,
             CellMessageHeaderKeys.CLIENT_IP: local_ip,
             CellMessageHeaderKeys.PROJECT_NAME: self.project_name,
+            CellMessageHeaderKeys.FEDERATION_PROTOCOL_VERSION: private_defs.FEDERATION_PROTOCOL_VERSION,
+            CellMessageHeaderKeys.NVFLARE_VERSION: nvflare.__version__,
         }
         login_message = new_cell_message(headers, shareable)
 

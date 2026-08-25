@@ -139,6 +139,7 @@ class AppFolderConstants:
 
 
 ERROR_MSG_PREFIX = "NVFLARE_ERROR"
+FEDERATION_PROTOCOL_VERSION = 1
 
 
 class CellMessageHeaderKeys:
@@ -155,6 +156,8 @@ class CellMessageHeaderKeys:
     JOB_IDS = "job_ids"
     MESSAGE = "message"
     ABORT_JOBS = "abort_jobs"
+    FEDERATION_PROTOCOL_VERSION = "federation_protocol_version"
+    NVFLARE_VERSION = "nvflare_version"
 
 
 class ClientRegMsgKey:

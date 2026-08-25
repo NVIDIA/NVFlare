@@ -133,9 +133,9 @@ Now we are ready to start the FLARE FL system.
 
 2. Start POC:
     ```bash
-    nvflare poc start -ex admin@nvidia.com
+    nvflare poc start
     ```
-    This will exclude the admin console service.
+    Admin consoles are not started by default.
 
 3. Run Job:
     See the run job section.

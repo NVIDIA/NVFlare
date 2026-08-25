@@ -26,6 +26,19 @@ importer preserves that native direction separately as `job_key_metric_mode`
 so candidate validation can detect changes hidden by an alternate metric
 bridge. A custom `model_selector` makes direction unresolved because it
 supersedes `key_metric_mode` and its behavior cannot be imported statically.
+Supported job constructors must use keyword-only arguments and must not pass
+`*args` or `**kwargs`. Positional arguments can hide the metric, direction, and
+fixed training budget. A keyword splat leaves direction and budget unresolved
+even when some safety-critical keywords are also explicit, because the accepted
+direction controls differ between constructors. Rewrite the call with
+keyword-only arguments, no splats, and the applicable `key_metric`, direction,
+and budget keywords written directly before initializing. A `SimEnv` call pins
+a positive explicit `num_clients`; when `num_clients` is zero or omitted, the
+importer requires a non-empty static `clients` list and pins its length. A
+dynamic or splatted client-count source and positional `SimEnv` arguments are
+unresolved. A mutation-schema
+bridge may declare the direction of a differing requested metric, but it cannot
+resolve the job key metric's own identity or direction.
 
 For a new campaign, import and admission complete in memory before the runner
 creates campaign files or acquires the workspace lock. An obvious

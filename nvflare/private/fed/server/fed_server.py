@@ -22,6 +22,7 @@ from abc import ABC, abstractmethod
 from threading import Lock
 from typing import Dict, List, Optional
 
+import nvflare
 from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
@@ -59,6 +60,7 @@ from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.sec.authn import add_authentication_headers
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.log_utils import get_obj_logger
+from nvflare.private import defs as private_defs
 from nvflare.private.defs import (
     CellChannel,
     CellChannelTopic,
@@ -855,6 +857,8 @@ class FederatedServer(BaseServer):
                         CellMessageHeaderKeys.TOKEN: client.token,
                         CellMessageHeaderKeys.TOKEN_SIGNATURE: token_signature,
                         CellMessageHeaderKeys.SSID: self.server_state.ssid,
+                        CellMessageHeaderKeys.FEDERATION_PROTOCOL_VERSION: private_defs.FEDERATION_PROTOCOL_VERSION,
+                        CellMessageHeaderKeys.NVFLARE_VERSION: nvflare.__version__,
                     }
 
                     # Add CC info if present
