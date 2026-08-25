@@ -32,6 +32,7 @@ from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.utils.log_utils import get_obj_logger
+from nvflare.private import defs as private_defs
 from nvflare.private.defs import CellChannel, CellChannelTopic, CellMessageHeaderKeys, ClientRegMsgKey, new_cell_message
 from nvflare.private.fed.utils.identity_utils import (
     IdentityAsserter,
@@ -247,6 +248,7 @@ class Authenticator:
             CellMessageHeaderKeys.CLIENT_TYPE: self.client_type,
             CellMessageHeaderKeys.CLIENT_IP: local_ip,
             CellMessageHeaderKeys.PROJECT_NAME: self.project_name,
+            CellMessageHeaderKeys.FEDERATION_PROTOCOL_VERSION: private_defs.FEDERATION_PROTOCOL_VERSION,
         }
         login_message = new_cell_message(headers, shareable)
 
