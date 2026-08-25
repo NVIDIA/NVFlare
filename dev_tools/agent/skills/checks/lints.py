@@ -1195,6 +1195,20 @@ _EVALUATOR_HOOK_RE = re.compile(
     r")",
     re.IGNORECASE,
 )
+# Exact evaluator metadata emitted in publication artifacts is descriptive, not runtime guidance. This exemption is
+# scoped to skill-root BENCHMARK.md and skill-card.md files so allowlist-shaped lines elsewhere are still flagged.
+_BENIGN_EVALUATOR_METADATA_LINE_RE = re.compile(
+    r"(?:"
+    r"- Evaluator version: `[0-9]+(?:\.[0-9]+){1,3}(?:[-+][0-9A-Za-z.-]+)?`"
+    r"|- Dataset digest: `sha256:[0-9a-f]{64}` \(skill-evaluator-dataset-snapshot/\d+\)"
+    r"|- AGENT_EVAL: Tier 3 evaluation complete: verdict (?:PASS|FAIL); best agent [A-Za-z0-9._-]+"
+    r"|\d+ evaluation tasks \(\d+ positive\) (?:from|against) skill-evaluator-dataset-snapshot/\d+\. <br>"
+    r"|\d+ evaluation tasks \(\d+ positive\) from skill-evaluator-dataset-snapshot, evaluated with "
+    r"\d+ attempts? per task in local environment\. <br>"
+    r"|Regenerate this benchmark when the skill, evaluation dataset, target agent/model, evaluator version, "
+    r"environment, or scoring policy changes\."
+    r")"
+)
 # Names excluded from runtime-guidance scanning. ``evals`` is co-located
 # evaluation metadata, which the standard installer copies with the complete
 # skill directory but which is not runtime guidance. Byte-code artifacts and
@@ -1250,7 +1264,7 @@ def _lint_runtime_boundary(context: LintContext) -> None:
                 )
             )
         for file_path, text in _iter_packaged_runtime_files(record.skill_dir):
-            _scan_runtime_boundary(context, file_path, text, skill=record.name)
+            _scan_runtime_boundary(context, file_path, text, skill_dir=record.skill_dir, skill=record.name)
 
 
 def _lint_dependency_install_safety(context: LintContext) -> None:
@@ -1399,7 +1413,10 @@ def _read_runtime_text_file(path: Path) -> Optional[str]:
     return _read_bounded_text(path)
 
 
-def _scan_runtime_boundary(context: LintContext, file_path: Path, text: str, *, skill: Optional[str]) -> None:
+def _scan_runtime_boundary(
+    context: LintContext, file_path: Path, text: str, *, skill_dir: Path, skill: Optional[str]
+) -> None:
+    is_publication_artifact = file_path.parent == skill_dir and file_path.name in {"BENCHMARK.md", "skill-card.md"}
     for line_no, line in enumerate(text.splitlines(), start=1):
         if _DESIGN_DOC_REF_RE.search(line):
             context.findings.append(
@@ -1416,7 +1433,9 @@ def _scan_runtime_boundary(context: LintContext, file_path: Path, text: str, *, 
                     global_finding=skill is None,
                 )
             )
-        if _EVALUATOR_HOOK_RE.search(line):
+        if _EVALUATOR_HOOK_RE.search(line) and not (
+            is_publication_artifact and _BENIGN_EVALUATOR_METADATA_LINE_RE.fullmatch(line)
+        ):
             context.findings.append(
                 _finding(
                     LINT_SKILL_RUNTIME_BOUNDARY,

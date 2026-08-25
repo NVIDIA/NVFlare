@@ -14,16 +14,25 @@
 
 """Deterministically import supported NVFlare job scripts into ``autofl.yaml``.
 
-The Auto-FL skill uses this module as its trust layer.  The importer parses
+Usage:
+    Import this library through ``run_job_campaign.py``; it is not a standalone
+    CLI and intentionally has no shebang or process exit-code contract.
+Arguments:
+    Public helpers accept a job source path plus optional static job arguments
+    and requested campaign settings.
+Output:
+    Returns a reviewable Auto-FL configuration mapping; dynamic or unsupported
+    fields are surfaced under ``unresolved``.
+
+The Auto-FL skill uses this module as its trust layer. The importer parses
 Python source with ``ast``; it never imports or executes the user's ``job.py``.
-Supported Recipe/FedJob patterns are converted into a reviewable config, while
-dynamic or unsupported fields are surfaced under ``unresolved``.
 """
 
 from __future__ import annotations
 
 import ast
 import hashlib
+import logging
 import os
 import re
 from dataclasses import dataclass
@@ -32,10 +41,11 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 import yaml
 
-try:
-    from nvflare.app_common.widgets.intime_model_selector import _looks_lower_is_better as _core_looks_lower_is_better
-except ImportError:
-    _core_looks_lower_is_better = None
+logger = logging.getLogger(__name__)
+
+_UNRESOLVED = object()
+_core_looks_lower_is_better = _UNRESOLVED
+_last_core_heuristic_warning = None
 
 AUTOFL_CONFIG_SCHEMA_VERSION = "nvflare.autofl.config.v1"
 IMPORTER_VERSION = "nvflare-autofl-job-importer/v1"
@@ -62,6 +72,7 @@ LOWER_IS_BETTER_METRIC_TOKENS = {
     "rmse",
     "wer",
 }
+ALREADY_NEGATED_METRIC_TOKEN = "neg"
 
 SUPPORTED_ENV_NAMES = {"PocEnv", "ProdEnv", "SimEnv"}
 NON_OPTIMIZATION_RECIPE_NAMES = {"FedEvalRecipe", "FedStatsRecipe", "NumpyCrossSiteEvalRecipe"}
@@ -116,20 +127,42 @@ class ResolvedValue:
 
 
 @dataclass(frozen=True)
+class AssignmentInfo:
+    """Assignment value with the branch conditions required to reach it."""
+
+    value: ast.AST
+    branch_conditions: Tuple[Tuple[ast.AST, bool], ...] = ()
+
+
+@dataclass(frozen=True)
 class CallInfo:
     """Supported call found in ``job.py`` with source-local resolution context."""
 
     name: str
     full_name: str
     keywords: Dict[str, ast.AST]
-    assignments: Dict[str, ast.AST]
+    assignments: Dict[str, Tuple[AssignmentInfo, ...]]
     source: str
     function_name: Optional[str] = None
     branch_conditions: Tuple[Tuple[ast.AST, bool], ...] = ()
+    has_keyword_splat: bool = False
+    has_positional_args: bool = False
+    has_positional_splat: bool = False
 
 
 class JobImportError(ValueError):
     """Raised when the importer cannot read or parse a job file."""
+
+
+class _NoAliasSafeDumper(yaml.SafeDumper):
+    def ignore_aliases(self, data):
+        return True
+
+
+def dump_autofl_yaml(config: Dict[str, Any]) -> str:
+    """Return deterministic YAML for an imported Auto-FL config."""
+
+    return yaml.dump(config, Dumper=_NoAliasSafeDumper, sort_keys=False)
 
 
 class DeterministicJobImporter:
@@ -195,7 +228,7 @@ class DeterministicJobImporter:
 
         parser_args, reachable_functions = _reachable_parser_args(tree, index, job_args or [])
         job_call = index.first_job_call(reachable_functions, parser_args)
-        env_call = index.first_env_call(reachable_functions)
+        env_call = index.first_env_call(reachable_functions, parser_args)
         train_script = self._resolve_train_script(
             source_path, job_call, index, parser_args, source_text, reachable_functions
         )
@@ -323,10 +356,7 @@ class DeterministicJobImporter:
         }
         return config
 
-    def dump_yaml(self, config: Dict[str, Any]) -> str:
-        """Return deterministic YAML for an imported Auto-FL config."""
-
-        return dump_autofl_yaml(config)
+    dump_yaml = staticmethod(dump_autofl_yaml)
 
     def _resolve_job_path(self, job_path: str) -> Path:
         path = Path(job_path)
@@ -394,6 +424,28 @@ class DeterministicJobImporter:
         parser_args: Dict[str, ArgSpec],
         source_text: str,
     ) -> Tuple[str, str, Optional[Dict[str, str]]]:
+        if job_call and job_call.has_positional_args:
+            return (
+                "accuracy",
+                "default",
+                _unresolved(
+                    "objective.metric",
+                    _positional_call_reason(
+                        job_call,
+                        "key_metric may be supplied positionally; use keyword-only constructor arguments",
+                    ),
+                ),
+            )
+        if job_call and job_call.has_keyword_splat and "key_metric" not in job_call.keywords:
+            return (
+                "accuracy",
+                "default",
+                _unresolved(
+                    "objective.metric",
+                    "job call passes **kwargs; key_metric may be supplied dynamically; "
+                    "write key_metric explicitly in the job call",
+                ),
+            )
         if job_call and "key_metric" in job_call.keywords:
             resolved = _resolve_value(job_call.keywords["key_metric"], job_call.assignments, parser_args, source_text)
             if isinstance(resolved.value, str) and not resolved.unresolved:
@@ -416,6 +468,30 @@ class DeterministicJobImporter:
     ) -> Tuple[str, str, Optional[Dict[str, str]]]:
         if not job_call:
             return "max", "unresolved", _unresolved("objective.mode", "job metric direction is unknown")
+
+        if job_call.has_positional_args:
+            return (
+                "max",
+                "unresolved",
+                _unresolved(
+                    "objective.mode",
+                    _positional_call_reason(
+                        job_call,
+                        "direction-relevant values may be supplied positionally; use keyword-only constructor arguments",
+                    ),
+                ),
+            )
+
+        if job_call.has_keyword_splat:
+            return (
+                "max",
+                "unresolved",
+                _unresolved(
+                    "objective.mode",
+                    "job call passes **kwargs; direction-relevant values may be supplied dynamically; "
+                    "remove **kwargs and write the applicable direction keyword explicitly in the job call",
+                ),
+            )
 
         model_selector = job_call.keywords.get("model_selector")
         if model_selector is not None:
@@ -498,12 +574,42 @@ class DeterministicJobImporter:
                 else:
                     fixed_training_budget["num_clients"] = resolved.value
 
-        if env_call and env_call.name == "SimEnv" and "num_clients" in env_call.keywords:
-            resolved = _resolve_value(env_call.keywords["num_clients"], env_call.assignments, parser_args, source_text)
+            if job_call.has_positional_args:
+                unresolved.append(
+                    _unresolved(
+                        "budget.fixed_training_budget",
+                        _positional_call_reason(
+                            job_call,
+                            "fixed training budget values may be supplied positionally; "
+                            "use keyword-only constructor arguments",
+                        ),
+                    )
+                )
+            if job_call.has_keyword_splat:
+                unresolved.append(
+                    _unresolved(
+                        "budget.fixed_training_budget",
+                        "job call passes **kwargs; fixed training budget values may be supplied dynamically; "
+                        "remove **kwargs and write the applicable budget keywords explicitly in the job call",
+                    )
+                )
+
+        if env_call and env_call.name == "SimEnv":
+            resolved = _resolve_sim_env_num_clients(env_call, parser_args, source_text)
             if resolved.unresolved:
                 unresolved.append(_unresolved("budget.fixed_training_budget.num_clients", resolved.source))
             else:
                 fixed_training_budget["num_clients"] = resolved.value
+            if env_call.has_positional_args:
+                unresolved.append(
+                    _unresolved(
+                        "budget.fixed_training_budget.num_clients",
+                        _positional_call_reason(
+                            env_call,
+                            "the client count may be supplied positionally; use keyword-only SimEnv arguments",
+                        ),
+                    )
+                )
 
         if fixed_training_budget:
             budget["fixed_training_budget"] = fixed_training_budget
@@ -522,12 +628,9 @@ class DeterministicJobImporter:
         environment: Dict[str, Any] = {"requested": requested, "profiles": {}, "simulator_env_passthrough": []}
         if env_call and env_call.name == "SimEnv":
             sim_profile: Dict[str, Any] = {}
-            if "num_clients" in env_call.keywords:
-                resolved = _resolve_value(
-                    env_call.keywords["num_clients"], env_call.assignments, parser_args, source_text
-                )
-                if not resolved.unresolved:
-                    sim_profile["num_clients"] = resolved.value
+            resolved = _resolve_sim_env_num_clients(env_call, parser_args, source_text)
+            if not resolved.unresolved:
+                sim_profile["num_clients"] = resolved.value
             environment["profiles"]["sim"] = sim_profile
         return environment
 
@@ -642,24 +745,13 @@ def inspect_job_cli_flags(job_path: str, job_args: Optional[Sequence[str]] = Non
     return sorted({flag for spec in parser_args.values() for flag in spec.flags if flag.startswith("--")})
 
 
-def dump_autofl_yaml(config: Dict[str, Any]) -> str:
-    """Return deterministic YAML for an imported Auto-FL config."""
-
-    return yaml.dump(config, Dumper=_NoAliasSafeDumper, sort_keys=False)
-
-
-class _NoAliasSafeDumper(yaml.SafeDumper):
-    def ignore_aliases(self, data):
-        return True
-
-
 class _ImportIndex(ast.NodeVisitor):
     def __init__(self, source_text: str):
         self.source_text = source_text
         self.imports: Dict[str, str] = {}
         self.parser_arg_definitions: Dict[str, List[ArgSpec]] = {}
-        self.module_assignments: Dict[str, ast.AST] = {}
-        self._local_assignments_stack: List[Dict[str, ast.AST]] = []
+        self.module_assignments: Dict[str, List[AssignmentInfo]] = {}
+        self._local_assignments_stack: List[Dict[str, List[AssignmentInfo]]] = []
         self._function_stack: List[str] = []
         self._branch_conditions: List[Tuple[ast.AST, bool]] = []
         self._argparse_parser_names: Set[Tuple[Optional[str], str]] = set()
@@ -682,8 +774,12 @@ class _ImportIndex(ast.NodeVisitor):
     ) -> Optional[CallInfo]:
         return _first_reachable_call(self.job_calls, reachable_functions, parser_args)
 
-    def first_env_call(self, reachable_functions: Optional[Set[str]] = None) -> Optional[CallInfo]:
-        return _first_reachable_call(self.env_calls, reachable_functions)
+    def first_env_call(
+        self,
+        reachable_functions: Optional[Set[str]] = None,
+        parser_args: Optional[Dict[str, ArgSpec]] = None,
+    ) -> Optional[CallInfo]:
+        return _first_reachable_call(self.env_calls, reachable_functions, parser_args)
 
     def first_unsupported_job_call(self) -> Optional[CallInfo]:
         return self.unsupported_job_calls[0] if self.unsupported_job_calls else None
@@ -727,13 +823,13 @@ class _ImportIndex(ast.NodeVisitor):
     def visit_Assign(self, node: ast.Assign) -> None:
         for target in node.targets:
             if isinstance(target, ast.Name):
-                self._current_assignments()[target.id] = node.value
+                self._record_assignment(target.id, node.value)
                 self._track_argparse_assignment(target.id, node.value)
         self.generic_visit(node)
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
         if isinstance(node.target, ast.Name) and node.value:
-            self._current_assignments()[node.target.id] = node.value
+            self._record_assignment(node.target.id, node.value)
             self._track_argparse_assignment(node.target.id, node.value)
         self.generic_visit(node)
 
@@ -742,7 +838,7 @@ class _ImportIndex(ast.NodeVisitor):
             # The result depends on runtime state. Preserve the expression so
             # downstream resolution marks the value as unresolved instead of
             # reusing an earlier static assignment.
-            self._current_assignments()[node.target.id] = node
+            self._record_assignment(node.target.id, node)
         self.generic_visit(node)
 
     def visit_If(self, node: ast.If) -> None:
@@ -778,6 +874,9 @@ class _ImportIndex(ast.NodeVisitor):
                 source=_source_segment(self.source_text, node),
                 function_name=self._function_stack[-1] if self._function_stack else None,
                 branch_conditions=tuple(self._branch_conditions),
+                has_keyword_splat=any(keyword.arg is None for keyword in node.keywords),
+                has_positional_args=bool(node.args),
+                has_positional_splat=any(isinstance(arg, ast.Starred) for arg in node.args),
             )
             if is_environment:
                 self.env_calls.append(call_info)
@@ -820,15 +919,19 @@ class _ImportIndex(ast.NodeVisitor):
             return call_name
         return f"{imported}.{remainder}" if separator else imported
 
-    def _current_assignments(self) -> Dict[str, ast.AST]:
+    def _current_assignments(self) -> Dict[str, List[AssignmentInfo]]:
         if self._local_assignments_stack:
             return self._local_assignments_stack[-1]
         return self.module_assignments
 
-    def _resolution_assignments(self) -> Dict[str, ast.AST]:
-        assignments = dict(self.module_assignments)
+    def _record_assignment(self, name: str, value: ast.AST) -> None:
+        assignment = AssignmentInfo(value=value, branch_conditions=tuple(self._branch_conditions))
+        self._current_assignments().setdefault(name, []).append(assignment)
+
+    def _resolution_assignments(self) -> Dict[str, Tuple[AssignmentInfo, ...]]:
+        assignments = {name: tuple(history) for name, history in self.module_assignments.items()}
         if self._local_assignments_stack:
-            assignments.update(self._local_assignments_stack[-1])
+            assignments.update({name: tuple(history) for name, history in self._local_assignments_stack[-1].items()})
         return assignments
 
 
@@ -850,11 +953,20 @@ def _first_reachable_call(
 
 
 def _matches_static_branch_conditions(call: CallInfo, arg_values: Dict[str, Any]) -> bool:
-    for condition, expected in call.branch_conditions:
+    return _static_branch_conditions_match(call.branch_conditions, arg_values) is not False
+
+
+def _static_branch_conditions_match(
+    branch_conditions: Sequence[Tuple[ast.AST, bool]], arg_values: Dict[str, Any]
+) -> Optional[bool]:
+    unknown = False
+    for condition, expected in branch_conditions:
         value = _static_condition_value(condition, arg_values)
-        if value is not None and value != expected:
+        if value is None:
+            unknown = True
+        elif value != expected:
             return False
-    return True
+    return None if unknown else True
 
 
 def _arg_spec_signature(spec: ArgSpec) -> Tuple[Any, ...]:
@@ -1035,6 +1147,9 @@ def _static_condition_value(node: ast.AST, arg_values: Dict[str, Any]) -> Option
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
         value = _static_condition_value(node.operand, arg_values)
         return None if value is None else not value
+    known, value = _static_condition_operand(node, arg_values)
+    if known:
+        return bool(value)
     return None
 
 
@@ -1139,7 +1254,7 @@ def _name_from_flags(flags: Iterable[str]) -> Optional[str]:
 
 def _resolve_value(
     node: ast.AST,
-    assignments: Dict[str, ast.AST],
+    assignments: Dict[str, Tuple[AssignmentInfo, ...]],
     parser_args: Dict[str, ArgSpec],
     source_text: str,
     seen: Optional[set[str]] = None,
@@ -1161,7 +1276,10 @@ def _resolve_value(
         if node.id in parser_args:
             return _resolve_arg_default(node.id, parser_args[node.id])
         if node.id in assignments:
-            return _resolve_value(assignments[node.id], assignments, parser_args, source_text, seen | {node.id})
+            assignment, issue = _select_assignment(node.id, assignments[node.id], parser_args)
+            if issue:
+                return ResolvedValue(None, issue, "low", True)
+            return _resolve_value(assignment, assignments, parser_args, source_text, seen | {node.id})
         return ResolvedValue(node.id, f"name:{node.id}", "low", True)
 
     if isinstance(node, ast.Call):
@@ -1184,6 +1302,64 @@ def _resolve_value(
             )
 
     return ResolvedValue(_source_segment(source_text, node) or type(node).__name__, "expression", "low", True)
+
+
+def _select_assignment(
+    name: str,
+    history: Sequence[AssignmentInfo],
+    parser_args: Dict[str, ArgSpec],
+) -> Tuple[Optional[ast.AST], Optional[str]]:
+    arg_values = {key: spec.default for key, spec in parser_args.items() if not spec.default_unresolved}
+    for assignment in reversed(history):
+        branch_match = _static_branch_conditions_match(assignment.branch_conditions, arg_values)
+        if branch_match is False:
+            continue
+        if branch_match is None:
+            return None, f"conditional assignment for {name} cannot be resolved from job arguments"
+        return assignment.value, None
+    return None, f"no reachable assignment for {name}"
+
+
+def _resolve_sim_env_num_clients(
+    env_call: CallInfo,
+    parser_args: Dict[str, ArgSpec],
+    source_text: str,
+) -> ResolvedValue:
+    """Resolve the effective client count using ``SimEnv`` runtime semantics."""
+
+    num_clients_node = env_call.keywords.get("num_clients")
+    if num_clients_node is not None:
+        num_clients = _resolve_value(num_clients_node, env_call.assignments, parser_args, source_text)
+        if num_clients.unresolved:
+            return ResolvedValue(None, f"num_clients is dynamic: {num_clients.source}", "low", True)
+        if isinstance(num_clients.value, bool) or not isinstance(num_clients.value, int):
+            return ResolvedValue(None, "num_clients must resolve to an integer", "low", True)
+        if num_clients.value > 0:
+            return num_clients
+
+    clients_node = env_call.keywords.get("clients")
+    if clients_node is not None:
+        clients = _resolve_value(clients_node, env_call.assignments, parser_args, source_text)
+        if clients.unresolved:
+            return ResolvedValue(None, f"clients is dynamic: {clients.source}", "low", True)
+        if not isinstance(clients.value, list) or not clients.value:
+            return ResolvedValue(None, "clients must resolve to a non-empty static list", "low", True)
+        return ResolvedValue(len(clients.value), f"len(clients):{clients.source}")
+
+    if env_call.has_keyword_splat:
+        return ResolvedValue(
+            None,
+            "SimEnv call passes **kwargs; num_clients or clients may be supplied dynamically; "
+            "write a positive num_clients or a non-empty static clients list explicitly in the SimEnv call",
+            "low",
+            True,
+        )
+    return ResolvedValue(
+        None,
+        "SimEnv client count is unresolved; write a positive num_clients or a non-empty static clients list",
+        "low",
+        True,
+    )
 
 
 def _resolve_arg_default(name: str, arg_spec: ArgSpec) -> ResolvedValue:
@@ -1225,18 +1401,42 @@ def _resolve_stop_condition_mode(
     return None, None
 
 
+def _resolve_core_heuristic():
+    """Load and cache the core heuristic, retrying after transient import failures."""
+
+    global _core_looks_lower_is_better, _last_core_heuristic_warning
+
+    if _core_looks_lower_is_better is _UNRESOLVED:
+        try:
+            from nvflare.app_common.widgets.intime_model_selector import _looks_lower_is_better
+        except Exception as e:
+            warning = (type(e).__name__, str(e))
+            if warning != _last_core_heuristic_warning:
+                logger.warning(
+                    "Unable to load the NVFlare core metric heuristic (%s: %s); using the local fallback and "
+                    "retrying on the next check",
+                    *warning,
+                )
+                _last_core_heuristic_warning = warning
+            return None
+        else:
+            _core_looks_lower_is_better = _looks_lower_is_better
+    return _core_looks_lower_is_better
+
+
 def likely_lower_is_better_metric(metric: str) -> bool:
     """Return whether a metric name is an obvious lower-is-better objective."""
 
-    if _core_looks_lower_is_better is not None:
-        return _core_looks_lower_is_better(metric)
+    core_heuristic = _resolve_core_heuristic()
+    if core_heuristic is not None:
+        return core_heuristic(metric)
     return _fallback_looks_lower_is_better(metric)
 
 
 def _fallback_looks_lower_is_better(metric: str) -> bool:
     name = metric.lower()
     tokens = re.split(r"[^a-z0-9]+", name)
-    if "neg" in tokens:
+    if ALREADY_NEGATED_METRIC_TOKEN in tokens:
         return False
     if any(hint in name for hint in LOWER_IS_BETTER_METRIC_SUBSTRINGS):
         return True
@@ -1246,7 +1446,7 @@ def _fallback_looks_lower_is_better(metric: str) -> bool:
 def _resolve_path_call(
     node: ast.Call,
     call_name: str,
-    assignments: Dict[str, ast.AST],
+    assignments: Dict[str, Tuple[AssignmentInfo, ...]],
     parser_args: Dict[str, ArgSpec],
     source_text: str,
 ) -> Optional[ResolvedValue]:
@@ -1450,3 +1650,8 @@ def _overall_confidence(unresolved: List[Dict[str, str]], job_call: Optional[Cal
 
 def _unresolved(field: str, reason: str) -> Dict[str, str]:
     return {"field": field, "reason": reason}
+
+
+def _positional_call_reason(call_info: CallInfo, detail: str) -> str:
+    argument_kind = "*args" if call_info.has_positional_splat else "positional arguments"
+    return f"{call_info.name} call passes {argument_kind}; {detail}"
