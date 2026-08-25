@@ -31,3 +31,20 @@ def test_internal_listener_host_overrides_default_resources():
 
     assert manager.int_resources[DriverParams.HOST.value] == "127.0.0.1"
     assert manager.int_resources[DriverParams.LISTEN_HOST.value] == "127.0.0.1"
+
+
+def test_internal_listener_host_does_not_override_configured_host():
+    comm_configurator = MagicMock()
+    comm_configurator.get_config.return_value = {
+        "internal": {"scheme": "tcp", "resources": {DriverParams.HOST.value: "10.0.0.5"}}
+    }
+
+    manager = ConnectorManager(
+        communicator=MagicMock(),
+        secure=False,
+        comm_configurator=comm_configurator,
+        internal_listener_host="127.0.0.1",
+    )
+
+    assert manager.int_resources[DriverParams.HOST.value] == "10.0.0.5"
+    assert DriverParams.LISTEN_HOST.value not in manager.int_resources

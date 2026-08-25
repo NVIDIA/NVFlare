@@ -43,11 +43,11 @@ class TestNetUtils:
     @patch("nvflare.fuel.f3.drivers.net_utils.get_open_tcp_port", return_value=1234)
     def test_tcp_listener_uses_explicit_listening_host(self, _):
         resources = {
-            DriverParams.HOST.value: "127.0.0.1",
+            DriverParams.HOST.value: "server.example",
             DriverParams.LISTEN_HOST.value: "127.0.0.1",
         }
 
-        assert get_tcp_urls("tcp", resources) == ("tcp://127.0.0.1:1234", "tcp://127.0.0.1:1234")
+        assert get_tcp_urls("tcp", resources) == ("tcp://server.example:1234", "tcp://127.0.0.1:1234")
 
     @patch("nvflare.fuel.f3.drivers.net_utils.get_open_tcp_port", return_value=1234)
     def test_tcp_listener_default_remains_wildcard(self, _):

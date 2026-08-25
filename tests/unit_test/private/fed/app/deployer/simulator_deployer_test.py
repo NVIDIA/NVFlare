@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import argparse
-import ipaddress
 import os
 import shutil
 import tempfile
@@ -80,8 +79,6 @@ class TestSimulatorDeploy(unittest.TestCase):
         assert isinstance(server, SimulatorServer)
         assert isinstance(server.engine.run_manager, RunManager)
         listening_host = "127.0.0.1"
-        listen_ip = ipaddress.ip_address(listening_host)
-        assert listen_ip.version == 4 and listen_ip.is_loopback
         fl_port = server_config["service"]["target"].rsplit(":", 1)[1]
         admin_port = server_config["admin_port"]
         cell_args = mock_cell.call_args.kwargs
