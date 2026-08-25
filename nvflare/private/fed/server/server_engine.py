@@ -57,6 +57,7 @@ from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.zip_utils import zip_directory_to_bytes
 from nvflare.private.admin_defs import Message, MsgHeader
+from nvflare.private.admin_defs import ReturnCode as AdminReturnCode
 from nvflare.private.aux_runner import AuxMsgTarget
 from nvflare.private.defs import (
     AUTH_CLIENT_NAME_FOR_SJ,
@@ -1053,17 +1054,43 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
         self, resource_check_results: Dict[str, Tuple[bool, str]], resource_reqs: Dict[str, dict], fl_ctx: FLContext
     ):
         requests = {}
+        reservation_sites = set()
         for site_name, result in resource_check_results.items():
             is_resource_enough, token = result
             if is_resource_enough and token:
+                reservation_sites.add(site_name)
                 resource_requirements = resource_reqs.get(site_name, {})
                 request = Message(topic=TrainingTopic.CANCEL_RESOURCE, body=resource_requirements)
                 request.set_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, token)
                 client = self.get_client_from_name(site_name)
                 if client:
                     requests.update({client.token: request})
-        if requests:
-            _ = self._send_admin_requests(requests, fl_ctx)
+
+        replies = self._send_admin_requests(requests, fl_ctx) if requests else []
+        replies_by_site = {reply.client_name: reply for reply in replies}
+        cancellation_errors = []
+        for site_name in sorted(reservation_sites):
+            client_reply = replies_by_site.get(site_name)
+            if not client_reply or not client_reply.reply:
+                cancellation_errors.append(f"{site_name}: no acknowledgement")
+                continue
+
+            reply = client_reply.reply
+            message_rc = reply.get_header(MsgHeader.RETURN_CODE, AdminReturnCode.OK)
+            if message_rc not in (AdminReturnCode.OK, ReturnCode.OK):
+                cancellation_errors.append(f"{site_name}: message return code {message_rc}")
+                continue
+
+            if not isinstance(reply.body, Shareable):
+                cancellation_errors.append(f"{site_name}: invalid acknowledgement")
+                continue
+
+            cancellation_rc = reply.body.get_return_code()
+            if cancellation_rc != ReturnCode.OK:
+                cancellation_errors.append(f"{site_name}: cancellation return code {cancellation_rc}")
+
+        if cancellation_errors:
+            raise RuntimeError(f"resource cancellation was not acknowledged: {'; '.join(cancellation_errors)}")
 
     def start_client_job(self, job, client_sites, fl_ctx: FLContext):
         requests = {}

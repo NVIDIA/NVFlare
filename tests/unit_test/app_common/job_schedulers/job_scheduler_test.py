@@ -655,6 +655,50 @@ class TestDefaultJobScheduler:
         assert JobMetaKey.SCHEDULE_COUNT.value not in later_candidate.meta
         job_manager.refresh_meta.assert_called_once_with(failed_candidate, scheduler._get_update_meta_keys(), ANY)
 
+    def test_partial_resource_results_cancel_known_reservations_and_stop_candidate_scan(self, monkeypatch):
+        resource_manager = Mock(spec=ResourceManagerSpec)
+        server = create_servers(
+            1,
+            [
+                Site("site1", {}, resource_manager),
+                Site("site2", {}),
+            ],
+        )[0]
+        failed_candidate = create_job(
+            job_id="failed-job",
+            resource_spec={},
+            deploy_map={"app": ["server", "site1", "site2"]},
+            min_sites=1,
+        )
+        later_candidate = create_job(
+            job_id="later-job",
+            resource_spec={},
+            deploy_map={"app": ["server", "site1", "site2"]},
+            min_sites=1,
+        )
+        scheduler = DefaultJobScheduler(max_jobs=1, min_schedule_interval=0)
+        job_manager = Mock(spec=JobDefManagerSpec)
+        check_client_resources = Mock(return_value={"site1": (True, "reservation-token")})
+        monkeypatch.setattr(server, "check_client_resources", check_client_resources)
+
+        with server.new_context() as fl_ctx:
+            job, dispatch_info = scheduler.schedule_job(
+                job_manager=job_manager,
+                job_candidates=[failed_candidate, later_candidate],
+                fl_ctx=fl_ctx,
+            )
+
+        assert job is None
+        assert dispatch_info is None
+        check_client_resources.assert_called_once()
+        resource_manager.cancel_resources.assert_called_once_with(
+            resource_requirement={}, token="reservation-token", fl_ctx=ANY
+        )
+        assert failed_candidate.meta[JobMetaKey.SCHEDULE_COUNT.value] == 1
+        assert "missing sites: ['site2']" in failed_candidate.meta[JobMetaKey.SCHEDULE_HISTORY.value][0]
+        assert JobMetaKey.SCHEDULE_COUNT.value not in later_candidate.meta
+        job_manager.refresh_meta.assert_called_once_with(failed_candidate, scheduler._get_update_meta_keys(), ANY)
+
     def test_empty_resource_results_without_expected_replies_continue_candidate_scan(self):
         server = create_servers(1, [Site("site1", {})])[0]
         server_only_candidate = create_job(
@@ -712,6 +756,55 @@ class TestDefaultJobScheduler:
         assert dispatch_info is None
         assert resource_manager.check_resources.call_count == 1
         job_manager.set_status.assert_called_once_with(candidate.job_id, RunStatus.FINISHED_CANT_SCHEDULE, ANY)
+
+    def test_post_admission_bookkeeping_error_cancels_resources_and_continues(self, monkeypatch):
+        resource_manager = Mock(spec=ResourceManagerSpec)
+        resource_manager.check_resources.side_effect = [(True, "first-token"), (True, "second-token")]
+        server = create_servers(1, [Site("site1", {}, resource_manager)])[0]
+        failed_candidate = create_job(
+            job_id="failed-job",
+            resource_spec={},
+            deploy_map={"app": ["server", "site1"]},
+            min_sites=1,
+        )
+        later_candidate = create_job(
+            job_id="later-job",
+            resource_spec={},
+            deploy_map={"app": ["server", "site1"]},
+            min_sites=1,
+        )
+        scheduler = DefaultJobScheduler(max_jobs=1, min_schedule_interval=0)
+        job_manager = Mock(spec=JobDefManagerSpec)
+        update_schedule_history = scheduler._update_schedule_history
+        update_calls = 0
+
+        def fail_first_history_update(job, result, fl_ctx):
+            nonlocal update_calls
+            update_calls += 1
+            if update_calls == 1:
+                raise RuntimeError("history update failed")
+            update_schedule_history(job, result, fl_ctx)
+
+        monkeypatch.setattr(scheduler, "_update_schedule_history", fail_first_history_update)
+
+        with server.new_context() as fl_ctx:
+            job, dispatch_info = scheduler.schedule_job(
+                job_manager=job_manager,
+                job_candidates=[failed_candidate, later_candidate],
+                fl_ctx=fl_ctx,
+            )
+
+        assert job is later_candidate
+        assert dispatch_info["site1"].token == "second-token"
+        resource_manager.cancel_resources.assert_called_once_with(
+            resource_requirement={}, token="first-token", fl_ctx=ANY
+        )
+        assert failed_candidate.meta[JobMetaKey.SCHEDULE_COUNT.value] == 1
+        assert (
+            "unexpected admission error: RuntimeError: history update failed"
+            in failed_candidate.meta[JobMetaKey.SCHEDULE_HISTORY.value][0]
+        )
+        job_manager.refresh_meta.assert_called_once_with(failed_candidate, scheduler._get_update_meta_keys(), ANY)
 
     @pytest.mark.parametrize("job_candidates,sites,expected_job,expected_dispatch_info", TEST_CASES)
     def test_normal_case(self, job_candidates, sites, expected_job, expected_dispatch_info):
