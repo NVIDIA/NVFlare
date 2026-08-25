@@ -7,6 +7,14 @@ What's New in FLARE v2.9.0
 Compatibility and Migration Notes
 =================================
 
+- ``nvflare poc start`` and ``nvflare poc stop`` now preserve every repeated
+  ``-p`` / ``--service`` and ``-ex`` / ``--exclude`` value. Earlier versions
+  silently kept only the last value. ``poc stop`` now also honors participant
+  exclusions. A bare ``poc start`` continues to start the server and clients
+  without an admin console.
+- ``nvflare poc stop`` now waits for targeted and exclusion-based shutdowns to
+  complete before returning ``status: stopped``. Use ``--no-wait`` for
+  fire-and-forget behavior.
 - Docker jobs may now control only ``image``, ``python_path``, ``entrypoint``,
   ``num_of_gpus``, and ``shm_size`` through their launcher metadata. Selecting
   ``image``, ``python_path``, or ``entrypoint`` requires BYOC authorization at
@@ -123,7 +131,15 @@ Compatibility and Migration Notes
   ``key_metric`` with ``key_metric_mode``, or declare the alternate metric
   bridge, before initializing a campaign. Experimental legacy minimization
   campaigns without direction provenance must be re-initialized in a fresh
-  workspace.
+  workspace. Job constructor calls that pass positional arguments, ``*args``,
+  or ``**kwargs`` now also fail closed when dynamic arguments could hide the
+  metric, direction, or fixed training budget. Rewrite the call with
+  keyword-only arguments, no splats, and the constructor's applicable
+  safety-critical keywords spelled out before initializing. ``SimEnv`` calls
+  pin a positive explicit ``num_clients``; when it is zero or omitted, they
+  must expose a non-empty static ``clients`` list whose length is pinned.
+  Dynamic or splatted client-count sources fail closed. A declared
+  alternate-metric bridge cannot override an unresolved native job metric.
 - In external-process Client API mode, losing a trainer after its lazy result
   envelope has been accepted now fails the run as ``EXECUTION_EXCEPTION`` even
   if a controller's ``min_responses`` threshold could otherwise tolerate a
