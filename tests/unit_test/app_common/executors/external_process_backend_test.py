@@ -1106,6 +1106,92 @@ class TestInitializeAndFinalize:
         assert "forcing trainer cleanup" not in caplog.text
         assert process.returncode == 0
 
+    def test_settled_source_that_never_exits_is_forced_after_fresh_budget(self, env, monkeypatch):
+        monkeypatch.setattr(ebp, "_RESULT_REAPER_MAX_TOTAL_TIMEOUT", 0.2)
+        monkeypatch.setattr(ebp, "_RESULT_REAPER_FORCE_TERM_GRACE", 0.05)
+        monkeypatch.setattr(ebp, "_NATURAL_EXIT_REAP_INTERVAL", 0.01)
+        backend, _ = _initialized_backend(env, shutdown_timeout=0.0, stop_grace_period=0.05)
+        trainer = backend._active_launch
+        trainer.result_source_live.set()
+        clock = [10.0]
+        started = clock[0]
+        settle_at = started + 0.04
+        signals = []
+
+        class ClockedReaper:
+            name = "clocked_result_reaper"
+            settled_at = None
+
+            def is_alive(self):
+                return not trainer._cleaned
+
+            def join(self, timeout):
+                if not self.is_alive():
+                    return
+                clock[0] += timeout
+                if self.settled_at is None and clock[0] >= settle_at:
+                    trainer.result_source_live.clear()
+                    self.settled_at = clock[0]
+                assert clock[0] < started + 0.5, "settled deadline did not expire"
+
+        reaper = ClockedReaper()
+        trainer.reaper_thread = reaper
+        backend._result_reapers.add(trainer)
+        monkeypatch.setattr(ebp.time, "monotonic", lambda: clock[0])
+        monkeypatch.setattr(backend, "_request_trainer_shutdown", lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(backend, "_process_group_alive", lambda _trainer: True)
+        monkeypatch.setattr(backend, "_await_group_exit", lambda _trainer, _timeout: True)
+        monkeypatch.setattr(
+            backend,
+            "_signal_process_tree",
+            lambda _trainer, hard: signals.append((hard, clock[0])),
+        )
+
+        backend._wait_for_result_reapers()
+
+        assert reaper.settled_at is not None
+        assert signals[0][0] is False
+        assert signals[0][1] - reaper.settled_at == pytest.approx(0.15)
+
+    def test_live_source_sigterm_starts_at_bound_minus_reserved_grace(self, env, monkeypatch):
+        monkeypatch.setattr(ebp, "_RESULT_REAPER_MAX_TOTAL_TIMEOUT", 0.2)
+        monkeypatch.setattr(ebp, "_RESULT_REAPER_FORCE_TERM_GRACE", 0.05)
+        monkeypatch.setattr(ebp, "_NATURAL_EXIT_REAP_INTERVAL", 0.01)
+        backend, _ = _initialized_backend(env, shutdown_timeout=0.0, stop_grace_period=0.05)
+        trainer = backend._active_launch
+        trainer.result_source_live.set()
+        clock = [10.0]
+        started = clock[0]
+        signals = []
+
+        class ClockedReaper:
+            name = "clocked_result_reaper"
+
+            def is_alive(self):
+                return not trainer._cleaned
+
+            def join(self, timeout):
+                if not self.is_alive():
+                    return
+                clock[0] += timeout
+                assert clock[0] < started + 0.3, "live deadline did not expire"
+
+        trainer.reaper_thread = ClockedReaper()
+        backend._result_reapers.add(trainer)
+        monkeypatch.setattr(ebp.time, "monotonic", lambda: clock[0])
+        monkeypatch.setattr(backend, "_request_trainer_shutdown", lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(backend, "_process_group_alive", lambda _trainer: True)
+        monkeypatch.setattr(backend, "_await_group_exit", lambda _trainer, _timeout: True)
+        monkeypatch.setattr(
+            backend,
+            "_signal_process_tree",
+            lambda _trainer, hard: signals.append((hard, clock[0])),
+        )
+
+        backend._wait_for_result_reapers()
+
+        assert signals == [(False, pytest.approx(started + 0.15))]
+
     @pytest.mark.skipif(os.name != "posix", reason="process-group semantics are POSIX")
     def test_live_timeout_reserves_term_grace_before_hard_deadline(self, env, monkeypatch):
         monkeypatch.setattr(ebp, "_RESULT_REAPER_MAX_TOTAL_TIMEOUT", 0.2)
@@ -1130,7 +1216,7 @@ class TestInitializeAndFinalize:
 
         backend.finalize(FLContext())
 
-        assert await_timeouts[0] == pytest.approx(0.05, abs=0.01)
+        assert await_timeouts[0] == 0.05
         assert env.harness.signals_sent() == [
             (process.pid, signal.SIGTERM),
             (process.pid, signal.SIGKILL),

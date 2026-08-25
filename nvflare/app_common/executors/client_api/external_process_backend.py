@@ -657,7 +657,7 @@ class ExternalProcessBackend(CellBackendBase):
                     raise
 
     def _wait_for_result_reapers(self) -> None:
-        """Wait boundedly for result sources without preempting a settled trainer's final work."""
+        """Wait within phase-local bounds without preempting a settled trainer's final work."""
         started = time.monotonic()
         settled_wait, settled_term_grace = self._settled_result_reaper_budget()
         live_wait = max(0.0, self._result_reaper_wait_bound() - settled_term_grace)
@@ -925,25 +925,24 @@ class ExternalProcessBackend(CellBackendBase):
         return shutdown_bound if shutdown_bound > 0 else _DEFAULT_SHUTDOWN_TIMEOUT
 
     def _result_reaper_wait_bound(self) -> float:
-        """Return the session-scale cleanup bound for a live result source.
+        """Return the session-scale bound used to split live wait and TERM grace.
 
         A source transaction has its own streaming idle timeout, but END_RUN cannot
         wait for that independently long timeout: the outer job process may tear down
-        the CJ first and orphan an owned per-task trainer. The short SHUTDOWN request
-        repeatedly samples whether send() still owns its transfer barrier, including
-        one final sample at the deadline. This lets completed transfer cleanup settle
-        the source even when its task-correlated settlement request is delayed. The
-        separately configured natural-exit grace starts when the source is first
-        observed settled.
+        the CJ first and orphan an owned per-task trainer. The live wait reserves TERM
+        grace inside this bound, then makes one final bounded SHUTDOWN probe. This lets
+        completed transfer cleanup settle the source even when its task-correlated
+        settlement request is delayed. The separately configured natural-exit grace
+        starts when the source is first observed settled.
         """
         return _RESULT_REAPER_MAX_TOTAL_TIMEOUT
 
     def _settled_result_reaper_budget(self) -> Tuple[float, float]:
         """Return natural-exit and TERM budgets for a settled one-task trainer.
 
-        Reserve a small configured TERM grace inside a fixed total bound. This
-        prevents END_RUN from cutting off normal post-send work at the live-source
-        acknowledgement deadline while ensuring the CJ remains bounded.
+        Reserve a small configured TERM grace inside a fixed settled-phase bound.
+        This phase starts when settlement is observed, after any preceding live-source
+        wait, so END_RUN does not cut off normal post-send work at the live deadline.
         """
         term_grace = min(max(0.0, self._termination_grace()), _RESULT_REAPER_FORCE_TERM_GRACE)
         natural_cap = max(0.0, _RESULT_REAPER_MAX_TOTAL_TIMEOUT - term_grace)

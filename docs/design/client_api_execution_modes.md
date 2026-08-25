@@ -307,10 +307,13 @@ longer data-transfer budget does not govern CJ process ownership. END_RUN uses a
 SHUTDOWN request to sample send-barrier state throughout a session-scale cleanup interval. The
 trainer publishes transfer-barrier completion before waiting for `RESULT_SOURCE_SETTLED`, and the
 reaper makes a final SHUTDOWN probe at the deadline. Therefore a completed transfer is treated as
-settled even if its separate settlement acknowledgement is delayed. The live-source interval
-reserves the capped TERM grace inside its 30-second cleanup budget; the final bounded control probe
-is separate. Once a source is observed settled, its configured natural-exit budget starts fresh and
-is followed by the same small TERM grace. A run-abort-marked `ABORT_TASK`
+settled even if its separate settlement acknowledgement is delayed. With the defaults, the
+live-source wait reserves the 5-second TERM grace and therefore ends after 25 seconds. The final
+control probe may wait up to 5 seconds; if the source is still live, TERM grace may add another
+5 seconds, for a 35-second maximum. Because a live reply can return immediately, settlement after
+the 25-second wait is not guaranteed to be observed. Once a source is observed settled, its
+configured natural-exit budget starts fresh and is followed by the same small TERM grace. A
+run-abort-marked `ABORT_TASK`
 latches aborted teardown even when `execute()` already returned the lazy result, sends ABORT
 immediately, and bypasses the normal result-source drain interval. Task/workflow-only cancellation
 sends ABORT without poisoning later tasks, and normal END_RUN carries no run-abort marker. Other
@@ -331,11 +334,10 @@ budget. Zero skips the direct orderly-exit and finalize-gate waits, but the acce
 disconnect and post-settlement group-exit roles normalize it to the 30-second backend default. That
 fallback also feeds the fixed 30-second settled-reaper budget, which reserves up to 5 seconds for
 termination. This zero configuration is the live default for `ScriptRunner`.
-The accepted-result reaper caps `stop_grace_period` at 5 seconds inside each 30-second cleanup
-budget, while ordinary forced teardown honors the full configured grace. An accepted result whose
-publication is still live receives that cleanup budget, with the TERM grace reserved at the end,
-and one final bounded SHUTDOWN state probe before process cleanup. A transition to settled starts a
-fresh post-settlement cleanup budget.
+The accepted-result reaper caps `stop_grace_period` at 5 seconds inside each phase's session-scale
+bound, while ordinary forced teardown honors the full configured grace. An accepted result whose
+publication is still live receives the live wait and final SHUTDOWN state probe described above. A
+transition to settled starts a fresh post-settlement cleanup budget.
 
 The backend starts the command in an owned process group on POSIX, monitors process-group exit and
 the authenticated heartbeat lease, and rejects messages from stale sessions or unexpected Cell

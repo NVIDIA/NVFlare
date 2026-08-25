@@ -466,9 +466,12 @@ modes. Heartbeats apply only to the out-of-process modes.
        Zero skips direct orderly-exit and finalize-gate waits but maps to 30
        seconds for accepted-source disconnect and post-settlement group-exit
        waits; that fallback also feeds the fixed settled-reaper budget. A
-       still-live accepted source receives a 30-second cleanup budget, with the
-       capped termination grace reserved at the end, and one final bounded
-       SHUTDOWN state probe. Observed settlement starts a fresh settled-reaper
+       still-live accepted source reserves the termination grace from a 30-second
+       session-scale bound. With the defaults, this leaves a 25-second live wait,
+       followed by a final SHUTDOWN state probe of up to 5 seconds and, if still
+       live, up to 5 seconds of termination grace (35 seconds maximum). A live
+       reply can return immediately, so settlement after the 25-second wait is not
+       guaranteed to be observed. Observed settlement starts a fresh settled-reaper
        budget.
    * - ``stop_grace_period``
      - ``external_process``
@@ -1694,9 +1697,10 @@ process group and applies these shutdown bounds:
      - Orderly-exit wait, also reused for the finalize gate, accepted-source
        disconnect fallback, post-settlement group-exit wait, and settled-result
        reaper budget. Zero maps to a 30-second disconnect grace for an accepted
-       result source. A still-live accepted source also receives a fixed 30-second
-       cleanup budget with termination grace reserved at the end; observed
-       settlement starts a fresh settled-reaper budget.
+       result source. For a still-live accepted source, the 30-second session-scale
+       bound is split into a 25-second live wait and 5-second termination grace,
+       with a final bounded SHUTDOWN state probe between them. Observed settlement
+       starts a fresh settled-reaper budget.
    * - stop_grace_period
      - 30.0
      - Time between soft and hard process-group termination. Accepted-result
