@@ -17,14 +17,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import (
-    FLContextKey,
-    ReservedKey,
-    ReturnCode,
-    StreamCtxKey,
-    SystemComponents,
-    WorkspaceConstants,
-)
+from nvflare.apis.fl_constant import ReservedKey, ReturnCode, StreamCtxKey, SystemComponents, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.storage import DataTypes, StorageSpec
 from nvflare.apis.streaming import StreamContextKey
@@ -110,43 +103,6 @@ def _make_recv_fl_ctx(client_name="trusted_client", site_allows: bool = True):
     fl_ctx.put(key=ReservedKey.ENGINE, value=engine, private=True, sticky=False)
     fl_ctx.set_peer_context(peer_ctx)
     return fl_ctx
-
-
-def _make_run_fl_ctx(job_id="trusted_job"):
-    fl_ctx = FLContext()
-    fl_ctx.put(key=ReservedKey.RUN_NUM, value=job_id, private=True, sticky=False)
-    return fl_ctx
-
-
-def test_job_log_receiver_holds_end_run_until_all_job_streams_finish(tmp_path):
-    receiver = JobLogReceiver(dest_dir=str(tmp_path))
-    streams = []
-    for client_name in ("site-1", "site-2"):
-        stream_ctx = {
-            KEY_FILE_NAME: WorkspaceConstants.LOG_FILE_NAME,
-            StreamContextKey.RC: ReturnCode.OK,
-        }
-        fl_ctx = _make_recv_fl_ctx(client_name=client_name)
-        receiver._on_chunk_received(f"{client_name}\n".encode(), stream_ctx, fl_ctx)
-        streams.append((stream_ctx, fl_ctx))
-
-    readiness_ctx = _make_run_fl_ctx()
-    receiver._check_end_run_readiness(EventType.CHECK_END_RUN_READINESS, readiness_ctx)
-    assert readiness_ctx.get_prop(FLContextKey.NOT_READY_TO_END_RUN) is True
-
-    receiver._on_stream_done(*streams[0])
-    readiness_ctx.remove_prop(FLContextKey.NOT_READY_TO_END_RUN, force_removal=True)
-    receiver._check_end_run_readiness(EventType.CHECK_END_RUN_READINESS, readiness_ctx)
-    assert readiness_ctx.get_prop(FLContextKey.NOT_READY_TO_END_RUN) is True
-
-    other_job_ctx = _make_run_fl_ctx(job_id="other_job")
-    receiver._check_end_run_readiness(EventType.CHECK_END_RUN_READINESS, other_job_ctx)
-    assert other_job_ctx.get_prop(FLContextKey.NOT_READY_TO_END_RUN) is None
-
-    receiver._on_stream_done(*streams[1])
-    readiness_ctx.remove_prop(FLContextKey.NOT_READY_TO_END_RUN, force_removal=True)
-    receiver._check_end_run_readiness(EventType.CHECK_END_RUN_READINESS, readiness_ctx)
-    assert readiness_ctx.get_prop(FLContextKey.NOT_READY_TO_END_RUN) is None
 
 
 def test_job_log_receiver_logs_error_once_when_site_does_not_allow(tmp_path):
@@ -246,9 +202,6 @@ def test_job_log_receiver_does_not_log_saved_when_storage_fails(tmp_path):
             receiver._on_stream_done(stream_ctx, fl_ctx)
 
     log_info.assert_not_called()
-    readiness_ctx = _make_run_fl_ctx()
-    receiver._check_end_run_readiness(EventType.CHECK_END_RUN_READINESS, readiness_ctx)
-    assert readiness_ctx.get_prop(FLContextKey.NOT_READY_TO_END_RUN) is None
 
 
 @pytest.mark.parametrize(
@@ -307,6 +260,3 @@ def test_register_event_handlers_cover_server_subprocess_path():
     assert EventType.START_RUN in registered_events
     assert EventType.SYSTEM_START in registered_events
     assert EventType.ABOUT_TO_START_RUN in registered_events
-
-    readiness_handlers = receiver.get_event_handlers()[EventType.CHECK_END_RUN_READINESS]
-    assert any(handler == receiver._check_end_run_readiness for handler, _ in readiness_handlers)
