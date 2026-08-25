@@ -155,7 +155,8 @@ class AwsProvider(CloudProvider):
         if not server:
             return None, set()
 
-        workspace_pvc = (server.prepare.get("parent") or {}).get("workspace_pvc")
+        # Same default as the generated K8s chart (nvflare deploy prepare).
+        workspace_pvc = (server.prepare.get("parent") or {}).get("workspace_pvc", "nvflws")
         if not workspace_pvc:
             return None, set()
 

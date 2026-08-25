@@ -151,6 +151,28 @@ def test_bound_server_workspace_pvc_zones_reads_pv_node_affinity():
     assert calls[1][0][-5:] == ["get", "pv", "pv-123", "-o", "json"]
 
 
+def test_bound_server_workspace_pvc_zones_defaults_to_chart_workspace_pvc():
+    provider = _aws_provider()
+    config = SimpleNamespace(
+        participants=[
+            SimpleNamespace(
+                role="server",
+                kubeconfig="/tmp/aws-kubeconfig",
+                namespace="nvflare-server",
+                prepare={"parent": {"docker_image": "repo/nvflare:dev"}},
+            )
+        ]
+    )
+    calls = []
+
+    def run(cmd, **kwargs):
+        calls.append(cmd)
+        return SimpleNamespace(stdout="", stderr="", returncode=0)
+
+    assert provider._bound_server_workspace_pvc_zones(run, config) == ("nvflws", set())
+    assert "nvflws" in calls[0]
+
+
 def test_bound_server_workspace_pvc_zones_ignores_missing_pvc():
     provider = _aws_provider()
     config = SimpleNamespace(
