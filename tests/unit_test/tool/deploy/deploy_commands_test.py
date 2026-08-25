@@ -709,6 +709,26 @@ def test_prepare_k8s_server_uses_configured_service_name(tmp_path, capsys):
     assert ".Values.serviceName" in tcp_services
 
 
+def test_prepare_k8s_server_chart_supports_node_selector(tmp_path, capsys):
+    kit = _make_server_kit(tmp_path)
+    output = tmp_path / "server-k8s"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+
+    values = yaml.safe_load((output / "helm_chart" / "values.yaml").read_text())
+    deployment = (output / "helm_chart" / "templates" / "server-deployment.yaml").read_text()
+    assert values["nodeSelector"] == {}
+    assert ".Values.nodeSelector" in deployment
+
+
 @pytest.mark.parametrize("runtime", ["docker", "k8s"])
 def test_prepare_server_without_snapshot_persistor_is_silent(tmp_path, capsys, runtime):
     kit = _make_server_kit(tmp_path)

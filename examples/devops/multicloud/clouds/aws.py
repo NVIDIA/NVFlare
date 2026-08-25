@@ -134,12 +134,14 @@ class AwsProvider(CloudProvider):
             if len(addresses) != 1:
                 raise RuntimeError(f"expected one Elastic IP tagged Name={ip_name}, found {len(addresses)}")
             state["aws_eip_allocation_id"] = addresses[0].get("AllocationId")
-        nlb_subnet = state.get("aws_nlb_subnet_id") or self._discover_public_subnet(
-            run, config.aws_eks_cluster_name, aws_region
-        )
+        nlb_subnet = state.get("aws_nlb_subnet_id")
+        nlb_zone = state.get("aws_nlb_availability_zone")
+        if not nlb_subnet or not nlb_zone:
+            nlb_subnet, nlb_zone = self._discover_public_subnet(run, config.aws_eks_cluster_name, aws_region)
         state["aws_nlb_subnet_id"] = nlb_subnet
+        state["aws_nlb_availability_zone"] = nlb_zone
 
-    def _discover_public_subnet(self, run, cluster_name: str, region: str) -> str:
+    def _discover_public_subnet(self, run, cluster_name: str, region: str) -> tuple[str, str]:
         print(f"Discovering public subnet for EKS cluster {cluster_name} ...")
         r = run(
             [
@@ -171,17 +173,25 @@ class AwsProvider(CloudProvider):
                 "--region",
                 region,
                 "--query",
-                "Subnets[0].SubnetId",
+                "Subnets[].{SubnetId:SubnetId,AvailabilityZone:AvailabilityZone}",
                 "--output",
-                "text",
+                "json",
             ],
             capture=True,
         )
-        subnet_id = r.stdout.strip()
-        if not subnet_id or subnet_id == "None":
+        subnets = json.loads(r.stdout) if r.stdout.strip() else []
+        if not isinstance(subnets, list):
+            raise RuntimeError(f"describe-subnets returned unexpected response: {r.stdout!r}")
+        candidates = [
+            (subnet.get("AvailabilityZone"), subnet.get("SubnetId"))
+            for subnet in subnets
+            if isinstance(subnet, dict) and subnet.get("AvailabilityZone") and subnet.get("SubnetId")
+        ]
+        if not candidates:
             raise RuntimeError(f"no public subnet (tag kubernetes.io/role/elb=1) in VPC {vpc_id}")
-        print(f"  Using subnet: {subnet_id}")
-        return subnet_id
+        availability_zone, subnet_id = min(candidates)
+        print(f"  Using subnet: {subnet_id} ({availability_zone})")
+        return subnet_id, availability_zone
 
     def release_ip(self, *, run, ip_name, state):
         aws_region = self._resolve_region(run, state.get("aws_region"))
@@ -206,16 +216,21 @@ class AwsProvider(CloudProvider):
     def server_service_helm_args(self, *, server_ip, state):
         aws_server_alloc_id = state.get("aws_eip_allocation_id")
         aws_server_subnet = state.get("aws_nlb_subnet_id")
-        if not aws_server_alloc_id or not aws_server_subnet:
-            raise RuntimeError("AWS server requires EIP allocation id and NLB subnet id")
-        return service_annotation_args(
+        aws_server_zone = state.get("aws_nlb_availability_zone")
+        if not aws_server_alloc_id or not aws_server_subnet or not aws_server_zone:
+            raise RuntimeError("AWS server requires EIP allocation id, NLB subnet id, and NLB availability zone")
+        args = service_annotation_args(
             {
                 "service.beta.kubernetes.io/aws-load-balancer-type": "external",
                 "service.beta.kubernetes.io/aws-load-balancer-nlb-target-type": "ip",
                 "service.beta.kubernetes.io/aws-load-balancer-scheme": "internet-facing",
                 "service.beta.kubernetes.io/aws-load-balancer-eip-allocations": aws_server_alloc_id,
                 "service.beta.kubernetes.io/aws-load-balancer-subnets": aws_server_subnet,
-                # Single-AZ NLB (one subnet annotation) needs cross-zone to reach pods in other AZs.
                 "service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled": "true",
             }
         )
+        args += [
+            "--set-string",
+            f"nodeSelector.topology\\.kubernetes\\.io/zone={aws_server_zone}",
+        ]
+        return args
