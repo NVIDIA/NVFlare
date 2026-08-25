@@ -7,6 +7,14 @@ What's New in FLARE v2.9.0
 Compatibility and Migration Notes
 =================================
 
+- ``nvflare poc start`` and ``nvflare poc stop`` now preserve every repeated
+  ``-p`` / ``--service`` and ``-ex`` / ``--exclude`` value. Earlier versions
+  silently kept only the last value. ``poc stop`` now also honors participant
+  exclusions. A bare ``poc start`` continues to start the server and clients
+  without an admin console.
+- ``nvflare poc stop`` now waits for targeted and exclusion-based shutdowns to
+  complete before returning ``status: stopped``. Use ``--no-wait`` for
+  fire-and-forget behavior.
 - Docker jobs may now control only ``image``, ``python_path``, ``entrypoint``,
   ``num_of_gpus``, and ``shm_size`` through their launcher metadata. Selecting
   ``image``, ``python_path``, or ``entrypoint`` requires BYOC authorization at
