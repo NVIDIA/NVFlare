@@ -183,6 +183,7 @@ def external_process_env(tmp_path, monkeypatch):
                 run_abort_signal.trigger("test cleanup")
                 backend.abort(fl_ctx)
             backend.finalize(fl_ctx)
+        DownloadService.shutdown()
         for cell in reversed(cells):
             fqcn = cell.get_fqcn()
             cell.stop()
