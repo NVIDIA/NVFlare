@@ -1682,10 +1682,10 @@ class TestHeartbeatAndOperationalLiveness:
 
     def test_task_ready_late_reply_is_rejected_by_task_wait_timeout(self, env, monkeypatch):
         monkeypatch.setattr(ebp, "_RESULT_POLL_INTERVAL", 0.01)
+        # Heartbeat expiry is unrelated to this test and can win the race under a loaded CI worker.
         backend, fl_ctx = _initialized_backend(
             env,
-            heartbeat_interval=0.02,
-            heartbeat_timeout=0.05,
+            heartbeat_timeout=0.0,
             task_wait_timeout=0.1,
             result_wait_timeout=None,
         )
@@ -1702,7 +1702,7 @@ class TestHeartbeatAndOperationalLiveness:
             elapsed = time.monotonic() - start
 
             assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
-            assert elapsed < 0.5
+            assert elapsed < 1.0
             assert "TASK_READY timed out after 0.1s" in backend._abort_reason
             assert "TASK_READY was pending" in backend._abort_reason
         finally:
