@@ -134,12 +134,116 @@ class AwsProvider(CloudProvider):
             if len(addresses) != 1:
                 raise RuntimeError(f"expected one Elastic IP tagged Name={ip_name}, found {len(addresses)}")
             state["aws_eip_allocation_id"] = addresses[0].get("AllocationId")
-        nlb_subnet = state.get("aws_nlb_subnet_id") or self._discover_public_subnet(
-            run, config.aws_eks_cluster_name, aws_region
-        )
+        workspace_pvc, required_zones = self._bound_server_workspace_pvc_zones(run, config)
+        nlb_subnet = state.get("aws_nlb_subnet_id")
+        nlb_zone = state.get("aws_nlb_availability_zone")
+        if not nlb_subnet or not nlb_zone or (required_zones and nlb_zone not in required_zones):
+            nlb_subnet, nlb_zone = self._discover_public_subnet(
+                run,
+                config.aws_eks_cluster_name,
+                aws_region,
+                required_zones=required_zones,
+                workspace_pvc=workspace_pvc,
+            )
         state["aws_nlb_subnet_id"] = nlb_subnet
+        state["aws_nlb_availability_zone"] = nlb_zone
 
-    def _discover_public_subnet(self, run, cluster_name: str, region: str) -> str:
+    def _bound_server_workspace_pvc_zones(self, run, config) -> tuple[str | None, set[str]]:
+        server = next(
+            (participant for participant in getattr(config, "participants", []) if participant.role == "server"), None
+        )
+        if not server:
+            return None, set()
+
+        # Same default as the generated K8s chart (nvflare deploy prepare).
+        workspace_pvc = (server.prepare.get("parent") or {}).get("workspace_pvc", "nvflws")
+        if not workspace_pvc:
+            return None, set()
+
+        r = run(
+            [
+                "kubectl",
+                "--kubeconfig",
+                server.kubeconfig,
+                "-n",
+                server.namespace,
+                "get",
+                "pvc",
+                workspace_pvc,
+                "-o",
+                "json",
+                "--ignore-not-found",
+            ],
+            capture=True,
+            check=False,
+        )
+        if r.returncode != 0:
+            stderr = getattr(r, "stderr", "") or ""
+            if "not found" in stderr.lower():
+                return workspace_pvc, set()
+            raise RuntimeError(f"failed to inspect workspace PVC {server.namespace}/{workspace_pvc}: {stderr.strip()}")
+        if not r.stdout.strip():
+            return workspace_pvc, set()
+
+        try:
+            pvc = json.loads(r.stdout)
+        except json.JSONDecodeError as e:
+            raise RuntimeError(
+                f"kubectl returned invalid JSON for workspace PVC {server.namespace}/{workspace_pvc}"
+            ) from e
+        pv_name = (pvc.get("spec") or {}).get("volumeName")
+        if not pv_name:
+            return workspace_pvc, set()
+
+        r = run(
+            ["kubectl", "--kubeconfig", server.kubeconfig, "get", "pv", pv_name, "-o", "json"],
+            capture=True,
+            check=False,
+        )
+        if r.returncode != 0:
+            stderr = getattr(r, "stderr", "") or ""
+            raise RuntimeError(
+                f"failed to inspect PV {pv_name} bound to workspace PVC {server.namespace}/{workspace_pvc}: {stderr.strip()}"
+            )
+        try:
+            pv = json.loads(r.stdout)
+        except json.JSONDecodeError as e:
+            raise RuntimeError(f"kubectl returned invalid JSON for PV {pv_name}") from e
+
+        pv_spec = pv.get("spec") or {}
+        terms = ((pv_spec.get("nodeAffinity") or {}).get("required") or {}).get("nodeSelectorTerms") or []
+        zones = {
+            zone
+            for term in terms
+            for expression in term.get("matchExpressions", [])
+            if expression.get("key", "").endswith("/zone") and expression.get("operator") == "In"
+            for zone in expression.get("values", [])
+            if zone
+        }
+        labels = (pv.get("metadata") or {}).get("labels") or {}
+        zones.update(value for key, value in labels.items() if key.endswith("/zone") and value)
+        driver = (pv_spec.get("csi") or {}).get("driver", "")
+        if not zones and ("ebs.csi." in driver or pv_spec.get("awsElasticBlockStore")):
+            raise RuntimeError(
+                f"could not determine the Availability Zone of AWS EBS PV {pv_name} bound to workspace PVC "
+                f"{server.namespace}/{workspace_pvc}; refusing to select an NLB subnet independently"
+            )
+        if zones:
+            print(
+                f"Workspace PVC {server.namespace}/{workspace_pvc} is bound to {pv_name} "
+                f"in Availability Zone(s): {', '.join(sorted(zones))}"
+            )
+        return workspace_pvc, zones
+
+    def _discover_public_subnet(
+        self,
+        run,
+        cluster_name: str,
+        region: str,
+        *,
+        required_zones: set[str] | None = None,
+        workspace_pvc: str | None = None,
+    ) -> tuple[str, str]:
         print(f"Discovering public subnet for EKS cluster {cluster_name} ...")
         r = run(
             [
@@ -171,17 +275,34 @@ class AwsProvider(CloudProvider):
                 "--region",
                 region,
                 "--query",
-                "Subnets[0].SubnetId",
+                "Subnets[].{SubnetId:SubnetId,AvailabilityZone:AvailabilityZone}",
                 "--output",
-                "text",
+                "json",
             ],
             capture=True,
         )
-        subnet_id = r.stdout.strip()
-        if not subnet_id or subnet_id == "None":
+        subnets = json.loads(r.stdout) if r.stdout.strip() else []
+        if not isinstance(subnets, list):
+            raise RuntimeError(f"describe-subnets returned unexpected response: {r.stdout!r}")
+        candidates = [
+            (subnet.get("AvailabilityZone"), subnet.get("SubnetId"))
+            for subnet in subnets
+            if isinstance(subnet, dict) and subnet.get("AvailabilityZone") and subnet.get("SubnetId")
+        ]
+        if not candidates:
             raise RuntimeError(f"no public subnet (tag kubernetes.io/role/elb=1) in VPC {vpc_id}")
-        print(f"  Using subnet: {subnet_id}")
-        return subnet_id
+        if required_zones:
+            candidates = [candidate for candidate in candidates if candidate[0] in required_zones]
+            if not candidates:
+                zones = ", ".join(sorted(required_zones))
+                raise RuntimeError(
+                    f"no public subnet (tag kubernetes.io/role/elb=1) in VPC {vpc_id} matches Availability "
+                    f"Zone(s) {zones} required by bound workspace PVC {workspace_pvc}. Add or tag a public subnet "
+                    "in a compatible zone, or preserve any required data and recreate the workspace PVC"
+                )
+        availability_zone, subnet_id = min(candidates)
+        print(f"  Using subnet: {subnet_id} ({availability_zone})")
+        return subnet_id, availability_zone
 
     def release_ip(self, *, run, ip_name, state):
         aws_region = self._resolve_region(run, state.get("aws_region"))
@@ -206,16 +327,21 @@ class AwsProvider(CloudProvider):
     def server_service_helm_args(self, *, server_ip, state):
         aws_server_alloc_id = state.get("aws_eip_allocation_id")
         aws_server_subnet = state.get("aws_nlb_subnet_id")
-        if not aws_server_alloc_id or not aws_server_subnet:
-            raise RuntimeError("AWS server requires EIP allocation id and NLB subnet id")
-        return service_annotation_args(
+        aws_server_zone = state.get("aws_nlb_availability_zone")
+        if not aws_server_alloc_id or not aws_server_subnet or not aws_server_zone:
+            raise RuntimeError("AWS server requires EIP allocation id, NLB subnet id, and NLB availability zone")
+        args = service_annotation_args(
             {
                 "service.beta.kubernetes.io/aws-load-balancer-type": "external",
                 "service.beta.kubernetes.io/aws-load-balancer-nlb-target-type": "ip",
                 "service.beta.kubernetes.io/aws-load-balancer-scheme": "internet-facing",
                 "service.beta.kubernetes.io/aws-load-balancer-eip-allocations": aws_server_alloc_id,
                 "service.beta.kubernetes.io/aws-load-balancer-subnets": aws_server_subnet,
-                # Single-AZ NLB (one subnet annotation) needs cross-zone to reach pods in other AZs.
                 "service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled": "true",
             }
         )
+        args += [
+            "--set-string",
+            f"nodeSelector.topology\\.kubernetes\\.io/zone={aws_server_zone}",
+        ]
+        return args
