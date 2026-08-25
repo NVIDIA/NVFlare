@@ -380,9 +380,8 @@ Note these command effects will last until reconfiguration or as long as the cor
 However these commands do not overwrite the log configuration file in the workspace- the log configuration file can be reloaded using "reload".
 
 - **target**: ``server``, ``client <clients>...``, or ``all``
-- **config**: the log config argument can be any of the following (For more details, refer to :ref:`Log Config Argument <log_config_argument>` above):
+- **config**: the remote log config argument can only be one of the following:
 
-    - path to a json log configuration file (``/path/to/my_log_config.json``)
     - predefined log mode (``concise``, ``full``, ``verbose``)
     - log level name or number (``debug``, ``info``, ``warning``, ``error``, ``critical``, ``30``)
     - read the current log configuration file log_config.json from the workspace (``reload``)
