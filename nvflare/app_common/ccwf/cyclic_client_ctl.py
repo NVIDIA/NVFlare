@@ -51,6 +51,10 @@ class CyclicClientController(ClientSideController):
             allow_busy_task=False,
         )
 
+    def requires_materialized_task_result(self, task_name: str) -> bool:
+        """Tell ClientAPIExecutor that the cyclic workflow consumes the concrete learn result."""
+        return task_name == self.learn_task_name
+
     @staticmethod
     def _set_task_headers(task_data: Shareable, num_rounds, current_round, client_order):
         task_data.set_header(AppConstants.NUM_ROUNDS, num_rounds)
