@@ -57,7 +57,8 @@ completed_logit = missing_logit + alpha * completion(missing_hidden)
 ```
 
 Only paired records can supervise the image contribution `full_logit - missing_logit`. A client with no paired
-records sends empty model parameters and `NUM_STEPS_CURRENT_ROUND=0`, so it has zero FedAvg aggregation weight.
+records sends empty model parameters, which makes the aggregator skip its update; it also reports
+`NUM_STEPS_CURRENT_ROUND=0` to make the lack of valid supervision explicit.
 Validation selection combines only per-client loss sums and counts. The optional pooled test AUROC is a
 single-machine tutorial diagnostic, not a production federated metric.
 
@@ -152,12 +153,15 @@ training stack. It federates Qwen LoRA adapters, freezes the resulting global pr
 completion workflow. Install the full dependency set and use one GPU per client:
 
 ```bash
-python -m pip install -r requirements-full.txt
+bash ../../examples/advanced/qwen3-vl/install_requirements.sh "$(pwd)/requirements-full.txt"
 python run_demo.py --mode full --scenario recoverable --gpu "[0],[1],[2]"
 ```
 
 Use `--predictor-rounds` and `--predictor-max-steps` to change the optional predictor budget. Full mode reuses the
 upstream Qwen3-VL implementation and attribution rather than maintaining a second copy here.
+The installer deliberately installs PyTorch before building `flash_attn` with `--no-build-isolation`; a compatible
+CUDA toolkit and compiler must be available. The synthetic proxy code is withheld from LoRA supervision so the
+predictor cannot learn the completion shortcut directly.
 
 The full path was smoke-tested with three clients, one LoRA FedAvg round, and one local training step. The resulting
 global adapter was reloaded for Qwen cache generation before the valid-supervision completion job ran end to end.
@@ -176,8 +180,10 @@ evaluation/per_site_metrics.json
 run_config.json               resolved command configuration
 ```
 
-The NVFlare simulator workspace defaults to `/tmp/nvflare/fedcore/<scenario>_seed<seed>/`; override it with
-`--workspace` when persistent simulator logs or checkpoints are required.
+`run_demo.py` places the NVFlare workspace under the run's output directory by default, so full-mode checkpoints use
+persistent project storage rather than `/tmp`. Direct `job.py` use retains its own `/tmp/nvflare/fedcore` default.
+Use `--workspace` to select a larger filesystem. Both output and workspace paths must be fresh; existing paths are
+rejected to prevent concurrent runs or stale checkpoints from being mixed.
 
 `summary.json` reports image-present performance on paired examples, naturally image-missing performance before and
 after completion, aggregate policy performance, contributing clients and paired-example counts, the selected `alpha`,
@@ -194,11 +200,13 @@ fields per site and split:
 
 - `example_ids`, `labels`, and `image_available` (rename semantically in your loader if needed);
 - `missing_features` and `missing_logits` for every record;
-- `full_logits` and `paired_mask` only where the modality to complete is observed.
+- `paired_mask`, equal to the boolean availability mask, and `full_logits`, finite for paired examples and `NaN`
+  elsewhere.
 
 Cache files are loaded with PyTorch's restricted `weights_only=True` deserializer. Store numeric arrays as
 `torch.Tensor` values and use only built-in Python containers for metadata; convert NumPy arrays before `torch.save`.
-Unsupported serialized objects fail with an explicit schema error rather than being deserialized.
+Labels must be binary integer tensors, masks must be boolean, and feature/logit tensors must follow the finite/`NaN`
+contract above. Unsupported or corrupt serialized objects fail before training.
 
 The completion job then remains unchanged. Real deployments should generate caches at each site, use an appropriate
 federated validation metric, and define modality masks from their actual acquisition workflow.
@@ -218,7 +226,9 @@ for clinical deployment.
 ## License
 
 The code in this directory follows NVFlare's Apache License 2.0; see the [repository license](../../LICENSE).
-Qwen3-VL model weights have separate terms; see [`NOTICE`](NOTICE) and the model card.
+Qwen3-VL model weights are downloaded separately and have their own terms; review the
+[model card](https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct). Optional full mode reuses the upstream example, whose
+vendored Qwen training code is attributed in its [NOTICE](../../examples/advanced/qwen3-vl/NOTICE).
 
 ## Citation
 

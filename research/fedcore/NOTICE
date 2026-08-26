@@ -1,9 +1,0 @@
-FedCoRe uses Qwen3-VL model weights through Hugging Face Transformers. No Qwen
-source code or model weights are redistributed in this directory. Users are
-responsible for reviewing the Qwen3-VL model license and acceptable-use terms:
-
-https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct
-
-The optional full mode invokes NVIDIA FLARE's existing Qwen3-VL example under
-examples/advanced/qwen3-vl, including its vendored-code attribution in that
-example's NOTICE file.

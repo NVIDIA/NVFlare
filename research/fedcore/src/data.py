@@ -103,7 +103,8 @@ def _stratified_mask(labels: np.ndarray, fraction: float, rng: np.random.Generat
     mask = np.zeros(len(labels), dtype=bool)
     for label in (0, 1):
         indices = np.flatnonzero(labels == label)
-        selected = int(round(len(indices) * fraction))
+        # Use explicit round-half-up semantics instead of Python's round-to-even.
+        selected = int(np.floor(len(indices) * fraction + 0.5))
         if selected:
             mask[rng.permutation(indices)[:selected]] = True
     return mask
@@ -124,7 +125,10 @@ def _write_jsonl(path: Path, records: Iterable[dict]) -> None:
 
 
 def _sft_record(record: dict) -> dict:
-    question = make_question(record["context"], include_image=record["image_available"])
+    # Do not teach the predictor the synthetic proxy-to-label mapping that the
+    # downstream completion operator is intended to learn from paired views.
+    predictor_context = "The auxiliary scanner code is withheld during predictor training."
+    question = make_question(predictor_context, include_image=record["image_available"])
     if record["image_available"]:
         question = f"<image>\n{question}"
     result = {

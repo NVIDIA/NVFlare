@@ -14,6 +14,8 @@
 
 import json
 
+import numpy as np
+
 from tests.unit_test.examples.fedcore_test_utils import fedcore_import_context
 
 
@@ -71,6 +73,18 @@ def test_qwen_sft_records_match_modality_availability(tmp_path):
         assert all("<image>" in record["conversations"][0]["value"] for record in site_one)
         assert all("image" not in record for record in site_three)
         assert all("<image>" not in record["conversations"][0]["value"] for record in site_three)
+        prompts = [record["conversations"][0]["value"] for record in site_one + site_three]
+        assert all("KAPPA" not in prompt and "SIGMA" not in prompt for prompt in prompts)
+
+
+def test_stratified_mask_uses_round_half_up():
+    with fedcore_import_context():
+        from src.data import _stratified_mask
+
+        labels = np.asarray([0, 1], dtype=np.int64)
+        mask = _stratified_mask(labels, 0.5, np.random.default_rng(7))
+
+    assert mask.tolist() == [True, True]
 
 
 def test_uninformative_proxy_is_balanced_within_each_class(tmp_path):

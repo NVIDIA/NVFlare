@@ -98,7 +98,7 @@ class QwenFeatureExtractor:
             )
         self.model.to(self.device)
         self.model.eval()
-        self.processor = AutoProcessor.from_pretrained(model_name_or_path, trust_remote_code=True)
+        self.processor = AutoProcessor.from_pretrained(model_name_or_path)
         self.class_token_ids = {label: self._single_token_id(label) for label in ("A", "B")}
 
     def _single_token_id(self, label: str) -> int:

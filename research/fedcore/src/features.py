@@ -114,11 +114,15 @@ def load_cache_split(cache_dir: Path, site: str, split: str) -> dict:
         raise FileNotFoundError(f"Feature cache not found: {path}")
     try:
         payload = torch.load(path, map_location="cpu", weights_only=True)
-    except pickle.UnpicklingError as error:
-        raise ValueError(
-            f"Cache {path} contains unsupported serialized objects. FedCoRe caches must use PyTorch tensors "
-            "for numeric arrays and built-in Python containers; convert NumPy arrays before calling torch.save."
-        ) from error
+    except (pickle.UnpicklingError, EOFError, IndexError, RuntimeError) as error:
+        if "numpy" in str(error).lower():
+            message = (
+                "contains unsupported NumPy objects. FedCoRe caches must use PyTorch tensors for numeric arrays; "
+                "convert NumPy arrays before calling torch.save."
+            )
+        else:
+            message = "is corrupt or contains objects unsupported by PyTorch's restricted weights-only loader."
+        raise ValueError(f"Cache {path} {message}") from error
     required = {
         "example_ids",
         "labels",
@@ -159,4 +163,32 @@ def load_cache_split(cache_dir: Path, site: str, split: str) -> dict:
         raise ValueError(
             f"Cache {path} fields have shapes inconsistent with {example_count} example IDs: {invalid_shapes}"
         )
+    if len(set(payload["example_ids"])) != example_count:
+        raise ValueError(f"Cache {path} field 'example_ids' must contain unique values.")
+
+    integer_dtypes = {torch.uint8, torch.int8, torch.int16, torch.int32, torch.int64}
+    floating_dtypes = {torch.float16, torch.bfloat16, torch.float32, torch.float64}
+    if payload["labels"].dtype not in integer_dtypes:
+        raise ValueError(f"Cache {path} field 'labels' must use an integer dtype, got {payload['labels'].dtype}.")
+    if not bool(torch.isin(payload["labels"], torch.tensor([0, 1], dtype=payload["labels"].dtype)).all()):
+        raise ValueError(f"Cache {path} field 'labels' must contain only binary values 0 and 1.")
+    for field in ("image_available", "paired_mask"):
+        if payload[field].dtype != torch.bool:
+            raise ValueError(f"Cache {path} field {field!r} must use torch.bool, got {payload[field].dtype}.")
+    for field in ("missing_features", "missing_logits", "full_logits"):
+        if payload[field].dtype not in floating_dtypes:
+            raise ValueError(f"Cache {path} field {field!r} must use a floating dtype, got {payload[field].dtype}.")
+
+    image_available = payload["image_available"]
+    paired_mask = payload["paired_mask"]
+    if not torch.equal(image_available, paired_mask):
+        raise ValueError(f"Cache {path} fields 'image_available' and 'paired_mask' must be identical.")
+    for field in ("missing_features", "missing_logits"):
+        if not bool(torch.isfinite(payload[field]).all()):
+            raise ValueError(f"Cache {path} field {field!r} must contain only finite values.")
+    full_logits = payload["full_logits"]
+    if bool(paired_mask.any()) and not bool(torch.isfinite(full_logits[paired_mask]).all()):
+        raise ValueError(f"Cache {path} field 'full_logits' must be finite for paired examples.")
+    if bool((~paired_mask).any()) and not bool(torch.isnan(full_logits[~paired_mask]).all()):
+        raise ValueError(f"Cache {path} field 'full_logits' must be NaN for unpaired examples.")
     return payload

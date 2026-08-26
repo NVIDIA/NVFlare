@@ -49,6 +49,18 @@ def _latest_checkpoint(workspace: Path) -> Path:
     return max(candidates, key=lambda path: path.stat().st_mtime)
 
 
+def _prepare_run_directories(output_dir: Path, workspace: Path) -> None:
+    """Reserve fresh output and workspace directories so runs cannot share artifacts."""
+
+    for path, description in ((output_dir, "output directory"), (workspace, "NVFlare workspace")):
+        try:
+            path.mkdir(parents=True, exist_ok=False)
+        except FileExistsError as error:
+            raise FileExistsError(
+                f"FedCoRe {description} already exists: {path}. Choose a fresh path to avoid stale or concurrent artifacts."
+            ) from error
+
+
 def define_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run the public FedCoRe synthetic starter end to end.")
     parser.add_argument("--mode", choices=["quick", "full"], default="quick")
@@ -121,16 +133,12 @@ def main() -> None:
         if args.output_dir
         else (PROJECT_DIR / "outputs" / f"{args.scenario}_seed{args.seed}").resolve()
     )
-    workspace = (
-        Path(args.workspace).expanduser().resolve()
-        if args.workspace
-        else (Path("/tmp/nvflare/fedcore") / f"{args.scenario}_seed{args.seed}").resolve()
-    )
+    workspace = Path(args.workspace).expanduser().resolve() if args.workspace else (output_dir / "workspace").resolve()
     data_dir = output_dir / "data"
     cache_dir = output_dir / "feature_cache"
     completion_output = output_dir / "completion"
     evaluation_output = output_dir / "evaluation"
-    output_dir.mkdir(parents=True, exist_ok=True)
+    _prepare_run_directories(output_dir, workspace)
     run_config = vars(args).copy()
     run_config.update(
         {

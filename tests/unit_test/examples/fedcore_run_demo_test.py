@@ -14,6 +14,8 @@
 
 from pathlib import Path
 
+import pytest
+
 from tests.unit_test.examples.fedcore_test_utils import fedcore_import_context
 
 
@@ -42,3 +44,16 @@ def test_full_mode_forwards_explicit_gpu_allocation():
         command = run_demo._build_predictor_command(args, Path("/repo/qwen"), Path("/tmp/data"), Path("/tmp/work"))
 
     assert command[command.index("--gpu") + 1] == "[3],[4],[5]"
+
+
+def test_run_directories_must_be_fresh(tmp_path):
+    with fedcore_import_context():
+        import run_demo
+
+        output_dir = tmp_path / "output"
+        workspace = output_dir / "workspace"
+        run_demo._prepare_run_directories(output_dir, workspace)
+        assert output_dir.is_dir()
+        assert workspace.is_dir()
+        with pytest.raises(FileExistsError, match="fresh path"):
+            run_demo._prepare_run_directories(output_dir, workspace)

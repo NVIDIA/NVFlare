@@ -120,11 +120,6 @@ def build_recipe(args, cache_dir: Path, output_dir: Path, client_runtime_dir: Pa
     set_per_site_config(recipe, per_site_config)
     recipe.add_client_file(str(client_runtime_dir), clients=SITES)
     recipe.add_server_file(str(PROJECT_DIR / "model.py"))
-    recipe.add_client_config(
-        {"max_resends": 3, "tensor_min_download_timeout": 600},
-        clients=SITES,
-    )
-    recipe.add_server_config({"streaming_per_request_timeout": 600, "tensor_min_download_timeout": 600})
     return recipe, input_dim
 
 

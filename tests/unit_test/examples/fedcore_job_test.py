@@ -23,17 +23,7 @@ from tests.unit_test.examples.fedcore_test_utils import fedcore_import_context
 
 
 def test_fedcore_job_quotes_client_arguments():
-    args = SimpleNamespace(
-        batch_size=16,
-        dropout=0.1,
-        effect_weight=1.0,
-        hidden_dim=128,
-        learning_rate=0.01,
-        local_epochs=4,
-        seed=7,
-        task_weight=1.0,
-        num_rounds=2,
-    )
+    args = _args()
     cache_dir = Path("/tmp/fedcore cache")
     output_dir = Path("/tmp/fedcore output")
 

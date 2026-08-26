@@ -19,6 +19,24 @@ import torch
 from tests.unit_test.examples.fedcore_test_utils import fedcore_import_context
 
 
+def _valid_payload() -> dict:
+    return {
+        "example_ids": ["paired", "unpaired"],
+        "labels": torch.tensor([1, 0], dtype=torch.long),
+        "image_available": torch.tensor([True, False]),
+        "paired_mask": torch.tensor([True, False]),
+        "missing_features": torch.zeros((2, 2), dtype=torch.float32),
+        "missing_logits": torch.zeros(2, dtype=torch.float32),
+        "full_logits": torch.tensor([1.0, torch.nan], dtype=torch.float32),
+    }
+
+
+def _save_payload(tmp_path, payload) -> None:
+    cache_path = tmp_path / "site-1" / "train.pt"
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    torch.save(payload, cache_path)
+
+
 def test_mock_cache_is_modality_neutral_and_preserves_missing_clients(tmp_path, monkeypatch):
     with fedcore_import_context():
         from src.data import SyntheticDataConfig, generate_synthetic_data
@@ -95,3 +113,48 @@ def test_cache_loader_rejects_inconsistent_tensor_shapes(tmp_path):
 
         with pytest.raises(ValueError, match="shapes inconsistent"):
             load_cache_split(tmp_path, "site-1", "train")
+
+
+def test_cache_loader_rejects_float_labels(tmp_path):
+    payload = _valid_payload()
+    payload["labels"] = payload["labels"].float()
+    _save_payload(tmp_path, payload)
+
+    with fedcore_import_context():
+        from src.features import load_cache_split
+
+        with pytest.raises(ValueError, match="integer dtype"):
+            load_cache_split(tmp_path, "site-1", "train")
+
+
+@pytest.mark.parametrize(
+    "field,value,match",
+    [
+        ("paired_mask", torch.tensor([False, False]), "must be identical"),
+        ("full_logits", torch.tensor([torch.nan, torch.nan]), "finite for paired"),
+        ("full_logits", torch.tensor([1.0, 0.0]), "NaN for unpaired"),
+    ],
+)
+def test_cache_loader_rejects_inconsistent_paired_logits(tmp_path, field, value, match):
+    payload = _valid_payload()
+    payload[field] = value
+    _save_payload(tmp_path, payload)
+
+    with fedcore_import_context():
+        from src.features import load_cache_split
+
+        with pytest.raises(ValueError, match=match):
+            load_cache_split(tmp_path, "site-1", "train")
+
+
+def test_cache_loader_reports_corrupt_files_without_numpy_diagnosis(tmp_path):
+    cache_path = tmp_path / "site-1" / "train.pt"
+    cache_path.parent.mkdir(parents=True)
+    cache_path.write_bytes(b"this is not a PyTorch cache")
+
+    with fedcore_import_context():
+        from src.features import load_cache_split
+
+        with pytest.raises(ValueError, match="corrupt or contains objects") as error:
+            load_cache_split(tmp_path, "site-1", "train")
+    assert "NumPy" not in str(error.value)

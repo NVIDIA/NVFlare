@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import numpy as np
+import pytest
 import torch
 
 from tests.unit_test.examples.fedcore_test_utils import fedcore_import_context
@@ -73,6 +74,24 @@ def test_validation_selection_aggregates_only_sufficient_statistics():
         }
         selected, _ = select_alpha_from_statistics(statistics)
         assert selected == 1.0
+
+
+def test_validation_selection_rejects_negative_tolerance():
+    with fedcore_import_context():
+        from src.evaluation import select_alpha_from_statistics
+
+        statistics = [
+            {
+                "site": "site-3",
+                "alpha": 0.0,
+                "missing_loss_sum": 1.0,
+                "missing_count": 2,
+                "aggregate_loss_sum": 1.0,
+                "aggregate_count": 2,
+            }
+        ]
+        with pytest.raises(ValueError, match="non-negative"):
+            select_alpha_from_statistics(statistics, aggregate_loss_tolerance=-0.1)
 
 
 def test_clients_without_paired_supervision_send_empty_update():

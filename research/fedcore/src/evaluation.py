@@ -108,9 +108,12 @@ def select_alpha_from_statistics(
 ) -> tuple[float, list[dict[str, float | int | bool]]]:
     """Aggregate site statistics and apply the validation no-harm constraint."""
 
+    aggregate_loss_tolerance = float(aggregate_loss_tolerance)
+    if not np.isfinite(aggregate_loss_tolerance) or aggregate_loss_tolerance < 0.0:
+        raise ValueError("aggregate_loss_tolerance must be a finite, non-negative value.")
     statistics = list(statistics)
     alpha_grid = sorted({float(row["alpha"]) for row in statistics})
-    if not statistics or 0.0 not in alpha_grid:
+    if not statistics or 0.0 not in alpha_grid or not all(np.isfinite(alpha) for alpha in alpha_grid):
         raise ValueError("Validation statistics must be non-empty and include alpha=0.")
 
     rows = []
@@ -122,6 +125,10 @@ def select_alpha_from_statistics(
         aggregate_count = sum(int(row["aggregate_count"]) for row in alpha_rows)
         if missing_count == 0:
             raise ValueError("Validation data contain no naturally missing-image examples.")
+        if aggregate_count <= 0:
+            raise ValueError("Validation data contain no aggregate examples.")
+        if not all(np.isfinite(value) for value in (missing_loss_sum, aggregate_loss_sum)):
+            raise ValueError("Validation statistics contain non-finite loss values.")
         rows.append(
             {
                 "alpha": alpha,
@@ -134,7 +141,7 @@ def select_alpha_from_statistics(
 
     identity_loss = next(float(row["aggregate_log_loss"]) for row in rows if float(row["alpha"]) == 0.0)
     for row in rows:
-        row["feasible"] = float(row["aggregate_log_loss"]) <= identity_loss + float(aggregate_loss_tolerance) + 1e-12
+        row["feasible"] = float(row["aggregate_log_loss"]) <= identity_loss + aggregate_loss_tolerance + 1e-12
     feasible = [row for row in rows if bool(row["feasible"])]
     selected = min(feasible, key=lambda row: (float(row["missing_log_loss"]), abs(float(row["alpha"]))))
     return float(selected["alpha"]), rows
