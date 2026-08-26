@@ -1713,6 +1713,26 @@ def test_configure_job_log_all_targets_server_and_clients(tmp_path, monkeypatch)
     assert not conn.meta
 
 
+def test_configure_job_log_all_handles_no_connected_clients(tmp_path, monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "ServerEngine", _FakeServerEngine)
+    workspace = _FakeWorkspace(tmp_path)
+    engine = _FakeServerEngine(workspace)
+    engine.job_def_manager.get_job.return_value = _FakeListedJob({JobMetaKey.STATUS.value: RunStatus.RUNNING.value})
+    conn = _MockConnection(
+        app_ctx=engine,
+        props={JobCommandModule.TARGET_CLIENT_TOKENS: [], JobCommandModule.TARGET_CLIENTS: {}},
+    )
+
+    JobCommandModule().configure_job_log(conn, ["configure_job_log", "job-1", "all", "DEBUG"])
+
+    engine.configure_job_log.assert_called_once_with("job-1", "DEBUG")
+    assert ("no responses from clients", None) in conn.strings
+    assert len(conn.tables) == 1
+    assert conn.tables[0].rows == []
+    assert not conn.errors
+    assert not conn.meta
+
+
 def test_configure_job_log_specific_client_target_is_honored(tmp_path, monkeypatch):
     monkeypatch.setattr(cmd_utils_module, "ServerEngineSpec", object)
     monkeypatch.setattr(job_cmds_module, "ServerEngine", _FakeServerEngine)
