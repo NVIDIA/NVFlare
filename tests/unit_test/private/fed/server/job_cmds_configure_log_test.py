@@ -131,7 +131,7 @@ def test_configure_job_log_success_does_not_set_error_meta(monkeypatch):
 
 
 def test_configure_job_log_all_with_no_clients_remains_successful(monkeypatch):
-    conn, engine = _run_client_config(monkeypatch, [], target_type="all")
+    conn, engine = _run_client_config(monkeypatch, None, target_type="all")
 
     engine.configure_job_log.assert_called_once_with("job-1", "DEBUG")
     assert MetaKey.STATUS not in conn.buffer.meta
