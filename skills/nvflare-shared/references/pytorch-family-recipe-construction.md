@@ -107,6 +107,12 @@ full simulations.
 
 ## Tensor-Native Transport
 
+Import the recipe transport enums from their public module:
+
+```python
+from nvflare.client.config import ExchangeFormat, TransferType
+```
+
 Use the workflow-side format keyword exposed by the selected recipe:
 
 - When `aggregation_format` is exposed, pass

@@ -317,6 +317,8 @@ def test_pytorch_family_construction_policy_is_canonical_and_capability_based():
     assert "Never instantiate an incomplete `FedAvgRecipe`" in normalized_construction
     assert "When `aggregation_format` is exposed" in normalized_construction
     assert "when `server_expected_format` is exposed" in normalized_construction
+    assert "from nvflare.client.config import ExchangeFormat, TransferType" in construction_text
+    assert "from nvflare.app_common.abstract.fl_model import ExchangeFormat" not in construction_text
     assert "When tensor-native transport was selected" in normalized_construction
     assert "Disk offload is an aggregation-workflow memory optimization" in normalized_construction
     assert "temporary files on the aggregation host and materialized lazily" in normalized_construction
