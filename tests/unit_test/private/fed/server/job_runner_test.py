@@ -928,7 +928,7 @@ def test_job_complete_process_releases_client_outcome_barrier_after_server_failu
     with _patch_job_runner_sleep(_stop_after_first_pass):
         runner._job_complete_process(engine)
 
-    runner._save_workspace.assert_called_once_with(completion_ctx, ANY)
+    runner._save_workspace.assert_called_once_with(completion_ctx, ANY, "job-1")
     job_manager.set_status.assert_called_once_with("job-1", RunStatus.FINISHED_EXECUTION_EXCEPTION, completion_ctx)
     runner.fire_event.assert_called_once_with(EventType.JOB_COMPLETED, completion_ctx)
     engine.remove_exception_process.assert_called_once_with("job-1")
