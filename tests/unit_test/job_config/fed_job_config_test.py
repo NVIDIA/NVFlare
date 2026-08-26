@@ -293,6 +293,27 @@ class TestFedJobConfig:
         assert (custom_dir / "client.py").is_file()
         assert (custom_dir / "custom_layers.py").is_file()
 
+    def test_parent_package_import_anchors_transitive_imports_to_parent_directory(self, tmp_path, monkeypatch):
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+        (project_dir / "client.py").write_text("from parent_pkg.a import A\n", encoding="utf-8")
+        parent_package_dir = tmp_path / "parent_pkg"
+        parent_package_dir.mkdir()
+        (parent_package_dir / "a.py").write_text("from parent_pkg.b import B\nA = B\n", encoding="utf-8")
+        (parent_package_dir / "b.py").write_text("B = 'parent'\n", encoding="utf-8")
+        project_package_dir = project_dir / "parent_pkg"
+        project_package_dir.mkdir()
+        (project_package_dir / "b.py").write_text("B = 'project'\n", encoding="utf-8")
+        monkeypatch.chdir(project_dir)
+
+        custom_dir = tmp_path / "exported" / "custom"
+        job_config = FedJobConfig(job_name="job_name", min_clients=1)
+        job_config._copy_ext_scripts(str(custom_dir), ["client.py"])
+
+        assert (custom_dir / "parent_pkg" / "a.py").is_file()
+        exported_module = custom_dir / "parent_pkg" / "b.py"
+        assert exported_module.read_text(encoding="utf-8") == "B = 'parent'\n"
+
     def test_copy_ext_script_finds_top_level_import_in_same_directory(self, tmp_path, monkeypatch):
         project_dir = tmp_path / "proj"
         project_dir.mkdir()
@@ -351,6 +372,22 @@ class TestFedJobConfig:
         assert (custom_dir / "src" / "client.py").is_file()
         assert (custom_dir / "net.py").is_file()
         assert (custom_dir / "root_helper.py").is_file()
+
+    def test_flat_sibling_import_prefers_source_directory_during_recursion(self, tmp_path, monkeypatch):
+        script_dir = tmp_path / "src"
+        script_dir.mkdir()
+        (tmp_path / "helper.py").write_text("VALUE = 'project'\n", encoding="utf-8")
+        (script_dir / "helper.py").write_text("VALUE = 'source'\n", encoding="utf-8")
+        (script_dir / "net.py").write_text("from helper import VALUE\n", encoding="utf-8")
+        (script_dir / "client.py").write_text("from net import VALUE\n", encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+
+        custom_dir = tmp_path / "exported" / "custom"
+        job_config = FedJobConfig(job_name="job_name", min_clients=1)
+        job_config._copy_ext_scripts(str(custom_dir), ["src/client.py"])
+
+        exported_module = custom_dir / "helper.py"
+        assert exported_module.read_text(encoding="utf-8") == "VALUE = 'source'\n"
 
     def test_copy_ext_scripts_reject_distinct_absolute_sources_with_same_destination(self, tmp_path, monkeypatch):
         first_dir = tmp_path / "first"
