@@ -492,7 +492,7 @@ class FedJobConfig:
         self._check_destination_collision(source_file, dest_file)
         return source_file, source_root, dest_file
 
-    def _get_custom_file(self, custom_dir, module, source_file, source_root=None):
+    def _get_custom_file(self, custom_dir, module, source_file, source_root=None, flat_import_roots=None):
         module_parts = self._module_parts(module)
         if source_root is None:
             source_root = self._derive_source_root(module=module, source_file=source_file)
@@ -514,7 +514,14 @@ class FedJobConfig:
 
         self.custom_modules.append(module)
         try:
-            self._copy_source_file(custom_dir, module, source_file, dest_file, source_root=source_root)
+            self._copy_source_file(
+                custom_dir,
+                module,
+                source_file,
+                dest_file,
+                source_root=source_root,
+                flat_import_roots=flat_import_roots,
+            )
         except Exception:
             self.custom_modules.remove(module)
             raise
@@ -538,7 +545,16 @@ class FedJobConfig:
         resolved_parts = package_parts[:keep_parts] + import_parts
         return ".".join(resolved_parts) if resolved_parts else None
 
-    def _copy_source_file(self, custom_dir, module, source_file, dest_file, source_root, is_external_script=False):
+    def _copy_source_file(
+        self,
+        custom_dir,
+        module,
+        source_file,
+        dest_file,
+        source_root,
+        is_external_script=False,
+        flat_import_roots=None,
+    ):
         source_file, source_root, dest_file = self._validate_copy_paths(
             custom_dir=custom_dir,
             source_file=source_file,
@@ -556,19 +572,20 @@ class FedJobConfig:
 
         source_dir = os.path.dirname(source_file)
         is_flat_external_script = is_external_script and not os.path.isfile(os.path.join(source_dir, "__init__.py"))
-        search_source_dir = is_flat_external_script or "." not in module
+        is_flat_module = (is_flat_external_script or "." not in module) and os.path.basename(
+            source_file
+        ) != "__init__.py"
+        if is_flat_module and flat_import_roots is None:
+            flat_import_roots = [source_dir, source_root]
+            if is_external_script and "." not in module:
+                flat_import_roots.append(os.path.dirname(source_dir))
         for import_source, level in import_specs:
             import_module = self._resolve_import_module(module, import_source, level, source_file)
             if not import_module:
                 continue
             import_path = os.path.join(*self._module_parts(import_module)) + ".py"
-            search_roots = [source_root]
-            # Flat registered scripts and non-package modules can resolve unqualified imports from source-dir siblings.
-            if level == 0 and search_source_dir and os.path.basename(source_file) != "__init__.py":
-                search_roots.insert(0, source_dir)
-            # Preserve parent-helper lookup for top-level registered scripts without using that parent for recursion.
-            if level == 0 and is_external_script and "." not in module:
-                search_roots.append(os.path.dirname(source_dir))
+            # Flat modules retain the registered script's ordered roots; package modules stay anchored to their root.
+            search_roots = list(flat_import_roots) if level == 0 and is_flat_module else [source_root]
             checked_roots = set()
             for search_root in search_roots:
                 search_root = self._resolved_path(search_root)
@@ -577,15 +594,12 @@ class FedJobConfig:
                 checked_roots.add(search_root)
                 import_source_file = os.path.join(search_root, import_path)
                 if os.path.isfile(import_source_file):
-                    recursive_source_root = source_root
-                    if not self._is_path_within(import_source_file, source_root):
-                        # Parent-helper matches must not retain an unrelated project root during recursion.
-                        recursive_source_root = search_root
                     self._get_custom_file(
                         custom_dir,
                         import_module,
                         import_source_file,
-                        source_root=recursive_source_root,
+                        source_root=search_root,
+                        flat_import_roots=flat_import_roots if "." not in import_module else None,
                     )
                     break
 

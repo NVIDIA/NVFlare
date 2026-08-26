@@ -314,6 +314,27 @@ class TestFedJobConfig:
         exported_module = custom_dir / "parent_pkg" / "b.py"
         assert exported_module.read_text(encoding="utf-8") == "B = 'parent'\n"
 
+    @pytest.mark.parametrize("with_parent_shadow", [False, True])
+    def test_parent_helper_preserves_project_root_for_transitive_import(
+        self, tmp_path, monkeypatch, with_parent_shadow
+    ):
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+        (project_dir / "client.py").write_text("from parent_helper import VALUE\n", encoding="utf-8")
+        (project_dir / "project_local.py").write_text("VALUE = 'project'\n", encoding="utf-8")
+        (tmp_path / "parent_helper.py").write_text("from project_local import VALUE\n", encoding="utf-8")
+        if with_parent_shadow:
+            (tmp_path / "project_local.py").write_text("VALUE = 'parent'\n", encoding="utf-8")
+        monkeypatch.chdir(project_dir)
+
+        custom_dir = tmp_path / "exported" / "custom"
+        job_config = FedJobConfig(job_name="job_name", min_clients=1)
+        job_config._copy_ext_scripts(str(custom_dir), ["client.py"])
+
+        assert (custom_dir / "parent_helper.py").is_file()
+        exported_module = custom_dir / "project_local.py"
+        assert exported_module.read_text(encoding="utf-8") == "VALUE = 'project'\n"
+
     def test_copy_ext_script_finds_top_level_import_in_same_directory(self, tmp_path, monkeypatch):
         project_dir = tmp_path / "proj"
         project_dir.mkdir()
