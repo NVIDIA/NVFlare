@@ -823,6 +823,51 @@ def test_fail_run_releases_client_outcome_barrier():
     runner._stop_run.assert_called_once_with("job-1", fl_ctx)
 
 
+def test_job_complete_process_releases_client_outcome_barrier_after_server_failure():
+    runner = JobRunner(workspace_root="/tmp")
+    runner.fire_event = MagicMock()
+    runner.log_debug = MagicMock()
+    runner.log_info = MagicMock()
+    runner.abort_client_run = MagicMock()
+    runner._save_workspace = MagicMock()
+    runner.ask_to_stop = False
+
+    engine = MagicMock()
+    engine.run_processes = {}
+    engine.client_manager.clients = {}
+    engine.exception_run_processes = {
+        "job-1": {
+            RunProcessKey.PARTICIPANTS: {},
+            RunProcessKey.PROCESS_RETURN_CODE: ProcessExitCode.EXCEPTION,
+        }
+    }
+
+    job_manager = MagicMock()
+    engine.get_component.return_value = job_manager
+
+    completion_ctx = MagicMock()
+    engine.new_context.return_value = nullcontext(completion_ctx)
+
+    job = MagicMock(job_id="job-1", run_aborted=False)
+    runner.running_jobs = {"job-1": job}
+    runner._pending_client_outcomes = {"job-1": {"site-1"}}
+    runner._client_outcome_deadlines = {"job-1": 123.0}
+
+    def _stop_after_first_pass(_):
+        runner.ask_to_stop = True
+
+    with _patch_job_runner_sleep(_stop_after_first_pass):
+        runner._job_complete_process(engine)
+
+    runner._save_workspace.assert_called_once_with(completion_ctx, ANY)
+    job_manager.set_status.assert_called_once_with("job-1", RunStatus.FINISHED_EXECUTION_EXCEPTION, completion_ctx)
+    runner.fire_event.assert_called_once_with(EventType.JOB_COMPLETED, completion_ctx)
+    engine.remove_exception_process.assert_called_once_with("job-1")
+    assert "job-1" not in runner.running_jobs
+    assert "job-1" not in runner._pending_client_outcomes
+    assert "job-1" not in runner._client_outcome_deadlines
+
+
 def test_job_complete_process_fires_job_aborted_for_aborted_launcher_return_code():
     runner = JobRunner(workspace_root="/tmp")
     runner.fire_event = MagicMock()

@@ -437,8 +437,18 @@ class JobRunner(FLComponent):
                 if job_id not in engine.run_processes.keys():
                     job = self.running_jobs.get(job_id)
                     if job:
+                        with engine.lock:
+                            exception_process = engine.exception_run_processes.get(job_id)
+                        server_failed = (
+                            exception_process is not None
+                            and exception_process.get(RunProcessKey.PROCESS_RETURN_CODE) != JobReturnCode.ABORTED
+                        )
                         with self.lock:
                             pending = self._pending_client_outcomes.get(job_id)
+                            if server_failed:
+                                if pending:
+                                    pending.clear()
+                                self._client_outcome_deadlines.pop(job_id, None)
                             if pending and not job.run_aborted:
                                 now = time.monotonic()
                                 deadline = self._client_outcome_deadlines.setdefault(
