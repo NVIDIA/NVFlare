@@ -89,15 +89,15 @@ allocated Slurm hostname.
 
 .. note::
 
-   Using the Slurm job launcher requires re-provisioning sites whose startup
-   kits were created by an earlier NVFlare release. The internal mTLS links use
-   the participant certificate in both TLS roles (the client parent listens
-   with the client certificate, and the server job connects with the server
-   certificate), so the certificate must carry the new extended key usage
-   (EKU) that allows both ``clientAuth`` and ``serverAuth``. Certificates
-   issued by earlier releases do not include the new EKU. Re-provision the
-   project so the certificates are regenerated with the new EKU, then rebuild
-   the runtime workspace from the new startup kit.
+   The Slurm job launcher requires certificates that allow both
+   ``clientAuth`` and ``serverAuth``, because the internal mTLS links use the
+   participant certificate in both TLS roles (the client parent listens with the
+   client certificate, and the server job connects with the server certificate).
+   Sites whose startup kits carry role-restricted certificates — for example,
+   kits created by NVFlare 2.8 distributed provisioning, which issues
+   certificates with only ``clientAuth`` or only ``serverAuth`` — must be
+   re-provisioned. Kits whose certificates carry no EKU (unrestricted) remain
+   compatible and do not need re-provisioning. After re-provisioning, rebuild the runtime workspace from the new startup kit.
 
 Build a Container Worker Image
 ==============================

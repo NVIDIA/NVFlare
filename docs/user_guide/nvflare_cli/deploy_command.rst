@@ -18,12 +18,12 @@ Kubernetes, or Slurm.
 
    The Kubernetes and Slurm runtimes secure the internal parent/job links
    (SP/SJ and CP/CJ) with mTLS by default, and these links use the participant
-   certificate in both TLS roles. The certificate must therefore carry the new
-   extended key usage (EKU) that allows both ``clientAuth`` and
-   ``serverAuth``. Startup kits provisioned by an earlier NVFlare release do
-   not include the new EKU, so re-provision the project with the current
-   release — regenerating its certificates — before preparing kits for these
-   runtimes.
+   certificate in both TLS roles. The certificate must therefore allow both
+   ``clientAuth`` and ``serverAuth`` in its extended key usage (EKU). Startup
+   kits whose certificates are restricted to a single role — for example, kits
+   created by NVFlare 2.8 distributed provisioning, which issues certificates
+   carrying only ``clientAuth`` or only ``serverAuth`` — must be re-provisioned
+   before using these runtimes. Kits whose certificates carry no EKU (unrestricted) remain compatible and do not need re-provisioning.
 
 For Kubernetes deployment workflow, see :ref:`helm_chart`. For the Slurm
 deployment workflow and security checklist, see :ref:`slurm_job_launcher`. For
