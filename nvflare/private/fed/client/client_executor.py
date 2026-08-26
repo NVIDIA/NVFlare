@@ -46,6 +46,8 @@ REPORTABLE_JOB_FAILURES = {
     JobReturnCode.ABORTED: "aborted",
 }
 
+_ABORT_REQUESTED_KEY = "_abort_requested"
+
 
 class _PendingJobHandle(JobHandleSpec):
     """Hold an abort request until a launcher returns the real job handle."""
@@ -301,6 +303,7 @@ class JobExecutor(ClientExecutor):
             self.run_processes[job_id] = {
                 RunProcessKey.JOB_HANDLE: pending_handle,
                 RunProcessKey.STATUS: ClientStatus.STARTING,
+                _ABORT_REQUESTED_KEY: False,
             }
         try:
             job_handle = job_launcher.launch_job(job_meta, fl_ctx)
@@ -493,6 +496,8 @@ class JobExecutor(ClientExecutor):
         while retry >= 0:
             with self.lock:
                 process = self.run_processes.get(job_id)
+                if process:
+                    process[_ABORT_REQUESTED_KEY] = True
                 process_status = (
                     process.get(RunProcessKey.STATUS, ClientStatus.NOT_STARTED) if process else ClientStatus.NOT_STARTED
                 )
@@ -624,9 +629,18 @@ class JobExecutor(ClientExecutor):
 
             return_code = get_return_code(job_handle, job_id, workspace, self.logger)
 
-            process_status = self.run_processes.get(job_id, {}).get(RunProcessKey.STATUS)
-            if return_code == JobReturnCode.EXECUTION_ERROR and process_status == ClientStatus.STARTING:
-                return_code = ProcessExitCode.INFRASTRUCTURE_ERROR
+            with self.lock:
+                process = self.run_processes.get(job_id, {})
+                process_status = process.get(RunProcessKey.STATUS)
+                abort_requested = process.get(_ABORT_REQUESTED_KEY, False)
+            # A generic RC 1 is actionable only while a checked-in worker is still active.
+            # STARTING remains an infrastructure failure, while STOPPED teardown noise and
+            # launcher UNKNOWN retain their existing non-reportable behavior.
+            if return_code == JobReturnCode.EXECUTION_ERROR and not abort_requested:
+                if process_status == ClientStatus.STARTING:
+                    return_code = ProcessExitCode.INFRASTRUCTURE_ERROR
+                elif process_status == ClientStatus.STARTED:
+                    return_code = ProcessExitCode.EXCEPTION
 
             self.logger.info(f"run ({job_id}): child worker process finished with RC {return_code}")
 
