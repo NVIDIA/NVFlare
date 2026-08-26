@@ -577,11 +577,15 @@ class FedJobConfig:
                 checked_roots.add(search_root)
                 import_source_file = os.path.join(search_root, import_path)
                 if os.path.isfile(import_source_file):
+                    recursive_source_root = source_root
+                    if not self._is_path_within(import_source_file, source_root):
+                        # Parent-helper matches must not retain an unrelated project root during recursion.
+                        recursive_source_root = search_root
                     self._get_custom_file(
                         custom_dir,
                         import_module,
                         import_source_file,
-                        source_root=search_root,
+                        source_root=recursive_source_root,
                     )
                     break
 
