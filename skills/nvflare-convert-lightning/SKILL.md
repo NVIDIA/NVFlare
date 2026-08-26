@@ -1,6 +1,6 @@
 ---
 name: nvflare-convert-lightning
-description: "Convert existing PyTorch Lightning training code into an NVFLARE federated job using the Lightning Client API patch, local validation, and job export; use when the user names PyTorch Lightning or preliminary source inspection identifies one Lightning owner, and not for plain PyTorch, other frameworks, deployment, POC/production lifecycle, or experiment workflows."
+description: "Convert existing PyTorch Lightning training code into an NVFLARE federated job using the Lightning Client API patch, local validation, and job export; use only when the request expresses federated or NVFLARE conversion intent and either names PyTorch Lightning or preliminary source inspection identifies one Lightning owner; do not use for non-federated Lightning work such as DDP, profiling, inference serving, or training-loop changes, nor for plain PyTorch, TensorFlow/Keras, other frameworks, deployment, POC/production lifecycle, or experiment workflows."
 license: Apache-2.0
 metadata:
   version: "0.1.0"
@@ -18,16 +18,16 @@ metadata:
 
 ## Use When
 
-Use when the user asks to convert PyTorch Lightning code into an NVFLARE
-federated training job: a `LightningModule`, `LightningDataModule`, a `Trainer`
-fit/validate/test loop, Lightning callbacks, checkpointing, or loggers.
+Use only when the user asks to convert PyTorch Lightning code into an NVFLARE federated training job; require both federation intent and Lightning ownership.
+Lightning source evidence alone is not sufficient. Relevant source may contain a `LightningModule`, `LightningDataModule`, a `Trainer` fit/validate/test loop,
+Lightning callbacks, checkpointing, or loggers.
 Supported: the PyTorch recipe family with `flare.patch(trainer)` as the model
 exchange integration, Lightning-native evaluation, custom aggregation through
 the same recipe `aggregator=` hook, and local validation and export.
 
 ## Do Not Use When
 
-Do not use for plain `torch.nn.Module` manual training loops without Lightning
+Do not use for non-federated Lightning changes such as DDP-only configuration, profiling, inference serving, callbacks, early stopping, or schedulers; or for plain `torch.nn.Module` manual training loops without Lightning
 (route to `nvflare-convert-pytorch`), Hugging Face Trainer (route to `nvflare-convert-huggingface`), TensorFlow,
 XGBoost, scikit-learn, a failed job (route to `nvflare-diagnose-job`),
 federated statistics without training (route to `nvflare-fed-stats`), or

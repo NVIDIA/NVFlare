@@ -952,6 +952,30 @@ def test_orientation_routes_only_unresolved_explicit_conversions():
     assert "no-orient-for-single-owner-conversion" in prohibited_ids
 
 
+def test_lightning_conversion_trigger_requires_federation_intent():
+    repo_root = Path(__file__).resolve().parents[4]
+    skill_root = repo_root / "skills" / "nvflare-convert-lightning"
+    skill_path = skill_root / "SKILL.md"
+    skill_text = " ".join(skill_path.read_text(encoding="utf-8").split())
+    description = parse_skill_frontmatter(skill_path)["description"]
+    eval_data = json.loads(skill_root.joinpath("evals", "evals.json").read_text(encoding="utf-8"))
+    negative_eval_ids = {
+        "lightning-negative-ddp-without-federation",
+        "lightning-negative-profiling",
+        "lightning-negative-inference-serving",
+        "lightning-negative-training-loop-change",
+        "lightning-negative-tensorflow-keras",
+    }
+
+    assert "use only when the request expresses federated or NVFLARE conversion intent" in description
+    assert "Lightning source evidence alone is not sufficient" in skill_text
+    for eval_id in negative_eval_ids:
+        negative_eval = _eval_by_id(eval_data, eval_id)
+        assert negative_eval["files"]
+        assert negative_eval["nvflare"]["expected_skill"] is None
+        assert negative_eval["nvflare"]["negative_for"] == "nvflare-convert-lightning"
+
+
 def test_huggingface_train_only_model_selection_contract_is_explicit():
     repo_root = Path(__file__).resolve().parents[4]
     hf_root = repo_root / "skills" / "nvflare-convert-huggingface"

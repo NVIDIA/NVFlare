@@ -743,6 +743,121 @@
       }
     },
     {
+      "id": "lightning-negative-ddp-without-federation",
+      "prompt": "Add DistributedDataParallel on 4 GPUs to this Lightning training project. Keep it non-federated and do not convert it to NVFLARE.",
+      "expected_output": "The Lightning conversion skill does not trigger because the request is distributed-training work without federated or NVFLARE conversion intent.",
+      "files": [
+        "files/hello-lightning/train.py",
+        "files/hello-lightning/model.py"
+      ],
+      "assertions": [
+        "The selected skill is not nvflare-convert-lightning.",
+        "The agent does not start an NVFLARE conversion merely because the project uses Lightning."
+      ],
+      "nvflare": {
+        "expected_skill": null,
+        "negative_for": "nvflare-convert-lightning",
+        "prohibited_behavior": [
+          {
+            "id": "no-lightning-conversion-for-ddp-only-request",
+            "description": "does not invoke Lightning conversion for a DDP-only request without federation intent"
+          }
+        ]
+      }
+    },
+    {
+      "id": "lightning-negative-profiling",
+      "prompt": "Profile and speed up this Lightning training loop. Do not federate it or convert it to NVFLARE.",
+      "expected_output": "The Lightning conversion skill does not trigger for profiling or performance work without federated conversion intent.",
+      "files": [
+        "files/hello-lightning/train.py",
+        "files/hello-lightning/model.py"
+      ],
+      "assertions": [
+        "The selected skill is not nvflare-convert-lightning.",
+        "The agent does not start an NVFLARE conversion merely because the profiled code uses Lightning."
+      ],
+      "nvflare": {
+        "expected_skill": null,
+        "negative_for": "nvflare-convert-lightning",
+        "prohibited_behavior": [
+          {
+            "id": "no-lightning-conversion-for-profiling",
+            "description": "does not invoke Lightning conversion for profiling or performance tuning without federation intent"
+          }
+        ]
+      }
+    },
+    {
+      "id": "lightning-negative-inference-serving",
+      "prompt": "Wrap this Lightning model in a FastAPI inference server. This is serving work, not federated training.",
+      "expected_output": "The Lightning conversion skill does not trigger for inference-serving work without federated conversion intent.",
+      "files": [
+        "files/hello-lightning/train.py",
+        "files/hello-lightning/model.py"
+      ],
+      "assertions": [
+        "The selected skill is not nvflare-convert-lightning.",
+        "The agent does not start an NVFLARE conversion merely because the served model uses Lightning."
+      ],
+      "nvflare": {
+        "expected_skill": null,
+        "negative_for": "nvflare-convert-lightning",
+        "prohibited_behavior": [
+          {
+            "id": "no-lightning-conversion-for-inference-serving",
+            "description": "does not invoke Lightning conversion for inference-serving work without federation intent"
+          }
+        ]
+      }
+    },
+    {
+      "id": "lightning-negative-training-loop-change",
+      "prompt": "Add early stopping and a cosine learning-rate scheduler to this Lightning Trainer. Do not turn it into a federated job.",
+      "expected_output": "The Lightning conversion skill does not trigger for an ordinary Lightning training-loop change without federated conversion intent.",
+      "files": [
+        "files/hello-lightning/train.py",
+        "files/hello-lightning/model.py"
+      ],
+      "assertions": [
+        "The selected skill is not nvflare-convert-lightning.",
+        "The agent does not start an NVFLARE conversion for ordinary callbacks or scheduler changes."
+      ],
+      "nvflare": {
+        "expected_skill": null,
+        "negative_for": "nvflare-convert-lightning",
+        "prohibited_behavior": [
+          {
+            "id": "no-lightning-conversion-for-training-loop-change",
+            "description": "does not invoke Lightning conversion for callbacks, early stopping, or scheduler changes without federation intent"
+          }
+        ]
+      }
+    },
+    {
+      "id": "lightning-negative-tensorflow-keras",
+      "prompt": "Convert my TensorFlow/Keras training workflow to an NVFLARE federated job. The Lightning files in this workspace are unrelated and must not be used.",
+      "expected_output": "The Lightning conversion skill does not trigger because the requested training owner is TensorFlow/Keras, outside this PyTorch Lightning converter.",
+      "files": [
+        "files/hello-lightning/train.py",
+        "files/hello-lightning/model.py"
+      ],
+      "assertions": [
+        "The selected skill is not nvflare-convert-lightning.",
+        "The agent does not substitute unrelated Lightning source for the explicitly requested TensorFlow/Keras workflow."
+      ],
+      "nvflare": {
+        "expected_skill": null,
+        "negative_for": "nvflare-convert-lightning",
+        "prohibited_behavior": [
+          {
+            "id": "no-lightning-conversion-for-tensorflow-keras",
+            "description": "does not invoke the PyTorch Lightning converter for an explicitly requested TensorFlow/Keras workflow"
+          }
+        ]
+      }
+    },
+    {
       "id": "lightning-negative-plain-pytorch",
       "prompt": "Convert my plain PyTorch nn.Module and manual training loop to an NVFLARE job. There is no Lightning here.",
       "expected_output": "The Lightning conversion skill should not be the lead; route to nvflare-convert-pytorch for plain PyTorch manual loops.",
