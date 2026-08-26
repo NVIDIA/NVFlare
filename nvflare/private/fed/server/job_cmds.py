@@ -328,7 +328,8 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     client_errors.append(f"{client_name}: {detail}")
 
             if client_errors:
-                conn.update_meta(make_meta(MetaStatusValue.ERROR, info="\n".join(client_errors)))
+                error_info = "\n".join(client_errors)
+                conn.append_error(error_info, make_meta(MetaStatusValue.ERROR, info=error_info))
 
         if target_type not in [self.TARGET_TYPE_ALL, self.TARGET_TYPE_CLIENT, self.TARGET_TYPE_SERVER]:
             conn.append_error(

@@ -19,7 +19,7 @@ import pytest
 
 from nvflare.apis.job_def import JobMetaKey, RunStatus
 from nvflare.fuel.hci.conn import Connection
-from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue
+from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, ProtoKey
 from nvflare.private.admin_defs import MsgHeader, error_reply, ok_reply
 from nvflare.private.fed.server import job_cmds as job_cmds_module
 from nvflare.private.fed.server.job_cmds import JobCommandModule
@@ -84,6 +84,10 @@ def test_configure_job_log_client_failure_sets_error_meta(monkeypatch, reply, ex
     assert conn.buffer.meta[MetaKey.STATUS] == MetaStatusValue.ERROR
     assert "site-a" in conn.buffer.meta[MetaKey.INFO]
     assert expected_info in conn.buffer.meta[MetaKey.INFO]
+    assert conn.buffer.data[-1] == {
+        ProtoKey.TYPE: ProtoKey.ERROR,
+        ProtoKey.DATA: conn.buffer.meta[MetaKey.INFO],
+    }
 
 
 def test_configure_job_log_no_client_responses_sets_error_meta(monkeypatch):
@@ -92,6 +96,10 @@ def test_configure_job_log_no_client_responses_sets_error_meta(monkeypatch):
     assert conn.buffer.meta == {
         MetaKey.STATUS: MetaStatusValue.ERROR,
         MetaKey.INFO: "site-a: no reply",
+    }
+    assert conn.buffer.data[-1] == {
+        ProtoKey.TYPE: ProtoKey.ERROR,
+        ProtoKey.DATA: "site-a: no reply",
     }
 
 
@@ -107,6 +115,10 @@ def test_configure_job_log_partial_client_responses_set_error_meta(monkeypatch):
     assert conn.buffer.meta == {
         MetaKey.STATUS: MetaStatusValue.ERROR,
         MetaKey.INFO: "site-b: no reply",
+    }
+    assert conn.buffer.data[-1] == {
+        ProtoKey.TYPE: ProtoKey.ERROR,
+        ProtoKey.DATA: "site-b: no reply",
     }
 
 
