@@ -343,34 +343,33 @@ def setup_and_teardown(request):
 
 
 class TestDefaultJobScheduler:
-    def test_lifecycle_event_uses_explicit_job_id_when_sticky_job_id_changes(self):
+    def test_lifecycle_event_uses_explicit_job_id_over_sticky_job_id(self):
         scheduler = DefaultJobScheduler(max_jobs=20)
-        fl_ctx_manager = FLContextManager()
-        starting_ctx = fl_ctx_manager.new_context()
-        starting_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, "starting-job")
-
-        completion_ctx = fl_ctx_manager.new_context()
-        completion_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, "completed-job")
-        assert starting_ctx.get_prop(FLContextKey.CURRENT_JOB_ID) == "completed-job"
-
-        starting_ctx.set_prop(
+        fl_ctx = FLContext()
+        fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, "wrong-job")
+        fl_ctx.set_prop(
             FLContextKey.EVENT_DATA,
-            {JobMetaKey.JOB_ID.value: "starting-job"},
+            {JobMetaKey.JOB_ID.value: "right-job"},
             private=True,
             sticky=False,
         )
-        scheduler.handle_event(EventType.JOB_STARTED, starting_ctx)
-        assert scheduler.scheduled_jobs == ["starting-job"]
 
-        completion_ctx.set_prop(
-            FLContextKey.EVENT_DATA,
-            {JobMetaKey.JOB_ID.value: "completed-job"},
-            private=True,
-            sticky=False,
-        )
-        scheduler.scheduled_jobs.append("completed-job")
-        scheduler.handle_event(EventType.JOB_COMPLETED, completion_ctx)
-        assert scheduler.scheduled_jobs == ["starting-job"]
+        scheduler.handle_event(EventType.JOB_STARTED, fl_ctx)
+        assert scheduler.scheduled_jobs == ["right-job"]
+
+        scheduler.handle_event(EventType.JOB_COMPLETED, fl_ctx)
+        assert scheduler.scheduled_jobs == []
+
+    def test_lifecycle_event_falls_back_to_sticky_job_id_without_event_data(self):
+        scheduler = DefaultJobScheduler(max_jobs=20)
+        fl_ctx = FLContext()
+        fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, "sticky-job")
+
+        scheduler.handle_event(EventType.JOB_STARTED, fl_ctx)
+        assert scheduler.scheduled_jobs == ["sticky-job"]
+
+        scheduler.handle_event(EventType.JOB_ABORTED, fl_ctx)
+        assert scheduler.scheduled_jobs == []
 
     def test_weird_deploy_map(self, setup_and_teardown):
         servers, scheduler, num_sites, job_manager = setup_and_teardown

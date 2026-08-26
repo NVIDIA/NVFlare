@@ -533,7 +533,7 @@ def test_job_complete_process_saves_workspace_before_publishing_aborted_status()
 
     completion_ctx.set_prop.assert_called_once_with(FLContextKey.CURRENT_JOB_ID, "job-1")
     assert parent.mock_calls == [
-        call.save_workspace(completion_ctx, ANY),
+        call.save_workspace(completion_ctx, ANY, "job-1"),
         call.set_status("job-1", RunStatus.FINISHED_ABORTED, completion_ctx),
         call.fire_job_lifecycle_event(EventType.JOB_ABORTED, "job-1", completion_ctx),
         call.fire_job_lifecycle_event(EventType.JOB_COMPLETED, "job-1", completion_ctx),
@@ -880,7 +880,7 @@ def test_job_complete_process_fires_job_aborted_for_aborted_launcher_return_code
     with _patch_job_runner_sleep(_stop_after_first_pass):
         runner._job_complete_process(engine)
 
-    runner._save_workspace.assert_called_once_with(completion_ctx, ANY)
+    runner._save_workspace.assert_called_once_with(completion_ctx, ANY, "job-1")
     job_manager.set_status.assert_called_once_with("job-1", RunStatus.FINISHED_ABORTED, completion_ctx)
     assert runner.fire_event.call_args_list == [
         call(EventType.JOB_ABORTED, completion_ctx),
@@ -964,7 +964,7 @@ def test_job_complete_process_keeps_processing_jobs_when_save_workspace_fails():
     with _patch_job_runner_sleep(_stop_after_first_pass):
         runner._job_complete_process(engine)
 
-    assert runner._save_workspace.call_args_list == [call(first_ctx, ANY), call(second_ctx, ANY)]
+    assert runner._save_workspace.call_args_list == [call(first_ctx, ANY, "job-1"), call(second_ctx, ANY, "job-2")]
     runner.log_exception.assert_called_once()
     job_manager.set_status.assert_called_once_with("job-2", RunStatus.FINISHED_ABORTED, second_ctx)
     assert runner.fire_event.call_args_list == [
@@ -1019,7 +1019,7 @@ def test_job_complete_process_retries_save_without_recomputing_finished_status()
     with _patch_job_runner_sleep(_stop_after_second_pass):
         runner._job_complete_process(engine)
 
-    assert runner._save_workspace.call_args_list == [call(first_ctx, ANY), call(second_ctx, ANY)]
+    assert runner._save_workspace.call_args_list == [call(first_ctx, ANY, "job-1"), call(second_ctx, ANY, "job-1")]
     runner.abort_client_run.assert_called_once_with("job-1", [], first_ctx)
     runner.log_exception.assert_called_once()
     job_manager.set_status.assert_called_once_with("job-1", RunStatus.FINISHED_ABORTED, second_ctx)
@@ -1079,7 +1079,7 @@ def test_job_complete_process_publishes_terminal_status_after_workspace_save_gra
     ):
         runner._job_complete_process(engine)
 
-    assert runner._save_workspace.call_args_list == [call(first_ctx, ANY), call(second_ctx, ANY)]
+    assert runner._save_workspace.call_args_list == [call(first_ctx, ANY, "job-1"), call(second_ctx, ANY, "job-1")]
     runner.abort_client_run.assert_called_once_with("job-1", [], first_ctx)
     runner.log_exception.assert_called_once()
     runner.log_error.assert_called_once()
@@ -1126,7 +1126,7 @@ def test_job_complete_process_retries_status_publish_without_resaving_workspace(
     with _patch_job_runner_sleep(_stop_after_second_pass):
         runner._job_complete_process(engine)
 
-    runner._save_workspace.assert_called_once_with(first_ctx, ANY)
+    runner._save_workspace.assert_called_once_with(first_ctx, ANY, "job-1")
     assert job_manager.set_status.call_args_list == [
         call("job-1", RunStatus.FINISHED_ABORTED, first_ctx),
         call("job-1", RunStatus.FINISHED_ABORTED, second_ctx),

@@ -477,7 +477,7 @@ class JobRunner(FLComponent):
                             # Publish terminal status only after artifacts are ready for download.
                             if not finished_state.workspace_archival_complete:
                                 try:
-                                    self._save_workspace(completion_ctx, finished_state)
+                                    self._save_workspace(completion_ctx, finished_state, job.job_id)
                                 except Exception as e:
                                     now = time.monotonic()
                                     if finished_state.workspace_save_started_at is None:
@@ -570,8 +570,11 @@ class JobRunner(FLComponent):
             status = RunStatus.FINISHED_COMPLETED
         return status
 
-    def _save_workspace(self, fl_ctx: FLContext, finished_state: _FinishedJobState | None = None):
-        job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
+    def _save_workspace(
+        self, fl_ctx: FLContext, finished_state: _FinishedJobState | None = None, job_id: str | None = None
+    ):
+        if job_id is None:
+            job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
         if finished_state and finished_state.workspace_archive_written:
             ws_dirs = list(finished_state.workspace_archive_sources)
         else:
