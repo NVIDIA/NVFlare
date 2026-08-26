@@ -24,7 +24,7 @@ from nvflare.private.fed.server.server_state import ColdState, HotState
 
 
 class TestFederatedServer:
-    def test_production_listener_bindings_remain_wildcard_by_default(self):
+    def test_production_localhost_listener_bindings_remain_wildcard(self):
         server = object.__new__(FederatedServer)
 
         with (
@@ -36,7 +36,7 @@ class TestFederatedServer:
                 server,
                 args=MagicMock(),
                 grpc_args={
-                    "service": {"target": "server.example:8002", "scheme": "tcp"},
+                    "service": {"target": "localhost:8002", "scheme": "tcp"},
                     "admin_port": 8003,
                 },
             )

@@ -17,6 +17,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue
 from nvflare.fuel.utils.log_utils import LogMode, dynamic_log_config
 from nvflare.private.admin_defs import Message, MsgHeader, ReturnCode
 from nvflare.private.defs import SysCommandTopic
@@ -166,6 +167,15 @@ def test_server_site_log_rejects_existing_file_path(tmp_path):
     assert "only supports log levels and built-in log modes" in conn.append_error.call_args.args[0]
     dynamic.assert_not_called()
     new_message.assert_not_called()
+
+
+def test_server_site_log_rejects_non_level_logging_attribute():
+    conn = MagicMock()
+
+    SystemCommandModule().configure_site_log(conn, ["configure_site_log", "all", "basic_format"])
+
+    assert "only supports log levels and built-in log modes" in conn.append_error.call_args.args[0]
+    assert conn.append_error.call_args.kwargs["meta"][MetaKey.STATUS] == MetaStatusValue.SYNTAX_ERROR
 
 
 @pytest.mark.parametrize("config", SAFE_CONFIGS)

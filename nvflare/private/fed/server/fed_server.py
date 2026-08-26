@@ -89,6 +89,8 @@ from .server_status import ServerStatus
 
 
 class BaseServer(ABC):
+    LISTENING_HOST = None
+
     def __init__(
         self,
         project_name=None,
@@ -178,7 +180,7 @@ class BaseServer(ABC):
         if len(parts) != 2:
             raise RuntimeError(f"bad service target: {target}")
 
-        listening_host = "127.0.0.1" if parts[0].rstrip(".").lower() == "localhost" else None
+        listening_host = self.LISTENING_HOST
         fl_port = int(parts[1])
 
         # get admin port

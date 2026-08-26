@@ -398,7 +398,7 @@ def validate_site_log_config(config) -> str:
         return config
 
     level = int(config) if config.isdigit() else getattr(logging, config.upper(), None)
-    if level is None or not (0 <= level <= 50):
+    if not isinstance(level, int) or not (0 <= level <= 50):
         raise ValueError("configure_site_log only supports log levels and built-in log modes")
 
     return config

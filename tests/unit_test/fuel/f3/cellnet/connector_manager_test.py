@@ -48,3 +48,24 @@ def test_internal_listener_host_does_not_override_configured_host():
 
     assert manager.int_resources[DriverParams.HOST.value] == "10.0.0.5"
     assert DriverParams.LISTEN_HOST.value not in manager.int_resources
+
+
+def test_internal_listener_host_does_not_mutate_shared_resources():
+    resources = {}
+    comm_configurator = MagicMock()
+    comm_configurator.get_config.return_value = {"internal": {"scheme": "tcp", "resources": resources}}
+
+    ConnectorManager(
+        communicator=MagicMock(),
+        secure=False,
+        comm_configurator=comm_configurator,
+        internal_listener_host="127.0.0.1",
+    )
+    manager = ConnectorManager(
+        communicator=MagicMock(),
+        secure=False,
+        comm_configurator=comm_configurator,
+    )
+
+    assert DriverParams.HOST.value not in resources
+    assert DriverParams.LISTEN_HOST.value not in manager.int_resources

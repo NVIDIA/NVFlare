@@ -99,6 +99,7 @@ class ConnectorManager:
                 self.adhoc_resources = adhoc_conf.get(_KEY_RESOURCES)
 
         if internal_listener_host and not internal_host_configured:
+            self.int_resources = dict(self.int_resources)
             self.int_resources[DriverParams.HOST.value] = internal_listener_host
             self.int_resources.setdefault(DriverParams.LISTEN_HOST.value, internal_listener_host)
 
