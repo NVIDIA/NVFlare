@@ -65,7 +65,9 @@ rejected at initialization with an ``AUTOFL_BUDGET_ARGUMENT_CONFLICT``
 error before any campaign file is written. Duplicates are matched by the
 flag spellings the job's parser defines, including short aliases; a
 spelling the parser does not define passes through unchanged so argparse
-still reports it.
+still reports it. A short-option cluster that would set a pinned
+zero-argument flag again is rejected with the same error; split the
+cluster instead.
 
 When the user does not name a metric, a deterministic ``key_metric`` extracted
 from ``job.py`` takes precedence. The default user experience does not require

@@ -2177,9 +2177,17 @@ def merge_base_budget_args(
                 index += 1
         elif not separator and not token.startswith("--") and token not in defined_flags:
             # Attached short-option value, e.g. -r3 for a pinned -r/--num_rounds (argparse's own semantics).
-            # A zero-argument pin never has an attached value: argparse reads -xv as the cluster -x -v.
             short = next((s for s in spellings if len(s) == 2 and not s.startswith("--") and token.startswith(s)), None)
-            if short is not None and pinned[spellings[short]][0] is not None:
+            if short is not None:
+                if pinned[spellings[short]][0] is None:
+                    # A zero-argument pin has no attached value: argparse reads -xv as the cluster -x -v,
+                    # which would supply the pinned flag a second time. Token-wise merging cannot drop one
+                    # letter from a user's cluster, so fail closed to keep each budget option emitted once.
+                    raise ValueError(
+                        f"AUTOFL_BUDGET_ARGUMENT_CONFLICT: short-option cluster {token} includes {short} "
+                        f"(--{spellings[short]}), which the campaign already supplies; "
+                        f"split the cluster and drop {short}"
+                    )
                 name = spellings[short]
                 supplied = token[2:]
         if name is None:

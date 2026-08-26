@@ -20,7 +20,9 @@ into one command line so each budget option is emitted exactly once. Explicit
 duplicates with identical values are dropped; conflicting values fail
 initialization with `AUTOFL_BUDGET_ARGUMENT_CONFLICT`. Duplicates are matched
 by the flag spellings the job's parser defines, including short aliases; a
-spelling the parser does not define passes through unchanged.
+spelling the parser does not define passes through unchanged. A short-option
+cluster that would set a pinned zero-argument flag again is rejected with the
+same error; split the cluster instead.
 
 The importer resolves the optimization direction from an explicit
 `key_metric_mode`, a same-metric `stop_cond`, or NVFLARE's default `max`, and
