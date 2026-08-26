@@ -111,6 +111,18 @@ These internal TCP links use mTLS by default. The job pod receives the existing
 participant startup CA, certificate, and key, while CellNet binds the certificate
 identity to the participant's logical FQCN rather than the pod name or IP address.
 
+.. note::
+
+   Using the Kubernetes job launcher requires re-provisioning sites whose
+   startup kits were created by an earlier NVFlare release. The internal mTLS
+   links use the participant certificate in both TLS roles (the client parent
+   listens with the client certificate, and the server job connects with the
+   server certificate), so the certificate must carry the new extended key
+   usage (EKU) that allows both ``clientAuth`` and ``serverAuth``. Certificates
+   issued by earlier releases do not include the new EKU. Re-provision the
+   project so the certificates are regenerated with the new EKU, then re-run
+   ``nvflare deploy prepare`` on the new startup kits.
+
 The runtime shape is:
 
 .. code-block:: text

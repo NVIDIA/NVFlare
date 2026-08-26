@@ -87,6 +87,18 @@ participant startup CA, certificate, and key, while CellNet binds the
 certificate identity to the participant's logical FQCN rather than the
 allocated Slurm hostname.
 
+.. note::
+
+   Using the Slurm job launcher requires re-provisioning sites whose startup
+   kits were created by an earlier NVFlare release. The internal mTLS links use
+   the participant certificate in both TLS roles (the client parent listens
+   with the client certificate, and the server job connects with the server
+   certificate), so the certificate must carry the new extended key usage
+   (EKU) that allows both ``clientAuth`` and ``serverAuth``. Certificates
+   issued by earlier releases do not include the new EKU. Re-provision the
+   project so the certificates are regenerated with the new EKU, then rebuild
+   the runtime workspace from the new startup kit.
+
 Build a Container Worker Image
 ==============================
 
@@ -495,11 +507,14 @@ fan-out behavior and requires effective ``sandbox: none``.
 Security and Operations
 =======================
 
-The worker-to-parent internal channel is clear TCP, matching the Kubernetes
-launcher, or clear shared-file I/O when the file transport is configured (see
-:ref:`slurm_shared_file_channel`). Use it only on a trusted or isolated site
-network or filesystem. This does not change the configured security of the
-external NVFlare federation channel.
+The worker-to-parent internal TCP channel uses mTLS by default, matching the
+Kubernetes launcher, and requires certificates carrying the new dual
+``clientAuth``/``serverAuth`` EKU (see the re-provisioning note in
+`Prerequisites`_). ``internal_connection_security: clear`` is an explicit
+insecure opt-out, and the shared-file transport is clear file I/O (see
+:ref:`slurm_shared_file_channel`). Use clear transport only on a trusted or
+isolated site network or filesystem. None of this changes the configured
+security of the external NVFlare federation channel.
 
 Working accounting is mandatory. The parent refuses to start if ``sacct`` is
 unavailable. A later scheduler or accounting outage leaves affected jobs

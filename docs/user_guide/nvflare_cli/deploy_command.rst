@@ -14,6 +14,17 @@ Kubernetes clusters. Use ``nvflare provision`` or the distributed
 ``deploy prepare`` on each server or client kit that should run in Docker,
 Kubernetes, or Slurm.
 
+.. note::
+
+   The Kubernetes and Slurm runtimes secure the internal parent/job links
+   (SP/SJ and CP/CJ) with mTLS by default, and these links use the participant
+   certificate in both TLS roles. The certificate must therefore carry the new
+   extended key usage (EKU) that allows both ``clientAuth`` and
+   ``serverAuth``. Startup kits provisioned by an earlier NVFlare release do
+   not include the new EKU, so re-provision the project with the current
+   release — regenerating its certificates — before preparing kits for these
+   runtimes.
+
 For Kubernetes deployment workflow, see :ref:`helm_chart`. For the Slurm
 deployment workflow and security checklist, see :ref:`slurm_job_launcher`. For
 job-level runtime settings, see :ref:`launcher_spec`.
