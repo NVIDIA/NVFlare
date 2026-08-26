@@ -397,10 +397,10 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             message = new_message(conn, topic=TrainingTopic.CONFIGURE_JOB_LOG, body=config, require_authz=False)
             message.set_header(RequestHeader.JOB_ID, str(job_id))
             replies = self.send_request_to_clients(conn, message)
-            self.process_replies_to_table(conn, replies)
+            client_replies = replies or []
+            self.process_replies_to_table(conn, client_replies)
 
             client_errors = []
-            client_replies = replies or []
             received_tokens = {client_reply.client_token for client_reply in client_replies}
             expected_clients = conn.get_prop(self.TARGET_CLIENTS, {}) or {}
             for client_token, client_name in expected_clients.items():
@@ -419,7 +419,8 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     client_errors.append(f"{client_name}: {detail}")
 
             if client_errors:
-                conn.update_meta(make_meta(MetaStatusValue.ERROR, info="\n".join(client_errors)))
+                error_info = "\n".join(client_errors)
+                conn.append_error(error_info, make_meta(MetaStatusValue.ERROR, info=error_info))
 
         if target_type not in [self.TARGET_TYPE_ALL, self.TARGET_TYPE_CLIENT, self.TARGET_TYPE_SERVER]:
             conn.append_error(
