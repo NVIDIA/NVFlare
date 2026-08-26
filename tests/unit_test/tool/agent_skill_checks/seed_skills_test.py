@@ -469,6 +469,22 @@ def test_lightning_conversion_limits_reference_loading_and_full_run_validation()
     ]
     phase_positions = [skill_text.index(marker) for marker in phase_markers]
     assert phase_positions == sorted(phase_positions)
+    standard_path_position = skill_text.index("## Standard Path")
+    workflow_position = skill_text.index("## Workflow")
+    non_standard_position = skill_text.index("## Non-standard Cases")
+    requirements_position = skill_text.index("## Requirements")
+    assert standard_path_position < workflow_position < non_standard_position < requirements_position
+    conditional_references = (
+        "../nvflare-shared/references/conversion-workflow.md",
+        "../nvflare-shared/references/pytorch-family-recipe-selection.md",
+        "../nvflare-shared/references/dependency-install.md",
+        "../nvflare-shared/references/runtime-output-guidance.md",
+        "references/lightning-ddp-and-tracking.md",
+        "../nvflare-shared/references/metrics-and-artifact-reporting.md",
+    )
+    for reference in conditional_references:
+        assert skill_text.count(reference) == 1
+        assert skill_text.index(reference) > non_standard_position
     assert "Complete each workflow phase before loading the next phase's reference" in normalized_skill
     assert "before any preflight, smoke test, cleanup, validation, or execution command" in normalized_skill
     assert "Do not enumerate reference directories or preload validation" in normalized_skill
