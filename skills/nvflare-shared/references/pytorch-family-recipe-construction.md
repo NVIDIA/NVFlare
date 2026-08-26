@@ -84,6 +84,13 @@ string. When present, it replaces the recipe-level `train_args`; the recipe does
 not merge shared arguments into the site override. Compose every site value from
 the shared and site-specific arguments before calling `set_per_site_config(...)`:
 
+Call `set_per_site_config(...)` immediately after recipe construction and
+before adding client configuration, files, filters, or components. Those
+operations prepare the client apps and close the per-site configuration window.
+The safe construction order is: construct the recipe -> set per-site config ->
+add files, filters, and components -> add required decomposers -> export or
+execute.
+
 ```python
 shared_train_args = f"--epochs {epochs} --batch-size {batch_size}"
 per_site_config = {

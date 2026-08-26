@@ -366,6 +366,14 @@ def test_conversion_skills_treat_per_site_train_args_as_complete_replacements():
     assert "complete argument string" in normalized_construction
     assert "it replaces the recipe-level `train_args`" in normalized_construction
     assert "does not merge shared arguments into the site override" in normalized_construction
+    assert (
+        "Call `set_per_site_config(...)` immediately after recipe construction and before adding client "
+        "configuration, files, filters, or components" in normalized_construction
+    )
+    assert (
+        "construct the recipe -> set per-site config -> add files, filters, and components -> add required "
+        "decomposers -> export or execute" in normalized_construction
+    )
     assert "only the fallback for a site without its own `train_args` entry" in normalized_construction
     assert "`task_script_args` contains the full expected argument set" in normalized_construction
     assert "completely replaces recipe-level `train_args`" in normalized_site_data
