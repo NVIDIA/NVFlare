@@ -361,7 +361,15 @@ class JobRunner(FLComponent):
         display_sites = ",".join(active_client_sites)
 
         self.log_info(fl_ctx, f"Started run: {job_id} for clients: {display_sites}")
-        self.fire_event(EventType.JOB_STARTED, fl_ctx)
+        self._fire_job_lifecycle_event(EventType.JOB_STARTED, job_id, fl_ctx)
+
+    def _fire_job_lifecycle_event(self, event_type: str, job_id: str, fl_ctx: FLContext):
+        self.fire_event_with_data(
+            event_type,
+            fl_ctx,
+            FLContextKey.EVENT_DATA,
+            {JobMetaKey.JOB_ID.value: job_id},
+        )
 
     def _stop_run(self, job_id, fl_ctx: FLContext):
         """Stop the application
@@ -469,7 +477,7 @@ class JobRunner(FLComponent):
                             # Publish terminal status only after artifacts are ready for download.
                             if not finished_state.workspace_archival_complete:
                                 try:
-                                    self._save_workspace(completion_ctx, finished_state)
+                                    self._save_workspace(completion_ctx, finished_state, job.job_id)
                                 except Exception as e:
                                     now = time.monotonic()
                                     if finished_state.workspace_save_started_at is None:
@@ -510,8 +518,8 @@ class JobRunner(FLComponent):
                                 self._pending_client_outcomes.pop(job_id, None)
                                 self._client_outcome_deadlines.pop(job_id, None)
                             if status == RunStatus.FINISHED_ABORTED:
-                                self.fire_event(EventType.JOB_ABORTED, completion_ctx)
-                            self.fire_event(EventType.JOB_COMPLETED, completion_ctx)
+                                self._fire_job_lifecycle_event(EventType.JOB_ABORTED, job_id, completion_ctx)
+                            self._fire_job_lifecycle_event(EventType.JOB_COMPLETED, job_id, completion_ctx)
                             self.log_debug(completion_ctx, f"Finished running job:{job.job_id}")
                     engine.remove_exception_process(job_id)
             time.sleep(1.0)
@@ -562,8 +570,11 @@ class JobRunner(FLComponent):
             status = RunStatus.FINISHED_COMPLETED
         return status
 
-    def _save_workspace(self, fl_ctx: FLContext, finished_state: _FinishedJobState | None = None):
-        job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
+    def _save_workspace(
+        self, fl_ctx: FLContext, finished_state: _FinishedJobState | None = None, job_id: str | None = None
+    ):
+        if job_id is None:
+            job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
         if finished_state and finished_state.workspace_archive_written:
             ws_dirs = list(finished_state.workspace_archive_sources)
         else:
@@ -700,7 +711,7 @@ class JobRunner(FLComponent):
                                     ready_job.job_id, {JobMetaKey.JOB_DEPLOY_DETAIL.value: deploy_detail}, fl_ctx
                                 )
 
-                            self.fire_event(EventType.JOB_ABORTED, fl_ctx)
+                            self._fire_job_lifecycle_event(EventType.JOB_ABORTED, ready_job.job_id, fl_ctx)
                             self.log_error(
                                 fl_ctx, f"Failed to run the Job ({ready_job.job_id}): {secure_format_exception(e)}"
                             )

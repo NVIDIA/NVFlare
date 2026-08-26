@@ -19,6 +19,8 @@ import pytest
 
 import nvflare.app_common.job_schedulers.job_scheduler as job_scheduler_module
 from nvflare.apis.client import Client
+from nvflare.apis.event_type import EventType
+from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.job_def import ALL_SITES, Job, JobMetaKey, RunStatus
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
@@ -341,6 +343,34 @@ def setup_and_teardown(request):
 
 
 class TestDefaultJobScheduler:
+    def test_lifecycle_event_uses_explicit_job_id_over_sticky_job_id(self):
+        scheduler = DefaultJobScheduler(max_jobs=20)
+        fl_ctx = FLContext()
+        fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, "wrong-job")
+        fl_ctx.set_prop(
+            FLContextKey.EVENT_DATA,
+            {JobMetaKey.JOB_ID.value: "right-job"},
+            private=True,
+            sticky=False,
+        )
+
+        scheduler.handle_event(EventType.JOB_STARTED, fl_ctx)
+        assert scheduler.scheduled_jobs == ["right-job"]
+
+        scheduler.handle_event(EventType.JOB_COMPLETED, fl_ctx)
+        assert scheduler.scheduled_jobs == []
+
+    def test_lifecycle_event_falls_back_to_sticky_job_id_without_event_data(self):
+        scheduler = DefaultJobScheduler(max_jobs=20)
+        fl_ctx = FLContext()
+        fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, "sticky-job")
+
+        scheduler.handle_event(EventType.JOB_STARTED, fl_ctx)
+        assert scheduler.scheduled_jobs == ["sticky-job"]
+
+        scheduler.handle_event(EventType.JOB_ABORTED, fl_ctx)
+        assert scheduler.scheduled_jobs == []
+
     def test_weird_deploy_map(self, setup_and_teardown):
         servers, scheduler, num_sites, job_manager = setup_and_teardown
         candidate = create_job(
