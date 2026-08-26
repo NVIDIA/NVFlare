@@ -300,7 +300,7 @@ Modifying Logging Configurations
 
 Log Config Argument
 ===================
-We provide a log config argument (``-l`` or ``log_config`` in simulator mode, and ``config`` in the dynamic logging admin commands for POC and production mode).
+We provide a log config argument (``-l`` or ``log_config``) in simulator mode.
 This argument can be any of the following:
 
 - log configuration json file (``/path/to/my_log_config.json``, ``my_log_config.json``)
@@ -311,7 +311,6 @@ This argument can be any of the following:
     - ``verbose``: debug level logs with detailed log attributes
 
 - log level name or number (``debug``, ``info``, ``warning``, ``error``, ``critical``, ``30``)
-- For admin commands only: read the current log configuration file log_config.json from the workspace (``reload``)
 
 
 Simulator log configuration
