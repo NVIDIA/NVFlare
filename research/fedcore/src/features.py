@@ -15,6 +15,7 @@
 """Feature-cache creation shared by the Qwen and mock backends."""
 
 import json
+import pickle
 from pathlib import Path
 
 import numpy as np
@@ -111,7 +112,13 @@ def load_cache_split(cache_dir: Path, site: str, split: str) -> dict:
     path = cache_dir.expanduser().resolve() / site / f"{split}.pt"
     if not path.exists():
         raise FileNotFoundError(f"Feature cache not found: {path}")
-    payload = torch.load(path, map_location="cpu", weights_only=True)
+    try:
+        payload = torch.load(path, map_location="cpu", weights_only=True)
+    except pickle.UnpicklingError as error:
+        raise ValueError(
+            f"Cache {path} contains unsupported serialized objects. FedCoRe caches must use PyTorch tensors "
+            "for numeric arrays and built-in Python containers; convert NumPy arrays before calling torch.save."
+        ) from error
     required = {
         "example_ids",
         "labels",
@@ -121,7 +128,35 @@ def load_cache_split(cache_dir: Path, site: str, split: str) -> dict:
         "missing_logits",
         "full_logits",
     }
+    if not isinstance(payload, dict):
+        raise ValueError(f"Cache {path} must contain a dictionary, got {type(payload).__name__}.")
     missing = required - set(payload)
     if missing:
         raise ValueError(f"Cache {path} is missing keys: {sorted(missing)}")
+    tensor_fields = required - {"example_ids"}
+    invalid_tensor_fields = sorted(field for field in tensor_fields if not isinstance(payload[field], torch.Tensor))
+    if invalid_tensor_fields:
+        raise ValueError(f"Cache {path} fields must be PyTorch tensors: {invalid_tensor_fields}")
+    if not isinstance(payload["example_ids"], list) or not all(
+        isinstance(example_id, str) for example_id in payload["example_ids"]
+    ):
+        raise ValueError(f"Cache {path} field 'example_ids' must be a list of strings.")
+    example_count = len(payload["example_ids"])
+    expected_dimensions = {
+        "labels": 1,
+        "image_available": 1,
+        "paired_mask": 1,
+        "missing_features": 2,
+        "missing_logits": 1,
+        "full_logits": 1,
+    }
+    invalid_shapes = sorted(
+        field
+        for field, dimensions in expected_dimensions.items()
+        if payload[field].ndim != dimensions or int(payload[field].shape[0]) != example_count
+    )
+    if invalid_shapes:
+        raise ValueError(
+            f"Cache {path} fields have shapes inconsistent with {example_count} example IDs: {invalid_shapes}"
+        )
     return payload

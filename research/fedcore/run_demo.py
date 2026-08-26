@@ -18,6 +18,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -28,15 +29,15 @@ REPO_ROOT = PROJECT_DIR.parents[1]
 
 
 def _run(command: list[str], cwd: Path = PROJECT_DIR) -> None:
-    print("\n$ " + " ".join(command), flush=True)
+    print("\n$ " + shlex.join(command), flush=True)
     env = os.environ.copy()
     python_bin = str(Path(sys.executable).resolve().parent)
     env["PATH"] = os.pathsep.join([python_bin, env.get("PATH", "")])
     subprocess.run(command, cwd=cwd, check=True, env=env)
 
 
-def _first_gpu(gpu: str) -> str:
-    matches = re.findall(r"\d+", gpu)
+def _first_gpu(gpu: str | None) -> str:
+    matches = re.findall(r"\d+", gpu or "")
     return matches[0] if matches else "0"
 
 
@@ -55,7 +56,11 @@ def define_parser() -> argparse.ArgumentParser:
     parser.add_argument("--proxy-strength", type=float, default=None)
     parser.add_argument("--model-name-or-path", default="Qwen/Qwen3-VL-2B-Instruct")
     parser.add_argument("--feature-backend", choices=["qwen", "mock"], default="qwen")
-    parser.add_argument("--gpu", default="0")
+    parser.add_argument(
+        "--gpu",
+        default=None,
+        help='GPU allocation. Quick mode defaults to GPU 0; full mode defaults to one GPU per client, "[0],[1],[2]".',
+    )
     parser.add_argument("--output-dir", default="")
     parser.add_argument("--workspace", default="")
     parser.add_argument("--seed", type=int, default=7)
@@ -75,6 +80,35 @@ def define_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _build_predictor_command(args, qwen_example: Path, data_dir: Path, predictor_workspace: Path) -> list[str]:
+    command = [
+        sys.executable,
+        str(qwen_example / "job.py"),
+        "--n_clients",
+        "3",
+        "--num_rounds",
+        str(args.predictor_rounds),
+        "--data_dir",
+        str(data_dir),
+        "--image_root",
+        str(data_dir),
+        "--model_name_or_path",
+        args.model_name_or_path,
+        "--max_steps",
+        str(args.predictor_max_steps),
+        "--lora",
+        "--lora_r",
+        str(args.lora_r),
+        "--lora_alpha",
+        str(args.lora_alpha),
+        "--workspace",
+        str(predictor_workspace),
+    ]
+    if args.gpu:
+        command.extend(["--gpu", args.gpu])
+    return command
+
+
 def main() -> None:
     args = define_parser().parse_args()
     if args.mode == "full" and args.feature_backend != "qwen":
@@ -87,7 +121,11 @@ def main() -> None:
         if args.output_dir
         else (PROJECT_DIR / "outputs" / f"{args.scenario}_seed{args.seed}").resolve()
     )
-    workspace = Path(args.workspace).expanduser().resolve() if args.workspace else (output_dir / "workspace").resolve()
+    workspace = (
+        Path(args.workspace).expanduser().resolve()
+        if args.workspace
+        else (Path("/tmp/nvflare/fedcore") / f"{args.scenario}_seed{args.seed}").resolve()
+    )
     data_dir = output_dir / "data"
     cache_dir = output_dir / "feature_cache"
     completion_output = output_dir / "completion"
@@ -126,34 +164,8 @@ def main() -> None:
     if args.mode == "full":
         qwen_example = REPO_ROOT / "examples" / "advanced" / "qwen3-vl"
         predictor_workspace = workspace / "qwen_predictor"
-        _run(
-            [
-                sys.executable,
-                str(qwen_example / "job.py"),
-                "--n_clients",
-                "3",
-                "--num_rounds",
-                str(args.predictor_rounds),
-                "--data_dir",
-                str(data_dir),
-                "--image_root",
-                str(data_dir),
-                "--model_name_or_path",
-                args.model_name_or_path,
-                "--max_steps",
-                str(args.predictor_max_steps),
-                "--lora",
-                "--lora_r",
-                str(args.lora_r),
-                "--lora_alpha",
-                str(args.lora_alpha),
-                "--gpu",
-                args.gpu,
-                "--workspace",
-                str(predictor_workspace),
-            ],
-            cwd=qwen_example,
-        )
+        predictor_command = _build_predictor_command(args, qwen_example, data_dir, predictor_workspace)
+        _run(predictor_command, cwd=qwen_example)
         adapter_checkpoint = str(_latest_checkpoint(predictor_workspace))
         print(f"Using federated Qwen LoRA checkpoint: {adapter_checkpoint}")
 

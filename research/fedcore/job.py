@@ -16,14 +16,16 @@
 
 import argparse
 import json
-import os
 import shlex
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 from src.features import load_cache_split
 
 PROJECT_DIR = Path(__file__).resolve().parent
+SITES = ["site-1", "site-2", "site-3"]
 
 
 def define_parser() -> argparse.ArgumentParser:
@@ -74,19 +76,25 @@ def _build_train_args(args, cache_dir: Path, output_dir: Path, site: str, input_
     )
 
 
-def main() -> None:
-    from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
-    from nvflare.recipe import SimEnv, set_per_site_config
+def _stage_client_runtime(destination: Path) -> Path:
+    """Build the minimal directory tree copied into each client's custom directory."""
 
-    args = define_parser().parse_args()
-    cache_dir = Path(args.cache_dir).expanduser().resolve()
-    output_dir = Path(args.output_dir).expanduser().resolve()
-    workspace = Path(args.workspace).expanduser().resolve()
-    output_dir.mkdir(parents=True, exist_ok=True)
-    sites = ["site-1", "site-2", "site-3"]
+    runtime_dir = destination / "runtime"
+    shutil.copytree(
+        PROJECT_DIR / "src",
+        runtime_dir / "src",
+        ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"),
+    )
+    return runtime_dir
+
+
+def build_recipe(args, cache_dir: Path, output_dir: Path, client_runtime_dir: Path):
+    from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+    from nvflare.recipe import set_per_site_config
+
     input_dim = int(load_cache_split(cache_dir, "site-1", "train")["missing_features"].shape[1])
     per_site_config = {}
-    for site in sites:
+    for site in SITES:
         train_args = _build_train_args(args, cache_dir, output_dir, site, input_dim)
         per_site_config[site] = {"train_args": train_args, "command": shlex.join([sys.executable, "-u"])}
 
@@ -99,31 +107,40 @@ def main() -> None:
             "seed": args.seed,
         },
     }
-    previous_cwd = Path.cwd()
-    os.chdir(PROJECT_DIR)
-    try:
-        recipe = FedAvgRecipe(
-            name="fedcore-image-completion",
-            model=model,
-            min_clients=len(sites),
-            num_rounds=args.num_rounds,
-            train_script="client.py",
-            launch_external_process=True,
-            server_expected_format="pytorch",
-            key_metric="",
-        )
-        set_per_site_config(recipe, per_site_config)
-    finally:
-        os.chdir(previous_cwd)
-    recipe.add_client_file(str(PROJECT_DIR / "client.py"), clients=sites)
+    recipe = FedAvgRecipe(
+        name="fedcore-image-completion",
+        model=model,
+        min_clients=len(SITES),
+        num_rounds=args.num_rounds,
+        train_script=str(PROJECT_DIR / "client.py"),
+        launch_external_process=True,
+        server_expected_format="pytorch",
+        key_metric="",
+    )
+    set_per_site_config(recipe, per_site_config)
+    recipe.add_client_file(str(client_runtime_dir), clients=SITES)
     recipe.add_server_file(str(PROJECT_DIR / "model.py"))
     recipe.add_client_config(
         {"max_resends": 3, "tensor_min_download_timeout": 600},
-        clients=sites,
+        clients=SITES,
     )
     recipe.add_server_config({"streaming_per_request_timeout": 600, "tensor_min_download_timeout": 600})
-    env = SimEnv(clients=sites, num_threads=len(sites), workspace_root=str(workspace))
-    run = recipe.execute(env)
+    return recipe, input_dim
+
+
+def main() -> None:
+    from nvflare.recipe import SimEnv
+
+    args = define_parser().parse_args()
+    cache_dir = Path(args.cache_dir).expanduser().resolve()
+    output_dir = Path(args.output_dir).expanduser().resolve()
+    workspace = Path(args.workspace).expanduser().resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="fedcore-client-runtime-") as temporary_dir:
+        client_runtime_dir = _stage_client_runtime(Path(temporary_dir))
+        recipe, input_dim = build_recipe(args, cache_dir, output_dir, client_runtime_dir)
+        env = SimEnv(clients=SITES, num_threads=len(SITES), workspace_root=str(workspace))
+        run = recipe.execute(env)
     status = run.get_status()
     result = {
         "status": str(status) if status is not None else "completed",

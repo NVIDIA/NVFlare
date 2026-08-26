@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import numpy as np
+import pytest
 import torch
 
 from tests.unit_test.examples.fedcore_test_utils import fedcore_import_context
@@ -51,3 +53,45 @@ def test_mock_cache_is_modality_neutral_and_preserves_missing_clients(tmp_path, 
         assert bool(torch.isnan(site_three["full_logits"]).all())
         assert load_kwargs
         assert all(kwargs["weights_only"] is True for kwargs in load_kwargs)
+
+
+def test_cache_loader_rejects_numpy_arrays_with_actionable_error(tmp_path):
+    payload = {
+        "example_ids": ["example-1"],
+        "labels": np.array([1]),
+        "image_available": np.array([True]),
+        "paired_mask": np.array([True]),
+        "missing_features": np.zeros((1, 2), dtype=np.float32),
+        "missing_logits": np.zeros(1, dtype=np.float32),
+        "full_logits": np.ones(1, dtype=np.float32),
+    }
+    cache_path = tmp_path / "site-1" / "train.pt"
+    cache_path.parent.mkdir(parents=True)
+    torch.save(payload, cache_path)
+
+    with fedcore_import_context():
+        from src.features import load_cache_split
+
+        with pytest.raises(ValueError, match="convert NumPy arrays"):
+            load_cache_split(tmp_path, "site-1", "train")
+
+
+def test_cache_loader_rejects_inconsistent_tensor_shapes(tmp_path):
+    payload = {
+        "example_ids": ["example-1"],
+        "labels": torch.tensor([1, 0]),
+        "image_available": torch.tensor([True]),
+        "paired_mask": torch.tensor([True]),
+        "missing_features": torch.zeros((1, 2)),
+        "missing_logits": torch.zeros(1),
+        "full_logits": torch.ones(1),
+    }
+    cache_path = tmp_path / "site-1" / "train.pt"
+    cache_path.parent.mkdir(parents=True)
+    torch.save(payload, cache_path)
+
+    with fedcore_import_context():
+        from src.features import load_cache_split
+
+        with pytest.raises(ValueError, match="shapes inconsistent"):
+            load_cache_split(tmp_path, "site-1", "train")

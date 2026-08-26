@@ -171,11 +171,13 @@ data/                         generated local records and images
 feature_cache/site-*/         local Qwen or mock caches
 completion/site-*/            per-round valid-supervision metrics
 completion/global_model.pt     final federated completion checkpoint
-workspace/                    NVFlare simulator workspaces and checkpoints
 evaluation/summary.json       aggregate selection and evaluation report
 evaluation/per_site_metrics.json
 run_config.json               resolved command configuration
 ```
+
+The NVFlare simulator workspace defaults to `/tmp/nvflare/fedcore/<scenario>_seed<seed>/`; override it with
+`--workspace` when persistent simulator logs or checkpoints are required.
 
 `summary.json` reports image-present performance on paired examples, naturally image-missing performance before and
 after completion, aggregate policy performance, contributing clients and paired-example counts, the selected `alpha`,
@@ -193,6 +195,10 @@ fields per site and split:
 - `example_ids`, `labels`, and `image_available` (rename semantically in your loader if needed);
 - `missing_features` and `missing_logits` for every record;
 - `full_logits` and `paired_mask` only where the modality to complete is observed.
+
+Cache files are loaded with PyTorch's restricted `weights_only=True` deserializer. Store numeric arrays as
+`torch.Tensor` values and use only built-in Python containers for metadata; convert NumPy arrays before `torch.save`.
+Unsupported serialized objects fail with an explicit schema error rather than being deserialized.
 
 The completion job then remains unchanged. Real deployments should generate caches at each site, use an appropriate
 federated validation metric, and define modality masks from their actual acquisition workflow.
