@@ -20,7 +20,7 @@ FEDCORE_DIR = Path(__file__).resolve().parents[3] / "research" / "fedcore"
 
 
 def _is_fedcore_module(name: str) -> bool:
-    return name in {"evaluate", "model", "src"} or name.startswith("src.")
+    return name in {"evaluate", "job", "model", "src"} or name.startswith("src.")
 
 
 @contextmanager

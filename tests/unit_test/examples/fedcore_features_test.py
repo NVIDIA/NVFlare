@@ -17,7 +17,7 @@ import torch
 from tests.unit_test.examples.fedcore_test_utils import fedcore_import_context
 
 
-def test_mock_cache_is_modality_neutral_and_preserves_missing_clients(tmp_path):
+def test_mock_cache_is_modality_neutral_and_preserves_missing_clients(tmp_path, monkeypatch):
     with fedcore_import_context():
         from src.data import SyntheticDataConfig, generate_synthetic_data
         from src.features import create_feature_cache, load_cache_split
@@ -34,6 +34,14 @@ def test_mock_cache_is_modality_neutral_and_preserves_missing_clients(tmp_path):
             )
         )
         metadata = create_feature_cache(data_dir, cache_dir, backend="mock", mock_hidden_dim=8)
+        original_load = torch.load
+        load_kwargs = []
+
+        def record_load(*args, **kwargs):
+            load_kwargs.append(kwargs)
+            return original_load(*args, **kwargs)
+
+        monkeypatch.setattr(torch, "load", record_load)
         site_one = load_cache_split(cache_dir, "site-1", "train")
         site_three = load_cache_split(cache_dir, "site-3", "train")
         assert metadata["target_modality"] == "image"
@@ -41,3 +49,5 @@ def test_mock_cache_is_modality_neutral_and_preserves_missing_clients(tmp_path):
         assert bool(site_one["paired_mask"].all())
         assert not bool(site_three["paired_mask"].any())
         assert bool(torch.isnan(site_three["full_logits"]).all())
+        assert load_kwargs
+        assert all(kwargs["weights_only"] is True for kwargs in load_kwargs)

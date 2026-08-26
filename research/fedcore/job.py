@@ -17,6 +17,7 @@
 import argparse
 import json
 import os
+import shlex
 import sys
 from pathlib import Path
 
@@ -42,6 +43,37 @@ def define_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _build_train_args(args, cache_dir: Path, output_dir: Path, site: str, input_dim: int) -> str:
+    return shlex.join(
+        [
+            "--cache-dir",
+            str(cache_dir),
+            "--output-dir",
+            str(output_dir),
+            "--site",
+            site,
+            "--input-dim",
+            str(input_dim),
+            "--hidden-dim",
+            str(args.hidden_dim),
+            "--dropout",
+            str(args.dropout),
+            "--local-epochs",
+            str(args.local_epochs),
+            "--batch-size",
+            str(args.batch_size),
+            "--learning-rate",
+            str(args.learning_rate),
+            "--task-weight",
+            str(args.task_weight),
+            "--effect-weight",
+            str(args.effect_weight),
+            "--seed",
+            str(args.seed),
+        ]
+    )
+
+
 def main() -> None:
     from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
     from nvflare.recipe import SimEnv, set_per_site_config
@@ -55,13 +87,8 @@ def main() -> None:
     input_dim = int(load_cache_split(cache_dir, "site-1", "train")["missing_features"].shape[1])
     per_site_config = {}
     for site in sites:
-        train_args = (
-            f"--cache-dir {cache_dir} --output-dir {output_dir} --site {site} --input-dim {input_dim} "
-            f"--hidden-dim {args.hidden_dim} --dropout {args.dropout} --local-epochs {args.local_epochs} "
-            f"--batch-size {args.batch_size} --learning-rate {args.learning_rate} --task-weight {args.task_weight} "
-            f"--effect-weight {args.effect_weight} --seed {args.seed}"
-        )
-        per_site_config[site] = {"train_args": train_args, "command": f"{sys.executable} -u"}
+        train_args = _build_train_args(args, cache_dir, output_dir, site, input_dim)
+        per_site_config[site] = {"train_args": train_args, "command": shlex.join([sys.executable, "-u"])}
 
     model = {
         "class_path": "model.LogitCompletionModel",

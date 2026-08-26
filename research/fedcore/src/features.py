@@ -111,7 +111,7 @@ def load_cache_split(cache_dir: Path, site: str, split: str) -> dict:
     path = cache_dir.expanduser().resolve() / site / f"{split}.pt"
     if not path.exists():
         raise FileNotFoundError(f"Feature cache not found: {path}")
-    payload = torch.load(path, map_location="cpu", weights_only=False)
+    payload = torch.load(path, map_location="cpu", weights_only=True)
     required = {
         "example_ids",
         "labels",
