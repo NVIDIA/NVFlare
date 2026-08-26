@@ -19,8 +19,11 @@ import pytest
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, RunProcessKey
+from nvflare.apis.fl_context import FLContextManager
 from nvflare.apis.job_def import JobMetaKey, RunStatus
 from nvflare.apis.job_launcher_spec import JobReturnCode
+from nvflare.apis.utils.event import fire_event_to_components
+from nvflare.app_common.job_schedulers.job_scheduler import DefaultJobScheduler
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.private.admin_defs import Message, MsgHeader, ReturnCode
 from nvflare.private.fed.server.job_runner import JobRunner, _FinishedJobState
@@ -94,17 +97,50 @@ def _make_workspace_save_inputs(run_dir, result_root, log_root, audit_root):
 # ---------------------------------------------------------------------------
 
 
+def test_fire_job_lifecycle_event_includes_job_id():
+    runner = JobRunner(workspace_root="/tmp")
+    runner.fire_event_with_data = MagicMock()
+    fl_ctx = MagicMock()
+
+    runner._fire_job_lifecycle_event(EventType.JOB_STARTED, "job-1", fl_ctx)
+
+    runner.fire_event_with_data.assert_called_once_with(
+        EventType.JOB_STARTED, fl_ctx, FLContextKey.EVENT_DATA, {JobMetaKey.JOB_ID.value: "job-1"}
+    )
+
+
+def test_lifecycle_event_delivers_explicit_job_id_to_scheduler():
+    scheduler = DefaultJobScheduler(max_jobs=5)
+    runner = JobRunner(workspace_root="/tmp")
+
+    engine = MagicMock()
+    engine.fire_event.side_effect = lambda event_type, ctx: fire_event_to_components(event_type, [scheduler], ctx)
+    fl_ctx = FLContextManager(engine=engine).new_context()
+    fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, "wrong-job")  # racy sticky value
+
+    runner._fire_job_lifecycle_event(EventType.JOB_STARTED, "job-1", fl_ctx)
+
+    assert scheduler.scheduled_jobs == ["job-1"]
+    assert fl_ctx.get_prop(FLContextKey.EVENT_DATA) is None  # cleaned up after the fire
+
+    runner._fire_job_lifecycle_event(EventType.JOB_COMPLETED, "job-1", fl_ctx)
+
+    assert scheduler.scheduled_jobs == []
+
+
 @patch("nvflare.private.fed.server.job_runner.check_client_replies")
 @patch("nvflare.private.fed.server.job_runner.ConfigService.get_bool_var", return_value=False)
 def test_start_run_passes_strict_false_when_flag_disabled(mock_get_bool, mock_check_replies):
     mock_check_replies.return_value = []  # no timeouts
     runner, fl_ctx, _engine, job, client_sites = _make_runner_inputs()
+    runner._fire_job_lifecycle_event = MagicMock()
 
     runner._start_run(job_id=job.job_id, job=job, client_sites=client_sites, fl_ctx=fl_ctx)
 
     mock_get_bool.assert_called_once()
     mock_check_replies.assert_called_once()
     assert mock_check_replies.call_args.kwargs["strict"] is False
+    runner._fire_job_lifecycle_event.assert_called_once_with(EventType.JOB_STARTED, "job-1", fl_ctx)
 
 
 @patch("nvflare.private.fed.server.job_runner.check_client_replies")
@@ -380,6 +416,25 @@ def test_save_workspace_retries_remaining_cleanup_after_earlier_source_was_remov
     assert not result_root.exists()
 
 
+def test_save_workspace_uses_explicit_job_id_over_sticky_context_id(tmp_path):
+    job_a_dir = tmp_path / "job-A"
+    job_a_dir.mkdir()
+    job_b_dir = tmp_path / "job-B"
+    job_b_dir.mkdir()
+
+    runner, fl_ctx, job_manager = _make_workspace_save_inputs("", "", "", "")
+    fl_ctx.get_prop.return_value = "job-B"  # racy sticky CURRENT_JOB_ID points at another job
+    workspace = fl_ctx.get_workspace.return_value
+    for getter in (workspace.get_run_dir, workspace.get_result_root, workspace.get_log_root, workspace.get_audit_root):
+        getter.side_effect = lambda job_id: str(tmp_path / job_id)
+
+    runner._save_workspace(fl_ctx, job_id="job-A")
+
+    job_manager.save_workspace.assert_called_once_with("job-A", [str(job_a_dir)], fl_ctx)
+    assert not job_a_dir.exists()
+    assert job_b_dir.exists()
+
+
 def test_job_complete_process_retries_cleanup_without_resaving_workspace(tmp_path):
     run_dir = tmp_path / "run"
     run_dir.mkdir()
@@ -486,7 +541,7 @@ def test_job_complete_process_publishes_status_after_persistent_cleanup_failure(
 
 def test_job_complete_process_saves_workspace_before_publishing_aborted_status():
     runner = JobRunner(workspace_root="/tmp")
-    runner.fire_event = MagicMock()
+    runner._fire_job_lifecycle_event = MagicMock()
     runner.log_debug = MagicMock()
     runner._save_workspace = MagicMock()
     runner.ask_to_stop = False
@@ -509,7 +564,7 @@ def test_job_complete_process_saves_workspace_before_publishing_aborted_status()
     parent = MagicMock()
     parent.attach_mock(runner._save_workspace, "save_workspace")
     parent.attach_mock(job_manager.set_status, "set_status")
-    parent.attach_mock(runner.fire_event, "fire_event")
+    parent.attach_mock(runner._fire_job_lifecycle_event, "fire_job_lifecycle_event")
 
     def _stop_after_first_pass(_):
         runner.ask_to_stop = True
@@ -519,10 +574,10 @@ def test_job_complete_process_saves_workspace_before_publishing_aborted_status()
 
     completion_ctx.set_prop.assert_called_once_with(FLContextKey.CURRENT_JOB_ID, "job-1")
     assert parent.mock_calls == [
-        call.save_workspace(completion_ctx, ANY),
+        call.save_workspace(completion_ctx, ANY, "job-1"),
         call.set_status("job-1", RunStatus.FINISHED_ABORTED, completion_ctx),
-        call.fire_event(EventType.JOB_ABORTED, completion_ctx),
-        call.fire_event(EventType.JOB_COMPLETED, completion_ctx),
+        call.fire_job_lifecycle_event(EventType.JOB_ABORTED, "job-1", completion_ctx),
+        call.fire_job_lifecycle_event(EventType.JOB_COMPLETED, "job-1", completion_ctx),
     ]
     engine.remove_exception_process.assert_called_once_with("job-1")
     assert "job-1" not in runner.running_jobs
@@ -957,7 +1012,7 @@ def test_job_complete_process_fires_job_aborted_for_aborted_launcher_return_code
     with _patch_job_runner_sleep(_stop_after_first_pass):
         runner._job_complete_process(engine)
 
-    runner._save_workspace.assert_called_once_with(completion_ctx, ANY)
+    runner._save_workspace.assert_called_once_with(completion_ctx, ANY, "job-1")
     job_manager.set_status.assert_called_once_with("job-1", RunStatus.FINISHED_ABORTED, completion_ctx)
     assert runner.fire_event.call_args_list == [
         call(EventType.JOB_ABORTED, completion_ctx),
@@ -1041,7 +1096,7 @@ def test_job_complete_process_keeps_processing_jobs_when_save_workspace_fails():
     with _patch_job_runner_sleep(_stop_after_first_pass):
         runner._job_complete_process(engine)
 
-    assert runner._save_workspace.call_args_list == [call(first_ctx, ANY), call(second_ctx, ANY)]
+    assert runner._save_workspace.call_args_list == [call(first_ctx, ANY, "job-1"), call(second_ctx, ANY, "job-2")]
     runner.log_exception.assert_called_once()
     job_manager.set_status.assert_called_once_with("job-2", RunStatus.FINISHED_ABORTED, second_ctx)
     assert runner.fire_event.call_args_list == [
@@ -1096,7 +1151,7 @@ def test_job_complete_process_retries_save_without_recomputing_finished_status()
     with _patch_job_runner_sleep(_stop_after_second_pass):
         runner._job_complete_process(engine)
 
-    assert runner._save_workspace.call_args_list == [call(first_ctx, ANY), call(second_ctx, ANY)]
+    assert runner._save_workspace.call_args_list == [call(first_ctx, ANY, "job-1"), call(second_ctx, ANY, "job-1")]
     runner.abort_client_run.assert_called_once_with("job-1", [], first_ctx)
     runner.log_exception.assert_called_once()
     job_manager.set_status.assert_called_once_with("job-1", RunStatus.FINISHED_ABORTED, second_ctx)
@@ -1156,7 +1211,7 @@ def test_job_complete_process_publishes_terminal_status_after_workspace_save_gra
     ):
         runner._job_complete_process(engine)
 
-    assert runner._save_workspace.call_args_list == [call(first_ctx, ANY), call(second_ctx, ANY)]
+    assert runner._save_workspace.call_args_list == [call(first_ctx, ANY, "job-1"), call(second_ctx, ANY, "job-1")]
     runner.abort_client_run.assert_called_once_with("job-1", [], first_ctx)
     runner.log_exception.assert_called_once()
     runner.log_error.assert_called_once()
@@ -1203,7 +1258,7 @@ def test_job_complete_process_retries_status_publish_without_resaving_workspace(
     with _patch_job_runner_sleep(_stop_after_second_pass):
         runner._job_complete_process(engine)
 
-    runner._save_workspace.assert_called_once_with(first_ctx, ANY)
+    runner._save_workspace.assert_called_once_with(first_ctx, ANY, "job-1")
     assert job_manager.set_status.call_args_list == [
         call("job-1", RunStatus.FINISHED_ABORTED, first_ctx),
         call("job-1", RunStatus.FINISHED_ABORTED, second_ctx),
