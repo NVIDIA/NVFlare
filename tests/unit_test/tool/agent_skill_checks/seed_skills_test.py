@@ -952,7 +952,11 @@ def test_orientation_routes_only_unresolved_explicit_conversions():
     assert "no-orient-for-single-owner-conversion" in prohibited_ids
 
 
-def test_lightning_conversion_trigger_requires_federation_intent():
+def test_lightning_conversion_trigger_contract_includes_adjacent_negative_evals():
+    """Keep the externally executed routing cases tied to the skill trigger contract.
+
+    Skill selection is performed by the agent/model, not by an in-repo router.
+    """
     repo_root = Path(__file__).resolve().parents[4]
     skill_root = repo_root / "skills" / "nvflare-convert-lightning"
     skill_path = skill_root / "SKILL.md"
