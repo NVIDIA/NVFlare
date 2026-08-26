@@ -342,21 +342,22 @@ def apply_log_config(dict_config, dir_path: str = "", file_prefix: str = ""):
     logging.captureWarnings(True)  # route Python warnings through logging so they reach file handlers
 
 
-def dynamic_log_config(config: Union[dict, str], dir_path: str, reload_path: str):
+def dynamic_log_config(config: Union[dict, str], dir_path: str, reload_path: str, allow_file_config: bool = True):
     # Dynamically configure log given a config (dict, filepath, LogMode, or level), apply the config to the proper locations.
 
     if isinstance(config, dict):
         apply_log_config(config, dir_path)
     elif isinstance(config, str):
         # Handle pre-defined LogModes
-        if config == LogMode.RELOAD:
+        reload_config = config == LogMode.RELOAD
+        if reload_config:
             config = reload_path
         elif log_config := logmode_config_dict.get(config):
             apply_log_config(copy.deepcopy(log_config), dir_path)
             return
 
         # Read config file
-        if os.path.isfile(config):
+        if (allow_file_config or reload_config) and os.path.isfile(config):
             with open(config, "r") as f:
                 dict_config = json.load(f)
 
@@ -376,6 +377,31 @@ def dynamic_log_config(config: Union[dict, str], dir_path: str, reload_path: str
         raise ValueError(
             f"Unsupported config type. Expect config to be a dict, filepath, level, or LogMode but got {type(config)}"
         )
+
+
+def validate_site_log_config(config) -> str:
+    """Validate site-wide log configuration input.
+
+    Site-wide log reconfiguration is intentionally narrower than general
+    dictConfig support: only simple log levels and built-in log modes are
+    allowed on this admin command path.
+    """
+
+    if not isinstance(config, str):
+        raise ValueError("configure_site_log only supports log levels and built-in log modes")
+
+    config = config.strip()
+    if not config:
+        raise ValueError("configure_site_log only supports log levels and built-in log modes")
+
+    if config == LogMode.RELOAD or config in logmode_config_dict:
+        return config
+
+    level = int(config) if config.isdigit() else getattr(logging, config.upper(), None)
+    if not isinstance(level, int) or not (0 <= level <= 50):
+        raise ValueError("configure_site_log only supports log levels and built-in log modes")
+
+    return config
 
 
 def add_log_file_handler(log_file_name):

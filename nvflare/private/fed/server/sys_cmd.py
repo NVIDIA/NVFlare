@@ -21,7 +21,7 @@ from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, make_meta
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
-from nvflare.fuel.utils.log_utils import dynamic_log_config
+from nvflare.fuel.utils.log_utils import dynamic_log_config, validate_site_log_config
 from nvflare.private.admin_defs import MsgHeader, ReturnCode
 from nvflare.private.defs import SysCommandTopic
 from nvflare.private.fed.server.admin import new_message
@@ -139,7 +139,11 @@ class SystemCommandModule(CommandModule, CommandUtil):
             return
 
         target_type = args[1]
-        config = args[-1]
+        try:
+            config = validate_site_log_config(args[-1])
+        except ValueError as e:
+            conn.append_error(str(e), meta=make_meta(MetaStatusValue.SYNTAX_ERROR, info=str(e)))
+            return
 
         if target_type in [self.TARGET_TYPE_SERVER, self.TARGET_TYPE_ALL]:
             engine = conn.app_ctx
@@ -149,7 +153,10 @@ class SystemCommandModule(CommandModule, CommandUtil):
             workspace = engine.get_workspace()
             try:
                 dynamic_log_config(
-                    config=config, dir_path=workspace.get_root_dir(), reload_path=workspace.get_log_config_file_path()
+                    config=config,
+                    dir_path=workspace.get_root_dir(),
+                    reload_path=workspace.get_log_config_file_path(),
+                    allow_file_config=False,
                 )
             except Exception as e:
                 conn.append_error(
