@@ -19,6 +19,8 @@ import pytest
 
 import nvflare.app_common.job_schedulers.job_scheduler as job_scheduler_module
 from nvflare.apis.client import Client
+from nvflare.apis.event_type import EventType
+from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.job_def import ALL_SITES, Job, JobMetaKey, RunStatus
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
@@ -341,6 +343,35 @@ def setup_and_teardown(request):
 
 
 class TestDefaultJobScheduler:
+    def test_lifecycle_event_uses_explicit_job_id_when_sticky_job_id_changes(self):
+        scheduler = DefaultJobScheduler(max_jobs=20)
+        fl_ctx_manager = FLContextManager()
+        starting_ctx = fl_ctx_manager.new_context()
+        starting_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, "starting-job")
+
+        completion_ctx = fl_ctx_manager.new_context()
+        completion_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, "completed-job")
+        assert starting_ctx.get_prop(FLContextKey.CURRENT_JOB_ID) == "completed-job"
+
+        starting_ctx.set_prop(
+            FLContextKey.EVENT_DATA,
+            {JobMetaKey.JOB_ID.value: "starting-job"},
+            private=True,
+            sticky=False,
+        )
+        scheduler.handle_event(EventType.JOB_STARTED, starting_ctx)
+        assert scheduler.scheduled_jobs == ["starting-job"]
+
+        completion_ctx.set_prop(
+            FLContextKey.EVENT_DATA,
+            {JobMetaKey.JOB_ID.value: "completed-job"},
+            private=True,
+            sticky=False,
+        )
+        scheduler.scheduled_jobs.append("completed-job")
+        scheduler.handle_event(EventType.JOB_COMPLETED, completion_ctx)
+        assert scheduler.scheduled_jobs == ["starting-job"]
+
     def test_weird_deploy_map(self, setup_and_teardown):
         servers, scheduler, num_sites, job_manager = setup_and_teardown
         candidate = create_job(

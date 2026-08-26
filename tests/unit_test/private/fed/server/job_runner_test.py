@@ -94,17 +94,31 @@ def _make_workspace_save_inputs(run_dir, result_root, log_root, audit_root):
 # ---------------------------------------------------------------------------
 
 
+def test_fire_job_lifecycle_event_includes_job_id():
+    runner = JobRunner(workspace_root="/tmp")
+    runner.fire_event_with_data = MagicMock()
+    fl_ctx = MagicMock()
+
+    runner._fire_job_lifecycle_event(EventType.JOB_STARTED, "job-1", fl_ctx)
+
+    runner.fire_event_with_data.assert_called_once_with(
+        EventType.JOB_STARTED, fl_ctx, FLContextKey.EVENT_DATA, {JobMetaKey.JOB_ID.value: "job-1"}
+    )
+
+
 @patch("nvflare.private.fed.server.job_runner.check_client_replies")
 @patch("nvflare.private.fed.server.job_runner.ConfigService.get_bool_var", return_value=False)
 def test_start_run_passes_strict_false_when_flag_disabled(mock_get_bool, mock_check_replies):
     mock_check_replies.return_value = []  # no timeouts
     runner, fl_ctx, _engine, job, client_sites = _make_runner_inputs()
+    runner._fire_job_lifecycle_event = MagicMock()
 
     runner._start_run(job_id=job.job_id, job=job, client_sites=client_sites, fl_ctx=fl_ctx)
 
     mock_get_bool.assert_called_once()
     mock_check_replies.assert_called_once()
     assert mock_check_replies.call_args.kwargs["strict"] is False
+    runner._fire_job_lifecycle_event.assert_called_once_with(EventType.JOB_STARTED, "job-1", fl_ctx)
 
 
 @patch("nvflare.private.fed.server.job_runner.check_client_replies")
@@ -486,7 +500,7 @@ def test_job_complete_process_publishes_status_after_persistent_cleanup_failure(
 
 def test_job_complete_process_saves_workspace_before_publishing_aborted_status():
     runner = JobRunner(workspace_root="/tmp")
-    runner.fire_event = MagicMock()
+    runner._fire_job_lifecycle_event = MagicMock()
     runner.log_debug = MagicMock()
     runner._save_workspace = MagicMock()
     runner.ask_to_stop = False
@@ -509,7 +523,7 @@ def test_job_complete_process_saves_workspace_before_publishing_aborted_status()
     parent = MagicMock()
     parent.attach_mock(runner._save_workspace, "save_workspace")
     parent.attach_mock(job_manager.set_status, "set_status")
-    parent.attach_mock(runner.fire_event, "fire_event")
+    parent.attach_mock(runner._fire_job_lifecycle_event, "fire_job_lifecycle_event")
 
     def _stop_after_first_pass(_):
         runner.ask_to_stop = True
@@ -521,8 +535,8 @@ def test_job_complete_process_saves_workspace_before_publishing_aborted_status()
     assert parent.mock_calls == [
         call.save_workspace(completion_ctx, ANY),
         call.set_status("job-1", RunStatus.FINISHED_ABORTED, completion_ctx),
-        call.fire_event(EventType.JOB_ABORTED, completion_ctx),
-        call.fire_event(EventType.JOB_COMPLETED, completion_ctx),
+        call.fire_job_lifecycle_event(EventType.JOB_ABORTED, "job-1", completion_ctx),
+        call.fire_job_lifecycle_event(EventType.JOB_COMPLETED, "job-1", completion_ctx),
     ]
     engine.remove_exception_process.assert_called_once_with("job-1")
     assert "job-1" not in runner.running_jobs

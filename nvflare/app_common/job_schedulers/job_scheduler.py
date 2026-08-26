@@ -274,14 +274,23 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.JOB_STARTED:
             with self.lock:
-                job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
+                job_id = self._get_event_job_id(fl_ctx)
                 if job_id not in self.scheduled_jobs:
                     self.scheduled_jobs.append(job_id)
         elif event_type == EventType.JOB_COMPLETED or event_type == EventType.JOB_ABORTED:
             with self.lock:
-                job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
+                job_id = self._get_event_job_id(fl_ctx)
                 if job_id in self.scheduled_jobs:
                     self.scheduled_jobs.remove(job_id)
+
+    @staticmethod
+    def _get_event_job_id(fl_ctx: FLContext):
+        event_data = fl_ctx.get_prop(FLContextKey.EVENT_DATA)
+        if isinstance(event_data, dict):
+            job_id = event_data.get(JobMetaKey.JOB_ID.value)
+            if job_id:
+                return job_id
+        return fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
 
     def schedule_job(
         self, job_manager: JobDefManagerSpec, job_candidates: List[Job], fl_ctx: FLContext
