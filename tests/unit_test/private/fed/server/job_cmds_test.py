@@ -114,6 +114,8 @@ class _MockConnection:
 
     def append_error(self, msg, meta=None):
         self.errors.append((msg, meta))
+        if meta:
+            self.update_meta(meta)
 
     def append_string(self, msg, meta=None):
         self.strings.append((msg, meta))
@@ -1738,6 +1740,7 @@ def test_configure_job_log_client_failure_sets_error_meta(tmp_path, monkeypatch,
     assert conn.meta[MetaKey.STATUS] == MetaStatusValue.ERROR
     assert "site-a" in conn.meta[MetaKey.INFO]
     assert expected_info in conn.meta[MetaKey.INFO]
+    assert conn.errors == [(conn.meta[MetaKey.INFO], conn.meta)]
 
 
 def test_configure_job_log_no_client_responses_sets_error_meta(tmp_path, monkeypatch):
@@ -1758,6 +1761,7 @@ def test_configure_job_log_no_client_responses_sets_error_meta(tmp_path, monkeyp
         MetaKey.STATUS: MetaStatusValue.ERROR,
         MetaKey.INFO: "site-a: no reply",
     }
+    assert conn.errors == [("site-a: no reply", conn.meta)]
 
 
 def test_configure_job_log_partial_client_responses_set_error_meta(tmp_path, monkeypatch):
@@ -1779,6 +1783,7 @@ def test_configure_job_log_partial_client_responses_set_error_meta(tmp_path, mon
         MetaKey.STATUS: MetaStatusValue.ERROR,
         MetaKey.INFO: "site-b: no reply",
     }
+    assert conn.errors == [("site-b: no reply", conn.meta)]
 
 
 def test_authorize_job_id_hides_jobs_from_other_studies(monkeypatch):
