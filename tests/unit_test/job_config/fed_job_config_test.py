@@ -403,6 +403,44 @@ class TestFedJobConfig:
         assert (custom_dir / "pkg" / "helper.py").is_file()
         assert not (custom_dir / "helper.py").exists()
 
+    def test_copy_ext_script_resolves_transitive_package_import_from_top_level_script(self, tmp_path, monkeypatch):
+        project_dir = tmp_path / "proj"
+        package_dir = project_dir / "pkg"
+        package_dir.mkdir(parents=True)
+        (project_dir / "train.py").write_text("from pkg.a import A\n", encoding="utf-8")
+        (package_dir / "__init__.py").write_text("", encoding="utf-8")
+        (package_dir / "a.py").write_text("from pkg.b import B\nA = B + 1\n", encoding="utf-8")
+        (package_dir / "b.py").write_text("B = 1\n", encoding="utf-8")
+        monkeypatch.chdir(project_dir)
+
+        custom_dir = tmp_path / "exported" / "custom"
+        job_config = FedJobConfig(job_name="job_name", min_clients=1)
+        job_config._copy_ext_scripts(str(custom_dir), ["train.py"])
+
+        assert (custom_dir / "train.py").is_file()
+        assert (custom_dir / "pkg" / "a.py").is_file()
+        assert (custom_dir / "pkg" / "b.py").read_text(encoding="utf-8") == "B = 1\n"
+
+    def test_transitive_package_import_does_not_resolve_from_parent_directory(self, tmp_path, monkeypatch):
+        project_dir = tmp_path / "proj"
+        package_dir = project_dir / "pkg"
+        package_dir.mkdir(parents=True)
+        (project_dir / "train.py").write_text("from pkg.a import A\n", encoding="utf-8")
+        (package_dir / "__init__.py").write_text("", encoding="utf-8")
+        (package_dir / "a.py").write_text("from pkg.b import B\nA = B + 1\n", encoding="utf-8")
+        (package_dir / "b.py").write_text("B = 'project'\n", encoding="utf-8")
+        parent_package_dir = tmp_path / "pkg"
+        parent_package_dir.mkdir()
+        (parent_package_dir / "b.py").write_text("B = 'foreign'\n", encoding="utf-8")
+        monkeypatch.chdir(project_dir)
+
+        custom_dir = tmp_path / "exported" / "custom"
+        job_config = FedJobConfig(job_name="job_name", min_clients=1)
+        job_config._copy_ext_scripts(str(custom_dir), ["train.py"])
+
+        exported_module = custom_dir / "pkg" / "b.py"
+        assert exported_module.read_text(encoding="utf-8") == "B = 'project'\n"
+
     def test_copy_ext_script_resolves_valid_multi_level_relative_import(self, tmp_path, monkeypatch):
         package_dir = tmp_path / "pkg"
         script_dir = package_dir / "sub"

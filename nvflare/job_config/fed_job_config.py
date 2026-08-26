@@ -377,7 +377,7 @@ class FedJobConfig:
                 if os.path.basename(source_file) != "__init__.py":
                     path_depth -= 1
                 source_root = os.path.dirname(source_path_for_root)
-                for _ in range(max(path_depth, 1)):
+                for _ in range(path_depth):
                     source_root = os.path.dirname(source_root)
                 self._copy_source_file(
                     custom_dir,
@@ -566,6 +566,9 @@ class FedJobConfig:
             # Flat registered scripts and non-package modules can resolve unqualified imports from source-dir siblings.
             if level == 0 and search_source_dir and os.path.basename(source_file) != "__init__.py":
                 search_roots.insert(0, source_dir)
+            # Preserve parent-helper lookup for top-level registered scripts without using that parent for recursion.
+            if level == 0 and is_external_script and "." not in module:
+                search_roots.append(os.path.dirname(source_dir))
             checked_roots = set()
             for search_root in search_roots:
                 search_root = self._resolved_path(search_root)
@@ -578,7 +581,7 @@ class FedJobConfig:
                         custom_dir,
                         import_module,
                         import_source_file,
-                        source_root=source_root,
+                        source_root=search_root,
                     )
                     break
 
