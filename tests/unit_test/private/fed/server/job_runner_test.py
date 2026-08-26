@@ -19,8 +19,11 @@ import pytest
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, RunProcessKey
+from nvflare.apis.fl_context import FLContextManager
 from nvflare.apis.job_def import JobMetaKey, RunStatus
 from nvflare.apis.job_launcher_spec import JobReturnCode
+from nvflare.apis.utils.event import fire_event_to_components
+from nvflare.app_common.job_schedulers.job_scheduler import DefaultJobScheduler
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.private.admin_defs import Message, MsgHeader, ReturnCode
 from nvflare.private.fed.server.job_runner import JobRunner, _FinishedJobState
@@ -104,6 +107,25 @@ def test_fire_job_lifecycle_event_includes_job_id():
     runner.fire_event_with_data.assert_called_once_with(
         EventType.JOB_STARTED, fl_ctx, FLContextKey.EVENT_DATA, {JobMetaKey.JOB_ID.value: "job-1"}
     )
+
+
+def test_lifecycle_event_delivers_explicit_job_id_to_scheduler():
+    scheduler = DefaultJobScheduler(max_jobs=5)
+    runner = JobRunner(workspace_root="/tmp")
+
+    engine = MagicMock()
+    engine.fire_event.side_effect = lambda event_type, ctx: fire_event_to_components(event_type, [scheduler], ctx)
+    fl_ctx = FLContextManager(engine=engine).new_context()
+    fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, "wrong-job")  # racy sticky value
+
+    runner._fire_job_lifecycle_event(EventType.JOB_STARTED, "job-1", fl_ctx)
+
+    assert scheduler.scheduled_jobs == ["job-1"]
+    assert fl_ctx.get_prop(FLContextKey.EVENT_DATA) is None  # cleaned up after the fire
+
+    runner._fire_job_lifecycle_event(EventType.JOB_COMPLETED, "job-1", fl_ctx)
+
+    assert scheduler.scheduled_jobs == []
 
 
 @patch("nvflare.private.fed.server.job_runner.check_client_replies")
@@ -392,6 +414,25 @@ def test_save_workspace_retries_remaining_cleanup_after_earlier_source_was_remov
     )
     assert not run_dir.exists()
     assert not result_root.exists()
+
+
+def test_save_workspace_uses_explicit_job_id_over_sticky_context_id(tmp_path):
+    job_a_dir = tmp_path / "job-A"
+    job_a_dir.mkdir()
+    job_b_dir = tmp_path / "job-B"
+    job_b_dir.mkdir()
+
+    runner, fl_ctx, job_manager = _make_workspace_save_inputs("", "", "", "")
+    fl_ctx.get_prop.return_value = "job-B"  # racy sticky CURRENT_JOB_ID points at another job
+    workspace = fl_ctx.get_workspace.return_value
+    for getter in (workspace.get_run_dir, workspace.get_result_root, workspace.get_log_root, workspace.get_audit_root):
+        getter.side_effect = lambda job_id: str(tmp_path / job_id)
+
+    runner._save_workspace(fl_ctx, job_id="job-A")
+
+    job_manager.save_workspace.assert_called_once_with("job-A", [str(job_a_dir)], fl_ctx)
+    assert not job_a_dir.exists()
+    assert job_b_dir.exists()
 
 
 def test_job_complete_process_retries_cleanup_without_resaving_workspace(tmp_path):
