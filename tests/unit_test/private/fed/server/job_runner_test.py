@@ -778,13 +778,15 @@ def test_mark_run_aborted_logs_info_when_job_not_running():
     runner.log_info.assert_called_once_with(fl_ctx, "Job job-1 is not running. It can not be stopped.")
 
 
-def test_fail_run_logs_info_when_job_not_running():
+def test_fail_run_ignores_job_already_finalized():
     runner = JobRunner(workspace_root="/tmp")
     runner.log_info = MagicMock()
     runner._stop_run = MagicMock()
 
     engine = MagicMock()
     engine.lock = MagicMock()
+    engine.run_processes = {}
+    engine.exception_run_processes = {}
     fl_ctx = MagicMock()
     fl_ctx.get_engine.return_value = engine
     runner.running_jobs = {}
@@ -793,7 +795,8 @@ def test_fail_run_logs_info_when_job_not_running():
 
     assert msg == "Job job-1 is not running."
     runner.log_info.assert_called_once_with(fl_ctx, "Job job-1 is not running. It can not be failed.")
-    runner._stop_run.assert_called_once_with("job-1", fl_ctx)
+    runner._stop_run.assert_not_called()
+    assert "job-1" not in engine.exception_run_processes
 
 
 def test_fail_run_releases_client_outcome_barrier():
@@ -823,8 +826,24 @@ def test_fail_run_releases_client_outcome_barrier():
     runner._stop_run.assert_called_once_with("job-1", fl_ctx)
 
 
-def test_job_complete_process_releases_client_outcome_barrier_after_server_failure():
+@pytest.mark.parametrize(
+    "failure_process",
+    [
+        {
+            RunProcessKey.PARTICIPANTS: {},
+            RunProcessKey.PROCESS_RETURN_CODE: ProcessExitCode.EXCEPTION,
+        },
+        {
+            RunProcessKey.PARTICIPANTS: {},
+            RunProcessKey.PROCESS_FINISHED: True,
+            RunProcessKey.PROCESS_EXE_ERROR: True,
+        },
+    ],
+    ids=["failure-return-code", "execution-error-without-return-code"],
+)
+def test_job_complete_process_releases_client_outcome_barrier_after_server_failure(failure_process):
     runner = JobRunner(workspace_root="/tmp")
+    runner.logger = MagicMock()
     runner.fire_event = MagicMock()
     runner.log_debug = MagicMock()
     runner.log_info = MagicMock()
@@ -835,12 +854,7 @@ def test_job_complete_process_releases_client_outcome_barrier_after_server_failu
     engine = MagicMock()
     engine.run_processes = {}
     engine.client_manager.clients = {}
-    engine.exception_run_processes = {
-        "job-1": {
-            RunProcessKey.PARTICIPANTS: {},
-            RunProcessKey.PROCESS_RETURN_CODE: ProcessExitCode.EXCEPTION,
-        }
-    }
+    engine.exception_run_processes = {"job-1": failure_process}
 
     job_manager = MagicMock()
     engine.get_component.return_value = job_manager
@@ -866,6 +880,38 @@ def test_job_complete_process_releases_client_outcome_barrier_after_server_failu
     assert "job-1" not in runner.running_jobs
     assert "job-1" not in runner._pending_client_outcomes
     assert "job-1" not in runner._client_outcome_deadlines
+    runner.logger.info.assert_called_once_with(
+        "Server failure for job (job-1); skipping client outcome wait for: ['site-1']"
+    )
+
+
+def test_job_complete_process_keeps_client_outcome_barrier_for_clean_unknown_return_code():
+    runner = JobRunner(workspace_root="/tmp")
+    runner.ask_to_stop = False
+
+    engine = MagicMock()
+    engine.run_processes = {}
+    engine.exception_run_processes = {
+        "job-1": {
+            RunProcessKey.PROCESS_RETURN_CODE: JobReturnCode.UNKNOWN,
+            RunProcessKey.PROCESS_FINISHED: True,
+            RunProcessKey.PROCESS_EXE_ERROR: False,
+        }
+    }
+    job_manager = MagicMock()
+    engine.get_component.return_value = job_manager
+
+    runner.running_jobs = {"job-1": MagicMock(job_id="job-1", run_aborted=False)}
+    runner._pending_client_outcomes = {"job-1": {"site-1"}}
+
+    def _stop_after_first_pass(_):
+        runner.ask_to_stop = True
+
+    with _patch_job_runner_sleep(_stop_after_first_pass):
+        runner._job_complete_process(engine)
+
+    job_manager.set_status.assert_not_called()
+    assert runner._pending_client_outcomes["job-1"] == {"site-1"}
 
 
 def test_job_complete_process_fires_job_aborted_for_aborted_launcher_return_code():
