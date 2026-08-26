@@ -19,11 +19,32 @@ import pytest
 from nvflare.apis.fl_constant import RunProcessKey
 from nvflare.apis.shareable import Shareable
 from nvflare.private.defs import CellMessageHeaderKeys, new_cell_message
-from nvflare.private.fed.server.fed_server import FederatedServer
+from nvflare.private.fed.server.fed_server import BaseServer, FederatedServer
 from nvflare.private.fed.server.server_state import ColdState, HotState
 
 
 class TestFederatedServer:
+    def test_production_localhost_listener_bindings_remain_wildcard(self):
+        server = object.__new__(FederatedServer)
+
+        with (
+            patch("nvflare.private.fed.server.fed_server.Cell") as cell_cls,
+            patch("nvflare.private.fed.server.fed_server.mpm.add_cleanup_cb"),
+            patch("nvflare.private.fed.server.fed_server.threading.Thread"),
+        ):
+            BaseServer.deploy(
+                server,
+                args=MagicMock(),
+                grpc_args={
+                    "service": {"target": "localhost:8002", "scheme": "tcp"},
+                    "admin_port": 8003,
+                },
+            )
+
+        cell_args = cell_cls.call_args.kwargs
+        assert cell_args["root_url"] == ["tcp://0:8002", "tcp://0:8003"]
+        assert cell_args["internal_listener_host"] is None
+
     @pytest.mark.parametrize("server_state, expected", [(HotState(), ["extra_job"]), (ColdState(), [])])
     def test_heart_beat_abort_jobs(self, server_state, expected):
         with patch("nvflare.private.fed.server.fed_server.ServerEngine"):

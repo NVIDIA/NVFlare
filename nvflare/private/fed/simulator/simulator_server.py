@@ -94,6 +94,8 @@ class SimulatorIdentityAsserter(IdentityAsserter):
 
 
 class SimulatorServer(FederatedServer):
+    LISTENING_HOST = "127.0.0.1"
+
     def __init__(
         self,
         project_name=None,

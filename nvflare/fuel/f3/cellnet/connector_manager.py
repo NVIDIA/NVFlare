@@ -59,7 +59,13 @@ class ConnectorManager:
     Manages creation of connectors
     """
 
-    def __init__(self, communicator: Communicator, secure: bool, comm_configurator: CommConfigurator):
+    def __init__(
+        self,
+        communicator: Communicator,
+        secure: bool,
+        comm_configurator: CommConfigurator,
+        internal_listener_host: str = None,
+    ):
         self._name = self.__class__.__name__
         self.logger = get_obj_logger(self)
 
@@ -76,6 +82,7 @@ class ConnectorManager:
         self.adhoc_allowed = comm_configurator.allow_adhoc_connections(_Defaults.ALLOW_ADHOC_CONNECTIONS)
         self.adhoc_scheme = comm_configurator.get_adhoc_connection_scheme(_Defaults.SCHEME_FOR_ADHOC_CONNECTIONS)
         self.adhoc_resources = {}
+        internal_host_configured = False
 
         # load config if any
         comm_config = comm_configurator.get_config()
@@ -84,11 +91,17 @@ class ConnectorManager:
             if int_conf:
                 self.int_scheme = int_conf.get(_KEY_SCHEME)
                 self.int_resources = int_conf.get(_KEY_RESOURCES)
+                internal_host_configured = DriverParams.HOST.value in self.int_resources
 
             adhoc_conf = self._validate_conn_config(comm_config, _KEY_ADHOC)
             if adhoc_conf:
                 self.adhoc_scheme = adhoc_conf.get(_KEY_SCHEME)
                 self.adhoc_resources = adhoc_conf.get(_KEY_RESOURCES)
+
+        if internal_listener_host and not internal_host_configured:
+            self.int_resources = dict(self.int_resources)
+            self.int_resources[DriverParams.HOST.value] = internal_listener_host
+            self.int_resources.setdefault(DriverParams.LISTEN_HOST.value, internal_listener_host)
 
         # default conn sec
         conn_sec = self.int_resources.get(DriverParams.CONNECTION_SECURITY)

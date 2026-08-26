@@ -67,17 +67,26 @@ class TestSimulatorDeploy(unittest.TestCase):
     @patch("nvflare.private.fed.server.admin.FedAdminServer.start")
     @patch("nvflare.private.fed.simulator.simulator_server.SimulatorServer._register_cellnet_cbs")
     @patch("nvflare.private.fed.server.fed_server.Cell")
-    def test_create_server(self, mock_admin, mock_simulator_server, mock_cell):
+    def test_create_server(self, mock_cell, mock_register_cbs, mock_admin_start):
         workspace = tempfile.mkdtemp()
         os.mkdir(os.path.join(workspace, "local"))
         os.mkdir(os.path.join(workspace, "startup"))
         parser = self._create_parser()
         args = parser.parse_args(["job_folder", "-w" + workspace, "-n 2", "-t 1"])
         args.config_folder = "config"
-        _, server = self.deployer.create_fl_server(args)
+        server_config, server = self.deployer.create_fl_server(args)
 
         assert isinstance(server, SimulatorServer)
         assert isinstance(server.engine.run_manager, RunManager)
+        listening_host = "127.0.0.1"
+        fl_port = server_config["service"]["target"].rsplit(":", 1)[1]
+        admin_port = server_config["admin_port"]
+        cell_args = mock_cell.call_args.kwargs
+        assert cell_args["root_url"] == [
+            f"tcp://{listening_host}:{fl_port}",
+            f"tcp://{listening_host}:{admin_port}",
+        ]
+        assert cell_args["internal_listener_host"] == listening_host
 
         server.cell.stop()
         server.close()

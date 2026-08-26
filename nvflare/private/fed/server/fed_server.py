@@ -89,6 +89,8 @@ from .server_status import ServerStatus
 
 
 class BaseServer(ABC):
+    LISTENING_HOST = None
+
     def __init__(
         self,
         project_name=None,
@@ -178,14 +180,16 @@ class BaseServer(ABC):
         if len(parts) != 2:
             raise RuntimeError(f"bad service target: {target}")
 
+        listening_host = self.LISTENING_HOST
         fl_port = int(parts[1])
 
         # get admin port
         admin_port = int(grpc_args.get("admin_port", fl_port))
 
-        root_url = [f"{scheme}://0:{fl_port}"]
+        url_host = listening_host or "0"
+        root_url = [f"{scheme}://{url_host}:{fl_port}"]
         if admin_port != fl_port:
-            root_url.append(f"{scheme}://0:{admin_port}")
+            root_url.append(f"{scheme}://{url_host}:{admin_port}")
 
         my_fqcn = FQCN.ROOT_SERVER
         self.cell = Cell(
@@ -195,6 +199,7 @@ class BaseServer(ABC):
             credentials=credentials,
             create_internal_listener=True,
             parent_url=parent_url,
+            internal_listener_host=listening_host,
         )
 
         self.cell.start()
