@@ -1792,3 +1792,17 @@ recipe.execute(SimEnv(num_clients=2))
 
     assert config["import"]["support"]["status"] == "supported"
     assert not marker.exists()
+
+
+def test_inspect_job_cli_flag_aliases_returns_parser_spellings(tmp_path):
+    job_path = _write_recipe_job(tmp_path)
+    source = job_path.read_text(encoding="utf-8").replace(
+        'parser.add_argument("--n_clients", type=int, default=3)',
+        'parser.add_argument("-n", "--n_clients", type=int, default=3)',
+    )
+    job_path.write_text(source, encoding="utf-8")
+
+    groups = job_importer.inspect_job_cli_flag_aliases(str(job_path))
+
+    assert ["--n_clients", "-n"] in groups
+    assert ["--num_rounds"] in groups

@@ -518,21 +518,24 @@ def test_comparison_budget_suppresses_duplicate_imported_fixed_budget_args():
     assert runner.build_fixed_args(config, help_text, schema) == []
 
     args = SimpleNamespace(base_args="")
-    assert runner.build_base_args(args, help_text, schema) == ["--n_clients", "8", "--num_rounds", "20"]
+    assert runner.build_campaign_args(config, args, help_text, schema) == (
+        [],
+        ["--n_clients", "8", "--num_rounds", "20"],
+    )
 
 
-def test_build_base_args_never_injects_dataset_flags_for_synthetic_capable_jobs():
+def test_campaign_args_never_inject_dataset_flags_for_synthetic_capable_jobs():
     runner = _load_runner()
     help_text = "usage: job.py [--synthetic_data] [--train_size TRAIN_SIZE] [--test_size TEST_SIZE]"
 
-    assert runner.build_base_args(SimpleNamespace(base_args=""), help_text, {}) == []
+    assert runner.build_campaign_args({"budget": {}}, SimpleNamespace(base_args=""), help_text, {}) == ([], [])
 
     schema = {"comparison_budget_args": {"default_candidate_budget": {"num_rounds": 5}}}
     help_text_with_budget = f"{help_text} [--num_rounds NUM_ROUNDS]"
-    assert runner.build_base_args(SimpleNamespace(base_args=""), help_text_with_budget, schema) == [
-        "--num_rounds",
-        "5",
-    ]
+    assert runner.build_campaign_args({"budget": {}}, SimpleNamespace(base_args=""), help_text_with_budget, schema) == (
+        [],
+        ["--num_rounds", "5"],
+    )
 
 
 def test_explicit_base_args_pass_through_verbatim():
@@ -540,7 +543,160 @@ def test_explicit_base_args_pass_through_verbatim():
     help_text = "usage: job.py [--synthetic_data] [--train_size TRAIN_SIZE] [--test_size TEST_SIZE]"
 
     args = SimpleNamespace(base_args="--synthetic_data --train_size 64")
-    assert runner.build_base_args(args, help_text, {}) == ["--synthetic_data", "--train_size", "64"]
+    assert runner.build_campaign_args({"budget": {}}, args, help_text, {}) == (
+        [],
+        ["--synthetic_data", "--train_size", "64"],
+    )
+
+
+def test_base_args_duplicates_of_fixed_budget_are_emitted_once():
+    runner = _load_runner()
+    config = {"budget": {"fixed_training_budget": {"num_clients": 2, "num_rounds": 3}}}
+    help_text = "--n_clients --num_rounds --update_type"
+    args = SimpleNamespace(base_args="--n_clients 2 --num_rounds=3 --update_type full")
+
+    fixed_args, base_args = runner.build_campaign_args(config, args, help_text, {})
+
+    assert fixed_args == ["--n_clients", "2", "--num_rounds", "3"]
+    assert base_args == ["--update_type", "full"]
+
+
+def test_base_args_alias_spelling_matches_only_parser_defined_flags():
+    runner = _load_runner()
+    config = {"budget": {"fixed_training_budget": {"num_rounds": 3}}}
+    args = SimpleNamespace(base_args="--num-rounds 3")
+
+    # The parser does not define --num-rounds: pass it through so argparse still reports the typo.
+    assert runner.build_campaign_args(config, args, "--num_rounds", {}) == (
+        ["--num_rounds", "3"],
+        ["--num-rounds", "3"],
+    )
+
+    # The parser defines both spellings as one option: deduplicate and conflict-check across them.
+    alias_groups = [["--num-rounds", "--num_rounds"]]
+    assert runner.build_campaign_args(config, args, "--num_rounds", {}, alias_groups=alias_groups) == (
+        ["--num_rounds", "3"],
+        [],
+    )
+    with pytest.raises(ValueError, match="AUTOFL_BUDGET_ARGUMENT_CONFLICT"):
+        runner.build_campaign_args(
+            config, SimpleNamespace(base_args="--num-rounds 5"), "--num_rounds", {}, alias_groups=alias_groups
+        )
+
+
+def test_base_args_short_alias_of_pinned_flag_is_deduplicated_and_conflicts_rejected():
+    runner = _load_runner()
+    config = {"budget": {"fixed_training_budget": {"num_rounds": 5}}}
+    alias_groups = [["-r", "--num_rounds"]]
+
+    fixed_args, base_args = runner.build_campaign_args(
+        config, SimpleNamespace(base_args="-r 5 --lr 0.1"), "--num_rounds --lr", {}, alias_groups=alias_groups
+    )
+    assert fixed_args == ["--num_rounds", "5"]
+    assert base_args == ["--lr", "0.1"]
+
+    for conflicting in ("-r 3", "-r=3", "-r3"):
+        with pytest.raises(ValueError, match=r"AUTOFL_BUDGET_ARGUMENT_CONFLICT.*--num_rounds.*'5'.*'3'"):
+            runner.build_campaign_args(
+                config, SimpleNamespace(base_args=conflicting), "--num_rounds", {}, alias_groups=alias_groups
+            )
+
+
+def test_base_args_conflicting_fixed_budget_value_is_rejected():
+    runner = _load_runner()
+    config = {"budget": {"fixed_training_budget": {"num_rounds": 5}}}
+    args = SimpleNamespace(base_args="--num_rounds 3")
+
+    with pytest.raises(
+        ValueError, match=r"AUTOFL_BUDGET_ARGUMENT_CONFLICT.*--num_rounds.*'5'.*fixed training budget.*'3'"
+    ):
+        runner.build_campaign_args(config, args, "--num_rounds", {})
+
+
+def test_base_args_conflicting_comparison_budget_value_is_rejected():
+    runner = _load_runner()
+    schema = {"comparison_budget_args": {"default_candidate_budget": {"num_rounds": 20}}}
+    args = SimpleNamespace(base_args="--num_rounds=3")
+
+    with pytest.raises(
+        ValueError, match=r"AUTOFL_BUDGET_ARGUMENT_CONFLICT.*--num_rounds.*'20'.*comparison budget.*'3'"
+    ):
+        runner.build_campaign_args({"budget": {}}, args, "--num_rounds", schema)
+
+
+def test_base_args_identical_comparison_budget_value_is_emitted_once():
+    runner = _load_runner()
+    schema = {"comparison_budget_args": {"default_candidate_budget": {"num_rounds": 5}}}
+    args = SimpleNamespace(base_args="--num_rounds 5 --synthetic_data")
+
+    fixed_args, base_args = runner.build_campaign_args({"budget": {}}, args, "--num_rounds --synthetic_data", schema)
+
+    assert fixed_args == []
+    assert base_args == ["--synthetic_data", "--num_rounds", "5"]
+    assert base_args.count("--num_rounds") == 1
+
+
+def test_base_args_conflicting_duplicates_of_pinned_flag_are_rejected():
+    runner = _load_runner()
+    config = {"budget": {"fixed_training_budget": {"num_rounds": 5}}}
+    args = SimpleNamespace(base_args="--num_rounds 5 --num-rounds=3")
+
+    with pytest.raises(ValueError, match="AUTOFL_BUDGET_ARGUMENT_CONFLICT"):
+        runner.build_campaign_args(config, args, "--num_rounds", {}, alias_groups=[["--num-rounds", "--num_rounds"]])
+
+
+def test_base_args_ambiguous_abbreviation_of_pinned_flag_is_rejected():
+    runner = _load_runner()
+    config = {"budget": {"fixed_training_budget": {"num_rounds": 5}}}
+    args = SimpleNamespace(base_args="--num_round 3")
+
+    with pytest.raises(ValueError, match=r"AUTOFL_BUDGET_ARGUMENT_CONFLICT.*ambiguous abbreviation.*--num_rounds"):
+        runner.build_campaign_args(config, args, "--num_rounds", {})
+
+
+def test_base_args_boolean_comparison_flag_deduplicates_and_rejects_values():
+    runner = _load_runner()
+    schema = {"comparison_budget_args": {"default_candidate_budget": {"cross_site_eval": True}}}
+    help_text = "--num_rounds --cross_site_eval"
+
+    fixed_args, base_args = runner.build_campaign_args(
+        {"budget": {}}, SimpleNamespace(base_args="--cross_site_eval"), help_text, schema
+    )
+    assert fixed_args == []
+    assert base_args == ["--cross_site_eval"]
+
+    # A zero-argument flag never consumes the next token: argparse would bind it to a positional.
+    fixed_args, base_args = runner.build_campaign_args(
+        {"budget": {}}, SimpleNamespace(base_args="--cross_site_eval dataset.csv"), help_text, schema
+    )
+    assert fixed_args == []
+    assert base_args == ["dataset.csv", "--cross_site_eval"]
+
+    with pytest.raises(ValueError, match="AUTOFL_BUDGET_ARGUMENT_CONFLICT"):
+        runner.build_campaign_args(
+            {"budget": {}}, SimpleNamespace(base_args="--cross_site_eval=true"), help_text, schema
+        )
+
+
+def test_base_args_budget_named_flags_stay_verbatim_when_not_pinned():
+    runner = _load_runner()
+    args = SimpleNamespace(base_args="--seed 1 --seed 2 --model_arch resnet18 resnet50")
+
+    fixed_args, base_args = runner.build_campaign_args({"budget": {}}, args, "--seed --model_arch", {})
+
+    assert fixed_args == []
+    assert base_args == ["--seed", "1", "--seed", "2", "--model_arch", "resnet18", "resnet50"]
+
+
+def test_base_args_exact_job_flag_matching_pinned_prefix_is_not_ambiguous():
+    runner = _load_runner()
+    schema = {"comparison_budget_args": {"default_candidate_budget": {"batch_size": 16}}}
+    args = SimpleNamespace(base_args="--batch 32")
+
+    fixed_args, base_args = runner.build_campaign_args({"budget": {}}, args, "--batch --batch_size", schema)
+
+    assert fixed_args == []
+    assert base_args == ["--batch", "32", "--batch_size", "16"]
 
 
 def test_restore_campaign_settings_ignores_legacy_synthetic_settings(tmp_path, capsys):
@@ -554,7 +710,7 @@ def test_restore_campaign_settings_ignores_legacy_synthetic_settings(tmp_path, c
 
     assert not hasattr(args, "prefer_synthetic")
     help_text = "usage: job.py [--synthetic_data] [--train_size TRAIN_SIZE] [--test_size TEST_SIZE]"
-    assert runner.build_base_args(args, help_text, {}) == []
+    assert runner.build_campaign_args({"budget": {}}, args, help_text, {}) == ([], [])
     # The prior baseline/candidates were scored on injected synthetic data; new runs use
     # real data, so the ledger crosses a data regime — warn instead of staying silent.
     stderr = capsys.readouterr().err
@@ -1039,6 +1195,42 @@ def test_socket_failure_marker_only_requests_human_runner_approval(tmp_path, mon
     assert state["next_action"] == runner.SIMULATION_APPROVAL_ACTION
     assert "Pause for human approval" in state["agent_instruction"]
     assert "Never request broader permission" in state["agent_instruction"]
+
+
+def test_run_job_argv_contains_each_budget_flag_exactly_once(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job = tmp_path / "job.py"
+    job.write_text("print('job')\n", encoding="utf-8")
+    captured = {}
+
+    def fake_run(_python, _arguments, *, log_path, **_kwargs):
+        captured["arguments"] = list(_arguments)
+        return _fake_python_result(_python, _arguments)
+
+    monkeypatch.setattr(runner, "run_python", fake_run)
+    config = {"budget": {"fixed_training_budget": {"num_clients": 2, "num_rounds": 3}}, "job": {}}
+    help_text = "--n_clients --num_rounds --update_type"
+    args = SimpleNamespace(base_args="--n_clients 2 --num_rounds=3 --update_type full")
+    fixed_args, base_args = runner.build_campaign_args(config, args, help_text, {})
+    runner.run_job(
+        runner.JobRun("baseline", [], "baseline"),
+        python=sys.executable,
+        job=job,
+        cwd=tmp_path,
+        help_text=help_text,
+        fixed_args=fixed_args,
+        base_args=base_args,
+        output_root=tmp_path / "runs",
+        timeout=10,
+        simulator_no_progress_timeout=0,
+        metrics=["accuracy"],
+        config=config,
+    )
+
+    arguments = captured["arguments"]
+    for flag in ("--n_clients", "--num_rounds", "--update_type"):
+        assert arguments.count(flag) == 1
+    assert arguments.index("--num_rounds") < arguments.index("--update_type")
 
 
 def test_run_job_uses_run_python_prepared_command_without_revalidating(tmp_path, monkeypatch):
@@ -3678,6 +3870,97 @@ def test_initialize_revalidates_source_after_in_memory_admission(tmp_path, monke
 
     with pytest.raises(ValueError, match="changed after metric-contract admission"):
         runner.admitted_initial_campaign(args, job)
+
+
+def test_initialize_rejects_conflicting_base_args_before_baseline(tmp_path, monkeypatch, capsys):
+    runner = _load_runner()
+    job = tmp_path / "job.py"
+    job.write_text(
+        """
+import argparse
+
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--num_rounds", type=int, default=3)
+    parser.parse_args()
+    recipe = FedAvgRecipe(
+        name="literal-budget",
+        min_clients=2,
+        num_rounds=5,
+        train_script="client.py",
+        key_metric="accuracy",
+    )
+    recipe.execute(SimEnv(num_clients=2))
+
+
+if __name__ == "__main__":
+    main()
+""".lstrip(),
+        encoding="utf-8",
+    )
+    tmp_path.joinpath("client.py").write_text("print('train')\n", encoding="utf-8")
+    monkeypatch.setattr(
+        runner,
+        "run_job",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("baseline must not execute")),
+    )
+
+    assert runner.main(["initialize", str(job), "--base-args", "--num_rounds 3"]) == 2
+
+    stderr = capsys.readouterr().err
+    assert "AUTOFL_BUDGET_ARGUMENT_CONFLICT" in stderr
+    assert not tmp_path.joinpath(".nvflare").exists()
+    assert not tmp_path.joinpath("autofl.yaml").exists()
+
+
+def test_initialize_rejects_conflicting_short_alias_base_args_before_baseline(tmp_path, monkeypatch, capsys):
+    runner = _load_runner()
+    job = tmp_path / "job.py"
+    job.write_text(
+        """
+import argparse
+
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-r", "--num_rounds", type=int, default=3)
+    parser.parse_args()
+    recipe = FedAvgRecipe(
+        name="literal-budget",
+        min_clients=2,
+        num_rounds=5,
+        train_script="client.py",
+        key_metric="accuracy",
+    )
+    recipe.execute(SimEnv(num_clients=2))
+
+
+if __name__ == "__main__":
+    main()
+""".lstrip(),
+        encoding="utf-8",
+    )
+    tmp_path.joinpath("client.py").write_text("print('train')\n", encoding="utf-8")
+    monkeypatch.setattr(
+        runner,
+        "run_job",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("baseline must not execute")),
+    )
+
+    assert runner.main(["initialize", str(job), "--base-args", "-r 3"]) == 2
+
+    stderr = capsys.readouterr().err
+    assert "AUTOFL_BUDGET_ARGUMENT_CONFLICT" in stderr
+    assert "--num_rounds" in stderr
+    assert not tmp_path.joinpath(".nvflare").exists()
+    assert not tmp_path.joinpath("autofl.yaml").exists()
 
 
 def test_explicit_immutable_campaign_setting_change_is_rejected(tmp_path, monkeypatch):

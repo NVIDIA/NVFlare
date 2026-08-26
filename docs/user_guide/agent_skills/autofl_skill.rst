@@ -57,6 +57,16 @@ The result is a reviewable ``autofl.yaml`` containing:
 - source and importer provenance;
 - unresolved dynamic or unsupported fields requiring review.
 
+Before baseline execution, the runner merges imported fixed-budget values,
+user ``--base-args``, and task-local comparison-budget arguments into one
+command line so each budget option is emitted exactly once. Explicit
+duplicates with identical values are dropped; conflicting values are
+rejected at initialization with an ``AUTOFL_BUDGET_ARGUMENT_CONFLICT``
+error before any campaign file is written. Duplicates are matched by the
+flag spellings the job's parser defines, including short aliases; a
+spelling the parser does not define passes through unchanged so argparse
+still reports it.
+
 When the user does not name a metric, a deterministic ``key_metric`` extracted
 from ``job.py`` takes precedence. The default user experience does not require
 editing ``autofl.yaml``.
