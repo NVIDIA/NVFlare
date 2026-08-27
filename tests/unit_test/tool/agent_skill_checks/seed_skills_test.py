@@ -1125,7 +1125,8 @@ def test_lightning_conversion_trigger_contract_includes_positive_and_adjacent_ne
     }
     implicit_positive = _eval_by_id(eval_data, "lightning-positive-implicit-federation-intent")
 
-    assert "use only when the request expresses federated or NVFLARE conversion intent" in description
+    assert "asks multiple sites to train collaboratively while keeping each site's data local" in description
+    assert "each site's data remains local as federation intent" in skill_text
     assert "Lightning source evidence alone is not sufficient" in skill_text
     implicit_prompt = implicit_positive["prompt"].lower()
     assert all(term not in implicit_prompt for term in ("flare", "nvflare", "federat"))
