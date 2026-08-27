@@ -1499,7 +1499,7 @@ _MRANK_WORKER_SCRIPT = textwrap.dedent(
         try:
             rank = dist.get_rank()
             world_size = dist.get_world_size()
-            flare.init(rank=rank)
+            flare.init()
             received = flare.receive()
             # rank contract: only rank 0 gets the model from NVFlare; non-zero ranks stay passive
             if rank == 0:

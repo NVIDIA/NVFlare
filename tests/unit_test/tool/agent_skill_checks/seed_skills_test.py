@@ -844,7 +844,7 @@ def test_client_api_rank_contract_is_shared_and_process_conditional():
     hf_client = repo_root.joinpath("skills/nvflare-convert-huggingface/assets/client_with_eval.py").read_text(
         encoding="utf-8"
     )
-    hf_public_api = repo_root.joinpath("nvflare/client/hf/__init__.py").read_text(encoding="utf-8")
+    rank_api = repo_root.joinpath("nvflare/client/rank.py").read_text(encoding="utf-8")
     hf_state = repo_root.joinpath(
         "skills/nvflare-convert-huggingface/references/huggingface-state-and-distributed.md"
     ).read_text(encoding="utf-8")
@@ -858,14 +858,12 @@ def test_client_api_rank_contract_is_shared_and_process_conditional():
     normalized_lightning_ddp = " ".join(lightning_ddp.split())
     normalized_construction = " ".join(construction_text.split())
 
-    assert (
-        "Rank is a process-level Client API property, not a framework-specific training argument" in normalized_common
-    )
-    assert "For a single-process launch, call `flare.init()` without an explicit rank" in normalized_common
+    assert "Rank is a product-owned process property, not a framework-specific training argument" in normalized_common
+    assert "Generated clients call `flare.init()` without an explicit rank" in normalized_common
     assert "do not add a required `rank` parser field or `--rank` to recipe arguments" in normalized_common
-    assert "For a distributed multi-process launch, resolve the global process rank" in normalized_common
-    assert "initialized process group or global `RANK`, never `LOCAL_RANK`" in normalized_common
-    assert "never default every process to rank zero" in normalized_common
+    assert "public Client API resolves an initialized Torch process-group rank or global `RANK`" in normalized_common
+    assert "rejects a declared multi-process launch" in normalized_common
+    assert "`LOCAL_RANK` remains device-local" in normalized_common
     assert "apply the canonical Client API global-rank contract in `conversion-common.md`" in normalized_construction
     assert "It does not apply to single-process `DataParallel`" in normalized_construction
 
@@ -877,21 +875,24 @@ def test_client_api_rank_contract_is_shared_and_process_conditional():
     assert "flare.init()" in hf_client
     assert "torch.distributed" not in hf_client
     assert "_MULTIRANK_SIZE_ENV_VARS" not in hf_client
-    assert "_MULTIRANK_SIZE_ENV_VARS" in hf_public_api
-    assert "global RANK is unavailable" in hf_public_api
+    assert "MULTIRANK_SIZE_ENV_VARS" in rank_api
+    assert "global RANK is unavailable" in rank_api
     assert "framework-neutral global-rank contract" in normalized_hf_state
     assert "do not add a rank argument to a standard single-process conversion" in normalized_hf_state
     assert "framework-neutral global-rank contract" in normalized_lightning_ddp
-    assert "`nvflare.client.hf.init()` owns this resolution" in normalized_hf_state
+    assert "public Client API owns global-rank resolution" in normalized_hf_state
     assert "Keep the generated client rankless" in normalized_hf_state
-    assert "flare.init(rank=global_rank)" in lightning_ddp
+    assert "Do not add rank-resolution code around DDP" in lightning_ddp
+    assert "call rankless `flare.init()`" in lightning_ddp
+    assert "flare.init(rank=global_rank)" not in lightning_ddp
 
     lightning_evals = json.loads(
         repo_root.joinpath("skills/nvflare-convert-lightning/evals/evals.json").read_text(encoding="utf-8")
     )
     ddp_eval = _eval_by_id(lightning_evals, "lightning-ddp-multigpu")["nvflare"]
-    assert "global-rank-for-distributed-processes" in {item["id"] for item in ddp_eval["mandatory_behavior"]}
-    assert "no-local-rank-as-global-rank" in {item["id"] for item in ddp_eval["prohibited_behavior"]}
+    assert "product-owned-global-rank" in {item["id"] for item in ddp_eval["mandatory_behavior"]}
+    prohibited_ids = {item["id"] for item in ddp_eval["prohibited_behavior"]}
+    assert {"no-local-rank-as-global-rank", "no-generated-rank-resolution"} <= prohibited_ids
 
 
 def test_all_conversion_skills_preserve_required_model_constructor_args():
@@ -1504,7 +1505,7 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "two-process `torchrun` case" in normalized_validation
     assert "This section applies only to a preserved distributed multi-process launch" in normalized_state
     assert "do not add a rank argument to a standard single-process conversion" in normalized_state
-    assert "`nvflare.client.hf.init()` owns this resolution" in normalized_state
+    assert "public Client API owns global-rank resolution" in normalized_state
     assert "do not pass it as the FLARE rank" in normalized_state
     basic_mandatory = {item["id"]: item["description"] for item in basic_eval["mandatory_behavior"]}
     ddp_mandatory = {item["id"]: item["description"] for item in ddp_eval["mandatory_behavior"]}

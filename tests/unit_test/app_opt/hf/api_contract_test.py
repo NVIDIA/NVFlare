@@ -182,14 +182,15 @@ def test_patch_rejects_nonzero_rank_without_initialized_distributed(monkeypatch,
         hf_api.patch(trainer, restore_state=False)
 
 
-def test_patch_rejects_rank_zero_multirank_env_without_initialized_distributed(monkeypatch, tmp_path):
+@pytest.mark.parametrize("size_marker", ("WORLD_SIZE", "LOCAL_WORLD_SIZE", "OMPI_COMM_WORLD_SIZE", "SLURM_NTASKS"))
+def test_patch_rejects_rank_zero_multirank_env_without_initialized_distributed(monkeypatch, tmp_path, size_marker):
     hf_api, trainer_cls, _ = _fresh_api(monkeypatch)
     monkeypatch.setattr(hf_api, "_torch_dist", lambda: None)
     monkeypatch.setenv("RANK", "0")
-    monkeypatch.setenv("WORLD_SIZE", "2")
+    monkeypatch.setenv(size_marker, "2")
     trainer = _make_trainer(trainer_cls, tmp_path)
 
-    with pytest.raises(RuntimeError, match="WORLD_SIZE|torch.distributed|torchrun"):
+    with pytest.raises(RuntimeError, match="multi-process|torch.distributed|torchrun"):
         hf_api.patch(trainer, restore_state=False)
 
 
