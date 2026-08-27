@@ -672,12 +672,14 @@ def test_base_args_boolean_comparison_flag_deduplicates_and_rejects_values():
     assert fixed_args == []
     assert base_args == ["dataset.csv", "--cross_site_eval"]
 
-    # A clustered short alias (-xv meaning -x -v) would supply the pinned flag a second time; fail closed.
+    # A clustered short alias (-xv meaning -x -v) sets the pinned flag itself; the runner omits its copy
+    # so the option still appears exactly once.
     alias_groups = [["-x", "--cross_site_eval"]]
-    with pytest.raises(ValueError, match=r"AUTOFL_BUDGET_ARGUMENT_CONFLICT.*-xv.*cross_site_eval.*split the cluster"):
-        runner.build_campaign_args(
-            {"budget": {}}, SimpleNamespace(base_args="-xv"), help_text, schema, alias_groups=alias_groups
-        )
+    fixed_args, base_args = runner.build_campaign_args(
+        {"budget": {}}, SimpleNamespace(base_args="-xv"), help_text, schema, alias_groups=alias_groups
+    )
+    assert fixed_args == []
+    assert base_args == ["-xv"]
 
     # A bare pinned short alias still deduplicates.
     fixed_args, base_args = runner.build_campaign_args(

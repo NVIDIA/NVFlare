@@ -2151,13 +2151,16 @@ def merge_base_budget_args(
     pinned: Dict[str, Tuple[Optional[str], str]],
     spellings: Dict[str, str],
     defined_flags: set,
-) -> List[str]:
+) -> Tuple[List[str], set[str]]:
     """Drop --base-args duplicates of runner-injected budget flags; reject conflicts and ambiguous abbreviations.
 
     Tokens are matched by the exact flag spellings the job's parser defines, mirroring argparse: a spelling
-    the parser would not accept passes through verbatim so the job still reports it as unrecognized.
+    the parser would not accept passes through verbatim so the job still reports it as unrecognized. Returns
+    the merged tokens plus the pinned names a kept token already sets (short-option clusters), whose
+    runner-injected copies must be omitted to keep each budget option emitted exactly once.
     """
     merged: List[str] = []
+    satisfied: set[str] = set()
     index = 0
     while index < len(base_tokens):
         token = base_tokens[index]
@@ -2181,13 +2184,11 @@ def merge_base_budget_args(
             if short is not None:
                 if pinned[spellings[short]][0] is None:
                     # A zero-argument pin has no attached value: argparse reads -xv as the cluster -x -v,
-                    # which would supply the pinned flag a second time. Token-wise merging cannot drop one
-                    # letter from a user's cluster, so fail closed to keep each budget option emitted once.
-                    raise ValueError(
-                        f"AUTOFL_BUDGET_ARGUMENT_CONFLICT: short-option cluster {token} includes {short} "
-                        f"(--{spellings[short]}), which the campaign already supplies; "
-                        f"split the cluster and drop {short}"
-                    )
+                    # which sets the pinned flag itself. One letter cannot be dropped from a user's cluster,
+                    # so keep the cluster and omit the runner's copy of the flag instead.
+                    satisfied.add(spellings[short])
+                    merged.append(token)
+                    continue
                 name = spellings[short]
                 supplied = token[2:]
         if name is None:
@@ -2210,7 +2211,7 @@ def merge_base_budget_args(
             f"supplies {'no value' if supplied is None else repr(supplied)}; "
             "remove the flag from --base-args or align the values"
         )
-    return merged
+    return merged, satisfied
 
 
 def build_campaign_args(
@@ -2237,7 +2238,10 @@ def build_campaign_args(
     spellings = pinned_flag_spellings(pinned, [*fixed_args, *budget_args], groups)
     defined_flags = supported_long_flags(help_text)
     defined_flags.update(flag for group in groups for flag in group)
-    base_args = merge_base_budget_args(shlex.split(args.base_args), pinned, spellings, defined_flags)
+    base_args, satisfied = merge_base_budget_args(shlex.split(args.base_args), pinned, spellings, defined_flags)
+    if satisfied:
+        fixed_args = [t for t in fixed_args if not (t.startswith("-") and normalize_budget_flag_name(t) in satisfied)]
+        budget_args = [t for t in budget_args if not (t.startswith("-") and normalize_budget_flag_name(t) in satisfied)]
     return fixed_args, [*base_args, *budget_args]
 
 
