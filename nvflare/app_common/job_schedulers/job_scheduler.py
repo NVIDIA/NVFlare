@@ -25,6 +25,7 @@ from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME, Job, JobMetaKey, R
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
 from nvflare.apis.job_scheduler_spec import DispatchInfo, JobSchedulerSpec
 from nvflare.apis.server_engine_spec import ServerEngineSpec
+from nvflare.apis.utils.job_utils import get_event_job_id
 from nvflare.private.fed.utils.fed_utils import extract_participants
 from nvflare.security.study_registry import StudyRegistryService
 from nvflare.utils.job_launcher_utils import get_resource_manager_spec
@@ -273,13 +274,13 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.JOB_STARTED:
+            job_id = get_event_job_id(fl_ctx)
             with self.lock:
-                job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
                 if job_id not in self.scheduled_jobs:
                     self.scheduled_jobs.append(job_id)
         elif event_type == EventType.JOB_COMPLETED or event_type == EventType.JOB_ABORTED:
+            job_id = get_event_job_id(fl_ctx)
             with self.lock:
-                job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
                 if job_id in self.scheduled_jobs:
                     self.scheduled_jobs.remove(job_id)
 
