@@ -1008,6 +1008,8 @@ def test_huggingface_preflights_and_metric_reporting_do_not_create_false_recover
     assert "do not append Hugging Face cache or filesystem discovery" in normalized_hf_skill
     assert "Defer model and dataset availability checks to the maintained resolver" in normalized_hf_skill
     assert "report a missing directory with exit code zero" in normalized_hf_skill
+    assert "Run the final simulation with `run_in_background: false`" in normalized_hf_skill
+    assert "never finalize with an active simulation" in normalized_hf_skill
     assert "rerun its resolver once with the matching canonical invocation" in normalized_hf_validation
     assert "`../scripts/resolve_model_snapshot.py`" in hf_validation
     assert "`--source local`" in hf_validation

@@ -115,12 +115,13 @@ Use `run_script()` only during the validation phase after loading `references/hu
    not use `parse_known_args()`.
 7. Only after generated files exist, load `../nvflare-shared/references/validation-evidence.md`
    and `references/huggingface-validation.md`. Follow the shared compile,
-   construction, simulation, and terminal-evidence ladder. Inspect export/package
-   evidence only for an exported final target; inspect a local target's
-   materialized evidence after its run. Apply only the standard HF Trainer checks
-   and stop at the first failed rung. Review and exercise the maintained assets directly;
-   do not inspect NVFLARE implementation source, improvise Recipe API probes, or
-   write one-off AST programs to re-prove them. Use
+   construction, simulation, and terminal-evidence ladder. Run the final
+   simulation with `run_in_background: false`; never finalize with an active
+   simulation. Inspect export/package evidence only for an exported final target;
+   inspect a local target's materialized evidence after its run. Apply only the
+   standard HF Trainer checks and stop at the first failed rung. Review and exercise
+   the maintained assets directly; do not inspect NVFLARE implementation source,
+   improvise Recipe API probes, or write one-off AST programs to re-prove them. Use
    `references/huggingface-state-and-distributed.md`
    only when inspection found PEFT, DDP, checkpoint/restore overrides,
    auxiliary trainable models, or another non-default patch setting.
