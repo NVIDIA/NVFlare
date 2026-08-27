@@ -102,6 +102,24 @@ def test_client_hf_init_uses_global_rank_before_delayed_process_group_init(monke
     assert calls == [("1", None)]
 
 
+@pytest.mark.parametrize(("raw_rank", "expected_rank"), (("+0", "0"), ("00", "0"), ("01", "1")))
+def test_client_hf_init_normalizes_environment_global_rank(monkeypatch, raw_rank, expected_rank):
+    hf_client = import_hf_module(monkeypatch, "nvflare.client.hf")
+    calls = []
+    _clear_rank_environment(monkeypatch, hf_client)
+    monkeypatch.setenv("WORLD_SIZE", "2")
+    monkeypatch.setenv("RANK", raw_rank)
+    monkeypatch.setattr(hf_client, "_get_initialized_distributed_rank", lambda: None)
+    monkeypatch.setattr(
+        hf_client,
+        "_client_api_init",
+        lambda *, rank, config_file: calls.append((rank, config_file)) or "context",
+    )
+
+    assert hf_client.init() == "context"
+    assert calls == [(expected_rank, None)]
+
+
 @pytest.mark.parametrize("size_marker", ("WORLD_SIZE", "LOCAL_WORLD_SIZE", "OMPI_COMM_WORLD_SIZE", "SLURM_NTASKS"))
 def test_client_hf_init_rejects_unresolved_multirank_before_client_context(monkeypatch, size_marker):
     hf_client = import_hf_module(monkeypatch, "nvflare.client.hf")
@@ -116,6 +134,25 @@ def test_client_hf_init_rejects_unresolved_multirank_before_client_context(monke
     )
 
     with pytest.raises(RuntimeError, match="global RANK is unavailable"):
+        hf_client.init()
+
+    assert calls == []
+
+
+def test_client_hf_init_rejects_negative_environment_global_rank_before_client_context(monkeypatch):
+    hf_client = import_hf_module(monkeypatch, "nvflare.client.hf")
+    calls = []
+    _clear_rank_environment(monkeypatch, hf_client)
+    monkeypatch.setenv("WORLD_SIZE", "2")
+    monkeypatch.setenv("RANK", "-1")
+    monkeypatch.setattr(hf_client, "_get_initialized_distributed_rank", lambda: None)
+    monkeypatch.setattr(
+        hf_client,
+        "_client_api_init",
+        lambda *, rank, config_file: calls.append((rank, config_file)),
+    )
+
+    with pytest.raises(RuntimeError, match="valid non-negative global RANK"):
         hf_client.init()
 
     assert calls == []

@@ -72,13 +72,15 @@ def _resolve_init_rank(rank):
     if _environment_declares_multirank():
         global_rank = os.environ.get("RANK")
         try:
-            int(global_rank)
+            normalized_rank = int(global_rank)
         except (TypeError, ValueError):
+            normalized_rank = -1
+        if normalized_rank < 0:
             raise RuntimeError(
-                "Hugging Face Client API detected a multi-process launch but global RANK is unavailable; "
-                "initialize torch.distributed or export a valid global RANK before flare.init()"
+                "Hugging Face Client API detected a multi-process launch but global RANK is unavailable or invalid; "
+                "initialize torch.distributed or export a valid non-negative global RANK before flare.init()"
             )
-        return global_rank
+        return str(normalized_rank)
     return None
 
 
