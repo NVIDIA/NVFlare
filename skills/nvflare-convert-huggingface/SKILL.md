@@ -72,9 +72,8 @@ Use `run_script()` only during the validation phase after loading `references/hu
    callbacks, checkpoint and PEFT settings, precision, local budget,
    distributed launcher, site/round counts, data location, and aggregation
    intent. Do not import or execute user training modules to discover them.
-3. Apply the dependency-install ordering rule in `../nvflare-shared/references/conversion-common.md` before
-   any Python command imports user, framework, NVFLARE, or declared dependency
-   modules.
+3. Apply the dependency-install ordering rule in `../nvflare-shared/references/conversion-common.md` before any Python command imports user, framework, NVFLARE, or declared dependencies. Keep dependency inventory single-purpose: check NVFLARE separately, inventory non-product packages separately, and do not append Hugging Face cache or filesystem discovery.
+   Defer model and dataset availability checks to the maintained resolver during validation. If an optional path must be inspected, run it separately and report a missing directory with exit code zero.
 4. Select the recipe from FL intent. For explicit FedAvg, run `nvflare recipe
    show fedavg-pt --format json`, then immediately load
    `../nvflare-shared/references/pytorch-family-recipe-construction.md` and use

@@ -996,12 +996,18 @@ def test_huggingface_preflights_and_metric_reporting_do_not_create_false_recover
     offline_eval = _eval_by_id(eval_data, "huggingface-offline-model-cache-miss")
     mandatory_ids = {item["id"] for item in basic_eval["mandatory_behavior"]}
     prohibited_ids = {item["id"] for item in basic_eval["prohibited_behavior"]}
+    normalized_hf_skill = " ".join(hf_skill.split())
     normalized_hf_validation = " ".join(hf_validation.split())
 
     assert "same interpreter selected for installation and validation" in " ".join(dependency_text.split())
     assert "make the inventory command exit zero" in " ".join(dependency_text.split())
     assert "optional capability or host-diagnostic utility as evidence" in " ".join(validation_text.split())
     assert "Do not append platform-specific utilities" in " ".join(validation_text.split())
+    assert "Keep dependency inventory single-purpose" in normalized_hf_skill
+    assert "check NVFLARE separately, inventory non-product packages separately" in normalized_hf_skill
+    assert "do not append Hugging Face cache or filesystem discovery" in normalized_hf_skill
+    assert "Defer model and dataset availability checks to the maintained resolver" in normalized_hf_skill
+    assert "report a missing directory with exit code zero" in normalized_hf_skill
     assert "rerun its resolver once with the matching canonical invocation" in normalized_hf_validation
     assert "`../scripts/resolve_model_snapshot.py`" in hf_validation
     assert "`--source local`" in hf_validation
@@ -1034,6 +1040,7 @@ def test_huggingface_preflights_and_metric_reporting_do_not_create_false_recover
     assert {"cache-aware-authorized-model-resolution", "numeric-primary-metric-reporting"} <= mandatory_ids
     assert {
         "no-raising-cache-only-model-probe",
+        "no-compound-dependency-and-cache-probe",
         "no-ambiguous-model-source",
         "no-invented-resolver-model-option",
         "no-unpinned-hub-download",

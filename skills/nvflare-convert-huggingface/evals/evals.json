@@ -57,6 +57,7 @@
         "The generated job imports FedAvgRecipe from nvflare.app_opt.pt.recipes.fedavg after recipe show confirms it.",
         "The agent treats recipe show as recipe metadata only, uses SimEnv with recipe.execute for local validation and standard export flags, and does not guess a separate export environment, private class-loader helper, internal command splitter, or another recipe-adjacent API.",
         "The agent establishes host-provided NVFLARE availability separately through nvflare agent inspect source, nvflare --version, or a public capability check before generic package inventory; it never includes nvflare in a batch of importlib.metadata lookups, handles missing non-product metadata as an inventory result rather than a failed command, and skips installation when all applicable requirements are already compatible.",
+        "The agent keeps dependency inventory separate from optional Hugging Face cache or filesystem discovery, defers model and dataset availability checks to the maintained resolver, and makes any separately necessary missing-path probe exit zero.",
         "The agent tells the maintained resolver whether each model identifier is a local path or Hub repository ID instead of inferring from slash syntax. When public checkpoint download is authorized if uncached, it uses one normal cache-aware load pinned to a full immutable commit SHA instead of an unguarded cache-only probe that fails on a normal miss.",
         "A generated or preserved HfArgumentParser is constructed with allow_abbrev=False. Intentional typo and abbreviation rejection checks run through assertion wrappers whose top-level commands succeed only when the generated parser rejects them; the wrapper accepts an expected unused-argument ValueError only when its diagnostic names the rejected argument.",
         "Standalone preflight may construct the Trainer but does not call flare.init(), flare.patch(), flare.is_running(), or patched Trainer methods without a launcher-created Client API context; the first bounded simulation validates runtime patch acceptance.",
@@ -201,6 +202,10 @@
           {
             "id": "no-failing-nvflare-metadata-probe",
             "description": "checks host-provided NVFLARE separately through its CLI or a public capability probe, excludes nvflare from generic distribution-metadata batches, and handles missing non-product metadata without a failed top-level inventory command"
+          },
+          {
+            "id": "no-compound-dependency-and-cache-probe",
+            "description": "does not combine required dependency inventory with optional Hugging Face cache or filesystem discovery whose absence can fail the command"
           },
           {
             "id": "no-raising-cache-only-model-probe",
