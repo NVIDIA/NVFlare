@@ -4,7 +4,7 @@
 What's New in FLARE v2.9.0
 **************************
 
-NVIDIA FLARE 2.9.0's headline changes:
+Highlights:
 
 - **Agent Skills** — agent-assisted federated development
 - **Collaboration API** — a Python-first API for research workflows
