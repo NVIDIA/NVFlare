@@ -651,13 +651,32 @@ def test_base_args_conflicting_duplicates_of_pinned_flag_are_rejected():
         runner.build_campaign_args(config, args, "--num_rounds", {}, alias_groups=[["--num-rounds", "--num_rounds"]])
 
 
-def test_base_args_ambiguous_abbreviation_of_pinned_flag_is_rejected():
+def test_base_args_abbreviation_of_pinned_flag_is_rejected():
     runner = _load_runner()
     config = {"budget": {"fixed_training_budget": {"num_rounds": 5}}}
     args = SimpleNamespace(base_args="--num_round 3")
 
-    with pytest.raises(ValueError, match=r"AUTOFL_BUDGET_ARGUMENT_CONFLICT.*ambiguous abbreviation.*--num_rounds"):
+    with pytest.raises(ValueError, match=r"AUTOFL_BUDGET_ARGUMENT_CONFLICT.*abbreviates pinned budget.*--num_rounds"):
         runner.build_campaign_args(config, args, "--num_rounds", {})
+
+
+def test_base_args_valued_pin_never_consumes_an_option_like_token():
+    runner = _load_runner()
+    config = {"budget": {"fixed_training_budget": {"num_rounds": 5}}}
+
+    # argparse raises "expected one argument" here; report the missing value, never '-x' as the value.
+    with pytest.raises(ValueError, match=r"AUTOFL_BUDGET_ARGUMENT_CONFLICT.*--num_rounds.*supplies no value"):
+        runner.build_campaign_args(
+            config, SimpleNamespace(base_args="--num_rounds -x --seed 1"), "--num_rounds --seed", {}
+        )
+
+    # argparse's negative-number exception still consumes numeric values.
+    schema = {"comparison_budget_args": {"default_candidate_budget": {"alpha": -0.5}}}
+    fixed_args, base_args = runner.build_campaign_args(
+        {"budget": {}}, SimpleNamespace(base_args="--alpha -0.5"), "--alpha", schema
+    )
+    assert fixed_args == []
+    assert base_args == ["--alpha", "-0.5"]
 
 
 def test_base_args_boolean_comparison_flag_deduplicates_and_rejects_values():

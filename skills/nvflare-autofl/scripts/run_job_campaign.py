@@ -2146,6 +2146,14 @@ def pinned_flag_spellings(
     return spellings
 
 
+# argparse's _negative_number_matcher: option-like tokens are not consumed as values unless they are numbers.
+_NEGATIVE_NUMBER_MATCHER = re.compile(r"^-\d+$|^-\d*\.\d+$")
+
+
+def _consumable_cli_value(token: str) -> bool:
+    return not token.startswith("-") or bool(_NEGATIVE_NUMBER_MATCHER.match(token))
+
+
 def merge_base_budget_args(
     base_tokens: Sequence[str],
     pinned: Dict[str, Tuple[Optional[str], str]],
@@ -2174,8 +2182,10 @@ def merge_base_budget_args(
         if name is not None:
             if separator:
                 supplied = inline_value
-            # A zero-argument pinned flag never consumes the next token: argparse binds it to positionals.
-            elif pinned[name][0] is not None and index < len(base_tokens) and not base_tokens[index].startswith("--"):
+            # A zero-argument pinned flag never consumes the next token (argparse binds it to positionals),
+            # and a valued flag never consumes an option-like token (argparse raises "expected one argument"),
+            # with argparse's negative-number exception.
+            elif pinned[name][0] is not None and index < len(base_tokens) and _consumable_cli_value(base_tokens[index]):
                 supplied = base_tokens[index]
                 index += 1
         elif not separator and not token.startswith("--") and token not in defined_flags:
@@ -2209,8 +2219,8 @@ def merge_base_budget_args(
                 ambiguous = sorted(s for s in spellings if s.startswith("--") and s.startswith(option) and s != option)
                 if ambiguous:
                     raise ValueError(
-                        f"AUTOFL_BUDGET_ARGUMENT_CONFLICT: --base-args option {option} is an ambiguous "
-                        f"abbreviation of budget option(s) {', '.join(ambiguous)}; spell the full flag"
+                        f"AUTOFL_BUDGET_ARGUMENT_CONFLICT: --base-args option {option} abbreviates pinned "
+                        f"budget option(s) {', '.join(ambiguous)}; spell the full flag"
                     )
             merged.append(token)
             continue
