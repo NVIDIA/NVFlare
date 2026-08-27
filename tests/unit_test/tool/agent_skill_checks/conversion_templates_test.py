@@ -630,13 +630,6 @@ def test_huggingface_client_template_preserves_trainer_sequence(monkeypatch, eva
     module = _load_module(HF_TEMPLATES / "client_with_eval.py")
     events = []
 
-    monkeypatch.delenv("RANK", raising=False)
-    monkeypatch.delenv("WORLD_SIZE", raising=False)
-    monkeypatch.delenv("LOCAL_WORLD_SIZE", raising=False)
-    monkeypatch.delenv("OMPI_COMM_WORLD_SIZE", raising=False)
-    monkeypatch.delenv("SLURM_NTASKS", raising=False)
-    monkeypatch.setattr(module.dist, "is_available", lambda: False)
-
     class _Trainer:
         def evaluate(self):
             events.append("evaluate")
@@ -662,16 +655,10 @@ def test_huggingface_client_template_preserves_trainer_sequence(monkeypatch, eva
     assert events == expected_events
 
 
-def test_huggingface_client_template_uses_rankless_single_process_init(monkeypatch):
+def test_huggingface_client_template_delegates_rank_resolution_to_product_init(monkeypatch):
     module = _load_module(HF_TEMPLATES / "client_with_eval.py")
     observed = []
 
-    monkeypatch.delenv("RANK", raising=False)
-    monkeypatch.delenv("WORLD_SIZE", raising=False)
-    monkeypatch.delenv("LOCAL_WORLD_SIZE", raising=False)
-    monkeypatch.delenv("OMPI_COMM_WORLD_SIZE", raising=False)
-    monkeypatch.delenv("SLURM_NTASKS", raising=False)
-    monkeypatch.setattr(module.dist, "is_available", lambda: False)
     monkeypatch.setattr(module.flare, "init", lambda: observed.append("init"))
     monkeypatch.setattr(module.flare, "patch", lambda trainer: None)
     monkeypatch.setattr(module.flare, "is_running", lambda: False)
@@ -679,86 +666,6 @@ def test_huggingface_client_template_uses_rankless_single_process_init(monkeypat
     assert "rank" not in inspect.signature(module.main).parameters
     module.main(lambda: object())
     assert observed == ["init"]
-
-
-@pytest.mark.parametrize(
-    "size_marker",
-    ("WORLD_SIZE", "LOCAL_WORLD_SIZE", "OMPI_COMM_WORLD_SIZE", "SLURM_NTASKS"),
-)
-def test_huggingface_client_template_rejects_unresolved_multirank_before_flare_init(monkeypatch, size_marker):
-    module = _load_module(HF_TEMPLATES / "client_with_eval.py")
-    events = []
-
-    for name in ("RANK", *module._MULTIRANK_SIZE_ENV_VARS):
-        monkeypatch.delenv(name, raising=False)
-    monkeypatch.setenv(size_marker, "2")
-    monkeypatch.setattr(module.dist, "is_available", lambda: False)
-    monkeypatch.setattr(module.flare, "init", lambda *args, **kwargs: events.append("init"))
-
-    with pytest.raises(RuntimeError, match="global RANK is unavailable"):
-        module.main(lambda: events.append("factory"))
-
-    assert events == []
-
-
-def test_huggingface_client_template_allows_delayed_dist_init_with_global_rank(monkeypatch):
-    module = _load_module(HF_TEMPLATES / "client_with_eval.py")
-    observed = []
-
-    monkeypatch.setenv("WORLD_SIZE", "2")
-    monkeypatch.setenv("RANK", "1")
-    monkeypatch.setattr(module.dist, "is_available", lambda: True)
-    monkeypatch.setattr(module.dist, "is_initialized", lambda: False)
-    monkeypatch.setattr(module.flare, "init", lambda: observed.append("init"))
-    monkeypatch.setattr(module.flare, "patch", lambda trainer: None)
-    monkeypatch.setattr(module.flare, "is_running", lambda: False)
-
-    module.main(lambda: object())
-
-    assert observed == ["init"]
-
-
-@pytest.mark.parametrize(
-    "evaluate_before_train, expected_events",
-    [
-        (True, ["init:1", "factory", "patch", "is_running", "evaluate", "train", "is_running"]),
-        (False, ["init:1", "factory", "patch", "is_running", "train", "is_running"]),
-    ],
-)
-def test_huggingface_client_template_preserves_multigpu_trainer_sequence(
-    monkeypatch, evaluate_before_train, expected_events
-):
-    module = _load_module(HF_TEMPLATES / "client_with_eval.py")
-    events = []
-
-    class _Trainer:
-        def evaluate(self):
-            events.append("evaluate")
-
-        def train(self):
-            events.append("train")
-
-    def trainer_factory():
-        events.append("factory")
-        return _Trainer()
-
-    running = iter((True, False))
-    monkeypatch.setenv("WORLD_SIZE", "2")
-    monkeypatch.setattr(module.dist, "is_available", lambda: True)
-    monkeypatch.setattr(module.dist, "is_initialized", lambda: True)
-    monkeypatch.setattr(module.dist, "get_world_size", lambda: 2)
-    monkeypatch.setattr(module.dist, "get_rank", lambda: 1)
-    monkeypatch.setattr(module.flare, "init", lambda *, rank: events.append(f"init:{rank}"))
-    monkeypatch.setattr(module.flare, "patch", lambda trainer: events.append("patch"))
-    monkeypatch.setattr(
-        module.flare,
-        "is_running",
-        lambda: events.append("is_running") or next(running),
-    )
-
-    module.main(trainer_factory, evaluate_before_train=evaluate_before_train)
-
-    assert events == expected_events
 
 
 def test_huggingface_job_template_uses_private_persistent_implicit_simulation_workspace(tmp_path):

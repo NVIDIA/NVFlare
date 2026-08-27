@@ -844,6 +844,7 @@ def test_client_api_rank_contract_is_shared_and_process_conditional():
     hf_client = repo_root.joinpath("skills/nvflare-convert-huggingface/assets/client_with_eval.py").read_text(
         encoding="utf-8"
     )
+    hf_public_api = repo_root.joinpath("nvflare/client/hf/__init__.py").read_text(encoding="utf-8")
     hf_state = repo_root.joinpath(
         "skills/nvflare-convert-huggingface/references/huggingface-state-and-distributed.md"
     ).read_text(encoding="utf-8")
@@ -874,14 +875,15 @@ def test_client_api_rank_contract_is_shared_and_process_conditional():
 
     assert "def main(trainer_factory, *, evaluate_before_train=True)" in hf_client
     assert "flare.init()" in hf_client
-    assert "flare.init(rank=dist.get_rank())" in hf_client
-    assert "_MULTIRANK_SIZE_ENV_VARS" in hf_client
-    assert "global RANK is unavailable" in hf_client
+    assert "torch.distributed" not in hf_client
+    assert "_MULTIRANK_SIZE_ENV_VARS" not in hf_client
+    assert "_MULTIRANK_SIZE_ENV_VARS" in hf_public_api
+    assert "global RANK is unavailable" in hf_public_api
     assert "framework-neutral global-rank contract" in normalized_hf_state
     assert "do not add a rank argument to a standard single-process conversion" in normalized_hf_state
     assert "framework-neutral global-rank contract" in normalized_lightning_ddp
-    assert "passes `torch.distributed.get_rank()` to `flare.init(...)`" in normalized_hf_state
-    assert "rejects the launch before `flare.init()` when it is missing" in normalized_hf_state
+    assert "`nvflare.client.hf.init()` owns this resolution" in normalized_hf_state
+    assert "Keep the generated client rankless" in normalized_hf_state
     assert "flare.init(rank=global_rank)" in lightning_ddp
 
     lightning_evals = json.loads(
@@ -1431,7 +1433,7 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "flare.patch(trainer)" in client_template
     assert "def main(trainer_factory, *, evaluate_before_train=True)" in client_template
     assert "flare.init()" in client_template
-    assert "flare.init(rank=dist.get_rank())" in client_template
+    assert "torch.distributed" not in client_template
     assert "HfArgumentParser(dataclass_types, allow_abbrev=False)" in client_template
     assert "while flare.is_running()" in client_template
     assert "return model" in server_model_template
@@ -1473,7 +1475,7 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "two-process `torchrun` case" in normalized_validation
     assert "This section applies only to a preserved distributed multi-process launch" in normalized_state
     assert "do not add a rank argument to a standard single-process conversion" in normalized_state
-    assert "`flare.patch(trainer)` verifies the rank after Trainer initialization" in normalized_state
+    assert "`nvflare.client.hf.init()` owns this resolution" in normalized_state
     assert "do not pass it as the FLARE rank" in normalized_state
     basic_mandatory = {item["id"]: item["description"] for item in basic_eval["mandatory_behavior"]}
     ddp_mandatory = {item["id"]: item["description"] for item in ddp_eval["mandatory_behavior"]}
@@ -1486,8 +1488,15 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
         item["id"] for item in basic_eval["prohibited_behavior"]
     }
     assert "single-process-rankless-init" in basic_mandatory
-    assert "without a rank-zero default" in ddp_mandatory["initialize-distributed-before-patch"]
-    assert "observed global and flare.init ranks 0 and 1" in ddp_mandatory["rank-symmetric-trainer-loop"]
+    assert (
+        "product-owned global-rank resolution and fail-fast rejection"
+        in ddp_mandatory["initialize-distributed-before-patch"]
+    )
+    assert "no-generated-rank-resolution" in {item["id"] for item in ddp_eval["prohibited_behavior"]}
+    assert (
+        "observed launcher and product-resolved Client API ranks 0 and 1"
+        in ddp_mandatory["rank-symmetric-trainer-loop"]
+    )
     assert "Version-check only fields claimed to belong to a framework" in normalized_validation
     assert "project-defined subclass field" in normalized_validation
     assert "actual parser accepts it" in normalized_validation

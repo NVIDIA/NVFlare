@@ -176,8 +176,8 @@ reaches the applicable phase, and stop at the first failure.
   applicable checks.
 - Do not report DDP validated from a single-process or rank-zero-only
   simulation. A DDP validation claim requires a two-process `torchrun` case in
-  which each process records its resolved global rank and the rank passed to
-  `flare.init()`, and the observed ranks are exactly `{0, 1}`.
+  which each process records its launcher rank and product-resolved Client API
+  rank, and the observed ranks are exactly `{0, 1}`.
 
 ## Report
 
