@@ -2151,7 +2151,8 @@ _NEGATIVE_NUMBER_MATCHER = re.compile(r"^-\d+$|^-\d*\.\d+$")
 
 
 def _consumable_cli_value(token: str) -> bool:
-    return not token.startswith("-") or bool(_NEGATIVE_NUMBER_MATCHER.match(token))
+    # Mirrors argparse's option classifier: lone "-" and tokens containing a space are values too.
+    return not token.startswith("-") or token == "-" or " " in token or bool(_NEGATIVE_NUMBER_MATCHER.match(token))
 
 
 def merge_base_budget_args(
@@ -2160,7 +2161,7 @@ def merge_base_budget_args(
     spellings: Dict[str, str],
     defined_flags: set,
 ) -> Tuple[List[str], set[str]]:
-    """Drop --base-args duplicates of runner-injected budget flags; reject conflicts and ambiguous abbreviations.
+    """Drop --base-args duplicates of runner-injected budget flags; reject conflicts and pinned-flag abbreviations.
 
     Tokens are matched by the exact flag spellings the job's parser defines, mirroring argparse: a spelling
     the parser would not accept passes through verbatim so the job still reports it as unrecognized. Returns

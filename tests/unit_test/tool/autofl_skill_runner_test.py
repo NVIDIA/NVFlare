@@ -678,6 +678,22 @@ def test_base_args_valued_pin_never_consumes_an_option_like_token():
     assert fixed_args == []
     assert base_args == ["--alpha", "-0.5"]
 
+    # The consumability classifier mirrors argparse exactly.
+    for token, consumable in (
+        ("3", True),
+        ("resnet18", True),
+        ("-3", True),
+        ("-0.5", True),
+        ("-.5", True),
+        ("-", True),
+        ("- spaced", True),
+        ("-5.", False),
+        ("-x", False),
+        ("-1e-3", False),
+        ("--foo", False),
+    ):
+        assert runner._consumable_cli_value(token) is consumable, token
+
 
 def test_base_args_boolean_comparison_flag_deduplicates_and_rejects_values():
     runner = _load_runner()
