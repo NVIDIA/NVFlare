@@ -39,6 +39,15 @@ reaches the applicable phase, and stop at the first failure.
   `train_args` values. Do not assume shell parsing or call internal command
   splitters. If a required value contains whitespace and no documented
   structured argument surface exists, fail closed.
+- Only when source inspection found a source-project-relative local file or
+  directory argument, change to a fresh working directory outside the project,
+  construct the Recipe with that relative source value, and inspect the final
+  `train_args`. Require the source argument name to be unchanged and its
+  transmitted value to be absolute and equal to the expected location under
+  `SOURCE_DIR` before running the full simulation. Skip this path-specific check
+  when the source has no local path argument. Do not pass absolute local paths,
+  per-site paths, Hub identifiers, or URLs through the relative-path test;
+  validate their classification using `site-data-and-paths.md` instead.
 
 ## Hugging Face Artifacts And Compatibility
 

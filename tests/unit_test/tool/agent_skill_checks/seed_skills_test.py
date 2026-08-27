@@ -550,7 +550,7 @@ def test_data_location_invariants_stay_on_the_always_loaded_path():
     # The gated reference carries only the detailed mechanics, and stays smaller
     # than the broad workflow reference it was extracted from.
     assert 'Apply the `conversion-common.md` "Data Location" invariants first' in normalized_site_data
-    assert "Resolve a relative source data path" in normalized_site_data
+    assert "Classify each detected input before adapting `job.py`" in normalized_site_data
     assert len(site_data_text) < len(workflow_text)
 
     # No skill may gate the reference on a subjective "nontrivial" judgment, and
@@ -581,6 +581,40 @@ def test_data_location_invariants_stay_on_the_always_loaded_path():
         behavior = external_eval["nvflare"]
         assert "configurable-data-path" in {item["id"] for item in behavior["mandatory_behavior"]}, eval_id
         assert "no-hardcoded-absolute-data-path" in {item["id"] for item in behavior["prohibited_behavior"]}, eval_id
+
+
+def test_huggingface_source_local_paths_are_conditional_and_cwd_independent():
+    repo_root = Path(__file__).resolve().parents[4]
+    hf_root = repo_root / "skills" / "nvflare-convert-huggingface"
+    job_text = hf_root.joinpath("assets/job.py").read_text(encoding="utf-8")
+    site_data_text = repo_root.joinpath("skills/nvflare-shared/references/site-data-and-paths.md").read_text(
+        encoding="utf-8"
+    )
+    validation_text = hf_root.joinpath("references/huggingface-validation.md").read_text(encoding="utf-8")
+    eval_data = json.loads(hf_root.joinpath("evals/evals.json").read_text(encoding="utf-8"))
+    relative_eval = _eval_by_id(eval_data, "huggingface-convert-relative-data-path")
+    normalized_site_data = " ".join(site_data_text.split())
+    normalized_validation = " ".join(validation_text.split())
+
+    assert "def resolve_source_local_path(value: str | Path) -> Path:" in job_text
+    assert "path = SOURCE_DIR / path" in job_text
+    assert 'parser.add_argument("--data_root"' not in job_text
+    assert "data_root:" not in job_text
+    assert "preserving the source's argument name and semantics" in normalized_site_data
+    assert "source-project-relative local file or directory" in normalized_site_data
+    assert "Preserve an absolute local file or directory path" in normalized_site_data
+    assert "Pass a per-site path through `per_site_config`" in normalized_site_data
+    assert "Do not pass a Hugging Face Hub identifier or URL" in normalized_site_data
+    assert "generate no path-specific option, helper call, or Recipe argument" in normalized_site_data
+    assert "fresh working directory outside the project" in normalized_validation
+    assert "transmitted value to be absolute" in normalized_validation
+    assert "Skip this path-specific check when the source has no local path argument" in normalized_validation
+    for fixture in relative_eval["files"]:
+        assert hf_root.joinpath("evals", fixture).is_file(), fixture
+    mandatory_ids = {item["id"] for item in relative_eval["nvflare"]["mandatory_behavior"]}
+    prohibited_ids = {item["id"] for item in relative_eval["nvflare"]["prohibited_behavior"]}
+    assert {"resolve-relative-source-local-path", "validate-source-path-from-fresh-cwd"} <= mandatory_ids
+    assert {"no-invented-data-root-option", "no-filesystem-resolution-for-nonlocal-inputs"} <= prohibited_ids
 
 
 def test_pytorch_recipe_capability_profiles_match_tensor_disk_offload_support():
@@ -1133,12 +1167,9 @@ def test_pytorch_conversion_avoids_known_recipe_and_partition_retries():
     assert "validate properties rather than guessed site sizes" in normalized_validation
     assert "complete, non-overlapping coverage" in normalized_validation
     assert "Assert exact per-site row counts only when" in validation_text
-    assert (
-        "Resolve a relative source data path in `job.py` against the original source-project root"
-        in normalized_site_data
-    )
+    assert "resolve it in `job.py` against the source-project root before Recipe construction" in normalized_site_data
     assert "the simulator process working directory" in normalized_site_data
-    assert "Validate relative-path conversions from a fresh caller working directory" in normalized_site_data
+    assert "fresh caller working directory outside the source project" in normalized_site_data
     assert {"safe-pandas-partitioning", "invariant-based-partition-validation"} <= mandatory_ids
     assert {"no-deprecated-save-filename-alias", "no-hardcoded-guessed-partition-counts"} <= prohibited_ids
 

@@ -5,9 +5,11 @@
 
 Copy this file beside ``client.py``, ``server_model.py``, and packaged
 project-local modules such as ``model.py``. Adapt the client argument names and
-capability-gated recipe options to the source project. Keep the required Recipe,
-packaging, and execution structure; do not replace local file names with parent
-traversal paths.
+capability-gated recipe options to the source project. Use
+``resolve_source_local_path`` only for an inspected source argument that names a
+local file or directory; do not use it for Hub identifiers, URLs, or site-local
+paths. Keep the required Recipe, packaging, and execution structure; do not
+replace local file names with parent traversal paths.
 """
 
 import argparse
@@ -23,6 +25,14 @@ from nvflare.recipe import SimEnv, set_per_site_config
 
 DEFAULT_MAX_STEPS = 10
 SOURCE_DIR = Path(__file__).resolve().parent
+
+
+def resolve_source_local_path(value: str | Path) -> Path:
+    """Resolve an inspected source-project-relative local path."""
+    path = Path(value)
+    if not path.is_absolute():
+        path = SOURCE_DIR / path
+    return path.resolve()
 
 
 @contextmanager
@@ -72,7 +82,6 @@ def _positive_float_arg(value: str) -> float:
 
 def build_train_args(
     model_name_or_path: str,
-    data_root: str,
     num_clients: int,
     *,
     max_steps: int | None = None,
@@ -97,8 +106,6 @@ def build_train_args(
     args = [
         "--model_name_or_path",
         _token(model_name_or_path, "model_name_or_path"),
-        "--data_root",
-        _token(data_root, "data_root"),
         "--num_clients",
         str(num_clients),
     ]
@@ -116,7 +123,6 @@ def build_recipe(
     *,
     name: str,
     model_name_or_path: str,
-    data_root: str,
     num_clients: int,
     num_rounds: int,
     key_metric: str = "",
@@ -129,7 +135,6 @@ def build_recipe(
     """Build FedAvg using only options confirmed by ``recipe show``."""
     train_args = build_train_args(
         model_name_or_path,
-        data_root,
         num_clients,
         max_steps=max_steps,
         num_train_epochs=num_train_epochs,
@@ -198,7 +203,6 @@ def main():
     parser = argparse.ArgumentParser(description="Hugging Face Trainer FedAvg job", allow_abbrev=False)
     parser.add_argument("--name", default="hf-trainer-fedavg")
     parser.add_argument("--model_name_or_path", required=True)
-    parser.add_argument("--data_root", required=True)
     parser.add_argument("--num_clients", type=int, default=2)
     parser.add_argument("--num_rounds", type=int, default=2)
     budget = parser.add_mutually_exclusive_group()
@@ -221,7 +225,6 @@ def main():
     recipe = build_recipe(
         name=args.name,
         model_name_or_path=args.model_name_or_path,
-        data_root=args.data_root,
         num_clients=args.num_clients,
         num_rounds=args.num_rounds,
         max_steps=args.max_steps,
