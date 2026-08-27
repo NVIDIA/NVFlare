@@ -4,53 +4,64 @@
 What's New in FLARE v2.9.0
 **************************
 
-NVIDIA FLARE 2.9.0's headline changes are **Agent Skills** for agent-assisted
-federated development, a Python-first **Collaboration API** for research
-workflows, and **more reliable training at HPC and large-model scale**
-(a Slurm job launcher, hardened F3 streaming, and FedAvg validated to 72
-billion parameters). Kubernetes/OpenShift deployment, credential handling,
-and framework/recipe additions also shipped this release; see
-`Also in This Release`_ below.
+NVIDIA FLARE 2.9.0's headline changes:
+
+- **Agent Skills** — agent-assisted federated development
+- **Collaboration API** — a Python-first API for research workflows
+- **More reliable training at HPC and large-model scale** — a Slurm job
+  launcher, hardened F3 streaming, and FedAvg validated to 72 billion
+  parameters
+
+Kubernetes/OpenShift deployment, credential handling, and framework/recipe
+additions also shipped this release; see `Also in This Release`_ below.
 
 Agent Skills
 ============
 
 FLARE Agent Skills help coding agents turn an existing training project into a
-reviewable federated job. They identify the owning framework, preserve the
-training and evaluation semantics, generate the supported Client API or recipe
-integration, validate the generated artifact, and report evidence. The skills
-also cover federated statistics, Auto-FL research assistance, and job
-diagnostics, with explicit safeguards for site-local data and preprocessing.
-Install and invoke the skills through a coding agent as described in
-:doc:`/user_guide/agent_skills/index`; see :ref:`autofl_skill` for the
-Auto-FL workflow. To try the conversion and federated-statistics workflows,
-start with the :github_nvflare_link:`runnable Agent Skills examples
-<examples/hello-world/agent-skills>`.
+reviewable federated job:
+
+1. identify the owning framework
+2. preserve the training and evaluation semantics
+3. generate the supported Client API or recipe integration
+4. validate the generated artifact
+5. report evidence
+
+The skills also cover federated statistics, Auto-FL research assistance, and
+job diagnostics, with explicit safeguards for site-local data and
+preprocessing. Install and invoke them through a coding agent as described in
+:doc:`/user_guide/agent_skills/index` (see :ref:`autofl_skill` for the Auto-FL
+workflow); start with the :github_nvflare_link:`runnable Agent Skills examples
+<examples/hello-world/agent-skills>` to try the conversion and
+federated-statistics workflows.
 
 Agent Skills are developer tooling, not a runtime FL API or a substitute for
-code review and job validation. The conversion skills currently target standard
-PyTorch, PyTorch Lightning, and Hugging Face Trainer workflows. They preserve
-explicitly supported Recipe and Client API paths, and ask or stop rather than
-guess when framework ownership, source semantics, required data handling, or
-runtime configuration is ambiguous. Auto-FL's initial importer similarly
-supports statically recognizable NVFLARE Recipe and ``*Job`` patterns.
+code review and job validation:
+
+- The conversion skills currently target standard PyTorch, PyTorch Lightning,
+  and Hugging Face Trainer workflows.
+- They preserve explicitly supported Recipe and Client API paths.
+- They ask or stop, rather than guess, when framework ownership, source
+  semantics, required data handling, or runtime configuration is ambiguous.
+- Auto-FL's initial importer similarly supports statically recognizable
+  NVFLARE Recipe and ``*Job`` patterns.
 
 Collaboration API
 ==================
 
 The Collaboration API provides a Python-first way to express custom federated
-algorithms. Decorate the functions that a server or client publishes, write the
-coordination logic in ordinary Python, and use ``CollabRecipe`` to package,
-export, simulate, or submit the result. This is especially useful for research
-workflows that do not fit a standard controller pattern: new examples span
-synchronous FedAvg, FedBuff-style buffered asynchronous aggregation, split
-learning, and swarm learning. See the ``hello-collab`` example for a minimal
-FedAvg workflow, and the advanced Collab examples for the rest:
-:github_nvflare_link:`Hello Collab <examples/hello-world/hello-collab>`,
-:github_nvflare_link:`pt_async_cifar10 (FedBuff-style async)
-<examples/advanced/collab/pt_async_cifar10>`, and
-:github_nvflare_link:`the full set of advanced Collab examples
-<examples/advanced/collab>` (split learning, swarm, and in-time aggregation).
+algorithms: decorate the functions that a server or client publishes, write
+the coordination logic in ordinary Python, and use ``CollabRecipe`` to
+package, export, simulate, or submit the result. This suits research
+workflows that don't fit a standard controller pattern. New examples:
+
+- :github_nvflare_link:`Hello Collab <examples/hello-world/hello-collab>` —
+  a minimal FedAvg workflow
+- :github_nvflare_link:`pt_async_cifar10
+  <examples/advanced/collab/pt_async_cifar10>` — FedBuff-style buffered
+  asynchronous aggregation
+- :github_nvflare_link:`advanced Collab examples <examples/advanced/collab>`
+  — split learning, swarm learning, and in-time aggregation
 
 HPC and Large-Model Training
 =============================
@@ -61,9 +72,13 @@ Slurm Job Launcher
 FLARE 2.9.0 adds Slurm-native job execution for HPC environments. A long-lived
 NVFLARE parent submits each client or server job process as a Slurm batch job;
 Slurm selects resources while FLARE manages the federated job lifecycle. The
-launcher supports Apptainer, Pyxis/Enroot, and bare-Python backends, GPU-aware
-worker setup, multi-node applications, and a shared-file worker channel for
-clusters where compute nodes cannot open a direct connection to the parent.
+launcher supports:
+
+- Apptainer, Pyxis/Enroot, and bare-Python execution backends
+- GPU-aware worker setup and multi-node applications
+- a shared-file worker channel for clusters where compute nodes cannot open a
+  direct connection to the parent
+
 Follow the :ref:`slurm_job_launcher` deployment guide for prerequisites,
 backend setup, site configuration, and validation steps.
 
@@ -107,32 +122,43 @@ guidance.
 Also in This Release
 ======================
 
-- **Kubernetes and OpenShift deployment**: ``nvflare deploy k8s stage`` (after
-  ``nvflare deploy prepare``) stages the prepared kit as a Kubernetes ConfigMap
-  and Secret and patches the generated Helm chart to mount them, while the
-  workspace PVC stays mounted for writable runtime state. Use ``--kubectl oc``
-  for OpenShift, and ``nvflare deploy k8s unstage`` to remove staged resources
-  after Helm uninstall. See :ref:`helm_chart` and the
-  :github_nvflare_link:`OpenShift <examples/devops/openshift>` /
-  :github_nvflare_link:`multicloud <examples/devops/multicloud>` examples.
-- **Security and credential handling**: job-process bootstrap credentials move
-  off command lines and into the process environment (a per-job Kubernetes
-  Secret on K8s). CLI and runtime diagnostics redact sensitive values more
-  consistently, and Recipe APIs add safeguards for declaring and handling
-  secrets; see :ref:`recipe_secrets`.
-- **Hugging Face Client API**: federate an existing ``Trainer`` or TRL
-  ``SFTTrainer`` through ``flare.patch(trainer)`` — FLARE owns round exchange,
-  global-weight loading, local-budget enforcement, rank-0 communication,
-  checkpoint continuity, and metric reporting. See :ref:`hf_client_api` and the
-  :github_nvflare_link:`Hello Hugging Face example
-  <examples/hello-world/hello-huggingface>`.
-- **Client API Attach and Recipe updates**: Attach mode lets a long-lived,
+- **Kubernetes and OpenShift deployment** — stage a prepared kit as
+  Kubernetes ConfigMaps and Secrets and mount them through the generated Helm
+  chart; the workspace PVC stays mounted for writable runtime state.
+
+  - Run ``nvflare deploy k8s stage`` after ``nvflare deploy prepare``; add
+    ``--kubectl oc`` for OpenShift and run ``nvflare deploy k8s unstage``
+    after Helm uninstall.
+  - See :ref:`helm_chart` and the :github_nvflare_link:`OpenShift
+    <examples/devops/openshift>` / :github_nvflare_link:`multicloud
+    <examples/devops/multicloud>` examples.
+
+- **Security and credential handling** — job-process bootstrap credentials
+  move off command lines and into the process environment (a per-job
+  Kubernetes Secret on K8s).
+
+  - CLI and runtime diagnostics redact sensitive values more consistently.
+  - Recipe APIs add safeguards for declaring and handling secrets; see
+    :ref:`recipe_secrets`.
+
+- **Hugging Face Client API** — federate an existing ``Trainer`` or TRL
+  ``SFTTrainer`` through ``flare.patch(trainer)``.
+
+  - FLARE owns round exchange, global-weight loading, local-budget
+    enforcement, rank-0 communication, checkpoint continuity, and metric
+    reporting.
+  - See :ref:`hf_client_api` and the :github_nvflare_link:`Hello Hugging Face
+    example <examples/hello-world/hello-huggingface>`.
+
+- **Client API Attach and Recipe updates** — Attach mode lets a long-lived,
   application-owned external trainer connect without starting a new process
-  each round (:ref:`client_api_attach`,
-  :github_nvflare_link:`example <examples/advanced/client-api-attach>`).
-  Recipe updates add the concrete PyTorch FedBPT entry point, expose
-  ``key_metric_mode`` for FedAvg recipes, and improve PyTorch workflow support
-  for FedProx, SCAFFOLD, Swarm, and model-selection behavior.
+  each round.
+
+  - See :ref:`client_api_attach` and the :github_nvflare_link:`example
+    <examples/advanced/client-api-attach>`.
+  - Recipe updates add the concrete PyTorch FedBPT entry point, expose
+    ``key_metric_mode`` for FedAvg recipes, and improve PyTorch workflow
+    support for FedProx, SCAFFOLD, Swarm, and model-selection behavior.
 
 Compatibility and Migration Notes
 =================================
