@@ -9,8 +9,8 @@ Highlights:
 - **Agent Skills** — agent-assisted federated development
 - **Collaboration API** — a Python-first API for research workflows
 - **More reliable training at HPC and large-model scale** — a Slurm job
-  launcher, hardened F3 streaming, and FedAvg validated to 72 billion
-  parameters
+  launcher, a hardened model-transfer streaming transport, and FedAvg
+  validated to 72 billion parameters
 
 Kubernetes/OpenShift deployment, credential handling, and framework/recipe
 additions also shipped this release; see `Also in This Release`_ below.
@@ -85,7 +85,8 @@ backend setup, site configuration, and validation steps.
 Large-Model Transport, Reliability, and Memory
 ------------------------------------------------
 
-FLARE 2.9.0 strengthens the F3 transport for long-running model transfers.
+FLARE 2.9.0 strengthens the streaming transport for long-running model
+transfers.
 When reliable streaming is enabled, unacknowledged chunks are retried within
 bounded retry budgets. Receiver-confirmed completion lets the sender retain a
 payload until the intended receiver has consumed it. A progress-aware liveness
@@ -163,11 +164,12 @@ Also in This Release
 Compatibility and Migration Notes
 =================================
 
-- F3 retains its 16 MiB streaming-window and 4 MiB ACK-interval defaults for
-  compatibility and bounded per-stream memory. High-bandwidth deployments may
-  opt into larger values on all endpoints; ``dev_tools/f3/comm_config.yml``
-  provides a 64 MiB/16 MiB tuning example. TCP connections now enable
-  ``TCP_NODELAY`` by default to reduce request/ACK latency.
+- The streaming transport retains its 16 MiB streaming-window and 4 MiB
+  ACK-interval defaults for compatibility and bounded per-stream memory.
+  High-bandwidth deployments may opt into larger values on all endpoints;
+  ``dev_tools/f3/comm_config.yml`` provides a 64 MiB/16 MiB tuning example.
+  TCP connections now enable ``TCP_NODELAY`` by default to reduce
+  request/ACK latency.
 - Job-process bootstrap credentials (auth token, token signature, session ID)
   are no longer passed as command-line arguments. Launchers deliver them
   through the job process environment; on Kubernetes they ride a per-job
