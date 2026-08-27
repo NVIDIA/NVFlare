@@ -16,7 +16,7 @@ import os
 import sys
 from typing import Optional, Union
 
-MULTIRANK_SIZE_ENV_VARS = ("WORLD_SIZE", "LOCAL_WORLD_SIZE", "OMPI_COMM_WORLD_SIZE", "SLURM_NTASKS")
+MULTIRANK_SIZE_ENV_VARS = ("WORLD_SIZE", "LOCAL_WORLD_SIZE", "OMPI_COMM_WORLD_SIZE")
 
 
 def environment_declares_multirank() -> bool:

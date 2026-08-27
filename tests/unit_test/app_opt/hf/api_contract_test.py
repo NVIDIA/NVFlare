@@ -182,7 +182,7 @@ def test_patch_rejects_nonzero_rank_without_initialized_distributed(monkeypatch,
         hf_api.patch(trainer, restore_state=False)
 
 
-@pytest.mark.parametrize("size_marker", ("WORLD_SIZE", "LOCAL_WORLD_SIZE", "OMPI_COMM_WORLD_SIZE", "SLURM_NTASKS"))
+@pytest.mark.parametrize("size_marker", ("WORLD_SIZE", "LOCAL_WORLD_SIZE", "OMPI_COMM_WORLD_SIZE"))
 def test_patch_rejects_rank_zero_multirank_env_without_initialized_distributed(monkeypatch, tmp_path, size_marker):
     hf_api, trainer_cls, _ = _fresh_api(monkeypatch)
     monkeypatch.setattr(hf_api, "_torch_dist", lambda: None)
@@ -192,6 +192,18 @@ def test_patch_rejects_rank_zero_multirank_env_without_initialized_distributed(m
 
     with pytest.raises(RuntimeError, match="multi-process|torch.distributed|torchrun"):
         hf_api.patch(trainer, restore_state=False)
+
+
+def test_patch_accepts_single_process_inside_multitask_slurm_allocation(monkeypatch, tmp_path):
+    hf_api, trainer_cls, client_api_mock = _fresh_api(monkeypatch)
+    monkeypatch.setattr(hf_api, "_torch_dist", lambda: None)
+    monkeypatch.delenv("RANK", raising=False)
+    monkeypatch.setenv("SLURM_NTASKS", "2")
+    trainer = _make_trainer(trainer_cls, tmp_path, process_index=0)
+
+    hf_api.patch(trainer, restore_state=False)
+
+    assert str(client_api_mock.init_calls[0]["rank"]) == "0"
 
 
 def test_patch_rejects_adapter_scope_for_non_peft_model(monkeypatch, tmp_path):

@@ -65,6 +65,21 @@ def test_environment_declares_multirank_for_supported_launchers(monkeypatch, siz
     assert rank_utils.environment_declares_multirank()
 
 
+def test_slurm_allocation_size_does_not_declare_trainer_multirank(monkeypatch):
+    _clear_rank_environment(monkeypatch)
+    monkeypatch.setenv("SLURM_NTASKS", "2")
+
+    assert not rank_utils.environment_declares_multirank()
+    assert rank_utils.resolve_process_rank() == "0"
+
+
+def test_invalid_launcher_size_does_not_declare_multirank(monkeypatch):
+    _clear_rank_environment(monkeypatch)
+    monkeypatch.setenv("WORLD_SIZE", "not-an-integer")
+
+    assert not rank_utils.environment_declares_multirank()
+
+
 @pytest.mark.parametrize(("raw_rank", "expected_rank"), ((0, "0"), ("+0", "0"), ("00", "0"), ("01", "1")))
 def test_normalize_process_rank_returns_canonical_decimal(raw_rank, expected_rank):
     assert rank_utils.normalize_process_rank(raw_rank) == expected_rank
