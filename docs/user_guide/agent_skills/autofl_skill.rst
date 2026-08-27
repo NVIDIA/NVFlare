@@ -67,7 +67,8 @@ flag spellings the job's parser defines, including short aliases; a
 spelling the parser does not define passes through unchanged so argparse
 still reports it. A short-option cluster that itself sets a pinned
 zero-argument flag is kept, and the runner omits its own copy so the
-option still appears exactly once.
+option still appears exactly once. Any other short-option token that may
+involve a pinned flag is rejected; write the options as separate tokens.
 
 When the user does not name a metric, a deterministic ``key_metric`` extracted
 from ``job.py`` takes precedence. The default user experience does not require

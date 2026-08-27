@@ -22,7 +22,9 @@ initialization with `AUTOFL_BUDGET_ARGUMENT_CONFLICT`. Duplicates are matched
 by the flag spellings the job's parser defines, including short aliases; a
 spelling the parser does not define passes through unchanged. A short-option
 cluster that itself sets a pinned zero-argument flag is kept, and the runner
-omits its own copy so the option still appears exactly once.
+omits its own copy so the option still appears exactly once. Any other
+short-option token that may involve a pinned flag is rejected; write the
+options as separate tokens.
 
 The importer resolves the optimization direction from an explicit
 `key_metric_mode`, a same-metric `stop_cond`, or NVFLARE's default `max`, and

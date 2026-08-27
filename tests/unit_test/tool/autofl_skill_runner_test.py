@@ -601,6 +601,12 @@ def test_base_args_short_alias_of_pinned_flag_is_deduplicated_and_conflicts_reje
                 config, SimpleNamespace(base_args=conflicting), "--num_rounds", {}, alias_groups=alias_groups
             )
 
+    # A valued pinned alias beyond the leading cluster position is ambiguous without -v's arity; fail closed.
+    with pytest.raises(ValueError, match=r"AUTOFL_BUDGET_ARGUMENT_CONFLICT.*-vr3.*num_rounds.*separate tokens"):
+        runner.build_campaign_args(
+            config, SimpleNamespace(base_args="-vr3"), "--num_rounds", {}, alias_groups=alias_groups
+        )
+
 
 def test_base_args_conflicting_fixed_budget_value_is_rejected():
     runner = _load_runner()
@@ -680,6 +686,19 @@ def test_base_args_boolean_comparison_flag_deduplicates_and_rejects_values():
     )
     assert fixed_args == []
     assert base_args == ["-xv"]
+
+    # Beyond the leading position the pinned alias is ambiguous (-v -x vs -v with value x); fail closed.
+    with pytest.raises(ValueError, match=r"AUTOFL_BUDGET_ARGUMENT_CONFLICT.*-vx.*cross_site_eval.*separate tokens"):
+        runner.build_campaign_args(
+            {"budget": {}}, SimpleNamespace(base_args="-vx"), help_text, schema, alias_groups=alias_groups
+        )
+
+    # Short tokens that cannot involve a pinned flag stay verbatim.
+    fixed_args, base_args = runner.build_campaign_args(
+        {"budget": {}}, SimpleNamespace(base_args="-vz"), help_text, schema, alias_groups=alias_groups
+    )
+    assert fixed_args == []
+    assert base_args == ["-vz", "--cross_site_eval"]
 
     # A bare pinned short alias still deduplicates.
     fixed_args, base_args = runner.build_campaign_args(

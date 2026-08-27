@@ -2191,6 +2191,18 @@ def merge_base_budget_args(
                     continue
                 name = spellings[short]
                 supplied = token[2:]
+            else:
+                # Beyond the leading position the token is ambiguous without the other flags' arity:
+                # -vx is -v -x for a boolean -v (setting the pinned flag again) but -v with value x
+                # otherwise. Fail closed so no cluster can supply a pinned budget option a second time.
+                involved = next(
+                    (s for s in spellings if len(s) == 2 and not s.startswith("--") and s[1] in token[1:]), None
+                )
+                if involved is not None:
+                    raise ValueError(
+                        f"AUTOFL_BUDGET_ARGUMENT_CONFLICT: cannot determine whether short-option token {token} "
+                        f"involves {involved} (--{spellings[involved]}); write the options as separate tokens"
+                    )
         if name is None:
             if token.startswith("--") and option not in defined_flags:
                 # An exactly-defined job flag is never an abbreviation: argparse gives exact matches precedence.
