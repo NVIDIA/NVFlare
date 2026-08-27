@@ -8,9 +8,10 @@ Highlights:
 
 - **Agent Skills** — agent-assisted federated development
 - **Collaboration API** — a Python-first API for research workflows
-- **More reliable training at HPC and large-model scale** — a Slurm job
-  launcher, a hardened model-transfer streaming transport, and FedAvg
-  validated to 72 billion parameters
+- **Slurm job launcher** — a new HPC execution target alongside process,
+  Docker, and Kubernetes
+- **Large-model training** — a hardened model-transfer streaming transport
+  and FedAvg validated to 72 billion parameters
 
 Kubernetes/OpenShift deployment, credential handling, and framework/recipe
 additions also shipped this release; see `Also in This Release`_ below.
@@ -74,11 +75,8 @@ envelope. New examples:
 - :github_nvflare_link:`advanced Collab examples <examples/advanced/collab>`
   — split learning, swarm learning, and in-time aggregation
 
-HPC and Large-Model Training
-=============================
-
 Slurm Job Launcher
--------------------
+===================
 
 FLARE 2.9.0 adds Slurm-native job execution for HPC environments — a new
 execution target alongside the existing process, Docker, and Kubernetes
@@ -94,8 +92,8 @@ federated job lifecycle. The launcher supports:
 Follow the :ref:`slurm_job_launcher` deployment guide for prerequisites,
 backend setup, site configuration, and validation steps.
 
-Large-Model Transport, Reliability, and Memory
-------------------------------------------------
+Large-Model Training
+=====================
 
 FLARE 2.9.0 strengthens the streaming transport for long-running model
 transfers.
