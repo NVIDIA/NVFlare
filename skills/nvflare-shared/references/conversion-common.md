@@ -44,6 +44,15 @@ context is read pre-patch; do not rely on the patch for pre-patch site-data or
 logging setup. The patch initializes the Client API on its own only when no
 earlier context access is needed.
 
+Rank is a process-level Client API property, not a framework-specific training
+argument. For a single-process launch, call `flare.init()` without an explicit
+rank and do not add a required `rank` parser field or `--rank` to recipe
+arguments. For a distributed multi-process launch, resolve the global process
+rank from the initialized process group or global `RANK`, never `LOCAL_RANK`,
+and pass it to `flare.init(rank=global_rank)`. Reject a multi-process launch
+when the global rank cannot be resolved; never default every process to rank
+zero.
+
 ## SimEnv Execution
 
 `SimEnv` is a plain execution-environment object, not a context manager. Never

@@ -179,6 +179,10 @@ from GPU count:
   strategies, or another source launch that creates distributed worker
   processes requires `launch_external_process=True`.
 
+For every distributed multi-process selection, apply the canonical Client API
+global-rank contract in `conversion-common.md`. It does not apply to
+single-process `DataParallel`.
+
 Before setting it, confirm `launch_external_process` is exposed. Also confirm
 the recipe exposes `command`, `launcher`, or another public launch surface that
 can preserve required distributed-launch arguments. If either capability is

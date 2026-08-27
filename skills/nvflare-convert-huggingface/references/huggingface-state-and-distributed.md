@@ -53,13 +53,18 @@ optimizer/scheduler state.
 
 ## Distributed Training
 
+This section applies only to a preserved distributed multi-process launch.
+Apply the framework-neutral global-rank contract in
+`../../nvflare-shared/references/conversion-common.md`; do not add a rank
+argument to a standard single-process conversion.
+
 Initialize `torch.distributed` before `flare.patch(trainer)` whenever
 `WORLD_SIZE` or `LOCAL_WORLD_SIZE` is greater than one. Resolve global rank from
-the initialized process group or global `RANK`, not `LOCAL_RANK`. Pass that rank
-to the generated client's required `rank` argument and then to
-`flare.init(rank=rank)`. `LOCAL_RANK` selects the local device and may differ
-from global `RANK` on multi-node launches; do not pass it as the FLARE rank.
-Reject a multi-process launch when global rank cannot be resolved.
+the initialized process group or global `RANK`, not `LOCAL_RANK`, and pass it to
+`flare.init(rank=global_rank)`. If the generated entry exposes rank as an
+argument, make it required and verify that the preserved distributed launcher
+supplies it. `LOCAL_RANK` selects the local device and may differ from global
+`RANK` on multi-node launches; do not pass it as the FLARE rank.
 
 Every rank must execute the same generated sequence of patched methods. If the
 source-backed loop evaluates before training, all ranks call

@@ -795,6 +795,60 @@ def test_shared_conversion_uses_one_simulator_topology_owner():
         assert "no-mixed-named-and-generated-client-topology" in prohibited_ids
 
 
+def test_client_api_rank_contract_is_shared_and_process_conditional():
+    repo_root = Path(__file__).resolve().parents[4]
+    common_text = repo_root.joinpath("skills/nvflare-shared/references/conversion-common.md").read_text(
+        encoding="utf-8"
+    )
+    normalized_common = " ".join(common_text.split())
+    hf_client = repo_root.joinpath("skills/nvflare-convert-huggingface/assets/client_with_eval.py").read_text(
+        encoding="utf-8"
+    )
+    hf_state = repo_root.joinpath(
+        "skills/nvflare-convert-huggingface/references/huggingface-state-and-distributed.md"
+    ).read_text(encoding="utf-8")
+    lightning_ddp = repo_root.joinpath(
+        "skills/nvflare-convert-lightning/references/lightning-ddp-and-tracking.md"
+    ).read_text(encoding="utf-8")
+    construction_text = repo_root.joinpath(
+        "skills/nvflare-shared/references/pytorch-family-recipe-construction.md"
+    ).read_text(encoding="utf-8")
+    normalized_hf_state = " ".join(hf_state.split())
+    normalized_lightning_ddp = " ".join(lightning_ddp.split())
+    normalized_construction = " ".join(construction_text.split())
+
+    assert (
+        "Rank is a process-level Client API property, not a framework-specific training argument" in normalized_common
+    )
+    assert "For a single-process launch, call `flare.init()` without an explicit rank" in normalized_common
+    assert "do not add a required `rank` parser field or `--rank` to recipe arguments" in normalized_common
+    assert "For a distributed multi-process launch, resolve the global process rank" in normalized_common
+    assert "initialized process group or global `RANK`, never `LOCAL_RANK`" in normalized_common
+    assert "never default every process to rank zero" in normalized_common
+    assert "apply the canonical Client API global-rank contract in `conversion-common.md`" in normalized_construction
+    assert "It does not apply to single-process `DataParallel`" in normalized_construction
+
+    for framework in ("pytorch", "lightning", "huggingface"):
+        skill_text = repo_root.joinpath(f"skills/nvflare-convert-{framework}/SKILL.md").read_text(encoding="utf-8")
+        assert "../nvflare-shared/references/conversion-common.md" in skill_text
+
+    assert "def main(trainer_factory, *, evaluate_before_train=True)" in hf_client
+    assert "flare.init()" in hf_client
+    assert "flare.init(rank=" not in hf_client
+    assert "framework-neutral global-rank contract" in normalized_hf_state
+    assert "do not add a rank argument to a standard single-process conversion" in normalized_hf_state
+    assert "framework-neutral global-rank contract" in normalized_lightning_ddp
+    assert "flare.init(rank=global_rank)" in hf_state
+    assert "flare.init(rank=global_rank)" in lightning_ddp
+
+    lightning_evals = json.loads(
+        repo_root.joinpath("skills/nvflare-convert-lightning/evals/evals.json").read_text(encoding="utf-8")
+    )
+    ddp_eval = _eval_by_id(lightning_evals, "lightning-ddp-multigpu")["nvflare"]
+    assert "global-rank-for-distributed-processes" in {item["id"] for item in ddp_eval["mandatory_behavior"]}
+    assert "no-local-rank-as-global-rank" in {item["id"] for item in ddp_eval["prohibited_behavior"]}
+
+
 def test_all_conversion_skills_preserve_required_model_constructor_args():
     repo_root = Path(__file__).resolve().parents[4]
     references = repo_root / "skills" / "nvflare-shared" / "references"
@@ -1326,8 +1380,9 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "rejects parent-traversal external-script paths" in normalized_conversion
     assert "inspecting NVFLARE implementation source" in normalized_conversion
     assert "flare.patch(trainer)" in client_template
-    assert "def main(trainer_factory, *, rank, evaluate_before_train=True)" in client_template
-    assert "flare.init(rank=rank)" in client_template
+    assert "def main(trainer_factory, *, evaluate_before_train=True)" in client_template
+    assert "flare.init()" in client_template
+    assert "flare.init(rank=" not in client_template
     assert "HfArgumentParser(dataclass_types, allow_abbrev=False)" in client_template
     assert "while flare.is_running()" in client_template
     assert "return model" in server_model_template
@@ -1345,6 +1400,7 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
         "client entry's actual argument mechanism and actual dataclass types in parse-only mode"
         in normalized_validation
     )
+    assert "do not append an argument only in preflight that the recipe will not deliver" in normalized_validation
     assert "generated client uses `HfArgumentParser`" in validation_text
     assert "same project and framework dataclass types" in normalized_validation
     assert "When it preserves `argparse` or another parser" in normalized_validation
@@ -1366,7 +1422,9 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "missing/newly initialized without a deterministic reset" in normalized_validation
     assert "Do not first run an unconditional full-state equality assertion" in normalized_validation
     assert "two-process `torchrun` case" in normalized_validation
-    assert "generated client's required `rank` argument" in normalized_state
+    assert "This section applies only to a preserved distributed multi-process launch" in normalized_state
+    assert "standard single-process conversion" in normalized_state
+    assert "verify that the preserved distributed launcher supplies it" in normalized_state
     assert "do not pass it as the FLARE rank" in normalized_state
     basic_mandatory = {item["id"]: item["description"] for item in basic_eval["mandatory_behavior"]}
     ddp_mandatory = {item["id"]: item["description"] for item in ddp_eval["mandatory_behavior"]}
@@ -1378,6 +1436,7 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "no-unconditional-equality-for-newly-initialized-parameters" in {
         item["id"] for item in basic_eval["prohibited_behavior"]
     }
+    assert "single-process-rankless-init" in basic_mandatory
     assert "without a rank-zero default" in ddp_mandatory["initialize-distributed-before-patch"]
     assert "observed global and flare.init ranks 0 and 1" in ddp_mandatory["rank-symmetric-trainer-loop"]
     assert "Version-check only fields claimed to belong to a framework" in normalized_validation

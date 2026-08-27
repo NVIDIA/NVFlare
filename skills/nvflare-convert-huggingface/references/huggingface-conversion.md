@@ -42,10 +42,15 @@ default selector. See the Best-Model Metric section of
 Import the Client API as `import nvflare.client.hf as flare`, as the asset does,
 so every `flare.*` call below resolves to `nvflare.client.hf`.
 
-Call `flare.init(rank=rank)` explicitly before `flare.get_site_name()`,
-`flare.get_config()`, or other Client API context access that occurs before
-`patch()`. The patch initializes the Client API when no earlier context access
-is needed.
+Follow the framework-neutral Client API initialization and rank contract in
+`../../nvflare-shared/references/conversion-common.md`. The standard
+single-process asset calls `flare.init()` with no rank argument. For a preserved
+distributed multi-process launch, load
+`huggingface-state-and-distributed.md` and pass its resolved global process rank
+to `flare.init(...)`. In either path, initialize explicitly before
+`flare.get_site_name()`, `flare.get_config()`, or other Client API context
+access that occurs before `patch()`. The patch initializes the Client API when
+no earlier context access is needed.
 
 Do not add manual model loading from `flare.receive()` or model sending through
 `flare.send()`. The patch wraps `train()` and `evaluate()`, loads the received

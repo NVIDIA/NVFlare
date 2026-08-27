@@ -622,8 +622,8 @@ def test_pytorch_eval_template_rejects_missing_or_invalid_round_steps(monkeypatc
 @pytest.mark.parametrize(
     "evaluate_before_train, expected_events",
     [
-        (True, ["init:3", "factory", "patch", "is_running", "evaluate", "train", "is_running"]),
-        (False, ["init:3", "factory", "patch", "is_running", "train", "is_running"]),
+        (True, ["init", "factory", "patch", "is_running", "evaluate", "train", "is_running"]),
+        (False, ["init", "factory", "patch", "is_running", "train", "is_running"]),
     ],
 )
 def test_huggingface_client_template_preserves_trainer_sequence(monkeypatch, evaluate_before_train, expected_events):
@@ -642,7 +642,7 @@ def test_huggingface_client_template_preserves_trainer_sequence(monkeypatch, eva
         return _Trainer()
 
     running = iter((True, False))
-    monkeypatch.setattr(module.flare, "init", lambda rank: events.append(f"init:{rank}"))
+    monkeypatch.setattr(module.flare, "init", lambda: events.append("init"))
     monkeypatch.setattr(module.flare, "patch", lambda trainer: events.append("patch"))
     monkeypatch.setattr(
         module.flare,
@@ -650,25 +650,22 @@ def test_huggingface_client_template_preserves_trainer_sequence(monkeypatch, eva
         lambda: events.append("is_running") or next(running),
     )
 
-    module.main(trainer_factory, rank=3, evaluate_before_train=evaluate_before_train)
+    module.main(trainer_factory, evaluate_before_train=evaluate_before_train)
 
     assert events == expected_events
 
 
-def test_huggingface_client_template_requires_and_forwards_global_rank(monkeypatch):
+def test_huggingface_client_template_uses_rankless_single_process_init(monkeypatch):
     module = _load_module(HF_TEMPLATES / "client_with_eval.py")
-    rank_parameter = inspect.signature(module.main).parameters["rank"]
     observed = []
 
-    monkeypatch.setattr(module.flare, "init", lambda rank: observed.append(rank))
+    monkeypatch.setattr(module.flare, "init", lambda: observed.append("init"))
     monkeypatch.setattr(module.flare, "patch", lambda trainer: None)
     monkeypatch.setattr(module.flare, "is_running", lambda: False)
 
-    assert rank_parameter.default is inspect.Parameter.empty
-    assert rank_parameter.kind is inspect.Parameter.KEYWORD_ONLY
-    for rank in (0, 1):
-        module.main(lambda: object(), rank=rank)
-    assert observed == [0, 1]
+    assert "rank" not in inspect.signature(module.main).parameters
+    module.main(lambda: object())
+    assert observed == ["init"]
 
 
 def test_huggingface_job_template_uses_private_persistent_implicit_simulation_workspace(tmp_path):
@@ -865,6 +862,7 @@ def test_huggingface_job_template_supports_one_resolved_budget_mode():
     assert "--max_steps" not in requested_epochs
     assert "--max_steps" not in preserved_source
     assert "--num_train_epochs" not in preserved_source
+    assert all("--rank" not in args for args in (requested_steps, requested_epochs, preserved_source))
 
     with pytest.raises(ValueError, match="only one"):
         module.build_train_args("local-model", "/tmp/data", 2, max_steps=7, num_train_epochs=3.0)

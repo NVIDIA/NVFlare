@@ -49,6 +49,7 @@
         "The agent completes inspect, dependency handling, recipe show and capability construction, conversion, job construction, and validation in order without preloading advanced or validation references.",
         "The generated conversion adapts the maintained HF client_with_eval.py, server_model.py, and job.py assets instead of drafting another loop or probing Recipe, persistor, class-loader, simulator, or argument-transport implementation source.",
         "The generated FL client entry cannot bypass flare.init() or flare.patch(trainer) through CLIENT_API_TYPE or other launch-environment detection; any preserved standalone path is behind an explicit non-client entry parameter.",
+        "For this single-process simulation, the generated client calls flare.init() without a required rank parser field or a --rank recipe argument.",
         "The generated client does not implement manual FLModel receive/send model exchange.",
         "The model, datasets, TrainingArguments, and Trainer are constructed once before the FL round loop.",
         "The agent encodes a prompt-specified local budget once in Trainer max_steps or num_train_epochs and lets flare.patch infer it; when the prompt is silent it reports max_steps=10 unless source-budget preservation was requested, and it does not interrupt a valid run because cumulative max_steps covers all rounds.",
@@ -90,6 +91,10 @@
           {
             "id": "fl-only-client-entry",
             "description": "ensures the generated FL client entry always reaches flare.init and flare.patch, with no CLIENT_API_TYPE or launch-environment auto-detection"
+          },
+          {
+            "id": "single-process-rankless-init",
+            "description": "uses flare.init() without a required rank parser field or --rank recipe argument for the standard single-process launch"
           },
           {
             "id": "global-evaluation-before-training",
