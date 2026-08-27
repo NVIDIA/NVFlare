@@ -327,6 +327,45 @@ The resource names default to ``nvflare-local-<site>`` and
 ``--startup-secret``. The namespace defaults to the namespace written into the
 prepared kit's ``K8sJobLauncher`` config, or ``default`` when unavailable.
 
+``--namespace`` selects the target namespace; it does not create that
+namespace. Make sure the namespace already exists before staging. On initial
+staging, an explicit ``--namespace`` takes precedence over the namespace in the
+prepared kit. It controls where the ConfigMap and Secret are applied and the
+namespace in the printed Helm command, but it does not rewrite the
+``K8sJobLauncher`` namespace in ``local/resources.json.default``. Normally, use
+the same namespace that was configured for ``nvflare deploy prepare`` so the
+parent and dynamically launched job pods remain in the same namespace.
+
+The stage command records the resolved namespace and resource names in
+``helm_chart/values.yaml`` before invoking ``kubectl``. Recording them first
+preserves the exact cleanup targets if ``kubectl`` succeeds, partially
+succeeds, or fails. A later stage command without overrides reuses these
+recorded values. Restaging with an explicit namespace or resource name that
+differs from a recorded value is rejected. For example:
+
+.. code-block:: text
+
+   Initial staging:
+     stage --namespace old-ns
+     -> values.yaml records old-ns
+     -> kubectl may succeed, partially succeed, or fail
+
+   Restaging:
+     stage --namespace new-ns
+     -> rejected because values.yaml still records old-ns
+
+In this case, the error includes ``Prepared kit is already staged with a
+different namespace.`` To change the namespace safely, uninstall any Helm
+release that uses the staged resources, unstage the prepared kit, and then
+stage it in the new namespace:
+
+.. code-block:: shell
+
+   # After uninstalling any Helm release:
+   nvflare deploy k8 unstage <prepared-kit>
+
+   nvflare deploy k8 stage <prepared-kit> --namespace new-ns
+
 After this staging command succeeds, run the printed ``helm_command`` or the
 equivalent ``helm upgrade --install`` command for the prepared chart to start
 the parent server or client pod. The command also prints a ``cleanup_command``
