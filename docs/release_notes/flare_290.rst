@@ -20,21 +20,24 @@ Agent Skills
 
 FLARE Agent Skills fall into two categories:
 
-**Conversion skills** turn an existing training project into a reviewable
-federated job — PyTorch, PyTorch Lightning, and Hugging Face Trainer are
-currently supported:
+**Conversion skills** generate a reviewable federated job from an existing
+project or dataset:
 
-1. identify the owning framework
-2. preserve the training and evaluation semantics
-3. generate the supported Client API or recipe integration
-4. validate the generated artifact
-5. report evidence
+- Training conversion — PyTorch, PyTorch Lightning, and Hugging Face Trainer
+  are currently supported — identifies the owning framework, preserves the
+  training and evaluation semantics, generates the supported Client API or
+  recipe integration, validates the generated artifact, and reports
+  evidence.
+- Federated statistics (tabular and image) generates a ``FedStatsRecipe``
+  job directly from the dataset and feature names, with no user statistics
+  code required.
 
-**Diagnostic and research skills** operate on jobs that already exist:
-
-- federated statistics, tabular and image
-- job diagnostics
-- Auto-FL research assistance — automated, budget-aware campaign optimization
+**Auto-FL research assistance** runs a coding-agent-directed campaign over
+an existing job: NVFLARE owns the deterministic campaign import, execution,
+policy boundaries, and provenance, while the agent proposes hypothesis-driven
+candidates within the job's fixed training budget and mutation-schema
+bounds. Its initial importer similarly supports statically recognizable
+NVFLARE Recipe and ``*Job`` patterns.
 
 All skills run behind a security-evaluation gate (prompt-injection and
 untrusted-input eval suites) and include explicit safeguards for site-local
@@ -46,14 +49,10 @@ for the Auto-FL workflow); start with the
 federated-statistics workflows.
 
 Agent Skills are developer tooling, not a runtime FL API or a substitute for
-code review and job validation:
-
-- Conversion skills preserve explicitly supported Recipe and Client API
-  paths, and ask or stop, rather than guess, when framework ownership,
-  source semantics, required data handling, or runtime configuration is
-  ambiguous.
-- Auto-FL's initial importer similarly supports statically recognizable
-  NVFLARE Recipe and ``*Job`` patterns.
+code review and job validation: conversion skills preserve explicitly
+supported Recipe and Client API paths, and ask or stop, rather than guess,
+when framework ownership, source semantics, required data handling, or
+runtime configuration is ambiguous.
 
 Collaboration API
 ==================
