@@ -630,8 +630,11 @@ def test_huggingface_client_template_preserves_trainer_sequence(monkeypatch, eva
     module = _load_module(HF_TEMPLATES / "client_with_eval.py")
     events = []
 
+    monkeypatch.delenv("RANK", raising=False)
     monkeypatch.delenv("WORLD_SIZE", raising=False)
     monkeypatch.delenv("LOCAL_WORLD_SIZE", raising=False)
+    monkeypatch.delenv("OMPI_COMM_WORLD_SIZE", raising=False)
+    monkeypatch.delenv("SLURM_NTASKS", raising=False)
     monkeypatch.setattr(module.dist, "is_available", lambda: False)
 
     class _Trainer:
@@ -663,8 +666,11 @@ def test_huggingface_client_template_uses_rankless_single_process_init(monkeypat
     module = _load_module(HF_TEMPLATES / "client_with_eval.py")
     observed = []
 
+    monkeypatch.delenv("RANK", raising=False)
     monkeypatch.delenv("WORLD_SIZE", raising=False)
     monkeypatch.delenv("LOCAL_WORLD_SIZE", raising=False)
+    monkeypatch.delenv("OMPI_COMM_WORLD_SIZE", raising=False)
+    monkeypatch.delenv("SLURM_NTASKS", raising=False)
     monkeypatch.setattr(module.dist, "is_available", lambda: False)
     monkeypatch.setattr(module.flare, "init", lambda: observed.append("init"))
     monkeypatch.setattr(module.flare, "patch", lambda trainer: None)
@@ -672,6 +678,43 @@ def test_huggingface_client_template_uses_rankless_single_process_init(monkeypat
 
     assert "rank" not in inspect.signature(module.main).parameters
     module.main(lambda: object())
+    assert observed == ["init"]
+
+
+@pytest.mark.parametrize(
+    "size_marker",
+    ("WORLD_SIZE", "LOCAL_WORLD_SIZE", "OMPI_COMM_WORLD_SIZE", "SLURM_NTASKS"),
+)
+def test_huggingface_client_template_rejects_unresolved_multirank_before_flare_init(monkeypatch, size_marker):
+    module = _load_module(HF_TEMPLATES / "client_with_eval.py")
+    events = []
+
+    for name in ("RANK", *module._MULTIRANK_SIZE_ENV_VARS):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv(size_marker, "2")
+    monkeypatch.setattr(module.dist, "is_available", lambda: False)
+    monkeypatch.setattr(module.flare, "init", lambda *args, **kwargs: events.append("init"))
+
+    with pytest.raises(RuntimeError, match="global RANK is unavailable"):
+        module.main(lambda: events.append("factory"))
+
+    assert events == []
+
+
+def test_huggingface_client_template_allows_delayed_dist_init_with_global_rank(monkeypatch):
+    module = _load_module(HF_TEMPLATES / "client_with_eval.py")
+    observed = []
+
+    monkeypatch.setenv("WORLD_SIZE", "2")
+    monkeypatch.setenv("RANK", "1")
+    monkeypatch.setattr(module.dist, "is_available", lambda: True)
+    monkeypatch.setattr(module.dist, "is_initialized", lambda: False)
+    monkeypatch.setattr(module.flare, "init", lambda: observed.append("init"))
+    monkeypatch.setattr(module.flare, "patch", lambda trainer: None)
+    monkeypatch.setattr(module.flare, "is_running", lambda: False)
+
+    module.main(lambda: object())
+
     assert observed == ["init"]
 
 
@@ -794,7 +837,8 @@ def test_huggingface_job_template_resolves_only_source_local_paths_from_another_
     generated_dir.mkdir()
     job_path = generated_dir / "job.py"
     job_path.write_text((HF_TEMPLATES / "job.py").read_text(encoding="utf-8"), encoding="utf-8")
-    relative_data = generated_dir / "datasets" / "sst2"
+    source_root = tmp_path / "read-only-source"
+    relative_data = source_root / "datasets" / "sst2"
     relative_data.mkdir(parents=True)
     absolute_data = tmp_path / "absolute-data"
     absolute_data.mkdir()
@@ -804,9 +848,17 @@ def test_huggingface_job_template_resolves_only_source_local_paths_from_another_
     monkeypatch.chdir(caller_dir)
     module = _load_module(job_path)
 
-    assert module.resolve_source_local_path("datasets/sst2") == relative_data.resolve()
-    assert module.resolve_source_local_path(absolute_data) == absolute_data.resolve()
+    assert module.resolve_source_local_path("datasets/sst2", source_root=source_root) == relative_data.resolve()
+    assert module.resolve_source_local_path(absolute_data, source_root=source_root) == absolute_data.resolve()
+    assert module.resolve_source_local_path("datasets/sst2", source_root=module.SOURCE_DIR) != relative_data.resolve()
     assert Path.cwd() == caller_dir
+
+
+def test_huggingface_job_template_rejects_relative_source_root():
+    module = _load_module(HF_TEMPLATES / "job.py")
+
+    with pytest.raises(ValueError, match="source_root must be an absolute path"):
+        module.resolve_source_local_path("datasets/sst2", source_root="source")
 
 
 def test_huggingface_job_template_does_not_assume_a_source_data_argument(monkeypatch):

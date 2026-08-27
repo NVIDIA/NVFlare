@@ -7,9 +7,10 @@ Copy this file beside ``client.py``, ``server_model.py``, and packaged
 project-local modules such as ``model.py``. Adapt the client argument names and
 capability-gated recipe options to the source project. Use
 ``resolve_source_local_path`` only for an inspected source argument that names a
-local file or directory; do not use it for Hub identifiers, URLs, or site-local
-paths. Keep the required Recipe, packaging, and execution structure; do not
-replace local file names with parent traversal paths.
+local file or directory, and pass the inspected source-project root explicitly;
+do not use it for Hub identifiers, URLs, or site-local paths. Keep the required
+Recipe, packaging, and execution structure; do not replace local file names
+with parent traversal paths.
 """
 
 import argparse
@@ -27,12 +28,16 @@ DEFAULT_MAX_STEPS = 10
 SOURCE_DIR = Path(__file__).resolve().parent
 
 
-def resolve_source_local_path(value: str | Path) -> Path:
-    """Resolve an inspected source-project-relative local path."""
+def resolve_source_local_path(value: str | Path, *, source_root: str | Path) -> Path:
+    """Resolve a local path against its explicit inspected source-project root."""
     path = Path(value)
-    if not path.is_absolute():
-        path = SOURCE_DIR / path
-    return path.resolve()
+    if path.is_absolute():
+        return path.resolve()
+
+    root = Path(source_root).expanduser()
+    if not root.is_absolute():
+        raise ValueError("source_root must be an absolute path")
+    return (root / path).resolve()
 
 
 @contextmanager

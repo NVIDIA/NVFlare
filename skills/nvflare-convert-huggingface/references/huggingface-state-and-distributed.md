@@ -63,7 +63,13 @@ Initialize `torch.distributed` before `flare.patch(trainer)` whenever
 the initialized process group or global `RANK`, not `LOCAL_RANK`. The maintained
 asset passes `torch.distributed.get_rank()` to `flare.init(...)` when the group
 is already initialized; otherwise `flare.init()` resolves global `RANK`, and
-`flare.patch(trainer)` verifies the rank after Trainer initialization.
+`flare.patch(trainer)` verifies the rank after Trainer initialization. If
+`WORLD_SIZE`, `LOCAL_WORLD_SIZE`, `OMPI_COMM_WORLD_SIZE`, or `SLURM_NTASKS`
+declares multiple processes while the group is still uninitialized, the asset
+requires a valid global `RANK` and rejects the launch before `flare.init()` when
+it is missing. Configure the launcher to export global `RANK` or initialize the
+process group before this entry; never let scheduler-specific rank variables
+silently become rank zero.
 `LOCAL_RANK` selects the local device and may differ from global `RANK` on
 multi-node launches; do not pass it as the FLARE rank.
 

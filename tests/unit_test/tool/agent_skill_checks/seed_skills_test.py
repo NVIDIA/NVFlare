@@ -596,12 +596,16 @@ def test_huggingface_source_local_paths_are_conditional_and_cwd_independent():
     normalized_site_data = " ".join(site_data_text.split())
     normalized_validation = " ".join(validation_text.split())
 
-    assert "def resolve_source_local_path(value: str | Path) -> Path:" in job_text
-    assert "path = SOURCE_DIR / path" in job_text
+    assert "def resolve_source_local_path(value: str | Path, *, source_root: str | Path) -> Path:" in job_text
+    assert "source_root must be an absolute path" in job_text
     assert 'parser.add_argument("--data_root"' not in job_text
     assert "data_root:" not in job_text
     assert "preserving the source's argument name and semantics" in normalized_site_data
     assert "source-project-relative local file or directory" in normalized_site_data
+    assert "explicit absolute source-project root" in normalized_site_data
+    assert "Use `SOURCE_DIR` as that root only when" in normalized_site_data
+    assert "must validate against the separate original root" in normalized_validation
+    assert "`../../nvflare-shared/references/site-data-and-paths.md`" in validation_text
     assert "Preserve an absolute local file or directory path" in normalized_site_data
     assert "Pass a per-site path through `per_site_config`" in normalized_site_data
     assert "Do not pass a Hugging Face Hub identifier or URL" in normalized_site_data
@@ -611,9 +615,11 @@ def test_huggingface_source_local_paths_are_conditional_and_cwd_independent():
     assert "Skip this path-specific check when the source has no local path argument" in normalized_validation
     for fixture in relative_eval["files"]:
         assert hf_root.joinpath("evals", fixture).is_file(), fixture
-    mandatory_ids = {item["id"] for item in relative_eval["nvflare"]["mandatory_behavior"]}
+    mandatory = {item["id"]: item["description"] for item in relative_eval["nvflare"]["mandatory_behavior"]}
     prohibited_ids = {item["id"] for item in relative_eval["nvflare"]["prohibited_behavior"]}
-    assert {"resolve-relative-source-local-path", "validate-source-path-from-fresh-cwd"} <= mandatory_ids
+    assert {"resolve-relative-source-local-path", "validate-source-path-from-fresh-cwd"} <= mandatory.keys()
+    assert "explicit inspected source-project root" in mandatory["resolve-relative-source-local-path"]
+    assert "using SOURCE_DIR only for colocated generation" in mandatory["resolve-relative-source-local-path"]
     assert {"no-invented-data-root-option", "no-filesystem-resolution-for-nonlocal-inputs"} <= prohibited_ids
 
 
@@ -869,10 +875,13 @@ def test_client_api_rank_contract_is_shared_and_process_conditional():
     assert "def main(trainer_factory, *, evaluate_before_train=True)" in hf_client
     assert "flare.init()" in hf_client
     assert "flare.init(rank=dist.get_rank())" in hf_client
+    assert "_MULTIRANK_SIZE_ENV_VARS" in hf_client
+    assert "global RANK is unavailable" in hf_client
     assert "framework-neutral global-rank contract" in normalized_hf_state
     assert "do not add a rank argument to a standard single-process conversion" in normalized_hf_state
     assert "framework-neutral global-rank contract" in normalized_lightning_ddp
     assert "passes `torch.distributed.get_rank()` to `flare.init(...)`" in normalized_hf_state
+    assert "rejects the launch before `flare.init()` when it is missing" in normalized_hf_state
     assert "flare.init(rank=global_rank)" in lightning_ddp
 
     lightning_evals = json.loads(
@@ -1176,7 +1185,7 @@ def test_pytorch_conversion_avoids_known_recipe_and_partition_retries():
     assert "validate properties rather than guessed site sizes" in normalized_validation
     assert "complete, non-overlapping coverage" in normalized_validation
     assert "Assert exact per-site row counts only when" in validation_text
-    assert "resolve it in `job.py` against the source-project root before Recipe construction" in normalized_site_data
+    assert "resolve it in `job.py` against an explicit absolute source-project root" in normalized_site_data
     assert "the simulator process working directory" in normalized_site_data
     assert "fresh caller working directory outside the source project" in normalized_site_data
     assert {"safe-pandas-partitioning", "invariant-based-partition-validation"} <= mandatory_ids

@@ -44,10 +44,13 @@ reaches the applicable phase, and stop at the first failure.
   construct the Recipe with that relative source value, and inspect the final
   `train_args`. Require the source argument name to be unchanged and its
   transmitted value to be absolute and equal to the expected location under
-  `SOURCE_DIR` before running the full simulation. Skip this path-specific check
-  when the source has no local path argument. Do not pass absolute local paths,
-  per-site paths, Hub identifiers, or URLs through the relative-path test;
-  validate their classification using `site-data-and-paths.md` instead.
+  the explicit inspected source-project root before running the full simulation.
+  `SOURCE_DIR` is that root only when generated `job.py` is colocated with the
+  source; a read-only-source flow must validate against the separate original
+  root. Skip this path-specific check when the source has no local path argument.
+  Do not pass absolute local paths, per-site paths, Hub identifiers, or URLs
+  through the relative-path test; validate their classification using
+  `../../nvflare-shared/references/site-data-and-paths.md` instead.
 
 ## Hugging Face Artifacts And Compatibility
 

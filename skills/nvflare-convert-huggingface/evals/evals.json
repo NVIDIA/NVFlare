@@ -405,16 +405,16 @@
     {
       "id": "huggingface-convert-relative-data-path",
       "prompt": "Convert this Hugging Face Trainer project to a two-site NVFLARE FedAvg job. Preserve its dataset_path argument, whose default datasets/sst2 location is relative to the source project, and validate recipe construction from outside the project directory.",
-      "expected_output": "A Hugging Face conversion that preserves dataset_path, resolves its relative local value against the generated job's SOURCE_DIR before recipe construction, transmits the resulting absolute source location through train_args, and proves the behavior from a fresh caller working directory without applying filesystem resolution to Hub identifiers, URLs, or site-controlled paths.",
+      "expected_output": "A Hugging Face conversion that preserves dataset_path, resolves its relative local value against the explicit inspected source-project root before recipe construction, uses SOURCE_DIR only when generated job.py is colocated with that source, transmits the resulting absolute source location through train_args, and proves the behavior from a fresh caller working directory without applying filesystem resolution to Hub identifiers, URLs, or site-controlled paths.",
       "files": [
         "files/relative-data-hf/train.py",
         "files/relative-data-hf/model.py"
       ],
       "assertions": [
         "The generated job preserves the source argument name dataset_path and does not replace it with data_root or another invented option.",
-        "The generated job calls the maintained resolve_source_local_path helper for the inspected relative local dataset_path before Recipe construction.",
+        "The generated job calls the maintained resolve_source_local_path helper with the explicit inspected source-project root for the relative local dataset_path before Recipe construction.",
         "Validation changes to a fresh working directory outside the project, constructs the Recipe with the relative dataset_path, and confirms that final train_args carries the expected absolute source location.",
-        "An absolute dataset_path remains absolute without a SOURCE_DIR prefix.",
+        "An absolute dataset_path remains absolute without a source-root prefix, and a read-only source root is not replaced by the generated job directory.",
         "Hub identifiers, URLs, and per-site paths are not passed through the source-local filesystem resolver. Per-site paths remain controlled by per_site_config.",
         "The conversion does not add path-specific code for source inputs that are not local file or directory arguments."
       ],
@@ -423,7 +423,7 @@
         "mandatory_behavior": [
           {
             "id": "resolve-relative-source-local-path",
-            "description": "preserves dataset_path and resolves its relative local value against SOURCE_DIR before Recipe construction"
+            "description": "preserves dataset_path and resolves its relative local value against the explicit inspected source-project root before Recipe construction, using SOURCE_DIR only for colocated generation"
           },
           {
             "id": "validate-source-path-from-fresh-cwd",

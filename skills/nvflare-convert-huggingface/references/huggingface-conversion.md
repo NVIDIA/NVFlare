@@ -124,6 +124,12 @@ NVFLARE rejects parent-traversal external-script paths. For an exceptional
 non-co-located module, pass its existing resolved absolute source path to the
 packaging API.
 
+`SOURCE_DIR` identifies the generated-file directory for packaging; it is the
+source-project root only in the colocated case. If a read-only source root puts
+generated files elsewhere, pass the inspected original root explicitly to
+`resolve_source_local_path(..., source_root=...)` for source-relative data. Do
+not resolve those data paths against the writable generated-file directory.
+
 Add optional recipe arguments and decomposers only as directed by the selected
 recipe's capability profile and the shared construction reference. Do not copy
 the FedAvg constructor shape to another recipe. When sites genuinely need
