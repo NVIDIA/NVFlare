@@ -34,13 +34,6 @@ _EXAMPLES = [
     pytest.param(
         _HELLO_COLLAB_ROOT,
         "job",
-        SimpleNamespace(n_clients=2, num_rounds=3, update_type="full"),
-        (),
-        id="hello_numpy_collab",
-    ),
-    pytest.param(
-        _ADVANCED_EXAMPLES_ROOT,
-        "collab.hello_fedavg.hello_fedavg",
         SimpleNamespace(num_clients=2, num_rounds=3),
         ("torch",),
         id="hello_fedavg",
@@ -85,8 +78,8 @@ def test_example_recipe_finalizes(monkeypatch, example_root, module_name, args, 
 
 def test_hello_fedavg_sim_env_uses_configured_clients(monkeypatch):
     pytest.importorskip("torch")
-    monkeypatch.syspath_prepend(str(_ADVANCED_EXAMPLES_ROOT))
-    module = importlib.import_module("collab.hello_fedavg.hello_fedavg")
+    monkeypatch.syspath_prepend(str(_HELLO_COLLAB_ROOT))
+    module = importlib.import_module("job")
     recipe = module.make_recipe(SimpleNamespace(num_clients=2, num_rounds=3))
 
     env = module.make_env(recipe)
