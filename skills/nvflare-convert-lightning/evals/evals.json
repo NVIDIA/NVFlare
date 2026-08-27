@@ -574,7 +574,7 @@
     {
       "id": "lightning-ddp-multigpu",
       "prompt": "My Lightning Trainer uses DDP across multiple GPUs. Federate it with FedAvg and keep multi-GPU training on each site.",
-      "expected_output": "The agent treats the DDP evidence as a high-impact runtime decision: it confirms the selected recipe documents an external-process launch parameter with nvflare recipe show before using it, applies the rank-synchronized round loop when the documented external-process path is used, keeps the patched trainer in charge of exchange, uses explicit standalone pre-fit validation with source-backed distributed reduction so the patched callback delivers finite scalar metrics, and configures key_metric only after the exact metric is proven to reach server FLModel.metrics.",
+      "expected_output": "The agent treats the DDP evidence as a high-impact runtime decision: it confirms the selected recipe documents an external-process launch parameter with nvflare recipe show before using it, resolves and forwards global process rank to flare.init, applies the rank-synchronized round loop when the documented external-process path is used, keeps the patched trainer in charge of exchange, uses explicit standalone pre-fit validation with source-backed distributed reduction so the patched callback delivers finite scalar metrics, and configures key_metric only after the exact metric is proven to reach server FLModel.metrics.",
       "files": [
         "files/hello-lightning/train.py",
         "files/hello-lightning/model.py"
@@ -582,6 +582,7 @@
       "assertions": [
         "The agent observes and reports the DDP/multi-GPU evidence as a high-impact runtime decision.",
         "The agent confirms the selected recipe documents an external-process launch parameter via nvflare recipe show before using it, instead of applying an implicit DDP-to-parameter mapping.",
+        "The generated client resolves global process rank from the initialized process group or RANK, never LOCAL_RANK, and passes it to flare.init(rank=global_rank).",
         "When the documented external-process path is used, the agent applies the rank-synchronized while loop that broadcasts flare.is_running() from rank 0 before receive/validate/fit.",
         "If the recipe did not document a launch parameter for DDP, the agent would ask in interactive mode or fail closed in unattended mode, reporting the DDP evidence and the missing product surface.",
         "The agent keeps flare.patch(trainer) in charge of model exchange and does not pass input_model into the Trainer.",
@@ -601,6 +602,10 @@
             "description": "broadcasts flare.is_running() from rank 0 before receive/validate/fit when the documented external-process path is used"
           },
           {
+            "id": "global-rank-for-distributed-processes",
+            "description": "resolves global process rank from the initialized process group or RANK and passes it to flare.init without using LOCAL_RANK"
+          },
+          {
             "id": "ddp-key-metric-requires-server-delivery",
             "description": "uses explicit standalone pre-fit DDP validation with source-backed distributed reduction, relies on patched callback delivery, and configures key_metric only after the exact metric is proven in client and aggregated FLModel.metrics"
           }
@@ -617,6 +622,10 @@
           {
             "id": "no-unguarded-receive-on-nonzero-ranks",
             "description": "does not insert an unguarded flare.receive() on every rank for metadata and ensures non-zero ranks do not receive the task or model object"
+          },
+          {
+            "id": "no-local-rank-as-global-rank",
+            "description": "does not use LOCAL_RANK as the global FLARE process rank"
           },
           {
             "id": "no-local-validate-metric-delivery-inference",
@@ -738,6 +747,144 @@
           {
             "id": "factory-lightning-owner",
             "description": "routes a recognized Trainer factory to Lightning conversion and preserves the patched fit lifecycle"
+          }
+        ]
+      }
+    },
+    {
+      "id": "lightning-positive-implicit-federation-intent",
+      "prompt": "Train this collaboratively across 3 hospitals without moving their data. Use the existing Lightning Trainer and show the combined validation result.",
+      "expected_output": "The Lightning conversion skill triggers because collaborative training across hospitals without moving data expresses cross-site privacy-preserving training intent, and source inspection confirms Lightning ownership.",
+      "files": [
+        "files/hello-lightning/train.py",
+        "files/hello-lightning/model.py"
+      ],
+      "assertions": [
+        "The selected skill is nvflare-convert-lightning even though the request does not name FLARE, NVFLARE, or federated learning.",
+        "The agent confirms Lightning ownership from source inspection before conversion.",
+        "The agent converts the collaborative three-hospital request into a three-site privacy-preserving training job."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-convert-lightning",
+        "mandatory_behavior": [
+          {
+            "id": "implicit-federation-intent-recall",
+            "description": "recognizes collaborative cross-hospital training without moving data as federation intent after Lightning ownership is confirmed"
+          }
+        ]
+      }
+    },
+    {
+      "id": "lightning-negative-ddp-without-federation",
+      "prompt": "Add DistributedDataParallel on 4 GPUs to this Lightning training project. Keep it non-federated and do not convert it to NVFLARE.",
+      "expected_output": "The Lightning conversion skill does not trigger because the request is distributed-training work without federated or NVFLARE conversion intent.",
+      "files": [
+        "files/hello-lightning/train.py",
+        "files/hello-lightning/model.py"
+      ],
+      "assertions": [
+        "The selected skill is not nvflare-convert-lightning.",
+        "The agent does not start an NVFLARE conversion merely because the project uses Lightning."
+      ],
+      "nvflare": {
+        "expected_skill": null,
+        "negative_for": "nvflare-convert-lightning",
+        "prohibited_behavior": [
+          {
+            "id": "no-lightning-conversion-for-ddp-only-request",
+            "description": "does not invoke Lightning conversion for a DDP-only request without federation intent"
+          }
+        ]
+      }
+    },
+    {
+      "id": "lightning-negative-profiling",
+      "prompt": "Profile and speed up this Lightning training loop. Do not federate it or convert it to NVFLARE.",
+      "expected_output": "The Lightning conversion skill does not trigger for profiling or performance work without federated conversion intent.",
+      "files": [
+        "files/hello-lightning/train.py",
+        "files/hello-lightning/model.py"
+      ],
+      "assertions": [
+        "The selected skill is not nvflare-convert-lightning.",
+        "The agent does not start an NVFLARE conversion merely because the profiled code uses Lightning."
+      ],
+      "nvflare": {
+        "expected_skill": null,
+        "negative_for": "nvflare-convert-lightning",
+        "prohibited_behavior": [
+          {
+            "id": "no-lightning-conversion-for-profiling",
+            "description": "does not invoke Lightning conversion for profiling or performance tuning without federation intent"
+          }
+        ]
+      }
+    },
+    {
+      "id": "lightning-negative-inference-serving",
+      "prompt": "Wrap this Lightning model in a FastAPI inference server. This is serving work, not federated training.",
+      "expected_output": "The Lightning conversion skill does not trigger for inference-serving work without federated conversion intent.",
+      "files": [
+        "files/hello-lightning/train.py",
+        "files/hello-lightning/model.py"
+      ],
+      "assertions": [
+        "The selected skill is not nvflare-convert-lightning.",
+        "The agent does not start an NVFLARE conversion merely because the served model uses Lightning."
+      ],
+      "nvflare": {
+        "expected_skill": null,
+        "negative_for": "nvflare-convert-lightning",
+        "prohibited_behavior": [
+          {
+            "id": "no-lightning-conversion-for-inference-serving",
+            "description": "does not invoke Lightning conversion for inference-serving work without federation intent"
+          }
+        ]
+      }
+    },
+    {
+      "id": "lightning-negative-training-loop-change",
+      "prompt": "Add early stopping and a cosine learning-rate scheduler to this Lightning Trainer. Do not turn it into a federated job.",
+      "expected_output": "The Lightning conversion skill does not trigger for an ordinary Lightning training-loop change without federated conversion intent.",
+      "files": [
+        "files/hello-lightning/train.py",
+        "files/hello-lightning/model.py"
+      ],
+      "assertions": [
+        "The selected skill is not nvflare-convert-lightning.",
+        "The agent does not start an NVFLARE conversion for ordinary callbacks or scheduler changes."
+      ],
+      "nvflare": {
+        "expected_skill": null,
+        "negative_for": "nvflare-convert-lightning",
+        "prohibited_behavior": [
+          {
+            "id": "no-lightning-conversion-for-training-loop-change",
+            "description": "does not invoke Lightning conversion for callbacks, early stopping, or scheduler changes without federation intent"
+          }
+        ]
+      }
+    },
+    {
+      "id": "lightning-negative-tensorflow-keras",
+      "prompt": "Convert my TensorFlow/Keras training workflow to an NVFLARE federated job. The Lightning files in this workspace are unrelated and must not be used.",
+      "expected_output": "The Lightning conversion skill does not trigger because the requested training owner is TensorFlow/Keras, outside this PyTorch Lightning converter.",
+      "files": [
+        "files/hello-lightning/train.py",
+        "files/hello-lightning/model.py"
+      ],
+      "assertions": [
+        "The selected skill is not nvflare-convert-lightning.",
+        "The agent does not substitute unrelated Lightning source for the explicitly requested TensorFlow/Keras workflow."
+      ],
+      "nvflare": {
+        "expected_skill": null,
+        "negative_for": "nvflare-convert-lightning",
+        "prohibited_behavior": [
+          {
+            "id": "no-lightning-conversion-for-tensorflow-keras",
+            "description": "does not invoke the PyTorch Lightning converter for an explicitly requested TensorFlow/Keras workflow"
           }
         ]
       }
