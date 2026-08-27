@@ -139,8 +139,8 @@ Use `run_script()` only during the validation phase after loading `references/hu
 - Must follow the Client API initialization and conditional rank contract in
   `../nvflare-shared/references/conversion-common.md`. Do not make rank a client
   argument for the standard single-process path. Only a distributed
-  multi-process launch requires a resolved global process rank; load
-  `references/huggingface-state-and-distributed.md` for that path.
+  multi-process launch requires the asset to resolve the global process rank;
+  load `references/huggingface-state-and-distributed.md` for that path.
 - Must preserve source evaluation. When per-round global-model evaluation is
   required, call `trainer.evaluate()` before `trainer.train()` on every rank.
   Do not invent `compute_metrics`, label mappings, averaging denominators, or

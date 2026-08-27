@@ -12,10 +12,13 @@ Keep ``evaluate_before_train=True`` when source-backed per-round evaluation or
 best-model selection is required. Set it to ``False`` only for a valid
 train-only source path.
 
-This standard asset assumes one training process per site. For a preserved
-distributed multi-process launch, adapt Client API initialization using
+The entry is rankless for CPU, single-GPU, and other single-process training.
+With an initialized multi-process group, it passes
+``torch.distributed.get_rank()`` to FLARE. For a preserved multi-GPU launch, follow
 ``references/huggingface-state-and-distributed.md``.
 """
+
+import torch.distributed as dist
 
 import nvflare.client.hf as flare
 
@@ -28,8 +31,13 @@ def make_hf_argument_parser(dataclass_types):
 
 
 def main(trainer_factory, *, evaluate_before_train=True):
-    """Run one persistent patched Trainer in a single training process."""
-    flare.init()
+    """Run one persistent patched Trainer in single-process or distributed mode."""
+    if dist.is_available() and dist.is_initialized() and dist.get_world_size() > 1:
+        flare.init(rank=dist.get_rank())
+    else:
+        # CPU and single-GPU runs stay rankless. Under torchrun, flare.init()
+        # resolves the global RANK environment value.
+        flare.init()
     trainer = trainer_factory()
     flare.patch(trainer)
 

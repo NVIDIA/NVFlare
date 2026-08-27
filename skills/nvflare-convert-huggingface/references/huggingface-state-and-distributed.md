@@ -60,11 +60,12 @@ argument to a standard single-process conversion.
 
 Initialize `torch.distributed` before `flare.patch(trainer)` whenever
 `WORLD_SIZE` or `LOCAL_WORLD_SIZE` is greater than one. Resolve global rank from
-the initialized process group or global `RANK`, not `LOCAL_RANK`, and pass it to
-`flare.init(rank=global_rank)`. If the generated entry exposes rank as an
-argument, make it required and verify that the preserved distributed launcher
-supplies it. `LOCAL_RANK` selects the local device and may differ from global
-`RANK` on multi-node launches; do not pass it as the FLARE rank.
+the initialized process group or global `RANK`, not `LOCAL_RANK`. The maintained
+asset passes `torch.distributed.get_rank()` to `flare.init(...)` when the group
+is already initialized; otherwise `flare.init()` resolves global `RANK`, and
+`flare.patch(trainer)` verifies the rank after Trainer initialization.
+`LOCAL_RANK` selects the local device and may differ from global `RANK` on
+multi-node launches; do not pass it as the FLARE rank.
 
 Every rank must execute the same generated sequence of patched methods. If the
 source-backed loop evaluates before training, all ranks call

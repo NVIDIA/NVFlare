@@ -44,10 +44,12 @@ so every `flare.*` call below resolves to `nvflare.client.hf`.
 
 Follow the framework-neutral Client API initialization and rank contract in
 `../../nvflare-shared/references/conversion-common.md`. The standard
-single-process asset calls `flare.init()` with no rank argument. For a preserved
-distributed multi-process launch, load
-`huggingface-state-and-distributed.md` and pass its resolved global process rank
-to `flare.init(...)`. In either path, initialize explicitly before
+single-process path calls `flare.init()` with no rank argument. When a process
+group is already initialized with world size greater than one, the same asset
+passes `torch.distributed.get_rank()` to `flare.init(...)`. Otherwise the Client
+API resolves torchrun's global `RANK` environment value, and `flare.patch()`
+verifies it after Trainer initialization. For a preserved multi-GPU launch,
+load `huggingface-state-and-distributed.md`. In either path, initialize before
 `flare.get_site_name()`, `flare.get_config()`, or other Client API context
 access that occurs before `patch()`. The patch initializes the Client API when
 no earlier context access is needed.

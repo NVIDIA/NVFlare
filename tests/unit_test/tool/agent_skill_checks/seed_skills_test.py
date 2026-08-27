@@ -834,11 +834,11 @@ def test_client_api_rank_contract_is_shared_and_process_conditional():
 
     assert "def main(trainer_factory, *, evaluate_before_train=True)" in hf_client
     assert "flare.init()" in hf_client
-    assert "flare.init(rank=" not in hf_client
+    assert "flare.init(rank=dist.get_rank())" in hf_client
     assert "framework-neutral global-rank contract" in normalized_hf_state
     assert "do not add a rank argument to a standard single-process conversion" in normalized_hf_state
     assert "framework-neutral global-rank contract" in normalized_lightning_ddp
-    assert "flare.init(rank=global_rank)" in hf_state
+    assert "passes `torch.distributed.get_rank()` to `flare.init(...)`" in normalized_hf_state
     assert "flare.init(rank=global_rank)" in lightning_ddp
 
     lightning_evals = json.loads(
@@ -1382,7 +1382,7 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "flare.patch(trainer)" in client_template
     assert "def main(trainer_factory, *, evaluate_before_train=True)" in client_template
     assert "flare.init()" in client_template
-    assert "flare.init(rank=" not in client_template
+    assert "flare.init(rank=dist.get_rank())" in client_template
     assert "HfArgumentParser(dataclass_types, allow_abbrev=False)" in client_template
     assert "while flare.is_running()" in client_template
     assert "return model" in server_model_template
@@ -1423,8 +1423,8 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "Do not first run an unconditional full-state equality assertion" in normalized_validation
     assert "two-process `torchrun` case" in normalized_validation
     assert "This section applies only to a preserved distributed multi-process launch" in normalized_state
-    assert "standard single-process conversion" in normalized_state
-    assert "verify that the preserved distributed launcher supplies it" in normalized_state
+    assert "do not add a rank argument to a standard single-process conversion" in normalized_state
+    assert "`flare.patch(trainer)` verifies the rank after Trainer initialization" in normalized_state
     assert "do not pass it as the FLARE rank" in normalized_state
     basic_mandatory = {item["id"]: item["description"] for item in basic_eval["mandatory_behavior"]}
     ddp_mandatory = {item["id"]: item["description"] for item in ddp_eval["mandatory_behavior"]}
