@@ -1019,8 +1019,6 @@ def test_huggingface_preflights_and_metric_reporting_do_not_create_false_recover
     assert "do not append Hugging Face cache or filesystem discovery" in normalized_hf_skill
     assert "Defer model and dataset availability checks to the maintained resolver" in normalized_hf_skill
     assert "report a missing directory with exit code zero" in normalized_hf_skill
-    assert "Run the final simulation with `run_in_background: false`" in normalized_hf_skill
-    assert "never finalize with an active simulation" in normalized_hf_skill
     assert "rerun its resolver once with the matching canonical invocation" in normalized_hf_validation
     assert "`../scripts/resolve_model_snapshot.py`" in hf_validation
     assert "`--source local`" in hf_validation
@@ -1086,7 +1084,28 @@ def test_orientation_routes_only_unresolved_explicit_conversions():
     assert "no-orient-for-single-owner-conversion" in prohibited_ids
 
 
-def test_lightning_conversion_trigger_contract_includes_adjacent_negative_evals():
+def test_shared_validation_requires_foreground_final_simulation():
+    repo_root = Path(__file__).resolve().parents[4]
+    shared_validation = " ".join(
+        repo_root.joinpath("skills/nvflare-shared/references/validation-evidence.md")
+        .read_text(encoding="utf-8")
+        .split()
+    )
+    hf_skill = " ".join(
+        repo_root.joinpath("skills/nvflare-convert-huggingface/SKILL.md").read_text(encoding="utf-8").split()
+    )
+    lightning_skill = " ".join(
+        repo_root.joinpath("skills/nvflare-convert-lightning/SKILL.md").read_text(encoding="utf-8").split()
+    )
+
+    assert "Run the final simulation with `run_in_background: false`" in shared_validation
+    assert "never finalize with an active simulation" in shared_validation
+    assert "../nvflare-shared/references/validation-evidence.md" in hf_skill
+    assert "../nvflare-shared/references/validation-evidence.md" in lightning_skill
+    assert "run_in_background: false" not in hf_skill
+
+
+def test_lightning_conversion_trigger_contract_includes_positive_and_adjacent_negative_evals():
     """Keep the externally executed routing cases tied to the skill trigger contract.
 
     Skill selection is performed by the agent/model, not by an in-repo router.
@@ -1104,9 +1123,18 @@ def test_lightning_conversion_trigger_contract_includes_adjacent_negative_evals(
         "lightning-negative-training-loop-change",
         "lightning-negative-tensorflow-keras",
     }
+    implicit_positive = _eval_by_id(eval_data, "lightning-positive-implicit-federation-intent")
 
     assert "use only when the request expresses federated or NVFLARE conversion intent" in description
     assert "Lightning source evidence alone is not sufficient" in skill_text
+    implicit_prompt = implicit_positive["prompt"].lower()
+    assert all(term not in implicit_prompt for term in ("flare", "nvflare", "federat"))
+    assert all(phrase in implicit_prompt for phrase in ("collaboratively", "hospitals", "without moving"))
+    assert implicit_positive["files"]
+    assert implicit_positive["nvflare"]["expected_skill"] == "nvflare-convert-lightning"
+    assert "implicit-federation-intent-recall" in {
+        item["id"] for item in implicit_positive["nvflare"]["mandatory_behavior"]
+    }
     for eval_id in negative_eval_ids:
         negative_eval = _eval_by_id(eval_data, eval_id)
         assert negative_eval["files"]

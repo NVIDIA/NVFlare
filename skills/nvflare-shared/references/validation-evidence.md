@@ -59,10 +59,10 @@ exported-job validation.
 
 ## Terminal Simulation Evidence
 
-The hard rule — the final validation must run in the foreground and finish in the
-same step before you report success — lives in `conversion-workflow.md` ("Final
-Validation Run Must Finish Before You Finalize"). This section covers the success
-evidence to collect once it finishes.
+Run the final simulation with `run_in_background: false`; never finalize with an
+active simulation. This framework-neutral rule applies to every converter that
+loads this reference. The final validation must finish in the same step before
+you report success.
 
 Prefer foreground execution for the final run. Do not depend on a background
 task notifying you after your final answer: in a non-interactive run the task

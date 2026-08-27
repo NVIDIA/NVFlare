@@ -752,6 +752,29 @@
       }
     },
     {
+      "id": "lightning-positive-implicit-federation-intent",
+      "prompt": "Train this collaboratively across 3 hospitals without moving their data. Use the existing Lightning Trainer and show the combined validation result.",
+      "expected_output": "The Lightning conversion skill triggers because collaborative training across hospitals without moving data expresses cross-site privacy-preserving training intent, and source inspection confirms Lightning ownership.",
+      "files": [
+        "files/hello-lightning/train.py",
+        "files/hello-lightning/model.py"
+      ],
+      "assertions": [
+        "The selected skill is nvflare-convert-lightning even though the request does not name FLARE, NVFLARE, or federated learning.",
+        "The agent confirms Lightning ownership from source inspection before conversion.",
+        "The agent converts the collaborative three-hospital request into a three-site privacy-preserving training job."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-convert-lightning",
+        "mandatory_behavior": [
+          {
+            "id": "implicit-federation-intent-recall",
+            "description": "recognizes collaborative cross-hospital training without moving data as federation intent after Lightning ownership is confirmed"
+          }
+        ]
+      }
+    },
+    {
       "id": "lightning-negative-ddp-without-federation",
       "prompt": "Add DistributedDataParallel on 4 GPUs to this Lightning training project. Keep it non-federated and do not convert it to NVFLARE.",
       "expected_output": "The Lightning conversion skill does not trigger because the request is distributed-training work without federated or NVFLARE conversion intent.",
