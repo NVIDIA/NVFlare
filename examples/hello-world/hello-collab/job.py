@@ -110,6 +110,9 @@ class FedAvg:
 
 
 def make_recipe(args):
+    if args.num_rounds < 1:
+        raise ValueError("FedAvg requires at least 1 round.")
+
     recipe = CollabRecipe(
         job_name="hello_fedavg",
         server=FedAvg(num_rounds=args.num_rounds),
