@@ -18,8 +18,11 @@ additions also shipped this release; see `Also in This Release`_ below.
 Agent Skills
 ============
 
-FLARE Agent Skills help coding agents turn an existing training project into a
-reviewable federated job:
+FLARE Agent Skills fall into two categories:
+
+**Conversion skills** turn an existing training project into a reviewable
+federated job — PyTorch, PyTorch Lightning, and Hugging Face Trainer are
+currently supported:
 
 1. identify the owning framework
 2. preserve the training and evaluation semantics
@@ -27,22 +30,28 @@ reviewable federated job:
 4. validate the generated artifact
 5. report evidence
 
-The skills also cover federated statistics, Auto-FL research assistance, and
-job diagnostics, with explicit safeguards for site-local data and
-preprocessing. Install and invoke them through a coding agent as described in
-:doc:`/user_guide/agent_skills/index` (see :ref:`autofl_skill` for the Auto-FL
-workflow); start with the :github_nvflare_link:`runnable Agent Skills examples
+**Diagnostic and research skills** operate on jobs that already exist:
+
+- federated statistics, tabular and image
+- job diagnostics
+- Auto-FL research assistance — automated, budget-aware campaign optimization
+
+All skills run behind a security-evaluation gate (prompt-injection and
+untrusted-input eval suites) and include explicit safeguards for site-local
+data and preprocessing. Install and invoke them through a coding agent as
+described in :doc:`/user_guide/agent_skills/index` (see :ref:`autofl_skill`
+for the Auto-FL workflow); start with the
+:github_nvflare_link:`runnable Agent Skills examples
 <examples/hello-world/agent-skills>` to try the conversion and
 federated-statistics workflows.
 
 Agent Skills are developer tooling, not a runtime FL API or a substitute for
 code review and job validation:
 
-- The conversion skills currently target standard PyTorch, PyTorch Lightning,
-  and Hugging Face Trainer workflows.
-- They preserve explicitly supported Recipe and Client API paths.
-- They ask or stop, rather than guess, when framework ownership, source
-  semantics, required data handling, or runtime configuration is ambiguous.
+- Conversion skills preserve explicitly supported Recipe and Client API
+  paths, and ask or stop, rather than guess, when framework ownership,
+  source semantics, required data handling, or runtime configuration is
+  ambiguous.
 - Auto-FL's initial importer similarly supports statically recognizable
   NVFLARE Recipe and ``*Job`` patterns.
 
@@ -53,7 +62,10 @@ The Collaboration API provides a Python-first way to express custom federated
 algorithms: decorate the functions that a server or client publishes, write
 the coordination logic in ordinary Python, and use ``CollabRecipe`` to
 package, export, simulate, or submit the result. This suits research
-workflows that don't fit a standard controller pattern. New examples:
+workflows that don't fit a standard controller pattern. Every Collab call is
+now authorized against the caller's authenticated CellNet origin before
+dispatch, rejecting a caller, method, or target that doesn't match the call
+envelope. New examples:
 
 - :github_nvflare_link:`Hello Collab <examples/hello-world/hello-collab>` —
   a minimal FedAvg workflow
@@ -69,10 +81,11 @@ HPC and Large-Model Training
 Slurm Job Launcher
 -------------------
 
-FLARE 2.9.0 adds Slurm-native job execution for HPC environments. A long-lived
-NVFLARE parent submits each client or server job process as a Slurm batch job;
-Slurm selects resources while FLARE manages the federated job lifecycle. The
-launcher supports:
+FLARE 2.9.0 adds Slurm-native job execution for HPC environments — a new
+execution target alongside the existing process, Docker, and Kubernetes
+launchers. A long-lived NVFLARE parent submits each client or server job
+process as a Slurm batch job; Slurm selects resources while FLARE manages the
+federated job lifecycle. The launcher supports:
 
 - Apptainer, Pyxis/Enroot, and bare-Python execution backends
 - GPU-aware worker setup and multi-node applications
