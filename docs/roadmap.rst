@@ -50,11 +50,6 @@ FLARE 2.10.0 — Target: Early 2027
   identity, action name, and job ID as one flat text line; possible gaps
   include artifact-level detail, site identity, and a structured,
   queryable format.
-- **AI Agents in Federated Data Networks** — Cover sites whose data isn't
-  mapped to a shared schema yet: reach sites outside existing
-  standardization programs, adaptively discover unmapped data, turn
-  ambiguous questions into queries within FLARE's allowlisted sandbox, and
-  reconcile same-schema/different-labeling mismatches across sites.
 
 **************************
 Research Directions
