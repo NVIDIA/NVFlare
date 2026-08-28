@@ -30,7 +30,12 @@ from nvflare.fuel.f3.cellnet.core_cell import FQCN
 from nvflare.fuel.f3.cellnet.defs import ReturnCode
 from nvflare.private.defs import CellChannel, CellChannelTopic, JobFailureMsgKey
 from nvflare.private.fed.client.client_engine import ClientEngine
-from nvflare.private.fed.client.client_executor import REPORTABLE_JOB_FAILURES, JobExecutor, _PendingJobHandle
+from nvflare.private.fed.client.client_executor import (
+    _ABORT_REQUESTED_KEY,
+    REPORTABLE_JOB_FAILURES,
+    JobExecutor,
+    _PendingJobHandle,
+)
 from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.client.communicator import Communicator
 
@@ -60,6 +65,7 @@ def test_abort_app_terminates_starting_job_without_worker_command():
 
     job_handle.terminate.assert_called_once_with()
     client.cell.fire_and_forget.assert_not_called()
+    assert job_executor.run_processes["job-1"][_ABORT_REQUESTED_KEY]
 
 
 @pytest.mark.parametrize("heartbeat_cleanup", [False, True], ids=["admin_abort", "server_cleanup"])
@@ -611,15 +617,20 @@ def test_wait_child_process_preserves_launcher_infrastructure_error_over_rc_file
 
 
 @pytest.mark.parametrize(
-    ("return_code", "process_status", "expected_code"),
+    ("return_code", "process_status", "abort_requested", "expected_code"),
     [
-        (JobReturnCode.SUCCESS, ClientStatus.STARTING, JobReturnCode.SUCCESS),
-        (JobReturnCode.UNKNOWN, ClientStatus.STARTING, JobReturnCode.UNKNOWN),
-        (JobReturnCode.EXECUTION_ERROR, ClientStatus.STARTED, JobReturnCode.EXECUTION_ERROR),
-        (JobReturnCode.EXECUTION_ERROR, ClientStatus.STARTING, ProcessExitCode.INFRASTRUCTURE_ERROR),
+        (JobReturnCode.SUCCESS, ClientStatus.STARTING, False, JobReturnCode.SUCCESS),
+        (JobReturnCode.UNKNOWN, ClientStatus.STARTING, False, JobReturnCode.UNKNOWN),
+        (JobReturnCode.UNKNOWN, ClientStatus.STARTED, False, JobReturnCode.UNKNOWN),
+        (JobReturnCode.EXECUTION_ERROR, ClientStatus.STARTING, False, ProcessExitCode.INFRASTRUCTURE_ERROR),
+        (JobReturnCode.EXECUTION_ERROR, ClientStatus.STARTED, False, ProcessExitCode.EXCEPTION),
+        (JobReturnCode.EXECUTION_ERROR, ClientStatus.STOPPED, False, JobReturnCode.EXECUTION_ERROR),
+        (JobReturnCode.EXECUTION_ERROR, ClientStatus.STARTING, True, JobReturnCode.EXECUTION_ERROR),
+        (JobReturnCode.EXECUTION_ERROR, ClientStatus.STARTED, True, JobReturnCode.EXECUTION_ERROR),
+        (JobReturnCode.ABORTED, ClientStatus.STARTED, False, JobReturnCode.ABORTED),
     ],
 )
-def test_wait_child_process_reports_terminal_return_code(return_code, process_status, expected_code):
+def test_wait_child_process_reports_terminal_return_code(return_code, process_status, abort_requested, expected_code):
     client = MagicMock()
     client.client_name = "site-1"
     client.send_request_before_shutdown.return_value.get_header.return_value = ReturnCode.OK
@@ -630,6 +641,7 @@ def test_wait_child_process_reports_terminal_return_code(return_code, process_st
         "job-1": {
             RunProcessKey.JOB_HANDLE: job_handle,
             RunProcessKey.STATUS: process_status,
+            _ABORT_REQUESTED_KEY: abort_requested,
         }
     }
 
@@ -651,6 +663,7 @@ def test_wait_child_process_reports_terminal_return_code(return_code, process_st
     client.send_request_before_shutdown.assert_called_once()
     payload = client.send_request_before_shutdown.call_args.kwargs["request"].payload
     assert payload[JobFailureMsgKey.CODE] == expected_code
+    assert payload[JobFailureMsgKey.REASON] == REPORTABLE_JOB_FAILURES.get(expected_code)
     assert "job-1" not in job_executor.run_processes
     engine.fire_event.assert_called_once_with(EventType.JOB_COMPLETED, fl_ctx)
 

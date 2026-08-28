@@ -12,6 +12,11 @@ only covers Lightning behavior after that decision.
 
 ## Rank-Synchronized Round Loop
 
+Before patching under DDP, apply the framework-neutral global-rank contract in
+`../../nvflare-shared/references/conversion-common.md`: resolve the global
+process rank from the initialized process group or global `RANK`, never
+`LOCAL_RANK`, and pass it to `flare.init(rank=global_rank)`.
+
 Under DDP, only rank 0 communicates with the FL server, so all ranks must agree
 on whether to continue. Broadcast `flare.is_running()` from rank 0 before each
 round, and let the patched trainer callback receive and broadcast the model

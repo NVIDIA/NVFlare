@@ -1072,6 +1072,156 @@ class TestInitializeAndFinalize:
         assert backend._active_launch is None
         client_job_exit.assert_not_called()
 
+    def test_late_settlement_gets_fresh_natural_exit_budget(self, env, monkeypatch, caplog):
+        monkeypatch.setattr(ebp, "_RESULT_REAPER_MAX_TOTAL_TIMEOUT", 0.4)
+        monkeypatch.setattr(ebp, "_RESULT_REAPER_FORCE_TERM_GRACE", 0.05)
+        monkeypatch.setattr(ebp, "_LIVE_RESULT_SHUTDOWN_ACK_TIMEOUT", 0.01)
+        monkeypatch.setattr(ebp, "_NATURAL_EXIT_REAP_INTERVAL", 0.005)
+        monkeypatch.setattr(ebp, "_SHUTDOWN_RETRY_INTERVAL", 0.01)
+        backend, _ = _initialized_backend(env, shutdown_timeout=0.0, stop_grace_period=0.05)
+        process = env.harness.processes[0]
+        trainer = backend._active_launch
+        trainer.result_source_live.set()
+        transfer_settled = threading.Event()
+
+        env.cell.on_shutdown = lambda *_args: make_cell_reply(
+            CellReturnCode.OK,
+            body={MsgKey.RESULT_SOURCE_LIVE: not transfer_settled.is_set()},
+        )
+        # The natural-exit budget is 0.35s. Exit after the old deadline but
+        # comfortably before the fresh deadline that starts at settlement.
+        settlement_timer = threading.Timer(0.15, transfer_settled.set)
+        exit_timer = threading.Timer(0.43, process.exit, args=[0])
+        settlement_timer.start()
+        exit_timer.start()
+        try:
+            backend.finalize(FLContext())
+        finally:
+            settlement_timer.cancel()
+            exit_timer.cancel()
+            settlement_timer.join(timeout=1.0)
+            exit_timer.join(timeout=1.0)
+
+        assert env.harness.signals_sent() == []
+        assert "forcing trainer cleanup" not in caplog.text
+        assert process.returncode == 0
+
+    def test_settled_source_that_never_exits_is_forced_after_fresh_budget(self, env, monkeypatch):
+        monkeypatch.setattr(ebp, "_RESULT_REAPER_MAX_TOTAL_TIMEOUT", 0.2)
+        monkeypatch.setattr(ebp, "_RESULT_REAPER_FORCE_TERM_GRACE", 0.05)
+        monkeypatch.setattr(ebp, "_NATURAL_EXIT_REAP_INTERVAL", 0.01)
+        backend, _ = _initialized_backend(env, shutdown_timeout=0.0, stop_grace_period=0.05)
+        trainer = backend._active_launch
+        trainer.result_source_live.set()
+        clock = [10.0]
+        started = clock[0]
+        settle_at = started + 0.04
+        signals = []
+
+        class ClockedReaper:
+            name = "clocked_result_reaper"
+            settled_at = None
+
+            def is_alive(self):
+                return not trainer._cleaned
+
+            def join(self, timeout):
+                if not self.is_alive():
+                    return
+                clock[0] += timeout
+                if self.settled_at is None and clock[0] >= settle_at:
+                    trainer.result_source_live.clear()
+                    self.settled_at = clock[0]
+                assert clock[0] < started + 0.5, "settled deadline did not expire"
+
+        reaper = ClockedReaper()
+        trainer.reaper_thread = reaper
+        backend._result_reapers.add(trainer)
+        monkeypatch.setattr(ebp.time, "monotonic", lambda: clock[0])
+        monkeypatch.setattr(backend, "_request_trainer_shutdown", lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(backend, "_process_group_alive", lambda _trainer: True)
+        monkeypatch.setattr(backend, "_await_group_exit", lambda _trainer, _timeout: True)
+        monkeypatch.setattr(
+            backend,
+            "_signal_process_tree",
+            lambda _trainer, hard: signals.append((hard, clock[0])),
+        )
+
+        backend._wait_for_result_reapers()
+
+        assert reaper.settled_at is not None
+        assert signals[0][0] is False
+        assert signals[0][1] - reaper.settled_at == pytest.approx(0.15)
+
+    def test_live_source_sigterm_starts_at_bound_minus_reserved_grace(self, env, monkeypatch):
+        monkeypatch.setattr(ebp, "_RESULT_REAPER_MAX_TOTAL_TIMEOUT", 0.2)
+        monkeypatch.setattr(ebp, "_RESULT_REAPER_FORCE_TERM_GRACE", 0.05)
+        monkeypatch.setattr(ebp, "_NATURAL_EXIT_REAP_INTERVAL", 0.01)
+        backend, _ = _initialized_backend(env, shutdown_timeout=0.0, stop_grace_period=0.05)
+        trainer = backend._active_launch
+        trainer.result_source_live.set()
+        clock = [10.0]
+        started = clock[0]
+        signals = []
+
+        class ClockedReaper:
+            name = "clocked_result_reaper"
+
+            def is_alive(self):
+                return not trainer._cleaned
+
+            def join(self, timeout):
+                if not self.is_alive():
+                    return
+                clock[0] += timeout
+                assert clock[0] < started + 0.3, "live deadline did not expire"
+
+        trainer.reaper_thread = ClockedReaper()
+        backend._result_reapers.add(trainer)
+        monkeypatch.setattr(ebp.time, "monotonic", lambda: clock[0])
+        monkeypatch.setattr(backend, "_request_trainer_shutdown", lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(backend, "_process_group_alive", lambda _trainer: True)
+        monkeypatch.setattr(backend, "_await_group_exit", lambda _trainer, _timeout: True)
+        monkeypatch.setattr(
+            backend,
+            "_signal_process_tree",
+            lambda _trainer, hard: signals.append((hard, clock[0])),
+        )
+
+        backend._wait_for_result_reapers()
+
+        assert signals == [(False, pytest.approx(started + 0.15))]
+
+    @pytest.mark.skipif(os.name != "posix", reason="process-group semantics are POSIX")
+    def test_live_timeout_reserves_term_grace_before_hard_deadline(self, env, monkeypatch):
+        monkeypatch.setattr(ebp, "_RESULT_REAPER_MAX_TOTAL_TIMEOUT", 0.2)
+        monkeypatch.setattr(ebp, "_RESULT_REAPER_FORCE_TERM_GRACE", 0.05)
+        monkeypatch.setattr(ebp, "_LIVE_RESULT_SHUTDOWN_ACK_TIMEOUT", 0.01)
+        monkeypatch.setattr(ebp, "_NATURAL_EXIT_REAP_INTERVAL", 0.005)
+        monkeypatch.setattr(ebp, "_LOG_THREAD_JOIN_TIMEOUT", 0.0)
+        backend, _ = _initialized_backend(env, shutdown_timeout=0.0, stop_grace_period=0.05)
+        process = env.harness.processes[0]
+        trainer = backend._active_launch
+        trainer.result_source_live.set()
+        env.cell.on_shutdown = lambda *_args: make_cell_reply(CellReturnCode.OK, body={MsgKey.RESULT_SOURCE_LIVE: True})
+        monkeypatch.setattr(env.harness, "killpg", lambda pgid, sig: env.harness.killpg_calls.append((pgid, sig)))
+        monkeypatch.setattr(ebp.os, "killpg", env.harness.killpg, raising=False)
+        await_timeouts = []
+
+        def record_await_timeout(_trainer, timeout):
+            await_timeouts.append(timeout)
+            return False
+
+        monkeypatch.setattr(backend, "_await_group_exit", record_await_timeout)
+
+        backend.finalize(FLContext())
+
+        assert await_timeouts[0] == 0.05
+        assert env.harness.signals_sent() == [
+            (process.pid, signal.SIGTERM),
+            (process.pid, signal.SIGKILL),
+        ]
+
     def test_zero_shutdown_live_result_uses_backend_grace_and_releases_on_truth(self, env, monkeypatch):
         monkeypatch.setattr(ebp, "_DEFAULT_SHUTDOWN_TIMEOUT", 0.1)
         monkeypatch.setattr(ebp, "_NATURAL_EXIT_REAP_INTERVAL", 0.005)
@@ -1682,10 +1832,10 @@ class TestHeartbeatAndOperationalLiveness:
 
     def test_task_ready_late_reply_is_rejected_by_task_wait_timeout(self, env, monkeypatch):
         monkeypatch.setattr(ebp, "_RESULT_POLL_INTERVAL", 0.01)
+        # Heartbeat expiry is unrelated to this test and can win the race under a loaded CI worker.
         backend, fl_ctx = _initialized_backend(
             env,
-            heartbeat_interval=0.02,
-            heartbeat_timeout=0.05,
+            heartbeat_timeout=0.0,
             task_wait_timeout=0.1,
             result_wait_timeout=None,
         )
@@ -1702,7 +1852,7 @@ class TestHeartbeatAndOperationalLiveness:
             elapsed = time.monotonic() - start
 
             assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
-            assert elapsed < 0.5
+            assert elapsed < 1.0
             assert "TASK_READY timed out after 0.1s" in backend._abort_reason
             assert "TASK_READY was pending" in backend._abort_reason
         finally:

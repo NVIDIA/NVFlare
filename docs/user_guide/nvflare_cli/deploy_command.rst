@@ -14,6 +14,17 @@ Kubernetes clusters. Use ``nvflare provision`` or the distributed
 ``deploy prepare`` on each server or client kit that should run in Docker,
 Kubernetes, or Slurm.
 
+.. note::
+
+   The Kubernetes and Slurm runtimes secure the internal parent/job links
+   (SP/SJ and CP/CJ) with mTLS by default, and these links use the participant
+   certificate in both TLS roles. The certificate must therefore allow both
+   ``clientAuth`` and ``serverAuth`` in its extended key usage (EKU). Startup
+   kits whose certificates are restricted to a single role — for example, kits
+   created by NVFlare 2.8 distributed provisioning, which issues certificates
+   carrying only ``clientAuth`` or only ``serverAuth`` — must be re-provisioned
+   before using these runtimes. Kits whose certificates carry no EKU (unrestricted) remain compatible and do not need re-provisioning.
+
 For Kubernetes deployment workflow, see :ref:`helm_chart`. For the Slurm
 deployment workflow and security checklist, see :ref:`slurm_job_launcher`. For
 job-level runtime settings, see :ref:`launcher_spec`.
@@ -315,6 +326,45 @@ The resource names default to ``nvflare-local-<site>`` and
 ``nvflare-startup-<site>``. Override them with ``--local-configmap`` and
 ``--startup-secret``. The namespace defaults to the namespace written into the
 prepared kit's ``K8sJobLauncher`` config, or ``default`` when unavailable.
+
+``--namespace`` selects the target namespace; it does not create that
+namespace. Make sure the namespace already exists before staging. On initial
+staging, an explicit ``--namespace`` takes precedence over the namespace in the
+prepared kit. It controls where the ConfigMap and Secret are applied and the
+namespace in the printed Helm command, but it does not rewrite the
+``K8sJobLauncher`` namespace in ``local/resources.json.default``. Normally, use
+the same namespace that was configured for ``nvflare deploy prepare`` so the
+parent and dynamically launched job pods remain in the same namespace.
+
+The stage command records the resolved namespace and resource names in
+``helm_chart/values.yaml`` before invoking ``kubectl``. Recording them first
+preserves the exact cleanup targets if ``kubectl`` succeeds, partially
+succeeds, or fails. A later stage command without overrides reuses these
+recorded values. Restaging with an explicit namespace or resource name that
+differs from a recorded value is rejected. For example:
+
+.. code-block:: text
+
+   Initial staging:
+     stage --namespace old-ns
+     -> values.yaml records old-ns
+     -> kubectl may succeed, partially succeed, or fail
+
+   Restaging:
+     stage --namespace new-ns
+     -> rejected because values.yaml still records old-ns
+
+In this case, the error includes ``Prepared kit is already staged with a
+different namespace.`` To change the namespace safely, uninstall any Helm
+release that uses the staged resources, unstage the prepared kit, and then
+stage it in the new namespace:
+
+.. code-block:: shell
+
+   # After uninstalling any Helm release:
+   nvflare deploy k8 unstage <prepared-kit>
+
+   nvflare deploy k8 stage <prepared-kit> --namespace new-ns
 
 After this staging command succeeds, run the printed ``helm_command`` or the
 equivalent ``helm upgrade --install`` command for the prepared chart to start

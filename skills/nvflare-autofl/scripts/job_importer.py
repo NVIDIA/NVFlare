@@ -745,6 +745,20 @@ def inspect_job_cli_flags(job_path: str, job_args: Optional[Sequence[str]] = Non
     return sorted({flag for spec in parser_args.values() for flag in spec.flags if flag.startswith("--")})
 
 
+def inspect_job_cli_flag_aliases(job_path: str, job_args: Optional[Sequence[str]] = None) -> List[List[str]]:
+    """Return each reachable argparse option's flag spellings (short and long) as one sorted group."""
+
+    path = Path(job_path).resolve()
+    try:
+        source_text = path.read_text(encoding="utf-8")
+        tree = ast.parse(source_text, filename=str(path))
+        index = _ImportIndex.from_tree(tree, source_text)
+    except (OSError, UnicodeError, SyntaxError, RecursionError) as e:
+        raise JobImportError(f"failed to parse {path}: {e}") from e
+    parser_args, _ = _reachable_parser_args(tree, index, job_args or [])
+    return sorted(sorted(spec.flags) for spec in parser_args.values() if spec.flags)
+
+
 class _ImportIndex(ast.NodeVisitor):
     def __init__(self, source_text: str):
         self.source_text = source_text

@@ -43,6 +43,7 @@ from pathlib import PurePosixPath
 
 import yaml
 
+from nvflare.apis.fl_constant import ConnPropKey
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
@@ -514,9 +515,64 @@ def _get_bootstrap_tls_pair(startup_dir: str, owner_fqcn: str) -> tuple[str, str
     raise RuntimeError(f"workspace transfer requires cert/key files in startup dir: {startup_dir}")
 
 
+def _load_startup_json(startup_dir: str, filename: str) -> dict | None:
+    path = os.path.join(startup_dir, filename)
+    if not os.path.isfile(path):
+        return None
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, json.JSONDecodeError) as ex:
+        logger.warning("failed to load %s: %s", path, secure_format_exception(ex))
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _server_auth_identity(server_cfg) -> str | None:
+    if not isinstance(server_cfg, dict):
+        return None
+    identity = server_cfg.get(ConnPropKey.AUTH_IDENTITY, server_cfg.get(ConnPropKey.IDENTITY))
+    if isinstance(identity, str) and identity:
+        return identity
+    return None
+
+
+def _configured_auth_identity_map(section) -> dict:
+    if not isinstance(section, dict):
+        return {}
+    configured = section.get(ConnPropKey.AUTH_IDENTITY_MAP)
+    return dict(configured) if isinstance(configured, dict) else {}
+
+
+def _bootstrap_auth_identity_map(startup_dir: str) -> dict | None:
+    """Match the regular client job cell: map logical root FQCN to the provisioned server cert identity."""
+    identity_map = {}
+    server_identity = None
+
+    client_cfg = _load_startup_json(startup_dir, "fed_client.json")
+    if client_cfg:
+        servers = client_cfg.get("servers") or []
+        server_identity = _server_auth_identity(servers[0] if servers else None)
+        identity_map.update(_configured_auth_identity_map(client_cfg.get("client")))
+
+    server_cfg = _load_startup_json(startup_dir, "fed_server.json")
+    if server_cfg:
+        servers = server_cfg.get("servers") or []
+        first_server = servers[0] if servers else None
+        if not server_identity:
+            server_identity = _server_auth_identity(first_server)
+        identity_map.update(_configured_auth_identity_map(first_server))
+
+    if server_identity:
+        identity_map[FQCN.ROOT_SERVER] = server_identity
+
+    return identity_map or None
+
+
 def _create_bootstrap_cell(args, owner_fqcn: str, secure_mode: bool) -> tuple[Cell, NetAgent]:
     startup_dir = os.path.join(args.workspace, "startup")
     credentials = {}
+    auth_identity_map = None
     if secure_mode:
         root_ca = os.path.join(startup_dir, "rootCA.pem")
         if not os.path.exists(root_ca):
@@ -527,6 +583,7 @@ def _create_bootstrap_cell(args, owner_fqcn: str, secure_mode: bool) -> tuple[Ce
             cert_key: cert_path,
             key_key: key_path,
         }
+        auth_identity_map = _bootstrap_auth_identity_map(startup_dir)
 
     parent_resources = {}
     parent_conn_sec = getattr(args, "parent_conn_sec", "")
@@ -542,6 +599,7 @@ def _create_bootstrap_cell(args, owner_fqcn: str, secure_mode: bool) -> tuple[Ce
         create_internal_listener=False,
         parent_url=args.parent_url,
         parent_resources=parent_resources or None,
+        auth_identity_map=auth_identity_map,
     )
     # Install auth headers BEFORE cell.start(): the cell's initial
     # cellnet.channel registration handshake fires during start(), and the

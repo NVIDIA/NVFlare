@@ -115,6 +115,8 @@ class _MockConnection:
 
     def append_error(self, msg, meta=None):
         self.errors.append((msg, meta))
+        if meta:
+            self.update_meta(meta)
 
     def append_string(self, msg, meta=None):
         self.strings.append((msg, meta))
@@ -1711,6 +1713,26 @@ def test_configure_job_log_all_targets_server_and_clients(tmp_path, monkeypatch)
     assert not conn.meta
 
 
+def test_configure_job_log_all_handles_no_connected_clients(tmp_path, monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "ServerEngine", _FakeServerEngine)
+    workspace = _FakeWorkspace(tmp_path)
+    engine = _FakeServerEngine(workspace)
+    engine.job_def_manager.get_job.return_value = _FakeListedJob({JobMetaKey.STATUS.value: RunStatus.RUNNING.value})
+    conn = _MockConnection(
+        app_ctx=engine,
+        props={JobCommandModule.TARGET_CLIENT_TOKENS: [], JobCommandModule.TARGET_CLIENTS: {}},
+    )
+
+    JobCommandModule().configure_job_log(conn, ["configure_job_log", "job-1", "all", "DEBUG"])
+
+    engine.configure_job_log.assert_called_once_with("job-1", "DEBUG")
+    assert ("no responses from clients", None) in conn.strings
+    assert len(conn.tables) == 1
+    assert conn.tables[0].rows == []
+    assert not conn.errors
+    assert not conn.meta
+
+
 def test_configure_job_log_specific_client_target_is_honored(tmp_path, monkeypatch):
     monkeypatch.setattr(cmd_utils_module, "ServerEngineSpec", object)
     monkeypatch.setattr(job_cmds_module, "ServerEngine", _FakeServerEngine)
@@ -1778,6 +1800,7 @@ def test_configure_job_log_client_failure_sets_error_meta(tmp_path, monkeypatch,
     assert conn.meta[MetaKey.STATUS] == MetaStatusValue.ERROR
     assert "site-a" in conn.meta[MetaKey.INFO]
     assert expected_info in conn.meta[MetaKey.INFO]
+    assert conn.errors == [(conn.meta[MetaKey.INFO], conn.meta)]
 
 
 def test_configure_job_log_no_client_responses_sets_error_meta(tmp_path, monkeypatch):
@@ -1798,6 +1821,7 @@ def test_configure_job_log_no_client_responses_sets_error_meta(tmp_path, monkeyp
         MetaKey.STATUS: MetaStatusValue.ERROR,
         MetaKey.INFO: "site-a: no reply",
     }
+    assert conn.errors == [("site-a: no reply", conn.meta)]
 
 
 def test_configure_job_log_partial_client_responses_set_error_meta(tmp_path, monkeypatch):
@@ -1819,6 +1843,7 @@ def test_configure_job_log_partial_client_responses_set_error_meta(tmp_path, mon
         MetaKey.STATUS: MetaStatusValue.ERROR,
         MetaKey.INFO: "site-b: no reply",
     }
+    assert conn.errors == [("site-b: no reply", conn.meta)]
 
 
 def test_authorize_job_id_hides_jobs_from_other_studies(monkeypatch):

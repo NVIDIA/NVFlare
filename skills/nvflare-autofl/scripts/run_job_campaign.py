@@ -2113,12 +2113,166 @@ def build_fixed_args(config: Dict[str, Any], help_text: str, schema: Dict[str, A
     return args
 
 
-def build_base_args(args: argparse.Namespace, help_text: str, schema: Dict[str, Any]) -> List[str]:
-    base = shlex.split(args.base_args)
+def normalize_budget_flag_name(token: str) -> str:
+    return token.lstrip("-").replace("-", "_")
+
+
+def _injected_budget_arg_values(injected: Sequence[str]) -> Dict[str, Optional[str]]:
+    values: Dict[str, Optional[str]] = {}
+    index = 0
+    while index < len(injected):
+        name = normalize_budget_flag_name(injected[index])
+        if index + 1 < len(injected) and not injected[index + 1].startswith("--"):
+            values[name] = injected[index + 1]
+            index += 2
+        else:
+            values[name] = None
+            index += 1
+    return values
+
+
+def pinned_flag_spellings(
+    pinned: Dict[str, Tuple[Optional[str], str]], injected: Sequence[str], alias_groups: Sequence[Sequence[str]]
+) -> Dict[str, str]:
+    """Map each parser-defined spelling (long, short, alias) of a pinned budget option to its pinned name."""
+    spellings = {token: normalize_budget_flag_name(token) for token in injected if token.startswith("--")}
+    for group in alias_groups:
+        names = {normalize_budget_flag_name(flag) for flag in group if flag.startswith("--")}
+        matched = names.intersection(pinned)
+        if len(matched) == 1:
+            name = next(iter(matched))
+            for flag in group:
+                spellings[flag] = name
+    return spellings
+
+
+# argparse's _negative_number_matcher: option-like tokens are not consumed as values unless they are numbers.
+_NEGATIVE_NUMBER_MATCHER = re.compile(r"^-\d+$|^-\d*\.\d+$")
+
+
+def _consumable_cli_value(token: str) -> bool:
+    # Mirrors argparse's option classifier: lone "-" and tokens containing a space are values too.
+    return not token.startswith("-") or token == "-" or " " in token or bool(_NEGATIVE_NUMBER_MATCHER.match(token))
+
+
+def merge_base_budget_args(
+    base_tokens: Sequence[str],
+    pinned: Dict[str, Tuple[Optional[str], str]],
+    spellings: Dict[str, str],
+    defined_flags: set,
+) -> Tuple[List[str], set[str]]:
+    """Drop --base-args duplicates of runner-injected budget flags; reject conflicts and pinned-flag abbreviations.
+
+    Tokens are matched by the exact flag spellings the job's parser defines, mirroring argparse: a spelling
+    the parser would not accept passes through verbatim so the job still reports it as unrecognized. Returns
+    the merged tokens plus the pinned names a kept token already sets (short-option clusters), whose
+    runner-injected copies must be omitted to keep each budget option emitted exactly once.
+    """
+    merged: List[str] = []
+    satisfied: set[str] = set()
+    index = 0
+    while index < len(base_tokens):
+        token = base_tokens[index]
+        index += 1
+        if not token.startswith("-") or token in ("-", "--"):
+            merged.append(token)
+            continue
+        option, separator, inline_value = token.partition("=")
+        name = spellings.get(option)
+        supplied: Optional[str] = None
+        if name is not None:
+            if separator:
+                supplied = inline_value
+            # A zero-argument pinned flag never consumes the next token (argparse binds it to positionals),
+            # and a valued flag never consumes an option-like token (argparse raises "expected one argument"),
+            # with argparse's negative-number exception.
+            elif pinned[name][0] is not None and index < len(base_tokens) and _consumable_cli_value(base_tokens[index]):
+                supplied = base_tokens[index]
+                index += 1
+        elif not separator and not token.startswith("--") and token not in defined_flags:
+            # Attached short-option value, e.g. -r3 for a pinned -r/--num_rounds (argparse's own semantics).
+            short = next((s for s in spellings if len(s) == 2 and not s.startswith("--") and token.startswith(s)), None)
+            if short is not None:
+                if pinned[spellings[short]][0] is None:
+                    # A zero-argument pin has no attached value: argparse reads -xv as the cluster -x -v,
+                    # which sets the pinned flag itself. One letter cannot be dropped from a user's cluster,
+                    # so keep the cluster and omit the runner's copy of the flag instead.
+                    satisfied.add(spellings[short])
+                    merged.append(token)
+                    continue
+                name = spellings[short]
+                supplied = token[2:]
+            else:
+                # Beyond the leading position the token is ambiguous without the other flags' arity:
+                # -vx is -v -x for a boolean -v (setting the pinned flag again) but -v with value x
+                # otherwise. Fail closed so no cluster can supply a pinned budget option a second time.
+                involved = next(
+                    (s for s in spellings if len(s) == 2 and not s.startswith("--") and s[1] in token[1:]), None
+                )
+                if involved is not None:
+                    raise ValueError(
+                        f"AUTOFL_BUDGET_ARGUMENT_CONFLICT: cannot determine whether short-option token {token} "
+                        f"involves {involved} (--{spellings[involved]}); write the options as separate tokens"
+                    )
+        if name is None:
+            if token.startswith("--") and option not in defined_flags:
+                # An exactly-defined job flag is never an abbreviation: argparse gives exact matches precedence.
+                ambiguous = sorted(s for s in spellings if s.startswith("--") and s.startswith(option) and s != option)
+                if ambiguous:
+                    raise ValueError(
+                        f"AUTOFL_BUDGET_ARGUMENT_CONFLICT: --base-args option {option} abbreviates pinned "
+                        f"budget option(s) {', '.join(ambiguous)}; spell the full flag"
+                    )
+            merged.append(token)
+            continue
+        pinned_value, source = pinned[name]
+        if supplied == pinned_value:
+            continue
+        raise ValueError(
+            f"AUTOFL_BUDGET_ARGUMENT_CONFLICT: --{name} is set to "
+            f"{'no value' if pinned_value is None else repr(pinned_value)} by {source} but --base-args ({token}) "
+            f"supplies {'no value' if supplied is None else repr(supplied)}; "
+            "remove the flag from --base-args or align the values"
+        )
+    return merged, satisfied
+
+
+def build_campaign_args(
+    config: Dict[str, Any],
+    args: argparse.Namespace,
+    help_text: str,
+    schema: Dict[str, Any],
+    alias_groups: Optional[Sequence[Sequence[str]]] = None,
+) -> Tuple[List[str], List[str]]:
+    """Resolve run arguments so each budget option is emitted exactly once.
+
+    Explicit --base-args duplicates of a runner-injected budget argument are dropped when the values are
+    identical and rejected with an actionable error when they conflict. Duplicates are matched by the exact
+    flag spellings the job's parser defines (including short aliases), so misspellings keep argparse's error.
+    """
+    fixed_args = build_fixed_args(config, help_text, schema)
     budget_args = build_comparison_budget_args(schema, help_text)
-    if budget_args:
-        base.extend(budget_args)
-    return base
+    pinned: Dict[str, Tuple[Optional[str], str]] = {}
+    for name, value in _injected_budget_arg_values(budget_args).items():
+        pinned[name] = (value, "the mutation-schema comparison budget")
+    for name, value in _injected_budget_arg_values(fixed_args).items():
+        pinned[name] = (value, "the imported fixed training budget")
+    groups = list(alias_groups or [])
+    spellings = pinned_flag_spellings(pinned, [*fixed_args, *budget_args], groups)
+    defined_flags = supported_long_flags(help_text)
+    defined_flags.update(flag for group in groups for flag in group)
+    base_args, satisfied = merge_base_budget_args(shlex.split(args.base_args), pinned, spellings, defined_flags)
+    if satisfied:
+        fixed_args = [t for t in fixed_args if not (t.startswith("-") and normalize_budget_flag_name(t) in satisfied)]
+        budget_args = [t for t in budget_args if not (t.startswith("-") and normalize_budget_flag_name(t) in satisfied)]
+    return fixed_args, [*base_args, *budget_args]
+
+
+def job_flag_alias_groups(job: Path) -> List[List[str]]:
+    try:
+        return load_job_importer().inspect_job_cli_flag_aliases(str(job))
+    except (OSError, ValueError) as e:
+        raise RuntimeError(f"cannot inspect job CLI flag aliases in {job}: {e}") from e
 
 
 def suggested_arg_defaults(config: Dict[str, Any]) -> Dict[str, Any]:
@@ -3370,14 +3524,17 @@ def execute_sim_baseline(
 ) -> RunRecord:
     timeout, no_progress_timeout = campaign_timeout(args, schema)
     help_text = job_help(args.python, job, job.parent)
+    fixed_args, base_args = build_campaign_args(
+        config, args, help_text, schema, alias_groups=job_flag_alias_groups(job)
+    )
     return run_job(
         JobRun(name=name, args=[], description="baseline", status="baseline"),
         python=args.python,
         job=job,
         cwd=job.parent,
         help_text=help_text,
-        fixed_args=build_fixed_args(config, help_text, schema),
-        base_args=build_base_args(args, help_text, schema),
+        fixed_args=fixed_args,
+        base_args=base_args,
         output_root=paths["output_root"],
         timeout=timeout,
         simulator_no_progress_timeout=no_progress_timeout,
@@ -3413,6 +3570,10 @@ def prepare_initial_campaign(args: argparse.Namespace, job: Path) -> None:
             "baseline execution is unsafe: "
             f"{'; '.join(admission_errors)}. Repair the job metric contract and initialize again."
         )
+    # Surface --base-args conflicts with the admitted budget before any campaign file is written.
+    build_campaign_args(
+        config, args, job_help(args.python, job, job.parent), schema, alias_groups=job_flag_alias_groups(job)
+    )
     args._initial_config = config
     args._initial_source_hashes = admitted_source_hashes(config, job.parent)
     args._initial_schema_sha256 = sha256_json(schema)
@@ -4044,6 +4205,9 @@ def evaluate_candidate(args: argparse.Namespace, job: Path) -> int:
 
     try:
         help_text = job_help(args.python, job, workspace)
+        fixed_args, base_args = build_campaign_args(
+            config, args, help_text, schema, alias_groups=job_flag_alias_groups(job)
+        )
         run_record = run_job(
             JobRun(
                 name=str(manifest["candidate_id"]),
@@ -4054,8 +4218,8 @@ def evaluate_candidate(args: argparse.Namespace, job: Path) -> int:
             job=job,
             cwd=workspace,
             help_text=help_text,
-            fixed_args=build_fixed_args(config, help_text, schema),
-            base_args=build_base_args(args, help_text, schema),
+            fixed_args=fixed_args,
+            base_args=base_args,
             output_root=paths["output_root"],
             timeout=timeout,
             simulator_no_progress_timeout=no_progress_timeout,
