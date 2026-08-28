@@ -22,9 +22,9 @@ Building on existing support for AMD SEV-SNP CPU CVMs with NVIDIA GPUs and Azure
 - Intel TDX CPU support for CPU-based confidential computing workloads
 - CoCo (Confidential Containers) support for container-level confidential execution
 
-********************************
-FLARE 2.10.0 — Target: Jan 2027
-********************************
+***********************************
+FLARE 2.10.0 — Target: Early 2027
+***********************************
 
 **Possible Features**
 
