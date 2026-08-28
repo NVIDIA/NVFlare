@@ -137,3 +137,10 @@ class TestStatisticsController:
     def test_validate_min_clients_returns_false_when_no_clients_responded(self):
         # zero clients responded at all -- must not vacuously pass as "ok to proceed"
         assert not self.stats_controller._validate_min_clients(5, {})
+
+    def test_validate_min_clients_returns_false_when_no_dataset_has_statistics(self):
+        # clients "responded" (enough of them per statistic), but every one of
+        # them reported an empty per-dataset dict -- resulting_clients ends up
+        # empty too, and must not vacuously pass as "ok to proceed" either.
+        client_statistics = {"count": {"site-1": {}}}
+        assert not self.stats_controller._validate_min_clients(1, client_statistics)

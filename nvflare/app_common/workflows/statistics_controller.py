@@ -373,12 +373,19 @@ class StatisticsController(Controller):
                     if ds_feature_statistics[ds_name]:
                         resulting_clients[ds_name].update([client])
 
+        if not resulting_clients:
+            self.logger.warning(
+                f"No dataset accumulated statistics from at least {min_clients} clients; aborting the job."
+            )
+            return False
+
         for ds in resulting_clients:
             if len(resulting_clients[ds]) < min_clients:
                 self.logger.warning(
                     f"Only {len(resulting_clients[ds])} of {min_clients} statistics received for '{ds}', aborting the job."
                 )
                 return False
+
         return True
 
     def post_fn(self, task_name: str, fl_ctx: FLContext):
