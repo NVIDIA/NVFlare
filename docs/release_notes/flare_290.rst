@@ -52,11 +52,8 @@ for the Auto-FL workflow); start with the
 <examples/hello-world/agent-skills>` to try the conversion and
 federated-statistics workflows.
 
-Agent Skills are developer tooling, not a runtime FL API or a substitute for
-code review and job validation: conversion skills preserve explicitly
-supported Recipe and Client API paths, and ask or stop, rather than guess,
-when framework ownership, source semantics, required data handling, or
-runtime configuration is ambiguous.
+Agent Skills are developer tooling, not a runtime FL API — review a
+generated job before running it.
 
 Collaboration API
 ==================
