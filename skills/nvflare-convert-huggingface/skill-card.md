@@ -9,7 +9,7 @@ NVIDIA <br>
 ### License/Terms of Use: <br>
 Apache 2.0 <br>
 ## Use Case: <br>
-Developers and ML engineers converting Hugging Face Trainer-based training code into federated learning jobs for secure, privacy-preserving distributed training across multiple parties. <br>
+Developers and ML engineers converting existing Hugging Face Transformers or TRL training scripts into federated learning jobs using NVIDIA FLARE. <br>
 
 ### Deployment Geography for Use: <br>
 Global <br>
@@ -25,17 +25,15 @@ Risk: Review before execution as proposals could introduce incorrect or misleadi
 Mitigation: Review and scan skill before deployment. <br>
 
 ## Reference(s): <br>
-- [huggingface-conversion.md](references/huggingface-conversion.md) <br>
-- [huggingface-detection.md](references/huggingface-detection.md) <br>
-- [huggingface-state-and-distributed.md](references/huggingface-state-and-distributed.md) <br>
-- [huggingface-validation.md](references/huggingface-validation.md) <br>
-- [NVIDIA FLARE Documentation](https://nvflare.readthedocs.io/en/main) <br>
-- [NVIDIA FLARE Paper](https://arxiv.org/abs/2210.13291) <br>
+- [Hugging Face Conversion Reference](references/huggingface-conversion.md) <br>
+- [Hugging Face Detection Reference](references/huggingface-detection.md) <br>
+- [Hugging Face State and Distributed Reference](references/huggingface-state-and-distributed.md) <br>
+- [Hugging Face Validation Reference](references/huggingface-validation.md) <br>
 
 
 ## Skill Output: <br>
-**Output Type(s):** [Code, Configuration instructions, Shell commands] <br>
-**Output Format:** [Python source files and Markdown with inline bash code blocks] <br>
+**Output Type(s):** [Code, Files, Shell commands] <br>
+**Output Format:** [Python source files and NVFLARE job configuration] <br>
 **Output Parameters:** [1D] <br>
 **Other Properties Related to Output:** [None] <br>
 
@@ -46,18 +44,18 @@ Mitigation: Review and scan skill before deployment. <br>
 
 
 ## Evaluation Tasks: <br>
-Evaluated against 21 tasks (21 positive) in isolated sandbox pods. <br>
+21 evaluation tasks (21 positive) in isolated sandbox pods. <br>
 
 ## Evaluation Metrics Used: <br>
 Reported benchmark dimensions: <br>
 - Security: Checks for unsafe operations, secret leakage, and unauthorized access. <br>
-- Correctness: Verifies final-answer correctness against reference answers. <br>
+- Correctness: Verifies final-answer correctness against the reference answer. <br>
 - Discoverability: Checks whether the expected skill was found and executed when needed. <br>
-- Effectiveness: Measures goal completion and expected workflow adherence. <br>
-- Efficiency: Evaluates routing quality, workspace-aware skill reads, and productive tool use. <br>
+- Effectiveness: Equal-weight mean of goal completion and expected workflow adherence. <br>
+- Efficiency: Measures routing quality, workspace-aware skill reads, and productive tool use. <br>
 
 Underlying evaluation signals used in this run: <br>
-- `security`: Detects unsafe operations, secret leakage, and unauthorized access. <br>
+- `security`: Unsafe operations, secret leakage, and unauthorized access. <br>
 - `skill_execution`: Whether the expected skill was found and executed. <br>
 - `skill_efficiency`: Routing quality, workspace-aware skill reads, and productive tool use. <br>
 - `accuracy`: Final-answer correctness against the reference answer. <br>
@@ -69,12 +67,12 @@ Underlying evaluation signals used in this run: <br>
 ## Evaluation Results: <br>
 | Measure | Codex (Baseline → Skill Uplift) |
 |---|---:|
-| Overall | 48% → 71% (+23 points) |
-| Security | 48% → 38% (-10 points) |
-| Correctness | 73% → 92% (+19 points) |
-| Discoverability | 33% → 73% (+40 points) |
-| Effectiveness | 52% → 69% (+17 points) |
-| Efficiency | 34% → 83% (+49 points) |
+| Overall | 46% → 77% (+31 points) |
+| Security | 45% → 60% (+14 points) |
+| Correctness | 70% → 99% (+29 points) |
+| Discoverability | 30% → 68% (+38 points) |
+| Effectiveness | 49% → 82% (+32 points) |
+| Efficiency | 33% → 77% (+44 points) |
 
 ## Skill Version(s): <br>
 0.1.0 (source: frontmatter) <br>

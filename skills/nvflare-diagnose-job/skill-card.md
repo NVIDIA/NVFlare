@@ -9,7 +9,7 @@ NVIDIA <br>
 ### License/Terms of Use: <br>
 Apache 2.0 <br>
 ## Use Case: <br>
-Developers and ML engineers diagnosing NVFLARE federated learning job failures across simulation, POC, and production environments. <br>
+Developers and engineers diagnosing NVFLARE federated learning job failures across simulation, POC, and production environments by collecting bounded evidence and mapping failure patterns to actionable recovery steps. <br>
 
 ### Deployment Geography for Use: <br>
 Global <br>
@@ -25,13 +25,13 @@ Risk: Review before execution as proposals could introduce incorrect or misleadi
 Mitigation: Review and scan skill before deployment. <br>
 
 ## Reference(s): <br>
-- [Evidence Collection](references/evidence-collection.md) <br>
+- [Evidence Collection Guide](references/evidence-collection.md) <br>
 - [Failure Pattern Catalog](references/failure-patterns.md) <br>
 
 
 ## Skill Output: <br>
-**Output Type(s):** [Analysis, Shell commands] <br>
-**Output Format:** [Structured diagnostic report in Markdown] <br>
+**Output Type(s):** [Analysis, Diagnosis report] <br>
+**Output Format:** [Structured Markdown with runtime mode, matched failure pattern, recovery category, evidence summary, and next action] <br>
 **Output Parameters:** [1D] <br>
 **Other Properties Related to Output:** [None] <br>
 
@@ -42,18 +42,18 @@ Mitigation: Review and scan skill before deployment. <br>
 
 
 ## Evaluation Tasks: <br>
-Evaluated against 10 positive diagnostic tasks, each in an isolated sandbox pod. <br>
+Evaluated against 10 internal diagnosis tasks (10 positive) in isolated sandbox pods. <br>
 
 ## Evaluation Metrics Used: <br>
 Reported benchmark dimensions: <br>
-- Security: Whether the skill avoids unsafe operations, secret leakage, and unauthorized access. <br>
-- Correctness: Whether the final diagnostic answer is correct against the reference. <br>
-- Discoverability: Whether the expected skill was found and activated when needed. <br>
-- Effectiveness: Whether the skill helped complete the user's diagnostic goal and followed the expected workflow. <br>
-- Efficiency: Whether the skill avoided wasted tool or skill usage. <br>
+- Security: Whether the skill is safe to use, checking for unsafe operations, secret leakage, and unauthorized access. <br>
+- Correctness: Whether the diagnosis answer is correct against the reference answer. <br>
+- Discoverability: Whether the right skill was found and executed when needed. <br>
+- Effectiveness: Whether the skill helped complete the user's goal (goal completion and expected workflow adherence). <br>
+- Efficiency: Whether the skill avoided wasted tool or skill usage, checking routing quality and productive tool use. <br>
 
 Underlying evaluation signals used in this run: <br>
-- `security`: Unsafe operations, secret leakage, and unauthorized access. <br>
+- `security`: Checks for unsafe operations, secret leakage, and unauthorized access. <br>
 - `skill_execution`: Whether the expected skill was found and executed. <br>
 - `skill_efficiency`: Routing quality, workspace-aware skill reads, and productive tool use. <br>
 - `accuracy`: Final-answer correctness against the reference answer. <br>
@@ -65,12 +65,12 @@ Underlying evaluation signals used in this run: <br>
 ## Evaluation Results: <br>
 | Measure | Claude Code (Baseline → Skill Uplift) | Codex (Baseline → Skill Uplift) |
 |---|---:|---:|
-| Overall | Not available | 66% → 81% (+15 points) |
-| Security | Not available | 65% → 90% (+25 points) |
-| Correctness | Not available | 96% → 94% (-2 points) |
-| Discoverability | Not available | 41% → 64% (+23 points) |
-| Effectiveness | Not available | 94% → 90% (-4 points) |
-| Efficiency | Not available | 37% → 68% (+31 points) |
+| Overall | Not available | 68% → 82% (+15 points) |
+| Security | Not available | 70% → 85% (+15 points) |
+| Correctness | Not available | 94% → 96% (+2 points) |
+| Discoverability | Not available | 41% → 69% (+28 points) |
+| Effectiveness | Not available | 95% → 90% (-6 points) |
+| Efficiency | Not available | 38% → 73% (+35 points) |
 
 ## Skill Version(s): <br>
 0.1.0 (source: frontmatter) <br>

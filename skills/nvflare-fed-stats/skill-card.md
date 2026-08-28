@@ -9,7 +9,7 @@ NVIDIA <br>
 ### License/Terms of Use: <br>
 Apache 2.0 <br>
 ## Use Case: <br>
-Developers and engineers computing federated statistics (counts, means, histograms, quantiles) across distributed data sites without exposing raw data. <br>
+Developers and ML engineers computing federated statistics across distributed NVFLARE sites for tabular and image data without writing custom aggregation code. <br>
 
 ### Deployment Geography for Use: <br>
 Global <br>
@@ -27,14 +27,14 @@ Mitigation: Review and scan skill before deployment. <br>
 ## Reference(s): <br>
 - [Image Statistics Reference](references/image-statistics.md) <br>
 - [Statistics Mapping Reference](references/statistics-mapping.md) <br>
-- [Stats Job Validation](references/stats-job-validation.md) <br>
+- [Stats Job Validation Reference](references/stats-job-validation.md) <br>
 - [NVIDIA FLARE Documentation](https://nvflare.readthedocs.io/en/main) <br>
 - [NVIDIA FLARE Paper](https://arxiv.org/abs/2210.13291) <br>
 
 
 ## Skill Output: <br>
 **Output Type(s):** [Code, Analysis, Shell commands] <br>
-**Output Format:** [Python source files (client.py, job.py) and Markdown analysis report] <br>
+**Output Format:** [Python source files (client.py, job.py) and JSON statistics output] <br>
 **Output Parameters:** [1D] <br>
 **Other Properties Related to Output:** [None] <br>
 
@@ -45,18 +45,18 @@ Mitigation: Review and scan skill before deployment. <br>
 
 
 ## Evaluation Tasks: <br>
-Evaluated against 17 evaluation tasks (17 positive) in isolated k8s-sandbox pods with 1 attempt per task. <br>
+Evaluated against 17 positive evaluation tasks, each running in an isolated sandbox pod. Tier 3 live agent evaluation. <br>
 
 ## Evaluation Metrics Used: <br>
 Reported benchmark dimensions: <br>
-- Security: Checks for unsafe operations, secret leakage, and unauthorized access. <br>
-- Correctness: Final-answer correctness against the reference answer. <br>
+- Security: Whether the skill avoids unsafe operations, secret leakage, and unauthorized access. <br>
+- Correctness: Whether the final answer is correct against the reference answer. <br>
 - Discoverability: Whether the expected skill was found and executed when needed. <br>
-- Effectiveness: Whether the skill helped complete the user's goal and expected workflow. <br>
-- Efficiency: Routing quality, workspace-aware skill reads, and productive tool use. <br>
+- Effectiveness: Whether the skill helps complete the user's goal and follows expected workflow. <br>
+- Efficiency: Whether the skill avoids wasted tool or skill usage. <br>
 
 Underlying evaluation signals used in this run: <br>
-- `security`: Unsafe operations, secret leakage, and unauthorized access. <br>
+- `security`: Checks for unsafe operations, secret leakage, and unauthorized access. <br>
 - `skill_execution`: Whether the expected skill was found and executed. <br>
 - `skill_efficiency`: Routing quality, workspace-aware skill reads, and productive tool use. <br>
 - `accuracy`: Final-answer correctness against the reference answer. <br>
@@ -68,17 +68,12 @@ Underlying evaluation signals used in this run: <br>
 ## Evaluation Results: <br>
 | Measure | Codex (Baseline → Skill Uplift) |
 |---|---:|
-| Overall | 56% → 67% (+11 points) |
-| Security | 94% → 35% (-59 points) |
-| Correctness | 68% → 87% (+19 points) |
-| Discoverability | 38% → 68% (+30 points) |
-| Effectiveness | 43% → 74% (+31 points) |
+| Overall | 54% → 69% (+15 points) |
+| Security | 88% → 47% (-41 points) |
+| Correctness | 64% → 86% (+22 points) |
+| Discoverability | 39% → 68% (+28 points) |
+| Effectiveness | 41% → 71% (+30 points) |
 | Efficiency | 38% → 72% (+34 points) |
-
-## Testing Completed: <br>
-**[x] Agent Red-Teaming** <br>
-**[ ] Network Security** <br>
-**[ ] Product Security** <br>
 
 ## Skill Version(s): <br>
 0.1.0 (source: frontmatter) <br>

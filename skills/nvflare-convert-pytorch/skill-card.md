@@ -9,7 +9,7 @@ NVIDIA <br>
 ### License/Terms of Use: <br>
 Apache 2.0 <br>
 ## Use Case: <br>
-Developers and ML engineers converting existing PyTorch training scripts into NVIDIA FLARE federated learning jobs using Client API model exchange, recipe-based aggregation, and job export. <br>
+Developers and engineers converting plain PyTorch training scripts into NVFLARE federated learning jobs with horizontal FL, Client API model exchange, validation, and export. <br>
 
 ### Deployment Geography for Use: <br>
 Global <br>
@@ -25,16 +25,14 @@ Risk: Review before execution as proposals could introduce incorrect or misleadi
 Mitigation: Review and scan skill before deployment. <br>
 
 ## Reference(s): <br>
-- [PyTorch Client API Conversion Reference](references/pytorch-client-api-conversion.md) <br>
-- [Recipe Selection Reference](references/recipe-selection.md) <br>
-- [Job Validation Reference](references/job-validation.md) <br>
-- [NVIDIA FLARE Documentation](https://nvflare.readthedocs.io/en/main) <br>
-- [NVIDIA FLARE Paper (arXiv:2210.13291)](https://arxiv.org/abs/2210.13291) <br>
+- [PyTorch Client API Conversion](references/pytorch-client-api-conversion.md) <br>
+- [Recipe Selection](references/recipe-selection.md) <br>
+- [Job Validation](references/job-validation.md) <br>
 
 
 ## Skill Output: <br>
 **Output Type(s):** [Code, Configuration instructions, Shell commands] <br>
-**Output Format:** [Python files and shell commands with validation output] <br>
+**Output Format:** [Markdown with inline Python and bash code blocks] <br>
 **Output Parameters:** [1D] <br>
 **Other Properties Related to Output:** [None] <br>
 
@@ -45,35 +43,35 @@ Mitigation: Review and scan skill before deployment. <br>
 
 
 ## Evaluation Tasks: <br>
-Evaluated against 17 positive tasks in isolated sandbox pods, covering safety, correctness, discoverability, effectiveness, and efficiency. <br>
+17 evaluation tasks (17 positive), each in an isolated sandbox pod. <br>
 
 ## Evaluation Metrics Used: <br>
 Reported benchmark dimensions: <br>
-- Security: Whether the skill is safe to use without unsafe operations, secret leakage, or unauthorized access. <br>
-- Correctness: Whether the generated conversion answer is correct against the reference. <br>
+- Security: Whether the skill is safe to use, checking for unsafe operations, secret leakage, and unauthorized access. <br>
+- Correctness: Whether the conversion answer is correct against the reference answer. <br>
 - Discoverability: Whether the right skill was loaded and executed when needed. <br>
 - Effectiveness: Whether the skill helped complete the user's goal and followed the expected workflow. <br>
-- Efficiency: Whether the skill avoided wasted tool or skill usage during execution. <br>
+- Efficiency: Whether the skill avoided wasted tool or skill usage during the conversion. <br>
 
 Underlying evaluation signals used in this run: <br>
 - `security`: Checks for unsafe operations, secret leakage, and unauthorized access. <br>
-- `skill_execution`: Verifies whether the expected skill was found and executed. <br>
-- `skill_efficiency`: Evaluates routing quality, workspace-aware skill reads, and productive tool use. <br>
-- `accuracy`: Checks final-answer correctness against the reference answer. <br>
-- `goal_accuracy`: Determines whether the user's goal was achieved. <br>
-- `behavior_check`: Validates whether the expected workflow behavior was followed. <br>
+- `skill_execution`: Whether the expected skill was found and executed. <br>
+- `skill_efficiency`: Routing quality, workspace-aware skill reads, and productive tool use. <br>
+- `accuracy`: Final-answer correctness against the reference answer. <br>
+- `goal_accuracy`: Whether the user's goal was achieved. <br>
+- `behavior_check`: Whether the expected workflow behavior was followed. <br>
 
 
 
 ## Evaluation Results: <br>
 | Measure | Claude Code (Baseline → Skill Uplift) | Codex (Baseline → Skill Uplift) |
 |---|---:|---:|
-| Overall | Not available | 48% → 68% (+21 points) |
-| Security | Not available | 32% → 29% (-3 points) |
-| Correctness | Not available | 85% → 94% (+9 points) |
-| Discoverability | Not available | 26% → 68% (+41 points) |
-| Effectiveness | Not available | 64% → 74% (+10 points) |
-| Efficiency | Not available | 30% → 76% (+45 points) |
+| Overall | Not available | 54% → 68% (+14 points) |
+| Security | Not available | 62% → 35% (-26 points) |
+| Correctness | Not available | 81% → 92% (+11 points) |
+| Discoverability | Not available | 29% → 68% (+39 points) |
+| Effectiveness | Not available | 64% → 70% (+6 points) |
+| Efficiency | Not available | 33% → 76% (+43 points) |
 
 ## Skill Version(s): <br>
 0.1.0 (source: frontmatter) <br>

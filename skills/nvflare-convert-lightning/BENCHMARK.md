@@ -1,4 +1,4 @@
-# Skill Benchmark: nvflare-orient
+# Skill Benchmark: nvflare-convert-lightning
 
 > ✅ **Overall verdict: PASS — Recommended for publication**
 
@@ -8,12 +8,12 @@ Recommended for publication based on the completed evaluation evidence in this r
 
 ## Evaluation Metadata
 
-- Skill: `nvflare-orient`
+- Skill: `nvflare-convert-lightning`
 - Evaluation date: 2026-08-28
 - Evaluator version: `1.3.2`
 - Agents: Claude Code (`aws/anthropic/bedrock-claude-opus-4-8`), Codex (`openai/openai/gpt-5.5`)
-- Tasks: 6 evaluation tasks (6 positive)
-- Dataset digest: `sha256:f0eb3341761e33ff5333a813d0031281967c536ac6580571ac1e5ac319860a60` (skill-evaluator-dataset-snapshot/1)
+- Tasks: 22 evaluation tasks (22 positive)
+- Dataset digest: `sha256:27fefd3863135e758ee738361deca2313b8f1efa03a456440267ac92dc654196` (skill-evaluator-dataset-snapshot/1)
 - Attempts per task: 1
 - Environment: `k8s-sandbox`
 - Tier 3 evidence: required for publication
@@ -45,12 +45,12 @@ The three-tier evaluation checks whether the skill:
 
 | Measure | Claude Code (Baseline → Skill Uplift) | Codex (Baseline → Skill Uplift) |
 |---|---:|---:|
-| Overall | 55% → 80% (+25 points) | 57% → 85% (+28 points) |
-| Security | 92% → 100% (+8 points) | 100% → 100% (±0 points) |
-| Correctness | 60% → 93% (+33 points) | 57% → 93% (+37 points) |
-| Discoverability | 42% → 66% (+25 points) | 33% → 79% (+46 points) |
-| Effectiveness | 54% → 80% (+26 points) | 61% → 66% (+5 points) |
-| Efficiency | 25% → 59% (+33 points) | 35% → 85% (+50 points) |
+| Overall | Not available | 44% → 67% (+24 points) |
+| Security | Not available | 27% → 45% (+18 points) |
+| Correctness | Not available | 72% → 88% (+16 points) |
+| Discoverability | Not available | 27% → 58% (+30 points) |
+| Effectiveness | Not available | 63% → 84% (+21 points) |
+| Efficiency | Not available | 28% → 62% (+33 points) |
 
 **How to read this table:** baseline is the same task attempted without the target skill. Uplift is `skill score - baseline score`, shown in percentage points.
 
@@ -62,15 +62,15 @@ Example: `47% → 92% (+45 points)` means the skill-assisted run scored 92%, 45 
 |---|---|---|---|
 | Tier 1 | Static validation | **PASSED WITH OBSERVATIONS** | 1 validator(s); 2 finding(s) |
 | Tier 2 | Semantic deduplication | **NOT RUN** | No result was recorded |
-| Tier 3 | Live agent evaluation | **PASS** | 2 agent(s); 6 task(s) |
+| Tier 3 | Live agent evaluation | **PASS** | 2 agent(s); 22 task(s) |
 
 ## Findings and Observations
 
 <details>
 <summary>Show detailed findings and successful checks</summary>
 
-- **MEDIUM** SCHEMA/body_recommended_section: Missing recommended section: '## Instructions' (`skills/nvflare-orient/SKILL.md`)
-- **MEDIUM** SCHEMA/body_recommended_section: Missing recommended section: '## Examples' (`skills/nvflare-orient/SKILL.md`)
+- **MEDIUM** SCHEMA/body_recommended_section: Missing recommended section: '## Instructions' (`skills/nvflare-convert-lightning/SKILL.md`)
+- **MEDIUM** SCHEMA/body_recommended_section: Missing recommended section: '## Examples' (`skills/nvflare-convert-lightning/SKILL.md`)
 
 </details>
 
