@@ -19,11 +19,27 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from agenticfl.agents.local_adapter import sanitize_adapter_diagnostic
+from agenticfl.data.contracts.classification import label_value
 from agenticfl.data.parser import DataParserConfig, list_client_ids, parse_site_dataset
 from PIL import Image
 
 
 class DataBoundaryTestCase(unittest.TestCase):
+    def test_classification_label_parser_rejects_booleans(self) -> None:
+        self.assertIsNone(label_value(True))
+        self.assertIsNone(label_value(False))
+        self.assertEqual(label_value(0), 0)
+        self.assertEqual(label_value("1"), 1)
+
+    def test_adapter_diagnostic_redacts_long_hyphenated_identifier(self) -> None:
+        identifier = "A-" + "--" * 10_000 + "1234"
+
+        self.assertEqual(
+            sanitize_adapter_diagnostic(identifier, private_roots=[]),
+            "[redacted-identifier]",
+        )
+
     def test_site_registry_rejects_unsafe_or_duplicate_client_ids(self) -> None:
         with TemporaryDirectory() as tmp:
             meta = Path(tmp) / "site-meta.json"

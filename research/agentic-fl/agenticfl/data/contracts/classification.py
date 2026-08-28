@@ -250,7 +250,7 @@ def label_rule_applied(policy: Mapping[str, Any]) -> dict[str, Any]:
 
 def label_value(value: Any) -> int | None:
     if isinstance(value, bool):
-        return int(value)
+        return None
     if isinstance(value, int) and value >= 0:
         return value
     if isinstance(value, str) and re.fullmatch(r"\d+", value.strip()):

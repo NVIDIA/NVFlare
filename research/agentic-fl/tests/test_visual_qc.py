@@ -123,6 +123,13 @@ class VisualQCContractTestCase(unittest.TestCase):
                 label_orientation={"selected_transform": "as_is"},
             )
         )
+        unknown_decision = _extracted_result(transform="transpose")["visual_qc"]
+        self.assertFalse(
+            visual_qc_decision_passed(
+                unknown_decision,
+                label_orientation={"selected_transform": "transpose"},
+            )
+        )
 
     def test_segmentation_training_fails_closed_without_visual_pass(self) -> None:
         summary = {

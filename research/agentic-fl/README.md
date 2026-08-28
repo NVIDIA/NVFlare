@@ -58,7 +58,6 @@ The following are explicit non-goals of this research artifact:
 ```text
 research/agentic-fl/
 |-- README.md
-|-- findings.md              # Review issues, acceptance criteria, and status
 |-- ACKNOWLEDGEMENTS.md
 |-- requirements.txt
 |-- pyproject.toml

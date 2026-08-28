@@ -24,7 +24,7 @@ from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
-from prepare_references import prepare_reference_bundle
+from prepare_references import _write_mask_png, prepare_reference_bundle
 
 
 class ReferencePreparationTestCase(unittest.TestCase):
@@ -32,7 +32,9 @@ class ReferencePreparationTestCase(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             Image.new("RGB", (20, 12), "white").save(root / "image.png")
-            Image.new("L", (20, 12), 255).save(root / "mask.png")
+            mask = Image.new("L", (20, 12), 0)
+            mask.putpixel((5, 5), 17)
+            mask.save(root / "mask.png")
             segmentation = root / "segmentation.jsonl"
             segmentation.write_text(
                 json.dumps({"image": "image.png", "mask": "mask.png", "split": "train"}) + "\n",
@@ -97,6 +99,20 @@ class ReferencePreparationTestCase(unittest.TestCase):
             )
             self.assertTrue(all(item["source"]["kind"] == "prepared_client_record" for item in manifest["examples"]))
             self.assertTrue(all(item["asset_sha256"] for item in manifest["examples"]))
+            for task_key in ("cup_seg", "disc_seg"):
+                with Image.open(root / "task_example" / task_key / "mask.png") as prepared_mask:
+                    self.assertEqual({value for _, value in prepared_mask.getcolors(maxcolors=3) or []}, {0, 255})
+
+    def test_reference_mask_rejects_multiclass_values(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "mask.png"
+            mask = Image.new("L", (3, 1))
+            mask.putdata([0, 1, 2])
+            mask.save(source)
+
+            with self.assertRaisesRegex(ValueError, "must be binary"):
+                _write_mask_png(source, root / "prepared.png", expected_size=(3, 1))
 
 
 if __name__ == "__main__":

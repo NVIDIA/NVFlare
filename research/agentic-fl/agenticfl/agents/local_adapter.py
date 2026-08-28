@@ -1479,17 +1479,17 @@ def sanitize_adapter_diagnostic(text: str, *, private_roots: Sequence[Path]) -> 
         filename = match.group(0)
         return filename if filename in {"adapter.py", "adapter_manifest.json"} else "[redacted-filename]"
 
+    def redact_identifier(match: re.Match[str]) -> str:
+        identifier = match.group(0)
+        return "[redacted-identifier]" if re.search(r"[_-]\d{3,}", identifier) else identifier
+
     sanitized = re.sub(
         r"(?<![A-Za-z0-9_.-])[A-Za-z0-9_.-]+\.(?:png|jpe?g|tiff?|bmp|gif|csv|tsv|txt|json|xml|mat|npy|npz|nii(?:\.gz)?|dcm|mha|mhd|nrrd|nhdr|h5|hdf5|svs|zip|tar|gz)(?![A-Za-z0-9_.-])",
         redact_filename,
         sanitized,
         flags=re.IGNORECASE,
     )
-    sanitized = re.sub(
-        r"(?<![A-Za-z0-9_.-])[A-Za-z][A-Za-z0-9-]*(?:[_-][A-Za-z0-9-]+)*[_-]\d{3,}[A-Za-z0-9_-]*(?![A-Za-z0-9_.-])",
-        "[redacted-identifier]",
-        sanitized,
-    )
+    sanitized = re.sub(r"[A-Za-z][A-Za-z0-9_-]*", redact_identifier, sanitized)
     return " ".join(sanitized.split())[:2000]
 
 

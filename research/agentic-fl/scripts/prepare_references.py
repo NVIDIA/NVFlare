@@ -298,7 +298,15 @@ def _write_mask_png(source: Path, destination: Path, *, expected_size: tuple[int
         mask = image.convert("L")
         if mask.size != expected_size:
             raise ValueError(f"reference mask size {mask.size} does not match image size {expected_size}")
-        mask.save(destination, format="PNG")
+        colors = mask.getcolors(maxcolors=3)
+        if colors is None or len(colors) > 2:
+            raise ValueError("reference mask must be binary")
+        values = {int(value) for _, value in colors}
+        if 0 not in values:
+            raise ValueError("reference binary mask must encode background as 0")
+        if not any(value > 0 for value in values):
+            raise ValueError("reference binary mask must contain nonzero foreground")
+        mask.point(lambda value: 255 if value > 0 else 0, mode="L").save(destination, format="PNG")
 
 
 def _detection_annotation(

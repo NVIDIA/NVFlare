@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Any
 
 from agenticfl.data.parser import validate_client_id
+from agenticfl.data.qc import visual_qc_decision_passed
 
 REPORT_SCHEMA = "agenticfl.client_training_runtime_prep.v1"
 
@@ -154,7 +155,7 @@ def _validate_prepared_dataset(
         visual_qc = legacy_visual_qc if isinstance(legacy_visual_qc, dict) and "passed" in legacy_visual_qc else {}
     if verification.get("passed") is not True:
         raise RuntimeError("client prepared dataset verification did not pass")
-    if visual_qc_required and not _visual_qc_decision_passed(
+    if visual_qc_required and not visual_qc_decision_passed(
         visual_qc,
         label_orientation=(
             manifest.get("label_orientation") if isinstance(manifest.get("label_orientation"), dict) else None
@@ -419,20 +420,6 @@ def _required_string(record: dict[str, Any], field: str, row_index: int) -> str:
 def _assert_expected_count(split: str, observed: int, expected: int | None) -> None:
     if expected is not None and expected >= 0 and observed != expected:
         raise RuntimeError(f"client prepared dataset {split} count mismatch: expected {expected}, observed {observed}")
-
-
-def _visual_qc_decision_passed(decision: dict[str, Any], *, label_orientation: dict[str, Any] | None = None) -> bool:
-    if decision.get("status") != "passed" or decision.get("passed") is not True:
-        return False
-    if decision.get("reviewed") is False or decision.get("consensus_reached") is False:
-        return False
-    selected_transform = decision.get("selected_transform")
-    if not isinstance(selected_transform, str):
-        return False
-    expected_transform = "as_is"
-    if isinstance(label_orientation, dict) and isinstance(label_orientation.get("selected_transform"), str):
-        expected_transform = label_orientation["selected_transform"]
-    return selected_transform == expected_transform
 
 
 def _write_report(path: Path, report: dict[str, Any]) -> None:
