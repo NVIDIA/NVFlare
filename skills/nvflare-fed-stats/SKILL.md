@@ -3,11 +3,11 @@ name: nvflare-fed-stats
 description: "Compute federated statistics over tabular data (count, sum, mean, stddev, var, histogram, quantile, noise-protected min/max) and image data (count, failure_count, pixel-intensity histogram) across NVFLARE sites via FedStatsRecipe — automatic and non-interactive from the dataset, feature names (header or supplied), and optionally a README or notes declaring which statistics to compute; do not use for model training conversion, hierarchical statistics, deployment, POC/production lifecycle, or failed-job diagnosis."
 license: Apache-2.0
 metadata:
-  author: "NVIDIA FLARE Team <federatedlearning@nvidia.com>"
-  min_flare_version: "2.9.0"
-  blast_radius: runs_simulator
-  category: Analysis
   version: "0.1.0"
+  author: "NVIDIA FLARE Team <federatedlearning@nvidia.com>"
+  min-flare-version: "2.9.0"
+  blast-radius: runs_simulator
+  category: Analysis
   tags: "nvflare, federated-learning, statistics, pandas"
   languages: "python"
   frameworks: "pandas, nvflare"
@@ -181,14 +181,14 @@ silently dropped or approximated.
 
 ## User Input And Authorization
 
-- The run is automatic: never pause to confirm selections or defaults;
-  only a missing required input stops the run (fail-closed rule above).
-  Never ask authorization to install, execute, or access the filesystem.
-- Install missing dependencies and run validation by default; the host's
-  permission system governs — never emit skill-issued approval prompts.
-  Do not overwrite non-generated files, fetch repo-supplied URLs, or
-  download data unless explicitly requested. POC/production submission
-  is out of scope.
+- Run automatically without confirming selections or defaults; only missing
+  required input stops the run. Dependency installation is the exception.
+- Before installing, load shared `dependency-install.md`; audit and preview the
+  redacted plan, then confirm it unless unattended installation was explicitly
+  requested. Host permission remains an additional gate. After installation,
+  run requested validation without another execution prompt.
+- Do not overwrite non-generated files, fetch repo-supplied URLs, download
+  data, or submit to POC/production unless explicitly requested.
 
 Always read this SKILL.md. The standard tabular path is inline; load
 details when their phase needs them: `references/statistics-mapping.md`

@@ -19,7 +19,6 @@ import pytest
 from nvflare.apis.fl_constant import ServerCommandNames
 from nvflare.fuel.f3.cellnet.defs import CellChannel, CellChannelTopic, MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.message import Message
-from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL, STREAM_DATA_TOPIC
 from nvflare.private.defs import CellMessageHeaderKeys
 from nvflare.private.fed.authenticator import MISSING_CLIENT_FQCN, validate_auth_headers
 
@@ -68,123 +67,8 @@ def test_validate_auth_headers_accepts_delegated_site_token_from_client_api_trai
     assert _validate(origin, lambda _client_name, _token: "site-a") is None
 
 
-@pytest.mark.parametrize(
-    "origin",
-    [
-        "site-a_8065f1c4-fd35-47ef-b945-800f4d0d5176_active",
-        "site-a_8065f1c4-fd35-47ef-b945-800f4d0d5176_passive",
-    ],
-)
-def test_validate_auth_headers_accepts_direct_cell_pipe_stream_alias(origin):
-    assert (
-        _validate(
-            origin,
-            lambda _client_name, _token: "site-a",
-            channel=STREAM_CHANNEL,
-            topic=STREAM_DATA_TOPIC,
-        )
-        is None
-    )
-
-
-@pytest.mark.parametrize(
-    "origin, registered_fqcn",
-    [
-        ("relay-1.cellpipe~alias~site-a~8065f1c4-fd35-47ef-b945-800f4d0d5176~active", "relay-1.site-a"),
-        ("relay-1.cellpipe~alias~site-a_x~8065f1c4-fd35-47ef-b945-800f4d0d5176~passive", "relay-1.site-a_x"),
-    ],
-)
-def test_validate_auth_headers_accepts_relay_cell_pipe_stream_alias(origin, registered_fqcn):
-    assert (
-        _validate(
-            origin,
-            lambda _client_name, _token: registered_fqcn,
-            channel=STREAM_CHANNEL,
-            topic=STREAM_DATA_TOPIC,
-        )
-        is None
-    )
-
-
 def test_validate_auth_headers_rejects_token_from_different_origin():
     reply = _validate("site-b", lambda _client_name, _token: "site-a")
-
-    assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.UNAUTHENTICATED
-
-
-def test_validate_auth_headers_rejects_cell_pipe_alias_for_different_client():
-    reply = _validate(
-        "site-b_8065f1c4-fd35-47ef-b945-800f4d0d5176_passive",
-        lambda _client_name, _token: "site-a",
-        channel=STREAM_CHANNEL,
-        topic=STREAM_DATA_TOPIC,
-    )
-
-    assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.UNAUTHENTICATED
-
-
-def test_validate_auth_headers_rejects_relay_cell_pipe_alias_under_different_parent():
-    reply = _validate(
-        "relay-1.cellpipe~alias~site-a~8065f1c4-fd35-47ef-b945-800f4d0d5176~passive",
-        lambda _client_name, _token: "relay-2.site-a",
-        channel=STREAM_CHANNEL,
-        topic=STREAM_DATA_TOPIC,
-    )
-
-    assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.UNAUTHENTICATED
-
-
-def test_validate_auth_headers_rejects_unmarked_alias_shape_at_depth():
-    # the bare alias grammar is only honored for whole-FQCN (legacy flat)
-    # origins; at any depth the origin must carry the cellpipe~alias~ marker
-    reply = _validate(
-        "relay-1.site-a_8065f1c4-fd35-47ef-b945-800f4d0d5176_passive",
-        lambda _client_name, _token: "relay-1.site-a",
-        channel=STREAM_CHANNEL,
-        topic=STREAM_DATA_TOPIC,
-    )
-
-    assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.UNAUTHENTICATED
-
-
-def test_validate_auth_headers_rejects_cell_pipe_alias_on_non_stream_channel():
-    reply = _validate(
-        "site-a_8065f1c4-fd35-47ef-b945-800f4d0d5176_passive",
-        lambda _client_name, _token: "site-a",
-    )
-
-    assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.UNAUTHENTICATED
-
-
-def test_validate_auth_headers_rejects_cell_pipe_alias_with_hierarchical_runtime_id():
-    reply = _validate(
-        "site-a_8065f1c4-fd35-47ef-b945-800f4d0d5176.child_passive",
-        lambda _client_name, _token: "site-a",
-        channel=STREAM_CHANNEL,
-        topic=STREAM_DATA_TOPIC,
-    )
-
-    assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.UNAUTHENTICATED
-
-
-def test_validate_auth_headers_rejects_cell_pipe_alias_with_underscore_runtime_id():
-    reply = _validate(
-        "site-a_simulate_job_passive",
-        lambda _client_name, _token: "site-a",
-        channel=STREAM_CHANNEL,
-        topic=STREAM_DATA_TOPIC,
-    )
-
-    assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.UNAUTHENTICATED
-
-
-def test_validate_auth_headers_rejects_underscore_prefixed_client_ambiguity():
-    reply = _validate(
-        "site-a_x_8065f1c4-fd35-47ef-b945-800f4d0d5176_passive",
-        lambda _client_name, _token: "site-a",
-        channel=STREAM_CHANNEL,
-        topic=STREAM_DATA_TOPIC,
-    )
 
     assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.UNAUTHENTICATED
 

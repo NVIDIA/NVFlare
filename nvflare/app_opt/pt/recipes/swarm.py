@@ -12,49 +12,52 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
 import os
 import warnings
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Literal, Optional, Union
 
 from pydantic import BaseModel, field_validator
 
 from nvflare.apis.dxo import DataKind
-from nvflare.apis.fl_constant import SystemVarName
 from nvflare.app_common.aggregators.intime_accumulate_model_aggregator import InTimeAccumulateWeightedAggregator
 from nvflare.app_common.ccwf.ccwf_job import CCWFJob, CrossSiteEvalConfig, SwarmClientConfig, SwarmServerConfig
 from nvflare.app_common.ccwf.comps.simple_model_shareable_generator import SimpleModelShareableGenerator
+from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
 from nvflare.client.config import ExchangeFormat, normalize_exchange_format
-from nvflare.fuel.utils.constants import Mode
-from nvflare.fuel.utils.pipe.file_pipe import FilePipe
 from nvflare.fuel.utils.secret_utils import (
     warn_on_potential_secrets,
     warn_on_unsupported_secret_refs,
     warn_on_unsupported_secret_refs_outside_keys,
 )
 from nvflare.fuel.utils.validation_utils import check_object_type, check_positive_int, check_positive_number
-from nvflare.job_config.script_runner import BaseScriptRunner, ScriptRunner
+from nvflare.job_config.script_runner import ScriptRunner
 from nvflare.recipe.spec import Recipe
 from nvflare.recipe.utils import merge_config_overrides, validate_aggregator_data_kind, validate_ckpt
 
-logger = logging.getLogger(__name__)
-
-_VALID_PIPE_TYPES = ("cell_pipe", "file_pipe")
 _RECIPE_MANAGED_SERVER_CONFIG_KEYS = frozenset({"min_clients"})
 _RECIPE_MANAGED_CLIENT_CONFIG_KEYS = frozenset(
-    {"executor", "aggregator", "persistor", "shareable_generator", "min_responses_required"}
+    {"executor", "aggregator", "persistor", "shareable_generator", "model_selector", "min_responses_required"}
 )
 
 
 class _SwarmValidator(BaseModel):
     initial_ckpt: Optional[str] = None
+    key_metric: Optional[str] = "accuracy"
+    key_metric_mode: Literal["min", "max"] = "max"
 
     @field_validator("initial_ckpt")
     @classmethod
     def validate_initial_ckpt(cls, v):
         if v is not None:
             validate_ckpt(v)
+        return v
+
+    @field_validator("key_metric")
+    @classmethod
+    def validate_key_metric(cls, v):
+        if v is not None and not v.strip():
+            raise ValueError("key_metric must be a non-empty string or None")
         return v
 
     model_config = {"arbitrary_types_allowed": True}
@@ -129,9 +132,11 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
             Defaults to False (in-process execution).
         command: Shell command used to launch the script when launch_external_process=True.
             Defaults to "python3 -u".
-        memory_gc_rounds: Run gc.collect() + malloc_trim every N FL rounds on both the trainer
-            and aggregator roles. Defaults to 1 (every round) to match legacy behavior where
-            gc.collect() was called unconditionally after each trainer submission. Set to 0 to disable.
+        memory_gc_rounds: Run allocator-aware cleanup (gc.collect() + malloc_trim) on three
+            independent cadences: every N training rounds in the trainer, every N completed
+            learn tasks in each client job, and every N aggregations in the aggregation client
+            job. Defaults to 1. Set to 0 to disable allocator-aware cleanup. A plain gc.collect()
+            still runs after every client-job learn task regardless of this value.
         cuda_empty_cache: Call torch.cuda.empty_cache() during cleanup. Defaults to False.
         expected_data_kind: The data kind the aggregator expects from clients. Defaults to
             DataKind.WEIGHTS for full-weight FedAvg. Clients returning differences must label
@@ -169,30 +174,13 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
             scheduler, server-controller, and client aggregation quorums aligned.
             This dictionary is stored in the job definition and must not contain secrets.
         client_config_overrides: Advanced shallow overrides for ``SwarmClientConfig``.
-            Values here take precedence over named constructor parameters. Recipe-managed
-            fields (executor, aggregator, persistor, shareable generator, and
-            ``min_responses_required``) cannot be replaced through this dictionary; use
-            ``BaseSwarmLearningRecipe`` for custom components or quorum settings.
+            Values for non-recipe-managed fields take precedence over named constructor
+            parameters. Recipe-managed fields (executor, aggregator, persistor, shareable
+            generator, model selector, and ``min_responses_required``) cannot be replaced
+            through this dictionary. Use ``key_metric=None`` to disable model selection, or
+            ``BaseSwarmLearningRecipe`` with an explicit ``SwarmClientConfig`` for a custom
+            selector, other custom components, or quorum settings.
             This dictionary is stored in the job definition and must not contain secrets.
-        pipe_type: Transport used between the NVFlare client process and the external
-            training process when ``launch_external_process=True``. Accepted values:
-
-            - ``"cell_pipe"`` *(default)*: Direct Cell transport through
-              ``ClientAPIExecutor`` with zero-copy tensor forwarding. Despite the option
-              name, this mode does not create a ``CellPipe`` component.
-            - ``"file_pipe"``: ``FilePipe`` backed by a shared directory. The NVFlare
-              client process fully loads and re-serializes the model (~2× model size
-              in RAM). Use when cell networking is unavailable or for third-party
-              integrations that cannot resolve NVFlare cell addresses.
-
-            Ignored when ``launch_external_process=False``.
-        pipe_root_path: Base directory for ``FilePipe`` when ``pipe_type="file_pipe"``.
-            ``None`` (default) uses ``{WORKSPACE}/{JOB_ID}/{SITE_NAME}``, matching
-            the ``sag_cse_ccwf_pt`` reference template. If provided, the path must be
-            an absolute path (e.g. ``"/dev/shm/nvflare_pipes"`` for a RAM-backed tmpfs);
-            the directory is treated as a runtime path and does not need to exist on the
-            machine that builds or exports the job. ``{JOB_ID}/{SITE_NAME}`` is always
-            appended so concurrent jobs and sites remain isolated. Ignored for ``"cell_pipe"``.
         aggregation_format: Parameter representation used by the CCWF controllers and aggregator.
             Use ``ExchangeFormat.PYTORCH`` to keep tensors on the streaming path. Defaults to
             ``ExchangeFormat.NUMPY`` for backward compatibility.
@@ -200,6 +188,13 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
             files on aggregation clients and materialize them lazily during aggregation. The
             trainer's source tensors remain in memory. This requires
             ``aggregation_format=ExchangeFormat.PYTORCH`` to take effect. Defaults to False.
+        key_metric: Metric used to determine the best global model. If validation metrics are
+            a dictionary, this selects the metric used by the client-side model selector.
+            Set to ``None`` to disable best-model selection. Defaults to "accuracy".
+        key_metric_mode: Whether lower ("min") or higher ("max") values of ``key_metric``
+            indicate a better model. Ignored when ``key_metric`` is ``None``. Defaults to "max".
+            In ``"min"`` mode, selector comparison values exposed through Swarm best-metric
+            logs and records are negated; for example, a loss of 2.31 is shown as -2.31.
 
     Example:
         Using nn.Module instance:
@@ -255,12 +250,16 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
         final_result_ack_timeout: Optional[float] = None,
         server_config_overrides: Optional[Dict[str, Any]] = None,
         client_config_overrides: Optional[Dict[str, Any]] = None,
-        pipe_type: str = "cell_pipe",
-        pipe_root_path: Optional[str] = None,
         aggregation_format: ExchangeFormat = ExchangeFormat.NUMPY,
         enable_tensor_disk_offload: bool = False,
+        key_metric: Optional[str] = "accuracy",
+        key_metric_mode: Literal["min", "max"] = "max",
     ):
-        _SwarmValidator(initial_ckpt=initial_ckpt)
+        _SwarmValidator(
+            initial_ckpt=initial_ckpt,
+            key_metric=key_metric,
+            key_metric_mode=key_metric_mode,
+        )
         warn_on_potential_secrets(command, context="recipe parameter 'command'")
         aggregation_format = normalize_exchange_format(aggregation_format, "aggregation_format")
         self.aggregation_format = aggregation_format
@@ -310,26 +309,8 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
             fields = ", ".join(sorted(protected_overrides))
             raise ValueError(
                 f"client_config_overrides cannot override recipe-managed fields: {fields}. "
-                "Use named recipe parameters for quorum settings or BaseSwarmLearningRecipe for custom components."
-            )
-
-        if pipe_type not in _VALID_PIPE_TYPES:
-            raise ValueError(f"pipe_type must be one of {_VALID_PIPE_TYPES}, got '{pipe_type}'")
-
-        if pipe_root_path and pipe_type != "file_pipe":
-            logger.warning(
-                f"pipe_root_path='{pipe_root_path}' is ignored when pipe_type='{pipe_type}' "
-                "(only applies to 'file_pipe')"
-            )
-
-        if pipe_root_path and pipe_type == "file_pipe":
-            if not os.path.isabs(pipe_root_path):
-                raise ValueError(f"pipe_root_path must be an absolute path, got '{pipe_root_path}'")
-
-        if pipe_type == "file_pipe" and not launch_external_process:
-            logger.warning(
-                "pipe_type='file_pipe' has no effect when launch_external_process=False "
-                "(in-process mode does not use pipes)"
+                "Use named recipe parameters (key_metric=None disables model selection) or "
+                "BaseSwarmLearningRecipe with an explicit SwarmClientConfig for custom components."
             )
 
         validate_aggregator_data_kind(
@@ -338,18 +319,6 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
             data_kind_arg="expected_data_kind",
             require_data_kind=True,
         )
-
-        task_pipe = None
-        if pipe_type == "file_pipe" and launch_external_process:
-            # Append {JOB_ID}/{SITE_NAME} so concurrent jobs and sites on the same
-            # machine use isolated pipe directories (resolved at runtime by NVFlare).
-            # Format matches the sag_cse_ccwf_pt reference template.
-            _job_site_suffix = "/{" + SystemVarName.JOB_ID + "}/{" + SystemVarName.SITE_NAME + "}"
-            if pipe_root_path:
-                root_path = pipe_root_path + _job_site_suffix
-            else:
-                root_path = "{" + SystemVarName.WORKSPACE + "}" + _job_site_suffix
-            task_pipe = FilePipe(mode=Mode.PASSIVE, root_path=root_path)
 
         # Handle dict-based model config (recipe accepts class_path; normalize for job API).
         # Pass the dict directly to PTFileModelPersistor so args are preserved in the exported config.
@@ -405,12 +374,8 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
         )
         server_config = SwarmServerConfig(**server_config_args)
 
-        # FilePipe remains an explicit legacy compatibility option. Ordinary Swarm jobs use
-        # ScriptRunner's ClientAPIExecutor path; only the custom Pipe case opts into the old
-        # BaseScriptRunner/LauncherExecutor stack.
-        runner_cls = BaseScriptRunner if task_pipe is not None else ScriptRunner
         client_config_args = {
-            "executor": runner_cls(
+            "executor": ScriptRunner(
                 script=train_script,
                 launch_external_process=launch_external_process,
                 command=command,
@@ -418,7 +383,6 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
                 cuda_empty_cache=cuda_empty_cache,
                 server_expected_format=aggregation_format,
                 params_transfer_type=params_transfer_type,
-                task_pipe=task_pipe,
                 **train_args,
             ),
             "aggregator": aggregator,
@@ -439,6 +403,11 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
                 round_timeout if final_result_ack_timeout is None else final_result_ack_timeout
             ),
         }
+        if key_metric is not None:
+            client_config_args["model_selector"] = IntimeModelSelector(
+                key_metric=key_metric,
+                negate_key_metric=key_metric_mode == "min",
+            )
         if learn_task_abort_timeout is not None:
             client_config_args["learn_task_abort_timeout"] = learn_task_abort_timeout
         client_config_args = merge_config_overrides(

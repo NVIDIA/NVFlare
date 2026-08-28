@@ -94,13 +94,12 @@ def test_known_agent_flag_table_keys_are_valid_command_paths():
         assert "--schema" in flags, f"command '{key}' should allow --schema"
 
 
-def test_runtime_boundary_excluded_dirs_match_packaging_exclusions():
-    # The runtime-boundary lint's excluded dirs and the packaging exclusion set
-    # are derived from a single source of truth in the lint engine
-    # (SKILL_PACKAGING_EXCLUDE_NAMES): both name what is stripped from a shipped
-    # skill (evals/, __pycache__, and byte-code globs). Keep the directory-name
-    # subset in sync so the lint never scans content packaging removes, and
-    # packaging never ships content the lint skips. Byte-code file globs
-    # (*.pyc/*.pyo) are not directory names and are excluded from this comparison.
-    packaging_dir_names = {name for name in lints_module.SKILL_PACKAGING_EXCLUDE_NAMES if not name.startswith("*")}
-    assert lints_module._RUNTIME_BOUNDARY_EXCLUDED_DIRS == packaging_dir_names
+def test_runtime_boundary_excluded_dirs_match_runtime_guidance_exclusions():
+    # The runtime-boundary lint's excluded dirs derive from its single source of
+    # truth, SKILL_RUNTIME_GUIDANCE_EXCLUDE_NAMES. This is a lint traversal rule,
+    # not an installer packaging rule. Byte-code file globs (*.pyc/*.pyo) are not
+    # directory names and are excluded from this comparison.
+    guidance_dir_names = {
+        name for name in lints_module.SKILL_RUNTIME_GUIDANCE_EXCLUDE_NAMES if not name.startswith("*")
+    }
+    assert lints_module._RUNTIME_BOUNDARY_EXCLUDED_DIRS == guidance_dir_names

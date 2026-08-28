@@ -20,8 +20,9 @@ Get the example code from github:
 Then navigate to the hello-tabular-stats directory:
 
 ```
+    cd NVFlare
     git switch <release branch>
-    cd NVFlare/examples/hello-world/hello-tabular-stats
+    cd examples/hello-world/hello-tabular-stats
 ```
 
 ## Install the dependency

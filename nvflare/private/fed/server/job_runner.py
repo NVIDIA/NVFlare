@@ -56,6 +56,8 @@ class _FinishedJobState:
     status: RunStatus
     workspace_archival_complete: bool = False
     workspace_save_started_at: float | None = None
+    workspace_archive_written: bool = False
+    workspace_archive_sources: Tuple[str, ...] = ()
 
 
 def _send_to_clients(admin_server, client_sites: List[str], engine, message, timeout=None, optional=False):
@@ -102,7 +104,26 @@ class JobRunner(FLComponent):
         self.scheduler = None
         self.running_jobs = {}
         self._finished_job_states = {}
+        self._pending_client_outcomes = {}
+        self._client_outcome_deadlines = {}
+        self.client_outcome_wait_timeout = ConfigService.get_float_var(
+            name=ConfigVarName.CLIENT_OUTCOME_WAIT_TIMEOUT, conf=SystemConfigs.APPLICATION_CONF, default=900.0
+        )
         self.lock = threading.Lock()
+
+    def is_client_outcome_pending(self, job_id: str, client_name: str) -> bool:
+        with self.lock:
+            return client_name in self._pending_client_outcomes.get(job_id, set())
+
+    def resolve_client_outcome(self, job_id: str, client_name: str):
+        with self.lock:
+            self._pending_client_outcomes.get(job_id, set()).discard(client_name)
+
+    def get_client_outcome_jobs(self, client_name: str = None) -> set:
+        with self.lock:
+            if client_name is None:
+                return set(self._pending_client_outcomes)
+            return {job_id for job_id, clients in self._pending_client_outcomes.items() if client_name in clients}
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.SYSTEM_START:
@@ -284,6 +305,8 @@ class JobRunner(FLComponent):
         if err:
             raise RuntimeError(f"Could not start the server App for job: {job_id}.")
 
+        with self.lock:
+            self._pending_client_outcomes[job_id] = set(client_sites)
         replies = engine.start_client_job(job, client_sites, fl_ctx)
         all_client_sites = list(client_sites.keys())
         active_client_sites = list(all_client_sites)
@@ -333,10 +356,20 @@ class JobRunner(FLComponent):
         active_sites = set(active_client_sites)
         participating_clients = [c.to_dict() for c in job_clients.values() if c.name in active_sites]
         job.meta[JobMetaKey.JOB_CLIENTS] = participating_clients
+        with self.lock:
+            self._pending_client_outcomes[job_id].intersection_update(active_client_sites)
         display_sites = ",".join(active_client_sites)
 
         self.log_info(fl_ctx, f"Started run: {job_id} for clients: {display_sites}")
-        self.fire_event(EventType.JOB_STARTED, fl_ctx)
+        self._fire_job_lifecycle_event(EventType.JOB_STARTED, job_id, fl_ctx)
+
+    def _fire_job_lifecycle_event(self, event_type: str, job_id: str, fl_ctx: FLContext):
+        self.fire_event_with_data(
+            event_type,
+            fl_ctx,
+            FLContextKey.EVENT_DATA,
+            {JobMetaKey.JOB_ID.value: job_id},
+        )
 
     def _stop_run(self, job_id, fl_ctx: FLContext):
         """Stop the application
@@ -412,6 +445,40 @@ class JobRunner(FLComponent):
                 if job_id not in engine.run_processes.keys():
                     job = self.running_jobs.get(job_id)
                     if job:
+                        with engine.lock:
+                            exception_process = engine.exception_run_processes.get(job_id)
+                            server_status = self._classify_finished_job_status(exception_process)
+                        server_failed = server_status in (
+                            RunStatus.FINISHED_EXECUTION_EXCEPTION,
+                            RunStatus.FINISHED_ABNORMAL,
+                        )
+                        with self.lock:
+                            pending = self._pending_client_outcomes.get(job_id)
+                            if server_failed:
+                                if pending:
+                                    self.logger.info(
+                                        f"Server failure for job ({job_id}); "
+                                        f"skipping client outcome wait for: {sorted(pending)}"
+                                    )
+                                self._pending_client_outcomes.pop(job_id, None)
+                                self._client_outcome_deadlines.pop(job_id, None)
+                                pending = None
+                            if pending and not job.run_aborted:
+                                now = time.monotonic()
+                                deadline = self._client_outcome_deadlines.setdefault(
+                                    job_id, now + self.client_outcome_wait_timeout
+                                )
+                                if now < deadline:
+                                    continue
+                                unresolved = sorted(pending)
+                                pending.clear()
+                            else:
+                                unresolved = None
+                        if unresolved:
+                            self.logger.warning(
+                                f"Timed out after {self.client_outcome_wait_timeout} seconds waiting for client outcomes "
+                                f"for job ({job_id}): {unresolved}. Finalizing from the server outcome."
+                            )
                         with engine.new_context() as completion_ctx:
                             completion_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job.job_id)
                             finished_state = self._finished_job_states.get(job.job_id)
@@ -426,7 +493,7 @@ class JobRunner(FLComponent):
                             # Publish terminal status only after artifacts are ready for download.
                             if not finished_state.workspace_archival_complete:
                                 try:
-                                    self._save_workspace(completion_ctx)
+                                    self._save_workspace(completion_ctx, finished_state, job.job_id)
                                 except Exception as e:
                                     now = time.monotonic()
                                     if finished_state.workspace_save_started_at is None:
@@ -438,12 +505,20 @@ class JobRunner(FLComponent):
                                             f"{secure_format_exception(e)}",
                                         )
                                         continue
-                                    self.log_error(
-                                        completion_ctx,
-                                        f"Workspace archival for finished job ({job.job_id}) kept failing for "
-                                        f"{WORKSPACE_SAVE_RETRY_GRACE_TIME} seconds; publishing terminal status without "
-                                        f"archived artifacts: {secure_format_exception(e)}",
-                                    )
+                                    if finished_state.workspace_archive_written:
+                                        self.log_error(
+                                            completion_ctx,
+                                            f"Workspace cleanup for finished job ({job.job_id}) kept failing for "
+                                            f"{WORKSPACE_SAVE_RETRY_GRACE_TIME} seconds; publishing terminal status with "
+                                            f"archived artifacts: {secure_format_exception(e)}",
+                                        )
+                                    else:
+                                        self.log_error(
+                                            completion_ctx,
+                                            f"Workspace archival for finished job ({job.job_id}) kept failing for "
+                                            f"{WORKSPACE_SAVE_RETRY_GRACE_TIME} seconds; publishing terminal status without "
+                                            f"archived artifacts: {secure_format_exception(e)}",
+                                        )
                                 finished_state.workspace_archival_complete = True
                             try:
                                 job_manager.set_status(job.job_id, status, completion_ctx)
@@ -456,18 +531,50 @@ class JobRunner(FLComponent):
                             with self.lock:
                                 del self.running_jobs[job_id]
                                 self._finished_job_states.pop(job_id, None)
+                                self._pending_client_outcomes.pop(job_id, None)
+                                self._client_outcome_deadlines.pop(job_id, None)
                             if status == RunStatus.FINISHED_ABORTED:
-                                self.fire_event(EventType.JOB_ABORTED, completion_ctx)
-                            self.fire_event(EventType.JOB_COMPLETED, completion_ctx)
+                                self._fire_job_lifecycle_event(EventType.JOB_ABORTED, job_id, completion_ctx)
+                            self._fire_job_lifecycle_event(EventType.JOB_COMPLETED, job_id, completion_ctx)
                             self.log_debug(completion_ctx, f"Finished running job:{job.job_id}")
                     engine.remove_exception_process(job_id)
             time.sleep(1.0)
 
+    @staticmethod
+    def _classify_finished_job_status(run_process):
+        if run_process is None:
+            return RunStatus.FINISHED_COMPLETED
+
+        finished = run_process.get(RunProcessKey.PROCESS_FINISHED, False)
+        process_return_code = run_process.get(RunProcessKey.PROCESS_RETURN_CODE)
+        if process_return_code == ProcessExitCode.INFRASTRUCTURE_ERROR:
+            return RunStatus.FINISHED_ABNORMAL
+        if process_return_code == JobReturnCode.ABORTED:
+            return RunStatus.FINISHED_ABORTED
+        if process_return_code in (
+            ProcessExitCode.CONFIG_ERROR,
+            ProcessExitCode.EXCEPTION,
+            ProcessExitCode.UNSAFE_COMPONENT,
+            JobReturnCode.EXECUTION_ERROR,
+        ):
+            # An external failure (e.g. launcher resource timeout) marked
+            # the run as exception. Preserve that even if the SJ later
+            # reported a clean shutdown via UPDATE_RUN_STATUS.
+            return RunStatus.FINISHED_EXECUTION_EXCEPTION
+        if finished:
+            # job status is already reported from the Job cell!
+            if run_process.get(RunProcessKey.PROCESS_EXE_ERROR, False):
+                return RunStatus.FINISHED_EXECUTION_EXCEPTION
+            return RunStatus.FINISHED_COMPLETED
+        # never got job status report from job cell
+        if process_return_code == -9:
+            return RunStatus.FINISHED_ABNORMAL
+        return RunStatus.FINISHED_EXECUTION_EXCEPTION
+
     def _get_finished_job_status(self, engine, job, fl_ctx):
-        exception_run_processes = engine.exception_run_processes
-        if job.job_id in exception_run_processes:
+        run_process = engine.exception_run_processes.get(job.job_id)
+        if run_process is not None:
             self.log_info(fl_ctx, f"Try to abort job ({job.job_id}) on clients ...")
-            run_process = exception_run_processes[job.job_id]
 
             # stop client run
             participants: Dict[str, Client] = run_process.get(RunProcessKey.PARTICIPANTS)
@@ -475,67 +582,46 @@ class JobRunner(FLComponent):
                 connected_clients=engine.client_manager.clients, participants=participants
             )
             self.abort_client_run(job.job_id, active_client_sites_names, fl_ctx)
+        return self._classify_finished_job_status(run_process)
 
-            finished = run_process.get(RunProcessKey.PROCESS_FINISHED, False)
-            process_return_code = run_process.get(RunProcessKey.PROCESS_RETURN_CODE)
-            if process_return_code == ProcessExitCode.INFRASTRUCTURE_ERROR:
-                status = RunStatus.FINISHED_ABNORMAL
-            elif process_return_code == JobReturnCode.ABORTED:
-                status = RunStatus.FINISHED_ABORTED
-            elif process_return_code in (
-                ProcessExitCode.CONFIG_ERROR,
-                ProcessExitCode.EXCEPTION,
-                ProcessExitCode.UNSAFE_COMPONENT,
-                JobReturnCode.EXECUTION_ERROR,
-            ):
-                # An external failure (e.g. launcher resource timeout) marked
-                # the run as exception. Preserve that even if the SJ later
-                # reported a clean shutdown via UPDATE_RUN_STATUS.
-                status = RunStatus.FINISHED_EXECUTION_EXCEPTION
-            elif finished:
-                # job status is already reported from the Job cell!
-                exe_err = run_process.get(RunProcessKey.PROCESS_EXE_ERROR, False)
-                if exe_err:
-                    status = RunStatus.FINISHED_EXECUTION_EXCEPTION
-                else:
-                    status = RunStatus.FINISHED_COMPLETED
-            else:
-                # never got job status report from job cell
-                if process_return_code == -9:
-                    status = RunStatus.FINISHED_ABNORMAL
-                else:
-                    status = RunStatus.FINISHED_EXECUTION_EXCEPTION
+    def _save_workspace(
+        self, fl_ctx: FLContext, finished_state: _FinishedJobState | None = None, job_id: str | None = None
+    ):
+        if job_id is None:
+            job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
+        if finished_state and finished_state.workspace_archive_written:
+            ws_dirs = list(finished_state.workspace_archive_sources)
         else:
-            status = RunStatus.FINISHED_COMPLETED
-        return status
+            workspace = fl_ctx.get_workspace()
+            run_dir = workspace.get_run_dir(job_id)
+            result_root = workspace.get_result_root(job_id)
+            log_root = workspace.get_log_root(job_id)
+            audit_root = workspace.get_audit_root(job_id)
 
-    def _save_workspace(self, fl_ctx: FLContext):
-        job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
-        workspace = fl_ctx.get_workspace()
-        run_dir = workspace.get_run_dir(job_id)
-        engine = fl_ctx.get_engine()
-        job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
-        result_root = workspace.get_result_root(job_id)
-        log_root = workspace.get_log_root(job_id)
-        audit_root = workspace.get_audit_root(job_id)
+            ws_dirs = []
+            seen_paths = set()
+            for path in (run_dir, result_root, log_root, audit_root):
+                if path in seen_paths:
+                    continue
+                seen_paths.add(path)
+                if not os.path.isdir(path):
+                    self.log_warning(fl_ctx, f"Skipping unavailable workspace archive source for job {job_id}: {path}")
+                    continue
+                ws_dirs.append(path)
 
-        ws_dirs = []
-        seen_paths = set()
-        for path in (run_dir, result_root, log_root, audit_root):
-            if path in seen_paths:
-                continue
-            seen_paths.add(path)
-            if not os.path.isdir(path):
-                self.log_warning(fl_ctx, f"Skipping unavailable workspace archive source for job {job_id}: {path}")
-                continue
-            ws_dirs.append(path)
+            if not ws_dirs:
+                self.log_warning(fl_ctx, f"No workspace archive sources are available for finished job {job_id}")
+                return
 
-        if not ws_dirs:
-            self.log_warning(fl_ctx, f"No workspace archive sources are available for finished job {job_id}")
-            return
-
-        location = job_manager.save_workspace(job_id, ws_dirs, fl_ctx)
-        self.log_debug(fl_ctx, f"Workspace {ws_dirs} saved to {location}")
+            engine = fl_ctx.get_engine()
+            job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
+            location = job_manager.save_workspace(job_id, ws_dirs, fl_ctx)
+            if finished_state:
+                # Latch the successful archive publication before cleanup so a cleanup retry cannot rewrite it from
+                # sources that an earlier cleanup attempt may have partially removed.
+                finished_state.workspace_archive_written = True
+                finished_state.workspace_archive_sources = tuple(ws_dirs)
+            self.log_debug(fl_ctx, f"Workspace {ws_dirs} saved to {location}")
 
         # Only remove sources after the complete set has been archived successfully.
         for d in ws_dirs:
@@ -626,9 +712,10 @@ class JobRunner(FLComponent):
                             self.log_info(fl_ctx, f"Job: {job_id} started to run, status changed to RUNNING.")
                         except Exception as e:
                             if job_id:
-                                if job_id in self.running_jobs:
-                                    with self.lock:
+                                with self.lock:
+                                    if job_id in self.running_jobs:
                                         del self.running_jobs[job_id]
+                                    self._pending_client_outcomes.pop(job_id, None)
                                 self._stop_run(job_id, fl_ctx)
                             job_manager.set_status(ready_job.job_id, RunStatus.FAILED_TO_RUN, fl_ctx)
 
@@ -638,7 +725,7 @@ class JobRunner(FLComponent):
                                     ready_job.job_id, {JobMetaKey.JOB_DEPLOY_DETAIL.value: deploy_detail}, fl_ctx
                                 )
 
-                            self.fire_event(EventType.JOB_ABORTED, fl_ctx)
+                            self._fire_job_lifecycle_event(EventType.JOB_ABORTED, ready_job.job_id, fl_ctx)
                             self.log_error(
                                 fl_ctx, f"Failed to run the Job ({ready_job.job_id}): {secure_format_exception(e)}"
                             )
@@ -665,6 +752,7 @@ class JobRunner(FLComponent):
                 raise RuntimeError(f"Could not restore the server App for job: {job_id}.")
             with self.lock:
                 self.running_jobs[job_id] = job
+                self._pending_client_outcomes[job_id] = {c.name for c in job_clients.values()}
             self.scheduler.restore_scheduled_job(job_id)
         except Exception as e:
             self.log_error(
@@ -724,17 +812,34 @@ class JobRunner(FLComponent):
 
     def fail_run(self, job_id: str, process_return_code: int, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
-        with engine.lock:
-            # Keep this synchronized with ServerEngine.wait_for_complete(), which
-            # may record the SJ's own exit code at the same time.
-            run_process = engine.exception_run_processes.get(job_id)
-            if run_process is None:
-                run_process = engine.run_processes.get(job_id)
-            if run_process is None:
-                run_process = {RunProcessKey.PARTICIPANTS: {}}
-            if run_process.get(RunProcessKey.PROCESS_RETURN_CODE) != ProcessExitCode.INFRASTRUCTURE_ERROR:
-                run_process[RunProcessKey.PROCESS_RETURN_CODE] = process_return_code
-            engine.exception_run_processes[job_id] = run_process
+        with self.lock:
+            with engine.lock:
+                if job_id not in self.running_jobs and job_id not in engine.run_processes:
+                    job_is_active = False
+                else:
+                    job_is_active = True
+                    # Keep this synchronized with ServerEngine.wait_for_complete(), which
+                    # may record the SJ's own exit code at the same time.
+                    run_process = engine.exception_run_processes.get(job_id)
+                    if run_process is None:
+                        run_process = engine.run_processes.get(job_id)
+                    if run_process is None:
+                        run_process = {RunProcessKey.PARTICIPANTS: {}}
+                    existing_code = run_process.get(RunProcessKey.PROCESS_RETURN_CODE)
+                    if existing_code != ProcessExitCode.INFRASTRUCTURE_ERROR and (
+                        existing_code is None or process_return_code != JobReturnCode.ABORTED
+                    ):
+                        run_process[RunProcessKey.PROCESS_RETURN_CODE] = process_return_code
+                    engine.exception_run_processes[job_id] = run_process
+            if not job_is_active:
+                self.log_info(fl_ctx, f"Job {job_id} is not running. It can not be failed.")
+                return f"Job {job_id} is not running."
+            # fail_run establishes an authoritative terminal failure. Remaining
+            # client reports cannot change that status and must not hold terminal
+            # publication behind the normal outcome grace period (900 seconds by
+            # default); _stop_run below drives their cleanup independently.
+            self._pending_client_outcomes.pop(job_id, None)
+            self._client_outcome_deadlines.pop(job_id, None)
         self._stop_run(job_id, fl_ctx)
 
         job = self.running_jobs.get(job_id)
@@ -759,4 +864,6 @@ class JobRunner(FLComponent):
         with self.lock:
             if job_id in self.running_jobs:
                 del self.running_jobs[job_id]
+            self._pending_client_outcomes.pop(job_id, None)
+            self._client_outcome_deadlines.pop(job_id, None)
         self.scheduler.remove_scheduled_job(job_id)

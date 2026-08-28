@@ -20,7 +20,7 @@ ownership hook, and the surface-freeze contract on the frozen constructor parame
 """
 
 import inspect
-from unittest.mock import Mock, call, patch
+from unittest.mock import Mock, patch
 
 import numpy as np
 import pytest
@@ -125,6 +125,9 @@ class _StubBackend(ClientAPIBackendSpec):
         self.calls.append(("execute", task_name))
         self.receiver_ids_during_execute = shareable.get_header(FOBSContextKey.RECEIVER_IDS)
         return self.result
+
+    def abort(self, fl_ctx):
+        self.calls.append("abort")
 
     def finalize(self, fl_ctx):
         self.calls.append("finalize")
@@ -554,34 +557,111 @@ class TestBackendPlumbing:
         engine.get_all_components.return_value = {"tensor_streamer": component}
         cell = engine.get_cell.return_value
         cell.get_fqcn.return_value = "site-1.job-1"
-        encode_ctx = {"cell": cell, "phase": "encode"}
-        decode_ctx = {"cell": cell, "phase": "decode"}
-        cell.get_fobs_context.side_effect = [encode_ctx, decode_ctx]
         fl_ctx = _make_fl_ctx(engine)
         fl_ctx.set_prop(FLContextKey.TASK_NAME, "train", private=True, sticky=False)
         task = Shareable()
         abort_signal = Signal()
         materialized = Shareable({"weight": "concrete"})
 
-        with (
-            patch("nvflare.app_common.executors.client_api_executor.fobs.dumps", return_value=b"encoded") as dumps,
-            patch("nvflare.app_common.executors.client_api_executor.fobs.loads", return_value=materialized) as loads,
-        ):
+        with patch(
+            "nvflare.app_common.executors.client_api_executor.materialize_lazy_download_refs",
+            return_value=materialized,
+        ) as resolve:
             reply = executor.execute("train", task, fl_ctx, abort_signal)
 
         assert reply is materialized
         assert task.get_header(FOBSContextKey.RECEIVER_IDS) == ["site-1.job-1"]
         assert backend.receiver_ids_during_execute == ["site-1.job-1"]
-        dumps.assert_called_once_with(backend.result, fobs_ctx=encode_ctx)
-        assert cell.get_fobs_context.call_args_list == [
-            call(
-                props={
-                    FOBSContextKey.PASS_THROUGH: False,
-                }
-            ),
-            call(props={FOBSContextKey.PASS_THROUGH: False, FOBSContextKey.ABORT_SIGNAL: abort_signal}),
-        ]
-        loads.assert_called_once_with(b"encoded", fobs_ctx=decode_ctx)
+        resolve.assert_called_once_with(backend.result, cell, abort_signal)
+
+    def test_execute_materializes_result_for_declared_nested_executor(self):
+        backend = _StubBackend()
+        backend.result = Shareable({"weight": LazyDownloadRef("trainer", "ref-1", "T0")})
+        executor = ClientAPIExecutor(execution_mode="external_process", command="python custom/train.py")
+        executor._backend = backend
+        engine = Mock()
+        engine.get_all_components.return_value = {}
+        cell = engine.get_cell.return_value
+        cell.get_fqcn.return_value = "site-1.job-1"
+        outer_executor = Mock()
+        outer_executor.requires_materialized_task_result.side_effect = lambda task_name: task_name == "train"
+        runner = Mock()
+        runner.find_executor.return_value = outer_executor
+        fl_ctx = _make_fl_ctx(engine)
+        fl_ctx.set_prop(FLContextKey.TASK_NAME, "cyclic_learn", private=True, sticky=False)
+        fl_ctx.set_prop(FLContextKey.RUNNER, runner, private=True, sticky=False)
+        task = Shareable()
+        abort_signal = Signal()
+        materialized = Shareable({"weight": "concrete"})
+
+        with patch(
+            "nvflare.app_common.executors.client_api_executor.materialize_lazy_download_refs",
+            return_value=materialized,
+        ) as resolve:
+            reply = executor.execute("train", task, fl_ctx, abort_signal)
+
+        assert reply is materialized
+        assert task.get_header(FOBSContextKey.RECEIVER_IDS) == ["site-1.job-1"]
+        runner.find_executor.assert_called_once_with("cyclic_learn")
+        outer_executor.requires_materialized_task_result.assert_called_once_with("train")
+        engine.get_all_components.assert_not_called()
+        resolve.assert_called_once_with(backend.result, cell, abort_signal)
+
+    def test_execute_materializes_result_for_configured_task_result_filter(self):
+        backend = _StubBackend()
+        backend.result = Shareable({"weight": LazyDownloadRef("trainer", "ref-1", "T0")})
+        executor = ClientAPIExecutor(execution_mode="external_process", command="python custom/train.py")
+        executor._backend = backend
+        engine = Mock()
+        engine.get_all_components.return_value = {}
+        cell = engine.get_cell.return_value
+        cell.get_fqcn.return_value = "site-1.job-1"
+        fl_ctx = _make_fl_ctx(engine)
+        fl_ctx.set_prop(FLContextKey.TASK_NAME, "train", private=True, sticky=False)
+        runner = Mock()
+        runner.task_result_filters = {"train/out": [Mock()]}
+        fl_ctx.set_prop(FLContextKey.RUNNER, runner, private=True, sticky=False)
+        task = Shareable()
+        materialized = Shareable({"weight": "concrete"})
+
+        with patch(
+            "nvflare.app_common.executors.client_api_executor.materialize_lazy_download_refs",
+            return_value=materialized,
+        ) as resolve:
+            reply = executor.execute("train", task, fl_ctx, Signal())
+
+        assert reply is materialized
+        assert task.get_header(FOBSContextKey.RECEIVER_IDS) == ["site-1.job-1"]
+        resolve.assert_called_once()
+
+    def test_execute_routes_result_to_cj_for_site_enforced_scope_filter(self):
+        backend = _StubBackend()
+        backend.result = Shareable({"weight": LazyDownloadRef("trainer", "ref-1", "T0")})
+        executor = ClientAPIExecutor(execution_mode="external_process", command="python custom/train.py")
+        executor._backend = backend
+        engine = Mock()
+        engine.get_all_components.return_value = {}
+        engine.get_cell.return_value.get_fqcn.return_value = "site-1.job-1"
+        fl_ctx = _make_fl_ctx(engine)
+        fl_ctx.set_prop(FLContextKey.TASK_NAME, "train", private=True, sticky=False)
+        scope = Mock()
+        scope.task_result_filters = {"out": [Mock()]}
+        fl_ctx.set_prop(FLContextKey.SCOPE_OBJECT, scope, private=True, sticky=False)
+        runner = Mock()
+        runner.task_result_filters = {}
+        fl_ctx.set_prop(FLContextKey.RUNNER, runner, private=True, sticky=False)
+        task = Shareable()
+        materialized = Shareable({"weight": "concrete"})
+
+        with patch(
+            "nvflare.app_common.executors.client_api_executor.materialize_lazy_download_refs",
+            return_value=materialized,
+        ):
+            reply = executor.execute("train", task, fl_ctx, Signal())
+
+        assert reply is materialized
+        assert task.get_header(FOBSContextKey.RECEIVER_IDS) == ["site-1.job-1"]
+        assert backend.receiver_ids_during_execute == ["site-1.job-1"]
 
     def test_materialize_result_uses_real_fobs_to_resolve_lazy_reference(self):
         flare_decomposers.register()
@@ -638,8 +718,11 @@ class TestBackendPlumbing:
         component = Mock()
         component.requires_materialized_task_result.side_effect = lambda task_name: task_name == "train"
         engine.get_all_components.return_value = {"tensor_streamer": component}
+        runner = Mock()
+        runner.find_executor.return_value = object()
         fl_ctx = _make_fl_ctx(engine)
         fl_ctx.set_prop(FLContextKey.TASK_NAME, "swarm_learn", private=True, sticky=False)
+        fl_ctx.set_prop(FLContextKey.RUNNER, runner, private=True, sticky=False)
         task = Shareable()
         task.set_header(FOBSContextKey.RECEIVER_IDS, ["site-1.job-1"])
 
@@ -647,6 +730,7 @@ class TestBackendPlumbing:
 
         assert reply is backend.result
         assert task.get_header(FOBSContextKey.RECEIVER_IDS) == ["site-1.job-1"]
+        runner.find_executor.assert_called_once_with("swarm_learn")
         component.requires_materialized_task_result.assert_not_called()
         engine.get_cell.assert_not_called()
 
@@ -657,6 +741,13 @@ class TestBackendPlumbing:
         executor.handle_event(EventType.ABOUT_TO_END_RUN, fl_ctx)
 
         backend.handle_event.assert_not_called()
+
+    def test_abort_task_notifies_backend(self):
+        executor, backend, fl_ctx, _ = self._make_started_executor()
+
+        executor.handle_event(EventType.ABORT_TASK, fl_ctx)
+
+        assert "abort" in backend.calls
 
     def test_end_run_finalizes_and_clears_backend(self):
         executor, backend, fl_ctx, _ = self._make_started_executor()
@@ -762,7 +853,7 @@ class TestAnalyticsOwnership:
 
     def test_fed_path_fires_federation_scoped_event(self):
         # The fed path must fire the already-"fed."-prefixed event name so it lands on the same
-        # server-side event as MetricRelay (job_config/script_runner.py) and flower_job.py
+        # server-side event used by Client API and Flower integrations
         # ("fed.analytix_log_stats"); firing the un-prefixed name federation-scoped would miss every
         # consumer listening on "fed.analytix_log_stats".
         assert FED_ANALYTIC_EVENT_TYPE == "fed.analytix_log_stats"

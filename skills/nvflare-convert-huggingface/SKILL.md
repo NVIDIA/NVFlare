@@ -1,13 +1,13 @@
 ---
 name: nvflare-convert-huggingface
-description: "Convert existing Hugging Face Transformers Trainer or TRL SFTTrainer training code into an NVFLARE federated job using flare.patch(trainer), local validation, and job export; do not use for manual PyTorch loops, Lightning, inference-only pipelines, deployment, or experiment workflows."
+description: "Convert existing Hugging Face Transformers Trainer or TRL SFTTrainer training code into an NVFLARE federated job using flare.patch(trainer), local validation, and job export; use when the user names Hugging Face or preliminary source inspection identifies one Hugging Face owner, and not for manual PyTorch loops, Lightning, inference-only pipelines, deployment, or experiment workflows."
 license: Apache-2.0
 metadata:
-  author: "NVIDIA FLARE Team <federatedlearning@nvidia.com>"
-  min_flare_version: "2.9.0"
-  blast_radius: runs_simulator
-  category: Conversion
   version: "0.1.0"
+  author: "NVIDIA FLARE Team <federatedlearning@nvidia.com>"
+  min-flare-version: "2.9.0"
+  blast-radius: runs_simulator
+  category: Conversion
   tags: "nvflare, federated-learning, huggingface, transformers, trl, peft, conversion"
   languages: "python"
   frameworks: "huggingface, transformers, trl, pytorch, nvflare"
@@ -43,13 +43,26 @@ workflows: do not merge or automatically chain them, do not route the combinatio
 workflow to run first before generating or running either job. Recommend `nvflare-fed-stats` first only when the
 user's purpose is to understand data distribution; handle conversion later as a separate request.
 
+## Available Scripts
+
+| Script | Purpose | Arguments |
+| --- | --- | --- |
+| `scripts/resolve_model_snapshot.py` | Resolve a local or Hub model/dataset snapshot and emit JSON evidence. | Identifier; required `--source`; optional source-root, download, revision, cache, and repository-type flags. |
+
+Use `run_script()` only during the validation phase after loading `references/huggingface-validation.md`. For example:
+
+- `run_script("scripts/resolve_model_snapshot.py", ["--source", "local", "--source-root", "<absolute-source-root>", "<configured-path>"])`
+- `run_script("scripts/resolve_model_snapshot.py", ["--source", "hub", "<org/model>"])`
+
 ## Workflow
 
 1. Load `../nvflare-shared/references/conversion-common.md` and apply it for the
    whole conversion; this SKILL.md states only the framework-specific deltas.
    Load `../nvflare-shared/references/conversion-workflow.md` only for a non-standard
-   case that needs its detailed rerun, data-location, authorization, or
-   missing-semantics guidance.
+   rerun, authorization, or missing-semantics case; it no longer holds the
+   data-location or partitioning contracts, whose invariants `conversion-common.md`
+   owns. Load `../nvflare-shared/references/site-data-and-paths.md` for generated
+   partitions, relative paths, or per-site data locations.
 2. Inspect before editing with `nvflare agent inspect source <path> --format json`
    plus direct source reading. Load `references/huggingface-detection.md` during
    this phase. If inspect recommends `nvflare-orient` for unresolved Trainer
@@ -59,9 +72,8 @@ user's purpose is to understand data distribution; handle conversion later as a 
    callbacks, checkpoint and PEFT settings, precision, local budget,
    distributed launcher, site/round counts, data location, and aggregation
    intent. Do not import or execute user training modules to discover them.
-3. Apply the dependency-install ordering rule in `../nvflare-shared/references/conversion-common.md` before
-   any Python command imports user, framework, NVFLARE, or declared dependency
-   modules.
+3. Apply the dependency-install ordering rule in `../nvflare-shared/references/conversion-common.md` before any Python command imports user, framework, NVFLARE, or declared dependencies. Keep dependency inventory single-purpose: check NVFLARE separately, inventory non-product packages separately, and do not append Hugging Face cache or filesystem discovery.
+   Defer model and dataset availability checks to the maintained resolver during validation. If an optional path must be inspected, run it separately and report a missing directory with exit code zero.
 4. Select the recipe from FL intent. For explicit FedAvg, run `nvflare recipe
    show fedavg-pt --format json`, then immediately load
    `../nvflare-shared/references/pytorch-family-recipe-construction.md` and use
@@ -77,10 +89,10 @@ user's purpose is to understand data distribution; handle conversion later as a 
 5. Convert with `references/huggingface-conversion.md` and adapt
    `assets/client_with_eval.py` rather than drafting a new round loop. Preserve
    model, tokenizer/processor, datasets, collator, Trainer arguments,
-   callbacks, and metrics. Partition site data per the "Site Data Partitioning"
-   rule in `../nvflare-shared/references/conversion-common.md`. Import the Client API as
-   `import nvflare.client.hf as flare`, so `flare.init()`, `flare.patch()`, and
-   `flare.is_running()` resolve to `nvflare.client.hf`. Keep
+   callbacks, and metrics. Apply the step-1 data-location rules to the client's
+   data argument. Import the Client API as `import nvflare.client.hf as flare`,
+   so `flare.init()`,
+   `flare.patch()`, and `flare.is_running()` resolve to `nvflare.client.hf`. Keep
    `flare.patch(trainer)` simple with inferred `params_scope="auto"` and encode
    one per-round budget in
    Trainer arguments: requested steps use `max_steps`, requested epochs use
@@ -93,21 +105,22 @@ user's purpose is to understand data distribution; handle conversion later as a 
    packaged project-local modules in the same writable source directory. Never
    use `..` in `train_script`, `add_server_file()`, or `add_client_file()`; use
    an existing resolved absolute path when co-location is impossible. Keep the
-   server and Trainer model factory and exchange keyspace identical. Follow the
-   shared "Recipe Model Config" policy; a direct instance must not use
-   `from_pretrained()`, downloads, or checkpoint loading during job
-   construction. Apply only options confirmed by the construction reference.
-   Preserve the job asset's recipe-before-parser
+   server and Trainer model factory and exchange keyspace identical. Use the
+   recipe's documented `class_path` or `path` key plus complete `args` for
+   required or overridden values; a direct zero-argument instance must not use
+   `from_pretrained()`, downloads, or
+   checkpoint loading during job construction. Apply only options confirmed by
+   the construction reference. Preserve the job asset's recipe-before-parser
    ordering, `ArgumentParser(allow_abbrev=False)`, and strict `parse_args()`; do
    not use `parse_known_args()`.
-7. Only after generated files exist, load
-   `../nvflare-shared/references/validation-evidence.md`, then
-   `references/huggingface-validation.md`. Follow the shared compile,
-   construction, export, package-inspection, simulation, and terminal-evidence
-   ladder; apply only the standard Trainer checks from the HF reference. Stop
-   at the first failed rung. Review and exercise the maintained assets directly;
-   do not inspect NVFLARE implementation source, improvise Recipe API probes, or
-   write one-off AST programs to re-prove them. Use
+7. Only after generated files exist, load `../nvflare-shared/references/validation-evidence.md`
+   and `references/huggingface-validation.md`. Follow the shared compile,
+   construction, simulation, and terminal-evidence ladder. Inspect export/package
+   evidence only for an exported final target;
+   inspect a local target's materialized evidence after its run. Apply only the
+   standard HF Trainer checks and stop at the first failed rung. Review and exercise
+   the maintained assets directly; do not inspect NVFLARE implementation source,
+   improvise Recipe API probes, or write one-off AST programs to re-prove them. Use
    `references/huggingface-state-and-distributed.md`
    only when inspection found PEFT, DDP, checkpoint/restore overrides,
    auxiliary trainable models, or another non-default patch setting.
@@ -122,11 +135,11 @@ user's purpose is to understand data distribution; handle conversion later as a 
 - Must use `flare.patch(trainer)` as the sole model-exchange owner. `receive()`
   inside a patched loop may inspect task metadata only; it must not load a
   second copy of the global model.
-- Must make the client entry's global `rank` argument required and pass it to
-  `flare.init(rank=rank)`; never default every process to rank zero. Resolve it
-  from an initialized process group or global `RANK`, using explicit zero only
-  for a verified single-process launch. Client API initialization order
-  otherwise follows `../nvflare-shared/references/conversion-common.md`.
+- Must follow the Client API initialization and conditional rank contract in
+  `../nvflare-shared/references/conversion-common.md`. Keep the generated client
+  rankless; `nvflare.client.hf.init()` owns distributed-rank resolution and
+  rejection. Load `references/huggingface-state-and-distributed.md` only for a
+  distributed multi-process source path.
 - Must preserve source evaluation. When per-round global-model evaluation is
   required, call `trainer.evaluate()` before `trainer.train()` on every rank.
   Do not invent `compute_metrics`, label mappings, averaging denominators, or
@@ -169,25 +182,18 @@ user's purpose is to understand data distribution; handle conversion later as a 
 - Must initialize `torch.distributed` before patching when rank environment
   variables declare multiple ranks. All ranks must call patched Trainer methods
   in identical order.
-- Must not set `trust_remote_code=True`, download model/data artifacts unless
-  requested, or recover from an offline/cache-only miss by going online. Cache
-  misses, offline errors, remote identifiers, and validation requests do not
-  authorize online retries. This narrows the authorization rules in
-  `../nvflare-shared/references/conversion-common.md`.
+- Must use the maintained HF validation resolver with an explicit local/Hub
+  source. For authorized downloads it obtains or validates a full commit-SHA
+  revision before downloading. Must not copy it into
+  generated job code, set `trust_remote_code=True`, download model/data
+  artifacts unless requested, or recover from a cache-only miss by going
+  online. Cache misses, remote identifiers, and validation requests do not
+  authorize online retries; see `../nvflare-shared/references/conversion-common.md`.
 - Site partitioning, custom aggregation, the Source Of Truth Boundary, and user
   input/authorization follow `../nvflare-shared/references/conversion-common.md`.
 
-Always read this converter SKILL.md together with
-`../nvflare-shared/references/conversion-common.md`. Complete each workflow
-phase before loading the next phase's reference. Do not preload validation,
-state/DDP, broad workflow, dependency, or reporting references. The standard
-FedAvg path loads, in order:
-`../nvflare-shared/references/conversion-common.md`,
-`references/huggingface-detection.md`,
-`../nvflare-shared/references/pytorch-family-recipe-construction.md`,
-`references/huggingface-conversion.md`,
-`../nvflare-shared/references/pytorch-model-exchange.md`,
-`../nvflare-shared/references/validation-evidence.md`, and
-`references/huggingface-validation.md`. Load
-`references/huggingface-state-and-distributed.md` and other shared references
-only under the triggers above. Do not depend on repository examples.
+Always read this converter SKILL.md together with `../nvflare-shared/references/conversion-common.md`. Complete each workflow phase before loading the next phase's reference.
+Do not preload validation, state/DDP, broad workflow, dependency, or reporting references. The standard FedAvg path loads, in order:
+`../nvflare-shared/references/conversion-common.md`, `references/huggingface-detection.md`, and `../nvflare-shared/references/site-data-and-paths.md` only for its stated triggers;
+`../nvflare-shared/references/pytorch-family-recipe-construction.md`, `references/huggingface-conversion.md`, and `../nvflare-shared/references/pytorch-model-exchange.md`;
+then `../nvflare-shared/references/validation-evidence.md` and `references/huggingface-validation.md`; load `references/huggingface-state-and-distributed.md` and other shared references only under the triggers above. Do not depend on repository examples.

@@ -75,6 +75,7 @@ for _mod_name, _mod_obj in [
 # doesn't actually try to connect to the Docker daemon.
 _docker_mock.from_env = MagicMock
 
+from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
@@ -430,6 +431,10 @@ class TestDockerJobHandleEnterStates:
 
 
 class TestDockerJobLauncherInit:
+    def test_rejects_whitespace_default_python_path(self):
+        with pytest.raises(ValueError, match="default_python_path must be a non-empty string"):
+            _make_launcher(default_python_path="   ")
+
     def test_raises_if_workspace_empty_and_no_env(self):
         """workspace is validated lazily in launch_job, not __init__."""
         with patch.dict("os.environ", {}, clear=True):
@@ -504,7 +509,8 @@ class TestDockerJobLauncherInit:
 def _make_fl_ctx(
     job_id="job-1",
     exe_module="nvflare.private.fed.app.client.worker_process",
-    parent_url="localhost:8002",
+    parent_url="tcp://localhost:8002",
+    parent_conn_sec=None,
     identity_name="site-1",
     workspace_path="/ws",
     set_list=None,
@@ -520,6 +526,8 @@ def _make_fl_ctx(
         JobProcessArgs.WORKSPACE: ("-w", workspace_path),
         JobProcessArgs.STARTUP_DIR: ("-s", workspace_path + "/startup"),
     }
+    if parent_conn_sec is not None:
+        job_args[JobProcessArgs.PARENT_CONN_SEC] = ("--parent_conn_sec", parent_conn_sec)
     fl_ctx.get_prop.side_effect = lambda key, *a, **kw: {
         FLContextKey.JOB_PROCESS_ARGS: job_args,
         FLContextKey.WORKSPACE_OBJECT: None,
@@ -622,6 +630,40 @@ class TestDockerJobLauncherLaunchJob:
         # Must replace localhost with container name (site name)
         assert "localhost" not in command_str
         assert "tcp://site-1:8004" in command_str
+
+    def test_launch_preserves_secure_parent_url(self):
+        launcher = _make_launcher()
+        dc = launcher._docker_client
+        container = MagicMock()
+        container.id = "abc123"
+        dc.containers.run.return_value = container
+
+        fl_ctx, _ = _make_fl_ctx(
+            identity_name="site-1",
+            parent_url="stcp://localhost:8004/path?option=value",
+            parent_conn_sec="mtls",
+        )
+        launcher.launch_job(_make_job_meta(), fl_ctx)
+
+        command = dc.containers.run.call_args.kwargs["command"]
+        assert "stcp://site-1:8004/path?option=value" in command
+        assert command[command.index("--parent_conn_sec") + 1] == "mtls"
+
+    @pytest.mark.parametrize(
+        ("parent_url", "parent_conn_sec", "message"),
+        [
+            ("stcp://localhost:8004", "clear", "does not match"),
+            ("tcp://localhost:8004", "mtls", "does not match"),
+            ("tcp://localhost:8004", "tls", "requires clear or mTLS"),
+            ("http://localhost:8004", "clear", "must use shared-file, tcp, or stcp"),
+        ],
+    )
+    def test_launch_rejects_invalid_parent_security(self, parent_url, parent_conn_sec, message):
+        launcher = _make_launcher()
+        fl_ctx, _ = _make_fl_ctx(parent_url=parent_url, parent_conn_sec=parent_conn_sec)
+
+        with pytest.raises(ValueError, match=message):
+            launcher.launch_job(_make_job_meta(), fl_ctx)
 
     def test_launch_raises_on_missing_job_id(self):
         launcher = _make_launcher()
@@ -957,6 +999,16 @@ class TestDockerJobLauncherLaunchJob:
         assert call_kwargs["command"][0] == "/opt/conda/bin/python"
         assert "python_path" not in call_kwargs
 
+    def test_launch_rejects_whitespace_python_path(self):
+        launcher = _make_launcher()
+        dc = launcher._docker_client
+        fl_ctx, _ = _make_fl_ctx(identity_name="site-1")
+        job_meta = _make_job_meta(site_name="site-1", docker_spec={"python_path": "   "})
+
+        with pytest.raises(RuntimeError, match="python_path.*non-empty string"):
+            launcher.launch_job(job_meta, fl_ctx)
+        dc.containers.run.assert_not_called()
+
     def test_launch_gpu_via_resource_spec_num_of_gpus(self):
         """num_of_gpus in resource_spec.docker is translated to device_requests for the job container."""
         launcher = _make_launcher()
@@ -974,25 +1026,75 @@ class TestDockerJobLauncherLaunchJob:
         device_requests = call_kwargs.get("device_requests")
         assert device_requests == [{"Count": 2, "Capabilities": [["gpu"]]}]
 
-    def test_launch_docker_spec_device_requests_overrides_num_of_gpus(self):
-        """Explicit device_requests in docker_spec takes precedence over num_of_gpus."""
+    def test_launch_rejects_job_controlled_device_requests(self):
+        launcher = _make_launcher()
+        dc = launcher._docker_client
+        fl_ctx, _ = _make_fl_ctx(identity_name="site-1")
+        job_meta = _make_job_meta(
+            site_name="site-1",
+            docker_spec={"num_of_gpus": 1, "device_requests": [{"Count": 4, "Capabilities": [["gpu"]]}]},
+        )
+
+        with pytest.raises(RuntimeError, match="unsupported job-controlled Docker option"):
+            launcher.launch_job(job_meta, fl_ctx)
+        dc.containers.run.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "field",
+        ["privileged", "pid_mode", "ipc_mode", "devices", "cap_add", "security_opt", "network_mode", "volumes"],
+    )
+    def test_launch_rejects_isolation_sensitive_job_options(self, field):
+        launcher = _make_launcher()
+        dc = launcher._docker_client
+        fl_ctx, _ = _make_fl_ctx(identity_name="site-1")
+        job_meta = _make_job_meta(site_name="site-1", docker_spec={field: "attacker-controlled"})
+
+        with pytest.raises(RuntimeError, match="unsupported job-controlled Docker option"):
+            launcher.launch_job(job_meta, fl_ctx)
+        dc.containers.run.assert_not_called()
+
+    def test_launch_rejects_entrypoint_without_locally_authorized_byoc(self):
+        launcher = _make_launcher()
+        dc = launcher._docker_client
+        fl_ctx, _ = _make_fl_ctx(identity_name="site-1")
+        job_meta = _make_job_meta(site_name="site-1", docker_spec={"entrypoint": "/bin/sh"})
+
+        with pytest.raises(RuntimeError, match="job Docker spec for site 'site-1'.*lacks locally authorized BYOC"):
+            launcher.launch_job(job_meta, fl_ctx)
+        dc.containers.run.assert_not_called()
+
+    @pytest.mark.parametrize("num_of_gpus", [True, False, "1", 1.5, -1, None])
+    def test_launch_rejects_invalid_num_of_gpus(self, num_of_gpus):
+        launcher = _make_launcher()
+        dc = launcher._docker_client
+        fl_ctx, _ = _make_fl_ctx(identity_name="site-1")
+        job_meta = _make_job_meta(site_name="site-1", docker_spec={"num_of_gpus": num_of_gpus})
+
+        with pytest.raises(RuntimeError, match="num_of_gpus.*integer greater than or equal to 0"):
+            launcher.launch_job(job_meta, fl_ctx)
+        dc.containers.run.assert_not_called()
+
+    def test_launch_forwards_entrypoint_after_local_byoc_authorization(self):
         launcher = _make_launcher()
         dc = launcher._docker_client
         container = MagicMock()
         container.id = "abc123"
         dc.containers.run.return_value = container
         dc.containers.get.return_value = _make_container("running")
-
         fl_ctx, _ = _make_fl_ctx(identity_name="site-1")
-        explicit_dr = [{"Count": 4, "Capabilities": [["gpu"]]}]
-        job_meta = _make_job_meta(
-            site_name="site-1",
-            docker_spec={"num_of_gpus": 1, "device_requests": explicit_dr},
-        )
+        job_meta = _make_job_meta(site_name="site-1", docker_spec={"entrypoint": ["/bin/sh", "-c"]})
+        job_meta[AppValidationKey.BYOC] = True
+
         launcher.launch_job(job_meta, fl_ctx)
 
         call_kwargs = dc.containers.run.call_args[1]
-        assert call_kwargs.get("device_requests") == explicit_dr
+        assert call_kwargs["entrypoint"] == ["/bin/sh", "-c"]
+        assert call_kwargs["command"][0:4] == [
+            "/usr/local/bin/python",
+            "-u",
+            "-m",
+            "nvflare.private.fed.app.client.worker_process",
+        ]
 
     def test_launch_num_of_gpus_overrides_default_device_requests(self):
         """Job-level num_of_gpus must override site-level default device_requests."""
@@ -1048,6 +1150,25 @@ class TestDockerJobLauncherLaunchJob:
 
         call_kwargs = dc.containers.run.call_args[1]
         assert call_kwargs.get("device_requests") == [{"Count": 2, "Capabilities": [["gpu"]]}]
+
+    def test_launch_portable_cpu_and_memory(self):
+        launcher = _make_launcher(default_job_container_kwargs={"nano_cpus": 1, "mem_limit": 1})
+        dc = launcher._docker_client
+        container = MagicMock(id="abc123")
+        dc.containers.run.return_value = container
+        dc.containers.get.return_value = _make_container("running")
+        fl_ctx, _ = _make_fl_ctx(identity_name="site-1")
+        job_meta = _make_job_meta(site_name="site-1")
+        job_meta[JobMetaKey.RESOURCE_SPEC.value] = {
+            "@default": {"num_of_cpus": 4, "memory": "8Gi"},
+            "site-1": {"num_of_cpus": 6},
+        }
+
+        launcher.launch_job(job_meta, fl_ctx)
+
+        call_kwargs = dc.containers.run.call_args[1]
+        assert call_kwargs["nano_cpus"] == 6_000_000_000
+        assert call_kwargs["mem_limit"] == 8 * 1024**3
 
     def test_launch_image_from_launcher_spec_default(self):
         """launcher_spec 'default' key applies to all sites that have no explicit entry."""

@@ -17,7 +17,7 @@
 from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
-from nvflare.fuel.utils.log_utils import dynamic_log_config
+from nvflare.fuel.utils.log_utils import dynamic_log_config, validate_site_log_config
 from nvflare.private.fed.client.client_status import get_status_message
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import InfoCollector
@@ -272,8 +272,9 @@ class ConfigureJobLogCommand(CommandProcessor):
         engine = fl_ctx.get_engine()
         workspace = engine.get_workspace()
         try:
+            config = validate_site_log_config(data)
             dynamic_log_config(
-                config=data,
+                config=config,
                 dir_path=workspace.get_run_dir(fl_ctx.get_job_id()),
                 reload_path=workspace.get_log_config_file_path(),
             )

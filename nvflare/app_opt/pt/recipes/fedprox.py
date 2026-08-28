@@ -53,6 +53,7 @@ class FedProxRecipe(FedAvgRecipe):
         model_locator: Optional custom model locator.
         per_site_config: Deprecated per-site constructor configuration.
         launch_once: Whether an external client process is launched once.
+        launch_timeout: Seconds to wait for an external client process to connect.
         shutdown_timeout: Seconds to wait for client shutdown.
         key_metric: Metric used for best-model selection.
         key_metric_mode: Whether the key metric should be minimized ("min") or maximized ("max").
@@ -91,6 +92,7 @@ class FedProxRecipe(FedAvgRecipe):
         model_locator: Optional[ModelLocator] = None,
         per_site_config: Optional[dict[str, dict]] = None,
         launch_once: bool = True,
+        launch_timeout: Optional[float] = 300.0,
         shutdown_timeout: float = 0.0,
         key_metric: str = "accuracy",
         key_metric_mode: Optional[Literal["min", "max"]] = None,
@@ -126,6 +128,7 @@ class FedProxRecipe(FedAvgRecipe):
             model_locator=model_locator,
             per_site_config=per_site_config,
             launch_once=launch_once,
+            launch_timeout=launch_timeout,
             shutdown_timeout=shutdown_timeout,
             key_metric=key_metric,
             key_metric_mode=key_metric_mode,

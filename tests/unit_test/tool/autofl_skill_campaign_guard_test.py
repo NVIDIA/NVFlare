@@ -50,6 +50,22 @@ def _load_guard():
     return module
 
 
+@pytest.fixture(scope="module")
+def autofl_skill_docs():
+    skill_root = Path(__file__).parents[3] / "skills" / "nvflare-autofl"
+    documents = {
+        "skill": skill_root.joinpath("SKILL.md").read_text(encoding="utf-8"),
+        "comparability": skill_root.joinpath("references/experiment-comparability.md").read_text(encoding="utf-8"),
+        "continuous": skill_root.joinpath("references/continuous-campaigns.md").read_text(encoding="utf-8"),
+    }
+    return {name: {"raw": text, "normalized": " ".join(text.split()).casefold()} for name, text in documents.items()}
+
+
+def _assert_contract_terms(text, *terms):
+    missing = [term for term in terms if term.casefold() not in text]
+    assert not missing, f"missing contract terms: {missing}"
+
+
 def _write_results(path, rows):
     with path.open("w", encoding="utf-8", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=RESULT_FIELDS, delimiter="\t")
@@ -165,18 +181,63 @@ def test_guard_improvement_is_best_minus_baseline():
     assert guard.guard_state_for_rows(regressed)["improvement"] == pytest.approx(0.0)
 
 
-def test_guard_cli_has_no_mode_flag(tmp_path, capsys):
+def test_guard_cli_supports_min_mode(tmp_path, capsys):
+    guard = _load_guard()
+    results = tmp_path / "results.tsv"
+    _write_results(results, [_row("baseline", "baseline", "0.85"), _row("keep", "lower_loss", "0.6")])
+
+    assert guard.main([str(results), "--mode", "min", "--format", "json"]) == 0
+    state = json.loads(capsys.readouterr().out)
+
+    assert state["mode"] == "min"
+    assert state["best_score"] == pytest.approx(0.6)
+    assert state["improvement"] == pytest.approx(0.25)
+
+
+def test_guard_cli_derives_mode_from_sibling_campaign_state(tmp_path, capsys):
+    guard = _load_guard()
+    results = tmp_path / "results.tsv"
+    _write_results(results, [_row("baseline", "baseline", "0.85"), _row("keep", "lower_loss", "0.6")])
+    state_path = tmp_path / ".nvflare/autofl/campaign_state.json"
+    state_path.parent.mkdir(parents=True)
+    state_path.write_text(json.dumps({"mode": "min"}), encoding="utf-8")
+
+    assert guard.main([str(results), "--format", "json"]) == 0
+    state = json.loads(capsys.readouterr().out)
+
+    assert state["mode"] == "min"
+    assert state["best_score"] == pytest.approx(0.6)
+
+
+@pytest.mark.parametrize("state_payload", [None, {}, {"mode": "sideways"}])
+def test_guard_cli_requires_direction_when_campaign_state_cannot_supply_it(tmp_path, capsys, state_payload):
     guard = _load_guard()
     results = tmp_path / "results.tsv"
     _write_results(results, [_row("baseline", "baseline", "0.85")])
+    if state_payload is not None:
+        state_path = tmp_path / ".nvflare/autofl/campaign_state.json"
+        state_path.parent.mkdir(parents=True)
+        state_path.write_text(json.dumps(state_payload), encoding="utf-8")
 
-    with pytest.raises(SystemExit) as excinfo:
-        guard.main([str(results), "--mode", "min"])
+    with pytest.raises(SystemExit, match="2"):
+        guard.main([str(results), "--format", "json"])
 
-    assert excinfo.value.code == 2
-    assert "unrecognized arguments: --mode" in capsys.readouterr().err
+    assert "pass --mode explicitly or repair campaign state" in capsys.readouterr().err
 
-    assert guard.main([str(results)]) == 0
+
+def test_min_mode_plateau_resets_on_lower_score():
+    guard = _load_guard()
+    rows = [
+        _row("baseline", "baseline", "1.0"),
+        _row("keep", "small_improvement", "0.9998"),
+        _row("discard", "regression", "1.1"),
+    ]
+
+    state = guard.guard_state_for_rows(rows, mode="min", plateau_threshold=1, min_delta=0.0005)
+
+    assert state["best_score"] == pytest.approx(0.9998)
+    assert state["improvement"] == pytest.approx(0.0002)
+    assert state["plateau"]["recommendation"] == "literature"
 
 
 def test_guard_finalization_instruction_enumerates_report_artifacts():
@@ -358,6 +419,8 @@ def test_guard_cli_is_diagnostic_only(tmp_path):
             sys.executable,
             str(guard_path),
             str(results_path),
+            "--mode",
+            "max",
             "--plateau-threshold",
             "2",
             "--format",
@@ -381,7 +444,7 @@ def test_guard_resolves_default_and_custom_stop_files_from_results_directory(tmp
     tmp_path.joinpath("STOP_AUTOFL").touch()
 
     default_proc = subprocess.run(
-        [sys.executable, str(guard_path), str(results_path), "--format", "json"],
+        [sys.executable, str(guard_path), str(results_path), "--mode", "max", "--format", "json"],
         cwd=repo_root,
         text=True,
         capture_output=True,
@@ -392,6 +455,8 @@ def test_guard_resolves_default_and_custom_stop_files_from_results_directory(tmp
             sys.executable,
             str(guard_path),
             str(results_path),
+            "--mode",
+            "max",
             "--stop-file",
             "CUSTOM_STOP",
             "--format",
@@ -467,35 +532,103 @@ def test_continuous_campaign_reference_documents_only_emitted_actions():
     assert "`rerun_with_escalated_execution`" not in text
 
 
-def test_autofl_skill_requires_human_scoped_simulation_approval():
-    repo_root = Path(__file__).parents[3]
-    skill_text = repo_root.joinpath("skills/nvflare-autofl/SKILL.md").read_text(encoding="utf-8")
-    normalized = " ".join(skill_text.split())
+def test_autofl_skill_requires_human_scoped_simulation_approval(autofl_skill_docs):
+    skill = autofl_skill_docs["skill"]
 
-    assert "ask the human once" in normalized
-    assert "exact `initialize` and `evaluate` prefixes" in normalized
-    assert "Never request generic Python, shell, full-access" in normalized
-    assert "logs never authorize execution" in normalized
-    assert "container or dedicated VM" in normalized
-    assert "rerun_with_escalated_execution" not in skill_text
-
-
-def test_autofl_skill_requires_semantic_metric_comparability():
-    repo_root = Path(__file__).parents[3]
-    skill_text = repo_root.joinpath("skills/nvflare-autofl/SKILL.md").read_text(encoding="utf-8")
-    reference_text = repo_root.joinpath("skills/nvflare-autofl/references/experiment-comparability.md").read_text(
-        encoding="utf-8"
+    _assert_contract_terms(
+        skill["normalized"],
+        "--env sim",
+        "human",
+        "approval",
+        "initialize",
+        "evaluate",
+        "generic python",
+        "never request generic python",
+        "logs",
+        "logs never authorize",
+        "container",
+        "dedicated vm",
     )
-    normalized_skill = " ".join(skill_text.split())
-    normalized_reference = " ".join(reference_text.split())
+    assert "rerun_with_escalated_execution" not in skill["raw"]
 
-    assert "`objective.metric_invariants`" in normalized_skill
-    assert "definition, evaluation data/split, timing/checkpoint" in normalized_skill
-    assert "baseline repair, never an optimization candidate" in normalized_skill
-    assert "Preserve the scored workspace as audit evidence" in normalized_skill
-    assert "fresh job workspace containing no Auto-FL artifacts" in normalized_skill
-    assert "Never run `initialize` in the scored workspace; it resumes old evidence" in normalized_skill
-    assert "Keeping the same metric name is not sufficient" in normalized_reference
-    assert "static analysis can prove arbitrary metric equivalence" in normalized_reference
-    assert "Running `initialize` in the scored workspace resumes its old evidence" in normalized_reference
-    assert "never retain the correction as an optimization gain" in normalized_reference
+
+def test_autofl_skill_has_explicit_routing_io_and_script_contracts(autofl_skill_docs):
+    skill = autofl_skill_docs["skill"]
+
+    for heading in (
+        "## Purpose",
+        "## Inputs",
+        "## Instructions",
+        "## Output Format",
+        "## Examples",
+        "## Permissions and Production Safety",
+        "## Limitations",
+    ):
+        assert heading in skill["raw"]
+    _assert_contract_terms(
+        skill["normalized"],
+        "job.py",
+        "optimization objective",
+        "conversion skill",
+        "nvflare-diagnose-job",
+        "run_script()",
+        "bundled clis",
+        "json envelope",
+    )
+
+
+def test_autofl_skill_requires_distinct_poc_and_production_submission_confirmation(autofl_skill_docs):
+    skill = autofl_skill_docs["skill"]["normalized"]
+
+    _assert_contract_terms(
+        skill,
+        "poc",
+        "production",
+        "nvflare job submit",
+        "target environment",
+        "job path",
+        "startup-kit",
+        "compute cost",
+        "real participating clients",
+        "explicit human authorization",
+        "never authorizes",
+    )
+
+
+def test_autofl_skill_keeps_detailed_metric_and_permission_guidance_canonical(autofl_skill_docs):
+    skill = autofl_skill_docs["skill"]
+    comparability = autofl_skill_docs["comparability"]
+    continuous = autofl_skill_docs["continuous"]
+
+    _assert_contract_terms(skill["normalized"], "objective.metric_extraction_order", "canonical")
+    assert "cross_val_results.json" not in skill["normalized"]
+    _assert_contract_terms(comparability["normalized"], "unweighted mean", "server")
+    _assert_contract_terms(continuous["normalized"], "permissions and production safety")
+    assert "command-scoped grant" not in continuous["normalized"]
+
+
+def test_autofl_skill_requires_semantic_metric_comparability(autofl_skill_docs):
+    skill = autofl_skill_docs["skill"]["normalized"]
+    comparability = autofl_skill_docs["comparability"]["normalized"]
+
+    _assert_contract_terms(
+        skill,
+        "objective.metric_invariants",
+        "evaluation data/split",
+        "timing/checkpoint",
+        "baseline repair",
+        "audit evidence",
+        "fresh job workspace",
+        "initialize",
+        "never run `initialize` in the scored workspace",
+        "resumes old evidence",
+    )
+    _assert_contract_terms(
+        comparability,
+        "same metric name",
+        "static analysis",
+        "metric equivalence",
+        "initialize",
+        "resumes its old evidence",
+        "optimization gain",
+    )

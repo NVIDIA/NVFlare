@@ -217,8 +217,8 @@ Example:
 
 For more details on how ScriptRunner configures ``ClientAPIExecutor`` with an in-process or external-process backend, refer to its
 :func:`add_to_fed_job<nvflare.job_config.script_runner.ScriptRunner.add_to_fed_job>` implementation.
-Code that passes ``pipe_connect_type`` explicitly or supplies a custom ``task_pipe`` must use
-``BaseScriptRunner``; ``ScriptRunner`` rejects these arguments.
+Transport is selected by the site's Cell driver configuration. ``ScriptRunner``
+does not accept Pipe or Launcher components.
 
 
 Executor

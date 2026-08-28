@@ -15,9 +15,20 @@
 
 """Diagnose the product Auto-FL campaign continuation decision.
 
+Usage:
+    ``python campaign_guard.py [RESULTS] [options]``
+Arguments:
+    ``RESULTS`` is the campaign TSV ledger; options configure diagnostic caps,
+    stop files, plateau, crash, exploration, and family-repeat thresholds.
+Output:
+    Prints the read-only continuation decision as text or JSON. The campaign
+    runner remains the only writer of authoritative campaign state.
+Exit codes:
+    0 for a completed diagnostic; argparse uses 2 for invalid CLI syntax and
+    contract validation errors return a nonzero process status.
+
 The skill runner executes candidates and writes ``results.tsv``. This guard
-turns that ledger into a machine-readable decision. The campaign runner is the
-only writer of authoritative campaign state.
+turns that ledger into a machine-readable decision.
 """
 
 from __future__ import annotations
@@ -36,12 +47,6 @@ DEFAULT_PLATEAU_THRESHOLD = 8
 DEFAULT_EXPLORATION_BATCH_SIZE = 3
 DEFAULT_FAMILY_REPEAT_LIMIT = 6
 DEFAULT_STOP_FILES = ("STOP_AUTOFL", ".nvflare/autofl/STOP")
-MODE_MAX_ONLY_MESSAGE = (
-    "Auto-FL campaigns only support mode 'max'; minimization is not supported because NVFLARE "
-    "best-model selection treats higher key_metric values as better. Report a negated metric "
-    "from the job (for example neg_val_loss) so that higher is better, matching the "
-    "IntimeModelSelector negate_key_metric guidance."
-)
 ATTEMPT_STATUSES = {"candidate", "keep", "discard", "crash"}
 SCORED_ATTEMPT_STATUSES = {"keep", "discard"}
 LITERATURE_EVENT_STATUSES = {"event", "literature", "checkpoint"}
@@ -184,20 +189,29 @@ def family_repeat_stalled(rows: List[Dict[str, str]], limit: int) -> bool:
     return all(candidate_kind(row) == "argument_only" for row in recent)
 
 
-def better(new_score: Optional[float], old_score: Optional[float], min_delta: float = 0.0) -> bool:
+def validate_mode(mode: str) -> str:
+    if mode not in {"min", "max"}:
+        raise ValueError(f"mode must be 'min' or 'max', but got {mode!r}")
+    return mode
+
+
+def better(new_score: Optional[float], old_score: Optional[float], mode: str = "max", min_delta: float = 0.0) -> bool:
+    mode = validate_mode(mode)
     new_score = parse_score(new_score)
     old_score = parse_score(old_score)
     if new_score is None:
         return False
     if old_score is None:
         return True
+    if mode == "min":
+        return new_score < old_score - min_delta
     return new_score > old_score + min_delta
 
 
-def best_score(rows: List[Dict[str, str]]) -> Optional[float]:
+def best_score(rows: List[Dict[str, str]], mode: str = "max") -> Optional[float]:
     best = None
     for _, _, score in scored_rows_with_index(rows, is_retained):
-        if better(score, best):
+        if better(score, best, mode):
             best = score
     return best
 
@@ -212,17 +226,39 @@ def scored_baseline_score(rows: List[Dict[str, str]]) -> Optional[float]:
     return None
 
 
-def improvement_over_baseline(baseline: Optional[float], best: Optional[float]) -> Optional[float]:
-    """Best-minus-baseline delta; campaigns always maximize, so a positive value always means better."""
+def improvement_over_baseline(baseline: Optional[float], best: Optional[float], mode: str = "max") -> Optional[float]:
+    """Return a direction-adjusted delta so positive values always mean improvement."""
+
+    mode = validate_mode(mode)
     if baseline is None or best is None:
         return None
-    return best - baseline
+    return baseline - best if mode == "min" else best - baseline
+
+
+def campaign_mode_for_results(results_path: Path) -> str:
+    """Read the authoritative objective mode associated with a campaign ledger."""
+
+    state_path = results_path.parent / ".nvflare/autofl/campaign_state.json"
+    try:
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ValueError(
+            f"cannot determine objective mode from {state_path}; pass --mode explicitly or repair campaign state"
+        ) from exc
+    state_mode = state.get("mode") if isinstance(state, dict) else None
+    if state_mode not in {"max", "min"}:
+        raise ValueError(
+            f"campaign state {state_path} does not contain a valid objective mode; "
+            "pass --mode explicitly or repair campaign state"
+        )
+    return state_mode
 
 
 def plateau_status(
     rows: List[Dict[str, str]],
     threshold: int,
     min_delta: float,
+    mode: str = "max",
     exploration_batch_size: int = DEFAULT_EXPLORATION_BATCH_SIZE,
 ) -> Dict[str, Any]:
     retained = scored_rows_with_index(rows, is_retained)
@@ -241,7 +277,7 @@ def plateau_status(
     best_scored_idx = -1
     best_name = ""
     for scored_idx, (row_idx, row, score) in enumerate(retained):
-        if better(score, best, min_delta):
+        if better(score, best, mode, min_delta):
             best = score
             best_row_idx = row_idx
             best_scored_idx = scored_idx
@@ -311,6 +347,7 @@ def guard_state_for_rows(
     plateau_threshold: int = DEFAULT_PLATEAU_THRESHOLD,
     min_delta: float = DEFAULT_MIN_DELTA,
     hard_crash_threshold: int = DEFAULT_HARD_CRASH_THRESHOLD,
+    mode: str = "max",
     pending_manifest_count: int = 0,
     exploration_batch_size: int = DEFAULT_EXPLORATION_BATCH_SIZE,
     family_repeat_limit: int = DEFAULT_FAMILY_REPEAT_LIMIT,
@@ -321,6 +358,7 @@ def guard_state_for_rows(
         raise ValueError("exploration_batch_size must be non-negative")
     if family_repeat_limit < 0:
         raise ValueError("family_repeat_limit must be non-negative")
+    mode = validate_mode(mode)
     attempts = comparable_attempts(rows)
     pending = pending_candidates(rows)
     cap = max_candidates
@@ -328,7 +366,7 @@ def guard_state_for_rows(
     stop_file_hits = existing_stop_files(stop_files or list(DEFAULT_STOP_FILES))
     batches = exploration_batches(rows, exploration_batch_size)
     active_batch = next((batch for batch in batches if batch["completion_index"] is None), None)
-    plateau = plateau_status(rows, plateau_threshold, min_delta, exploration_batch_size)
+    plateau = plateau_status(rows, plateau_threshold, min_delta, mode, exploration_batch_size)
 
     decision = "continue"
     reason = "continue"
@@ -405,12 +443,13 @@ def guard_state_for_rows(
     else:
         instruction = "Do not produce a final answer. Propose and prepare the next same-budget candidate now."
 
-    retained_best = best_score(rows)
+    retained_best = best_score(rows, mode)
     baseline = scored_baseline_score(rows)
     return {
         "schema_version": "nvflare.autofl.campaign_state.v1",
         "updated_at": utc_now(),
         "results": results_path,
+        "mode": mode,
         "decision": decision,
         "reason": reason,
         "next_action": next_action,
@@ -424,7 +463,7 @@ def guard_state_for_rows(
         "best_score": retained_best,
         "baseline_status": "complete" if baseline is not None else "pending",
         "baseline_score": baseline,
-        "improvement": improvement_over_baseline(baseline, retained_best),
+        "improvement": improvement_over_baseline(baseline, retained_best, mode),
         "stop_files": stop_file_hits,
         "plateau": plateau,
         "exploration_batch": active_batch or (batches[-1] if batches else None),
@@ -443,6 +482,7 @@ def guard_state(
     plateau_threshold: int = DEFAULT_PLATEAU_THRESHOLD,
     min_delta: float = DEFAULT_MIN_DELTA,
     hard_crash_threshold: int = DEFAULT_HARD_CRASH_THRESHOLD,
+    mode: str = "max",
     pending_manifest_count: int = 0,
     exploration_batch_size: int = DEFAULT_EXPLORATION_BATCH_SIZE,
     family_repeat_limit: int = DEFAULT_FAMILY_REPEAT_LIMIT,
@@ -455,6 +495,7 @@ def guard_state(
         plateau_threshold=plateau_threshold,
         min_delta=min_delta,
         hard_crash_threshold=hard_crash_threshold,
+        mode=mode,
         pending_manifest_count=pending_manifest_count,
         exploration_batch_size=exploration_batch_size,
         family_repeat_limit=family_repeat_limit,
@@ -469,6 +510,7 @@ def print_text(state: Dict[str, Any]) -> None:
         "final_response_allowed",
         "candidate_cap",
         "candidate_cap_source",
+        "mode",
         "candidate_attempts",
         "remaining_candidates",
         "pending_candidates",
@@ -497,6 +539,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--hard-crash-threshold", type=int, default=DEFAULT_HARD_CRASH_THRESHOLD)
     parser.add_argument("--exploration-batch-size", type=int, default=DEFAULT_EXPLORATION_BATCH_SIZE)
     parser.add_argument("--family-repeat-limit", type=int, default=DEFAULT_FAMILY_REPEAT_LIMIT)
+    parser.add_argument("--mode", choices=["max", "min"])
     parser.add_argument("--format", choices=["text", "json"], default="text")
     args = parser.parse_args(argv)
 
@@ -512,6 +555,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         raise ValueError("--family-repeat-limit must be non-negative")
 
     results_path = Path(args.results).resolve()
+    mode = args.mode
+    if mode is None:
+        try:
+            mode = campaign_mode_for_results(results_path)
+        except ValueError as exc:
+            parser.error(str(exc))
     stop_files = args.stop_file if args.stop_file is not None else list(DEFAULT_STOP_FILES)
     resolved_stop_files = [
         str(path if path.is_absolute() else results_path.parent / path) for path in map(Path, stop_files)
@@ -523,6 +572,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         plateau_threshold=args.plateau_threshold,
         min_delta=args.min_delta,
         hard_crash_threshold=args.hard_crash_threshold,
+        mode=mode,
         exploration_batch_size=args.exploration_batch_size,
         family_repeat_limit=args.family_repeat_limit,
     )

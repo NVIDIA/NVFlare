@@ -67,7 +67,9 @@ from nvflare.utils.job_launcher_utils import (
     get_client_job_args,
     get_credential_env,
     get_job_launcher_spec,
+    get_portable_resource_spec,
     get_server_job_args,
+    portable_memory_to_mib,
 )
 
 
@@ -108,9 +110,8 @@ def _resolve_resources(
         return None if value is None else _require_int(value, name)
 
     gpus_per_node = optional_int("gpus_per_node")
-    resources = _mapping_or_empty(job_meta.get(JobMetaKey.RESOURCE_SPEC.value), "resource_spec")
-    site = _mapping_or_empty(resources.get(site_name), f"resource_spec for site '{site_name}'")
-    portable_total = site.get("num_of_gpus")
+    portable = get_portable_resource_spec(job_meta, site_name)
+    portable_total = portable.get("num_of_gpus")
     if portable_total is not None:
         portable_total = _require_int(portable_total, "num_of_gpus", 0)
     if gpus_per_node is not None and portable_total is not None and portable_total != nodes * gpus_per_node:
@@ -122,6 +123,10 @@ def _resolve_resources(
 
     cpus_per_node = optional_int("cpus_per_node")
     mem_per_node = optional_int("mem_per_node")
+    if "num_of_cpus" in portable:
+        cpus_per_node = portable["num_of_cpus"]
+    if "memory" in portable:
+        mem_per_node = portable_memory_to_mib(portable["memory"])
     time_limit = spec.get("time")
     if time_limit is not None:
         time_limit = _require_string(time_limit, "time")
@@ -216,15 +221,15 @@ def _rewrite_parent_url(job_args: dict, parent_host: Optional[str], internal_por
         host = parsed.hostname
     except ValueError as e:
         raise SlurmLauncherError("malformed parent URL in JOB_PROCESS_ARGS") from e
-    if parsed.scheme != "tcp" or port != internal_port or not host:
+    if parsed.scheme not in ("tcp", "stcp") or port != internal_port or not host:
         raise SlurmLauncherError(
-            f"parent URL must use {SHARED_FILE_SCHEME} or tcp with configured internal_port "
+            f"parent URL must use {SHARED_FILE_SCHEME}, tcp, or stcp with configured internal_port "
             f"{internal_port}, got {raw_url!r}"
         )
     host = _resolve_parent_host(parent_host)
     rendered_host = host if host.startswith("[") and host.endswith("]") else f"[{host}]" if ":" in host else host
     netloc = f"{rendered_host}:{internal_port}"
-    rewritten = urlunsplit(("tcp", netloc, parsed.path, parsed.query, parsed.fragment))
+    rewritten = urlunsplit((parsed.scheme, netloc, parsed.path, parsed.query, parsed.fragment))
     copied[JobProcessArgs.PARENT_URL] = (flag, rewritten)
     return copied
 
@@ -450,13 +455,16 @@ class SlurmJobLauncher(JobLauncherSpec):
         if not isinstance(connection_entry, (tuple, list)) or len(connection_entry) != 2:
             raise SlurmLauncherError(f"malformed {JobProcessArgs.PARENT_CONN_SEC} in JOB_PROCESS_ARGS")
         process_connection_security = _require_string(connection_entry[1], f"{JobProcessArgs.PARENT_CONN_SEC} value")
-        if process_connection_security != "clear":
-            raise SlurmLauncherError("Slurm job launch requires clear parent connection security")
+        if process_connection_security not in ("clear", "mtls"):
+            raise SlurmLauncherError("Slurm job launch requires clear or mTLS parent connection security")
         job_args = _rewrite_parent_url(
             raw_job_args,
             parent_host=self.config.parent_host,
             internal_port=self.config.internal_port,
         )
+        parent_scheme = urlsplit(str(job_args[JobProcessArgs.PARENT_URL][1])).scheme
+        if (parent_scheme == "stcp") != (process_connection_security == "mtls"):
+            raise SlurmLauncherError("parent URL scheme does not match parent connection security")
 
         study = job_meta.get(JobMetaKey.STUDY.value)
         if study is not None:

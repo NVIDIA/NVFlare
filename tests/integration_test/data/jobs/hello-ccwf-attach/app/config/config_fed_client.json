@@ -1,0 +1,95 @@
+{
+  "format_version": 2,
+  "executors": [
+    {
+      "tasks": [
+        "train",
+        "submit_model",
+        "validate"
+      ],
+      "executor": {
+        "path": "nvflare.app_common.executors.client_api_executor.ClientAPIExecutor",
+        "args": {
+          "execution_mode": "attach",
+          "attach_id": "ccwf_trainer",
+          "attach_timeout": 60.0,
+          "heartbeat_interval": 1.0,
+          "heartbeat_timeout": 10.0,
+          "task_wait_timeout": 60.0,
+          "result_wait_timeout": 60.0,
+          "params_exchange_format": "numpy",
+          "server_expected_format": "numpy",
+          "params_transfer_type": "DIFF"
+        }
+      }
+    },
+    {
+      "tasks": [
+        "swarm_*"
+      ],
+      "executor": {
+        "path": "nvflare.app_common.ccwf.SwarmClientController",
+        "args": {
+          "learn_task_name": "train",
+          "learn_task_timeout": 60.0,
+          "persistor_id": "persistor",
+          "aggregator_id": "aggregator",
+          "shareable_generator_id": "shareable_generator",
+          "min_responses_required": 2,
+          "wait_time_after_min_resps_received": 1
+        }
+      }
+    },
+    {
+      "tasks": [
+        "cse_*"
+      ],
+      "executor": {
+        "path": "nvflare.app_common.ccwf.CrossSiteEvalClientController",
+        "args": {
+          "submit_model_task_name": "submit_model",
+          "validation_task_name": "validate",
+          "persistor_id": "cse_persistor"
+        }
+      }
+    }
+  ],
+  "task_result_filters": [],
+  "task_data_filters": [],
+  "components": [
+    {
+      "id": "cse_persistor",
+      "path": "empty_model_persistor.EmptyModelPersistor",
+      "args": {}
+    },
+    {
+      "id": "persistor",
+      "path": "nvflare.app_common.ccwf.comps.np_file_model_persistor.NPFileModelPersistor",
+      "args": {}
+    },
+    {
+      "id": "shareable_generator",
+      "path": "nvflare.app_common.ccwf.comps.simple_model_shareable_generator.SimpleModelShareableGenerator",
+      "args": {}
+    },
+    {
+      "id": "aggregator",
+      "path": "nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator",
+      "args": {
+        "expected_data_kind": "WEIGHT_DIFF"
+      }
+    },
+    {
+      "id": "model_selector",
+      "path": "nvflare.app_common.widgets.intime_model_selector.IntimeModelSelector",
+      "args": {
+        "key_metric": "val_accuracy"
+      }
+    },
+    {
+      "id": "result_printer",
+      "path": "nvflare.app_common.ccwf.comps.cwe_result_printer.CWEResultPrinter",
+      "args": {}
+    }
+  ]
+}

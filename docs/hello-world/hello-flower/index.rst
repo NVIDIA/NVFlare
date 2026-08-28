@@ -25,6 +25,7 @@ Then navigate to the ``hello-flower`` directory:
 
 .. code-block:: bash
 
+   cd NVFlare
    git switch <release branch>
    cd examples/hello-world/hello-flower
 
@@ -37,8 +38,8 @@ Install the dependencies:
 .. warning::
 
    This ``main`` branch example uses Flower 1.26+ and the newer Flower SuperLink
-   configuration flow. Use the NVFlare 2.8 release candidate line
-   (``nvflare~=2.8.0rc``), or install NVFlare from this repository if that
+   configuration flow. Use the NVFlare 2.9 release candidate line
+   (``nvflare~=2.9.0rc``), or install NVFlare from this repository if that
    package is not available from PyPI yet.
 
    If you are using released NVFlare 2.7.x, switch to the 2.7 branch or tag of
@@ -106,13 +107,16 @@ The Job Recipe contains the Flower app configuration and deploys it within NVFla
 
 .. code-block:: python
 
+    from nvflare.app_opt.flower.recipe import FlowerRecipe
+    from nvflare.recipe import SimEnv, add_experiment_tracking
+
     recipe = FlowerRecipe(
         name="hello-flower",
         min_clients=n_clients,
-        num_rounds=num_rounds,
         flower_content="./flwr-pt",  # Local directory path
-        stream_metrics=stream_metrics,
     )
+    if stream_metrics:
+        add_experiment_tracking(recipe, tracking_type="tensorboard")
 
     env = SimEnv(num_clients=n_clients, num_threads=n_clients)
     recipe.execute(env=env)
@@ -121,15 +125,17 @@ The Job Recipe contains the Flower app configuration and deploys it within NVFla
 
 .. code-block:: python
 
+    from nvflare.app_opt.flower.recipe import FlowerRecipe
+    from nvflare.recipe import ProdEnv
+
     recipe = FlowerRecipe(
         name="hello-flower",
         min_clients=n_clients,
-        num_rounds=num_rounds,
         flower_app_path="local/custom/flwr-pt", # local/custom is the mandatory location for flower apps.
-        stream_metrics=stream_metrics,
     )
-
-    env = SimEnv(num_clients=n_clients, num_threads=n_clients)
+    # The app must already be installed by the administrator under
+    # local/custom in the server's workspace.
+    env = ProdEnv(startup_kit_location="/path/to/admin/startup/kit")
     recipe.execute(env=env)
 
 Run Job
@@ -145,15 +151,6 @@ This runs 2 Flower clients and a Flower server in parallel using NVFlare's simul
 .. code-block:: bash
 
    python job.py --job_name "flwr-pt" --content_dir "./flwr-pt"
-
-Run ``flwr-pt`` with NVFlare Simulation (Pre-deployed Mode)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-If the Flower app is pre-deployed on the server (clients receive it via Flower's FAB distribution):
-
-.. code-block:: bash
-
-   python job.py --job_name "flwr-pt" --flower_app_path "local/custom/flwr-pt"
 
 Run ``flwr-pt`` with NVFlare Simulation and TensorBoard Streaming
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

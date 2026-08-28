@@ -1,0 +1,4597 @@
+{
+  "schema_version": 1,
+  "recipes": [
+    {
+      "summary": {
+        "name": "cyclic",
+        "description": "Cyclic federated learning recipe for sequential model training across clients.",
+        "framework": "core",
+        "module": "nvflare.recipe.cyclic",
+        "class": "CyclicRecipe",
+        "algorithm": "cyclic",
+        "aggregation": null,
+        "state_exchange": "full_model",
+        "privacy": []
+      },
+      "detail": {
+        "name": "cyclic",
+        "description": "Cyclic federated learning recipe for sequential model training across clients.",
+        "framework": "core",
+        "module": "nvflare.recipe.cyclic",
+        "class": "CyclicRecipe",
+        "algorithm": "cyclic",
+        "aggregation": null,
+        "state_exchange": "full_model",
+        "privacy": [],
+        "client_requirements": {
+          "state_exchange": "full_model",
+          "requires_training_script": true,
+          "requires_per_site_config": false,
+          "requires_site_list": false,
+          "min_clients": {
+            "required": false,
+            "default": 2
+          }
+        },
+        "framework_support": [
+          "pytorch",
+          "tensorflow",
+          "numpy",
+          "raw"
+        ],
+        "heterogeneity_support": [
+          "horizontal"
+        ],
+        "privacy_compatible": [],
+        "notes": [],
+        "parameters": [
+          {
+            "name": "name",
+            "type": "str",
+            "required": false,
+            "default": "cyclic",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "model",
+            "type": "Union[Any, Dict[str, Any], None]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "initial_ckpt",
+            "type": "Optional[str]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "num_rounds",
+            "type": "int",
+            "required": false,
+            "default": 2,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "min_clients",
+            "type": "int",
+            "required": false,
+            "default": 2,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "train_script",
+            "type": "str",
+            "required": true,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "train_args",
+            "type": "str",
+            "required": false,
+            "default": "",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "launch_external_process",
+            "type": "bool",
+            "required": false,
+            "default": false,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "command",
+            "type": "str",
+            "required": false,
+            "default": "python3 -u",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "framework",
+            "type": "FrameworkType",
+            "required": false,
+            "default": "numpy",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "server_expected_format",
+            "type": "ExchangeFormat",
+            "required": false,
+            "default": "numpy",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "params_transfer_type",
+            "type": "TransferType",
+            "required": false,
+            "default": "FULL",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "server_memory_gc_rounds",
+            "type": "int",
+            "required": false,
+            "default": 1,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "client_memory_gc_rounds",
+            "type": "int",
+            "required": false,
+            "default": 0,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "cuda_empty_cache",
+            "type": "bool",
+            "required": false,
+            "default": false,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "task_assignment_timeout",
+            "type": "int",
+            "required": false,
+            "default": 10,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "shutdown_timeout",
+            "type": "float",
+            "required": false,
+            "default": 0.0,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "server_config_overrides",
+            "type": "Optional[Dict[str, Any]]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "client_config_overrides",
+            "type": "Optional[Dict[str, Any]]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          }
+        ],
+        "optional_dependencies": [],
+        "template_references": []
+      }
+    },
+    {
+      "summary": {
+        "name": "cyclic-pt",
+        "description": "PyTorch-specific cyclic federated learning recipe.",
+        "framework": "pytorch",
+        "module": "nvflare.app_opt.pt.recipes.cyclic",
+        "class": "CyclicRecipe",
+        "algorithm": "cyclic",
+        "aggregation": null,
+        "state_exchange": "full_model",
+        "privacy": []
+      },
+      "detail": {
+        "name": "cyclic-pt",
+        "description": "PyTorch-specific cyclic federated learning recipe.",
+        "framework": "pytorch",
+        "module": "nvflare.app_opt.pt.recipes.cyclic",
+        "class": "CyclicRecipe",
+        "algorithm": "cyclic",
+        "aggregation": null,
+        "state_exchange": "full_model",
+        "privacy": [],
+        "client_requirements": {
+          "state_exchange": "full_model",
+          "requires_training_script": true,
+          "requires_per_site_config": false,
+          "requires_site_list": false,
+          "min_clients": {
+            "required": false,
+            "default": 2
+          }
+        },
+        "framework_support": [
+          "pytorch"
+        ],
+        "heterogeneity_support": [
+          "horizontal"
+        ],
+        "privacy_compatible": [],
+        "notes": [],
+        "parameters": [
+          {
+            "name": "name",
+            "type": "str",
+            "required": false,
+            "default": "cyclic",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "model",
+            "type": "Union[Any, dict[str, Any], None]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "initial_ckpt",
+            "type": "Optional[str]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "num_rounds",
+            "type": "int",
+            "required": false,
+            "default": 2,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "min_clients",
+            "type": "int",
+            "required": false,
+            "default": 2,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "train_script",
+            "type": "str",
+            "required": true,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "train_args",
+            "type": "str",
+            "required": false,
+            "default": "",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "launch_external_process",
+            "type": "bool",
+            "required": false,
+            "default": false,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "command",
+            "type": "str",
+            "required": false,
+            "default": "python3 -u",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "framework",
+            "type": "FrameworkType",
+            "required": false,
+            "default": "pytorch",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "server_expected_format",
+            "type": "ExchangeFormat",
+            "required": false,
+            "default": "numpy",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "params_transfer_type",
+            "type": "TransferType",
+            "required": false,
+            "default": "FULL",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "server_memory_gc_rounds",
+            "type": "int",
+            "required": false,
+            "default": 1,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "client_memory_gc_rounds",
+            "type": "int",
+            "required": false,
+            "default": 0,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "cuda_empty_cache",
+            "type": "bool",
+            "required": false,
+            "default": false,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "task_assignment_timeout",
+            "type": "int",
+            "required": false,
+            "default": 10,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "shutdown_timeout",
+            "type": "float",
+            "required": false,
+            "default": 0.0,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "server_config_overrides",
+            "type": "Optional[Dict[str, Any]]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "client_config_overrides",
+            "type": "Optional[Dict[str, Any]]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          }
+        ],
+        "optional_dependencies": [
+          "pip install nvflare[PT]",
+          "pip install torch"
+        ],
+        "template_references": []
+      }
+    },
+    {
+      "summary": {
+        "name": "cyclic-tf",
+        "description": "TensorFlow-specific cyclic federated learning recipe.",
+        "framework": "tensorflow",
+        "module": "nvflare.app_opt.tf.recipes.cyclic",
+        "class": "CyclicRecipe",
+        "algorithm": "cyclic",
+        "aggregation": null,
+        "state_exchange": "full_model",
+        "privacy": []
+      },
+      "detail": {
+        "name": "cyclic-tf",
+        "description": "TensorFlow-specific cyclic federated learning recipe.",
+        "framework": "tensorflow",
+        "module": "nvflare.app_opt.tf.recipes.cyclic",
+        "class": "CyclicRecipe",
+        "algorithm": "cyclic",
+        "aggregation": null,
+        "state_exchange": "full_model",
+        "privacy": [],
+        "client_requirements": {
+          "state_exchange": "full_model",
+          "requires_training_script": true,
+          "requires_per_site_config": false,
+          "requires_site_list": false,
+          "min_clients": {
+            "required": false,
+            "default": 2
+          }
+        },
+        "framework_support": [
+          "tensorflow"
+        ],
+        "heterogeneity_support": [
+          "horizontal"
+        ],
+        "privacy_compatible": [],
+        "notes": [],
+        "parameters": [
+          {
+            "name": "name",
+            "type": "str",
+            "required": false,
+            "default": "cyclic",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "model",
+            "type": "Union[Any, dict[str, Any], None]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "initial_ckpt",
+            "type": "Optional[str]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "num_rounds",
+            "type": "int",
+            "required": false,
+            "default": 2,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "min_clients",
+            "type": "int",
+            "required": false,
+            "default": 2,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "train_script",
+            "type": "str",
+            "required": true,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "train_args",
+            "type": "str",
+            "required": false,
+            "default": "",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "launch_external_process",
+            "type": "bool",
+            "required": false,
+            "default": false,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "command",
+            "type": "str",
+            "required": false,
+            "default": "python3 -u",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "framework",
+            "type": "FrameworkType",
+            "required": false,
+            "default": "tensorflow",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "server_expected_format",
+            "type": "ExchangeFormat",
+            "required": false,
+            "default": "numpy",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "params_transfer_type",
+            "type": "TransferType",
+            "required": false,
+            "default": "FULL",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "server_memory_gc_rounds",
+            "type": "int",
+            "required": false,
+            "default": 1,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "client_memory_gc_rounds",
+            "type": "int",
+            "required": false,
+            "default": 0,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "task_assignment_timeout",
+            "type": "int",
+            "required": false,
+            "default": 10,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "shutdown_timeout",
+            "type": "float",
+            "required": false,
+            "default": 0.0,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "server_config_overrides",
+            "type": "Optional[Dict[str, Any]]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "client_config_overrides",
+            "type": "Optional[Dict[str, Any]]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          }
+        ],
+        "optional_dependencies": [
+          "pip install tensorflow"
+        ],
+        "template_references": []
+      }
+    },
+    {
+      "summary": {
+        "name": "fed-task",
+        "description": "A model-free recipe for running one federated task on participating clients.",
+        "framework": "core",
+        "module": "nvflare.recipe.fed_task",
+        "class": "FedTaskRecipe",
+        "algorithm": null,
+        "aggregation": null,
+        "state_exchange": null,
+        "privacy": []
+      },
+      "detail": {
+        "name": "fed-task",
+        "description": "A model-free recipe for running one federated task on participating clients.",
+        "framework": "core",
+        "module": "nvflare.recipe.fed_task",
+        "class": "FedTaskRecipe",
+        "algorithm": null,
+        "aggregation": null,
+        "state_exchange": null,
+        "privacy": [],
+        "client_requirements": {
+          "state_exchange": null,
+          "requires_training_script": false,
+          "requires_per_site_config": false,
+          "requires_site_list": false,
+          "min_clients": {
+            "required": true,
+            "default": null
+          }
+        },
+        "framework_support": [
+          "framework_agnostic"
+        ],
+        "heterogeneity_support": [
+          "horizontal"
+        ],
+        "privacy_compatible": [],
+        "notes": [],
+        "parameters": [
+          {
+            "name": "name",
+            "type": "str",
+            "required": false,
+            "default": "fed_task",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "task_name",
+            "type": "str",
+            "required": false,
+            "default": "task",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "min_clients",
+            "type": "int",
+            "required": true,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "num_clients",
+            "type": "Optional[int]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "min_responses",
+            "type": "Optional[int]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "timeout",
+            "type": "int",
+            "required": false,
+            "default": 0,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "task_data",
+            "type": "Optional[dict]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "task_meta",
+            "type": "Optional[dict]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "task_script",
+            "type": "str",
+            "required": true,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "task_args",
+            "type": "str",
+            "required": false,
+            "default": "",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "launch_external_process",
+            "type": "bool",
+            "required": false,
+            "default": false,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "command",
+            "type": "str",
+            "required": false,
+            "default": "python3 -u",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "framework",
+            "type": "FrameworkType",
+            "required": false,
+            "default": "raw",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "server_expected_format",
+            "type": "ExchangeFormat",
+            "required": false,
+            "default": "raw",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "params_transfer_type",
+            "type": "TransferType",
+            "required": false,
+            "default": "FULL",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "launch_once",
+            "type": "bool",
+            "required": false,
+            "default": true,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "shutdown_timeout",
+            "type": "float",
+            "required": false,
+            "default": 0.0,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "client_memory_gc_rounds",
+            "type": "int",
+            "required": false,
+            "default": 0,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "cuda_empty_cache",
+            "type": "bool",
+            "required": false,
+            "default": false,
+            "kind": "keyword_only"
+          }
+        ],
+        "optional_dependencies": [],
+        "template_references": []
+      }
+    },
+    {
+      "summary": {
+        "name": "fedavg",
+        "description": "Unified FedAvg recipe for PyTorch, TensorFlow, and Scikit-learn.",
+        "framework": "core",
+        "module": "nvflare.recipe.fedavg",
+        "class": "FedAvgRecipe",
+        "algorithm": "fedavg",
+        "aggregation": "weighted_average",
+        "state_exchange": "full_model",
+        "privacy": []
+      },
+      "detail": {
+        "name": "fedavg",
+        "description": "Unified FedAvg recipe for PyTorch, TensorFlow, and Scikit-learn.",
+        "framework": "core",
+        "module": "nvflare.recipe.fedavg",
+        "class": "FedAvgRecipe",
+        "algorithm": "fedavg",
+        "aggregation": "weighted_average",
+        "state_exchange": "full_model",
+        "privacy": [],
+        "client_requirements": {
+          "state_exchange": "full_model",
+          "requires_training_script": true,
+          "requires_per_site_config": false,
+          "requires_site_list": false,
+          "min_clients": {
+            "required": true,
+            "default": null
+          }
+        },
+        "framework_support": [
+          "pytorch",
+          "tensorflow",
+          "sklearn",
+          "numpy",
+          "raw"
+        ],
+        "heterogeneity_support": [
+          "horizontal"
+        ],
+        "privacy_compatible": [],
+        "notes": [],
+        "parameters": [
+          {
+            "name": "name",
+            "type": "str",
+            "required": false,
+            "default": "fedavg",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "model",
+            "type": "Union[Any, Dict[str, Any], None]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "initial_ckpt",
+            "type": "Optional[str]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "min_clients",
+            "type": "int",
+            "required": true,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "num_rounds",
+            "type": "int",
+            "required": false,
+            "default": 2,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "train_script",
+            "type": "str",
+            "required": true,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "train_args",
+            "type": "str",
+            "required": false,
+            "default": "",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "aggregator",
+            "type": "Optional[Aggregator]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "aggregator_data_kind",
+            "type": "Optional[DataKind]",
+            "required": false,
+            "default": "WEIGHTS",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "launch_external_process",
+            "type": "bool",
+            "required": false,
+            "default": false,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "command",
+            "type": "str",
+            "required": false,
+            "default": "python3 -u",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "framework",
+            "type": "FrameworkType",
+            "required": false,
+            "default": "pytorch",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "server_expected_format",
+            "type": "ExchangeFormat",
+            "required": false,
+            "default": "numpy",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "params_transfer_type",
+            "type": "TransferType",
+            "required": false,
+            "default": "FULL",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "model_persistor",
+            "type": "Optional[ModelPersistor]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "per_site_config",
+            "type": "Optional[Dict[str, Dict]]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "launch_once",
+            "type": "bool",
+            "required": false,
+            "default": true,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "launch_timeout",
+            "type": "Optional[float]",
+            "required": false,
+            "default": 300.0,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "shutdown_timeout",
+            "type": "float",
+            "required": false,
+            "default": 0.0,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "key_metric",
+            "type": "str",
+            "required": false,
+            "default": "accuracy",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "key_metric_mode",
+            "type": "Optional[Literal['min', 'max']]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "stop_cond",
+            "type": "Optional[str]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "patience",
+            "type": "Optional[int]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "best_model_filename",
+            "type": "Optional[str]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "save_filename",
+            "type": "Optional[str]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "exclude_vars",
+            "type": "Optional[str]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "aggregation_weights",
+            "type": "Optional[Dict[str, float]]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "server_memory_gc_rounds",
+            "type": "int",
+            "required": false,
+            "default": 0,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "enable_tensor_disk_offload",
+            "type": "bool",
+            "required": false,
+            "default": false,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "client_memory_gc_rounds",
+            "type": "int",
+            "required": false,
+            "default": 0,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "cuda_empty_cache",
+            "type": "bool",
+            "required": false,
+            "default": false,
+            "kind": "keyword_only"
+          }
+        ],
+        "optional_dependencies": [],
+        "template_references": []
+      }
+    },
+    {
+      "summary": {
+        "name": "fedavg-he-pt",
+        "description": "A recipe for implementing Federated Averaging (FedAvg) with Homomorphic Encryption.",
+        "framework": "pytorch",
+        "module": "nvflare.app_opt.pt.recipes.fedavg_he",
+        "class": "FedAvgRecipeWithHE",
+        "algorithm": "fedavg",
+        "aggregation": "weighted_average",
+        "state_exchange": "full_model",
+        "privacy": [
+          "homomorphic_encryption"
+        ],
+        "privacy_compatible": [
+          "homomorphic_encryption"
+        ],
+        "optional_dependencies": [
+          "pip install nvflare[PT]",
+          "pip install torch",
+          "pip install tenseal"
+        ]
+      },
+      "detail": {
+        "name": "fedavg-he-pt",
+        "description": "A recipe for implementing Federated Averaging (FedAvg) with Homomorphic Encryption.",
+        "framework": "pytorch",
+        "module": "nvflare.app_opt.pt.recipes.fedavg_he",
+        "class": "FedAvgRecipeWithHE",
+        "algorithm": "fedavg",
+        "aggregation": "weighted_average",
+        "state_exchange": "full_model",
+        "privacy": [
+          "homomorphic_encryption"
+        ],
+        "client_requirements": {
+          "state_exchange": "full_model",
+          "requires_training_script": true,
+          "requires_per_site_config": false,
+          "requires_site_list": false,
+          "min_clients": {
+            "required": true,
+            "default": null
+          }
+        },
+        "framework_support": [
+          "pytorch"
+        ],
+        "heterogeneity_support": [
+          "horizontal"
+        ],
+        "privacy_compatible": [
+          "homomorphic_encryption"
+        ],
+        "notes": [],
+        "parameters": [
+          {
+            "name": "name",
+            "type": "str",
+            "required": false,
+            "default": "fedavg_he",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "model",
+            "type": "Union[Any, dict[str, Any], None]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "initial_ckpt",
+            "type": "Optional[str]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "min_clients",
+            "type": "int",
+            "required": true,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "num_rounds",
+            "type": "int",
+            "required": false,
+            "default": 2,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "train_script",
+            "type": "str",
+            "required": true,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "train_args",
+            "type": "str",
+            "required": false,
+            "default": "",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "aggregator",
+            "type": "Optional[Aggregator]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "aggregator_data_kind",
+            "type": "Optional[DataKind]",
+            "required": false,
+            "default": "WEIGHTS",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "launch_external_process",
+            "type": "bool",
+            "required": false,
+            "default": false,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "command",
+            "type": "str",
+            "required": false,
+            "default": "python3 -u",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "server_expected_format",
+            "type": "ExchangeFormat",
+            "required": false,
+            "default": "numpy",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "params_transfer_type",
+            "type": "TransferType",
+            "required": false,
+            "default": "FULL",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "encrypt_layers",
+            "type": "Optional[Union[List[str], str]]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "server_memory_gc_rounds",
+            "type": "int",
+            "required": false,
+            "default": 1,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "client_memory_gc_rounds",
+            "type": "int",
+            "required": false,
+            "default": 0,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "cuda_empty_cache",
+            "type": "bool",
+            "required": false,
+            "default": false,
+            "kind": "keyword_only"
+          }
+        ],
+        "optional_dependencies": [
+          "pip install nvflare[PT]",
+          "pip install torch",
+          "pip install tenseal"
+        ],
+        "template_references": []
+      }
+    },
+    {
+      "summary": {
+        "name": "fedavg-numpy",
+        "description": "A recipe for implementing Federated Averaging (FedAvg) for NumPy-based models.",
+        "framework": "numpy",
+        "module": "nvflare.app_common.np.recipes.fedavg",
+        "class": "NumpyFedAvgRecipe",
+        "algorithm": "fedavg",
+        "aggregation": "weighted_average",
+        "state_exchange": "full_model",
+        "privacy": [],
+        "framework_support": [
+          "numpy",
+          "raw"
+        ]
+      },
+      "detail": {
+        "name": "fedavg-numpy",
+        "description": "A recipe for implementing Federated Averaging (FedAvg) for NumPy-based models.",
+        "framework": "numpy",
+        "module": "nvflare.app_common.np.recipes.fedavg",
+        "class": "NumpyFedAvgRecipe",
+        "algorithm": "fedavg",
+        "aggregation": "weighted_average",
+        "state_exchange": "full_model",
+        "privacy": [],
+        "client_requirements": {
+          "state_exchange": "full_model",
+          "requires_training_script": true,
+          "requires_per_site_config": false,
+          "requires_site_list": false,
+          "min_clients": {
+            "required": true,
+            "default": null
+          }
+        },
+        "framework_support": [
+          "numpy",
+          "raw"
+        ],
+        "heterogeneity_support": [
+          "horizontal"
+        ],
+        "privacy_compatible": [],
+        "notes": [],
+        "parameters": [
+          {
+            "name": "name",
+            "type": "str",
+            "required": false,
+            "default": "fedavg",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "model",
+            "type": "Union[Any, Dict[str, Any], None]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "initial_model",
+            "type": "Union[Any, Dict[str, Any], None]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "initial_ckpt",
+            "type": "Optional[str]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "min_clients",
+            "type": "int",
+            "required": true,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "num_rounds",
+            "type": "int",
+            "required": false,
+            "default": 2,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "train_script",
+            "type": "str",
+            "required": true,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "train_args",
+            "type": "str",
+            "required": false,
+            "default": "",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "aggregator",
+            "type": "Optional[Aggregator]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "aggregator_data_kind",
+            "type": "Optional[DataKind]",
+            "required": false,
+            "default": "WEIGHTS",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "launch_external_process",
+            "type": "bool",
+            "required": false,
+            "default": false,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "command",
+            "type": "str",
+            "required": false,
+            "default": "python3 -u",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "server_expected_format",
+            "type": "ExchangeFormat",
+            "required": false,
+            "default": "numpy",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "params_transfer_type",
+            "type": "TransferType",
+            "required": false,
+            "default": "FULL",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "per_site_config",
+            "type": "Optional[Dict[str, Dict]]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "launch_once",
+            "type": "bool",
+            "required": false,
+            "default": true,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "shutdown_timeout",
+            "type": "float",
+            "required": false,
+            "default": 0.0,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "key_metric",
+            "type": "str",
+            "required": false,
+            "default": "accuracy",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "key_metric_mode",
+            "type": "Optional[Literal['min', 'max']]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "stop_cond",
+            "type": "Optional[str]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "patience",
+            "type": "Optional[int]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "best_model_filename",
+            "type": "Optional[str]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "save_filename",
+            "type": "Optional[str]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "exclude_vars",
+            "type": "Optional[str]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "aggregation_weights",
+            "type": "Optional[Dict[str, float]]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "client_memory_gc_rounds",
+            "type": "int",
+            "required": false,
+            "default": 0,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "cuda_empty_cache",
+            "type": "bool",
+            "required": false,
+            "default": false,
+            "kind": "keyword_only"
+          }
+        ],
+        "optional_dependencies": [],
+        "template_references": []
+      }
+    },
+    {
+      "summary": {
+        "name": "fedavg-pt",
+        "description": "A recipe for implementing Federated Averaging (FedAvg) for PyTorch.",
+        "framework": "pytorch",
+        "module": "nvflare.app_opt.pt.recipes.fedavg",
+        "class": "FedAvgRecipe",
+        "algorithm": "fedavg",
+        "aggregation": "weighted_average",
+        "state_exchange": "full_model",
+        "privacy": []
+      },
+      "detail": {
+        "name": "fedavg-pt",
+        "description": "A recipe for implementing Federated Averaging (FedAvg) for PyTorch.",
+        "framework": "pytorch",
+        "module": "nvflare.app_opt.pt.recipes.fedavg",
+        "class": "FedAvgRecipe",
+        "algorithm": "fedavg",
+        "aggregation": "weighted_average",
+        "state_exchange": "full_model",
+        "privacy": [],
+        "client_requirements": {
+          "state_exchange": "full_model",
+          "requires_training_script": true,
+          "requires_per_site_config": false,
+          "requires_site_list": false,
+          "min_clients": {
+            "required": true,
+            "default": null
+          }
+        },
+        "framework_support": [
+          "pytorch"
+        ],
+        "heterogeneity_support": [
+          "horizontal"
+        ],
+        "privacy_compatible": [],
+        "notes": [],
+        "parameters": [
+          {
+            "name": "name",
+            "type": "str",
+            "required": false,
+            "default": "fedavg",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "model",
+            "type": "Union[Any, dict[str, Any], None]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "initial_ckpt",
+            "type": "Optional[str]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "min_clients",
+            "type": "int",
+            "required": true,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "num_rounds",
+            "type": "int",
+            "required": false,
+            "default": 2,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "train_script",
+            "type": "str",
+            "required": true,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "train_args",
+            "type": "str",
+            "required": false,
+            "default": "",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "aggregator",
+            "type": "Optional[Aggregator]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "aggregator_data_kind",
+            "type": "Optional[DataKind]",
+            "required": false,
+            "default": "WEIGHTS",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "launch_external_process",
+            "type": "bool",
+            "required": false,
+            "default": false,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "command",
+            "type": "str",
+            "required": false,
+            "default": "python3 -u",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "server_expected_format",
+            "type": "ExchangeFormat",
+            "required": false,
+            "default": "numpy",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "params_transfer_type",
+            "type": "TransferType",
+            "required": false,
+            "default": "FULL",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "model_persistor",
+            "type": "Optional[ModelPersistor]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "model_locator",
+            "type": "Optional[ModelLocator]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "per_site_config",
+            "type": "Optional[dict[str, dict]]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "launch_once",
+            "type": "bool",
+            "required": false,
+            "default": true,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "launch_timeout",
+            "type": "Optional[float]",
+            "required": false,
+            "default": 300.0,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "shutdown_timeout",
+            "type": "float",
+            "required": false,
+            "default": 0.0,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "key_metric",
+            "type": "str",
+            "required": false,
+            "default": "accuracy",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "key_metric_mode",
+            "type": "Optional[Literal['min', 'max']]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "stop_cond",
+            "type": "Optional[str]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "patience",
+            "type": "Optional[int]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "best_model_filename",
+            "type": "Optional[str]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "save_filename",
+            "type": "Optional[str]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "exclude_vars",
+            "type": "Optional[str]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "aggregation_weights",
+            "type": "Optional[dict[str, float]]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "server_memory_gc_rounds",
+            "type": "int",
+            "required": false,
+            "default": 0,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "enable_tensor_disk_offload",
+            "type": "bool",
+            "required": false,
+            "default": false,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "client_memory_gc_rounds",
+            "type": "int",
+            "required": false,
+            "default": 0,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "cuda_empty_cache",
+            "type": "bool",
+            "required": false,
+            "default": false,
+            "kind": "keyword_only"
+          }
+        ],
+        "optional_dependencies": [
+          "pip install nvflare[PT]",
+          "pip install torch"
+        ],
+        "template_references": []
+      }
+    },
+    {
+      "summary": {
+        "name": "fedavg-sklearn",
+        "description": "A recipe for implementing Federated Averaging (FedAvg) with Scikit-learn.",
+        "framework": "sklearn",
+        "module": "nvflare.app_opt.sklearn.recipes.fedavg",
+        "class": "SklearnFedAvgRecipe",
+        "algorithm": "fedavg",
+        "aggregation": "weighted_average",
+        "state_exchange": "full_model",
+        "privacy": []
+      },
+      "detail": {
+        "name": "fedavg-sklearn",
+        "description": "A recipe for implementing Federated Averaging (FedAvg) with Scikit-learn.",
+        "framework": "sklearn",
+        "module": "nvflare.app_opt.sklearn.recipes.fedavg",
+        "class": "SklearnFedAvgRecipe",
+        "algorithm": "fedavg",
+        "aggregation": "weighted_average",
+        "state_exchange": "full_model",
+        "privacy": [],
+        "client_requirements": {
+          "state_exchange": "full_model",
+          "requires_training_script": true,
+          "requires_per_site_config": false,
+          "requires_site_list": false,
+          "min_clients": {
+            "required": true,
+            "default": null
+          }
+        },
+        "framework_support": [
+          "sklearn"
+        ],
+        "heterogeneity_support": [
+          "horizontal"
+        ],
+        "privacy_compatible": [],
+        "notes": [],
+        "parameters": [
+          {
+            "name": "name",
+            "type": "str",
+            "required": false,
+            "default": "sklearn_fedavg",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "min_clients",
+            "type": "int",
+            "required": true,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "num_rounds",
+            "type": "int",
+            "required": false,
+            "default": 2,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "model_params",
+            "type": "Optional[dict]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "model_path",
+            "type": "Optional[str]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "train_script",
+            "type": "str",
+            "required": true,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "train_args",
+            "type": "str",
+            "required": false,
+            "default": "",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "aggregator",
+            "type": "Optional[Aggregator]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "aggregator_data_kind",
+            "type": "DataKind",
+            "required": false,
+            "default": "WEIGHTS",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "launch_external_process",
+            "type": "bool",
+            "required": false,
+            "default": false,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "command",
+            "type": "str",
+            "required": false,
+            "default": "python3 -u",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "per_site_config",
+            "type": "Optional[dict[str, dict]]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "key_metric",
+            "type": "str",
+            "required": false,
+            "default": "accuracy",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "key_metric_mode",
+            "type": "Literal['min', 'max']",
+            "required": false,
+            "default": "max",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "launch_once",
+            "type": "bool",
+            "required": false,
+            "default": true,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "launch_timeout",
+            "type": "Optional[float]",
+            "required": false,
+            "default": 300.0,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "shutdown_timeout",
+            "type": "float",
+            "required": false,
+            "default": 0.0,
+            "kind": "keyword_only"
+          }
+        ],
+        "optional_dependencies": [
+          "pip install nvflare[SKLEARN]",
+          "pip install scikit-learn"
+        ],
+        "template_references": []
+      }
+    },
+    {
+      "summary": {
+        "name": "fedavg-tf",
+        "description": "A recipe for implementing Federated Averaging (FedAvg) for TensorFlow.",
+        "framework": "tensorflow",
+        "module": "nvflare.app_opt.tf.recipes.fedavg",
+        "class": "FedAvgRecipe",
+        "algorithm": "fedavg",
+        "aggregation": "weighted_average",
+        "state_exchange": "full_model",
+        "privacy": []
+      },
+      "detail": {
+        "name": "fedavg-tf",
+        "description": "A recipe for implementing Federated Averaging (FedAvg) for TensorFlow.",
+        "framework": "tensorflow",
+        "module": "nvflare.app_opt.tf.recipes.fedavg",
+        "class": "FedAvgRecipe",
+        "algorithm": "fedavg",
+        "aggregation": "weighted_average",
+        "state_exchange": "full_model",
+        "privacy": [],
+        "client_requirements": {
+          "state_exchange": "full_model",
+          "requires_training_script": true,
+          "requires_per_site_config": false,
+          "requires_site_list": false,
+          "min_clients": {
+            "required": true,
+            "default": null
+          }
+        },
+        "framework_support": [
+          "tensorflow"
+        ],
+        "heterogeneity_support": [
+          "horizontal"
+        ],
+        "privacy_compatible": [],
+        "notes": [],
+        "parameters": [
+          {
+            "name": "name",
+            "type": "str",
+            "required": false,
+            "default": "fedavg",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "model",
+            "type": "Union[Any, dict[str, Any], None]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "initial_ckpt",
+            "type": "Optional[str]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "min_clients",
+            "type": "int",
+            "required": true,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "num_rounds",
+            "type": "int",
+            "required": false,
+            "default": 2,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "train_script",
+            "type": "str",
+            "required": true,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "train_args",
+            "type": "str",
+            "required": false,
+            "default": "",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "aggregator",
+            "type": "Optional[Aggregator]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "aggregator_data_kind",
+            "type": "Optional[DataKind]",
+            "required": false,
+            "default": "WEIGHTS",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "launch_external_process",
+            "type": "bool",
+            "required": false,
+            "default": false,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "command",
+            "type": "str",
+            "required": false,
+            "default": "python3 -u",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "framework",
+            "type": "FrameworkType",
+            "required": false,
+            "default": "tensorflow",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "server_expected_format",
+            "type": "ExchangeFormat",
+            "required": false,
+            "default": "numpy",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "params_transfer_type",
+            "type": "TransferType",
+            "required": false,
+            "default": "FULL",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "model_persistor",
+            "type": "Optional[ModelPersistor]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "per_site_config",
+            "type": "Optional[dict[str, dict]]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "launch_once",
+            "type": "bool",
+            "required": false,
+            "default": true,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "launch_timeout",
+            "type": "Optional[float]",
+            "required": false,
+            "default": 300.0,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "shutdown_timeout",
+            "type": "float",
+            "required": false,
+            "default": 0.0,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "key_metric",
+            "type": "str",
+            "required": false,
+            "default": "accuracy",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "key_metric_mode",
+            "type": "Literal['min', 'max']",
+            "required": false,
+            "default": "max",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "best_model_filename",
+            "type": "Optional[str]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "save_filename",
+            "type": "Optional[str]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "server_memory_gc_rounds",
+            "type": "int",
+            "required": false,
+            "default": 0,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "client_memory_gc_rounds",
+            "type": "int",
+            "required": false,
+            "default": 0,
+            "kind": "keyword_only"
+          }
+        ],
+        "optional_dependencies": [
+          "pip install tensorflow"
+        ],
+        "template_references": []
+      }
+    },
+    {
+      "summary": {
+        "name": "fedce-pt",
+        "description": "PyTorch federated training via client contribution estimation (FedCE).",
+        "framework": "pytorch",
+        "module": "nvflare.app_opt.pt.recipes.fedce",
+        "class": "FedCERecipe",
+        "algorithm": "fedce",
+        "aggregation": "contribution_weighted_average",
+        "state_exchange": "weight_diff",
+        "privacy": [],
+        "heterogeneity_support": [
+          "non_iid",
+          "contribution_fairness"
+        ],
+        "notes": [
+          "Client scripts must return fedce_minus_val metadata; FedCE is not a passive FedAvg flag."
+        ]
+      },
+      "detail": {
+        "name": "fedce-pt",
+        "description": "PyTorch federated training via client contribution estimation (FedCE).",
+        "framework": "pytorch",
+        "module": "nvflare.app_opt.pt.recipes.fedce",
+        "class": "FedCERecipe",
+        "algorithm": "fedce",
+        "aggregation": "contribution_weighted_average",
+        "state_exchange": "weight_diff",
+        "privacy": [],
+        "client_requirements": {
+          "state_exchange": "weight_diff",
+          "requires_training_script": true,
+          "requires_per_site_config": false,
+          "requires_site_list": false,
+          "min_clients": {
+            "required": true,
+            "default": null
+          }
+        },
+        "framework_support": [
+          "pytorch"
+        ],
+        "heterogeneity_support": [
+          "non_iid",
+          "contribution_fairness"
+        ],
+        "privacy_compatible": [],
+        "notes": [
+          "Client scripts must return fedce_minus_val metadata; FedCE is not a passive FedAvg flag."
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "type": "str",
+            "required": false,
+            "default": "fedce",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "model",
+            "type": "Union[Any, Dict[str, Any], None]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "initial_ckpt",
+            "type": "Optional[str]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "min_clients",
+            "type": "int",
+            "required": true,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "num_rounds",
+            "type": "int",
+            "required": false,
+            "default": 2,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "train_script",
+            "type": "str",
+            "required": true,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "train_args",
+            "type": "str",
+            "required": false,
+            "default": "",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "fedce_mode",
+            "type": "str",
+            "required": false,
+            "default": "plus",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "trainable_param_names",
+            "type": "Optional[List[str]]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "launch_external_process",
+            "type": "bool",
+            "required": false,
+            "default": false,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "command",
+            "type": "str",
+            "required": false,
+            "default": "python3 -u",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "server_expected_format",
+            "type": "ExchangeFormat",
+            "required": false,
+            "default": "pytorch",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "per_site_config",
+            "type": "Optional[Dict[str, Dict]]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "launch_once",
+            "type": "bool",
+            "required": false,
+            "default": true,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "shutdown_timeout",
+            "type": "float",
+            "required": false,
+            "default": 0.0,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "key_metric",
+            "type": "str",
+            "required": false,
+            "default": "accuracy",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "key_metric_mode",
+            "type": "Optional[Literal['min', 'max']]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "stop_cond",
+            "type": "Optional[str]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "patience",
+            "type": "Optional[int]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "best_model_filename",
+            "type": "Optional[str]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "server_memory_gc_rounds",
+            "type": "int",
+            "required": false,
+            "default": 0,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "enable_tensor_disk_offload",
+            "type": "bool",
+            "required": false,
+            "default": false,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "client_memory_gc_rounds",
+            "type": "int",
+            "required": false,
+            "default": 0,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "cuda_empty_cache",
+            "type": "bool",
+            "required": false,
+            "default": false,
+            "kind": "keyword_only"
+          }
+        ],
+        "optional_dependencies": [
+          "pip install nvflare[PT]",
+          "pip install torch"
+        ],
+        "template_references": []
+      }
+    },
+    {
+      "summary": {
+        "name": "fedeval-pt",
+        "description": "A recipe for federated evaluation of a PyTorch model across multiple sites.",
+        "framework": "pytorch",
+        "module": "nvflare.app_opt.pt.recipes.fedeval",
+        "class": "FedEvalRecipe",
+        "algorithm": "fedeval",
+        "aggregation": null,
+        "state_exchange": "full_model",
+        "privacy": []
+      },
+      "detail": {
+        "name": "fedeval-pt",
+        "description": "A recipe for federated evaluation of a PyTorch model across multiple sites.",
+        "framework": "pytorch",
+        "module": "nvflare.app_opt.pt.recipes.fedeval",
+        "class": "FedEvalRecipe",
+        "algorithm": "fedeval",
+        "aggregation": null,
+        "state_exchange": "full_model",
+        "privacy": [],
+        "client_requirements": {
+          "state_exchange": "full_model",
+          "requires_training_script": false,
+          "requires_per_site_config": false,
+          "requires_site_list": false,
+          "min_clients": {
+            "required": true,
+            "default": null
+          }
+        },
+        "framework_support": [
+          "pytorch"
+        ],
+        "heterogeneity_support": [
+          "horizontal"
+        ],
+        "privacy_compatible": [],
+        "notes": [],
+        "parameters": [
+          {
+            "name": "name",
+            "type": "str",
+            "required": false,
+            "default": "eval",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "model",
+            "type": "Union[Any, Dict[str, Any]]",
+            "required": true,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "eval_ckpt",
+            "type": "str",
+            "required": true,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "min_clients",
+            "type": "int",
+            "required": true,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "eval_script",
+            "type": "str",
+            "required": true,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "eval_args",
+            "type": "str",
+            "required": false,
+            "default": "",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "launch_external_process",
+            "type": "bool",
+            "required": false,
+            "default": false,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "command",
+            "type": "str",
+            "required": false,
+            "default": "python3 -u",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "server_expected_format",
+            "type": "ExchangeFormat",
+            "required": false,
+            "default": "numpy",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "validation_timeout",
+            "type": "int",
+            "required": false,
+            "default": 6000,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "per_site_config",
+            "type": "Optional[Dict[str, Dict]]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "client_memory_gc_rounds",
+            "type": "int",
+            "required": false,
+            "default": 0,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "cuda_empty_cache",
+            "type": "bool",
+            "required": false,
+            "default": false,
+            "kind": "keyword_only"
+          }
+        ],
+        "optional_dependencies": [
+          "pip install nvflare[PT]",
+          "pip install torch"
+        ],
+        "template_references": []
+      }
+    },
+    {
+      "summary": {
+        "name": "fedopt-pt",
+        "description": "A recipe for implementing Federated Optimization (FedOpt) in PyTorch.",
+        "framework": "pytorch",
+        "module": "nvflare.app_opt.pt.recipes.fedopt",
+        "class": "FedOptRecipe",
+        "algorithm": "fedopt",
+        "aggregation": "server_optimizer",
+        "state_exchange": "weight_diff",
+        "privacy": []
+      },
+      "detail": {
+        "name": "fedopt-pt",
+        "description": "A recipe for implementing Federated Optimization (FedOpt) in PyTorch.",
+        "framework": "pytorch",
+        "module": "nvflare.app_opt.pt.recipes.fedopt",
+        "class": "FedOptRecipe",
+        "algorithm": "fedopt",
+        "aggregation": "server_optimizer",
+        "state_exchange": "weight_diff",
+        "privacy": [],
+        "client_requirements": {
+          "state_exchange": "weight_diff",
+          "requires_training_script": true,
+          "requires_per_site_config": false,
+          "requires_site_list": false,
+          "min_clients": {
+            "required": true,
+            "default": null
+          }
+        },
+        "framework_support": [
+          "pytorch"
+        ],
+        "heterogeneity_support": [
+          "horizontal"
+        ],
+        "privacy_compatible": [],
+        "notes": [],
+        "parameters": [
+          {
+            "name": "name",
+            "type": "str",
+            "required": false,
+            "default": "fedopt",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "model",
+            "type": "Union[Any, dict[str, Any], None]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "initial_ckpt",
+            "type": "Optional[str]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "min_clients",
+            "type": "int",
+            "required": true,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "num_rounds",
+            "type": "int",
+            "required": false,
+            "default": 2,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "train_script",
+            "type": "str",
+            "required": true,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "train_args",
+            "type": "str",
+            "required": false,
+            "default": "",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "aggregator",
+            "type": "Optional[Aggregator]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "launch_external_process",
+            "type": "bool",
+            "required": false,
+            "default": false,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "command",
+            "type": "str",
+            "required": false,
+            "default": "python3 -u",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "server_expected_format",
+            "type": "ExchangeFormat",
+            "required": false,
+            "default": "numpy",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "device",
+            "type": "Optional[str]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "source_model",
+            "type": "str",
+            "required": false,
+            "default": "model",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "optimizer_args",
+            "type": "Optional[dict]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "lr_scheduler_args",
+            "type": "Optional[dict]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "server_memory_gc_rounds",
+            "type": "int",
+            "required": false,
+            "default": 1,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "client_memory_gc_rounds",
+            "type": "int",
+            "required": false,
+            "default": 0,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "cuda_empty_cache",
+            "type": "bool",
+            "required": false,
+            "default": false,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "enable_tensor_disk_offload",
+            "type": "bool",
+            "required": false,
+            "default": false,
+            "kind": "keyword_only"
+          }
+        ],
+        "optional_dependencies": [
+          "pip install nvflare[PT]",
+          "pip install torch"
+        ],
+        "template_references": []
+      }
+    },
+    {
+      "summary": {
+        "name": "fedopt-tf",
+        "description": "A recipe for implementing Federated Optimization (FedOpt) in TensorFlow.",
+        "framework": "tensorflow",
+        "module": "nvflare.app_opt.tf.recipes.fedopt",
+        "class": "FedOptRecipe",
+        "algorithm": "fedopt",
+        "aggregation": "server_optimizer",
+        "state_exchange": "weight_diff",
+        "privacy": []
+      },
+      "detail": {
+        "name": "fedopt-tf",
+        "description": "A recipe for implementing Federated Optimization (FedOpt) in TensorFlow.",
+        "framework": "tensorflow",
+        "module": "nvflare.app_opt.tf.recipes.fedopt",
+        "class": "FedOptRecipe",
+        "algorithm": "fedopt",
+        "aggregation": "server_optimizer",
+        "state_exchange": "weight_diff",
+        "privacy": [],
+        "client_requirements": {
+          "state_exchange": "weight_diff",
+          "requires_training_script": true,
+          "requires_per_site_config": false,
+          "requires_site_list": false,
+          "min_clients": {
+            "required": true,
+            "default": null
+          }
+        },
+        "framework_support": [
+          "tensorflow"
+        ],
+        "heterogeneity_support": [
+          "horizontal"
+        ],
+        "privacy_compatible": [],
+        "notes": [],
+        "parameters": [
+          {
+            "name": "name",
+            "type": "str",
+            "required": false,
+            "default": "fedopt",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "model",
+            "type": "Union[Any, dict[str, Any], None]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "initial_ckpt",
+            "type": "Optional[str]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "min_clients",
+            "type": "int",
+            "required": true,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "num_rounds",
+            "type": "int",
+            "required": false,
+            "default": 2,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "train_script",
+            "type": "str",
+            "required": true,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "train_args",
+            "type": "str",
+            "required": false,
+            "default": "",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "launch_external_process",
+            "type": "bool",
+            "required": false,
+            "default": false,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "command",
+            "type": "str",
+            "required": false,
+            "default": "python3 -u",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "server_expected_format",
+            "type": "ExchangeFormat",
+            "required": false,
+            "default": "numpy",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "params_transfer_type",
+            "type": "TransferType",
+            "required": false,
+            "default": "FULL",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "optimizer_args",
+            "type": "Optional[dict]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "lr_scheduler_args",
+            "type": "Optional[dict]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "server_memory_gc_rounds",
+            "type": "int",
+            "required": false,
+            "default": 0,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "client_memory_gc_rounds",
+            "type": "int",
+            "required": false,
+            "default": 0,
+            "kind": "keyword_only"
+          }
+        ],
+        "optional_dependencies": [
+          "pip install tensorflow"
+        ],
+        "template_references": []
+      }
+    },
+    {
+      "summary": {
+        "name": "fedprox-pt",
+        "description": "A recipe for implementing FedProx with PyTorch.",
+        "framework": "pytorch",
+        "module": "nvflare.app_opt.pt.recipes.fedprox",
+        "class": "FedProxRecipe",
+        "algorithm": "fedprox",
+        "aggregation": "weighted_average",
+        "state_exchange": "full_model",
+        "privacy": [],
+        "heterogeneity_support": [
+          "non_iid"
+        ],
+        "notes": [
+          "Patched PyTorch Lightning clients apply FedProx automatically; raw PyTorch clients must consume FEDPROX_MU metadata and integrate PTFedProxLoss."
+        ]
+      },
+      "detail": {
+        "name": "fedprox-pt",
+        "description": "A recipe for implementing FedProx with PyTorch.",
+        "framework": "pytorch",
+        "module": "nvflare.app_opt.pt.recipes.fedprox",
+        "class": "FedProxRecipe",
+        "algorithm": "fedprox",
+        "aggregation": "weighted_average",
+        "state_exchange": "full_model",
+        "privacy": [],
+        "client_requirements": {
+          "state_exchange": "full_model",
+          "requires_training_script": true,
+          "requires_per_site_config": false,
+          "requires_site_list": false,
+          "min_clients": {
+            "required": true,
+            "default": null
+          }
+        },
+        "framework_support": [
+          "pytorch"
+        ],
+        "heterogeneity_support": [
+          "non_iid"
+        ],
+        "privacy_compatible": [],
+        "notes": [
+          "Patched PyTorch Lightning clients apply FedProx automatically; raw PyTorch clients must consume FEDPROX_MU metadata and integrate PTFedProxLoss."
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "type": "str",
+            "required": false,
+            "default": "fedprox",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "model",
+            "type": "Union[Any, dict[str, Any], None]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "initial_ckpt",
+            "type": "Optional[str]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "min_clients",
+            "type": "int",
+            "required": true,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "num_rounds",
+            "type": "int",
+            "required": false,
+            "default": 2,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "train_script",
+            "type": "str",
+            "required": true,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "train_args",
+            "type": "str",
+            "required": false,
+            "default": "",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "aggregator",
+            "type": "Optional[Aggregator]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "aggregator_data_kind",
+            "type": "Optional[DataKind]",
+            "required": false,
+            "default": "WEIGHTS",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "launch_external_process",
+            "type": "bool",
+            "required": false,
+            "default": false,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "command",
+            "type": "str",
+            "required": false,
+            "default": "python3 -u",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "server_expected_format",
+            "type": "ExchangeFormat",
+            "required": false,
+            "default": "numpy",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "params_transfer_type",
+            "type": "TransferType",
+            "required": false,
+            "default": "FULL",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "model_persistor",
+            "type": "Optional[ModelPersistor]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "model_locator",
+            "type": "Optional[ModelLocator]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "per_site_config",
+            "type": "Optional[dict[str, dict]]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "launch_once",
+            "type": "bool",
+            "required": false,
+            "default": true,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "launch_timeout",
+            "type": "Optional[float]",
+            "required": false,
+            "default": 300.0,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "shutdown_timeout",
+            "type": "float",
+            "required": false,
+            "default": 0.0,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "key_metric",
+            "type": "str",
+            "required": false,
+            "default": "accuracy",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "key_metric_mode",
+            "type": "Optional[Literal['min', 'max']]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "stop_cond",
+            "type": "Optional[str]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "patience",
+            "type": "Optional[int]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "best_model_filename",
+            "type": "Optional[str]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "save_filename",
+            "type": "Optional[str]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "exclude_vars",
+            "type": "Optional[str]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "aggregation_weights",
+            "type": "Optional[dict[str, float]]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "server_memory_gc_rounds",
+            "type": "int",
+            "required": false,
+            "default": 0,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "enable_tensor_disk_offload",
+            "type": "bool",
+            "required": false,
+            "default": false,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "client_memory_gc_rounds",
+            "type": "int",
+            "required": false,
+            "default": 0,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "cuda_empty_cache",
+            "type": "bool",
+            "required": false,
+            "default": false,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "fedprox_mu",
+            "type": "float",
+            "required": false,
+            "default": 0.01,
+            "kind": "keyword_only"
+          }
+        ],
+        "optional_dependencies": [
+          "pip install nvflare[PT]",
+          "pip install torch"
+        ],
+        "template_references": []
+      }
+    },
+    {
+      "summary": {
+        "name": "fedstats",
+        "description": "A recipe for federated statistics computation.",
+        "framework": "core",
+        "module": "nvflare.recipe.fedstats",
+        "class": "FedStatsRecipe",
+        "algorithm": "fedstats",
+        "aggregation": null,
+        "state_exchange": null,
+        "privacy": [],
+        "framework_support": [
+          "framework_agnostic"
+        ],
+        "heterogeneity_support": [
+          "cross_site_statistics"
+        ]
+      },
+      "detail": {
+        "name": "fedstats",
+        "description": "A recipe for federated statistics computation.",
+        "framework": "core",
+        "module": "nvflare.recipe.fedstats",
+        "class": "FedStatsRecipe",
+        "algorithm": "fedstats",
+        "aggregation": null,
+        "state_exchange": null,
+        "privacy": [],
+        "client_requirements": {
+          "state_exchange": null,
+          "requires_training_script": false,
+          "requires_per_site_config": false,
+          "requires_site_list": true,
+          "sites": {
+            "required": true,
+            "default": null
+          }
+        },
+        "framework_support": [
+          "framework_agnostic"
+        ],
+        "heterogeneity_support": [
+          "cross_site_statistics"
+        ],
+        "privacy_compatible": [],
+        "notes": [],
+        "parameters": [
+          {
+            "name": "name",
+            "type": "str",
+            "required": true,
+            "default": null,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "stats_output_path",
+            "type": "str",
+            "required": true,
+            "default": null,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "sites",
+            "type": "List[str]",
+            "required": true,
+            "default": null,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "statistic_configs",
+            "type": "Dict[str, Any]",
+            "required": true,
+            "default": null,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "stats_generator",
+            "type": "Statistics",
+            "required": true,
+            "default": null,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "min_count",
+            "type": "int",
+            "required": false,
+            "default": 10,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "min_noise_level",
+            "type": "float",
+            "required": false,
+            "default": 0.1,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "max_noise_level",
+            "type": "float",
+            "required": false,
+            "default": 0.3,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "max_bins_percent",
+            "type": "float",
+            "required": false,
+            "default": 10,
+            "kind": "positional_or_keyword"
+          }
+        ],
+        "optional_dependencies": [],
+        "template_references": []
+      }
+    },
+    {
+      "summary": {
+        "name": "kmeans-sklearn",
+        "description": "A recipe for Federated K-Means Clustering with Scikit-learn.",
+        "framework": "sklearn",
+        "module": "nvflare.app_opt.sklearn.recipes.kmeans",
+        "class": "KMeansFedAvgRecipe",
+        "algorithm": "kmeans",
+        "aggregation": "cluster_centers",
+        "state_exchange": "cluster_centers",
+        "privacy": []
+      },
+      "detail": {
+        "name": "kmeans-sklearn",
+        "description": "A recipe for Federated K-Means Clustering with Scikit-learn.",
+        "framework": "sklearn",
+        "module": "nvflare.app_opt.sklearn.recipes.kmeans",
+        "class": "KMeansFedAvgRecipe",
+        "algorithm": "kmeans",
+        "aggregation": "cluster_centers",
+        "state_exchange": "cluster_centers",
+        "privacy": [],
+        "client_requirements": {
+          "state_exchange": "cluster_centers",
+          "requires_training_script": true,
+          "requires_per_site_config": false,
+          "requires_site_list": false,
+          "min_clients": {
+            "required": true,
+            "default": null
+          }
+        },
+        "framework_support": [
+          "sklearn"
+        ],
+        "heterogeneity_support": [
+          "horizontal"
+        ],
+        "privacy_compatible": [],
+        "notes": [],
+        "parameters": [
+          {
+            "name": "name",
+            "type": "str",
+            "required": false,
+            "default": "kmeans_fedavg",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "min_clients",
+            "type": "int",
+            "required": true,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "num_rounds",
+            "type": "int",
+            "required": false,
+            "default": 5,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "n_clusters",
+            "type": "int",
+            "required": false,
+            "default": 3,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "model_path",
+            "type": "Optional[str]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "train_script",
+            "type": "str",
+            "required": true,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "train_args",
+            "type": "str",
+            "required": false,
+            "default": "",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "launch_external_process",
+            "type": "bool",
+            "required": false,
+            "default": false,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "command",
+            "type": "str",
+            "required": false,
+            "default": "python3 -u",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "per_site_config",
+            "type": "Optional[dict[str, dict]]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "key_metric",
+            "type": "str",
+            "required": false,
+            "default": "metrics",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "key_metric_mode",
+            "type": "Literal['min', 'max']",
+            "required": false,
+            "default": "max",
+            "kind": "keyword_only"
+          }
+        ],
+        "optional_dependencies": [
+          "pip install nvflare[SKLEARN]",
+          "pip install scikit-learn"
+        ],
+        "template_references": []
+      }
+    },
+    {
+      "summary": {
+        "name": "lr",
+        "description": "A recipe for federated logistic regression.",
+        "framework": "numpy",
+        "module": "nvflare.app_common.np.recipes.lr.fedavg",
+        "class": "FedAvgLrRecipe",
+        "algorithm": "fedavg_logistic_regression",
+        "aggregation": "weighted_average",
+        "state_exchange": "model_weights",
+        "privacy": [],
+        "framework_support": [
+          "numpy",
+          "sklearn"
+        ]
+      },
+      "detail": {
+        "name": "lr",
+        "description": "A recipe for federated logistic regression.",
+        "framework": "numpy",
+        "module": "nvflare.app_common.np.recipes.lr.fedavg",
+        "class": "FedAvgLrRecipe",
+        "algorithm": "fedavg_logistic_regression",
+        "aggregation": "weighted_average",
+        "state_exchange": "model_weights",
+        "privacy": [],
+        "client_requirements": {
+          "state_exchange": "model_weights",
+          "requires_training_script": true,
+          "requires_per_site_config": false,
+          "requires_site_list": false,
+          "min_clients": {
+            "required": true,
+            "default": null
+          }
+        },
+        "framework_support": [
+          "numpy",
+          "sklearn"
+        ],
+        "heterogeneity_support": [
+          "horizontal"
+        ],
+        "privacy_compatible": [],
+        "notes": [],
+        "parameters": [
+          {
+            "name": "name",
+            "type": "str",
+            "required": false,
+            "default": "lr_fedavg",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "min_clients",
+            "type": "int",
+            "required": true,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "num_rounds",
+            "type": "int",
+            "required": false,
+            "default": 2,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "damping_factor",
+            "type": null,
+            "required": false,
+            "default": 0.8,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "num_features",
+            "type": null,
+            "required": false,
+            "default": 13,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "initial_ckpt",
+            "type": "Optional[str]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "train_script",
+            "type": "str",
+            "required": true,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "train_args",
+            "type": "str",
+            "required": false,
+            "default": "",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "launch_external_process",
+            "type": null,
+            "required": false,
+            "default": false,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "command",
+            "type": "str",
+            "required": false,
+            "default": "python3 -u",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "client_memory_gc_rounds",
+            "type": "int",
+            "required": false,
+            "default": 0,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "cuda_empty_cache",
+            "type": "bool",
+            "required": false,
+            "default": false,
+            "kind": "keyword_only"
+          }
+        ],
+        "optional_dependencies": [],
+        "template_references": []
+      }
+    },
+    {
+      "summary": {
+        "name": "scaffold-pt",
+        "description": "A recipe for implementing SCAFFOLD in PyTorch.",
+        "framework": "pytorch",
+        "module": "nvflare.app_opt.pt.recipes.scaffold",
+        "class": "ScaffoldRecipe",
+        "algorithm": "scaffold",
+        "aggregation": "weighted_average",
+        "state_exchange": "full_model",
+        "privacy": [],
+        "heterogeneity_support": [
+          "non_iid"
+        ]
+      },
+      "detail": {
+        "name": "scaffold-pt",
+        "description": "A recipe for implementing SCAFFOLD in PyTorch.",
+        "framework": "pytorch",
+        "module": "nvflare.app_opt.pt.recipes.scaffold",
+        "class": "ScaffoldRecipe",
+        "algorithm": "scaffold",
+        "aggregation": "weighted_average",
+        "state_exchange": "full_model",
+        "privacy": [],
+        "client_requirements": {
+          "state_exchange": "full_model",
+          "requires_training_script": true,
+          "requires_per_site_config": false,
+          "requires_site_list": false,
+          "min_clients": {
+            "required": true,
+            "default": null
+          }
+        },
+        "framework_support": [
+          "pytorch"
+        ],
+        "heterogeneity_support": [
+          "non_iid"
+        ],
+        "privacy_compatible": [],
+        "notes": [],
+        "parameters": [
+          {
+            "name": "name",
+            "type": "str",
+            "required": false,
+            "default": "scaffold",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "model",
+            "type": "Union[Any, dict[str, Any], None]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "initial_ckpt",
+            "type": "Optional[str]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "min_clients",
+            "type": "int",
+            "required": true,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "num_rounds",
+            "type": "int",
+            "required": false,
+            "default": 2,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "train_script",
+            "type": "str",
+            "required": true,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "train_args",
+            "type": "str",
+            "required": false,
+            "default": "",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "launch_external_process",
+            "type": "bool",
+            "required": false,
+            "default": false,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "command",
+            "type": "str",
+            "required": false,
+            "default": "python3 -u",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "server_expected_format",
+            "type": "ExchangeFormat",
+            "required": false,
+            "default": "numpy",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "params_transfer_type",
+            "type": "TransferType",
+            "required": false,
+            "default": "FULL",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "server_memory_gc_rounds",
+            "type": "int",
+            "required": false,
+            "default": 0,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "client_memory_gc_rounds",
+            "type": "int",
+            "required": false,
+            "default": 0,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "cuda_empty_cache",
+            "type": "bool",
+            "required": false,
+            "default": false,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "enable_tensor_disk_offload",
+            "type": "bool",
+            "required": false,
+            "default": false,
+            "kind": "keyword_only"
+          }
+        ],
+        "optional_dependencies": [
+          "pip install nvflare[PT]",
+          "pip install torch"
+        ],
+        "template_references": []
+      }
+    },
+    {
+      "summary": {
+        "name": "scaffold-tf",
+        "description": "A recipe for implementing SCAFFOLD in TensorFlow.",
+        "framework": "tensorflow",
+        "module": "nvflare.app_opt.tf.recipes.scaffold",
+        "class": "ScaffoldRecipe",
+        "algorithm": "scaffold",
+        "aggregation": "weighted_average",
+        "state_exchange": "full_model",
+        "privacy": [],
+        "heterogeneity_support": [
+          "non_iid"
+        ]
+      },
+      "detail": {
+        "name": "scaffold-tf",
+        "description": "A recipe for implementing SCAFFOLD in TensorFlow.",
+        "framework": "tensorflow",
+        "module": "nvflare.app_opt.tf.recipes.scaffold",
+        "class": "ScaffoldRecipe",
+        "algorithm": "scaffold",
+        "aggregation": "weighted_average",
+        "state_exchange": "full_model",
+        "privacy": [],
+        "client_requirements": {
+          "state_exchange": "full_model",
+          "requires_training_script": true,
+          "requires_per_site_config": false,
+          "requires_site_list": false,
+          "min_clients": {
+            "required": true,
+            "default": null
+          }
+        },
+        "framework_support": [
+          "tensorflow"
+        ],
+        "heterogeneity_support": [
+          "non_iid"
+        ],
+        "privacy_compatible": [],
+        "notes": [],
+        "parameters": [
+          {
+            "name": "name",
+            "type": "str",
+            "required": false,
+            "default": "scaffold",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "model",
+            "type": "Union[Any, dict[str, Any], None]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "initial_ckpt",
+            "type": "Optional[str]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "min_clients",
+            "type": "int",
+            "required": true,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "num_rounds",
+            "type": "int",
+            "required": false,
+            "default": 2,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "train_script",
+            "type": "str",
+            "required": true,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "train_args",
+            "type": "str",
+            "required": false,
+            "default": "",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "launch_external_process",
+            "type": "bool",
+            "required": false,
+            "default": false,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "command",
+            "type": "str",
+            "required": false,
+            "default": "python3 -u",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "server_expected_format",
+            "type": "ExchangeFormat",
+            "required": false,
+            "default": "numpy",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "params_transfer_type",
+            "type": "TransferType",
+            "required": false,
+            "default": "FULL",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "server_memory_gc_rounds",
+            "type": "int",
+            "required": false,
+            "default": 0,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "client_memory_gc_rounds",
+            "type": "int",
+            "required": false,
+            "default": 0,
+            "kind": "keyword_only"
+          }
+        ],
+        "optional_dependencies": [
+          "pip install tensorflow"
+        ],
+        "template_references": []
+      }
+    },
+    {
+      "summary": {
+        "name": "svm-sklearn",
+        "description": "A recipe for Federated SVM with Scikit-learn.",
+        "framework": "sklearn",
+        "module": "nvflare.app_opt.sklearn.recipes.svm",
+        "class": "SVMFedAvgRecipe",
+        "algorithm": "svm",
+        "aggregation": "support_vectors",
+        "state_exchange": "support_vectors",
+        "privacy": []
+      },
+      "detail": {
+        "name": "svm-sklearn",
+        "description": "A recipe for Federated SVM with Scikit-learn.",
+        "framework": "sklearn",
+        "module": "nvflare.app_opt.sklearn.recipes.svm",
+        "class": "SVMFedAvgRecipe",
+        "algorithm": "svm",
+        "aggregation": "support_vectors",
+        "state_exchange": "support_vectors",
+        "privacy": [],
+        "client_requirements": {
+          "state_exchange": "support_vectors",
+          "requires_training_script": true,
+          "requires_per_site_config": false,
+          "requires_site_list": false,
+          "min_clients": {
+            "required": true,
+            "default": null
+          }
+        },
+        "framework_support": [
+          "sklearn"
+        ],
+        "heterogeneity_support": [
+          "horizontal"
+        ],
+        "privacy_compatible": [],
+        "notes": [],
+        "parameters": [
+          {
+            "name": "name",
+            "type": "str",
+            "required": false,
+            "default": "svm_fedavg",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "min_clients",
+            "type": "int",
+            "required": true,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "kernel",
+            "type": "Literal['linear', 'poly', 'rbf', 'sigmoid']",
+            "required": false,
+            "default": "rbf",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "model_path",
+            "type": "Optional[str]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "train_script",
+            "type": "str",
+            "required": true,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "train_args",
+            "type": "str",
+            "required": false,
+            "default": "",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "launch_external_process",
+            "type": "bool",
+            "required": false,
+            "default": false,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "command",
+            "type": "str",
+            "required": false,
+            "default": "python3 -u",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "per_site_config",
+            "type": "Optional[dict[str, dict]]",
+            "required": false,
+            "default": null,
+            "kind": "keyword_only"
+          },
+          {
+            "name": "key_metric",
+            "type": "str",
+            "required": false,
+            "default": "AUC",
+            "kind": "keyword_only"
+          },
+          {
+            "name": "key_metric_mode",
+            "type": "Literal['min', 'max']",
+            "required": false,
+            "default": "max",
+            "kind": "keyword_only"
+          }
+        ],
+        "optional_dependencies": [
+          "pip install nvflare[SKLEARN]",
+          "pip install scikit-learn"
+        ],
+        "template_references": []
+      }
+    },
+    {
+      "summary": {
+        "name": "swarm-pt",
+        "description": "A simple recipe for Swarm Learning with PyTorch models.",
+        "framework": "pytorch",
+        "module": "nvflare.app_opt.pt.recipes.swarm",
+        "class": "SwarmLearningRecipe",
+        "algorithm": "swarm",
+        "aggregation": null,
+        "state_exchange": "full_model",
+        "privacy": []
+      },
+      "detail": {
+        "name": "swarm-pt",
+        "description": "A simple recipe for Swarm Learning with PyTorch models.",
+        "framework": "pytorch",
+        "module": "nvflare.app_opt.pt.recipes.swarm",
+        "class": "SwarmLearningRecipe",
+        "algorithm": "swarm",
+        "aggregation": null,
+        "state_exchange": "full_model",
+        "privacy": [],
+        "client_requirements": {
+          "state_exchange": "full_model",
+          "requires_training_script": true,
+          "requires_per_site_config": false,
+          "requires_site_list": false,
+          "min_clients": {
+            "required": true,
+            "default": null
+          }
+        },
+        "framework_support": [
+          "pytorch"
+        ],
+        "heterogeneity_support": [
+          "horizontal"
+        ],
+        "privacy_compatible": [],
+        "notes": [],
+        "parameters": [
+          {
+            "name": "name",
+            "type": "str",
+            "required": true,
+            "default": null,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "model",
+            "type": "Union[Any, Dict[str, Any]]",
+            "required": true,
+            "default": null,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "num_rounds",
+            "type": "int",
+            "required": true,
+            "default": null,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "train_script",
+            "type": "str",
+            "required": true,
+            "default": null,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "min_clients",
+            "type": "int",
+            "required": true,
+            "default": null,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "initial_ckpt",
+            "type": "Optional[str]",
+            "required": false,
+            "default": null,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "train_args",
+            "type": "dict",
+            "required": false,
+            "default": null,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "do_cross_site_eval",
+            "type": "bool",
+            "required": false,
+            "default": false,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "cross_site_eval_timeout",
+            "type": "float",
+            "required": false,
+            "default": 300,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "launch_external_process",
+            "type": "bool",
+            "required": false,
+            "default": false,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "command",
+            "type": "str",
+            "required": false,
+            "default": "python3 -u",
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "memory_gc_rounds",
+            "type": "int",
+            "required": false,
+            "default": 1,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "cuda_empty_cache",
+            "type": "bool",
+            "required": false,
+            "default": false,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "expected_data_kind",
+            "type": "str",
+            "required": false,
+            "default": "WEIGHTS",
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "params_transfer_type",
+            "type": "str",
+            "required": false,
+            "default": "FULL",
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "start_task_timeout",
+            "type": "float",
+            "required": false,
+            "default": 300,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "progress_timeout",
+            "type": "float",
+            "required": false,
+            "default": 3600,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "max_status_report_interval",
+            "type": "float",
+            "required": false,
+            "default": 300,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "round_timeout",
+            "type": "float",
+            "required": false,
+            "default": 3600,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "learn_task_timeout",
+            "type": "Optional[float]",
+            "required": false,
+            "default": null,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "max_concurrent_submissions",
+            "type": "int",
+            "required": false,
+            "default": 1,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "learn_task_abort_timeout",
+            "type": "Optional[float]",
+            "required": false,
+            "default": null,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "learn_task_ack_timeout",
+            "type": "Optional[float]",
+            "required": false,
+            "default": null,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "final_result_ack_timeout",
+            "type": "Optional[float]",
+            "required": false,
+            "default": null,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "server_config_overrides",
+            "type": "Optional[Dict[str, Any]]",
+            "required": false,
+            "default": null,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "client_config_overrides",
+            "type": "Optional[Dict[str, Any]]",
+            "required": false,
+            "default": null,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "aggregation_format",
+            "type": "ExchangeFormat",
+            "required": false,
+            "default": "numpy",
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "enable_tensor_disk_offload",
+            "type": "bool",
+            "required": false,
+            "default": false,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "key_metric",
+            "type": "Optional[str]",
+            "required": false,
+            "default": "accuracy",
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "key_metric_mode",
+            "type": "Literal['min', 'max']",
+            "required": false,
+            "default": "max",
+            "kind": "positional_or_keyword"
+          }
+        ],
+        "optional_dependencies": [
+          "pip install nvflare[PT]",
+          "pip install torch"
+        ],
+        "template_references": []
+      }
+    },
+    {
+      "summary": {
+        "name": "xgb-bagging",
+        "description": "Tree-based federated XGBoost using bagging.",
+        "framework": "xgboost",
+        "module": "nvflare.app_opt.xgboost.recipes.bagging",
+        "class": "XGBBaggingRecipe",
+        "algorithm": "xgboost_bagging",
+        "aggregation": "tree_ensemble",
+        "state_exchange": "trees",
+        "privacy": [],
+        "heterogeneity_support": [
+          "horizontal"
+        ]
+      },
+      "detail": {
+        "name": "xgb-bagging",
+        "description": "Tree-based federated XGBoost using bagging.",
+        "framework": "xgboost",
+        "module": "nvflare.app_opt.xgboost.recipes.bagging",
+        "class": "XGBBaggingRecipe",
+        "algorithm": "xgboost_bagging",
+        "aggregation": "tree_ensemble",
+        "state_exchange": "trees",
+        "privacy": [],
+        "client_requirements": {
+          "state_exchange": "trees",
+          "requires_training_script": false,
+          "requires_per_site_config": false,
+          "requires_site_list": false,
+          "min_clients": {
+            "required": true,
+            "default": null
+          }
+        },
+        "framework_support": [
+          "xgboost"
+        ],
+        "heterogeneity_support": [
+          "horizontal"
+        ],
+        "privacy_compatible": [],
+        "notes": [],
+        "parameters": [
+          {
+            "name": "name",
+            "type": "str",
+            "required": true,
+            "default": null,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "min_clients",
+            "type": "int",
+            "required": true,
+            "default": null,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "training_mode",
+            "type": "str",
+            "required": false,
+            "default": "bagging",
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "num_rounds",
+            "type": "Optional[int]",
+            "required": false,
+            "default": null,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "num_client_bagging",
+            "type": "Optional[int]",
+            "required": false,
+            "default": null,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "num_local_parallel_tree",
+            "type": "int",
+            "required": false,
+            "default": 1,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "local_subsample",
+            "type": "float",
+            "required": false,
+            "default": 0.8,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "learning_rate",
+            "type": "float",
+            "required": false,
+            "default": 0.1,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "objective",
+            "type": "str",
+            "required": false,
+            "default": "binary:logistic",
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "max_depth",
+            "type": "int",
+            "required": false,
+            "default": 8,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "eval_metric",
+            "type": "str",
+            "required": false,
+            "default": "auc",
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "tree_method",
+            "type": "str",
+            "required": false,
+            "default": "hist",
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "use_gpus",
+            "type": "bool",
+            "required": false,
+            "default": false,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "nthread",
+            "type": "int",
+            "required": false,
+            "default": 16,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "lr_mode",
+            "type": "str",
+            "required": false,
+            "default": "uniform",
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "save_name",
+            "type": "str",
+            "required": false,
+            "default": "xgboost_model.json",
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "data_loader_id",
+            "type": "str",
+            "required": false,
+            "default": "dataloader",
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "per_site_config",
+            "type": "Optional[dict[str, dict]]",
+            "required": false,
+            "default": null,
+            "kind": "positional_or_keyword"
+          }
+        ],
+        "optional_dependencies": [
+          "pip install xgboost"
+        ],
+        "template_references": []
+      }
+    },
+    {
+      "summary": {
+        "name": "xgb-horizontal",
+        "description": "Histogram-based federated XGBoost for horizontal data partitioning.",
+        "framework": "xgboost",
+        "module": "nvflare.app_opt.xgboost.recipes.histogram",
+        "class": "XGBHorizontalRecipe",
+        "algorithm": "xgboost_horizontal",
+        "aggregation": "tree_ensemble",
+        "state_exchange": "trees",
+        "privacy": [],
+        "heterogeneity_support": [
+          "horizontal"
+        ],
+        "privacy_compatible": [
+          "homomorphic_encryption"
+        ]
+      },
+      "detail": {
+        "name": "xgb-horizontal",
+        "description": "Histogram-based federated XGBoost for horizontal data partitioning.",
+        "framework": "xgboost",
+        "module": "nvflare.app_opt.xgboost.recipes.histogram",
+        "class": "XGBHorizontalRecipe",
+        "algorithm": "xgboost_horizontal",
+        "aggregation": "tree_ensemble",
+        "state_exchange": "trees",
+        "privacy": [],
+        "client_requirements": {
+          "state_exchange": "trees",
+          "requires_training_script": false,
+          "requires_per_site_config": false,
+          "requires_site_list": false,
+          "min_clients": {
+            "required": true,
+            "default": null
+          },
+          "client_ranks": {
+            "required": false,
+            "default": null
+          }
+        },
+        "framework_support": [
+          "xgboost"
+        ],
+        "heterogeneity_support": [
+          "horizontal"
+        ],
+        "privacy_compatible": [
+          "homomorphic_encryption"
+        ],
+        "notes": [],
+        "parameters": [
+          {
+            "name": "name",
+            "type": "str",
+            "required": true,
+            "default": null,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "min_clients",
+            "type": "int",
+            "required": true,
+            "default": null,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "num_rounds",
+            "type": "int",
+            "required": true,
+            "default": null,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "early_stopping_rounds",
+            "type": "int",
+            "required": false,
+            "default": 2,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "use_gpus",
+            "type": "bool",
+            "required": false,
+            "default": false,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "secure",
+            "type": "bool",
+            "required": false,
+            "default": false,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "client_ranks",
+            "type": "Optional[dict]",
+            "required": false,
+            "default": null,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "xgb_params",
+            "type": "Optional[dict]",
+            "required": false,
+            "default": null,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "data_loader_id",
+            "type": "str",
+            "required": false,
+            "default": "dataloader",
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "metrics_writer_id",
+            "type": "str",
+            "required": false,
+            "default": "metrics_writer",
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "per_site_config",
+            "type": "Optional[dict[str, dict]]",
+            "required": false,
+            "default": null,
+            "kind": "positional_or_keyword"
+          }
+        ],
+        "optional_dependencies": [
+          "pip install xgboost"
+        ],
+        "template_references": []
+      }
+    },
+    {
+      "summary": {
+        "name": "xgb-vertical",
+        "description": "Federated XGBoost for vertical data partitioning.",
+        "framework": "xgboost",
+        "module": "nvflare.app_opt.xgboost.recipes.vertical",
+        "class": "XGBVerticalRecipe",
+        "algorithm": "xgboost_vertical",
+        "aggregation": "tree_ensemble",
+        "state_exchange": "trees",
+        "privacy": [],
+        "heterogeneity_support": [
+          "vertical"
+        ],
+        "privacy_compatible": [
+          "homomorphic_encryption",
+          "private_set_intersection"
+        ]
+      },
+      "detail": {
+        "name": "xgb-vertical",
+        "description": "Federated XGBoost for vertical data partitioning.",
+        "framework": "xgboost",
+        "module": "nvflare.app_opt.xgboost.recipes.vertical",
+        "class": "XGBVerticalRecipe",
+        "algorithm": "xgboost_vertical",
+        "aggregation": "tree_ensemble",
+        "state_exchange": "trees",
+        "privacy": [],
+        "client_requirements": {
+          "state_exchange": "trees",
+          "requires_training_script": false,
+          "requires_per_site_config": false,
+          "requires_site_list": false,
+          "min_clients": {
+            "required": true,
+            "default": null
+          },
+          "label_owner": {
+            "required": true,
+            "default": null
+          },
+          "client_ranks": {
+            "required": false,
+            "default": null
+          }
+        },
+        "framework_support": [
+          "xgboost"
+        ],
+        "heterogeneity_support": [
+          "vertical"
+        ],
+        "privacy_compatible": [
+          "homomorphic_encryption",
+          "private_set_intersection"
+        ],
+        "notes": [],
+        "parameters": [
+          {
+            "name": "name",
+            "type": "str",
+            "required": true,
+            "default": null,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "min_clients",
+            "type": "int",
+            "required": true,
+            "default": null,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "num_rounds",
+            "type": "int",
+            "required": true,
+            "default": null,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "label_owner",
+            "type": "str",
+            "required": true,
+            "default": null,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "early_stopping_rounds",
+            "type": "int",
+            "required": false,
+            "default": 3,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "use_gpus",
+            "type": "bool",
+            "required": false,
+            "default": false,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "secure",
+            "type": "bool",
+            "required": false,
+            "default": false,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "client_ranks",
+            "type": "Optional[dict]",
+            "required": false,
+            "default": null,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "xgb_params",
+            "type": "Optional[dict]",
+            "required": false,
+            "default": null,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "data_loader_id",
+            "type": "str",
+            "required": false,
+            "default": "dataloader",
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "metrics_writer_id",
+            "type": "str",
+            "required": false,
+            "default": "metrics_writer",
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "in_process",
+            "type": "bool",
+            "required": false,
+            "default": true,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "model_file_name",
+            "type": "str",
+            "required": false,
+            "default": "test.model.json",
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "per_site_config",
+            "type": "Optional[dict[str, dict]]",
+            "required": false,
+            "default": null,
+            "kind": "positional_or_keyword"
+          }
+        ],
+        "optional_dependencies": [
+          "pip install xgboost"
+        ],
+        "template_references": []
+      }
+    }
+  ]
+}

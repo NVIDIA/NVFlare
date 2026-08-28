@@ -29,6 +29,7 @@ class TestDefs:
             "HELLO",
             "HELLO_ACCEPTED",
             "HELLO_REJECTED",
+            "SESSION_READY",
             "SESSION_OPEN",
             "SESSION_ACCEPTED",
             "SESSION_REJECTED",
@@ -40,6 +41,7 @@ class TestDefs:
             "RESULT_ACCEPTED",
             "RESULT_REJECTED",
             "RESULT_STATUS",
+            "RESULT_SOURCE_SETTLED",
             "LOG",
             "HEARTBEAT",
             "ABORT",
@@ -57,7 +59,7 @@ class TestDefs:
         assert len(values) == len(set(values))
 
     def test_no_collision_with_legacy_ipc_defs(self):
-        # the Client API control protocol must not collide with the legacy FlareAgent
+        # the Client API control protocol topics must remain unique
         # channel/topic values in nvflare/client/ipc/defs.py
         assert CHANNEL != ipc_defs.CHANNEL
         legacy_topics = {
@@ -75,6 +77,7 @@ class TestDefs:
             "HELLO": "client_api.hello",
             "HELLO_ACCEPTED": "client_api.hello_accepted",
             "HELLO_REJECTED": "client_api.hello_rejected",
+            "SESSION_READY": "client_api.session_ready",
             "SESSION_OPEN": "client_api.session_open",
             "SESSION_ACCEPTED": "client_api.session_accepted",
             "SESSION_REJECTED": "client_api.session_rejected",
@@ -86,6 +89,7 @@ class TestDefs:
             "RESULT_ACCEPTED": "client_api.result_accepted",
             "RESULT_REJECTED": "client_api.result_rejected",
             "RESULT_STATUS": "client_api.result_status",
+            "RESULT_SOURCE_SETTLED": "client_api.result_source_settled",
             "LOG": "client_api.log",
             "HEARTBEAT": "client_api.heartbeat",
             "ABORT": "client_api.abort",

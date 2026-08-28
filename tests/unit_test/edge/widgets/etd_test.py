@@ -95,6 +95,22 @@ def test_job_lifecycle_handlers_validate_context(tmp_path):
     assert not dispatcher._job_exists("job-1")
 
 
+def test_job_done_prefers_explicit_event_job_id_over_sticky_id(tmp_path):
+    dispatcher = EdgeTaskDispatcher()
+    workspace = MagicMock()
+    workspace.get_app_config_dir.return_value = str(tmp_path)
+    fl_ctx = _context()
+    fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace, private=True, sticky=False)
+    fl_ctx.set_prop(FLContextKey.JOB_META, _job_meta(), private=True, sticky=False)
+    dispatcher._handle_job_launched("launched", fl_ctx)
+    assert dispatcher._job_exists("job-1")
+
+    fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, "wrong-job", private=True, sticky=False)
+    fl_ctx.set_prop(FLContextKey.EVENT_DATA, {JobMetaKey.JOB_ID.value: "job-1"}, private=True, sticky=False)
+    dispatcher._handle_job_done("done", fl_ctx)
+    assert not dispatcher._job_exists("job-1")
+
+
 def test_edge_job_request_returns_invalid_no_job_and_match(monkeypatch):
     dispatcher = EdgeTaskDispatcher()
     monkeypatch.setattr(dispatcher.logger, "error", MagicMock())

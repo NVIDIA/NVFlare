@@ -15,13 +15,15 @@
 """Tests for Swarm Learning recipes."""
 
 import json
-import os
 from unittest.mock import patch
 
 import pytest
 
 from nvflare.apis.dxo import DataKind
 from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME
+from nvflare.app_common.app_constant import DefaultCheckpointFileName
+from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
+from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
 from nvflare.client.config import ExchangeFormat
 from nvflare.fuel.utils.secret_utils import PotentialSecretWarning
 
@@ -92,6 +94,112 @@ class TestSwarmLearningRecipe:
         )
 
         assert recipe._job is not None
+
+    @pytest.mark.parametrize(
+        "key_metric,key_metric_mode,negate_key_metric",
+        [
+            ("accuracy", "max", False),
+            ("val_loss", "min", True),
+        ],
+    )
+    def test_configures_client_side_best_model_selection(
+        self,
+        mock_file_system,
+        simple_pt_model,
+        key_metric,
+        key_metric_mode,
+        negate_key_metric,
+    ):
+        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
+
+        recipe = SwarmLearningRecipe(
+            name="test_swarm_model_selection",
+            model=simple_pt_model,
+            num_rounds=5,
+            train_script="train.py",
+            min_clients=2,
+            key_metric=key_metric,
+            key_metric_mode=key_metric_mode,
+        )
+
+        client_components = recipe._job._deploy_map[ALL_SITES].app_config.components
+        selector = client_components["model_selector"]
+        persistor = client_components["persistor"]
+
+        assert isinstance(selector, IntimeModelSelector)
+        assert selector.key_metric == key_metric
+        assert selector.negate_key_metric is negate_key_metric
+        assert isinstance(persistor, PTFileModelPersistor)
+        assert persistor.best_global_model_file_name == DefaultCheckpointFileName.BEST_GLOBAL_MODEL
+        assert "model_selector" not in recipe._job._deploy_map[SERVER_SITE_NAME].app_config.components
+
+    def test_rejects_invalid_key_metric_mode(self, mock_file_system, simple_pt_model):
+        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
+
+        with pytest.raises(ValueError, match="key_metric_mode"):
+            SwarmLearningRecipe(
+                name="test_swarm_invalid_metric_mode",
+                model=simple_pt_model,
+                num_rounds=5,
+                train_script="train.py",
+                min_clients=2,
+                key_metric_mode="median",
+            )
+
+    @pytest.mark.parametrize("key_metric", ("", "   "))
+    def test_rejects_empty_key_metric(self, mock_file_system, simple_pt_model, key_metric):
+        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
+
+        with pytest.raises(ValueError, match="key_metric must be a non-empty string or None"):
+            SwarmLearningRecipe(
+                name="test_swarm_empty_metric",
+                model=simple_pt_model,
+                num_rounds=5,
+                train_script="train.py",
+                min_clients=2,
+                key_metric=key_metric,
+            )
+
+    def test_key_metric_none_disables_client_side_best_model_selection(self, mock_file_system, simple_pt_model):
+        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
+
+        recipe = SwarmLearningRecipe(
+            name="test_swarm_without_model_selection",
+            model=simple_pt_model,
+            num_rounds=5,
+            train_script="train.py",
+            min_clients=2,
+            key_metric=None,
+        )
+
+        client_components = recipe._job._deploy_map[ALL_SITES].app_config.components
+        assert "model_selector" not in client_components
+
+    def test_base_recipe_accepts_custom_model_selector(self, mock_file_system, simple_pt_model):
+        from nvflare.app_common.aggregators.intime_accumulate_model_aggregator import InTimeAccumulateWeightedAggregator
+        from nvflare.app_common.ccwf.ccwf_job import SwarmClientConfig, SwarmServerConfig
+        from nvflare.app_common.ccwf.comps.simple_model_shareable_generator import SimpleModelShareableGenerator
+        from nvflare.app_opt.pt.recipes.swarm import BaseSwarmLearningRecipe
+        from nvflare.job_config.script_runner import ScriptRunner
+
+        selector = IntimeModelSelector(key_metric="custom_score")
+        client_config = SwarmClientConfig(
+            executor=ScriptRunner(script="train.py"),
+            aggregator=InTimeAccumulateWeightedAggregator(),
+            persistor=PTFileModelPersistor(model=simple_pt_model),
+            shareable_generator=SimpleModelShareableGenerator(),
+            model_selector=selector,
+            min_responses_required=2,
+        )
+        recipe = BaseSwarmLearningRecipe(
+            name="test_custom_swarm_selector",
+            server_config=SwarmServerConfig(num_rounds=5, min_clients=2),
+            client_config=client_config,
+            min_clients=2,
+        )
+
+        client_components = recipe._job._deploy_map[ALL_SITES].app_config.components
+        assert client_components["model_selector"] is selector
 
     def test_weight_diff_with_default_transfer_is_valid(self, mock_file_system, simple_pt_model):
         from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
@@ -350,6 +458,8 @@ class TestSwarmLearningRecipeControllerConfig:
             SwarmLearningRecipe(**defaults, client_config_overrides={"executor": object()})
         with pytest.raises(ValueError, match="cannot override recipe-managed fields: min_responses_required"):
             SwarmLearningRecipe(**defaults, client_config_overrides={"min_responses_required": 5})
+        with pytest.raises(ValueError, match="cannot override recipe-managed fields: model_selector"):
+            SwarmLearningRecipe(**defaults, client_config_overrides={"model_selector": None})
         with pytest.raises(TypeError, match="server_config_overrides must be a dict"):
             SwarmLearningRecipe(**defaults, server_config_overrides=[])
         with pytest.raises(TypeError, match="server_config_overrides keys must be strings"):
@@ -518,162 +628,58 @@ class TestSwarmLearningRecipeTensorDiskOffload:
             )
 
 
-class TestSwarmLearningRecipePipeType:
-    """Tests for pipe_type and pipe_root_path parameters."""
-
-    def _capture_task_pipe(self, recipe_kwargs):
-        """Helper: build recipe and return the task_pipe passed to the selected runner."""
-        import torch.nn as nn
-
-        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
-        from nvflare.job_config.script_runner import BaseScriptRunner
-
-        captured = {}
-        orig = BaseScriptRunner.__init__
-
-        def _capture(self, *a, **kw):
-            captured["task_pipe"] = kw.get("task_pipe")
-            orig(self, *a, **kw)
-
-        model = nn.Linear(2, 2)
-        defaults = dict(name="t", model=model, num_rounds=1, train_script="t.py", min_clients=2)
-        defaults.update(recipe_kwargs)
-
-        with (
-            patch("os.path.isfile", return_value=True),
-            patch("os.path.isdir", return_value=True),
-            patch("os.path.exists", return_value=True),
-            patch.object(BaseScriptRunner, "__init__", _capture),
-        ):
-            SwarmLearningRecipe(**defaults)
-
-        return captured.get("task_pipe")
-
-    def test_default_cell_pipe_passes_task_pipe_none(self):
-        """Default pipe_type='cell_pipe' uses ScriptRunner without a legacy task pipe."""
-        task_pipe = self._capture_task_pipe({})
-        assert task_pipe is None
-
-    def test_file_pipe_passes_filepipe_instance(self):
-        """External pipe_type='file_pipe' passes FilePipe to the legacy BaseScriptRunner."""
-        from nvflare.fuel.utils.pipe.file_pipe import FilePipe
-
-        task_pipe = self._capture_task_pipe({"pipe_type": "file_pipe", "launch_external_process": True})
-        assert isinstance(task_pipe, FilePipe)
-
-    def test_file_pipe_default_root_path_uses_workspace_template(self):
-        """pipe_type='file_pipe' with no pipe_root_path must use {WORKSPACE}/{JOB_ID}/{SITE_NAME}
-        matching the sag_cse_ccwf_pt reference template for runtime path isolation."""
-        from nvflare.apis.fl_constant import SystemVarName
-
-        task_pipe = self._capture_task_pipe({"pipe_type": "file_pipe", "launch_external_process": True})
-        root_path = task_pipe.root_path
-        assert "{" + SystemVarName.WORKSPACE + "}" in root_path
-        assert "{" + SystemVarName.JOB_ID + "}" in root_path
-        assert "{" + SystemVarName.SITE_NAME + "}" in root_path
-
-    def test_file_pipe_custom_root_path_forwarded(self, tmp_path):
-        """pipe_type='file_pipe' with a valid pipe_root_path must use custom_base/{JOB_ID}/{SITE_NAME}."""
-        from nvflare.apis.fl_constant import SystemVarName
-        from nvflare.fuel.utils.pipe.file_pipe import FilePipe
-
-        custom_path = str(tmp_path)
-        task_pipe = self._capture_task_pipe(
-            {"pipe_type": "file_pipe", "pipe_root_path": custom_path, "launch_external_process": True}
-        )
-        assert isinstance(task_pipe, FilePipe)
-        assert task_pipe.root_path.startswith(custom_path)
-        assert "{" + SystemVarName.JOB_ID + "}" in task_pipe.root_path
-        assert "{" + SystemVarName.SITE_NAME + "}" in task_pipe.root_path
-
-    def test_invalid_pipe_type_raises(self, mock_file_system, simple_pt_model):
-        """An unrecognised pipe_type must raise ValueError immediately."""
-        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
-
-        with pytest.raises(ValueError, match="pipe_type must be one of"):
-            SwarmLearningRecipe(
-                name="t",
-                model=simple_pt_model,
-                num_rounds=1,
-                train_script="t.py",
-                min_clients=2,
-                pipe_type="grpc_pipe",
-            )
-
-    def test_cell_pipe_with_root_path_warns(self, mock_file_system, simple_pt_model, caplog):
-        """pipe_root_path set alongside pipe_type='cell_pipe' must emit a warning."""
-        import logging
-
-        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
-
-        with caplog.at_level(logging.WARNING, logger="nvflare.app_opt.pt.recipes.swarm"):
-            SwarmLearningRecipe(
-                name="t",
-                model=simple_pt_model,
-                num_rounds=1,
-                train_script="t.py",
-                min_clients=2,
-                pipe_type="cell_pipe",
-                pipe_root_path="/some/path",
-            )
-        assert any("pipe_root_path" in r.message and "ignored" in r.message for r in caplog.records)
-
-    def test_file_pipe_with_in_process_warns(self, mock_file_system, simple_pt_model, caplog):
-        """pipe_type='file_pipe' + launch_external_process=False must warn the user."""
-        import logging
-
-        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
-
-        with caplog.at_level(logging.WARNING, logger="nvflare.app_opt.pt.recipes.swarm"):
-            SwarmLearningRecipe(
-                name="t",
-                model=simple_pt_model,
-                num_rounds=1,
-                train_script="t.py",
-                min_clients=2,
-                pipe_type="file_pipe",
-                launch_external_process=False,
-            )
-        assert any("has no effect" in r.message for r in caplog.records)
-
-    def test_pipe_root_path_relative_raises(self, mock_file_system, simple_pt_model):
-        """A relative pipe_root_path must raise ValueError."""
-        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
-
-        with pytest.raises(ValueError, match="absolute path"):
-            SwarmLearningRecipe(
-                name="t",
-                model=simple_pt_model,
-                num_rounds=1,
-                train_script="t.py",
-                min_clients=2,
-                pipe_type="file_pipe",
-                pipe_root_path="relative/path",
-            )
-
-    def test_pipe_root_path_nonexistent_accepted(self, mock_file_system, simple_pt_model):
-        """A non-existent pipe_root_path must be accepted (runtime path, not validated locally).
-
-        NVFlare follows the same model as absolute checkpoint paths: the directory
-        is treated as a runtime-only path and does not need to exist on the machine
-        that builds or exports the job (e.g. /dev/shm mounts on worker nodes).
-        """
-        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
-
-        # Should not raise even though /nonexistent/path does not exist locally.
-        SwarmLearningRecipe(
-            name="t",
-            model=simple_pt_model,
-            num_rounds=1,
-            train_script="t.py",
-            min_clients=2,
-            pipe_type="file_pipe",
-            pipe_root_path="/nonexistent/path",
-        )
-
-
 class TestSwarmLearningRecipeExport:
     """Export behavior tests for SwarmLearningRecipe."""
+
+    def test_export_includes_client_side_best_model_selector(self, tmp_path):
+        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
+
+        train_script = tmp_path / "train.py"
+        train_script.write_text("print('train')\n")
+        recipe = SwarmLearningRecipe(
+            name="swarm_best_model",
+            model={"class_path": "torch.nn.Linear", "args": {"in_features": 2, "out_features": 2}},
+            num_rounds=2,
+            train_script=str(train_script),
+            min_clients=2,
+            key_metric="val_loss",
+            key_metric_mode="min",
+        )
+
+        export_dir = tmp_path / "job"
+        recipe.export(str(export_dir))
+
+        client_config_path = export_dir / "swarm_best_model" / "app" / "config" / "config_fed_client.json"
+        with open(client_config_path, "r") as f:
+            client_config = json.load(f)
+        selector = next(component for component in client_config["components"] if component["id"] == "model_selector")
+
+        assert selector["path"].endswith(".IntimeModelSelector")
+        assert selector["args"]["key_metric"] == "val_loss"
+        assert selector["args"]["negate_key_metric"] is True
+
+    def test_export_omits_client_side_best_model_selector_when_disabled(self, tmp_path):
+        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
+
+        train_script = tmp_path / "train.py"
+        train_script.write_text("print('train')\n")
+        recipe = SwarmLearningRecipe(
+            name="swarm_without_best_model",
+            model={"class_path": "torch.nn.Linear", "args": {"in_features": 2, "out_features": 2}},
+            num_rounds=2,
+            train_script=str(train_script),
+            min_clients=2,
+            key_metric=None,
+        )
+
+        export_dir = tmp_path / "job"
+        recipe.export(str(export_dir))
+
+        client_config_path = export_dir / "swarm_without_best_model" / "app" / "config" / "config_fed_client.json"
+        with open(client_config_path, "r") as f:
+            client_config = json.load(f)
+
+        assert all(component["id"] != "model_selector" for component in client_config["components"])
 
     def test_export_nested_relative_ckpt_uses_configured_basename(self, tmp_path, monkeypatch):
         """A nested relative checkpoint is flattened into each client app."""
@@ -764,7 +770,7 @@ class TestSwarmLearningRecipeExport:
         train_script.write_text("print('train')\n")
 
         recipe = SwarmLearningRecipe(
-            name="test_cell_pipe_export",
+            name="test_external_process_export",
             model=nn.Linear(2, 2),
             num_rounds=1,
             train_script=str(train_script),
@@ -775,7 +781,7 @@ class TestSwarmLearningRecipeExport:
         export_dir = tmp_path / "job"
         recipe.export(str(export_dir))
 
-        config_path = export_dir / "test_cell_pipe_export" / "app" / "config" / "config_fed_client.json"
+        config_path = export_dir / "test_external_process_export" / "app" / "config" / "config_fed_client.json"
         with open(config_path, "r") as f:
             config = json.load(f)
 
@@ -785,181 +791,3 @@ class TestSwarmLearningRecipeExport:
         component_ids = {component["id"] for component in config.get("components", [])}
         assert "pipe" not in component_ids
         assert "launcher" not in component_ids
-
-    def test_export_file_pipe_generates_file_pipe_component(self, tmp_path):
-        """pipe_type='file_pipe' must export a FilePipe component with correct root_path."""
-        import torch.nn as nn
-
-        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
-
-        train_script = tmp_path / "train.py"
-        train_script.write_text("print('train')\n")
-
-        recipe = SwarmLearningRecipe(
-            name="test_file_pipe_export",
-            model=nn.Linear(2, 2),
-            num_rounds=1,
-            train_script=str(train_script),
-            min_clients=2,
-            launch_external_process=True,
-            pipe_type="file_pipe",
-        )
-
-        export_dir = tmp_path / "job"
-        recipe.export(str(export_dir))
-
-        config_path = export_dir / "test_file_pipe_export" / "app" / "config" / "config_fed_client.json"
-        with open(config_path, "r") as f:
-            config = json.load(f)
-
-        pipe_comp = None
-        for comp in config.get("components", []):
-            if comp.get("id") == "pipe":
-                pipe_comp = comp
-                break
-
-        assert pipe_comp is not None, "Pipe component not found in exported client config"
-        assert "file_pipe.FilePipe" in pipe_comp["path"], f"Expected FilePipe path, got '{pipe_comp['path']}'"
-        pipe_args = pipe_comp.get("args", {})
-        assert "root_path" in pipe_args, "FilePipe must have root_path arg"
-        root_path = pipe_args["root_path"]
-        assert "{WORKSPACE}" in root_path, f"root_path must contain {{WORKSPACE}}, got '{root_path}'"
-        assert "{JOB_ID}" in root_path, f"root_path must contain {{JOB_ID}}, got '{root_path}'"
-        assert "{SITE_NAME}" in root_path, f"root_path must contain {{SITE_NAME}}, got '{root_path}'"
-        # CJ-side FilePipe is PASSIVE (matches sag_cse_ccwf_pt reference template).
-        # The subprocess side uses ACTIVE (initiates communication with the waiting CJ).
-        assert pipe_args.get("mode") in (
-            "PASSIVE",
-            "passive",
-        ), f"CJ-side pipe mode must be PASSIVE (matching reference template), got '{pipe_args.get('mode')}'"
-
-    def test_export_file_pipe_custom_root_path(self, tmp_path):
-        """pipe_type='file_pipe' with custom pipe_root_path must use custom base + {JOB_ID}/{SITE_NAME}."""
-        import torch.nn as nn
-
-        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
-
-        train_script = tmp_path / "train.py"
-        train_script.write_text("print('train')\n")
-
-        custom_base = str(tmp_path / "custom_pipes")
-        os.makedirs(custom_base, exist_ok=True)
-
-        recipe = SwarmLearningRecipe(
-            name="test_file_pipe_custom_export",
-            model=nn.Linear(2, 2),
-            num_rounds=1,
-            train_script=str(train_script),
-            min_clients=2,
-            launch_external_process=True,
-            pipe_type="file_pipe",
-            pipe_root_path=custom_base,
-        )
-
-        export_dir = tmp_path / "job"
-        recipe.export(str(export_dir))
-
-        config_path = export_dir / "test_file_pipe_custom_export" / "app" / "config" / "config_fed_client.json"
-        with open(config_path, "r") as f:
-            config = json.load(f)
-
-        pipe_comp = None
-        for comp in config.get("components", []):
-            if comp.get("id") == "pipe":
-                pipe_comp = comp
-                break
-
-        assert pipe_comp is not None, "Pipe component not found in exported client config"
-        root_path = pipe_comp.get("args", {}).get("root_path", "")
-        assert root_path.startswith(
-            custom_base
-        ), f"root_path must start with custom base '{custom_base}', got '{root_path}'"
-        assert "{JOB_ID}" in root_path, f"root_path must contain {{JOB_ID}}, got '{root_path}'"
-        assert "{SITE_NAME}" in root_path, f"root_path must contain {{SITE_NAME}}, got '{root_path}'"
-
-    def test_export_file_pipe_all_components_present(self, tmp_path):
-        """Exported config with pipe_type='file_pipe' must contain all required
-        components matching the sag_cse_ccwf_pt/config_fed_client.conf pattern:
-        executors (SwarmClientController, PTClientAPILauncherExecutor),
-        components (persistor, shareable_generator, aggregator, pipe, launcher)."""
-        import torch.nn as nn
-
-        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
-
-        train_script = tmp_path / "train.py"
-        train_script.write_text("print('train')\n")
-
-        recipe = SwarmLearningRecipe(
-            name="test_full_export",
-            model=nn.Linear(2, 2),
-            num_rounds=3,
-            train_script=str(train_script),
-            min_clients=2,
-            launch_external_process=True,
-            pipe_type="file_pipe",
-        )
-
-        export_dir = tmp_path / "job"
-        recipe.export(str(export_dir))
-
-        config_path = export_dir / "test_full_export" / "app" / "config" / "config_fed_client.json"
-        with open(config_path, "r") as f:
-            config = json.load(f)
-
-        # --- Executors ---
-        executors = config.get("executors", [])
-        executor_tasks = {tuple(e["tasks"]): e["executor"] for e in executors}
-
-        # SwarmClientController for swarm_* tasks
-        swarm_executor = None
-        for tasks, executor in executor_tasks.items():
-            if any("swarm" in t for t in tasks):
-                swarm_executor = executor
-                break
-        assert swarm_executor is not None, "SwarmClientController executor not found"
-        assert "SwarmClientController" in swarm_executor["path"]
-        swarm_args = swarm_executor.get("args", {})
-        assert "learn_task_ack_timeout" in swarm_args, "learn_task_ack_timeout missing from SwarmClientController"
-        assert "final_result_ack_timeout" in swarm_args, "final_result_ack_timeout missing from SwarmClientController"
-
-        # PTClientAPILauncherExecutor for train/validate/submit_model
-        train_executor = None
-        for tasks, executor in executor_tasks.items():
-            if "train" in tasks:
-                train_executor = executor
-                break
-        assert train_executor is not None, "Train executor not found"
-        assert "LauncherExecutor" in train_executor["path"]
-        train_args = train_executor.get("args", {})
-        assert train_args.get("pipe_id") == "pipe", "Train executor must reference pipe_id='pipe'"
-        assert train_args.get("launcher_id") == "launcher", "Train executor must reference launcher_id='launcher'"
-
-        # --- Components ---
-        components = {c["id"]: c for c in config.get("components", [])}
-
-        # Persistor
-        assert "persistor" in components, "persistor component missing"
-        assert "PTFileModelPersistor" in components["persistor"]["path"]
-
-        # Shareable generator
-        assert "shareable_generator" in components, "shareable_generator component missing"
-
-        # Aggregator
-        assert "aggregator" in components, "aggregator component missing"
-
-        # Pipe (FilePipe with correct args)
-        assert "pipe" in components, "pipe component missing"
-        pipe = components["pipe"]
-        assert "file_pipe.FilePipe" in pipe["path"], f"Expected FilePipe, got '{pipe['path']}'"
-        pipe_args = pipe.get("args", {})
-        assert "root_path" in pipe_args, "FilePipe must have root_path"
-        assert "{WORKSPACE}" in pipe_args["root_path"], "root_path must contain {WORKSPACE}"
-        assert "{JOB_ID}" in pipe_args["root_path"], "root_path must contain {JOB_ID}"
-        assert "{SITE_NAME}" in pipe_args["root_path"], "root_path must contain {SITE_NAME}"
-        assert "mode" in pipe_args, "FilePipe must have mode"
-
-        # Launcher
-        assert "launcher" in components, "launcher component missing"
-        assert "SubprocessLauncher" in components["launcher"]["path"]
-        launcher_args = components["launcher"].get("args", {})
-        assert "script" in launcher_args, "launcher must have script arg"

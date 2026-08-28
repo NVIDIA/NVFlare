@@ -46,6 +46,8 @@ class CellSession:
         self.session_id = session_id
         self.ready = threading.Event()
         self.result_source_live = threading.Event()
+        self.result_accepted = threading.Event()
+        self.result_source_task_id: Optional[str] = None
         self._activity_lock = threading.Lock()
         self._last_peer_activity: Optional[float] = None
 
@@ -72,6 +74,7 @@ class CellTask:
         self.result: Optional[Shareable] = None
         self.result_id: Optional[str] = None
         self.accepted_attempt_id: Optional[str] = None
+        self.result_receiver_ids = ()
 
 
 class CellBackendBase(ClientAPIBackendSpec):
@@ -157,16 +160,24 @@ class CellBackendBase(ClientAPIBackendSpec):
 
     def _register_common_protocol_cbs(self) -> None:
         self._cell.register_request_cb(channel=CHANNEL, topic=Topic.RESULT_READY, cb=self._handle_result_ready)
+        self._cell.register_request_cb(
+            channel=CHANNEL, topic=Topic.RESULT_SOURCE_SETTLED, cb=self._handle_result_source_settled
+        )
         if self.result_attempts:
             self._cell.register_request_cb(channel=CHANNEL, topic=Topic.RESULT_STATUS, cb=self._handle_result_status)
         self._cell.register_request_cb(channel=CHANNEL, topic=Topic.LOG, cb=self._handle_log)
         self._cell.register_request_cb(channel=CHANNEL, topic=Topic.HEARTBEAT, cb=self._handle_heartbeat)
 
-    def _get_protocol_session(self) -> Optional[CellSession]:
+    def _get_protocol_session(self, origin: Optional[str] = None) -> Optional[CellSession]:
         raise NotImplementedError
 
     def _validate_session_msg(self, request, payload) -> Tuple[Optional[CellSession], Optional[str]]:
-        session = self._get_protocol_session()
+        origin = request.get_header(MessageHeaderKey.ORIGIN) or ""
+        session = self._get_protocol_session(origin)
+        if session is None:
+            active_session = self._get_protocol_session()
+            if active_session is not None:
+                return None, f"unexpected origin {origin!r}"
         if (
             session is None
             or not session.ready.is_set()
@@ -174,7 +185,6 @@ class CellBackendBase(ClientAPIBackendSpec):
             or getattr(session, "error", None)
         ):
             return None, "no active trainer session"
-        origin = request.get_header(MessageHeaderKey.ORIGIN) or ""
         if origin != session.trainer_fqcn:
             return None, f"unexpected origin {origin!r}"
         if payload.get(MsgKey.SESSION_ID) != session.session_id:
@@ -247,6 +257,9 @@ class CellBackendBase(ClientAPIBackendSpec):
             if self.result_attempts:
                 self._remember_result_authority(task_id, result_id, attempt_id)
             session.result_source_live.set()
+            session.result_accepted.set()
+            session.result_source_task_id = task_id
+            self._on_result_accepted(session, task, result)
             task.result_ready.set()
 
         fields = {}
@@ -274,6 +287,33 @@ class CellBackendBase(ClientAPIBackendSpec):
                 MsgKey.ACCEPTED_ATTEMPT_ID: authority[1],
             },
         )
+
+    def _handle_result_source_settled(self, request):
+        payload = request.payload
+        if not isinstance(payload, dict):
+            return make_cell_reply(CellReturnCode.INVALID_REQUEST, error="RESULT_SOURCE_SETTLED payload must be a dict")
+        session, reason = self._validate_session_msg(request, payload)
+        if reason:
+            return self._protocol_reply(Topic.ERROR, **{MsgKey.REASON: reason})
+        task_id = payload.get(MsgKey.TASK_ID)
+        with self._task_lock:
+            if not task_id or session.result_source_task_id != task_id:
+                return self._protocol_reply(
+                    Topic.ERROR,
+                    **{MsgKey.REASON: f"no live result source matching task_id {task_id!r}"},
+                )
+            session.result_source_live.clear()
+            session.result_source_task_id = None
+            self._on_result_source_settled(session, task_id)
+            if self.result_attempts:
+                self._trim_result_authority()
+        return self._protocol_reply(Topic.RESULT_SOURCE_SETTLED, **{MsgKey.TASK_ID: task_id})
+
+    def _on_result_accepted(self, session: CellSession, task: CellTask, result: Shareable) -> None:
+        """Hook for mode-specific ownership of an accepted result source."""
+
+    def _on_result_source_settled(self, session: CellSession, task_id: str) -> None:
+        """Hook for mode-specific retirement of accepted result-source state."""
 
     def _remember_result_authority(self, task_id: str, result_id: str, attempt_id: str) -> None:
         self._result_authority[task_id] = (result_id, attempt_id)
@@ -328,6 +368,7 @@ class CellBackendBase(ClientAPIBackendSpec):
                 session.result_source_live.set()
             elif source_live is False:
                 session.result_source_live.clear()
+                session.result_source_task_id = None
                 with self._task_lock:
                     self._trim_result_authority()
         return self._protocol_reply(Topic.HEARTBEAT, **{MsgKey.SESSION_ID: session.session_id})

@@ -278,6 +278,46 @@ Also in This Release
 Compatibility and Migration Notes
 =================================
 
+- **``poc start``/``poc stop`` preserve every repeated flag.** Earlier
+  versions silently kept only the last ``-p``/``--service`` or
+  ``-ex``/``--exclude`` value. ``poc stop`` now also honors participant
+  exclusions, and now waits for targeted and exclusion-based shutdowns to
+  complete before returning ``status: stopped`` (use ``--no-wait`` for
+  fire-and-forget). A bare ``poc start`` continues to start the server and
+  clients without an admin console.
+
+- **Docker job-controlled launcher options are now restricted.** Jobs may
+  control only ``image``, ``python_path``, ``entrypoint``, ``num_of_gpus``,
+  and ``shm_size`` through their launcher metadata; selecting ``image``,
+  ``python_path``, or ``entrypoint`` requires BYOC authorization at each
+  receiving site.
+
+  - Previously job-controlled Docker SDK options such as ``ipc_mode`` and
+    ``device_requests`` are now site-owned, configured through
+    ``default_job_container_kwargs`` or a study's ``docker_kwargs``;
+    launcher-owned options such as mounts and networks remain fixed.
+  - New jobs with unsupported options are rejected at submission; jobs
+    stored before an upgrade are checked again and can fail at launch
+    until their metadata is migrated.
+
+- **Portable job resource fields are now reserved.** The flat
+  ``resource_spec`` names ``num_of_gpus``, ``num_of_cpus``, and ``memory``
+  must use the documented portable types. Custom resource managers that
+  previously interpreted these names differently must migrate to the
+  portable types or rename their custom fields. Legacy nested resource
+  specifications without ``@default`` remain unchanged.
+
+- **Collab calls carry a versioned authorization envelope.** Calls are
+  accepted only from authenticated participants in the same job; all
+  sites running a Collab job must use NVFlare 2.9 or newer.
+
+  - A 2.8-or-older Collab sender lacks this envelope and its calls are
+    rejected: a 2.9 sender receives an immediate ``COMM_ERROR``, while a
+    2.8-or-older sender can instead observe a request timeout, since it
+    lacks the dedicated stream-error correlation used by 2.9. The
+    receiving site logs that the peer may be running an older NVFlare
+    version to make this mixed-version failure diagnosable.
+
 - **Streaming transport defaults are unchanged.** Still 16 MiB
   streaming-window / 4 MiB ACK-interval; ``TCP_NODELAY`` is now on by
   default, reducing request/ACK latency.
@@ -312,10 +352,57 @@ Compatibility and Migration Notes
     unless it supplies ``NUM_STEPS_CURRENT_ROUND`` explicitly; explicit
     client metadata is still preserved.
 
+- **Patched Lightning clients transmit pre-fit validation metrics.** A
+  metric captured by an explicit ``trainer.validate()`` call before
+  ``trainer.fit()`` is now transmitted regardless of
+  ``train_with_evaluation``; sanity-check and in-fit validation metrics
+  are still not transmitted as global-model scores. This enables
+  ``IntimeModelSelector`` and best-global-model persistence for
+  recipe-based Lightning jobs.
+
+  - ``train_with_evaluation=True`` still requires validation metrics;
+    otherwise metrics remain optional, but ``False`` no longer suppresses
+    metrics from an explicit pre-fit validation.
+  - An application that must keep such metrics local should omit the
+    explicit pre-fit validation; if it still requires one locally, a
+    custom task-result filter must remove ``MetaKey.INITIAL_METRICS``
+    before the result reaches the server.
+
+- **``SimpleIntimeModelSelector`` (CCWF) now handles dict-valued metrics.**
+  It selects a scalar ``key_metric`` (default ``val_accuracy``) from
+  dict-valued ``INITIAL_METRICS`` payloads instead of failing with a
+  logged ``TypeError`` that silently disabled best-model selection.
+
+  - Swarm jobs whose metric dicts contain the configured key change from
+    selection-inert to active best-global-model tracking without a config
+    change; dict payloads lacking the key, and non-numeric values, are
+    skipped with a warning, so configure ``key_metric`` to match the
+    reported metric name.
+  - A new ``negate_key_metric`` argument supports lower-is-better metrics
+    such as losses.
+
 - **FedProx recipe rename.** Recipe discovery now exposes the concrete
   PyTorch ``FedProxRecipe`` as ``fedprox-pt`` and no longer advertises the
   ``fedprox-tf`` manual pattern as a concrete recipe. TensorFlow clients
   can still combine a FedAvg recipe with ``TFFedProxLoss`` explicitly.
+
+- **The legacy Client API execution stack has been removed** —
+  ``ParamsConverter``, the framework-specific converter components,
+  ``InProcessClientAPIExecutor``, ``ClientAPILauncherExecutor``,
+  ``LauncherExecutor``, ``SubprocessLauncher``, ``TaskExchanger``,
+  ``FlareAgent``, ``BaseScriptRunner``, ``ExternalConfigurator``, and the
+  ``Pipe``/``PipeHandler`` implementations (including ``FilePipe`` and
+  ``CellPipe``).
+
+  - Use ``ClientAPIExecutor`` with ``in_process``, ``external_process``,
+    or ``attach`` execution mode. Custom parameter transformations belong
+    in trainer code around ``flare.receive()``/``flare.send()``; common
+    functions remain available in ``nvflare.client.converter_utils``.
+  - Recipe-level ``pipe_type`` and ``pipe_root_path`` options are also
+    removed; transport is selected through site communication
+    configuration. The F3 ``FileDriver`` remains available as scheme
+    ``shared-file`` for either a launched external process or an attached
+    trainer.
 
 - **CellPipe FQCN naming is now explicit.** Cell names keep the runtime
   token and pipe mode in one ``~``-delimited leaf segment
@@ -352,9 +439,6 @@ Compatibility and Migration Notes
   - ``ScriptRunner`` no longer performs a build-time PyTorch or
     TensorFlow import check; ensure the required framework dependencies
     are available in the execution environment.
-  - Code that explicitly passes ``pipe_connect_type`` (including its
-    former default value) or supplies a custom ``task_pipe`` must use
-    ``BaseScriptRunner``.
   - A client app may contain only one ``ClientAPIExecutor``;
     configurations that previously added multiple script runners to one
     site must combine the scripts behind one entry point and dispatch on
@@ -364,3 +448,101 @@ Compatibility and Migration Notes
   ``aggregation_format=ExchangeFormat.PYTORCH`` and
   ``enable_tensor_disk_offload=True`` on ``SwarmLearningRecipe``; the same
   offload flag is available on ``SwarmClientConfig`` for Job API users.
+
+- **``SwarmLearningRecipe`` now configures best-model selection by
+  default.** Use ``key_metric`` to select a dictionary-valued validation
+  metric and ``key_metric_mode="min"`` for lower-is-better metrics.
+
+  - Clients must report a pre-training validation metric with the
+    configured name for selection to occur; jobs without that metric
+    continue to persist the last global model but do not create
+    ``best_FL_global_model.pt``. Set ``key_metric=None`` to opt out and
+    preserve the pre-2.9 last-model-only behavior.
+  - Selection skips round 0, so a one-round job does not create a
+    best-model checkpoint. With ``key_metric_mode="min"``, Swarm
+    best-metric logs and records expose the negated comparison value (for
+    example, a loss of 2.31 is shown as -2.31).
+  - ``client_config_overrides`` can no longer replace ``model_selector``:
+    migrate the former ``{"model_selector": None}`` opt-out to
+    ``key_metric=None``, and use ``BaseSwarmLearningRecipe`` with an
+    explicit ``SwarmClientConfig`` for a custom selector.
+
+- **Auto-FL campaigns now honor the job's native metric direction**
+  (``key_metric_mode`` or a matching same-metric ``stop_cond``) instead of
+  assuming maximization, so raw lower-is-better objectives no longer need
+  to be negated. Campaign admission fails closed in three new cases:
+
+  - An obvious lower-is-better metric such as ``val_loss`` that relies
+    only on NVFlare's implicit ``max`` default is rejected until the job
+    declares ``key_metric_mode="min"``.
+  - A job passing a custom ``model_selector`` is rejected, because that
+    component supersedes ``key_metric_mode`` and its selection direction
+    can't be imported deterministically. Remove the custom selector and
+    expose its criterion as a declared ``key_metric`` with
+    ``key_metric_mode`` before initializing a campaign.
+  - A requested metric that differs from the job's key metric is rejected
+    unless ``mutation_schema.yaml`` declares the requested and
+    optimization metric bridge.
+  - Job constructor calls that pass positional arguments, ``*args``, or
+    ``**kwargs`` also fail closed, since dynamic arguments could hide the
+    metric, direction, or fixed training budget; rewrite the call with
+    keyword-only arguments and no splats. ``SimEnv`` calls must pin a
+    positive explicit ``num_clients``, or expose a non-empty static
+    ``clients`` list whose length is pinned.
+  - Experimental legacy minimization campaigns without direction
+    provenance must be re-initialized in a fresh workspace.
+
+- **External-process Client API: an accepted lazy result can't be
+  withdrawn.** Losing a trainer after its lazy result envelope has been
+  accepted now fails the run as ``EXECUTION_EXCEPTION``, even if a
+  controller's ``min_responses`` threshold could otherwise tolerate a
+  missing client — the accepted envelope may already have exposed
+  references to downstream consumers. An explicit job abort that wins the
+  terminal-state race remains ``ABORTED``.
+  ``aggregation_format=ExchangeFormat.PYTORCH`` and
+  ``enable_tensor_disk_offload=True`` on ``SwarmLearningRecipe``; the same
+  offload flag is available on ``SwarmClientConfig`` for Job API users.
+- Auto-FL campaigns now honor the job's native metric direction
+  (``key_metric_mode`` or a matching same-metric ``stop_cond``) instead of
+  assuming maximization, so raw lower-is-better objectives no longer need to be
+  negated. Campaign admission fails closed in three new cases: an obvious
+  lower-is-better metric such as ``val_loss`` that relies only on NVFlare's
+  implicit ``max`` default is rejected until the job declares
+  ``key_metric_mode="min"``, and jobs passing a custom ``model_selector`` are
+  rejected because that component supersedes ``key_metric_mode``, so its
+  selection direction cannot be imported deterministically. A requested metric
+  that differs from the job's key metric is also rejected unless
+  ``mutation_schema.yaml`` declares the requested and optimization metric
+  bridge. Remove the custom selector and expose its criterion as a declared
+  ``key_metric`` with ``key_metric_mode``, or declare the alternate metric
+  bridge, before initializing a campaign. Experimental legacy minimization
+  campaigns without direction provenance must be re-initialized in a fresh
+  workspace. Job constructor calls that pass positional arguments, ``*args``,
+  or ``**kwargs`` now also fail closed when dynamic arguments could hide the
+  metric, direction, or fixed training budget. Rewrite the call with
+  keyword-only arguments, no splats, and the constructor's applicable
+  safety-critical keywords spelled out before initializing. ``SimEnv`` calls
+  pin a positive explicit ``num_clients``; when it is zero or omitted, they
+  must expose a non-empty static ``clients`` list whose length is pinned.
+  Dynamic or splatted client-count sources fail closed. A declared
+  alternate-metric bridge cannot override an unresolved native job metric.
+- In external-process Client API mode, losing a trainer after its lazy result
+  envelope has been accepted now fails the run as ``EXECUTION_EXCEPTION`` even
+  if a controller's ``min_responses`` threshold could otherwise tolerate a
+  missing client. The accepted envelope may already have exposed references to
+  downstream consumers and cannot be safely withdrawn. An explicit job abort
+  that wins the terminal-state race remains ``ABORTED``.
+- ``SwarmLearningRecipe`` now configures client-side best-model selection by
+  default. Use ``key_metric`` to select a dictionary-valued validation metric
+  and ``key_metric_mode="min"`` for lower-is-better metrics. Clients must report
+  a pre-training validation metric with the configured name for selection to
+  occur; jobs without that metric continue to persist the last global model but
+  do not create ``best_FL_global_model.pt``. Set ``key_metric=None`` to opt out
+  and preserve the pre-2.9 last-model-only behavior. Selection skips round 0,
+  so a one-round job does not create a best-model checkpoint. With
+  ``key_metric_mode="min"``, Swarm best-metric logs and records expose the
+  negated comparison value (for example, a loss of 2.31 is shown as -2.31).
+  ``client_config_overrides`` can no longer replace ``model_selector``: migrate
+  the former ``{"model_selector": None}`` opt-out to ``key_metric=None``, and
+  use ``BaseSwarmLearningRecipe`` with an explicit ``SwarmClientConfig`` for a
+  custom selector.

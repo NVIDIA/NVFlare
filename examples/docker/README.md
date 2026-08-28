@@ -15,6 +15,21 @@ SP/CP containers are started manually; SJ/CJ containers are launched automatical
 bash build_docker.sh
 ```
 
+The recommended way to run this example is from a Git checkout. The build
+script derives the NVFlare base version from the nearest version tag, so no
+version environment variable is required.
+
+GitHub-generated source archives and other Git-less source copies do not contain
+the metadata needed to determine a version. If you intentionally use one, provide
+`NVFL_BASE_VERSION` as an advanced override:
+
+```bash
+NVFL_BASE_VERSION=2.9.0 bash build_docker.sh
+```
+
+Use only the base release number, such as `2.9.0`; the package build adds its
+development suffix when Git metadata is unavailable.
+
 This builds two images:
 - `nvflare-site:latest` — used by SP/CP containers (started by `start_docker.sh`),
   built from this example's `Dockerfile`
@@ -131,8 +146,10 @@ Available jobs:
   Every site configured with a Docker job launcher needs either a site-specific `docker`
   entry or a `launcher_spec.default.docker` entry that supplies the job image.
 - Site-level Docker defaults (e.g. `shm_size`, `ipc_mode`) can be set via
-  `default_job_container_kwargs` in `resources.json` — job-level
-  `launcher_spec[site][docker]` takes precedence on conflict.
+  `job_launcher.default_job_container_kwargs` in `docker.yaml`; `nvflare deploy prepare`
+  writes them to `resources.json`. This example configures `ipc_mode: host` there because
+  host-isolation options are site-owned and cannot be supplied by job metadata. Job-level
+  `launcher_spec[site][docker]` takes precedence for supported options.
 - Some multi-GPU Docker environments may need `NCCL_P2P_DISABLE=1` to avoid NCCL hangs.
   Set this site-wide with `default_job_env` in `resources.json`, for example:
   ```json

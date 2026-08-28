@@ -237,8 +237,8 @@ the profile must match that listener.
      "execution_mode": "attach",
      "attach_id": "trainer_a",
      "site_name": "site-1",
-     "connect_url": "tcp://site-1.example.com:8004",
-     "connection_security": "clear",
+     "connect_url": "stcp://site-1.example.com:8004",
+     "connection_security": "mtls",
      "secure_mode": true,
      "ca_cert": "/absolute/path/to/site/startup/rootCA.pem",
      "job_wait_timeout": null
@@ -249,6 +249,12 @@ identity lets it start before the job and discover the dynamic CJ through
 authenticated ``SESSION_OPEN``. For a relayed site, include ``cp_fqcn``; include
 ``auth_identity`` when the provisioned certificate CN differs from
 ``site_name``. An optional ``cj_fqcn`` can pin the profile to one job.
+
+Prepared Docker, Kubernetes, and Slurm parents use ``stcp`` with mTLS by
+default. To opt out on a trusted, isolated network, set
+``parent.internal_connection_security: clear`` for Docker/Kubernetes or
+``job_launcher.internal_connection_security: clear`` for Slurm, then use
+``tcp`` with ``connection_security="clear"``.
 
 See the :github_nvflare_link:`Client API Attach example <examples/advanced/client-api-attach>`
 for complete shared-file, CP-routed network, and local POC instructions.

@@ -40,7 +40,7 @@ from nvflare.fuel.f3.cellnet.defs import (
     ReturnReason,
     ServiceUnavailable,
 )
-from nvflare.fuel.f3.cellnet.fqcn import CELL_PIPE_LEAF_PREFIX, FQCN, FqcnInfo, same_family
+from nvflare.fuel.f3.cellnet.fqcn import FQCN, FqcnInfo, same_family
 from nvflare.fuel.f3.cellnet.identity import (
     CellIdentityResolver,
     get_cert_common_name_from_file,
@@ -307,6 +307,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         max_bulk_size=100,
         auth_identity: str = None,
         auth_identity_map: dict = None,
+        internal_listener_host: str = None,
     ):
         """
 
@@ -321,6 +322,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             parent_resources: extra resources for making connection to parent
             auth_identity: authenticated identity of this cell's local certificate
             auth_identity_map: FQCN prefix to expected certificate identity map for mTLS peers
+            internal_listener_host: host for the internal listener to advertise and bind to
 
         FQCN is the names of all ancestor, concatenated with dots.
 
@@ -442,7 +444,10 @@ class CoreCell(MessageReceiver, EndpointMonitor):
 
         self.endpoint = ep
         self.connector_manager = ConnectorManager(
-            communicator=self.communicator, secure=secure, comm_configurator=comm_configurator
+            communicator=self.communicator,
+            secure=secure,
+            comm_configurator=comm_configurator,
+            internal_listener_host=internal_listener_host,
         )
 
         self.communicator.register_message_receiver(app_id=self.APP_ID, receiver=self)
@@ -645,11 +650,6 @@ class CoreCell(MessageReceiver, EndpointMonitor):
 
         if self.connector_manager.should_connect_to_server(self.my_info):
             self._create_bb_external_connector()
-        elif not parent_url and self.root_url:
-            # A cell configured with only a root URL (e.g. a CellPipe cell named
-            # <site>.cellpipe~plain~<token>~<mode> that joins the cellnet at the root) has no
-            # other way to connect, regardless of its generation.
-            self._create_bb_external_connector()
 
     def _set_bb_for_server_root(self):
         if isinstance(self.root_url, list):
@@ -748,14 +748,18 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                 self.logger.debug(f"{self.my_info.fqcn}: removing agent {a}")
                 self.agents.pop(a, None)
 
-    def make_internal_listener(self):
+    def make_internal_listener(self, scheme=None, resources=None):
         """
         Create the internal listener for child cells of this cell to connect to.
+
+        Args:
+            scheme: optional transport scheme for this listener
+            resources: optional resources for this listener
 
         Returns:
 
         """
-        self._create_internal_listener()
+        self._create_internal_listener(scheme, resources)
 
     def get_internal_listener_url(self) -> Union[None, str]:
         """Get the cell's internal listener url.
@@ -800,10 +804,10 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                 self.logger.info(f"{self.my_info.fqcn}: cannot create adhoc connector to {url} on {to_cell}")
             return connector
 
-    def _create_internal_listener(self):
+    def _create_internal_listener(self, scheme=None, resources=None):
         # internal listener is always backbone
         if not self.int_listener:
-            self.int_listener = self.connector_manager.get_internal_listener()
+            self.int_listener = self.connector_manager.get_internal_listener(scheme, resources)
             if self.int_listener:
                 self.logger.info(
                     f"{self.my_info.fqcn}: created backbone internal listener "
@@ -1114,6 +1118,22 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             if reply:
                 return reply
 
+    def _filter_outgoing_reply(self, reply: Message) -> Message:
+        channel = reply.get_header(MessageHeaderKey.CHANNEL, "")
+        topic = reply.get_header(MessageHeaderKey.TOPIC, "")
+        reply_filters = self.out_reply_filter_reg.find(channel, topic)
+        if not reply_filters:
+            return reply
+
+        self.logger.debug(f"{self.my_info.fqcn}: invoking outgoing reply filters")
+        assert isinstance(reply_filters, list)
+        for f in reply_filters:
+            assert isinstance(f, Callback)
+            filtered_reply = self._try_cb(reply, f.cb, *f.args, **f.kwargs)
+            if filtered_reply:
+                return filtered_reply
+        return reply
+
     def _try_path(self, fqcn_path: List[str]) -> Union[None, Endpoint]:
         self.logger.debug(f"{self.my_info.fqcn}: trying path {fqcn_path} ...")
         target = FQCN.join(fqcn_path)
@@ -1139,7 +1159,11 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             ep = self._try_find_ep(target_fqcn, for_msg)
             if not ep:
                 return ReturnCode.TARGET_UNREACHABLE, None
-            if ep.name != target_fqcn and self._already_visited(ep.name, for_msg):
+            if (
+                ep.name != target_fqcn
+                and self._already_visited(ep.name, for_msg)
+                and not self._is_server_transit_revisit_allowed(ep.name, for_msg)
+            ):
                 # Deterministic resolution means a revisited cell would pick the
                 # same next leg again - refuse the hop so the message fails
                 # cleanly instead of bouncing between cells that cannot reach
@@ -1167,12 +1191,79 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         # after decoding
         return any(isinstance(hop, (list, tuple)) and len(hop) > 0 and hop[0] == fqcn for hop in route)
 
+    def _is_server_transit_revisit_allowed(self, next_fqcn: str, msg: Union[None, Message]) -> bool:
+        """Allow only the intentional downstream revisits after the server boundary."""
+        if not msg or not msg.get_header(MessageHeaderKey.SERVER_TRANSIT_REQUIRED, False):
+            return False
+
+        if self.my_info.fqcn == FQCN.ROOT_SERVER:
+            return not self._already_visited(FQCN.ROOT_SERVER, msg)
+
+        return self.is_server_transit_return(msg) and FQCN.is_ancestor(self.my_info.fqcn, next_fqcn)
+
+    def is_server_transit_return(self, msg: Union[None, Message]) -> bool:
+        """Return whether a marked message arrived from this cell's trusted upstream after the server hop.
+
+        The route identifies the transit phase but is sender-controlled, so it is
+        insufficient on its own. The actual incoming endpoint must also be the
+        root server or the cell's configured topology parent.
+        """
+        if (
+            not msg
+            or self.my_info.is_on_server
+            or not msg.get_header(MessageHeaderKey.SERVER_TRANSIT_REQUIRED, False)
+            or not self._already_visited(FQCN.ROOT_SERVER, msg)
+        ):
+            return False
+
+        incoming_endpoint = msg.get_prop(MessagePropKey.ENDPOINT)
+        if not isinstance(incoming_endpoint, Endpoint):
+            return False
+
+        if incoming_endpoint.name == FQCN.ROOT_SERVER:
+            return True
+        if self.my_info.gen <= 1:
+            return False
+        return incoming_endpoint.name == FQCN.get_parent(self.my_info.fqcn)
+
     def _try_find_ep(self, target_fqcn: str, for_msg: Message) -> Union[None, Endpoint]:
         self.logger.debug(f"{self.my_info.fqcn}: finding path to {target_fqcn}")
         if target_fqcn == self.my_info.fqcn:
             return self.endpoint
 
         target_info = FqcnInfo(target_fqcn)
+
+        # Authenticated messages between different client families must cross
+        # the server trust boundary. Do not let a direct or ad-hoc peer route
+        # bypass server validation merely because that endpoint is cached.
+        if (
+            for_msg
+            and for_msg.get_header(MessageHeaderKey.SERVER_TRANSIT_REQUIRED, False)
+            and not self.my_info.is_on_server
+            and not self.is_server_transit_return(for_msg)
+        ):
+            # Prefer this cell's own server connection when available. This
+            # avoids detouring a client job through its parent and preserves
+            # delivery when the parent's uplink is unavailable.
+            if FQCN.ROOT_SERVER in self.ALL_CELLS:
+                return Endpoint(FQCN.ROOT_SERVER)
+            root_agent = self.agents.get(FQCN.ROOT_SERVER)
+            if root_agent:
+                return root_agent.endpoint
+
+            # Otherwise walk the connected local ancestors toward the server.
+            ancestor_path = self.my_info.path[:-1]
+            while ancestor_path:
+                ancestor_fqcn = FQCN.join(ancestor_path)
+                if ancestor_fqcn in self.ALL_CELLS:
+                    return Endpoint(ancestor_fqcn)
+                agent = self.agents.get(ancestor_fqcn)
+                if agent:
+                    return agent.endpoint
+                ancestor_path = ancestor_path[:-1]
+
+            self.log_warning(msg=for_msg, log_text="no server-transit path through a local ancestor or server")
+            return None
 
         # is there a direct path to the target?
         if target_fqcn in self.ALL_CELLS:
@@ -1183,24 +1274,9 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             return agent.endpoint
 
         if same_family(self.my_info, target_info):
-            unconnected_pipe_descendant = False
-            if FQCN.is_ancestor(self.my_info.fqcn, target_fqcn):
-                first_descendant = target_info.path[self.my_info.gen]
-                unconnected_pipe_descendant = first_descendant.startswith(CELL_PIPE_LEAF_PREFIX)
             if FQCN.is_parent(self.my_info.fqcn, target_fqcn):
-                if unconnected_pipe_descendant:
-                    # A topology-named CellPipe child may connect to the server
-                    # root instead of its FQCN parent when using VIA_ROOT. Let
-                    # this specific topology fall through to root resolution;
-                    # the routing-loop guard in _find_endpoint handles a pipe
-                    # target that is not connected anywhere.
-                    self.logger.debug(f"{self.my_info.fqcn}: no connection to CellPipe child {target_fqcn}")
-                else:
-                    # Preserve the original behavior for every other direct
-                    # child. Only CellPipe has a supported topology in which a
-                    # child intentionally bypasses its FQCN parent.
-                    self.log_warning(msg=for_msg, log_text=f"no connection to child {target_fqcn}")
-                    return None
+                self.log_warning(msg=for_msg, log_text=f"no connection to child {target_fqcn}")
+                return None
             elif FQCN.is_parent(target_fqcn, self.my_info.fqcn):
                 self.log_warning(f"no connection to parent {target_fqcn}", for_msg)
 
@@ -1208,10 +1284,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             if FQCN.is_ancestor(self.my_info.fqcn, target_fqcn):
                 # I am the ancestor of the target
                 self.logger.debug(f"{self.my_info.fqcn}: I'm ancestor of the target {target_fqcn}")
-                ep = self._try_path(target_info.path)
-                if ep or not unconnected_pipe_descendant:
-                    return ep
-                self.logger.debug(f"{self.my_info.fqcn}: trying server root for CellPipe descendant {target_fqcn}")
+                return self._try_path(target_info.path)
             else:
                 # target is my ancestor, or we share the same ancestor - go to my parent!
                 self.logger.debug(f"{self.my_info.fqcn}: target {target_fqcn} is or share my ancestor")
@@ -1219,14 +1292,6 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                 agent = self.agents.get(parent_fqcn)
                 if agent:
                     return agent.endpoint
-                # I'm not connected to my FQCN parent: some hierarchical cells
-                # connect to an ancestor or to the root instead (e.g. CellPipe
-                # cells named <site>.cellpipe~plain~<token>~<mode> that connect to
-                # the server root). This fall-through is load-bearing for such cells - see
-                # test_pipe_cell_reaches_peer_through_server_root in
-                # core_cell_routing_test.py. Fall through to the generic
-                # resolution below.
-                self.logger.debug(f"{self.my_info.fqcn}: no connection to parent {parent_fqcn}")
 
         # not the same family, or no direct path within the family
         ep = self._try_path(target_info.path)
@@ -1357,9 +1422,22 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                     # process next target
                     continue
 
+            # The authentication filter can require server transit after the
+            # preliminary endpoint lookup above. Resolve again with the fully
+            # populated request so a cached/ad-hoc peer endpoint is not used.
+            if req.get_header(MessageHeaderKey.SERVER_TRANSIT_REQUIRED, False):
+                err, ep = self._find_endpoint(t, req)
+                if not ep:
+                    self.log_error(f"cannot send server-transit message to '{t}': {err}", req)
+                    send_errs[t] = err
+                    continue
+                req.set_header(MessageHeaderKey.TO_CELL, ep.name)
+
             # is this a direct path?
             ti = FqcnInfo(t)
             allow_adhoc = self.connector_manager.is_adhoc_allowed(ti, self.my_info)
+            if req.get_header(MessageHeaderKey.SERVER_TRANSIT_REQUIRED, False):
+                allow_adhoc = False
             if allow_adhoc and t != ep.name:
                 # Not a direct path since the destination and the next leg are not the same
                 if not ti.is_on_server and (self.my_info.is_on_server or self.my_info.fqcn > t):
@@ -1694,7 +1772,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         if err:
             return err
         reply.set_header(MessageHeaderKey.TO_CELL, ep.name)
-        return self._send_to_endpoint(ep, reply)
+        return self._send_reply(reply, ep)
 
     def _try_cb(self, message, cb, *args, **kwargs):
         try:
@@ -1799,6 +1877,13 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         else:
             # cannot find next leg endpoint
             self.log_error(f"cannot forward {msg_type}: no path", message)
+
+        channel = message.get_header(MessageHeaderKey.CHANNEL, "")
+        topic = message.get_header(MessageHeaderKey.TOPIC, "")
+        error_handler = self.error_handler_reg.find(channel, topic)
+        if error_handler:
+            assert isinstance(error_handler, Callback)
+            self._try_cb(message, error_handler.cb, err, *error_handler.args, **error_handler.kwargs)
 
         if msg_type == MessageType.REQ:
             reply_expected = message.get_header(MessageHeaderKey.REPLY_EXPECTED, False)
@@ -2055,7 +2140,9 @@ class CoreCell(MessageReceiver, EndpointMonitor):
 
         # handle ad-hoc
         my_conn_url = None
-        if msg_type in [MessageType.REQ, MessageType.REPLY]:
+        if msg_type in [MessageType.REQ, MessageType.REPLY] and not message.get_header(
+            MessageHeaderKey.SERVER_TRANSIT_REQUIRED, False
+        ):
             from_cell = message.get_header(MessageHeaderKey.FROM_CELL)
             oi = FqcnInfo(origin)
             if from_cell != origin and not same_family(oi, self.my_info):
@@ -2128,17 +2215,6 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             if my_conn_url:
                 reply.set_header(MessageHeaderKey.CONN_URL, my_conn_url)
 
-            # invoke outgoing reply filters
-            reply_filters = self.out_reply_filter_reg.find(channel, topic)
-            if reply_filters:
-                self.logger.debug(f"{self.my_info.fqcn}: invoking outgoing reply filters")
-                assert isinstance(reply_filters, list)
-                for f in reply_filters:
-                    assert isinstance(f, Callback)
-                    r = self._try_cb(reply, f.cb, *f.args, **f.kwargs)
-                    if r:
-                        reply = r
-                        break
             self._send_reply(reply, endpoint)
             if should_close_connection and connection:
                 connection.close()
@@ -2146,7 +2222,19 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             # the message is either a reply or a return for a previous request: handle replies
             self._process_reply(origin, message, msg_type)
 
-    def _send_reply(self, reply: Message, endpoint: Endpoint):
+    def _send_reply(self, reply: Message, endpoint: Endpoint) -> str:
+        reply = self._filter_outgoing_reply(reply)
+        if reply.get_header(MessageHeaderKey.SERVER_TRANSIT_REQUIRED, False):
+            destination = reply.get_header(MessageHeaderKey.DESTINATION)
+            err, transit_ep = self._find_endpoint(destination, reply)
+            if not transit_ep:
+                self.log_error(f"cannot send server-transit reply to '{destination}': {err}", reply)
+                self.received_msg_counter_pool.increment(
+                    category=self._stats_category(reply), counter_name=ReturnCode.COMM_ERROR
+                )
+                return ReturnCode.COMM_ERROR
+            endpoint = transit_ep
+            reply.add_headers({MessageHeaderKey.FROM_CELL: self.my_info.fqcn, MessageHeaderKey.TO_CELL: endpoint.name})
         self.logger.debug(f"{self.my_info.fqcn}: sending reply back to {endpoint.name}")
         self.logger.debug(f"Reply message: {reply.headers}")
         err = self._send_to_endpoint(endpoint, reply)
@@ -2159,6 +2247,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             )
             rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
             self.received_msg_counter_pool.increment(category=self._stats_category(reply), counter_name=rc)
+        return err
 
     def _check_bulk(self):
         while not self.asked_to_stop:

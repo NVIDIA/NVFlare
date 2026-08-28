@@ -27,7 +27,6 @@ from nvflare.client.constants import CLIENT_API_CONFIG
 from nvflare.fuel.data_event.data_bus import DataBus
 
 from .api_spec import CLIENT_API_KEY, CLIENT_API_TYPE_KEY, APISpec
-from .ex_process.api import ExProcessClientAPI
 from .in_process.api import InProcessClientAPI
 
 DEFAULT_CONFIG = f"config/{CLIENT_API_CONFIG}"
@@ -36,8 +35,7 @@ data_bus = DataBus()
 
 class ClientAPIType(Enum):
     IN_PROCESS_API = "IN_PROCESS_API"
-    EX_PROCESS_API = "EX_PROCESS_API"
-    # Trainer-side Cell engine selected by ExternalProcessBackend's typed bootstrap.
+    # Trainer-side Cell engine selected by external_process or attach bootstrap.
     CELL_API = CELL_API_TYPE
 
 
@@ -62,7 +60,7 @@ class APIContext:
             self.api = None
 
     def _resolve_api_type(self) -> ClientAPIType:
-        """Resolve the API engine from a typed bootstrap or the legacy type environment."""
+        """Resolve the API engine from a typed bootstrap or the in-process environment."""
         typed_api_type = None
         typed_config_path = None
         if self._explicit_config_file:
@@ -70,14 +68,13 @@ class APIContext:
             try:
                 config = read_bootstrap_config(self.config_file)
             except (OSError, ValueError):
-                # Legacy config validation remains owned by the selected API engine; a
-                # readable typed envelope is validated below and never downgraded.
+                # A readable typed envelope is validated below and never downgraded.
                 config = None
             if config is not None:
                 typed_api_type = get_bootstrap_client_api_type(config, self.config_file)
         if typed_api_type is None:
-            # The backend bootstrap supersedes a legacy config_file argument so launched
-            # trainers always use this run's Cell endpoint and token.
+            # The backend bootstrap supersedes a config_file argument so launched trainers
+            # always use this run's Cell endpoint and session material.
             bootstrap_path = os.environ.get(BOOTSTRAP_FILE_ENV_VAR)
             if bootstrap_path:
                 config = read_bootstrap_config(bootstrap_path)
@@ -113,5 +110,4 @@ class APIContext:
             if self._typed_bootstrap_file:
                 return CellClientAPI(bootstrap_file=self._typed_bootstrap_file)
             return CellClientAPI()
-        else:
-            return ExProcessClientAPI(config_file=self.config_file)
+        raise ValueError(f"unsupported Client API type {api_type.value!r}")

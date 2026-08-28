@@ -38,9 +38,9 @@ def test_declarations_are_validated_without_payload_inference():
         validate_format_pair(ExchangeFormat.PYTORCH, ExchangeFormat.KERAS_LAYER_WEIGHTS)
 
 
-def test_format_pair_requires_converters_in_both_directions(monkeypatch):
+def test_format_pair_requires_adapters_in_both_directions(monkeypatch):
     monkeypatch.delitem(
-        converter_utils._CONVERTER_SPECS,
+        converter_utils._ADAPTER_SPECS,
         (ExchangeFormat.PYTORCH, ExchangeFormat.NUMPY),
     )
 

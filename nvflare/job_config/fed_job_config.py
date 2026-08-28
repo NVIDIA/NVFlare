@@ -20,14 +20,15 @@ import shlex
 import shutil
 import subprocess
 import sys
+import uuid
 from enum import Enum
-from tempfile import TemporaryDirectory
+from tempfile import TemporaryDirectory, mkdtemp
 from typing import Dict, List
 
 from nvflare.fuel.utils.class_utils import get_component_init_parameters
 from nvflare.fuel.utils.job_secret_scanner import warn_on_potential_secrets_in_job_dir
 from nvflare.fuel.utils.log_utils import get_obj_logger
-from nvflare.fuel.utils.validation_utils import check_object_type
+from nvflare.fuel.utils.validation_utils import check_job_name, check_object_type
 from nvflare.job_config.base_app_config import BaseAppConfig
 from nvflare.job_config.fed_app_config import FedAppConfig
 from nvflare.private.fed.app.fl_conf import FL_PACKAGES
@@ -38,6 +39,7 @@ CUSTOM = "custom"
 FED_SERVER_JSON = "config_fed_server.json"
 FED_CLIENT_JSON = "config_fed_client.json"
 META_JSON = "meta.json"
+BACKUP_ROOT = ".nvflare_job_backups"
 
 
 class FedJobConfig:
@@ -56,8 +58,7 @@ class FedJobConfig:
         """
         super().__init__()
 
-        if meta_props:
-            check_object_type("meta_props", meta_props, dict)
+        self._validate_meta_props(meta_props)
 
         self.job_name = job_name
         self.min_clients = min_clients
@@ -72,6 +73,13 @@ class FedJobConfig:
         self.custom_modules = []
         self._copied_source_by_dest = {}
         self.logger = get_obj_logger(self)
+
+    @staticmethod
+    def _validate_meta_props(meta_props):
+        if meta_props:
+            check_object_type("meta_props", meta_props, dict)
+            if "name" in meta_props:
+                raise ValueError("meta_props must not override the reserved 'name' property")
 
     def set_app_packages(self, app_packages: List[str]):
         """Set app packages.
@@ -112,6 +120,7 @@ class FedJobConfig:
         self.deploy_map[site_name] = app_name
 
     def add_resource_spec(self, site_name: str, resource_spec: Dict):
+        """Add resource requirements for one site or the portable ``@default`` block."""
         if site_name in self.resource_specs.keys():
             raise RuntimeError(f"{site_name} resource specs already exist.")
         if not isinstance(resource_spec, dict):
@@ -119,13 +128,9 @@ class FedJobConfig:
 
         self.resource_specs[site_name] = resource_spec
 
-    def _generate_meta(self, job_dir):
-        """generate the job meta.json
-
-        Returns:
-
-        """
-        meta_file = os.path.join(job_dir, META_JSON)
+    def _prepare_meta(self):
+        """Validate and serialize job metadata before replacing an existing export."""
+        self._validate_meta_props(self.meta_props)
         meta_json = {
             "name": self.job_name,
             "resource_spec": self.resource_specs,
@@ -138,9 +143,20 @@ class FedJobConfig:
         if self.meta_props:
             meta_json.update(self.meta_props)
 
-        with open(meta_file, "w") as outfile:
-            json_dump = json.dumps(meta_json, indent=4)
-            outfile.write(json_dump)
+        return json.dumps(meta_json, indent=4)
+
+    def _generate_meta(self, job_dir, json_dump):
+        """Atomically write the pre-validated job metadata."""
+        meta_file = os.path.join(job_dir, META_JSON)
+        temp_file = f"{meta_file}.tmp"
+        try:
+            with open(temp_file, "w") as outfile:
+                outfile.write(json_dump)
+            os.replace(temp_file, meta_file)
+        except OSError:
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
+            raise
 
     def generate_job_config(self, job_root):
         """generate the job config
@@ -148,28 +164,102 @@ class FedJobConfig:
         Returns:
 
         """
+        # Revalidate at the filesystem boundary in case this low-level object was
+        # constructed directly or job_name was changed after construction.
+        # check_job_name() rejects names starting with ".", so a validated
+        # job name can never collide with BACKUP_ROOT or the staging dirs.
+        check_job_name("job_name", self.job_name)
+        # Anchor to the entry CWD so a CWD change during the long generation
+        # phase cannot redirect the publish/replace operations to a different,
+        # unvalidated directory tree.
+        job_root = os.path.abspath(job_root)
+        os.makedirs(job_root, exist_ok=True)
         job_dir = os.path.join(job_root, self.job_name)
+        backup_root = os.path.join(job_root, BACKUP_ROOT)
+        self._warn_stranded_backups(backup_root)
+        json_dump = self._prepare_meta()
+        replace_existing = False
         if os.path.exists(job_dir):
-            if self._is_valid_job_folder(job_dir) or self._is_partial_export_folder(job_dir):
-                shutil.rmtree(job_dir, ignore_errors=True)
+            if self._is_valid_job_folder(job_dir, self.job_name):
+                replace_existing = True
             else:
-                raise RuntimeError(f"Job folder {job_dir} already exists and is not a valid job folder.")
+                raise RuntimeError(f"Job folder {job_dir} already exists and does not belong to job {self.job_name}.")
 
-        for app_name, fed_app in self.fed_apps.items():
-            self.custom_modules = []
-            self._copied_source_by_dest = {}
-            config_dir = os.path.join(job_dir, app_name, CONFIG)
-            custom_dir = os.path.join(job_dir, app_name, CUSTOM)
-            os.makedirs(config_dir, exist_ok=True)
-            # custom_dir will be created on-demand if custom code is added.
+        # Build in a sibling directory and publish only after the ownership
+        # marker and all app files are complete. An interrupted export therefore
+        # cannot leave an unowned job directory that blocks a retry.
+        temp_job_dir = mkdtemp(prefix=f".{self.job_name}.", dir=job_root)
+        try:
+            self._generate_meta(temp_job_dir, json_dump)
 
-            if fed_app.server_app:
-                self._get_server_app(config_dir, custom_dir, fed_app)
+            for app_name, fed_app in self.fed_apps.items():
+                self.custom_modules = []
+                self._copied_source_by_dest = {}
+                config_dir = os.path.join(temp_job_dir, app_name, CONFIG)
+                custom_dir = os.path.join(temp_job_dir, app_name, CUSTOM)
+                os.makedirs(config_dir, exist_ok=True)
+                # custom_dir will be created on-demand if custom code is added.
 
-            if fed_app.client_app:
-                self._get_client_app(config_dir, custom_dir, fed_app)
+                if fed_app.server_app:
+                    self._get_server_app(config_dir, custom_dir, fed_app)
 
-        self._generate_meta(job_dir)
+                if fed_app.client_app:
+                    self._get_client_app(config_dir, custom_dir, fed_app)
+
+            if replace_existing:
+                os.makedirs(backup_root, exist_ok=True)
+                backup_job_dir = os.path.join(backup_root, uuid.uuid4().hex)
+                os.replace(job_dir, backup_job_dir)
+                try:
+                    os.replace(temp_job_dir, job_dir)
+                except BaseException:
+                    os.replace(backup_job_dir, job_dir)
+                    raise
+                # The replacement is committed at this point, so a backup
+                # disposal failure must not be reported as an export failure.
+                try:
+                    self._remove_backup_export(job_root, backup_job_dir)
+                except OSError:
+                    self.logger.warning(
+                        f"The export was published but the replaced backup could not be removed; "
+                        f"it remains at {backup_job_dir} and can be removed manually."
+                    )
+            else:
+                os.replace(temp_job_dir, job_dir)
+        except BaseException:
+            shutil.rmtree(temp_job_dir, ignore_errors=True)
+            raise
+
+    def _warn_stranded_backups(self, backup_root):
+        """Report backups left behind by a previously interrupted replacement.
+
+        A backup is only consumed by the invocation that created it, so it is
+        surfaced for manual recovery instead of being restored or deleted
+        based on its on-disk contents.
+        """
+        try:
+            stranded = os.listdir(backup_root)
+        except OSError:
+            return
+        if stranded:
+            self.logger.warning(
+                f"{backup_root} contains {len(stranded)} backup(s) preserved from interrupted exports; "
+                f"recover or remove them manually."
+            )
+
+    @staticmethod
+    def _remove_backup_root_if_empty(backup_root):
+        try:
+            os.rmdir(backup_root)
+        except OSError:
+            pass
+
+    def _remove_backup_export(self, job_root, backup_job_dir):
+        cleanup_dir = mkdtemp(prefix=".nvflare_job_cleanup.", dir=job_root)
+        os.rmdir(cleanup_dir)
+        os.replace(backup_job_dir, cleanup_dir)
+        self._remove_backup_root_if_empty(os.path.dirname(backup_job_dir))
+        shutil.rmtree(cleanup_dir, ignore_errors=True)
 
     def simulator_run(self, workspace, clients=None, n_clients=None, threads=None, gpu=None, log_config=None):
         with TemporaryDirectory() as job_root:
@@ -287,7 +377,7 @@ class FedJobConfig:
                 if os.path.basename(source_file) != "__init__.py":
                     path_depth -= 1
                 source_root = os.path.dirname(source_path_for_root)
-                for _ in range(max(path_depth, 1)):
+                for _ in range(path_depth):
                     source_root = os.path.dirname(source_root)
                 self._copy_source_file(
                     custom_dir,
@@ -402,7 +492,7 @@ class FedJobConfig:
         self._check_destination_collision(source_file, dest_file)
         return source_file, source_root, dest_file
 
-    def _get_custom_file(self, custom_dir, module, source_file, source_root=None):
+    def _get_custom_file(self, custom_dir, module, source_file, source_root=None, flat_import_roots=None):
         module_parts = self._module_parts(module)
         if source_root is None:
             source_root = self._derive_source_root(module=module, source_file=source_file)
@@ -424,7 +514,14 @@ class FedJobConfig:
 
         self.custom_modules.append(module)
         try:
-            self._copy_source_file(custom_dir, module, source_file, dest_file, source_root=source_root)
+            self._copy_source_file(
+                custom_dir,
+                module,
+                source_file,
+                dest_file,
+                source_root=source_root,
+                flat_import_roots=flat_import_roots,
+            )
         except Exception:
             self.custom_modules.remove(module)
             raise
@@ -448,7 +545,16 @@ class FedJobConfig:
         resolved_parts = package_parts[:keep_parts] + import_parts
         return ".".join(resolved_parts) if resolved_parts else None
 
-    def _copy_source_file(self, custom_dir, module, source_file, dest_file, source_root, is_external_script=False):
+    def _copy_source_file(
+        self,
+        custom_dir,
+        module,
+        source_file,
+        dest_file,
+        source_root,
+        is_external_script=False,
+        flat_import_roots=None,
+    ):
         source_file, source_root, dest_file = self._validate_copy_paths(
             custom_dir=custom_dir,
             source_file=source_file,
@@ -466,16 +572,20 @@ class FedJobConfig:
 
         source_dir = os.path.dirname(source_file)
         is_flat_external_script = is_external_script and not os.path.isfile(os.path.join(source_dir, "__init__.py"))
-        search_source_dir = is_flat_external_script or "." not in module
+        is_flat_module = (is_flat_external_script or "." not in module) and os.path.basename(
+            source_file
+        ) != "__init__.py"
+        if is_flat_module and flat_import_roots is None:
+            flat_import_roots = [source_dir, source_root]
+            if is_external_script and "." not in module:
+                flat_import_roots.append(os.path.dirname(source_dir))
         for import_source, level in import_specs:
             import_module = self._resolve_import_module(module, import_source, level, source_file)
             if not import_module:
                 continue
             import_path = os.path.join(*self._module_parts(import_module)) + ".py"
-            search_roots = [source_root]
-            # Flat registered scripts and non-package modules can resolve unqualified imports from source-dir siblings.
-            if level == 0 and search_source_dir and os.path.basename(source_file) != "__init__.py":
-                search_roots.insert(0, source_dir)
+            # Flat modules retain the registered script's ordered roots; package modules stay anchored to their root.
+            search_roots = list(flat_import_roots) if level == 0 and is_flat_module else [source_root]
             checked_roots = set()
             for search_root in search_roots:
                 search_root = self._resolved_path(search_root)
@@ -488,7 +598,8 @@ class FedJobConfig:
                         custom_dir,
                         import_module,
                         import_source_file,
-                        source_root=source_root,
+                        source_root=search_root,
+                        flat_import_roots=flat_import_roots if "." not in import_module else None,
                     )
                     break
 
@@ -648,19 +759,11 @@ class FedJobConfig:
         return ",".join(strings)
 
     @staticmethod
-    def _is_valid_job_folder(job_folder: str) -> bool:
+    def _is_valid_job_folder(job_folder: str, job_name: str) -> bool:
         meta_file = os.path.join(job_folder, META_JSON)
-        return os.path.exists(meta_file)
-
-    def _is_partial_export_folder(self, job_folder: str) -> bool:
-        """True when a previous export created the directory but did not finish writing meta.json.
-
-        A partial export only contains app-named subdirectories (no foreign files), so it is
-        safe to delete and retry.  Any other content means the folder was not created by NVFlare.
-        """
         try:
-            app_names = set(self.fed_apps.keys())
-            entries = os.listdir(job_folder)
-            return all(os.path.isdir(os.path.join(job_folder, e)) and e in app_names for e in entries)
-        except OSError:
+            with open(meta_file) as f:
+                metadata = json.load(f)
+                return isinstance(metadata, dict) and metadata.get("name") == job_name
+        except (OSError, json.JSONDecodeError):
             return False
