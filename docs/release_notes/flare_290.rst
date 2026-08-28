@@ -82,8 +82,12 @@ no ``Shareable``, ``DXO``, or ``FLModel`` transport objects:
 
 .. code-block:: python
 
+   import numpy as np
+
    from nvflare.collab import CollabRecipe, collab
    from nvflare.recipe import SimEnv
+
+   INITIAL_MODEL = np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=np.float64)
 
    @collab.publish  # publishes this function to clients under the name "train"
    def train(model, update_type):
@@ -96,7 +100,8 @@ no ``Shareable``, ``DXO``, or ``FLModel`` transport objects:
        for _ in range(collab.get_app_prop("num_rounds", 3)):
            # "train" here calls the published train() function on every client
            client_results = collab.clients.train(model, "full")
-           # average client_results into the next round's model
+           updates = [update for _, (update, _) in client_results]
+           model = np.mean(updates, axis=0)  # average into the next round's model
        return model
 
    # CollabRecipe discovers the decorated functions above for both sides.
@@ -316,9 +321,10 @@ Also in This Release
     support for FedProx, SCAFFOLD, Swarm, and model-selection behavior.
 
 - **New ``external_process`` execution mode for ``ClientAPIExecutor``** —
-  a trainer-side Cell reuses the client job's Cell and launches as a
-  child process from a typed, owner-only bootstrap file, authenticated
-  and liveness-checked independently of the in-process path.
+  the launched trainer process creates its own Cell, with a prescribed
+  FQCN from a typed, owner-only bootstrap file, and connects to the
+  client job's Cell over an authenticated, liveness-checked session
+  independent of the in-process path.
 
   - ``ScriptRunner`` selects ``ClientAPIExecutor(in_process)`` by default,
     or ``ClientAPIExecutor(external_process)`` when
@@ -464,33 +470,6 @@ Compatibility and Migration Notes
     ``shared-file`` for either a launched external process or an attached
     trainer.
 
-- **CellPipe FQCN naming is now explicit.** Cell names keep the runtime
-  token and pipe mode in one ``~``-delimited leaf segment
-  (``site-1.cellpipe~plain~<job-id>~active``, or
-  ``<relay>.cellpipe~alias~<site>~<job-id>~active`` behind a relay), so a
-  pipe cell's FQCN parent always matches the cell it actually connects to.
-
-  - CellPipe now validates tokens at construction: non-empty, no reserved
-    ``~``, and no ``.`` when connecting to the site's own CP or a relay.
-    A violating custom ``FlareAgentWithCellPipe`` agent id now fails fast
-    with ``ValueError`` instead of producing an unroutable cell name.
-
-- **CellPipe cross-version pairing needs matching NVFlare versions.**
-  Both ends of a CellPipe pair derive each other's cell names
-  independently, so a Client Job process and an external training
-  process must run the same NVFlare naming scheme.
-
-  - A training environment pinned to an older NVFlare fails with "peer
-    FQCN mismatch" when paired with a 2.9 CJ; align the training
-    environment's NVFlare version with the site's.
-  - Only the flat whole-FQCN alias from 2.8 and earlier (root-connected,
-    ``<site>_<token>_<mode>``) is still recognized. The nested form used
-    through 2.8 (``<parent>.<site>_<token>_<mode>``) is not, because an
-    unmarked leaf inside a longer FQCN is indistinguishable from a real
-    cell of that name.
-  - When upgrading to 2.9, upgrade a site and its relay together,
-    including sites still running NVFlare 2.8.
-
 - **``ScriptRunner`` now requires ``ClientAPIExecutor``.** It exports this
   executor for both in-process and external-process execution; jobs
   generated with FLARE 2.9 therefore require a client runtime that
@@ -530,7 +509,8 @@ Compatibility and Migration Notes
 - **Auto-FL campaigns now honor the job's native metric direction**
   (``key_metric_mode`` or a matching same-metric ``stop_cond``) instead of
   assuming maximization, so raw lower-is-better objectives no longer need
-  to be negated. Campaign admission fails closed in three new cases:
+  to be negated. Campaign admission also fails closed in the following
+  cases:
 
   - An obvious lower-is-better metric such as ``val_loss`` that relies
     only on NVFlare's implicit ``max`` default is rejected until the job

@@ -117,31 +117,26 @@ Key Features
   communication backends without changing application code
 - **Rich Examples** -- Extensive library of FL algorithms, workflows, and application examples to build from
 
-What is New in 2.8.0
+What is New in 2.9.0
 ====================
 
-NVIDIA FLARE 2.8.0 expands deployment automation, CLI operations,
-multi-study support, and production hardening while adding Docker and
-Kubernetes job launchers for on-premises and cloud environments plus new
-multimodal and research examples.
+NVIDIA FLARE 2.9.0's headline changes are Agent Skills for agent-assisted
+federated development, a Python-first Collaboration API, a Slurm job
+launcher, and more reliable large-model training, alongside a broad
+security-hardening pass across the internal transport, admin access, and
+confidential computing.
 
 **Highlights:**
 
-- **Modern NVFlare CLI**: expanded ``job``, ``system``, ``config``,
-  ``recipe``, ``cert``, ``package``, and ``deploy`` command groups with JSON
-  output and schema support for automation
-- **Distributed Provisioning**: participant-managed certificate requests keep
-  private keys local while Project Admins approve signed packages and root CA
-  trust
-- **Docker and Kubernetes Job Launchers**: sites can configure process,
-  Docker, or Kubernetes job launchers for subprocess jobs, job containers, or
-  isolated job pods with study-scoped dataset mounts, including Kubernetes
-  deployments on AWS, Azure, and GCP
-- **Multi-Study Support**: study-scoped sessions, authorization, CLI commands,
-  and local PoC workflows let one deployment host multiple collaborations
-  without mixing operational or data-access context
-- **Live Log Streaming**: client job logs stream to the server while jobs are
-  running, shortening remote debugging loops
+- **Agent Skills**: agent-assisted federated development
+- **Collaboration API**: a Python-first API for research workflows
+- **Slurm job launcher**: a new HPC execution target alongside process,
+  Docker, and Kubernetes
+- **Large-model training**: a hardened model-transfer streaming transport
+  and FedAvg validated to 72 billion parameters
+- **Security hardening**: authenticated CellNet messages, internal mTLS by
+  default, and hardened admin, confidential-computing, and job-signing
+  paths
 
 See :doc:`release_notes/flare_290` for full release notes.
 See :doc:`release_notes/previous` for previous releases.
