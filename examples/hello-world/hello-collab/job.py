@@ -12,11 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Collab rewrite of ``examples/hello-world/hello-numpy`` using the same Recipe API.
+"""Hello-world: federated averaging with the Collab API.
 
-The client publishes an ordinary Python function and the server calls it on
-all clients as if it were local. NumPy arrays and floats are passed directly;
-there are no Shareable, DXO, or FLModel transport objects.
+The server drives rounds from a single ``@collab.main`` method; each client
+exposes ``train`` via ``@collab.publish``; ``collab.clients.train(...)`` fans
+the call out to every client in parallel and returns their results.
+
+Server and client do not have to be classes: ``@collab.main`` and
+``@collab.publish`` also work on plain module-level functions, in which case
+``CollabRecipe`` picks up the current module automatically when ``server``/
+``client`` are omitted.
+
+Per-site configuration: ``recipe.set_per_site_config({site: {name: value}})``
+resolves values for each site before execution, so a client receives only its
+own values and reads them with ``collab.get_app_prop(name)``. Here each site
+trains for a different number of local epochs.
 
 Run from the ``examples/hello-world/hello-collab`` directory:
 
@@ -25,82 +35,112 @@ Run from the ``examples/hello-world/hello-collab`` directory:
 
 import argparse
 
-import numpy as np
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import DataLoader, TensorDataset
 
-from nvflare.collab import CollabRecipe, collab
+from nvflare.collab import CollabRecipe, collab, simple_logging
 from nvflare.recipe import SimEnv
 
-INITIAL_MODEL = np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=np.float64)
+
+class SimpleModel(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.fc = nn.Linear(10, 1)
+
+    def forward(self, x):
+        return self.fc(x)
 
 
-@collab.publish
-def train(model: np.ndarray, update_type: str):
-    """Simulate local training by adding one to every model weight."""
-    updated_model = model + 1
-    model_update = updated_model - model if update_type == "diff" else updated_model
-    return model_update, float(np.mean(updated_model))
+class Trainer:
+    @collab.publish
+    def train(self, weights=None):
+        # The recipe resolves this site's value before the client starts.
+        local_epochs = collab.get_app_prop("local_epochs", 5)
+
+        inputs = torch.randn(100, 10)
+        labels = torch.randn(100, 1)
+        dataloader = DataLoader(TensorDataset(inputs, labels), batch_size=10)
+
+        model = SimpleModel()
+        if weights is not None:
+            model.load_state_dict(weights)
+
+        optimizer = optim.SGD(model.parameters(), lr=0.01)
+        criterion = nn.MSELoss()
+
+        for _epoch in range(local_epochs):
+            for batch_inputs, batch_labels in dataloader:
+                optimizer.zero_grad()
+                loss = criterion(model(batch_inputs), batch_labels)
+                loss.backward()
+                optimizer.step()
+
+        print(f"  [{collab.site_name}] epochs={local_epochs} Loss: {loss.item():.4f}")
+        return model.state_dict(), loss.item()
 
 
-@collab.main
-def run():
-    """Run the federated averaging loop on the server."""
-    model = INITIAL_MODEL.copy()
-    num_rounds = collab.get_app_prop("num_rounds", 3)
-    update_type = collab.get_app_prop("update_type", "full")
+def weighted_avg(client_results):
+    valid = dict(client_results)
+    for client_id, error in client_results.failures.items():
+        print(f"  Warning: {client_id} failed: {error}")
+    if not valid:
+        raise RuntimeError(f"all {len(client_results.failures)} client calls failed")
 
-    for current_round in range(num_rounds):
-        print(f"Round {current_round + 1}: sending weights\n{model}")
-        client_results = collab.clients.train(model, update_type)
-        model_updates = []
-        for client_name, (model_update, weight_mean) in client_results:
-            print(f"  {client_name}: weight_mean={weight_mean:.1f}")
-            model_updates.append(model_update)
-        averaged_update = np.mean(model_updates, axis=0)
-        model = model + averaged_update if update_type == "diff" else averaged_update
-        print(f"Round {current_round + 1}: averaged weights\n{model}")
-
-    print(f"Final model after {num_rounds} rounds:\n{model}")
-    return model
+    all_weights = [result[0] for result in valid.values()]
+    avg_weights = {k: torch.stack([w[k] for w in all_weights]).mean(dim=0) for k in all_weights[0]}
+    avg_loss = sum(result[1] for result in valid.values()) / len(valid)
+    return avg_weights, avg_loss
 
 
-def define_parser():
-    """Use the core experiment options from ``hello-world/hello-numpy``."""
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--n_clients", type=int, default=2)
-    parser.add_argument("--num_rounds", type=int, default=3)
-    parser.add_argument("--update_type", choices=["full", "diff"], default="full")
-    parser.add_argument(
-        "--log_config",
-        type=str,
-        default=None,
-        help="Log config mode ('concise', 'full', 'verbose'), filepath, or logging level",
-    )
-    return parser.parse_args()
+class FedAvg:
+    def __init__(self, num_rounds=3):
+        self.num_rounds = num_rounds
+
+    @collab.main
+    def run(self):
+        global_weights = None
+        for round_num in range(self.num_rounds):
+            print(f"=== Round {round_num + 1} ===")
+            client_results = collab.clients.train(global_weights)
+            global_weights, global_loss = weighted_avg(client_results)
+            print(f"  Global average loss: {global_loss:.4f}")
+        return global_weights
 
 
 def make_recipe(args):
-    # No server or client objects are needed: CollabRecipe discovers the
-    # decorated functions in this module and uses them for both sides.
+    if args.num_rounds < 1:
+        raise ValueError("FedAvg requires at least 1 round.")
+
     recipe = CollabRecipe(
-        job_name="hello_numpy_collab",
-        min_clients=args.n_clients,
+        job_name="hello_fedavg",
+        server=FedAvg(num_rounds=args.num_rounds),
+        client=Trainer(),
+        min_clients=args.num_clients,
         sync_task_timeout=60,
     )
-    recipe.set_server_prop("num_rounds", args.num_rounds)
-    recipe.set_server_prop("update_type", args.update_type)
+    # Per-site configuration: site-1 trains fewer local epochs than site-2.
+    recipe.set_per_site_config(
+        {f"site-{site_num}": {"local_epochs": 2 if site_num == 1 else 5} for site_num in range(1, args.num_clients + 1)}
+    )
     return recipe
 
 
-def main():
-    args = define_parser()
-    recipe = make_recipe(args)
+def make_env(recipe):
+    return SimEnv(clients=recipe.configured_sites())
 
-    env = SimEnv(num_clients=args.n_clients, log_config=args.log_config)
-    run = recipe.execute(env)
-    print()
-    print("Result can be found in:", run.get_result())
-    print("Job Status is:", run.get_status())
-    print()
+
+def main():
+    parser = argparse.ArgumentParser(description="Hello-world FedAvg with the Collab API")
+    parser.add_argument("--num-clients", type=int, default=2)
+    parser.add_argument("--num-rounds", type=int, default=3)
+    args = parser.parse_args()
+    simple_logging()
+    recipe = make_recipe(args)
+    run = recipe.execute(make_env(recipe))
+    print("Job Status:", run.get_status())
+    print("Results at:", run.get_result())
 
 
 if __name__ == "__main__":

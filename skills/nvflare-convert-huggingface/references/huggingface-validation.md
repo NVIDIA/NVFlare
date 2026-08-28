@@ -23,7 +23,8 @@ reaches the applicable phase, and stop at the first failure.
   unused argument. When the generated client uses `HfArgumentParser`, construct
   it with `allow_abbrev=False` and parse with the same project and framework
   dataclass types. When it preserves `argparse` or another parser, use that
-  parser instead.
+  parser instead. Test the exact arguments produced by the generated job helper;
+  do not append an argument only in preflight that the recipe will not deliver.
 - Run intentional typo and abbreviation rejection cases through the shared
   assertion-wrapper rule. `HfArgumentParser.parse_args_into_dataclasses()` may
   raise `ValueError` for unused arguments rather than `SystemExit`; the wrapper
@@ -38,6 +39,18 @@ reaches the applicable phase, and stop at the first failure.
   `train_args` values. Do not assume shell parsing or call internal command
   splitters. If a required value contains whitespace and no documented
   structured argument surface exists, fail closed.
+- Only when source inspection found a source-project-relative local file or
+  directory argument, change to a fresh working directory outside the project,
+  construct the Recipe with that relative source value, and inspect the final
+  `train_args`. Require the source argument name to be unchanged and its
+  transmitted value to be absolute and equal to the expected location under
+  the explicit inspected source-project root before running the full simulation.
+  `SOURCE_DIR` is that root only when generated `job.py` is colocated with the
+  source; a read-only-source flow must validate against the separate original
+  root. Skip this path-specific check when the source has no local path argument.
+  Do not pass absolute local paths, per-site paths, Hub identifiers, or URLs
+  through the relative-path test; validate their classification using
+  `../../nvflare-shared/references/site-data-and-paths.md` instead.
 
 ## Hugging Face Artifacts And Compatibility
 
@@ -163,8 +176,8 @@ reaches the applicable phase, and stop at the first failure.
   applicable checks.
 - Do not report DDP validated from a single-process or rank-zero-only
   simulation. A DDP validation claim requires a two-process `torchrun` case in
-  which each process records its resolved global rank and the rank passed to
-  `flare.init()`, and the observed ranks are exactly `{0, 1}`.
+  which each process records its launcher rank and product-resolved Client API
+  rank, and the observed ranks are exactly `{0, 1}`.
 
 ## Report
 

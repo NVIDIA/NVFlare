@@ -72,9 +72,8 @@ Use `run_script()` only during the validation phase after loading `references/hu
    callbacks, checkpoint and PEFT settings, precision, local budget,
    distributed launcher, site/round counts, data location, and aggregation
    intent. Do not import or execute user training modules to discover them.
-3. Apply the dependency-install ordering rule in `../nvflare-shared/references/conversion-common.md` before
-   any Python command imports user, framework, NVFLARE, or declared dependency
-   modules.
+3. Apply the dependency-install ordering rule in `../nvflare-shared/references/conversion-common.md` before any Python command imports user, framework, NVFLARE, or declared dependencies. Keep dependency inventory single-purpose: check NVFLARE separately, inventory non-product packages separately, and do not append Hugging Face cache or filesystem discovery.
+   Defer model and dataset availability checks to the maintained resolver during validation. If an optional path must be inspected, run it separately and report a missing directory with exit code zero.
 4. Select the recipe from FL intent. For explicit FedAvg, run `nvflare recipe
    show fedavg-pt --format json`, then immediately load
    `../nvflare-shared/references/pytorch-family-recipe-construction.md` and use
@@ -117,11 +116,11 @@ Use `run_script()` only during the validation phase after loading `references/hu
 7. Only after generated files exist, load `../nvflare-shared/references/validation-evidence.md`
    and `references/huggingface-validation.md`. Follow the shared compile,
    construction, simulation, and terminal-evidence ladder. Inspect export/package
-   evidence only for an exported final target; inspect a local target's
-   materialized evidence after its run. Apply only the standard HF Trainer checks
-   and stop at the first failed rung. Review and exercise the maintained assets directly;
-   do not inspect NVFLARE implementation source, improvise Recipe API probes, or
-   write one-off AST programs to re-prove them. Use
+   evidence only for an exported final target;
+   inspect a local target's materialized evidence after its run. Apply only the
+   standard HF Trainer checks and stop at the first failed rung. Review and exercise
+   the maintained assets directly; do not inspect NVFLARE implementation source,
+   improvise Recipe API probes, or write one-off AST programs to re-prove them. Use
    `references/huggingface-state-and-distributed.md`
    only when inspection found PEFT, DDP, checkpoint/restore overrides,
    auxiliary trainable models, or another non-default patch setting.
@@ -136,11 +135,11 @@ Use `run_script()` only during the validation phase after loading `references/hu
 - Must use `flare.patch(trainer)` as the sole model-exchange owner. `receive()`
   inside a patched loop may inspect task metadata only; it must not load a
   second copy of the global model.
-- Must make the client entry's global `rank` argument required and pass it to
-  `flare.init(rank=rank)`; never default every process to rank zero. Resolve it
-  from an initialized process group or global `RANK`, using explicit zero only
-  for a verified single-process launch. Client API initialization order
-  otherwise follows `../nvflare-shared/references/conversion-common.md`.
+- Must follow the Client API initialization and conditional rank contract in
+  `../nvflare-shared/references/conversion-common.md`. Keep the generated client
+  rankless; `nvflare.client.hf.init()` owns distributed-rank resolution and
+  rejection. Load `references/huggingface-state-and-distributed.md` only for a
+  distributed multi-process source path.
 - Must preserve source evaluation. When per-round global-model evaluation is
   required, call `trainer.evaluate()` before `trainer.train()` on every rank.
   Do not invent `compute_metrics`, label mappings, averaging denominators, or

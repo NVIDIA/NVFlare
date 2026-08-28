@@ -18,7 +18,8 @@ import os
 from typing import Optional
 from zipfile import ZipFile
 
-from nvflare.apis.fl_constant import JobConstants
+from nvflare.apis.fl_constant import FLContextKey, JobConstants
+from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import ALL_SITES, JobMetaKey
 from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel.utils.config_factory import ConfigFactory
@@ -105,3 +106,18 @@ def load_job_def_bytes(from_path: str, def_name: str) -> bytes:
     # zip the job folder
     data = zip_directory_to_bytes(from_path, def_name)
     return convert_legacy_zipped_app_to_job(data)
+
+
+def get_event_job_id(fl_ctx: FLContext) -> Optional[str]:
+    """Get the ID of the job that originated a job lifecycle event.
+
+    Prefers the explicit job ID published in the event data, which is immune to
+    concurrent changes of the sticky CURRENT_JOB_ID context property. Falls back
+    to CURRENT_JOB_ID for event publishers that do not attach event data.
+    """
+    event_data = fl_ctx.get_prop(FLContextKey.EVENT_DATA)
+    if isinstance(event_data, dict):
+        job_id = event_data.get(JobMetaKey.JOB_ID.value)
+        if job_id:
+            return job_id
+    return fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
