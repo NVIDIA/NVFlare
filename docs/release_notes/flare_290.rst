@@ -33,12 +33,15 @@ project or dataset:
   job directly from the dataset and feature names, with no user statistics
   code required.
 
-**Auto-FL research assistance** runs a coding-agent-directed campaign over
-an existing job: NVFLARE owns the deterministic campaign import, execution,
-policy boundaries, and provenance, while the agent proposes hypothesis-driven
-candidates within the job's fixed training budget and mutation-schema
-bounds. Its initial importer similarly supports statically recognizable
-NVFLARE Recipe and ``*Job`` patterns.
+**Auto-FL research assistance** runs a coding-agent-directed campaign over an
+existing job:
+
+- NVFLARE owns the deterministic campaign import, execution, policy
+  boundaries, and provenance.
+- The coding agent proposes hypothesis-driven candidates, constrained to the
+  job's fixed training budget and mutation-schema bounds.
+- Its initial importer similarly supports statically recognizable NVFLARE
+  Recipe and ``*Job`` patterns.
 
 All skills run behind a security-evaluation gate (prompt-injection and
 untrusted-input eval suites) and include explicit safeguards for site-local
