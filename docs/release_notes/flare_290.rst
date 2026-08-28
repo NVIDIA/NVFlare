@@ -201,17 +201,21 @@ operational guidance.
 
        FedAvg server peak memory, 1.7B-72B (measured, 2 training rounds)
 
-Swarm Learning's tensor disk offload shows a similar drop at both the
-aggregator and non-aggregator sites, since pass-through download keeps
-cross-site tensors lazy through the client job:
+Each configuration in both charts ran for 2 FedAvg rounds; the measurements
+characterize per-round transfer time and server peak memory, not a full
+convergence training run.
+
+Swarm Learning's tensor disk offload lowers the fixed aggregator's peak
+memory; non-aggregator sites stay approximately flat, since disk offload
+targets contribution handling at the aggregator rather than the per-site
+learner footprint:
 
 .. image:: ../resources/flare_290_swarm_disk_offload_memory.png
-   :width: 520px
+   :width: 400px
    :align: center
 
 Peak container memory, disk offload OFF vs. ON (external-process, fixed
-aggregator, 5 GB model, 4 clients, 30 rounds; container RSS peak sampled
-every 2 seconds):
+aggregator, 5 GB synthetic model, 4 clients, 30 rounds):
 
 .. list-table::
    :header-rows: 1
@@ -220,27 +224,28 @@ every 2 seconds):
    * - Site
      - Role
      - Peak memory (OFF -> ON)
-     - Reduction
+     - Change
    * - site-1
      - Aggregator
-     - 61.82 -> 35.98 GiB
-     - 41.8%
+     - 48.49 -> 37.08 GiB
+     - -23.5%
    * - site-2
      - Non-aggregator
-     - 45.54 -> 19.61 GiB
-     - 56.9%
+     - 16.69 -> 16.37 GiB
+     - -1.9%
    * - site-3
      - Non-aggregator
-     - 42.11 -> 19.91 GiB
-     - 52.7%
+     - 15.94 -> 16.26 GiB
+     - +2.0%
    * - site-4
      - Non-aggregator
-     - 46.00 -> 19.34 GiB
-     - 58.0%
+     - 16.64 -> 16.52 GiB
+     - -0.7%
 
-Each configuration in both charts ran for 2 FedAvg rounds; the measurements
-characterize per-round transfer time and server peak memory, not a full
-convergence training run.
+The non-aggregator changes are run-to-run peak variation, not a
+disk-offload effect. Larger models widen the aggregator's savings: the same
+report measured -36.3% at 30 GB (Qwen2.5-14B) and -36.4% at 60 GB, with
+non-aggregator sites remaining flat at every size tested.
 
 Security Hardening
 ====================
