@@ -177,7 +177,9 @@ load:
 - Active administrative result downloads refresh their bound HCI session as
   bytes advance, so a healthy long download doesn't expire as idle.
 
-**Memory** — peak server RSS stays flatter as models and client counts grow:
+**Memory** — peak aggregator RSS stays flatter as models and client counts
+grow (the FL server for FedAvg/Scaffold/FedOpt; the client-elected
+aggregator site for Swarm):
 
 - Tensor disk offload during aggregation, previously FedAvg-only, now also
   covers Scaffold, FedOpt, and Swarm.
