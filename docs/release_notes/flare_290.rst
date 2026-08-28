@@ -179,6 +179,16 @@ for federated LLM training at scales up to 72 billion parameters. See
 :ref:`notes_on_large_models` for deployment sizing and large-model
 operational guidance.
 
+.. list-table::
+   :widths: 50 50
+
+   * - .. image:: ../resources/flare_290_72b_training_elapsed_time.png
+
+       Elapsed time, 1.7B-72B (measured)
+     - .. image:: ../resources/flare_290_72b_training_server_memory.png
+
+       FedAvg server peak memory, 1.7B-72B
+
 Also in This Release
 ======================
 
