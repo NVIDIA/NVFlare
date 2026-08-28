@@ -50,21 +50,9 @@ FLARE 2.10.0 — Target: Early 2027
   identity, action name, and job ID as one flat text line; possible gaps
   include artifact-level detail, site identity, and a structured,
   queryable format.
-
-**************************
-Research Directions
-**************************
-
-These are earlier-stage research threads that may feed a future FLARE
-release. They are not yet scheduled or committed to a specific version.
-
 - **Memorization in LLMs** — Understanding what a federated LLM training run
   memorizes from participant data, a prerequisite for defensible privacy
   claims about federated training itself.
 - **FedRevive (Async FL Algorithm)** — An asynchronous federated learning
   algorithm where participants contribute without waiting on a synchronous
   round barrier.
-- **Missing Modality** — Robust federated learning when different sites hold
-  different, incomplete subsets of a multimodal dataset.
-- **Contribution Estimation** — Attributing a trained model's
-  quality/behavior back to each participating site's actual contribution.
