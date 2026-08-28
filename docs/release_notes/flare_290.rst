@@ -35,8 +35,8 @@ project or dataset:
   job directly from the dataset and feature names, with no user statistics
   code required.
 
-**Auto-FL research assistance** runs a coding-agent-directed campaign over an
-existing job:
+**Auto-FL optimization** — an agent-directed campaign that tunes an existing
+job within its declared training budget:
 
 - NVFLARE owns the deterministic campaign import, execution, policy
   boundaries, and provenance.
@@ -81,17 +81,46 @@ no ``Shareable``, ``DXO``, or ``FLModel`` transport objects:
 
 .. code-block:: python
 
+   import torch
+   import torch.nn as nn
+   import torch.optim as optim
+   from torch.utils.data import DataLoader, TensorDataset
+
    from nvflare.collab import CollabRecipe, collab
    from nvflare.recipe import SimEnv
+
+   class SimpleModel(nn.Module):
+       def __init__(self):
+           super().__init__()
+           self.fc = nn.Linear(10, 1)
+
+       def forward(self, x):
+           return self.fc(x)
 
    class Trainer:
        @collab.publish  # publishes this method to clients under the name "train"
        def train(self, weights=None):
+           inputs, labels = torch.randn(100, 10), torch.randn(100, 1)
+           dataloader = DataLoader(TensorDataset(inputs, labels), batch_size=10)
+
            model = SimpleModel()
            if weights is not None:
                model.load_state_dict(weights)
-           # ... local training loop (see the full example) ...
+
+           optimizer = optim.SGD(model.parameters(), lr=0.01)
+           criterion = nn.MSELoss()
+           for batch_inputs, batch_labels in dataloader:
+               optimizer.zero_grad()
+               loss = criterion(model(batch_inputs), batch_labels)
+               loss.backward()
+               optimizer.step()
            return model.state_dict(), loss.item()
+
+   def weighted_avg(client_results):
+       all_weights = [result[0] for result in dict(client_results).values()]
+       avg_weights = {k: torch.stack([w[k] for w in all_weights]).mean(dim=0) for k in all_weights[0]}
+       avg_loss = sum(result[1] for result in dict(client_results).values()) / len(all_weights)
+       return avg_weights, avg_loss
 
    class FedAvg:
        def __init__(self, num_rounds=3):
@@ -103,7 +132,7 @@ no ``Shareable``, ``DXO``, or ``FLModel`` transport objects:
            for _ in range(self.num_rounds):
                # "train" here calls the published train() method on every client
                client_results = collab.clients.train(global_weights)
-               global_weights, global_loss = weighted_avg(client_results)  # average state_dicts
+               global_weights, global_loss = weighted_avg(client_results)
            return global_weights
 
    if __name__ == "__main__":
