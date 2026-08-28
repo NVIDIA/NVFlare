@@ -42,7 +42,7 @@ existing job:
   boundaries, and provenance.
 - The coding agent proposes hypothesis-driven candidates, constrained to the
   job's fixed training budget and mutation-schema bounds.
-- Its initial importer similarly supports statically recognizable NVFLARE
+- Auto-FL's initial importer supports statically recognizable NVFLARE
   Recipe and ``*Job`` patterns.
 
 Bundled skills are validated by pre-merge security scans, including
@@ -106,9 +106,10 @@ no ``Shareable``, ``DXO``, or ``FLModel`` transport objects:
                global_weights, global_loss = weighted_avg(client_results)  # average state_dicts
            return global_weights
 
-   # CollabRecipe wires the server and client objects together for both sides.
-   recipe = CollabRecipe(job_name="hello_fedavg", server=FedAvg(), client=Trainer(), min_clients=2)
-   recipe.execute(SimEnv(num_clients=2))
+   if __name__ == "__main__":
+       # CollabRecipe wires the server and client objects together for both sides.
+       recipe = CollabRecipe(job_name="hello_fedavg", server=FedAvg(), client=Trainer(), min_clients=2)
+       recipe.execute(SimEnv(num_clients=2))
 
 New examples:
 
@@ -314,9 +315,11 @@ Also in This Release
   - See :ref:`hf_client_api` and the :github_nvflare_link:`Hello Hugging Face
     example <examples/hello-world/hello-huggingface>`.
 
-- **Client API Attach and Recipe updates** — Attach mode lets a long-lived,
-  application-owned external trainer connect without starting a new process
-  each round.
+- **Client API Attach and Recipe updates** — Attach mode lets an
+  independently started, externally owned trainer connect to FLARE
+  without transferring process ownership to NVFlare (unlike
+  ``in_process``/``external_process``, where FLARE launches and owns the
+  trainer process).
 
   - See :ref:`client_api_attach` and the :github_nvflare_link:`example
     <examples/advanced/client-api-attach>`.
@@ -389,6 +392,12 @@ Compatibility and Migration Notes
   keys in ``comm_config.yml`` (see ``dev_tools/f3/comm_config.yml`` for the
   shipped values); ``TCP_NODELAY`` is now on by default, reducing
   request/ACK latency.
+
+  - A 2.8 receiver has a fixed out-of-sequence tolerance of 16 chunks and
+    cannot derive a larger one from a peer's advertised window; a 2.9
+    sender's 64 MiB default window can exceed that under load and abort
+    the stream. While any 2.8 peers are still in the fleet, set
+    ``streaming_window_size: 16M`` on 2.9 senders that talk to them.
 
 - **Job-process bootstrap credentials move off the command line.**
   Launchers deliver them through the job process environment instead (a
@@ -527,7 +536,8 @@ Compatibility and Migration Notes
     ``key_metric_mode`` before initializing a campaign.
   - A requested metric that differs from the job's key metric is rejected
     unless ``mutation_schema.yaml`` declares the requested and
-    optimization metric bridge.
+    optimization metric bridge. A declared bridge cannot override an
+    unresolved native job metric.
   - Job constructor calls that pass positional arguments, ``*args``, or
     ``**kwargs`` also fail closed, since dynamic arguments could hide the
     metric, direction, or fixed training budget; rewrite the call with
