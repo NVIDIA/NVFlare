@@ -33,6 +33,7 @@ FLARE 2.10.0 — Target: Early 2027
 - Job Statistics
 - Operation and Security
 - Audit log enhancements
+- AI Agents in Federated Data Networks
 
 **************************
 Research Directions

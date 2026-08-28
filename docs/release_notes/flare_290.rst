@@ -200,15 +200,16 @@ operational guidance.
    * - .. image:: /resources/flare_290_72b_training_elapsed_time.png
           :width: 460px
 
-       Elapsed time, 1.7B-72B (measured, 2 training rounds)
+       Elapsed time, 1.7B-72B (measured, 1 FL round)
      - .. image:: /resources/flare_290_72b_training_server_memory.png
           :width: 390px
 
-       FedAvg server peak memory, 1.7B-72B (measured, 2 training rounds)
+       FedAvg server peak memory, 1.7B-72B (measured, 1 FL round)
 
-Each configuration in both charts ran for 2 FedAvg rounds; the measurements
-characterize per-round transfer time and server peak memory, not a full
-convergence training run.
+Each configuration in both charts ran a single FL round with two
+simultaneous clients and four local optimizer steps per client; the
+measurements characterize per-round transfer time and server peak memory,
+not a full convergence training run.
 
 With pass-through download on, Swarm Learning's tensor disk offload lowers
 the fixed aggregator's peak memory, and the savings widen with model size;
