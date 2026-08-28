@@ -17,6 +17,8 @@ import sys
 from typing import Optional, Union
 
 MULTIRANK_SIZE_ENV_VARS = ("WORLD_SIZE", "LOCAL_WORLD_SIZE", "OMPI_COMM_WORLD_SIZE")
+SLURM_TASK_COUNT_ENV_VAR = "SLURM_NTASKS"
+SLURM_PROCESS_ID_ENV_VAR = "SLURM_PROCID"
 
 
 def environment_declares_multirank() -> bool:
@@ -27,6 +29,13 @@ def environment_declares_multirank() -> bool:
                 return True
         except (TypeError, ValueError):
             continue
+    # SLURM_NTASKS alone can be inherited by a single-process child. Require the
+    # per-process marker before treating the allocation size as a trainer launch.
+    if SLURM_PROCESS_ID_ENV_VAR in os.environ:
+        try:
+            return int(os.environ.get(SLURM_TASK_COUNT_ENV_VAR, "1") or 1) > 1
+        except (TypeError, ValueError):
+            return False
     return False
 
 

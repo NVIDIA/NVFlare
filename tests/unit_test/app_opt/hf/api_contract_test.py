@@ -198,12 +198,25 @@ def test_patch_accepts_single_process_inside_multitask_slurm_allocation(monkeypa
     hf_api, trainer_cls, client_api_mock = _fresh_api(monkeypatch)
     monkeypatch.setattr(hf_api, "_torch_dist", lambda: None)
     monkeypatch.delenv("RANK", raising=False)
+    monkeypatch.delenv("SLURM_PROCID", raising=False)
     monkeypatch.setenv("SLURM_NTASKS", "2")
     trainer = _make_trainer(trainer_cls, tmp_path, process_index=0)
 
     hf_api.patch(trainer, restore_state=False)
 
     assert str(client_api_mock.init_calls[0]["rank"]) == "0"
+
+
+def test_patch_rejects_unresolved_slurm_multiprocess_launch(monkeypatch, tmp_path):
+    hf_api, trainer_cls, _ = _fresh_api(monkeypatch)
+    monkeypatch.setattr(hf_api, "_torch_dist", lambda: None)
+    monkeypatch.delenv("RANK", raising=False)
+    monkeypatch.setenv("SLURM_NTASKS", "2")
+    monkeypatch.setenv("SLURM_PROCID", "0")
+    trainer = _make_trainer(trainer_cls, tmp_path, process_index=0)
+
+    with pytest.raises(RuntimeError, match="multi-process|torch.distributed|torchrun"):
+        hf_api.patch(trainer, restore_state=False)
 
 
 def test_patch_rejects_adapter_scope_for_non_peft_model(monkeypatch, tmp_path):

@@ -41,6 +41,8 @@ def _clear_rank_environment(monkeypatch):
     monkeypatch.delenv("RANK", raising=False)
     for name in rank_utils.MULTIRANK_SIZE_ENV_VARS:
         monkeypatch.delenv(name, raising=False)
+    monkeypatch.delenv(rank_utils.SLURM_TASK_COUNT_ENV_VAR, raising=False)
+    monkeypatch.delenv(rank_utils.SLURM_PROCESS_ID_ENV_VAR, raising=False)
 
 
 def test_initialized_torch_rank_is_discovered_without_import(monkeypatch):
@@ -67,15 +69,33 @@ def test_environment_declares_multirank_for_supported_launchers(monkeypatch, siz
 
 def test_slurm_allocation_size_does_not_declare_trainer_multirank(monkeypatch):
     _clear_rank_environment(monkeypatch)
-    monkeypatch.setenv("SLURM_NTASKS", "2")
+    monkeypatch.setenv(rank_utils.SLURM_TASK_COUNT_ENV_VAR, "2")
 
     assert not rank_utils.environment_declares_multirank()
     assert rank_utils.resolve_process_rank() == "0"
 
 
+def test_slurm_process_context_declares_unresolved_multirank(monkeypatch):
+    _clear_rank_environment(monkeypatch)
+    monkeypatch.setenv(rank_utils.SLURM_TASK_COUNT_ENV_VAR, "2")
+    monkeypatch.setenv(rank_utils.SLURM_PROCESS_ID_ENV_VAR, "0")
+
+    assert rank_utils.environment_declares_multirank()
+    with pytest.raises(RuntimeError, match="global RANK is unavailable"):
+        rank_utils.resolve_process_rank()
+
+
 def test_invalid_launcher_size_does_not_declare_multirank(monkeypatch):
     _clear_rank_environment(monkeypatch)
     monkeypatch.setenv("WORLD_SIZE", "not-an-integer")
+
+    assert not rank_utils.environment_declares_multirank()
+
+
+def test_invalid_slurm_task_count_does_not_declare_multirank(monkeypatch):
+    _clear_rank_environment(monkeypatch)
+    monkeypatch.setenv(rank_utils.SLURM_TASK_COUNT_ENV_VAR, "not-an-integer")
+    monkeypatch.setenv(rank_utils.SLURM_PROCESS_ID_ENV_VAR, "0")
 
     assert not rank_utils.environment_declares_multirank()
 
