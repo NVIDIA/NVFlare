@@ -82,7 +82,7 @@ no ``Shareable``, ``DXO``, or ``FLModel`` transport objects:
    from nvflare.collab import CollabRecipe, collab
    from nvflare.recipe import SimEnv
 
-   @collab.publish
+   @collab.publish  # publishes this function to clients under the name "train"
    def train(model, update_type):
        updated_model = model + 1
        return updated_model, float(updated_model.mean())
@@ -91,6 +91,7 @@ no ``Shareable``, ``DXO``, or ``FLModel`` transport objects:
    def run():
        model = INITIAL_MODEL.copy()
        for _ in range(collab.get_app_prop("num_rounds", 3)):
+           # "train" here calls the published train() function on every client
            client_results = collab.clients.train(model, "full")
            # average client_results into the next round's model
        return model
