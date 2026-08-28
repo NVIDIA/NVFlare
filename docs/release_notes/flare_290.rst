@@ -58,6 +58,12 @@ runtime configuration is ambiguous.
 Collaboration API
 ==================
 
+.. admonition:: Technical Preview
+
+   The Collaboration API is a **technical preview** designed for researchers
+   to run quick experiments. It can run and deploy on a real multi-machine
+   setup, but is not recommended for production at this rollout.
+
 The Collaboration API provides a Python-first way to express custom federated
 algorithms: decorate the functions that a server or client publishes, write
 the coordination logic in ordinary Python, and use ``CollabRecipe`` to
@@ -65,7 +71,34 @@ package, export, simulate, or submit the result. This suits research
 workflows that don't fit a standard controller pattern. Every Collab call is
 now authorized against the caller's authenticated CellNet origin before
 dispatch, rejecting a caller, method, or target that doesn't match the call
-envelope. New examples:
+envelope.
+
+Trimmed from the ``hello-collab`` example — the client publishes an ordinary
+function, and the server calls it on every client as if it were local, with
+no ``Shareable``, ``DXO``, or ``FLModel`` transport objects:
+
+.. code-block:: python
+
+   from nvflare.collab import CollabRecipe, collab
+   from nvflare.recipe import SimEnv
+
+   @collab.publish
+   def train(model, update_type):
+       updated_model = model + 1
+       return updated_model, float(updated_model.mean())
+
+   @collab.main
+   def run():
+       model = INITIAL_MODEL.copy()
+       for _ in range(collab.get_app_prop("num_rounds", 3)):
+           client_results = collab.clients.train(model, "full")
+           # average client_results into the next round's model
+       return model
+
+   # CollabRecipe discovers the decorated functions above for both sides.
+   CollabRecipe(job_name="hello_numpy_collab").execute(SimEnv(num_clients=2))
+
+New examples:
 
 - :github_nvflare_link:`Hello Collab <examples/hello-world/hello-collab>` —
   a minimal FedAvg workflow
