@@ -546,9 +546,9 @@ Compatibility and Migration Notes
   - Job constructor calls that pass positional arguments, ``*args``, or
     ``**kwargs`` also fail closed, since dynamic arguments could hide the
     metric, direction, or fixed training budget; rewrite the call with
-    keyword-only arguments and no splats. ``SimEnv`` calls must pin a
-    positive explicit ``num_clients``, or expose a non-empty static
-    ``clients`` list whose length is pinned.
+    keyword-only arguments and no splats.
+  - ``SimEnv`` calls must pin a positive explicit ``num_clients``, or
+    expose a non-empty static ``clients`` list whose length is pinned.
   - Experimental legacy minimization campaigns without direction
     provenance must be re-initialized in a fresh workspace.
 
