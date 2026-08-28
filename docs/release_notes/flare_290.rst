@@ -129,40 +129,52 @@ backend setup, site configuration, and validation steps.
 Large-Model Training
 =====================
 
-FLARE 2.9.0 strengthens the streaming transport for long-running model
-transfers.
-When reliable streaming is enabled, unacknowledged chunks are retried within
-bounded retry budgets. Receiver-confirmed completion lets the sender retain a
-payload until the intended receiver has consumed it. A progress-aware liveness
-policy keeps task downloads and result uploads alive while bytes continue to
-advance, instead of failing or resending solely because a fixed wall-clock
-timeout elapsed; transfers that stop making progress still fail after the
-configured idle limit. External trainer task materialization no longer trips a
-heartbeat expiry while a ``TASK_READY`` exchange is pending; an optional task
-wait timeout continues to provide an absolute bound.
+FLARE 2.9.0 strengthens the streaming transport used for large model
+transfers, across three areas:
 
-The transport now communicates the sender's effective chunk, window, ACK, and
-retry-pending limits to the receiver for each stream, preventing incompatible
-endpoint settings from stalling flow control. Receiver reassembly capacity is
-derived from the negotiated stream window rather than a fixed chunk count, so
-scheduler-induced chunk reordering does not abort healthy transfers under load.
-Pipelined tensor downloads, prefetching, and ``TCP_NODELAY`` improve transfer
-throughput. Oversized blobs fail before transmission with an actionable error,
-and task-result delivery retries a failed streamed send rather than silently
-dropping the result. Active administrative result downloads also refresh their
-bound HCI session as bytes advance, preventing a healthy long download from
-expiring as idle.
+**Reliability** — a transfer survives interruptions instead of failing
+outright:
 
-PyTorch Swarm can use tensor disk offload during aggregation, reducing peak
-memory pressure by materializing incoming tensors through temporary disk
-storage. Pass-through tensor broadcasts now release their source transactions
-after downstream consumers complete, preventing model-sized retained objects
-from accumulating across aggregation rounds. The default maximum streamed blob
-size is 4 GiB, while remaining finite and configurable. With suitable
-infrastructure and configuration, FedAvg has been validated for federated LLM
-training at scales up to 72 billion parameters. See
-:ref:`notes_on_large_models` for deployment sizing and large-model operational
-guidance.
+- Unacknowledged chunks retry within bounded retry budgets, and
+  receiver-confirmed completion holds a payload until the receiver has
+  actually consumed it.
+- A progress-aware liveness policy keeps a task download or result upload
+  alive as long as bytes keep advancing, instead of failing or resending on
+  a fixed wall-clock timeout; a transfer that truly stalls still fails after
+  the configured idle limit.
+- External-trainer task materialization no longer trips a heartbeat expiry
+  while a ``TASK_READY`` exchange is pending (an optional task-wait timeout
+  still bounds it).
+
+**Throughput and flow control** — sender and receiver stay in sync under
+load:
+
+- The sender now tells the receiver its effective chunk, window, ACK, and
+  retry-pending limits per stream, so mismatched endpoint settings can't
+  stall flow control.
+- Receiver reassembly capacity tracks the negotiated stream window instead
+  of a fixed chunk count, so scheduler-induced chunk reordering doesn't
+  abort healthy transfers under load.
+- Pipelined tensor downloads, prefetching, and ``TCP_NODELAY`` improve
+  throughput; oversized blobs fail before transmission with an actionable
+  error, and a failed streamed result send now retries instead of silently
+  dropping the result.
+- Active administrative result downloads refresh their bound HCI session as
+  bytes advance, so a healthy long download doesn't expire as idle.
+
+**Memory** — peak memory stays flatter as models and client counts grow:
+
+- Tensor disk offload during aggregation, previously FedAvg-only, now also
+  covers Scaffold, FedOpt, and Swarm.
+- Pass-through tensor broadcasts release their source transaction as soon as
+  downstream consumers finish, instead of retaining a model-sized object per
+  aggregation round.
+- The default maximum streamed blob size is 4 GiB, and remains configurable.
+
+With suitable infrastructure and configuration, FedAvg has been validated
+for federated LLM training at scales up to 72 billion parameters. See
+:ref:`notes_on_large_models` for deployment sizing and large-model
+operational guidance.
 
 Also in This Release
 ======================
