@@ -123,8 +123,7 @@ What is New in 2.9.0
 NVIDIA FLARE 2.9.0's headline changes are Agent Skills for agent-assisted
 federated development, a Python-first Collaboration API, a Slurm job
 launcher, and more reliable large-model training, alongside a broad
-security-hardening pass across the internal transport, admin access, and
-confidential computing.
+security-hardening pass across the internal transport and admin access.
 
 **Highlights:**
 
@@ -135,8 +134,7 @@ confidential computing.
 - **Large-model training**: a hardened model-transfer streaming transport
   and FedAvg validated to 72 billion parameters
 - **Security hardening**: authenticated CellNet messages, internal mTLS by
-  default, and hardened admin, confidential-computing, and job-signing
-  paths
+  default, and hardened admin and job-signing paths
 
 See :doc:`release_notes/flare_290` for full release notes.
 See :doc:`release_notes/previous` for previous releases.

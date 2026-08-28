@@ -13,8 +13,7 @@ Highlights:
 - **Large-model training** — a hardened model-transfer streaming transport
   and FedAvg validated to 72 billion parameters
 - **Security hardening** — authenticated CellNet messages, internal mTLS
-  by default, and hardened admin, confidential-computing, and job-signing
-  paths
+  by default, and hardened admin and job-signing paths
 
 Kubernetes/OpenShift deployment and framework/recipe additions also shipped
 this release; see `Also in This Release`_ below.
@@ -46,9 +45,9 @@ existing job:
 - Its initial importer similarly supports statically recognizable NVFLARE
   Recipe and ``*Job`` patterns.
 
-All skills run behind a security-evaluation gate (prompt-injection and
-untrusted-input eval suites) and include explicit safeguards for site-local
-data and preprocessing. Install and invoke them through a coding agent as
+Bundled skills are validated by pre-merge security scans, including
+prompt-injection and untrusted-input eval coverage, and include explicit
+safeguards for site-local data and preprocessing. Install and invoke them through a coding agent as
 described in :doc:`/user_guide/agent_skills/index` (see :ref:`autofl_skill`
 for the Auto-FL workflow); start with the
 :github_nvflare_link:`runnable Agent Skills examples
@@ -112,8 +111,8 @@ New examples:
 - :github_nvflare_link:`Hello Collab <examples/hello-world/hello-collab>` —
   a minimal FedAvg workflow
 - :github_nvflare_link:`pt_async_cifar10
-  <examples/advanced/collab/pt_async_cifar10>` — FedBuff-style buffered
-  asynchronous aggregation
+  <examples/advanced/collab/pt_async_cifar10>` — in-time aggregation on
+  CIFAR-10 at scale (up to 1,000 logical clients)
 - :github_nvflare_link:`advanced Collab examples <examples/advanced/collab>`
   — split learning, swarm learning, and in-time aggregation
 
@@ -229,15 +228,15 @@ Aggregator (site-1) peak container memory, disk offload OFF vs. ON:
    * - 5 GB synthetic
      - 48.49 GiB
      - 37.08 GiB
-     - -23.5%
+     - 23.5%
    * - 30 GB (Qwen2.5-14B)
      - 236.80 GiB
      - 150.80 GiB
-     - -36.3%
+     - 36.3%
    * - 60 GB synthetic
      - 452.20 GiB
      - 287.40 GiB
-     - -36.4%
+     - 36.4%
 
 Non-aggregator sites (site-2/3/4) moved by -1.9% to +3.0% across all three
 model sizes -- run-to-run peak variation, not a disk-offload effect.
@@ -245,16 +244,18 @@ model sizes -- run-to-run peak variation, not a disk-offload effect.
 Security Hardening
 ====================
 
-FLARE 2.9.0 hardens the internal transport, admin access, and
-confidential-computing paths, on top of moving job-process bootstrap
-credentials off the command line (see Compatibility and Migration Notes
-below for that migration's requirements):
+FLARE 2.9.0 hardens the internal transport and admin access, on top of
+moving job-process bootstrap credentials off the command line (see
+Compatibility and Migration Notes below for that migration's
+requirements):
 
 - **CellNet message authentication.** Cell payload encryption moves from
   unauthenticated AES-CBC to signed AES-256-GCM envelopes, and the sender
   signature on every message — including cached-key paths — is now
   verified before it's trusted, closing a ciphertext bit-flipping
-  exposure.
+  exposure. This is a wire-format change: a 2.9 peer rejects the legacy
+  unversioned ciphertext, so encrypted CellNet participants must upgrade
+  to 2.9 together.
 
 - **Internal mTLS by default.** Internal CellNet TCP links between a
   parent and its job processes now default to mutual TLS across Docker,
@@ -271,11 +272,6 @@ below for that migration's requirements):
   message between different client families is authenticated through the
   server trust boundary even when a direct or cached peer endpoint would
   otherwise be used.
-
-- **Confidential-computing attestation hardening.** GPU attestation
-  migrates from the retired Python SDK to the native NVAT ``nvattest``
-  CLI, with hardened SNP/TDX evidence parsing and nonce replay
-  protection.
 
 - **New ``require_signed_jobs`` policy.** A client-local policy rejects
   unsigned job deployment bytes at the receiving site; exact-byte
@@ -344,6 +340,16 @@ Compatibility and Migration Notes
   without it needs an explicit clear-transport opt-out. See
   `Security Hardening`_ above for the full list of hardening changes.
 
+  - Kubernetes and Slurm sites use the participant certificate in both TLS
+    roles, which requires a certificate allowing both ``clientAuth`` and
+    ``serverAuth``. A startup kit with a role-restricted certificate — for
+    example, from NVFlare 2.8 distributed provisioning, which issues only
+    ``clientAuth`` or only ``serverAuth`` — must be re-provisioned before
+    using the Kubernetes or Slurm launcher; unrestricted (no-EKU)
+    certificates remain compatible. After re-provisioning, Kubernetes
+    sites rerun ``nvflare deploy prepare`` and Slurm sites rebuild the
+    runtime workspace.
+
 - **``poc start``/``poc stop`` preserve every repeated flag.** Earlier
   versions silently kept only the last ``-p``/``--service`` or
   ``-ex``/``--exclude`` value. ``poc stop`` now also honors participant
@@ -384,13 +390,11 @@ Compatibility and Migration Notes
     receiving site logs that the peer may be running an older NVFlare
     version to make this mixed-version failure diagnosable.
 
-- **Streaming transport defaults are unchanged.** Still 16 MiB
-  streaming-window / 4 MiB ACK-interval; ``TCP_NODELAY`` is now on by
-  default, reducing request/ACK latency.
-
-  - High-bandwidth deployments may opt into larger values on all
-    endpoints; ``dev_tools/f3/comm_config.yml`` has a 64 MiB/16 MiB
-    tuning example.
+- **Streaming transport defaults are larger.** The sender's default
+  streaming window / ACK interval move from 2.8's 16 MiB / 4 MiB to 64 MiB
+  / 16 MiB (``STREAM_WINDOW_SIZE`` / ``STREAM_ACK_INTERVAL``, documented in
+  ``dev_tools/f3/comm_config.yml``); ``TCP_NODELAY`` is now on by default,
+  reducing request/ACK latency.
 
 - **Job-process bootstrap credentials move off the command line.**
   Launchers deliver them through the job process environment instead (a
