@@ -141,7 +141,10 @@ outright:
 - A progress-aware liveness policy keeps a task download or result upload
   alive as long as bytes keep advancing, instead of failing or resending on
   a fixed wall-clock timeout; a transfer that truly stalls still fails after
-  the configured idle limit.
+  the configured idle limit. This now extends to Swarm Learning, where the
+  aggregation client's result-upload progress is tracked by its exact FQCN in
+  relay and hierarchical topologies instead of falling back to
+  single-receiver progress tracking.
 - External-trainer task materialization no longer trips a heartbeat expiry
   while a ``TASK_READY`` exchange is pending (an optional task-wait timeout
   still bounds it).
