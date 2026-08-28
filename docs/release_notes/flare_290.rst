@@ -76,35 +76,39 @@ dispatch, rejecting a caller, method, or target that doesn't match the call
 envelope.
 
 Trimmed from the ``hello-collab`` example — the client publishes an ordinary
-function, and the server calls it on every client as if it were local, with
+method, and the server calls it on every client as if it were local, with
 no ``Shareable``, ``DXO``, or ``FLModel`` transport objects:
 
 .. code-block:: python
 
-   import numpy as np
-
    from nvflare.collab import CollabRecipe, collab
    from nvflare.recipe import SimEnv
 
-   INITIAL_MODEL = np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=np.float64)
+   class Trainer:
+       @collab.publish  # publishes this method to clients under the name "train"
+       def train(self, weights=None):
+           model = SimpleModel()
+           if weights is not None:
+               model.load_state_dict(weights)
+           # ... local training loop (see the full example) ...
+           return model.state_dict(), loss.item()
 
-   @collab.publish  # publishes this function to clients under the name "train"
-   def train(model, update_type):
-       updated_model = model + 1
-       return updated_model, float(updated_model.mean())
+   class FedAvg:
+       def __init__(self, num_rounds=3):
+           self.num_rounds = num_rounds
 
-   @collab.main
-   def run():
-       model = INITIAL_MODEL.copy()
-       for _ in range(collab.get_app_prop("num_rounds", 3)):
-           # "train" here calls the published train() function on every client
-           client_results = collab.clients.train(model, "full")
-           updates = [update for _, (update, _) in client_results]
-           model = np.mean(updates, axis=0)  # average into the next round's model
-       return model
+       @collab.main
+       def run(self):
+           global_weights = None
+           for _ in range(self.num_rounds):
+               # "train" here calls the published train() method on every client
+               client_results = collab.clients.train(global_weights)
+               global_weights, global_loss = weighted_avg(client_results)  # average state_dicts
+           return global_weights
 
-   # CollabRecipe discovers the decorated functions above for both sides.
-   CollabRecipe(job_name="hello_numpy_collab").execute(SimEnv(num_clients=2))
+   # CollabRecipe wires the server and client objects together for both sides.
+   recipe = CollabRecipe(job_name="hello_fedavg", server=FedAvg(), client=Trainer(), min_clients=2)
+   recipe.execute(SimEnv(num_clients=2))
 
 New examples:
 
@@ -159,9 +163,10 @@ failing outright:
 **Throughput and flow control** — sender and receiver stay in sync under
 load:
 
-- The sender now tells the receiver its effective chunk, window, ACK, and
-  retry-pending limits per stream, so mismatched endpoint settings can't
-  stall flow control.
+- The sender now tells the receiver its effective chunk and window size on
+  every frame, and its ACK interval (plus retry wait/timeout for reliable
+  streams) on the first frame of each stream, so mismatched endpoint
+  settings can't stall flow control.
 - Receiver reassembly capacity tracks the negotiated stream window instead
   of a fixed chunk count, so scheduler-induced chunk reordering doesn't
   abort healthy transfers under load.
@@ -273,10 +278,11 @@ requirements):
   server trust boundary even when a direct or cached peer endpoint would
   otherwise be used.
 
-- **New ``require_signed_jobs`` policy.** A client-local policy rejects
-  unsigned job deployment bytes at the receiving site; exact-byte
-  signature verification is preserved even when unsigned jobs are
-  otherwise allowed.
+- **``require_signed_jobs`` is now also enforced client-side.** The policy
+  itself shipped server-side in 2.8; 2.9 adds the same enforcement at the
+  receiving client, rejecting unsigned job deployment bytes there too.
+  Exact-byte signature verification is preserved even when unsigned jobs
+  are otherwise allowed.
 
 - **CLI, diagnostics, and Recipe secret handling.** CLI and runtime
   diagnostics redact sensitive values more consistently, and Recipe APIs
@@ -370,21 +376,17 @@ Compatibility and Migration Notes
   specifications without ``@default`` remain unchanged.
 
 - **Collab calls carry a versioned authorization envelope.** Calls are
-  accepted only from authenticated participants in the same job; all
-  sites running a Collab job must use NVFlare 2.9 or newer.
-
-  - A 2.8-or-older Collab sender lacks this envelope and its calls are
-    rejected: a 2.9 sender receives an immediate ``COMM_ERROR``, while a
-    2.8-or-older sender can instead observe a request timeout, since it
-    lacks the dedicated stream-error correlation used by 2.9. The
-    receiving site logs that the peer may be running an older NVFlare
-    version to make this mixed-version failure diagnosable.
+  accepted only from authenticated participants in the same job. The
+  Collaboration API is new in 2.9.0 (there is no earlier Collab
+  implementation to be compatible with); every site running a Collab job
+  must run 2.9.0 or newer.
 
 - **Streaming transport defaults are larger.** The sender's default
   streaming window / ACK interval move from 2.8's 16 MiB / 4 MiB to 64 MiB
-  / 16 MiB (``STREAM_WINDOW_SIZE`` / ``STREAM_ACK_INTERVAL``, documented in
-  ``dev_tools/f3/comm_config.yml``); ``TCP_NODELAY`` is now on by default,
-  reducing request/ACK latency.
+  / 16 MiB — set via the ``streaming_window_size`` / ``streaming_ack_interval``
+  keys in ``comm_config.yml`` (see ``dev_tools/f3/comm_config.yml`` for the
+  shipped values); ``TCP_NODELAY`` is now on by default, reducing
+  request/ACK latency.
 
 - **Job-process bootstrap credentials move off the command line.**
   Launchers deliver them through the job process environment instead (a
