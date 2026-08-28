@@ -350,6 +350,12 @@ class StatisticsController(Controller):
     def _validate_min_clients(self, min_clients: int, client_statistics: dict) -> bool:
         self.logger.info("Check if min_client result received for all features")
 
+        if not client_statistics:
+            self.logger.warning(
+                f"No client statistics received at all; expected at least {min_clients}, aborting the job."
+            )
+            return False
+
         resulting_clients = {}
         for statistic in client_statistics:
             clients = client_statistics[statistic].keys()
