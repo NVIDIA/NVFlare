@@ -17,7 +17,7 @@ FLARE 2.9.1 — Target: Q4 2026
 
 **Confidential Federated AI Support**
 
-Building on existing support for AMD SEV-SNP CPU CVMs with NVIDIA GPUs and Azure Confidential Computing:
+Building on existing support for AMD SEV-SNP CPU CVMs with NVIDIA GPUs:
 
 - Intel TDX CPU support for CPU-based confidential computing workloads
 - CoCo (Confidential Containers) support for container-level confidential execution
