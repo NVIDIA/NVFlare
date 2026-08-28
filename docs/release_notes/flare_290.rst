@@ -183,11 +183,19 @@ operational guidance.
    :widths: 50 50
 
    * - .. image:: ../resources/flare_290_72b_training_elapsed_time.png
+          :width: 420px
+          :height: 280px
 
-       Elapsed time, 1.7B-72B (measured)
+       Elapsed time, 1.7B-72B (measured, 2 training rounds)
      - .. image:: ../resources/flare_290_72b_training_server_memory.png
+          :width: 420px
+          :height: 280px
 
-       FedAvg server peak memory, 1.7B-72B
+       FedAvg server peak memory, 1.7B-72B (measured, 2 training rounds)
+
+Each configuration in both charts ran for 2 FedAvg rounds; the measurements
+characterize per-round transfer time and server peak memory, not a full
+convergence training run.
 
 Also in This Release
 ======================
