@@ -198,8 +198,9 @@ def test_patch_accepts_single_process_inside_multitask_slurm_allocation(monkeypa
     hf_api, trainer_cls, client_api_mock = _fresh_api(monkeypatch)
     monkeypatch.setattr(hf_api, "_torch_dist", lambda: None)
     monkeypatch.delenv("RANK", raising=False)
-    monkeypatch.delenv("SLURM_PROCID", raising=False)
     monkeypatch.setenv("SLURM_NTASKS", "2")
+    monkeypatch.setenv("SLURM_PROCID", "0")
+    monkeypatch.setenv("NVFLARE_CLIENT_API_PROCESS_COUNT", "1")
     trainer = _make_trainer(trainer_cls, tmp_path, process_index=0)
 
     hf_api.patch(trainer, restore_state=False)

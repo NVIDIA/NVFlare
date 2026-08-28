@@ -17,6 +17,7 @@ import sys
 from typing import Optional, Union
 
 MULTIRANK_SIZE_ENV_VARS = ("WORLD_SIZE", "LOCAL_WORLD_SIZE", "OMPI_COMM_WORLD_SIZE")
+CLIENT_API_PROCESS_COUNT_ENV_VAR = "NVFLARE_CLIENT_API_PROCESS_COUNT"
 SLURM_TASK_COUNT_ENV_VAR = "SLURM_NTASKS"
 SLURM_PROCESS_ID_ENV_VAR = "SLURM_PROCID"
 
@@ -29,6 +30,12 @@ def environment_declares_multirank() -> bool:
                 return True
         except (TypeError, ValueError):
             continue
+    client_api_process_count = os.environ.get(CLIENT_API_PROCESS_COUNT_ENV_VAR)
+    if client_api_process_count is not None:
+        try:
+            return int(client_api_process_count) != 1
+        except (TypeError, ValueError):
+            return True
     # SLURM_NTASKS alone can be inherited by a single-process child. Require the
     # per-process marker before treating the allocation size as a trainer launch.
     if SLURM_PROCESS_ID_ENV_VAR in os.environ:

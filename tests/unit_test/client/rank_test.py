@@ -41,6 +41,7 @@ def _clear_rank_environment(monkeypatch):
     monkeypatch.delenv("RANK", raising=False)
     for name in rank_utils.MULTIRANK_SIZE_ENV_VARS:
         monkeypatch.delenv(name, raising=False)
+    monkeypatch.delenv(rank_utils.CLIENT_API_PROCESS_COUNT_ENV_VAR, raising=False)
     monkeypatch.delenv(rank_utils.SLURM_TASK_COUNT_ENV_VAR, raising=False)
     monkeypatch.delenv(rank_utils.SLURM_PROCESS_ID_ENV_VAR, raising=False)
 
@@ -83,6 +84,24 @@ def test_slurm_process_context_declares_unresolved_multirank(monkeypatch):
     assert rank_utils.environment_declares_multirank()
     with pytest.raises(RuntimeError, match="global RANK is unavailable"):
         rank_utils.resolve_process_rank()
+
+
+def test_nvflare_slurm_fanout_declares_one_client_api_process(monkeypatch):
+    _clear_rank_environment(monkeypatch)
+    monkeypatch.setenv(rank_utils.SLURM_TASK_COUNT_ENV_VAR, "2")
+    monkeypatch.setenv(rank_utils.SLURM_PROCESS_ID_ENV_VAR, "0")
+    monkeypatch.setenv(rank_utils.CLIENT_API_PROCESS_COUNT_ENV_VAR, "1")
+
+    assert not rank_utils.environment_declares_multirank()
+    assert rank_utils.resolve_process_rank() == "0"
+
+
+@pytest.mark.parametrize("process_count", ("0", "2", "-1", "not-an-integer"))
+def test_non_single_client_api_process_count_fails_closed(monkeypatch, process_count):
+    _clear_rank_environment(monkeypatch)
+    monkeypatch.setenv(rank_utils.CLIENT_API_PROCESS_COUNT_ENV_VAR, process_count)
+
+    assert rank_utils.environment_declares_multirank()
 
 
 def test_invalid_launcher_size_does_not_declare_multirank(monkeypatch):

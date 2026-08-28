@@ -215,6 +215,8 @@ def test_apptainer_node_group_containerizes_each_rank_on_its_node(tmp_path):
     assert 'export APPTAINERENV_NVFL_MASTER_ADDR="${NVFL_MASTER_ADDR}"' in batch
 
     assert 'export APPTAINERENV_NVFL_NODE_RANK="${NVFL_NODE_RANK}"' in node
+    assert "export NVFLARE_CLIENT_API_PROCESS_COUNT=1" in node
+    assert "export APPTAINERENV_NVFLARE_CLIENT_API_PROCESS_COUNT=1" in node
     gpu_env_names = ("CUDA_VISIBLE_DEVICES", "GPU_DEVICE_ORDINAL", "ROCR_VISIBLE_DEVICES")
     assert f"unset {' '.join(f'APPTAINERENV_{name}' for name in gpu_env_names)}" in node
     for name in gpu_env_names:
