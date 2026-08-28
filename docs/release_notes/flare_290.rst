@@ -75,70 +75,33 @@ now authorized against the caller's authenticated CellNet origin before
 dispatch, rejecting a caller, method, or target that doesn't match the call
 envelope.
 
-Trimmed from the ``hello-collab`` example — the client publishes an ordinary
-method, and the server calls it on every client as if it were local, with
-no ``Shareable``, ``DXO``, or ``FLModel`` transport objects:
+A simplified sketch of the API's shape, not a literal excerpt — the client
+publishes an ordinary method, and the server calls it on every client as if
+it were local, with no ``Shareable``, ``DXO``, or ``FLModel`` transport
+objects. See the runnable ``hello-collab`` example linked below for the
+complete version:
 
 .. code-block:: python
 
-   import torch
-   import torch.nn as nn
-   import torch.optim as optim
-   from torch.utils.data import DataLoader, TensorDataset
-
    from nvflare.collab import CollabRecipe, collab
-   from nvflare.recipe import SimEnv
-
-   class SimpleModel(nn.Module):
-       def __init__(self):
-           super().__init__()
-           self.fc = nn.Linear(10, 1)
-
-       def forward(self, x):
-           return self.fc(x)
 
    class Trainer:
        @collab.publish  # publishes this method to clients under the name "train"
        def train(self, weights=None):
-           inputs, labels = torch.randn(100, 10), torch.randn(100, 1)
-           dataloader = DataLoader(TensorDataset(inputs, labels), batch_size=10)
-
-           model = SimpleModel()
-           if weights is not None:
-               model.load_state_dict(weights)
-
-           optimizer = optim.SGD(model.parameters(), lr=0.01)
-           criterion = nn.MSELoss()
-           for batch_inputs, batch_labels in dataloader:
-               optimizer.zero_grad()
-               loss = criterion(model(batch_inputs), batch_labels)
-               loss.backward()
-               optimizer.step()
-           return model.state_dict(), loss.item()
-
-   def weighted_avg(client_results):
-       all_weights = [result[0] for result in dict(client_results).values()]
-       avg_weights = {k: torch.stack([w[k] for w in all_weights]).mean(dim=0) for k in all_weights[0]}
-       avg_loss = sum(result[1] for result in dict(client_results).values()) / len(all_weights)
-       return avg_weights, avg_loss
+           ...  # local training
+           return updated_weights, loss
 
    class FedAvg:
-       def __init__(self, num_rounds=3):
-           self.num_rounds = num_rounds
-
        @collab.main
        def run(self):
-           global_weights = None
-           for _ in range(self.num_rounds):
+           weights = None
+           for _ in range(num_rounds):
                # "train" here calls the published train() method on every client
-               client_results = collab.clients.train(global_weights)
-               global_weights, global_loss = weighted_avg(client_results)
-           return global_weights
+               results = collab.clients.train(weights)
+               weights = average(results)
+           return weights
 
-   if __name__ == "__main__":
-       # CollabRecipe wires the server and client objects together for both sides.
-       recipe = CollabRecipe(job_name="hello_fedavg", server=FedAvg(), client=Trainer(), min_clients=2)
-       recipe.execute(SimEnv(num_clients=2))
+   CollabRecipe(job_name="hello_fedavg", server=FedAvg(), client=Trainer()).execute(SimEnv(num_clients=2))
 
 New examples:
 
