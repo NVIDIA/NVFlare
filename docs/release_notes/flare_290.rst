@@ -12,9 +12,12 @@ Highlights:
   Docker, and Kubernetes
 - **Large-model training** — a hardened model-transfer streaming transport
   and FedAvg validated to 72 billion parameters
+- **Security hardening** — authenticated CellNet messages, internal mTLS
+  by default, and hardened admin, confidential-computing, and job-signing
+  paths
 
-Kubernetes/OpenShift deployment, credential handling, and framework/recipe
-additions also shipped this release; see `Also in This Release`_ below.
+Kubernetes/OpenShift deployment and framework/recipe additions also shipped
+this release; see `Also in This Release`_ below.
 
 Agent Skills
 ============
@@ -234,6 +237,51 @@ Each configuration in both charts ran for 2 FedAvg rounds; the measurements
 characterize per-round transfer time and server peak memory, not a full
 convergence training run.
 
+Security Hardening
+====================
+
+FLARE 2.9.0 hardens the internal transport, admin access, and
+confidential-computing paths, on top of moving job-process bootstrap
+credentials off the command line (see Compatibility and Migration Notes
+below for that migration's requirements):
+
+- **CellNet message authentication.** Cell payload encryption moves from
+  unauthenticated AES-CBC to signed AES-256-GCM envelopes, and the sender
+  signature on every message — including cached-key paths — is now
+  verified before it's trusted, closing a ciphertext bit-flipping
+  exposure.
+
+- **Internal mTLS by default.** Internal CellNet TCP links between a
+  parent and its job processes now default to mutual TLS across Docker,
+  Slurm, Kubernetes, and Network Attach deployments, each with an
+  explicit clear-transport opt-out for sites that intentionally run
+  without it.
+
+- **Certless admin session and listener hardening.** An admin session
+  token that can't be signature-verified now fails closed instead of
+  falling back; admin, TCP, and SimEnv listeners bind to explicit
+  loopback or configured hosts instead of a broad wildcard default.
+
+- **Cross-client authentication now routes through the server.** A
+  message between different client families is authenticated through the
+  server trust boundary even when a direct or cached peer endpoint would
+  otherwise be used.
+
+- **Confidential-computing attestation hardening.** GPU attestation
+  migrates from the retired Python SDK to the native NVAT ``nvattest``
+  CLI, with hardened SNP/TDX evidence parsing and nonce replay
+  protection.
+
+- **New ``require_signed_jobs`` policy.** A client-local policy rejects
+  unsigned job deployment bytes at the receiving site; exact-byte
+  signature verification is preserved even when unsigned jobs are
+  otherwise allowed.
+
+- **CLI, diagnostics, and Recipe secret handling.** CLI and runtime
+  diagnostics redact sensitive values more consistently, and Recipe APIs
+  add safeguards for declaring and handling secrets; see
+  :ref:`recipe_secrets`.
+
 Also in This Release
 ======================
 
@@ -247,14 +295,6 @@ Also in This Release
   - See :ref:`helm_chart` and the :github_nvflare_link:`OpenShift
     <examples/devops/openshift>` / :github_nvflare_link:`multicloud
     <examples/devops/multicloud>` examples.
-
-- **Security and credential handling** — job-process bootstrap credentials
-  move off command lines and into the process environment (a per-job
-  Kubernetes Secret on K8s).
-
-  - CLI and runtime diagnostics redact sensitive values more consistently.
-  - Recipe APIs add safeguards for declaring and handling secrets; see
-    :ref:`recipe_secrets`.
 
 - **Hugging Face Client API** — federate an existing ``Trainer`` or TRL
   ``SFTTrainer`` through ``flare.patch(trainer)``.
@@ -275,8 +315,28 @@ Also in This Release
     ``key_metric_mode`` for FedAvg recipes, and improve PyTorch workflow
     support for FedProx, SCAFFOLD, Swarm, and model-selection behavior.
 
+- **New ``external_process`` execution mode for ``ClientAPIExecutor``** —
+  a trainer-side Cell reuses the client job's Cell and launches as a
+  child process from a typed, owner-only bootstrap file, authenticated
+  and liveness-checked independently of the in-process path.
+
+  - ``ScriptRunner`` selects ``ClientAPIExecutor(in_process)`` by default,
+    or ``ClientAPIExecutor(external_process)`` when
+    ``launch_external_process=True``.
+
 Compatibility and Migration Notes
 =================================
+
+- **HUB support removed.** The deprecated FL HUB feature and its
+  remaining runtime, documentation, and test surface are removed,
+  including the ``nvflare.app_common.hub`` implementation and its
+  component registry entries.
+
+- **Internal CellNet TCP links default to mTLS.** Docker, Slurm,
+  Kubernetes, and Network Attach deployments now default to mutual TLS
+  between a parent and its job processes; a site that intentionally runs
+  without it needs an explicit clear-transport opt-out. See
+  `Security Hardening`_ above for the full list of hardening changes.
 
 - **``poc start``/``poc stop`` preserve every repeated flag.** Earlier
   versions silently kept only the last ``-p``/``--service`` or
