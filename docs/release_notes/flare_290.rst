@@ -467,8 +467,8 @@ Compatibility and Migration Notes
   - Recipe-level ``pipe_type`` and ``pipe_root_path`` options are also
     removed; transport is selected through site communication
     configuration. The F3 ``FileDriver`` remains available as scheme
-    ``shared-file`` for either a launched external process or an attached
-    trainer.
+    ``shared-file`` for an attached trainer; a launched external-process
+    trainer instead requires a clear TCP listener bound to loopback.
 
 - **``ScriptRunner`` now requires ``ClientAPIExecutor``.** It exports this
   executor for both in-process and external-process execution; jobs
