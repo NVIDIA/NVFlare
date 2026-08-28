@@ -119,11 +119,11 @@ New examples:
 Slurm Job Launcher
 ===================
 
-FLARE 2.9.0 adds Slurm-native job execution for HPC environments — a new
-execution target alongside the existing process, Docker, and Kubernetes
-launchers. A long-lived NVFLARE parent submits each client or server job
-process as a Slurm batch job; Slurm selects resources while FLARE manages the
-federated job lifecycle. The launcher supports:
+FLARE 2.9.0 adds a new Slurm job launcher for HPC environments, joining the
+existing process, Docker, and Kubernetes launchers. A long-lived NVFLARE
+parent submits each client or server job process as a Slurm batch job;
+Slurm selects resources while FLARE manages the federated job lifecycle.
+The Slurm launcher supports:
 
 - Apptainer, Pyxis/Enroot, and bare-Python execution backends
 - GPU-aware worker setup and multi-node applications
@@ -139,8 +139,8 @@ Large-Model Training
 FLARE 2.9.0 strengthens the streaming transport used for large model
 transfers, across three areas:
 
-**Reliability** — a transfer survives interruptions instead of failing
-outright:
+**Reliable Streaming** — a transfer survives interruptions instead of
+failing outright:
 
 - Unacknowledged chunks retry within bounded retry budgets, and
   receiver-confirmed completion holds a payload until the receiver has
@@ -316,16 +316,6 @@ Also in This Release
     ``key_metric_mode`` for FedAvg recipes, and improve PyTorch workflow
     support for FedProx, SCAFFOLD, Swarm, and model-selection behavior.
 
-- **New ``external_process`` execution mode for ``ClientAPIExecutor``** —
-  the launched trainer process creates its own Cell, with a prescribed
-  FQCN from a typed, owner-only bootstrap file, and connects to the
-  client job's Cell over an authenticated, liveness-checked session
-  independent of the in-process path.
-
-  - ``ScriptRunner`` selects ``ClientAPIExecutor(in_process)`` by default,
-    or ``ClientAPIExecutor(external_process)`` when
-    ``launch_external_process=True``.
-
 Compatibility and Migration Notes
 =================================
 
@@ -456,36 +446,43 @@ Compatibility and Migration Notes
   ``fedprox-tf`` manual pattern as a concrete recipe. TensorFlow clients
   can still combine a FedAvg recipe with ``TFFedProxLoss`` explicitly.
 
-- **The legacy Client API execution stack has been removed** —
-  ``ParamsConverter``, the framework-specific converter components,
-  ``InProcessClientAPIExecutor``, ``ClientAPILauncherExecutor``,
-  ``LauncherExecutor``, ``SubprocessLauncher``, ``TaskExchanger``,
-  ``FlareAgent``, ``BaseScriptRunner``, ``ExternalConfigurator``, and the
-  ``Pipe``/``PipeHandler`` implementations (including ``FilePipe`` and
-  ``CellPipe``).
+- **Unified Client API execution paths.** ``ClientAPIExecutor``
+  consolidates NVFlare's trainer-process ownership patterns behind one
+  Client API executor; jobs generated with FLARE 2.9 require a client
+  runtime that provides it and are not runnable on older client runtimes.
 
-  - Use ``ClientAPIExecutor`` with ``in_process``, ``external_process``,
-    or ``attach`` execution mode. Custom parameter transformations belong
-    in trainer code around ``flare.receive()``/``flare.send()``; common
-    functions remain available in ``nvflare.client.converter_utils``.
+  - ``in_process`` replaces the previous ``InProcessClientAPIExecutor``.
+  - ``external_process`` replaces the former ``ClientAPILauncherExecutor``
+    stack (``LauncherExecutor``, ``SubprocessLauncher``,
+    ``TaskExchanger``, ``FlareAgent``, ``BaseScriptRunner``,
+    ``ExternalConfigurator``, and the ``Pipe``/``PipeHandler``
+    implementations including ``FilePipe`` and ``CellPipe``) for trainers
+    launched and owned by NVFlare: the launched trainer creates its own
+    Cell, with a prescribed FQCN from a typed, owner-only bootstrap file,
+    and connects to the client job's Cell over an authenticated,
+    liveness-checked session.
+  - ``attach`` provides a standard Client API migration path for the
+    independently managed trainer pattern served by ``IPCExchanger`` and
+    ``IPCAgent``. It preserves the server-facing trust boundary and
+    CP-routed topology of that path while adding an explicit session
+    protocol, Attach profiles, and ``flare.receive()``/``flare.send()``
+    integration.
+  - Custom parameter transformations (formerly ``ParamsConverter`` and
+    the framework-specific converter components) belong in trainer code
+    around ``flare.receive()``/``flare.send()``; common functions remain
+    available in ``nvflare.client.converter_utils``.
   - Recipe-level ``pipe_type`` and ``pipe_root_path`` options are also
     removed; transport is selected through site communication
     configuration. The F3 ``FileDriver`` remains available as scheme
     ``shared-file`` for an attached trainer; a launched external-process
     trainer instead requires a clear TCP listener bound to loopback.
-
-- **``ScriptRunner`` now requires ``ClientAPIExecutor``.** It exports this
-  executor for both in-process and external-process execution; jobs
-  generated with FLARE 2.9 therefore require a client runtime that
-  provides it and are not runnable on older client runtimes.
-
-  - ``ScriptRunner`` no longer performs a build-time PyTorch or
-    TensorFlow import check; ensure the required framework dependencies
-    are available in the execution environment.
-  - A client app may contain only one ``ClientAPIExecutor``;
-    configurations that previously added multiple script runners to one
-    site must combine the scripts behind one entry point and dispatch on
-    the Client API task name.
+  - ``ScriptRunner`` selects ``ClientAPIExecutor(in_process)`` by
+    default, or ``ClientAPIExecutor(external_process)`` when
+    ``launch_external_process=True``, and no longer performs a build-time
+    PyTorch or TensorFlow import check. A client app may contain only one
+    ``ClientAPIExecutor``; configurations that previously added multiple
+    script runners to one site must combine the scripts behind one entry
+    point and dispatch on the Client API task name.
 
 - **Swarm can combine tensor streaming with disk offload.** Set
   ``aggregation_format=ExchangeFormat.PYTORCH`` and
