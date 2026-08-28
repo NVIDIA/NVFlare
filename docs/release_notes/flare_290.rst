@@ -206,46 +206,40 @@ characterize per-round transfer time and server peak memory, not a full
 convergence training run.
 
 Swarm Learning's tensor disk offload lowers the fixed aggregator's peak
-memory; non-aggregator sites stay approximately flat, since disk offload
-targets contribution handling at the aggregator rather than the per-site
-learner footprint:
+memory, and the savings widen with model size; non-aggregator sites stay
+approximately flat at every size, since disk offload targets contribution
+handling at the aggregator rather than the per-site learner footprint
+(external-process, fixed aggregator, 4 clients, 30 rounds):
 
 .. image:: ../resources/flare_290_swarm_disk_offload_memory.png
-   :width: 400px
+   :width: 850px
    :align: center
 
-Peak container memory, disk offload OFF vs. ON (external-process, fixed
-aggregator, 5 GB synthetic model, 4 clients, 30 rounds):
+Aggregator (site-1) peak container memory, disk offload OFF vs. ON:
 
 .. list-table::
    :header-rows: 1
-   :widths: 15 20 35 15
+   :widths: 25 25 25 25
 
-   * - Site
-     - Role
-     - Peak memory (OFF -> ON)
-     - Change
-   * - site-1
-     - Aggregator
-     - 48.49 -> 37.08 GiB
+   * - Model
+     - OFF peak
+     - ON peak
+     - Reduction
+   * - 5 GB synthetic
+     - 48.49 GiB
+     - 37.08 GiB
      - -23.5%
-   * - site-2
-     - Non-aggregator
-     - 16.69 -> 16.37 GiB
-     - -1.9%
-   * - site-3
-     - Non-aggregator
-     - 15.94 -> 16.26 GiB
-     - +2.0%
-   * - site-4
-     - Non-aggregator
-     - 16.64 -> 16.52 GiB
-     - -0.7%
+   * - 30 GB (Qwen2.5-14B)
+     - 236.80 GiB
+     - 150.80 GiB
+     - -36.3%
+   * - 60 GB synthetic
+     - 452.20 GiB
+     - 287.40 GiB
+     - -36.4%
 
-The non-aggregator changes are run-to-run peak variation, not a
-disk-offload effect. Larger models widen the aggregator's savings: the same
-report measured -36.3% at 30 GB (Qwen2.5-14B) and -36.4% at 60 GB, with
-non-aggregator sites remaining flat at every size tested.
+Non-aggregator sites (site-2/3/4) moved by -1.9% to +3.0% across all three
+model sizes -- run-to-run peak variation, not a disk-offload effect.
 
 Security Hardening
 ====================
