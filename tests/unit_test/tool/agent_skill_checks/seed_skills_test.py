@@ -1295,10 +1295,6 @@ def test_pytorch_family_validation_avoids_recovered_probe_failures():
     assert "when the selected final target is a local `python job.py` simulation, do not export during preflight" in (
         validation_text
     )
-    assert "Before calling an inspected project helper" in common_text
-    assert "preserve its required argument types" in common_text
-    assert "When a parameter is annotated as `Path`, instantiate and pass `Path(...)`" in common_text
-    assert "When a helper parameter is annotated as `Path`" not in validation_text
     assert "normalize generated columns to the source schema before using `DataFrame.equals()`" in validation_text
     assert "a dtype-only difference is not a coverage failure" in validation_text
     assert "copy the complete local import closure" in validation_text
@@ -1319,7 +1315,6 @@ def test_pytorch_family_validation_avoids_recovered_probe_failures():
     assert "For a local `python job.py` target, do not export" in hf_conversion
     assert "inspect the materialized simulation workspace" in hf_conversion
     assert "For an exported-artifact target, exported app layout is owned by" in hf_conversion
-
     assert "do not import or introspect a `Run` class" in construction_text
     assert "probe its module location, signature, or docstring" in construction_text
     assert "selected maintained asset or the public recipe documentation" in construction_text
@@ -1346,6 +1341,23 @@ def test_pytorch_family_validation_avoids_recovered_probe_failures():
         prohibited_ids = {item["id"] for item in basic_eval["prohibited_behavior"]}
         assert "single-final-validation-path" in mandatory_ids
         assert {"no-unrequested-explicit-export", "no-generated-export-system-arguments"} <= prohibited_ids
+
+
+def test_helper_argument_types_reach_early_conversion_and_fed_stats_validation():
+    repo_root = Path(__file__).resolve().parents[4]
+    references = repo_root / "skills" / "nvflare-shared" / "references"
+    common_text = " ".join(references.joinpath("conversion-common.md").read_text(encoding="utf-8").split())
+    validation_text = " ".join(references.joinpath("validation-evidence.md").read_text(encoding="utf-8").split())
+    fed_stats_text = " ".join(
+        repo_root.joinpath("skills/nvflare-fed-stats/SKILL.md").read_text(encoding="utf-8").split()
+    )
+
+    assert "Before calling an inspected project helper" in common_text
+    assert "preserve its required argument types" in common_text
+    assert "When a parameter is annotated as `Path`, instantiate and pass `Path(...)`" in common_text
+    assert "Build validation calls from inspected callable signatures and type annotations" in validation_text
+    assert "When a helper parameter is annotated as `Path`, instantiate and pass `Path(...)`" in validation_text
+    assert "Validate in a ladder per the shared `validation-evidence.md`" in fed_stats_text
 
 
 def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys():

@@ -143,6 +143,9 @@ Before spending time on full simulation, run cheap checks when applicable.
 Keep custom checks atomic: do not combine partition, model-compatibility,
 metric, and artifact checks in one hand-written inline Python program. Each
 custom probe should test one contract and produce one actionable failure.
+Build validation calls from inspected callable signatures and type annotations,
+and preserve their required argument types. When a helper parameter is annotated
+as `Path`, instantiate and pass `Path(...)`; do not substitute a string literal.
 
 - compile generated Python files;
 - construct or instantiate the selected recipe;
