@@ -205,11 +205,12 @@ Each configuration in both charts ran for 2 FedAvg rounds; the measurements
 characterize per-round transfer time and server peak memory, not a full
 convergence training run.
 
-Swarm Learning's tensor disk offload lowers the fixed aggregator's peak
-memory, and the savings widen with model size; non-aggregator sites stay
-approximately flat at every size, since disk offload targets contribution
-handling at the aggregator rather than the per-site learner footprint
-(external-process, fixed aggregator, 4 clients, 30 rounds):
+With pass-through download on, Swarm Learning's tensor disk offload lowers
+the fixed aggregator's peak memory, and the savings widen with model size;
+non-aggregator sites stay approximately flat at every size, since disk
+offload targets contribution handling at the aggregator rather than the
+per-site learner footprint (external-process, fixed aggregator, 4 clients,
+30 rounds):
 
 .. image:: ../resources/flare_290_swarm_disk_offload_memory.png
    :width: 850px
