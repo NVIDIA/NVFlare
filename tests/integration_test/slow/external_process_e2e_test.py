@@ -22,11 +22,145 @@ import subprocess
 import sys
 import textwrap
 
+import psutil
 import pytest
 
 import nvflare
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(nvflare.__file__)))
+_TIMEOUT_OUTPUT_TAIL_CHARS = 20_000
+_TIMEOUT_LOG_TAIL_CHARS = 12_000
+_TIMEOUT_LOGS_TOTAL_CHARS = 60_000
+_TIMEOUT_CLEANUP_GRACE = 5.0
+
+
+def _is_simulator_log(file_name: str) -> bool:
+    return file_name == "log.json" or file_name.startswith(("log.txt", "log_fl.txt", "error_log.txt"))
+
+
+def _read_file_tail(file_path: str, limit: int) -> str:
+    try:
+        with open(file_path, "rb") as file:
+            file.seek(0, os.SEEK_END)
+            size = file.tell()
+            file.seek(max(0, size - limit))
+            data = file.read()
+    except OSError as e:
+        return f"<failed to read log: {e}>"
+    text = data.decode("utf-8", errors="replace")
+    return ("...<tail truncated>\n" if size > limit else "") + text
+
+
+def _collect_simulator_log_tails(workdir: str) -> str:
+    if not os.path.isdir(workdir):
+        return f"<simulator workspace was not created: {workdir}>"
+
+    log_paths = []
+    for root, _, files in os.walk(workdir):
+        for file_name in files:
+            if _is_simulator_log(file_name):
+                log_paths.append(os.path.join(root, file_name))
+
+    if not log_paths:
+        return f"<no simulator logs found under {workdir}>"
+
+    sections = []
+    remaining = _TIMEOUT_LOGS_TOTAL_CHARS
+    for log_path in sorted(log_paths):
+        if remaining <= 0:
+            sections.append("<additional simulator logs omitted>")
+            break
+        tail = _read_file_tail(log_path, min(_TIMEOUT_LOG_TAIL_CHARS, remaining))
+        remaining -= len(tail)
+        sections.append(f"===== {os.path.relpath(log_path, workdir)} =====\n{tail}")
+    return "\n".join(sections)
+
+
+def _terminate_process_tree(process: subprocess.Popen) -> tuple[str, str]:
+    """Terminate the timed-out wrapper and every descendant visible before teardown."""
+    try:
+        descendants = psutil.Process(process.pid).children(recursive=True)
+    except (psutil.Error, OSError):
+        descendants = []
+
+    for child in reversed(descendants):
+        try:
+            child.terminate()
+        except psutil.Error:
+            pass
+    if process.poll() is None:
+        try:
+            process.terminate()
+        except ProcessLookupError:
+            pass
+
+    try:
+        stdout, stderr = process.communicate(timeout=_TIMEOUT_CLEANUP_GRACE)
+    except subprocess.TimeoutExpired:
+        for child in reversed(descendants):
+            try:
+                if child.is_running():
+                    child.kill()
+            except psutil.Error:
+                pass
+        if process.poll() is None:
+            try:
+                process.kill()
+            except ProcessLookupError:
+                pass
+        try:
+            stdout, stderr = process.communicate(timeout=_TIMEOUT_CLEANUP_GRACE)
+        except subprocess.TimeoutExpired as cleanup_error:
+            # A descendant that escaped the process snapshot may still hold a
+            # capture pipe open. Preserve the partial output instead of hiding
+            # the original job timeout behind a second TimeoutExpired.
+            stdout = cleanup_error.output or ""
+            stderr = cleanup_error.stderr or ""
+            if isinstance(stdout, bytes):
+                stdout = stdout.decode("utf-8", errors="replace")
+            if isinstance(stderr, bytes):
+                stderr = stderr.decode("utf-8", errors="replace")
+            if process.stdout:
+                process.stdout.close()
+            if process.stderr:
+                process.stderr.close()
+
+    try:
+        _, alive = psutil.wait_procs(descendants, timeout=_TIMEOUT_CLEANUP_GRACE)
+    except (psutil.Error, OSError):
+        alive = []
+    for child in alive:
+        try:
+            child.kill()
+        except psutil.Error:
+            pass
+    if alive:
+        psutil.wait_procs(alive, timeout=_TIMEOUT_CLEANUP_GRACE)
+    return stdout, stderr
+
+
+def _run_job_with_timeout_diagnostics(args, cwd: str, env: dict, workdir: str, timeout: float):
+    process = subprocess.Popen(
+        args,
+        cwd=cwd,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        stdout, stderr = _terminate_process_tree(process)
+        output = (stdout or "") + (stderr or "")
+        pytest.fail(
+            f"job command {args!r} timed out after {timeout} seconds\n"
+            f"\n===== captured process output (tail) =====\n{output[-_TIMEOUT_OUTPUT_TAIL_CHARS:]}"
+            f"\n===== simulator log tails =====\n{_collect_simulator_log_tails(workdir)}",
+            pytrace=False,
+        )
+    return subprocess.CompletedProcess(args=args, returncode=process.returncode, stdout=stdout, stderr=stderr)
+
 
 _CLIENT_SCRIPT = textwrap.dedent(
     """
@@ -271,12 +405,11 @@ def test_external_process_pytorch_fedavg_end_to_end(tmp_path):
     env["PYTHONPATH"] = _REPO_ROOT + os.pathsep + env.get("PYTHONPATH", "")
     command = f"{sys.executable} -u"
 
-    proc = subprocess.run(
+    proc = _run_job_with_timeout_diagnostics(
         [sys.executable, "-u", str(jobdir / "run_job.py"), str(workdir), command],
         cwd=str(jobdir),
         env=env,
-        capture_output=True,
-        text=True,
+        workdir=str(workdir),
         timeout=300,
     )
     out = proc.stdout + proc.stderr
