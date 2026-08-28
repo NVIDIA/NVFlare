@@ -103,6 +103,9 @@ complete version:
 
    CollabRecipe(job_name="hello_fedavg", server=FedAvg(), client=Trainer()).execute(SimEnv(num_clients=2))
 
+This sketch illustrates the key code flow only. For the complete, runnable
+code, see the ``hello-collab`` example below.
+
 New examples:
 
 - :github_nvflare_link:`Hello Collab <examples/hello-world/hello-collab>` —
