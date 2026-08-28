@@ -197,11 +197,11 @@ operational guidance.
 .. list-table::
    :widths: 55 45
 
-   * - .. image:: ../resources/flare_290_72b_training_elapsed_time.png
+   * - .. image:: /resources/flare_290_72b_training_elapsed_time.png
           :width: 460px
 
        Elapsed time, 1.7B-72B (measured, 2 training rounds)
-     - .. image:: ../resources/flare_290_72b_training_server_memory.png
+     - .. image:: /resources/flare_290_72b_training_server_memory.png
           :width: 390px
 
        FedAvg server peak memory, 1.7B-72B (measured, 2 training rounds)
@@ -217,7 +217,7 @@ offload targets contribution handling at the aggregator rather than the
 per-site learner footprint (external-process, fixed aggregator, 4 clients,
 30 rounds):
 
-.. image:: ../resources/flare_290_swarm_disk_offload_memory.png
+.. image:: /resources/flare_290_swarm_disk_offload_memory.png
    :width: 850px
    :align: center
 
