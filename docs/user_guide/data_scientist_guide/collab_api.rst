@@ -42,13 +42,19 @@ require them to subclass anything.
 * ``CollabRecipe`` builds the job from the server and client objects, the
   same way a concrete recipe builds a job from a model and script.
 
-Additional facade members are available inside a running Collab function,
-including ``collab.site_name``, ``collab.caller``/``collab.callee``,
-``collab.other_clients``/``collab.child_clients``/``collab.leaf_clients``,
-``collab.get_app_prop()``/``collab.set_app_prop()`` for per-site
-configuration, and ``collab.get_prop()``/``collab.set_prop()`` for sharing
-data within a single call context. ``@collab.init`` and ``@collab.final``
-mark methods to run once at object setup and teardown.
+Additional facade members are available inside a running Collab function:
+
+* ``collab.site_name`` -- the current site's identity.
+* ``collab.caller`` / ``collab.callee`` -- who invoked this call, and who
+  it's calling.
+* ``collab.other_clients`` / ``collab.child_clients`` / ``collab.leaf_clients``
+  -- site-topology lookups, for calls that fan out beyond the server.
+* ``collab.get_app_prop()`` / ``collab.set_app_prop()`` -- per-site
+  configuration.
+* ``collab.get_prop()`` / ``collab.set_prop()`` -- sharing data within a
+  single call context.
+* ``@collab.init`` / ``@collab.final`` -- mark methods to run once at
+  object setup and teardown.
 
 A Minimal Example
 ------------------
