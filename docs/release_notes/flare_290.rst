@@ -221,11 +221,10 @@ offload targets contribution handling at the aggregator rather than the
 per-site learner footprint (external-process, fixed aggregator, 4 clients,
 30 rounds):
 
-.. centered:: Swarm Learning aggregator peak memory reduction (with disk offload)
+**Swarm Learning aggregator peak memory reduction (with disk offload)**
 
 .. image:: /resources/flare_290_swarm_disk_offload_memory.png
    :width: 850px
-   :align: center
 
 Aggregator (site-1) peak container memory, disk offload OFF vs. ON:
 
