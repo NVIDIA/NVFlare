@@ -84,6 +84,7 @@ complete version:
 .. code-block:: python
 
    from nvflare.collab import CollabRecipe, collab
+   from nvflare.recipe import SimEnv
 
    class Trainer:
        @collab.publish  # publishes this method to clients under the name "train"
@@ -101,7 +102,8 @@ complete version:
                weights = average(results)
            return weights
 
-   CollabRecipe(job_name="hello_fedavg", server=FedAvg(), client=Trainer()).execute(SimEnv(num_clients=2))
+   recipe = CollabRecipe(job_name="hello_fedavg", server=FedAvg(), client=Trainer())
+   recipe.execute(SimEnv(num_clients=2))
 
 .. note::
 
