@@ -1,4 +1,4 @@
-# Skill Benchmark: nvflare-autofl
+# Skill Benchmark: nvflare-convert-huggingface
 
 > ✅ **Overall verdict: PASS — Recommended for publication**
 
@@ -8,12 +8,12 @@ Recommended for publication based on the completed evaluation evidence in this r
 
 ## Evaluation Metadata
 
-- Skill: `nvflare-autofl`
+- Skill: `nvflare-convert-huggingface`
 - Evaluation date: 2026-08-28
 - Evaluator version: `1.3.2`
 - Agents: Claude Code (`aws/anthropic/bedrock-claude-opus-4-8`), Codex (`openai/openai/gpt-5.5`)
-- Tasks: 7 evaluation tasks (7 positive)
-- Dataset digest: `sha256:47bb5f4f9de5f1a56ecb009c45deee42349c7c12a196a16f05072e36e82b36ec` (skill-evaluator-dataset-snapshot/1)
+- Tasks: 21 evaluation tasks (21 positive)
+- Dataset digest: `sha256:3794dc432acf265997fa5eb68a48b58af6f70a01c5578fbd5eb674f88b7ac22f` (skill-evaluator-dataset-snapshot/1)
 - Attempts per task: 1
 - Environment: `k8s-sandbox`
 - Tier 3 evidence: required for publication
@@ -45,12 +45,12 @@ The three-tier evaluation checks whether the skill:
 
 | Measure | Claude Code (Baseline → Skill Uplift) | Codex (Baseline → Skill Uplift) |
 |---|---:|---:|
-| Overall | Not available | 60% → 73% (+13 points) |
-| Security | Not available | 86% → 100% (+14 points) |
-| Correctness | Not available | 71% → 71% (±0 points) |
-| Discoverability | Not available | 38% → 71% (+33 points) |
-| Effectiveness | Not available | 64% → 55% (-9 points) |
-| Efficiency | Not available | 41% → 69% (+29 points) |
+| Overall | Not available | 46% → 77% (+31 points) |
+| Security | Not available | 45% → 60% (+14 points) |
+| Correctness | Not available | 70% → 99% (+29 points) |
+| Discoverability | Not available | 30% → 68% (+38 points) |
+| Effectiveness | Not available | 49% → 82% (+32 points) |
+| Efficiency | Not available | 33% → 77% (+44 points) |
 
 **How to read this table:** baseline is the same task attempted without the target skill. Uplift is `skill score - baseline score`, shown in percentage points.
 
@@ -60,17 +60,17 @@ Example: `47% → 92% (+45 points)` means the skill-assisted run scored 92%, 45 
 
 | Tier | Purpose | Status | Evidence |
 |---|---|---|---|
-| Tier 1 | Static validation | **PASSED** | 1 validator(s); 0 finding(s) |
+| Tier 1 | Static validation | **PASSED WITH OBSERVATIONS** | 1 validator(s); 2 finding(s) |
 | Tier 2 | Semantic deduplication | **NOT RUN** | No result was recorded |
-| Tier 3 | Live agent evaluation | **PASS** | 2 agent(s); 7 task(s) |
+| Tier 3 | Live agent evaluation | **PASS** | 2 agent(s); 21 task(s) |
 
 ## Findings and Observations
 
 <details>
 <summary>Show detailed findings and successful checks</summary>
 
-- Schema & Repository Governance: Found skill manifest: SKILL.md
-- AGENT_EVAL: Tier 3 evaluation complete: verdict PASS; best agent codex
+- **MEDIUM** SCHEMA/body_recommended_section: Missing recommended section: '## Instructions' (`skills/nvflare-convert-huggingface/SKILL.md`)
+- **MEDIUM** SCHEMA/body_recommended_section: Missing recommended section: '## Examples' (`skills/nvflare-convert-huggingface/SKILL.md`)
 
 </details>
 

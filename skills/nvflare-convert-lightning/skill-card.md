@@ -1,5 +1,5 @@
 ## Description: <br>
-Use for agent-assisted Auto-FL optimization of an existing NVFLARE job in simulation, POC, or production. <br>
+Convert existing PyTorch Lightning training code into an NVFLARE federated job using the Lightning Client API patch, local validation, and job export. <br>
 
 This skill is ready for commercial/non-commercial use. <br>
 
@@ -9,7 +9,7 @@ NVIDIA <br>
 ### License/Terms of Use: <br>
 Apache 2.0 <br>
 ## Use Case: <br>
-Developers and engineers use this skill to iteratively optimize NVFLARE federated learning jobs through agent-assisted campaigns that propose, evaluate, and track candidate changes against a measured objective. <br>
+Developers and engineers converting existing PyTorch Lightning training code into NVFLARE federated learning jobs for privacy-preserving distributed multi-party collaboration. <br>
 
 ### Deployment Geography for Use: <br>
 Global <br>
@@ -25,19 +25,17 @@ Risk: Review before execution as proposals could introduce incorrect or misleadi
 Mitigation: Review and scan skill before deployment. <br>
 
 ## Reference(s): <br>
-- [Job Import Contract](references/job-import-contract.md) <br>
-- [Continuous Campaigns](references/continuous-campaigns.md) <br>
-- [Experiment Comparability](references/experiment-comparability.md) <br>
-- [Bounded Campaign Example](references/bounded-campaign-example.md) <br>
-- [NVIDIA FLARE Documentation](https://nvflare.readthedocs.io/en/main) <br>
-- [NVIDIA FLARE Paper](https://arxiv.org/abs/2210.13291) <br>
+- [lightning-conversion.md](references/lightning-conversion.md) <br>
+- [lightning-ddp-and-tracking.md](references/lightning-ddp-and-tracking.md) <br>
+- [lightning-detection.md](references/lightning-detection.md) <br>
+- [lightning-validation.md](references/lightning-validation.md) <br>
 
 
 ## Skill Output: <br>
-**Output Type(s):** [Shell commands, Analysis, Configuration instructions, Files] <br>
-**Output Format:** [JSON envelopes with Markdown summaries and TSV ledger] <br>
+**Output Type(s):** [Code, Shell commands, Configuration instructions] <br>
+**Output Format:** [Python source files and shell commands] <br>
 **Output Parameters:** [1D] <br>
-**Other Properties Related to Output:** [Persists autofl.yaml, results.tsv, campaign_state.json, candidate manifests, run artifacts, and progress plots] <br>
+**Other Properties Related to Output:** [None] <br>
 
 ## Evaluation Agents Used: <br>
 - Claude Code (`aws/anthropic/bedrock-claude-opus-4-8`) <br>
@@ -46,7 +44,7 @@ Mitigation: Review and scan skill before deployment. <br>
 
 
 ## Evaluation Tasks: <br>
-Evaluated against 7 evaluation tasks (7 positive) in isolated sandbox pods. <br>
+22 evaluation tasks (22 positive), each run in an isolated sandbox pod. <br>
 
 ## Evaluation Metrics Used: <br>
 Reported benchmark dimensions: <br>
@@ -57,24 +55,24 @@ Reported benchmark dimensions: <br>
 - Efficiency: Checks routing quality, workspace-aware skill reads, and productive tool use. <br>
 
 Underlying evaluation signals used in this run: <br>
-- `security`: Verifies absence of unsafe operations, secret leakage, and unauthorized access. <br>
-- `skill_execution`: Verifies whether the expected skill was found and executed. <br>
-- `skill_efficiency`: Verifies routing quality, workspace-aware skill reads, and productive tool use. <br>
-- `accuracy`: Verifies final-answer correctness against the reference answer. <br>
-- `goal_accuracy`: Verifies whether the user's goal was achieved. <br>
-- `behavior_check`: Verifies whether the expected workflow behavior was followed. <br>
+- `security`: Unsafe operations, secret leakage, and unauthorized access. <br>
+- `skill_execution`: Whether the expected skill was found and executed. <br>
+- `skill_efficiency`: Routing quality, workspace-aware skill reads, and productive tool use. <br>
+- `accuracy`: Final-answer correctness against the reference answer. <br>
+- `goal_accuracy`: Whether the user's goal was achieved. <br>
+- `behavior_check`: Whether the expected workflow behavior was followed. <br>
 
 
 
 ## Evaluation Results: <br>
-| Measure | Codex (Baseline → Skill Uplift) |
-|---|---:|
-| Overall | 60% → 73% (+13 points) |
-| Security | 86% → 100% (+14 points) |
-| Correctness | 71% → 71% (±0 points) |
-| Discoverability | 38% → 71% (+33 points) |
-| Effectiveness | 64% → 55% (-9 points) |
-| Efficiency | 41% → 69% (+29 points) |
+| Measure | Claude Code (Baseline → Skill Uplift) | Codex (Baseline → Skill Uplift) |
+|---|---:|---:|
+| Overall | Not available | 44% → 67% (+24 points) |
+| Security | Not available | 27% → 45% (+18 points) |
+| Correctness | Not available | 72% → 88% (+16 points) |
+| Discoverability | Not available | 27% → 58% (+30 points) |
+| Effectiveness | Not available | 63% → 84% (+21 points) |
+| Efficiency | Not available | 28% → 62% (+33 points) |
 
 ## Skill Version(s): <br>
 0.1.0 (source: frontmatter) <br>

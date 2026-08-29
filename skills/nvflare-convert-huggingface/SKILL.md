@@ -18,10 +18,10 @@ metadata:
 
 ## Use When
 
-Use when converting training code built around `transformers.Trainer`,
-`Seq2SeqTrainer`, TRL `SFTTrainer`, or another Trainer subclass. Support
-full-model and PEFT/LoRA fine-tuning, datasets/tokenizers, Trainer callbacks and
-metrics, checkpoint continuity, and replicated `torch.distributed` training.
+Use when converting training code built around `transformers.Trainer`, `Seq2SeqTrainer`,
+TRL `SFTTrainer`, or another Trainer subclass. Support full-model and PEFT/LoRA
+fine-tuning, datasets/tokenizers, Trainer callbacks and metrics, checkpoint continuity,
+and replicated `torch.distributed` training.
 
 ## Do Not Use When
 
