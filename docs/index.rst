@@ -30,11 +30,10 @@ NVIDIA FLARE
 
    Choose an API Path <user_guide/data_scientist_guide/api_selection>
    user_guide/data_scientist_guide/client_api_usage
-   HuggingFace Client API <user_guide/data_scientist_guide/hf_client_api>
+   Collaboration API (Technical Preview) <user_guide/data_scientist_guide/collab_api>
    user_guide/data_scientist_guide/job_recipe
    user_guide/data_scientist_guide/recipe_api
    user_guide/data_scientist_guide/available_recipes
-   Collaboration API (Technical Preview) <user_guide/data_scientist_guide/collab_api>
    user_guide/data_scientist_guide/flare_api
    user_guide/data_scientist_guide/flower_integration/flower_integration
    programming_guide/experiment_tracking
