@@ -195,6 +195,8 @@ for federated LLM training at scales up to 72 billion parameters. See
 :ref:`notes_on_large_models` for deployment sizing and large-model
 operational guidance.
 
+**Training time and server memory across model sizes (1.7B-72B)**
+
 .. list-table::
    :widths: 55 45
 
@@ -218,6 +220,8 @@ non-aggregator sites stay approximately flat at every size, since disk
 offload targets contribution handling at the aggregator rather than the
 per-site learner footprint (external-process, fixed aggregator, 4 clients,
 30 rounds):
+
+**Swarm Learning aggregator peak memory reduction (with disk offload)**
 
 .. image:: /resources/flare_290_swarm_disk_offload_memory.png
    :width: 850px
