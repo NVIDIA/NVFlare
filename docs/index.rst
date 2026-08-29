@@ -34,6 +34,7 @@ NVIDIA FLARE
    user_guide/data_scientist_guide/job_recipe
    user_guide/data_scientist_guide/recipe_api
    user_guide/data_scientist_guide/available_recipes
+   Collaboration API (Technical Preview) <user_guide/data_scientist_guide/collab_api>
    user_guide/data_scientist_guide/flare_api
    user_guide/data_scientist_guide/flower_integration/flower_integration
    programming_guide/experiment_tracking
