@@ -150,6 +150,7 @@ Start here if you want to federate an existing training script.
 - :doc:`Installation <installation>` -- Install FLARE and set up your environment
 - :doc:`Quick Start <quickstart>` -- Run a Hello World example and convert your ML code
 - :ref:`Client API <client_api>` -- Recommended high-level API for federated training
+- :ref:`Collaboration API <collab_api>` -- Technical Preview: agent-to-agent style calls between server and clients
 - :ref:`Job Recipe API <job_recipe>` -- Pre-built recipes for common FL workflows
 - :doc:`Migration Guide <migration_guide>` -- Upgrade between FLARE versions
 - :ref:`Examples & Tutorials <example_applications>` -- End-to-end examples and tutorials
