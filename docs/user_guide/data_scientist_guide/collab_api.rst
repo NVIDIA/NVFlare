@@ -142,6 +142,66 @@ base ``Recipe``) to deliver different values to different clients; a client
 reads its own value with ``collab.get_app_prop(name)``, as in the example
 above.
 
+Advanced Usage
+--------------
+
+``collab.clients.train(...)`` above uses default call behavior: call every
+client, wait for every result, and raise if any client fails. Real
+workflows often need more control over who is called and how the call
+behaves.
+
+**Selecting clients**
+
+* ``collab.get_clients(["site-1", "site-2"])`` calls out to a named subset
+  instead of every client; it returns a ``ProxyList`` you call the same way
+  as ``collab.clients``.
+* ``collab.clients[0]`` (or any index/slice) returns individual client
+  proxies. A single proxy's method call goes to that one site only and
+  returns its result directly -- no ``(site_name, result)`` collection to
+  unwrap.
+* ``collab.other_clients``, ``collab.child_clients``, and
+  ``collab.leaf_clients`` scope a call to a topology-based subset (see
+  `Core Concepts`_ above); each also supports indexing into an individual
+  proxy.
+
+**Call options**
+
+Both ``ProxyList`` (group calls) and an individual ``Proxy`` (single-site
+calls) accept call options by calling them before the method name, for
+example ``collab.clients(blocking=False, timeout=30).train(weights)``:
+
+* ``blocking`` (group calls only, default ``True``) -- ``True`` waits for
+  every result and returns a re-iterable snapshot; ``False`` returns
+  immediately with a live, single-pass result stream you iterate as
+  results arrive.
+* ``expect_result`` (default ``True``) -- ``False`` is fire-and-forget: the
+  call returns ``None`` immediately without waiting on the remote method at
+  all.
+* ``timeout`` (default 60s) -- maximum seconds to wait for each result.
+* ``optional`` (default ``False``) -- ``True`` turns a per-site failure
+  into a logged warning and a ``None`` result instead of raising
+  ``CollabCallError``.
+* ``secure`` (default ``False``) -- routes the call over point-to-point
+  secure messaging; the site's Cell must be configured with certificates,
+  or a secure call raises.
+* ``target`` -- name of a specific collab object at the remote site to
+  call, for a site that registers more than one (via
+  ``server_objects``/``client_objects`` on ``CollabRecipe``).
+* ``parallel`` (group calls only, default unlimited) -- caps how many
+  calls may be in flight for that group call at once.
+* ``process_resp_cb`` (group calls only) -- a callback invoked as each
+  response arrives, useful for streaming/in-time aggregation instead of
+  waiting for the whole group. See the ``async_aggregation`` example
+  below.
+
+**Error handling**
+
+A failed call raises ``CollabCallError`` (site, function name, and cause)
+unless ``optional=True`` was set. For a group call, a per-site failure is
+recorded in the result collection's ``failures`` dict (site name to
+``CollabCallError``) instead of failing the other sites' results, as in
+``weighted_avg`` in the example above.
+
 Versioning and Authorization
 -----------------------------
 
@@ -150,6 +210,31 @@ Collab job -- server and all clients -- must run NVFlare 2.9.0 or newer:
 Collab calls carry a versioned authorization envelope that only 2.9.0+ peers
 produce and accept, so there is no mixed-version compatibility path for
 Collab jobs specifically (other job types are unaffected).
+
+Limitations
+-----------
+
+As a Technical Preview, the Collab API has a smaller feature set than the
+Client API / Job Recipe API path:
+
+* **No mixed-version jobs.** See `Versioning and Authorization`_ above --
+  every site must run 2.9.0 or newer.
+* **No task/result filter pipeline.** Standard NVFlare task and result
+  filters (for example differential privacy or homomorphic encryption
+  filters) attach to the ``Shareable``/``Task`` exchange, which Collab
+  calls bypass entirely. Apply any needed data transformation explicitly
+  inside your server/client methods instead.
+* **Fixed client roster.** The set of participating clients is established
+  once, when the job starts (from the execution environment's site list
+  and ``min_clients``); Collab does not support clients dynamically
+  joining or leaving mid-run.
+* **No automatic retry.** A failed call raises ``CollabCallError``
+  immediately (or is swallowed if ``optional=True``); there is no built-in
+  retry, backoff, or resume-from-checkpoint for a failed or interrupted
+  call. Retry logic, if needed, is the application's responsibility.
+* **``secure=True`` requires certificates.** A secure call needs the
+  site's Cell configured with certificates; without that, the call raises
+  rather than falling back to a non-secure transport.
 
 Examples
 --------
