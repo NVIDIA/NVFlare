@@ -179,7 +179,7 @@ FLARE Day is an annual event showcasing real-world federated learning deployment
 healthcare, finance, autonomous driving, and more. These talks feature practitioners sharing
 production experiences and lessons learned.
 
-- **FLARE Day 2026** -- *Coming September 2026*
+- `FLARE Day 2026 <https://events.nvidia.com/flare-day-2026>`_ -- *Coming September 2026*
 - `FLARE Day 2025 <https://developer.nvidia.com/flare-day-2025>`_ -- Real-world FL applications in healthcare, finance, autonomous driving, and more
 - `FLARE Day 2024 <https://nvidia.github.io/NVFlare/flareDay>`_ -- Talks and demos featuring real-world FL deployments at NVIDIA, healthcare institutions, and industry partners
 
