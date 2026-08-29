@@ -11,76 +11,48 @@ Dates and features are subject to change.
    This roadmap reflects current planning and is provided for informational purposes.
    Feature scope and release timing may shift as development progresses.
 
-*******************************
-FLARE 2.8.0 — Target: Q2 2026
-*******************************
-
-**Native Kubernetes Support**
-
-- Separate the parent control pod from the job execution pod, enabling independent lifecycle management and better resource isolation
-- Simplified deployment across major cloud Kubernetes environments (GKE, EKS, AKS, and on-prem)
-
-**Improved Docker Deployment**
-
-- Separate parent container from job execution container, mirroring the Kubernetes pod separation model
-- Ready-to-use Dockerfiles provided for common deployment scenarios, reducing setup friction
-
-**Multi-Study Support**
-
-- Enable multiple concurrent studies within a single FLARE deployment
-- Enforce data isolation between studies via Docker and Kubernetes pod-level data separation
-
-**Distributed Provisioning**
-
-- Enable the distributed provisioning workflow so site administrators can generate their own key pairs locally and receive signed certificates from the project administrator
-- Eliminates the need for centralized private key generation and distribution
-
-**Expanded CLI Commands**
-
-- Extend the ``nvflare`` CLI to cover all FLARE Admin Console commands
-- Enables full administrative control from the command line without requiring the interactive console
-
-**Server-Side Memory Optimization**
-
-- Reduce server-side memory usage during federated learning jobs
-- Improved memory management for large model and large dataset workloads
-
-*******************************
-FLARE 2.9.0 — Target: Q3 2026
-*******************************
-
-**New Collab API**
-
-- Introduce a new Collaboration (Collab) API designed to improve research productivity
-- Enables more flexible and composable FL workflow definitions with reduced boilerplate
-
-**FLARE Agent Readiness**
-
-- Platform features enabling FLARE to be used as a backend for AI agent workflows
-
-**Better Kubernetes User Experience**
-
-- Simplified Kubernetes deployment and operational experience building on the 2.8.0 foundation
-- Usability improvements for data scientists and operators managing multi-site Kubernetes deployments
-
-**Slurm Support**
-
-- Better integration with Slurm workload managers for HPC cluster environments
-- Enable FL jobs to run natively within Slurm-managed compute environments
-
 ********************************
-FLARE 2.10.0 — Target: Q4 2026
+FLARE 2.9.1 — Target: Q4 2026
 ********************************
-
-**Advanced Kubernetes Enhancements**
-
-- Advanced Kubernetes feature set building on prior releases
-- Deeper platform integration and operational controls for large-scale multi-site Kubernetes deployments
 
 **Confidential Federated AI Support**
 
-Building on existing support for AMD SEV-SNP CPU CVMs with NVIDIA GPUs and Azure Confidential Computing:
+Building on existing support for AMD SEV-SNP CPU CVMs with NVIDIA GPUs:
 
 - Intel TDX CPU support for CPU-based confidential computing workloads
 - CoCo (Confidential Containers) support for container-level confidential execution
-- Expanded Cloud Service Provider (CSP) integration beyond Azure to additional major cloud platforms
+
+***********************************
+FLARE 2.10.0 — Target: Early 2027
+***********************************
+
+**Possible Features**
+
+- **Documentation and Tutorial Transformation** — Redesign the onboarding
+  path so a first-time user runs a real federation before seeing a feature
+  list, and bring the 100+ notebook self-paced course and research-project
+  guides up to a verified, reproducible standard.
+- **Better GPU resource utilization** — Release GPUs during aggregation,
+  barriers, and downloads instead of holding them idle. A durable, GPU-free
+  site supervisor keeps a job's identity alive across time-bounded Slurm
+  allocations via checkpoint-and-resume, with no change to the
+  FedAvg/FedOpt/DiLoCo math.
+- **Job Statistics** — A usage proxy for cost: FLARE has no access to
+  billing rates, so the goal is to report compute hours, GPU hours, storage
+  volume/time, and ingress/egress size per job, so real cost can be mapped
+  in later once rates are supplied.
+- **Operation and Security** — Federated identity via OpenID Connect (sites
+  federate through their existing enterprise IdP) plus short-lived,
+  job-scoped ephemeral keys, so a leaked credential's blast radius is
+  limited to one job and one window.
+- **Audit log enhancements** — Still a brainstorm, not yet scoped. Today's
+  per-site audit log (unchanged since FLARE 2.2.1) captures event ID, user
+  identity, action name, and job ID as one flat text line; possible gaps
+  include artifact-level detail, site identity, and a structured,
+  queryable format.
+- **Memorization in LLMs** — Understanding what a federated LLM training run
+  memorizes from participant data, a prerequisite for defensible privacy
+  claims about federated training itself.
+- **FedRevive (Async FL Algorithm)** — An asynchronous federated learning
+  algorithm where participants contribute without waiting on a synchronous
+  round barrier.
