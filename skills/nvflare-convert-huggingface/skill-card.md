@@ -1,5 +1,5 @@
 ## Description: <br>
-Generate a reproducible final report, literature-outcome synthesis, JSON summary, and refreshed progress plot for a stopped or interrupted NVFLARE Auto-FL campaign. <br>
+Convert existing Hugging Face Transformers Trainer or TRL SFTTrainer training code into an NVFLARE federated job using flare.patch(trainer), local validation, and job export. <br>
 
 This skill is ready for commercial/non-commercial use. <br>
 
@@ -9,14 +9,14 @@ NVIDIA <br>
 ### License/Terms of Use: <br>
 Apache 2.0 <br>
 ## Use Case: <br>
-Developers and engineers generating reproducible final reports, literature-outcome summaries, and progress visualizations from completed or interrupted NVFLARE Auto-FL federated learning campaigns. <br>
+Developers and ML engineers converting existing Hugging Face Transformers or TRL training scripts into federated learning jobs using NVIDIA FLARE. <br>
 
 ### Deployment Geography for Use: <br>
 Global <br>
 
 ## Requirements / Dependencies: <br>
-**Requires API Key or External Credential:** [No] <br>
-**Credential Type(s):** [None] <br>
+**Requires API Key or External Credential:** [Not Specified] <br>
+**Credential Type(s):** [None identified] <br>
 
 Do not include secrets in prompts/logs/output; use least-privilege credentials; rotate keys as appropriate. <br>
 
@@ -25,12 +25,15 @@ Risk: Review before execution as proposals could introduce incorrect or misleadi
 Mitigation: Review and scan skill before deployment. <br>
 
 ## Reference(s): <br>
-- [Auto-FL Final Report Contract](references/report-contract.md) <br>
+- [Hugging Face Conversion Reference](references/huggingface-conversion.md) <br>
+- [Hugging Face Detection Reference](references/huggingface-detection.md) <br>
+- [Hugging Face State and Distributed Reference](references/huggingface-state-and-distributed.md) <br>
+- [Hugging Face Validation Reference](references/huggingface-validation.md) <br>
 
 
 ## Skill Output: <br>
-**Output Type(s):** [Files, Analysis] <br>
-**Output Format:** [Markdown report, JSON summary, and optional PNG plot] <br>
+**Output Type(s):** [Code, Files, Shell commands] <br>
+**Output Format:** [Python source files and NVFLARE job configuration] <br>
 **Output Parameters:** [1D] <br>
 **Other Properties Related to Output:** [None] <br>
 
@@ -41,35 +44,35 @@ Mitigation: Review and scan skill before deployment. <br>
 
 
 ## Evaluation Tasks: <br>
-Evaluated against 4 positive tasks in isolated k8s-sandbox pods with 1 attempt per task. <br>
+21 evaluation tasks (21 positive) in isolated sandbox pods. <br>
 
 ## Evaluation Metrics Used: <br>
 Reported benchmark dimensions: <br>
-- Security: Whether the skill avoids unsafe operations, secret leakage, and unauthorized access. <br>
-- Correctness: Whether the final answer is correct against the reference answer. <br>
-- Discoverability: Whether the expected skill was found and executed when needed. <br>
-- Effectiveness: Whether the skill helps complete the user's goal and follows expected workflow behavior. <br>
-- Efficiency: Whether the skill avoids wasted tool or skill usage through quality routing and productive tool use. <br>
+- Security: Checks for unsafe operations, secret leakage, and unauthorized access. <br>
+- Correctness: Verifies final-answer correctness against the reference answer. <br>
+- Discoverability: Checks whether the expected skill was found and executed when needed. <br>
+- Effectiveness: Equal-weight mean of goal completion and expected workflow adherence. <br>
+- Efficiency: Measures routing quality, workspace-aware skill reads, and productive tool use. <br>
 
 Underlying evaluation signals used in this run: <br>
 - `security`: Unsafe operations, secret leakage, and unauthorized access. <br>
-- `accuracy`: Final-answer correctness against the reference answer. <br>
 - `skill_execution`: Whether the expected skill was found and executed. <br>
+- `skill_efficiency`: Routing quality, workspace-aware skill reads, and productive tool use. <br>
+- `accuracy`: Final-answer correctness against the reference answer. <br>
 - `goal_accuracy`: Whether the user's goal was achieved. <br>
 - `behavior_check`: Whether the expected workflow behavior was followed. <br>
-- `skill_efficiency`: Routing quality, workspace-aware skill reads, and productive tool use. <br>
 
 
 
 ## Evaluation Results: <br>
-| Measure | Claude Code (Baseline → Skill Uplift) | Codex (Baseline → Skill Uplift) |
-|---|---:|---:|
-| Overall | 58% → 88% (+30 points) | 46% → 65% (+19 points) |
-| Security | 100% → 100% (±0 points) | 50% → 75% (+25 points) |
-| Correctness | 50% → 100% (+50 points) | 35% → 55% (+20 points) |
-| Discoverability | 48% → 86% (+38 points) | 41% → 72% (+31 points) |
-| Effectiveness | 48% → 71% (+23 points) | 62% → 50% (-12 points) |
-| Efficiency | 44% → 82% (+38 points) | 43% → 75% (+32 points) |
+| Measure | Codex (Baseline → Skill Uplift) |
+|---|---:|
+| Overall | 46% → 77% (+31 points) |
+| Security | 45% → 60% (+14 points) |
+| Correctness | 70% → 99% (+29 points) |
+| Discoverability | 30% → 68% (+38 points) |
+| Effectiveness | 49% → 82% (+32 points) |
+| Efficiency | 33% → 77% (+44 points) |
 
 ## Skill Version(s): <br>
 0.1.0 (source: frontmatter) <br>
