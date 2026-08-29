@@ -82,6 +82,8 @@ itself:
        valid = dict(client_results)
        for client_id, error in client_results.failures.items():
            print(f"Warning: {client_id} failed: {error}")
+       if not valid:
+           raise RuntimeError(f"all {len(client_results.failures)} client calls failed")
        all_weights = [result[0] for result in valid.values()]
        avg_weights = {k: sum(w[k] for w in all_weights) / len(all_weights) for k in all_weights[0]}
        avg_loss = sum(result[1] for result in valid.values()) / len(valid)
