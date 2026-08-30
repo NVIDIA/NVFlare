@@ -4,20 +4,25 @@
 Agent Conversion Skills
 #######################
 
-NVFLARE Agent Conversion Skills help a coding agent create a reviewable,
-multi-site NVFLARE job from an existing single-site training project or a
-federated data-summary request. The agent inspects the source project or data,
-chooses a compatible NVFLARE recipe, generates the integration files, and
-validates the result locally.
+NVFLARE Agent Conversion Skills support two user workflows: converting
+existing deep learning training code into federated learning training code,
+and generating a federated statistics job from a sample tabular or image
+dataset. The agent inspects the supplied code or data, generates a reviewable
+NVFLARE job, and validates the result locally.
 
 The skills are coding-agent workflows, not NVFLARE runtime commands or an
 automatic production migration service. You review and own the generated code
 and configuration.
 
-Supported Workflows
-===================
+Supported Workflow Groups
+=========================
 
-You can use Agent Skills for four job-creation workflows:
+1. Deep Learning Training Code Conversion
+-----------------------------------------
+
+Provide an existing single-site deep learning training project. The skill
+converts its training and evaluation workflow into a multi-site federated
+learning job:
 
 .. list-table::
    :header-rows: 1
@@ -35,22 +40,38 @@ You can use Agent Skills for four job-creation workflows:
      - A multi-site NVFLARE training job that retains the Trainer workflow,
        datasets, metrics, callbacks, and checkpoints. Full-model and PEFT/LoRA
        fine-tuning are supported.
-   * - Tabular or image data
-     - A federated statistics job and aggregate results. Tabular inputs include
-       CSV, Parquet, and other pandas-readable data. Image inputs include
-       common image folders and DICOM or NIfTI when the matching loader is
-       available. Existing statistics selections declared in a script or
-       README can also be preserved.
 
 The three model-training skills target horizontal federated learning with the
 PyTorch recipe family. FedAvg is the standard conversion path when requested.
 Other PyTorch-family recipes are used only when the requested workflow is
 compatible with a recipe exposed by the installed NVFLARE version.
 
-The federated statistics skill generates a separate ``FedStatsRecipe`` job. It
-supports count, sum, mean, standard deviation, variance, histogram, quantile,
-and noise-protected minimum and maximum for numeric tabular features. For image
-data, it supports image count, failure count, and pixel-intensity histograms.
+2. Federated Statistics Job Generation
+--------------------------------------
+
+Provide a sample dataset that represents the tabular or image data available
+at the participating sites. The skill uses the sample to determine the data
+layout and generate a separate federated statistics job:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Sample dataset
+     - What the skill creates
+   * - Tabular data
+     - A federated statistics job for CSV, Parquet, or other pandas-readable
+       data, plus per-site and global aggregate results.
+   * - Image data
+     - A federated statistics job for common image folders, or DICOM and NIfTI
+       data when the matching loader is available, plus per-site and global
+       image statistics.
+
+For numeric tabular features, the generated job supports count, sum, mean,
+standard deviation, variance, histogram, quantile, and noise-protected minimum
+and maximum. For image data, it supports image count, failure count, and
+pixel-intensity histograms. Existing statistics selections declared in a
+script or README can also be preserved.
 
 Install the Skills
 ==================

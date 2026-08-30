@@ -148,9 +148,9 @@ Advanced Usage
 --------------
 
 ``collab.clients.train(...)`` above uses default call behavior: call every
-client, wait for every result, and raise if any client fails. Real
-workflows often need more control over who is called and how the call
-behaves.
+client, wait for every outcome, and return the successful results while
+recording per-client failures in the result collection. Real workflows often
+need more control over who is called and how the call behaves.
 
 **Selecting clients**
 
@@ -180,9 +180,10 @@ example ``collab.clients(blocking=False, timeout=30).train(weights)``:
   call returns ``None`` immediately without waiting on the remote method at
   all.
 * ``timeout`` (default 60s) -- maximum seconds to wait for each result.
-* ``optional`` (default ``False``) -- ``True`` turns a per-site failure
-  into a logged warning and a ``None`` result instead of raising
-  ``CollabCallError``.
+* ``optional`` (default ``False``) -- for an individual ``Proxy`` call,
+  ``True`` turns a failure into a logged warning and a ``None`` result instead
+  of raising ``CollabCallError``. Group calls report per-site failures through
+  the returned result collection as described below.
 * ``secure`` (default ``False``) -- routes the call over point-to-point
   secure messaging; the site's Cell must be configured with certificates,
   or a secure call raises.
@@ -198,11 +199,12 @@ example ``collab.clients(blocking=False, timeout=30).train(weights)``:
 
 **Error handling**
 
-A failed call raises ``CollabCallError`` (site, function name, and cause)
-unless ``optional=True`` was set. For a group call, a per-site failure is
-recorded in the result collection's ``failures`` dict (site name to
-``CollabCallError``) instead of failing the other sites' results, as in
-``weighted_avg`` in the example above.
+An individual ``Proxy`` call failure raises ``CollabCallError`` (site,
+function name, and cause) unless ``optional=True`` was set. A group call does
+not raise for a per-site call failure: it returns the successful results and
+records each failure in the result collection's ``failures`` dict (site name
+to ``CollabCallError``), as in ``weighted_avg`` above. Callers must check both
+``failures`` and whether any successful results remain before aggregating.
 
 Versioning and Authorization
 -----------------------------
