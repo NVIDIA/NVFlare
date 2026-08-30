@@ -351,7 +351,7 @@ class StatisticsController(Controller):
         self.logger.info("Check if min_client result received for all features")
 
         if not client_statistics:
-            self.logger.warning(
+            self.logger.error(
                 f"No client statistics received at all; expected at least {min_clients}, aborting the job."
             )
             return False
@@ -374,7 +374,7 @@ class StatisticsController(Controller):
                         resulting_clients[ds_name].update([client])
 
         if not resulting_clients:
-            self.logger.warning(
+            self.logger.error(
                 f"No dataset accumulated statistics from at least {min_clients} clients; aborting the job."
             )
             return False
