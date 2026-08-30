@@ -28,10 +28,14 @@ def register_framework_decomposers(params_exchange_format, server_expected_forma
     """
     params_exchange_format = ExchangeFormat(params_exchange_format)
     server_expected_format = ExchangeFormat(server_expected_format)
-    formats = (params_exchange_format, server_expected_format)
-    pytorch_wire_format = server_expected_format == ExchangeFormat.PYTORCH or (
-        ExchangeFormat.RAW in formats and ExchangeFormat.PYTORCH in formats
-    )
+    # TensorDecomposer is required whenever the trainer-side representation
+    # is PyTorch. The server-side representation may still be NumPy because
+    # parameter conversion can happen after the trainer-side FOBS encoding.
+    #
+    # In particular, PYTORCH -> NUMPY must register TensorDecomposer because
+    # large tensors/download references use DOT TENSOR_DOWNLOAD (6).
+    pytorch_wire_format = params_exchange_format == ExchangeFormat.PYTORCH
+
     if not pytorch_wire_format:
         return
 
