@@ -146,6 +146,7 @@ New to FLARE (ML Practitioners)
 
 Start here if you want to federate an existing training script.
 
+- :doc:`Agent Skills <user_guide/agent_skills/index>` -- Use coding-agent workflows to learn NVFLARE, create federated jobs, optimize with AutoFL, and report results
 - :doc:`Welcome <welcome>` -- What FLARE is and what it supports
 - :doc:`Installation <installation>` -- Install FLARE and set up your environment
 - :doc:`Quick Start <quickstart>` -- Run a Hello World example and convert your ML code
