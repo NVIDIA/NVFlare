@@ -28,6 +28,7 @@ NVIDIA FLARE
    :hidden:
    :caption: User Guide
 
+   Agent Skills <user_guide/agent_skills/index>
    Choose an API Path <user_guide/data_scientist_guide/api_selection>
    user_guide/data_scientist_guide/client_api_usage
    Collaboration API (Technical Preview) <user_guide/data_scientist_guide/collab_api>
@@ -39,7 +40,6 @@ NVIDIA FLARE
    programming_guide/experiment_tracking
    Federated XGBoost <user_guide/data_scientist_guide/federated_xgboost/federated_xgboost>
    user_guide/data_scientist_guide/data_preparation
-   Agent Skills <user_guide/agent_skills/index>
    CLI Tools <user_guide/nvflare_cli/nvflare_cli>
 
 .. toctree::

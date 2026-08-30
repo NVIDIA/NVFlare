@@ -11,4 +11,5 @@ through the coding agent rather than by invoking its private scripts directly.
    :maxdepth: 1
 
    quickstart
+   conversion_skills
    autofl_skill

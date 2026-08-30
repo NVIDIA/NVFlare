@@ -1,3 +1,5 @@
+.. _agent_skills_quickstart:
+
 #######################
 Agent Skills Quickstart
 #######################
@@ -24,3 +26,6 @@ you do not need to select or name a skill. The examples cover plain PyTorch,
 PyTorch Lightning, Hugging Face Trainer, tabular federated statistics, and
 image federated statistics. Review the agent's proposed changes before running
 a simulation or applying a workflow to real data.
+
+For framework coverage, conversion behavior, data handling, and current
+limitations, see :ref:`Agent Conversion Skills <agent_conversion_skills>`.
