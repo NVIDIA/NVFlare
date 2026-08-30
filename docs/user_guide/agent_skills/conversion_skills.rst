@@ -12,7 +12,22 @@ NVFLARE job, and validates the result locally.
 
 The skills are coding-agent workflows, not NVFLARE runtime commands or an
 automatic production migration service. You review and own the generated code
-and configuration.
+and configuration. You do not need to know or name an internal skill; describe
+one of the two outcomes below and provide the corresponding input.
+
+Install the Skills
+==================
+
+From an NVFLARE source checkout, install the complete skill set for Codex,
+Claude Code, or both:
+
+.. code-block:: shell
+
+   npx skills add ./skills --skill '*' -a codex -a claude-code -y
+
+Generated jobs require NVFLARE 2.9.0 or later in the Python environment used
+by the coding agent. The skills are installed from the source tree; they are
+not installed by the NVFLARE Python package.
 
 Supported Workflow Groups
 =========================
@@ -46,6 +61,46 @@ PyTorch recipe family. FedAvg is the standard conversion path when requested.
 Other PyTorch-family recipes are used only when the requested workflow is
 compatible with a recipe exposed by the installed NVFLARE version.
 
+How to Request Training-Code Conversion
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Open the existing training project in the coding agent. Include the source
+location, framework, algorithm when you have a preference, client count, round
+count, local training budget, and whether to run a local simulation. For
+example:
+
+.. code-block:: text
+
+   I have an existing PyTorch Lightning project in ./source. Convert it to an
+   NVFLARE FedAvg job for 3 sites and 3 rounds. Preserve its validation metric
+   and local training budget, and validate the result with a local simulation.
+
+The request must express federated or cross-site collaborative training intent
+and the source must have one supported training owner. A request to add local
+DDP, profile a trainer, run inference, or debug ordinary training is not a
+conversion request.
+
+During conversion, the agent:
+
+#. Inspects the source statically to identify the model, constructor arguments,
+   training owner, data inputs, local training budget, evaluation path,
+   metrics, checkpoints, and callbacks.
+#. Confirms the requested algorithm against the recipes available in the
+   installed NVFLARE version.
+#. Preserves the source project's framework-native training and evaluation
+   behavior while adding the appropriate NVFLARE model exchange.
+#. Generates project-local integration files, such as a client entry point and
+   ``job.py``, without overwriting non-generated source files.
+#. Validates the generated target in stages and stops at the first failed
+   stage. When requested and authorized, the final stage runs a completed
+   local simulation.
+#. Reports the generated files, data and partition assumptions, metrics,
+   simulation evidence, and output artifact locations.
+
+The agent asks a focused question, or stops, when a required semantic choice
+cannot be recovered safely from the source. Examples include an ambiguous
+model constructor, aggregation rule, or best-model metric direction.
+
 2. Federated Statistics Job Generation
 --------------------------------------
 
@@ -73,40 +128,13 @@ and maximum. For image data, it supports image count, failure count, and
 pixel-intensity histograms. Existing statistics selections declared in a
 script or README can also be preserved.
 
-Install the Skills
-==================
+How to Request a Federated Statistics Job
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-From an NVFLARE source checkout, install the complete skill set for Codex,
-Claude Code, or both:
-
-.. code-block:: shell
-
-   npx skills add ./skills --skill '*' -a codex -a claude-code -y
-
-Generated jobs require NVFLARE 2.9.0 or later in the Python environment used
-by the coding agent. The skills are installed from the source tree; they are
-not installed by the NVFLARE Python package.
-
-Request a Job
-=============
-
-Open the existing training project or data directory in the coding agent and
-describe the federated outcome.
-
-For model training, include the source location, framework, algorithm when you
-have a preference, client count, round count, local training budget, and
-whether to run a local simulation. For example:
-
-.. code-block:: text
-
-   I have an existing PyTorch Lightning project in ./source. Convert it to an
-   NVFLARE FedAvg job for 3 sites and 3 rounds. Preserve its validation metric
-   and local training budget, and validate the result with a local simulation.
-
-For federated statistics, identify the per-site data or the flat source data,
-the site count when it cannot be inferred, and any required statistics. When
-no statistics are named, the skill reports and applies its supported defaults.
-For example:
+Open the sample data directory in the coding agent. Identify the per-site data
+or flat source data, the site count when it cannot be inferred, and any
+required statistics. When no statistics are named, the skill reports and
+applies its supported defaults. For example:
 
 .. code-block:: text
 
@@ -114,40 +142,7 @@ For example:
    ./data. Compute count, mean, standard deviation, histogram, and median for
    the numeric features, and validate the job with a local simulation.
 
-You do not need to name a skill. The agent selects a converter only when the
-request expresses federated or cross-site collaborative training intent and
-the source has one supported training owner. A request to add local DDP,
-profile a trainer, run inference, or debug ordinary training is not a
-conversion request.
-
-A request for statistics across sites selects the federated statistics
-workflow rather than a model-training converter. If a request combines
-statistics and model training conversion, the agent treats them as two
-independent jobs and asks which workflow to run first; it does not merge or
-automatically chain them.
-
-During model-training conversion, the agent:
-
-#. Inspects the source statically to identify the model, constructor arguments,
-   training owner, data inputs, local training budget, evaluation path,
-   metrics, checkpoints, and callbacks.
-#. Confirms the requested algorithm against the recipes available in the
-   installed NVFLARE version.
-#. Preserves the source project's framework-native training and evaluation
-   behavior while adding the appropriate NVFLARE model exchange.
-#. Generates project-local integration files, such as a client entry point and
-   ``job.py``, without overwriting non-generated source files.
-#. Validates the generated target in stages and stops at the first failed
-   stage. When requested and authorized, the final stage runs a completed
-   local simulation.
-#. Reports the generated files, data and partition assumptions, metrics,
-   simulation evidence, and output artifact locations.
-
-The agent asks a focused question, or stops, when a required semantic choice
-cannot be recovered safely from the source. Examples include an ambiguous
-model constructor, aggregation rule, or best-model metric direction.
-
-For a federated statistics job, the agent:
+The agent:
 
 #. Inspects the data deterministically to identify modality, site layout,
    feature names, data types, row counts, and schema agreement.
@@ -163,6 +158,10 @@ For a federated statistics job, the agent:
    configured statistic for each feature, site, and the global aggregate.
 #. Reports applied privacy parameters, missing-data rates, aggregate summaries,
    and the result path without exposing raw rows or cell values.
+
+If one request combines federated statistics and model-training conversion,
+the agent treats them as two independent jobs and asks which workflow to run
+first. It does not merge or automatically chain them.
 
 Data and Artifacts
 ==================

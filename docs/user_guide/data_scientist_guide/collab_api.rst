@@ -232,10 +232,12 @@ Client API / Job Recipe API path:
   once, when the job starts (from the execution environment's site list
   and ``min_clients``); Collab does not support clients dynamically
   joining or leaving mid-run.
-* **No automatic retry.** A failed call raises ``CollabCallError``
-  immediately (or is swallowed if ``optional=True``); there is no built-in
-  retry, backoff, or resume-from-checkpoint for a failed or interrupted
-  call. Retry logic, if needed, is the application's responsibility.
+* **No automatic retry.** A failed individual call raises
+  ``CollabCallError`` immediately (or returns ``None`` if ``optional=True``),
+  while a failed group call records the per-site error in the result
+  collection's ``failures`` dict. There is no built-in retry, backoff, or
+  resume-from-checkpoint for a failed or interrupted call. Retry logic, if
+  needed, is the application's responsibility.
 * **``secure=True`` requires certificates.** A secure call needs the
   site's Cell configured with certificates; without that, the call raises
   rather than falling back to a non-secure transport.
