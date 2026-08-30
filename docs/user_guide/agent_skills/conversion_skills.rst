@@ -4,50 +4,53 @@
 Agent Conversion Skills
 #######################
 
-NVFLARE Agent Conversion Skills help a coding agent adapt an existing
-single-site training project into a reviewable, multi-site NVFLARE job. The
-agent inspects the project's existing training and evaluation code, chooses a
-compatible NVFLARE recipe, generates the integration files, and validates the
-result locally.
+NVFLARE Agent Conversion Skills help a coding agent create a reviewable,
+multi-site NVFLARE job from an existing single-site training project or a
+federated data-summary request. The agent inspects the source project or data,
+chooses a compatible NVFLARE recipe, generates the integration files, and
+validates the result locally.
 
 The skills are coding-agent workflows, not NVFLARE runtime commands or an
 automatic production migration service. You review and own the generated code
 and configuration.
 
-Supported Training Frameworks
-=============================
+Supported Workflows
+===================
 
-The conversion skills support three PyTorch-family training styles:
+You can use Agent Skills for four job-creation workflows:
 
 .. list-table::
    :header-rows: 1
-   :widths: 20 30 50
+   :widths: 30 70
 
-   * - Starting project
-     - Skill
-     - Supported integration
-   * - Plain PyTorch
-     - ``nvflare-convert-pytorch``
-     - Manual training loops built with ``nn.Module``, optimizers,
-       ``DataLoader``, and ``state_dict`` exchange. The generated client uses
-       the NVFLARE Client API and preserves source-backed training and
-       evaluation behavior.
-   * - PyTorch Lightning
-     - ``nvflare-convert-lightning``
-     - A Lightning-owned workflow with ``LightningModule`` and ``Trainer``.
-       The generated client patches the existing ``Trainer`` and keeps
-       evaluation, metrics, callbacks, and checkpoint behavior in Lightning.
-   * - Hugging Face
-     - ``nvflare-convert-huggingface``
-     - ``Trainer``, ``Seq2SeqTrainer``, TRL ``SFTTrainer``, or a compatible
-       ``Trainer`` subclass. Full-model and PEFT/LoRA fine-tuning are
-       supported, including single-process and replicated distributed
-       training when the process rank is unambiguous.
+   * - Starting input
+     - What the skill creates
+   * - An existing plain PyTorch training project
+     - A multi-site NVFLARE training job that preserves the project's model,
+       local training loop, training budget, and evaluation behavior.
+   * - An existing PyTorch Lightning project
+     - A multi-site NVFLARE training job that retains the Lightning trainer,
+       validation metrics, callbacks, and checkpoint behavior.
+   * - An existing Hugging Face Trainer project
+     - A multi-site NVFLARE training job that retains the Trainer workflow,
+       datasets, metrics, callbacks, and checkpoints. Full-model and PEFT/LoRA
+       fine-tuning are supported.
+   * - Tabular or image data
+     - A federated statistics job and aggregate results. Tabular inputs include
+       CSV, Parquet, and other pandas-readable data. Image inputs include
+       common image folders and DICOM or NIfTI when the matching loader is
+       available. Existing statistics selections declared in a script or
+       README can also be preserved.
 
-All three skills target horizontal federated learning with the PyTorch recipe
-family. FedAvg is the standard conversion path when requested. Other
-PyTorch-family recipes are used only when the requested workflow is compatible
-with a recipe exposed by the installed NVFLARE version.
+The three model-training skills target horizontal federated learning with the
+PyTorch recipe family. FedAvg is the standard conversion path when requested.
+Other PyTorch-family recipes are used only when the requested workflow is
+compatible with a recipe exposed by the installed NVFLARE version.
+
+The federated statistics skill generates a separate ``FedStatsRecipe`` job. It
+supports count, sum, mean, standard deviation, variance, histogram, quantile,
+and noise-protected minimum and maximum for numeric tabular features. For image
+data, it supports image count, failure count, and pixel-intensity histograms.
 
 Install the Skills
 ==================
@@ -63,11 +66,13 @@ Generated jobs require NVFLARE 2.9.0 or later in the Python environment used
 by the coding agent. The skills are installed from the source tree; they are
 not installed by the NVFLARE Python package.
 
-Request a Conversion
-====================
+Request a Job
+=============
 
-Open the existing training project in the coding agent and describe the
-federated outcome. Include the source location, framework, algorithm when you
+Open the existing training project or data directory in the coding agent and
+describe the federated outcome.
+
+For model training, include the source location, framework, algorithm when you
 have a preference, client count, round count, local training budget, and
 whether to run a local simulation. For example:
 
@@ -77,13 +82,30 @@ whether to run a local simulation. For example:
    NVFLARE FedAvg job for 3 sites and 3 rounds. Preserve its validation metric
    and local training budget, and validate the result with a local simulation.
 
+For federated statistics, identify the per-site data or the flat source data,
+the site count when it cannot be inferred, and any required statistics. When
+no statistics are named, the skill reports and applies its supported defaults.
+For example:
+
+.. code-block:: text
+
+   Create an NVFLARE federated statistics job for the per-site CSV files under
+   ./data. Compute count, mean, standard deviation, histogram, and median for
+   the numeric features, and validate the job with a local simulation.
+
 You do not need to name a skill. The agent selects a converter only when the
 request expresses federated or cross-site collaborative training intent and
 the source has one supported training owner. A request to add local DDP,
 profile a trainer, run inference, or debug ordinary training is not a
 conversion request.
 
-During conversion, the agent:
+A request for statistics across sites selects the federated statistics
+workflow rather than a model-training converter. If a request combines
+statistics and model training conversion, the agent treats them as two
+independent jobs and asks which workflow to run first; it does not merge or
+automatically chain them.
+
+During model-training conversion, the agent:
 
 #. Inspects the source statically to identify the model, constructor arguments,
    training owner, data inputs, local training budget, evaluation path,
@@ -104,15 +126,36 @@ The agent asks a focused question, or stops, when a required semantic choice
 cannot be recovered safely from the source. Examples include an ambiguous
 model constructor, aggregation rule, or best-model metric direction.
 
+For a federated statistics job, the agent:
+
+#. Inspects the data deterministically to identify modality, site layout,
+   feature names, data types, row counts, and schema agreement.
+#. Maps requested or declared statistics to the supported set and reports any
+   exclusions before generating code. When none are declared, it uses and
+   reports the default selection.
+#. Generates a data-loading client and ``job.py`` backed by
+   ``FedStatsRecipe``. Statistics are computed by NVFLARE rather than copied
+   from a source script.
+#. Preserves existing per-site data layout or creates deterministic partitions
+   for explicitly authorized flat demonstration data.
+#. Runs staged validation and verifies that the result JSON contains every
+   configured statistic for each feature, site, and the global aggregate.
+#. Reports applied privacy parameters, missing-data rates, aggregate summaries,
+   and the result path without exposing raw rows or cell values.
+
 Data and Artifacts
 ==================
 
-Training data remains external to the generated NVFLARE job and is passed to
+Source data remains external to the generated NVFLARE job and is passed to
 clients through configurable arguments. Existing site partitions are
 preserved. When a demonstration requires generated partitions, the agent uses
 a deterministic source-backed split and reports its policy, seed, and site
 count. It does not pool private records or silently derive preprocessing
 artifacts from multiple sites.
+
+Federated statistics output contains per-site and global aggregates, not raw
+records. Feature names must come from the data header or a user-supplied
+schema; they are never invented for ambiguous headerless data.
 
 Relative source-data paths are resolved against the source project before the
 job runs from NVFLARE's per-site runtime directories. Real deployments must
@@ -141,28 +184,39 @@ The conversion skills deliberately stop at the following boundaries:
 * **Framework coverage:** TensorFlow, XGBoost, scikit-learn, NeMo, inference-only
   pipelines, serving, and generic training repair are outside these conversion
   skills. Use the corresponding NVFLARE workflow or documentation instead.
-* **Hugging Face distributed strategies:** DeepSpeed and FSDP are outside the
-  Hugging Face converter's current scope. It supports one persistent
+* **Hugging Face Client API limitation:** The current NVFLARE Hugging Face
+  Client API does not support DeepSpeed or FSDP, so the conversion skill cannot
+  generate jobs that use those strategies. It supports one persistent
   ``Trainer`` per process and rejects an unresolved multi-process global rank.
-* **Privacy mechanisms:** A conversion does not add homomorphic encryption,
-  differential privacy, privacy filters, or a disclosure policy. Ask for those
-  requirements as a separate security and privacy design step; do not treat a
-  successful simulation as privacy approval.
+  DeepSpeed and FSDP support is planned for a future release.
+* **Federated statistics coverage:** Categorical counts, unique-value counts,
+  correlations, custom aggregations, and hierarchical statistics are not
+  supported. Requested minimum and maximum values are returned only as
+  noise-protected estimates. Missing feature names, inconsistent site schemas,
+  or an unknown site count for flat data cause the workflow to stop rather than
+  guess.
+* **Statistics validation:** The skill validates execution and result
+  completeness, but exact numeric parity is a separate test responsibility.
+* **Privacy mechanisms:** Model conversion does not add homomorphic encryption,
+  differential privacy, privacy filters, or a disclosure policy. The federated
+  statistics job retains its recipe's built-in privacy filters, but that does
+  not establish an approved disclosure policy. Do not treat a successful
+  simulation as privacy approval.
 * **Production deployment:** Provisioning, POC submission, Kubernetes or Slurm
   deployment, production policy, and operational approval are separate from
   conversion. Local simulation verifies the generated job path, not production
   readiness.
-* **Other workflows:** Federated statistics, AutoFL experiment search, failed-job
-  diagnosis, and general source modernization have their own skills or guides.
-  A combined request is handled as separate workflows rather than one blended
-  job.
+* **Other workflows:** AutoFL experiment search, failed-job diagnosis, and
+  general source modernization have their own skills or guides. Statistics and
+  model conversion are also kept as separate jobs rather than one blended
+  workflow.
 
 Try the Examples
 ================
 
 The :github_nvflare_link:`Agent Skills runnable examples
-<examples/hello-world/agent-skills>` include small plain PyTorch, Lightning, and
-Hugging Face starting projects with exact prompts and synthetic data. Start
-with :ref:`Agent Skills Quickstart <agent_skills_quickstart>`, then review the
-generated changes and validation evidence before applying the workflow to a
-real project.
+<examples/hello-world/agent-skills>` include small plain PyTorch, Lightning,
+Hugging Face, tabular statistics, and image statistics starting projects with
+exact prompts and synthetic data. Start with :ref:`Agent Skills Quickstart
+<agent_skills_quickstart>`, then review the generated changes and validation
+evidence before applying the workflow to a real project.

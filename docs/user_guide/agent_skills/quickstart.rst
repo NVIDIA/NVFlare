@@ -29,3 +29,5 @@ a simulation or applying a workflow to real data.
 
 For framework coverage, conversion behavior, data handling, and current
 limitations, see :ref:`Agent Conversion Skills <agent_conversion_skills>`.
+To optimize an existing NVFLARE ``job.py`` through agent-guided experiment
+search, see :ref:`NVFlare Auto-FL Agent Skill <autofl_skill>`.
