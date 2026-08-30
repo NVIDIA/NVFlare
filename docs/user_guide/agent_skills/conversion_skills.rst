@@ -204,6 +204,9 @@ The conversion skills deliberately stop at the following boundaries:
 * **Framework coverage:** TensorFlow, XGBoost, scikit-learn, NeMo, inference-only
   pipelines, serving, and generic training repair are outside these conversion
   skills. Use the corresponding NVFLARE workflow or documentation instead.
+* **Target API path:** Deep learning training-code conversion uses the
+  :ref:`Client API <client_api>` and :ref:`Job Recipe API <job_recipe>`. It
+  does not convert training code to the :ref:`Collaboration API <collab_api>`.
 * **Hugging Face Client API limitation:** The current NVFLARE Hugging Face
   Client API does not support DeepSpeed or FSDP, so the conversion skill cannot
   generate jobs that use those strategies. It supports one persistent
