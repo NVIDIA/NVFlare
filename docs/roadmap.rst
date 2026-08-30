@@ -35,8 +35,8 @@ FLARE 2.10.0 — Target: Early 2027
 - **Better GPU resource utilization** — Release GPUs during aggregation,
   barriers, and downloads instead of holding them idle. A durable, GPU-free
   site supervisor keeps a job's identity alive across time-bounded Slurm
-  allocations via checkpoint-and-resume, with no change to the
-  FedAvg/FedOpt/DiLoCo math.
+  allocations via checkpoint-and-resume while avoiding or minimizing changes
+  to the federated training algorithm.
 - **Job Statistics** — A usage proxy for cost: FLARE has no access to
   billing rates, so the goal is to report compute hours, GPU hours, storage
   volume/time, and ingress/egress size per job, so real cost can be mapped
