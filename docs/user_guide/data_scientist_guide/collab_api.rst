@@ -179,7 +179,8 @@ example ``collab.clients(blocking=False, timeout=30).train(weights)``:
 * ``blocking`` (group calls only, default ``True``) -- ``True`` waits for
   every result and returns a re-iterable snapshot; ``False`` returns
   immediately with a live, single-pass result stream you iterate as
-  results arrive.
+  results arrive. Exhaust the stream before treating its ``failures``
+  collection as complete.
 * ``expect_result`` (default ``True``) -- ``False`` is fire-and-forget: the
   call returns ``None`` immediately without waiting on the remote method at
   all.
@@ -209,6 +210,19 @@ not raise for a per-site call failure: it returns the successful results and
 records each failure in the result collection's ``failures`` dict (site name
 to ``CollabCallError``), as in ``weighted_avg`` above. Callers must check both
 ``failures`` and whether any successful results remain before aggregating.
+For a nonblocking group call, outcomes continue to populate the live stream
+and its ``failures`` dict in the background. Iterate the stream to exhaustion
+before inspecting the complete failure set or making a final aggregation
+decision:
+
+.. code-block:: python
+
+   client_results = collab.clients(blocking=False).train(weights)
+   valid = dict(client_results)  # drains the stream and waits for every outcome
+   for client_id, error in client_results.failures.items():
+       print(f"Warning: {client_id} failed: {error}")
+   if not valid:
+       raise RuntimeError("all client calls failed")
 
 Versioning and Authorization
 -----------------------------
