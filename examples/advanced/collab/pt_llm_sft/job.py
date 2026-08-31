@@ -20,7 +20,7 @@ from pathlib import Path
 from client import LLMSFTClient
 from server import SFTFedAvg
 
-from nvflare.collab import CollabRecipe, simple_logging
+from nvflare.collab import CollabRecipe
 from nvflare.recipe import SimEnv
 
 DEFAULT_DATA_ROOT = "/tmp/nvflare/collab/pt_llm_sft/data"
@@ -109,7 +109,6 @@ def main() -> None:
     args.data_root = Path(args.data_root).expanduser().resolve()
     args.output_root = Path(args.output_root).expanduser().resolve()
 
-    simple_logging()
     print(
         "Starting Collab full-parameter SFT simulation\n"
         f"  model: {args.model_name_or_path}\n"
