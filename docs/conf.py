@@ -51,8 +51,8 @@ copyright = "2025 NVIDIA"
 author = "NVIDIA"
 
 # The full version, including alpha/beta/rc tags
-release = "2.7.0"
-version = "2.7.0"
+release = "2.9.0"
+version = "2.9.0"
 
 readthedocs_version_name = os.environ.get("READTHEDOCS_VERSION_NAME")
 build_version = readthedocs_version_name if readthedocs_version_name not in (None, "latest", "stable") else "main"
