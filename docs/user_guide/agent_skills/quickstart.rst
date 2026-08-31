@@ -9,6 +9,8 @@ creating jobs, optimizing an existing job, and reporting AutoFL results. You
 describe the goal in natural language; the coding agent selects the appropriate
 installed skill from the request and available source files.
 
+.. _agent_skills_install:
+
 Install the Skills
 ==================
 

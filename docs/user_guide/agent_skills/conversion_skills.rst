@@ -15,19 +15,8 @@ automatic production migration service. You review and own the generated code
 and configuration. You do not need to know or name an internal skill; describe
 one of the two outcomes below and provide the corresponding input.
 
-Install the Skills
-==================
-
-From an NVFLARE source checkout, install the complete skill set for Codex,
-Claude Code, or both:
-
-.. code-block:: shell
-
-   npx skills add ./skills --skill '*' -a codex -a claude-code -y
-
-Generated jobs require NVFLARE 2.9.0 or later in the Python environment used
-by the coding agent. The skills are installed from the source tree; they are
-not installed by the NVFLARE Python package.
+Before using these workflows, complete :ref:`Agent Skills installation
+<agent_skills_install>`, including the NVFLARE runtime setup described there.
 
 Supported Workflow Groups
 =========================

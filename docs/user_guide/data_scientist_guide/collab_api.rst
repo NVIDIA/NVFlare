@@ -40,19 +40,23 @@ Decorators
 * ``@collab.main`` marks the server's single entry point. Every Collab
   server object or module must define exactly one.
 * ``@collab.init`` / ``@collab.final`` mark methods to run once at object
-  setup and teardown.
+  setup and teardown; see `Lifecycle Decorators`_ below.
 
 Facade Members
 ^^^^^^^^^^^^^^
 
-* ``collab.clients.<method>(...)`` calls the named ``@collab.publish``
-  method on every client in parallel and returns a result collection you can
-  iterate as ``(client_id, result)`` pairs; a client that raises is recorded
-  in ``client_results.failures`` (keyed by client ID) instead of failing the
-  whole call.
+* ``collab.clients`` is a ``ProxyList``. Call a method directly to use default
+  options (``collab.clients.train(weights)``), or call the ``ProxyList`` first
+  to set options (``collab.clients(timeout=30).train(weights)``). Both forms
+  call the named ``@collab.publish`` method on every client in parallel and
+  return a result collection you can iterate as ``(client_id, result)`` pairs;
+  a client that raises is recorded in ``client_results.failures`` (keyed by
+  client ID) instead of failing the whole call.
 * ``collab.site_name`` -- the current site's identity.
-* ``collab.caller`` / ``collab.callee`` -- who invoked this call, and who
-  it's calling.
+* ``collab.caller`` / ``collab.callee`` -- the site that invoked the current
+  call, and the receiving app or named object at the current site. The callee
+  is a fully qualified target such as ``site-1`` or ``site-1.selector``; it is
+  not a downstream target.
 * ``collab.other_clients`` / ``collab.child_clients`` / ``collab.leaf_clients``
   -- site-topology lookups, for calls that fan out beyond the server.
 * ``collab.get_app_prop()`` / ``collab.set_app_prop()`` -- per-site
@@ -60,13 +64,34 @@ Facade Members
 * ``collab.get_prop()`` / ``collab.set_prop()`` -- sharing data within a
   single call context.
 
+Lifecycle Decorators
+^^^^^^^^^^^^^^^^^^^^
+
+``@collab.init`` runs once after a site's Collab app is set up and before its
+main or published methods are called. ``@collab.final`` runs during Collab app
+teardown after normal execution or controlled end-run cleanup; a hard process
+termination cannot guarantee that finalization code runs. A lifecycle method
+may take no arguments or declare a ``context`` parameter to receive the active
+Collab call context. The runtime invokes lifecycle methods on the primary
+server/client object and on every named object registered through
+``server_objects`` or ``client_objects``.
+
+See the runnable :github_nvflare_link:`LLM SFT client
+<examples/advanced/collab/pt_llm_sft/client.py>` for an ``@collab.init`` method
+that prepares site-local data, model, trainer, dataloader, and optimizer once
+before training calls begin.
+
 A Minimal Example
 ------------------
 
 This is the server and client from the runnable
 :github_nvflare_link:`Hello FedAvg with the Collab API
 <examples/hello-world/hello-collab>` example, trimmed to the FedAvg loop
-itself:
+itself. The placeholder local trainer keeps the snippet executable while the
+linked example contains real PyTorch training. For brevity, this version
+assumes every successful client contributes the same number of examples and
+therefore uses equal client weighting. If site dataset sizes differ, return
+each site's sample count and weight its update and loss by that count.
 
 .. code-block:: python
 
@@ -74,20 +99,31 @@ itself:
    from nvflare.recipe import SimEnv
 
 
+   MIN_CLIENTS = 2
+
+
+   def run_local_training(weights, local_epochs):
+       """Replace this no-op placeholder with the application's training loop."""
+       updated_weights = dict(weights or {"weight": 0.0})
+       for _epoch in range(local_epochs):
+           pass  # run one local training epoch and update `updated_weights`
+       return updated_weights, 0.0
+
+
    class Trainer:
        @collab.publish
        def train(self, weights=None):
            local_epochs = collab.get_app_prop("local_epochs", 5)
-           # ... local training using `weights` as the starting point ...
-           return updated_weights, loss
+           return run_local_training(weights, local_epochs)
 
 
-   def weighted_avg(client_results):
+   def simple_avg(client_results, min_successes):
        valid = dict(client_results)
        for client_id, error in client_results.failures.items():
            print(f"Warning: {client_id} failed: {error}")
-       if not valid:
-           raise RuntimeError(f"all {len(client_results.failures)} client calls failed")
+       total_clients = len(valid) + len(client_results.failures)
+       if len(valid) < min_successes:
+           raise RuntimeError(f"only {len(valid)} of {total_clients} client calls succeeded")
        all_weights = [result[0] for result in valid.values()]
        avg_weights = {k: sum(w[k] for w in all_weights) / len(all_weights) for k in all_weights[0]}
        avg_loss = sum(result[1] for result in valid.values()) / len(valid)
@@ -95,21 +131,27 @@ itself:
 
 
    class FedAvg:
-       def __init__(self, num_rounds=3):
+       def __init__(self, num_rounds=3, min_successes=MIN_CLIENTS):
            self.num_rounds = num_rounds
+           self.min_successes = min_successes
 
        @collab.main
        def run(self):
            global_weights = None
            for _round_num in range(self.num_rounds):
                client_results = collab.clients.train(global_weights)
-               global_weights, global_loss = weighted_avg(client_results)
+               global_weights, _global_loss = simple_avg(client_results, self.min_successes)
            return global_weights
 
 
    simple_logging()
-   recipe = CollabRecipe(job_name="hello_fedavg", server=FedAvg(), client=Trainer(), min_clients=2)
-   run = recipe.execute(SimEnv(clients=recipe.configured_sites()))
+   recipe = CollabRecipe(
+       job_name="hello_fedavg",
+       server=FedAvg(min_successes=MIN_CLIENTS),
+       client=Trainer(),
+       min_clients=MIN_CLIENTS,
+   )
+   run = recipe.execute(SimEnv(num_clients=MIN_CLIENTS))
 
 See the full, runnable example (real PyTorch model, per-site epoch
 configuration, argument parsing) at the link above.
@@ -131,9 +173,12 @@ same ``Run`` handle. Constructor arguments a user is expected to set:
 * ``server`` / ``client`` -- the server and client objects (or ``None`` to
   auto-discover module-level ``@collab.main``/``@collab.publish``
   functions).
-* ``min_clients`` -- minimum number of clients required for the job to run.
-* ``sync_task_timeout`` -- timeout, in seconds, for the underlying
-  synchronization task each Collab call rides on.
+* ``min_clients`` -- minimum number of clients required for the job to start.
+  It does not enforce a successful-response quorum for each group call; the
+  application must check that, as ``simple_avg`` does above.
+* ``sync_task_timeout`` -- timeout, in seconds, for the startup client
+  synchronization and setup tasks. It does not control remote method calls;
+  set their ``timeout`` through the per-call options described below.
 * ``server_objects`` / ``client_objects`` -- additional named objects (for
   example a model-selector or a strategy object) that a server or client
   method needs to call into beyond the main server/client object.
@@ -146,7 +191,10 @@ authorized.
 Use ``recipe.set_per_site_config({site: {name: value}})`` (inherited from the
 base ``Recipe``) to deliver different values to different clients; a client
 reads its own value with ``collab.get_app_prop(name)``, as in the example
-above.
+above. ``recipe.configured_sites()`` is also inherited from ``Recipe`` and
+returns the site names supplied through per-site configuration. It does not
+infer clients from an execution environment; when no per-site configuration
+is set, provide ``num_clients`` or ``clients`` directly to ``SimEnv``.
 
 Advanced Usage
 --------------
@@ -161,10 +209,11 @@ need more control over who is called and how the call behaves.
 * ``collab.get_clients(["site-1", "site-2"])`` calls out to a named subset
   instead of every client; it returns a ``ProxyList`` you call the same way
   as ``collab.clients``.
-* ``collab.clients[0]`` (or any index/slice) returns individual client
-  proxies. A single proxy's method call goes to that one site only and
-  returns its result directly -- no ``(site_name, result)`` collection to
-  unwrap.
+* Integer indexing such as ``collab.clients[0]`` returns an individual client
+  proxy. A single proxy's method call goes to that one site only and returns
+  its result directly -- no ``(site_name, result)`` collection to unwrap. A
+  slice returns a plain Python list, not a callable ``ProxyList``; use
+  ``collab.get_clients([...])`` for a callable subset.
 * ``collab.other_clients``, ``collab.child_clients``, and
   ``collab.leaf_clients`` scope a call to a topology-based subset (see
   `Core Concepts`_ above); each also supports indexing into an individual
@@ -241,6 +290,10 @@ Client API / Job Recipe API path:
 
 * **No mixed-version jobs.** See `Versioning and Authorization`_ above --
   every site must run 2.9.0 or newer.
+* **BYOC authorization required.** ``CollabRecipe`` packages the supplied
+  server, client, and named-object source into the job. Every receiving site
+  must authorize BYOC for the submitting user or the job cannot run. See
+  :ref:`BYOC authorization <troubleshooting_byoc>` for deployment details.
 * **No task/result filter pipeline.** Standard NVFlare task and result
   filters (for example differential privacy or homomorphic encryption
   filters) attach to the ``Shareable``/``Task`` exchange, which Collab
