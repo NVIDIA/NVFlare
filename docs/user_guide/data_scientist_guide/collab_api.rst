@@ -282,6 +282,8 @@ Collab calls carry a versioned authorization envelope that only 2.9.0+ peers
 produce and accept, so there is no mixed-version compatibility path for
 Collab jobs specifically (other job types are unaffected).
 
+.. _collab_api_limitations:
+
 Limitations
 -----------
 

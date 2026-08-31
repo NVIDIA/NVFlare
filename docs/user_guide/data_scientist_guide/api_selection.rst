@@ -9,15 +9,15 @@ Choose an NVFLARE API Path
 NVFLARE offers two high-level ways to build federated applications. They serve
 different goals and are complementary, not interchangeable defaults.
 
-Choose Collaboration API for Research
-=====================================
+Choose Collaboration API (Technical Preview) for Research
+==========================================================
 
-Use the Collaboration API when you are a researcher exploring a new federated
-algorithm, communication pattern, or analysis workflow. Annotate client
-functions with ``@collab.publish``, express the coordinating algorithm as
-ordinary Python, and use ``CollabRecipe`` to run it. This keeps experimentation
-close to the algorithm and avoids writing Controllers, Executors, Shareables,
-or ``FLModel`` exchange code.
+Use the :ref:`Collaboration API <collab_api>` when you are a researcher
+exploring a new federated algorithm, communication pattern, or analysis
+workflow. Annotate client functions with ``@collab.publish``, express the
+coordinating algorithm as ordinary Python, and use ``CollabRecipe`` to run it.
+This keeps experimentation close to the algorithm and avoids writing
+Controllers, Executors, Shareables, or ``FLModel`` exchange code.
 
 The Collaboration API is the right starting point when the primary goal is to
 quickly test algorithmic ideas. It gives the researcher broad control over what
@@ -29,7 +29,15 @@ deployment security controls configured for that environment. Collaboration API
 does not prescribe a model-training lifecycle, aggregation strategy, or
 recipe-specific resource policy; the researcher owns those choices.
 
-Start with the :github_nvflare_link:`Hello Collab example
+Before selecting this path, review the current
+:ref:`Collaboration API limitations <collab_api_limitations>`. In particular,
+all participating sites must run a compatible NVFLARE version and authorize
+BYOC, and the standard task/result filter pipeline is not available. These
+constraints can make Client API + Job Recipe the more appropriate choice even
+for a custom application.
+
+Start with the :ref:`Collaboration API guide <collab_api>`, the
+:github_nvflare_link:`Hello Collab example
 <examples/hello-world/hello-collab>` or the :github_nvflare_link:`advanced
 Collaboration examples <examples/advanced/collab>`.
 
@@ -94,7 +102,8 @@ At a Glance
      - Start with
      - What you get
    * - Explore a new FL algorithm or communication pattern
-     - **Collaboration API** (Collab annotations + ``CollabRecipe``)
+     - :ref:`Collaboration API (Technical Preview) <collab_api>`
+       (Collab annotations + ``CollabRecipe``)
      - Direct Python expression of server coordination and client calls, with
        maximum algorithmic flexibility.
    * - Federate an existing training application for production use
