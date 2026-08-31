@@ -109,6 +109,7 @@ PyTorch model, data, and FedAvg implementation.
 
 
    def aggregate(client_results):
+       # Per-site call exceptions are available in client_results.failures.
        successful = list(dict(client_results).values())
        if len(successful) < MIN_CLIENTS:
            raise RuntimeError(f"only {len(successful)} client calls succeeded")
@@ -242,8 +243,9 @@ An individual ``Proxy`` call failure raises ``CollabCallError`` (site,
 function name, and cause) unless ``optional=True`` was set. A group call does
 not raise for a per-site call failure: it returns the successful results and
 records each failure in the result collection's ``failures`` dict (site name
-to ``CollabCallError``), as in ``weighted_avg`` above. Callers must check both
-``failures`` and whether any successful results remain before aggregating.
+to ``CollabCallError``). Callers must inspect ``failures`` and enforce their
+required successful-response quorum before aggregating; ``aggregate`` above
+shows the minimum quorum guard.
 For a nonblocking group call, outcomes continue to populate the live stream
 and its ``failures`` dict in the background. Iterate the stream to exhaustion
 before inspecting the complete failure set or making a final aggregation
