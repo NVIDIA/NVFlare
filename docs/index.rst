@@ -151,7 +151,7 @@ Start here if you want to federate an existing training script.
 - :doc:`Quick Start <quickstart>` -- Run a Hello World example and convert your ML code
 - :doc:`Agent Skills <user_guide/agent_skills/index>` -- Optional coding-agent workflows to learn NVFLARE, create federated jobs, optimize with AutoFL, and report results
 - :ref:`Client API <client_api>` -- Recommended high-level API for federated training
-- :ref:`Collaboration API (Technical Preview) <collab_api>` -- Agent-to-agent style calls between server and clients
+- :ref:`Collaboration API (Technical Preview) <collab_api>` -- Remote Python method calls between server and clients and among peer clients
 - :ref:`Job Recipe API <job_recipe>` -- Pre-built recipes for common FL workflows
 - :doc:`Migration Guide <migration_guide>` -- Upgrade between FLARE versions
 - :ref:`Examples & Tutorials <example_applications>` -- End-to-end examples and tutorials

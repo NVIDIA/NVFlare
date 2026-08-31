@@ -10,13 +10,15 @@ Collaboration API (Technical Preview)
    in NVFlare 2.9.0. The API surface documented here may still change in a
    future release.
 
-The Collab API lets you write a federated workflow as direct, agent-to-agent
-style function calls between server and client objects, instead of the
+The Collab API lets you write a federated workflow as remote Python method
+calls between server and client objects and among peer clients, instead of the
 task/\ ``Shareable`` exchange used by the :ref:`Client API <client_api>` and
 :ref:`Job Recipe API <job_recipe>`. A server method calls a decorated client
 method as if it were local, and clients can call published methods on other
-clients in the same way. Calls return ordinary Python objects -- no manual
-``Shareable``/``DXO``/``FLModel`` packing.
+clients in the same way. Peer calls may be routed through a coordinator; this
+programming model does not imply a direct network connection. Calls return
+ordinary Python objects -- no manual ``Shareable``/``DXO``/``FLModel``
+packing.
 
 Use the Collab API when your workflow's control flow is naturally expressed
 as calls and return values -- for example fan-out/fan-in patterns with custom
