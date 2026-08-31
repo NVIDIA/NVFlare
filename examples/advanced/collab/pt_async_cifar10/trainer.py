@@ -158,6 +158,8 @@ class Cifar10Trainer:
         model.train()
         total_loss = 0.0
         num_steps = self.aggregation_epochs * len(dataloader)
+        if num_steps == 0:
+            raise ValueError(f"Prepared shard for '{logical_name}' contains no training batches")
         for _epoch in range(self.aggregation_epochs):
             model.train()
             for inputs, labels in dataloader:
