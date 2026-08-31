@@ -21,23 +21,14 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.nn as nn
-from data import load_manifest, split_path
-from model import ModerateCNN, get_model_params, load_model_params, reset_model_state, resnet18_local
+from model import ModerateCNN, get_model_params, load_model_params
 from torch.utils.data import DataLoader, Subset
 from torchvision import datasets, transforms
 
 from nvflare.collab import collab
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
-_CIFAR10_MEAN = (0.4914, 0.4822, 0.4465)
-_CIFAR10_STD = (0.2023, 0.1994, 0.2010)
 _TRAIN_TRANSFORM = transforms.Compose(
-    [
-        transforms.ToTensor(),
-        transforms.Normalize(_CIFAR10_MEAN, _CIFAR10_STD),
-    ]
-)
-_FEDAVG_TRAIN_TRANSFORM = transforms.Compose(
     [
         transforms.ToTensor(),
         transforms.Pad(4, padding_mode="reflect"),
@@ -52,17 +43,15 @@ _FEDAVG_TRAIN_TRANSFORM = transforms.Compose(
 
 
 class Cifar10Trainer:
-    """Train logical client shards that were created by ``prepare_data.py``."""
+    """Train logical client shards created by the shared CIFAR-10 splitter."""
 
     def __init__(
         self,
         data_root: str,
-        local_batch_size: int = 32,
-        local_iters: int = 25,
-        local_lr: float = 0.0003,
+        local_batch_size: int = 64,
+        local_lr: float = 0.05,
         device: str | None = None,
         num_threads: int = 1,
-        profile: str = "native",
         train_idx_root: str | None = None,
         aggregation_epochs: int = 4,
         total_client_rounds: int = 50,
@@ -70,18 +59,15 @@ class Cifar10Trainer:
     ):
         self.data_root = data_root
         self.local_batch_size = local_batch_size
-        self.local_iters = local_iters
         self.local_lr = local_lr
         self.device_name = device
         self.num_threads = num_threads
-        self.profile = profile
         self.train_idx_root = train_idx_root
         self.aggregation_epochs = aggregation_epochs
         self.total_client_rounds = total_client_rounds
         self.num_workers = num_workers
         self.logger = get_obj_logger(self)
         self._dataset = None
-        self._manifest = None
         self._local_model = None
         self._optimizer = None
         self._scheduler = None
@@ -91,51 +77,34 @@ class Cifar10Trainer:
     def initialize(self):
         torch.set_num_threads(self.num_threads)
         self.data_root = collab.get_app_prop("data_root", self.data_root)
-        if self.profile == "native":
-            self._manifest = load_manifest(self.data_root)
         self._dataset = datasets.CIFAR10(
             root=self.data_root,
             train=True,
             download=False,
-            transform=_FEDAVG_TRAIN_TRANSFORM if self.profile == "fedavg" else _TRAIN_TRANSFORM,
+            transform=_TRAIN_TRANSFORM,
         )
-        if self.profile == "fedavg":
-            self._local_model = ModerateCNN()
-            self._optimizer = torch.optim.SGD(self._local_model.parameters(), lr=self.local_lr, momentum=0.9)
-            self._scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-                self._optimizer,
-                T_max=self.total_client_rounds * self.aggregation_epochs,
-                eta_min=self.local_lr * 0.01,
-            )
-            self.logger.info(f"[{collab.site_name}] loaded existing FedAvg CIFAR-10 profile")
-        else:
-            self.logger.info(
-                f"[{collab.site_name}] loaded prepared CIFAR-10 metadata for "
-                f"{self._manifest['num_clients']} logical clients"
-            )
+        self._local_model = ModerateCNN()
+        self._optimizer = torch.optim.SGD(self._local_model.parameters(), lr=self.local_lr, momentum=0.9)
+        self._scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            self._optimizer,
+            T_max=self.total_client_rounds * self.aggregation_epochs,
+            eta_min=self.local_lr * 0.01,
+        )
+        self.logger.info(f"[{collab.site_name}] loaded FedAvg-compatible CIFAR-10 training settings")
 
     def _device(self) -> torch.device:
         return torch.device(self.device_name or ("cuda" if torch.cuda.is_available() else "cpu"))
 
-    def _build_dataloader(self, logical_name: str, assignment_id: int) -> DataLoader:
-        if self.profile == "fedavg" and logical_name in self._dataloaders:
+    def _build_dataloader(self, logical_name: str) -> DataLoader:
+        if logical_name in self._dataloaders:
             return self._dataloaders[logical_name]
-        if self.profile == "fedavg":
-            indices_file = Path(self.train_idx_root).expanduser().resolve() / f"{logical_name}.npy"
-        else:
-            indices_file = split_path(self.data_root, logical_name)
+        indices_file = Path(self.train_idx_root).expanduser().resolve() / f"{logical_name}.npy"
         if not indices_file.is_file():
             raise FileNotFoundError(
                 f"No prepared split for logical client '{logical_name}' at '{indices_file}'. "
-                "Re-run prepare_data.py with enough logical clients."
+                "Re-run job.py to regenerate the shared CIFAR-10 split."
             )
         indices = np.load(indices_file)
-        loader_args = {}
-        if self.profile == "native":
-            logical_index = int(logical_name.rsplit("-", 1)[-1])
-            loader_args["generator"] = torch.Generator().manual_seed(
-                self._manifest["split_seed"] + logical_index * 100_000 + assignment_id
-            )
         dataloader = DataLoader(
             Subset(self._dataset, indices.tolist()),
             batch_size=self.local_batch_size,
@@ -143,17 +112,11 @@ class Cifar10Trainer:
             num_workers=self.num_workers,
             pin_memory=True,
             persistent_workers=self.num_workers > 0,
-            **loader_args,
         )
-        if self.profile == "fedavg":
-            self._dataloaders[logical_name] = dataloader
+        self._dataloaders[logical_name] = dataloader
         return dataloader
 
     def _prepare_model(self, global_model: dict[str, torch.Tensor], device: torch.device):
-        if self._local_model is None:
-            self._local_model = resnet18_local()
-        if self.profile == "native":
-            reset_model_state(self._local_model, reset_norm_stats=True)
         load_model_params(self._local_model, global_model, target_device=device)
         return self._local_model
 
@@ -181,44 +144,23 @@ class Cifar10Trainer:
         )
 
         data_started = time.time()
-        dataloader = self._build_dataloader(logical_name, assignment_id)
+        dataloader = self._build_dataloader(logical_name)
         data_time = time.time() - data_started
 
         model_started = time.time()
         device = self._device()
         model = self._prepare_model(global_model, device)
-        optimizer = (
-            self._optimizer if self.profile == "fedavg" else torch.optim.Adam(model.parameters(), lr=self.local_lr)
-        )
+        optimizer = self._optimizer
         criterion = nn.CrossEntropyLoss()
         model_time = time.time() - model_started
 
         train_started = time.time()
         model.train()
         total_loss = 0.0
-        if self.profile == "fedavg":
-            num_steps = self.aggregation_epochs * len(dataloader)
-            for _epoch in range(self.aggregation_epochs):
-                model.train()
-                for inputs, labels in dataloader:
-                    inputs = inputs.to(device)
-                    labels = labels.to(device)
-                    optimizer.zero_grad()
-                    loss = criterion(model(inputs), labels)
-                    loss.backward()
-                    optimizer.step()
-                    total_loss += loss.item()
-                self._scheduler.step()
-        else:
-            num_steps = self.local_iters
-            data_iter = iter(dataloader)
-            for _step in range(self.local_iters):
-                try:
-                    inputs, labels = next(data_iter)
-                except StopIteration:
-                    data_iter = iter(dataloader)
-                    inputs, labels = next(data_iter)
-
+        num_steps = self.aggregation_epochs * len(dataloader)
+        for _epoch in range(self.aggregation_epochs):
+            model.train()
+            for inputs, labels in dataloader:
                 inputs = inputs.to(device)
                 labels = labels.to(device)
                 optimizer.zero_grad()
@@ -226,6 +168,7 @@ class Cifar10Trainer:
                 loss.backward()
                 optimizer.step()
                 total_loss += loss.item()
+            self._scheduler.step()
         train_time = time.time() - train_started
 
         metrics = {

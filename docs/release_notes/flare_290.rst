@@ -116,7 +116,7 @@ New examples:
   a minimal FedAvg workflow
 - :github_nvflare_link:`pt_async_cifar10
   <examples/advanced/collab/pt_async_cifar10>` — asynchronous FL with
-  FedBuff at scale (up to 1,000 logical clients)
+  FedBuff on CIFAR-10
 - :github_nvflare_link:`advanced Collab examples <examples/advanced/collab>`
   — split learning, swarm learning, and in-time aggregation
 

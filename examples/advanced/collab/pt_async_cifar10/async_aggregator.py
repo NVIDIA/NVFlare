@@ -26,14 +26,7 @@ from dataclasses import dataclass
 
 import numpy as np
 import torch
-from model import (
-    ModerateCNN,
-    add_update_to_params,
-    get_model_params,
-    load_model_params,
-    reset_model_state,
-    resnet18_local,
-)
+from model import ModerateCNN, add_update_to_params, get_model_params, load_model_params
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from torchvision import datasets, transforms
@@ -42,15 +35,7 @@ from nvflare.collab import collab
 from nvflare.collab.api import ContextKey
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
-_CIFAR10_MEAN = (0.4914, 0.4822, 0.4465)
-_CIFAR10_STD = (0.2023, 0.1994, 0.2010)
 _TEST_TRANSFORM = transforms.Compose(
-    [
-        transforms.ToTensor(),
-        transforms.Normalize(_CIFAR10_MEAN, _CIFAR10_STD),
-    ]
-)
-_FEDAVG_TEST_TRANSFORM = transforms.Compose(
     [
         transforms.ToTensor(),
         transforms.Normalize(
@@ -98,21 +83,16 @@ class Cifar10AsyncAggregator:
     def __init__(
         self,
         data_root: str,
-        logical_num_clients: int,
         num_rounds: int = 100,
         num_active_jobs: int = 8,
         buffer_size: int = 4,
         min_open_slots: int = 1,
         call_timeout: float = 3600.0,
         device: str | None = None,
-        eval_interval: int = 1,
         eval_batch_size: int = 300,
         server_lr: float = 1.0,
         setup_seed: int = 10,
         run_seed: int = 10,
-        profile: str = "native",
-        fixed_logical_clients: bool = False,
-        aggregation_weight_metric: str | None = None,
         checkpoint_interval: int = 0,
     ):
         if num_active_jobs < 1:
@@ -121,34 +101,25 @@ class Cifar10AsyncAggregator:
             raise ValueError("buffer_size must be >= 1")
         if not 1 <= min_open_slots <= num_active_jobs:
             raise ValueError("min_open_slots must be between 1 and num_active_jobs")
-        if logical_num_clients < num_active_jobs:
-            raise ValueError("logical_num_clients must be >= num_active_jobs")
 
         self.data_root = data_root
-        self.logical_num_clients = logical_num_clients
         self.num_rounds = num_rounds
         self.num_active_jobs = num_active_jobs
         self.buffer_size = buffer_size
         self.min_open_slots = min_open_slots
         self.call_timeout = call_timeout
         self.device_name = device
-        self.eval_interval = max(1, eval_interval)
         self.eval_batch_size = max(1, eval_batch_size)
         self.server_lr = float(server_lr)
         self.setup_seed = setup_seed
         self.run_seed = run_seed
-        self.profile = profile
-        self.fixed_logical_clients = fixed_logical_clients
-        self.aggregation_weight_metric = aggregation_weight_metric
         self.checkpoint_interval = max(0, checkpoint_interval)
         self.logger = get_obj_logger(self)
 
-        self._logical_client_names = [f"site-{index}" for index in range(1, logical_num_clients + 1)]
-        self._rng = None
         self._outcomes = queue.Queue()
         self._active_jobs: dict[str, _ActiveJob] = {}
-        self._active_logical_names: set[str] = set()
-        self._open_slots: list[str] = []
+        self._available_clients: list[str] = []
+        self._num_open_slots = 0
         self._update_buffer: list[_BufferedUpdate] = []
         self._next_assignment_id = 0
         self._model_version = 0
@@ -163,7 +134,7 @@ class Cifar10AsyncAggregator:
         self._eval_snapshot_dir = None
 
     def _new_model(self):
-        return ModerateCNN() if self.profile == "fedavg" else resnet18_local()
+        return ModerateCNN()
 
     def _device(self) -> torch.device:
         return torch.device(self.device_name or ("cuda" if torch.cuda.is_available() else "cpu"))
@@ -181,7 +152,7 @@ class Cifar10AsyncAggregator:
                 root=self.data_root,
                 train=False,
                 download=False,
-                transform=_FEDAVG_TEST_TRANSFORM if self.profile == "fedavg" else _TEST_TRANSFORM,
+                transform=_TEST_TRANSFORM,
             )
             self._test_loader = DataLoader(test_set, batch_size=self.eval_batch_size, shuffle=False, num_workers=0)
 
@@ -190,7 +161,6 @@ class Cifar10AsyncAggregator:
         device = self._device()
         if self._eval_model is None:
             self._eval_model = self._new_model()
-        reset_model_state(self._eval_model, reset_norm_stats=True)
         load_model_params(self._eval_model, global_model, target_device=device)
         self._eval_model.eval()
 
@@ -246,8 +216,7 @@ class Cifar10AsyncAggregator:
         initial_model = get_model_params(self._new_model(), target_device="cpu")
         global_model = collab.get_prop(ContextKey.RESULT, initial_model)
         self._global_model = {name: value.detach().cpu().clone() for name, value in global_model.items()}
-        if self.profile == "fedavg":
-            self._save_eval_snapshot()
+        self._save_eval_snapshot()
 
         all_physical_names = [client.name for client in collab.clients]
         if self.num_active_jobs > len(all_physical_names):
@@ -257,11 +226,9 @@ class Cifar10AsyncAggregator:
             )
 
         try:
-            if self.profile == "native":
-                self._evaluate_model(self._global_model, round_index=-1)
             seed_everything(self.run_seed)
-            self._rng = np.random.RandomState(self.run_seed)
-            self._open_slots = all_physical_names[: self.num_active_jobs]
+            self._available_clients = all_physical_names
+            self._num_open_slots = self.num_active_jobs
             self._dispatch_open_slots(force=True)
             self._last_round_time = time.time()
 
@@ -271,7 +238,7 @@ class Cifar10AsyncAggregator:
 
                 # Aggregate first when both thresholds are reached. Jobs
                 # dispatched here therefore receive the newly created version.
-                if self._rounds_completed < self.num_rounds and len(self._open_slots) >= self.min_open_slots:
+                if self._rounds_completed < self.num_rounds and self._num_open_slots >= self.min_open_slots:
                     self._dispatch_open_slots()
                 if aggregated:
                     self._after_aggregation()
@@ -283,8 +250,7 @@ class Cifar10AsyncAggregator:
             while self._active_jobs:
                 self._process_outcome(self._wait_for_outcome(), accept_update=False)
 
-            if self.profile == "fedavg":
-                self._evaluate_snapshots()
+            self._evaluate_snapshots()
 
             final_dir = os.path.join(self._run_dir, "final_model")
             os.makedirs(final_dir, exist_ok=True)
@@ -297,22 +263,21 @@ class Cifar10AsyncAggregator:
                 self._writer.close()
 
     def _dispatch_open_slots(self, force: bool = False) -> None:
-        if not self._open_slots:
+        if not self._available_clients or self._num_open_slots == 0:
             return
-        if not force and len(self._open_slots) < self.min_open_slots:
+        if not force and self._num_open_slots < self.min_open_slots:
             return
 
         target_updates = self.num_rounds * self.buffer_size
         accepted_or_buffered = self._rounds_completed * self.buffer_size + len(self._update_buffer)
         assignments_needed = target_updates - accepted_or_buffered - len(self._active_jobs)
+        assignments_needed = min(assignments_needed, self._num_open_slots, len(self._available_clients))
         if assignments_needed <= 0:
             return
-        physical_names = self._open_slots[:assignments_needed]
-        self._open_slots = self._open_slots[assignments_needed:]
-        if self.fixed_logical_clients:
-            logical_assignments = physical_names
-        else:
-            logical_assignments = self._sample_logical_clients(len(physical_names))
+        physical_names = self._available_clients[:assignments_needed]
+        self._available_clients = self._available_clients[assignments_needed:]
+        self._num_open_slots -= len(physical_names)
+        logical_assignments = physical_names
         logical_by_physical = dict(zip(physical_names, logical_assignments))
         assignment_ids = {}
         model_snapshot = {name: value.detach().clone() for name, value in self._global_model.items()}
@@ -329,7 +294,6 @@ class Cifar10AsyncAggregator:
                 model_version=self._model_version,
                 base_model=model_snapshot,
             )
-            self._active_logical_names.add(logical_name)
 
         self.logger.info(
             f"[{collab.call_info}] dispatching model version {self._model_version} to "
@@ -354,16 +318,6 @@ class Cifar10AsyncAggregator:
             daemon=True,
             name=f"fedbuff_dispatch_v{self._model_version}",
         ).start()
-
-    def _sample_logical_clients(self, count: int) -> list[str]:
-        available = [name for name in self._logical_client_names if name not in self._active_logical_names]
-        if count > len(available):
-            raise RuntimeError(
-                f"Need {count} inactive logical clients, but only {len(available)} are available. "
-                "Prepare at least num_active_jobs logical clients."
-            )
-        selected = self._rng.choice(available, size=count, replace=False)
-        return [str(name) for name in selected.tolist()]
 
     def _accept_train_result(self, group_call_context, result):
         physical_name = group_call_context.target_name.split(".", 1)[0]
@@ -394,8 +348,8 @@ class Cifar10AsyncAggregator:
             self.logger.warning(f"ignoring duplicate or unexpected outcome from {outcome.physical_name}")
             return False
 
-        self._active_logical_names.discard(job.logical_name)
-        self._open_slots.append(job.physical_name)
+        self._available_clients.append(job.physical_name)
+        self._num_open_slots += 1
         if outcome.error is not None:
             self.logger.warning(
                 f"assignment {job.assignment_id} failed on {job.physical_name} "
@@ -433,10 +387,7 @@ class Cifar10AsyncAggregator:
     def _aggregate_buffer(self) -> None:
         total_delta = {}
         metrics = defaultdict(list)
-        if self.aggregation_weight_metric:
-            weights = [float(update.metrics[self.aggregation_weight_metric]) for update in self._update_buffer]
-        else:
-            weights = [1.0] * len(self._update_buffer)
+        weights = [float(update.metrics["num_steps"]) for update in self._update_buffer]
         total_weight = sum(weights)
         if total_weight <= 0:
             raise ValueError("aggregation weights must sum to a positive value")
@@ -462,13 +413,7 @@ class Cifar10AsyncAggregator:
         )
 
     def _after_aggregation(self) -> None:
-        round_index = self._rounds_completed - 1
-        if self.profile == "native" and (
-            self._rounds_completed % self.eval_interval == 0 or self._rounds_completed == self.num_rounds
-        ):
-            self._evaluate_model(self._global_model, round_index)
-        elif self.profile == "fedavg":
-            self._save_eval_snapshot()
+        self._save_eval_snapshot()
 
         if self.checkpoint_interval and (
             self._rounds_completed % self.checkpoint_interval == 0 or self._rounds_completed == self.num_rounds

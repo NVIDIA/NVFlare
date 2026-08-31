@@ -25,9 +25,8 @@ python -m pip install -r requirements.txt
 pt_async_cifar10/
 ├── async_aggregator.py  # Server-side FedBuff scheduler and aggregation
 ├── trainer.py           # Published client-side local training
-├── model.py             # Native ResNet-18, FedAvg ModerateCNN, and state helpers
-├── data.py              # Prepared-data validation and split helpers
-├── prepare_data.py      # CIFAR-10 download and logical-client preparation
+├── model.py             # FedAvg ModerateCNN and state helpers
+├── prepare_data.sh      # Shared CIFAR-10 download entry point
 ├── job.py               # CollabRecipe CLI and simulator wiring
 └── requirements.txt
 ```
@@ -65,44 +64,34 @@ accepted-update budget while using FedBuff's immediate refill policy.
 
 ## Data
 
-For the native profile, prepare eight logical clients for the default run:
+Use the single preparation script shared with the existing CIFAR-10 simulator
+examples to download the dataset to `/tmp/cifar10`:
 
 ```bash
-python prepare_data.py \
-    --num-clients 8 \
-    --data-root /tmp/nvflare/datasets/cifar10
+./prepare_data.sh
 ```
 
-The command downloads CIFAR-10 once and creates deterministic logical-client
-index files:
+`job.py` then calls the same shared `split_and_save()` function as the existing
+FedAvg job. The defaults create eight non-overlapping Dirichlet shards with
+alpha 0.5 and seed 0 at:
 
 ```text
-/tmp/nvflare/datasets/cifar10/
-├── cifar-10-batches-py/
-├── manifest.json
-└── splits/
-    ├── site-1.npy
-    ├── site-2.npy
-    └── ...
+/tmp/cifar10_splits/cifar10_fedavg_8sites_alpha0.50_seed0/
+├── site-1.npy
+├── site-2.npy
+└── ...
 ```
 
-Logical-client subsets use Dirichlet class skew and may overlap. This models a
-large logical population whose participants independently sample local data
-from the smaller CIFAR-10 training pool.
-
-The `fedavg` comparison profile does not use these prepared subsets. It reads
-the exact `site-1.npy` through `site-8.npy` shards produced by the existing
-CIFAR-10 FedAvg example.
-
-Use `--overwrite` when intentionally regenerating an existing split set.
+Use `--alpha` and `--split-seed` to change that partition. Keeping their
+defaults makes the Collab and existing FedAvg jobs consume the exact same
+eight shards.
 
 ## Model
 
-The native profile uses ResNet-18. The `fedavg` comparison profile uses the
-same `ModerateCNN` as the existing CIFAR-10 FedAvg example. Every client trains
-from the exact global-model snapshot attached to its assignment. An update can
-therefore be stale when it returns after newer global versions have already
-been created.
+The workflow uses the same `ModerateCNN` as the existing CIFAR-10 FedAvg
+example. Every client trains from the exact global-model snapshot attached to
+its assignment. An update can therefore be stale when it returns after newer
+global versions have already been created.
 
 ## Client Code
 
@@ -125,17 +114,15 @@ entry point. It:
 6. leaves other jobs active on the model versions they originally received.
 
 The server computes each client delta relative to that assignment's base
-model, then applies the FedBuff average with `--server-lr`. The native profile
-uses uniform weights; the `fedavg` comparison profile weights updates by local
-training steps to match the existing FedAvg example.
+model, weights updates by local training steps, and applies the FedBuff average
+with `--server-lr` to match the existing FedAvg example.
 
 ## Job Recipe Code
 
 `job.py` constructs a `CollabRecipe` with the server workflow and published
 client trainer. `recipe.execute(SimEnv(...))` starts the requested physical
-simulator clients. Prepared logical clients are assigned to these reusable
-physical workers without allowing one logical client to have two concurrent
-jobs.
+simulator clients. Each physical client retains its optimizer, learning-rate
+scheduler, data loader, and corresponding `site-<N>` shard across assignments.
 
 ## Run Job
 
@@ -143,28 +130,11 @@ Run the default FedBuff configuration explicitly as $K=8$, $B=4$, $O=1$:
 
 ```bash
 python job.py \
-    --data-root /tmp/nvflare/datasets/cifar10 \
     --num-clients 8 \
+    --alpha 0.5 \
+    --split-seed 0 \
     --num-active-jobs 8 \
     --buffer-size 4 \
-    --min-open-slots 1 \
-    --num-rounds 100
-```
-
-For a larger FedBuff simulation with 100 active jobs and a buffer of ten:
-
-```bash
-python prepare_data.py \
-    --num-clients 1000 \
-    --subset-size 350 \
-    --data-root /tmp/nvflare/datasets/cifar10 \
-    --overwrite
-
-python job.py \
-    --data-root /tmp/nvflare/datasets/cifar10 \
-    --num-clients 100 \
-    --num-active-jobs 100 \
-    --buffer-size 10 \
     --min-open-slots 1 \
     --num-rounds 100
 ```
@@ -182,19 +152,18 @@ updates, which makes them a useful first comparison:
 | FedBuff | 8 | 4 | 1 | 100 | 400 |
 | Synchronous | 8 | 8 | 8 | 50 | 400 |
 
-Use `--profile fedavg` and the split directory created by the existing example
-for direct comparison under different scheduling settings. This profile uses
-the same `ModerateCNN`, fixed site-to-shard mapping, augmentation and
-normalization, batch size 64, four local epochs, SGD with momentum, cosine
-learning-rate schedule, and step-weighted aggregation.
+The shared splitter creates the same eight shards used by the existing
+example. The Collab workflow also uses the same `ModerateCNN`, fixed
+site-to-shard mapping, augmentation and normalization, batch size 64, four
+local epochs, SGD with momentum, cosine learning-rate schedule, and
+step-weighted aggregation.
 
 ```bash
 # FedBuff: 4 updates/version x 100 versions = 400 updates.
 python job.py \
-    --profile fedavg \
-    --data-root /tmp/cifar10 \
-    --train-idx-root /tmp/cifar10_splits/cifar10_fedavg_8sites_alpha0.50_seed0 \
     --num-clients 8 \
+    --alpha 0.5 \
+    --split-seed 0 \
     --num-active-jobs 8 \
     --buffer-size 4 \
     --min-open-slots 1 \
@@ -204,10 +173,9 @@ python job.py \
 
 # Synchronous: 8 updates/round x 50 rounds = 400 updates.
 python job.py \
-    --profile fedavg \
-    --data-root /tmp/cifar10 \
-    --train-idx-root /tmp/cifar10_splits/cifar10_fedavg_8sites_alpha0.50_seed0 \
     --num-clients 8 \
+    --alpha 0.5 \
+    --split-seed 0 \
     --num-active-jobs 8 \
     --buffer-size 8 \
     --min-open-slots 8 \
@@ -228,10 +196,10 @@ client happens to receive an asynchronous version is not comparable: different
 versions can be evaluated by different sites, and broadcasting every version
 to every site would introduce a synchronization barrier into FedBuff.
 
-The `fedavg` profile therefore uses the union CIFAR-10 test set on the server.
-During training, the server only snapshots each global version; it does not
-run evaluation concurrently with client training. After training is complete,
-the server evaluates every saved version on that common test set. Deferring
+The workflow therefore uses the union CIFAR-10 test set on the server. During
+training, the server only snapshots each global version; it does not run
+evaluation concurrently with client training. After training is complete, the
+server evaluates every saved version on that common test set. Deferring
 evaluation prevents evaluation work from changing client completion order,
 open-slot timing, staleness, or the asynchronous participation sequence.
 
@@ -250,12 +218,12 @@ The default simulation workspace is
 `/tmp/nvflare/collab/collab_pt_async_cifar10`. The server run directory
 contains:
 
-- `eval_snapshots/model_version_<N>.pt` for the `fedavg` comparison profile
+- `eval_snapshots/model_version_<N>.pt`
 - `accuracy_history.json`
 - `final_model/global_model.pt`
 - `tensorboard/`
 
-Native-profile round checkpoints are optional and controlled by
+Additional round checkpoints are optional and controlled by
 `--checkpoint-interval`.
 
 View metrics with:
