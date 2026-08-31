@@ -123,6 +123,9 @@ with `--server-lr` to match the existing FedAvg example.
 client trainer. `recipe.execute(SimEnv(...))` starts the requested physical
 simulator clients. Each physical client retains its optimizer, learning-rate
 scheduler, data loader, and corresponding `site-<N>` shard across assignments.
+The cosine schedule reaches its minimum after `--total-client-rounds`
+assignments and remains there if asynchronous refill gives a faster client
+additional assignments.
 
 ## Run Job
 

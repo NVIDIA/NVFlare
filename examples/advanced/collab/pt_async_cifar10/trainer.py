@@ -170,7 +170,8 @@ class Cifar10Trainer:
                 loss.backward()
                 optimizer.step()
                 total_loss += loss.item()
-            self._scheduler.step()
+            if self._scheduler.last_epoch < self._scheduler.T_max:
+                self._scheduler.step()
         train_time = time.time() - train_started
 
         metrics = {

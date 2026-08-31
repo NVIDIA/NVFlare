@@ -78,7 +78,12 @@ def define_parser() -> argparse.ArgumentParser:
     parser.add_argument("--local-batch-size", type=int, default=64)
     parser.add_argument("--local-lr", type=float, default=0.05)
     parser.add_argument("--aggregation-epochs", type=int, default=4)
-    parser.add_argument("--total-client-rounds", type=int, default=50)
+    parser.add_argument(
+        "--total-client-rounds",
+        type=int,
+        default=50,
+        help="Per-client cosine schedule horizon; later assignments remain at the minimum learning rate",
+    )
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--server-lr", type=float, default=1.0)
     parser.add_argument("--eval-batch-size", type=int, default=300)
