@@ -291,10 +291,11 @@ Client API / Job Recipe API path:
   filters) attach to the ``Shareable``/``Task`` exchange, which Collab
   calls bypass entirely. Apply any needed data transformation explicitly
   inside your server/client methods instead.
-* **Fixed client roster.** The set of participating clients is established
-  once, when the job starts (from the execution environment's site list
-  and ``min_clients``); Collab does not support clients dynamically
-  joining or leaving mid-run.
+* **Fixed client roster.** Collab setup captures all clients assigned to the
+  running job and uses that set for the job's lifetime; clients cannot
+  dynamically join or leave the roster mid-run. ``min_clients`` is only the
+  minimum readiness threshold for starting the job and does not select the
+  roster.
 * **No automatic retry.** A failed individual call raises
   ``CollabCallError`` immediately (or returns ``None`` if ``optional=True``),
   while a failed group call records the per-site error in the result
