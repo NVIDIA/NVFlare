@@ -456,6 +456,13 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             return
         self.ensure_client_cert_valid()
 
+        try:
+            self._connect_cell(timeout)
+        except Exception:
+            self._reset_cell()
+            raise
+
+    def _connect_cell(self, timeout):
         my_fqcn = new_admin_client_name()
         credentials = {
             DriverParams.CA_CERT.value: self.ca_cert,
@@ -475,76 +482,72 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
 
         self.debug(f"Creating cell: {my_fqcn=} {root_url=} {secure_conn=} {credentials=}")
 
-        try:
-            self.cell = Cell(
-                fqcn=my_fqcn,
-                root_url=root_url,
-                secure=secure_conn,
-                credentials=credentials,
-                create_internal_listener=False,
-                parent_url=None,
-                auth_identity_map={FQCN.ROOT_SERVER: self.server_identity},
-            )
+        self.cell = Cell(
+            fqcn=my_fqcn,
+            root_url=root_url,
+            secure=secure_conn,
+            credentials=credentials,
+            create_internal_listener=False,
+            parent_url=None,
+            auth_identity_map={FQCN.ROOT_SERVER: self.server_identity},
+        )
 
-            self.cell.register_request_cb(
-                channel=CellChannel.HCI,
-                topic="SESSION_EXPIRED",
-                cb=self._handle_session_expired,
-            )
+        self.cell.register_request_cb(
+            channel=CellChannel.HCI,
+            topic="SESSION_EXPIRED",
+            cb=self._handle_session_expired,
+        )
 
-            NetAgent(self.cell)
-            self.cell.start()
+        NetAgent(self.cell)
+        self.cell.start()
 
-            # authenticate
-            authenticator = Authenticator(
-                cell=self.cell,
-                project_name=self.project_name,
-                client_name=self.user_name,
-                client_type=ClientType.ADMIN,
-                expected_sp_identity=self.server_identity,
-                secure_mode=True,  # always True to authenticate the cell endpoint!
-                root_cert_file=self.ca_cert,
-                private_key_file=self.client_key,
-                cert_file=self.client_cert,
-                msg_timeout=self.authenticate_msg_timeout,
-                retry_interval=1.0,
-                timeout=timeout,
-            )
+        # authenticate
+        authenticator = Authenticator(
+            cell=self.cell,
+            project_name=self.project_name,
+            client_name=self.user_name,
+            client_type=ClientType.ADMIN,
+            expected_sp_identity=self.server_identity,
+            secure_mode=True,  # always True to authenticate the cell endpoint!
+            root_cert_file=self.ca_cert,
+            private_key_file=self.client_key,
+            cert_file=self.client_cert,
+            msg_timeout=self.authenticate_msg_timeout,
+            retry_interval=1.0,
+            timeout=timeout,
+        )
 
-            abort_signal = Signal()
-            shared_fl_ctx = FLContext()
-            shared_fl_ctx.set_public_props({ReservedKey.IDENTITY_NAME: self.user_name})
-            token, token_signature, ssid, token_verifier = authenticator.authenticate(
-                shared_fl_ctx=shared_fl_ctx,
-                abort_signal=abort_signal,
-            )
+        abort_signal = Signal()
+        shared_fl_ctx = FLContext()
+        shared_fl_ctx.set_public_props({ReservedKey.IDENTITY_NAME: self.user_name})
+        token, token_signature, ssid, token_verifier = authenticator.authenticate(
+            shared_fl_ctx=shared_fl_ctx,
+            abort_signal=abort_signal,
+        )
 
-            if not isinstance(token_verifier, TokenVerifier):
-                raise RuntimeError(f"expect token_verifier to be TokenVerifier but got {type(token_verifier)}")
+        if not isinstance(token_verifier, TokenVerifier):
+            raise RuntimeError(f"expect token_verifier to be TokenVerifier but got {type(token_verifier)}")
 
-            set_add_auth_headers_filters(self.cell, self.user_name, token, token_signature, ssid)
+        set_add_auth_headers_filters(self.cell, self.user_name, token, token_signature, ssid)
 
-            self.cell.core_cell.add_incoming_filter(
-                channel="*",
-                topic="*",
-                cb=validate_auth_headers,
-                token_verifier=token_verifier,
-                logger=self.logger,
-                local_cell_fqcn=self.cell.get_fqcn(),
-            )
-            self.debug(f"Successfully authenticated to {self.server_identity}: {token=} {ssid=}")
+        self.cell.core_cell.add_incoming_filter(
+            channel="*",
+            topic="*",
+            cb=validate_auth_headers,
+            token_verifier=token_verifier,
+            logger=self.logger,
+            local_cell_fqcn=self.cell.get_fqcn(),
+        )
+        self.debug(f"Successfully authenticated to {self.server_identity}: {token=} {ssid=}")
 
-            self.aux_runner = AuxRunner(self)
-            self.object_streamer = ObjectStreamer(self.aux_runner)
+        self.aux_runner = AuxRunner(self)
+        self.object_streamer = ObjectStreamer(self.aux_runner)
 
-            self.cell.register_request_cb(
-                channel=CellChannel.AUX_COMMUNICATION,
-                topic="*",
-                cb=self._handle_aux_message,
-            )
-        except Exception:
-            self._reset_cell()
-            raise
+        self.cell.register_request_cb(
+            channel=CellChannel.AUX_COMMUNICATION,
+            topic="*",
+            cb=self._handle_aux_message,
+        )
 
     def _handle_aux_message(self, request: CellMessage) -> CellMessage:
         assert isinstance(request, CellMessage), "request must be CellMessage but got {}".format(type(request))
