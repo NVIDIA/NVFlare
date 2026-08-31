@@ -101,6 +101,7 @@ PyTorch model, data, and FedAvg implementation.
 
 
    class Trainer:
+       # Publish this client method under the remote name "train".
        @collab.publish
        def train(self, weights=None):
            local_epochs = collab.get_app_prop("local_epochs", 5)
@@ -126,6 +127,8 @@ PyTorch model, data, and FedAvg implementation.
        def run(self):
            global_weights = 0.0
            for _round_num in range(self.num_rounds):
+               # Invoke Trainer.train(global_weights) on every client. The
+               # argument becomes `weights`; return values are collected by site.
                client_results = collab.clients.train(global_weights)
                global_weights = aggregate(client_results)
            return global_weights
@@ -134,7 +137,7 @@ PyTorch model, data, and FedAvg implementation.
    recipe = CollabRecipe(
        job_name="collab_core",
        server=Coordinator(),
-       client=Trainer(),
+       client=Trainer(),  # supplies the published train() method to each client
        min_clients=MIN_CLIENTS,
    )
    recipe.execute(SimEnv(num_clients=MIN_CLIENTS))
