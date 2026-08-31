@@ -124,6 +124,15 @@ def _terminate_process_tree(process: subprocess.Popen) -> tuple[str, str]:
                 process.stdout.close()
             if process.stderr:
                 process.stderr.close()
+            if process.poll() is None:
+                try:
+                    process.kill()
+                except OSError:
+                    pass
+            try:
+                process.wait(timeout=_TIMEOUT_CLEANUP_GRACE)
+            except (OSError, subprocess.TimeoutExpired):
+                pass
 
     try:
         _, alive = psutil.wait_procs(descendants, timeout=_TIMEOUT_CLEANUP_GRACE)
