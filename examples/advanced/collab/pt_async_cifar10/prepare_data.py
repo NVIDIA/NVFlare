@@ -35,7 +35,7 @@ DEFAULT_DATA_ROOT = "/tmp/nvflare/datasets/cifar10"
 def define_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Prepare CIFAR-10 splits for the Collab async example")
     parser.add_argument("--data-root", default=DEFAULT_DATA_ROOT, help="CIFAR-10 cache and prepared-split directory")
-    parser.add_argument("--num-clients", type=int, default=10, help="Number of logical client splits")
+    parser.add_argument("--num-clients", type=int, default=8, help="Number of logical client splits")
     parser.add_argument("--subset-size", type=int, default=350, help="Training examples sampled per logical client")
     parser.add_argument("--dirichlet-alpha", type=float, default=0.5, help="Dirichlet class-skew parameter")
     parser.add_argument("--val-split", type=float, default=0.15, help="Fraction reserved from logical-client training")

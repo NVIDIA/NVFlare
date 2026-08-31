@@ -1,4 +1,4 @@
-# FedBuff with the Collab API
+# Asynchronous FL with FedBuff and the Collab API
 
 This example implements online buffered asynchronous federated learning on
 CIFAR-10. Client jobs remain active across global-model updates, and the
@@ -65,11 +65,11 @@ accepted-update budget while using FedBuff's immediate refill policy.
 
 ## Data
 
-Prepare ten logical clients for a small run:
+For the native profile, prepare eight logical clients for the default run:
 
 ```bash
 python prepare_data.py \
-    --num-clients 10 \
+    --num-clients 8 \
     --data-root /tmp/nvflare/datasets/cifar10
 ```
 
@@ -89,6 +89,10 @@ index files:
 Logical-client subsets use Dirichlet class skew and may overlap. This models a
 large logical population whose participants independently sample local data
 from the smaller CIFAR-10 training pool.
+
+The `fedavg` comparison profile does not use these prepared subsets. It reads
+the exact `site-1.npy` through `site-8.npy` shards produced by the existing
+CIFAR-10 FedAvg example.
 
 Use `--overwrite` when intentionally regenerating an existing split set.
 
