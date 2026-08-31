@@ -14,8 +14,9 @@ The Collab API lets you write a federated workflow as direct, agent-to-agent
 style function calls between server and client objects, instead of the
 task/\ ``Shareable`` exchange used by the :ref:`Client API <client_api>` and
 :ref:`Job Recipe API <job_recipe>`. A server method calls a decorated client
-method as if it were local, and gets back whatever Python objects the client
-method returns -- no manual ``Shareable``/``DXO``/``FLModel`` packing.
+method as if it were local, and clients can call published methods on other
+clients in the same way. Calls return ordinary Python objects -- no manual
+``Shareable``/``DXO``/``FLModel`` packing.
 
 Use the Collab API when your workflow's control flow is naturally expressed
 as calls and return values -- for example fan-out/fan-in patterns with custom
@@ -30,20 +31,25 @@ A Collab job defines a **server object** and a **client object**. Both are
 plain Python classes (or plain module-level functions); NVFlare does not
 require them to subclass anything.
 
-* ``@collab.publish`` marks a client method as callable from the server. Its
+Decorators
+^^^^^^^^^^
+
+* ``@collab.publish`` marks a method as remotely callable through a client
+  proxy. It supports both server-to-client and client-to-client calls. Its
   parameters must be fixed (no ``*args``/``**kwargs``).
 * ``@collab.main`` marks the server's single entry point. Every Collab
   server object or module must define exactly one.
+* ``@collab.init`` / ``@collab.final`` mark methods to run once at object
+  setup and teardown.
+
+Facade Members
+^^^^^^^^^^^^^^
+
 * ``collab.clients.<method>(...)`` calls the named ``@collab.publish``
   method on every client in parallel and returns a result collection you can
   iterate as ``(client_id, result)`` pairs; a client that raises is recorded
   in ``client_results.failures`` (keyed by client ID) instead of failing the
   whole call.
-* ``CollabRecipe`` builds the job from the server and client objects, the
-  same way a concrete recipe builds a job from a model and script.
-
-Additional facade members are available inside a running Collab function:
-
 * ``collab.site_name`` -- the current site's identity.
 * ``collab.caller`` / ``collab.callee`` -- who invoked this call, and who
   it's calling.
@@ -53,8 +59,6 @@ Additional facade members are available inside a running Collab function:
   configuration.
 * ``collab.get_prop()`` / ``collab.set_prop()`` -- sharing data within a
   single call context.
-* ``@collab.init`` / ``@collab.final`` -- mark methods to run once at
-  object setup and teardown.
 
 A Minimal Example
 ------------------
