@@ -34,9 +34,9 @@ Understand Where to Start
 -------------------------
 
 Use the orientation workflow when you are new to NVFLARE, are unsure which API
-or workflow fits a project, or have source code with more than one possible
-training owner. It inspects the supplied project read-only and recommends one
-next workflow without editing files or starting a job.
+or workflow fits a project, or have source code with more than one training
+framework or entry point. It inspects the supplied project read-only and
+recommends one next workflow without editing files or starting a job.
 
 Create a Federated Job
 ----------------------
@@ -57,8 +57,8 @@ Optimize an Existing Job
 Use AutoFL when you already have a runnable NVFLARE ``job.py`` and want to
 improve a measured objective through reproducible candidate experiments. State
 the metric, execution environment (simulation, POC, or production), and any
-candidate limit. AutoFL does not convert standalone training code or diagnose a
-failure-only request.
+candidate limit. AutoFL optimizes an existing job; it does not convert
+standalone training code.
 
 See :ref:`NVFlare Auto-FL Agent Skill <autofl_skill>` for campaign behavior,
 permissions, comparison rules, and outputs.

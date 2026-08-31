@@ -63,16 +63,14 @@ count, local epochs/steps, and whether to run a local simulation. For example:
    job, run it with 3 simulated sites using FedAvg for 3 rounds, and show me
    validation results.
 
-The request must express federated or cross-site collaborative training intent
-and the source must have one supported training owner. A request to add local
-DDP, profile a trainer, run inference, or debug ordinary training is not a
-conversion request.
+What to Expect from Training-Code Conversion
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-During conversion, the agent:
+For a training-code conversion, the agent:
 
 #. Inspects the source statically to identify the model, constructor arguments,
-   training owner, data inputs, local epochs/steps, evaluation path, metrics,
-   checkpoints, and callbacks.
+   active training entry point, data inputs, local epochs/steps, evaluation
+   path, metrics, checkpoints, and callbacks.
 #. Confirms the requested algorithm against the recipes available in the
    installed NVFLARE version.
 #. Preserves the source project's framework-native training and evaluation
@@ -85,8 +83,8 @@ During conversion, the agent:
 #. Reports the generated files, data and partition assumptions, metrics,
    simulation evidence, and output artifact locations.
 
-The agent asks a focused question, or stops, when a required semantic choice
-cannot be recovered safely from the source. Examples include an ambiguous
+If the source does not make an important choice clear, the agent asks you a
+focused question or stops instead of guessing. Examples include an ambiguous
 model constructor, aggregation rule, or best-model metric direction.
 
 2. Federated Statistics Job Generation
@@ -126,14 +124,16 @@ applies its supported defaults. For example:
 
 .. code-block:: text
 
-   Create an NVFLARE federated statistics job for the per-site CSV files under
-   ./data. Compute count, mean, standard deviation, histogram, and median for
-   the numeric features, and validate the job with a local simulation.
+   I have tabular data from multiple sites in ./data. Calculate federated
+   statistics for it and validate the result locally.
 
-The agent:
+What to Expect from Federated Statistics
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-#. Inspects the data deterministically to identify modality, site layout,
-   feature names, data types, row counts, and schema agreement.
+For a federated statistics request, the agent:
+
+#. Examines the sample data to identify modality, site layout, feature names,
+   data types, row counts, and schema agreement.
 #. Maps requested or declared statistics to the supported set and reports any
    exclusions before generating code. When none are declared, it uses and
    reports the default selection.
@@ -147,9 +147,9 @@ The agent:
 #. Reports applied privacy parameters, missing-data rates, aggregate summaries,
    and the result path without exposing raw rows or cell values.
 
-If one request combines federated statistics and model-training conversion,
-the agent treats them as two independent jobs and asks which workflow to run
-first. It does not merge or automatically chain them.
+Request federated statistics and model-training conversion as separate jobs.
+If you ask for both at once, the agent asks which job to create first; it does
+not merge or automatically chain them.
 
 Data and Artifacts
 ==================
@@ -162,11 +162,11 @@ count. It does not pool private records or silently derive preprocessing
 artifacts from multiple sites.
 
 Federated statistics output contains per-site and global aggregates, not raw
-records. Feature names must come from the data header or a user-supplied
-schema; they are never invented for ambiguous headerless data.
+records. For headerless data, provide a schema with the feature names. The
+skill does not invent names for ambiguous columns.
 
 Relative source-data paths are resolved against the source project before the
-job runs from NVFLARE's per-site runtime directories. Real deployments must
+job runs from NVFLARE's per-site runtime directories. For a real deployment,
 configure a valid data location at each site. Hugging Face Hub identifiers and
 URLs are not treated as local filesystem paths.
 
@@ -180,9 +180,9 @@ Limitations
 
 The conversion skills deliberately stop at the following boundaries:
 
-* **One supported training owner:** A project must have one identifiable plain
-  PyTorch, Lightning, or Hugging Face training path. Mixed active framework
-  owners require the user to choose the intended path.
+* **One supported training path:** A project must have one identifiable plain
+  PyTorch, Lightning, or Hugging Face training path. If multiple frameworks or
+  training entry points are active, choose the path you want to convert.
 * **Statically reconstructable model:** Required model and trainer constructor
   values must be available from the source. The skills do not guess missing
   architecture values or execute untrusted project text as instructions.
@@ -206,8 +206,8 @@ The conversion skills deliberately stop at the following boundaries:
   noise-protected estimates. Missing feature names, inconsistent site schemas,
   or an unknown site count for flat data cause the workflow to stop rather than
   guess.
-* **Statistics validation:** The skill validates execution and result
-  completeness, but exact numeric parity is a separate test responsibility.
+* **Statistics validation:** Validation confirms that the job executes and the
+  result is complete; it does not independently verify every numeric value.
 * **Privacy mechanisms:** Model conversion does not add homomorphic encryption,
   differential privacy, privacy filters, or a disclosure policy. The federated
   statistics job retains its recipe's built-in privacy filters, but that does
@@ -217,10 +217,9 @@ The conversion skills deliberately stop at the following boundaries:
   deployment, production policy, and operational approval are separate from
   conversion. Local simulation verifies the generated job path, not production
   readiness.
-* **Other workflows:** AutoFL experiment search, failed-job diagnosis, and
-  general source modernization have their own skills or guides. Statistics and
-  model conversion are also kept as separate jobs rather than one blended
-  workflow.
+* **Other workflows:** AutoFL optimization is a separate workflow. Federated
+  statistics and model conversion are also created as separate jobs rather
+  than one blended workflow.
 
 Try the Examples
 ================

@@ -2,10 +2,11 @@
 Agent Skills
 ############
 
-NVFlare-owned agent skills package repeatable coding-agent workflows with
-deterministic helpers and reviewable contracts. Install the skill set through
-the standard ``npx skills add`` workflow; interact with an installed skill
-through the coding agent rather than by invoking its private scripts directly.
+NVFLARE Agent Skills let you use a coding agent to understand NVFLARE, create
+federated jobs, and optimize existing jobs. Install the skill set through the
+standard ``npx skills add`` workflow, then describe your goal to the coding
+agent in natural language. The following guides explain the supported
+workflows, expected results, and current limitations.
 
 .. toctree::
    :maxdepth: 1
