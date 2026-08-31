@@ -84,74 +84,59 @@ before training calls begin.
 A Minimal Example
 ------------------
 
-This is the server and client from the runnable
+This core pattern is derived from the runnable
 :github_nvflare_link:`Hello FedAvg with the Collab API
-<examples/hello-world/hello-collab>` example, trimmed to the FedAvg loop
-itself. The placeholder local trainer keeps the snippet executable while the
-linked example contains real PyTorch training. For brevity, this version
-assumes every successful client contributes the same number of examples and
-therefore uses equal client weighting. If site dataset sizes differ, return
-each site's sample count and weight its update and loss by that count.
+<examples/hello-world/hello-collab>` example, reduced to the core Collab API
+pattern. It uses a scalar toy update so the snippet is self-contained; replace
+that line with application training. The linked example contains the complete
+PyTorch model, data, and FedAvg implementation.
 
 .. code-block:: python
 
-   from nvflare.collab import CollabRecipe, collab, simple_logging
+   from nvflare.collab import CollabRecipe, collab
    from nvflare.recipe import SimEnv
 
 
    MIN_CLIENTS = 2
 
 
-   def run_local_training(weights, local_epochs):
-       """Replace this no-op placeholder with the application's training loop."""
-       updated_weights = dict(weights or {"weight": 0.0})
-       for _epoch in range(local_epochs):
-           pass  # run one local training epoch and update `updated_weights`
-       return updated_weights, 0.0
-
-
    class Trainer:
        @collab.publish
        def train(self, weights=None):
            local_epochs = collab.get_app_prop("local_epochs", 5)
-           return run_local_training(weights, local_epochs)
+           # Replace this scalar update with application-specific local training.
+           return (weights or 0.0) + local_epochs
 
 
-   def simple_avg(client_results, min_successes):
-       valid = dict(client_results)
-       for client_id, error in client_results.failures.items():
-           print(f"Warning: {client_id} failed: {error}")
-       total_clients = len(valid) + len(client_results.failures)
-       if len(valid) < min_successes:
-           raise RuntimeError(f"only {len(valid)} of {total_clients} client calls succeeded")
-       all_weights = [result[0] for result in valid.values()]
-       avg_weights = {k: sum(w[k] for w in all_weights) / len(all_weights) for k in all_weights[0]}
-       avg_loss = sum(result[1] for result in valid.values()) / len(valid)
-       return avg_weights, avg_loss
+   def aggregate(client_results):
+       successful = list(dict(client_results).values())
+       if len(successful) < MIN_CLIENTS:
+           raise RuntimeError(f"only {len(successful)} client calls succeeded")
+       # Equal averaging is sufficient for this scalar illustration. Real FedAvg
+       # weights each update by the site's number of training examples.
+       return sum(successful) / len(successful)
 
 
-   class FedAvg:
-       def __init__(self, num_rounds=3, min_successes=MIN_CLIENTS):
+   class Coordinator:
+       def __init__(self, num_rounds=3):
            self.num_rounds = num_rounds
-           self.min_successes = min_successes
 
        @collab.main
        def run(self):
-           global_weights = None
+           global_weights = 0.0
            for _round_num in range(self.num_rounds):
                client_results = collab.clients.train(global_weights)
-               global_weights, _global_loss = simple_avg(client_results, self.min_successes)
+               global_weights = aggregate(client_results)
            return global_weights
 
 
-   simple_logging()
    recipe = CollabRecipe(
-       job_name="hello_fedavg",
-       server=FedAvg(min_successes=MIN_CLIENTS),
+       job_name="collab_core",
+       server=Coordinator(),
        client=Trainer(),
        min_clients=MIN_CLIENTS,
    )
-   run = recipe.execute(SimEnv(num_clients=MIN_CLIENTS))
+   recipe.execute(SimEnv(num_clients=MIN_CLIENTS))
 
 See the full, runnable example (real PyTorch model, per-site epoch
 configuration, argument parsing) at the link above.
@@ -175,7 +160,7 @@ same ``Run`` handle. Constructor arguments a user is expected to set:
   functions).
 * ``min_clients`` -- minimum number of clients required for the job to start.
   It does not enforce a successful-response quorum for each group call; the
-  application must check that, as ``simple_avg`` does above.
+  application must check that, as ``aggregate`` does above.
 * ``sync_task_timeout`` -- timeout, in seconds, for the startup client
   synchronization and setup tasks. It does not control remote method calls;
   set their ``timeout`` through the per-call options described below.
