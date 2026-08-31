@@ -21,6 +21,61 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+# ModerateCNN is the model used by
+# examples/advanced/cifar10/pt/cifar10-sim/cifar10_fedavg. Its architecture is
+# derived from IBM FedMA (MIT license; see that example's src/model.py).
+def set_seed(seed: int) -> None:
+    import random
+
+    import numpy as np
+
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+
+
+class ModerateCNN(nn.Module):
+    """CIFAR-10 model used by the existing NVFlare FedAvg example."""
+
+    def __init__(self, seed: int = 42):
+        set_seed(seed)
+        super().__init__()
+        self.conv_layer = nn.Sequential(
+            nn.Conv2d(3, 32, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(32, 64, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            nn.Conv2d(64, 128, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(128, 128, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            nn.Dropout2d(p=0.05),
+            nn.Conv2d(128, 256, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(256, 256, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+        )
+        self.fc_layer = nn.Sequential(
+            nn.Dropout(p=0.1),
+            nn.Linear(4096, 512),
+            nn.ReLU(inplace=True),
+            nn.Linear(512, 512),
+            nn.ReLU(inplace=True),
+            nn.Dropout(p=0.1),
+            nn.Linear(512, 10),
+        )
+
+    def forward(self, x):
+        x = self.conv_layer(x)
+        x = x.view(x.size(0), -1)
+        return self.fc_layer(x)
+
+
 class StatTracker(nn.Module):
     """Track channel statistics without normalizing activations."""
 
