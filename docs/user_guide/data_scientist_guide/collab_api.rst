@@ -59,6 +59,16 @@ Facade Members
   call, and the receiving app or named object at the current site. The callee
   is a fully qualified target such as ``site-1`` or ``site-1.selector``; it is
   not a downstream target.
+
+  For example, inside a published method on the named ``selector`` object at
+  ``site-1``:
+
+  .. code-block:: python
+
+     collab.caller     # "server"
+     collab.callee     # "site-1.selector" (receiving object, not the method name)
+     collab.site_name  # "site-1"
+
 * ``collab.other_clients`` / ``collab.child_clients`` / ``collab.leaf_clients``
   -- site-topology lookups, for calls that fan out beyond the server.
 * ``collab.get_app_prop()`` / ``collab.set_app_prop()`` -- per-site
