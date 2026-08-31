@@ -56,8 +56,8 @@ root read-write at the same absolute path. A containerized client job configured
 `client_api_attach.scheme: shared-file` receives the same kind of mount for its Attach `root_dir`. This is a separate
 CJ-to-trainer channel, not the worker-to-parent channel. Bare client jobs and network Attach do not add this mount.
 
-See "Shared-File Worker Channel" in `docs/user_guide/admin_guide/deployment/slurm_job_launcher.rst` for configuration,
-permission, and tuning details.
+See [Shared-File Worker Channel](../user_guide/admin_guide/deployment/slurm_job_launcher.rst#shared-file-worker-channel)
+for configuration, permission, and tuning details.
 
 ## Deployment and workspace
 
