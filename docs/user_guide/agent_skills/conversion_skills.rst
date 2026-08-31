@@ -36,7 +36,7 @@ learning job:
      - What the skill creates
    * - An existing plain PyTorch training project
      - A multi-site NVFLARE training job that preserves the project's model,
-       local training loop, training budget, and evaluation behavior.
+       local training loop, local epochs/steps, and evaluation behavior.
    * - An existing PyTorch Lightning project
      - A multi-site NVFLARE training job that retains the Lightning trainer,
        validation metrics, callbacks, and checkpoint behavior.
@@ -55,14 +55,13 @@ How to Request Training-Code Conversion
 
 Open the existing training project in the coding agent. Include the source
 location, framework, algorithm when you have a preference, client count, round
-count, local training budget, and whether to run a local simulation. For
-example:
+count, local epochs/steps, and whether to run a local simulation. For example:
 
 .. code-block:: text
 
-   I have an existing PyTorch Lightning project in ./source. Convert it to an
-   NVFLARE FedAvg job for 3 sites and 3 rounds. Preserve its validation metric
-   and local training budget, and validate the result with a local simulation.
+   Here is my PyTorch Lightning training code. Convert it to a FLARE federated
+   job, run it with 3 simulated sites using FedAvg for 3 rounds, and show me
+   validation results.
 
 The request must express federated or cross-site collaborative training intent
 and the source must have one supported training owner. A request to add local
@@ -72,8 +71,8 @@ conversion request.
 During conversion, the agent:
 
 #. Inspects the source statically to identify the model, constructor arguments,
-   training owner, data inputs, local training budget, evaluation path,
-   metrics, checkpoints, and callbacks.
+   training owner, data inputs, local epochs/steps, evaluation path, metrics,
+   checkpoints, and callbacks.
 #. Confirms the requested algorithm against the recipes available in the
    installed NVFLARE version.
 #. Preserves the source project's framework-native training and evaluation
