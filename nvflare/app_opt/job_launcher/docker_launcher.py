@@ -18,7 +18,7 @@ import re
 import threading
 import time
 from abc import abstractmethod
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 
 try:
     import docker.errors
@@ -31,7 +31,7 @@ except ImportError:
 
 from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import FLContextKey, JobConstants, WorkspaceConstants
+from nvflare.apis.fl_constant import ConnectionSecurity, FLContextKey, JobConstants, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobProcessArgs, JobReturnCode, add_launcher
@@ -83,6 +83,52 @@ _RESERVED_WORKSPACE_CHILD_NAMES = {
 # Site-level defaults and study docker_kwargs additionally reserve "image": jobs select
 # their image through docker_spec["image"], so it must not trip the job-spec warning.
 _RESERVED_DEFAULT_KWARGS = RESERVED_DOCKER_KWARGS
+
+
+def _rewrite_parent_url(job_args: dict, site_name: str) -> tuple[dict, str | None]:
+    """Rewrite a parent URL to Docker DNS while preserving its transport security."""
+    entry = job_args.get(JobProcessArgs.PARENT_URL)
+    if not entry:
+        return job_args, None
+    if not isinstance(entry, (tuple, list)) or len(entry) != 2:
+        raise ValueError(f"malformed {JobProcessArgs.PARENT_URL} in JOB_PROCESS_ARGS")
+
+    connection_entry = job_args.get(JobProcessArgs.PARENT_CONN_SEC, (None, ConnectionSecurity.CLEAR))
+    if not isinstance(connection_entry, (tuple, list)) or len(connection_entry) != 2:
+        raise ValueError(f"malformed {JobProcessArgs.PARENT_CONN_SEC} in JOB_PROCESS_ARGS")
+    connection_security = connection_entry[1]
+    if connection_security not in (ConnectionSecurity.CLEAR, ConnectionSecurity.MTLS):
+        raise ValueError("Docker job launch requires clear or mTLS parent connection security")
+
+    flag, original_url = entry
+    try:
+        parsed = urlsplit(str(original_url))
+    except ValueError as e:
+        raise ValueError(f"invalid parent URL {original_url!r}") from e
+
+    if parsed.scheme == SHARED_FILE_SCHEME:
+        if connection_security != ConnectionSecurity.CLEAR:
+            raise ValueError("shared-file parent URL scheme does not match parent connection security")
+        try:
+            file_parent_dir = parse_file_url(str(original_url))
+        except CommError as e:
+            raise ValueError(f"invalid shared-file parent URL {original_url!r}: {e}") from e
+        return dict(job_args), file_parent_dir
+
+    try:
+        port = parsed.port
+        host = parsed.hostname
+    except ValueError as e:
+        raise ValueError(f"invalid parent URL {original_url!r}") from e
+    if parsed.scheme not in ("tcp", "stcp") or not host or not port:
+        raise ValueError(f"parent URL must use {SHARED_FILE_SCHEME}, tcp, or stcp with a host and port")
+    if (parsed.scheme == "stcp") != (connection_security == ConnectionSecurity.MTLS):
+        raise ValueError("parent URL scheme does not match parent connection security")
+
+    parent_url = urlunsplit((parsed.scheme, f"{site_name}:{port}", parsed.path, parsed.query, parsed.fragment))
+    copied = dict(job_args)
+    copied[JobProcessArgs.PARENT_URL] = (flag, parent_url)
+    return copied, None
 
 
 def _sanitize_container_name(name: str) -> str:
@@ -425,7 +471,7 @@ class DockerJobLauncher(JobLauncherSpec):
         self.default_python_path = default_python_path if default_python_path is not None else python_path
         if self.default_python_path is None:
             self.default_python_path = self.DEFAULT_PYTHON_PATH
-        if not isinstance(self.default_python_path, str) or not self.default_python_path:
+        if not isinstance(self.default_python_path, str) or not self.default_python_path.strip():
             raise ValueError("default_python_path must be a non-empty string")
         self.timeout = timeout
         default_job_container_kwargs = default_job_container_kwargs or {}
@@ -514,6 +560,15 @@ class DockerJobLauncher(JobLauncherSpec):
 
         site_name = fl_ctx.get_identity_name()
         docker_spec = get_job_launcher_spec(job_meta, site_name, "docker")
+        job_image = docker_spec.get("image")
+        if job_image is not None and not isinstance(job_image, str):
+            raise RuntimeError(
+                f"launcher_spec docker image for site '{site_name}' must be a string, "
+                f"got {type(job_image).__name__}: {job_image!r}"
+            )
+        python_path = docker_spec.get("python_path", self.default_python_path)
+        if not isinstance(python_path, str) or not python_path.strip():
+            raise RuntimeError(f"launcher_spec['{site_name}']['docker']['python_path'] must be a non-empty string")
         try:
             validate_docker_job_launcher_spec(docker_spec, f"job Docker spec for site '{site_name}'")
         except ValueError as e:
@@ -523,13 +578,7 @@ class DockerJobLauncher(JobLauncherSpec):
                 f"job Docker spec for site '{site_name}' contains entrypoint but lacks locally authorized BYOC"
             )
         portable_spec = get_portable_resource_spec(job_meta, site_name)
-        job_image = docker_spec.get("image")
         container_name = _sanitize_container_name(f"{site_name}-{job_id}")
-        if job_image is not None and not isinstance(job_image, str):
-            raise RuntimeError(
-                f"launcher_spec docker image for site '{site_name}' must be a string, "
-                f"got {type(job_image).__name__}: {job_image!r}"
-            )
         study = job_meta.get(JobMetaKey.STUDY.value)
         study_runtime = self._resolve_study_runtime(study)
         if not job_image and study_runtime is not None:
@@ -555,25 +604,9 @@ class DockerJobLauncher(JobLauncherSpec):
         # Derive parent_url at runtime: site name (= container name on Docker DNS) + port
         # from the original PARENT_URL in job_args. This avoids baking parent_url into
         # resources.json at provision time.
-        file_parent_dir = None
-        if JobProcessArgs.PARENT_URL in job_args:
-            flag, original_url = job_args[JobProcessArgs.PARENT_URL]
-            if urlsplit(str(original_url)).scheme == SHARED_FILE_SCHEME:
-                # Shared-file transport URLs are location-independent; pass through unchanged and
-                # bind-mount the listener directory at the same path inside the container
-                try:
-                    file_parent_dir = parse_file_url(str(original_url))
-                except CommError as e:
-                    raise ValueError(f"invalid shared-file parent URL {original_url!r}: {e}")
-                if file_parent_dir.startswith(self.WORKSPACE_MOUNT):
-                    raise ValueError(
-                        f"shared-file parent directory {file_parent_dir} overlaps the container workspace mount"
-                    )
-            else:
-                port = original_url.rsplit(":", 1)[-1]
-                parent_url = f"tcp://{site_name}:{port}"
-                job_args = dict(job_args)
-                job_args[JobProcessArgs.PARENT_URL] = (flag, parent_url)
+        job_args, file_parent_dir = _rewrite_parent_url(job_args, site_name)
+        if file_parent_dir and file_parent_dir.startswith(self.WORKSPACE_MOUNT):
+            raise ValueError(f"shared-file parent directory {file_parent_dir} overlaps the container workspace mount")
 
         module_args = self.get_module_args(job_args)
         module_args_list = []
@@ -587,9 +620,6 @@ class DockerJobLauncher(JobLauncherSpec):
         if set_list:
             module_args_list.extend(["--set"] + set_list)
 
-        python_path = docker_spec.get("python_path", self.default_python_path)
-        if not isinstance(python_path, str) or not python_path:
-            raise RuntimeError(f"launcher_spec['{site_name}']['docker']['python_path'] must be a non-empty string")
         command = [python_path, "-u", "-m", exe_module] + module_args_list
 
         site_env = {}

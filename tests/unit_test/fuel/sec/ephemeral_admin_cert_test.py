@@ -416,11 +416,15 @@ def test_ephemeral_admin_cert_cache_serializes_concurrent_acquisition(monkeypatc
     assert first.client_key == second.client_key
 
 
-def test_validate_ephemeral_admin_cert_files_rejects_missing_role(tmp_path):
+@pytest.mark.parametrize(
+    "org, role, missing_field",
+    [(None, "lead", "organizationName"), ("nvidia", None, "unstructuredName")],
+)
+def test_validate_ephemeral_admin_cert_files_rejects_missing_identity_field(tmp_path, org, role, missing_field):
     ca_key, _ca_cert, root_ca_path = _make_root_ca(tmp_path)
     admin_key, admin_pub_key = generate_keys()
     cert = generate_cert(
-        subject=Identity("alice@nvidia.com", "nvidia"),
+        subject=Identity("alice@nvidia.com", org, role),
         issuer=Identity("root", "nvidia"),
         signing_pri_key=ca_key,
         subject_pub_key=admin_pub_key,
@@ -429,7 +433,7 @@ def test_validate_ephemeral_admin_cert_files_rejects_missing_role(tmp_path):
     cert_path = tmp_path / "client.crt"
     _write_key_cert(key_path, cert_path, admin_key, [cert])
 
-    with pytest.raises(EphemeralAdminCertError, match="unstructuredName"):
+    with pytest.raises(EphemeralAdminCertError, match=missing_field):
         validate_ephemeral_admin_cert_files(str(cert_path), str(key_path), str(root_ca_path))
 
 

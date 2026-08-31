@@ -13,12 +13,14 @@
 # limitations under the License.
 
 from typing import Optional
-from unittest.mock import Mock
+from unittest.mock import ANY, Mock
 
 import pytest
 
 import nvflare.app_common.job_schedulers.job_scheduler as job_scheduler_module
 from nvflare.apis.client import Client
+from nvflare.apis.event_type import EventType
+from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.job_def import ALL_SITES, Job, JobMetaKey, RunStatus
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
@@ -341,6 +343,34 @@ def setup_and_teardown(request):
 
 
 class TestDefaultJobScheduler:
+    def test_lifecycle_event_uses_explicit_job_id_over_sticky_job_id(self):
+        scheduler = DefaultJobScheduler(max_jobs=20)
+        fl_ctx = FLContext()
+        fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, "wrong-job")
+        fl_ctx.set_prop(
+            FLContextKey.EVENT_DATA,
+            {JobMetaKey.JOB_ID.value: "right-job"},
+            private=True,
+            sticky=False,
+        )
+
+        scheduler.handle_event(EventType.JOB_STARTED, fl_ctx)
+        assert scheduler.scheduled_jobs == ["right-job"]
+
+        scheduler.handle_event(EventType.JOB_COMPLETED, fl_ctx)
+        assert scheduler.scheduled_jobs == []
+
+    def test_lifecycle_event_falls_back_to_sticky_job_id_without_event_data(self):
+        scheduler = DefaultJobScheduler(max_jobs=20)
+        fl_ctx = FLContext()
+        fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, "sticky-job")
+
+        scheduler.handle_event(EventType.JOB_STARTED, fl_ctx)
+        assert scheduler.scheduled_jobs == ["sticky-job"]
+
+        scheduler.handle_event(EventType.JOB_ABORTED, fl_ctx)
+        assert scheduler.scheduled_jobs == []
+
     def test_weird_deploy_map(self, setup_and_teardown):
         servers, scheduler, num_sites, job_manager = setup_and_teardown
         candidate = create_job(
@@ -399,6 +429,67 @@ class TestDefaultJobScheduler:
             )
         assert job is None
 
+    def test_require_sites_duplicate_entries_are_treated_as_one(self, setup_and_teardown):
+        servers, scheduler, num_sites, job_manager = setup_and_teardown
+        candidate = create_job(
+            job_id="job",
+            resource_spec={},
+            deploy_map={"app5": ["server", "site0"]},
+            min_sites=1,
+            required_sites=["site0", "site0"],
+        )
+        with servers[0].new_context() as fl_ctx:
+            job, dispatch_info = scheduler.schedule_job(
+                job_manager=job_manager, job_candidates=[candidate], fl_ctx=fl_ctx
+            )
+        assert job is candidate
+        assert set(dispatch_info) == {"server", "site0"}
+
+    @pytest.mark.parametrize(
+        "required_sites",
+        [
+            pytest.param(1, id="invalid-container"),
+            pytest.param([["site0"]], id="invalid-entry"),
+        ],
+    )
+    def test_require_sites_invalid_metadata_does_not_interrupt_scheduling(
+        self, monkeypatch, setup_and_teardown, required_sites
+    ):
+        servers, scheduler, num_sites, job_manager = setup_and_teardown
+        monkeypatch.setattr(job_scheduler_module, "StudyRegistryService", _FakeStudyRegistryService, raising=False)
+        monkeypatch.setattr(
+            _FakeStudyRegistryService,
+            "registry",
+            _FakeStudyRegistry(sites={"cancer-research": {"site0"}}),
+            raising=False,
+        )
+        malformed_candidate = create_job(
+            job_id="malformed_job",
+            resource_spec={},
+            deploy_map={"app5": [ALL_SITES]},
+            min_sites=1,
+            required_sites=required_sites,
+        )
+        valid_candidate = create_job(
+            job_id="valid_job",
+            resource_spec={},
+            deploy_map={"app5": ["server", "site0"]},
+            min_sites=1,
+        )
+        malformed_candidate.meta[JobMetaKey.STUDY.value] = "cancer-research"
+        valid_candidate.meta[JobMetaKey.STUDY.value] = "cancer-research"
+        with servers[0].new_context() as fl_ctx:
+            job, dispatch_info = scheduler.schedule_job(
+                job_manager=job_manager,
+                job_candidates=[malformed_candidate, valid_candidate],
+                fl_ctx=fl_ctx,
+            )
+        assert job is valid_candidate
+        assert set(dispatch_info) == {"server", "site0"}
+        job_manager.set_status.assert_called_once_with(
+            malformed_candidate.job_id, RunStatus.FINISHED_CANT_SCHEDULE, ANY
+        )
+
     def test_require_sites_not_enough_resource(self, setup_and_teardown):
         servers, scheduler, num_sites, job_manager = setup_and_teardown
         candidate = create_job(
@@ -413,6 +504,11 @@ class TestDefaultJobScheduler:
                 job_manager=job_manager, job_candidates=[candidate], fl_ctx=fl_ctx
             )
         assert job is None
+        assert candidate.meta[JobMetaKey.SCHEDULE_COUNT.value] == 1
+        assert (
+            "required sites: ['site2'] don't have enough resources"
+            in candidate.meta[JobMetaKey.SCHEDULE_HISTORY.value][0]
+        )
 
     def test_not_enough_sites_has_enough_resource(self, setup_and_teardown):
         servers, scheduler, num_sites, job_manager = setup_and_teardown
@@ -428,6 +524,25 @@ class TestDefaultJobScheduler:
                 job_manager=job_manager, job_candidates=[candidate], fl_ctx=fl_ctx
             )
         assert job is None
+
+    def test_resource_manager_error_is_recorded_in_schedule_history(self):
+        resource_manager = Mock(spec=ResourceManagerSpec)
+        resource_manager.check_resources.return_value = (False, "resource check failed: unsupported license")
+        candidate = create_job(
+            job_id="job",
+            resource_spec={"site1": {"license": 2}},
+            deploy_map={"app": [ALL_SITES]},
+            min_sites=1,
+        )
+        scheduler = DefaultJobScheduler(max_jobs=1, min_schedule_interval=0)
+
+        with create_servers(1, [Site("site1", {}, resource_manager)])[0].new_context() as fl_ctx:
+            job, _ = scheduler.schedule_job(Mock(spec=JobDefManagerSpec), [candidate], fl_ctx)
+
+        assert job is None
+        assert (
+            "site1: resource check failed: unsupported license" in candidate.meta[JobMetaKey.SCHEDULE_HISTORY.value][0]
+        )
 
     @pytest.mark.parametrize("job_candidates,sites,expected_job,expected_dispatch_info", TEST_CASES)
     def test_normal_case(self, job_candidates, sites, expected_job, expected_dispatch_info):

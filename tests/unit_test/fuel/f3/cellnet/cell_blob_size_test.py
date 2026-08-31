@@ -18,14 +18,14 @@ from unittest.mock import MagicMock
 import pytest
 
 from nvflare.fuel.f3.cellnet import cell as cell_module
-from nvflare.fuel.f3.cellnet.cell import Adapter
+from nvflare.fuel.f3.cellnet.cell import Adapter, Cell
 from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.message import Message
-from nvflare.fuel.f3.streaming.blob_streamer import BlobStream, BlobStreamer
+from nvflare.fuel.f3.streaming.blob_streamer import BlobStreamer
 from nvflare.fuel.f3.streaming.byte_receiver import ByteReceiver, RxTask
-from nvflare.fuel.f3.streaming.byte_streamer import TxTask
-from nvflare.fuel.f3.streaming.stream_const import StreamDataType, StreamHeaderKey
+from nvflare.fuel.f3.streaming.byte_streamer import ByteStreamer
+from nvflare.fuel.f3.streaming.stream_const import STREAM_ERROR_TOPIC, StreamDataType, StreamHeaderKey
 from nvflare.fuel.f3.streaming.stream_types import BlobSizeError, StreamError, StreamFuture
 
 
@@ -47,7 +47,7 @@ def test_oversized_server_job_response_exits_job_process(monkeypatch):
 
     with pytest.raises(SystemExit) as exc_info:
         adapter._send_response(
-            Message(payload=b"payload"), "stream-id", "request-id", "channel", "topic", "client", False, False
+            Message(payload=b"payload"), "stream-id", "request-id", "channel", "topic", "client", False
         )
 
     assert exc_info.value.code == 1
@@ -59,7 +59,7 @@ def test_oversized_non_server_job_response_propagates_error(monkeypatch):
 
     with pytest.raises(BlobSizeError, match=r"limit 4 \(streaming_max_blob_size\)"):
         adapter._send_response(
-            Message(payload=b"payload"), "stream-id", "request-id", "channel", "topic", "peer", False, False
+            Message(payload=b"payload"), "stream-id", "request-id", "channel", "topic", "peer", False
         )
 
 
@@ -69,9 +69,7 @@ def test_asymmetric_receiver_limit_exits_server_job_after_async_rejection(monkey
     monkeypatch.setattr(cell_module, "encode_payload", lambda *args, **kwargs: None)
     monkeypatch.setattr(cell_module.os, "_exit", lambda code: (_ for _ in ()).throw(SystemExit(code)))
 
-    adapter._send_response(
-        Message(payload=b"payload"), "stream-id", "request-id", "channel", "topic", "client", False, False
-    )
+    adapter._send_response(Message(payload=b"payload"), "stream-id", "request-id", "channel", "topic", "client", False)
 
     with pytest.raises(SystemExit) as exc_info:
         reply_future.set_exception(BlobSizeError("receiver limit 4 is smaller than response size 5"))
@@ -86,56 +84,85 @@ def test_async_stream_error_does_not_exit_non_server_job(monkeypatch):
     exit_calls = []
     monkeypatch.setattr(cell_module.os, "_exit", exit_calls.append)
 
-    adapter._send_response(
-        Message(payload=b"payload"), "stream-id", "request-id", "channel", "topic", "peer", False, False
-    )
+    adapter._send_response(Message(payload=b"payload"), "stream-id", "request-id", "channel", "topic", "peer", False)
     reply_future.set_exception(StreamError("receiver stopped stream"))
 
     assert exit_calls == []
 
 
-def test_single_frame_receiver_rejection_fails_server_reply_and_receiver_future(monkeypatch):
+def test_uncorrelated_blob_size_stream_error_does_not_exit_server_job(monkeypatch):
+    sender_cell = MagicMock()
+    sender_cell.my_info.fqcn = "server.job-id"
+    byte_streamer = ByteStreamer(sender_cell)
+    server = Cell.__new__(Cell)
+    server.core_cell = sender_cell
+    server.requests_dict = {}
+    server.logger = MagicMock()
+    byte_streamer.register_error_callback(server._process_stream_error)
+    exit_calls = []
+    monkeypatch.setattr(cell_module.os, "_exit", exit_calls.append)
+
+    byte_streamer._error_handler(
+        Message(
+            {
+                MessageHeaderKey.ORIGIN: "client",
+                StreamHeaderKey.STREAM_ID: 999,
+                StreamHeaderKey.CHANNEL: "channel",
+                StreamHeaderKey.TOPIC: "topic",
+                StreamHeaderKey.ERROR_MSG: "forged oversized blob",
+                StreamHeaderKey.ERROR_TYPE: BlobSizeError.__name__,
+            }
+        )
+    )
+
+    assert exit_calls == []
+
+
+def test_single_frame_receiver_rejection_reports_generic_error_after_receive_completion(monkeypatch):
+    import nvflare.fuel.f3.streaming.blob_streamer as blob_streamer_module
+    import nvflare.fuel.f3.streaming.byte_receiver as byte_receiver_module
+
     monkeypatch.setattr(CommConfigurator, "get_streaming_max_blob_size", lambda self: 4)
-    monkeypatch.setattr(cell_module, "encode_payload", lambda *args, **kwargs: None)
     monkeypatch.setattr(cell_module.os, "_exit", lambda code: (_ for _ in ()).throw(SystemExit(code)))
+    pending_callbacks = []
+    monkeypatch.setattr(
+        byte_receiver_module.stream_thread_pool,
+        "submit",
+        lambda fn, *args: pending_callbacks.append((fn, args)),
+    )
+    monkeypatch.setattr(blob_streamer_module.callback_thread_pool, "submit", lambda fn, *args: fn(*args))
 
     sender_cell = MagicMock()
-    tx_task = TxTask(
+    sender_cell.my_info.fqcn = "server.job-id"
+    byte_streamer = ByteStreamer(sender_cell)
+    completed_send = SimpleNamespace(
+        sid=101,
         cell=sender_cell,
-        chunk_size=8,
+        target="client",
         channel=CellChannel.RETURN_ONLY,
         topic="channel:topic",
-        target="client",
-        headers={},
-        stream=BlobStream(b"abcde", {}),
-        reliable=True,
-        secure=False,
-        optional=False,
+        headers={StreamHeaderKey.STREAM_REQ_ID: "request-id"},
     )
-    send_kwargs = {}
-
-    def send_blob(*args, **kwargs):
-        send_kwargs.update(kwargs)
-        return tx_task.stream_future
-
-    adapter_cell = SimpleNamespace(send_blob=send_blob, get_fobs_context=lambda: {})
-    adapter = Adapter(None, SimpleNamespace(fqcn="server.job-id"), adapter_cell)
-    adapter._send_response(
-        Message(payload=b"abcde"), "stream-id", "request-id", "channel", "topic", "client", False, False
-    )
-    assert send_kwargs["reliable"] is True
+    with ByteStreamer.map_lock:
+        ByteStreamer._retain_error_context(completed_send)
+    server = Cell.__new__(Cell)
+    server.core_cell = sender_cell
+    server.requests_dict = {}
+    server.logger = MagicMock()
+    byte_streamer.register_error_callback(server._process_stream_error)
 
     receiver_cell = MagicMock()
     receiver_cell.my_info.fqcn = "client"
     error_messages = []
 
-    def return_error(_channel, _topic, _target, message, **_kwargs):
-        error_messages.append(message)
-        message.set_header(MessageHeaderKey.ORIGIN, "client")
-        tx_task.handle_ack(message)
+    def route_receiver_message(_channel, topic, _target, message, **_kwargs):
+        if topic == STREAM_ERROR_TOPIC:
+            error_messages.append(message)
+            message.set_header(MessageHeaderKey.ORIGIN, "client")
+            byte_streamer._error_handler(message)
         return {}
 
-    receiver_cell.fire_and_forget.side_effect = return_error
+    receiver_cell.fire_and_forget.side_effect = route_receiver_message
     byte_receiver = ByteReceiver(receiver_cell)
     BlobStreamer(SimpleNamespace(), byte_receiver).register_blob_callback(
         CellChannel.RETURN_ONLY,
@@ -145,9 +172,10 @@ def test_single_frame_receiver_rejection_fails_server_reply_and_receiver_future(
     incoming = Message(
         {
             MessageHeaderKey.ORIGIN: "server.job-id",
-            StreamHeaderKey.STREAM_ID: tx_task.sid,
+            StreamHeaderKey.STREAM_ID: 101,
             StreamHeaderKey.CHANNEL: CellChannel.RETURN_ONLY,
             StreamHeaderKey.TOPIC: "channel:topic",
+            StreamHeaderKey.STREAM_REQ_ID: "request-id",
             StreamHeaderKey.SIZE: 5,
             StreamHeaderKey.SEQUENCE: 0,
             StreamHeaderKey.OFFSET: 0,
@@ -160,21 +188,30 @@ def test_single_frame_receiver_rejection_fails_server_reply_and_receiver_future(
     )
 
     try:
+        byte_receiver._data_handler(incoming)
+
+        with RxTask.map_lock:
+            rx_task = RxTask.rx_task_map[("server.job-id", 101)]
+        assert rx_task.completed is True
+        assert rx_task.failed is False
+        assert rx_task.stream_future.done() is False
+        assert len(pending_callbacks) == 1
+
         with pytest.raises(SystemExit) as exc_info:
-            byte_receiver._data_handler(incoming)
+            fn, args = pending_callbacks.pop()
+            fn(*args)
 
         assert exc_info.value.code == 1
-        with RxTask.map_lock:
-            rx_task = RxTask.rx_task_map[("server.job-id", tx_task.sid)]
         receiver_error = rx_task.stream_future.exception(timeout=0.1)
         assert isinstance(receiver_error, BlobSizeError)
         assert rx_task.failed is True
-        assert rx_task.completed is False
+        assert rx_task.completed is True
         assert len(error_messages) == 1
         assert error_messages[0].get_header(StreamHeaderKey.ERROR_TYPE) == BlobSizeError.__name__
-        assert isinstance(tx_task.stream_future.exception(timeout=0.1), BlobSizeError)
     finally:
+        with ByteStreamer.map_lock:
+            ByteStreamer.error_context_map.pop(101, None)
         with RxTask.map_lock:
-            rx_task = RxTask.rx_task_map.pop(("server.job-id", tx_task.sid), None)
+            rx_task = RxTask.rx_task_map.pop(("server.job-id", 101), None)
         if rx_task and rx_task.cleanup_timer:
             rx_task.cleanup_timer.cancel()

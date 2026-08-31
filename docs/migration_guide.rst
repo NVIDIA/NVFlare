@@ -87,10 +87,11 @@ using ``in_process``, ``external_process``, or ``attach`` mode.
 
 Recipe-level ``pipe_type`` and ``pipe_root_path`` settings are no longer
 accepted. Select transport in site ``comm_config.json`` instead; the F3
-``FileDriver`` remains available as scheme ``shared-file``. For custom model
-representation logic, transform parameters explicitly around
-``flare.receive()`` and ``flare.send()`` or use helpers in
-:mod:`nvflare.client.converter_utils`.
+``FileDriver`` remains available as scheme ``shared-file`` for an attached
+trainer. A launched external-process trainer instead requires a clear TCP
+listener bound to loopback. For custom model representation logic,
+transform parameters explicitly around ``flare.receive()`` and
+``flare.send()`` or use helpers in :mod:`nvflare.client.converter_utils`.
 
 FLARE API Compatibility Note
 ----------------------------
@@ -218,8 +219,8 @@ If you previously used advanced JSON/file-based configs with
 upgrading to the next release built from ``main``.
 For dict-based or file-path logging, use ``configure_job_log`` on a running job instead.
 
-POC Start Default Service Clarification
----------------------------------------
+POC Start Defaults and Repeatable Selection
+-------------------------------------------
 
 On the current ``main`` branch, the documented default behavior of
 ``nvflare poc start`` is clarified to reflect the actual runtime behavior:
@@ -231,8 +232,14 @@ Impact:
 - Running ``nvflare poc start`` with no explicit ``-p`` / ``--service`` starts
   the server and clients.
 - Admin consoles are not started unless explicitly selected.
+- ``-p`` / ``--service`` and ``-ex`` / ``--exclude`` can be repeated for
+  ``poc start`` and ``poc stop``. Earlier versions silently kept only the last
+  value when an option was repeated.
+- ``poc stop -ex <participant>`` now leaves each excluded participant running;
+  earlier versions ignored exclusions on the default coordinated shutdown path.
 
-This is a documentation/help clarification, not a runtime behavior change.
+The default-start behavior is a documentation/help clarification. Preserving
+repeated participant options is new CLI behavior on ``main``.
 
 Upgrading from 2.7.0/2.7.1 to 2.7.2
 ======================================

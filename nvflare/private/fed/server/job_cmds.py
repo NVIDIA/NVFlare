@@ -72,6 +72,8 @@ from nvflare.fuel.utils.argument_utils import SafeArgumentParser
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.lighter.tool_consts import NVFLARE_SUBMITTER_CRT_FILE
 from nvflare.lighter.utils import load_crt_chain_bytes
+from nvflare.private.admin_defs import MsgHeader
+from nvflare.private.admin_defs import ReturnCode as AdminReturnCode
 from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.server.admin import new_message
 from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
@@ -455,7 +457,30 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             message = new_message(conn, topic=TrainingTopic.CONFIGURE_JOB_LOG, body=config, require_authz=False)
             message.set_header(RequestHeader.JOB_ID, str(job_id))
             replies = self.send_request_to_clients(conn, message)
-            self.process_replies_to_table(conn, replies)
+            client_replies = replies or []
+            self.process_replies_to_table(conn, client_replies)
+
+            client_errors = []
+            received_tokens = {client_reply.client_token for client_reply in client_replies}
+            expected_clients = conn.get_prop(self.TARGET_CLIENTS, {}) or {}
+            for client_token, client_name in expected_clients.items():
+                if client_token not in received_tokens:
+                    client_errors.append(f"{client_name or client_token}: no reply")
+
+            for client_reply in client_replies:
+                client_name = client_reply.client_name or client_reply.client_token or "client"
+                if client_reply.reply is None:
+                    client_errors.append(f"{client_name}: no reply")
+                    continue
+
+                return_code = client_reply.reply.get_header(MsgHeader.RETURN_CODE, AdminReturnCode.OK)
+                if return_code != AdminReturnCode.OK:
+                    detail = client_reply.reply.body or f"return code {return_code}"
+                    client_errors.append(f"{client_name}: {detail}")
+
+            if client_errors:
+                error_info = "\n".join(client_errors)
+                conn.append_error(error_info, make_meta(MetaStatusValue.ERROR, info=error_info))
 
         if target_type not in [self.TARGET_TYPE_ALL, self.TARGET_TYPE_CLIENT, self.TARGET_TYPE_SERVER]:
             conn.append_error(

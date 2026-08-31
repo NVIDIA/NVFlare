@@ -11,9 +11,8 @@ trainer process, use `external_process`; if training runs in the Client Job, use
 for the mode decision, configuration responsibilities, and legacy migration
 mapping.
 
-Attach keeps the 2.8 `IPCExchanger`/`IPCAgent` trust boundary: the Client Job
-(CJ) materializes trainer results, and the trainer receives no site
-`AUTH_TOKEN` or signature.
+The Client Job (CJ) is the task/result materialization boundary, and the
+trainer receives no site `AUTH_TOKEN` or signature.
 
 ## Network Attach through the CP
 
@@ -39,19 +38,22 @@ Start from `attach_profile_network.json`:
   "execution_mode": "attach",
   "attach_id": "numpy_trainer",
   "site_name": "site-1",
-  "connect_url": "tcp://site-1.example.com:8004",
-  "connection_security": "clear",
+  "connect_url": "stcp://site-1.example.com:8004",
+  "connection_security": "mtls",
   "secure_mode": true,
   "ca_cert": "/absolute/path/to/site/startup/rootCA.pem",
   "job_wait_timeout": null
 }
 ```
 
-`connect_url` must be the provisioned CP internal listener, not a CJ URL. Keep
-`client.crt` and `client.key` beside `rootCA.pem`. `secure_mode=true` uses those
-site credentials for Cell authentication and end-to-end payload encryption even
-when the CP transport itself is `connection_security="clear"`, matching the old
-IPCAgent model.
+`connect_url` must be the provisioned CP internal listener, not a CJ URL. Prepared
+Docker, Kubernetes, and Slurm parents use `stcp` with mTLS by default. Keep
+`client.crt` and `client.key` beside `rootCA.pem`; they provide transport and Cell
+authentication, while `secure_mode=true` provides end-to-end payload encryption.
+To opt out on a trusted, isolated network, set
+`parent.internal_connection_security: clear` for Docker/Kubernetes or
+`job_launcher.internal_connection_security: clear` for Slurm, then use `tcp`
+with `connection_security="clear"`.
 
 The trainer identity is stable:
 
@@ -143,7 +145,7 @@ nvflare.app_common.executors.client_api_executor.ClientAPIExecutor
 Start the POC and install the example dependency:
 
 ```bash
-nvflare poc start -ex admin@nvidia.com
+nvflare poc start
 python -m pip install -r examples/advanced/client-api-attach/requirements.txt
 ```
 
@@ -165,6 +167,9 @@ python trainer.py --config attach_profile_shared_file.json
 For network Attach, replace the placeholders in
 `attach_profile_network.json` with the CP route and trainer credential paths,
 then run the same command with that profile.
+For this local process-mode POC, use the CP's advertised `tcp://` URL and set
+`connection_security` to `"clear"`. Keep `secure_mode` enabled so the
+provisioned credentials continue to authenticate and protect Cell messages.
 
 Successful output ends with `Status: FINISHED:COMPLETED`. For this three-round
 example, the final model is:

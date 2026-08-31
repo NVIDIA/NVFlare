@@ -460,11 +460,25 @@ modes. Heartbeats apply only to the out-of-process modes.
    * - ``shutdown_timeout``
      - ``external_process``
      - ``None``
-     - Wait for orderly exit before forced process-tree termination.
+     - Natural-exit wait after orderly shutdown, also reused for the finalize
+       gate, accepted-source disconnect fallback, post-settlement group-exit
+       wait, and settled-result reaper budget. ``None`` selects 30 seconds.
+       Zero skips direct orderly-exit and finalize-gate waits but maps to 30
+       seconds for accepted-source disconnect and post-settlement group-exit
+       waits; that fallback also feeds the fixed settled-reaper budget. A
+       still-live accepted source reserves the termination grace from a 30-second
+       session-scale bound. With the defaults, this leaves a 25-second live wait,
+       followed by a final SHUTDOWN state probe of up to 5 seconds and, if still
+       live, up to 5 seconds of termination grace (35 seconds maximum). A live
+       reply can return immediately, so settlement after the 25-second wait is not
+       guaranteed to be observed. Observed settlement starts a fresh settled-reaper
+       budget.
    * - ``stop_grace_period``
      - ``external_process``
      - 30.0
-     - Grace period between soft and hard process termination.
+     - Grace period between soft and hard process termination. Accepted-result
+       reaper cleanup silently caps this phase at 5 seconds;
+       ordinary teardown honors the configured value.
    * - ``heartbeat_interval``
      - ``external_process``, ``attach``
      - 5.0
@@ -1055,7 +1069,9 @@ All standard recipes support these timeout parameters (fedavg.py, cyclic.py):
      - Purpose
    * - shutdown_timeout
      - 0.0
-     - Wait time before shutdown for cleanup
+     - External-process orderly-exit wait. Zero skips direct orderly-exit and
+       finalize-gate waits but maps to 30 seconds for accepted-source disconnect
+       and post-settlement group-exit waits and feeds the settled-reaper budget.
    * - task_assignment_timeout
      - 10
      - Timeout for cyclic task assignment (CyclicRecipe only)
@@ -1678,10 +1694,18 @@ process group and applies these shutdown bounds:
      - Purpose
    * - shutdown_timeout
      - backend default
-     - Time for orderly trainer exit before forced termination begins
+     - Orderly-exit wait, also reused for the finalize gate, accepted-source
+       disconnect fallback, post-settlement group-exit wait, and settled-result
+       reaper budget. Zero maps to a 30-second disconnect grace for an accepted
+       result source. For a still-live accepted source, the 30-second session-scale
+       bound is split into a 25-second live wait and 5-second termination grace,
+       with a final bounded SHUTDOWN state probe between them. Observed settlement
+       starts a fresh settled-reaper budget.
    * - stop_grace_period
      - 30.0
-     - Time between soft and hard process-group termination
+     - Time between soft and hard process-group termination. Accepted-result
+       reaper cleanup silently caps this phase at 5 seconds; ordinary teardown
+       uses the full value.
 
 Attach mode never terminates the externally owned trainer process.
 

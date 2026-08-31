@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import ipaddress
 import logging
 import os
 import random
@@ -65,6 +66,9 @@ def get_ssl_context(params: dict, ssl_server: bool) -> Optional[SSLContext]:
         ca_path = params.get(DriverParams.CA_CERT.value)
         cert_path = params.get(DriverParams.SERVER_CERT.value)
         key_path = params.get(DriverParams.SERVER_KEY.value)
+        client_pair = (params.get(DriverParams.CLIENT_CERT.value), params.get(DriverParams.CLIENT_KEY.value))
+        if not any((cert_path, key_path)) and all(client_pair):
+            cert_path, key_path = client_pair
 
         if not cert_path or not key_path:
             raise RuntimeError(f"not cert or key for SSL server: {params=}")
@@ -94,6 +98,9 @@ def get_ssl_context(params: dict, ssl_server: bool) -> Optional[SSLContext]:
             ca_path = params.get(DriverParams.CA_CERT.value)
             cert_path = params.get(DriverParams.CLIENT_CERT.value)
             key_path = params.get(DriverParams.CLIENT_KEY.value)
+            server_pair = (params.get(DriverParams.SERVER_CERT.value), params.get(DriverParams.SERVER_KEY.value))
+            if not any((cert_path, key_path)) and all(server_pair):
+                cert_path, key_path = server_pair
             params[DriverParams.IMPLEMENTED_CONN_SEC] = "Client mTLS: Flare credentials used"
 
     if not ca_path:
@@ -286,7 +293,15 @@ def get_tcp_urls(scheme: str, resources: dict) -> (str, str):
 
     listening_host = resources.get(DriverParams.LISTEN_HOST.value) if resources else None
     if not listening_host:
-        listening_host = "0"
+        if host.rstrip(".").lower() == "localhost":
+            listening_host = "127.0.0.1"
+        else:
+            try:
+                address = ipaddress.ip_address(host)
+            except ValueError:
+                address = None
+            # F3 URL parsing and the TCP driver do not yet support IPv6 end to end.
+            listening_host = host if isinstance(address, ipaddress.IPv4Address) and address.is_loopback else "0"
 
     port = get_open_tcp_port(resources)
     if not port:

@@ -16,6 +16,8 @@ import queue
 import threading
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from nvflare.apis.signal import Signal
 from nvflare.collab.api._invocation import _InvocationDispatcher
 from nvflare.collab.api.call_opt import CallOption
@@ -235,3 +237,81 @@ def test_result_queue_does_not_drop_last_concurrent_item():
 
     assert not consumer.is_alive()
     assert outcome == [("result", item)]
+
+
+def test_frozen_result_queue_is_reiterable_and_preserves_partial_results():
+    result_queue = ResultQueue(limit=2)
+    expected = [
+        ("site-1", "partial"),
+        ("site-1", "first"),
+        ("site-2", "second"),
+    ]
+    result_queue.append(expected[0], is_whole=False)
+    result_queue.append(expected[1])
+    result_queue.append(expected[2])
+
+    frozen_results = result_queue.freeze()
+    assert list(frozen_results) == expected
+    assert list(frozen_results) == expected
+    assert len(frozen_results) == 2
+
+
+def test_frozen_result_queue_preserves_previously_consumed_results():
+    result_queue = ResultQueue(limit=2)
+    expected = [("site-1", "first"), ("site-2", "second")]
+    result_queue.append(expected[0])
+
+    assert next(result_queue) == expected[0]
+
+    result_queue.append(expected[1])
+    frozen_results = result_queue.freeze()
+
+    assert list(frozen_results) == expected
+    assert list(frozen_results) == expected
+
+
+def test_frozen_result_queue_is_not_an_iterator():
+    result_queue = ResultQueue(limit=1)
+    result_queue.append(("site-1", "result"))
+    frozen_results = result_queue.freeze()
+
+    with pytest.raises(TypeError, match="not an iterator"):
+        next(frozen_results)
+
+
+def test_frozen_result_queue_preserves_failures_without_yielding_markers():
+    result_queue = ResultQueue(limit=2)
+    error = CollabCallError("site-1", "train", TimeoutError("timed out"))
+    result_queue.append_failure("site-1", error)
+    result_queue.append(("site-2", "result"))
+
+    frozen_results = result_queue.freeze()
+
+    assert list(frozen_results) == [("site-2", "result")]
+    assert list(frozen_results) == [("site-2", "result")]
+    assert frozen_results.failures == {"site-1": error}
+
+
+def test_freezing_does_not_change_existing_live_iterator():
+    result_queue = ResultQueue(limit=2)
+    expected = [("site-1", "first"), ("site-2", "second")]
+    live_iterator = iter(result_queue)
+    result_queue.append(expected[0])
+    result_queue.append(expected[1])
+
+    frozen_results = result_queue.freeze()
+
+    assert list(live_iterator) == expected
+    assert list(frozen_results) == expected
+
+
+def test_result_queue_rejects_freeze_before_completion():
+    incomplete_queue = ResultQueue(limit=2)
+    incomplete_queue.append(("site-1", "first"))
+    with pytest.raises(RuntimeError, match="before all outcomes"):
+        incomplete_queue.freeze()
+
+    live_queue = ResultQueue(limit=1, retain_history=False)
+    live_queue.append(("site-1", "result"))
+    with pytest.raises(RuntimeError, match="without retained history"):
+        live_queue.freeze()

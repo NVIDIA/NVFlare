@@ -72,8 +72,7 @@ The built-in provider is ``step_ca``. With this provider, step-ca owns OIDC
 login, role claim handling, and certificate issuance. The issued certificate
 must contain the same FLARE identity fields that the existing PKI path consumes:
 ``commonName`` for the admin identity, ``organizationName`` for the FLARE org,
-and ``unstructuredName`` for one FLARE role: ``project_admin``, ``org_admin``,
-``lead``, or ``member``.
+and ``unstructuredName`` for the FLARE authorization role.
 
 The step-ca template must map an exact, allowlisted IdP role to both the FLARE
 organization and role. This binds the authorization tuple before the

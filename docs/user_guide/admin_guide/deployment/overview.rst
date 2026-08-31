@@ -320,9 +320,9 @@ You can use the following command:
 
 .. code-block::
 
-    nvflare preflight_check
+    nvflare preflight-check -p /path/to/startup_kit
 
-To learn more about `preflight_check`, see :ref:`preflight_check`.
+To learn more about ``nvflare preflight-check``, see :ref:`preflight_check`.
 
 Workload
 ========

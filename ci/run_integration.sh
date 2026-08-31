@@ -45,14 +45,16 @@ init_pipenv() {
     rm -f Pipfile Pipfile.lock
     export PIPENV_INSTALL_TIMEOUT=9999
     export PIPENV_TIMEOUT=9999
-    pipenv install -e .[dev]
+    # The environment is disposable and its lockfile is never reused, so skip the expensive lock step.
+    export PIPENV_SKIP_LOCK=1
+    pipenv install -e ".[dev]"
     export PYTHONPATH=$PWD
 }
 
 remove_pipenv() {
     echo "removing pip environment"
     pipenv --rm
-    rm Pipfile Pipfile.lock
+    rm -f Pipfile Pipfile.lock
 }
 
 integration_test_tf() {
@@ -101,7 +103,7 @@ run_pytest() {
 prepare_cifar10_data() {
     local test_mode=$1
     case $test_mode in
-        client_api|client_api_qa|model_controller_api|pytorch|cifar)
+        client_api|client_api_qa|pytorch|cifar)
             "${PYTHON_BIN[@]}" tools/prepare_cifar10.py
             ;;
     esac
@@ -179,7 +181,7 @@ run_pytest_mode() {
         tensorflow)
             run_tensorflow_test
             ;;
-        numpy|pytorch|auth|cifar|stats|xgboost|client_api|client_api_qa|model_controller_api)
+        numpy|pytorch|auth|cifar|stats|xgboost|client_api|client_api_qa)
             run_system_test "$test_mode"
             ;;
         *)

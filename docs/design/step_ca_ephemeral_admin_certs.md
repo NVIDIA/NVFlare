@@ -25,7 +25,7 @@ The issued leaf certificate must contain the fields FLARE already consumes:
 
 - `commonName`: authenticated admin identity
 - `organizationName`: FLARE organization
-- `unstructuredName`: `project_admin`, `org_admin`, `lead`, or `member`
+- `unstructuredName`: FLARE authorization role
 
 The admin private key is generated on the admin machine by `step ca
 certificate` and is not sent to the OIDC provider or FLARE server.

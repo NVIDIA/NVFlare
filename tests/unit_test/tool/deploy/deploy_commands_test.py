@@ -319,6 +319,7 @@ def test_prepare_docker_client_copies_and_patches_runtime_files(tmp_path, capsys
 
     comm_config = json.loads((output / "local" / "comm_config.json").read_text())
     assert comm_config["internal"]["resources"]["host"] == "0.0.0.0"
+    assert comm_config["internal"]["resources"]["connection_security"] == "mtls"
     study_runtime_path = output / "local" / "study_runtime.yaml"
     study_runtime_text = study_runtime_path.read_text()
     assert "@@NVFLARE_" not in study_runtime_text
@@ -702,9 +703,67 @@ def test_prepare_k8s_server_uses_configured_service_name(tmp_path, capsys):
 
     assert values["serviceName"] == "custom-nvflare-server"
     assert comm_config["internal"]["resources"]["host"] == "custom-nvflare-server"
+    assert comm_config["internal"]["resources"]["connection_security"] == "mtls"
     assert "name: {{ .Values.serviceName }}" in service
     assert "nvflare-server:%v" not in tcp_services
     assert ".Values.serviceName" in tcp_services
+
+
+def test_prepare_k8s_server_chart_supports_node_selector(tmp_path, capsys):
+    kit = _make_server_kit(tmp_path)
+    output = tmp_path / "server-k8s"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+
+    values = yaml.safe_load((output / "helm_chart" / "values.yaml").read_text())
+    deployment = (output / "helm_chart" / "templates" / "server-deployment.yaml").read_text()
+    assert values["nodeSelector"] == {}
+    assert ".Values.nodeSelector" in deployment
+
+
+@pytest.mark.skipif(shutil.which("helm") is None, reason="Helm is not installed")
+def test_prepare_k8s_server_chart_renders_node_selector(tmp_path, capsys):
+    kit = _make_server_kit(tmp_path)
+    output = tmp_path / "server-k8s"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+
+    helm = shutil.which("helm")
+    assert helm is not None
+    result = subprocess.run(
+        [
+            helm,
+            "template",
+            "server",
+            str(output / "helm_chart"),
+            "--show-only",
+            "templates/server-deployment.yaml",
+            "--set-string",
+            "nodeSelector.topology\\.kubernetes\\.io/zone=us-west-2a",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    deployment = yaml.safe_load(result.stdout)
+    assert deployment["spec"]["template"]["spec"]["nodeSelector"] == {"topology.kubernetes.io/zone": "us-west-2a"}
 
 
 @pytest.mark.parametrize("runtime", ["docker", "k8s"])
@@ -858,8 +917,51 @@ def test_prepare_docker_creates_comm_config_when_missing(tmp_path, capsys):
     assert comm_config["internal"]["scheme"] == "tcp"
     assert comm_config["internal"]["resources"] == {
         "host": "0.0.0.0",
-        "connection_security": "clear",
+        "connection_security": "mtls",
     }
+
+
+def test_prepare_docker_accepts_clear_internal_connection_security(tmp_path, capsys):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-docker"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "docker",
+            "parent": {
+                "docker_image": "repo/nvflare:dev",
+                "internal_connection_security": "clear",
+            },
+        },
+    )
+    capsys.readouterr()
+
+    comm_config = json.loads((output / "local" / "comm_config.json").read_text())
+    assert comm_config["internal"]["resources"]["connection_security"] == "clear"
+
+
+@pytest.mark.parametrize("connection_security", ["tls", "MTLS", "", None, 7, True])
+def test_prepare_docker_rejects_invalid_internal_connection_security(tmp_path, capsys, connection_security):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-docker"
+
+    with pytest.raises(SystemExit):
+        _run_prepare(
+            kit,
+            output,
+            {
+                "runtime": "docker",
+                "parent": {
+                    "docker_image": "repo/nvflare:dev",
+                    "internal_connection_security": connection_security,
+                },
+            },
+        )
+
+    assert "parent.internal_connection_security" in capsys.readouterr().err
+    assert not output.exists()
 
 
 @pytest.mark.parametrize(
@@ -955,6 +1057,7 @@ def test_prepare_k8s_client_writes_chart_and_launcher_config(tmp_path, capsys):
             "namespace": "flare",
             "parent": {
                 "docker_image": "repo/nvflare:dev",
+                "internal_connection_security": "clear",
                 "parent_port": 9102,
                 "workspace_pvc": "nvflws.team.example.com",
                 "workspace_mount_path": "/workspace",
@@ -1018,6 +1121,28 @@ def test_prepare_k8s_client_writes_chart_and_launcher_config(tmp_path, capsys):
     deployment = (output / "helm_chart" / "templates" / "client-deployment.yaml").read_text()
     assert "workspace-local" in deployment
     assert "workspace-startup" in deployment
+
+
+@pytest.mark.parametrize("connection_security", ["tls", "MTLS", "", None, 7, True])
+def test_prepare_k8s_rejects_invalid_internal_connection_security(tmp_path, capsys, connection_security):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-k8s"
+
+    with pytest.raises(SystemExit):
+        _run_prepare(
+            kit,
+            output,
+            {
+                "runtime": "k8s",
+                "parent": {
+                    "docker_image": "repo/nvflare:dev",
+                    "internal_connection_security": connection_security,
+                },
+            },
+        )
+
+    assert "parent.internal_connection_security" in capsys.readouterr().err
+    assert not output.exists()
 
 
 def test_stage_k8_creates_configmap_secret_and_patches_chart(tmp_path, capsys, monkeypatch):
@@ -2003,7 +2128,7 @@ def test_prepare_k8s_creates_comm_config_when_missing(tmp_path, capsys):
     assert comm_config["internal"]["resources"] == {
         "host": "site-1",
         "port": 8102,
-        "connection_security": "clear",
+        "connection_security": "mtls",
     }
 
 

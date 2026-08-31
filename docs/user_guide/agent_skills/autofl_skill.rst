@@ -57,6 +57,19 @@ The result is a reviewable ``autofl.yaml`` containing:
 - source and importer provenance;
 - unresolved dynamic or unsupported fields requiring review.
 
+Before baseline execution, the runner merges imported fixed-budget values,
+user ``--base-args``, and task-local comparison-budget arguments into one
+command line so each budget option is emitted exactly once. Explicit
+duplicates with identical values are dropped; conflicting values are
+rejected at initialization with an ``AUTOFL_BUDGET_ARGUMENT_CONFLICT``
+error before any campaign file is written. Duplicates are matched by the
+flag spellings the job's parser defines, including short aliases; a
+spelling the parser does not define passes through unchanged so argparse
+still reports it. A short-option cluster that itself sets a pinned
+zero-argument flag is kept, and the runner omits its own copy so the
+option still appears exactly once. Any other short-option token that may
+involve a pinned flag is rejected; write the options as separate tokens.
+
 When the user does not name a metric, a deterministic ``key_metric`` extracted
 from ``job.py`` takes precedence. The default user experience does not require
 editing ``autofl.yaml``.
@@ -195,10 +208,17 @@ literature event, plus grouped crashes. Missing family metadata stays
 The trajectory keeps the first and final running best and the largest measured
 objective improvements rather than evenly sampling the campaign.
 
-The product campaign and report contracts support metric maximization only.
-The report also surfaces abandoned-candidate state and warns if the state's
-ledger pointer, candidate-attempt, baseline, or improvement accounting
-disagrees with the ledger.
+The product campaign and report contracts preserve the ``min`` or ``max``
+direction imported from the job's NVFlare metric contract. Raw loss metrics
+should declare ``key_metric_mode="min"``; explicitly negated metrics remain
+valid ``max`` objectives. Ledger values stay raw, while improvement is positive
+when the declared objective improves. A job that supplies a custom
+``model_selector`` is not admitted automatically because that selector
+supersedes ``key_metric_mode`` and arbitrary component behavior cannot be
+imported deterministically. The report also surfaces
+abandoned-candidate state and warns if the state's ledger pointer,
+candidate-attempt, baseline, or improvement accounting disagrees with the
+ledger.
 
 As with active Auto-FL, users invoke the skill through their coding agent and
 do not run scripts from the installed skill directory themselves.

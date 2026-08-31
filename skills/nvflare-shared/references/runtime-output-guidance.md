@@ -40,7 +40,7 @@ read-only — read code and data from it but write generated source to a writabl
 directory: a user-provided path when available, otherwise the runtime directory.
 Point the job at the original data through a configurable `train_args` value
 rather than a path hardcoded in the generated code — see the "Data Location"
-rule in `conversion-workflow.md` — and report both the read-only source root and
+rule in `conversion-common.md` — and report both the read-only source root and
 the exact generated job source location.
 
 ## Runtime And Export Outputs

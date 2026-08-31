@@ -14,6 +14,17 @@ Kubernetes clusters. Use ``nvflare provision`` or the distributed
 ``deploy prepare`` on each server or client kit that should run in Docker,
 Kubernetes, or Slurm.
 
+.. note::
+
+   The Kubernetes and Slurm runtimes secure the internal parent/job links
+   (SP/SJ and CP/CJ) with mTLS by default, and these links use the participant
+   certificate in both TLS roles. The certificate must therefore allow both
+   ``clientAuth`` and ``serverAuth`` in its extended key usage (EKU). Startup
+   kits whose certificates are restricted to a single role — for example, kits
+   created by NVFlare 2.8 distributed provisioning, which issues certificates
+   carrying only ``clientAuth`` or only ``serverAuth`` — must be re-provisioned
+   before using these runtimes. Kits whose certificates carry no EKU (unrestricted) remain compatible and do not need re-provisioning.
+
 For Kubernetes deployment workflow, see :ref:`helm_chart`. For the Slurm
 deployment workflow and security checklist, see :ref:`slurm_job_launcher`. For
 job-level runtime settings, see :ref:`launcher_spec`.
@@ -73,6 +84,7 @@ Example ``docker.yaml``:
    parent:
      docker_image: registry.example.com/nvflare-site:2.8
      network: nvflare-network
+     internal_connection_security: mtls
 
    job_launcher:
      default_python_path: /usr/local/bin/python
@@ -93,6 +105,11 @@ Top-level keys:
 - ``docker_image``: required parent image used by ``startup/start_docker.sh``.
 - ``network``: Docker network for parent and job containers. Defaults to
   ``nvflare-network``.
+- ``internal_connection_security``: security mode for internal parent/job TCP
+  links (SP/SJ and CP/CJ). Accepts ``mtls`` or ``clear`` and defaults to
+  ``mtls``. Use ``clear`` only as an explicit insecure opt-out because it
+  removes certificate authentication while the parent port remains reachable
+  from containers attached to the Docker network.
 
 ``job_launcher`` keys:
 
@@ -122,6 +139,10 @@ The command writes:
 - patched ``local/comm_config.json``
 - ``local/study_runtime.yaml`` template when missing (skipped for legacy kits that already have ``study_data.yaml``)
 
+The Docker launcher preserves ``stcp://`` while replacing the parent hostname
+with its Docker DNS name. It rejects URL and connection-security mismatches
+instead of silently downgrading an mTLS parent connection to clear TCP.
+
 **********
 K8s Config
 **********
@@ -135,6 +156,7 @@ Example ``k8s.yaml``:
 
    parent:
      docker_image: registry.example.com/nvflare-site:2.8
+     internal_connection_security: mtls
      image_pull_secrets:
        - registry-credentials
      parent_port: 8102
@@ -167,6 +189,10 @@ Top-level keys:
 ``parent`` keys:
 
 - ``docker_image``: required parent image used by the Helm chart.
+- ``internal_connection_security``: security mode for internal parent/job TCP
+  links (SP/SJ and CP/CJ). Accepts ``mtls`` or ``clear`` and defaults to
+  ``mtls``. Use ``clear`` only as an explicit insecure opt-out because it
+  removes certificate authentication from these links.
 - ``image_pull_secrets``: optional list of existing Kubernetes Secret names to
   render as ``imagePullSecrets`` on the parent server/client pod. Create these
   registry pull Secrets in the target namespace before installing the chart.
@@ -260,7 +286,11 @@ and ``startup/`` from the generated Secret.
 communication settings so dynamically launched job pods connect to the generated
 parent Kubernetes Service on ``parent_port``. If you customize the chart's
 Service name or port, keep that Service endpoint consistent with the prepared
-kit.
+kit. By default, these TCP links use mTLS and preserve ``stcp://`` through the
+job launcher and runtime arguments. Setting
+``parent.internal_connection_security: clear`` instead emits ``tcp://`` links
+without certificate authentication; receiver-side CellNet authorization still
+applies, but it does not replace peer authentication.
 
 The command writes:
 
@@ -296,6 +326,45 @@ The resource names default to ``nvflare-local-<site>`` and
 ``nvflare-startup-<site>``. Override them with ``--local-configmap`` and
 ``--startup-secret``. The namespace defaults to the namespace written into the
 prepared kit's ``K8sJobLauncher`` config, or ``default`` when unavailable.
+
+``--namespace`` selects the target namespace; it does not create that
+namespace. Make sure the namespace already exists before staging. On initial
+staging, an explicit ``--namespace`` takes precedence over the namespace in the
+prepared kit. It controls where the ConfigMap and Secret are applied and the
+namespace in the printed Helm command, but it does not rewrite the
+``K8sJobLauncher`` namespace in ``local/resources.json.default``. Normally, use
+the same namespace that was configured for ``nvflare deploy prepare`` so the
+parent and dynamically launched job pods remain in the same namespace.
+
+The stage command records the resolved namespace and resource names in
+``helm_chart/values.yaml`` before invoking ``kubectl``. Recording them first
+preserves the exact cleanup targets if ``kubectl`` succeeds, partially
+succeeds, or fails. A later stage command without overrides reuses these
+recorded values. Restaging with an explicit namespace or resource name that
+differs from a recorded value is rejected. For example:
+
+.. code-block:: text
+
+   Initial staging:
+     stage --namespace old-ns
+     -> values.yaml records old-ns
+     -> kubectl may succeed, partially succeed, or fail
+
+   Restaging:
+     stage --namespace new-ns
+     -> rejected because values.yaml still records old-ns
+
+In this case, the error includes ``Prepared kit is already staged with a
+different namespace.`` To change the namespace safely, uninstall any Helm
+release that uses the staged resources, unstage the prepared kit, and then
+stage it in the new namespace:
+
+.. code-block:: shell
+
+   # After uninstalling any Helm release:
+   nvflare deploy k8 unstage <prepared-kit>
+
+   nvflare deploy k8 stage <prepared-kit> --namespace new-ns
 
 After this staging command succeeds, run the printed ``helm_command`` or the
 equivalent ``helm upgrade --install`` command for the prepared chart to start
@@ -358,6 +427,7 @@ minimal ``slurm.yaml`` is:
      image: /lustre/images/nvflare-prod.sif
      python_path: /usr/bin/python3
      parent_host: nvflare-site1.internal
+     internal_connection_security: mtls
 
 Prepare directly into the shared runtime workspace, then start the parent:
 
@@ -370,7 +440,13 @@ The output is the live workspace and must be visible at the same absolute path
 on the parent and compute nodes. Preparing to the same output again replaces
 the complete workspace. A client kit can optionally generate
 ``startup/parent.slurm``; prepare prints the direct ``sbatch`` command that runs
-it in an allocation. See :ref:`slurm_job_launcher` for the complete guide.
+it in an allocation. Internal TCP links use mTLS by default and preserve
+``stcp://`` while the launcher rewrites only the parent host and port. Set
+``job_launcher.internal_connection_security: clear`` only as an explicit
+insecure opt-out; it emits ``tcp://`` links without certificate authentication.
+Receiver-side CellNet authorization still applies, but it does not replace peer
+authentication. Shared-file transport is unchanged and remains clear. See
+:ref:`slurm_job_launcher` for the complete guide.
 
 **********
 Job Images
@@ -424,4 +500,4 @@ causes include:
 - ``--output`` pointing at or inside the input kit
 - a Slurm ``--output`` path that is not valid as a runtime workspace
 - a missing/non-executable Slurm parent CLI, invalid sandbox/image, or
-  unsupported Slurm ``connection_security`` or server ``parent`` configuration
+  invalid Slurm ``internal_connection_security`` or server ``parent`` configuration

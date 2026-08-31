@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Mapping, Optional
 
 from cryptography.hazmat.primitives import serialization
+from cryptography.x509.oid import NameOID
 
 from nvflare.fuel.sec.admin_cert import validate_admin_leaf_cert
 from nvflare.lighter.utils import load_crt, load_crt_chain, load_private_key_file, verify_cert_chain
@@ -116,6 +117,12 @@ def validate_ephemeral_admin_cert_files(
         validate_admin_leaf_cert(cert)
     except Exception as ex:
         raise EphemeralAdminCertError(str(ex)) from ex
+    for oid, field_name in (
+        (NameOID.ORGANIZATION_NAME, "organizationName"),
+        (NameOID.UNSTRUCTURED_NAME, "unstructuredName"),
+    ):
+        if not cert.subject.get_attributes_for_oid(oid):
+            raise EphemeralAdminCertError(f"ephemeral admin certificate missing subject {field_name}")
     return cert
 
 

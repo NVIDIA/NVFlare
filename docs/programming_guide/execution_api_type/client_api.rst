@@ -415,6 +415,24 @@ process, including multi-process or distributed launch commands. The backend
 uses Cell for task/result exchange and owns the trainer lifecycle. It can launch
 one trainer for the job or a fresh trainer for each task.
 
+For a single-node distributed trainer, set ``launch_external_process=True`` on
+the Recipe or ``ScriptRunner`` and use ``torchrun`` (or another framework
+launcher) as its command. Every rank initializes the Client API with its global
+rank, but only global rank 0 owns the NVFLARE control session. Rank 0 receives
+and sends the :class:`FLModel<nvflare.app_common.abstract.fl_model.FLModel>`;
+the training framework must distribute the model and collect the result among
+the other ranks. See the CPU/Gloo
+:github_nvflare_link:`two-rank acceptance job <tests/integration_test/data/jobs/pt_client_api_torchrun_cpu>`
+for the complete contract.
+
+For multi-node Slurm training, let the site's Slurm Job Launcher own the
+allocation. Declare ``nodes`` and ``gpus_per_node`` in the per-site launcher
+spec; do not start a nested ``srun`` from the training script. ``ScriptRunner``
+packages the same external-process command for the additional nodes, and
+``nvflare.app_opt.pt.torchrun_node`` forms the cross-node worker group. The
+:github_nvflare_link:`LLM-HF multi-node example <examples/advanced/llm_hf/MULTINODE.md>`
+shows the supported job export and submission flow.
+
 Attach Mode
 -----------
 
@@ -452,12 +470,19 @@ Parameter conversion
 ====================
 
 There is no converter-component or converter-plugin API. Built-in PyTorch,
-TensorFlow, and NumPy representation adaptation is performed at the trainer-side
-Client API boundary according to ``params_exchange_format`` and
-``server_expected_format``. Applications that need a custom transformation
-should perform it explicitly after ``flare.receive()`` or before
-``flare.send()``. Reusable built-in conversion functions are available in
-:mod:`nvflare.client.converter_utils`.
+TensorFlow, and NumPy representation adaptation occurs only at the trainer-side
+Client API boundary. On ``flare.receive()``, the trainer converts from
+``server_expected_format`` to ``params_exchange_format`` before returning the
+model to training code. On ``flare.send()``, it converts the trainer-native
+parameters back to ``server_expected_format`` and applies the declared
+``params_transfer_type`` (``FULL`` or ``DIFF``). The executor, CJ, and Cell
+transport do not perform model conversion.
+
+Applications that need a custom transformation should perform it explicitly
+after ``flare.receive()`` or before ``flare.send()``. Reusable built-in
+conversion functions are available in :mod:`nvflare.client.converter_utils`.
+``FULL`` versus ``DIFF`` is model-state behavior, not a representation
+converter.
 
 Examples
 ========

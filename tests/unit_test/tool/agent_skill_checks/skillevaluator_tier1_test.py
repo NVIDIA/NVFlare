@@ -24,6 +24,8 @@ import pytest
 COMMAND_TIMEOUT = 120
 REPO_ROOT = Path(__file__).resolve().parents[4]
 TIER1_SELECTION_SCRIPT = REPO_ROOT / "ci" / "should_run_skill_tier1.sh"
+LOCAL_SKILL_LINT_SCRIPT = REPO_ROOT / "dev_tools" / "agent" / "skills" / "checks" / "cli.py"
+DEPENDENCY_INSTALL_SAFETY_LINT = "skill-dependency-install-safety-lint"
 SKILL_DIRS = tuple(sorted(path.parent for path in (REPO_ROOT / "skills").glob("*/SKILL.md")))
 # Fail closed: pytest silently skips a test parametrized over an empty sequence and still
 # exits 0, so a moved or renamed skills layout would turn this gate green without ever
@@ -60,6 +62,24 @@ KEY_ENV_NAMES = (
     "SKILL_EVAL_LLM_API_KEY",
     "SKILL_EVAL_LLM_PROVIDER",
 )
+
+
+def test_tier1_dependency_install_policy_of_bundled_skills():
+    """Companion policy check for a class the external scanner does not model."""
+    command = [
+        sys.executable,
+        str(LOCAL_SKILL_LINT_SCRIPT),
+        "--skills-root",
+        str(REPO_ROOT / "skills"),
+        "--check",
+        DEPENDENCY_INSTALL_SAFETY_LINT,
+        "--format",
+        "json",
+    ]
+
+    completed = _run(command)
+
+    assert completed.returncode == 0, _failure_message(command, completed)
 
 
 @pytest.mark.parametrize("skill_dir", SKILL_DIRS, ids=lambda path: path.name)
@@ -150,7 +170,10 @@ def _require_skillevaluator():
     if not skillevaluator:
         if os.environ.get("NVFLARE_SKILL_TIER1_REQUIRED") == "true":
             pytest.fail("skillevaluator CLI is required for the selected Tier 1 skill security scan")
-        pytest.skip("skillevaluator CLI not on PATH; install .[skill_eval] in a separate environment to run this check")
+        pytest.skip(
+            "skillevaluator CLI not on PATH; run the isolated `uv tool install --python 3.13` command "
+            "from .github/workflows/premerge.yml to enable this check"
+        )
     return skillevaluator
 
 

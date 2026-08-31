@@ -62,7 +62,7 @@ The following is an example of the comm_config.json:
     "allow_adhoc_conns": false,
     "backbone_conn_gen": 2,
     "max_message_size": 2000000000,
-    "streaming_max_blob_size": 2144337904,
+    "streaming_max_blob_size": 4294967296,
     "internal": {
       "scheme": "tcp",
       "resources": {
@@ -292,8 +292,8 @@ certificate/key for Cell authentication and end-to-end message protection.
     "execution_mode": "attach",
     "attach_id": "trainer_a",
     "site_name": "site-1",
-    "connect_url": "tcp://site-1.example.com:8004",
-    "connection_security": "clear",
+    "connect_url": "stcp://site-1.example.com:8004",
+    "connection_security": "mtls",
     "secure_mode": true,
     "ca_cert": "/absolute/path/to/site/startup/rootCA.pem",
     "job_wait_timeout": null
@@ -304,6 +304,12 @@ certificate/key for Cell authentication and end-to-end message protection.
 trainer identity can start before the job and bind the dynamic CJ through
 authenticated ``SESSION_OPEN``; the trainer never receives the site's server
 bearer token.
+
+Prepared Docker, Kubernetes, and Slurm parents use ``stcp`` with mTLS by
+default. To opt out on a trusted, isolated network, set
+``parent.internal_connection_security: clear`` for Docker/Kubernetes or
+``job_launcher.internal_connection_security: clear`` for Slurm, then use
+``tcp`` with ``connection_security="clear"``.
 
 See :ref:`client_api_attach` for job and trainer configuration.
 
@@ -326,11 +332,12 @@ are intentionally omitted.
     "heartbeat_interval": 60,
     "tcp_no_delay": true,
     "streaming_chunk_size": 1048576,
-    "streaming_max_blob_size": 2144337904,
-    "streaming_read_timeout": 60,
+    "streaming_max_blob_size": 4294967296,
+    "streaming_read_timeout": 300,
     "streaming_window_size": 67108864,
     "streaming_ack_interval": 16777216,
-    "streaming_ack_wait": 10,
+    "streaming_ack_wait": 300,
+    "streaming_ack_progress_timeout": 60.0,
     "streaming_reliable": false,
     "streaming_retry_wait": 5.0,
     "streaming_retry_timeout": 60.0,
@@ -401,7 +408,7 @@ The chunk size in bytes. The default value is 1M. When deciding chunk size the f
 streaming_max_blob_size
 -----------------------
 
-The maximum total size in bytes of a received blob stream. The default value is 2144337904 (about 2 GB).
+The maximum total size in bytes of a received blob stream. The default value is 4294967296 (4 GiB).
 This limit is enforced before pre-allocating a declared-size blob and while buffering a blob whose size is not declared up front.
 
 This parameter is separate from ``max_message_size``. ``max_message_size`` limits each individual frame, while
@@ -410,7 +417,7 @@ This parameter is separate from ``max_message_size``. ``max_message_size`` limit
 streaming_read_timeout
 ----------------------
 
-The receiver of streaming times out after this value while waiting for the next chunk. The unit is seconds and the default is 60. 
+The receiver of streaming times out after this value while waiting for the next chunk. The unit is seconds and the default is 300.
 
 This timeout is used to detect dead senders. On a very slow network or extremely busy host, this value may need to be increased.
 
@@ -452,10 +459,20 @@ with an older sender that does not include these headers, the receiver uses its 
 streaming_ack_wait
 ------------------
 
-The number of seconds that the sender waits for the next ACK.
-The default value is 10 seconds. 
+The maximum number of seconds that the sender may remain blocked by its flow-control window.
+The default value is 300 seconds.
 
-This timeout is used to detect dead receivers. On a very slow network, this value may need to be increased.
+This limit applies to one blocked-window wait and does not reset merely because a partial ACK advances within that window.
+The sender also enforces ``streaming_ack_progress_timeout``, so a stalled stream stops when either timeout expires.
+
+streaming_ack_progress_timeout
+------------------------------
+
+The sender records the time of the most recent ACK progress. While blocked by its flow-control window, it stops the stream
+if no ACK progress has occurred for this number of seconds. The default value is 60.0 seconds. An increase in the
+acknowledged byte offset, or the acknowledged sequence number for reliable streaming, counts as progress and resets the
+timestamp. With the defaults, a stalled stream normally stops after 60 seconds without ACK progress, before the
+300-second ``streaming_ack_wait`` expires.
 
 streaming_reliable
 ------------------

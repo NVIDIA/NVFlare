@@ -25,6 +25,7 @@ from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME, Job, JobMetaKey, R
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
 from nvflare.apis.job_scheduler_spec import DispatchInfo, JobSchedulerSpec
 from nvflare.apis.server_engine_spec import ServerEngineSpec
+from nvflare.apis.utils.job_utils import get_event_job_id
 from nvflare.private.fed.utils.fed_utils import extract_participants
 from nvflare.security.study_registry import StudyRegistryService
 from nvflare.utils.job_launcher_utils import get_resource_manager_spec
@@ -135,7 +136,22 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
                     sites_to_app[SERVER_SITE_NAME] = app_name
         self.log_debug(fl_ctx, f"Job {job.job_id} is checking against applicable sites: {applicable_sites}")
 
-        required_sites = job.required_sites if job.required_sites else []
+        raw_required_sites = job.required_sites
+        if raw_required_sites is None:
+            raw_required_sites = []
+        elif not isinstance(raw_required_sites, list):
+            self.log_error(fl_ctx, f"Job {job.job_id} has invalid required sites '{raw_required_sites}'")
+            return SCHEDULE_RESULT_BLOCK, None, "required sites must be a list"
+
+        required_sites = []
+        seen = set()
+        for site_name in raw_required_sites:
+            if not isinstance(site_name, str):
+                self.log_error(fl_ctx, f"Job {job.job_id} has invalid required site '{site_name}'")
+                return SCHEDULE_RESULT_BLOCK, None, f"invalid required site '{site_name}'"
+            if site_name not in seen:
+                seen.add(site_name)
+                required_sites.append(site_name)
         if enrolled_sites is not None:
             for site_name in required_sites:
                 if site_name not in enrolled_sites:
@@ -192,6 +208,7 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
         num_sites_ok = 0
         sites_dispatch_info = {}
         no_resource_message = ""
+        resource_failure_details = []
         for site_name, check_result in resource_check_results.items():
             is_resource_enough, token = check_result
             if is_resource_enough:
@@ -205,18 +222,19 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
                     required_sites_not_enough_resource.remove(site_name)
             else:
                 if site_name in required_sites:
-                    no_resource_message += site_name + ":" + token + ";"
+                    no_resource_message += site_name + ":" + (token or "") + ";"
+                if token:
+                    resource_failure_details.append(f"{site_name}: {token}")
 
         if num_sites_ok < job.min_sites:
             self.log_debug(fl_ctx, f"Job {job.job_id} can't be scheduled: not enough sites have enough resources.")
             self._cancel_resources(
                 resource_reqs=resource_reqs, resource_check_results=resource_check_results, fl_ctx=fl_ctx
             )
-            return (
-                SCHEDULE_RESULT_NO_RESOURCE,
-                None,
-                f"not enough sites have enough resources (ok sites {num_sites_ok} < min sites {job.min_sites})",
-            )
+            reason = f"not enough sites have enough resources (ok sites {num_sites_ok} < min sites {job.min_sites})"
+            if resource_failure_details:
+                reason += f". Details: {'; '.join(resource_failure_details)}"
+            return SCHEDULE_RESULT_NO_RESOURCE, None, reason
 
         if required_sites_not_enough_resource:
             self.log_debug(
@@ -256,13 +274,13 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.JOB_STARTED:
+            job_id = get_event_job_id(fl_ctx)
             with self.lock:
-                job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
                 if job_id not in self.scheduled_jobs:
                     self.scheduled_jobs.append(job_id)
         elif event_type == EventType.JOB_COMPLETED or event_type == EventType.JOB_ABORTED:
+            job_id = get_event_job_id(fl_ctx)
             with self.lock:
-                job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
                 if job_id in self.scheduled_jobs:
                     self.scheduled_jobs.remove(job_id)
 

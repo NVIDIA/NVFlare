@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Server-side model wrapper for PTFileModelPersistor.
+"""Client-side model wrapper for the Swarm PTFileModelPersistor.
 
 Exposes only the LoRA adapter parameters through state_dict() / load_state_dict()
 so the persistor stores a compact checkpoint (~2 MB) instead of the full base

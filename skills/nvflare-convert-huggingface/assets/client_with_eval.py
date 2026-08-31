@@ -11,6 +11,12 @@ owns model exchange; do not add a manual ``FLModel`` receive/send path.
 Keep ``evaluate_before_train=True`` when source-backed per-round evaluation or
 best-model selection is required. Set it to ``False`` only for a valid
 train-only source path.
+
+The entry is rankless for CPU, single-GPU, and other single-process training.
+The Hugging Face Client API resolves an initialized process-group rank or global
+``RANK`` and rejects an unresolved multi-process launch. For a preserved
+multi-GPU launch, follow
+``references/huggingface-state-and-distributed.md``.
 """
 
 import nvflare.client.hf as flare
@@ -23,9 +29,9 @@ def make_hf_argument_parser(dataclass_types):
     return HfArgumentParser(dataclass_types, allow_abbrev=False)
 
 
-def main(trainer_factory, *, rank, evaluate_before_train=True):
-    """Run one persistent patched Trainer using the caller's resolved global rank."""
-    flare.init(rank=rank)
+def main(trainer_factory, *, evaluate_before_train=True):
+    """Run one persistent patched Trainer in single-process or distributed mode."""
+    flare.init()
     trainer = trainer_factory()
     flare.patch(trainer)
 

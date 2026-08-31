@@ -18,7 +18,8 @@ Supported execution modes are:
 - trusted bare multi-node jobs with application-owned fan-out.
 
 The deployment targets one Slurm cluster, with scheduler routing controlled by trusted site policy. The internal
-worker-to-parent connection is clear TCP and runs on a trusted site network.
+worker-to-parent TCP connection uses mTLS by default. `job_launcher.internal_connection_security: clear` is an
+explicit insecure opt-out for a trusted, isolated site network.
 
 ## Main components
 

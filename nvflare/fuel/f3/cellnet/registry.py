@@ -15,11 +15,10 @@ from typing import Any
 
 
 class Callback:
-    def __init__(self, cb, args, kwargs, preflight_cb=None):
+    def __init__(self, cb, args, kwargs):
         self.cb = cb
         self.args = args
         self.kwargs = kwargs
-        self.preflight_cb = preflight_cb
 
 
 class Registry:

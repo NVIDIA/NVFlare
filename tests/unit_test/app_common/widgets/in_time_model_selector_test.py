@@ -14,6 +14,7 @@
 
 import logging
 
+import numpy as np
 import pytest
 
 from nvflare.apis.dxo import DXO, DataKind, MetaKey
@@ -171,3 +172,62 @@ class TestInTimeModelSelector:
             "best_round": 1,
             "best_metrics": {"loss": 0.2},
         }
+
+    def test_numpy_metric_is_coerced_to_float(self):
+        handler = IntimeModelSelector(key_metric="loss", negate_key_metric=True)
+        engine = MockSimpleEngine()
+        peer_ctx = FLContext()
+        dxo = DXO(
+            DataKind.WEIGHT_DIFF,
+            data=dict(),
+            meta={MetaKey.INITIAL_METRICS: {"loss": np.float32(0.2)}},
+        )
+        shareable = dxo.to_shareable()
+        shareable.add_cookie(AppConstants.CONTRIBUTION_ROUND, 1)
+        peer_ctx.set_prop(FLContextKey.SHAREABLE, shareable, private=True)
+        fl_ctx = engine.fl_ctx_mgr.new_context()
+        fl_ctx.set_prop(AppConstants.CURRENT_ROUND, 1, private=True, sticky=False)
+        fl_ctx.set_peer_context(peer_ctx)
+
+        handler.handle_event(AppEventType.BEFORE_CONTRIBUTION_ACCEPT, fl_ctx)
+        handler.handle_event(AppEventType.BEFORE_AGGREGATION, fl_ctx)
+
+        assert type(handler.val_metric) is float
+        assert handler.val_metric == pytest.approx(-0.2)
+        assert type(handler.raw_val_metric) is float
+        assert handler.raw_val_metric == pytest.approx(0.2)
+        assert type(fl_ctx.get_prop(AppConstants.VALIDATION_RESULT)) is float
+
+    @pytest.mark.parametrize("metric", ([0.5, 0.6], "N/A", None))
+    def test_non_numeric_metric_is_skipped(self, caplog, metric):
+        handler = IntimeModelSelector(key_metric="loss")
+        engine = MockSimpleEngine()
+        peer_ctx = FLContext()
+        dxo = DXO(DataKind.WEIGHT_DIFF, data=dict(), meta={MetaKey.INITIAL_METRICS: {"loss": metric}})
+        shareable = dxo.to_shareable()
+        shareable.add_cookie(AppConstants.CONTRIBUTION_ROUND, 1)
+        peer_ctx.set_prop(FLContextKey.SHAREABLE, shareable, private=True)
+        fl_ctx = engine.fl_ctx_mgr.new_context()
+        fl_ctx.set_prop(AppConstants.CURRENT_ROUND, 1, private=True, sticky=False)
+        fl_ctx.set_peer_context(peer_ctx)
+
+        assert handler._before_accept(fl_ctx) is False
+        assert handler.validation_metric_sum_of_weights == 0
+        assert "is not a number; skipping" in caplog.text
+
+    @pytest.mark.parametrize("metric", (float("nan"), float("inf"), float("-inf")))
+    def test_non_finite_metric_is_skipped(self, caplog, metric):
+        handler = IntimeModelSelector(key_metric="loss")
+        engine = MockSimpleEngine()
+        peer_ctx = FLContext()
+        dxo = DXO(DataKind.WEIGHT_DIFF, data=dict(), meta={MetaKey.INITIAL_METRICS: {"loss": metric}})
+        shareable = dxo.to_shareable()
+        shareable.add_cookie(AppConstants.CONTRIBUTION_ROUND, 1)
+        peer_ctx.set_prop(FLContextKey.SHAREABLE, shareable, private=True)
+        fl_ctx = engine.fl_ctx_mgr.new_context()
+        fl_ctx.set_prop(AppConstants.CURRENT_ROUND, 1, private=True, sticky=False)
+        fl_ctx.set_peer_context(peer_ctx)
+
+        assert handler._before_accept(fl_ctx) is False
+        assert handler.validation_metric_sum_of_weights == 0
+        assert "is not finite; skipping" in caplog.text

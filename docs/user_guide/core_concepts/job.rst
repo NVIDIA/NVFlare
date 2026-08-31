@@ -111,14 +111,15 @@ These three names are reserved portable fields in flat site specifications and m
 CPU and memory are enforced by the selected job launcher rather than reserved by the site's NVIDIA FLARE resource
 manager. Positive GPU requests and additional site-specific fields continue through resource-manager admission.
 
-``resource_spec["@default"]`` applies to every targeted site. A site block is shallow-merged over it. For example:
+``resource_spec["@default"]`` applies to every targeted site, including the server. A named client or ``server`` block
+can override individual fields; fields it omits continue to inherit the default. For example:
 
 .. code-block:: json
 
     {
         "resource_spec": {
             "@default": {
-                "num_of_gpus": 1,
+                "num_of_gpus": 0,
                 "num_of_cpus": 4,
                 "memory": "8Gi"
             },
@@ -126,9 +127,17 @@ manager. Positive GPU requests and additional site-specific fields continue thro
                 "num_of_gpus": 8,
                 "num_of_cpus": 16,
                 "mem_per_gpu_in_GiB": 16
+            },
+            "server": {
+                "num_of_cpus": 16,
+                "memory": "32Gi"
             }
         }
     }
+
+Here, other clients use the default values, ``site-2`` inherits the default memory while overriding its GPU and CPU
+requirements, and the server inherits zero GPUs while overriding its CPU and memory requirements. An inherited field
+can be replaced but not removed by a site block.
 
 Docker enforces these as GPU device requests, CPU quota, and a memory limit. Kubernetes sets equal requests and limits
 for GPUs, CPU, and memory. Slurm maps them to ``--gres``, ``--cpus-per-task``, and ``--mem``. The portable ``memory``
@@ -189,14 +198,15 @@ launcher modes without choosing which mode a site uses.
         }
     }
 
-Use ``launcher_spec["default"][mode]`` for shared settings and
-``launcher_spec[site][mode]`` for site-specific overrides. Keep
+``launcher_spec["default"][mode]`` applies to every runtime site using that launcher mode, including the server.
+Use ``launcher_spec[site][mode]`` for site-specific overrides. Keep
 ``resource_spec`` for portable GPU, CPU, and memory requirements enforced by the selected job launcher.
 Use ``launcher_spec`` for backend-specific topology and policy.
 
 The Slurm job block accepts ``image``, ``nodes``, ``gpus_per_node``,
 ``cpus_per_node``, ``mem_per_node`` (MiB), ``time``, and
-``pending_timeout``. A job cannot select a Slurm partition, account, QOS,
+``pending_timeout``. Put client-only topology such as ``nodes`` and ``gpus_per_node`` in explicit client-site blocks
+rather than the default block, which the server job also inherits. A job cannot select a Slurm partition, account, QOS,
 sandbox, setup command, or raw scheduler flags; those are site-owned and may
 be overridden per study. A job image requires BYOC authorization and overrides
 study/site image defaults. It must be an absolute site-visible existing file.

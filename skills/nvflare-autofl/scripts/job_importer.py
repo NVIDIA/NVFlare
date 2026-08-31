@@ -14,22 +14,38 @@
 
 """Deterministically import supported NVFlare job scripts into ``autofl.yaml``.
 
-The Auto-FL skill uses this module as its trust layer.  The importer parses
+Usage:
+    Import this library through ``run_job_campaign.py``; it is not a standalone
+    CLI and intentionally has no shebang or process exit-code contract.
+Arguments:
+    Public helpers accept a job source path plus optional static job arguments
+    and requested campaign settings.
+Output:
+    Returns a reviewable Auto-FL configuration mapping; dynamic or unsupported
+    fields are surfaced under ``unresolved``.
+
+The Auto-FL skill uses this module as its trust layer. The importer parses
 Python source with ``ast``; it never imports or executes the user's ``job.py``.
-Supported Recipe/FedJob patterns are converted into a reviewable config, while
-dynamic or unsupported fields are surfaced under ``unresolved``.
 """
 
 from __future__ import annotations
 
 import ast
 import hashlib
+import logging
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 import yaml
+
+logger = logging.getLogger(__name__)
+
+_UNRESOLVED = object()
+_core_looks_lower_is_better = _UNRESOLVED
+_last_core_heuristic_warning = None
 
 AUTOFL_CONFIG_SCHEMA_VERSION = "nvflare.autofl.config.v1"
 IMPORTER_VERSION = "nvflare-autofl-job-importer/v1"
@@ -42,13 +58,21 @@ METRIC_INVARIANTS = [
     "scale_units_and_direction",
 ]
 METRIC_CHANGE_POLICY = "restart_campaign_with_repaired_baseline"
-# Keep this text aligned with campaign_guard.MODE_MAX_ONLY_MESSAGE; the importer stays standalone.
-MODE_MAX_ONLY_MESSAGE = (
-    "Auto-FL campaigns only support mode 'max'; minimization is not supported because NVFLARE "
-    "best-model selection treats higher key_metric values as better. Report a negated metric "
-    "from the job (for example neg_val_loss) so that higher is better, matching the "
-    "IntimeModelSelector negate_key_metric guidance."
-)
+SUPPORTED_OBJECTIVE_MODES = {"min", "max"}
+LOWER_IS_BETTER_METRIC_SUBSTRINGS = ("loss", "err")
+LOWER_IS_BETTER_METRIC_TOKENS = {
+    "bce",
+    "ce",
+    "cer",
+    "mae",
+    "mse",
+    "nll",
+    "perplexity",
+    "ppl",
+    "rmse",
+    "wer",
+}
+ALREADY_NEGATED_METRIC_TOKEN = "neg"
 
 SUPPORTED_ENV_NAMES = {"PocEnv", "ProdEnv", "SimEnv"}
 NON_OPTIMIZATION_RECIPE_NAMES = {"FedEvalRecipe", "FedStatsRecipe", "NumpyCrossSiteEvalRecipe"}
@@ -103,20 +127,42 @@ class ResolvedValue:
 
 
 @dataclass(frozen=True)
+class AssignmentInfo:
+    """Assignment value with the branch conditions required to reach it."""
+
+    value: ast.AST
+    branch_conditions: Tuple[Tuple[ast.AST, bool], ...] = ()
+
+
+@dataclass(frozen=True)
 class CallInfo:
     """Supported call found in ``job.py`` with source-local resolution context."""
 
     name: str
     full_name: str
     keywords: Dict[str, ast.AST]
-    assignments: Dict[str, ast.AST]
+    assignments: Dict[str, Tuple[AssignmentInfo, ...]]
     source: str
     function_name: Optional[str] = None
     branch_conditions: Tuple[Tuple[ast.AST, bool], ...] = ()
+    has_keyword_splat: bool = False
+    has_positional_args: bool = False
+    has_positional_splat: bool = False
 
 
 class JobImportError(ValueError):
     """Raised when the importer cannot read or parse a job file."""
+
+
+class _NoAliasSafeDumper(yaml.SafeDumper):
+    def ignore_aliases(self, data):
+        return True
+
+
+def dump_autofl_yaml(config: Dict[str, Any]) -> str:
+    """Return deterministic YAML for an imported Auto-FL config."""
+
+    return yaml.dump(config, Dumper=_NoAliasSafeDumper, sort_keys=False)
 
 
 class DeterministicJobImporter:
@@ -130,7 +176,6 @@ class DeterministicJobImporter:
         job_path: str,
         *,
         metric: Optional[str] = None,
-        mode: str = "max",
         target_env: Optional[str] = None,
         max_candidates: Optional[int] = None,
         job_args: Optional[Sequence[str]] = None,
@@ -141,7 +186,6 @@ class DeterministicJobImporter:
             return self._import_job(
                 job_path,
                 metric=metric,
-                mode=mode,
                 target_env=target_env,
                 max_candidates=max_candidates,
                 job_args=job_args,
@@ -156,7 +200,6 @@ class DeterministicJobImporter:
         job_path: str,
         *,
         metric: Optional[str] = None,
-        mode: str = "max",
         target_env: Optional[str] = None,
         max_candidates: Optional[int] = None,
         job_args: Optional[Sequence[str]] = None,
@@ -166,8 +209,6 @@ class DeterministicJobImporter:
         Args:
             job_path: Path to ``job.py`` or a directory containing ``job.py``.
             metric: Optional optimization metric requested by the user.
-            mode: Objective direction; only ``max`` is supported. Kept for command-shape
-                compatibility so callers report negated metrics instead of minimizing.
             target_env: Optional target environment, such as ``sim`` or ``prod``.
             max_candidates: Optional fixed candidate budget.
             job_args: Optional job CLI arguments used to resolve argparse defaults
@@ -176,9 +217,6 @@ class DeterministicJobImporter:
         Returns:
             A deterministic, YAML-serializable mapping.
         """
-
-        if mode != "max":
-            raise JobImportError(MODE_MAX_ONLY_MESSAGE)
 
         source_path = self._resolve_job_path(job_path)
         try:
@@ -190,7 +228,7 @@ class DeterministicJobImporter:
 
         parser_args, reachable_functions = _reachable_parser_args(tree, index, job_args or [])
         job_call = index.first_job_call(reachable_functions, parser_args)
-        env_call = index.first_env_call(reachable_functions)
+        env_call = index.first_env_call(reachable_functions, parser_args)
         train_script = self._resolve_train_script(
             source_path, job_call, index, parser_args, source_text, reachable_functions
         )
@@ -212,10 +250,27 @@ class DeterministicJobImporter:
         if not train_script:
             unresolved.append(_unresolved("job.train_script", "no train_script was found or resolved"))
 
-        metric_name, metric_source, metric_issue = self._resolve_metric(metric, job_call, parser_args)
-        objective = _objective_contract(metric_name, metric_source)
+        job_metric, job_metric_source, metric_issue = self._resolve_job_metric(job_call, parser_args, source_text)
+        metric_name = metric or job_metric
+        metric_source = "user_request" if metric else job_metric_source
+        mode_name, mode_source, mode_issue = self._resolve_metric_mode(job_metric, job_call, parser_args, source_text)
+        objective = _objective_contract(
+            metric_name,
+            metric_source,
+            mode_name,
+            mode_source,
+            job_metric,
+            job_metric_source,
+        )
         if metric_issue:
+            mode_uses_job_metric = mode_source == "job:stop_cond" or (
+                job_call is not None and "stop_cond" in job_call.keywords and "key_metric_mode" not in job_call.keywords
+            )
+            if metric and not mode_issue and not mode_uses_job_metric:
+                metric_issue = {**metric_issue, "field": "objective.job_key_metric"}
             unresolved.append(metric_issue)
+        if mode_issue:
+            unresolved.append(mode_issue)
 
         budget, budget_issues = self._resolve_budget(max_candidates, job_call, env_call, parser_args, source_text)
         unresolved.extend(budget_issues)
@@ -301,10 +356,7 @@ class DeterministicJobImporter:
         }
         return config
 
-    def dump_yaml(self, config: Dict[str, Any]) -> str:
-        """Return deterministic YAML for an imported Auto-FL config."""
-
-        return dump_autofl_yaml(config)
+    dump_yaml = staticmethod(dump_autofl_yaml)
 
     def _resolve_job_path(self, job_path: str) -> Path:
         path = Path(job_path)
@@ -366,30 +418,128 @@ class DeterministicJobImporter:
             return None
         return _existing_path(path)
 
-    def _resolve_metric(
+    def _resolve_job_metric(
         self,
-        requested_metric: Optional[str],
         job_call: Optional[CallInfo],
         parser_args: Dict[str, ArgSpec],
+        source_text: str,
     ) -> Tuple[str, str, Optional[Dict[str, str]]]:
-        if requested_metric:
-            return requested_metric, "user_request", None
+        if job_call and job_call.has_positional_args:
+            return (
+                "accuracy",
+                "default",
+                _unresolved(
+                    "objective.metric",
+                    _positional_call_reason(
+                        job_call,
+                        "key_metric may be supplied positionally; use keyword-only constructor arguments",
+                    ),
+                ),
+            )
+        if job_call and job_call.has_keyword_splat and "key_metric" not in job_call.keywords:
+            return (
+                "accuracy",
+                "default",
+                _unresolved(
+                    "objective.metric",
+                    "job call passes **kwargs; key_metric may be supplied dynamically; "
+                    "write key_metric explicitly in the job call",
+                ),
+            )
         if job_call and "key_metric" in job_call.keywords:
-            resolved = _resolve_value(job_call.keywords["key_metric"], job_call.assignments, parser_args, "")
+            resolved = _resolve_value(job_call.keywords["key_metric"], job_call.assignments, parser_args, source_text)
             if isinstance(resolved.value, str) and not resolved.unresolved:
                 return resolved.value, resolved.source, None
             return "accuracy", "default", _unresolved("objective.metric", resolved.source)
-        if "key_metric" in parser_args:
-            metric_arg = parser_args["key_metric"]
-            if isinstance(metric_arg.default, str) and not metric_arg.default_unresolved:
-                return metric_arg.default, "arg:key_metric", None
-            if metric_arg.default_unresolved:
-                return "accuracy", "default", _unresolved("objective.metric", metric_arg.default_source)
+        if job_call:
+            return "accuracy", "core_default", None
         return (
             "accuracy",
             "default",
             _unresolved("objective.metric", "metric defaulted to accuracy; validation metric source is unknown"),
         )
+
+    def _resolve_metric_mode(
+        self,
+        job_metric: str,
+        job_call: Optional[CallInfo],
+        parser_args: Dict[str, ArgSpec],
+        source_text: str,
+    ) -> Tuple[str, str, Optional[Dict[str, str]]]:
+        if not job_call:
+            return "max", "unresolved", _unresolved("objective.mode", "job metric direction is unknown")
+
+        if job_call.has_positional_args:
+            return (
+                "max",
+                "unresolved",
+                _unresolved(
+                    "objective.mode",
+                    _positional_call_reason(
+                        job_call,
+                        "direction-relevant values may be supplied positionally; use keyword-only constructor arguments",
+                    ),
+                ),
+            )
+
+        if job_call.has_keyword_splat:
+            return (
+                "max",
+                "unresolved",
+                _unresolved(
+                    "objective.mode",
+                    "job call passes **kwargs; direction-relevant values may be supplied dynamically; "
+                    "remove **kwargs and write the applicable direction keyword explicitly in the job call",
+                ),
+            )
+
+        model_selector = job_call.keywords.get("model_selector")
+        if model_selector is not None:
+            resolved_selector = _resolve_value(model_selector, job_call.assignments, parser_args, source_text)
+            if resolved_selector.unresolved or resolved_selector.value:
+                return (
+                    "max",
+                    "unresolved",
+                    _unresolved(
+                        "objective.mode",
+                        "custom model_selector controls checkpoint selection, so key_metric_mode is not effective "
+                        "and selector direction cannot be imported deterministically",
+                    ),
+                )
+
+        explicit_mode = job_call.keywords.get("key_metric_mode")
+        if explicit_mode is not None:
+            resolved = _resolve_value(explicit_mode, job_call.assignments, parser_args, source_text)
+            if resolved.unresolved:
+                return "max", "unresolved", _unresolved("objective.mode", resolved.source)
+            if resolved.value is not None:
+                if not isinstance(resolved.value, str) or resolved.value not in SUPPORTED_OBJECTIVE_MODES:
+                    return (
+                        "max",
+                        "unresolved",
+                        _unresolved("objective.mode", f"invalid key_metric_mode: {resolved.value!r}"),
+                    )
+                mode_source = "job:key_metric_mode" if resolved.source == "literal" else resolved.source
+                stop_mode, stop_issue = _resolve_stop_condition_mode(job_metric, job_call, parser_args, source_text)
+                if stop_issue:
+                    return resolved.value, mode_source, stop_issue
+                if stop_mode and stop_mode != resolved.value:
+                    return (
+                        resolved.value,
+                        mode_source,
+                        _unresolved(
+                            "objective.mode",
+                            "key_metric_mode conflicts with same-metric stop_cond",
+                        ),
+                    )
+                return resolved.value, mode_source, None
+
+        stop_mode, stop_issue = _resolve_stop_condition_mode(job_metric, job_call, parser_args, source_text)
+        if stop_issue:
+            return "max", "unresolved", stop_issue
+        if stop_mode:
+            return stop_mode, "job:stop_cond", None
+        return "max", "core_default", None
 
     def _resolve_budget(
         self,
@@ -424,12 +574,42 @@ class DeterministicJobImporter:
                 else:
                     fixed_training_budget["num_clients"] = resolved.value
 
-        if env_call and env_call.name == "SimEnv" and "num_clients" in env_call.keywords:
-            resolved = _resolve_value(env_call.keywords["num_clients"], env_call.assignments, parser_args, source_text)
+            if job_call.has_positional_args:
+                unresolved.append(
+                    _unresolved(
+                        "budget.fixed_training_budget",
+                        _positional_call_reason(
+                            job_call,
+                            "fixed training budget values may be supplied positionally; "
+                            "use keyword-only constructor arguments",
+                        ),
+                    )
+                )
+            if job_call.has_keyword_splat:
+                unresolved.append(
+                    _unresolved(
+                        "budget.fixed_training_budget",
+                        "job call passes **kwargs; fixed training budget values may be supplied dynamically; "
+                        "remove **kwargs and write the applicable budget keywords explicitly in the job call",
+                    )
+                )
+
+        if env_call and env_call.name == "SimEnv":
+            resolved = _resolve_sim_env_num_clients(env_call, parser_args, source_text)
             if resolved.unresolved:
                 unresolved.append(_unresolved("budget.fixed_training_budget.num_clients", resolved.source))
             else:
                 fixed_training_budget["num_clients"] = resolved.value
+            if env_call.has_positional_args:
+                unresolved.append(
+                    _unresolved(
+                        "budget.fixed_training_budget.num_clients",
+                        _positional_call_reason(
+                            env_call,
+                            "the client count may be supplied positionally; use keyword-only SimEnv arguments",
+                        ),
+                    )
+                )
 
         if fixed_training_budget:
             budget["fixed_training_budget"] = fixed_training_budget
@@ -448,12 +628,9 @@ class DeterministicJobImporter:
         environment: Dict[str, Any] = {"requested": requested, "profiles": {}, "simulator_env_passthrough": []}
         if env_call and env_call.name == "SimEnv":
             sim_profile: Dict[str, Any] = {}
-            if "num_clients" in env_call.keywords:
-                resolved = _resolve_value(
-                    env_call.keywords["num_clients"], env_call.assignments, parser_args, source_text
-                )
-                if not resolved.unresolved:
-                    sim_profile["num_clients"] = resolved.value
+            resolved = _resolve_sim_env_num_clients(env_call, parser_args, source_text)
+            if not resolved.unresolved:
+                sim_profile["num_clients"] = resolved.value
             environment["profiles"]["sim"] = sim_profile
         return environment
 
@@ -538,7 +715,6 @@ def import_job_to_autofl_config(
     *,
     workspace_root: Optional[str] = None,
     metric: Optional[str] = None,
-    mode: str = "max",
     target_env: Optional[str] = None,
     max_candidates: Optional[int] = None,
     job_args: Optional[Sequence[str]] = None,
@@ -549,7 +725,6 @@ def import_job_to_autofl_config(
     return importer.import_job(
         job_path,
         metric=metric,
-        mode=mode,
         target_env=target_env,
         max_candidates=max_candidates,
         job_args=job_args,
@@ -570,15 +745,18 @@ def inspect_job_cli_flags(job_path: str, job_args: Optional[Sequence[str]] = Non
     return sorted({flag for spec in parser_args.values() for flag in spec.flags if flag.startswith("--")})
 
 
-def dump_autofl_yaml(config: Dict[str, Any]) -> str:
-    """Return deterministic YAML for an imported Auto-FL config."""
+def inspect_job_cli_flag_aliases(job_path: str, job_args: Optional[Sequence[str]] = None) -> List[List[str]]:
+    """Return each reachable argparse option's flag spellings (short and long) as one sorted group."""
 
-    return yaml.dump(config, Dumper=_NoAliasSafeDumper, sort_keys=False)
-
-
-class _NoAliasSafeDumper(yaml.SafeDumper):
-    def ignore_aliases(self, data):
-        return True
+    path = Path(job_path).resolve()
+    try:
+        source_text = path.read_text(encoding="utf-8")
+        tree = ast.parse(source_text, filename=str(path))
+        index = _ImportIndex.from_tree(tree, source_text)
+    except (OSError, UnicodeError, SyntaxError, RecursionError) as e:
+        raise JobImportError(f"failed to parse {path}: {e}") from e
+    parser_args, _ = _reachable_parser_args(tree, index, job_args or [])
+    return sorted(sorted(spec.flags) for spec in parser_args.values() if spec.flags)
 
 
 class _ImportIndex(ast.NodeVisitor):
@@ -586,8 +764,8 @@ class _ImportIndex(ast.NodeVisitor):
         self.source_text = source_text
         self.imports: Dict[str, str] = {}
         self.parser_arg_definitions: Dict[str, List[ArgSpec]] = {}
-        self.module_assignments: Dict[str, ast.AST] = {}
-        self._local_assignments_stack: List[Dict[str, ast.AST]] = []
+        self.module_assignments: Dict[str, List[AssignmentInfo]] = {}
+        self._local_assignments_stack: List[Dict[str, List[AssignmentInfo]]] = []
         self._function_stack: List[str] = []
         self._branch_conditions: List[Tuple[ast.AST, bool]] = []
         self._argparse_parser_names: Set[Tuple[Optional[str], str]] = set()
@@ -610,8 +788,12 @@ class _ImportIndex(ast.NodeVisitor):
     ) -> Optional[CallInfo]:
         return _first_reachable_call(self.job_calls, reachable_functions, parser_args)
 
-    def first_env_call(self, reachable_functions: Optional[Set[str]] = None) -> Optional[CallInfo]:
-        return _first_reachable_call(self.env_calls, reachable_functions)
+    def first_env_call(
+        self,
+        reachable_functions: Optional[Set[str]] = None,
+        parser_args: Optional[Dict[str, ArgSpec]] = None,
+    ) -> Optional[CallInfo]:
+        return _first_reachable_call(self.env_calls, reachable_functions, parser_args)
 
     def first_unsupported_job_call(self) -> Optional[CallInfo]:
         return self.unsupported_job_calls[0] if self.unsupported_job_calls else None
@@ -655,13 +837,13 @@ class _ImportIndex(ast.NodeVisitor):
     def visit_Assign(self, node: ast.Assign) -> None:
         for target in node.targets:
             if isinstance(target, ast.Name):
-                self._current_assignments()[target.id] = node.value
+                self._record_assignment(target.id, node.value)
                 self._track_argparse_assignment(target.id, node.value)
         self.generic_visit(node)
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
         if isinstance(node.target, ast.Name) and node.value:
-            self._current_assignments()[node.target.id] = node.value
+            self._record_assignment(node.target.id, node.value)
             self._track_argparse_assignment(node.target.id, node.value)
         self.generic_visit(node)
 
@@ -670,7 +852,7 @@ class _ImportIndex(ast.NodeVisitor):
             # The result depends on runtime state. Preserve the expression so
             # downstream resolution marks the value as unresolved instead of
             # reusing an earlier static assignment.
-            self._current_assignments()[node.target.id] = node
+            self._record_assignment(node.target.id, node)
         self.generic_visit(node)
 
     def visit_If(self, node: ast.If) -> None:
@@ -706,6 +888,9 @@ class _ImportIndex(ast.NodeVisitor):
                 source=_source_segment(self.source_text, node),
                 function_name=self._function_stack[-1] if self._function_stack else None,
                 branch_conditions=tuple(self._branch_conditions),
+                has_keyword_splat=any(keyword.arg is None for keyword in node.keywords),
+                has_positional_args=bool(node.args),
+                has_positional_splat=any(isinstance(arg, ast.Starred) for arg in node.args),
             )
             if is_environment:
                 self.env_calls.append(call_info)
@@ -748,15 +933,19 @@ class _ImportIndex(ast.NodeVisitor):
             return call_name
         return f"{imported}.{remainder}" if separator else imported
 
-    def _current_assignments(self) -> Dict[str, ast.AST]:
+    def _current_assignments(self) -> Dict[str, List[AssignmentInfo]]:
         if self._local_assignments_stack:
             return self._local_assignments_stack[-1]
         return self.module_assignments
 
-    def _resolution_assignments(self) -> Dict[str, ast.AST]:
-        assignments = dict(self.module_assignments)
+    def _record_assignment(self, name: str, value: ast.AST) -> None:
+        assignment = AssignmentInfo(value=value, branch_conditions=tuple(self._branch_conditions))
+        self._current_assignments().setdefault(name, []).append(assignment)
+
+    def _resolution_assignments(self) -> Dict[str, Tuple[AssignmentInfo, ...]]:
+        assignments = {name: tuple(history) for name, history in self.module_assignments.items()}
         if self._local_assignments_stack:
-            assignments.update(self._local_assignments_stack[-1])
+            assignments.update({name: tuple(history) for name, history in self._local_assignments_stack[-1].items()})
         return assignments
 
 
@@ -778,11 +967,20 @@ def _first_reachable_call(
 
 
 def _matches_static_branch_conditions(call: CallInfo, arg_values: Dict[str, Any]) -> bool:
-    for condition, expected in call.branch_conditions:
+    return _static_branch_conditions_match(call.branch_conditions, arg_values) is not False
+
+
+def _static_branch_conditions_match(
+    branch_conditions: Sequence[Tuple[ast.AST, bool]], arg_values: Dict[str, Any]
+) -> Optional[bool]:
+    unknown = False
+    for condition, expected in branch_conditions:
         value = _static_condition_value(condition, arg_values)
-        if value is not None and value != expected:
+        if value is None:
+            unknown = True
+        elif value != expected:
             return False
-    return True
+    return None if unknown else True
 
 
 def _arg_spec_signature(spec: ArgSpec) -> Tuple[Any, ...]:
@@ -963,6 +1161,9 @@ def _static_condition_value(node: ast.AST, arg_values: Dict[str, Any]) -> Option
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
         value = _static_condition_value(node.operand, arg_values)
         return None if value is None else not value
+    known, value = _static_condition_operand(node, arg_values)
+    if known:
+        return bool(value)
     return None
 
 
@@ -1004,11 +1205,24 @@ def _arg_spec_from_call(node: ast.Call, function_name: Optional[str]) -> Optiona
         return None
 
     keywords = {keyword.arg: keyword.value for keyword in node.keywords if keyword.arg}
-    name = _literal_keyword_value(keywords.get("dest")) or (_name_from_flags(flags) if flags else positional_names[0])
+    if "dest" in keywords:
+        dest_is_literal, name = _literal_value(keywords["dest"])
+        if dest_is_literal and not isinstance(name, str):
+            return None
+        if not dest_is_literal:
+            name = _name_from_flags(flags) if flags else positional_names[0]
+    else:
+        name = _name_from_flags(flags) if flags else positional_names[0]
     if not name:
         return None
 
-    action = _literal_keyword_value(keywords.get("action"))
+    action = None
+    if "action" in keywords:
+        action_is_literal, action_value = _literal_value(keywords["action"])
+        if action_is_literal:
+            if not isinstance(action_value, str):
+                return None
+            action = action_value
     default, default_source, default_unresolved = _arg_default_from_keywords(keywords)
     if not flags and "default" not in keywords:
         default_source = "required_positional"
@@ -1054,7 +1268,7 @@ def _name_from_flags(flags: Iterable[str]) -> Optional[str]:
 
 def _resolve_value(
     node: ast.AST,
-    assignments: Dict[str, ast.AST],
+    assignments: Dict[str, Tuple[AssignmentInfo, ...]],
     parser_args: Dict[str, ArgSpec],
     source_text: str,
     seen: Optional[set[str]] = None,
@@ -1076,7 +1290,10 @@ def _resolve_value(
         if node.id in parser_args:
             return _resolve_arg_default(node.id, parser_args[node.id])
         if node.id in assignments:
-            return _resolve_value(assignments[node.id], assignments, parser_args, source_text, seen | {node.id})
+            assignment, issue = _select_assignment(node.id, assignments[node.id], parser_args)
+            if issue:
+                return ResolvedValue(None, issue, "low", True)
+            return _resolve_value(assignment, assignments, parser_args, source_text, seen | {node.id})
         return ResolvedValue(node.id, f"name:{node.id}", "low", True)
 
     if isinstance(node, ast.Call):
@@ -1101,16 +1318,149 @@ def _resolve_value(
     return ResolvedValue(_source_segment(source_text, node) or type(node).__name__, "expression", "low", True)
 
 
+def _select_assignment(
+    name: str,
+    history: Sequence[AssignmentInfo],
+    parser_args: Dict[str, ArgSpec],
+) -> Tuple[Optional[ast.AST], Optional[str]]:
+    arg_values = {key: spec.default for key, spec in parser_args.items() if not spec.default_unresolved}
+    for assignment in reversed(history):
+        branch_match = _static_branch_conditions_match(assignment.branch_conditions, arg_values)
+        if branch_match is False:
+            continue
+        if branch_match is None:
+            return None, f"conditional assignment for {name} cannot be resolved from job arguments"
+        return assignment.value, None
+    return None, f"no reachable assignment for {name}"
+
+
+def _resolve_sim_env_num_clients(
+    env_call: CallInfo,
+    parser_args: Dict[str, ArgSpec],
+    source_text: str,
+) -> ResolvedValue:
+    """Resolve the effective client count using ``SimEnv`` runtime semantics."""
+
+    num_clients_node = env_call.keywords.get("num_clients")
+    if num_clients_node is not None:
+        num_clients = _resolve_value(num_clients_node, env_call.assignments, parser_args, source_text)
+        if num_clients.unresolved:
+            return ResolvedValue(None, f"num_clients is dynamic: {num_clients.source}", "low", True)
+        if isinstance(num_clients.value, bool) or not isinstance(num_clients.value, int):
+            return ResolvedValue(None, "num_clients must resolve to an integer", "low", True)
+        if num_clients.value > 0:
+            return num_clients
+
+    clients_node = env_call.keywords.get("clients")
+    if clients_node is not None:
+        clients = _resolve_value(clients_node, env_call.assignments, parser_args, source_text)
+        if clients.unresolved:
+            return ResolvedValue(None, f"clients is dynamic: {clients.source}", "low", True)
+        if not isinstance(clients.value, list) or not clients.value:
+            return ResolvedValue(None, "clients must resolve to a non-empty static list", "low", True)
+        return ResolvedValue(len(clients.value), f"len(clients):{clients.source}")
+
+    if env_call.has_keyword_splat:
+        return ResolvedValue(
+            None,
+            "SimEnv call passes **kwargs; num_clients or clients may be supplied dynamically; "
+            "write a positive num_clients or a non-empty static clients list explicitly in the SimEnv call",
+            "low",
+            True,
+        )
+    return ResolvedValue(
+        None,
+        "SimEnv client count is unresolved; write a positive num_clients or a non-empty static clients list",
+        "low",
+        True,
+    )
+
+
 def _resolve_arg_default(name: str, arg_spec: ArgSpec) -> ResolvedValue:
     if arg_spec.default_unresolved:
         return ResolvedValue(arg_spec.default, f"arg:{name}:{arg_spec.default_source}", "low", True)
     return ResolvedValue(arg_spec.default, f"arg:{name}")
 
 
+def _resolve_stop_condition_mode(
+    job_metric: str,
+    job_call: CallInfo,
+    parser_args: Dict[str, ArgSpec],
+    source_text: str,
+) -> Tuple[Optional[str], Optional[Dict[str, str]]]:
+    stop_condition = job_call.keywords.get("stop_cond")
+    if stop_condition is None:
+        return None, None
+    resolved = _resolve_value(stop_condition, job_call.assignments, parser_args, source_text)
+    if resolved.unresolved:
+        return None, _unresolved("objective.mode", f"stop_cond is dynamic: {resolved.source}")
+    if resolved.value is None:
+        return None, None
+    if not isinstance(resolved.value, str):
+        return None, _unresolved("objective.mode", "stop_cond is not a string")
+    tokens = resolved.value.split(" ")
+    if len(tokens) != 3 or tokens[1] not in {"<", "<=", "=", ">", ">="}:
+        return None, _unresolved("objective.mode", f"invalid stop_cond: {resolved.value!r}")
+    try:
+        float(tokens[2])
+    except (TypeError, ValueError):
+        return None, _unresolved("objective.mode", f"invalid stop_cond: {resolved.value!r}")
+    stop_metric, operator = tokens[:2]
+    if stop_metric != job_metric:
+        return None, None
+    if operator in {"<", "<="}:
+        return "min", None
+    if operator in {">", ">="}:
+        return "max", None
+    return None, None
+
+
+def _resolve_core_heuristic():
+    """Load and cache the core heuristic, retrying after transient import failures."""
+
+    global _core_looks_lower_is_better, _last_core_heuristic_warning
+
+    if _core_looks_lower_is_better is _UNRESOLVED:
+        try:
+            from nvflare.app_common.widgets.intime_model_selector import _looks_lower_is_better
+        except Exception as e:
+            warning = (type(e).__name__, str(e))
+            if warning != _last_core_heuristic_warning:
+                logger.warning(
+                    "Unable to load the NVFlare core metric heuristic (%s: %s); using the local fallback and "
+                    "retrying on the next check",
+                    *warning,
+                )
+                _last_core_heuristic_warning = warning
+            return None
+        else:
+            _core_looks_lower_is_better = _looks_lower_is_better
+    return _core_looks_lower_is_better
+
+
+def likely_lower_is_better_metric(metric: str) -> bool:
+    """Return whether a metric name is an obvious lower-is-better objective."""
+
+    core_heuristic = _resolve_core_heuristic()
+    if core_heuristic is not None:
+        return core_heuristic(metric)
+    return _fallback_looks_lower_is_better(metric)
+
+
+def _fallback_looks_lower_is_better(metric: str) -> bool:
+    name = metric.lower()
+    tokens = re.split(r"[^a-z0-9]+", name)
+    if ALREADY_NEGATED_METRIC_TOKEN in tokens:
+        return False
+    if any(hint in name for hint in LOWER_IS_BETTER_METRIC_SUBSTRINGS):
+        return True
+    return any(token in LOWER_IS_BETTER_METRIC_TOKENS for token in tokens)
+
+
 def _resolve_path_call(
     node: ast.Call,
     call_name: str,
-    assignments: Dict[str, ast.AST],
+    assignments: Dict[str, Tuple[AssignmentInfo, ...]],
     parser_args: Dict[str, ArgSpec],
     source_text: str,
 ) -> Optional[ResolvedValue]:
@@ -1241,6 +1591,7 @@ def _trust_extracted(
         extracted.append({"field": "job.train_script", "value": train_script.name})
     extracted.append({"field": "objective.metric", "value": objective["metric"]})
     extracted.append({"field": "objective.optimization_metric", "value": objective["optimization_metric"]})
+    extracted.append({"field": "objective.mode", "value": objective["mode"]})
     if "fixed_training_budget" in budget:
         extracted.append({"field": "budget.fixed_training_budget", "value": budget["fixed_training_budget"]})
     if search_space:
@@ -1248,14 +1599,25 @@ def _trust_extracted(
     return extracted
 
 
-def _objective_contract(metric_name: str, source: str) -> Dict[str, Any]:
+def _objective_contract(
+    metric_name: str,
+    source: str,
+    mode: str,
+    mode_source: str,
+    job_metric: str,
+    job_metric_source: str,
+) -> Dict[str, Any]:
     return {
         "metric": metric_name,
         "requested_metric": metric_name,
         "optimization_metric": metric_name,
         "metric_extraction_order": [metric_name],
-        # Constant for schema stability: campaigns always maximize the optimization metric.
-        "mode": "max",
+        "mode": mode,
+        "mode_contract_source": mode_source,
+        "job_key_metric": job_metric,
+        "job_key_metric_source": job_metric_source,
+        "job_key_metric_mode": mode,
+        "job_key_metric_mode_source": mode_source,
         "metric_contract_source": source,
         "metric_invariants": list(METRIC_INVARIANTS),
         "metric_change_policy": METRIC_CHANGE_POLICY,
@@ -1302,3 +1664,8 @@ def _overall_confidence(unresolved: List[Dict[str, str]], job_call: Optional[Cal
 
 def _unresolved(field: str, reason: str) -> Dict[str, str]:
     return {"field": field, "reason": reason}
+
+
+def _positional_call_reason(call_info: CallInfo, detail: str) -> str:
+    argument_kind = "*args" if call_info.has_positional_splat else "positional arguments"
+    return f"{call_info.name} call passes {argument_kind}; {detail}"
