@@ -1,8 +1,9 @@
 # FedCoRe: Federated Cross-Modal Representation Completion
 
-FedCoRe is a research starter for learning a missing-modality completion operator from clients that have valid paired
-supervision, then sharing that operator with clients that do not observe the modality. This project provides a small,
-public, end-to-end NVIDIA FLARE workflow using Qwen3-VL and generated image-plus-context data.
+This is a starter example for FedCoRe, a federated cross-modal representation completion method. Clients with valid
+paired supervision learn a missing-modality completion operator, which is then shared with clients that do not observe
+the modality. The project provides a small, public, end-to-end NVIDIA FLARE workflow using Qwen3-VL and generated
+image-plus-context data.
 
 The accompanying paper is available on arXiv: [FedCoRe: Target-Adaptive Completion for Missing Modalities in Healthcare Federated Learning](https://arxiv.org/abs/2608.18311).
 
@@ -28,6 +29,12 @@ code. The image is authoritative. The code is correlated with the image class, b
 mapping is not explained to the frozen predictor. Paired clients can therefore learn the mapping from its hidden
 state without exposing the class directly in the text. Modality availability differs across three disjoint simulated
 clients:
+
+![Visual example of the synthetic task and image availability across the three federated clients.](figures/fedcore_synthetic_client_design.svg)
+
+The top row shows one paired training example: the same context is processed with and without its image, and their
+logit difference supervises the completion operator. The bottom row shows which clients can contribute paired
+updates and which clients only use the aggregated operator at inference.
 
 | Client | Training image availability | Role |
 | --- | ---: | --- |

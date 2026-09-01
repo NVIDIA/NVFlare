@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="790" viewBox="0 0 1200 790" role="img" aria-labelledby="title desc">
+  <title id="title">FedCoRe synthetic task and client design</title>
+  <desc id="desc">A red triangle and a noisy KAPPA context are processed with and without an image to supervise a logit-effect completion operator. Site one has all images, site two has half, and site three has none.</desc>
+  <defs>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#000000" flood-opacity="0.12"/>
+    </filter>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#4b5563"/>
+    </marker>
+    <style>
+      .title { font: 700 28px Arial, sans-serif; fill: #111827; }
+      .section { font: 700 20px Arial, sans-serif; fill: #111827; }
+      .label { font: 700 16px Arial, sans-serif; fill: #111827; }
+      .body { font: 15px Arial, sans-serif; fill: #374151; }
+      .small { font: 13px Arial, sans-serif; fill: #4b5563; }
+      .tiny { font: 12px Arial, sans-serif; fill: #4b5563; }
+      .mono { font: 700 15px "Courier New", monospace; fill: #111827; }
+      .card { fill: #ffffff; stroke: #d1d5db; stroke-width: 1.5; filter: url(#shadow); }
+      .arrow { fill: none; stroke: #4b5563; stroke-width: 2.2; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect width="1200" height="790" fill="#f8fafc"/>
+  <text x="42" y="43" class="title">Synthetic data and federated client design</text>
+
+  <rect x="40" y="65" width="1120" height="315" rx="18" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5"/>
+  <text x="65" y="98" class="section">One paired example provides the learning signal</text>
+
+  <rect x="66" y="120" width="190" height="220" rx="14" class="card"/>
+  <text x="161" y="148" text-anchor="middle" class="label">Authoritative image</text>
+  <rect x="91" y="165" width="140" height="130" rx="9" fill="#eef0f4" stroke="#d1d5db"/>
+  <polygon points="161,184 215,275 107,275" fill="#d62728" stroke="#691414" stroke-width="4"/>
+  <text x="161" y="322" text-anchor="middle" class="body">Red triangle = class A</text>
+
+  <rect x="280" y="120" width="240" height="220" rx="14" class="card"/>
+  <text x="400" y="148" text-anchor="middle" class="label">Auxiliary context</text>
+  <rect x="305" y="173" width="190" height="54" rx="9" fill="#fff7d6" stroke="#d6a800"/>
+  <text x="400" y="207" text-anchor="middle" class="mono">code=KAPPA</text>
+  <text x="400" y="257" text-anchor="middle" class="body">Noisy class proxy</text>
+  <text x="400" y="280" text-anchor="middle" class="small">90% correlated by default</text>
+  <text x="400" y="307" text-anchor="middle" class="small">Mapping is hidden from Qwen</text>
+
+  <path d="M525 178 L565 178" class="arrow"/>
+  <path d="M525 286 L565 286" class="arrow"/>
+
+  <rect x="575" y="126" width="265" height="92" rx="13" fill="#e9f7df" stroke="#76b900" stroke-width="2"/>
+  <circle cx="610" cy="164" r="18" fill="#ffffff" stroke="#76b900"/>
+  <polygon points="610,151 621,174 599,174" fill="#d62728"/>
+  <text x="642" y="158" class="label">Image-present pass</text>
+  <text x="642" y="185" class="body">image + context → full logit</text>
+
+  <rect x="575" y="238" width="265" height="92" rx="13" fill="#f3f4f6" stroke="#9ca3af" stroke-width="2"/>
+  <rect x="593" y="254" width="34" height="34" rx="5" fill="#ffffff" stroke="#9ca3af" stroke-dasharray="4 3"/>
+  <line x1="596" y1="257" x2="624" y2="285" stroke="#6b7280" stroke-width="3"/>
+  <text x="642" y="270" class="label">Image-removed pass</text>
+  <text x="642" y="297" class="body">context only → missing logit</text>
+
+  <path d="M845 174 L895 174" class="arrow"/>
+  <path d="M845 284 C875 284 875 211 895 211" class="arrow"/>
+
+  <rect x="905" y="133" width="225" height="156" rx="14" fill="#e8f2ff" stroke="#4c78a8" stroke-width="2"/>
+  <text x="1018" y="163" text-anchor="middle" class="label">Paired supervision</text>
+  <text x="1018" y="197" text-anchor="middle" class="mono">delta = full − missing</text>
+  <text x="1018" y="228" text-anchor="middle" class="body">Train a lightweight</text>
+  <text x="1018" y="250" text-anchor="middle" class="body">completion operator</text>
+  <text x="1018" y="319" text-anchor="middle" class="small">Raw image stays at the client</text>
+
+  <rect x="40" y="400" width="1120" height="350" rx="18" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5"/>
+  <text x="65" y="435" class="section">Three patient-disjoint clients have different image availability</text>
+
+  <rect x="65" y="460" width="315" height="190" rx="14" class="card"/>
+  <rect x="65" y="460" width="315" height="42" rx="14" fill="#e9f7df"/>
+  <rect x="65" y="488" width="315" height="14" fill="#e9f7df"/>
+  <text x="88" y="488" class="label">site-1 · 100% images</text>
+  <g transform="translate(88 526)">
+    <rect width="52" height="52" rx="7" fill="#eef0f4" stroke="#c5c9d1"/>
+    <polygon points="26,9 43,42 9,42" fill="#d62728"/>
+  </g>
+  <g transform="translate(151 526)">
+    <rect width="52" height="52" rx="7" fill="#eef0f4" stroke="#c5c9d1"/>
+    <circle cx="26" cy="26" r="17" fill="#1f77b4"/>
+  </g>
+  <g transform="translate(214 526)">
+    <rect width="52" height="52" rx="7" fill="#eef0f4" stroke="#c5c9d1"/>
+    <polygon points="26,9 43,42 9,42" fill="#d62728"/>
+  </g>
+  <g transform="translate(277 526)">
+    <rect width="52" height="52" rx="7" fill="#eef0f4" stroke="#c5c9d1"/>
+    <circle cx="26" cy="26" r="17" fill="#1f77b4"/>
+  </g>
+  <text x="88" y="609" class="body">All records provide paired supervision</text>
+  <text x="88" y="633" class="small">Trains and receives the operator</text>
+
+  <rect x="442" y="460" width="315" height="190" rx="14" class="card"/>
+  <rect x="442" y="460" width="315" height="42" rx="14" fill="#fff7d6"/>
+  <rect x="442" y="488" width="315" height="14" fill="#fff7d6"/>
+  <text x="465" y="488" class="label">site-2 · 50% images</text>
+  <g transform="translate(465 526)">
+    <rect width="52" height="52" rx="7" fill="#eef0f4" stroke="#c5c9d1"/>
+    <polygon points="26,9 43,42 9,42" fill="#d62728"/>
+  </g>
+  <g transform="translate(528 526)">
+    <rect width="52" height="52" rx="7" fill="#ffffff" stroke="#9ca3af" stroke-dasharray="5 4"/>
+    <line x1="10" y1="10" x2="42" y2="42" stroke="#6b7280" stroke-width="3"/>
+    <text x="26" y="69" text-anchor="middle" class="tiny">missing</text>
+  </g>
+  <g transform="translate(591 526)">
+    <rect width="52" height="52" rx="7" fill="#eef0f4" stroke="#c5c9d1"/>
+    <circle cx="26" cy="26" r="17" fill="#1f77b4"/>
+  </g>
+  <g transform="translate(654 526)">
+    <rect width="52" height="52" rx="7" fill="#ffffff" stroke="#9ca3af" stroke-dasharray="5 4"/>
+    <line x1="10" y1="10" x2="42" y2="42" stroke="#6b7280" stroke-width="3"/>
+    <text x="26" y="69" text-anchor="middle" class="tiny">missing</text>
+  </g>
+  <text x="465" y="609" class="body">Observed records train the operator</text>
+  <text x="465" y="633" class="small">Missing records use the shared operator</text>
+
+  <rect x="819" y="460" width="315" height="190" rx="14" class="card"/>
+  <rect x="819" y="460" width="315" height="42" rx="14" fill="#e8f2ff"/>
+  <rect x="819" y="488" width="315" height="14" fill="#e8f2ff"/>
+  <text x="842" y="488" class="label">site-3 · 0% images</text>
+  <g transform="translate(842 526)">
+    <rect width="52" height="52" rx="7" fill="#ffffff" stroke="#9ca3af" stroke-dasharray="5 4"/>
+    <line x1="10" y1="10" x2="42" y2="42" stroke="#6b7280" stroke-width="3"/>
+  </g>
+  <g transform="translate(905 526)">
+    <rect width="52" height="52" rx="7" fill="#ffffff" stroke="#9ca3af" stroke-dasharray="5 4"/>
+    <line x1="10" y1="10" x2="42" y2="42" stroke="#6b7280" stroke-width="3"/>
+  </g>
+  <g transform="translate(968 526)">
+    <rect width="52" height="52" rx="7" fill="#ffffff" stroke="#9ca3af" stroke-dasharray="5 4"/>
+    <line x1="10" y1="10" x2="42" y2="42" stroke="#6b7280" stroke-width="3"/>
+  </g>
+  <g transform="translate(1031 526)">
+    <rect width="52" height="52" rx="7" fill="#ffffff" stroke="#9ca3af" stroke-dasharray="5 4"/>
+    <line x1="10" y1="10" x2="42" y2="42" stroke="#6b7280" stroke-width="3"/>
+  </g>
+  <text x="842" y="609" class="body">Sends an empty completion update</text>
+  <text x="842" y="633" class="small">Receives the aggregated operator</text>
+
+  <path d="M220 665 L220 692 L502 692" fill="none" stroke="#76b900" stroke-width="3"/>
+  <path d="M600 665 L600 692 L502 692" fill="none" stroke="#76b900" stroke-width="3"/>
+  <rect x="502" y="671" width="205" height="43" rx="20" fill="#111827"/>
+  <text x="604" y="698" text-anchor="middle" style="font:700 15px Arial,sans-serif;fill:#ffffff">valid-supervision FedAvg</text>
+  <path d="M707 692 L979 692 L979 658" class="arrow"/>
+  <text x="841" y="725" text-anchor="middle" class="small">One shared operator benefits image-missing records</text>
+</svg>
+
