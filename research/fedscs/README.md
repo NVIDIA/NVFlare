@@ -249,3 +249,4 @@ If you use FedSCS in your research, please cite the corresponding paper:
 ## Acknowledgment
 
 This implementation is provided as a research example for NVIDIA FLARE and is intended to facilitate experimentation with robust federated learning aggregation.
+

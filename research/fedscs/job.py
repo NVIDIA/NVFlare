@@ -8,6 +8,7 @@ from nvflare.recipe import SimEnv
 
 HERE = Path(__file__).resolve().parent
 SOURCE_DIR = HERE / "src"
+DATA_ARCHIVE = HERE / "data" / "cifar-10-python.tar.gz"
 
 
 def create_recipe():
@@ -61,6 +62,17 @@ def create_recipe():
         aggregator=aggregator,
         key_metric="accuracy",
         server_expected_format=ExchangeFormat.PYTORCH,
+    )
+
+    if not DATA_ARCHIVE.exists():
+        raise FileNotFoundError(
+            f"CIFAR-10 archive not found: {DATA_ARCHIVE}. "
+            "Run prepare_data.sh first."
+        )
+
+    recipe._job.add_file_to_clients(
+        str(DATA_ARCHIVE),
+        dest_dir="data",
     )
 
     return recipe

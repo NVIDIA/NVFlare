@@ -15,7 +15,6 @@ logger = logging.getLogger(__name__)
 
 def get_dataloaders(site_id: str, batch_size: int = 128):
     data_root = Path(__file__).resolve().parent / "data"
-    data_root.mkdir(parents=True, exist_ok=True)
 
     transform = transforms.Compose([
         transforms.ToTensor(),
@@ -28,14 +27,14 @@ def get_dataloaders(site_id: str, batch_size: int = 128):
     train_dataset = datasets.CIFAR10(
         root=data_root,
         train=True,
-        download=True,
+        download=False,
         transform=transform,
     )
 
     test_dataset = datasets.CIFAR10(
         root=data_root,
         train=False,
-        download=True,
+        download=False,
         transform=transform,
     )
 
@@ -78,6 +77,9 @@ def train_one_round(
     )
 
     for epoch in range(epochs):
+        if len(train_loader) == 0:
+            raise ValueError("Training data loader is empty")
+
         running_loss = 0.0
 
         for images, labels in train_loader:
@@ -94,7 +96,7 @@ def train_one_round(
 
             running_loss += loss.item()
 
-        avg_loss = running_loss / max(len(train_loader), 1)
+        avg_loss = running_loss / len(train_loader)
 
         logger.info(
             "Epoch %d/%d - loss: %.4f",

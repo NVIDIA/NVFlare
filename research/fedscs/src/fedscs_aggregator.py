@@ -49,16 +49,10 @@ class FedSCSAggregator(ModelAggregator):
 
         self.eps = eps
 
-        # --------------------------------------------------------------
         # Persistent across rounds
-        # --------------------------------------------------------------
-
         self.previous_scores: Dict[str, float] = {}
 
-        # --------------------------------------------------------------
         # Current round state
-        # --------------------------------------------------------------
-
         self.client_models: Dict[
             str,
             Dict[str, np.ndarray],
@@ -74,26 +68,16 @@ class FedSCSAggregator(ModelAggregator):
             Dict[str, float],
         ] = {}
 
-        # --------------------------------------------------------------
         # Round-start global model
-        # --------------------------------------------------------------
-
         self.global_model: Optional[
             Dict[str, np.ndarray]
         ] = None
 
-        # --------------------------------------------------------------
         # Diagnostics
-        # --------------------------------------------------------------
-
         self.raw_scores: Dict[str, float] = {}
-
         self.current_scores: Dict[str, float] = {}
-
         self.current_weights: Dict[str, float] = {}
-
         self.current_round: Optional[int] = None
-
 
     # ==============================================================
     # Utility functions
@@ -106,7 +90,6 @@ class FedSCSAggregator(ModelAggregator):
         """
         Convert tensor-like object to numpy.
         """
-
         if hasattr(value, "detach"):
             value = value.detach()
 
@@ -118,7 +101,6 @@ class FedSCSAggregator(ModelAggregator):
 
         return np.asarray(value)
 
-
     def _flatten_model(
         self,
         model: Dict[str, Any],
@@ -126,12 +108,10 @@ class FedSCSAggregator(ModelAggregator):
         """
         Convert model parameters to numpy arrays.
         """
-
         return {
             name: self._to_numpy(value).copy()
             for name, value in model.items()
         }
-
 
     def _flatten_update(
         self,
@@ -140,19 +120,14 @@ class FedSCSAggregator(ModelAggregator):
         """
         Flatten update dictionary into one vector.
         """
-
         parts = []
 
         for name in sorted(update.keys()):
-
             value = np.asarray(
                 update[name],
                 dtype=np.float64,
             )
-
-            parts.append(
-                value.reshape(-1)
-            )
+            parts.append(value.reshape(-1))
 
         if not parts:
             return np.array(
@@ -162,7 +137,6 @@ class FedSCSAggregator(ModelAggregator):
 
         return np.concatenate(parts)
 
-
     def _cosine_similarity(
         self,
         a: np.ndarray,
@@ -171,7 +145,6 @@ class FedSCSAggregator(ModelAggregator):
         """
         Stable cosine similarity.
         """
-
         a_norm = np.linalg.norm(a)
         b_norm = np.linalg.norm(b)
 
@@ -190,7 +163,6 @@ class FedSCSAggregator(ModelAggregator):
 
         return float(score)
 
-
     # ==============================================================
     # Global model handling
     # ==============================================================
@@ -201,7 +173,6 @@ class FedSCSAggregator(ModelAggregator):
         """
         Get current FL round.
         """
-
         if self.fl_ctx is None:
             return None
 
@@ -209,10 +180,8 @@ class FedSCSAggregator(ModelAggregator):
             return self.fl_ctx.get_prop(
                 AppConstants.CURRENT_ROUND
             )
-
         except Exception:
             return None
-
 
     def _load_global_model(
         self,
@@ -220,25 +189,21 @@ class FedSCSAggregator(ModelAggregator):
         """
         Load round-start global model from NVFlare context.
         """
-
         if self.fl_ctx is None:
             self.warning(
                 "FedSCS cannot access FLContext."
             )
             return False
 
-
         try:
             global_model = self.fl_ctx.get_prop(
                 AppConstants.GLOBAL_MODEL
             )
-
         except Exception as e:
             self.warning(
                 f"Failed reading GLOBAL_MODEL: {e}"
             )
             return False
-
 
         if global_model is None:
             self.warning(
@@ -246,14 +211,11 @@ class FedSCSAggregator(ModelAggregator):
             )
             return False
 
-
         # NVFlare model object
         if hasattr(global_model, "weights"):
-
             weights = global_model.weights
 
             if weights is not None:
-
                 self.global_model = (
                     self._flatten_model(weights)
                 )
@@ -264,42 +226,32 @@ class FedSCSAggregator(ModelAggregator):
 
                 return True
 
-
         # Dictionary model
         if isinstance(
             global_model,
             dict,
         ):
-
             if "weights" in global_model:
-
                 weights = global_model["weights"]
 
                 if isinstance(
                     weights,
                     dict,
                 ):
-
                     self.global_model = (
                         self._flatten_model(weights)
                     )
-
                     return True
-
 
             self.global_model = (
                 self._flatten_model(global_model)
             )
-
             return True
-
 
         self.warning(
             "Unable to extract GLOBAL_MODEL."
         )
-
         return False
-
 
     # ==============================================================
     # Client update computation
@@ -313,29 +265,21 @@ class FedSCSAggregator(ModelAggregator):
 
             delta_i = client_model - global_model
         """
-
         if self.global_model is None:
             raise RuntimeError(
                 "Global model is missing."
             )
 
-
         self.client_updates = {}
 
-
         for client, model in self.client_models.items():
-
             update = {}
 
-
             for name, client_value in model.items():
-
                 if name not in self.global_model:
-
                     raise KeyError(
                         f"{name} missing in global model"
                     )
-
 
                 client_value = np.asarray(
                     client_value,
@@ -347,15 +291,12 @@ class FedSCSAggregator(ModelAggregator):
                     dtype=np.float64,
                 )
 
-
                 update[name] = (
-                    client_value
-                    -
-                    global_value
+                    client_value - global_value
                 )
 
-
             self.client_updates[client] = update
+
     # ==============================================================
     # FedSCS scoring
     # ==============================================================
@@ -372,7 +313,6 @@ class FedSCSAggregator(ModelAggregator):
             2. temporal stability update
             3. normalize weights
         """
-
         clients = list(
             self.client_updates.keys()
         )
@@ -383,7 +323,6 @@ class FedSCSAggregator(ModelAggregator):
             self.current_weights = {}
             return
 
-
         vectors = {
             client: self._flatten_update(
                 self.client_updates[client]
@@ -391,18 +330,14 @@ class FedSCSAggregator(ModelAggregator):
             for client in clients
         }
 
-
         # ----------------------------------------------------------
         # Raw similarity score
         # ----------------------------------------------------------
 
         self.raw_scores = {}
 
-
         for client in clients:
-
             own_update = vectors[client]
-
 
             peer_updates = [
                 vectors[c]
@@ -410,33 +345,25 @@ class FedSCSAggregator(ModelAggregator):
                 if c != client
             ]
 
-
             # Single client case
-
             if not peer_updates:
-
                 self.raw_scores[client] = 1.0
                 continue
-
 
             peer_sum = np.sum(
                 peer_updates,
                 axis=0,
             )
 
-
             score = self._cosine_similarity(
                 own_update,
                 peer_sum,
             )
 
-
             self.raw_scores[client] = max(
                 float(score),
                 0.0,
             )
-
-
 
         # ----------------------------------------------------------
         # Temporal stability
@@ -444,51 +371,37 @@ class FedSCSAggregator(ModelAggregator):
 
         self.current_scores = {}
 
-
         previous_count = len(
             self.previous_scores
         )
-
 
         denominator = max(
             previous_count + 1,
             1,
         )
 
-
         for client in clients:
-
-
             current_score = (
                 self.raw_scores[client]
             )
 
-
             if client in self.previous_scores:
-
                 previous = (
                     self.previous_scores[client]
                 )
 
                 current_score = (
                     previous
-                    +
-                    (
-                        current_score
-                        -
-                        previous
+                    + (
+                        current_score - previous
                     )
-                    /
-                    denominator
+                    / denominator
                 )
-
 
             self.current_scores[client] = max(
                 float(current_score),
                 0.0,
             )
-
-
 
         # ----------------------------------------------------------
         # Normalize
@@ -498,33 +411,23 @@ class FedSCSAggregator(ModelAggregator):
             self.current_scores.values()
         )
 
-
         if total <= self.eps:
-
             uniform = (
-                1.0 /
-                len(clients)
+                1.0 / len(clients)
             )
 
             self.current_weights = {
                 c: uniform
                 for c in clients
             }
-
-
         else:
-
             self.current_weights = {
-
-                c:
-                self.current_scores[c]
-                /
-                total
-
+                c: (
+                    self.current_scores[c]
+                    / total
+                )
                 for c in clients
             }
-
-
 
     # ==============================================================
     # Model aggregation
@@ -536,18 +439,14 @@ class FedSCSAggregator(ModelAggregator):
         """
         Weighted aggregation using FedSCS weights.
         """
-
         clients = list(
             self.client_models.keys()
         )
 
         aggregated = {}
 
-
         if not clients:
             return aggregated
-
-
 
         parameters = (
             self.client_models[
@@ -555,54 +454,36 @@ class FedSCSAggregator(ModelAggregator):
             ].keys()
         )
 
-
         for name in parameters:
-
-
             value_sum = None
 
-
             for client in clients:
-
-
                 if name not in self.client_models[client]:
                     continue
-
 
                 value = np.asarray(
                     self.client_models[client][name],
                     dtype=np.float64,
                 )
 
-
                 weighted_value = (
                     self.current_weights[client]
-                    *
-                    value
+                    * value
                 )
 
-
                 if value_sum is None:
-
                     value_sum = (
                         weighted_value.copy()
                     )
-
                 else:
-
                     value_sum += (
                         weighted_value
                     )
 
-
             if value_sum is not None:
-
                 aggregated[name] = value_sum
 
-
         return aggregated
-
-
 
     # ==============================================================
     # Client identification
@@ -612,24 +493,18 @@ class FedSCSAggregator(ModelAggregator):
         self,
         model: FLModel,
     ) -> str:
-
         if model.meta:
-
             for key in (
                 "client_name",
                 "site_name",
                 "client",
             ):
-
                 value = model.meta.get(key)
 
                 if value is not None:
                     return str(value)
 
-
         return "?"
-
-
 
     # ==============================================================
     # NVFlare ModelAggregator API
@@ -642,80 +517,60 @@ class FedSCSAggregator(ModelAggregator):
         """
         Receive one client model.
         """
-
-
         if model.params is None:
-
             self.warning(
                 "Received empty client model."
             )
-
             return
-
-
 
         client_name = (
             self._extract_client_name(model)
         )
 
-
-
         if client_name in self.client_models:
-
             self.warning(
                 f"Duplicate contribution from {client_name}"
             )
-
             return
 
-
-
         # Load global model once per round
-
         if not self.client_models:
-
-
             self.current_round = (
                 self._get_current_round()
             )
 
-
             self.global_model = None
 
-
             if not self._load_global_model():
-
                 raise RuntimeError(
                     "FedSCS could not load global model."
                 )
-
 
             self.info(
                 f"FedSCS round {self.current_round}: "
                 "global model loaded."
             )
 
-
-
-        self.client_models[client_name] = (
-            self._flatten_model(
-                model.params
-            )
+        # Validate and store client model.
+        client_model = self._flatten_model(
+            model.params
         )
 
+        if any(
+            not np.isfinite(value).all()
+            for value in client_model.values()
+        ):
+            raise ValueError(
+                f"Non-finite parameters from {client_name}"
+            )
 
+        self.client_models[client_name] = client_model
 
         # Store client metrics
-
         if model.metrics:
-
             self.client_metrics[client_name] = {
-
-                str(k):
-                float(v)
-
+                str(k): float(v)
                 for k, v in model.metrics.items()
-
                 if isinstance(
                     v,
                     (
@@ -723,18 +578,13 @@ class FedSCSAggregator(ModelAggregator):
                         float,
                         np.integer,
                         np.floating,
-                    )
+                    ),
                 )
-
             }
-
-
 
         self.info(
             f"Accepted FedSCS contribution from {client_name}"
         )
-
-
 
     def aggregate_model(
         self,
@@ -742,14 +592,10 @@ class FedSCSAggregator(ModelAggregator):
         """
         Generate global model.
         """
-
-
         if not self.client_models:
-
             raise RuntimeError(
                 "No client models received."
             )
-
 
         self.info(
             f"FedSCS aggregation: "
@@ -757,17 +603,11 @@ class FedSCSAggregator(ModelAggregator):
             f"round={self.current_round}"
         )
 
-
         self._compute_updates()
-
 
         self._compute_fedscs_scores()
 
-
-
         for client in self.client_models:
-
-
             self.info(
                 f"FedSCS client={client} "
                 f"raw={self.raw_scores[client]:.6f} "
@@ -775,100 +615,67 @@ class FedSCSAggregator(ModelAggregator):
                 f"weight={self.current_weights[client]:.6f}"
             )
 
-
-
         aggregated_model = (
             self._aggregate_models()
         )
 
-
-        # keep history
-
+        # Keep history.
         self.previous_scores = dict(
             self.current_scores
         )
 
-
-
-        # Aggregate metrics
-
+        # Aggregate metrics.
         aggregated_metrics = {}
 
-
         if self.client_metrics:
-
             metric_names = set()
 
             for metrics in self.client_metrics.values():
-
                 metric_names.update(
                     metrics.keys()
                 )
 
-
             for metric in metric_names:
-
                 values = []
 
-                for client, metrics in self.client_metrics.items():
-
+                for client, metrics in (
+                    self.client_metrics.items()
+                ):
                     if metric in metrics:
-
                         values.append(
                             metrics[metric]
                         )
 
-
                 if values:
-
                     aggregated_metrics[metric] = (
                         float(np.mean(values))
                     )
 
-
-
         return FLModel(
-
             params=aggregated_model,
-
             params_type=ParamsType.FULL,
-
             current_round=self.current_round,
-
-
             metrics=(
                 aggregated_metrics
                 if aggregated_metrics
                 else None
             ),
-
-
             meta={
-
-                "nr_aggregated":
-                    len(self.client_models),
-
-
-                "current_round":
-                    self.current_round,
-
-
-                "fedscs_weights":
-                    dict(self.current_weights),
-
-
-                "fedscs_raw_scores":
-                    dict(self.raw_scores),
-
-
-                "fedscs_stability_scores":
-                    dict(self.current_scores),
-
+                "nr_aggregated": len(
+                    self.client_models
+                ),
+                "current_round": self.current_round,
+                "fedscs_weights": dict(
+                    self.current_weights
+                ),
+                "fedscs_raw_scores": dict(
+                    self.raw_scores
+                ),
+                "fedscs_stability_scores": dict(
+                    self.current_scores
+                ),
             },
-
         )
-
-
 
     def reset_stats(
         self,
@@ -878,27 +685,16 @@ class FedSCSAggregator(ModelAggregator):
 
         Keep previous_scores.
         """
-
-
         self.client_models = {}
-
         self.client_updates = {}
-
         self.client_metrics = {}
 
-
         self.raw_scores = {}
-
         self.current_scores = {}
-
         self.current_weights = {}
 
-
         self.global_model = None
-
         self.current_round = None
-
-
 
     # ==============================================================
     # Optional external API
@@ -908,33 +704,21 @@ class FedSCSAggregator(ModelAggregator):
         self,
         model: Dict[str, Any],
     ) -> None:
-
         self.global_model = {
-
-            k:
-            self._to_numpy(v).copy()
-
+            k: self._to_numpy(v).copy()
             for k, v in model.items()
-
         }
-
-
 
     def get_scores(
         self,
     ) -> Dict[str, float]:
-
         return dict(
             self.current_scores
         )
 
-
-
     def get_weights(
         self,
     ) -> Dict[str, float]:
-
         return dict(
             self.current_weights
         )
-            
