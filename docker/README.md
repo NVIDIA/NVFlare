@@ -82,16 +82,47 @@ code, or framework packages. If you need to change packages constrained by the
 NGC PyTorch image, review the base image release notes first; recent PyTorch
 containers include `/etc/pip/constraint.txt` to protect the tested package set.
 
+## Confidential Containers Parent Image
+
+`Dockerfile.coco` builds a generic parent image for NVFlare deployments using
+Confidential Containers. It adds the pinned AMD SEV-SNP, Intel TDX, and NVIDIA
+NVAT attestation clients needed by the confidential-computing authorizers to
+the standard parent runtime. It does not copy application code from `examples/`
+or install dependencies for a particular workload. The image supports only
+`linux/amd64` because the bundled attestation clients are amd64-specific;
+builds for other target architectures fail fast.
+
+Unlike `Dockerfile.parent`, which currently uses Python 3.14,
+`Dockerfile.coco` intentionally stays on Python 3.12. Its
+`PYTHON_BUILD_BASE`, `PYTHON_RUNTIME_BASE`, and `PYTHON_MINOR` values must be
+updated together; do not automatically synchronize them to the parent image's
+Python version.
+
+Build it from the repository root:
+
+```bash
+docker build -f docker/Dockerfile.coco -t nvflare-coco:latest .
+```
+
+Use it as the parent image in a Confidential Containers deployment, then
+provide workload code and dependencies through the selected job-launcher
+mechanism. Pin, sign, and authorize the resulting image digest according to the
+deployment's attestation policy.
+
 ## Choosing an Image
 
-- Use `Dockerfile.parent` for parent server/client processes.
+- Use `Dockerfile.parent` for non-CoCo parent server/client processes.
 - Use `Dockerfile.parent` for the dashboard runtime; tag the same build as a
   dashboard image if you want a dashboard-specific image name.
+- Use `Dockerfile.coco` for CoCo server/client parent processes that need the
+  bundled attestation clients.
 - Use `Dockerfile.job` for submitted job containers.
 - Do not rely on a shell being available in the parent image; it is absent by
   design.
-- Add user workload dependencies to the job image, not the parent image, unless
-  the parent process itself needs them.
+- Add user workload dependencies to the job image when using a container job
+  launcher. With a process job launcher, extend and sign a deployment-specific
+  derivative of the parent image instead of adding workload code to the generic
+  Dockerfile.
 
 ## References
 
