@@ -76,14 +76,16 @@ def define_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-dir", default="")
     parser.add_argument("--workspace", default="")
     parser.add_argument("--seed", type=int, default=7)
-    parser.add_argument("--train-samples-per-site", type=int, default=48)
-    parser.add_argument("--val-samples-per-site", type=int, default=16)
-    parser.add_argument("--test-samples-per-site", type=int, default=16)
+    parser.add_argument("--train-samples-per-site", type=int, default=96)
+    parser.add_argument("--val-samples-per-site", type=int, default=64)
+    parser.add_argument("--test-samples-per-site", type=int, default=64)
     parser.add_argument("--feature-batch-size", type=int, default=2)
-    parser.add_argument("--num-rounds", type=int, default=5)
-    parser.add_argument("--local-epochs", type=int, default=4)
+    parser.add_argument("--num-rounds", type=int, default=10)
+    parser.add_argument("--local-epochs", type=int, default=10)
     parser.add_argument("--hidden-dim", type=int, default=128)
-    parser.add_argument("--learning-rate", type=float, default=1e-2)
+    parser.add_argument("--learning-rate", type=float, default=1e-3)
+    parser.add_argument("--task-weight", type=float, default=4.0)
+    parser.add_argument("--effect-weight", type=float, default=0.25)
     parser.add_argument("--alpha-grid", default="0,0.25,0.5,0.75,1,1.5,2")
     parser.add_argument("--predictor-rounds", type=int, default=1)
     parser.add_argument("--predictor-max-steps", type=int, default=10)
@@ -223,6 +225,10 @@ def main() -> None:
             str(args.hidden_dim),
             "--learning-rate",
             str(args.learning_rate),
+            "--task-weight",
+            str(args.task_weight),
+            "--effect-weight",
+            str(args.effect_weight),
             "--seed",
             str(args.seed),
         ]

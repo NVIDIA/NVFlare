@@ -59,6 +59,7 @@ def define_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dropout", type=float, default=0.1)
     parser.add_argument("--alpha-grid", default="0,0.25,0.5,0.75,1,1.5,2")
     parser.add_argument("--aggregate-loss-tolerance", type=float, default=0.0)
+    parser.add_argument("--client-auroc-tolerance", type=float, default=0.0)
     return parser
 
 
@@ -81,7 +82,9 @@ def main() -> None:
     alpha_grid = [float(value) for value in args.alpha_grid.split(",") if value.strip()]
     site_statistics = validation_sufficient_statistics(validation_sites, alpha_grid)
     selected_alpha, candidate_table = select_alpha_from_statistics(
-        site_statistics, aggregate_loss_tolerance=args.aggregate_loss_tolerance
+        site_statistics,
+        aggregate_loss_tolerance=args.aggregate_loss_tolerance,
+        client_auroc_tolerance=args.client_auroc_tolerance,
     )
     test_sites = [prepare_site(site, load_cache_split(cache_dir, site, "test"), model) for site in sites]
     summary, per_site = evaluate_sites(test_sites, selected_alpha)
@@ -96,6 +99,7 @@ def main() -> None:
             "evaluation_split": "test",
             "alpha_grid": alpha_grid,
             "aggregate_loss_tolerance": args.aggregate_loss_tolerance,
+            "client_auroc_tolerance": args.client_auroc_tolerance,
             "validation_candidates": candidate_table,
             "validation_site_statistics": site_statistics,
             "contributing_clients": contributing_clients,

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Feature-cache creation shared by the Qwen and mock backends."""
+"""Feature-cache creation for Qwen paired-view outputs."""
 
 import json
 import pickle

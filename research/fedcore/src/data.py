@@ -49,14 +49,17 @@ class MNISTDataConfig:
 
 
 def make_question(context: str, *, include_image: bool) -> str:
-    image_status = (
-        "Use the handwritten-digit image as the authoritative signal."
-        if include_image
-        else "The handwritten-digit image is unavailable; use only the secondary OCR report."
-    )
+    ocr_report = f"Secondary OCR report: {context}"
+    if include_image:
+        evidence = (
+            "A handwritten MNIST digit image is attached. Inspect the image yourself and ignore the OCR estimate "
+            "whenever it conflicts with the image; the image is authoritative."
+        )
+    else:
+        evidence = "No digit image is available, so use the OCR report as the available evidence."
     return (
-        "This is an MNIST digit classification task. Class A contains digits 0 through 4 and class B contains digits "
-        f"5 through 9. {image_status} Secondary OCR report: {context} Return exactly A or B."
+        f"{ocr_report} {evidence} Class A means digits 0, 1, 2, 3, or 4. Class B means digits 5, 6, 7, 8, or 9. "
+        "Answer with exactly one uppercase letter: A or B."
     )
 
 
@@ -142,7 +145,9 @@ def _confidence_mask(
             if not len(indices):
                 continue
             if scenario == "recoverable":
-                fraction = 0.8 if matches else 0.2
+                # Low confidence identifies the small subset where the OCR class is usually wrong.
+                # This leaves recoverable structure in the text while requiring learned calibration.
+                fraction = 0.98 if matches else 0.10
             else:
                 fraction = 0.5
             selected = int(np.floor(len(indices) * fraction + 0.5))

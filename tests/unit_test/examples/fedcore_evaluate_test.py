@@ -43,7 +43,8 @@ def test_test_caches_are_opened_only_after_validation_selection(tmp_path, monkey
             opened.append((site, split))
             return {"site": site, "split": split}
 
-        def fake_select(_statistics, aggregate_loss_tolerance=0.0):
+        def fake_select(_statistics, aggregate_loss_tolerance=0.0, client_auroc_tolerance=0.0):
+            del aggregate_loss_tolerance, client_auroc_tolerance
             nonlocal selection_complete
             selection_complete = True
             return 0.0, [{"alpha": 0.0, "feasible": True}]

@@ -63,18 +63,21 @@ def _policy_logits(site: PreparedSite, alpha: float) -> tuple[np.ndarray, np.nda
 
 
 def select_alpha(
-    sites: Iterable[PreparedSite], alpha_grid: Iterable[float], aggregate_loss_tolerance: float = 0.0
+    sites: Iterable[PreparedSite],
+    alpha_grid: Iterable[float],
+    aggregate_loss_tolerance: float = 0.0,
+    client_auroc_tolerance: float = 0.0,
 ) -> tuple[float, list[dict[str, float | int | bool]]]:
     """Select using validation sufficient statistics only; alpha=0 must be present."""
 
     statistics = validation_sufficient_statistics(sites, alpha_grid)
-    return select_alpha_from_statistics(statistics, aggregate_loss_tolerance)
+    return select_alpha_from_statistics(statistics, aggregate_loss_tolerance, client_auroc_tolerance)
 
 
 def validation_sufficient_statistics(
     sites: Iterable[PreparedSite], alpha_grid: Iterable[float]
 ) -> list[dict[str, float | int | str]]:
-    """Compute site-local loss sums and counts for validation selection."""
+    """Compute site-local validation summaries without sharing example-level predictions."""
 
     sites = list(sites)
     alpha_grid = sorted({float(alpha) for alpha in alpha_grid})
@@ -95,6 +98,7 @@ def validation_sufficient_statistics(
                     "missing_loss_sum": (
                         binary_log_loss_sum(after[missing], site.labels[missing]) if missing.any() else 0.0
                     ),
+                    "missing_auroc": binary_metrics(after[missing], site.labels[missing])["auroc"],
                     "missing_count": int(missing.sum()),
                     "aggregate_loss_sum": binary_log_loss_sum(after, site.labels),
                     "aggregate_count": int(site.labels.size),
@@ -104,13 +108,18 @@ def validation_sufficient_statistics(
 
 
 def select_alpha_from_statistics(
-    statistics: Iterable[dict[str, float | int | str]], aggregate_loss_tolerance: float = 0.0
+    statistics: Iterable[dict[str, float | int | str]],
+    aggregate_loss_tolerance: float = 0.0,
+    client_auroc_tolerance: float = 0.0,
 ) -> tuple[float, list[dict[str, float | int | bool]]]:
-    """Aggregate site statistics and apply the validation no-harm constraint."""
+    """Select by loss subject to aggregate and client-level validation safeguards."""
 
     aggregate_loss_tolerance = float(aggregate_loss_tolerance)
+    client_auroc_tolerance = float(client_auroc_tolerance)
     if not np.isfinite(aggregate_loss_tolerance) or aggregate_loss_tolerance < 0.0:
         raise ValueError("aggregate_loss_tolerance must be a finite, non-negative value.")
+    if not np.isfinite(client_auroc_tolerance) or client_auroc_tolerance < 0.0:
+        raise ValueError("client_auroc_tolerance must be a finite, non-negative value.")
     statistics = list(statistics)
     alpha_grid = sorted({float(row["alpha"]) for row in statistics})
     if not statistics or 0.0 not in alpha_grid or not all(np.isfinite(alpha) for alpha in alpha_grid):
@@ -140,8 +149,25 @@ def select_alpha_from_statistics(
         )
 
     identity_loss = next(float(row["aggregate_log_loss"]) for row in rows if float(row["alpha"]) == 0.0)
+    identity_site_aurocs = {
+        str(row["site"]): float(row["missing_auroc"])
+        for row in statistics
+        if float(row["alpha"]) == 0.0 and int(row["missing_count"]) > 0
+    }
     for row in rows:
-        row["feasible"] = float(row["aggregate_log_loss"]) <= identity_loss + aggregate_loss_tolerance + 1e-12
+        alpha_rows = [item for item in statistics if float(item["alpha"]) == float(row["alpha"])]
+        comparable = [item for item in alpha_rows if int(item["missing_count"]) > 0]
+        client_auroc_safe = all(
+            not np.isfinite(identity_site_aurocs.get(str(item["site"]), float("nan")))
+            or not np.isfinite(float(item["missing_auroc"]))
+            or float(item["missing_auroc"]) + client_auroc_tolerance + 1e-12 >= identity_site_aurocs[str(item["site"])]
+            for item in comparable
+        )
+        row["aggregate_loss_safe"] = (
+            float(row["aggregate_log_loss"]) <= identity_loss + aggregate_loss_tolerance + 1e-12
+        )
+        row["client_auroc_safe"] = client_auroc_safe
+        row["feasible"] = bool(row["aggregate_loss_safe"] and client_auroc_safe)
     feasible = [row for row in rows if bool(row["feasible"])]
     selected = min(feasible, key=lambda row: (float(row["missing_log_loss"]), abs(float(row["alpha"]))))
     return float(selected["alpha"]), rows

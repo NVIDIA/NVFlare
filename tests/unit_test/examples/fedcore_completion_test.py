@@ -68,6 +68,7 @@ def test_validation_selection_aggregates_only_sufficient_statistics():
             "site",
             "alpha",
             "missing_loss_sum",
+            "missing_auroc",
             "missing_count",
             "aggregate_loss_sum",
             "aggregate_count",
@@ -85,6 +86,7 @@ def test_validation_selection_rejects_negative_tolerance():
                 "site": "site-3",
                 "alpha": 0.0,
                 "missing_loss_sum": 1.0,
+                "missing_auroc": 0.5,
                 "missing_count": 2,
                 "aggregate_loss_sum": 1.0,
                 "aggregate_count": 2,
@@ -92,6 +94,28 @@ def test_validation_selection_rejects_negative_tolerance():
         ]
         with pytest.raises(ValueError, match="non-negative"):
             select_alpha_from_statistics(statistics, aggregate_loss_tolerance=-0.1)
+
+
+def test_validation_selection_requires_rank_safety_at_each_missing_client():
+    with fedcore_import_context():
+        from src.evaluation import PreparedSite, select_alpha
+
+        first = _missing_site(PreparedSite, [-4.0, 4.0])
+        second = PreparedSite(
+            site="site-2",
+            labels=np.asarray([0, 1], dtype=np.int64),
+            image_available=np.asarray([False, False]),
+            missing_logits=np.asarray([0.0, 0.0]),
+            full_logits=np.asarray([np.nan, np.nan]),
+            predicted_delta=np.asarray([0.1, -0.1]),
+        )
+        selected, rows = select_alpha([first, second], [0.0, 1.0])
+
+        assert selected == 0.0
+        candidate = next(row for row in rows if row["alpha"] == 1.0)
+        assert candidate["aggregate_loss_safe"] is True
+        assert candidate["client_auroc_safe"] is False
+        assert candidate["feasible"] is False
 
 
 def test_clients_without_paired_supervision_send_empty_update():

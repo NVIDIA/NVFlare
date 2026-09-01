@@ -103,11 +103,11 @@ def define_parser() -> argparse.ArgumentParser:
     parser.add_argument("--input-dim", type=int, required=True)
     parser.add_argument("--hidden-dim", type=int, default=128)
     parser.add_argument("--dropout", type=float, default=0.1)
-    parser.add_argument("--local-epochs", type=int, default=4)
+    parser.add_argument("--local-epochs", type=int, default=10)
     parser.add_argument("--batch-size", type=int, default=16)
-    parser.add_argument("--learning-rate", type=float, default=1e-2)
-    parser.add_argument("--task-weight", type=float, default=1.0)
-    parser.add_argument("--effect-weight", type=float, default=1.0)
+    parser.add_argument("--learning-rate", type=float, default=1e-3)
+    parser.add_argument("--task-weight", type=float, default=4.0)
+    parser.add_argument("--effect-weight", type=float, default=0.25)
     parser.add_argument("--seed", type=int, default=7)
     return parser
 

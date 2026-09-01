@@ -20,6 +20,8 @@ Requires a Qwen3-VL base model when using the Qwen3-VL repo's train_qwen.py.
 import argparse
 import os
 import re
+import shlex
+import sys
 
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.recipe import SimEnv, add_experiment_tracking, set_per_site_config
@@ -159,7 +161,17 @@ def main():
             )
         # Per-site torchrun for distributed training (unique master_port per client)
         master_port = 29500 + (idx + 1)
-        command = f"torchrun --nproc_per_node={n_proc} --nnodes=1 --master_port {master_port}"
+        command = shlex.join(
+            [
+                sys.executable,
+                "-m",
+                "torch.distributed.run",
+                f"--nproc_per_node={n_proc}",
+                "--nnodes=1",
+                "--master_port",
+                str(master_port),
+            ]
+        )
         per_site_config[site_name] = {"train_args": train_args, "command": command}
 
     # Initial model: when --lora, use LoRA-only wrapper so server and clients exchange only adapter weights.

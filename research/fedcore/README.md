@@ -33,7 +33,7 @@ more common when the estimate is correct. In the `uninformative` control, OCR cl
 independently of the true class within every client split. Modality availability differs across three disjoint
 simulated clients:
 
-![Visual example of the MNIST task and image availability across the three federated clients.](figures/fedcore_synthetic_client_design.svg)
+![Visual example of the MNIST task and image availability across the three federated clients.](figures/fedcore_mnist_client_design.svg)
 
 The top row shows one paired training example: the same OCR context is processed with and without its digit image, and
 their logit difference supervises the completion operator. The bottom row shows which clients can contribute paired
@@ -67,9 +67,10 @@ completed_logit = missing_logit + alpha * completion(missing_hidden)
 
 Only paired records can supervise the image contribution `full_logit - missing_logit`. A client with no paired
 records sends empty model parameters, which makes the aggregator skip its update; it also reports
-`NUM_STEPS_CURRENT_ROUND=0` to make the lack of valid supervision explicit. Validation selection combines only
-per-client loss sums and counts. The optional pooled test AUROC is a single-machine tutorial diagnostic, not a
-production federated metric.
+`NUM_STEPS_CURRENT_ROUND=0` to make the lack of valid supervision explicit. Validation selection uses per-client loss
+summaries and AUROC values, not example-level predictions. It minimizes missing-image log loss subject to two
+safeguards: aggregate log loss cannot exceed the identity policy, and no missing-image client's AUROC may regress.
+The optional pooled test AUROC is a single-machine tutorial diagnostic, not a production federated metric.
 
 ## Repository layout
 
@@ -127,13 +128,22 @@ python run_demo.py --mode quick --scenario uninformative --gpu 0
 
 ## Expected behavior
 
-- `recoverable`: validation should select a nonzero `alpha`, and missing-image performance should improve without
-  reducing aggregate validation performance.
+- `recoverable`: validation should select a nonzero `alpha`, and missing-image AUROC should improve at every
+  missing-image client without reducing aggregate validation performance.
 - `uninformative`: validation should select `alpha=0`, retaining the image-missing baseline.
 - `site-3`: every round should report `sent_empty_update=true` because the client has no paired image supervision.
 
 Exact Qwen metrics depend on the model and runtime. These outcomes test the mechanics of FedCoRe rather than establish
 a benchmark result.
+
+A deterministic seed-7 run with `Qwen/Qwen3-VL-2B-Instruct` on an NVIDIA H100 produced:
+
+| Scenario | Paired image-present AUROC | Missing before | Missing after | Missing delta | Aggregate delta | Selected `alpha` |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `recoverable` | 0.9885 | 0.9386 | 0.9911 | +0.0525 | +0.1174 | 1.0 |
+| `uninformative` | 0.9889 | 0.5033 | 0.5033 | +0.0000 | +0.0000 | 0.0 |
+
+These are tutorial verification metrics from one deterministic simulator run, not benchmark or clinical claims.
 
 ## Optional federated Qwen LoRA mode
 
