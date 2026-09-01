@@ -1,9 +1,10 @@
 # FedCoRe: Federated Cross-Modal Representation Completion
 
-This is a starter example for FedCoRe, a federated cross-modal representation completion method. Clients with valid
-paired supervision learn a missing-modality completion operator, which is then shared with clients that do not observe
-the modality. The project provides a small, public, end-to-end NVIDIA FLARE workflow using Qwen3-VL and MNIST
-image-plus-text data.
+This is a starter example for FedCoRe, a federated cross-modal representation completion method. It deliberately uses
+MNIST as a toy multimodal task so that the data, missing-image patterns, and expected behavior are easy to inspect.
+Clients with valid paired supervision learn a missing-modality completion operator, which is then shared with clients
+that do not observe the modality. The example provides a public, end-to-end NVIDIA FLARE workflow using Qwen3-VL and
+MNIST image-plus-text data.
 
 The accompanying paper is available on arXiv: [FedCoRe: Target-Adaptive Completion for Missing Modalities in Healthcare Federated Learning](https://arxiv.org/abs/2608.18311).
 
@@ -11,9 +12,10 @@ The accompanying paper is available on arXiv: [FedCoRe: Target-Adaptive Completi
 
 ## Objective
 
-Demonstrate federated cross-modal completion with public model weights and a familiar dataset. Clients that observe
-digit images learn an additive classifier-logit correction, clients without paired image supervision have zero
-aggregation weight, and validation can retain the identity operator when completion is unsupported.
+Demonstrate the mechanics of federated cross-modal completion with public model weights and a familiar toy dataset.
+Clients that observe digit images learn an additive classifier-logit correction, clients without paired image
+supervision have zero aggregation weight, and validation can retain the identity operator when completion is
+unsupported.
 
 ## Background
 
@@ -28,10 +30,31 @@ Each example contains an MNIST handwritten-digit image and a secondary text repo
 Digits `0` through `4` are class `A`; digits `5` through `9` are class `B`. The image is authoritative. The OCR report
 contains an estimated digit and a `high` or `low` confidence value.
 
+MNIST is not intended to model a realistic clinical or multimodal deployment. It provides a small, recognizable toy
+example in which one modality is authoritative, another modality is imperfectly correlated with it, and image
+availability can be controlled independently across clients.
+
 In the default `recoverable` scenario, the OCR estimate has the requested class-level accuracy and high confidence is
 more common when the estimate is correct. In the `uninformative` control, OCR class and confidence are exactly balanced
-independently of the true class within every client split. Modality availability differs across three disjoint
-simulated clients:
+independently of the true class within every client split.
+
+### Why the recoverable scenario works
+
+- The image contains the authoritative MNIST digit.
+- The text contains a noisy OCR estimate plus confidence.
+- Correct OCR estimates are usually high-confidence; errors are usually low-confidence.
+- Qwen3-VL's missing-image hidden state therefore contains information about both the estimate and its reliability.
+- Image-rich clients run paired passes with and without the image. Their classifier-logit difference measures the
+  image's contribution.
+- FedCoRe learns when the OCR-derived prediction should be trusted or corrected, then shares that lightweight operator
+  through FedAvg.
+- `site-3`, which never sees images, can use the resulting operator despite contributing no training update.
+
+The `uninformative` scenario is the corresponding negative control. Its OCR estimate and confidence are independent of
+the true class, so there is no transferable missing-image relationship to learn. Validation should therefore select
+the exact identity setting, `alpha=0`.
+
+Both scenarios use the same image-availability pattern across three disjoint simulated clients:
 
 ![Visual example of the MNIST task and image availability across the three federated clients.](figures/fedcore_mnist_client_design.svg)
 
