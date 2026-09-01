@@ -2,8 +2,8 @@
 
 This is a starter example for FedCoRe, a federated cross-modal representation completion method. Clients with valid
 paired supervision learn a missing-modality completion operator, which is then shared with clients that do not observe
-the modality. The project provides a small, public, end-to-end NVIDIA FLARE workflow using Qwen3-VL and generated
-image-plus-context data.
+the modality. The project provides a small, public, end-to-end NVIDIA FLARE workflow using Qwen3-VL and MNIST
+image-plus-text data.
 
 The accompanying paper is available on arXiv: [FedCoRe: Target-Adaptive Completion for Missing Modalities in Healthcare Federated Learning](https://arxiv.org/abs/2608.18311).
 
@@ -11,45 +11,47 @@ The accompanying paper is available on arXiv: [FedCoRe: Target-Adaptive Completi
 
 ## Objective
 
-Demonstrate the mechanics of federated cross-modal completion with public model weights and generated data: clients
-that observe images learn an additive classifier-logit correction, clients without paired image supervision have zero
+Demonstrate federated cross-modal completion with public model weights and a familiar dataset. Clients that observe
+digit images learn an additive classifier-logit correction, clients without paired image supervision have zero
 aggregation weight, and validation can retain the identity operator when completion is unsupported.
 
 ## Background
 
 Multimodal FL clients often differ in which inputs they observe. A client without a modality cannot directly train a
 completion operator for that modality, but it can consume an operator learned from other clients with paired
-target-present and target-removed passes. FedCoRe formalizes that valid-supervision exchange without reconstructing
+modality-present and modality-removed passes. FedCoRe formalizes that valid-supervision exchange without reconstructing
 raw images.
 
-## Synthetic data and client design
+## MNIST data and client design
 
-The generated task contains a red triangle (class `A`) or blue circle (class `B`) and an opaque auxiliary scanner
-code. The image is authoritative. The code is correlated with the image class, but its arbitrary `KAPPA`/`SIGMA`
-mapping is not explained to the frozen predictor. Paired clients can therefore learn the mapping from its hidden
-state without exposing the class directly in the text. Modality availability differs across three disjoint simulated
-clients:
+Each example contains an MNIST handwritten-digit image and a secondary text report from a simulated noisy OCR sensor.
+Digits `0` through `4` are class `A`; digits `5` through `9` are class `B`. The image is authoritative. The OCR report
+contains an estimated digit and a `high` or `low` confidence value.
 
-![Visual example of the synthetic task and image availability across the three federated clients.](figures/fedcore_synthetic_client_design.svg)
+In the default `recoverable` scenario, the OCR estimate has the requested class-level accuracy and high confidence is
+more common when the estimate is correct. In the `uninformative` control, OCR class and confidence are exactly balanced
+independently of the true class within every client split. Modality availability differs across three disjoint
+simulated clients:
 
-The top row shows one paired training example: the same context is processed with and without its image, and their
-logit difference supervises the completion operator. The bottom row shows which clients can contribute paired
+![Visual example of the MNIST task and image availability across the three federated clients.](figures/fedcore_synthetic_client_design.svg)
+
+The top row shows one paired training example: the same OCR context is processed with and without its digit image, and
+their logit difference supervises the completion operator. The bottom row shows which clients can contribute paired
 updates and which clients only use the aggregated operator at inference.
 
 | Client | Training image availability | Role |
 | --- | ---: | --- |
 | `site-1` | 100% | Paired image-present/image-removed supervision |
-| `site-2` | 50% | Patient-mixed supervision and deployment examples |
+| `site-2` | 50% | Example-mixed supervision and deployment examples |
 | `site-3` | 0% | Missing-image deployment only; sends no completion update |
 
-The default `recoverable` scenario correlates the code strongly with the image class. The `uninformative` control
-balances code matches and mismatches within each class, removing that cross-modal relationship and testing whether
-validation retains the identity operator. These generated outcomes verify the workflow; they are not clinical
-evidence.
+MNIST source indices are allocated without replacement across all sites and splits. Training and validation examples
+come from disjoint portions of the official training set; test examples come from the official test set. This task
+verifies the workflow and is not evidence of clinical effectiveness.
 
 ```mermaid
 flowchart LR
-    A[Generate local image + context records] --> B[Qwen3-VL full and image-removed passes]
+    A[Prepare local MNIST image + OCR records] --> B[Qwen3-VL image-present and image-removed passes]
     B --> C[Train local logit-effect completion on paired records]
     C --> D[Valid-supervision FedAvg]
     D --> E[Validation-constrained alpha selection]
@@ -65,26 +67,31 @@ completed_logit = missing_logit + alpha * completion(missing_hidden)
 
 Only paired records can supervise the image contribution `full_logit - missing_logit`. A client with no paired
 records sends empty model parameters, which makes the aggregator skip its update; it also reports
-`NUM_STEPS_CURRENT_ROUND=0` to make the lack of valid supervision explicit.
-Validation selection combines only per-client loss sums and counts. The optional pooled test AUROC is a
-single-machine tutorial diagnostic, not a production federated metric.
+`NUM_STEPS_CURRENT_ROUND=0` to make the lack of valid supervision explicit. Validation selection combines only
+per-client loss sums and counts. The optional pooled test AUROC is a single-machine tutorial diagnostic, not a
+production federated metric.
 
 ## Repository layout
 
 | Path | Purpose |
 | --- | --- |
-| `prepare_data.py` | Generate deterministic, disjoint client data and Qwen SFT JSON. |
-| `cache_features.py` | Run Qwen3-VL full/image-removed passes or create test-only mock caches. |
+| `prepare_data.py` | Download MNIST and create deterministic, disjoint client data plus Qwen SFT JSON. |
+| `cache_features.py` | Run Qwen3-VL image-present/image-removed passes. |
 | `model.py` | Define the lightweight classifier-logit completion operator. |
 | `client.py` | Train on valid paired records and implement empty-update behavior. |
 | `job.py` | Configure the three-client completion job with `FedAvgRecipe`. |
 | `evaluate.py` | Select `alpha` on validation summaries, then evaluate once on test data. |
 | `run_demo.py` | Orchestrate data, optional Qwen LoRA FL, completion FL, and reporting. |
 
-Data are generated automatically by `run_demo.py`. To prepare them separately:
+Data are prepared automatically by `run_demo.py`. To prepare them separately:
 
 ```bash
-python prepare_data.py --output-dir data/recoverable --proxy-strength 0.9 --seed 7
+python prepare_data.py \
+  --output-dir data/recoverable \
+  --dataset-root ~/.cache/nvflare/fedcore \
+  --scenario recoverable \
+  --proxy-strength 0.9 \
+  --seed 7
 ```
 
 ## Setup
@@ -100,7 +107,7 @@ python -m pip install -r requirements.txt
 ```
 
 The default model is [`Qwen/Qwen3-VL-2B-Instruct`](https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct). Review its
-model license before use. The first run downloads model weights from Hugging Face.
+model license before use. The first run downloads model weights from Hugging Face and MNIST through `torchvision`.
 
 ## One-GPU quickstart
 
@@ -112,46 +119,21 @@ python run_demo.py --mode quick --scenario recoverable --gpu 0
 ```
 
 It is designed to finish in about 20 minutes on a modern data-center GPU, although model download and hardware speed
-affect runtime. Run the low-correlation control with:
+affect runtime. Run the cross-modal control with:
 
 ```bash
 python run_demo.py --mode quick --scenario uninformative --gpu 0
 ```
 
-For a CPU-only pipeline smoke test without downloading Qwen:
-
-```bash
-python run_demo.py \
-  --mode quick \
-  --scenario recoverable \
-  --feature-backend mock \
-  --train-samples-per-site 12 \
-  --val-samples-per-site 6 \
-  --test-samples-per-site 6 \
-  --num-rounds 2
-```
-
-The mock backend validates orchestration and FL behavior only. It is not a Qwen result.
-
 ## Expected behavior
 
-- `recoverable`: validation should select a nonzero `alpha`, and missing-image performance should improve.
-- `uninformative`: validation should select `alpha=0` or otherwise satisfy the aggregate no-harm constraint.
+- `recoverable`: validation should select a nonzero `alpha`, and missing-image performance should improve without
+  reducing aggregate validation performance.
+- `uninformative`: validation should select `alpha=0`, retaining the image-missing baseline.
 - `site-3`: every round should report `sent_empty_update=true` because the client has no paired image supervision.
 
-Exact Qwen metrics depend on the model and runtime.
-
-The default seed-7 commands were validated with `Qwen/Qwen3-VL-2B-Instruct` on one NVIDIA H100 NVL against an
-editable NVFlare source checkout rebased on upstream `main`. These are tutorial checks, not benchmark claims:
-
-| Scenario | Missing AUROC before | Missing AUROC after | Aggregate AUROC before | Aggregate AUROC after | Selected `alpha` |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| `recoverable` | 0.1806 | 0.8681 | 0.7951 | 0.9670 | 0.75 |
-| `uninformative` | 0.5625 | 0.5972 | 0.8906 | 0.8993 | 0.75 |
-
-The low-correlation control's small rank change is not evidence of cross-modal recovery. Its nonzero scale primarily
-reduces the frozen model's biased answer-token loss while satisfying the aggregate no-harm constraint. Depending on
-the model version and validation sample, this control may instead retain `alpha=0`.
+Exact Qwen metrics depend on the model and runtime. These outcomes test the mechanics of FedCoRe rather than establish
+a benchmark result.
 
 ## Optional federated Qwen LoRA mode
 
@@ -165,32 +147,31 @@ python run_demo.py --mode full --scenario recoverable --gpu "[0],[1],[2]"
 ```
 
 Use `--predictor-rounds` and `--predictor-max-steps` to change the optional predictor budget. Full mode reuses the
-upstream Qwen3-VL implementation and attribution rather than maintaining a second copy here.
-The installer deliberately installs PyTorch before building `flash_attn` with `--no-build-isolation`; a compatible
-CUDA toolkit and compiler must be available. The synthetic proxy code is withheld from LoRA supervision so the
-predictor cannot learn the completion shortcut directly.
+upstream Qwen3-VL implementation and attribution rather than maintaining a second copy here. Both image-present and
+image-missing clients retain their locally available OCR report during predictor training.
 
-The full path was smoke-tested with three clients, one LoRA FedAvg round, and one local training step. The resulting
-global adapter was reloaded for Qwen cache generation before the valid-supervision completion job ran end to end.
+The installer deliberately installs PyTorch before building `flash_attn` with `--no-build-isolation`; a compatible
+CUDA toolkit and compiler must be available.
 
 ## Outputs
 
 By default, runs write to `outputs/<scenario>_seed<seed>/`:
 
 ```text
-data/                         generated local records and images
-feature_cache/site-*/         local Qwen or mock caches
+data/                          local manifests and rendered MNIST images
+feature_cache/site-*/         local Qwen caches
 completion/site-*/            per-round valid-supervision metrics
-completion/global_model.pt     final federated completion checkpoint
+completion/global_model.pt    final federated completion checkpoint
 evaluation/summary.json       aggregate selection and evaluation report
 evaluation/per_site_metrics.json
 run_config.json               resolved command configuration
 ```
 
-`run_demo.py` places the NVFlare workspace under the run's output directory by default, so full-mode checkpoints use
-persistent project storage rather than `/tmp`. Direct `job.py` use retains its own `/tmp/nvflare/fedcore` default.
-Use `--workspace` to select a larger filesystem. Both output and workspace paths must be fresh; existing paths are
-rejected to prevent concurrent runs or stale checkpoints from being mixed.
+The reusable torchvision MNIST download is stored under `--dataset-root`, which defaults to
+`~/.cache/nvflare/fedcore`. `run_demo.py` places the NVFlare workspace under the run's output directory by default,
+so full-mode checkpoints use persistent project storage rather than `/tmp`. Direct `job.py` use retains its own
+`/tmp/nvflare/fedcore` default. Use `--workspace` to select a larger filesystem. Both output and workspace paths
+must be fresh; existing paths are rejected to prevent concurrent runs or stale checkpoints from being mixed.
 
 `summary.json` reports image-present performance on paired examples, naturally image-missing performance before and
 after completion, aggregate policy performance, contributing clients and paired-example counts, the selected `alpha`,
@@ -202,8 +183,8 @@ privacy-preserving production aggregation protocol.
 
 ## Adapting to another modality or dataset
 
-The cache contract is target-modality neutral. Replace the generator and feature extractor while preserving these
-fields per site and split:
+The cache contract is target-modality neutral. Replace the MNIST preparation and feature extraction while preserving
+these fields per site and split:
 
 - `example_ids`, `labels`, and `image_available` (rename semantically in your loader if needed);
 - `missing_features` and `missing_logits` for every record;
@@ -220,22 +201,24 @@ federated validation metric, and define modality masks from their actual acquisi
 
 ## Privacy and limitations
 
-Raw images and text records remain in site-specific directories during training, and clients exchange only completion
-parameters. The single-machine tutorial evaluator can read all site caches to report pooled AUROC; a production
-deployment should replace that diagnostic with an approved federated evaluation protocol. This workflow does not
-provide a formal privacy guarantee: model updates can leak information without additional controls such as secure
-aggregation or differential privacy.
+Rendered digit images and OCR reports remain in site-specific directories during training, and clients exchange only
+completion parameters. The single-machine tutorial evaluator can read all site caches to report pooled AUROC; a
+production deployment should replace that diagnostic with an approved federated evaluation protocol. This workflow
+does not provide a formal privacy guarantee: model updates can leak information without additional controls such as
+secure aggregation or differential privacy.
 
-The synthetic proxy is intentionally controllable and does not model clinical missingness, institutional shift, or
-the difficulty of recovering a patient-specific radiograph contribution. Do not interpret tutorial gains as evidence
-for clinical deployment.
+The OCR sensor is intentionally controllable and does not model clinical missingness, institutional shift, or the
+difficulty of recovering a patient-specific clinical modality. Do not interpret tutorial gains as evidence for
+clinical deployment.
 
 ## License
 
 The code in this directory follows NVFlare's Apache License 2.0; see the [repository license](../../LICENSE).
-Qwen3-VL model weights are downloaded separately and have their own terms; review the
-[model card](https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct). Optional full mode reuses the upstream example, whose
-vendored Qwen training code is attributed in its [NOTICE](../../examples/advanced/qwen3-vl/NOTICE).
+MNIST is downloaded separately through [`torchvision.datasets.MNIST`](https://docs.pytorch.org/vision/stable/generated/torchvision.datasets.MNIST.html);
+review the dataset's source terms before use. Qwen3-VL model weights are downloaded separately and have their own
+terms; review the [model card](https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct). Optional full mode reuses the upstream
+example, whose vendored Qwen training code is attributed in its
+[NOTICE](../../examples/advanced/qwen3-vl/NOTICE).
 
 ## Citation
 

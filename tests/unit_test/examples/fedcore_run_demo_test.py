@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -57,3 +58,16 @@ def test_run_directories_must_be_fresh(tmp_path):
         assert workspace.is_dir()
         with pytest.raises(FileExistsError, match="fresh path"):
             run_demo._prepare_run_directories(output_dir, workspace)
+
+
+def test_uninformative_scenario_rejects_proxy_override(monkeypatch):
+    with fedcore_import_context():
+        import run_demo
+
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            ["run_demo.py", "--scenario", "uninformative", "--proxy-strength", "0.8"],
+        )
+        with pytest.raises(ValueError, match="fixed at 0.5"):
+            run_demo.main()

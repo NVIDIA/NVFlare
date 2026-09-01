@@ -15,66 +15,135 @@
 import json
 
 import numpy as np
+from PIL import Image
 
 from tests.unit_test.examples.fedcore_test_utils import fedcore_import_context
 
 
-def test_synthetic_data_are_deterministic_and_disjoint(tmp_path):
-    with fedcore_import_context():
-        from src.data import SPLITS, SyntheticDataConfig, generate_synthetic_data, load_manifest
+class _MNISTFixture:
+    def __init__(self, examples_per_digit: int):
+        self.targets = []
+        self.images = []
+        for digit in range(10):
+            for example_index in range(examples_per_digit):
+                pixels = np.zeros((28, 28), dtype=np.uint8)
+                pixels[4:24, 5 + digit % 4 : 7 + digit % 4] = 160 + example_index % 96
+                self.images.append(Image.fromarray(pixels, mode="L"))
+                self.targets.append(digit)
 
-        first = tmp_path / "first"
-        second = tmp_path / "second"
-        config = dict(
-            train_samples_per_site=8,
-            val_samples_per_site=4,
-            test_samples_per_site=4,
-            proxy_strength=0.9,
+    def __len__(self):
+        return len(self.targets)
+
+    def __getitem__(self, index):
+        return self.images[index].copy(), self.targets[index]
+
+
+def _loader(_root, train):
+    return _MNISTFixture(30 if train else 12)
+
+
+def _config(output_dir, scenario="recoverable"):
+    with fedcore_import_context():
+        from src.data import MNISTDataConfig
+
+        return MNISTDataConfig(
+            output_dir=output_dir,
+            dataset_root=output_dir / "mnist-cache",
+            scenario=scenario,
+            train_samples_per_site=16,
+            val_samples_per_site=8,
+            test_samples_per_site=8,
+            proxy_strength=0.75,
             seed=13,
             image_size=64,
         )
-        summary = generate_synthetic_data(SyntheticDataConfig(output_dir=first, **config))
-        generate_synthetic_data(SyntheticDataConfig(output_dir=second, **config))
 
-        assert summary["total_examples"] == 48
-        seen = set()
+
+def test_mnist_data_are_deterministic_balanced_and_disjoint(tmp_path):
+    with fedcore_import_context():
+        from src.data import SPLITS, generate_mnist_data, load_manifest
+
+        first = tmp_path / "first"
+        second = tmp_path / "second"
+        first_summary = generate_mnist_data(_config(first), dataset_loader=_loader)
+        generate_mnist_data(_config(second), dataset_loader=_loader)
+
+        assert first_summary["dataset"] == "MNIST"
+        assert first_summary["total_examples"] == 96
+        seen_sources = set()
         for site_index in range(1, 4):
             site = f"site-{site_index}"
             for split in SPLITS:
                 first_records = load_manifest(first / site / f"{split}.jsonl")
                 second_records = load_manifest(second / site / f"{split}.jsonl")
                 assert first_records == second_records
-                ids = {record["example_id"] for record in first_records}
-                assert not seen.intersection(ids)
-                seen.update(ids)
+                assert sum(record["label"] for record in first_records) == len(first_records) // 2
+                for record in first_records:
+                    source = (record["source_split"], record["source_index"])
+                    assert source not in seen_sources
+                    seen_sources.add(source)
+                    assert record["label"] == int(record["digit"] <= 4)
+                    assert record["ocr_label"] == int(record["ocr_digit"] <= 4)
+                    assert record["sensor_matches_label"] == (record["ocr_label"] == record["label"])
 
-        assert summary["sites"]["site-1"]["splits"]["train"]["image_available"] == 8
-        assert summary["sites"]["site-2"]["splits"]["train"]["image_available"] == 4
-        assert summary["sites"]["site-3"]["splits"]["train"]["image_available"] == 0
+        assert first_summary["sites"]["site-1"]["splits"]["train"]["image_available"] == 16
+        assert first_summary["sites"]["site-2"]["splits"]["train"]["image_available"] == 8
+        assert first_summary["sites"]["site-3"]["splits"]["train"]["image_available"] == 0
+        image = Image.open(first / "site-1" / "images" / "train-s1-00000.png")
+        assert image.mode == "RGB"
+        assert image.size == (64, 64)
 
 
-def test_qwen_sft_records_match_modality_availability(tmp_path):
+def test_qwen_sft_records_include_ocr_context_and_match_modality_availability(tmp_path):
     with fedcore_import_context():
-        from src.data import SyntheticDataConfig, generate_synthetic_data
+        from src.data import generate_mnist_data
 
-        generate_synthetic_data(
-            SyntheticDataConfig(
-                output_dir=tmp_path,
-                train_samples_per_site=4,
-                val_samples_per_site=2,
-                test_samples_per_site=2,
-                seed=7,
-                image_size=64,
-            )
-        )
+        generate_mnist_data(_config(tmp_path), dataset_loader=_loader)
         site_one = json.loads((tmp_path / "site-1" / "train.json").read_text())
         site_three = json.loads((tmp_path / "site-3" / "train.json").read_text())
+
         assert all("image" in record for record in site_one)
         assert all("<image>" in record["conversations"][0]["value"] for record in site_one)
         assert all("image" not in record for record in site_three)
         assert all("<image>" not in record["conversations"][0]["value"] for record in site_three)
         prompts = [record["conversations"][0]["value"] for record in site_one + site_three]
-        assert all("KAPPA" not in prompt and "SIGMA" not in prompt for prompt in prompts)
+        assert all("Secondary OCR report:" in prompt for prompt in prompts)
+        assert all("estimated digit=" in prompt and "sensor confidence=" in prompt for prompt in prompts)
+
+
+def test_recoverable_ocr_accuracy_and_confidence_are_informative(tmp_path):
+    with fedcore_import_context():
+        from src.data import generate_mnist_data, load_manifest
+
+        generate_mnist_data(_config(tmp_path), dataset_loader=_loader)
+        for site_index in range(1, 4):
+            records = load_manifest(tmp_path / f"site-{site_index}" / "train.jsonl")
+            for label in (0, 1):
+                class_records = [record for record in records if record["label"] == label]
+                matched = [record for record in class_records if record["sensor_matches_label"]]
+                mismatched = [record for record in class_records if not record["sensor_matches_label"]]
+                assert len(matched) == 6
+                assert len(mismatched) == 2
+                matched_high = sum(record["sensor_confidence"] == "high" for record in matched) / len(matched)
+                mismatched_high = sum(record["sensor_confidence"] == "high" for record in mismatched) / len(mismatched)
+                assert matched_high > mismatched_high
+
+
+def test_uninformative_ocr_and_confidence_are_exactly_independent(tmp_path):
+    with fedcore_import_context():
+        from src.data import generate_mnist_data, load_manifest
+
+        config = _config(tmp_path, scenario="uninformative")
+        generate_mnist_data(config, dataset_loader=_loader)
+        for site_index in range(1, 4):
+            for split in ("train", "val", "test"):
+                records = load_manifest(tmp_path / f"site-{site_index}" / f"{split}.jsonl")
+                for label in (0, 1):
+                    class_records = [record for record in records if record["label"] == label]
+                    assert sum(record["sensor_matches_label"] for record in class_records) == len(class_records) // 2
+                    for matches in (False, True):
+                        group = [record for record in class_records if record["sensor_matches_label"] == matches]
+                        assert sum(record["sensor_confidence"] == "high" for record in group) == len(group) // 2
 
 
 def test_stratified_mask_uses_round_half_up():
@@ -85,25 +154,3 @@ def test_stratified_mask_uses_round_half_up():
         mask = _stratified_mask(labels, 0.5, np.random.default_rng(7))
 
     assert mask.tolist() == [True, True]
-
-
-def test_uninformative_proxy_is_balanced_within_each_class(tmp_path):
-    with fedcore_import_context():
-        from src.data import SyntheticDataConfig, generate_synthetic_data, load_manifest
-
-        generate_synthetic_data(
-            SyntheticDataConfig(
-                output_dir=tmp_path,
-                train_samples_per_site=16,
-                val_samples_per_site=8,
-                test_samples_per_site=8,
-                proxy_strength=0.5,
-                seed=7,
-                image_size=64,
-            )
-        )
-        for site_index in range(1, 4):
-            records = load_manifest(tmp_path / f"site-{site_index}" / "train.jsonl")
-            for label in (0, 1):
-                class_records = [record for record in records if record["label"] == label]
-                assert sum(record["proxy_matches_label"] for record in class_records) == len(class_records) // 2

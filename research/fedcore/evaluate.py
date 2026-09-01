@@ -111,7 +111,7 @@ def main() -> None:
         json.dump(_json_safe(per_site), f, indent=2, sort_keys=True)
         f.write("\n")
 
-    print("FedCoRe synthetic evaluation")
+    print("FedCoRe MNIST evaluation")
     print("+----------------------+----------+----------+----------+")
     print("| Scope                | Before   | After    | Delta    |")
     print("+----------------------+----------+----------+----------+")

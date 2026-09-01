@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
+
 import numpy as np
 import pytest
 import torch
@@ -37,23 +39,46 @@ def _save_payload(tmp_path, payload) -> None:
     torch.save(payload, cache_path)
 
 
-def test_mock_cache_is_modality_neutral_and_preserves_missing_clients(tmp_path, monkeypatch):
+def test_qwen_cache_is_modality_neutral_and_preserves_missing_clients(tmp_path, monkeypatch):
     with fedcore_import_context():
-        from src.data import SyntheticDataConfig, generate_synthetic_data
         from src.features import create_feature_cache, load_cache_split
 
         data_dir = tmp_path / "data"
         cache_dir = tmp_path / "cache"
-        generate_synthetic_data(
-            SyntheticDataConfig(
-                output_dir=data_dir,
-                train_samples_per_site=6,
-                val_samples_per_site=4,
-                test_samples_per_site=4,
-                image_size=64,
-            )
-        )
-        metadata = create_feature_cache(data_dir, cache_dir, backend="mock", mock_hidden_dim=8)
+        for site_index in range(1, 4):
+            site = f"site-{site_index}"
+            available = site_index == 1
+            for split in ("train", "val", "test"):
+                path = data_dir / site / f"{split}.jsonl"
+                path.parent.mkdir(parents=True, exist_ok=True)
+                record = {
+                    "example_id": f"{site}-{split}",
+                    "label": site_index % 2,
+                    "image_available": available,
+                }
+                path.write_text(json.dumps(record) + "\n")
+
+        class Extractor:
+            @staticmethod
+            def extract(records, data_dir):
+                del data_dir
+                available = torch.tensor([record["image_available"] for record in records], dtype=torch.bool)
+                full_logits = torch.tensor([1.0 if value else torch.nan for value in available])
+                return {
+                    "example_ids": [record["example_id"] for record in records],
+                    "labels": torch.tensor([record["label"] for record in records]),
+                    "image_available": available,
+                    "paired_mask": available.clone(),
+                    "missing_features": torch.zeros((len(records), 8)),
+                    "missing_logits": torch.zeros(len(records)),
+                    "full_logits": full_logits,
+                }
+
+            @staticmethod
+            def metadata():
+                return {"model_name_or_path": "test-qwen"}
+
+        metadata = create_feature_cache(data_dir, cache_dir, qwen_extractor=Extractor())
         original_load = torch.load
         load_kwargs = []
 

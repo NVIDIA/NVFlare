@@ -18,56 +18,23 @@ import json
 import pickle
 from pathlib import Path
 
-import numpy as np
 import torch
 from src.data import SPLITS, load_manifest
 
 CACHE_SCHEMA_VERSION = 1
 
 
-def mock_features(records: list[dict], hidden_dim: int = 16) -> dict:
-    labels = torch.tensor([record["label"] for record in records], dtype=torch.long)
-    image_available = torch.tensor([record["image_available"] for record in records], dtype=torch.bool)
-    features = []
-    missing_logits = []
-    full_logits = []
-    for record in records:
-        proxy_signed = 1.0 if int(record["proxy_label"]) == 1 else -1.0
-        vector = np.zeros(hidden_dim, dtype=np.float32)
-        vector[0] = proxy_signed
-        if hidden_dim > 1:
-            vector[1] = 1.0
-        features.append(vector)
-        # The mock frozen predictor does not know the arbitrary KAPPA/SIGMA mapping.
-        missing_logits.append(0.0)
-        full_logits.append(3.0 if int(record["label"]) == 1 else -3.0)
-    full_tensor = torch.tensor(full_logits, dtype=torch.float32)
-    full_tensor[~image_available] = torch.nan
-    return {
-        "schema_version": CACHE_SCHEMA_VERSION,
-        "example_ids": [record["example_id"] for record in records],
-        "labels": labels,
-        "image_available": image_available,
-        "paired_mask": image_available.clone(),
-        "missing_features": torch.tensor(np.stack(features), dtype=torch.float32),
-        "missing_logits": torch.tensor(missing_logits, dtype=torch.float32),
-        "full_logits": full_tensor,
-    }
-
-
 def create_feature_cache(
     data_dir: Path,
     cache_dir: Path,
-    backend: str,
-    qwen_extractor=None,
-    mock_hidden_dim: int = 16,
+    qwen_extractor,
 ) -> dict:
     data_dir = data_dir.expanduser().resolve()
     cache_dir = cache_dir.expanduser().resolve()
     cache_dir.mkdir(parents=True, exist_ok=True)
     metadata = {
         "schema_version": CACHE_SCHEMA_VERSION,
-        "backend": backend,
+        "backend": "qwen",
         "data_dir": str(data_dir),
         "sites": {},
         "target_modality": "image",
@@ -78,14 +45,7 @@ def create_feature_cache(
         metadata["sites"][site] = {}
         for split in SPLITS:
             records = load_manifest(data_dir / site / f"{split}.jsonl")
-            if backend == "mock":
-                payload = mock_features(records, hidden_dim=mock_hidden_dim)
-            elif backend == "qwen":
-                if qwen_extractor is None:
-                    raise ValueError("qwen_extractor is required for backend='qwen'.")
-                payload = qwen_extractor.extract(records, data_dir=data_dir)
-            else:
-                raise ValueError(f"Unsupported feature backend: {backend}")
+            payload = qwen_extractor.extract(records, data_dir=data_dir)
             current_dim = int(payload["missing_features"].shape[1])
             if input_dim is None:
                 input_dim = current_dim

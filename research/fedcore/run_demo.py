@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""One-command synthetic FedCoRe workflow."""
+"""One-command MNIST FedCoRe workflow."""
 
 import argparse
 import json
@@ -62,12 +62,12 @@ def _prepare_run_directories(output_dir: Path, workspace: Path) -> None:
 
 
 def define_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Run the public FedCoRe synthetic starter end to end.")
+    parser = argparse.ArgumentParser(description="Run the public MNIST FedCoRe starter end to end.")
     parser.add_argument("--mode", choices=["quick", "full"], default="quick")
     parser.add_argument("--scenario", choices=["recoverable", "uninformative"], default="recoverable")
     parser.add_argument("--proxy-strength", type=float, default=None)
+    parser.add_argument("--dataset-root", default="~/.cache/nvflare/fedcore")
     parser.add_argument("--model-name-or-path", default="Qwen/Qwen3-VL-2B-Instruct")
-    parser.add_argument("--feature-backend", choices=["qwen", "mock"], default="qwen")
     parser.add_argument(
         "--gpu",
         default=None,
@@ -123,11 +123,12 @@ def _build_predictor_command(args, qwen_example: Path, data_dir: Path, predictor
 
 def main() -> None:
     args = define_parser().parse_args()
-    if args.mode == "full" and args.feature_backend != "qwen":
-        raise ValueError("Full mode requires --feature-backend qwen.")
-    proxy_strength = args.proxy_strength
-    if proxy_strength is None:
-        proxy_strength = 0.9 if args.scenario == "recoverable" else 0.5
+    if args.scenario == "uninformative" and args.proxy_strength is not None:
+        raise ValueError("--proxy-strength is fixed at 0.5 for the uninformative scenario.")
+    proxy_strength = (
+        args.proxy_strength if args.proxy_strength is not None else (0.9 if args.scenario == "recoverable" else 0.5)
+    )
+    dataset_root = Path(args.dataset_root).expanduser().resolve()
     output_dir = (
         Path(args.output_dir).expanduser().resolve()
         if args.output_dir
@@ -144,29 +145,33 @@ def main() -> None:
         {
             "resolved_output_dir": str(output_dir),
             "resolved_workspace": str(workspace),
+            "resolved_dataset_root": str(dataset_root),
             "resolved_proxy_strength": proxy_strength,
         }
     )
     (output_dir / "run_config.json").write_text(json.dumps(run_config, indent=2, sort_keys=True) + "\n")
 
-    _run(
-        [
-            sys.executable,
-            str(PROJECT_DIR / "prepare_data.py"),
-            "--output-dir",
-            str(data_dir),
-            "--train-samples-per-site",
-            str(args.train_samples_per_site),
-            "--val-samples-per-site",
-            str(args.val_samples_per_site),
-            "--test-samples-per-site",
-            str(args.test_samples_per_site),
-            "--proxy-strength",
-            str(proxy_strength),
-            "--seed",
-            str(args.seed),
-        ]
-    )
+    prepare_command = [
+        sys.executable,
+        str(PROJECT_DIR / "prepare_data.py"),
+        "--output-dir",
+        str(data_dir),
+        "--dataset-root",
+        str(dataset_root),
+        "--scenario",
+        args.scenario,
+        "--train-samples-per-site",
+        str(args.train_samples_per_site),
+        "--val-samples-per-site",
+        str(args.val_samples_per_site),
+        "--test-samples-per-site",
+        str(args.test_samples_per_site),
+        "--seed",
+        str(args.seed),
+    ]
+    if args.scenario == "recoverable":
+        prepare_command.extend(["--proxy-strength", str(proxy_strength)])
+    _run(prepare_command)
 
     adapter_checkpoint = ""
     if args.mode == "full":
@@ -184,8 +189,6 @@ def main() -> None:
         str(data_dir),
         "--cache-dir",
         str(cache_dir),
-        "--backend",
-        args.feature_backend,
         "--model-name-or-path",
         args.model_name_or_path,
         "--device",
