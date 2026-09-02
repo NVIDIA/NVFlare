@@ -2021,6 +2021,22 @@ def load_mutation_schema(cwd: Path) -> Dict[str, Any]:
     return read_yaml(path)
 
 
+def requested_metric_from_schema(schema: Dict[str, Any]) -> Optional[str]:
+    objective = schema.get("objective")
+    if objective is None:
+        return None
+    if not isinstance(objective, dict):
+        raise ValueError("mutation_schema.yaml objective must be a mapping")
+    requested = objective.get("requested_metric")
+    if requested is None:
+        requested = objective.get("metric")
+    if requested is None:
+        return None
+    if not isinstance(requested, str) or not requested.strip():
+        raise ValueError("mutation_schema.yaml objective.requested_metric must be a non-empty string")
+    return requested.strip()
+
+
 def apply_mutation_schema_contract(config: Dict[str, Any], schema: Dict[str, Any], workspace: Path) -> Dict[str, Any]:
     preferred_targets = schema.get("preferred_targets")
     if preferred_targets is None:
@@ -3550,6 +3566,8 @@ def prepare_initial_campaign(args: argparse.Namespace, job: Path) -> None:
         raise ValueError("--confirm-user-approved-cap-change is not valid for an initial campaign cap")
     paths = campaign_paths(args, job)
     schema = load_mutation_schema(job.parent)
+    if args.metric is None:
+        args.metric = requested_metric_from_schema(schema)
     timeout, _ = campaign_timeout(args, schema)
     config = import_job_config(
         args,

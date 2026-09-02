@@ -3500,7 +3500,7 @@ def test_prepare_and_status_never_request_simulation_runner_approval(tmp_path, m
             assert runner.main(["status", str(job)]) == 0
 
 
-def test_omitted_metric_uses_imported_job_metric(tmp_path, monkeypatch):
+def test_omitted_metric_without_schema_uses_imported_job_metric(tmp_path, monkeypatch):
     runner = _load_runner()
     job = tmp_path / "job.py"
     job.write_text("print('job')\n", encoding="utf-8")
@@ -3530,6 +3530,65 @@ def test_omitted_metric_uses_imported_job_metric(tmp_path, monkeypatch):
     assert runner.main(["initialize", str(job)]) == 0
     metadata = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign.json").read_text(encoding="utf-8"))
     assert metadata["settings"]["metric"] == "auc"
+
+
+def test_omitted_metric_adopts_mutation_schema_requested_metric(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job = tmp_path / "job.py"
+    job.write_text("print('job')\n", encoding="utf-8")
+    tmp_path.joinpath("client.py").write_text("ALGORITHM = 'baseline'\n", encoding="utf-8")
+    tmp_path.joinpath("mutation_schema.yaml").write_text(
+        """
+objective:
+  requested_metric: val_auc
+  optimization_metric: val_auc
+  metric_extraction_order: [val_auc]
+""".lstrip(),
+        encoding="utf-8",
+    )
+    config = _campaign_config()
+    config["objective"] = {
+        "metric": "val_auc",
+        "requested_metric": "val_auc",
+        "optimization_metric": "val_auc",
+        "metric_extraction_order": ["val_auc"],
+        "mode": "max",
+        "mode_contract_source": "core_default",
+        "job_key_metric": "train_proxy_auc",
+        "job_key_metric_source": "literal",
+        "metric_contract_source": "user_request",
+    }
+
+    def fake_import(args, *unused, **kwargs):
+        assert args.metric == "val_auc"
+        return deepcopy(config)
+
+    monkeypatch.setattr(runner, "import_job_config", fake_import)
+    monkeypatch.setattr(runner, "job_help", lambda *args, **kwargs: "")
+    monkeypatch.setattr(runner, "write_progress", lambda path, *args: path.write_bytes(b"progress"))
+    monkeypatch.setattr(
+        runner,
+        "run_job",
+        lambda run_def, **kwargs: runner.RunRecord(
+            "baseline", run_def.name, 0.6, 1.0, "none", "baseline", "python job.py", "/tmp/baseline"
+        ),
+    )
+
+    assert runner.main(["initialize", str(job), "--max-candidates", "1"]) == 0
+
+    metadata = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign.json").read_text(encoding="utf-8"))
+    resolved = runner.read_yaml(tmp_path / "autofl.yaml")["objective"]
+    assert metadata["settings"]["metric"] == "val_auc"
+    assert metadata["settings"]["max_candidates"] == 1
+    assert resolved["requested_metric"] == "val_auc"
+    assert resolved["optimization_metric"] == "val_auc"
+
+
+def test_requested_metric_from_schema_rejects_invalid_value():
+    runner = _load_runner()
+
+    with pytest.raises(ValueError, match="requested_metric must be a non-empty string"):
+        runner.requested_metric_from_schema({"objective": {"requested_metric": []}})
 
 
 def test_explicit_mutable_campaign_settings_persist_and_uncapped_removes_cap(tmp_path, monkeypatch):

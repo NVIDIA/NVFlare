@@ -46,14 +46,21 @@ Before editing or running a job, verify that the path is an existing NVFLARE `jo
 Resolve [run_job_campaign.py](scripts/run_job_campaign.py) relative to this `SKILL.md`, store its absolute path as `RUNNER`, and initialize the campaign:
 
 ```bash
-python "$RUNNER" initialize ./job.py [--metric <metric>] --env <sim|poc|prod> [--max-candidates <n>]
+python "$RUNNER" initialize ./job.py --metric <metric> --env <sim|poc|prod> [--max-candidates <n>]
 ```
+
+Pass the user's requested objective through `--metric`; do not rely on the job's key metric when the user named a
+different objective. If `mutation_schema.yaml` declares `objective.requested_metric`, the runner adopts it when the
+flag is omitted, but an explicit user objective still belongs in the command for auditable provenance.
 
 Campaign direction comes from `job.py` `key_metric_mode` or a same-metric `stop_cond`; NVFLARE defaults to `max`.
 Declare raw loss metrics with `key_metric_mode="min"`; explicitly negated metrics remain ordinary `max` metrics. For conditional
 recipes, safe refusals, and unnamed simulator roots, read the [job import contract](references/job-import-contract.md).
 
-Read `autofl.yaml` and the JSON response, then prepare an agent-authored candidate with a short hypothesis and optional candidate-only arguments:
+Read `autofl.yaml`, `.nvflare/autofl/campaign_state.json`, and the JSON response. Before preparing a candidate, verify
+that `requested_metric`, `optimization_metric`, direction, environment, and any user-specified candidate cap match the
+request. Stop before candidate training if any resolved field differs. Then prepare an agent-authored candidate with a
+short hypothesis and optional candidate-only arguments:
 
 ```bash
 python "$RUNNER" prepare ./job.py --name <candidate> --hypothesis "<expected improvement>" [--run-args "<args>"] [--family <slug>] [--literature-event <id>]
@@ -158,4 +165,3 @@ On import or validation failure, fix the reported contract issue without bypassi
 ## Stop Handling
 
 Finalize only when state reports `final_response_allowed=true` for stop, cap, policy, or blocker; then hand off to `nvflare-autofl-report`. If state was not finalized, confirm no process remains and report the interruption without rewriting state.
-
