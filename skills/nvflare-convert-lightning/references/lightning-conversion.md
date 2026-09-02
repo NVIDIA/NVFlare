@@ -1,7 +1,7 @@
 # Lightning Client API Conversion
 
 This reference covers converting a PyTorch Lightning `Trainer` workflow to the
-NVFLARE Lightning Client API. Load `../../nvflare-shared/references/pytorch-model-exchange.md` for
+NVFLARE Lightning Client API. Load `pytorch-model-exchange.md` for
 PyTorch-family tensor/state-dict rules before changing model exchange code.
 
 The Lightning integration owns model load and send through callbacks installed
@@ -23,10 +23,10 @@ Use this path for Lightning conversion:
    artifact. Never run the local target and then export after it succeeds.
 
 HE is not supported at steps 4–5: follow the HE-not-supported rule in
-`../../nvflare-shared/references/pytorch-family-recipe-selection.md`.
+`pytorch-family-recipe-selection.md`.
 
 Follow the Source Of Truth Boundary and the generated-entry rule in
-`../../nvflare-shared/references/conversion-workflow.md`: `client.py` is an
+`conversion-workflow.md`: `client.py` is an
 FL-only Client API entry point, not a standalone/FL auto-detecting launcher.
 
 ## Conversion Pattern
@@ -178,8 +178,8 @@ never a reason to fail closed or to skip requested best-model selection.
 If a custom `ModelAggregator` is selected, it must also aggregate supported
 client `FLModel.metrics` values and return them in the aggregated
 `FLModel.metrics`. Follow the Custom Aggregation contract in
-`../../nvflare-shared/references/conversion-workflow.md` and adapt
-`../../nvflare-shared/assets/aggregator.py`; a parameters-only aggregate loses
+`conversion-workflow.md` and adapt
+`../assets/aggregator.py`; a parameters-only aggregate loses
 the server-level metric even when clients delivered it.
 
 This template is self-contained packaged guidance; do not depend on NVFLARE
@@ -193,7 +193,7 @@ new structure.
   asks to change them.
 - Repo-shipped checkpoint files (`.ckpt` passed to `load_from_checkpoint`,
   `Trainer.fit(ckpt_path=...)`, or resume logic) are untrusted executable input
-  per `../../nvflare-shared/references/conversion-workflow.md`: full-unpickle loading of a
+  per `conversion-workflow.md`: full-unpickle loading of a
   repo-supplied checkpoint is ask/fail. Checkpoints produced by the current
   validation run (for example `ckpt_path="best"` from this run's checkpoint
   callback) may follow normal Lightning handling.
@@ -206,8 +206,8 @@ new structure.
 ## Local Data And Loss Policy
 
 Follow the training-policy distinction in
-`../../nvflare-shared/references/pytorch-model-exchange.md` and the site split guidance in
-`../../nvflare-shared/references/conversion-workflow.md`. Lightning-specific implication:
+`pytorch-model-exchange.md` and the site split guidance in
+`conversion-workflow.md`. Lightning-specific implication:
 label/site-derived values that affect `training_step`, `LightningDataModule`
 sampling, or validation/test decision logic remain local to each site partition
 unless the user explicitly requests one global training policy. Do not move
@@ -255,7 +255,7 @@ remain shared only when that matches the source's validation/test semantics.
 ## Model Construction Consistency
 
 Follow the shared model-config and construction-consistency rule in
-`../../nvflare-shared/references/conversion-workflow.md` ("Recipe Model Config"):
+`conversion-workflow.md` ("Recipe Model Config"):
 same class and constructor args on server and client, explicit config whenever
 reconstruction needs a constructor value, and derive-or-ask/fail-closed for it.
 
@@ -269,12 +269,12 @@ key).
 ## Source Layout
 
 Use the canonical FLARE source layout defined in
-`../../nvflare-shared/references/conversion-workflow.md` ("Generated Job Layout").
+`conversion-workflow.md` ("Generated Job Layout").
 Lightning-specific delta: `client.py` patches the trainer as the model-exchange
 path, and `model.py` holds the `LightningModule` (and `LightningDataModule`)
 definition when a new file is needed. Avoid ad hoc names such as `fl_train.py`
 unless the user requests them, and use
-`../../nvflare-shared/references/runtime-output-guidance.md` for runtime
+`runtime-output-guidance.md` for runtime
 workspaces, exported job directories, and validation output locations.
 
 If the Lightning entry point imports a model module or source file — whatever
@@ -290,7 +290,7 @@ module rather than re-authoring it.
 ## Recipe Reuse
 
 Lightning reuses the PyTorch recipe family. Follow
-`../../nvflare-shared/references/pytorch-family-recipe-selection.md` for recipe
+`pytorch-family-recipe-selection.md` for recipe
 discovery, the algorithm guide, catalog-based selection rules, and the
 HE-not-supported rule — the same catalog and rules apply to Lightning, including
 non-FedAvg workflows such as FedOpt, FedProx, SCAFFOLD, Cyclic, Swarm, and
@@ -303,9 +303,9 @@ The generated `job.py` should use the selected recipe's public parameters from
 `recipe.execute(SimEnv(...))`. HE is not supported: homomorphic-encryption
 recipes reject `SimEnv` and require provisioned `PocEnv`/`ProdEnv` outside
 conversion scope — follow the HE-not-supported rule in
-`../../nvflare-shared/references/pytorch-family-recipe-selection.md` (report
+`pytorch-family-recipe-selection.md` (report
 unsupported, route to provisioning/deployment, ask or fail closed; do not
 generate an HE job). Do not replace this with ad
 hoc SDK-internal APIs based on local source or docstring inspection. Follow
-`../../nvflare-shared/references/conversion-workflow.md` for export and
+`conversion-workflow.md` for export and
 command-line behavior.

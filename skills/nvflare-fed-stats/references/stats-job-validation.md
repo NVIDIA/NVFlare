@@ -1,6 +1,6 @@
 # Federated Statistics Job Validation
 
-Validate in the shared ladder order and stop at the first failed rung,
+Validate in the ladder below and stop at the first failed rung,
 reporting the product error. The skill adds one rung after the simulator
 run — output completeness, executed as ephemeral commands with no
 generated files. Parity verification (below) is documented for offline

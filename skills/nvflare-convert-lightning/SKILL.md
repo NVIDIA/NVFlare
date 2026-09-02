@@ -28,18 +28,18 @@ the same recipe `aggregator=` hook, and local validation and export.
 ## Standard Path
 
 Always read this converter SKILL.md with
-`../nvflare-shared/references/conversion-common.md`. For an explicit-FedAvg
+`references/conversion-common.md`. For an explicit-FedAvg
 conversion, load only these references, in workflow order:
 
 1. During inspection, `references/lightning-detection.md`.
 2. For generated splits, relative paths, or per-site data locations,
-   `../nvflare-shared/references/site-data-and-paths.md`.
+   `references/site-data-and-paths.md`.
 3. After `nvflare recipe show fedavg-pt --format json`,
-   `../nvflare-shared/references/pytorch-family-recipe-construction.md`.
+   `references/pytorch-family-recipe-construction.md`.
 4. During conversion, `references/lightning-conversion.md`, then
-   `../nvflare-shared/references/pytorch-model-exchange.md`.
+   `references/pytorch-model-exchange.md`.
 5. Only after generated files exist,
-   `../nvflare-shared/references/validation-evidence.md`, then
+   `references/validation-evidence.md`, then
    `references/lightning-validation.md`.
 
 Complete each workflow phase before loading the next phase's reference. Do not
@@ -72,7 +72,7 @@ distribution; handle conversion later as a separate request.
 
 ## Workflow
 
-1. Apply `../nvflare-shared/references/conversion-common.md` for the whole
+1. Apply `references/conversion-common.md` for the whole
    conversion; this SKILL.md states only the framework-specific deltas.
 2. Inspect before editing with `nvflare agent inspect source <path> --format json`
    plus direct reading; fact extraction is static. Confirm Lightning versus plain
@@ -80,7 +80,7 @@ distribution; handle conversion later as a separate request.
    exists. If inspection recommends `nvflare-orient` for active Lightning and
    Hugging Face Trainer owners, stop and hand off before editing.
 3. Apply the dependency-install ordering rule in
-   `../nvflare-shared/references/conversion-common.md` before any Python command
+   `references/conversion-common.md` before any Python command
    imports user, Lightning, NVFLARE, or declared dependency modules. Determine
    applicable dependencies from the selected execution path first. If required
    data artifacts already exist and static inspection shows that the selected
@@ -145,18 +145,18 @@ distribution; handle conversion later as a separate request.
 
 Load only the reference matching an encountered case:
 
-- `../nvflare-shared/references/conversion-workflow.md` for an unresolved
+- `references/conversion-workflow.md` for an unresolved
   non-standard rerun, authorization, or missing-semantics case; it no longer
   holds the data-location or partitioning contracts.
-- `../nvflare-shared/references/pytorch-family-recipe-selection.md` for an
+- `references/pytorch-family-recipe-selection.md` for an
   ambiguous or non-FedAvg algorithm; use its catalog for FedAvg, FedOpt, FedProx,
   SCAFFOLD, Cyclic, Swarm, or FedEval, and reserve `nvflare recipe list` for these cases.
-- `../nvflare-shared/references/dependency-install.md` when an applicable
+- `references/dependency-install.md` when an applicable
   dependency is missing.
-- `../nvflare-shared/references/runtime-output-guidance.md` for a read-only
+- `references/runtime-output-guidance.md` for a read-only
   source root or user-chosen output destination.
 - `references/lightning-ddp-and-tracking.md` when inspection finds its trigger.
-- `../nvflare-shared/references/metrics-and-artifact-reporting.md` when normal
+- `references/metrics-and-artifact-reporting.md` when normal
   metric artifacts are absent or inconsistent.
 
 ## Requirements
@@ -193,7 +193,7 @@ Load only the reference matching an encountered case:
   explicitly requested, and do not ask solely to enable them. This narrows
   `references/lightning-conversion.md`.
 - Must not make non-PyTorch-family skills load
-  `../nvflare-shared/references/pytorch-model-exchange.md`.
+  `references/pytorch-model-exchange.md`.
 - Site partitioning, custom aggregation, the Source Of Truth Boundary, and user
-  input/authorization follow `../nvflare-shared/references/conversion-common.md`.
+  input/authorization follow `references/conversion-common.md`.
 

@@ -96,6 +96,7 @@ LINT_SKILL_COMMAND_DRIFT = "skill-command-drift-lint"
 LINT_SKILL_HELPER_SCRIPT = "skill-helper-script-lint"
 LINT_SKILL_FIXTURE = "skill-fixture-lint"
 LINT_SKILL_RUNTIME_BOUNDARY = "skill-runtime-boundary-lint"
+LINT_SKILL_REFERENCE_PATH = "skill-reference-path-lint"
 LINT_SKILL_DEPENDENCY_INSTALL_SAFETY = "skill-dependency-install-safety-lint"
 
 FINDING_ERROR = "error"
@@ -122,6 +123,14 @@ _TRIGGER_TERMS = (
 _BOUNDARY_TERMS = ("do not use", "do-not-use", "use boundary", "boundary", "negative")
 _NORMATIVE_RE = re.compile(r"\b(must|must not|required|prohibited|approval)\b", re.IGNORECASE)
 _BACKTICK_NVFLARE_RE = re.compile(r"`(nvflare(?:\s+[^`]+)?)`")
+_MARKDOWN_LINK_TARGET_RE = re.compile(r"!?\[[^\]]*\]\((?P<target><[^>]+>|[^)\s]+)")
+_PACKAGED_BACKTICK_PATH_RE = re.compile(
+    r"`(?P<target>"
+    r"(?:references|assets|scripts)/[^`\s]+"
+    r"|(?:\.\./)+(?:references|assets|scripts|nvflare-[^/`\s]+)/[^`\s]+"
+    r"|\./(?:references|assets|scripts)/[^`\s]+"
+    r")`"
+)
 _SAFE_COMMAND_TOKEN_RE = re.compile(r"^(?:--?[A-Za-z0-9][\w-]*(?:=[^\s`;&|]+)?|[A-Za-z0-9_./:=+@%,-]+|<[^>\n]+>)$")
 _SIGNIFICANT_TOKEN_RE = re.compile(r"[a-z][a-z0-9_-]{2,}")
 _STOPWORDS = {
@@ -1350,6 +1359,49 @@ def _lint_dependency_install_safety(context: LintContext) -> None:
                         )
 
 
+def _lint_reference_paths(context: LintContext) -> None:
+    """Require packaged Markdown references to stay inside their owning skill."""
+    for record in context.records:
+        for markdown_path in _iter_skill_markdown_paths(record.skill_dir):
+            text = _read_bounded_text(markdown_path)
+            if text is None:
+                continue
+            for target, line_number, relative_to_skill in _iter_local_reference_targets(text):
+                base = record.skill_dir if relative_to_skill else markdown_path.parent
+                skill_dir = Path(os.path.abspath(record.skill_dir))
+                candidate = Path(os.path.abspath(base / target))
+                resolved_candidate = candidate.resolve(strict=False)
+                resolved_skill_dir = skill_dir.resolve(strict=False)
+                if not _path_is_within(candidate, skill_dir) or not _path_is_within(
+                    resolved_candidate, resolved_skill_dir
+                ):
+                    context.findings.append(
+                        _finding(
+                            LINT_SKILL_REFERENCE_PATH,
+                            FINDING_ERROR,
+                            markdown_path,
+                            f"packaged reference '{target}' escapes the owning skill directory",
+                            "Vendor the required file inside this skill and update the reference to its local path.",
+                            code="skill-reference-cross-skill",
+                            skill=record.name,
+                            line=line_number,
+                        )
+                    )
+                elif not candidate.exists():
+                    context.findings.append(
+                        _finding(
+                            LINT_SKILL_REFERENCE_PATH,
+                            FINDING_ERROR,
+                            markdown_path,
+                            f"packaged reference '{target}' does not exist",
+                            "Add the referenced file inside this skill or correct the relative path.",
+                            code="skill-reference-missing",
+                            skill=record.name,
+                            line=line_number,
+                        )
+                    )
+
+
 # Canonical lint registry: single source of truth for lint IDs, their run
 # order, and their implementations. V1_LINT_IDS and _LINT_FUNCTIONS derive
 # from it; do not maintain separate lists.
@@ -1365,6 +1417,7 @@ _LINT_REGISTRY = (
     (LINT_SKILL_HELPER_SCRIPT, _lint_helper_scripts),
     (LINT_SKILL_FIXTURE, _lint_fixtures),
     (LINT_SKILL_RUNTIME_BOUNDARY, _lint_runtime_boundary),
+    (LINT_SKILL_REFERENCE_PATH, _lint_reference_paths),
     (LINT_SKILL_DEPENDENCY_INSTALL_SAFETY, _lint_dependency_install_safety),
 )
 V1_LINT_IDS = tuple(lint_id for lint_id, _ in _LINT_REGISTRY)
@@ -1386,6 +1439,48 @@ def _iter_misplaced_eval_dirs(skill_dir: Path) -> Iterable[Path]:
             if current_dir != skill_dir:
                 yield current_dir / "evals"
             dir_names.remove("evals")
+
+
+def _iter_skill_markdown_paths(skill_dir: Path) -> Iterable[Path]:
+    for path in _iter_files_no_follow(skill_dir):
+        try:
+            relative_path = path.relative_to(skill_dir)
+        except ValueError:
+            continue
+        if relative_path.parts and relative_path.parts[0] == "evals":
+            continue
+        if path.suffix.lower() == ".md":
+            yield path
+
+
+def _iter_local_reference_targets(text: str) -> Iterable[tuple[str, int, bool]]:
+    for match in _MARKDOWN_LINK_TARGET_RE.finditer(text):
+        target = _normalize_local_reference_target(match.group("target"))
+        if target is not None:
+            yield target, text.count("\n", 0, match.start()) + 1, False
+    for match in _PACKAGED_BACKTICK_PATH_RE.finditer(text):
+        target = _normalize_local_reference_target(match.group("target"))
+        if target is not None:
+            relative_to_skill = not target.startswith(".")
+            yield target, text.count("\n", 0, match.start()) + 1, relative_to_skill
+
+
+def _normalize_local_reference_target(raw_target: str) -> Optional[str]:
+    target = raw_target.strip().strip("<>")
+    if not target or target.startswith(("#", "/", "//")):
+        return None
+    if re.match(r"^[A-Za-z][A-Za-z0-9+.-]*:", target):
+        return None
+    target = target.split("#", 1)[0].split("?", 1)[0]
+    return target or None
+
+
+def _path_is_within(path: Path, parent: Path) -> bool:
+    try:
+        path.relative_to(parent)
+    except ValueError:
+        return False
+    return True
 
 
 def _iter_packaged_runtime_files(skill_dir: Path) -> Iterable[tuple[Path, str]]:
@@ -1443,7 +1538,7 @@ def _scan_runtime_boundary(
                     file_path,
                     "packaged runtime skill content contains evaluator or benchmark-harness instructions",
                     "Keep evaluator hooks and benchmark instructions in the co-located repo-only "
-                    "evals/ content, not in SKILL.md, references/, scripts/, or shared references.",
+                    "evals/ content, not in SKILL.md, references/, assets/, or scripts/.",
                     code="skill-runtime-evaluator-hook",
                     skill=skill,
                     line=line_no,

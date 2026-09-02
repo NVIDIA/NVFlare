@@ -43,12 +43,12 @@ distribution; handle conversion later as a separate request.
 
 ## Workflow
 
-1. Load `../nvflare-shared/references/conversion-common.md` and apply it for the
+1. Load `references/conversion-common.md` and apply it for the
    whole conversion; this SKILL.md states only the framework-specific deltas.
-   Load `../nvflare-shared/references/conversion-workflow.md` only for a non-standard
+   Load `references/conversion-workflow.md` only for a non-standard
    rerun, authorization, or missing-semantics case; it no longer holds the
    data-location or partitioning contracts, whose invariants `conversion-common.md`
-   owns. Load `../nvflare-shared/references/site-data-and-paths.md` for generated
+   owns. Load `references/site-data-and-paths.md` for generated
    partitions, relative paths, or per-site data locations.
 2. Inspect before editing with `nvflare agent inspect source <path> --format json`
    plus direct reading. Fact extraction is static; do not import or execute
@@ -57,7 +57,7 @@ distribution; handle conversion later as a separate request.
    functions, data loading, metric names and denominators, local epochs/steps,
    requested client and round counts, source data split or partition evidence,
    tracking evidence, DDP evidence, and any custom aggregation intent.
-3. Apply the dependency-install ordering rule in `../nvflare-shared/references/conversion-common.md` before
+3. Apply the dependency-install ordering rule in `references/conversion-common.md` before
    any Python command imports user, PyTorch, NVFLARE, or declared dependency
    modules.
 4. Select the recipe from the requested FL workflow, not from PyTorch alone. For
@@ -65,14 +65,14 @@ distribution; handle conversion later as a separate request.
    identifies PyTorch — run `nvflare recipe show fedavg-pt --format json`
    directly and construct it; do not add per-site recipe config unless sites
    actually differ. Load
-   `../nvflare-shared/references/pytorch-family-recipe-selection.md` (discovery,
+   `references/pytorch-family-recipe-selection.md` (discovery,
    algorithm guide, catalog-based selection, HE-not-supported rule) only for
    ambiguous or non-FedAvg algorithms, reserving `nvflare recipe list` for those
    cases. Use the module, class, and parameters returned by `recipe show` for
    standard `job.py` construction; for `fedavg-pt`, import `FedAvgRecipe` from
    `nvflare.app_opt.pt.recipes.fedavg`, never from `nvflare.recipe`. After every
    `recipe show`, load
-   `../nvflare-shared/references/pytorch-family-recipe-construction.md` and
+   `references/pytorch-family-recipe-construction.md` and
    derive the recipe's construction capabilities. Load
    `references/recipe-selection.md` only when non-FedAvg or execution-mode
    details are needed.
@@ -89,7 +89,7 @@ distribution; handle conversion later as a separate request.
    whenever reconstruction needs values. Add requested `aggregator=` wiring,
    metric, tensor-transport, server offload, and execution settings derived
    from the shared PyTorch-family construction profile.
-7. Validate in a ladder per `../nvflare-shared/references/validation-evidence.md`:
+7. Validate in a ladder per `references/validation-evidence.md`:
    compile checks, recipe construction, one final full-run path chosen by the
    artifact being validated, with export and package inspection only for the
    selected exported-artifact path. For a local target, inspect the materialized
@@ -100,7 +100,7 @@ distribution; handle conversion later as a separate request.
    its security boundary.
 8. Report the recipe, changed files, validation status, metrics, and exact
    artifact paths. Load
-   `../nvflare-shared/references/metrics-and-artifact-reporting.md` only when
+   `references/metrics-and-artifact-reporting.md` only when
    normal metric artifacts are absent or inconsistent.
 
 ## Requirements
@@ -114,11 +114,11 @@ distribution; handle conversion later as a separate request.
   unchanged zero-argument defaults reconstruct it. Values must be statically
   clear from literal source, configuration, or supplied metadata. Otherwise ask
   one semantic question when an answer channel exists or fail closed.
-- Must follow `../nvflare-shared/references/pytorch-model-exchange.md` and
+- Must follow `references/pytorch-model-exchange.md` and
   `references/pytorch-client-api-conversion.md` for the canonical plain-PyTorch
   payload and round-loop pattern.
 - Must apply
-  `../nvflare-shared/references/pytorch-family-recipe-construction.md` after
+  `references/pytorch-family-recipe-construction.md` after
   `recipe show`; it is the canonical policy for optional recipe parameters,
   model selection, tensor transport, server disk offload, and execution mode.
   Never patch a framework-neutral runtime module or register FOBS handlers in
@@ -134,37 +134,37 @@ distribution; handle conversion later as a separate request.
   checkpoint that needs full unpickling is ask/fail, per
   `references/pytorch-client-api-conversion.md`.
 - Must not make non-PyTorch-family skills load
-  `../nvflare-shared/references/pytorch-model-exchange.md`; that reference is
+  `references/pytorch-model-exchange.md`; that reference is
   for plain PyTorch, PyTorch Lightning, and Hugging Face Trainer model/state-dict
   exchange only.
 - Site partitioning, custom aggregation, the Source Of Truth Boundary, and user
-  input/authorization follow `../nvflare-shared/references/conversion-common.md`.
+  input/authorization follow `references/conversion-common.md`.
 
 Always read this converter SKILL.md together with
-`../nvflare-shared/references/conversion-common.md`. The standard routing,
+`references/conversion-common.md`. The standard routing,
 recipe selection, and reporting path is inline, so common FedAvg does not load
 broad policy or algorithm-selection references. Load the client template,
 model-exchange reference, validation reference, and aggregator asset only when
 their phase needs them. Load other detailed references only for exceptions:
 
-- `../nvflare-shared/references/conversion-workflow.md` for the full conversion
+- `references/conversion-workflow.md` for the full conversion
   contract when a case is non-standard;
-- `../nvflare-shared/references/site-data-and-paths.md` only for generated site
+- `references/site-data-and-paths.md` only for generated site
   partitions, relative-path resolution, or per-site data locations;
-- `../nvflare-shared/references/pytorch-family-recipe-selection.md` only for
+- `references/pytorch-family-recipe-selection.md` only for
   ambiguous or non-FedAvg algorithms, and `references/recipe-selection.md` only
   for non-FedAvg or execution-mode construction details not supplied by
   `recipe show`;
-- `../nvflare-shared/references/pytorch-family-recipe-construction.md` after
+- `references/pytorch-family-recipe-construction.md` after
   every `recipe show`;
-- `../nvflare-shared/references/dependency-install.md` only when an install is
+- `references/dependency-install.md` only when an install is
   needed;
-- `../nvflare-shared/references/runtime-output-guidance.md` only for read-only
+- `references/runtime-output-guidance.md` only for read-only
   source roots or user-chosen output destinations;
-- `../nvflare-shared/references/metrics-and-artifact-reporting.md` only when
+- `references/metrics-and-artifact-reporting.md` only when
   metrics are absent or inconsistent;
-- `../nvflare-shared/references/validation-evidence.md` before validation, and
-  `../nvflare-shared/references/pytorch-model-exchange.md` only for PyTorch-family exchange;
+- `references/validation-evidence.md` before validation, and
+  `references/pytorch-model-exchange.md` only for PyTorch-family exchange;
 - `references/pytorch-client-api-conversion.md` for Client API conversion, and
   `references/job-validation.md` for PyTorch-specific validation failures.
 

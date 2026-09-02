@@ -126,8 +126,8 @@ flowchart TB
 | Layer | When | Implemented pieces | Purpose |
 | --- | --- | --- | --- |
 | Authoring source | Dev-time | `skills/`, `SKILL.md`, `references/` (runtime); `skills/<skill>/evals/` (evaluation suites) | Human-readable skill instructions and supporting evidence; eval suites are co-located with their skill but are not runtime guidance. |
-| Engineering lint tool | Dev-time / CI | `dev_tools/agent/skills/checks`, `python dev_tools/agent/skills/checks/cli.py`, pytest coverage | Deterministic admission checks for frontmatter, triggers, command drift, policy coverage, fixtures, and process metrics. This is a repo-local tool validated by pytest; it is not shipped in the wheel. |
-| Skill install | Install-time bridge | `npx skills add ./skills -a claude-code -a codex` (local) or `npx skills add NVIDIA/<skills-repo> -a claude-code -a codex` (published) | Standard [agentskills.io](https://agentskills.io) installer that copies the complete `skills/` tree, including each skill's co-located `evals/` evaluation metadata, into the Codex and Claude skill directories. `SKILL.md` remains the instruction entry point; `evals/` is not runtime guidance. Install the whole set together so cross-skill references (`nvflare-shared/`) resolve. NVFLARE ships no custom installer command. |
+| Engineering lint tool | Dev-time / CI | `dev_tools/agent/skills/checks`, `python dev_tools/agent/skills/checks/cli.py`, pytest coverage | Deterministic admission checks for frontmatter, triggers, command drift, reference-path portability, policy coverage, fixtures, and process metrics. This is a repo-local tool validated by pytest; it is not shipped in the wheel. |
+| Skill install | Install-time bridge | `npx skills add ./skills -a claude-code -a codex` (local) or `npx skills add NVIDIA/<skills-repo> -a claude-code -a codex` (published) | Standard [agentskills.io](https://agentskills.io) installer that copies selected skill directories, including each skill's co-located `evals/` evaluation metadata, into the Codex and Claude skill directories. `SKILL.md` remains the instruction entry point; `evals/` is not runtime guidance. Every skill owns its runtime references and assets, so whole-set and individual installation are both supported. NVFLARE ships no custom installer command. |
 | Runtime agent surface | Runtime | Codex/Claude skill loading, `nvflare agent inspect source|data`, recipe/job CLI | The agent reads skill instructions and uses NVFLARE commands to inspect, convert, validate, or diagnose. Source and data inspection are separate static capabilities. |
 | Benchmark harness | Separate | Follow-up work outside this PR | Separate architecture for measuring skill impact with Docker, SDK profiles, agent plugins, and reporting. |
 
@@ -145,7 +145,7 @@ current code:
   explicitly distinct from the forbidden `docs_root`.
 - Separate the two input surfaces by check type: **runtime-boundary checks**
   validate shippable artifacts only (`skills/`, `SKILL.md`, `references/`,
-  `assets/`, and the internal `skills/nvflare-shared/` skill), omitting each
+  `assets/`, and `scripts/`), omitting each
   co-located `evals/` suite from runtime-guidance scanning, while
   **trigger, coverage, process-metric, and fixture checks** deliberately consume
   the co-located eval suites under `skills/<skill>/evals/` to verify positive/negative
@@ -211,7 +211,7 @@ flowchart TB
 
 ```mermaid
 flowchart TD
-    SkillsRoot["repo-root skills/ (or published NVIDIA/<skills-repo>)"] --> SkillDirs["nvflare-orient, nvflare-convert-pytorch, nvflare-convert-lightning, nvflare-convert-huggingface, nvflare-diagnose-job, nvflare-shared (internal)"]
+    SkillsRoot["repo-root skills/ (or published NVIDIA/<skills-repo>)"] --> SkillDirs["eight independently portable nvflare-* skills"]
 
     SkillDirs --> Lint["Engineering lint tool: dev_tools/agent/skills/checks (frontmatter validation, admission checks)"]
 
@@ -219,7 +219,7 @@ flowchart TD
     Install --> Target["Agent skill dirs (.claude/skills, .agents/skills, ~/.claude/skills, ~/.codex/skills)"]
     Target --> Discover["Codex/Claude load installed skills"]
 
-    Install --> WholeSet["Install the whole set together so nvflare-shared relative refs resolve"]
+    Install --> AnySet["Install all skills or select one skill independently"]
 ```
 
 ## What The Skills Actually Do

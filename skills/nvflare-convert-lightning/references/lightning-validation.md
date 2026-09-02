@@ -1,37 +1,37 @@
 # Lightning Job Validation Notes
 
-Use `../../nvflare-shared/references/validation-evidence.md` for generic validation status,
+Use `validation-evidence.md` for generic validation status,
 commands, blockers, and evidence reporting. Use
-`../../nvflare-shared/references/metrics-and-artifact-reporting.md` for final metrics, round
+`metrics-and-artifact-reporting.md` for final metrics, round
 metrics, model artifact paths, and missing-evidence reporting. This file only
 covers Lightning-specific validation checks.
 
 ## Validate In Order
 
 1. If an applicable dependency is missing, load
-   `../../nvflare-shared/references/dependency-install.md` and install it before
+   `dependency-install.md` and install it before
    importing the user's Lightning code. Do not load that reference for an
    already-satisfied environment.
 2. Before a full run, select exactly one final validation target:
    - For local or first-run simulation without an export claim, run only
      `python job.py` and follow
-     `../../nvflare-shared/references/runtime-output-guidance.md` for workspace
+     `runtime-output-guidance.md` for workspace
      location.
    - For a requested exported/deployable artifact, run the recipe's public
      export command, inspect the export per
-     `../../nvflare-shared/references/conversion-workflow.md` ("Export"), and run
+     `conversion-workflow.md` ("Export"), and run
      only the exported folder with the simulator CLI. Do not first run
      `python job.py` as a local simulation.
    HE is not supported: homomorphic-encryption recipes reject `SimEnv` and
    require provisioned `PocEnv`/`ProdEnv` outside conversion scope, so refuse an
    HE request before this step. Report it as unsupported and route to
    provisioning/deployment per the HE-not-supported rule in
-   `../../nvflare-shared/references/pytorch-family-recipe-selection.md` and
-   `../../nvflare-shared/references/conversion-workflow.md` rather than
+   `pytorch-family-recipe-selection.md` and
+   `conversion-workflow.md` rather than
    generating an HE job.
 3. Run the selected target to completion per the shared contract
-   (`../../nvflare-shared/references/conversion-workflow.md` hard-stop and
-   `../../nvflare-shared/references/validation-evidence.md` evidence contract).
+   (`conversion-workflow.md` hard-stop and
+   `validation-evidence.md` evidence contract).
    Never run the other target after success. After failure, diagnose, apply a
    scoped fix, and rerun the same target; change targets only when evidence shows
    that the original target does not represent the requested artifact.

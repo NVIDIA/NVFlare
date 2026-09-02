@@ -37,7 +37,7 @@ PT_TEMPLATES = SKILLS_ROOT / "nvflare-convert-pytorch" / "assets"
 LIGHTNING_TEMPLATES = SKILLS_ROOT / "nvflare-convert-lightning" / "assets"
 HF_TEMPLATES = SKILLS_ROOT / "nvflare-convert-huggingface" / "assets"
 HF_SCRIPTS = SKILLS_ROOT / "nvflare-convert-huggingface" / "scripts"
-SHARED_TEMPLATES = SKILLS_ROOT / "nvflare-shared" / "assets"
+COMMON_TEMPLATES = SKILLS_ROOT / "nvflare-convert-pytorch" / "assets"
 
 
 def _load_module(path: Path):
@@ -1192,7 +1192,7 @@ def test_custom_aggregator_template_step_weighted_average():
     from nvflare.apis.dxo import MetaKey
     from nvflare.app_common.abstract.fl_model import FLModel
 
-    module = _load_module(SHARED_TEMPLATES / "aggregator.py")
+    module = _load_module(COMMON_TEMPLATES / "aggregator.py")
     aggregator = module.WeightedAggregator()
 
     aggregator.accept_model(FLModel(params={"w": np.array([2.0])}, meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 1}))
@@ -1209,7 +1209,7 @@ def test_custom_aggregator_template_carries_weighted_metrics():
     from nvflare.apis.dxo import MetaKey
     from nvflare.app_common.abstract.fl_model import FLModel
 
-    module = _load_module(SHARED_TEMPLATES / "aggregator.py")
+    module = _load_module(COMMON_TEMPLATES / "aggregator.py")
     aggregator = module.WeightedAggregator()
 
     aggregator.accept_model(
@@ -1247,7 +1247,7 @@ def test_custom_aggregator_template_disables_metrics_when_any_client_omits_them(
     from nvflare.apis.dxo import MetaKey
     from nvflare.app_common.abstract.fl_model import FLModel
 
-    module = _load_module(SHARED_TEMPLATES / "aggregator.py")
+    module = _load_module(COMMON_TEMPLATES / "aggregator.py")
     aggregator = module.WeightedAggregator()
 
     aggregator.accept_model(
@@ -1272,7 +1272,7 @@ def test_custom_aggregator_template_uses_per_key_metric_denominators():
     from nvflare.apis.dxo import MetaKey
     from nvflare.app_common.abstract.fl_model import FLModel
 
-    module = _load_module(SHARED_TEMPLATES / "aggregator.py")
+    module = _load_module(COMMON_TEMPLATES / "aggregator.py")
     aggregator = module.WeightedAggregator()
 
     aggregator.accept_model(
@@ -1303,7 +1303,7 @@ def test_custom_aggregator_template_keeps_extreme_weighted_metrics_finite():
     from nvflare.apis.dxo import MetaKey
     from nvflare.app_common.abstract.fl_model import FLModel
 
-    module = _load_module(SHARED_TEMPLATES / "aggregator.py")
+    module = _load_module(COMMON_TEMPLATES / "aggregator.py")
     aggregator = module.WeightedAggregator()
 
     for score in (1e308, -1e308):
@@ -1328,7 +1328,7 @@ def test_custom_aggregator_template_keeps_extreme_weighted_params_finite():
     from nvflare.apis.dxo import MetaKey
     from nvflare.app_common.abstract.fl_model import FLModel
 
-    module = _load_module(SHARED_TEMPLATES / "aggregator.py")
+    module = _load_module(COMMON_TEMPLATES / "aggregator.py")
     aggregator = module.WeightedAggregator()
 
     for value in (0.5, 0.9):
@@ -1354,7 +1354,7 @@ def test_custom_aggregator_template_materializes_lazy_disk_offload_refs():
     from nvflare.apis.dxo import MetaKey
     from nvflare.app_common.abstract.fl_model import FLModel
 
-    module = _load_module(SHARED_TEMPLATES / "aggregator.py")
+    module = _load_module(COMMON_TEMPLATES / "aggregator.py")
     aggregator = module.WeightedAggregator()
 
     class _LazyRef:
@@ -1384,7 +1384,7 @@ def test_custom_aggregator_template_averages_per_key_with_mismatched_keys():
     from nvflare.apis.dxo import MetaKey
     from nvflare.app_common.abstract.fl_model import FLModel
 
-    module = _load_module(SHARED_TEMPLATES / "aggregator.py")
+    module = _load_module(COMMON_TEMPLATES / "aggregator.py")
     aggregator = module.WeightedAggregator()
 
     aggregator.accept_model(FLModel(params={"shared": np.array([2.0])}, meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 1}))
@@ -1423,7 +1423,7 @@ def test_custom_aggregator_template_falls_back_to_unit_weight_for_bad_step_count
     from nvflare.apis.dxo import MetaKey
     from nvflare.app_common.abstract.fl_model import FLModel
 
-    module = _load_module(SHARED_TEMPLATES / "aggregator.py")
+    module = _load_module(COMMON_TEMPLATES / "aggregator.py")
     aggregator = module.WeightedAggregator()
 
     meta = {} if bad_steps is None else {MetaKey.NUM_STEPS_CURRENT_ROUND: bad_steps}
@@ -1440,7 +1440,7 @@ def test_custom_aggregator_template_resets_between_rounds():
 
     from nvflare.app_common.abstract.fl_model import FLModel
 
-    module = _load_module(SHARED_TEMPLATES / "aggregator.py")
+    module = _load_module(COMMON_TEMPLATES / "aggregator.py")
     aggregator = module.WeightedAggregator()
 
     aggregator.accept_model(FLModel(params={"w": np.array([1.0])}))

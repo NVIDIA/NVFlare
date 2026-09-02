@@ -169,7 +169,7 @@ def test_pytorch_family_construction_owns_best_model_metric_policy():
     client_text = skill_root.joinpath("references/pytorch-client-api-conversion.md").read_text(encoding="utf-8")
     validation_text = skill_root.joinpath("references/job-validation.md").read_text(encoding="utf-8")
     construction_text = repo_root.joinpath(
-        "skills/nvflare-shared/references/pytorch-family-recipe-construction.md"
+        "skills/nvflare-convert-pytorch/references/pytorch-family-recipe-construction.md"
     ).read_text(encoding="utf-8")
     lightning_ddp_text = repo_root.joinpath(
         "skills/nvflare-convert-lightning/references/lightning-ddp-and-tracking.md"
@@ -252,9 +252,9 @@ def test_pytorch_family_construction_owns_best_model_metric_policy():
 
 def test_pytorch_model_exchange_owns_plain_pytorch_send_pattern():
     repo_root = Path(__file__).resolve().parents[4]
-    model_exchange_text = repo_root.joinpath("skills/nvflare-shared/references/pytorch-model-exchange.md").read_text(
-        encoding="utf-8"
-    )
+    model_exchange_text = repo_root.joinpath(
+        "skills/nvflare-convert-pytorch/references/pytorch-model-exchange.md"
+    ).read_text(encoding="utf-8")
     client_reference_text = repo_root.joinpath(
         "skills/nvflare-convert-pytorch/references/pytorch-client-api-conversion.md"
     ).read_text(encoding="utf-8")
@@ -267,12 +267,12 @@ def test_pytorch_model_exchange_owns_plain_pytorch_send_pattern():
 
 def test_conversion_skills_keep_preprocessing_statistics_local_by_default():
     repo_root = Path(__file__).resolve().parents[4]
-    common_text = repo_root.joinpath("skills/nvflare-shared/references/conversion-common.md").read_text(
+    common_text = repo_root.joinpath("skills/nvflare-convert-pytorch/references/conversion-common.md").read_text(
         encoding="utf-8"
     )
-    model_exchange_text = repo_root.joinpath("skills/nvflare-shared/references/pytorch-model-exchange.md").read_text(
-        encoding="utf-8"
-    )
+    model_exchange_text = repo_root.joinpath(
+        "skills/nvflare-convert-pytorch/references/pytorch-model-exchange.md"
+    ).read_text(encoding="utf-8")
     normalized_common = " ".join(common_text.split())
     normalized_model_exchange = " ".join(model_exchange_text.split())
 
@@ -292,14 +292,14 @@ def test_pytorch_family_construction_policy_is_canonical_and_capability_based():
     lightning_skill = repo_root.joinpath("skills/nvflare-convert-lightning/SKILL.md").read_text(encoding="utf-8")
     recipe_text = pytorch_root.joinpath("references/recipe-selection.md").read_text(encoding="utf-8")
     validation_text = pytorch_root.joinpath("references/job-validation.md").read_text(encoding="utf-8")
-    construction_path = "../nvflare-shared/references/pytorch-family-recipe-construction.md"
+    construction_path = "references/pytorch-family-recipe-construction.md"
     construction_text = repo_root.joinpath(
-        "skills/nvflare-shared/references/pytorch-family-recipe-construction.md"
+        "skills/nvflare-convert-pytorch/references/pytorch-family-recipe-construction.md"
     ).read_text(encoding="utf-8")
-    model_exchange_text = repo_root.joinpath("skills/nvflare-shared/references/pytorch-model-exchange.md").read_text(
-        encoding="utf-8"
-    )
-    workflow_text = repo_root.joinpath("skills/nvflare-shared/references/conversion-workflow.md").read_text(
+    model_exchange_text = repo_root.joinpath(
+        "skills/nvflare-convert-pytorch/references/pytorch-model-exchange.md"
+    ).read_text(encoding="utf-8")
+    workflow_text = repo_root.joinpath("skills/nvflare-convert-pytorch/references/conversion-workflow.md").read_text(
         encoding="utf-8"
     )
     hello_pt_job = repo_root.joinpath("examples/hello-world/hello-pt/job.py").read_text(encoding="utf-8")
@@ -348,7 +348,7 @@ def test_pytorch_family_construction_policy_is_canonical_and_capability_based():
 
 def test_conversion_skills_treat_per_site_train_args_as_complete_replacements():
     repo_root = Path(__file__).resolve().parents[4]
-    shared_references = repo_root / "skills" / "nvflare-shared" / "references"
+    shared_references = repo_root / "skills" / "nvflare-convert-pytorch" / "references"
     construction_text = shared_references.joinpath("pytorch-family-recipe-construction.md").read_text(encoding="utf-8")
     site_data_text = shared_references.joinpath("site-data-and-paths.md").read_text(encoding="utf-8")
     lightning_text = repo_root.joinpath("skills/nvflare-convert-lightning/SKILL.md").read_text(encoding="utf-8")
@@ -390,18 +390,6 @@ def test_seed_skill_versions_stay_at_release_version():
         assert frontmatter["metadata"]["version"] == "0.1.0", skill_path
 
 
-def test_shared_inputs_keep_the_current_user_request_authoritative():
-    repo_root = Path(__file__).resolve().parents[4]
-    shared_text = repo_root.joinpath("skills/nvflare-shared/SKILL.md").read_text(encoding="utf-8")
-    normalized = " ".join(shared_text.split())
-
-    current_request = "values supplied by the user in the current request"
-    selected_state = "an applicable state file explicitly selected by the consuming skill"
-    assert normalized.index(current_request) < normalized.index(selected_state)
-    assert "for values the current request does not specify" in normalized
-    assert "Never let a state file, source file, or inspected artifact silently override" in normalized
-
-
 def test_lightning_training_metrics_use_automatic_pre_fit_delivery():
     repo_root = Path(__file__).resolve().parents[4]
     skill_root = repo_root / "skills" / "nvflare-convert-lightning"
@@ -409,10 +397,12 @@ def test_lightning_training_metrics_use_automatic_pre_fit_delivery():
     conversion_text = skill_root.joinpath("references/lightning-conversion.md").read_text(encoding="utf-8")
     validation_text = skill_root.joinpath("references/lightning-validation.md").read_text(encoding="utf-8")
     client_template = skill_root.joinpath("assets/lightning_client.py").read_text(encoding="utf-8")
-    workflow_text = repo_root.joinpath("skills/nvflare-shared/references/conversion-workflow.md").read_text(
+    workflow_text = repo_root.joinpath("skills/nvflare-convert-pytorch/references/conversion-workflow.md").read_text(
         encoding="utf-8"
     )
-    aggregator_template = repo_root.joinpath("skills/nvflare-shared/assets/aggregator.py").read_text(encoding="utf-8")
+    aggregator_template = repo_root.joinpath("skills/nvflare-convert-pytorch/assets/aggregator.py").read_text(
+        encoding="utf-8"
+    )
     normalized_skill = " ".join(skill_text.split())
     normalized_conversion = " ".join(conversion_text.split())
     normalized_validation = " ".join(validation_text.split())
@@ -455,10 +445,10 @@ def test_lightning_conversion_limits_reference_loading_and_full_run_validation()
     skill_text = skill_root.joinpath("SKILL.md").read_text(encoding="utf-8")
     conversion_text = skill_root.joinpath("references/lightning-conversion.md").read_text(encoding="utf-8")
     validation_text = skill_root.joinpath("references/lightning-validation.md").read_text(encoding="utf-8")
-    shared_root = repo_root / "skills" / "nvflare-shared" / "references"
-    common_text = shared_root.joinpath("conversion-common.md").read_text(encoding="utf-8")
-    workflow_text = shared_root.joinpath("conversion-workflow.md").read_text(encoding="utf-8")
-    site_data_text = shared_root.joinpath("site-data-and-paths.md").read_text(encoding="utf-8")
+    common_root = repo_root / "skills" / "nvflare-convert-pytorch" / "references"
+    common_text = common_root.joinpath("conversion-common.md").read_text(encoding="utf-8")
+    workflow_text = common_root.joinpath("conversion-workflow.md").read_text(encoding="utf-8")
+    site_data_text = common_root.joinpath("site-data-and-paths.md").read_text(encoding="utf-8")
     eval_data = json.loads(skill_root.joinpath("evals/evals.json").read_text(encoding="utf-8"))
     basic_eval = _eval_by_id(eval_data, "lightning-convert-basic")["nvflare"]
     mandatory_ids = {item["id"] for item in basic_eval["mandatory_behavior"]}
@@ -485,12 +475,12 @@ def test_lightning_conversion_limits_reference_loading_and_full_run_validation()
     requirements_position = skill_text.index("## Requirements")
     assert standard_path_position < workflow_position < non_standard_position < requirements_position
     conditional_references = (
-        "../nvflare-shared/references/conversion-workflow.md",
-        "../nvflare-shared/references/pytorch-family-recipe-selection.md",
-        "../nvflare-shared/references/dependency-install.md",
-        "../nvflare-shared/references/runtime-output-guidance.md",
+        "references/conversion-workflow.md",
+        "references/pytorch-family-recipe-selection.md",
+        "references/dependency-install.md",
+        "references/runtime-output-guidance.md",
         "references/lightning-ddp-and-tracking.md",
-        "../nvflare-shared/references/metrics-and-artifact-reporting.md",
+        "references/metrics-and-artifact-reporting.md",
     )
     for reference in conditional_references:
         assert skill_text.count(reference) == 1
@@ -532,12 +522,12 @@ def test_lightning_conversion_limits_reference_loading_and_full_run_validation()
 
 def test_data_location_invariants_stay_on_the_always_loaded_path():
     """The data-location rules apply to every conversion, so they must live in the
-    always-loaded shared reference rather than behind the site-data-and-paths gate."""
+    always-loaded common reference rather than behind the site-data-and-paths gate."""
     repo_root = Path(__file__).resolve().parents[4]
-    shared_root = repo_root / "skills" / "nvflare-shared" / "references"
-    common_text = shared_root.joinpath("conversion-common.md").read_text(encoding="utf-8")
-    site_data_text = shared_root.joinpath("site-data-and-paths.md").read_text(encoding="utf-8")
-    workflow_text = shared_root.joinpath("conversion-workflow.md").read_text(encoding="utf-8")
+    common_root = repo_root / "skills" / "nvflare-convert-pytorch" / "references"
+    common_text = common_root.joinpath("conversion-common.md").read_text(encoding="utf-8")
+    site_data_text = common_root.joinpath("site-data-and-paths.md").read_text(encoding="utf-8")
+    workflow_text = common_root.joinpath("conversion-workflow.md").read_text(encoding="utf-8")
     normalized_common = " ".join(common_text.split())
     normalized_site_data = " ".join(site_data_text.split())
 
@@ -587,7 +577,7 @@ def test_huggingface_source_local_paths_are_conditional_and_cwd_independent():
     repo_root = Path(__file__).resolve().parents[4]
     hf_root = repo_root / "skills" / "nvflare-convert-huggingface"
     job_text = hf_root.joinpath("assets/job.py").read_text(encoding="utf-8")
-    site_data_text = repo_root.joinpath("skills/nvflare-shared/references/site-data-and-paths.md").read_text(
+    site_data_text = repo_root.joinpath("skills/nvflare-convert-pytorch/references/site-data-and-paths.md").read_text(
         encoding="utf-8"
     )
     validation_text = hf_root.joinpath("references/huggingface-validation.md").read_text(encoding="utf-8")
@@ -605,7 +595,7 @@ def test_huggingface_source_local_paths_are_conditional_and_cwd_independent():
     assert "explicit absolute source-project root" in normalized_site_data
     assert "Use `SOURCE_DIR` as that root only when" in normalized_site_data
     assert "must validate against the separate original root" in normalized_validation
-    assert "`../../nvflare-shared/references/site-data-and-paths.md`" in validation_text
+    assert "`site-data-and-paths.md`" in validation_text
     assert "Preserve an absolute local file or directory path" in normalized_site_data
     assert "Pass a per-site path through `per_site_config`" in normalized_site_data
     assert "Do not pass a Hugging Face Hub identifier or URL" in normalized_site_data
@@ -680,10 +670,10 @@ def test_pytorch_family_capability_evals_cover_fedeval_and_dataparallel():
 def test_pytorch_conversion_stops_after_dependency_install_failure():
     repo_root = Path(__file__).resolve().parents[4]
     skill_text = repo_root.joinpath("skills/nvflare-convert-pytorch/SKILL.md").read_text(encoding="utf-8")
-    dependency_text = repo_root.joinpath("skills/nvflare-shared/references/dependency-install.md").read_text(
+    dependency_text = repo_root.joinpath("skills/nvflare-convert-pytorch/references/dependency-install.md").read_text(
         encoding="utf-8"
     )
-    workflow_text = repo_root.joinpath("skills/nvflare-shared/references/conversion-workflow.md").read_text(
+    workflow_text = repo_root.joinpath("skills/nvflare-convert-pytorch/references/conversion-workflow.md").read_text(
         encoding="utf-8"
     )
     eval_data = json.loads(
@@ -696,7 +686,7 @@ def test_pytorch_conversion_stops_after_dependency_install_failure():
     mandatory_ids = set(mandatory_by_id)
     prohibited_ids = {item["id"] for item in basic_eval["prohibited_behavior"]}
 
-    common_text = repo_root.joinpath("skills/nvflare-shared/references/conversion-common.md").read_text(
+    common_text = repo_root.joinpath("skills/nvflare-convert-pytorch/references/conversion-common.md").read_text(
         encoding="utf-8"
     )
     normalized_common = " ".join(common_text.split())
@@ -761,7 +751,7 @@ def test_pytorch_conversion_stops_after_dependency_install_failure():
 
 def test_shared_conversion_policies_have_single_canonical_owners():
     repo_root = Path(__file__).resolve().parents[4]
-    references = repo_root / "skills" / "nvflare-shared" / "references"
+    references = repo_root / "skills" / "nvflare-convert-pytorch" / "references"
     common_text = references.joinpath("conversion-common.md").read_text(encoding="utf-8")
     dependency_text = references.joinpath("dependency-install.md").read_text(encoding="utf-8")
     workflow_text = references.joinpath("conversion-workflow.md").read_text(encoding="utf-8")
@@ -795,7 +785,7 @@ def test_shared_conversion_policies_have_single_canonical_owners():
 
 def test_shared_conversion_uses_one_simulator_topology_owner():
     repo_root = Path(__file__).resolve().parents[4]
-    references = repo_root / "skills" / "nvflare-shared" / "references"
+    references = repo_root / "skills" / "nvflare-convert-pytorch" / "references"
     common_text = " ".join(references.joinpath("conversion-common.md").read_text(encoding="utf-8").split())
     construction_text = " ".join(
         references.joinpath("pytorch-family-recipe-construction.md").read_text(encoding="utf-8").split()
@@ -817,9 +807,7 @@ def test_shared_conversion_uses_one_simulator_topology_owner():
     assert "single-topology-owner rule in `conversion-common.md`" in construction_text
     assert "canonical single-topology-owner rule in `conversion-common.md`" in validation_text
     assert "canonical single-topology-owner rule" not in workflow_text
-    assert (
-        "single-topology-owner rule from `../../nvflare-shared/references/conversion-common.md`" in hf_conversion_text
-    )
+    assert "single-topology-owner rule from `conversion-common.md`" in hf_conversion_text
     assert "clients=list(" not in construction_text
     assert "clients=list(" not in workflow_text
     assert "clients=list(" not in hf_conversion_text
@@ -837,7 +825,7 @@ def test_shared_conversion_uses_one_simulator_topology_owner():
 
 def test_client_api_rank_contract_is_shared_and_process_conditional():
     repo_root = Path(__file__).resolve().parents[4]
-    common_text = repo_root.joinpath("skills/nvflare-shared/references/conversion-common.md").read_text(
+    common_text = repo_root.joinpath("skills/nvflare-convert-pytorch/references/conversion-common.md").read_text(
         encoding="utf-8"
     )
     normalized_common = " ".join(common_text.split())
@@ -852,7 +840,7 @@ def test_client_api_rank_contract_is_shared_and_process_conditional():
         "skills/nvflare-convert-lightning/references/lightning-ddp-and-tracking.md"
     ).read_text(encoding="utf-8")
     construction_text = repo_root.joinpath(
-        "skills/nvflare-shared/references/pytorch-family-recipe-construction.md"
+        "skills/nvflare-convert-pytorch/references/pytorch-family-recipe-construction.md"
     ).read_text(encoding="utf-8")
     normalized_hf_state = " ".join(hf_state.split())
     normalized_lightning_ddp = " ".join(lightning_ddp.split())
@@ -871,7 +859,7 @@ def test_client_api_rank_contract_is_shared_and_process_conditional():
 
     for framework in ("pytorch", "lightning", "huggingface"):
         skill_text = repo_root.joinpath(f"skills/nvflare-convert-{framework}/SKILL.md").read_text(encoding="utf-8")
-        assert "../nvflare-shared/references/conversion-common.md" in skill_text
+        assert "references/conversion-common.md" in skill_text
 
     assert "def main(trainer_factory, *, evaluate_before_train=True)" in hf_client
     assert "flare.init()" in hf_client
@@ -896,7 +884,7 @@ def test_client_api_rank_contract_is_shared_and_process_conditional():
 
 def test_all_conversion_skills_preserve_required_model_constructor_args():
     repo_root = Path(__file__).resolve().parents[4]
-    references = repo_root / "skills" / "nvflare-shared" / "references"
+    references = repo_root / "skills" / "nvflare-convert-pytorch" / "references"
     common_text = " ".join(references.joinpath("conversion-common.md").read_text(encoding="utf-8").split())
     workflow_text = " ".join(references.joinpath("conversion-workflow.md").read_text(encoding="utf-8").split())
     validation_text = " ".join(references.joinpath("validation-evidence.md").read_text(encoding="utf-8").split())
@@ -957,44 +945,71 @@ def test_skills_readme_frontmatter_example_includes_required_author():
     assert "root-level `version` is ignored" in normalized
 
 
-def test_shared_skill_metadata_and_progressive_disclosure_structure():
+def test_published_skills_are_independently_packaged():
     repo_root = Path(__file__).resolve().parents[4]
-    shared_file = repo_root.joinpath("skills/nvflare-shared/SKILL.md")
-    shared_text = shared_file.read_text(encoding="utf-8")
-    metadata = parse_skill_frontmatter(shared_file)
+    skills_root = repo_root / "skills"
+    expected_names = {
+        "nvflare-autofl",
+        "nvflare-autofl-report",
+        "nvflare-convert-huggingface",
+        "nvflare-convert-lightning",
+        "nvflare-convert-pytorch",
+        "nvflare-diagnose-job",
+        "nvflare-fed-stats",
+        "nvflare-orient",
+    }
+    actual_names = {path.parent.name for path in skills_root.glob("*/SKILL.md")}
 
-    assert 50 <= len(metadata["description"]) <= 150
-    assert "Use only when" in metadata["description"]
-    assert "version" not in metadata
-    assert metadata["metadata"]["version"] == "0.1.0"
-    assert "Use this internal, non-triggered skill only to load" in " ".join(shared_text.split())
-    assert "min-flare-version:" in shared_text
-    assert "blast-radius:" in shared_text
-    assert "min_flare_version:" not in shared_text
-    assert "blast_radius:" not in shared_text
-    for heading in (
-        "## Purpose",
-        "## Instructions",
-        "## Inputs",
-        "## Examples",
-        "## Prerequisites",
-        "## Limitations",
-        "## Troubleshooting",
-    ):
-        assert heading in shared_text
+    assert actual_names == expected_names
+    assert not skills_root.joinpath("nvflare-shared").exists()
+
+    common_reference_names = {
+        "conversion-common.md",
+        "conversion-workflow.md",
+        "dependency-install.md",
+        "metrics-and-artifact-reporting.md",
+        "pytorch-family-recipe-construction.md",
+        "pytorch-family-recipe-selection.md",
+        "pytorch-model-exchange.md",
+        "runtime-output-guidance.md",
+        "site-data-and-paths.md",
+        "validation-evidence.md",
+    }
+    converter_names = (
+        "nvflare-convert-pytorch",
+        "nvflare-convert-lightning",
+        "nvflare-convert-huggingface",
+    )
+    canonical = skills_root / converter_names[0]
+    for converter_name in converter_names:
+        converter = skills_root / converter_name
+        assert common_reference_names <= {path.name for path in converter.joinpath("references").glob("*.md")}
+        assert converter.joinpath("assets", "aggregator.py").is_file()
+        for reference_name in common_reference_names:
+            assert (
+                converter.joinpath("references", reference_name).read_bytes()
+                == canonical.joinpath("references", reference_name).read_bytes()
+            )
+        assert (
+            converter.joinpath("assets", "aggregator.py").read_bytes()
+            == canonical.joinpath("assets", "aggregator.py").read_bytes()
+        )
+
+    for skill_name in ("nvflare-autofl", "nvflare-fed-stats"):
+        assert skills_root.joinpath(skill_name, "references", "dependency-install.md").is_file()
 
 
 def test_huggingface_preflights_and_metric_reporting_do_not_create_false_recoveries():
     repo_root = Path(__file__).resolve().parents[4]
-    dependency_text = repo_root.joinpath("skills/nvflare-shared/references/dependency-install.md").read_text(
+    dependency_text = repo_root.joinpath("skills/nvflare-convert-pytorch/references/dependency-install.md").read_text(
         encoding="utf-8"
     )
-    validation_text = repo_root.joinpath("skills/nvflare-shared/references/validation-evidence.md").read_text(
+    validation_text = repo_root.joinpath("skills/nvflare-convert-pytorch/references/validation-evidence.md").read_text(
         encoding="utf-8"
     )
-    metrics_text = repo_root.joinpath("skills/nvflare-shared/references/metrics-and-artifact-reporting.md").read_text(
-        encoding="utf-8"
-    )
+    metrics_text = repo_root.joinpath(
+        "skills/nvflare-convert-pytorch/references/metrics-and-artifact-reporting.md"
+    ).read_text(encoding="utf-8")
     hf_root = repo_root / "skills" / "nvflare-convert-huggingface"
     hf_skill = hf_root.joinpath("SKILL.md").read_text(encoding="utf-8")
     hf_validation = hf_root.joinpath("references/huggingface-validation.md").read_text(encoding="utf-8")
@@ -1087,7 +1102,7 @@ def test_orientation_routes_only_unresolved_explicit_conversions():
 def test_shared_validation_requires_foreground_final_simulation():
     repo_root = Path(__file__).resolve().parents[4]
     shared_validation = " ".join(
-        repo_root.joinpath("skills/nvflare-shared/references/validation-evidence.md")
+        repo_root.joinpath("skills/nvflare-convert-pytorch/references/validation-evidence.md")
         .read_text(encoding="utf-8")
         .split()
     )
@@ -1100,8 +1115,8 @@ def test_shared_validation_requires_foreground_final_simulation():
 
     assert "Run the final simulation with `run_in_background: false`" in shared_validation
     assert "never finalize with an active simulation" in shared_validation
-    assert "../nvflare-shared/references/validation-evidence.md" in hf_skill
-    assert "../nvflare-shared/references/validation-evidence.md" in lightning_skill
+    assert "references/validation-evidence.md" in hf_skill
+    assert "references/validation-evidence.md" in lightning_skill
     assert "run_in_background: false" not in hf_skill
 
 
@@ -1152,12 +1167,12 @@ def test_huggingface_train_only_model_selection_contract_is_explicit():
     )
     job_text = hf_root.joinpath("assets/job.py").read_text(encoding="utf-8")
     construction_text = " ".join(
-        repo_root.joinpath("skills/nvflare-shared/references/pytorch-family-recipe-construction.md")
+        repo_root.joinpath("skills/nvflare-convert-pytorch/references/pytorch-family-recipe-construction.md")
         .read_text(encoding="utf-8")
         .split()
     )
     validation_text = " ".join(
-        repo_root.joinpath("skills/nvflare-shared/references/validation-evidence.md")
+        repo_root.joinpath("skills/nvflare-convert-pytorch/references/validation-evidence.md")
         .read_text(encoding="utf-8")
         .split()
     )
@@ -1184,16 +1199,16 @@ def test_huggingface_train_only_model_selection_contract_is_explicit():
 def test_pytorch_conversion_avoids_known_recipe_and_partition_retries():
     repo_root = Path(__file__).resolve().parents[4]
     construction_text = repo_root.joinpath(
-        "skills/nvflare-shared/references/pytorch-family-recipe-construction.md"
+        "skills/nvflare-convert-pytorch/references/pytorch-family-recipe-construction.md"
     ).read_text(encoding="utf-8")
-    site_data_text = repo_root.joinpath("skills/nvflare-shared/references/site-data-and-paths.md").read_text(
+    site_data_text = repo_root.joinpath("skills/nvflare-convert-pytorch/references/site-data-and-paths.md").read_text(
         encoding="utf-8"
     )
     client_text = repo_root.joinpath(
         "skills/nvflare-convert-pytorch/references/pytorch-client-api-conversion.md"
     ).read_text(encoding="utf-8")
     lightning_skill = repo_root.joinpath("skills/nvflare-convert-lightning/SKILL.md").read_text(encoding="utf-8")
-    validation_text = repo_root.joinpath("skills/nvflare-shared/references/validation-evidence.md").read_text(
+    validation_text = repo_root.joinpath("skills/nvflare-convert-pytorch/references/validation-evidence.md").read_text(
         encoding="utf-8"
     )
     eval_data = json.loads(
@@ -1273,11 +1288,11 @@ def test_fedstats_reuses_named_sites_for_recipe_and_simulation():
 
 def test_pytorch_family_validation_avoids_recovered_probe_failures():
     repo_root = Path(__file__).resolve().parents[4]
-    shared_root = repo_root / "skills" / "nvflare-shared" / "references"
-    common_text = " ".join(shared_root.joinpath("conversion-common.md").read_text(encoding="utf-8").split())
-    validation_text = " ".join(shared_root.joinpath("validation-evidence.md").read_text(encoding="utf-8").split())
+    common_root = repo_root / "skills" / "nvflare-convert-pytorch" / "references"
+    common_text = " ".join(common_root.joinpath("conversion-common.md").read_text(encoding="utf-8").split())
+    validation_text = " ".join(common_root.joinpath("validation-evidence.md").read_text(encoding="utf-8").split())
     construction_text = " ".join(
-        shared_root.joinpath("pytorch-family-recipe-construction.md").read_text(encoding="utf-8").split()
+        common_root.joinpath("pytorch-family-recipe-construction.md").read_text(encoding="utf-8").split()
     )
     pytorch_conversion = " ".join(
         repo_root.joinpath("skills/nvflare-convert-pytorch/references/pytorch-client-api-conversion.md")
@@ -1345,7 +1360,7 @@ def test_pytorch_family_validation_avoids_recovered_probe_failures():
 
 def test_helper_argument_types_reach_early_conversion_and_fed_stats_validation():
     repo_root = Path(__file__).resolve().parents[4]
-    references = repo_root / "skills" / "nvflare-shared" / "references"
+    references = repo_root / "skills" / "nvflare-convert-pytorch" / "references"
     common_text = " ".join(references.joinpath("conversion-common.md").read_text(encoding="utf-8").split())
     validation_text = " ".join(references.joinpath("validation-evidence.md").read_text(encoding="utf-8").split())
     fed_stats_text = " ".join(
@@ -1357,7 +1372,7 @@ def test_helper_argument_types_reach_early_conversion_and_fed_stats_validation()
     assert "When a parameter is annotated as `Path`, instantiate and pass `Path(...)`" in common_text
     assert "Build validation calls from inspected callable signatures and type annotations" in validation_text
     assert "When a helper parameter is annotated as `Path`, instantiate and pass `Path(...)`" in validation_text
-    assert "Validate in a ladder per the shared `validation-evidence.md`" in fed_stats_text
+    assert "Validate in the ladder documented by `references/stats-job-validation.md`" in fed_stats_text
 
 
 def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys():
@@ -1367,13 +1382,13 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     conversion_text = skill_root.joinpath("references/huggingface-conversion.md").read_text(encoding="utf-8")
     validation_text = skill_root.joinpath("references/huggingface-validation.md").read_text(encoding="utf-8")
     state_text = skill_root.joinpath("references/huggingface-state-and-distributed.md").read_text(encoding="utf-8")
-    shared_validation = repo_root.joinpath("skills/nvflare-shared/references/validation-evidence.md").read_text(
+    shared_validation = repo_root.joinpath(
+        "skills/nvflare-convert-pytorch/references/validation-evidence.md"
+    ).read_text(encoding="utf-8")
+    shared_common = repo_root.joinpath("skills/nvflare-convert-pytorch/references/conversion-common.md").read_text(
         encoding="utf-8"
     )
-    shared_common = repo_root.joinpath("skills/nvflare-shared/references/conversion-common.md").read_text(
-        encoding="utf-8"
-    )
-    shared_workflow = repo_root.joinpath("skills/nvflare-shared/references/conversion-workflow.md").read_text(
+    shared_workflow = repo_root.joinpath("skills/nvflare-convert-pytorch/references/conversion-workflow.md").read_text(
         encoding="utf-8"
     )
     pytorch_conversion = repo_root.joinpath(
@@ -1386,7 +1401,7 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     server_model_template = skill_root.joinpath("assets/server_model.py").read_text(encoding="utf-8")
     job_template = skill_root.joinpath("assets/job.py").read_text(encoding="utf-8")
     recipe_text = repo_root.joinpath(
-        "skills/nvflare-shared/references/pytorch-family-recipe-construction.md"
+        "skills/nvflare-convert-pytorch/references/pytorch-family-recipe-construction.md"
     ).read_text(encoding="utf-8")
     eval_data = json.loads(
         (repo_root / "skills" / "nvflare-convert-huggingface" / "evals" / "evals.json").read_text(encoding="utf-8")
@@ -1652,7 +1667,7 @@ def test_per_site_export_packages_server_class_path_file_with_server_targeted_ap
 
 def test_pytorch_family_validation_and_custom_aggregation_metric_contracts():
     repo_root = Path(__file__).resolve().parents[4]
-    validation_text = repo_root.joinpath("skills/nvflare-shared/references/validation-evidence.md").read_text(
+    validation_text = repo_root.joinpath("skills/nvflare-convert-pytorch/references/validation-evidence.md").read_text(
         encoding="utf-8"
     )
     normalized_validation = " ".join(validation_text.split())

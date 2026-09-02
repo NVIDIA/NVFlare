@@ -40,6 +40,7 @@ LINT_SKILL_COMMAND_DRIFT = "skill-command-drift-lint"
 LINT_SKILL_HELPER_SCRIPT = "skill-helper-script-lint"
 LINT_SKILL_FIXTURE = "skill-fixture-lint"
 LINT_SKILL_RUNTIME_BOUNDARY = "skill-runtime-boundary-lint"
+LINT_SKILL_REFERENCE_PATH = "skill-reference-path-lint"
 LINT_SKILL_DEPENDENCY_INSTALL_SAFETY = "skill-dependency-install-safety-lint"
 REQUIRED_FINDING_FIELDS = {"id", "severity", "file", "message", "hint"}
 
@@ -65,8 +66,74 @@ def test_run_v1_lints_passes_complete_skill(tmp_path):
         LINT_SKILL_HELPER_SCRIPT,
         LINT_SKILL_FIXTURE,
         LINT_SKILL_RUNTIME_BOUNDARY,
+        LINT_SKILL_REFERENCE_PATH,
         LINT_SKILL_DEPENDENCY_INSTALL_SAFETY,
     }
+
+
+def test_reference_path_lint_accepts_local_packaged_files(tmp_path):
+    skill_dir = _write_skill(
+        tmp_path / "skills",
+        "nvflare-valid-skill",
+        body="Read [the guide](references/guide.md) and use `assets/helper.py`.\n",
+    )
+    skill_dir.joinpath("references").mkdir()
+    skill_dir.joinpath("references", "guide.md").write_text("Use `../assets/helper.py`.\n", encoding="utf-8")
+    skill_dir.joinpath("assets").mkdir()
+    skill_dir.joinpath("assets", "helper.py").write_text("VALUE = 1\n", encoding="utf-8")
+
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_REFERENCE_PATH])
+
+    assert result["status"] == "ok"
+    assert result["findings"] == []
+
+
+def test_reference_path_lint_rejects_missing_markdown_link(tmp_path):
+    _write_skill(
+        tmp_path / "skills",
+        "nvflare-valid-skill",
+        body="Read [the missing guide](references/missing.md).\n",
+    )
+
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_REFERENCE_PATH])
+
+    assert _has_finding(result, LINT_SKILL_REFERENCE_PATH, "skill-reference-missing")
+
+
+def test_reference_path_lint_rejects_cross_skill_sibling_reference(tmp_path):
+    root = tmp_path / "skills"
+    _write_skill(
+        root,
+        "nvflare-first-skill",
+        body="Read `../nvflare-second-skill/references/guide.md`.\n",
+    )
+    second = _write_skill(root, "nvflare-second-skill")
+    second.joinpath("references").mkdir()
+    second.joinpath("references", "guide.md").write_text("Guide.\n", encoding="utf-8")
+
+    result = run_v1_lints(root, checks=[LINT_SKILL_REFERENCE_PATH])
+
+    finding = _finding(result, LINT_SKILL_REFERENCE_PATH, "skill-reference-cross-skill")
+    assert finding["skill"] == "nvflare-first-skill"
+
+
+def test_reference_path_lint_rejects_symlink_escape(tmp_path):
+    skill_dir = _write_skill(
+        tmp_path / "skills",
+        "nvflare-valid-skill",
+        body="Read [the guide](references/guide.md).\n",
+    )
+    outside = tmp_path / "outside.md"
+    outside.write_text("Outside.\n", encoding="utf-8")
+    skill_dir.joinpath("references").mkdir()
+    try:
+        skill_dir.joinpath("references", "guide.md").symlink_to(outside)
+    except OSError as e:
+        pytest.skip(f"file symlink is not available in this environment: {e}")
+
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_REFERENCE_PATH])
+
+    assert _has_finding(result, LINT_SKILL_REFERENCE_PATH, "skill-reference-cross-skill")
 
 
 def test_run_v1_lints_reports_frontmatter_prefix(tmp_path):
@@ -1627,15 +1694,13 @@ def test_run_v1_lints_reports_benchmark_instruction_in_scripts(tmp_path):
     assert _has_finding(result, LINT_SKILL_RUNTIME_BOUNDARY, "skill-runtime-evaluator-hook")
 
 
-def test_run_v1_lints_reports_design_doc_reference_in_shared_skill(tmp_path):
-    # nvflare-shared is an internal (non-triggered) skill referenced by the other
-    # skills; its runtime content is scanned like any other skill record, so a
-    # design-doc reference in it is flagged and attributed to nvflare-shared.
+def test_run_v1_lints_reports_design_doc_reference_in_internal_skill(tmp_path):
+    # Internal skill runtime content is scanned like any other skill record.
     root = tmp_path / "skills"
     _write_skill(root, "nvflare-valid-skill")
     _write_skill(
         root,
-        "nvflare-shared",
+        "nvflare-internal",
         status="internal",
         body="See docs/design/agent_skill_operating_model.md for the policy.\n",
     )
@@ -1643,7 +1708,7 @@ def test_run_v1_lints_reports_design_doc_reference_in_shared_skill(tmp_path):
     result = run_v1_lints(root, checks=[LINT_SKILL_RUNTIME_BOUNDARY])
 
     findings = [f for f in result["findings"] if f.get("code") == "skill-runtime-design-doc-ref"]
-    assert findings and any(f.get("skill") == "nvflare-shared" for f in findings)
+    assert findings and any(f.get("skill") == "nvflare-internal" for f in findings)
 
 
 def test_run_v1_lints_allows_evaluation_language_in_runtime_content(tmp_path):

@@ -2,7 +2,7 @@
 
 This reference covers standard PyTorch training loops that already have a
 `torch.nn.Module`, optimizer, data loaders, and metrics. Load
-`../../nvflare-shared/references/pytorch-model-exchange.md` for PyTorch-family state-dict and
+`pytorch-model-exchange.md` for PyTorch-family state-dict and
 tensor payload rules before changing model exchange code.
 
 ## Canonical Path
@@ -21,10 +21,10 @@ Use this path for plain PyTorch conversion:
    with the simulator CLI. Do not run both targets after one succeeds.
 
 HE is not supported at steps 4–5: follow the HE-not-supported rule in
-`../../nvflare-shared/references/pytorch-family-recipe-selection.md`.
+`pytorch-family-recipe-selection.md`.
 
 Follow the Source Of Truth Boundary and the generated-entry rule in
-`../../nvflare-shared/references/conversion-workflow.md`: `client.py` is an
+`conversion-workflow.md`: `client.py` is an
 FL-only Client API entry point, not a standalone/FL auto-detecting launcher.
 
 ## Conversion Pattern
@@ -32,7 +32,7 @@ FL-only Client API entry point, not a standalone/FL auto-detecting launcher.
 - Import `nvflare.client as flare`.
 - Build the model, optimizer, loss, and data loaders once before the loop, not
   inside it, per the shared "Setup Outside The Round Loop" rule in
-  `../../nvflare-shared/references/conversion-workflow.md`.
+  `conversion-workflow.md`.
 - Call `flare.init()` before setup hooks that need Client API context, such as
   `flare.get_config()` or `flare.get_site_name()`, while still keeping setup
   outside the federated round loop.
@@ -44,26 +44,26 @@ FL-only Client API entry point, not a standalone/FL auto-detecting launcher.
   `train_one_round` helper must return this positive count; do not use an
   estimated, cumulative, or default value.
 - Send the trained weights with the canonical plain-PyTorch payload pattern in
-  `../../nvflare-shared/references/pytorch-model-exchange.md`. Do not call
+  `pytorch-model-exchange.md`. Do not call
   `model.cpu()`, which moves the persistent model off the training device.
 
 ## PyTorch Parameter Payload Type
 
 Use the exact outbound payload contract and send snippet in
-`../../nvflare-shared/references/pytorch-model-exchange.md`. Apply the separate
+`pytorch-model-exchange.md`. Apply the separate
 recipe-capability policy in
-`../../nvflare-shared/references/pytorch-family-recipe-construction.md`; its
+`pytorch-family-recipe-construction.md`; its
 server disk-offload optimization does not change the client payload contract or
 execution mode.
 
 ## Source Layout
 
 Use the canonical FLARE source layout defined in
-`../../nvflare-shared/references/conversion-workflow.md` ("Generated Job Layout"):
+`conversion-workflow.md` ("Generated Job Layout"):
 `client.py`, `model.py`, `job.py`, and the optional `aggregators.py`, data-setup,
 and requirements files. Avoid ad hoc entry-point names such as `fl_train.py`
 unless the user explicitly requests that naming, and use
-`../../nvflare-shared/references/runtime-output-guidance.md` for runtime
+`runtime-output-guidance.md` for runtime
 workspaces, exported job directories, and validation output locations.
 During export inspection, verify generated or project-local modules referenced
 by server-side `class_path` config are packaged into the server app with
@@ -85,12 +85,12 @@ explicitly asks for shared training data or the source already provides
 site-specific data that resolves to that behavior. Validation/test loaders may
 remain shared only when that matches the source's validation/test semantics.
 For generated Pandas partition code, follow
-`../../nvflare-shared/references/site-data-and-paths.md`.
+`site-data-and-paths.md`.
 
 ## Model Construction Consistency
 
 Follow the shared model-config and construction-consistency rule in
-`../../nvflare-shared/references/conversion-workflow.md` ("Recipe Model Config"):
+`conversion-workflow.md` ("Recipe Model Config"):
 same class and constructor args on server and client, explicit config whenever
 reconstruction needs a constructor value, and derive-or-ask/fail-closed for it.
 
@@ -126,7 +126,7 @@ without source evidence; when evaluation is required but the source has none,
 ask in interactive mode or fail closed in unattended mode.
 
 Follow the "Best-Model Metric" contract in
-`../../nvflare-shared/references/pytorch-family-recipe-construction.md`. It owns
+`pytorch-family-recipe-construction.md`. It owns
 metric-name matching and lower-is-better direction; this reference owns where
 evaluation occurs in the plain-PyTorch round loop.
 
@@ -141,7 +141,7 @@ unattended mode instead of silently using equal client weights.
 
 The round `FLModel.metrics` is this pre-training evaluation of the received
 global model, not a post-training metric — see
-`../../nvflare-shared/references/metrics-and-artifact-reporting.md`
+`metrics-and-artifact-reporting.md`
 ("Received-Model Metric Ownership").
 
 When the task is evaluation-only or cross-site evaluation, use
@@ -165,7 +165,7 @@ it.
 - For checkpoints, preserve user checkpoint semantics and document what is
   federated versus site-local.
 - For metrics, send scalar summaries in the `metrics` field. Use
-  `../../nvflare-shared/references/metrics-and-artifact-reporting.md` for generic final metrics,
+  `metrics-and-artifact-reporting.md` for generic final metrics,
   round metrics, model artifact paths, and missing-evidence reporting.
 
 ## Job Pattern Reference

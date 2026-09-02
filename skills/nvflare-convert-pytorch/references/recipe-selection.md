@@ -10,7 +10,7 @@ Recipe discovery, the algorithm guide (FedAvg, FedProx, FedOpt, SCAFFOLD,
 Cyclic, Swarm, FedEval), catalog-based selection rules, the HE-not-supported
 rule, and non-FedAvg recipe rules are shared across the PyTorch recipe family.
 Follow
-`../../nvflare-shared/references/pytorch-family-recipe-selection.md` for all of
+`pytorch-family-recipe-selection.md` for all of
 them before constructing `job.py`. This file covers only the plain-PyTorch
 `job.py` construction details.
 
@@ -18,7 +18,7 @@ them before constructing `job.py`. This file covers only the plain-PyTorch
 
 For a normal PyTorch-to-FedAvg conversion, keep the `job.py` recipe construction
 small and portable. Run `recipe show fedavg-pt --format json` first and follow
-`../../nvflare-shared/references/pytorch-family-recipe-construction.md`. The
+`pytorch-family-recipe-construction.md`. The
 example below contains only the workflow-specific constructor values; add
 optional recipe keywords and decomposers only as directed by that capability
 profile:
@@ -92,13 +92,13 @@ least one site needs a different `train_script`, `train_args`, command,
 external-process setting, framework/exchange setting, or launch behavior.
 
 For non-FedAvg workflows, use the matching recipe from the catalog (see the
-shared reference above) and keep the PyTorch Client API exchange aligned with
+common reference above) and keep the PyTorch Client API exchange aligned with
 that recipe's expected task names, metadata, and parameter format.
 
 ## Recipe Capabilities And Execution Mode
 
 Follow
-`../../nvflare-shared/references/pytorch-family-recipe-construction.md` for
+`pytorch-family-recipe-construction.md` for
 every selected recipe. It owns the capability checks for tensor settings,
 decomposer registration, best-model naming, and process-based execution mode;
 do not copy the FedAvg constructor above to a non-FedAvg recipe.
@@ -106,5 +106,5 @@ do not copy the FedAvg constructor above to a non-FedAvg recipe.
 ## Export Behavior
 
 Export handling is shared across algorithms and frameworks. Follow
-`../../nvflare-shared/references/conversion-workflow.md` for `--export`, `--export-dir`, and
+`conversion-workflow.md` for `--export`, `--export-dir`, and
 local command-line parser behavior.

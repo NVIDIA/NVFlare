@@ -1,8 +1,8 @@
 # Hugging Face Conversion Validation
 
-Use `../../nvflare-shared/references/validation-evidence.md` for compilation,
+Use `validation-evidence.md` for compilation,
 Recipe construction, export, package inspection, simulation, terminal evidence,
-and reporting. Run these Trainer-specific checks only after the shared ladder
+and reporting. Run these Trainer-specific checks only after the common ladder
 reaches the applicable phase, and stop at the first failure.
 
 ## Generated Trainer Contract
@@ -50,7 +50,7 @@ reaches the applicable phase, and stop at the first failure.
   root. Skip this path-specific check when the source has no local path argument.
   Do not pass absolute local paths, per-site paths, Hub identifiers, or URLs
   through the relative-path test; validate their classification using
-  `../../nvflare-shared/references/site-data-and-paths.md` instead.
+  `site-data-and-paths.md` instead.
 
 ## Hugging Face Artifacts And Compatibility
 

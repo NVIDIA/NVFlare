@@ -16,7 +16,7 @@ the request as unsupported and route it to provisioning/deployment. Never
 satisfy a requested privacy protection with only a disclaimer while generating an
 unprotected job.
 
-Load the smaller shared references when the task reaches that phase:
+Load the smaller common references when the task reaches that phase:
 
 - `dependency-install.md` before Python commands that import user, product, or
   framework modules; static `nvflare agent inspect source` discovery does not

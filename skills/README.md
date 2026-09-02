@@ -20,10 +20,9 @@ co-located with the owning skill to follow the Agent Skills Specification. They
 are not referenced as agent instructions, so their presence does not change a
 skill's triggering or workflow behavior.
 
-`nvflare-shared/` is an internal, non-triggered skill: it holds references and
-templates shared by the other skills and is installed alongside them, but it is
-not user-selectable. It still follows the skill structure (a valid `SKILL.md`
-with `status: internal`, plus `references/` and `assets/`).
+Every public skill is independently portable. Guidance and templates needed at
+runtime live inside that skill's own `references/`, `assets/`, and `scripts/`
+directories; skills must not reference sibling skill directories.
 
 `SKILL.md` frontmatter uses the portable fields from the
 [agentskills.io spec](https://agentskills.io/specification) plus the NVIDIA
@@ -70,28 +69,31 @@ consumers and rejected by the NVFLARE validator.
 
 NVFLARE skills are installed with the standard [`skills`](https://agentskills.io)
 tool via `npx skills add`. Both `claude-code` and `codex` are supported agent
-targets. Install the whole set together so cross-skill references resolve:
-`nvflare-shared/` is loaded by the other skills through relative references, so
-installing skills individually can leave those references dangling.
+targets. Skills can be installed together or individually.
 
-From a local checkout (pre-publish):
+From a local checkout (pre-publish), install all skills:
 
 ```bash
 npx skills add ./skills --skill '*' -a claude-code -a codex -y
 ```
 
 From the published repository (no manual `git clone` needed — `npx skills add`
-fetches the repo itself; append `#<branch>` to install from a specific branch):
+fetches the repo itself; append `#<branch>` to install from a specific branch),
+install all skills:
 
 ```bash
 npx skills add NVIDIA/<skills-repo> --skill '*' -a claude-code -a codex -y
 ```
 
+To install one skill, replace `--skill '*'` with its exact name, for example
+`--skill nvflare-orient`. Each skill includes all of its runtime dependencies,
+so individual installation is supported.
+
 Installation is git-based and does not depend on `pip install nvflare`; the
 skills are not shipped inside the Python wheel. Pass every agent you use with
 repeated `-a` flags. Omitting an agent skips installation for that agent; there
 is no NVFLARE-specific installer command. The standard installer copies the
-complete skill directory, including each co-located `evals/` directory. Those
+complete selected skill directory, including its co-located `evals/` directory. Those
 files are evaluation metadata, not runtime guidance: `SKILL.md` remains the
 instruction entry point, and repository tooling treats `evals/` separately
 from the guidance it validates.

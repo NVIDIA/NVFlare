@@ -26,7 +26,7 @@ patched Trainer's exchanged parameter scope; otherwise ask or fail closed.
 Use `ExchangeFormat.PYTORCH` for native tensor dtypes such as BF16. Keep dtype,
 precision, quantization, and device-map behavior from source evidence rather
 than model-family assumptions. Follow the authorization rules in
-`../../nvflare-shared/references/conversion-common.md`, plus the `SKILL.md`
+`conversion-common.md`, plus the `SKILL.md`
 delta covering `trust_remote_code` and offline recovery, for remote code and
 download effects.
 
@@ -43,7 +43,7 @@ Reject or report:
 - `load_best_model_at_end=True`;
 - explicit recipe `launch_once=False` with `restore_state=True` — the persistent
   Trainer cannot survive a per-task relaunch. `launch_once` itself is owned by
-  `../../nvflare-shared/references/pytorch-family-recipe-construction.md`;
+  `pytorch-family-recipe-construction.md`;
 - prebuilt optimizer/scheduler instances with `restore_state=False`;
 - checkpoint paths that are not visible to every distributed rank.
 
@@ -55,7 +55,7 @@ optimizer/scheduler state.
 
 This section applies only to a preserved distributed multi-process launch.
 Apply the framework-neutral global-rank contract in
-`../../nvflare-shared/references/conversion-common.md`; do not add a rank
+`conversion-common.md`; do not add a rank
 argument to a standard single-process conversion.
 
 Initialize `torch.distributed` before `flare.patch(trainer)` whenever

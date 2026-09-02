@@ -12,7 +12,7 @@ Use this path for a standard Trainer conversion:
 4. Adapt `../assets/server_model.py` and `../assets/job.py` for the source model
    factory, client arguments, selected metric, and capability-gated options.
    Hugging Face Trainer is part of the PyTorch family, so
-   `../../nvflare-shared/references/pytorch-model-exchange.md` owns the
+   `pytorch-model-exchange.md` owns the
    tensor-payload and state-dict compatibility rules for the server model and
    every client; load it before pinning shared constructor values.
 5. Follow the shared validation ladder with the HF-specific validation delta.
@@ -37,13 +37,13 @@ evaluation nor best-model selection is requested, adapt the asset with
 `evaluate_before_train=False` and `key_metric=""` so model selection is disabled.
 Do not omit `key_metric`: `FedAvgRecipe` otherwise activates its documented
 default selector. See the Best-Model Metric section of
-`../../nvflare-shared/references/pytorch-family-recipe-construction.md`.
+`pytorch-family-recipe-construction.md`.
 
 Import the Client API as `import nvflare.client.hf as flare`, as the asset does,
 so every `flare.*` call below resolves to `nvflare.client.hf`.
 
 Follow the framework-neutral Client API initialization and rank contract in
-`../../nvflare-shared/references/conversion-common.md`. The standard
+`conversion-common.md`. The standard
 asset always calls rankless `nvflare.client.hf.init()`. The product resolves an
 initialized process-group rank or global `RANK` and rejects an unresolved
 multi-process launch before creating a Client API context; do not reimplement
@@ -95,8 +95,8 @@ global parameters, and sends the result from rank 0.
 
 Use the PyTorch recipe family. Run `nvflare recipe show <recipe-name> --format
 json`, then load
-`../../nvflare-shared/references/pytorch-family-recipe-construction.md` before
-constructing the recipe. That shared reference owns capability checks,
+`pytorch-family-recipe-construction.md` before
+constructing the recipe. That common reference owns capability checks,
 tensor-native transport and decomposer registration, disk offload, external
 process selection, and common metric-selection policy.
 
@@ -143,7 +143,7 @@ script overrides because it cannot package them while preserving one portable
 app-local runtime path.
 Pass that same mapping to the asset's `build_sim_env(...)`, which implements the
 single-topology-owner rule from
-`../../nvflare-shared/references/conversion-common.md`. Leave the mapping unset
+`conversion-common.md`. Leave the mapping unset
 for ordinary generated partitions, and derive their indices from the initialized
 `site-N` name.
 Follow the shared construction reference's client-argument transport rule.
@@ -164,7 +164,7 @@ absolute `task_script_path` values in generated configs because runtime apps
 must launch their packaged client script portably.
 
 For an exported-artifact target, exported app layout is owned by
-`../../nvflare-shared/references/conversion-workflow.md`: inspect the exported
+`conversion-workflow.md`: inspect the exported
 job root and enumerate the app directories it actually contains before asserting
 any path.
 
@@ -180,7 +180,7 @@ import/preflight checks.
 
 ## Data And Model Selection
 
-Follow `../../nvflare-shared/references/site-data-and-paths.md` when generated
+Follow `site-data-and-paths.md` when generated
 site partitions, relative-path resolution, or per-site data locations are
 involved. Pass data roots through client arguments or per-site configuration —
 never a path hardcoded in the generated client, and never copy private site data
@@ -194,7 +194,7 @@ server with `key_metric="eval_accuracy"` and report the mapping from source
 metric name to server metric key.
 
 `FedAvgRecipe` does not expose a lower-is-better direction flag, so the shared
-rule in `../../nvflare-shared/references/pytorch-family-recipe-construction.md`
+rule in `pytorch-family-recipe-construction.md`
 applies unchanged: when best-model selection is requested, every
 lower-is-better metric is delivered as an explicitly negated companion and
 selected by that key. This holds for loss exactly as it does for any other

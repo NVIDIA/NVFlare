@@ -106,7 +106,7 @@ While `final_response_allowed=false`, return only a concise progress update and 
 - Preserve `budget.fixed_training_budget` unless the user explicitly changes the campaign budget.
 - Preserve `objective.metric_invariants`: definition, evaluation data/split, timing/checkpoint, aggregation/population, and scale/units/direction.
 - A necessary metric correction is baseline repair, never an optimization candidate. Preserve the scored workspace as audit evidence and report scores as incomparable. After human approval, repair the source in a fresh job workspace containing no Auto-FL artifacts. Never run `initialize` in the scored workspace; it resumes old evidence.
-- Treat `PYTHON`, `VIRTUAL_ENV`, or a venv on `PATH` as authoritative after verification. Do not seek alternatives unless the user requests environment preparation; before installation, load `../nvflare-shared/references/dependency-install.md`.
+- Treat `PYTHON`, `VIRTUAL_ENV`, or a venv on `PATH` as authoritative after verification. Do not seek alternatives unless the user requests environment preparation; before installation, load `references/dependency-install.md`.
 - Use the configured `SimEnv` for simulation. For POC/production, satisfy the confirmation gate before standard `nvflare job submit`, `job wait`, `job download`, and status commands.
 - Prefer small, reviewable edits over broad rewrites.
 - Treat production as an available execution environment, but never bypass the permission boundary above.

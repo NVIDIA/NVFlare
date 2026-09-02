@@ -6,14 +6,14 @@ experiment-tracking work. Single-process Lightning training does not need it.
 ## DDP Execution Model
 
 Use the process-evidence criterion and capability checks in
-`../../nvflare-shared/references/pytorch-family-recipe-construction.md`; that
+`pytorch-family-recipe-construction.md`; that
 reference owns the DDP/DataParallel-to-execution-mode decision. This reference
 only covers Lightning behavior after that decision.
 
 ## Rank-Synchronized Round Loop
 
 Before patching under DDP, apply the framework-neutral global-rank contract in
-`../../nvflare-shared/references/conversion-common.md`: resolve the global
+`conversion-common.md`: resolve the global
 process rank from the initialized process group or global `RANK`, never
 `LOCAL_RANK`, and pass it to `flare.init(rank=global_rank)`.
 
@@ -115,5 +115,5 @@ request, and the skill must not ask solely to enable an external effect.
   replacement for a standalone tracking server. State this limitation rather
   than promising parity with a dedicated tracking backend.
 
-Follow `../../nvflare-shared/references/metrics-and-artifact-reporting.md` for reporting metric
+Follow `metrics-and-artifact-reporting.md` for reporting metric
 and artifact paths and for missing-evidence reporting.
