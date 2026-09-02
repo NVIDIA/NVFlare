@@ -150,15 +150,17 @@ class JobCertIssuer:
         self.ca_key = ca_key
         self.ca_cn = self.ca_cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
 
-    def issue(self, site_name: str, job_id: str) -> Tuple[bytes, bytes]:
+    def issue(self, site_name: str, job_id: str, valid_days: int = JOB_CERT_VALID_DAYS) -> Tuple[bytes, bytes]:
         """Issue a per-job credential for one site.
 
         Returns:
             (cert_chain_pem, key_pem): leaf cert followed by the job CA cert, and the private key.
         """
+        if valid_days <= 0:
+            raise ValueError(f"valid_days must be positive, got {valid_days}")
         pri_key, pub_key = generate_keys()
         now = datetime.datetime.now(datetime.timezone.utc)
-        not_valid_after = min(now + datetime.timedelta(days=JOB_CERT_VALID_DAYS), self.ca_cert.not_valid_after_utc)
+        not_valid_after = min(now + datetime.timedelta(days=valid_days), self.ca_cert.not_valid_after_utc)
         job_id_ext = x509.UnrecognizedExtension(JOB_ID_EXTENSION_OID, job_id.encode("utf-8"))
         cert = generate_cert(
             subject=Identity(site_name),

@@ -127,6 +127,18 @@ def test_issued_cert_validity_clamped_to_job_ca(tmp_path):
     assert leaf.not_valid_after_utc == ca_cert.not_valid_after_utc.replace(microsecond=0)
 
 
+def test_issue_honors_valid_days(tmp_path):
+    _write_job_ca(str(tmp_path))
+    issuer = load_job_cert_issuer(str(tmp_path))
+
+    cert_pem, _ = issuer.issue("site-1", "job-123", valid_days=3)
+
+    leaf = x509.load_pem_x509_certificates(cert_pem)[0]
+    assert leaf.not_valid_after_utc - leaf.not_valid_before_utc == datetime.timedelta(days=3) + JOB_CERT_BACKDATE
+    with pytest.raises(ValueError, match="valid_days"):
+        issuer.issue("site-1", "job-123", valid_days=0)
+
+
 def test_pick_cell_credential_prefers_complete_job_pair():
     config = {
         SecureTrainConst.SSL_CERT: "site.crt",

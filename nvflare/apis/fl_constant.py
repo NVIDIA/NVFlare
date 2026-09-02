@@ -575,6 +575,9 @@ class ConfigVarName:
     # server: max time to wait for client terminal outcomes after the server process exits
     CLIENT_OUTCOME_WAIT_TIMEOUT = "client_outcome_wait_timeout"
 
+    # server: validity in days of the per-job certificates issued at job deploy
+    JOB_CERT_VALID_DAYS = "job_cert_valid_days"
+
     # customized nvflare decomposers module name
     DECOMPOSER_MODULE = "nvflare_decomposers"
 

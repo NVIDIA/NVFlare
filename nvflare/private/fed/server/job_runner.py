@@ -48,7 +48,12 @@ from nvflare.private.fed.server.server_state import HotState
 from nvflare.private.fed.utils.app_deployer import AppDeployer
 from nvflare.private.fed.utils.fed_utils import extract_participants, require_signed_jobs, set_message_security_data
 from nvflare.private.fed.utils.identity_utils import get_cn_from_cert, load_cert_file
-from nvflare.private.fed.utils.job_cert_utils import load_job_cert_issuer, pack_job_cert_header, write_job_cert
+from nvflare.private.fed.utils.job_cert_utils import (
+    JOB_CERT_VALID_DAYS,
+    load_job_cert_issuer,
+    pack_job_cert_header,
+    write_job_cert,
+)
 from nvflare.security.logging import secure_format_exception
 
 WORKSPACE_SAVE_RETRY_GRACE_TIME = 60
@@ -112,6 +117,11 @@ class JobRunner(FLComponent):
         self.client_outcome_wait_timeout = ConfigService.get_float_var(
             name=ConfigVarName.CLIENT_OUTCOME_WAIT_TIMEOUT, conf=SystemConfigs.APPLICATION_CONF, default=900.0
         )
+        self.job_cert_valid_days = ConfigService.get_int_var(
+            name=ConfigVarName.JOB_CERT_VALID_DAYS, conf=SystemConfigs.APPLICATION_CONF, default=JOB_CERT_VALID_DAYS
+        )
+        if self.job_cert_valid_days <= 0:
+            raise ValueError(f"{ConfigVarName.JOB_CERT_VALID_DAYS} must be positive, got {self.job_cert_valid_days}")
         self.lock = threading.Lock()
 
     def is_client_outcome_pending(self, job_id: str, client_name: str) -> bool:
@@ -239,7 +249,7 @@ class JobRunner(FLComponent):
                         # deploy message becomes per-site (the app bytes stay shared);
                         # c.name equals the CN of the client's registered cert
                         # (registration enforces CN == client name)
-                        cert_pem, key_pem = job_cert_issuer.issue(c.name, job.job_id)
+                        cert_pem, key_pem = job_cert_issuer.issue(c.name, job.job_id, self.job_cert_valid_days)
                         client_request = self._make_deploy_message(job, app_data, app_name, fl_ctx)
                         client_request.set_header(RequestHeader.JOB_CERT, pack_job_cert_header(cert_pem, key_pem))
                     else:
@@ -261,7 +271,7 @@ class JobRunner(FLComponent):
             # "server")
             server_cert_path = os.path.join(workspace.get_startup_kit_dir(), f"{CertFileBasename.SERVER}.crt")
             server_cn = get_cn_from_cert(load_cert_file(server_cert_path))
-            cert_pem, key_pem = job_cert_issuer.issue(server_cn, job.job_id)
+            cert_pem, key_pem = job_cert_issuer.issue(server_cn, job.job_id, self.job_cert_valid_days)
             write_job_cert(workspace.get_run_dir(job.job_id), cert_pem, key_pem)
 
         abort_job = False
