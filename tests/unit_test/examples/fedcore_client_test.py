@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import pytest
 import torch
 
 from tests.unit_test.examples.fedcore_test_utils import fedcore_import_context
@@ -49,12 +50,42 @@ def test_local_training_is_deterministic_with_dropout():
             assert torch.equal(tensor, second.state_dict()[name])
 
 
-def test_sigterm_handler_shuts_down_nvflare(monkeypatch):
+def test_sigterm_handler_requests_single_entry_shutdown(monkeypatch):
     with fedcore_import_context():
         import client
 
         calls = []
         monkeypatch.setattr(client.flare, "shutdown", lambda: calls.append("shutdown"))
+        client._TERMINATION_REQUESTED = False
         client._shutdown_on_signal(None, None)
 
-    assert calls == ["shutdown"]
+    assert client._TERMINATION_REQUESTED is True
+    assert calls == []
+
+
+def test_local_training_rejects_non_positive_sizes():
+    with fedcore_import_context():
+        import client
+        from model import LogitCompletionModel
+
+        payload = {
+            "paired_mask": torch.ones(1, dtype=torch.bool),
+            "missing_features": torch.zeros((1, 2)),
+            "missing_logits": torch.zeros(1),
+            "full_logits": torch.ones(1),
+            "labels": torch.ones(1),
+        }
+        model = LogitCompletionModel(input_dim=2, hidden_dim=2)
+        common = {
+            "model": model,
+            "payload": payload,
+            "learning_rate": 1e-3,
+            "task_weight": 1.0,
+            "effect_weight": 1.0,
+            "seed": 7,
+            "current_round": 0,
+        }
+        with pytest.raises(ValueError, match="local_epochs"):
+            client._train_round(local_epochs=0, batch_size=1, **common)
+        with pytest.raises(ValueError, match="batch_size"):
+            client._train_round(local_epochs=1, batch_size=0, **common)

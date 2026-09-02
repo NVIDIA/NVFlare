@@ -15,6 +15,9 @@
 import json
 import sys
 
+import numpy as np
+import torch
+
 from tests.unit_test.examples.fedcore_test_utils import fedcore_import_context
 
 
@@ -26,6 +29,7 @@ def test_test_caches_are_opened_only_after_validation_selection(tmp_path, monkey
         output_dir = tmp_path / "output"
         cache_dir.mkdir()
         metadata = {
+            "schema_version": 1,
             "input_dim": 4,
             "sites": {
                 site: {"train": {"paired_examples": 1 if site == "site-1" else 0}}
@@ -81,3 +85,26 @@ def test_test_caches_are_opened_only_after_validation_selection(tmp_path, monkey
 
         assert opened[:3] == [("site-1", "val"), ("site-2", "val"), ("site-3", "val")]
         assert opened[3:] == [("site-1", "test"), ("site-2", "test"), ("site-3", "test")]
+
+
+def test_prepare_site_supports_bfloat16_cache_tensors():
+    with fedcore_import_context():
+        from src.evaluation import prepare_site
+
+        class Delta(torch.nn.Module):
+            def forward(self, features):
+                return features[:, 0]
+
+        payload = {
+            "labels": torch.tensor([0, 1], dtype=torch.long),
+            "image_available": torch.tensor([True, False]),
+            "missing_features": torch.tensor([[0.25, 0.0], [0.5, 0.0]], dtype=torch.bfloat16),
+            "missing_logits": torch.tensor([-1.0, 1.0], dtype=torch.bfloat16),
+            "full_logits": torch.tensor([-0.5, torch.nan], dtype=torch.bfloat16),
+        }
+        prepared = prepare_site("site-1", payload, Delta())
+
+    assert prepared.missing_logits.dtype == np.float64
+    assert prepared.full_logits.dtype == np.float64
+    assert prepared.predicted_delta.dtype == np.float64
+    assert np.allclose(prepared.predicted_delta, [0.25, 0.5])

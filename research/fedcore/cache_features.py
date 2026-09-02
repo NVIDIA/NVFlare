@@ -18,6 +18,7 @@ import argparse
 from pathlib import Path
 
 from src.features import create_feature_cache
+from src.validation import positive_int
 
 
 def define_parser() -> argparse.ArgumentParser:
@@ -27,9 +28,9 @@ def define_parser() -> argparse.ArgumentParser:
     parser.add_argument("--model-name-or-path", default="Qwen/Qwen3-VL-2B-Instruct")
     parser.add_argument("--adapter-checkpoint", default="")
     parser.add_argument("--device", default="cuda:0")
-    parser.add_argument("--batch-size", type=int, default=2)
-    parser.add_argument("--lora-r", type=int, default=64)
-    parser.add_argument("--lora-alpha", type=int, default=128)
+    parser.add_argument("--batch-size", type=positive_int, default=2)
+    parser.add_argument("--lora-r", type=positive_int, default=64)
+    parser.add_argument("--lora-alpha", type=positive_int, default=128)
     return parser
 
 

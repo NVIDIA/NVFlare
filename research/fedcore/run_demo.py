@@ -16,6 +16,7 @@
 
 import argparse
 import json
+import math
 import os
 import re
 import shlex
@@ -23,6 +24,9 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+from src.data import MNISTDataConfig, validate_mnist_config
+from src.validation import non_negative_float, positive_float, positive_int, probability
 
 PROJECT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = PROJECT_DIR.parents[1]
@@ -33,6 +37,8 @@ def _run(command: list[str], cwd: Path = PROJECT_DIR) -> None:
     env = os.environ.copy()
     python_bin = str(Path(sys.executable).resolve().parent)
     env["PATH"] = os.pathsep.join([python_bin, env.get("PATH", "")])
+    # Explicit --workspace values must remain authoritative so checkpoint discovery uses the same tree as SimEnv.
+    env.pop("NVFLARE_SIMULATOR_WORKSPACE_ROOT", None)
     subprocess.run(command, cwd=cwd, check=True, env=env)
 
 
@@ -52,20 +58,43 @@ def _latest_checkpoint(workspace: Path) -> Path:
 def _prepare_run_directories(output_dir: Path, workspace: Path) -> None:
     """Reserve fresh output and workspace directories so runs cannot share artifacts."""
 
-    for path, description in ((output_dir, "output directory"), (workspace, "NVFlare workspace")):
-        try:
-            path.mkdir(parents=True, exist_ok=False)
-        except FileExistsError as error:
+    if output_dir == workspace:
+        raise ValueError("FedCoRe output and workspace directories must be different paths.")
+    paths = ((output_dir, "output directory"), (workspace, "NVFlare workspace"))
+    for path, description in paths:
+        if path.exists():
             raise FileExistsError(
                 f"FedCoRe {description} already exists: {path}. Choose a fresh path to avoid stale or concurrent artifacts."
-            ) from error
+            )
+    output_dir.mkdir(parents=True, exist_ok=False)
+    workspace.mkdir(parents=True, exist_ok=False)
+
+
+def _validate_run_configuration(args, proxy_strength: float) -> None:
+    validate_mnist_config(
+        MNISTDataConfig(
+            output_dir=Path("."),
+            dataset_root=Path("."),
+            scenario=args.scenario,
+            train_samples_per_site=args.train_samples_per_site,
+            val_samples_per_site=args.val_samples_per_site,
+            test_samples_per_site=args.test_samples_per_site,
+            proxy_strength=proxy_strength,
+        )
+    )
+    try:
+        alpha_grid = [float(value) for value in args.alpha_grid.split(",") if value.strip()]
+    except ValueError as error:
+        raise ValueError("--alpha-grid must be a comma-separated list of finite numbers including 0.") from error
+    if not alpha_grid or 0.0 not in alpha_grid or not all(math.isfinite(alpha) for alpha in alpha_grid):
+        raise ValueError("--alpha-grid must be a comma-separated list of finite numbers including 0.")
 
 
 def define_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run the public MNIST FedCoRe starter end to end.")
     parser.add_argument("--mode", choices=["quick", "full"], default="quick")
     parser.add_argument("--scenario", choices=["recoverable", "uninformative"], default="recoverable")
-    parser.add_argument("--proxy-strength", type=float, default=None)
+    parser.add_argument("--proxy-strength", type=probability, default=None)
     parser.add_argument("--dataset-root", default="~/.cache/nvflare/fedcore")
     parser.add_argument("--model-name-or-path", default="Qwen/Qwen3-VL-2B-Instruct")
     parser.add_argument(
@@ -76,21 +105,21 @@ def define_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-dir", default="")
     parser.add_argument("--workspace", default="")
     parser.add_argument("--seed", type=int, default=7)
-    parser.add_argument("--train-samples-per-site", type=int, default=96)
-    parser.add_argument("--val-samples-per-site", type=int, default=64)
-    parser.add_argument("--test-samples-per-site", type=int, default=64)
-    parser.add_argument("--feature-batch-size", type=int, default=2)
-    parser.add_argument("--num-rounds", type=int, default=10)
-    parser.add_argument("--local-epochs", type=int, default=10)
-    parser.add_argument("--hidden-dim", type=int, default=128)
-    parser.add_argument("--learning-rate", type=float, default=1e-3)
-    parser.add_argument("--task-weight", type=float, default=4.0)
-    parser.add_argument("--effect-weight", type=float, default=0.25)
+    parser.add_argument("--train-samples-per-site", type=positive_int, default=96)
+    parser.add_argument("--val-samples-per-site", type=positive_int, default=64)
+    parser.add_argument("--test-samples-per-site", type=positive_int, default=64)
+    parser.add_argument("--feature-batch-size", type=positive_int, default=2)
+    parser.add_argument("--num-rounds", type=positive_int, default=10)
+    parser.add_argument("--local-epochs", type=positive_int, default=10)
+    parser.add_argument("--hidden-dim", type=positive_int, default=128)
+    parser.add_argument("--learning-rate", type=positive_float, default=1e-3)
+    parser.add_argument("--task-weight", type=non_negative_float, default=4.0)
+    parser.add_argument("--effect-weight", type=non_negative_float, default=0.25)
     parser.add_argument("--alpha-grid", default="0,0.25,0.5,0.75,1,1.5,2")
-    parser.add_argument("--predictor-rounds", type=int, default=1)
-    parser.add_argument("--predictor-max-steps", type=int, default=10)
-    parser.add_argument("--lora-r", type=int, default=64)
-    parser.add_argument("--lora-alpha", type=int, default=128)
+    parser.add_argument("--predictor-rounds", type=positive_int, default=1)
+    parser.add_argument("--predictor-max-steps", type=positive_int, default=10)
+    parser.add_argument("--lora-r", type=positive_int, default=64)
+    parser.add_argument("--lora-alpha", type=positive_int, default=128)
     return parser
 
 
@@ -130,6 +159,7 @@ def main() -> None:
     proxy_strength = (
         args.proxy_strength if args.proxy_strength is not None else (0.9 if args.scenario == "recoverable" else 0.5)
     )
+    _validate_run_configuration(args, proxy_strength)
     dataset_root = Path(args.dataset_root).expanduser().resolve()
     output_dir = (
         Path(args.output_dir).expanduser().resolve()

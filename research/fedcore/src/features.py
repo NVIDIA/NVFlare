@@ -24,6 +24,30 @@ from src.data import SPLITS, load_manifest
 CACHE_SCHEMA_VERSION = 1
 
 
+def load_cache_metadata(cache_dir: Path) -> dict:
+    """Load and validate the cache-level contract used by training and evaluation."""
+
+    path = cache_dir.expanduser().resolve() / "metadata.json"
+    if not path.exists():
+        raise FileNotFoundError(f"Feature-cache metadata not found: {path}")
+    try:
+        metadata = json.loads(path.read_text())
+    except json.JSONDecodeError as error:
+        raise ValueError(f"Feature-cache metadata is not valid JSON: {path}") from error
+    if not isinstance(metadata, dict):
+        raise ValueError(f"Feature-cache metadata {path} must contain a JSON object.")
+    if metadata.get("schema_version") != CACHE_SCHEMA_VERSION:
+        raise ValueError(
+            f"Feature-cache metadata {path} has schema_version={metadata.get('schema_version')!r}; "
+            f"expected {CACHE_SCHEMA_VERSION}."
+        )
+    if not isinstance(metadata.get("input_dim"), int) or int(metadata["input_dim"]) <= 0:
+        raise ValueError(f"Feature-cache metadata {path} must define a positive integer input_dim.")
+    if not isinstance(metadata.get("sites"), dict):
+        raise ValueError(f"Feature-cache metadata {path} must define a sites object.")
+    return metadata
+
+
 def create_feature_cache(
     data_dir: Path,
     cache_dir: Path,
@@ -84,6 +108,7 @@ def load_cache_split(cache_dir: Path, site: str, split: str) -> dict:
             message = "is corrupt or contains objects unsupported by PyTorch's restricted weights-only loader."
         raise ValueError(f"Cache {path} {message}") from error
     required = {
+        "schema_version",
         "example_ids",
         "labels",
         "image_available",
@@ -97,7 +122,11 @@ def load_cache_split(cache_dir: Path, site: str, split: str) -> dict:
     missing = required - set(payload)
     if missing:
         raise ValueError(f"Cache {path} is missing keys: {sorted(missing)}")
-    tensor_fields = required - {"example_ids"}
+    if payload["schema_version"] != CACHE_SCHEMA_VERSION:
+        raise ValueError(
+            f"Cache {path} has schema_version={payload['schema_version']!r}; expected {CACHE_SCHEMA_VERSION}."
+        )
+    tensor_fields = required - {"schema_version", "example_ids"}
     invalid_tensor_fields = sorted(field for field in tensor_fields if not isinstance(payload[field], torch.Tensor))
     if invalid_tensor_fields:
         raise ValueError(f"Cache {path} fields must be PyTorch tensors: {invalid_tensor_fields}")

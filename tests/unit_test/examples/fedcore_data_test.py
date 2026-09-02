@@ -13,8 +13,11 @@
 # limitations under the License.
 
 import json
+from dataclasses import replace
+from pathlib import Path
 
 import numpy as np
+import pytest
 from PIL import Image
 
 from tests.unit_test.examples.fedcore_test_utils import fedcore_import_context
@@ -154,3 +157,51 @@ def test_stratified_mask_uses_round_half_up():
         mask = _stratified_mask(labels, 0.5, np.random.default_rng(7))
 
     assert mask.tolist() == [True, True]
+
+
+def test_recoverable_split_rejects_unrealizable_proxy_errors_before_writing(tmp_path):
+    with fedcore_import_context():
+        from src.data import generate_mnist_data
+
+        output_dir = tmp_path / "too-small"
+        config = replace(
+            _config(output_dir),
+            train_samples_per_site=8,
+            proxy_strength=0.9,
+        )
+        with pytest.raises(ValueError, match="cannot represent both correct and incorrect OCR"):
+            generate_mnist_data(config, dataset_loader=_loader)
+
+    assert not output_dir.exists()
+
+
+def test_dataset_summary_reports_requested_and_realized_proxy_strength(tmp_path):
+    with fedcore_import_context():
+        from src.data import generate_mnist_data
+
+        summary = generate_mnist_data(_config(tmp_path), dataset_loader=_loader)
+
+    assert summary["proxy_strength_requested"] == 0.75
+    assert summary["proxy_strength_realized"] == 0.75
+
+
+def test_prepare_data_default_output_is_scenario_specific():
+    with fedcore_import_context():
+        import prepare_data
+
+        recoverable = prepare_data.define_parser().parse_args(["--scenario", "recoverable"])
+        uninformative = prepare_data.define_parser().parse_args(["--scenario", "uninformative"])
+
+    assert prepare_data._resolve_output_dir(recoverable) == Path("data/recoverable")
+    assert prepare_data._resolve_output_dir(uninformative) == Path("data/uninformative")
+
+
+def test_manifest_loader_rejects_unknown_schema(tmp_path):
+    manifest = tmp_path / "manifest.jsonl"
+    manifest.write_text(json.dumps({"schema_version": 999}) + "\n")
+
+    with fedcore_import_context():
+        from src.data import load_manifest
+
+        with pytest.raises(ValueError, match="expected 2"):
+            load_manifest(manifest)

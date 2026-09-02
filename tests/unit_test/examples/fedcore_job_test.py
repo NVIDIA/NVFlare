@@ -67,6 +67,7 @@ def test_fedcore_job_exports_client_script_and_src_package_from_another_cwd(tmp_
     cache_path.parent.mkdir(parents=True)
     torch.save(
         {
+            "schema_version": 1,
             "example_ids": ["example-1"],
             "labels": torch.tensor([1]),
             "image_available": torch.tensor([True]),
@@ -99,6 +100,7 @@ def test_fedcore_job_exports_client_script_and_src_package_from_another_cwd(tmp_
     assert not (custom_dir / "src" / "__pycache__").exists()
     client_config = json.loads((app_dir / "config" / "config_fed_client.json").read_text())
     command = client_config["executors"][0]["executor"]["args"]["command"]
+    assert command[:2] == ["python3", "-u"]
     assert command[2] == "custom/client.py"
     assert command[command.index("--cache-dir") + 1] == str(cache_dir)
 

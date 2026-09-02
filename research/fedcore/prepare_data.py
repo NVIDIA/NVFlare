@@ -18,20 +18,25 @@ import argparse
 from pathlib import Path
 
 from src.data import MNISTDataConfig, generate_mnist_data
+from src.validation import positive_int, probability
 
 
 def define_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Prepare MNIST image-plus-context data for FedCoRe.")
-    parser.add_argument("--output-dir", default="data/recoverable")
+    parser.add_argument("--output-dir", default="", help="Defaults to data/<scenario>.")
     parser.add_argument("--dataset-root", default="~/.cache/nvflare/fedcore")
     parser.add_argument("--scenario", choices=["recoverable", "uninformative"], default="recoverable")
-    parser.add_argument("--train-samples-per-site", type=int, default=96)
-    parser.add_argument("--val-samples-per-site", type=int, default=64)
-    parser.add_argument("--test-samples-per-site", type=int, default=64)
-    parser.add_argument("--proxy-strength", type=float, default=None)
+    parser.add_argument("--train-samples-per-site", type=positive_int, default=96)
+    parser.add_argument("--val-samples-per-site", type=positive_int, default=64)
+    parser.add_argument("--test-samples-per-site", type=positive_int, default=64)
+    parser.add_argument("--proxy-strength", type=probability, default=None)
     parser.add_argument("--seed", type=int, default=7)
-    parser.add_argument("--image-size", type=int, default=224)
+    parser.add_argument("--image-size", type=positive_int, default=224)
     return parser
+
+
+def _resolve_output_dir(args) -> Path:
+    return Path(args.output_dir) if args.output_dir else Path("data") / args.scenario
 
 
 def main() -> None:
@@ -39,9 +44,10 @@ def main() -> None:
     if args.scenario == "uninformative" and args.proxy_strength is not None:
         raise ValueError("--proxy-strength is fixed at 0.5 for the uninformative scenario.")
     proxy_strength = args.proxy_strength if args.proxy_strength is not None else 0.9
+    output_dir = _resolve_output_dir(args)
     summary = generate_mnist_data(
         MNISTDataConfig(
-            output_dir=Path(args.output_dir),
+            output_dir=output_dir,
             dataset_root=Path(args.dataset_root),
             scenario=args.scenario,
             train_samples_per_site=args.train_samples_per_site,
@@ -52,7 +58,7 @@ def main() -> None:
             image_size=args.image_size,
         )
     )
-    print(f"Prepared {summary['total_examples']} MNIST examples under {Path(args.output_dir).resolve()}")
+    print(f"Prepared {summary['total_examples']} MNIST examples under {output_dir.resolve()}")
     for site, site_summary in summary["sites"].items():
         train = site_summary["splits"]["train"]
         print(

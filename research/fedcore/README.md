@@ -34,8 +34,9 @@ MNIST is not intended to model a realistic clinical or multimodal deployment. It
 example in which one modality is authoritative, another modality is imperfectly correlated with it, and image
 availability can be controlled independently across clients.
 
-In the default `recoverable` scenario, the OCR estimate has the requested class-level accuracy and high confidence is
-more common when the estimate is correct. In the `uninformative` control, OCR class and confidence are exactly balanced
+In the default `recoverable` scenario, the OCR estimate approximates the requested class-level accuracy and high
+confidence is more common when the estimate is correct. `dataset_summary.json` records both the requested and realized
+accuracy after deterministic allocation. In the `uninformative` control, OCR class and confidence are exactly balanced
 independently of the true class within every client split.
 
 ### Why the recoverable scenario works
@@ -118,6 +119,9 @@ python prepare_data.py \
   --seed 7
 ```
 
+If `--output-dir` is omitted, `prepare_data.py` writes to `data/<scenario>` so the recoverable and uninformative
+datasets do not overwrite one another.
+
 ## Setup
 
 Quick mode uses PyTorch SDPA and does not require FlashAttention:
@@ -193,6 +197,7 @@ By default, runs write to `outputs/<scenario>_seed<seed>/`:
 ```text
 data/                          local manifests and rendered MNIST images
 feature_cache/site-*/         local Qwen caches
+feature_cache/metadata.json   cache schema, dimensions, and per-site paired counts
 completion/site-*/            per-round valid-supervision metrics
 completion/global_model.pt    final federated completion checkpoint
 evaluation/summary.json       aggregate selection and evaluation report
@@ -203,8 +208,9 @@ run_config.json               resolved command configuration
 The reusable torchvision MNIST download is stored under `--dataset-root`, which defaults to
 `~/.cache/nvflare/fedcore`. `run_demo.py` places the NVFlare workspace under the run's output directory by default,
 so full-mode checkpoints use persistent project storage rather than `/tmp`. Direct `job.py` use retains its own
-`/tmp/nvflare/fedcore` default. Use `--workspace` to select a larger filesystem. Both output and workspace paths
-must be fresh; existing paths are rejected to prevent concurrent runs or stale checkpoints from being mixed.
+`/tmp/nvflare/fedcore` default. Use `--workspace` to select a larger filesystem. For `run_demo.py`, both output and
+workspace paths must be fresh; existing paths are rejected to prevent concurrent runs or stale checkpoints from being
+mixed.
 
 `summary.json` reports image-present performance on paired examples, naturally image-missing performance before and
 after completion, aggregate policy performance, contributing clients and paired-example counts, the selected `alpha`,
@@ -219,10 +225,14 @@ privacy-preserving production aggregation protocol.
 The cache contract is target-modality neutral. Replace the MNIST preparation and feature extraction while preserving
 these fields per site and split:
 
-- `example_ids`, `labels`, and `image_available` (rename semantically in your loader if needed);
+- `schema_version`, `example_ids`, `labels`, and `image_available` (rename semantically in your loader if needed);
 - `missing_features` and `missing_logits` for every record;
 - `paired_mask`, equal to the boolean availability mask, and `full_logits`, finite for paired examples and `NaN`
   elsewhere.
+
+The cache root must also contain `metadata.json` with the same `schema_version`, a positive `input_dim`, and a `sites`
+object containing the per-site/per-split counts used by evaluation. The easiest way to preserve both contracts is to
+reuse `create_feature_cache` and change only the data loader and paired-view extractor.
 
 Cache files are loaded with PyTorch's restricted `weights_only=True` deserializer. Store numeric arrays as
 `torch.Tensor` values and use only built-in Python containers for metadata; convert NumPy arrays before `torch.save`.

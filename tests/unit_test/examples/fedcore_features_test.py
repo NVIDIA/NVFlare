@@ -23,6 +23,7 @@ from tests.unit_test.examples.fedcore_test_utils import fedcore_import_context
 
 def _valid_payload() -> dict:
     return {
+        "schema_version": 1,
         "example_ids": ["paired", "unpaired"],
         "labels": torch.tensor([1, 0], dtype=torch.long),
         "image_available": torch.tensor([True, False]),
@@ -52,6 +53,7 @@ def test_qwen_cache_is_modality_neutral_and_preserves_missing_clients(tmp_path, 
                 path = data_dir / site / f"{split}.jsonl"
                 path.parent.mkdir(parents=True, exist_ok=True)
                 record = {
+                    "schema_version": 2,
                     "example_id": f"{site}-{split}",
                     "label": site_index % 2,
                     "image_available": available,
@@ -65,6 +67,7 @@ def test_qwen_cache_is_modality_neutral_and_preserves_missing_clients(tmp_path, 
                 available = torch.tensor([record["image_available"] for record in records], dtype=torch.bool)
                 full_logits = torch.tensor([1.0 if value else torch.nan for value in available])
                 return {
+                    "schema_version": 1,
                     "example_ids": [record["example_id"] for record in records],
                     "labels": torch.tensor([record["label"] for record in records]),
                     "image_available": available,
@@ -100,6 +103,7 @@ def test_qwen_cache_is_modality_neutral_and_preserves_missing_clients(tmp_path, 
 
 def test_cache_loader_rejects_numpy_arrays_with_actionable_error(tmp_path):
     payload = {
+        "schema_version": 1,
         "example_ids": ["example-1"],
         "labels": np.array([1]),
         "image_available": np.array([True]),
@@ -121,6 +125,7 @@ def test_cache_loader_rejects_numpy_arrays_with_actionable_error(tmp_path):
 
 def test_cache_loader_rejects_inconsistent_tensor_shapes(tmp_path):
     payload = {
+        "schema_version": 1,
         "example_ids": ["example-1"],
         "labels": torch.tensor([1, 0]),
         "image_available": torch.tensor([True]),
@@ -150,6 +155,31 @@ def test_cache_loader_rejects_float_labels(tmp_path):
 
         with pytest.raises(ValueError, match="integer dtype"):
             load_cache_split(tmp_path, "site-1", "train")
+
+
+def test_cache_loader_rejects_unknown_schema_version(tmp_path):
+    payload = _valid_payload()
+    payload["schema_version"] = 999
+    _save_payload(tmp_path, payload)
+
+    with fedcore_import_context():
+        from src.features import load_cache_split
+
+        with pytest.raises(ValueError, match="expected 1"):
+            load_cache_split(tmp_path, "site-1", "train")
+
+
+def test_cache_metadata_is_required_and_schema_checked(tmp_path):
+    with fedcore_import_context():
+        from src.features import load_cache_metadata
+
+        with pytest.raises(FileNotFoundError, match="metadata not found"):
+            load_cache_metadata(tmp_path)
+        (tmp_path / "metadata.json").write_text(json.dumps({"schema_version": 999, "input_dim": 2, "sites": {}}))
+        with pytest.raises(ValueError, match="expected 1"):
+            load_cache_metadata(tmp_path)
+        (tmp_path / "metadata.json").write_text(json.dumps({"schema_version": 1, "input_dim": 2, "sites": {}}))
+        assert load_cache_metadata(tmp_path)["input_dim"] == 2
 
 
 @pytest.mark.parametrize(

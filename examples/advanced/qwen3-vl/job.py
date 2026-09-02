@@ -21,7 +21,6 @@ import argparse
 import os
 import re
 import shlex
-import sys
 
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.recipe import SimEnv, add_experiment_tracking, set_per_site_config
@@ -99,6 +98,17 @@ def _parse_gpu_string(gpu_str: str):
     return [max(1, len(g.split(","))) for g in groups]
 
 
+def _build_torchrun_command(n_proc: int) -> str:
+    return shlex.join(
+        [
+            "python3",
+            "-m",
+            "nvflare.app_opt.pt.torchrun_node",
+            f"--nproc-per-node={n_proc}",
+        ]
+    )
+
+
 def _configure_timeouts(recipe, client_names, task_timeout=1200, tensor_timeout=600):
     """Add client and server timeouts for large model / tensor streaming.
 
@@ -159,19 +169,8 @@ def main():
                 f" --lora_exchange --lora_r {args.lora_r} --lora_alpha {args.lora_alpha}"
                 f" --lora_dropout {args.lora_dropout}"
             )
-        # Per-site torchrun for distributed training (unique master_port per client)
-        master_port = 29500 + (idx + 1)
-        command = shlex.join(
-            [
-                sys.executable,
-                "-m",
-                "torch.distributed.run",
-                f"--nproc_per_node={n_proc}",
-                "--nnodes=1",
-                "--master_port",
-                str(master_port),
-            ]
-        )
+        # The NVFlare wrapper handles standalone and launcher-provided multi-node rendezvous consistently.
+        command = _build_torchrun_command(n_proc)
         per_site_config[site_name] = {"train_args": train_args, "command": command}
 
     # Initial model: when --lora, use LoRA-only wrapper so server and clients exchange only adapter weights.

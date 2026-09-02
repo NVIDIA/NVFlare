@@ -70,9 +70,17 @@ def load_manifest(path: Path) -> list[dict]:
             if not line.strip():
                 continue
             try:
-                records.append(json.loads(line))
+                record = json.loads(line)
             except json.JSONDecodeError as exc:
                 raise ValueError(f"Invalid JSON on line {line_number} of {path}") from exc
+            if not isinstance(record, dict):
+                raise ValueError(f"Record on line {line_number} of {path} must be a JSON object.")
+            if record.get("schema_version") != SCHEMA_VERSION:
+                raise ValueError(
+                    f"Record on line {line_number} of {path} has schema_version={record.get('schema_version')!r}; "
+                    f"expected {SCHEMA_VERSION}."
+                )
+            records.append(record)
     return records
 
 
@@ -163,7 +171,7 @@ def _ocr_digit(true_digit: int, sensor_matches: bool, rng: np.random.Generator) 
     if sensor_matches and rng.random() < 0.7:
         return true_digit
     alternatives = [digit for digit in candidates if digit != true_digit]
-    return int(rng.choice(alternatives or candidates))
+    return int(rng.choice(alternatives))
 
 
 def _render_mnist_image(source: Image.Image, path: Path, image_size: int) -> None:
@@ -202,11 +210,13 @@ def _sft_record(record: dict) -> dict:
     return result
 
 
-def _validate_config(config: MNISTDataConfig) -> None:
+def validate_mnist_config(config: MNISTDataConfig) -> None:
     if config.scenario not in {"recoverable", "uninformative"}:
         raise ValueError("scenario must be 'recoverable' or 'uninformative'.")
     if not 0.0 <= config.proxy_strength <= 1.0:
         raise ValueError("proxy_strength must be in [0, 1].")
+    if config.image_size < 64:
+        raise ValueError("image_size must be at least 64 pixels.")
     for split in SPLITS:
         count = config.split_count(split)
         if count < 8 or count % 4:
@@ -215,10 +225,18 @@ def _validate_config(config: MNISTDataConfig) -> None:
             raise ValueError(
                 f"{split}_samples_per_site must be divisible by 8 for the exactly balanced control, got {count}."
             )
+        if config.scenario == "recoverable" and 0.0 < config.proxy_strength < 1.0:
+            per_class = count // 2
+            matched_per_class = int(np.floor(per_class * config.proxy_strength + 0.5))
+            if matched_per_class in {0, per_class}:
+                raise ValueError(
+                    f"{split}_samples_per_site={count} cannot represent both correct and incorrect OCR estimates at "
+                    f"proxy_strength={config.proxy_strength}; increase the split size or choose a less extreme value."
+                )
 
 
 def generate_mnist_data(config: MNISTDataConfig, dataset_loader: MNISTLoader | None = None) -> dict:
-    _validate_config(config)
+    validate_mnist_config(config)
     output_dir = config.output_dir.expanduser().resolve()
     dataset_root = config.dataset_root.expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -243,10 +261,12 @@ def generate_mnist_data(config: MNISTDataConfig, dataset_loader: MNISTLoader | N
         "scenario": config.scenario,
         "seed": config.seed,
         "proxy_strength": effective_proxy_strength,
+        "proxy_strength_requested": effective_proxy_strength,
         "sites": {},
         "splits": {},
     }
     all_source_ids = set()
+    total_sensor_matches = 0
 
     for site_index, image_fraction in enumerate(SITE_IMAGE_FRACTIONS, start=1):
         site_name = f"site-{site_index}"
@@ -258,7 +278,7 @@ def generate_mnist_data(config: MNISTDataConfig, dataset_loader: MNISTLoader | N
             dataset = test_dataset if split == "test" else train_dataset
             source_split = "test" if split == "test" else "train"
             indices = allocations[f"{split}:{site_name}"]
-            digits = np.asarray([int(dataset[index][1]) for index in indices], dtype=np.int64)
+            digits = _targets(dataset)[indices]
             labels = np.asarray([_binary_label(int(digit)) for digit in digits], dtype=np.int64)
             rng = np.random.default_rng(config.seed + 1000 * site_index + 100 * split_index)
             availability = _stratified_mask(labels, image_fraction, rng)
@@ -316,6 +336,7 @@ def generate_mnist_data(config: MNISTDataConfig, dataset_loader: MNISTLoader | N
                 "sensor_matches_label": int(sensor_matches.sum()),
                 "sensor_high_confidence": int(high_confidence.sum()),
             }
+            total_sensor_matches += int(sensor_matches.sum())
             site_summary["splits"][split] = split_summary
             summary["splits"].setdefault(split, 0)
             summary["splits"][split] += len(records)
@@ -325,6 +346,7 @@ def generate_mnist_data(config: MNISTDataConfig, dataset_loader: MNISTLoader | N
         summary["sites"][site_name] = site_summary
 
     summary["total_examples"] = len(all_source_ids)
+    summary["proxy_strength_realized"] = total_sensor_matches / max(1, summary["total_examples"])
     with (output_dir / "dataset_summary.json").open("w") as f:
         json.dump(summary, f, indent=2, sort_keys=True)
         f.write("\n")

@@ -19,6 +19,7 @@ from pathlib import Path
 
 import torch
 from src.data import make_question
+from src.features import CACHE_SCHEMA_VERSION
 
 
 def _load_upstream_qwen_helpers():
@@ -62,6 +63,13 @@ def _load_nvflare_lora_checkpoint(model, checkpoint_path: Path, helpers, lora_r:
         raise ValueError(f"No LoRA adapter weights from {checkpoint_path} matched Qwen3-VL.")
     if unmatched:
         raise ValueError(f"Could not map {len(unmatched)} LoRA weights from {checkpoint_path}.")
+    missing = sorted(helpers.get_expected_peft_adapter_keys(model) - set(mapped))
+    if missing:
+        sample = ", ".join(missing[:3])
+        raise ValueError(
+            f"LoRA checkpoint {checkpoint_path} is missing {len(missing)} required adapter weights. "
+            f"Example missing keys: {sample}"
+        )
     model.load_state_dict(mapped, strict=False)
     return model
 
@@ -79,9 +87,11 @@ class QwenFeatureExtractor:
         from transformers import AutoProcessor
 
         helpers = _load_upstream_qwen_helpers()
+        if int(batch_size) <= 0:
+            raise ValueError("batch_size must be positive.")
         self.model_name_or_path = model_name_or_path
         self.device = torch.device(device)
-        self.batch_size = max(1, int(batch_size))
+        self.batch_size = int(batch_size)
         dtype = torch.bfloat16 if self.device.type == "cuda" else torch.float32
         self.model = helpers.load_qwen_vl_from_pretrained(
             model_name_or_path,
@@ -167,7 +177,7 @@ class QwenFeatureExtractor:
             _, paired_logits = self._forward(paired_records, data_dir, include_image=True)
             full_logits[paired_indices] = paired_logits
         return {
-            "schema_version": 1,
+            "schema_version": CACHE_SCHEMA_VERSION,
             "example_ids": [record["example_id"] for record in records],
             "labels": torch.tensor([record["label"] for record in records], dtype=torch.long),
             "image_available": image_available,

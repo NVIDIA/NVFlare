@@ -60,6 +60,57 @@ def test_run_directories_must_be_fresh(tmp_path):
             run_demo._prepare_run_directories(output_dir, workspace)
 
 
+def test_existing_workspace_does_not_poison_fresh_output_path(tmp_path):
+    with fedcore_import_context():
+        import run_demo
+
+        output_dir = tmp_path / "output"
+        workspace = tmp_path / "existing-workspace"
+        workspace.mkdir()
+        with pytest.raises(FileExistsError, match="workspace"):
+            run_demo._prepare_run_directories(output_dir, workspace)
+
+    assert not output_dir.exists()
+
+
+def test_run_command_ignores_process_workspace_redirect(tmp_path, monkeypatch):
+    with fedcore_import_context():
+        import run_demo
+
+        captured = {}
+
+        def fake_run(command, cwd, check, env):
+            captured.update({"command": command, "cwd": cwd, "check": check, "env": env})
+
+        monkeypatch.setenv("NVFLARE_SIMULATOR_WORKSPACE_ROOT", "/unexpected/workspace")
+        monkeypatch.setattr(run_demo.subprocess, "run", fake_run)
+        run_demo._run([sys.executable, "-c", "pass"], cwd=tmp_path)
+
+    assert "NVFLARE_SIMULATOR_WORKSPACE_ROOT" not in captured["env"]
+
+
+def test_invalid_data_configuration_does_not_reserve_output(tmp_path, monkeypatch):
+    with fedcore_import_context():
+        import run_demo
+
+        output_dir = tmp_path / "output"
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "run_demo.py",
+                "--output-dir",
+                str(output_dir),
+                "--train-samples-per-site",
+                "8",
+            ],
+        )
+        with pytest.raises(ValueError, match="cannot represent both correct and incorrect OCR"):
+            run_demo.main()
+
+    assert not output_dir.exists()
+
+
 def test_uninformative_scenario_rejects_proxy_override(monkeypatch):
     with fedcore_import_context():
         import run_demo

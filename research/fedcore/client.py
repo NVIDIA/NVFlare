@@ -25,8 +25,11 @@ import torch.nn.functional as F
 from model import LogitCompletionModel, effect_target
 from src.features import load_cache_split
 from src.federated import aggregation_meta, state_dict_for_update
+from src.validation import non_negative_float, positive_float, positive_int, probability
 
 import nvflare.client as flare
+
+_TERMINATION_REQUESTED = False
 
 
 def _tensor_state_dict(params: dict) -> dict[str, torch.Tensor]:
@@ -48,6 +51,10 @@ def _train_round(
     seed: int,
     current_round: int,
 ) -> dict[str, float]:
+    if local_epochs <= 0:
+        raise ValueError("local_epochs must be positive.")
+    if batch_size <= 0:
+        raise ValueError("batch_size must be positive.")
     paired_indices = payload["paired_mask"].nonzero(as_tuple=False).flatten()
     paired_count = int(paired_indices.numel())
     if paired_count == 0:
@@ -68,9 +75,9 @@ def _train_round(
         torch.manual_seed(round_seed)
         optimizer = torch.optim.AdamW(model.parameters(), lr=float(learning_rate))
         generator = torch.Generator().manual_seed(round_seed)
-        for _ in range(max(1, int(local_epochs))):
+        for _ in range(int(local_epochs)):
             order = torch.randperm(paired_count, generator=generator)
-            for start in range(0, paired_count, max(1, int(batch_size))):
+            for start in range(0, paired_count, int(batch_size)):
                 indices = order[start : start + batch_size]
                 predicted_delta = model(features[indices])
                 completed = missing_logits[indices] + predicted_delta
@@ -101,24 +108,28 @@ def define_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--site", required=True)
     parser.add_argument("--input-dim", type=int, required=True)
-    parser.add_argument("--hidden-dim", type=int, default=128)
-    parser.add_argument("--dropout", type=float, default=0.1)
-    parser.add_argument("--local-epochs", type=int, default=10)
-    parser.add_argument("--batch-size", type=int, default=16)
-    parser.add_argument("--learning-rate", type=float, default=1e-3)
-    parser.add_argument("--task-weight", type=float, default=4.0)
-    parser.add_argument("--effect-weight", type=float, default=0.25)
+    parser.add_argument("--hidden-dim", type=positive_int, default=128)
+    parser.add_argument("--dropout", type=probability, default=0.1)
+    parser.add_argument("--local-epochs", type=positive_int, default=10)
+    parser.add_argument("--batch-size", type=positive_int, default=16)
+    parser.add_argument("--learning-rate", type=positive_float, default=1e-3)
+    parser.add_argument("--task-weight", type=non_negative_float, default=4.0)
+    parser.add_argument("--effect-weight", type=non_negative_float, default=0.25)
     parser.add_argument("--seed", type=int, default=7)
     return parser
 
 
 def _shutdown_on_signal(_signum, _frame) -> None:
-    """Release NVFlare resources before the external trainer exits."""
+    """Request an orderly exit; the existing finally block owns teardown."""
 
-    flare.shutdown()
+    global _TERMINATION_REQUESTED
+    _TERMINATION_REQUESTED = True
 
 
 def main() -> None:
+    global _TERMINATION_REQUESTED
+
+    _TERMINATION_REQUESTED = False
     args = define_parser().parse_args()
     train_payload = load_cache_split(Path(args.cache_dir), args.site, "train")
     model = LogitCompletionModel(args.input_dim, hidden_dim=args.hidden_dim, dropout=args.dropout, seed=args.seed)
@@ -128,9 +139,9 @@ def main() -> None:
     flare.init()
     signal.signal(signal.SIGTERM, _shutdown_on_signal)
     try:
-        while flare.is_running():
+        while flare.is_running() and not _TERMINATION_REQUESTED:
             input_model = flare.receive()
-            if input_model is None:
+            if input_model is None or _TERMINATION_REQUESTED:
                 break
             current_round = int(getattr(input_model, "current_round", 0) or 0)
             model.load_state_dict(_tensor_state_dict(input_model.params), strict=True)
@@ -149,12 +160,12 @@ def main() -> None:
             paired_examples = int(train_metrics["paired_examples"])
             params = state_dict_for_update(model, paired_examples)
             round_metrics = {
+                **train_metrics,
                 "site": args.site,
                 "round": current_round,
                 "paired_examples": paired_examples,
                 "sent_empty_update": not bool(params),
                 "wall_time_seconds": time.perf_counter() - start,
-                **train_metrics,
             }
             with (output_dir / f"round_{current_round:03d}.json").open("w") as f:
                 json.dump(round_metrics, f, indent=2, sort_keys=True)

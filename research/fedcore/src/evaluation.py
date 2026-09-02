@@ -38,17 +38,25 @@ def predict_delta(model: torch.nn.Module, payload: dict, batch_size: int = 256) 
     model.eval()
     with torch.inference_mode():
         for start in range(0, int(features.shape[0]), max(1, int(batch_size))):
-            predictions.append(model(features[start : start + batch_size]).detach().cpu())
+            predictions.append(model(features[start : start + batch_size]).detach().float().cpu())
     return torch.cat(predictions).numpy() if predictions else np.empty(0, dtype=np.float32)
+
+
+def _as_numpy(tensor: torch.Tensor, dtype) -> np.ndarray:
+    """Convert tensors, including bfloat16 caches, to a NumPy-supported dtype."""
+
+    if tensor.dtype == torch.bfloat16:
+        tensor = tensor.float()
+    return tensor.detach().cpu().numpy().astype(dtype)
 
 
 def prepare_site(site: str, payload: dict, model: torch.nn.Module) -> PreparedSite:
     return PreparedSite(
         site=site,
-        labels=payload["labels"].detach().cpu().numpy().astype(np.int64),
-        image_available=payload["image_available"].detach().cpu().numpy().astype(bool),
-        missing_logits=payload["missing_logits"].detach().cpu().numpy().astype(np.float64),
-        full_logits=payload["full_logits"].detach().cpu().numpy().astype(np.float64),
+        labels=_as_numpy(payload["labels"], np.int64),
+        image_available=_as_numpy(payload["image_available"], bool),
+        missing_logits=_as_numpy(payload["missing_logits"], np.float64),
+        full_logits=_as_numpy(payload["full_logits"], np.float64),
         predicted_delta=predict_delta(model, payload).astype(np.float64),
     )
 

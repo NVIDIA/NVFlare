@@ -18,11 +18,11 @@ import argparse
 import json
 import shlex
 import shutil
-import sys
 import tempfile
 from pathlib import Path
 
 from src.features import load_cache_split
+from src.validation import non_negative_float, positive_float, positive_int, probability
 
 PROJECT_DIR = Path(__file__).resolve().parent
 SITES = ["site-1", "site-2", "site-3"]
@@ -33,14 +33,14 @@ def define_parser() -> argparse.ArgumentParser:
     parser.add_argument("--cache-dir", required=True)
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--workspace", default="/tmp/nvflare/fedcore")
-    parser.add_argument("--num-rounds", type=int, default=10)
-    parser.add_argument("--local-epochs", type=int, default=10)
-    parser.add_argument("--batch-size", type=int, default=16)
-    parser.add_argument("--learning-rate", type=float, default=1e-3)
-    parser.add_argument("--hidden-dim", type=int, default=128)
-    parser.add_argument("--dropout", type=float, default=0.1)
-    parser.add_argument("--task-weight", type=float, default=4.0)
-    parser.add_argument("--effect-weight", type=float, default=0.25)
+    parser.add_argument("--num-rounds", type=positive_int, default=10)
+    parser.add_argument("--local-epochs", type=positive_int, default=10)
+    parser.add_argument("--batch-size", type=positive_int, default=16)
+    parser.add_argument("--learning-rate", type=positive_float, default=1e-3)
+    parser.add_argument("--hidden-dim", type=positive_int, default=128)
+    parser.add_argument("--dropout", type=probability, default=0.1)
+    parser.add_argument("--task-weight", type=non_negative_float, default=4.0)
+    parser.add_argument("--effect-weight", type=non_negative_float, default=0.25)
     parser.add_argument("--seed", type=int, default=7)
     return parser
 
@@ -96,7 +96,7 @@ def build_recipe(args, cache_dir: Path, output_dir: Path, client_runtime_dir: Pa
     per_site_config = {}
     for site in SITES:
         train_args = _build_train_args(args, cache_dir, output_dir, site, input_dim)
-        per_site_config[site] = {"train_args": train_args, "command": shlex.join([sys.executable, "-u"])}
+        per_site_config[site] = {"train_args": train_args, "command": "python3 -u"}
 
     model = {
         "class_path": "model.LogitCompletionModel",
