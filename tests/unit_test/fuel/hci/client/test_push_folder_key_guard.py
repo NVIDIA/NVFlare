@@ -221,7 +221,7 @@ def test_push_folder_refreshes_ephemeral_cert_before_signing(tmp_path):
         module.push_folder(args, ctx)
 
     api.ensure_client_cert_valid.assert_called_once_with()
-    assert server_execute.call_args.args[0] == "admin.push_folder test_job --ephemeral-admin-cert"
+    assert server_execute.call_args.args[0] == "admin.push_folder test_job"
 
 
 def test_push_folder_reconnects_when_cell_is_missing_after_failed_renewal_reconnect(tmp_path):

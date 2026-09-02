@@ -695,6 +695,9 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             return None
         if self.in_logout:
             return None
+        if not self.cell:
+            self.close()
+            return None
 
         self.in_logout = True
         try:

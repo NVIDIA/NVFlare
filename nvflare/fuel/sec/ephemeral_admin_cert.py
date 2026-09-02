@@ -16,6 +16,7 @@ import datetime
 import hashlib
 import importlib
 import json
+import math
 import os
 import shutil
 import tempfile
@@ -26,6 +27,7 @@ from pathlib import Path
 from typing import Mapping, Optional
 
 from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
 from nvflare.fuel.sec.admin_cert import validate_admin_leaf_cert
@@ -78,6 +80,10 @@ def obtain_ephemeral_admin_cert_files(config: Mapping, root_ca_file: str) -> Eph
         provider=provider_name, provider_config=provider_config, root_ca_file=root_ca_file
     )
     with _cache_lock(cache_dir):
+        for staging_dir in cache_dir.glob(".new-*"):
+            if staging_dir.is_dir():
+                shutil.rmtree(staging_dir, ignore_errors=True)
+
         cached_files = _load_cached_ephemeral_admin_cert_files(cache_dir, root_ca_file, renewal_window)
         if cached_files:
             return cached_files
@@ -89,10 +95,14 @@ def obtain_ephemeral_admin_cert_files(config: Mapping, root_ca_file: str) -> Eph
 
         try:
             cert = validate_ephemeral_admin_cert_files(files.client_cert, files.client_key, root_ca_file)
+            files.expires_at = cert_time(cert, "not_valid_after").timestamp()
+            if files.needs_renewal(renewal_window=renewal_window):
+                raise EphemeralAdminCertError(
+                    "issued ephemeral admin certificate must remain valid beyond the renewal window"
+                )
         except Exception:
             files.cleanup()
             raise
-        files.expires_at = cert_time(cert, "not_valid_after").timestamp()
         return _store_ephemeral_admin_cert_files(files, cache_dir, root_ca_file)
 
 
@@ -107,10 +117,17 @@ def validate_ephemeral_admin_cert_files(
     try:
         verify_cert_chain(leaf_cert=cert, intermediate_certs=cert_chain[1:], root_ca_cert=root_ca_cert)
     except Exception as ex:
-        raise EphemeralAdminCertError("ephemeral admin certificate does not chain to the configured CA") from ex
+        raise EphemeralAdminCertError(f"ephemeral admin certificate chain validation failed: {ex}") from ex
 
-    private_key = load_private_key_file(key_path)
-    if _public_key_pem(cert.public_key()) != _public_key_pem(private_key.public_key()):
+    try:
+        private_key = load_private_key_file(key_path)
+    except Exception as ex:
+        raise EphemeralAdminCertError("ephemeral admin private key must be an unencrypted PEM private key") from ex
+
+    public_key = cert.public_key()
+    if not isinstance(private_key, rsa.RSAPrivateKey) or not isinstance(public_key, rsa.RSAPublicKey):
+        raise EphemeralAdminCertError("ephemeral admin certificate and private key must use RSA")
+    if _public_key_pem(public_key) != _public_key_pem(private_key.public_key()):
         raise EphemeralAdminCertError("ephemeral admin certificate is for a different private key")
 
     try:
@@ -121,7 +138,8 @@ def validate_ephemeral_admin_cert_files(
         (NameOID.ORGANIZATION_NAME, "organizationName"),
         (NameOID.UNSTRUCTURED_NAME, "unstructuredName"),
     ):
-        if not cert.subject.get_attributes_for_oid(oid):
+        attrs = cert.subject.get_attributes_for_oid(oid)
+        if not attrs or not attrs[0].value:
             raise EphemeralAdminCertError(f"ephemeral admin certificate missing subject {field_name}")
     return cert
 
@@ -264,10 +282,14 @@ def _cache_key(provider: str, provider_config: Mapping, root_ca_file: str) -> st
 
 def get_ephemeral_admin_cert_renewal_window(config: Mapping) -> float:
     renewal_window = config.get("renewal_window", 60.0)
+    if isinstance(renewal_window, bool):
+        raise EphemeralAdminCertError("ephemeral_admin_cert.renewal_window must be a finite number")
     try:
         renewal_window = float(renewal_window)
     except (TypeError, ValueError) as ex:
-        raise EphemeralAdminCertError("ephemeral_admin_cert.renewal_window must be a number") from ex
+        raise EphemeralAdminCertError("ephemeral_admin_cert.renewal_window must be a finite number") from ex
+    if not math.isfinite(renewal_window):
+        raise EphemeralAdminCertError("ephemeral_admin_cert.renewal_window must be a finite number")
     if renewal_window <= 0.0:
         raise EphemeralAdminCertError("ephemeral_admin_cert.renewal_window must be greater than zero")
     return renewal_window

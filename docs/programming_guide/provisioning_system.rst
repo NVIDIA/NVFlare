@@ -519,6 +519,10 @@ its private key, contain a valid FLARE organization and admin role, and be valid
 for the current time. If ``cert_ttl`` is omitted, the built-in ``step_ca``
 provider requests ``24h``.
 
+SSO users can log in to the default study. A ``project_admin`` can explicitly
+add their certificate CN to another study. Declarative certificate-based study
+authorization will be added separately.
+
 The certificate provider must map authenticated IdP claims to one allowed
 ``(organization, role)`` pair. For example, an IdP role such as
 ``nvflare-demo-example-project_admin`` can map to organization ``example`` and
@@ -529,8 +533,12 @@ organization are present, select the highest privilege; fail closed if the
 organization is ambiguous.
 
 Custom certificate providers can be configured with
-``provider: module:function``. The function receives ``provider_config`` and
-``root_ca_file`` and returns paths for the admin certificate and key.
+``provider: module:function``. FLARE calls the function as
+``provider(config=provider_config, root_ca_file=root_ca_file)``. It must return
+an ``nvflare.fuel.sec.ephemeral_admin_cert.EphemeralAdminCertFiles`` instance.
+The certificate and key paths must remain readable until FLARE copies them;
+providers that own a temporary directory should set the result's ``temp_dir``
+so FLARE can clean it up. FLARE derives ``expires_at`` from the certificate.
 FLARE performs the same certificate validation for custom providers as it does
 for ``step_ca``.
 

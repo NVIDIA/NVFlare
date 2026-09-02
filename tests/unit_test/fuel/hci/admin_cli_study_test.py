@@ -176,11 +176,13 @@ def test_admin_client_passes_study_to_admin_api(tmp_path):
     }
 
     class _FakeAdminAPI:
+        user_name = "cert-admin@example.com"
+
         def __init__(self, **kwargs):
             captured["study"] = kwargs["study"]
 
     with patch("nvflare.fuel.hci.client.cli.AdminAPI", _FakeAdminAPI):
-        AdminClient(
+        client = AdminClient(
             admin_config=admin_config,
             username="admin@nvidia.com",
             handlers=[],
@@ -189,6 +191,7 @@ def test_admin_client_passes_study_to_admin_api(tmp_path):
         )
 
     assert captured["study"] == "cancer-research"
+    assert client.user_name == "cert-admin@example.com"
 
 
 def test_admin_client_run_reports_login_rejection_and_skips_cmdloop():

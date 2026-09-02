@@ -60,7 +60,7 @@ def test_admin_api_hydrates_missing_cert_pair_from_step_ca(monkeypatch, tmp_path
 
 
 def test_admin_api_reports_invalid_ephemeral_renewal_window_as_config_error():
-    with pytest.raises(ConfigError, match="renewal_window must be a number"):
+    with pytest.raises(ConfigError, match="renewal_window must be a finite number"):
         AdminAPI(
             user_name="alice@nvidia.com",
             admin_config={

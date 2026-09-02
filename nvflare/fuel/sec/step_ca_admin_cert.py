@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import math
 import os
 import subprocess
 import tempfile
@@ -27,6 +28,8 @@ DEFAULT_STEP_CA_COMMAND_TIMEOUT = 300.0
 
 
 def obtain_step_ca_admin_cert_files(config: Mapping, root_ca_file: str) -> EphemeralAdminCertFiles:
+    config = validate_step_ca_admin_cert_config(config)
+    command_timeout = config["command_timeout"]
     temp_dir = tempfile.TemporaryDirectory(prefix="nvflare-step-ca-admin-")
     cert_path = os.path.join(temp_dir.name, "client.crt")
     key_path = os.path.join(temp_dir.name, "client.key")
@@ -36,8 +39,6 @@ def obtain_step_ca_admin_cert_files(config: Mapping, root_ca_file: str) -> Ephem
         cert_path=cert_path,
         key_path=key_path,
     )
-    command_timeout = float(config.get("command_timeout") or DEFAULT_STEP_CA_COMMAND_TIMEOUT)
-
     try:
         _run_step(command, timeout=command_timeout)
     except Exception:
@@ -61,7 +62,7 @@ def validate_step_ca_admin_cert_config(config: Mapping) -> dict:
     _validate_step_ca_url(str(ca_url))
     if not result.get("provisioner"):
         raise EphemeralAdminCertError("step_ca provider_config.provisioner is required")
-    _command_timeout(result)
+    result["command_timeout"] = _command_timeout(result)
     return result
 
 
@@ -71,7 +72,6 @@ def _build_step_ca_command(
     cert_path: str,
     key_path: str,
 ) -> Sequence[str]:
-    config = validate_step_ca_admin_cert_config(config)
     step_bin = str(config.get("step_bin") or "step")
     ca_url = str(config.get("ca_url"))
     provisioner = str(config.get("provisioner"))
@@ -87,10 +87,14 @@ def _command_timeout(config: Mapping) -> float:
     command_timeout_config = config.get("command_timeout")
     if command_timeout_config is None or command_timeout_config == "":
         return DEFAULT_STEP_CA_COMMAND_TIMEOUT
+    if isinstance(command_timeout_config, bool):
+        raise EphemeralAdminCertError("step_ca provider_config.command_timeout must be a finite number")
     try:
         command_timeout = float(command_timeout_config)
     except (TypeError, ValueError) as ex:
-        raise EphemeralAdminCertError("step_ca provider_config.command_timeout must be a number") from ex
+        raise EphemeralAdminCertError("step_ca provider_config.command_timeout must be a finite number") from ex
+    if not math.isfinite(command_timeout):
+        raise EphemeralAdminCertError("step_ca provider_config.command_timeout must be a finite number")
     if command_timeout <= 0.0:
         raise EphemeralAdminCertError("step_ca provider_config.command_timeout must be greater than zero")
     return command_timeout
@@ -106,9 +110,9 @@ def _run_step(
             check=True,
             timeout=timeout,
         )
-    except FileNotFoundError as ex:
+    except OSError as ex:
         raise EphemeralAdminCertError(
-            "step-ca admin certs require the 'step' CLI in PATH or step_ca provider_config.step_bin"
+            "cannot execute the 'step' CLI; install it or configure step_ca provider_config.step_bin"
         ) from ex
     except subprocess.TimeoutExpired as ex:
         raise EphemeralAdminCertError(f"step ca certificate timed out after {timeout} seconds") from ex

@@ -40,7 +40,9 @@ static `client.crt` and `client.key` files. The admin client:
    and certificate/private-key match.
 3. Uses the existing certificate challenge, mTLS, authorization, and job-signing
    paths.
-4. Reacquires credentials when the certificate enters its renewal window.
+4. Reacquires credentials at startup, login, or job submission when the cached
+   certificate enters its renewal window. Running sessions are not transparently
+   renewed and end when their certificate expires.
 
 The certificate-chain support is implemented separately. This feature adds no
 OIDC token format, server login mode, or server-signed job manifest to FLARE.
@@ -73,18 +75,30 @@ certificate. Its name identifies a generic startup kit, not a user. The kit
 contains `rootCA.pem` and provider configuration but no static admin
 certificate or private key. Server and site startup kits are unchanged.
 
+SSO users can log in to the default study. A `project_admin` can explicitly add
+their certificate CN to another study. Declarative certificate-based study
+authorization will be added separately.
+
 ## Provider and Cache
 
 `ephemeral_admin_cert.provider` is a built-in provider name or a
-`module:function` path. A provider receives its configuration and the project
-root certificate, and returns local certificate/key paths. FLARE applies the
-same validation to built-in and custom provider results.
+`module:function` path. Its exact contract is:
+
+```python
+def obtain(config: Mapping, root_ca_file: str) -> EphemeralAdminCertFiles:
+    ...
+```
+
+The returned paths must remain readable until FLARE copies them into its cache.
+Providers that own a temporary directory should attach it to `temp_dir` so
+FLARE can clean it up. FLARE derives `expires_at` from the validated certificate
+and applies the same validation to built-in and custom provider results.
 
 Valid credentials are cached per OS user under
 `~/.nvflare/ephemeral_admin_certs`. The cache entry is bound to the provider
 configuration and project root. Files are private to the OS user, concurrent
-CLI processes serialize acquisition, and immutable credential directories
-prevent cert/key replacement races.
+CLI processes serialize acquisition, and credentials are published atomically
+only after both files have been copied.
 
 The cache is required because each `nvflare` command starts a new process;
 without it every command would repeat browser login. Users must not share an OS
@@ -143,9 +157,8 @@ and deployment delays because clients verify that the signing certificate is
 still valid when the job is deployed.
 
 `clone_job` copies the original submitter signature without contacting the
-admin client. A clone therefore becomes unusable after the original certificate
-expires. FLARE reports this before cloning when it can inspect the stored
-certificate. A future client-assisted clone could re-sign and resubmit the job.
+admin client. A clone can therefore become unusable after the original
+certificate expires. This feature adds no special clone protocol or handling.
 
 ## References
 
