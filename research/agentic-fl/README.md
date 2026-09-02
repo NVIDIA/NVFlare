@@ -1,49 +1,88 @@
-# AgenticFL: Agentic Data Readiness for Federated Learning
+# FedReady: Bounded Agents for Federation Formation
 
-## Abstract
+This directory contains the NVIDIA FLARE reference implementation of
+**FedReady**, a protocol for turning a task request and heterogeneous private
+site data into a verified, trainable federation. The source directory, Python
+package, and command names retain the `agentic-fl` and `agenticfl` identifiers.
 
-AgenticFL is a research workflow for turning a natural-language federated
-learning task into client-local prepared data and an executable NVIDIA FLARE
-training job. NVIDIA FLARE owns client/server transport, task lifecycles,
-simulation, aggregation, and result collection. Bounded Codex workers propose
-task inquiries, client-local adapters, data contracts, and training code; the
-workflow validates those proposals before promoting them.
+<img src="docs/assets/fedready_overview.png" alt="FedReady federation formation workflow: heterogeneous private site representations are harmonized by bounded agents and boundary verifiers before ordinary federated learning begins" width="1100">
 
-This contribution is the stable research artifact with one live coding-agent
-backend (`codex`). A client-local VLM performs bounded raw-input guardrail
+*Federation formation end to end. (a) A task request arrives, but the center
+cannot inspect the different private representations held by participating
+sites. (b) Bounded agents propose a shared contract, local adapters, and
+training code; boundary-local verifiers decide which artifacts and sites are
+promoted. (c) Once the cohort and artifacts are frozen, every agent exits and
+ordinary federated learning begins with one contract and uniform records.*
+
+## Motivation
+
+A federated study spans five stages: local data curation, shared data-contract
+formulation, local adaptation to that contract, training-recipe construction,
+and federated training. A curated local corpus and the FL runtime can be reused,
+but the three stages between them recur whenever a new task changes the
+required supervision interface. One study may require a binary mask, another a
+boundary or bounding box, and another an image-level diagnosis, even when all
+use the same underlying records.
+
+This work is distributed by construction. Only a site can inspect and interpret
+its private records, while only the coordinating center can establish a target
+shared across sites. FedReady calls the work required to reconcile those views
+**federation formation** and treats it as a first-class protocol rather than
+informal setup. A federation is ready only when a cohort is admitted, a shared
+contract is established, every admitted site can produce valid records under
+it, and verified training code exists to consume those records.
+
+## Bounded Agents
+
+A single agent that can inspect private records and decide who joins the
+federation collapses the separation that cross-silo FL depends on. FedReady
+instead bounds every agent along three dimensions:
+
+- **View:** the evidence it may observe.
+- **Output:** the artifacts it may propose.
+- **Authority:** the state it may change.
+
+Generative agents have no promotion authority. They propose inquiries,
+contracts, adapters, and training code; NVFlare-owned verifiers evaluate those
+artifacts at the boundary that owns the required evidence and decide whether
+they are promoted. Only typed, path-redacted summaries, aggregate counts,
+status codes, and digests cross the federated transport boundary.
+
+## Workflow
+
+1. **Discover:** an NVFlare controller asks every site for safe aggregate
+   metadata. Central routing remains high recall because the server cannot see
+   the private evidence needed for final eligibility decisions.
+2. **Form the contract:** a server Codex worker drafts a shared data contract
+   from the task request and redacted summaries.
+3. **Adapt locally:** each selected site Codex worker inspects its own data and
+   generates an adapter against the locked contract.
+4. **Verify at the boundary:** the client executes the adapter, checks
+   provenance and contract validity, and performs bounded local visual review.
+   Only verified sites enter the cohort.
+5. **Prepare shared training:** a server Codex worker generates
+   contract-compatible training code. Package checks and a one-client mock-data
+   `SimEnv` preflight must pass before export.
+6. **Freeze and train:** NVFlare freezes the qualified cohort and artifact
+   graph, removes every agent from the loop, and runs ordinary sample-weighted
+   FedAvg.
+
+Agent outputs are proposals, not trusted state. A generated local adapter must
+execute against client data and produce a provenance-valid manifest. Generated
+training code must satisfy package and Client API contracts and pass a local
+NVFlare simulation before it can be exported or run.
+
+## Implementation Scope
+
+This contribution provides the stable research artifact with one live
+coding-agent backend (`codex`). A client-local VLM performs bounded raw-input
+guardrail
 inspection and image/label alignment review; for spatial labels, the workflow
 renders orientation candidates. For the built-in segmentation contract, it
 automatically applies a consensus flip or 180-degree transform before training;
 generated spatial contracts retain ownership of their geometry. The separate
 acquisition-quality scoring and sample-filtering workflow is deliberately
 excluded.
-
-## Objective
-
-AgenticFL studies whether coding agents can reduce repeated, task-specific data
-engineering in cross-silo FL without moving client-local records to the server.
-The contribution demonstrates an end-to-end proposal, verification, and
-promotion workflow built on NVFlare rather than proposing a new aggregation
-algorithm.
-
-## Method Summary
-
-The workflow has two explicit phases:
-
-1. A custom NVFlare controller asks every client for safe aggregate metadata,
-   uses Codex to define a shared data contract, and asks eligible clients to
-   generate and execute local adapters. The client-local VLM checks a bounded
-   raw input, reviews contract-owned visual artifacts, and selects any required
-   orientation repair. Only path-redacted aggregate outcomes return through
-   FLARE.
-2. A server Codex worker generates task-specific training code. AgenticFL
-   validates and packages it, runs a one-client mock-data `SimEnv` preflight,
-   and then launches the prepared multi-client FedAvg job.
-
-Agent outputs are proposals, not trusted state. A generated local adapter must
-execute against client data and produce a provenance-valid manifest. Generated
-training code must satisfy package and Client API contracts and pass a local
-NVFlare simulation before it can be exported or run.
 
 The following are explicit non-goals of this research artifact:
 
@@ -68,6 +107,7 @@ research/agentic-fl/
 |-- task_example/             # Prepared and git-ignored reference output
 |-- docs/data-download.md     # Public links for the 39-site retinal cohort
 |-- docs/architecture.md
+|-- docs/assets/fedready_overview.png # Federation-formation overview
 |-- agenticfl/
 |   |-- job_data.py           # Data preflight, FedJob construction, and execution
 |   |-- job_train.py          # Generated trainer validation and FedAvg execution
@@ -365,8 +405,9 @@ Recipe execution and Client API contracts on `main`.
 
 ## Citation
 
-AgenticFL has not yet been published. Until a paper citation is available,
-record the AgenticFL and NVIDIA FLARE revisions used for the experiment.
+The FedReady paper has not yet been published. Until a formal citation is
+available, record the `agentic-fl` contribution and NVIDIA FLARE revisions
+used for the experiment.
 
 ## Retinal Benchmark Cohort
 

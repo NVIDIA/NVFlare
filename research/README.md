@@ -32,9 +32,10 @@ README in each subfolder for setup, data, and run instructions.
 
 ## Agent-Assisted Research Workflow
 
-- [AgenticFL](./agentic-fl/README.md) provides a Codex-driven, privacy-bounded
-  workflow for task negotiation, client-local data adaptation, generated
-  training code, validation gates, and NVFlare FedAvg execution.
+- [FedReady](./agentic-fl/README.md) provides the `agenticfl` reference
+  implementation: a Codex-driven, privacy-bounded workflow for federation
+  formation, client-local data adaptation, generated training code, validation
+  gates, and NVFlare FedAvg execution.
 - [Auto-FL Research with NVFlare](./auto-fl-research/README.md) provides
   an autoresearch-style control plane, CIFAR-10 simulation harness, bounded
   mutation workflow, and reporting tools for agent-assisted FL experiments.
