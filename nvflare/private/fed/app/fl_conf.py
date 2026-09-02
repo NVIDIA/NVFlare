@@ -30,7 +30,7 @@ from nvflare.fuel.utils.json_scanner import Node
 from nvflare.fuel.utils.url_utils import make_url
 from nvflare.fuel.utils.wfconf import ConfigContext, ConfigError
 from nvflare.private.defs import ClientRegMsgKey, SSLConstants
-from nvflare.private.fed.utils.job_cert_utils import job_cert_config_entries
+from nvflare.private.fed.utils.job_cert_utils import apply_job_cert_config
 from nvflare.private.fed.utils.site_config import project_site_config
 from nvflare.private.json_configer import JsonConfigurator
 from nvflare.private.privacy_manager import PrivacyManager, Scope
@@ -117,10 +117,9 @@ class FLServerStarterConfiger(JsonConfigurator):
             raise ValueError(f"Server config error: '{self.server_config_file_names}'")
 
         if self.args.job_id:
-            job_cert_entries = job_cert_config_entries(self.workspace.get_run_dir(self.args.job_id))
-            if job_cert_entries:
-                for server in self.config_data["servers"]:
-                    server.update(job_cert_entries)
+            run_dir = self.workspace.get_run_dir(self.args.job_id)
+            for server in self.config_data["servers"]:
+                apply_job_cert_config(server, run_dir)
 
     def build_component(self, config_dict):
         t = super().build_component(config_dict)
@@ -412,9 +411,7 @@ class FLClientStarterConfiger(JsonConfigurator):
             raise ValueError(f"Client config error: '{self.client_config_file_names}'")
 
         if self.args.job_id:
-            job_cert_entries = job_cert_config_entries(self.workspace.get_run_dir(self.args.job_id))
-            if job_cert_entries:
-                self.config_data["client"].update(job_cert_entries)
+            apply_job_cert_config(self.config_data["client"], self.workspace.get_run_dir(self.args.job_id))
 
     def finalize_config(self, config_ctx: ConfigContext):
         """Finalize the config process.

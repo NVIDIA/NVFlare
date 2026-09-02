@@ -28,7 +28,14 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
-from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobProcessArgs, JobReturnCode, add_launcher
+from nvflare.apis.job_launcher_spec import (
+    JobHandleSpec,
+    JobLauncherSpec,
+    JobProcessArgs,
+    JobProcessEnv,
+    JobReturnCode,
+    add_launcher,
+)
 from nvflare.app_opt.job_launcher.study_data import (
     load_study_data_file,
     resolve_study_dataset_mounts,
@@ -45,6 +52,7 @@ from nvflare.app_opt.job_launcher.workspace_cell_transfer import (
     WorkspaceTransferManager,
 )
 from nvflare.fuel.common.exit_codes import ProcessExitCode
+from nvflare.private.fed.utils.job_cert_utils import read_job_cert
 from nvflare.utils.job_launcher_utils import (
     get_client_job_args,
     get_credential_env,
@@ -127,10 +135,14 @@ _PENDING_FAILURE_EVENT_REASONS = {
 # Files actually read from startup/ by the job pod at runtime. Others in
 # startup/ are dropped to shrink the Secret. local/ is bundled whole with each
 # job workspace so job resource files and local custom code keep working.
-_STARTUP_KEEP_SUFFIXES = (".crt", ".key", ".pem", ".json")
+# Site private keys ship only when the job has no job credential to run on.
+_STARTUP_KEEP_SUFFIXES = (".crt", ".pem", ".json")
+_PRIVATE_KEY_SUFFIX = ".key"
 
 
-def _keep_startup_file(fname: str) -> bool:
+def _keep_startup_file(fname: str, include_private_keys: bool = False) -> bool:
+    if fname.endswith(_PRIVATE_KEY_SUFFIX):
+        return include_private_keys
     return fname.endswith(_STARTUP_KEEP_SUFFIXES)
 
 
@@ -956,7 +968,7 @@ class K8sJobLauncher(JobLauncherSpec):
                 self.logger.debug("recreated Secret %s after concurrent deletion", secret_name)
         return secret_name
 
-    def _ensure_startup_secret(self, site_name: str, startup_dir: str) -> str:
+    def _ensure_startup_secret(self, site_name: str, startup_dir: str, include_private_keys: bool = False) -> str:
         """Create or update a k8s Secret containing the site startup kit.
 
         Returns the Secret name.
@@ -964,7 +976,7 @@ class K8sJobLauncher(JobLauncherSpec):
         data = {}
         if os.path.isdir(startup_dir):
             for fname in os.listdir(startup_dir):
-                if not _keep_startup_file(fname):
+                if not _keep_startup_file(fname, include_private_keys):
                     continue
                 fpath = os.path.join(startup_dir, fname)
                 if os.path.isfile(fpath):
@@ -1115,6 +1127,9 @@ class K8sJobLauncher(JobLauncherSpec):
             )
 
         startup_dir = workspace_obj.get_startup_kit_dir()
+        job_cert = read_job_cert(workspace_obj.get_run_dir(raw_job_id))
+        if job_cert is None:
+            self.logger.warning(f"job {job_id} has no job credential; the site private key is shipped to its pod")
         engine = fl_ctx.get_engine()
         owner_cell = getattr(engine, "cell", None) if engine else None
         if owner_cell is None:
@@ -1125,12 +1140,18 @@ class K8sJobLauncher(JobLauncherSpec):
         credential_secret_name = None
         created_pod = None
         try:
-            startup_secret_name = self._ensure_startup_secret(site_name, startup_dir)
+            startup_secret_name = self._ensure_startup_secret(
+                site_name, startup_dir, include_private_keys=job_cert is None
+            )
 
             # The transfer token rides the credential Secret too: a literal env value
             # would be readable in the pod object by anyone with pods/get.
             credential_env = get_credential_env(job_args)
             credential_env[ENV_WORKSPACE_TRANSFER_TOKEN] = workspace_transfer_token
+            if job_cert is not None:
+                # the pod's bootstrap cell needs the credential before the run dir is downloaded
+                credential_env[JobProcessEnv.JOB_CERT] = job_cert[0].decode("ascii")
+                credential_env[JobProcessEnv.JOB_KEY] = job_cert[1].decode("ascii")
             credential_secret_name = self._ensure_job_credential_secret(pod_name, credential_env)
 
             env[ENV_WORKSPACE_OWNER_FQCN] = workspace_transfer.owner_fqcn

@@ -38,12 +38,16 @@ from nvflare.private.fed.utils.job_cert_utils import (
     JOB_CERT_FILE_NAME,
     JOB_CERT_VALID_DAYS,
     JOB_KEY_FILE_NAME,
+    apply_job_cert_config,
     find_job_cert,
     get_job_id_from_cert,
     has_job_ca_marker,
+    job_startup_files,
     load_job_cert_issuer,
     pack_job_cert_header,
     pick_cell_credential,
+    read_job_cert,
+    stage_job_startup_dir,
     unpack_job_cert_header,
     write_job_cert,
 )
@@ -203,6 +207,50 @@ def test_write_job_cert_overwrite(tmp_path):
         assert f.read() == b"cert-2"
     with open(key_path, "rb") as f:
         assert f.read() == b"key-2"
+
+
+def test_read_job_cert(tmp_path):
+    run_dir = str(tmp_path / "run_1")
+    assert read_job_cert(run_dir) is None
+
+    write_job_cert(run_dir, b"cert-bytes", b"key-bytes")
+
+    assert read_job_cert(run_dir) == (b"cert-bytes", b"key-bytes")
+
+
+def test_apply_job_cert_config_replaces_site_credential(tmp_path):
+    run_dir = str(tmp_path / "run_1")
+    site_only = {SecureTrainConst.SSL_CERT: "site.crt", SecureTrainConst.PRIVATE_KEY: "site.key"}
+    config = dict(site_only)
+
+    assert apply_job_cert_config(config, run_dir) is False
+    assert config == site_only
+
+    write_job_cert(run_dir, b"c", b"k")
+    assert apply_job_cert_config(config, run_dir) is True
+    cert_path, key_path = find_job_cert(run_dir)
+    assert config == {
+        SecureTrainConst.SSL_CERT: cert_path,
+        SecureTrainConst.PRIVATE_KEY: key_path,
+        SecureTrainConst.JOB_CERT: cert_path,
+        SecureTrainConst.JOB_PRIVATE_KEY: key_path,
+    }
+
+
+def test_job_startup_files_and_staging_exclude_private_keys(tmp_path):
+    startup = tmp_path / "startup"
+    startup.mkdir()
+    for name in ("rootCA.pem", "client.crt", "client.key", "fed_client.json", "job_ca.key", "start.sh"):
+        (startup / name).write_text(name)
+    (startup / "subdir").mkdir()
+
+    assert job_startup_files(str(startup)) == ["client.crt", "fed_client.json", "rootCA.pem", "start.sh"]
+
+    staged = stage_job_startup_dir(str(startup), str(tmp_path / "job" / "startup"))
+
+    assert sorted(os.listdir(staged)) == ["client.crt", "fed_client.json", "rootCA.pem", "start.sh"]
+    assert stat.S_IMODE(os.stat(staged).st_mode) == 0o700
+    assert (tmp_path / "job" / "startup" / "rootCA.pem").read_text() == "rootCA.pem"
 
 
 def test_cell_cipher_works_with_job_cert_chains(tmp_path):

@@ -71,6 +71,8 @@ _RESERVED_ENV_NAMES = frozenset(
         JobProcessEnv.AUTH_TOKEN,
         JobProcessEnv.TOKEN_SIGNATURE,
         JobProcessEnv.SSID,
+        JobProcessEnv.JOB_CERT,
+        JobProcessEnv.JOB_KEY,
     }
 )
 SLURM_RESERVED_ENV_NAMES = _RESERVED_ENV_NAMES.union(

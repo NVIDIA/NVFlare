@@ -50,6 +50,7 @@ from nvflare.app_opt.job_launcher.study_runtime import (
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.drivers.file_driver import SCHEME as SHARED_FILE_SCHEME
 from nvflare.fuel.f3.drivers.file_driver import parse_file_url
+from nvflare.private.fed.utils.job_cert_utils import find_job_cert, job_startup_files
 from nvflare.utils.job_launcher_utils import (
     DOCKER_JOB_CONTAINER_KWARGS,
     get_client_job_args,
@@ -722,6 +723,28 @@ class DockerJobLauncher(JobLauncherSpec):
 
         docker_client = self._get_docker_client()
         try:
+            if workspace_obj is not None and find_job_cert(workspace_obj.get_run_dir(job_id)):
+                # bind the kit file by file so the site private keys never enter the job container;
+                # the job credential arrives through the read-write job workspace bind
+                startup_mounts = [
+                    docker.types.Mount(
+                        target=posixpath.join(container_startup_dir, fname),
+                        source=os.path.join(host_startup_dir, fname),
+                        type="bind",
+                        read_only=True,
+                    )
+                    for fname in job_startup_files(workspace_obj.get_startup_kit_dir())
+                ]
+            else:
+                self.logger.warning(f"job {job_id} has no job credential; the site private key is visible to it")
+                startup_mounts = [
+                    docker.types.Mount(
+                        target=container_startup_dir,
+                        source=host_startup_dir,
+                        type="bind",
+                        read_only=True,
+                    )
+                ]
             mounts = [
                 docker.types.Mount(
                     target=self.WORKSPACE_MOUNT,
@@ -730,12 +753,7 @@ class DockerJobLauncher(JobLauncherSpec):
                     read_only=False,
                     tmpfs_mode=_WORKSPACE_TMPFS_MODE,
                 ),
-                docker.types.Mount(
-                    target=container_startup_dir,
-                    source=host_startup_dir,
-                    type="bind",
-                    read_only=True,
-                ),
+                *startup_mounts,
                 docker.types.Mount(target=container_local_dir, source=host_local_dir, type="bind", read_only=True),
                 docker.types.Mount(
                     target=container_job_workspace,

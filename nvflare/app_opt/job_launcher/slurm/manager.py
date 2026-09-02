@@ -54,6 +54,7 @@ from nvflare.app_opt.job_launcher.slurm.config import (
 )
 from nvflare.app_opt.job_launcher.slurm.scheduler_client import _command_diagnostic, _SlurmCliAdapter
 from nvflare.fuel.common.exit_codes import PROCESS_EXIT_REASON, ProcessExitCode
+from nvflare.private.fed.utils.job_cert_utils import find_job_cert, stage_job_startup_dir
 
 _HEALTHY_MISSES = 5
 _ACCOUNTING_RETRY_INTERVAL = 6.0
@@ -209,14 +210,19 @@ class SlurmJobManager:
     def _write_job_files(self, plan: LaunchPlan, job_dir: str) -> None:
         if plan.sandbox != "none":
             workspace = self.config.workspace_path
+            startup_source = os.path.realpath(os.path.join(workspace, "startup"))
+            if find_job_cert(plan.run_dir):
+                # a keyless copy of the kit keeps the site private keys out of the sandbox;
+                # the job credential is inside the run dir bind
+                startup_source = stage_job_startup_dir(startup_source, os.path.join(job_dir, "startup"))
+            else:
+                self.logger.warning(
+                    "job in %s has no job credential; the site private key is visible to it", plan.run_dir
+                )
             launcher_mounts = (
                 BindMount(os.path.join(job_dir, SANDBOX_ROOT), workspace, "rw"),
                 BindMount(plan.run_dir, plan.run_dir, "rw"),
-                BindMount(
-                    os.path.realpath(os.path.join(workspace, "startup")),
-                    os.path.join(workspace, "startup"),
-                    "ro",
-                ),
+                BindMount(startup_source, os.path.join(workspace, "startup"), "ro"),
                 BindMount(
                     os.path.realpath(os.path.join(workspace, "local")),
                     os.path.join(workspace, "local"),

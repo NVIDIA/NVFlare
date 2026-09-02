@@ -22,6 +22,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from nvflare.apis.job_launcher_spec import JobProcessEnv
 from nvflare.app_opt.job_launcher.workspace_cell_transfer import (
     BOOTSTRAP_CONNECT_TIMEOUT,
     ENV_WORKSPACE_OWNER_FQCN,
@@ -29,8 +30,11 @@ from nvflare.app_opt.job_launcher.workspace_cell_transfer import (
     WorkspaceTransferManager,
     _bootstrap_auth_identity_map,
     _create_bootstrap_cell,
+    _get_bootstrap_tls_pair,
     _hash_file,
+    _install_job_cert_from_env,
     _wait_for_bootstrap_ready,
+    _zip_results_to_file,
     _zip_workspace_to_file,
     download_workspace,
     make_workspace_transfer_fqcn,
@@ -40,6 +44,7 @@ from nvflare.app_opt.job_launcher.workspace_cell_transfer import (
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.utils import make_reply, new_cell_message
+from nvflare.fuel.f3.drivers.driver_params import DriverParams
 
 JOB_ID = "abc12345-dead-beef-0000-111122223333"
 
@@ -194,6 +199,21 @@ class TestWorkspaceTransferManager:
             assert f"{JOB_ID}/app/config/config_train.json" in names
             assert "local/study_runtime.yaml" not in names
             assert "local/pod_specs/h100-pod.yaml" not in names
+
+    @pytest.mark.parametrize("zip_fn", [_zip_workspace_to_file, _zip_results_to_file])
+    def test_bundles_exclude_job_credential(self, zip_fn):
+        with tempfile.TemporaryDirectory() as ws_root, tempfile.TemporaryDirectory() as tmp:
+            _make_workspace(ws_root, JOB_ID)
+            _write_file(os.path.join(ws_root, JOB_ID, "job_cert", "job.crt"), b"cert")
+            _write_file(os.path.join(ws_root, JOB_ID, "job_cert", "job.key"), b"key")
+            zip_path = os.path.join(tmp, "bundle.zip")
+
+            zip_fn(ws_root, JOB_ID, zip_path)
+
+            with zipfile.ZipFile(zip_path) as zf:
+                names = set(zf.namelist())
+            assert f"{JOB_ID}/app/config/config_train.json" in names
+            assert not any(name.startswith(f"{JOB_ID}/job_cert/") for name in names)
 
     def test_prepare_download_returns_ref_for_valid_token(self, monkeypatch):
         with tempfile.TemporaryDirectory() as ws_root:
@@ -848,3 +868,58 @@ class TestBootstrapAuthIdentityMap:
 
         assert captured["auth_identity_map"] == {FQCN.ROOT_SERVER: "gcp-server"}
         assert captured["secure"] is True
+
+    def test_bootstrap_tls_pair_prefers_job_credential(self, tmp_path):
+        startup = tmp_path / "startup"
+        startup.mkdir()
+        (startup / "rootCA.pem").write_text("ca")
+        (startup / "client.crt").write_text("cert")
+        run_dir = tmp_path / JOB_ID
+        job_crt = run_dir / "job_cert" / "job.crt"
+        job_key = run_dir / "job_cert" / "job.key"
+        _write_file(str(job_crt), b"job-cert")
+        _write_file(str(job_key), b"job-key")
+
+        cert_path, key_path, cert_key, key_key = _get_bootstrap_tls_pair(str(startup), "site-1", str(run_dir))
+
+        assert (cert_path, key_path) == (str(job_crt), str(job_key))
+        assert (cert_key, key_key) == (DriverParams.CLIENT_CERT.value, DriverParams.CLIENT_KEY.value)
+
+        _, _, cert_key, key_key = _get_bootstrap_tls_pair(str(startup), FQCN.ROOT_SERVER, str(run_dir))
+        assert (cert_key, key_key) == (DriverParams.SERVER_CERT.value, DriverParams.SERVER_KEY.value)
+
+    def test_bootstrap_tls_pair_falls_back_to_site_key_without_job_credential(self, tmp_path):
+        startup = tmp_path / "startup"
+        startup.mkdir()
+        (startup / "client.crt").write_text("cert")
+        run_dir = str(tmp_path / JOB_ID)
+
+        with pytest.raises(RuntimeError, match="cert/key files"):
+            _get_bootstrap_tls_pair(str(startup), "site-1", run_dir)
+
+        (startup / "client.key").write_text("key")
+        cert_path, key_path, _, _ = _get_bootstrap_tls_pair(str(startup), "site-1", run_dir)
+        assert (cert_path, key_path) == (str(startup / "client.crt"), str(startup / "client.key"))
+
+    def test_install_job_cert_from_env_writes_run_dir_and_clears_env(self, monkeypatch, tmp_path):
+        monkeypatch.setenv(JobProcessEnv.JOB_CERT, "cert-pem")
+        monkeypatch.setenv(JobProcessEnv.JOB_KEY, "key-pem")
+
+        assert _install_job_cert_from_env(str(tmp_path), JOB_ID) is True
+
+        cert_path = tmp_path / JOB_ID / "job_cert" / "job.crt"
+        key_path = tmp_path / JOB_ID / "job_cert" / "job.key"
+        assert cert_path.read_bytes() == b"cert-pem"
+        assert key_path.read_bytes() == b"key-pem"
+        assert stat.S_IMODE(os.stat(key_path).st_mode) == 0o600
+        assert JobProcessEnv.JOB_CERT not in os.environ
+        assert JobProcessEnv.JOB_KEY not in os.environ
+
+    def test_install_job_cert_from_env_noop_without_complete_credential(self, monkeypatch, tmp_path):
+        monkeypatch.delenv(JobProcessEnv.JOB_CERT, raising=False)
+        monkeypatch.setenv(JobProcessEnv.JOB_KEY, "key-only")
+
+        assert _install_job_cert_from_env(str(tmp_path), JOB_ID) is False
+
+        assert not (tmp_path / JOB_ID).exists()
+        assert JobProcessEnv.JOB_KEY not in os.environ

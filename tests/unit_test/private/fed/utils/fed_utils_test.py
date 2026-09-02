@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -19,10 +20,12 @@ import pytest
 
 from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.fl_constant import ConfigVarName
+from nvflare.fuel.sec.security_content_service import LoadResult, SecurityContentService
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs import Decomposer
 from nvflare.fuel.utils.fobs.datum import DatumManager
 from nvflare.fuel.utils.fobs.fobs import register_custom_folder
+from nvflare.private.fed.utils import fed_utils
 from nvflare.private.fed.utils.fed_utils import (
     create_job_processing_context_properties,
     custom_fobs_initialize,
@@ -150,3 +153,18 @@ class TestFedUtils:
         custom_decomposer_dir = os.path.join("job", "custom", ConfigVarName.DECOMPOSER_MODULE)
 
         assert custom_decomposer_dir not in registered_dirs
+
+
+def test_check_secure_content_can_skip_site_private_key(monkeypatch):
+    config = {"client": {"ssl_cert": "client.crt", "ssl_private_key": "client.key", "ssl_root_cert": "rootCA.pem"}}
+
+    def load_content(cls, name):
+        return b"", LoadResult.NO_SUCH_CONTENT if name == "client.key" else LoadResult.OK
+
+    monkeypatch.setattr(SecurityContentService, "load_json", classmethod(lambda cls, name: (config, LoadResult.OK)))
+    monkeypatch.setattr(SecurityContentService, "load_content", classmethod(load_content))
+    monkeypatch.setattr(SecurityContentService, "check_json_files", classmethod(lambda cls, patterns: []))
+    monkeypatch.setattr(SecurityContentService, "security_content_manager", SimpleNamespace(signature={}))
+
+    assert fed_utils._check_secure_content("client") == ["client.key"]
+    assert fed_utils._check_secure_content("client", check_private_key=False) == []

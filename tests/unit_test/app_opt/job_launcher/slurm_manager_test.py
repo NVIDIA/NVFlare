@@ -356,6 +356,26 @@ def test_pyxis_node_group_writes_node_script_and_mounts_job_artifacts(tmp_path):
     assert f"{tmp_path / 'startup'}:{tmp_path / 'startup'}:ro" in batch
 
 
+def test_job_credential_stages_keyless_startup_kit(tmp_path):
+    startup = tmp_path / "startup"
+    startup.mkdir()
+    for name in ("rootCA.pem", "client.crt", "client.key"):
+        (startup / name).write_text(name)
+    run_dir = tmp_path / "job-1"
+    (run_dir / "job_cert").mkdir(parents=True)
+    (run_dir / "job_cert" / "job.crt").write_text("cert")
+    (run_dir / "job_cert" / "job.key").write_text("key")
+    adapter = Adapter()
+    manager = _manager(tmp_path, adapter)
+
+    handle = manager.launch(_plan(tmp_path, sandbox="apptainer", image="/image.sif"))
+
+    staged = Path(handle.job_dir, "startup")
+    assert sorted(p.name for p in staged.iterdir()) == ["client.crt", "rootCA.pem"]
+    assert f"{staged}:{tmp_path / 'startup'}:ro" in adapter.submitted_batch
+    assert f"{tmp_path / 'startup'}:{tmp_path / 'startup'}:ro" not in adapter.submitted_batch
+
+
 def test_submission_uses_site_timeout(tmp_path):
     adapter = Adapter()
 

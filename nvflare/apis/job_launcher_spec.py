@@ -51,6 +51,11 @@ class JobProcessEnv:
     TOKEN_SIGNATURE = "NVFLARE_JOB_TOKEN_SIGNATURE"
     SSID = "NVFLARE_JOB_SSID"
 
+    # PEM job credential for launchers whose job process has no filesystem path to the
+    # run dir at startup (K8s workspace transfer); consumed by download_workspace().
+    JOB_CERT = "NVFLARE_JOB_CERT"
+    JOB_KEY = "NVFLARE_JOB_KEY"
+
 
 def pop_credential_env() -> dict:
     """Remove every JobProcessEnv credential from the environment and return it.

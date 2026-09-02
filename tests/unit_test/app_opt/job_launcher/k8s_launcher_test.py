@@ -56,7 +56,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants, ReservedKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
-from nvflare.apis.job_launcher_spec import JobProcessArgs, JobReturnCode
+from nvflare.apis.job_launcher_spec import JobProcessArgs, JobProcessEnv, JobReturnCode
 from nvflare.app_opt.job_launcher.k8s_launcher import (
     JOB_RETURN_CODE_MAPPING,
     POD_STATE_MAPPING,
@@ -1724,6 +1724,7 @@ def _make_launch_fl_ctx(
     workspace_obj.get_app_custom_dir.return_value = app_custom_folder
     workspace_obj.get_startup_kit_dir.return_value = "/fake/startup"
     workspace_obj.get_site_config_dir.return_value = "/fake/local"
+    workspace_obj.get_run_dir.return_value = "/fake/run"
     fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace_obj, private=True, sticky=False)
     engine = Mock()
     engine.cell = Mock()
@@ -3511,20 +3512,67 @@ class TestK8sCredentialTransport:
         return launcher, mock_api
 
     @pytest.mark.parametrize(("cert_name", "key_name"), [("client.crt", "client.key"), ("server.crt", "server.key")])
-    def test_startup_secret_contains_complete_participant_tls_credentials(self, tmp_path, cert_name, key_name):
+    @pytest.mark.parametrize("include_private_keys", [False, True])
+    def test_startup_secret_ships_site_key_only_on_request(self, tmp_path, cert_name, key_name, include_private_keys):
         from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
 
         startup_dir = tmp_path / "startup"
         startup_dir.mkdir()
-        for name in ("rootCA.pem", cert_name, key_name):
+        for name in ("rootCA.pem", cert_name, key_name, "job_ca.key"):
             (startup_dir / name).write_text(name)
         launcher = ClientK8sJobLauncher(config_file_path=None)
         launcher.core_v1 = MagicMock()
 
-        launcher._ensure_startup_secret("site-1", str(startup_dir))
+        launcher._ensure_startup_secret("site-1", str(startup_dir), include_private_keys=include_private_keys)
 
         body = launcher.core_v1.create_namespaced_secret.call_args.kwargs["body"]
-        assert set(body["data"]) == {"rootCA.pem", cert_name, key_name}
+        expected = {"rootCA.pem", cert_name}
+        if include_private_keys:
+            expected |= {key_name, "job_ca.key"}
+        assert set(body["data"]) == expected
+
+    def test_job_credential_rides_credential_secret_and_site_key_is_withheld(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        launcher._ensure_startup_secret = MagicMock(return_value="nvflare-startup-site-1")
+        try:
+            with patch(
+                "nvflare.app_opt.job_launcher.k8s_launcher.read_job_cert",
+                return_value=(b"JOB-CERT-PEM", b"JOB-KEY-PEM"),
+            ):
+                launcher.launch_job(_make_launch_job_meta(), _make_cred_fl_ctx())
+
+            assert launcher._ensure_startup_secret.call_args.kwargs["include_private_keys"] is False
+            (body,) = _cred_secret_bodies(mock_api)
+            assert body["stringData"] == {
+                **_CREDENTIAL_ENV,
+                ENV_WORKSPACE_TRANSFER_TOKEN: "transfer-token",
+                JobProcessEnv.JOB_CERT: "JOB-CERT-PEM",
+                JobProcessEnv.JOB_KEY: "JOB-KEY-PEM",
+            }
+
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            env_by_name = {item["name"]: item for item in manifest["spec"]["containers"][0]["env"]}
+            for env_name in (JobProcessEnv.JOB_CERT, JobProcessEnv.JOB_KEY):
+                ref = env_by_name[env_name]["valueFrom"]["secretKeyRef"]
+                assert ref == {"name": _EXPECTED_CRED_SECRET_NAME, "key": env_name}
+            assert "JOB-KEY-PEM" not in str(manifest)
+        finally:
+            _exit_patches(patches)
+
+    def test_site_key_ships_only_when_job_has_no_credential(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        launcher._ensure_startup_secret = MagicMock(return_value="nvflare-startup-site-1")
+        try:
+            launcher.launch_job(_make_launch_job_meta(), _make_cred_fl_ctx())
+
+            assert launcher._ensure_startup_secret.call_args.kwargs["include_private_keys"] is True
+            (body,) = _cred_secret_bodies(mock_api)
+            assert JobProcessEnv.JOB_CERT not in body["stringData"]
+            assert JobProcessEnv.JOB_KEY not in body["stringData"]
+        finally:
+            _exit_patches(patches)
 
     def test_secret_created_and_pod_references_it_without_values(self):
         patches = _make_k8s_launcher_patches()

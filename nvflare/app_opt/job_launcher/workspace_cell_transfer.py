@@ -43,7 +43,8 @@ from pathlib import PurePosixPath
 
 import yaml
 
-from nvflare.apis.fl_constant import ConnPropKey
+from nvflare.apis.fl_constant import ConnPropKey, WorkspaceConstants
+from nvflare.apis.job_launcher_spec import JobProcessEnv
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
@@ -56,6 +57,13 @@ from nvflare.fuel.f3.streaming.file_downloader import add_file, download_file
 from nvflare.fuel.f3.streaming.obj_downloader import ObjectDownloader
 from nvflare.fuel.sec.authn import set_add_auth_headers_filters
 from nvflare.private.defs import AUTH_CLIENT_NAME_FOR_SJ
+from nvflare.private.fed.utils.job_cert_utils import (
+    JOB_CERT_DIR_NAME,
+    JOB_CERT_FILE_NAME,
+    JOB_KEY_FILE_NAME,
+    find_job_cert,
+    write_job_cert,
+)
 from nvflare.security.logging import secure_format_exception
 
 logger = logging.getLogger(__name__)
@@ -195,16 +203,26 @@ def _write_dir_to_zip(zf: zipfile.ZipFile, src: str, root: str, excluded_paths: 
             zf.write(abs_path, rel_path)
 
 
+def _run_dir(workspace_root: str, job_id: str) -> str:
+    return os.path.join(workspace_root, WorkspaceConstants.WORKSPACE_PREFIX + job_id)
+
+
+def _job_cert_excludes(job_id: str) -> frozenset[str]:
+    # the job credential is delivered through the credential Secret, never inside a bundle
+    cert_dir = posixpath.join(WorkspaceConstants.WORKSPACE_PREFIX + job_id, JOB_CERT_DIR_NAME)
+    return frozenset(posixpath.join(cert_dir, fname) for fname in (JOB_CERT_FILE_NAME, JOB_KEY_FILE_NAME))
+
+
 def _zip_workspace_to_file(workspace_root: str, job_id: str, file_path: str) -> None:
     excluded_paths = _workspace_download_excludes(workspace_root)
     with zipfile.ZipFile(file_path, "w", zipfile.ZIP_DEFLATED) as zf:
         _write_dir_to_zip(zf, os.path.join(workspace_root, "local"), workspace_root, excluded_paths)
-        _write_dir_to_zip(zf, os.path.join(workspace_root, job_id), workspace_root)
+        _write_dir_to_zip(zf, _run_dir(workspace_root, job_id), workspace_root, _job_cert_excludes(job_id))
 
 
 def _zip_results_to_file(workspace_root: str, job_id: str, file_path: str) -> None:
     with zipfile.ZipFile(file_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        _write_dir_to_zip(zf, os.path.join(workspace_root, job_id), workspace_root)
+        _write_dir_to_zip(zf, _run_dir(workspace_root, job_id), workspace_root, _job_cert_excludes(job_id))
 
 
 def _validate_relative_zip_members(zf: zipfile.ZipFile) -> None:
@@ -494,18 +512,20 @@ def _get_root_url(args) -> str:
     raise RuntimeError("unable to determine root_url for workspace transfer bootstrap cell")
 
 
-def _get_bootstrap_tls_pair(startup_dir: str, owner_fqcn: str) -> tuple[str, str, str, str]:
+def _get_bootstrap_tls_pair(startup_dir: str, owner_fqcn: str, run_dir: str) -> tuple[str, str, str, str]:
     prefer_server = FQCN.get_root(owner_fqcn) == FQCN.ROOT_SERVER
-    if prefer_server:
-        candidates = [
-            ("server.crt", "server.key", DriverParams.SERVER_CERT.value, DriverParams.SERVER_KEY.value),
-            ("client.crt", "client.key", DriverParams.CLIENT_CERT.value, DriverParams.CLIENT_KEY.value),
-        ]
-    else:
-        candidates = [
-            ("client.crt", "client.key", DriverParams.CLIENT_CERT.value, DriverParams.CLIENT_KEY.value),
-            ("server.crt", "server.key", DriverParams.SERVER_CERT.value, DriverParams.SERVER_KEY.value),
-        ]
+    server_params = (DriverParams.SERVER_CERT.value, DriverParams.SERVER_KEY.value)
+    client_params = (DriverParams.CLIENT_CERT.value, DriverParams.CLIENT_KEY.value)
+
+    job_cert = find_job_cert(run_dir)
+    if job_cert:
+        cert_path, key_path = job_cert
+        return (cert_path, key_path, *(server_params if prefer_server else client_params))
+
+    # kits without a job CA: the launcher ships the site key for this fallback
+    candidates = [("server.crt", "server.key", *server_params), ("client.crt", "client.key", *client_params)]
+    if not prefer_server:
+        candidates.reverse()
 
     for cert_name, key_name, cert_key, key_key in candidates:
         cert_path = os.path.join(startup_dir, cert_name)
@@ -577,7 +597,9 @@ def _create_bootstrap_cell(args, owner_fqcn: str, secure_mode: bool) -> tuple[Ce
         root_ca = os.path.join(startup_dir, "rootCA.pem")
         if not os.path.exists(root_ca):
             raise RuntimeError(f"workspace transfer requires rootCA.pem in startup dir: {startup_dir}")
-        cert_path, key_path, cert_key, key_key = _get_bootstrap_tls_pair(startup_dir, owner_fqcn)
+        cert_path, key_path, cert_key, key_key = _get_bootstrap_tls_pair(
+            startup_dir, owner_fqcn, _run_dir(args.workspace, args.job_id)
+        )
         credentials = {
             DriverParams.CA_CERT.value: root_ca,
             cert_key: cert_path,
@@ -653,6 +675,20 @@ def _request_workspace_bundle(cell: Cell, owner_fqcn: str, job_id: str, transfer
     return payload
 
 
+def _install_job_cert_from_env(workspace_root: str, job_id: str) -> bool:
+    """Write the job credential the launcher passed in the environment into the run dir.
+
+    Popped unconditionally so job-spawned children never inherit the key. Returns
+    whether a credential was installed.
+    """
+    cert_pem = os.environ.pop(JobProcessEnv.JOB_CERT, None)
+    key_pem = os.environ.pop(JobProcessEnv.JOB_KEY, None)
+    if not (cert_pem and key_pem):
+        return False
+    write_job_cert(_run_dir(workspace_root, job_id), cert_pem.encode("ascii"), key_pem.encode("ascii"))
+    return True
+
+
 def download_workspace(args, secure_mode: bool) -> None:
     owner_fqcn = os.environ.get(ENV_WORKSPACE_OWNER_FQCN, "")
     if not owner_fqcn:
@@ -662,6 +698,8 @@ def download_workspace(args, secure_mode: bool) -> None:
         raise RuntimeError(f"workspace transfer requires env var {ENV_WORKSPACE_TRANSFER_TOKEN}")
 
     os.makedirs(args.workspace, exist_ok=True)
+    # the bootstrap cell authenticates with the job credential, so install it before creating the cell
+    _install_job_cert_from_env(args.workspace, args.job_id)
     temp_dir = tempfile.mkdtemp(prefix="workspace-download-")
     try:
         cell = _get_bootstrap_cell(args, owner_fqcn, secure_mode)

@@ -15,7 +15,8 @@
 import datetime
 import logging
 import os
-from typing import Optional, Tuple
+import shutil
+from typing import List, Optional, Tuple
 
 from cryptography import x509
 from cryptography.x509.oid import NameOID
@@ -73,12 +74,57 @@ def find_job_cert(run_dir: str) -> Optional[Tuple[str, str]]:
     return None
 
 
-def job_cert_config_entries(run_dir: str) -> Optional[dict]:
-    """Security config entries pointing at the job credential, or None if the job has none."""
+def read_job_cert(run_dir: str) -> Optional[Tuple[bytes, bytes]]:
     paths = find_job_cert(run_dir)
     if not paths:
         return None
-    return {SecureTrainConst.JOB_CERT: paths[0], SecureTrainConst.JOB_PRIVATE_KEY: paths[1]}
+    with open(paths[0], "rb") as f:
+        cert_pem = f.read()
+    with open(paths[1], "rb") as f:
+        key_pem = f.read()
+    return cert_pem, key_pem
+
+
+def apply_job_cert_config(site_config: dict, run_dir: str) -> bool:
+    """Point a job process's security config at the job credential.
+
+    The job entries are added and also become the process's ssl_cert / ssl_private_key,
+    so nothing in the job process refers to the site key. Returns False, leaving the
+    config untouched, when the job has no credential.
+    """
+    paths = find_job_cert(run_dir)
+    if not paths:
+        return False
+    cert_path, key_path = paths
+    site_config[SecureTrainConst.JOB_CERT] = cert_path
+    site_config[SecureTrainConst.JOB_PRIVATE_KEY] = key_path
+    site_config[SecureTrainConst.SSL_CERT] = cert_path
+    site_config[SecureTrainConst.PRIVATE_KEY] = key_path
+    return True
+
+
+PRIVATE_KEY_SUFFIX = ".key"
+
+
+def is_private_key_file(fname: str) -> bool:
+    return fname.endswith(PRIVATE_KEY_SUFFIX)
+
+
+def job_startup_files(startup_dir: str) -> List[str]:
+    """Startup-kit files a job process may see: every regular file except private keys."""
+    return sorted(
+        f
+        for f in os.listdir(startup_dir)
+        if not is_private_key_file(f) and os.path.isfile(os.path.join(startup_dir, f))
+    )
+
+
+def stage_job_startup_dir(startup_dir: str, dest_dir: str) -> str:
+    """Copy the startup kit without its private keys to dest_dir, for a launcher to mount into the job."""
+    os.makedirs(dest_dir, mode=0o700, exist_ok=True)
+    for fname in job_startup_files(startup_dir):
+        shutil.copy2(os.path.join(startup_dir, fname), os.path.join(dest_dir, fname))
+    return dest_dir
 
 
 def pick_cell_credential(config: dict) -> Tuple[str, str]:
