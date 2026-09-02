@@ -89,6 +89,26 @@ def test_run_command_ignores_process_workspace_redirect(tmp_path, monkeypatch):
     assert "NVFLARE_SIMULATOR_WORKSPACE_ROOT" not in captured["env"]
 
 
+def test_run_command_preserves_symlinked_virtual_environment(tmp_path, monkeypatch):
+    with fedcore_import_context():
+        import run_demo
+
+        captured = {}
+        venv_bin = tmp_path / "venv" / "bin"
+        venv_bin.mkdir(parents=True)
+        venv_python = venv_bin / "python"
+        venv_python.symlink_to(Path(sys.executable))
+
+        def fake_run(command, cwd, check, env):
+            captured.update({"command": command, "cwd": cwd, "check": check, "env": env})
+
+        monkeypatch.setattr(run_demo.sys, "executable", str(venv_python))
+        monkeypatch.setattr(run_demo.subprocess, "run", fake_run)
+        run_demo._run(["python3", "-c", "pass"], cwd=tmp_path)
+
+    assert Path(captured["env"]["PATH"].split(run_demo.os.pathsep)[0]) == venv_bin
+
+
 def test_invalid_data_configuration_does_not_reserve_output(tmp_path, monkeypatch):
     with fedcore_import_context():
         import run_demo

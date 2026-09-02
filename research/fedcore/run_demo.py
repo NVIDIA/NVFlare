@@ -35,7 +35,9 @@ REPO_ROOT = PROJECT_DIR.parents[1]
 def _run(command: list[str], cwd: Path = PROJECT_DIR) -> None:
     print("\n$ " + shlex.join(command), flush=True)
     env = os.environ.copy()
-    python_bin = str(Path(sys.executable).resolve().parent)
+    # Keep external simulator clients in the active virtual environment. Resolving a venv's Python symlink here can
+    # replace its bin directory with the base interpreter directory before clients execute portable `python3` commands.
+    python_bin = str(Path(sys.executable).parent)
     env["PATH"] = os.pathsep.join([python_bin, env.get("PATH", "")])
     # Explicit --workspace values must remain authoritative so checkpoint discovery uses the same tree as SimEnv.
     env.pop("NVFLARE_SIMULATOR_WORKSPACE_ROOT", None)

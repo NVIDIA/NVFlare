@@ -30,6 +30,6 @@ def state_dict_for_update(model: torch.nn.Module, paired_examples: int) -> dict[
 
 
 def aggregation_meta(paired_examples: int) -> dict[str, float]:
-    """Use valid paired examples as the FedAvg aggregation weight."""
+    """Report valid paired examples through NVFlare's current-round step metadata."""
 
     return {FLMetaKey.NUM_STEPS_CURRENT_ROUND: float(max(0, paired_examples))}

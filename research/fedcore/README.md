@@ -239,7 +239,9 @@ Real deployments should generate caches at each site, replace the pooled tutoria
 - **Toy data.** MNIST plus a simulated OCR sensor does not model clinical missingness, institutional shift, or the difficulty of recovering a patient-specific modality. Tutorial gains are not evidence for clinical deployment.
 - **No formal privacy guarantee.** Raw images and text stay in site-specific directories and clients exchange only completion parameters, but model updates can leak information without additional controls such as secure aggregation or differential privacy.
 - **Single-machine evaluation.** The evaluator reads all site caches to report pooled AUROC. That is a tutorial diagnostic, not a federated metric.
-- **Small splits.** Split sizes are validated (at least 8, divisible by 4 or 8), but very small splits can make the requested OCR accuracy unrealizable after rounding; check `data/dataset_summary.json` for the realized counts.
+- **Small splits.** Split sizes are validated (at least 8, divisible by 4 or 8), and unrealizable OCR configurations
+  are rejected before data are written. For accepted runs, `data/dataset_summary.json` records both requested and
+  realized OCR rates.
 
 ## License and citation
 
