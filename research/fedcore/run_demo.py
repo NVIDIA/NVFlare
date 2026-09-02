@@ -66,8 +66,15 @@ def _latest_checkpoint(workspace: Path) -> Path:
 def _prepare_run_directories(output_dir: Path, workspace: Path) -> None:
     """Reserve fresh output and workspace directories so runs cannot share artifacts."""
 
+    output_dir = output_dir.expanduser().resolve()
+    workspace = workspace.expanduser().resolve()
     if output_dir == workspace:
         raise ValueError("FedCoRe output and workspace directories must be different paths.")
+    if output_dir.is_relative_to(workspace):
+        raise ValueError(
+            f"FedCoRe output directory cannot be inside the NVFlare workspace: {output_dir}. "
+            "Choose separate paths or keep the default workspace inside the output directory."
+        )
     paths = ((output_dir, "output directory"), (workspace, "NVFlare workspace"))
     for path, description in paths:
         if path.exists():

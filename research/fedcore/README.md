@@ -63,7 +63,8 @@ Here the OCR text carries no class information, so there is nothing to recover; 
 
 > **Each run needs fresh directories.** `run_demo.py` refuses to reuse an existing output directory or NVFlare
 > workspace so that runs can never mix artifacts. To repeat a scenario, pass a new `--output-dir` (and a new
-> `--workspace` if you set one explicitly), or remove the previous run directories.
+> `--workspace` if you set one explicitly), or remove the previous run directories. An explicit output directory
+> cannot be nested inside the workspace; the default workspace-inside-output layout is supported.
 
 ### 4. Read the results
 

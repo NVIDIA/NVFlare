@@ -73,6 +73,19 @@ def test_existing_workspace_does_not_poison_fresh_output_path(tmp_path):
     assert not output_dir.exists()
 
 
+def test_output_cannot_be_nested_inside_workspace(tmp_path):
+    with fedcore_import_context():
+        import run_demo
+
+        workspace = tmp_path / "workspace"
+        output_dir = workspace / "results"
+        with pytest.raises(ValueError, match="output directory cannot be inside"):
+            run_demo._prepare_run_directories(output_dir, workspace)
+
+    assert not workspace.exists()
+    assert not output_dir.exists()
+
+
 def test_run_command_ignores_process_workspace_redirect(tmp_path, monkeypatch):
     with fedcore_import_context():
         import run_demo
