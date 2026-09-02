@@ -101,6 +101,8 @@ class StatisticsTaskHandler(TaskHandler):
             statistics_result[tm.name][ds_name] = {}
             features: List[Feature] = ds_features[ds_name]
             for feature in features:
+                if tm.name == StC.STATS_HISTOGRAM and "*" not in tm.config and feature.feature_name not in tm.config:
+                    continue
                 try:
                     statistics_result[tm.name][ds_name][feature.feature_name] = fn(
                         ds_name, feature.feature_name, tm, shareable, fl_ctx

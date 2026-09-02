@@ -13,14 +13,21 @@
 # limitations under the License.
 
 
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
-from nvflare.app_common.abstract.statistics_spec import Bin, Feature, Histogram, HistogramType, StatisticConfig
+from nvflare.app_common.abstract.statistics_spec import (
+    Bin,
+    DataType,
+    Feature,
+    Histogram,
+    HistogramType,
+    StatisticConfig,
+)
 from nvflare.app_common.app_constant import StatisticsConstants as StC
 from nvflare.app_common.executors.statistics.statistics_task_handler import StatisticsTaskHandler
 from nvflare.app_common.statistics.numeric_stats import get_global_stats
@@ -199,6 +206,51 @@ class TestStatisticsExecutor:
             str(e.value)
             == "feature name = 'Age': missing required 'bins' config in histogram config = {'Age': {'bin': 5}}"
         )
+
+    def test_histogram_only_calls_explicitly_configured_features(self):
+        result = {StC.STATS_HISTOGRAM: {}}
+        features = {
+            "train": [
+                Feature("Age", DataType.INT),
+                Feature("Weight", DataType.FLOAT),
+            ]
+        }
+        histogram = Mock(return_value=Histogram(HistogramType.STANDARD, []))
+
+        self.stats_executor._populate_result_statistics(
+            result,
+            features,
+            StatisticConfig(StC.STATS_HISTOGRAM, {"Age": {StC.STATS_BINS: 5}}),
+            Shareable(),
+            FLContext(),
+            histogram,
+        )
+
+        assert list(result[StC.STATS_HISTOGRAM]["train"]) == ["Age"]
+        histogram.assert_called_once()
+        assert histogram.call_args.args[1] == "Age"
+
+    def test_histogram_wildcard_still_calls_all_features(self):
+        result = {StC.STATS_HISTOGRAM: {}}
+        features = {
+            "train": [
+                Feature("Age", DataType.INT),
+                Feature("Weight", DataType.FLOAT),
+            ]
+        }
+        histogram = Mock(return_value=Histogram(HistogramType.STANDARD, []))
+
+        self.stats_executor._populate_result_statistics(
+            result,
+            features,
+            StatisticConfig(StC.STATS_HISTOGRAM, {"*": {StC.STATS_BINS: 5}}),
+            Shareable(),
+            FLContext(),
+            histogram,
+        )
+
+        assert list(result[StC.STATS_HISTOGRAM]["train"]) == ["Age", "Weight"]
+        assert histogram.call_count == 2
 
     def test_histogram_bin_range(self):
         hist_config = {"Age": {"bins": 5, "range": [0, 120]}}
