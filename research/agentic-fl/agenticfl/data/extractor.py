@@ -1348,6 +1348,20 @@ def _run_generated_data_materializer(
         source_files = generated_materializer.get("source_files")
         if not isinstance(source_files, list) or not source_files:
             raise ValueError("generated materializer did not include source_files")
+        source_file_count = generated_materializer.get("source_file_count")
+        if (
+            isinstance(source_file_count, bool)
+            or not isinstance(source_file_count, int)
+            or source_file_count != len(source_files)
+        ):
+            raise ValueError("generated materializer source_file_count mismatch")
+        entry_script = generated_materializer.get("entry_script")
+        if not isinstance(entry_script, str) or not entry_script.strip():
+            raise ValueError("generated materializer missing entry_script")
+
+        validated_sources: list[tuple[Path, str]] = []
+        source_manifest: list[dict[str, str]] = []
+        resolved_targets: set[Path] = set()
         for entry in source_files:
             if not isinstance(entry, dict):
                 raise ValueError("generated materializer source file entry was not an object")
@@ -1356,16 +1370,34 @@ def _run_generated_data_materializer(
             expected_sha = entry.get("sha256")
             if not isinstance(rel_path, str) or not rel_path.strip() or not isinstance(content, str):
                 raise ValueError("generated materializer source file missing path or content")
-            if isinstance(expected_sha, str) and expected_sha and payload_digest(content) != expected_sha:
+            if not isinstance(expected_sha, str) or not expected_sha:
+                raise ValueError(f"generated materializer source checksum missing for {rel_path}")
+            if payload_digest(content) != expected_sha:
                 raise ValueError(f"generated materializer source checksum mismatch for {rel_path}")
             target = (workspace / rel_path).resolve()
             if target != workspace and workspace not in target.parents:
                 raise ValueError(f"generated materializer source file escapes workspace: {rel_path}")
+            if target in resolved_targets:
+                raise ValueError(f"generated materializer source file target is duplicated: {rel_path}")
+            resolved_targets.add(target)
+            validated_sources.append((target, content))
+            source_manifest.append({"path": rel_path, "sha256": expected_sha})
+
+        expected_source_digest = generated_materializer.get("source_digest")
+        if not isinstance(expected_source_digest, str) or not expected_source_digest:
+            raise ValueError("generated materializer source_digest missing")
+        actual_source_digest = payload_digest(
+            {
+                "entry_script": entry_script,
+                "source_files": source_manifest,
+            }
+        )
+        if actual_source_digest != expected_source_digest:
+            raise ValueError("generated materializer source_digest mismatch")
+
+        for target, content in validated_sources:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(content, encoding="utf-8")
-        entry_script = generated_materializer.get("entry_script")
-        if not isinstance(entry_script, str) or not entry_script.strip():
-            raise ValueError("generated materializer missing entry_script")
         entry_path = (workspace / entry_script).resolve()
         if entry_path != workspace and workspace not in entry_path.parents:
             raise ValueError("generated materializer entry_script escapes workspace")

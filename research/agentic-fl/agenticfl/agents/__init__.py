@@ -1557,9 +1557,7 @@ def _guardrail_review_payload(payload: dict[str, Any]) -> dict[str, Any]:
 def _guardrail_redact_value(value: Any, *, path: list[str]) -> Any:
     if isinstance(value, dict):
         if value.get("schema_version") == "agenticfl.generated_data_materializer.v1":
-            materializer_summary = _generated_materializer_agent_summary(value)
-            if materializer_summary is not None:
-                return materializer_summary
+            return _generated_materializer_guardrail_payload(value)
         redacted: dict[str, Any] = {}
         for key, child in value.items():
             key_text = str(key)
@@ -1573,6 +1571,12 @@ def _guardrail_redact_value(value: Any, *, path: list[str]) -> Any:
     if isinstance(value, str) and _looks_like_local_path(value):
         return _redact_local_paths_in_text(value)
     return value
+
+
+def _generated_materializer_guardrail_payload(materializer: dict[str, Any]) -> dict[str, Any]:
+    """Preserve server-supplied executable source for client boundary review."""
+
+    return json.loads(json.dumps(materializer, default=str))
 
 
 def _guardrail_redaction_decision(
