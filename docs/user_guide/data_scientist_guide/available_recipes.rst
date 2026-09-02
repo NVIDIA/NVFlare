@@ -1086,8 +1086,9 @@ clients.
      offloads the receiving aggregation path, not the trainer's in-memory model
      or outgoing result tensors.
    - Client API transport is selected by the site's Cell driver configuration rather than
-     by the recipe. A site can use the F3 ``FileDriver`` for a launched external process or
-     an attached trainer when shared-filesystem transport is required.
+     by the recipe. A site can use the F3 ``FileDriver`` (scheme ``shared-file``) for an
+     attached trainer when shared-filesystem transport is required; a launched
+     external-process trainer instead requires a clear TCP listener bound to loopback.
    - Download-layer settings such as ``tensor_min_download_timeout`` can be set
      via ``recipe.add_client_config({...})``. See
      :ref:`timeout_troubleshooting`.

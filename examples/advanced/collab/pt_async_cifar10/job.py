@@ -21,7 +21,6 @@ From the ``examples/advanced/collab/pt_async_cifar10`` directory:
 """
 
 import argparse
-import logging
 from pathlib import Path
 
 from async_aggregator import Cifar10AsyncAggregator
@@ -29,7 +28,7 @@ from data import validate_prepared_data
 from prepare_data import DEFAULT_DATA_ROOT
 from trainer import Cifar10Trainer
 
-from nvflare.collab import CollabRecipe, simple_logging
+from nvflare.collab import CollabRecipe
 from nvflare.recipe import SimEnv
 
 JOB_NAME = "collab_pt_async_cifar10"
@@ -138,7 +137,6 @@ def main():
     args = define_parser().parse_args()
     args.data_root = str(Path(args.data_root).expanduser().resolve())
     manifest = validate_prepared_data(args.data_root)
-    simple_logging(logging.INFO)
     recipe = make_recipe(args, manifest)
     clients_per_round = args.num_clients if args.clients_per_round is None else args.clients_per_round
 

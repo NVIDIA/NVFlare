@@ -18,9 +18,10 @@ metadata:
 
 ## Use When
 
-Use when converting an existing plain PyTorch training script, `torch.nn.Module`, manual training loop,
-`state_dict` workflow, data loader, checkpoint, or metric loop into an NVFLARE federated training job. Supports
-horizontal FL, Client API model exchange with `FLModel`, recipe `aggregator=` hooks, validation, and export.
+Use when converting an existing plain PyTorch training script, `torch.nn.Module`,
+manual training loop, `state_dict` workflow, data loader, checkpoint, or metric loop
+into an NVFLARE federated training job. Supports horizontal FL, Client API model
+exchange with `FLModel`, recipe `aggregator=` hooks, validation, and export.
 
 ## Do Not Use When
 
