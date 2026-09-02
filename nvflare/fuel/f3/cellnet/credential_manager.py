@@ -23,6 +23,7 @@ from nvflare.fuel.f3.cellnet.cell_cipher import SimpleCellCipher
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.identity import CellIdentityResolver, get_cert_common_name_from_pem
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
+from nvflare.fuel.f3.drivers.net_utils import get_cert_job_id_from_pem
 from nvflare.fuel.f3.endpoint import Endpoint
 from nvflare.fuel.f3.message import Message
 
@@ -114,8 +115,9 @@ class CredentialManager:
 
         if self.enforce_identity:
             cn = get_cert_common_name_from_pem(cert)
+            job_id = get_cert_job_id_from_pem(cert)
             try:
-                self.identity_resolver.require_match(fqcn, cn, f"certificate for {fqcn}")
+                self.identity_resolver.require_match(fqcn, cn, f"certificate for {fqcn}", peer_job_id=job_id)
             except ValueError as ex:
                 raise RuntimeError(str(ex))
 
