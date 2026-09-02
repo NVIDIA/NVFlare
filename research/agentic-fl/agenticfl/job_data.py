@@ -26,12 +26,12 @@ from agenticfl.client import AgenticFLTaskQueryExecutor
 from agenticfl.data.extractor import ExtractionConfig
 from agenticfl.data.parser import list_client_ids
 from agenticfl.flare.channel import SIMULATION_SCHEMA_VERSION, TASK_QUERY_TASK_NAME
-from agenticfl.flare.simulator import create_sim_env, simulator_mode
 from agenticfl.server import AgenticFLTaskQueryController
 from agenticfl.utils.io import safe_path_slug
 from agenticfl.utils.logging import timestamp_utc
 
 from nvflare.job_config.api import FedJob
+from nvflare.recipe import SimEnv
 from nvflare.recipe.spec import Recipe
 
 DEFAULT_WORKSPACE_ROOT = "workspace"
@@ -68,7 +68,7 @@ def run_fed_job_recipe(
 
     root = Path(workspace_root)
     root.mkdir(parents=True, exist_ok=True)
-    env = create_sim_env(
+    env = SimEnv(
         clients=clients,
         num_threads=threads,
         log_config=log_config,
@@ -82,7 +82,6 @@ def run_fed_job_recipe(
         "schema_version": "agenticfl.nvflare_recipe_run.v1",
         "api": "nvflare.recipe",
         "environment": "SimEnv",
-        "simulator_mode": simulator_mode(),
         "job_id": run.get_job_id(),
         "workspace_root": str(root),
         "workspace": str(workspace),

@@ -25,7 +25,6 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from agenticfl import job_data, job_train
-from agenticfl.flare.simulator import create_sim_env, simulator_mode
 from agenticfl.job_data import (
     _default_session_id,
     _safe_workspace_slug,
@@ -120,20 +119,6 @@ class NVFlareJobTestCase(unittest.TestCase):
                 terminal_status={"matched_line": "ERROR - trainer crashed"},
             )
         )
-
-    def test_local_simulator_uses_public_sim_env_without_opening_a_socket(self) -> None:
-        sentinel = object()
-        with (
-            mock.patch.dict(os.environ, {}, clear=False),
-            mock.patch("agenticfl.flare.simulator.SimEnv", return_value=sentinel) as sim_env,
-        ):
-            os.environ.pop("AGENTICFL_SIMULATOR_MODE", None)
-            result = create_sim_env(clients=["SITE_A"], workspace_root="workspace")
-            mode = simulator_mode()
-
-        self.assertIs(result, sentinel)
-        self.assertEqual(mode, "public")
-        sim_env.assert_called_once_with(clients=["SITE_A"], workspace_root="workspace")
 
     def test_main_passes_documented_local_vlm_overrides_to_preflight(self) -> None:
         with TemporaryDirectory() as tmp:

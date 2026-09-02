@@ -296,19 +296,6 @@ custom `FedJob` objects to NVFlare's public `SimEnv` and launch them with
 uploads model differences with `NUM_STEPS_CURRENT_ROUND` metadata for FedAvg
 aggregation.
 
-The public simulator is the default. On a host where NVFlare simulator traffic
-cannot use IPv4 loopback, an explicit compatibility mode is available. Use it
-when the simulator reports `Failed to create connection to the child process in
-SimulatorClientRunner` after client registration:
-
-```bash
-export AGENTICFL_SIMULATOR_MODE=ipv6_unix
-```
-
-That mode is limited to the NVFlare 2.9 simulator internals used by this
-research example; an incompatible installation fails immediately instead of
-silently changing transport behavior.
-
 On some hosts, SimEnv may print `could not stop AIO loop` during process cleanup
 after `Finished FedAvg`. The run is reported as completed with warnings only when
 all client results were aggregated, the global model was persisted, and non-empty
