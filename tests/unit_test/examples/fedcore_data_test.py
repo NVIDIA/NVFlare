@@ -196,6 +196,17 @@ def test_prepare_data_default_output_is_scenario_specific():
     assert prepare_data._resolve_output_dir(uninformative) == Path("data/uninformative")
 
 
+def test_negative_seed_is_rejected_before_data_are_written(tmp_path):
+    with fedcore_import_context():
+        from src.data import generate_mnist_data
+
+        output_dir = tmp_path / "negative-seed"
+        with pytest.raises(ValueError, match="seed must be non-negative"):
+            generate_mnist_data(replace(_config(output_dir), seed=-1), dataset_loader=_loader)
+
+    assert not output_dir.exists()
+
+
 def test_manifest_loader_rejects_unknown_schema(tmp_path):
     manifest = tmp_path / "manifest.jsonl"
     manifest.write_text(json.dumps({"schema_version": 999}) + "\n")

@@ -18,7 +18,7 @@ import argparse
 from pathlib import Path
 
 from src.data import MNISTDataConfig, generate_mnist_data
-from src.validation import positive_int, probability
+from src.validation import non_negative_int, positive_int, probability
 
 
 def define_parser() -> argparse.ArgumentParser:
@@ -30,7 +30,7 @@ def define_parser() -> argparse.ArgumentParser:
     parser.add_argument("--val-samples-per-site", type=positive_int, default=64)
     parser.add_argument("--test-samples-per-site", type=positive_int, default=64)
     parser.add_argument("--proxy-strength", type=probability, default=None)
-    parser.add_argument("--seed", type=int, default=7)
+    parser.add_argument("--seed", type=non_negative_int, default=7)
     parser.add_argument("--image-size", type=positive_int, default=224)
     return parser
 

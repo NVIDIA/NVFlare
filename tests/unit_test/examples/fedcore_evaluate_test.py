@@ -16,9 +16,33 @@ import json
 import sys
 
 import numpy as np
+import pytest
 import torch
 
 from tests.unit_test.examples.fedcore_test_utils import fedcore_import_context
+
+
+def test_malformed_alpha_grid_has_actionable_error(tmp_path, monkeypatch):
+    with fedcore_import_context():
+        import evaluate
+
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "evaluate.py",
+                "--cache-dir",
+                str(tmp_path / "cache"),
+                "--checkpoint",
+                str(tmp_path / "checkpoint.pt"),
+                "--output-dir",
+                str(tmp_path / "output"),
+                "--alpha-grid",
+                "0,nope",
+            ],
+        )
+        with pytest.raises(ValueError, match="comma-separated list of finite numbers including 0"):
+            evaluate.main()
 
 
 def test_test_caches_are_opened_only_after_validation_selection(tmp_path, monkeypatch):

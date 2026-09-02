@@ -25,7 +25,7 @@ import torch.nn.functional as F
 from model import LogitCompletionModel, effect_target
 from src.features import load_cache_split
 from src.federated import aggregation_meta, state_dict_for_update
-from src.validation import non_negative_float, positive_float, positive_int, probability
+from src.validation import non_negative_float, non_negative_int, positive_float, positive_int, probability
 
 import nvflare.client as flare
 
@@ -115,15 +115,16 @@ def define_parser() -> argparse.ArgumentParser:
     parser.add_argument("--learning-rate", type=positive_float, default=1e-3)
     parser.add_argument("--task-weight", type=non_negative_float, default=4.0)
     parser.add_argument("--effect-weight", type=non_negative_float, default=0.25)
-    parser.add_argument("--seed", type=int, default=7)
+    parser.add_argument("--seed", type=non_negative_int, default=7)
     return parser
 
 
-def _shutdown_on_signal(_signum, _frame) -> None:
-    """Request an orderly exit; the existing finally block owns teardown."""
+def _shutdown_on_signal(signum, _frame) -> None:
+    """Interrupt idle or active work; the existing finally block owns teardown."""
 
     global _TERMINATION_REQUESTED
     _TERMINATION_REQUESTED = True
+    raise SystemExit(128 + int(signum))
 
 
 def main() -> None:
@@ -137,8 +138,8 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     flare.init()
-    signal.signal(signal.SIGTERM, _shutdown_on_signal)
     try:
+        signal.signal(signal.SIGTERM, _shutdown_on_signal)
         while flare.is_running() and not _TERMINATION_REQUESTED:
             input_model = flare.receive()
             if input_model is None or _TERMINATION_REQUESTED:

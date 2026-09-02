@@ -16,7 +16,6 @@
 
 import argparse
 import json
-import math
 import os
 import re
 import shlex
@@ -26,7 +25,14 @@ import sys
 from pathlib import Path
 
 from src.data import MNISTDataConfig, validate_mnist_config
-from src.validation import non_negative_float, positive_float, positive_int, probability
+from src.validation import (
+    non_negative_float,
+    non_negative_int,
+    parse_alpha_grid,
+    positive_float,
+    positive_int,
+    probability,
+)
 
 PROJECT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = PROJECT_DIR.parents[1]
@@ -82,14 +88,10 @@ def _validate_run_configuration(args, proxy_strength: float) -> None:
             val_samples_per_site=args.val_samples_per_site,
             test_samples_per_site=args.test_samples_per_site,
             proxy_strength=proxy_strength,
+            seed=args.seed,
         )
     )
-    try:
-        alpha_grid = [float(value) for value in args.alpha_grid.split(",") if value.strip()]
-    except ValueError as error:
-        raise ValueError("--alpha-grid must be a comma-separated list of finite numbers including 0.") from error
-    if not alpha_grid or 0.0 not in alpha_grid or not all(math.isfinite(alpha) for alpha in alpha_grid):
-        raise ValueError("--alpha-grid must be a comma-separated list of finite numbers including 0.")
+    parse_alpha_grid(args.alpha_grid)
 
 
 def define_parser() -> argparse.ArgumentParser:
@@ -106,7 +108,7 @@ def define_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--output-dir", default="")
     parser.add_argument("--workspace", default="")
-    parser.add_argument("--seed", type=int, default=7)
+    parser.add_argument("--seed", type=non_negative_int, default=7)
     parser.add_argument("--train-samples-per-site", type=positive_int, default=96)
     parser.add_argument("--val-samples-per-site", type=positive_int, default=64)
     parser.add_argument("--test-samples-per-site", type=positive_int, default=64)

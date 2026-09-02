@@ -147,8 +147,8 @@ Most options are set on `run_demo.py` and forwarded to the stage scripts.
 | `--mode` | `quick` | `quick` uses the frozen public Qwen3-VL predictor; `full` first federates a Qwen LoRA adapter (see below). |
 | `--scenario` | `recoverable` | `recoverable` or `uninformative`. |
 | `--proxy-strength` | `0.9` | OCR class accuracy in the `recoverable` scenario. Not accepted for `uninformative`, which is fixed at 0.5 to keep the control exactly balanced. |
-| `--seed` | `7` | Controls data allocation, OCR noise, model initialization, and training order. |
-| `--train-samples-per-site`, `--val-samples-per-site`, `--test-samples-per-site` | `96`, `64`, `64` | Records per site and split. Each must be at least 8 and divisible by 4 (by 8 for `uninformative`). |
+| `--seed` | `7` | Non-negative seed controlling data allocation, OCR noise, model initialization, and training order. |
+| `--train-samples-per-site`, `--val-samples-per-site`, `--test-samples-per-site` | `96`, `64`, `64` | Records per site and split. Each must be at least 8 and divisible by 4 (by 8 for `uninformative`). At intermediate proxy strengths, each recoverable split must be large enough to include correct and incorrect OCR estimates in both classes. |
 | `--num-rounds`, `--local-epochs` | `10`, `10` | Federated rounds and local epochs per round for the completion operator. |
 | `--learning-rate`, `--hidden-dim`, `--task-weight`, `--effect-weight` | `1e-3`, `128`, `4.0`, `0.25` | Completion-operator optimizer settings and loss weights. |
 | `--alpha-grid` | `0,0.25,0.5,0.75,1,1.5,2` | Candidate completion strengths; must include `0`. |

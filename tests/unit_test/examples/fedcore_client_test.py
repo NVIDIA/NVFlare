@@ -57,9 +57,11 @@ def test_sigterm_handler_requests_single_entry_shutdown(monkeypatch):
         calls = []
         monkeypatch.setattr(client.flare, "shutdown", lambda: calls.append("shutdown"))
         client._TERMINATION_REQUESTED = False
-        client._shutdown_on_signal(None, None)
+        with pytest.raises(SystemExit) as termination:
+            client._shutdown_on_signal(client.signal.SIGTERM, None)
 
     assert client._TERMINATION_REQUESTED is True
+    assert termination.value.code == 128 + client.signal.SIGTERM
     assert calls == []
 
 

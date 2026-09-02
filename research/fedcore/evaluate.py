@@ -23,7 +23,7 @@ import torch
 from model import LogitCompletionModel
 from src.evaluation import evaluate_sites, prepare_site, select_alpha_from_statistics, validation_sufficient_statistics
 from src.features import load_cache_metadata, load_cache_split
-from src.validation import non_negative_float, positive_int, probability
+from src.validation import non_negative_float, parse_alpha_grid, positive_int, probability
 
 
 def _load_model(checkpoint: Path, input_dim: int, hidden_dim: int, dropout: float) -> LogitCompletionModel:
@@ -68,9 +68,7 @@ def main() -> None:
     args = define_parser().parse_args()
     cache_dir = Path(args.cache_dir).expanduser().resolve()
     output_dir = Path(args.output_dir).expanduser().resolve()
-    alpha_grid = [float(value) for value in args.alpha_grid.split(",") if value.strip()]
-    if not alpha_grid or 0.0 not in alpha_grid or not all(math.isfinite(alpha) for alpha in alpha_grid):
-        raise ValueError("--alpha-grid must contain finite values and include 0 for the identity fallback.")
+    alpha_grid = parse_alpha_grid(args.alpha_grid)
     metadata = load_cache_metadata(cache_dir)
     model = _load_model(
         Path(args.checkpoint).expanduser().resolve(),

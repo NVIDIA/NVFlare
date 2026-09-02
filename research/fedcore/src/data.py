@@ -213,6 +213,8 @@ def _sft_record(record: dict) -> dict:
 def validate_mnist_config(config: MNISTDataConfig) -> None:
     if config.scenario not in {"recoverable", "uninformative"}:
         raise ValueError("scenario must be 'recoverable' or 'uninformative'.")
+    if config.seed < 0:
+        raise ValueError(f"seed must be non-negative, got {config.seed}.")
     if not 0.0 <= config.proxy_strength <= 1.0:
         raise ValueError("proxy_strength must be in [0, 1].")
     if config.image_size < 64:

@@ -25,6 +25,13 @@ def positive_int(value: str) -> int:
     return result
 
 
+def non_negative_int(value: str) -> int:
+    result = int(value)
+    if result < 0:
+        raise argparse.ArgumentTypeError(f"expected a non-negative integer, got {value!r}")
+    return result
+
+
 def positive_float(value: str) -> float:
     result = float(value)
     if not math.isfinite(result) or result <= 0.0:
@@ -43,4 +50,15 @@ def probability(value: str) -> float:
     result = float(value)
     if not math.isfinite(result) or not 0.0 <= result <= 1.0:
         raise argparse.ArgumentTypeError(f"expected a finite value in [0, 1], got {value!r}")
+    return result
+
+
+def parse_alpha_grid(value: str) -> list[float]:
+    message = "--alpha-grid must be a comma-separated list of finite numbers including 0."
+    try:
+        result = [float(item) for item in value.split(",") if item.strip()]
+    except ValueError as error:
+        raise ValueError(message) from error
+    if not result or 0.0 not in result or not all(math.isfinite(alpha) for alpha in result):
+        raise ValueError(message)
     return result

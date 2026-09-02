@@ -22,7 +22,7 @@ import tempfile
 from pathlib import Path
 
 from src.features import load_cache_split
-from src.validation import non_negative_float, positive_float, positive_int, probability
+from src.validation import non_negative_float, non_negative_int, positive_float, positive_int, probability
 
 PROJECT_DIR = Path(__file__).resolve().parent
 SITES = ["site-1", "site-2", "site-3"]
@@ -41,7 +41,7 @@ def define_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dropout", type=probability, default=0.1)
     parser.add_argument("--task-weight", type=non_negative_float, default=4.0)
     parser.add_argument("--effect-weight", type=non_negative_float, default=0.25)
-    parser.add_argument("--seed", type=int, default=7)
+    parser.add_argument("--seed", type=non_negative_int, default=7)
     return parser
 
 

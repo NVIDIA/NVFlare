@@ -131,6 +131,22 @@ def test_invalid_data_configuration_does_not_reserve_output(tmp_path, monkeypatc
     assert not output_dir.exists()
 
 
+def test_negative_seed_is_rejected_before_output_is_reserved(tmp_path, monkeypatch):
+    with fedcore_import_context():
+        import run_demo
+
+        output_dir = tmp_path / "output"
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            ["run_demo.py", "--output-dir", str(output_dir), "--seed", "-1"],
+        )
+        with pytest.raises(SystemExit):
+            run_demo.main()
+
+    assert not output_dir.exists()
+
+
 def test_uninformative_scenario_rejects_proxy_override(monkeypatch):
     with fedcore_import_context():
         import run_demo
