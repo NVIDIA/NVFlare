@@ -1108,6 +1108,13 @@ def test_clone_job_preserves_source_study(monkeypatch):
     assert engine.job_def_manager.cloned_meta[JobMetaKey.STUDY.value] == "cancer-research"
 
 
+def test_clone_job_command_help_is_deprecated():
+    clone_spec = next(spec for spec in JobCommandModule().get_spec().cmd_specs if spec.name == "clone_job")
+
+    assert "[DEPRECATED]" in clone_spec.description
+    assert "nvflare job submit -j JOB_FOLDER" in clone_spec.description
+
+
 def test_clone_job_preserves_byoc_flag(monkeypatch):
     monkeypatch.setattr(job_cmds_module, "ServerEngine", object)
     monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
