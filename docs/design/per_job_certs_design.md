@@ -58,23 +58,30 @@ signing.
 
 ## Provisioning
 
-`CertBuilder` gains an `enable_job_ca` option (default off):
+`CertBuilder` gains an `enable_job_ca` option, on by default so every newly
+provisioned project (including POC) gets the job CA. It can be turned off:
 
 ```yaml
 builders:
   - path: nvflare.lighter.impl.cert.CertBuilder
     args:
-      enable_job_ca: true
+      enable_job_ca: false
 ```
 
-When enabled, provisioning generates one additional pair signed by the root:
+Provisioning generates one additional pair signed by the root:
 `job_ca.crt` / `job_ca.key`, written to the **server** startup kit only, with
 the key at mode 0600. The pair is persisted in the certificate state file so
 re-provisioning reuses it. `pathlen:0` prevents the job CA from issuing further
-CAs.
+CAs. The job CA cert also carries a marker extension (see Site-Scope Rejection)
+so verifiers can reject anything it issued by issuer alone.
 
-Client startup kits are unchanged. Existing projects keep working without
-re-provisioning; the feature simply stays off.
+Client startup kits are unchanged. Kits provisioned before this feature keep
+working without re-provisioning; the server finds no job CA and job cells stay
+on site certificates. Re-provisioning an existing project adds the job CA
+(the root is reused from the state file, so no other cert changes).
+
+`nvflare package` uses `PrebuiltCertBuilder` with externally signed certs and
+has no root key to sign an intermediate, so those kits have no job CA.
 
 ## Runtime Issuance (SP)
 
@@ -183,10 +190,10 @@ admin identity; its blast radius is job cells only.
 
 | Deployment | Behavior |
 | ---------- | -------- |
-| Kit without job CA (existing) | No job certs issued; job cells use site certs (today's behavior) |
-| Server kit with job CA, current clients | CJ certs pushed and used; SJ cert used |
+| Kit without job CA (pre-feature, `enable_job_ca: false`, `nvflare package`) | No job certs issued; job cells use site certs (today's behavior) |
+| Server kit with job CA, current clients (default for new provision and POC) | CJ certs pushed and used; SJ cert used |
 | Server kit with job CA, older client release | Client ignores the unknown deploy header; CJ falls back to site certs |
-| Non-secure mode / simulator / POC default | Feature inactive |
+| Non-secure mode / simulator | Feature inactive |
 
 ## Future Work
 

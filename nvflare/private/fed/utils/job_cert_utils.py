@@ -176,8 +176,8 @@ class JobCertIssuer:
 def load_job_cert_issuer(startup_dir: str) -> Optional[JobCertIssuer]:
     """Create a JobCertIssuer from the startup kit's job CA, or None if absent or near expiry.
 
-    The job CA is provisioned only when CertBuilder's enable_job_ca option is on; without it,
-    job cells fall back to site certificates.
+    The job CA is absent from kits provisioned before this feature or with CertBuilder's
+    enable_job_ca option off; job cells then fall back to site certificates.
     """
     cert_path = os.path.join(startup_dir, ProvFileName.JOB_CA_CERT)
     key_path = os.path.join(startup_dir, ProvFileName.JOB_CA_KEY)

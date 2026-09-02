@@ -105,7 +105,7 @@ class _CertState:
 
 
 class CertBuilder(Builder):
-    def __init__(self, root_valid_days=DEFAULT_CERT_VALID_DAYS, enable_job_ca=False):
+    def __init__(self, root_valid_days=DEFAULT_CERT_VALID_DAYS, enable_job_ca=True):
         """Build certificate chain for every participant.
 
         Handles building (creating and self-signing) the root CA certificates, creating server, client and
@@ -115,8 +115,9 @@ class CertBuilder(Builder):
         Args:
             root_valid_days: validity period in days for a newly generated root CA certificate. This value does not
                 renew or replace a root CA already stored in the provisioning state.
-            enable_job_ca: when True, also generate a job-signing intermediate CA (job_ca.crt/job_ca.key) in the
-                server startup kit. The server uses it at job deploy time to issue short-lived per-job certificates.
+            enable_job_ca: also generate a job-signing intermediate CA (job_ca.crt/job_ca.key) in the server
+                startup kit. The server uses it at job deploy time to issue short-lived per-job certificates.
+                Set False to keep job cells on the site certificates.
         """
         if isinstance(root_valid_days, bool) or not isinstance(root_valid_days, int) or root_valid_days <= 0:
             raise ValueError(

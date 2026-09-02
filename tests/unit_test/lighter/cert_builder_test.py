@@ -149,10 +149,20 @@ def test_leaf_validity_is_bounded_by_shorter_root(tmp_path):
     assert leaf_cert.not_valid_after_utc - leaf_cert.not_valid_before_utc <= datetime.timedelta(days=1)
 
 
-def test_job_ca_not_generated_by_default(tmp_path):
+def test_job_ca_generated_by_default(tmp_path):
     workspace = tmp_path / "workspace"
 
     ctx = _provision(workspace, CertBuilder())
+
+    assert not ctx.get(CtxKey.BUILD_ERROR)
+    assert (_kit_dir(workspace, "server1") / ProvFileName.JOB_CA_CERT).exists()
+    assert (_kit_dir(workspace, "server1") / ProvFileName.JOB_CA_KEY).exists()
+
+
+def test_job_ca_can_be_disabled(tmp_path):
+    workspace = tmp_path / "workspace"
+
+    ctx = _provision(workspace, CertBuilder(enable_job_ca=False))
 
     assert not ctx.get(CtxKey.BUILD_ERROR)
     assert not (_kit_dir(workspace, "server1") / ProvFileName.JOB_CA_CERT).exists()
