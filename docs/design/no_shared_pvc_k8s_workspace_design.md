@@ -55,9 +55,14 @@ For each launched job pod, the launcher creates a pod manifest with:
 - optional study-data PVC mounts at `/data/<study>/<dataset>`
 
 The launcher also creates or updates a startup Secret for the participant site.
-That Secret contains the startup-kit files needed by the launched process, such
-as certificates, keys, and JSON config files, and those files appear in the
-pod under `/var/tmp/nvflare/workspace/startup` via the Secret mount.
+That Secret contains the startup-kit files needed by the launched process —
+certificates, `rootCA.pem`, and JSON config files — and those files appear in
+the pod under `/var/tmp/nvflare/workspace/startup` via the Secret mount. Site
+private keys (`*.key`) are included only when the job has no per-job
+credential; otherwise the job's own certificate and key travel in the per-job
+credential Secret (`NVFLARE_JOB_CERT` / `NVFLARE_JOB_KEY`) and the job process
+writes them into its run directory before creating the bootstrap cell (see
+`per_job_certs_design.md`).
 
 ## Transfer Architecture
 
@@ -203,8 +208,9 @@ artifacts.
 The key protections are:
 
 - `startup/` is mounted read-only from a Kubernetes Secret
-- secure mode bootstrap cells use `rootCA.pem` plus the available startup cert
-  and key pair
+- secure mode bootstrap cells use `rootCA.pem` plus the job credential when the
+  launcher delivered one, falling back to the startup cert and key pair
+- workspace bundles and result uploads never include `job_cert/`
 - the launcher passes the parent listener's connection-security setting into
   the child process args, and the bootstrap cell installs its CellNet auth
   headers before `cell.start()` so the parent accepts the initial registration

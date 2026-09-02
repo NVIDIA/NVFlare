@@ -1,36 +1,33 @@
 # Per-Job Certificates for Job Cells
 
 This document describes per-job TLS credentials for job processes (SJ: server
-job process, CJ: client job process). Today both job cells load the same
-provisioned site certificates as their parent processes (SP: server parent,
-CP: client parent), so every job process holds the site's long-lived private
-key.
+job process, CJ: client job process). Before this change both job cells loaded
+the same provisioned site certificates as their parent processes (SP: server
+parent, CP: client parent), so every job process held the site's long-lived
+private key.
 
 ## Problem
 
 Job processes run job-supplied code (custom Executors, Controllers, third-party
-training code). The cell creation paths give them the site identity keys:
+training code). The cell creation paths gave them the site identity keys:
 
-- SJ: `BaseServer.create_job_cell()` reads `server.crt` / `server.key` from the
+- SJ: `BaseServer.create_job_cell()` read `server.crt` / `server.key` from the
   server startup kit — identical to SP.
-- CJ: `FederatedClientBase._create_cell()` reads `client.crt` / `client.key`
+- CJ: `FederatedClientBase._create_cell()` read `client.crt` / `client.key`
   from the client startup kit — identical to CP.
 
-Any code running inside a job can therefore read the site's private key and
+Any code running inside a job could therefore read the site's private key and
 impersonate the site indefinitely: register as a CP, decrypt message-level
 traffic, or authenticate as the site after the job ends.
 
 ## Goal
 
-Give each job process its own short-lived credential, scoped to one job, so
-that job code never needs the site's long-lived key for cell communication.
+Give each job process its own short-lived credential, scoped to one job, make
+that credential the only one the job process refers to, and have container and
+scheduler launchers withhold the site private keys from the job entirely.
 
-Non-goals of this phase (see Future Work):
-
-- Removing site keys from job workspaces / container bundles. The mechanism
-  introduced here is the prerequisite for that hardening.
-- Certificate revocation. Short validity plus job-workspace teardown bound the
-  exposure window instead.
+Non-goal: certificate revocation. Bounded validity plus job-workspace teardown
+limit the exposure window instead.
 
 ## Trust Model
 
@@ -39,9 +36,9 @@ rootCA (private key exists only during provisioning)
 ├── server.crt / server.key        server startup kit      (unchanged)
 ├── client.crt / client.key        client startup kits     (unchanged)
 └── job_ca.crt / job_ca.key        server startup kit ONLY (new)
-        CA:TRUE, pathlen:0
+        CA:TRUE, pathlen:0, job-CA marker extension
         └── per-job leaf certs, issued at job deploy time
-              CN=<site name>, job_id extension, short validity
+              CN=<site name>, job_id extension, bounded validity
 ```
 
 Because the job CA chains to the existing root, no participant needs a new
@@ -55,6 +52,20 @@ holding the job ID.
 
 Only SP ever holds the job CA key. CP receives issued certificates; it does no
 signing.
+
+### Extension OIDs
+
+Both extensions live under NVIDIA's IANA private enterprise arc
+(`1.3.6.1.4.1.5703`), sub-arc `300`:
+
+| OID | Placed on | Meaning |
+| --- | --------- | ------- |
+| `1.3.6.1.4.1.5703.300.1` | job leaf certs | the job ID the credential is bound to |
+| `1.3.6.1.4.1.5703.300.2` | the job CA cert | "issued by the job CA" marker |
+
+Both are non-critical, so standard TLS stacks ignore them; only FLARE code reads
+them. Neither can be stripped: the marker is inside the root-signed job CA cert,
+the job ID inside the job-CA-signed leaf.
 
 ## Provisioning
 
@@ -71,9 +82,8 @@ builders:
 Provisioning generates one additional pair signed by the root:
 `job_ca.crt` / `job_ca.key`, written to the **server** startup kit only, with
 the key at mode 0600. The pair is persisted in the certificate state file so
-re-provisioning reuses it. `pathlen:0` prevents the job CA from issuing further
-CAs. The job CA cert also carries a marker extension (see Site-Scope Rejection)
-so verifiers can reject anything it issued by issuer alone.
+re-provisioning reuses it (an expired stored job CA is regenerated). `pathlen:0`
+prevents the job CA from issuing further CAs.
 
 Client startup kits are unchanged. Kits provisioned before this feature keep
 working without re-provisioning; the server finds no job CA and job cells stay
@@ -87,7 +97,7 @@ has no root key to sign an intermediate, so those kits have no job CA.
 
 A `JobCertIssuer` in the SP process loads `job_ca.crt` / `job_ca.key` from the
 startup kit. The issuer is only used in secure mode; it is disabled — and the
-whole feature falls back to current behavior — when the files are absent or
+whole feature falls back to site certificates — when the files are absent or
 when the job CA has less than a minimum remaining validity (so jobs never get
 certs that expire mid-run).
 
@@ -102,17 +112,18 @@ issuer generates an RSA keypair and a leaf certificate:
 - a job-ID extension identifying the job
 - `notBefore` backdated a few minutes to tolerate clock skew between the
   issuing server and the sites that validate the cert seconds later
-- `notAfter` = issue time + a fixed validity (30 days), clamped to the job
-  CA's own expiry
+- `notAfter` = issue time + `job_cert_valid_days` (server resources config,
+  default 30), clamped to the job CA's own expiry. There is no renewal, so this
+  is also the maximum job duration; operators running longer jobs raise it.
 
 The issued credential is a PEM bundle: leaf cert followed by `job_ca.crt`
 (so TLS peers can build the chain to the root), plus the private key PEM.
 
 ## Distribution
 
-**SJ (local write).** When the server app is deployed to the server workspace,
-SP writes the SJ credential into the job run directory before the SJ process is
-launched.
+**SJ (local write).** After all apps are deployed to the server workspace
+(`AppDeployer` recreates the run directory), SP writes the SJ credential into
+the job run directory before the SJ process is launched.
 
 **CJ (push).** The job deploy message becomes per-site: the shared app bytes
 stay a single payload reference, but each site's message carries an additional
@@ -121,10 +132,8 @@ the existing authenticated CP–SP channel (mTLS in secure mode). On the client,
 the deploy processor writes the credential into the job run directory (key at
 mode 0600) after the app passes signature verification and deploys.
 
-No new channels, topics, or handshakes are introduced. Because the run
-directory is part of the per-job workspace, detached launchers that bundle the
-run directory (e.g. the Kubernetes no-shared-PVC workspace transfer) deliver
-job credentials to job pods with no additional work.
+No new channels, topics, or handshakes are introduced. The private key transits
+SP→CP inside the deploy message; a CSR variant is listed under Future Work.
 
 ## Workspace Layout
 
@@ -140,28 +149,25 @@ job credentials to job pods with no additional work.
 
 ## Job Process Changes
 
-At job-process startup, the starter configers check the job run directory for
-`job_cert/job.crt` + `job_cert/job.key`. When present, the paths are added to
-the process security config under new keys (`job_ssl_cert`,
-`job_ssl_private_key`) alongside — not replacing — the site cert entries.
+At job-process startup, the starter configers look for `job_cert/job.crt` +
+`job_cert/job.key` in the run directory. When both are present, the paths are
+added under `job_ssl_cert` / `job_ssl_private_key` **and replace**
+`ssl_cert` / `ssl_private_key`, so nothing in the job process refers to the
+site key any more. `ssl_root_cert` remains `rootCA.pem`.
 
-Only the cell creation paths prefer the job credential (and only when both the
-cert and the key are present, so a partial config can never pair a job cert
-with the site key):
-
-- `BaseServer.create_job_cell()` uses the job cert/key for the SJ cell when
-  configured.
-- `FederatedClientBase._create_cell()` uses the job cert/key for the CJ cell
-  when configured. The CJ also pins its server-role credential to the job
-  cert; otherwise, on listener-enabled sites, the site's server cert would be
-  back-filled from the startup kit and preferred by message-level crypto.
-
-`ssl_root_cert` remains `rootCA.pem` everywhere. All other consumers of the
-site credential (auth-token verification, identity assertion) are unchanged in
-this phase.
+- `BaseServer.create_job_cell()` and `FederatedClientBase._create_cell()` use
+  the job credential for the SJ/CJ cell. The CJ also pins its server-role
+  credential to the job cert; otherwise, on listener-enabled sites, the site's
+  server cert would be back-filled from the startup kit and preferred by
+  message-level crypto.
+- The startup content-integrity check (`signature.json` kits) no longer
+  requires the site private key in job processes.
+- The job process never registers with the server (it receives the CP's auth
+  token and signature) and never asserts site identity, so it has no other use
+  for the site key.
 
 If the job credential is absent — feature disabled, old server, non-secure
-mode, simulator — cell creation uses the site certs exactly as today.
+mode, simulator — the job process uses the site certs exactly as before.
 
 ## Site-Scope Rejection
 
@@ -186,38 +192,73 @@ asserts identity there. Two rejections cover two distinct threats:
 With both checks, compromise of the job CA key no longer escalates to site or
 admin identity; its blast radius is job cells only.
 
+## Job Binding in Cellnet
+
+Site-scope rejection stops a job credential from acting as a site. Job binding
+stops one job's credential from acting as another job's cell:
+
+- Every TLS driver exposes the peer certificate's job-ID extension as the
+  `PEER_JOB_ID` connection property next to `PEER_CN`.
+- `CellIdentityResolver.require_match()` rejects a peer whose certificate is
+  bound to job X unless the FQCN it claims contains the segment X
+  (`site-1.X`, `server.X`, and their descendants). The check runs at the
+  connection handshake (`ConnManager`) and again on the certificate exchanged
+  for message-level crypto (`CredentialManager`), which is the certificate
+  later used to decrypt that peer's messages.
+
+The rule is one-directional on purpose: a job cert may only appear on job
+FQCNs, but a job FQCN may still present a site cert, so older clients that
+fall back to site certificates keep working.
+
+## Site-Key Isolation by Launcher
+
+With the job process no longer referring to the site key, launchers withhold
+the `*.key` files of the startup kit (this includes `job_ca.key` on the
+server). Isolation is applied only when a job credential exists for the job;
+kits without a job CA keep today's behavior, with a warning, so that the
+fallback to site certificates still works.
+
+| Launcher | Startup kit delivered to the job | Job credential |
+| -------- | -------------------------------- | -------------- |
+| Process | same host workspace, same user — no filesystem isolation possible | run dir |
+| Docker | `startup/` bound file by file, read-only, `*.key` omitted | read-write job workspace bind |
+| Kubernetes | startup Secret without `*.key` | `NVFLARE_JOB_CERT` / `NVFLARE_JOB_KEY` in the per-pod credential Secret (`secretKeyRef` env) |
+| Slurm (apptainer / pyxis) | keyless staged copy under the 0700 job dir, bound at `<workspace>/startup` | run dir bind |
+| Slurm (`sandbox: none`) | bare host process — no isolation possible | run dir |
+
+Kubernetes needs the environment route because the pod's bootstrap cell, which
+downloads the run directory, exists before the run directory does. The job
+process pops both variables and writes the credential into the run directory
+(`_install_job_cert_from_env`) before creating the bootstrap cell, which then
+authenticates with the job credential instead of the site key. Workspace
+bundles and result uploads exclude `job_cert/` so the key travels only once.
+A Secret volume at `<run dir>/job_cert` was rejected because kubelet would
+create the run directory root-owned and break extraction for non-root pods.
+
 ## Compatibility
 
 | Deployment | Behavior |
 | ---------- | -------- |
-| Kit without job CA (pre-feature, `enable_job_ca: false`, `nvflare package`) | No job certs issued; job cells use site certs (today's behavior) |
-| Server kit with job CA, current clients (default for new provision and POC) | CJ certs pushed and used; SJ cert used |
+| Kit without job CA (pre-feature, `enable_job_ca: false`, `nvflare package`) | No job certs issued; job cells use site certs; launchers ship site keys as before |
+| Server kit with job CA, current clients (default for new provision and POC) | CJ certs pushed and used; SJ cert used; launchers withhold site keys |
 | Server kit with job CA, older client release | Client ignores the unknown deploy header; CJ falls back to site certs |
 | Non-secure mode / simulator | Feature inactive |
+| Relays | Relays keep their provisioned site certs; CJs behind a relay use job certs |
+| Sub-worker cells, Client API trainers | Unchanged: sub-workers use unauthenticated local internal links; CellPipe trainers connect with the root CA only. Neither holds a site key. |
 
 ## Future Work
 
-1. **Job-FQCN binding in cellnet.** Site-scope rejection is implemented (see
-   above). The remaining enforcement is at the cellnet message-crypto layer:
-   accept a peer cert carrying a job-ID extension only from an FQCN whose job
-   suffix matches, preventing one job's leaked key from impersonating another
-   job's cell. Deferred until the sub-worker/workspace redesign settles the
-   process and FQCN layout.
-2. **Site-key isolation.** Stop shipping `client.key` / `server.key` into job
-   workspaces, workspace-transfer bundles, and job-pod Secrets once job cells
-   no longer need them. The CP registration auth token and its signature,
-   currently passed to job processes on the command line, belong on the same
-   list.
-3. **CSR mode.** Optional variant where CP generates the keypair and sends a
+1. **CSR mode.** Optional variant where CP generates the keypair and sends a
    CSR, so private keys never transit SP→CP.
+2. **Renewal** for jobs that outlive `job_cert_valid_days`.
+3. **Externally issued job CA** for `nvflare package` / BYO-PKI kits, so those
+   servers can issue job certs too.
 
 ## Unresolved Questions
 
-1. Should sub-worker cells (multi-GPU `sub_worker_process`, Client API
-   subprocesses) also use the job credential, or continue on internal links?
-2. Should job-cert validity be configurable per job (e.g. from job meta or a
-   server config var) rather than a fixed default?
-3. HA with multiple SPs: is per-server-kit job CA acceptable, or must all SPs
+1. Should sub-worker cells and Client API trainers also carry the job
+   credential, or continue on their current links?
+2. HA with multiple SPs: is per-server-kit job CA acceptable, or must all SPs
    share one job CA identity?
 
 (Message-level encryption was verified to already support certificate chains:
