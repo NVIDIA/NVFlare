@@ -123,7 +123,8 @@ The download sequence is:
    `NVFL_WORKSPACE_TRANSFER_TOKEN`.
 2. It creates a short-lived bootstrap child cell using the startup kit and the
    existing parent connection settings. The bootstrap FQCN is
-   `<owner_fqcn>.ws_transfer_<job_id>`. When the child process is a client
+   `<owner_fqcn>.ws_transfer_<job_id>`, which `FQCN.belongs_to_job` recognizes as
+   part of the job so the job-bound certificate is accepted. When the child process is a client
    worker, the bootstrap cell reuses that worker's `client_name`, auth token,
    token signature, and `ssid`. When the child process is a server runner, the
    bootstrap cell uses the same server-job auth identity as the main runner.

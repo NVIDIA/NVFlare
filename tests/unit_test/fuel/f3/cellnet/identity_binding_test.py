@@ -35,6 +35,7 @@ from nvflare.fuel.f3.cellnet.cell_cipher import (
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.f3.cellnet.credential_manager import CERT_CONTENT, CredentialManager
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessageType, ReturnCode
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.identity import ADMIN_LISTENER_KEY, CellIdentityResolver
 from nvflare.fuel.f3.cellnet.utils import make_reply
 from nvflare.fuel.f3.comm_error import CommError
@@ -449,14 +450,41 @@ def test_mtls_certificate_cache_accepts_configured_auth_identity_for_site_cert_c
     assert manager.cert_cache["site-1.job-123"] == cert
 
 
+@pytest.mark.parametrize(
+    "fqcn, expected",
+    [
+        ("site-1.job-123", True),
+        ("server.job-123", True),
+        ("site-1.job-123.sub-1", True),
+        ("site-1.ws_transfer_job-123", True),
+        ("server.ws_transfer_job-123", True),
+        ("site-1", False),
+        ("site-1.job-999", False),
+        ("site-1.ws_transfer_job-999", False),
+        ("site-1.ws_transferjob-123", False),
+        ("site-1.job-1234", False),
+        ("site-1.xjob-123", False),
+    ],
+)
+def test_fqcn_belongs_to_job(fqcn, expected):
+    assert FQCN.belongs_to_job(fqcn, "job-123") is expected
+
+
+def test_fqcn_belongs_to_job_rejects_empty_job_id():
+    assert FQCN.belongs_to_job("site-1.ws_transfer_", "") is False
+
+
 def test_identity_resolver_binds_job_cert_to_job_fqcn():
     resolver = CellIdentityResolver(local_fqcn="server", prefix_identity_map={"site-1": "site-1"})
 
     resolver.require_match("site-1.job-123", "site-1", "connection cj", peer_job_id="job-123")
     resolver.require_match("site-1.job-123.sub-1", "site-1", "connection sub", peer_job_id="job-123")
+    resolver.require_match("site-1.ws_transfer_job-123", "site-1", "connection bootstrap", peer_job_id="job-123")
 
     with pytest.raises(ValueError, match="bound to job 'job-123'"):
         resolver.require_match("site-1.job-999", "site-1", "connection cj", peer_job_id="job-123")
+    with pytest.raises(ValueError, match="bound to job 'job-123'"):
+        resolver.require_match("site-1.ws_transfer_job-999", "site-1", "connection bootstrap", peer_job_id="job-123")
     with pytest.raises(ValueError, match="bound to job 'job-123'"):
         resolver.require_match("site-1", "site-1", "connection cp", peer_job_id="job-123")
     with pytest.raises(ValueError, match="bound to job 'job-123'"):
@@ -465,18 +493,19 @@ def test_identity_resolver_binds_job_cert_to_job_fqcn():
         )
 
 
-def test_mtls_handshake_accepts_job_cert_for_own_job():
+@pytest.mark.parametrize("endpoint_name", ["site-1.job-123", "site-1.ws_transfer_job-123"])
+def test_mtls_handshake_accepts_job_cert_for_own_job(endpoint_name):
     manager = _conn_manager(identity_map={"site-1": "site-1"})
     conn = _FakeConnection(peer_cn="site-1", peer_job_id="job-123")
     sfm_conn = SfmConnection(conn, Endpoint("server"))
 
-    manager.update_endpoint(sfm_conn, {HandshakeKeys.ENDPOINT_NAME: "site-1.job-123"})
+    manager.update_endpoint(sfm_conn, {HandshakeKeys.ENDPOINT_NAME: endpoint_name})
 
-    assert "site-1.job-123" in manager.sfm_endpoints
+    assert endpoint_name in manager.sfm_endpoints
     assert not conn.closed
 
 
-@pytest.mark.parametrize("endpoint_name", ["site-1.job-999", "site-1"])
+@pytest.mark.parametrize("endpoint_name", ["site-1.job-999", "site-1", "site-1.ws_transfer_job-999"])
 def test_mtls_handshake_rejects_job_cert_outside_its_job(endpoint_name):
     manager = _conn_manager(identity_map={"site-1": "site-1"})
     conn = _FakeConnection(peer_cn="site-1", peer_job_id="job-123")

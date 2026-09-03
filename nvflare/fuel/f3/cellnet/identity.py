@@ -165,7 +165,7 @@ class CellIdentityResolver:
             raise ValueError(f"{peer_desc} does not have an authenticated mTLS peer common name")
 
         # A per-job certificate may only authenticate cells of that job.
-        if peer_job_id is not None and peer_job_id not in FQCN.split(FQCN.normalize(fqcn)):
+        if peer_job_id is not None and not FQCN.belongs_to_job(fqcn, peer_job_id):
             raise ValueError(
                 f"{peer_desc} authenticated with a certificate bound to job '{peer_job_id}' "
                 f"but claimed endpoint '{fqcn}' is not part of that job"

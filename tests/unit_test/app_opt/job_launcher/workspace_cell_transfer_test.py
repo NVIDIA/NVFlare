@@ -42,6 +42,7 @@ from nvflare.app_opt.job_launcher.workspace_cell_transfer import (
 )
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.f3.cellnet.identity import CellIdentityResolver
 from nvflare.fuel.f3.cellnet.utils import make_reply, new_cell_message
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 
@@ -111,6 +112,15 @@ class _FakeCell:
 
 
 class TestGetOrCreate:
+    @pytest.mark.parametrize("owner_fqcn, owner_cn", [("server", "server"), ("site-1", "site-1")])
+    def test_bootstrap_fqcn_is_accepted_by_job_cert_binding(self, owner_fqcn, owner_cn):
+        resolver = CellIdentityResolver(local_fqcn=owner_fqcn, prefix_identity_map={owner_fqcn: owner_cn})
+        fqcn = make_workspace_transfer_fqcn(owner_fqcn, JOB_ID)
+
+        resolver.require_match(fqcn, owner_cn, "bootstrap", peer_job_id=JOB_ID)
+        with pytest.raises(ValueError, match="bound to job"):
+            resolver.require_match(fqcn, owner_cn, "bootstrap", peer_job_id="other-job")
+
     def test_returns_same_manager_for_same_cell(self):
         owner_cell = _FakeCell(fqcn="site-1.parent")
         first = WorkspaceTransferManager.get_or_create(owner_cell)

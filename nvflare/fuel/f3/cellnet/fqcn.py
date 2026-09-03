@@ -17,6 +17,21 @@ from nvflare.fuel.common.fqn import FQN
 class FQCN(FQN):
     VALID_PATTERN = "^[A-Za-z0-9_.~-]*$"
 
+    # A job's cells are the job cell (<site>.<job_id>) and its descendants, plus auxiliary cells
+    # named <name>_<job_id> directly under the site (e.g. the workspace-transfer bootstrap cell).
+    JOB_AUX_SEPARATOR = "_"
+
+    @staticmethod
+    def job_aux_name(name: str, job_id: str) -> str:
+        return f"{name}{FQCN.JOB_AUX_SEPARATOR}{job_id}"
+
+    @staticmethod
+    def belongs_to_job(fqcn: str, job_id: str) -> bool:
+        if not job_id:
+            return False
+        aux_suffix = FQCN.JOB_AUX_SEPARATOR + job_id
+        return any(seg == job_id or seg.endswith(aux_suffix) for seg in FQCN.split(FQCN.normalize(fqcn)))
+
 
 # A network Attach trainer connects beneath the stable site CP and authenticates
 # with that physical parent's provisioned identity.
