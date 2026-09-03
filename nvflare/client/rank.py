@@ -22,20 +22,27 @@ SLURM_TASK_COUNT_ENV_VAR = "SLURM_NTASKS"
 SLURM_PROCESS_ID_ENV_VAR = "SLURM_PROCID"
 
 
+def _environment_declares_single_client_api_process() -> bool:
+    process_count = os.environ.get(CLIENT_API_PROCESS_COUNT_ENV_VAR)
+    if process_count is None:
+        return False
+    try:
+        return int(process_count) == 1
+    except (TypeError, ValueError):
+        return False
+
+
 def environment_declares_multirank() -> bool:
     """Return whether a supported launcher declares more than one process."""
+    client_api_process_count = os.environ.get(CLIENT_API_PROCESS_COUNT_ENV_VAR)
+    if client_api_process_count is not None:
+        return not _environment_declares_single_client_api_process()
     for name in MULTIRANK_SIZE_ENV_VARS:
         try:
             if int(os.environ.get(name, "1") or 1) > 1:
                 return True
         except (TypeError, ValueError):
             continue
-    client_api_process_count = os.environ.get(CLIENT_API_PROCESS_COUNT_ENV_VAR)
-    if client_api_process_count is not None:
-        try:
-            return int(client_api_process_count) != 1
-        except (TypeError, ValueError):
-            return True
     # SLURM_NTASKS alone can be inherited by a single-process child. Require the
     # per-process marker before treating the allocation size as a trainer launch.
     if SLURM_PROCESS_ID_ENV_VAR in os.environ:
@@ -70,13 +77,18 @@ def normalize_process_rank(rank: Union[str, int]) -> str:
 
 
 def resolve_process_rank(rank: Optional[Union[str, int]] = None) -> str:
-    """Resolve an explicit, initialized Torch, or launcher-provided global rank."""
+    """Resolve an explicit, initialized Torch, Client API process-count, or launcher-provided global rank."""
     if rank is not None:
         return normalize_process_rank(rank)
 
     distributed_rank = get_initialized_torch_distributed_rank()
     if distributed_rank is not None:
         return normalize_process_rank(distributed_rank)
+
+    # A launcher can designate one Client API participant even when its process
+    # inherits an unrelated global rank from the surrounding study environment.
+    if _environment_declares_single_client_api_process():
+        return "0"
 
     environment_rank = os.environ.get("RANK")
     if environment_rank is not None:

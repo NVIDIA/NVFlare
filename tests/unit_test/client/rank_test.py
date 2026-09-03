@@ -91,6 +91,7 @@ def test_nvflare_slurm_fanout_declares_one_client_api_process(monkeypatch):
     monkeypatch.setenv(rank_utils.SLURM_TASK_COUNT_ENV_VAR, "2")
     monkeypatch.setenv(rank_utils.SLURM_PROCESS_ID_ENV_VAR, "0")
     monkeypatch.setenv(rank_utils.CLIENT_API_PROCESS_COUNT_ENV_VAR, "1")
+    monkeypatch.setenv("RANK", "1")
 
     assert not rank_utils.environment_declares_multirank()
     assert rank_utils.resolve_process_rank() == "0"
