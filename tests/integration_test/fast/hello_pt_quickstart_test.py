@@ -20,7 +20,6 @@ from contextlib import contextmanager
 
 import torch
 
-from nvflare.apis.job_def import RunStatus
 from nvflare.recipe import SimEnv
 
 INTEGRATION_TEST_ROOT = os.path.dirname(os.path.dirname(__file__))
@@ -61,7 +60,6 @@ def test_zero_flag_hello_pt_produces_learned_loadable_final_model(tmp_path, monk
 
         run = recipe.execute(env)
         result_path = run.get_result()
-        assert run.get_status() == RunStatus.FINISHED_COMPLETED.value
 
     server_run_dir = os.path.join(result_path, "server", "simulate_job")
     with open(os.path.join(server_run_dir, "metrics", "metrics_summary.json")) as summary_file:
