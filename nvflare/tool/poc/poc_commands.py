@@ -2166,6 +2166,11 @@ def _docker_cli_env() -> Dict[str, str]:
 
     if not docker_endpoint or docker_endpoint.startswith("unix://"):
         docker_env["DOCKER_HOST"] = f"unix://{socket_override}"
+        # Docker gives DOCKER_CONTEXT precedence over DOCKER_HOST. The POC
+        # startup script uses an explicit --host for this local override, so
+        # remove the context selector to give lifecycle commands the same
+        # endpoint precedence.
+        docker_env.pop("DOCKER_CONTEXT", None)
     return docker_env
 
 

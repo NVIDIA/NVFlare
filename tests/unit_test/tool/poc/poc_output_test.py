@@ -1412,6 +1412,7 @@ class TestPocOutput:
         from nvflare.tool.poc.poc_commands import _run_stop_command
 
         monkeypatch.setenv("DOCKER_HOST", "unix:///var/run/docker.sock")
+        monkeypatch.setenv("DOCKER_CONTEXT", "remote-context")
         monkeypatch.setenv("NVFL_DOCKER_SOCK", "/run/user/1000/docker.sock")
         completed = SimpleNamespace(returncode=0, stdout="", stderr="")
 
@@ -1420,6 +1421,7 @@ class TestPocOutput:
 
         assert run_command.call_args.args[0] == ["docker", "stop", "site-1"]
         assert run_command.call_args.kwargs["env"]["DOCKER_HOST"] == "unix:///run/user/1000/docker.sock"
+        assert "DOCKER_CONTEXT" not in run_command.call_args.kwargs["env"]
 
     def test_docker_process_env_honors_poc_socket_override(self, monkeypatch):
         from nvflare.tool.poc.poc_commands import prepare_env

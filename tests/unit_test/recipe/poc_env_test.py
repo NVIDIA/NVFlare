@@ -382,6 +382,7 @@ def test_docker_liveness_honors_poc_socket_override(monkeypatch):
         return SimpleNamespace(returncode=0, stdout="true\n")
 
     monkeypatch.setenv("DOCKER_HOST", "unix:///var/run/docker.sock")
+    monkeypatch.setenv("DOCKER_CONTEXT", "remote-context")
     monkeypatch.setenv("NVFL_DOCKER_SOCK", "/run/user/1000/docker.sock")
     monkeypatch.setattr(poc_env_module.subprocess, "run", inspect_container)
 
@@ -389,6 +390,7 @@ def test_docker_liveness_honors_poc_socket_override(monkeypatch):
     command, kwargs = calls[0]
     assert command[-1] == "site-1"
     assert kwargs["env"]["DOCKER_HOST"] == "unix:///run/user/1000/docker.sock"
+    assert "DOCKER_CONTEXT" not in kwargs["env"]
 
 
 @patch("nvflare.recipe.poc_env.get_poc_workspace")
