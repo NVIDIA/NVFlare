@@ -170,7 +170,10 @@ def _require_skillevaluator():
     if not skillevaluator:
         if os.environ.get("NVFLARE_SKILL_TIER1_REQUIRED") == "true":
             pytest.fail("skillevaluator CLI is required for the selected Tier 1 skill security scan")
-        pytest.skip("skillevaluator CLI not on PATH; install .[skill_eval] in a separate environment to run this check")
+        pytest.skip(
+            "skillevaluator CLI not on PATH; run the isolated `uv tool install --python 3.13` command "
+            "from .github/workflows/premerge.yml to enable this check"
+        )
     return skillevaluator
 
 

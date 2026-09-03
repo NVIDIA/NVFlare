@@ -14,7 +14,7 @@
 
 """Run the synchronous CIFAR-10 FedAvg Collab example."""
 
-from nvflare.collab import CollabRecipe, simple_logging
+from nvflare.collab import CollabRecipe
 from nvflare.recipe import SimEnv
 
 from .client import FedAvgClient
@@ -35,7 +35,6 @@ def make_recipe() -> CollabRecipe:
 
 
 def main():
-    simple_logging()
     run = make_recipe().execute(SimEnv(num_clients=NUM_CLIENTS))
     print("Job Status:", run.get_status())
     print("Results at:", run.get_result())
