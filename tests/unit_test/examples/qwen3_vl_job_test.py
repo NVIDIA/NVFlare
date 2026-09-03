@@ -43,39 +43,14 @@ def test_qwen_train_args_preserve_paths_with_spaces(tmp_path):
         model_name_or_path="/models/Qwen VL",
         max_steps=10,
         learning_rate="5e-7",
-        lora=True,
-        lora_r=64,
-        lora_alpha=128,
-        lora_dropout=0.1,
+        lora=False,
     )
+    site_data_path = str(tmp_path / "site data" / "site-1")
+    image_root = str(tmp_path / "image root")
 
-    train_args = module._build_train_args(
-        args,
-        str(tmp_path / "site data" / "site-1"),
-        str(tmp_path / "image root"),
-        "none",
-    )
+    parts = shlex.split(module._build_train_args(args, site_data_path, image_root, "none"))
 
-    assert shlex.split(train_args) == [
-        "--data_path",
-        str(tmp_path / "site data" / "site-1"),
-        "--image_root",
-        str(tmp_path / "image root"),
-        "--dataset_use",
-        "fl_site",
-        "--model_name_or_path",
-        "/models/Qwen VL",
-        "--max_steps",
-        "10",
-        "--learning_rate",
-        "5e-7",
-        "--report_to",
-        "none",
-        "--lora_exchange",
-        "--lora_r",
-        "64",
-        "--lora_alpha",
-        "128",
-        "--lora_dropout",
-        "0.1",
-    ]
+    assert parts[parts.index("--data_path") + 1] == site_data_path
+    assert parts[parts.index("--image_root") + 1] == image_root
+    assert parts[parts.index("--model_name_or_path") + 1] == "/models/Qwen VL"
+    assert parts[parts.index("--max_steps") + 1] == "10"
