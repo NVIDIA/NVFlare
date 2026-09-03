@@ -194,10 +194,10 @@ def test_patch_rejects_rank_zero_multirank_env_without_initialized_distributed(m
         hf_api.patch(trainer, restore_state=False)
 
 
-def test_patch_accepts_single_process_inside_multitask_slurm_allocation(monkeypatch, tmp_path):
+def test_patch_single_process_marker_overrides_inherited_rank_in_multitask_slurm(monkeypatch, tmp_path):
     hf_api, trainer_cls, client_api_mock = _fresh_api(monkeypatch)
     monkeypatch.setattr(hf_api, "_torch_dist", lambda: None)
-    monkeypatch.delenv("RANK", raising=False)
+    monkeypatch.setenv("RANK", "1")
     monkeypatch.setenv("SLURM_NTASKS", "2")
     monkeypatch.setenv("SLURM_PROCID", "0")
     monkeypatch.setenv("NVFLARE_CLIENT_API_PROCESS_COUNT", "1")

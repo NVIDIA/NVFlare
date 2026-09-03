@@ -22,7 +22,8 @@ SLURM_TASK_COUNT_ENV_VAR = "SLURM_NTASKS"
 SLURM_PROCESS_ID_ENV_VAR = "SLURM_PROCID"
 
 
-def _environment_declares_single_client_api_process() -> bool:
+def environment_declares_single_client_api_process() -> bool:
+    """Return whether the launcher designates exactly one Client API process."""
     process_count = os.environ.get(CLIENT_API_PROCESS_COUNT_ENV_VAR)
     if process_count is None:
         return False
@@ -36,7 +37,7 @@ def environment_declares_multirank() -> bool:
     """Return whether a supported launcher declares more than one process."""
     client_api_process_count = os.environ.get(CLIENT_API_PROCESS_COUNT_ENV_VAR)
     if client_api_process_count is not None:
-        return not _environment_declares_single_client_api_process()
+        return not environment_declares_single_client_api_process()
     for name in MULTIRANK_SIZE_ENV_VARS:
         try:
             if int(os.environ.get(name, "1") or 1) > 1:
@@ -83,7 +84,7 @@ def resolve_process_rank(rank: Optional[Union[str, int]] = None) -> str:
 
     # A launcher can designate one Client API participant even when its process
     # inherits unrelated distributed state from the surrounding study environment.
-    if _environment_declares_single_client_api_process():
+    if environment_declares_single_client_api_process():
         return "0"
 
     distributed_rank = get_initialized_torch_distributed_rank()

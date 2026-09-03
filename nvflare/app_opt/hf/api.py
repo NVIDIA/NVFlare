@@ -23,7 +23,7 @@ from typing import Mapping, Optional
 from nvflare.app_common.abstract.fl_model import FLModel, MetaKey
 from nvflare.client import api as flare_api
 from nvflare.client.config import ConfigKey, ExchangeFormat
-from nvflare.client.rank import environment_declares_multirank
+from nvflare.client.rank import environment_declares_multirank, environment_declares_single_client_api_process
 from nvflare.fuel.utils import fobs
 
 from . import utils
@@ -245,6 +245,9 @@ def _validate_repatch_settings(
 
 
 def _resolve_rank(trainer) -> int:
+    if environment_declares_single_client_api_process():
+        return 0
+
     dist = _torch_dist()
     if dist is not None:
         return int(dist.get_rank())
