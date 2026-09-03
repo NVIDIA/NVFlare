@@ -1492,7 +1492,9 @@ class TestFedAvgRecipeExternalProcessStartup:
             assert train_executor_args["command"][:2] == ["python3", "-u"]
             assert train_executor_args["command"][-2:] == ["--epochs", "1"]
         else:
-            assert train_executor_args["task_script_path"] == str(train_script)
+            # The merged argv contract keeps token boundaries while this PR's
+            # packaging contract points the executor at the bundled script.
+            assert train_executor_args["task_script_path"] == train_script.name
             assert train_executor_args["task_script_args"] == ["--epochs", "1"]
 
 

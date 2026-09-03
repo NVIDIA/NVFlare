@@ -16,6 +16,7 @@ import os
 import shutil
 import threading
 import time
+import uuid
 from typing import Optional
 
 from pydantic import BaseModel, conint, model_validator
@@ -43,6 +44,7 @@ from .session_mgr import SessionManager
 STOP_POC_TIMEOUT = 10
 SERVICE_START_TIMEOUT = 3
 DEFAULT_ADMIN_USER = "admin@nvidia.com"
+_WORKSPACE_BACKUP_PREFIX = ".nvflare-recipe-backup-"
 
 
 # Internal — not part of the public API
@@ -140,6 +142,34 @@ class PocEnv(ExecEnv):
         self.study = v.study
         self._session_manager = None  # Lazy initialization
         self._session_manager_lock = threading.Lock()
+        self._deployment_started = False
+        self._workspace_owned = False
+
+    @property
+    def deployment_started(self) -> bool:
+        """Whether the latest deploy call passed preflight and began POC preparation."""
+        return self._deployment_started
+
+    @property
+    def workspace_owned(self) -> bool:
+        """Whether the latest deploy created or replaced the active POC workspace."""
+        return self._workspace_owned
+
+    def _backup_existing_workspace(self) -> Optional[str]:
+        """Move a retained workspace aside before provisioning mutates its path."""
+        if not os.path.exists(self.poc_workspace):
+            return None
+        backup = f"{self.poc_workspace}{_WORKSPACE_BACKUP_PREFIX}{uuid.uuid4().hex}"
+        os.replace(self.poc_workspace, backup)
+        return backup
+
+    def _restore_existing_workspace(self, backup: str) -> None:
+        """Discard a partial replacement and atomically restore the retained workspace."""
+        if os.path.isdir(self.poc_workspace) and not os.path.islink(self.poc_workspace):
+            shutil.rmtree(self.poc_workspace)
+        elif os.path.lexists(self.poc_workspace):
+            os.remove(self.poc_workspace)
+        os.replace(backup, self.poc_workspace)
 
     def deploy(self, job: FedJob) -> str:
         """Deploy a FedJob to the POC environment.
@@ -153,6 +183,11 @@ class PocEnv(ExecEnv):
         Raises:
             ValueError: If scripts do not exist locally.
         """
+        # Reset before non-mutating preflight so callers can distinguish a
+        # rejected job from an invocation that owns a new POC lifecycle.
+        self._deployment_started = False
+        self._workspace_owned = False
+
         # Validate scripts exist locally for POC
         non_local_scripts = collect_non_local_scripts(job)
         if non_local_scripts:
@@ -162,25 +197,63 @@ class PocEnv(ExecEnv):
             )
 
         if self._check_poc_running():
-            self.stop(clean_up=True)
+            # Keep the stopped workspace until fresh provisioning succeeds, so
+            # a failed replacement can restore its prior logs and results.
+            self.stop(clean_up=False)
+            if self._check_poc_running():
+                raise RuntimeError("Existing POC services could not be stopped")
 
+        self._deployment_started = True
+        workspace_backup = self._backup_existing_workspace()
         self.logger.info("Preparing and starting fresh POC services...")
-        prepare_poc_provision(
-            clients=self.clients or [],  # Empty list if None, let prepare_clients generate
-            number_of_clients=self.num_clients,
-            workspace=self.poc_workspace,
-            docker_image=self.docker_image,
-            use_he=self.use_he,
-            project_conf_path=self.project_conf_path,
-            examples_dir=None,
-        )
-
-        _start_poc(
-            poc_workspace=self.poc_workspace,
-            gpu_ids=self.gpu_ids,
-            excluded=[self.username],
-            services_list=[],
-        )
+        try:
+            prepare_poc_provision(
+                clients=self.clients or [],  # Empty list if None, let prepare_clients generate
+                number_of_clients=self.num_clients,
+                workspace=self.poc_workspace,
+                docker_image=self.docker_image,
+                use_he=self.use_he,
+                project_conf_path=self.project_conf_path,
+                examples_dir=None,
+            )
+            _start_poc(
+                poc_workspace=self.poc_workspace,
+                gpu_ids=self.gpu_ids,
+                excluded=[self.username],
+                services_list=[],
+            )
+        except BaseException:
+            if self._check_poc_running():
+                self.stop(clean_up=False)
+                if self._check_poc_running():
+                    self._workspace_owned = True
+                    backup_note = (
+                        f"the retained workspace backup remains at {workspace_backup}"
+                        if workspace_backup
+                        else "there was no retained workspace to restore"
+                    )
+                    raise RuntimeError(
+                        f"POC deployment failed and partially started services could not be stopped; " f"{backup_note}"
+                    )
+            if workspace_backup:
+                try:
+                    self._restore_existing_workspace(workspace_backup)
+                except Exception as restore_error:
+                    # The active path contains only this invocation's partial
+                    # replacement. Let the caller clean it, but retain the
+                    # backup for manual recovery.
+                    self._workspace_owned = True
+                    raise RuntimeError(
+                        f"POC deployment failed and the retained workspace could not be restored from {workspace_backup}"
+                    ) from restore_error
+                self._workspace_owned = False
+            else:
+                self._workspace_owned = True
+            raise
+        else:
+            self._workspace_owned = True
+            if workspace_backup:
+                shutil.rmtree(workspace_backup, ignore_errors=True)
         self.logger.info("POC services started successfully")
 
         # Give services time to start up
