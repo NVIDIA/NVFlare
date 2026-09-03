@@ -127,6 +127,9 @@ def test_sim_env_deploy_with_explicit_clients_does_not_pass_n_clients(tmp_path):
 def test_sim_env_deploy_raises_on_failed_simulation(tmp_path, return_code, expected_status):
     job = _make_job()
     env = SimEnv(num_clients=2, workspace_root=str(tmp_path))
+    failed_workspace = tmp_path / job.name
+    failed_workspace.mkdir()
+    (failed_workspace / "partial-result.txt").write_text("created before the simulator failed")
 
     with patch("nvflare.recipe.sim_env.collect_non_local_scripts", return_value=[]):
         with patch.object(job, "simulator_run", return_value=return_code):
@@ -135,6 +138,7 @@ def test_sim_env_deploy_raises_on_failed_simulation(tmp_path, return_code, expec
 
     assert env.last_run_failed
     assert env.get_job_status(job.name) == expected_status.value
+    assert env.get_job_result(job.name) is None
 
 
 def test_sim_env_deploy_records_exception_as_failed_to_run(tmp_path):
