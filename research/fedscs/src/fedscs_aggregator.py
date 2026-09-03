@@ -35,7 +35,11 @@ class FedSCSAggregator(ModelAggregator):
     """
     FedSCS aggregation for full model weights.
 
-    Uses NVFlare ModelAggregator interface.
+    Uses the NVFlare ModelAggregator interface.
+
+    FedSCS computes client update similarity relative to the
+    other participating clients and maintains a temporal
+    stability score across rounds.
 
     The official global model update remains controlled by NVFlare.
     This aggregator only computes the aggregated model.
@@ -44,10 +48,18 @@ class FedSCSAggregator(ModelAggregator):
     def __init__(
         self,
         eps: float = 1e-12,
+        max_update_norm: float = 10.0,
     ):
         super().__init__()
 
         self.eps = eps
+
+        if max_update_norm <= 0:
+            raise ValueError(
+                "max_update_norm must be positive"
+            )
+
+        self.max_update_norm = max_update_norm
 
         # Persistent across rounds
         self.previous_scores: Dict[str, float] = {}
@@ -143,7 +155,7 @@ class FedSCSAggregator(ModelAggregator):
         b: np.ndarray,
     ) -> float:
         """
-        Stable cosine similarity.
+        Compute numerically stable cosine similarity.
         """
         a_norm = np.linalg.norm(a)
         b_norm = np.linalg.norm(b)
@@ -162,6 +174,103 @@ class FedSCSAggregator(ModelAggregator):
             return 0.0
 
         return float(score)
+
+    def _validate_model_schema(
+        self,
+        client_model: Dict[str, np.ndarray],
+    ) -> None:
+        """
+        Ensure the client model exactly matches the round-start
+        global model in parameter names and shapes.
+        """
+        if self.global_model is None:
+            raise RuntimeError(
+                "Global model is missing."
+            )
+
+        global_keys = set(
+            self.global_model.keys()
+        )
+        client_keys = set(
+            client_model.keys()
+        )
+
+        missing = global_keys - client_keys
+        unexpected = client_keys - global_keys
+
+        if missing or unexpected:
+            raise ValueError(
+                "Client model parameter schema mismatch: "
+                f"missing={sorted(missing)}, "
+                f"unexpected={sorted(unexpected)}"
+            )
+
+        for name in global_keys:
+            client_shape = client_model[name].shape
+            global_shape = self.global_model[name].shape
+
+            if client_shape != global_shape:
+                raise ValueError(
+                    f"Parameter shape mismatch for '{name}': "
+                    f"client={client_shape}, "
+                    f"global={global_shape}"
+                )
+
+    def _clip_update(
+        self,
+        update: Dict[str, np.ndarray],
+    ) -> Dict[str, np.ndarray]:
+        """
+        Clip a client update to the configured maximum L2 norm.
+
+        Clipping preserves the update direction while preventing
+        an arbitrarily large finite client update from dominating
+        the aggregated global model.
+        """
+        vector = self._flatten_update(update)
+
+        if vector.size == 0:
+            raise ValueError(
+                "Client update is empty."
+            )
+
+        norm = np.linalg.norm(vector)
+
+        if not np.isfinite(norm):
+            raise ValueError(
+                "Client update has non-finite norm."
+            )
+
+        if norm <= self.max_update_norm:
+            return update
+
+        scale = (
+            self.max_update_norm
+            / max(norm, self.eps)
+        )
+
+        self.info(
+            "Clipping client update norm "
+            f"{norm:.6f} to "
+            f"{self.max_update_norm:.6f}"
+        )
+
+        clipped_update = {
+            name: np.asarray(value)
+            * scale
+            for name, value in update.items()
+        }
+
+        if any(
+            not np.isfinite(value).all()
+            for value in clipped_update.values()
+        ):
+            raise ValueError(
+                "Clipped client update contains "
+                "non-finite values."
+            )
+
+        return clipped_update
 
     # ==============================================================
     # Global model handling
@@ -264,6 +373,9 @@ class FedSCSAggregator(ModelAggregator):
         Compute:
 
             delta_i = client_model - global_model
+
+        and clip each client update to the configured maximum
+        L2 norm before FedSCS scoring.
         """
         if self.global_model is None:
             raise RuntimeError(
@@ -276,11 +388,6 @@ class FedSCSAggregator(ModelAggregator):
             update = {}
 
             for name, client_value in model.items():
-                if name not in self.global_model:
-                    raise KeyError(
-                        f"{name} missing in global model"
-                    )
-
                 client_value = np.asarray(
                     client_value,
                     dtype=np.float64,
@@ -295,7 +402,9 @@ class FedSCSAggregator(ModelAggregator):
                     client_value - global_value
                 )
 
-            self.client_updates[client] = update
+            self.client_updates[client] = (
+                self._clip_update(update)
+            )
 
     # ==============================================================
     # FedSCS scoring
@@ -394,8 +503,7 @@ class FedSCSAggregator(ModelAggregator):
                     previous
                     + (
                         current_score - previous
-                    )
-                    / denominator
+                    ) / denominator
                 )
 
             self.current_scores[client] = max(
@@ -438,31 +546,47 @@ class FedSCSAggregator(ModelAggregator):
     ) -> Dict[str, np.ndarray]:
         """
         Weighted aggregation using FedSCS weights.
+
+        All participating clients must contain exactly the same
+        parameter names. Missing parameters are treated as an
+        invalid contribution rather than silently skipped.
         """
         clients = list(
             self.client_models.keys()
         )
 
-        aggregated = {}
-
         if not clients:
-            return aggregated
+            return {}
 
-        parameters = (
+        reference_keys = set(
             self.client_models[
                 clients[0]
             ].keys()
         )
 
-        for name in parameters:
+        for client in clients:
+            client_keys = set(
+                self.client_models[
+                    client
+                ].keys()
+            )
+
+            if client_keys != reference_keys:
+                raise ValueError(
+                    "Parameter schema mismatch for "
+                    f"client {client}"
+                )
+
+        aggregated = {}
+
+        for name in sorted(reference_keys):
             value_sum = None
 
             for client in clients:
-                if name not in self.client_models[client]:
-                    continue
-
                 value = np.asarray(
-                    self.client_models[client][name],
+                    self.client_models[
+                        client
+                    ][name],
                     dtype=np.float64,
                 )
 
@@ -480,8 +604,21 @@ class FedSCSAggregator(ModelAggregator):
                         weighted_value
                     )
 
-            if value_sum is not None:
-                aggregated[name] = value_sum
+            if value_sum is None:
+                raise RuntimeError(
+                    f"Failed to aggregate "
+                    f"parameter '{name}'"
+                )
+
+            if not np.isfinite(
+                value_sum
+            ).all():
+                raise ValueError(
+                    "Non-finite aggregated "
+                    f"parameter '{name}'"
+                )
+
+            aggregated[name] = value_sum
 
         return aggregated
 
@@ -493,6 +630,9 @@ class FedSCSAggregator(ModelAggregator):
         self,
         model: FLModel,
     ) -> str:
+        """
+        Extract client/site name from model metadata.
+        """
         if model.meta:
             for key in (
                 "client_name",
@@ -529,7 +669,8 @@ class FedSCSAggregator(ModelAggregator):
 
         if client_name in self.client_models:
             self.warning(
-                f"Duplicate contribution from {client_name}"
+                f"Duplicate contribution from "
+                f"{client_name}"
             )
             return
 
@@ -543,32 +684,54 @@ class FedSCSAggregator(ModelAggregator):
 
             if not self._load_global_model():
                 raise RuntimeError(
-                    "FedSCS could not load global model."
+                    "FedSCS could not load "
+                    "global model."
                 )
 
             self.info(
-                f"FedSCS round {self.current_round}: "
+                f"FedSCS round "
+                f"{self.current_round}: "
                 "global model loaded."
             )
 
+        # ----------------------------------------------------------
         # Validate and store client model.
+        # ----------------------------------------------------------
+
         client_model = self._flatten_model(
             model.params
         )
 
+        if not client_model:
+            raise ValueError(
+                f"Empty parameter mapping from "
+                f"{client_name}"
+            )
+
+        # Validate exact parameter schema.
+        self._validate_model_schema(
+            client_model
+        )
+
+        # Reject NaN/Inf parameters.
         if any(
             not np.isfinite(value).all()
             for value in client_model.values()
         ):
             raise ValueError(
-                f"Non-finite parameters from {client_name}"
+                f"Non-finite parameters from "
+                f"{client_name}"
             )
 
-        self.client_models[client_name] = client_model
+        self.client_models[
+            client_name
+        ] = client_model
 
         # Store client metrics
         if model.metrics:
-            self.client_metrics[client_name] = {
+            self.client_metrics[
+                client_name
+            ] = {
                 str(k): float(v)
                 for k, v in model.metrics.items()
                 if isinstance(
@@ -583,7 +746,8 @@ class FedSCSAggregator(ModelAggregator):
             }
 
         self.info(
-            f"Accepted FedSCS contribution from {client_name}"
+            "Accepted FedSCS contribution "
+            f"from {client_name}"
         )
 
     def aggregate_model(
@@ -598,7 +762,7 @@ class FedSCSAggregator(ModelAggregator):
             )
 
         self.info(
-            f"FedSCS aggregation: "
+            "FedSCS aggregation: "
             f"{len(self.client_models)} clients "
             f"round={self.current_round}"
         )
@@ -611,13 +775,31 @@ class FedSCSAggregator(ModelAggregator):
             self.info(
                 f"FedSCS client={client} "
                 f"raw={self.raw_scores[client]:.6f} "
-                f"stability={self.current_scores[client]:.6f} "
-                f"weight={self.current_weights[client]:.6f}"
+                f"stability="
+                f"{self.current_scores[client]:.6f} "
+                f"weight="
+                f"{self.current_weights[client]:.6f}"
             )
 
         aggregated_model = (
             self._aggregate_models()
         )
+
+        if not aggregated_model:
+            raise RuntimeError(
+                "FedSCS produced an empty "
+                "aggregated model."
+            )
+
+        # Final aggregation safety check.
+        if any(
+            not np.isfinite(value).all()
+            for value in aggregated_model.values()
+        ):
+            raise ValueError(
+                "FedSCS produced non-finite "
+                "aggregated parameters."
+            )
 
         # Keep history.
         self.previous_scores = dict(
@@ -630,7 +812,9 @@ class FedSCSAggregator(ModelAggregator):
         if self.client_metrics:
             metric_names = set()
 
-            for metrics in self.client_metrics.values():
+            for metrics in (
+                self.client_metrics.values()
+            ):
                 metric_names.update(
                     metrics.keys()
                 )
@@ -638,17 +822,20 @@ class FedSCSAggregator(ModelAggregator):
             for metric in metric_names:
                 values = []
 
-                for client, metrics in (
-                    self.client_metrics.items()
-                ):
+                for (
+                    client,
+                    metrics,
+                ) in self.client_metrics.items():
                     if metric in metrics:
                         values.append(
                             metrics[metric]
                         )
 
                 if values:
-                    aggregated_metrics[metric] = (
-                        float(np.mean(values))
+                    aggregated_metrics[
+                        metric
+                    ] = float(
+                        np.mean(values)
                     )
 
         return FLModel(
@@ -664,7 +851,9 @@ class FedSCSAggregator(ModelAggregator):
                 "nr_aggregated": len(
                     self.client_models
                 ),
-                "current_round": self.current_round,
+                "current_round": (
+                    self.current_round
+                ),
                 "fedscs_weights": dict(
                     self.current_weights
                 ),
@@ -704,6 +893,9 @@ class FedSCSAggregator(ModelAggregator):
         self,
         model: Dict[str, Any],
     ) -> None:
+        """
+        Set the global model explicitly.
+        """
         self.global_model = {
             k: self._to_numpy(v).copy()
             for k, v in model.items()
@@ -712,6 +904,9 @@ class FedSCSAggregator(ModelAggregator):
     def get_scores(
         self,
     ) -> Dict[str, float]:
+        """
+        Return current FedSCS stability scores.
+        """
         return dict(
             self.current_scores
         )
@@ -719,6 +914,9 @@ class FedSCSAggregator(ModelAggregator):
     def get_weights(
         self,
     ) -> Dict[str, float]:
+        """
+        Return current FedSCS aggregation weights.
+        """
         return dict(
             self.current_weights
         )

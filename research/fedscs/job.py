@@ -51,6 +51,7 @@ def create_recipe():
 
     aggregator = FedSCSAggregator(
         eps=1e-12,
+        max_update_norm=10.0,
     )
 
     recipe = FedSCSRecipe(
