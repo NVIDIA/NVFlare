@@ -32,6 +32,8 @@ from nvflare.recipe.utils import add_cross_site_evaluation
 DEFAULT_NUM_CLIENTS = 2
 DEFAULT_NUM_ROUNDS = 3
 SUCCESS_STATUS = "FINISHED:COMPLETED"
+LEGACY_SUCCESS_STATUS = "FINISHED_OK"
+SUCCESS_STATUSES = {SUCCESS_STATUS, LEGACY_SUCCESS_STATUS}
 EXPORT_HELP = """NVFlare Recipe export options:
   --export                    Export the job instead of running it.
   --export-dir EXPORT_DIR     Parent directory for the exported job (default: ./fl_job).
@@ -181,7 +183,7 @@ def main(argv=None):
         status = None if args.env == "sim" else run.get_status()
         if result is None:
             raise RuntimeError("Job monitoring did not return a result. Review the execution-environment logs.")
-        if args.env != "sim" and status != SUCCESS_STATUS:
+        if args.env != "sim" and status not in SUCCESS_STATUSES:
             raise RuntimeError(f"Job completed with unsuccessful status: {status}")
     except (Exception, KeyboardInterrupt):
         # Only delete a POC workspace that this invocation created or replaced.
