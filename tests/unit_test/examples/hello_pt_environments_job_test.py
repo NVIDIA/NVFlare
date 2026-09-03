@@ -232,6 +232,25 @@ def test_main_preserves_successful_poc_result(tmp_path, monkeypatch, capsys):
     assert f"Result can be found in: {result_dir}" in output
 
 
+def test_main_accepts_legacy_production_success_status(tmp_path, monkeypatch, capsys):
+    job_module = _load_job_module()
+    result_dir = tmp_path / "production-result"
+    result_dir.mkdir()
+    run = SimpleNamespace(
+        get_result=lambda clean_up: str(result_dir),
+        get_status=lambda: job_module.LEGACY_SUCCESS_STATUS,
+    )
+    env = SimpleNamespace()
+    recipe = SimpleNamespace(execute=lambda value: run)
+    monkeypatch.setattr(job_module, "create_recipe", lambda args: recipe)
+    monkeypatch.setattr(job_module, "create_environment", lambda args: env)
+
+    result = job_module.main(["--env", "prod", "--startup-kit", "/tmp/admin"])
+
+    assert result == str(result_dir)
+    assert f"Job Status is: {job_module.LEGACY_SUCCESS_STATUS}" in capsys.readouterr().out
+
+
 def test_main_turns_real_run_monitoring_failure_into_error(monkeypatch):
     job_module = _load_job_module()
     stop_calls = []
