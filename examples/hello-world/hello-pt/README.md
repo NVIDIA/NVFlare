@@ -235,3 +235,9 @@ The exported job is written under `/tmp/nvflare/jobs/job_config/hello-pt`.
 
 For an interactive CIFAR-10 and TensorBoard-oriented variant, see [`hello-pt.ipynb`](hello-pt.ipynb). The canonical
 deterministic quickstart and its tested defaults are defined by `job.py`.
+
+## Continue to POC and Production
+
+After completing the simulation, continue with the
+[advanced environment-continuity example](../../advanced/hello-pt-environments/README.md)
+to run the same learning application in a local POC or an already-running production deployment.

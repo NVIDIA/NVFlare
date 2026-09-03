@@ -120,5 +120,13 @@ experiment tracking, full cross-site evaluation, external-process execution,
 and memory tuning belong in a separate continuation workflow rather than the
 first federated-learning run.
 
+Continue to POC and Production
+------------------------------
+
+After completing the simulation, continue with the
+:github_nvflare_link:`advanced environment-continuity example
+<examples/advanced/hello-pt-environments/README.md>` to run the same learning
+application in a local POC or an already-running production deployment.
+
 For the API concepts behind the example, continue with
 :ref:`Client API <client_api>` and :ref:`Available Recipes <available_recipes>`.

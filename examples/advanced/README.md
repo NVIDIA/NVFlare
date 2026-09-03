@@ -11,6 +11,10 @@ provided.
 * [Collab API](./collab/README.md)
   * Advanced examples for custom server workflows, in-time aggregation, and decentralized client-to-client calls.
 
+## Execution environments
+* [Hello PyTorch across simulation, POC, and production](./hello-pt-environments/README.md)
+  * Reuses one PyTorch application while changing Recipe controls and execution environments.
+
 ## Client API
 * [Attach an externally managed trainer](./client-api-attach/README.md)
   * Connects the same Client API training loop through either a direct network profile or shared-file rendezvous.

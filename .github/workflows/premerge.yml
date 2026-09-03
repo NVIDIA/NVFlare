@@ -132,6 +132,14 @@ jobs:
         run: >-
           python3 -m pytest -q
           tests/integration_test/fast/hello_pt_quickstart_test.py
+      # The advanced continuation must run the same application through real
+      # local POC server/client processes, not only construct a PocEnv object.
+      - name: Run Hello PyTorch POC continuation
+        if: ${{ matrix.os == 'ubuntu-24.04' && matrix.python-version == '3.12' }}
+        timeout-minutes: 8
+        run: >-
+          python3 -m pytest -q
+          tests/integration_test/fast/hello_pt_environment_continuity_test.py
 
   hf-client-api-tests:
     runs-on: ubuntu-24.04
