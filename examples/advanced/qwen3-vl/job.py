@@ -109,6 +109,37 @@ def _build_torchrun_command(n_proc: int) -> str:
     )
 
 
+def _build_train_args(args, site_data_path: str, image_root: str, report_to: str) -> str:
+    tokens = [
+        "--data_path",
+        site_data_path,
+        "--image_root",
+        image_root,
+        "--dataset_use",
+        "fl_site",
+        "--model_name_or_path",
+        args.model_name_or_path,
+    ]
+    if args.max_steps is not None:
+        tokens.extend(["--max_steps", str(args.max_steps)])
+    else:
+        tokens.extend(["--num_train_epochs", "1"])
+    tokens.extend(["--learning_rate", args.learning_rate, "--report_to", report_to])
+    if args.lora:
+        tokens.extend(
+            [
+                "--lora_exchange",
+                "--lora_r",
+                str(args.lora_r),
+                "--lora_alpha",
+                str(args.lora_alpha),
+                "--lora_dropout",
+                str(args.lora_dropout),
+            ]
+        )
+    return shlex.join(tokens)
+
+
 def _configure_timeouts(recipe, client_names, task_timeout=1200, tensor_timeout=600):
     """Add client and server timeouts for large model / tensor streaming.
 
@@ -154,21 +185,7 @@ def main():
     for idx, site_name in enumerate(client_names):
         site_data_path = os.path.join(data_dir, site_name)
         n_proc = n_procs_per_site[idx]
-        step_or_epoch = f"--max_steps {args.max_steps} " if args.max_steps is not None else "--num_train_epochs 1 "
-        train_args = (
-            f"--data_path {site_data_path} "
-            f"--image_root {image_root} "
-            f"--dataset_use fl_site "
-            f"--model_name_or_path {args.model_name_or_path} "
-            f"{step_or_epoch}"
-            f"--learning_rate {args.learning_rate} "
-            f"--report_to {report_to}"
-        )
-        if args.lora:
-            train_args += (
-                f" --lora_exchange --lora_r {args.lora_r} --lora_alpha {args.lora_alpha}"
-                f" --lora_dropout {args.lora_dropout}"
-            )
+        train_args = _build_train_args(args, site_data_path, image_root, report_to)
         # The NVFlare wrapper handles standalone and launcher-provided multi-node rendezvous consistently.
         command = _build_torchrun_command(n_proc)
         per_site_config[site_name] = {"train_args": train_args, "command": command}

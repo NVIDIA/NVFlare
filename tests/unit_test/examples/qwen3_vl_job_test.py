@@ -15,6 +15,7 @@
 import importlib.util
 import shlex
 from pathlib import Path
+from types import SimpleNamespace
 
 
 def _load_qwen_job_module():
@@ -33,4 +34,48 @@ def test_qwen_job_uses_nvflare_torchrun_wrapper():
         "-m",
         "nvflare.app_opt.pt.torchrun_node",
         "--nproc-per-node=4",
+    ]
+
+
+def test_qwen_train_args_preserve_paths_with_spaces(tmp_path):
+    module = _load_qwen_job_module()
+    args = SimpleNamespace(
+        model_name_or_path="/models/Qwen VL",
+        max_steps=10,
+        learning_rate="5e-7",
+        lora=True,
+        lora_r=64,
+        lora_alpha=128,
+        lora_dropout=0.1,
+    )
+
+    train_args = module._build_train_args(
+        args,
+        str(tmp_path / "site data" / "site-1"),
+        str(tmp_path / "image root"),
+        "none",
+    )
+
+    assert shlex.split(train_args) == [
+        "--data_path",
+        str(tmp_path / "site data" / "site-1"),
+        "--image_root",
+        str(tmp_path / "image root"),
+        "--dataset_use",
+        "fl_site",
+        "--model_name_or_path",
+        "/models/Qwen VL",
+        "--max_steps",
+        "10",
+        "--learning_rate",
+        "5e-7",
+        "--report_to",
+        "none",
+        "--lora_exchange",
+        "--lora_r",
+        "64",
+        "--lora_alpha",
+        "128",
+        "--lora_dropout",
+        "0.1",
     ]
