@@ -246,6 +246,15 @@ def _validate_repatch_settings(
 
 def _resolve_rank(trainer) -> int:
     if environment_declares_single_client_api_process():
+        dist = _torch_dist()
+        if dist is not None:
+            torch_rank = int(dist.get_rank())
+            if torch_rank != 0:
+                raise RuntimeError(
+                    "HuggingFace Client API single-process marker designates this process as Client API rank 0, "
+                    f"but torch.distributed initialized it as Torch rank {torch_rank}. Set the marker only for "
+                    "Torch rank 0 or remove it from the distributed trainer environment."
+                )
         return 0
 
     dist = _torch_dist()
