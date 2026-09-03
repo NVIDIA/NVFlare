@@ -123,7 +123,10 @@ def evaluate(model, test_loader, device):
         total += labels.size(0)
         correct += (predicted == labels).sum().item()
 
-    accuracy = 100.0 * correct / max(total, 1)
+    if total == 0:
+        raise ValueError("Test data loader is empty")
+
+    accuracy = 100.0 * correct / total
 
     logger.info(
         "Test accuracy: %.2f%% (%d/%d)",
