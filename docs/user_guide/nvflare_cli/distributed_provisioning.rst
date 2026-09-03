@@ -52,6 +52,16 @@ startup kit.
    homomorphic encryption) are not directly supported; use centralized
    ``nvflare provision`` for those deployments.
 
+.. note::
+
+   Kits assembled with ``nvflare package`` do not contain the job CA that
+   :ref:`per-job certificates <per_job_certificates>` require, because the
+   packaging step has no access to the root CA key. A server running from such a
+   kit cannot run jobs in secure mode. Extending this workflow is addressed
+   separately; until then, either provision the server centrally with
+   ``nvflare provision`` or add a job CA issued by your own PKI as described in
+   :ref:`per_job_certificates_external_ca`.
+
 *******************************************
 Before You Start: Record Connection Details
 *******************************************

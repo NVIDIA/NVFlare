@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import logging
+import os
 import sys
 import threading
 from types import ModuleType
@@ -506,6 +507,31 @@ class TestDockerJobLauncherInit:
 # ---------------------------------------------------------------------------
 
 
+_FAKE_STARTUP_FILES = ("rootCA.pem", "client.crt", "client.key", "fed_client.json")
+_fake_startup_dir = None
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _shared_startup_kit(tmp_path_factory):
+    """A real startup kit directory, shared by the module, so the launcher can list files to bind."""
+    global _fake_startup_dir
+    _fake_startup_dir = str(tmp_path_factory.mktemp("startup"))
+    for name in _FAKE_STARTUP_FILES:
+        with open(os.path.join(_fake_startup_dir, name), "w") as f:
+            f.write(name)
+    yield
+    _fake_startup_dir = None
+
+
+def _make_workspace_obj(startup_dir=None, run_dir="/ws/job-1"):
+    workspace_obj = MagicMock()
+    workspace_obj.get_startup_kit_dir.return_value = startup_dir or _fake_startup_dir
+    workspace_obj.get_run_dir.return_value = run_dir
+    workspace_obj.get_app_custom_dir.return_value = ""
+    workspace_obj.get_site_custom_dir.return_value = ""
+    return workspace_obj
+
+
 def _make_fl_ctx(
     job_id="job-1",
     exe_module="nvflare.private.fed.app.client.worker_process",
@@ -515,7 +541,11 @@ def _make_fl_ctx(
     workspace_path="/ws",
     set_list=None,
     num_of_gpus=None,
+    workspace_obj=None,
+    secure_mode=False,
 ):
+    if workspace_obj is None:
+        workspace_obj = _make_workspace_obj()
     fl_ctx = MagicMock(spec=FLContext)
     fl_ctx.get_identity_name.return_value = identity_name
 
@@ -530,8 +560,9 @@ def _make_fl_ctx(
         job_args[JobProcessArgs.PARENT_CONN_SEC] = ("--parent_conn_sec", parent_conn_sec)
     fl_ctx.get_prop.side_effect = lambda key, *a, **kw: {
         FLContextKey.JOB_PROCESS_ARGS: job_args,
-        FLContextKey.WORKSPACE_OBJECT: None,
+        FLContextKey.WORKSPACE_OBJECT: workspace_obj,
         FLContextKey.ARGS: None,
+        FLContextKey.SECURE_MODE: secure_mode,
     }.get(key)
 
     return fl_ctx, job_args
@@ -720,9 +751,13 @@ class TestDockerJobLauncherLaunchJob:
         call_kwargs = dc.containers.run.call_args[1]
         mounts = call_kwargs["mounts"]
         assert mounts[0]["Target"] == "/var/tmp/nvflare/workspace"
-        assert mounts[1]["Target"] == "/var/tmp/nvflare/workspace/startup"
-        assert mounts[2]["Target"] == "/var/tmp/nvflare/workspace/local"
-        assert mounts[3]["Target"] == "/var/tmp/nvflare/workspace/job-1"
+        startup_targets = [m["Target"] for m in mounts if m["Target"].startswith("/var/tmp/nvflare/workspace/startup")]
+        # the kit is bound file by file, without private keys, ahead of local/ and the job workspace
+        assert startup_targets == [
+            f"/var/tmp/nvflare/workspace/startup/{name}" for name in ("client.crt", "fed_client.json", "rootCA.pem")
+        ]
+        assert mounts[len(startup_targets) + 1]["Target"] == "/var/tmp/nvflare/workspace/local"
+        assert mounts[len(startup_targets) + 2]["Target"] == "/var/tmp/nvflare/workspace/job-1"
 
         mounts_by_target = _mounts_by_target(call_kwargs["mounts"])
         assert mounts_by_target["/var/tmp/nvflare/workspace"] == {
@@ -732,12 +767,13 @@ class TestDockerJobLauncherLaunchJob:
             "ReadOnly": False,
             "tmpfs_mode": 0o1777,
         }
-        assert mounts_by_target["/var/tmp/nvflare/workspace/startup"] == {
-            "Target": "/var/tmp/nvflare/workspace/startup",
-            "Source": "/host/workspace/startup",
+        assert mounts_by_target["/var/tmp/nvflare/workspace/startup/rootCA.pem"] == {
+            "Target": "/var/tmp/nvflare/workspace/startup/rootCA.pem",
+            "Source": "/host/workspace/startup/rootCA.pem",
             "Type": "bind",
             "ReadOnly": True,
         }
+        assert "/var/tmp/nvflare/workspace/startup/client.key" not in mounts_by_target
         assert mounts_by_target["/var/tmp/nvflare/workspace/local"] == {
             "Target": "/var/tmp/nvflare/workspace/local",
             "Source": "/host/workspace/local",
@@ -750,6 +786,49 @@ class TestDockerJobLauncherLaunchJob:
             "Type": "bind",
             "ReadOnly": False,
         }
+
+    def test_secure_launch_with_job_credential_binds_startup_files_without_keys(self, tmp_path):
+        startup = tmp_path / "startup"
+        startup.mkdir()
+        for name in ("rootCA.pem", "client.crt", "client.key", "fed_client.json"):
+            (startup / name).write_text(name)
+        run_dir = tmp_path / "job-1"
+        (run_dir / "job_cert").mkdir(parents=True)
+        (run_dir / "job_cert" / "job.crt").write_text("cert")
+        (run_dir / "job_cert" / "job.key").write_text("key")
+        workspace_obj = _make_workspace_obj(startup_dir=str(startup), run_dir=str(run_dir))
+
+        launcher = _make_launcher(workspace="/host/workspace")
+        dc = launcher._docker_client
+        container = MagicMock()
+        container.id = "abc123"
+        dc.containers.run.return_value = container
+        dc.containers.get.return_value = _make_container("running")
+        fl_ctx, _ = _make_fl_ctx(workspace_obj=workspace_obj, secure_mode=True)
+
+        launcher.launch_job(_make_job_meta(), fl_ctx)
+
+        mounts_by_target = _mounts_by_target(dc.containers.run.call_args[1]["mounts"])
+        assert "/var/tmp/nvflare/workspace/startup" not in mounts_by_target
+        assert "/var/tmp/nvflare/workspace/startup/client.key" not in mounts_by_target
+        for name in ("rootCA.pem", "client.crt", "fed_client.json"):
+            assert mounts_by_target[f"/var/tmp/nvflare/workspace/startup/{name}"] == {
+                "Target": f"/var/tmp/nvflare/workspace/startup/{name}",
+                "Source": f"/host/workspace/startup/{name}",
+                "Type": "bind",
+                "ReadOnly": True,
+            }
+        assert mounts_by_target["/var/tmp/nvflare/workspace/job-1"]["ReadOnly"] is False
+
+    def test_secure_launch_without_job_credential_is_refused(self, tmp_path):
+        launcher = _make_launcher(workspace="/host/workspace")
+        dc = launcher._docker_client
+        fl_ctx, _ = _make_fl_ctx(workspace_obj=_make_workspace_obj(run_dir=str(tmp_path / "job-1")), secure_mode=True)
+
+        with pytest.raises(RuntimeError, match="no job credential"):
+            launcher.launch_job(_make_job_meta(), fl_ctx)
+
+        dc.containers.run.assert_not_called()
 
     def test_launch_rejects_job_workspace_path_escape(self):
         launcher = _make_launcher(workspace="/host/workspace")
@@ -880,7 +959,9 @@ class TestDockerJobLauncherLaunchJob:
         mounts_by_target = _mounts_by_target(dc.containers.run.call_args[1]["mounts"])
         assert set(mounts_by_target) == {
             "/var/tmp/nvflare/workspace",
-            "/var/tmp/nvflare/workspace/startup",
+            "/var/tmp/nvflare/workspace/startup/client.crt",
+            "/var/tmp/nvflare/workspace/startup/fed_client.json",
+            "/var/tmp/nvflare/workspace/startup/rootCA.pem",
             "/var/tmp/nvflare/workspace/local",
             "/var/tmp/nvflare/workspace/job-1",
         }
@@ -927,7 +1008,9 @@ class TestDockerJobLauncherLaunchJob:
         mounts_by_target = _mounts_by_target(dc.containers.run.call_args[1]["mounts"])
         assert set(mounts_by_target) == {
             "/var/tmp/nvflare/workspace",
-            "/var/tmp/nvflare/workspace/startup",
+            "/var/tmp/nvflare/workspace/startup/client.crt",
+            "/var/tmp/nvflare/workspace/startup/fed_client.json",
+            "/var/tmp/nvflare/workspace/startup/rootCA.pem",
             "/var/tmp/nvflare/workspace/local",
             "/var/tmp/nvflare/workspace/job-1",
         }

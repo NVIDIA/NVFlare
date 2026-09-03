@@ -26,7 +26,7 @@ from nvflare.fuel.f3.drivers.aio_context import AioContext
 from nvflare.fuel.f3.drivers.base_driver import BaseDriver
 from nvflare.fuel.f3.drivers.driver import ConnectorInfo
 from nvflare.fuel.f3.drivers.driver_params import DriverCap, DriverParams
-from nvflare.fuel.f3.drivers.net_utils import get_tcp_urls
+from nvflare.fuel.f3.drivers.net_utils import add_peer_job_id, get_tcp_urls
 from nvflare.fuel.hci.security import get_certificate_common_name
 from nvflare.security.logging import secure_format_exception
 
@@ -72,6 +72,7 @@ class WsConnection(Connection):
         peer_cert = self.websocket.get_extra_info("peercert")
         if peer_cert:
             cn = get_certificate_common_name(peer_cert)
+            add_peer_job_id(conn_props, self.websocket.get_extra_info("ssl_object"))
         else:
             cn = "N/A" if self.ssl_context else None
 

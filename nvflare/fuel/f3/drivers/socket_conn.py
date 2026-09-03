@@ -24,7 +24,7 @@ from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.connection import BytesAlike, Connection
 from nvflare.fuel.f3.drivers.driver import ConnectorInfo
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
-from nvflare.fuel.f3.drivers.net_utils import MAX_FRAME_SIZE
+from nvflare.fuel.f3.drivers.net_utils import MAX_FRAME_SIZE, add_peer_job_id
 from nvflare.fuel.f3.sfm.prefix import PREFIX_LEN, Prefix
 from nvflare.fuel.hci.security import get_certificate_common_name
 from nvflare.security.logging import secure_format_exception
@@ -223,6 +223,7 @@ class SocketConnection(Connection):
             cert = self.sock.getpeercert()
             if cert:
                 cn = get_certificate_common_name(cert)
+                add_peer_job_id(conn_props, self.sock)
             else:
                 cn = "N/A"
             conn_props[DriverParams.PEER_CN.value] = cn

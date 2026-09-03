@@ -68,9 +68,7 @@ _RESERVED_ENV_NAMES = frozenset(
         "PYTHONPATH",
         "NVFL_WORKSPACE_OWNER_FQCN",
         "NVFL_WORKSPACE_TRANSFER_TOKEN",
-        JobProcessEnv.AUTH_TOKEN,
-        JobProcessEnv.TOKEN_SIGNATURE,
-        JobProcessEnv.SSID,
+        *JobProcessEnv.ALL,
     }
 )
 SLURM_RESERVED_ENV_NAMES = _RESERVED_ENV_NAMES.union(

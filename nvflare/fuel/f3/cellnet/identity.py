@@ -156,13 +156,20 @@ class CellIdentityResolver:
 
         return parts[0] if parts else fqcn
 
-    def require_match(self, fqcn: str, peer_cn: str, peer_desc: str):
+    def require_match(self, fqcn: str, peer_cn: str, peer_desc: str, peer_job_id: Optional[str] = None):
         expected_cn = self.resolve(fqcn)
         if not expected_cn:
             raise ValueError(f"{peer_desc} claimed endpoint '{fqcn}' does not resolve to an expected identity")
 
         if not peer_cn or peer_cn == "N/A":
             raise ValueError(f"{peer_desc} does not have an authenticated mTLS peer common name")
+
+        # A per-job certificate may only authenticate cells of that job.
+        if peer_job_id is not None and peer_job_id not in FQCN.split(FQCN.normalize(fqcn)):
+            raise ValueError(
+                f"{peer_desc} authenticated with a certificate bound to job '{peer_job_id}' "
+                f"but claimed endpoint '{fqcn}' is not part of that job"
+            )
 
         # Admin client cell names are per-session random IDs; the authenticated user is the cert CN.
         if is_valid_admin_client_name(fqcn):

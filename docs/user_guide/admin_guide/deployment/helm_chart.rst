@@ -982,9 +982,12 @@ Role/RoleBinding by default. The launcher needs permission to:
 The Secret permission is required because the launcher creates or updates a
 per-site startup-kit Secret for dynamically launched job pods, and a per-job
 credential Secret (``nvflare-cred-<pod-name>``) delivering the job bootstrap
-credentials as env vars via ``secretKeyRef``. The credential Secret is patched
-with an ownerReference to its pod and deleted when the job ends. Job pods mount
-the startup-kit Secret read-only at ``<workspace_mount_path>/startup``. The
+credentials and the job's own certificate and key (see
+:ref:`per_job_certificates`) as env vars via ``secretKeyRef``. The credential
+Secret is patched with an ownerReference to its pod and deleted when the job
+ends. Job pods mount the startup-kit Secret read-only at
+``<workspace_mount_path>/startup``; that Secret contains the certificates,
+``rootCA.pem``, and JSON configuration of the kit but never a private key. The
 startup-kit Secret name uses this pattern:
 
 .. code-block:: text

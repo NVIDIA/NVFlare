@@ -63,6 +63,7 @@ from nvflare.fuel.f3.drivers.file_driver import SCHEME as SHARED_FILE_SCHEME
 from nvflare.fuel.f3.drivers.file_driver import parse_file_url
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.secret_utils import has_secret_refs
+from nvflare.private.fed.utils.job_cert_utils import JobCertError, require_job_cert
 from nvflare.utils.job_launcher_utils import (
     get_client_job_args,
     get_credential_env,
@@ -447,6 +448,10 @@ class SlurmJobLauncher(JobLauncherSpec):
         if os.path.realpath(workspace.get_root_dir()) != self.config.workspace_path:
             raise SlurmLauncherError("FLContext workspace does not match configured Slurm workspace_path")
         run_dir = _validate_run_dir(self.config.workspace_path, workspace.get_run_dir(job_id))
+        try:
+            require_job_cert(fl_ctx, run_dir)
+        except JobCertError as e:
+            raise SlurmLauncherError(str(e)) from e
 
         raw_job_args = fl_ctx.get_prop(FLContextKey.JOB_PROCESS_ARGS)
         if not isinstance(raw_job_args, dict) or not raw_job_args:

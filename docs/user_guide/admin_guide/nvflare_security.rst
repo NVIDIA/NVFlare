@@ -31,6 +31,7 @@ NVFLARE implements security measures in the following areas (see each section be
 
    security/terminologies_and_roles
    security/identity_security
+   security/per_job_certificates
    security/site_policy_management
    security/authorization_policy_previewer
    security/communication_security

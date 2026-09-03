@@ -21,11 +21,20 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.x509.oid import NameOID
 
-from nvflare.lighter.constants import CertFileBasename, CtxKey, ParticipantType, PropKey
+from nvflare.lighter.constants import CertExtensionOID, CertFileBasename, CtxKey, ParticipantType, PropKey, ProvFileName
 from nvflare.lighter.ctx import ProvisionContext
 from nvflare.lighter.entity import Participant, Project
 from nvflare.lighter.spec import Builder
-from nvflare.lighter.utils import Identity, generate_cert, generate_keys, serialize_cert, serialize_pri_key
+from nvflare.lighter.utils import (
+    Identity,
+    bounded_validity,
+    generate_cert,
+    generate_keys,
+    load_crt_bytes,
+    serialize_cert,
+    serialize_pri_key,
+    write_pri_key_file,
+)
 
 MAX_CN_LENGTH = 64
 DEFAULT_CERT_VALID_DAYS = 360
@@ -97,7 +106,7 @@ class _CertState:
 
 
 class CertBuilder(Builder):
-    def __init__(self, root_valid_days=DEFAULT_CERT_VALID_DAYS):
+    def __init__(self, root_valid_days=DEFAULT_CERT_VALID_DAYS, enable_job_ca=True):
         """Build certificate chain for every participant.
 
         Handles building (creating and self-signing) the root CA certificates, creating server, client and
@@ -107,14 +116,20 @@ class CertBuilder(Builder):
         Args:
             root_valid_days: validity period in days for a newly generated root CA certificate. This value does not
                 renew or replace a root CA already stored in the provisioning state.
+            enable_job_ca: also generate a job-signing intermediate CA (job_ca.crt/job_ca.key) in the server
+                startup kit. The server uses it at job deploy time to issue short-lived per-job certificates;
+                without it, secure-mode jobs refuse to deploy. Set False only for non-secure deployments.
         """
         if isinstance(root_valid_days, bool) or not isinstance(root_valid_days, int) or root_valid_days <= 0:
             raise ValueError(
                 f"root_valid_days must be a positive integer, got {root_valid_days!r} "
                 f"({type(root_valid_days).__name__})"
             )
+        if not isinstance(enable_job_ca, bool):
+            raise ValueError(f"enable_job_ca must be a bool, got {enable_job_ca!r} ({type(enable_job_ca).__name__})")
 
         self.root_valid_days = root_valid_days
+        self.enable_job_ca = enable_job_ca
         self.root_cert = None
         self.persistent_state = None
         self.serialized_cert = None
@@ -257,10 +272,7 @@ class CertBuilder(Builder):
         dest_dir = ctx.get_kit_dir(participant)
         with open(os.path.join(dest_dir, f"{base_name}.crt"), "wb") as f:
             f.write(serialize_cert(cert))
-        key_path = os.path.join(dest_dir, f"{base_name}.key")
-        fd = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "wb") as f:
-            f.write(serialize_pri_key(pri_key))
+        write_pri_key_file(os.path.join(dest_dir, f"{base_name}.key"), serialize_pri_key(pri_key))
 
         if participant.type in [ParticipantType.CLIENT, ParticipantType.RELAY]:
             self._build_internal_listener_cert(participant, ctx)
@@ -308,10 +320,7 @@ class CertBuilder(Builder):
         bn = CertFileBasename.SERVER
         with open(os.path.join(dest_dir, f"{bn}.crt"), "wb") as f:
             f.write(serialize_cert(tmp_cert))
-        key_path_bn = os.path.join(dest_dir, f"{bn}.key")
-        fd = os.open(key_path_bn, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "wb") as f:
-            f.write(serialize_pri_key(tmp_pri_key))
+        write_pri_key_file(os.path.join(dest_dir, f"{bn}.key"), serialize_pri_key(tmp_pri_key))
 
     def build(self, project: Project, ctx: ProvisionContext):
         self._build_root(project.name, subject_org=None)
@@ -325,6 +334,8 @@ class CertBuilder(Builder):
         server = project.get_server()
         if server:
             self._build_write_cert_pair(server, CertFileBasename.SERVER, ctx)
+            if self.enable_job_ca:
+                self._build_write_job_ca(project, server, ctx)
 
         for client in project.get_clients():
             self._build_write_cert_pair(client, CertFileBasename.CLIENT, ctx)
@@ -335,6 +346,61 @@ class CertBuilder(Builder):
         for admin in project.get_admins():
             self._build_write_cert_pair(admin, CertFileBasename.CLIENT, ctx)
 
+    def _build_write_job_ca(self, project: Project, server: Participant, ctx: ProvisionContext):
+        """Generate the job-signing intermediate CA and write it to the server startup kit.
+
+        The job CA is signed by the root, constrained to issue only leaf certs (pathlen:0), and its
+        private key goes only to the server kit. The server uses it at job deploy time to issue
+        short-lived per-job certificates that chain to the project root.
+        """
+        assert isinstance(self.persistent_state, _CertState)
+        subject = f"job_ca.{project.name}"[:MAX_CN_LENGTH]
+        cert_pem = None
+        key_pem = None
+        if self.persistent_state.has_subject(subject):
+            stored_cert_pem = self.persistent_state.get_subject_cert(subject).encode("ascii")
+            stored_cert = load_crt_bytes(stored_cert_pem)
+            if stored_cert.not_valid_after_utc > datetime.datetime.now(datetime.timezone.utc):
+                cert_pem = stored_cert_pem
+                key_pem = self.persistent_state.get_subject_pri_key(subject).encode("ascii")
+            else:
+                ctx.info(f"stored job CA expired at {stored_cert.not_valid_after_utc.isoformat()}; regenerating")
+
+        if cert_pem is None:
+            pri_key, pub_key = generate_keys()
+            now, not_valid_after = self._bounded_not_valid_after("job CA")
+            # the marker lets site-scope verification reject anything this CA issues by
+            # issuer, even a cert minted without the job-ID extension by a stolen CA key
+            marker = x509.UnrecognizedExtension(x509.ObjectIdentifier(CertExtensionOID.JOB_CA_MARKER), b"job_ca")
+            cert = self._generate_cert(
+                subject,
+                None,
+                self.issuer,
+                self.pri_key,
+                pub_key,
+                ca=True,
+                ca_path_length=0,
+                not_valid_before=now,
+                not_valid_after=not_valid_after,
+                extra_extensions=[(marker, False)],
+            )
+            cert_pem = serialize_cert(cert)
+            key_pem = serialize_pri_key(pri_key)
+            self.persistent_state.add_subject_cert(subject, cert_pem.decode("ascii"))
+            self.persistent_state.add_subject_pri_key(subject, key_pem.decode("ascii"))
+
+        dest_dir = ctx.get_kit_dir(server)
+        with open(os.path.join(dest_dir, ProvFileName.JOB_CA_CERT), "wb") as f:
+            f.write(cert_pem)
+        write_pri_key_file(os.path.join(dest_dir, ProvFileName.JOB_CA_KEY), key_pem)
+
+    def _bounded_not_valid_after(self, subject_desc: str):
+        """Validity window for a cert signed by the root: now until DEFAULT_CERT_VALID_DAYS, clamped to the root."""
+        try:
+            return bounded_validity(self.root_cert, DEFAULT_CERT_VALID_DAYS)
+        except ValueError as e:
+            raise RuntimeError(f"cannot generate certificate for '{subject_desc}': root CA {e}") from e
+
     def get_pri_key_cert(self, participant: Participant):
         pri_key, pub_key = generate_keys()
         subject = participant.subject
@@ -344,15 +410,7 @@ class CertBuilder(Builder):
         else:
             role = None
 
-        now = datetime.datetime.now(datetime.timezone.utc)
-        root_not_after = self.root_cert.not_valid_after_utc
-        if root_not_after <= now:
-            raise RuntimeError(
-                f"cannot generate certificate for '{participant.name}': root CA expired at {root_not_after.isoformat()}"
-            )
-        not_valid_after = (
-            root_not_after if root_not_after < now + datetime.timedelta(days=DEFAULT_CERT_VALID_DAYS) else None
-        )
+        now, not_valid_after = self._bounded_not_valid_after(participant.name)
 
         server = participant if participant.type == ParticipantType.SERVER else None
         cert = self._generate_cert(
@@ -377,6 +435,7 @@ class CertBuilder(Builder):
         subject_pub_key,
         valid_days=DEFAULT_CERT_VALID_DAYS,
         ca=False,
+        ca_path_length=None,
         role=None,
         server: Participant = None,
         server_default_host=None,
@@ -398,6 +457,7 @@ class CertBuilder(Builder):
             subject_pub_key=subject_pub_key,
             valid_days=valid_days,
             ca=ca,
+            ca_path_length=ca_path_length,
             server_default_host=server_default_host,
             server_additional_hosts=server_additional_hosts,
             extra_extensions=extra_extensions,

@@ -210,6 +210,12 @@ class FederatedClientBase:
                 DriverParams.CLIENT_CERT.value: ssl_cert,
                 DriverParams.CLIENT_KEY.value: private_key,
             }
+            if self.args.job_id:
+                # the CJ's ssl_cert is its job credential; pin the server-role credential to it
+                # too: otherwise, on listener-enabled sites, the site's server cert gets
+                # back-filled from the startup kit and message crypto prefers it over CLIENT_CERT
+                credentials[DriverParams.SERVER_CERT.value] = ssl_cert
+                credentials[DriverParams.SERVER_KEY.value] = private_key
         else:
             credentials = {}
 

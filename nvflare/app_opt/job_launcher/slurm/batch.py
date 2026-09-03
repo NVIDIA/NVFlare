@@ -218,7 +218,7 @@ def _render_node_script(plan: LaunchPlan, config: SlurmConfig) -> str:
     """
     worker_words = _build_worker_words(plan)
     node_words = [shlex.quote(word) for word in plan.additional_node_command]
-    credential_names = (JobProcessEnv.AUTH_TOKEN, JobProcessEnv.TOKEN_SIGNATURE, JobProcessEnv.SSID)
+    credential_names = JobProcessEnv.ALL
     nonzero_setup = [
         f"  unset {' '.join(credential_names)}",
         f"  export {CLIENT_API_TYPE_KEY}={CELL_API_TYPE}",
