@@ -124,6 +124,14 @@ jobs:
         run: >-
           python3 -m pytest -q
           tests/integration_test/fast/client_api_external_process_lifecycle_test.py
+      # This is the executable acceptance gate for the documented zero-argument
+      # Hello PyTorch path.
+      - name: Run Hello PyTorch learning quickstart
+        if: ${{ matrix.os == 'ubuntu-24.04' && matrix.python-version == '3.12' }}
+        timeout-minutes: 5
+        run: >-
+          python3 -m pytest -q
+          tests/integration_test/fast/hello_pt_quickstart_test.py
 
   hf-client-api-tests:
     runs-on: ubuntu-24.04
