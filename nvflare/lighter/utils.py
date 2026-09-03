@@ -83,6 +83,7 @@ def generate_cert(
     not_valid_before=None,
     not_valid_after=None,
     extra_extensions=None,
+    ca_path_length=None,
 ):
     now = not_valid_before or datetime.datetime.now(datetime.timezone.utc)
     cert_not_valid_after = not_valid_after or now + datetime.timedelta(days=valid_days)
@@ -109,7 +110,9 @@ def generate_cert(
     )
 
     if ca:
-        builder = builder.add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True).add_extension(
+        builder = builder.add_extension(
+            x509.BasicConstraints(ca=True, path_length=ca_path_length), critical=True
+        ).add_extension(
             x509.KeyUsage(
                 digital_signature=True,
                 content_commitment=False,
@@ -162,6 +165,24 @@ def serialize_pri_key(pri_key, passphrase=None):
 
 def serialize_cert(cert):
     return cert.public_bytes(serialization.Encoding.PEM)
+
+
+def write_pri_key_file(path: str, pri_key_pem: bytes):
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    # os.open's mode only applies on creation; re-tighten in case the file pre-existed
+    os.chmod(path, 0o600)
+    with os.fdopen(fd, "wb") as f:
+        f.write(pri_key_pem)
+
+
+def bounded_validity(issuer_cert, valid_days: int, backdate=datetime.timedelta(0)):
+    """(not_valid_before, not_valid_after) for a cert signed by issuer_cert: now minus backdate until
+    valid_days from now, clamped to the issuer's own expiry. Raises ValueError if the issuer has expired."""
+    now = datetime.datetime.now(datetime.timezone.utc)
+    issuer_not_after = issuer_cert.not_valid_after_utc
+    if issuer_not_after <= now:
+        raise ValueError(f"expired at {issuer_not_after.isoformat()}")
+    return now - backdate, min(issuer_not_after, now + datetime.timedelta(days=valid_days))
 
 
 def generate_keys():

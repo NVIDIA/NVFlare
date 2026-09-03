@@ -108,6 +108,20 @@ def _build_fl_ctx(token_to_reply: dict, job_id="job-1", min_sites=None, required
     return runner, fl_ctx, engine, job, sites
 
 
+def test_secure_deploy_fails_without_job_ca(tmp_path):
+    runner, fl_ctx, engine, job, sites = _build_fl_ctx({"tok-1": _ok_reply()})
+    (tmp_path / "startup").mkdir()
+    (tmp_path / "local").mkdir()
+    runner.workspace_root = str(tmp_path)
+    deploy_detail = fl_ctx.get_prop.return_value
+    fl_ctx.get_prop.side_effect = lambda key, default=None: True if key == FLContextKey.SECURE_MODE else deploy_detail
+
+    with pytest.raises(RuntimeError, match="no job CA"):
+        runner._deploy_job(job, sites, fl_ctx)
+
+    engine.server.admin_server.send_requests_and_get_reply_dict.assert_not_called()
+
+
 # ---------------------------------------------------------------------------
 # Deployment timeout classified as failure
 # ---------------------------------------------------------------------------

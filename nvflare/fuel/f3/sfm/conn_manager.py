@@ -435,7 +435,12 @@ class ConnManager(ConnMonitor):
                         f"Admin endpoint '{endpoint_name}' can only connect through an admin listener",
                     )
                 try:
-                    self.identity_resolver.require_match(endpoint_name, peer_cn, f"connection {sfm_conn.get_name()}")
+                    self.identity_resolver.require_match(
+                        endpoint_name,
+                        peer_cn,
+                        f"connection {sfm_conn.get_name()}",
+                        peer_job_id=get_param(conn_props, DriverParams.PEER_JOB_ID),
+                    )
                 except ValueError as ex:
                     sfm_conn.conn.close()
                     raise CommError(CommError.BAD_DATA, str(ex))

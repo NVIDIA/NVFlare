@@ -27,6 +27,7 @@ from nvflare.apis.fl_constant import (
     ConfigVarName,
     FLContextKey,
     RunProcessKey,
+    SecureTrainConst,
     SiteType,
     SystemComponents,
     SystemConfigs,
@@ -37,6 +38,7 @@ from nvflare.apis.job_launcher_spec import JobReturnCode
 from nvflare.apis.job_scheduler_spec import DispatchInfo
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.exit_codes import ProcessExitCode
+from nvflare.fuel.f3.cellnet.identity import get_cert_common_name_from_file
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE
 from nvflare.lighter.utils import verify_folder_signature
@@ -46,6 +48,13 @@ from nvflare.private.fed.server.admin import check_client_replies
 from nvflare.private.fed.server.server_state import HotState
 from nvflare.private.fed.utils.app_deployer import AppDeployer
 from nvflare.private.fed.utils.fed_utils import extract_participants, require_signed_jobs, set_message_security_data
+from nvflare.private.fed.utils.job_cert_utils import (
+    JOB_CERT_VALID_DAYS,
+    JobCertError,
+    load_job_cert_issuer,
+    pack_job_cert_header,
+    write_job_cert,
+)
 from nvflare.security.logging import secure_format_exception
 
 WORKSPACE_SAVE_RETRY_GRACE_TIME = 60
@@ -109,6 +118,11 @@ class JobRunner(FLComponent):
         self.client_outcome_wait_timeout = ConfigService.get_float_var(
             name=ConfigVarName.CLIENT_OUTCOME_WAIT_TIMEOUT, conf=SystemConfigs.APPLICATION_CONF, default=900.0
         )
+        self.job_cert_valid_days = ConfigService.get_int_var(
+            name=ConfigVarName.JOB_CERT_VALID_DAYS, conf=SystemConfigs.APPLICATION_CONF, default=JOB_CERT_VALID_DAYS
+        )
+        if self.job_cert_valid_days <= 0:
+            raise ValueError(f"{ConfigVarName.JOB_CERT_VALID_DAYS} must be positive, got {self.job_cert_valid_days}")
         self.lock = threading.Lock()
 
     def is_client_outcome_pending(self, job_id: str, client_name: str) -> bool:
@@ -170,6 +184,15 @@ class JobRunner(FLComponent):
         deploy_detail = []
         fl_ctx.set_prop(FLContextKey.JOB_DEPLOY_DETAIL, deploy_detail)
 
+        job_cert_issuer = None
+        if fl_ctx.get_prop(FLContextKey.SECURE_MODE, False):
+            # secure jobs run only on per-job credentials: a missing or expiring job CA fails the deploy
+            try:
+                job_cert_issuer = load_job_cert_issuer(workspace.get_startup_kit_dir())
+            except JobCertError as e:
+                deploy_detail.append(f"server: {e}")
+                raise RuntimeError(f"cannot issue job credentials: {e}") from e
+
         for app_name, participants in job.get_deployment().items():
             app_data = job.get_application(app_name, fl_ctx)
             participants = extract_participants(participants)
@@ -218,17 +241,27 @@ class JobRunner(FLComponent):
 
             if client_sites:
                 self.fire_event(EventType.DEPLOY_JOB_TO_CLIENT, fl_ctx)
-                message = self._make_deploy_message(job, app_data, app_name, fl_ctx)
                 clients, invalid_inputs = engine.validate_targets(client_sites)
 
                 if invalid_inputs:
                     deploy_detail.append("invalid_clients: {}".format(",".join(invalid_inputs)))
                     raise RuntimeError(f"unknown clients: {invalid_inputs}.")
 
+                # each site receives only its own job credential, so the deploy message is per site
+                # (the app bytes stay shared). c.name equals the CN of the client's registered
+                # cert (registration enforces CN == client name)
+                job_creds = {}
+                if job_cert_issuer:
+                    site_names = [c.name for c in clients]
+                    job_creds = job_cert_issuer.issue_many(site_names, job.job_id, self.job_cert_valid_days)
+
                 for c in clients:
                     assert isinstance(c, Client)
                     client_token_to_name[c.token] = c.name
-                    client_deploy_requests[c.token] = message
+                    client_request = self._make_deploy_message(job, app_data, app_name, fl_ctx)
+                    if c.name in job_creds:
+                        client_request.set_header(RequestHeader.JOB_CERT, pack_job_cert_header(*job_creds[c.name]))
+                    client_deploy_requests[c.token] = client_request
                     client_token_to_reply[c.token] = None
 
                 display_sites = ",".join(client_sites)
@@ -237,6 +270,16 @@ class JobRunner(FLComponent):
                     f"App {app_name} to be deployed to the clients: {display_sites} for run: {run_number}",
                     fire_event=False,
                 )
+
+        if job_cert_issuer:
+            # write the SJ credential only after all apps are deployed: AppDeployer wipes the
+            # run dir. The SJ cert must present the CN of the site's server cert — that is the
+            # identity peers expect for server FQCNs (fl_ctx.get_identity_name() is the literal
+            # "server")
+            server_cert_path = fl_ctx.get_prop(FLContextKey.SERVER_CONFIG)[0][SecureTrainConst.SSL_CERT]
+            server_cn = get_cert_common_name_from_file(server_cert_path)
+            cert_pem, key_pem = job_cert_issuer.issue(server_cn, job.job_id, self.job_cert_valid_days)
+            write_job_cert(workspace.get_run_dir(job.job_id), cert_pem, key_pem)
 
         abort_job = False
         failed_clients = []

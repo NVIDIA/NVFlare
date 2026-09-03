@@ -579,6 +579,21 @@ def test_launch_plan_rejects_different_context_workspace(tmp_path):
         launcher._build_launch_plan({JobConstants.JOB_ID: "job-1"}, _fl_ctx(context_workspace))
 
 
+def test_launch_plan_rejects_secure_job_without_credential(tmp_path):
+    workspace = _workspace(tmp_path)
+    launcher = _launcher(tmp_path, workspace)
+    fl_ctx = _fl_ctx(workspace)
+    fl_ctx.set_prop(FLContextKey.SECURE_MODE, True, private=True, sticky=True)
+
+    with pytest.raises(SlurmLauncherError, match="no job credential"):
+        launcher._build_launch_plan({JobConstants.JOB_ID: "job-1"}, fl_ctx)
+
+    (workspace / "job-1" / "job_cert").mkdir()
+    (workspace / "job-1" / "job_cert" / "job.crt").write_text("cert")
+    (workspace / "job-1" / "job_cert" / "job.key").write_text("key")
+    assert launcher._build_launch_plan({JobConstants.JOB_ID: "job-1"}, fl_ctx).run_dir == str(workspace / "job-1")
+
+
 @pytest.mark.parametrize("launcher_class", [ClientSlurmJobLauncher, ServerSlurmJobLauncher])
 def test_launch_plan_preserves_mtls_parent_args(tmp_path, launcher_class):
     workspace = _workspace(tmp_path)

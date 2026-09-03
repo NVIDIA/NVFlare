@@ -29,8 +29,11 @@ from nvflare.app_opt.job_launcher.workspace_cell_transfer import (
     WorkspaceTransferManager,
     _bootstrap_auth_identity_map,
     _create_bootstrap_cell,
+    _get_bootstrap_tls_pair,
     _hash_file,
+    _install_job_cert,
     _wait_for_bootstrap_ready,
+    _zip_results_to_file,
     _zip_workspace_to_file,
     download_workspace,
     make_workspace_transfer_fqcn,
@@ -39,7 +42,9 @@ from nvflare.app_opt.job_launcher.workspace_cell_transfer import (
 )
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.f3.cellnet.identity import CellIdentityResolver
 from nvflare.fuel.f3.cellnet.utils import make_reply, new_cell_message
+from nvflare.fuel.f3.drivers.driver_params import DriverParams
 
 JOB_ID = "abc12345-dead-beef-0000-111122223333"
 
@@ -107,6 +112,15 @@ class _FakeCell:
 
 
 class TestGetOrCreate:
+    @pytest.mark.parametrize("owner_fqcn, owner_cn", [("server", "server"), ("site-1", "site-1")])
+    def test_bootstrap_fqcn_is_accepted_by_job_cert_binding(self, owner_fqcn, owner_cn):
+        resolver = CellIdentityResolver(local_fqcn=owner_fqcn, prefix_identity_map={owner_fqcn: owner_cn})
+        fqcn = make_workspace_transfer_fqcn(owner_fqcn, JOB_ID)
+
+        resolver.require_match(fqcn, owner_cn, "bootstrap", peer_job_id=JOB_ID)
+        with pytest.raises(ValueError, match="bound to job"):
+            resolver.require_match(fqcn, owner_cn, "bootstrap", peer_job_id="other-job")
+
     def test_returns_same_manager_for_same_cell(self):
         owner_cell = _FakeCell(fqcn="site-1.parent")
         first = WorkspaceTransferManager.get_or_create(owner_cell)
@@ -194,6 +208,21 @@ class TestWorkspaceTransferManager:
             assert f"{JOB_ID}/app/config/config_train.json" in names
             assert "local/study_runtime.yaml" not in names
             assert "local/pod_specs/h100-pod.yaml" not in names
+
+    @pytest.mark.parametrize("zip_fn", [_zip_workspace_to_file, _zip_results_to_file])
+    def test_bundles_exclude_job_credential(self, zip_fn):
+        with tempfile.TemporaryDirectory() as ws_root, tempfile.TemporaryDirectory() as tmp:
+            _make_workspace(ws_root, JOB_ID)
+            _write_file(os.path.join(ws_root, JOB_ID, "job_cert", "job.crt"), b"cert")
+            _write_file(os.path.join(ws_root, JOB_ID, "job_cert", "job.key"), b"key")
+            zip_path = os.path.join(tmp, "bundle.zip")
+
+            zip_fn(ws_root, JOB_ID, zip_path)
+
+            with zipfile.ZipFile(zip_path) as zf:
+                names = set(zf.namelist())
+            assert f"{JOB_ID}/app/config/config_train.json" in names
+            assert not any(name.startswith(f"{JOB_ID}/job_cert/") for name in names)
 
     def test_prepare_download_returns_ref_for_valid_token(self, monkeypatch):
         with tempfile.TemporaryDirectory() as ws_root:
@@ -811,11 +840,11 @@ class TestBootstrapAuthIdentityMap:
         startup = tmp_path / "startup"
         startup.mkdir()
         (startup / "rootCA.pem").write_text("ca")
-        (startup / "client.crt").write_text("cert")
-        (startup / "client.key").write_text("key")
         (startup / "fed_client.json").write_text(
             json.dumps({"servers": [{"name": "project", "identity": "gcp-server"}]})
         )
+        _write_file(str(tmp_path / JOB_ID / "job_cert" / "job.crt"), b"job-cert")
+        _write_file(str(tmp_path / JOB_ID / "job_cert" / "job.key"), b"job-key")
 
         captured = {}
 
@@ -848,3 +877,43 @@ class TestBootstrapAuthIdentityMap:
 
         assert captured["auth_identity_map"] == {FQCN.ROOT_SERVER: "gcp-server"}
         assert captured["secure"] is True
+        job_cert_dir = str(tmp_path / JOB_ID / "job_cert")
+        assert captured["credentials"][DriverParams.CLIENT_CERT.value] == os.path.join(job_cert_dir, "job.crt")
+        assert captured["credentials"][DriverParams.CLIENT_KEY.value] == os.path.join(job_cert_dir, "job.key")
+
+    def test_bootstrap_tls_pair_uses_job_credential_in_the_peer_role(self, tmp_path):
+        run_dir = tmp_path / JOB_ID
+        job_crt = run_dir / "job_cert" / "job.crt"
+        job_key = run_dir / "job_cert" / "job.key"
+        _write_file(str(job_crt), b"job-cert")
+        _write_file(str(job_key), b"job-key")
+
+        cert_path, key_path, cert_key, key_key = _get_bootstrap_tls_pair(str(run_dir), "site-1")
+
+        assert (cert_path, key_path) == (str(job_crt), str(job_key))
+        assert (cert_key, key_key) == (DriverParams.CLIENT_CERT.value, DriverParams.CLIENT_KEY.value)
+
+        _, _, cert_key, key_key = _get_bootstrap_tls_pair(str(run_dir), FQCN.ROOT_SERVER)
+        assert (cert_key, key_key) == (DriverParams.SERVER_CERT.value, DriverParams.SERVER_KEY.value)
+
+    def test_bootstrap_tls_pair_requires_job_credential(self, tmp_path):
+        with pytest.raises(RuntimeError, match="requires the job credential"):
+            _get_bootstrap_tls_pair(str(tmp_path / JOB_ID), "site-1")
+
+    def test_install_job_cert_writes_run_dir(self, tmp_path):
+        args = SimpleNamespace(workspace=str(tmp_path), job_id=JOB_ID, job_cert_pem="cert-pem", job_key_pem="key-pem")
+
+        _install_job_cert(args)
+
+        cert_path = tmp_path / JOB_ID / "job_cert" / "job.crt"
+        key_path = tmp_path / JOB_ID / "job_cert" / "job.key"
+        assert cert_path.read_bytes() == b"cert-pem"
+        assert key_path.read_bytes() == b"key-pem"
+        assert stat.S_IMODE(os.stat(key_path).st_mode) == 0o600
+
+    def test_install_job_cert_noop_without_complete_credential(self, tmp_path):
+        args = SimpleNamespace(workspace=str(tmp_path), job_id=JOB_ID, job_cert_pem=None, job_key_pem="key-only")
+
+        _install_job_cert(args)
+
+        assert not (tmp_path / JOB_ID).exists()

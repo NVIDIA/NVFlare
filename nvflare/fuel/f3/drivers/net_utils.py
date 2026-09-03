@@ -21,13 +21,18 @@ from ssl import SSLContext
 from typing import Any, Optional
 from urllib.parse import parse_qsl, urlencode, urlparse
 
+from cryptography import x509
+
 from nvflare.apis.fl_constant import ConnectionSecurity
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.utils.argument_utils import str2bool
+from nvflare.lighter.constants import CertExtensionOID
 from nvflare.security.logging import secure_format_exception
 
 log = logging.getLogger(__name__)
+
+JOB_ID_EXTENSION_OID = x509.ObjectIdentifier(CertExtensionOID.JOB_ID)
 
 LO_PORT = 1025
 HI_PORT = 65535
@@ -115,6 +120,54 @@ def get_ssl_context(params: dict, ssl_server: bool) -> Optional[SSLContext]:
         ctx.load_cert_chain(certfile=cert_path, keyfile=key_path)
 
     return ctx
+
+
+def get_cert_job_id(cert: x509.Certificate) -> Optional[str]:
+    """Job ID a per-job certificate is bound to; None for a site certificate.
+
+    An undecodable extension value comes back with replacement characters so it
+    can never equal a real job ID.
+    """
+    try:
+        ext = cert.extensions.get_extension_for_oid(JOB_ID_EXTENSION_OID)
+    except x509.ExtensionNotFound:
+        return None
+    return ext.value.value.decode("utf-8", errors="replace")
+
+
+def get_cert_job_id_from_pem(cert_bytes: bytes) -> Optional[str]:
+    if not cert_bytes:
+        return None
+    return get_cert_job_id(x509.load_pem_x509_certificate(cert_bytes))
+
+
+def get_peer_job_id(ssl_object) -> Optional[str]:
+    """Job ID from the peer certificate of an established TLS connection (SSLSocket or SSLObject)."""
+    if not ssl_object:
+        return None
+    der = ssl_object.getpeercert(binary_form=True)
+    if not der:
+        return None
+    return get_cert_job_id(x509.load_der_x509_certificate(der))
+
+
+def get_grpc_peer_job_id(auth_context: dict) -> Optional[str]:
+    pem_certs = auth_context.get("x509_pem_cert") if auth_context else None
+    return get_cert_job_id_from_pem(pem_certs[0]) if pem_certs else None
+
+
+def add_peer_job_id(conn_props: dict, ssl_object) -> None:
+    """Record the peer certificate's job binding next to PEER_CN (TLS socket connections)."""
+    job_id = get_peer_job_id(ssl_object)
+    if job_id:
+        conn_props[DriverParams.PEER_JOB_ID.value] = job_id
+
+
+def add_grpc_peer_job_id(conn_props: dict, auth_context: dict) -> None:
+    """Record the peer certificate's job binding next to PEER_CN (gRPC server-side connections)."""
+    job_id = get_grpc_peer_job_id(auth_context)
+    if job_id:
+        conn_props[DriverParams.PEER_JOB_ID.value] = job_id
 
 
 def get_address(params: dict) -> str:
