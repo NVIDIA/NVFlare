@@ -30,9 +30,9 @@ from nvflare.recipe.utils import collect_non_local_scripts
 from nvflare.tool.poc.poc_commands import (
     POC_START_READY_TIMEOUT,
     _clean_poc,
+    _is_live_pid_file,
     _start_poc,
     _stop_poc,
-    _wait_for_poc_system_ready,
     get_poc_workspace,
     get_prod_dir,
     is_poc_running,
@@ -44,6 +44,8 @@ from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
 from .session_mgr import SessionManager
 
 STOP_POC_TIMEOUT = 10
+POC_READY_POLL_INTERVAL = 0.2
+POC_READY_STABLE_INTERVAL = 2.0
 DEFAULT_ADMIN_USER = "admin@nvidia.com"
 _WORKSPACE_BACKUP_PREFIX = ".nvflare-recipe-backup-"
 
@@ -172,6 +174,47 @@ class PocEnv(ExecEnv):
             os.remove(self.poc_workspace)
         os.replace(backup, self.poc_workspace)
 
+    @staticmethod
+    def _running_services(project_config: dict, service_config: dict, poc_workspace: str) -> list[str]:
+        """Return managed POC services whose local process is still alive."""
+        project_name = project_config.get("name")
+        prod_dir = get_prod_dir(poc_workspace, project_name)
+        service_names = [service_config[SC.FLARE_SERVER], *service_config.get(SC.FLARE_CLIENTS, [])]
+        running = []
+        for service_name in service_names:
+            service_dir = os.path.join(prod_dir, service_name)
+            if _is_live_pid_file(os.path.join(service_dir, "pid.fl")) or _is_live_pid_file(
+                os.path.join(service_dir, "daemon_pid.fl")
+            ):
+                running.append(service_name)
+        return running
+
+    def _wait_for_services_ready(self, project_config: dict, service_config: dict) -> None:
+        """Wait until every managed service remains alive through a stabilization interval."""
+        expected_services = [service_config[SC.FLARE_SERVER], *service_config.get(SC.FLARE_CLIENTS, [])]
+        if not expected_services:
+            raise RuntimeError("POC provisioning did not configure a server or clients")
+
+        deadline = time.monotonic() + POC_START_READY_TIMEOUT
+        all_running_since = None
+        running_services = []
+        while time.monotonic() < deadline:
+            running_services = self._running_services(project_config, service_config, self.poc_workspace)
+            if set(running_services) == set(expected_services):
+                if all_running_since is None:
+                    all_running_since = time.monotonic()
+                elif time.monotonic() - all_running_since >= POC_READY_STABLE_INTERVAL:
+                    return
+            else:
+                all_running_since = None
+            time.sleep(POC_READY_POLL_INTERVAL)
+
+        missing_services = sorted(set(expected_services) - set(running_services))
+        raise RuntimeError(
+            f"POC services did not remain healthy within {POC_START_READY_TIMEOUT} seconds; "
+            f"not running: {', '.join(missing_services)}"
+        )
+
     def deploy(self, job: FedJob) -> str:
         """Deploy a FedJob to the POC environment.
 
@@ -224,15 +267,11 @@ class PocEnv(ExecEnv):
                 services_list=[],
             )
             project_config, service_config = setup_service_config(self.poc_workspace)
-            if not _wait_for_poc_system_ready(
-                self.poc_workspace,
-                project_config,
-                service_config,
-                services_list=[],
-                excluded=[self.username],
-                timeout_in_sec=POC_START_READY_TIMEOUT,
-            ):
-                raise RuntimeError("POC services were started but no server or clients were selected for readiness")
+            self._wait_for_services_ready(project_config, service_config)
+            # Successful submission proves that the admin connection is ready,
+            # in addition to the local process-health check above. Keep the
+            # retained workspace backup until both checks have passed.
+            job_id = self._get_session_manager().submit_job(job)
         except BaseException:
             if self._check_poc_running():
                 self.stop(clean_up=False)
@@ -266,9 +305,7 @@ class PocEnv(ExecEnv):
             if workspace_backup:
                 shutil.rmtree(workspace_backup, ignore_errors=True)
         self.logger.info("POC services started successfully")
-
-        # Submit job using SessionManager
-        return self._get_session_manager().submit_job(job)
+        return job_id
 
     def _check_poc_running(self) -> bool:
         """Check if POC services are currently running.
@@ -282,10 +319,7 @@ class PocEnv(ExecEnv):
             # POC workspace is not initialized yet, so we don't need to stop and clean it
             return False
 
-        if not is_poc_running(self.poc_workspace, service_config, project_config):
-            return False
-
-        return True
+        return bool(self._running_services(project_config, service_config, self.poc_workspace))
 
     def stop(self, clean_up: bool = False) -> None:
         """Try to stop and clean existing POC.
@@ -307,16 +341,22 @@ class PocEnv(ExecEnv):
         try:
             project_config, service_config = setup_service_config(self.poc_workspace)
             self.logger.info("Stopping existing POC services...")
+            # Prefer the coordinated server shutdown while it is reachable. If
+            # the server exited during startup, stop any surviving local client
+            # processes directly so the workspace can be restored safely.
+            services_list = []
+            if not is_poc_running(self.poc_workspace, service_config, project_config):
+                services_list = self._running_services(project_config, service_config, self.poc_workspace)
             _stop_poc(
                 poc_workspace=self.poc_workspace,
                 excluded=[self.username],  # Exclude admin console (consistent with start)
-                services_list=[],
+                services_list=services_list,
             )
             count = 0
             poc_running = True
             while count < STOP_POC_TIMEOUT:
                 try:
-                    if not is_poc_running(self.poc_workspace, service_config, project_config):
+                    if not self._running_services(project_config, service_config, self.poc_workspace):
                         poc_running = False
                         break
                 except Exception:

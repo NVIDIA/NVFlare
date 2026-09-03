@@ -226,13 +226,17 @@ def test_failed_readiness_restores_retained_workspace(tmp_path, monkeypatch):
 
     monkeypatch.setattr(poc_env_module, "prepare_poc_provision", prepare_replacement)
     monkeypatch.setattr(poc_env_module, "_start_poc", lambda **kwargs: None)
-    monkeypatch.setattr(poc_env_module, "setup_service_config", lambda path: ({"name": "poc"}, {"admin": "a"}))
     monkeypatch.setattr(
         poc_env_module,
-        "_wait_for_poc_system_ready",
-        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("POC did not become ready")),
+        "setup_service_config",
+        lambda path: ({"name": "poc"}, {SC.FLARE_SERVER: "server", SC.FLARE_CLIENTS: ["site-1"]}),
     )
     env = PocEnv()
+    monkeypatch.setattr(
+        env,
+        "_wait_for_services_ready",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("POC did not become ready")),
+    )
 
     with pytest.raises(RuntimeError, match="did not become ready"):
         env.deploy(object())
@@ -244,7 +248,7 @@ def test_failed_readiness_restores_retained_workspace(tmp_path, monkeypatch):
     assert not list(tmp_path.glob("readiness-failure-workspace.nvflare-recipe-backup-*"))
 
 
-def test_successful_readiness_discards_backup_only_after_health_check(tmp_path, monkeypatch):
+def test_successful_submission_discards_backup_only_after_health_check(tmp_path, monkeypatch):
     import nvflare.recipe.poc_env as poc_env_module
 
     workspace = tmp_path / "healthy-workspace"
@@ -258,18 +262,28 @@ def test_successful_readiness_discards_backup_only_after_health_check(tmp_path, 
         workspace.mkdir()
         (workspace / "new-workspace.txt").write_text("new")
 
-    def verify_ready(*args, **kwargs):
+    def assert_backup_retained():
         backups = list(tmp_path.glob("healthy-workspace.nvflare-recipe-backup-*"))
         assert len(backups) == 1
         assert (backups[0] / "prior-result.txt").read_text() == "old"
-        return True
+
+    def verify_ready(*args, **kwargs):
+        assert_backup_retained()
+
+    def submit_job(job):
+        assert_backup_retained()
+        return "job-id"
 
     monkeypatch.setattr(poc_env_module, "prepare_poc_provision", prepare_replacement)
     monkeypatch.setattr(poc_env_module, "_start_poc", lambda **kwargs: None)
-    monkeypatch.setattr(poc_env_module, "setup_service_config", lambda path: ({"name": "poc"}, {"admin": "a"}))
-    monkeypatch.setattr(poc_env_module, "_wait_for_poc_system_ready", verify_ready)
+    monkeypatch.setattr(
+        poc_env_module,
+        "setup_service_config",
+        lambda path: ({"name": "poc"}, {SC.FLARE_SERVER: "server", SC.FLARE_CLIENTS: ["site-1"]}),
+    )
     env = PocEnv()
-    monkeypatch.setattr(env, "_get_session_manager", lambda: SimpleNamespace(submit_job=lambda job: "job-id"))
+    monkeypatch.setattr(env, "_wait_for_services_ready", verify_ready)
+    monkeypatch.setattr(env, "_get_session_manager", lambda: SimpleNamespace(submit_job=submit_job))
 
     assert env.deploy(object()) == "job-id"
 
@@ -277,6 +291,56 @@ def test_successful_readiness_discards_backup_only_after_health_check(tmp_path, 
     assert (workspace / "new-workspace.txt").read_text() == "new"
     assert not (workspace / "prior-result.txt").exists()
     assert not list(tmp_path.glob("healthy-workspace.nvflare-recipe-backup-*"))
+
+
+def test_failed_submission_restores_retained_workspace(tmp_path, monkeypatch):
+    import nvflare.recipe.poc_env as poc_env_module
+
+    workspace = tmp_path / "submission-failure-workspace"
+    workspace.mkdir()
+    (workspace / "prior-result.txt").write_text("old")
+    monkeypatch.setattr(poc_env_module, "get_poc_workspace", lambda: str(workspace))
+    monkeypatch.setattr(poc_env_module, "collect_non_local_scripts", lambda job: [])
+    monkeypatch.setattr(PocEnv, "_check_poc_running", lambda self: False)
+
+    def prepare_replacement(**kwargs):
+        workspace.mkdir()
+        (workspace / "partial-result.txt").write_text("partial")
+
+    monkeypatch.setattr(poc_env_module, "prepare_poc_provision", prepare_replacement)
+    monkeypatch.setattr(poc_env_module, "_start_poc", lambda **kwargs: None)
+    monkeypatch.setattr(
+        poc_env_module,
+        "setup_service_config",
+        lambda path: ({"name": "poc"}, {SC.FLARE_SERVER: "server", SC.FLARE_CLIENTS: ["site-1"]}),
+    )
+    env = PocEnv()
+    monkeypatch.setattr(env, "_wait_for_services_ready", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        env,
+        "_get_session_manager",
+        lambda: SimpleNamespace(submit_job=lambda job: (_ for _ in ()).throw(RuntimeError("job submission failed"))),
+    )
+
+    with pytest.raises(RuntimeError, match="job submission failed"):
+        env.deploy(object())
+
+    assert env.workspace_owned is False
+    assert (workspace / "prior-result.txt").read_text() == "old"
+    assert not (workspace / "partial-result.txt").exists()
+    assert not list(tmp_path.glob("submission-failure-workspace.nvflare-recipe-backup-*"))
+
+
+def test_wait_for_services_ready_rejects_an_exited_client(monkeypatch):
+    import nvflare.recipe.poc_env as poc_env_module
+
+    env = PocEnv()
+    monkeypatch.setattr(poc_env_module, "POC_START_READY_TIMEOUT", 0.01)
+    monkeypatch.setattr(poc_env_module, "POC_READY_POLL_INTERVAL", 0.001)
+    monkeypatch.setattr(env, "_running_services", lambda *args: ["server"])
+
+    with pytest.raises(RuntimeError, match="not running: site-1"):
+        env._wait_for_services_ready({"name": "poc"}, {SC.FLARE_SERVER: "server", SC.FLARE_CLIENTS: ["site-1"]})
 
 
 @patch("nvflare.recipe.poc_env.get_poc_workspace")
@@ -324,12 +388,11 @@ def test_get_admin_startup_kit_path_not_found(mock_setup, mock_get_prod_dir, moc
 def test_stop_poc(mock_is_running, mock_clean_poc, mock_stop_poc, mock_setup):
     """Test stop and clean POC functionality."""
     mock_setup.return_value = ({"name": "test"}, {"server": "server"})
-    # Mock is_poc_running to return True initially (POC is running),
-    # then False (POC stops successfully after _stop_poc is called)
-    mock_is_running.side_effect = [True, False]
+    mock_is_running.return_value = True
 
     env = PocEnv()
-    env.stop(clean_up=True)
+    with patch.object(PocEnv, "_running_services", side_effect=[["server"], []]):
+        env.stop(clean_up=True)
 
     mock_stop_poc.assert_called_once_with(
         poc_workspace=env.poc_workspace, excluded=["admin@nvidia.com"], services_list=[]
