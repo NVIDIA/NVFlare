@@ -220,7 +220,16 @@ class TestFedAvgRecipe:
         assert BaseFedAvgRecipe.__doc__
         assert FedAvgRecipe.__doc__
 
-    def test_external_command_secret_ref_is_supported(self, mock_file_system, base_recipe_params, simple_model):
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "env API_TOKEN=${secret:API_TOKEN} python3 -u",
+            ["env", "API_TOKEN=${secret:API_TOKEN}", "python3", "-u"],
+        ],
+    )
+    def test_external_command_secret_ref_is_supported(
+        self, mock_file_system, base_recipe_params, simple_model, command
+    ):
         with warnings.catch_warnings():
             warnings.simplefilter("error", UnsupportedSecretRefWarning)
             recipe = FedAvgRecipe(
@@ -233,10 +242,69 @@ class TestFedAvgRecipe:
                 {
                     "site-1": {
                         "launch_external_process": True,
-                        "command": "env API_TOKEN=${secret:API_TOKEN} python3 -u",
+                        "command": command,
                     },
                     "site-2": {},
                 },
+            )
+
+    def test_pre_tokenized_train_args_with_secret_refs_are_supported(
+        self, mock_file_system, base_recipe_params, simple_model
+    ):
+        params = {**base_recipe_params, "train_args": ["--api-key", "${secret:DEFAULT_API_KEY}"]}
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UnsupportedSecretRefWarning)
+            recipe = FedAvgRecipe(name="argv_secret_ref", model=simple_model, **params)
+            set_per_site_config(
+                recipe,
+                {
+                    "site-1": {"train_args": ["--api-key", "${secret:SITE_API_KEY}"]},
+                    "site-2": {},
+                },
+            )
+            recipe._ensure_client_apps_prepared()
+
+        assert get_client_executor(recipe, "site-1")._task_script_args == [
+            "--api-key",
+            "${secret:SITE_API_KEY}",
+        ]
+        assert get_client_executor(recipe, "site-2")._task_script_args == [
+            "--api-key",
+            "${secret:DEFAULT_API_KEY}",
+        ]
+
+    @pytest.mark.parametrize("bad_args", [("--epochs", "3"), {"--epochs", "3"}, b"--epochs 3"])
+    def test_top_level_train_args_rejects_non_list_sequences(
+        self, mock_file_system, base_recipe_params, simple_model, bad_args
+    ):
+        params = {**base_recipe_params, "train_args": bad_args}
+
+        with pytest.raises(ValueError, match="train_args must be a string or list of strings"):
+            FedAvgRecipe(name="invalid_argv", model=simple_model, **params)
+
+    def test_top_level_train_args_rejects_non_string_argv_element(
+        self, mock_file_system, base_recipe_params, simple_model
+    ):
+        params = {**base_recipe_params, "train_args": ["--epochs", 3]}
+
+        with pytest.raises(ValueError, match="train_args argv must contain only strings"):
+            FedAvgRecipe(name="invalid_argv_element", model=simple_model, **params)
+
+    def test_top_level_command_accepts_argv_and_rejects_tuple(self, mock_file_system, base_recipe_params, simple_model):
+        recipe = FedAvgRecipe(
+            name="command_argv",
+            model=simple_model,
+            command=["python3", "-u"],
+            **base_recipe_params,
+        )
+
+        assert recipe.command == ["python3", "-u"]
+        with pytest.raises(ValueError, match="command must be a string or list of strings"):
+            FedAvgRecipe(
+                name="invalid_command_argv",
+                model=simple_model,
+                command=("python3", "-u"),
+                **base_recipe_params,
             )
 
     """Test cases for FedAvgRecipe class."""
@@ -311,6 +379,27 @@ class TestFedAvgRecipe:
         recipe._ensure_client_apps_prepared()
 
         assert get_client_executor(recipe, "site-1")._task_script_args == "--epochs 1"
+
+    def test_set_per_site_config_snapshots_argv_before_deferred_preparation(
+        self, mock_file_system, base_recipe_params, simple_model
+    ):
+        recipe = FedAvgRecipe(name="test_helper_argv_snapshot", model=simple_model, **base_recipe_params)
+        train_args = ["--data-root", "/data/site-1"]
+
+        set_per_site_config(recipe, {"site-1": {"train_args": train_args}, "site-2": {}})
+        train_args[-1] = "/changed"
+        train_args.append("--leaked")
+        recipe._ensure_client_apps_prepared()
+
+        assert get_client_executor(recipe, "site-1")._task_script_args == ["--data-root", "/data/site-1"]
+
+    def test_set_per_site_config_rejects_invalid_argv_immediately(
+        self, mock_file_system, base_recipe_params, simple_model
+    ):
+        recipe = FedAvgRecipe(name="test_invalid_site_argv", model=simple_model, **base_recipe_params)
+
+        with pytest.raises(ValueError, match="train_args argv must contain only strings"):
+            set_per_site_config(recipe, {"site-1": {"train_args": ["--epochs", 3]}, "site-2": {}})
 
     def test_per_site_launch_timeout_none_disables_timeout(self, mock_file_system, base_recipe_params, simple_model):
         recipe = FedAvgRecipe(
@@ -1375,7 +1464,7 @@ class TestFedAvgRecipeExternalProcessStartup:
             name=job_name,
             model={"class_path": "model.SimpleNetwork", "args": {}},
             train_script=str(train_script),
-            train_args="--epochs 1",
+            train_args=["--epochs", "1"],
             min_clients=2,
             num_rounds=1,
             launch_external_process=launch_external_process,
@@ -1402,7 +1491,7 @@ class TestFedAvgRecipeExternalProcessStartup:
             assert train_executor_args["command"][-2:] == ["--epochs", "1"]
         else:
             assert train_executor_args["task_script_path"] == str(train_script)
-            assert train_executor_args["task_script_args"] == "--epochs 1"
+            assert train_executor_args["task_script_args"] == ["--epochs", "1"]
 
 
 class TestNumpyFedAvgRecipeInitialCkpt:

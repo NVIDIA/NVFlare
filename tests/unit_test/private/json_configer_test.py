@@ -254,6 +254,31 @@ def test_configured_in_process_executor_resolves_file_ref_only_at_script_start(t
     assert "resolved secret" not in configurator.component._task_script_args
 
 
+def test_configured_in_process_executor_preserves_argv_and_expands_site_name(tmp_path):
+    config_file = tmp_path / "config.json"
+    _write_component_config(
+        config_file,
+        {
+            "path": "nvflare.app_common.executors.client_api_executor.ClientAPIExecutor",
+            "args": {
+                "execution_mode": "in_process",
+                "task_script_path": "train.py",
+                "task_script_args": ["--site", "{SITE_NAME}", "--data-root", "/data/cache path"],
+            },
+        },
+    )
+
+    configurator = _NestedComponentConfigurator(str(config_file), sys_vars={"SITE_NAME": "site-1"})
+    configurator.configure()
+
+    assert configurator.component._task_script_args == [
+        "--site",
+        "site-1",
+        "--data-root",
+        "/data/cache path",
+    ]
+
+
 def _record_load_class_calls(monkeypatch):
     loaded_paths = []
 

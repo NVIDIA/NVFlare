@@ -430,6 +430,12 @@ class TestUnsupportedSecretRefs:
             supported_value_depth=2,
             context="per_site_config",
         )
+        assert not warn_on_unsupported_secret_refs_outside_keys(
+            {"site-1": {"train_args": ["--api-key", reference]}},
+            supported_value_keys={"train_args"},
+            supported_value_depth=2,
+            context="per_site_config",
+        )
         with pytest.warns(UnsupportedSecretRefWarning):
             assert warn_on_unsupported_secret_refs_outside_keys(
                 {"site-1": {"subsection": {"train_args": reference}}},
@@ -440,6 +446,13 @@ class TestUnsupportedSecretRefs:
         with pytest.warns(UnsupportedSecretRefWarning):
             assert warn_on_unsupported_secret_refs_outside_keys(
                 {"site-1": {"train_args": {"nested": reference}}},
+                supported_value_keys={"train_args"},
+                supported_value_depth=2,
+                context="per_site_config",
+            )
+        with pytest.warns(UnsupportedSecretRefWarning):
+            assert warn_on_unsupported_secret_refs_outside_keys(
+                {"site-1": {"train_args": ["--api-key", {"nested": reference}]}},
                 supported_value_keys={"train_args"},
                 supported_value_depth=2,
                 context="per_site_config",
