@@ -28,9 +28,11 @@ from nvflare.job_config.api import FedJob
 from nvflare.recipe.spec import ExecEnv
 from nvflare.recipe.utils import collect_non_local_scripts
 from nvflare.tool.poc.poc_commands import (
+    POC_START_READY_TIMEOUT,
     _clean_poc,
     _start_poc,
     _stop_poc,
+    _wait_for_poc_system_ready,
     get_poc_workspace,
     get_prod_dir,
     is_poc_running,
@@ -42,7 +44,6 @@ from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
 from .session_mgr import SessionManager
 
 STOP_POC_TIMEOUT = 10
-SERVICE_START_TIMEOUT = 3
 DEFAULT_ADMIN_USER = "admin@nvidia.com"
 _WORKSPACE_BACKUP_PREFIX = ".nvflare-recipe-backup-"
 
@@ -222,6 +223,16 @@ class PocEnv(ExecEnv):
                 excluded=[self.username],
                 services_list=[],
             )
+            project_config, service_config = setup_service_config(self.poc_workspace)
+            if not _wait_for_poc_system_ready(
+                self.poc_workspace,
+                project_config,
+                service_config,
+                services_list=[],
+                excluded=[self.username],
+                timeout_in_sec=POC_START_READY_TIMEOUT,
+            ):
+                raise RuntimeError("POC services were started but no server or clients were selected for readiness")
         except BaseException:
             if self._check_poc_running():
                 self.stop(clean_up=False)
@@ -255,9 +266,6 @@ class PocEnv(ExecEnv):
             if workspace_backup:
                 shutil.rmtree(workspace_backup, ignore_errors=True)
         self.logger.info("POC services started successfully")
-
-        # Give services time to start up
-        time.sleep(SERVICE_START_TIMEOUT)
 
         # Submit job using SessionManager
         return self._get_session_manager().submit_job(job)
