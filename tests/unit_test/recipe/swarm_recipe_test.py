@@ -397,6 +397,35 @@ class TestSwarmLearningRecipe:
 
         assert recipe._job is not None
 
+    def test_pre_tokenized_command_is_validated_and_copied(self, mock_file_system, simple_pt_model):
+        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
+
+        command = ["python3", "-u"]
+        recipe = SwarmLearningRecipe(
+            name="test_swarm_argv_cmd",
+            model=simple_pt_model,
+            num_rounds=1,
+            train_script="train.py",
+            min_clients=2,
+            launch_external_process=True,
+            command=command,
+        )
+        command[-1] = "mutated"
+
+        client_app = recipe._job._deploy_map[ALL_SITES]
+        train_executor = next(item.executor for item in client_app.app_config.executors if "train" in item.tasks)
+        assert train_executor._command[:2] == ["python3", "-u"]
+
+        with pytest.raises(ValueError, match="command must be a string or list of strings"):
+            SwarmLearningRecipe(
+                name="test_swarm_invalid_argv_cmd",
+                model=simple_pt_model,
+                num_rounds=1,
+                train_script="train.py",
+                min_clients=2,
+                command=("python3", "-u"),
+            )
+
 
 class TestSwarmLearningRecipeControllerConfig:
     """Test named controller parameters and advanced config overrides."""

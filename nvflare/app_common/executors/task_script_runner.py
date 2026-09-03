@@ -149,9 +149,11 @@ class TaskScriptRunner:
                     sys.argv = self._original_argv
 
     def get_sys_argv(self):
-        # Keep legacy strings on their historical whitespace-only path. New
-        # callers can pass argv to preserve exact boundaries without ambiguous
-        # shell parsing (for example, apostrophes versus single-quoted spans).
+        # Keep legacy strings on their historical whitespace-only path, except that
+        # quoted spans containing secret references remain grouped so the resolved
+        # value stays one argument. New callers can pass argv to preserve exact
+        # boundaries without ambiguous shell parsing (for example, apostrophes
+        # versus single-quoted spans).
         if isinstance(self.script_args, list):
             args_list = list(self.script_args)
         elif self.script_args:

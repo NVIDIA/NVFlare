@@ -242,6 +242,9 @@ def test_sim_env_rejects_invalid_resources_file(tmp_path):
 def test_sim_env_preflight_failure_has_no_result_path(tmp_path):
     job = _make_job("missing-script")
     env = SimEnv(num_clients=2, workspace_root=str(tmp_path))
+    stale_result = tmp_path / job.name
+    stale_result.mkdir()
+    (stale_result / "old-result.txt").write_text("from an earlier run")
 
     with patch("nvflare.recipe.sim_env.collect_non_local_scripts", return_value=["missing.py"]):
         with pytest.raises(ValueError, match="missing.py"):

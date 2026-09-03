@@ -190,5 +190,7 @@ class SimEnv(ExecEnv):
         """Get job result workspace path."""
         if self.workspace_root is None:
             raise RuntimeError("Simulation workspace_root is None - SimEnv may not be properly initialized")
+        if self.get_job_status(job_id) != RunStatus.FINISHED_COMPLETED.value:
+            return None
         result_path = os.path.join(self.workspace_root, job_id)
         return result_path if os.path.exists(result_path) else None

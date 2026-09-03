@@ -230,8 +230,8 @@ class TestFedAvgRecipe:
     def test_external_command_secret_ref_is_supported(
         self, mock_file_system, base_recipe_params, simple_model, command
     ):
-        with warnings.catch_warnings():
-            warnings.simplefilter("error", UnsupportedSecretRefWarning)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
             recipe = FedAvgRecipe(
                 name="command_secret_ref",
                 model=simple_model,
@@ -247,13 +247,14 @@ class TestFedAvgRecipe:
                     "site-2": {},
                 },
             )
+        assert not any(issubclass(warning.category, UnsupportedSecretRefWarning) for warning in caught)
 
     def test_pre_tokenized_train_args_with_secret_refs_are_supported(
         self, mock_file_system, base_recipe_params, simple_model
     ):
         params = {**base_recipe_params, "train_args": ["--api-key", "${secret:DEFAULT_API_KEY}"]}
-        with warnings.catch_warnings():
-            warnings.simplefilter("error", UnsupportedSecretRefWarning)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
             recipe = FedAvgRecipe(name="argv_secret_ref", model=simple_model, **params)
             set_per_site_config(
                 recipe,
@@ -263,6 +264,7 @@ class TestFedAvgRecipe:
                 },
             )
             recipe._ensure_client_apps_prepared()
+        assert not any(issubclass(warning.category, UnsupportedSecretRefWarning) for warning in caught)
 
         assert get_client_executor(recipe, "site-1")._task_script_args == [
             "--api-key",

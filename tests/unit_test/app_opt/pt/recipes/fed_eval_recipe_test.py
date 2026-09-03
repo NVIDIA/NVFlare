@@ -113,6 +113,45 @@ class TestFedEvalRecipe:
                 },
             )
 
+    @pytest.mark.parametrize("field", ["eval_args", "command"])
+    def test_top_level_argv_is_validated_and_copied(self, mock_file_system, base_recipe_params, simple_model, field):
+        model, _ = simple_model
+        argv = ["--value", "/data/cache path"] if field == "eval_args" else ["python3", "-u"]
+        expected = list(argv)
+        params = {**base_recipe_params, field: argv}
+
+        recipe = FedEvalRecipe(name="argv_eval", model=model, **params)
+        argv[-1] = "mutated"
+
+        assert getattr(recipe, field) == expected
+
+        params[field] = ("invalid", "tuple")
+        with pytest.raises(ValueError, match=f"{field} must be a string or list of strings"):
+            FedEvalRecipe(name="invalid_argv_eval", model=model, **params)
+
+    def test_per_site_argv_is_validated_and_copied(self, mock_file_system, base_recipe_params, simple_model):
+        model, _ = simple_model
+        recipe = FedEvalRecipe(name="site_argv_eval", model=model, **base_recipe_params)
+        eval_args = ["--data", "/site/cache path"]
+        command = ["python3", "-u"]
+
+        set_per_site_config(
+            recipe,
+            {
+                "site-1": {"eval_args": eval_args, "command": command},
+                "site-2": {},
+            },
+        )
+        eval_args[-1] = "mutated"
+        command[-1] = "mutated"
+
+        assert recipe.per_site_config["site-1"]["eval_args"] == ["--data", "/site/cache path"]
+        assert recipe.per_site_config["site-1"]["command"] == ["python3", "-u"]
+
+        invalid_recipe = FedEvalRecipe(name="invalid_site_argv_eval", model=model, **base_recipe_params)
+        with pytest.raises(ValueError, match="eval_args must be a string or list of strings"):
+            set_per_site_config(invalid_recipe, {"site-1": {"eval_args": ("invalid",)}, "site-2": {}})
+
     def test_basic_initialization(self, mock_file_system, base_recipe_params, simple_model):
         """Test FedEvalRecipe initialization with default parameters."""
         model, checkpoint_path = simple_model
