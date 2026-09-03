@@ -87,10 +87,11 @@ using ``in_process``, ``external_process``, or ``attach`` mode.
 
 Recipe-level ``pipe_type`` and ``pipe_root_path`` settings are no longer
 accepted. Select transport in site ``comm_config.json`` instead; the F3
-``FileDriver`` remains available as scheme ``shared-file``. For custom model
-representation logic, transform parameters explicitly around
-``flare.receive()`` and ``flare.send()`` or use helpers in
-:mod:`nvflare.client.converter_utils`.
+``FileDriver`` remains available as scheme ``shared-file`` for an attached
+trainer. A launched external-process trainer instead requires a clear TCP
+listener bound to loopback. For custom model representation logic,
+transform parameters explicitly around ``flare.receive()`` and
+``flare.send()`` or use helpers in :mod:`nvflare.client.converter_utils`.
 
 FLARE API Compatibility Note
 ----------------------------

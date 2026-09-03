@@ -11,7 +11,7 @@ NVIDIA FLARE
 
    welcome
    roadmap
-   release_notes/flare_280
+   release_notes/flare_290
    industry_use_cases
 
 .. toctree::
@@ -28,9 +28,10 @@ NVIDIA FLARE
    :hidden:
    :caption: User Guide
 
+   Agent Skills <user_guide/agent_skills/index>
    Choose an API Path <user_guide/data_scientist_guide/api_selection>
    user_guide/data_scientist_guide/client_api_usage
-   HuggingFace Client API <user_guide/data_scientist_guide/hf_client_api>
+   Collaboration API (Technical Preview) <user_guide/data_scientist_guide/collab_api>
    user_guide/data_scientist_guide/job_recipe
    user_guide/data_scientist_guide/recipe_api
    user_guide/data_scientist_guide/available_recipes
@@ -39,7 +40,6 @@ NVIDIA FLARE
    programming_guide/experiment_tracking
    Federated XGBoost <user_guide/data_scientist_guide/federated_xgboost/federated_xgboost>
    user_guide/data_scientist_guide/data_preparation
-   Agent Skills <user_guide/agent_skills/index>
    CLI Tools <user_guide/nvflare_cli/nvflare_cli>
 
 .. toctree::
@@ -149,7 +149,9 @@ Start here if you want to federate an existing training script.
 - :doc:`Welcome <welcome>` -- What FLARE is and what it supports
 - :doc:`Installation <installation>` -- Install FLARE and set up your environment
 - :doc:`Quick Start <quickstart>` -- Run a Hello World example and convert your ML code
+- :doc:`Agent Skills <user_guide/agent_skills/index>` -- Optional coding-agent workflows to learn NVFLARE, create federated jobs, optimize with AutoFL, and report results
 - :ref:`Client API <client_api>` -- Recommended high-level API for federated training
+- :ref:`Collaboration API (Technical Preview) <collab_api>` -- Remote Python method calls between server and clients and among peer clients
 - :ref:`Job Recipe API <job_recipe>` -- Pre-built recipes for common FL workflows
 - :doc:`Migration Guide <migration_guide>` -- Upgrade between FLARE versions
 - :ref:`Examples & Tutorials <example_applications>` -- End-to-end examples and tutorials
