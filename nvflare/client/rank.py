@@ -77,18 +77,18 @@ def normalize_process_rank(rank: Union[str, int]) -> str:
 
 
 def resolve_process_rank(rank: Optional[Union[str, int]] = None) -> str:
-    """Resolve an explicit, initialized Torch, Client API process-count, or launcher-provided global rank."""
+    """Resolve an explicit, Client API process-count, initialized Torch, or launcher-provided global rank."""
     if rank is not None:
         return normalize_process_rank(rank)
+
+    # A launcher can designate one Client API participant even when its process
+    # inherits unrelated distributed state from the surrounding study environment.
+    if _environment_declares_single_client_api_process():
+        return "0"
 
     distributed_rank = get_initialized_torch_distributed_rank()
     if distributed_rank is not None:
         return normalize_process_rank(distributed_rank)
-
-    # A launcher can designate one Client API participant even when its process
-    # inherits an unrelated global rank from the surrounding study environment.
-    if _environment_declares_single_client_api_process():
-        return "0"
 
     environment_rank = os.environ.get("RANK")
     if environment_rank is not None:

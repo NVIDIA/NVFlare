@@ -97,6 +97,14 @@ def test_nvflare_slurm_fanout_declares_one_client_api_process(monkeypatch):
     assert rank_utils.resolve_process_rank() == "0"
 
 
+def test_single_client_api_process_overrides_initialized_torch_rank(monkeypatch):
+    _clear_rank_environment(monkeypatch)
+    monkeypatch.setenv(rank_utils.CLIENT_API_PROCESS_COUNT_ENV_VAR, "1")
+    monkeypatch.setattr(rank_utils, "get_initialized_torch_distributed_rank", lambda: 1)
+
+    assert rank_utils.resolve_process_rank() == "0"
+
+
 @pytest.mark.parametrize("process_count", ("0", "2", "-1", "not-an-integer"))
 def test_non_single_client_api_process_count_fails_closed(monkeypatch, process_count):
     _clear_rank_environment(monkeypatch)
