@@ -15,6 +15,7 @@
 import json
 import subprocess
 import sys
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -1406,6 +1407,30 @@ class TestPocOutput:
 
         assert [call.args[:2] for call in run_stop_command.call_args_list] == service_commands
         assert [call.kwargs["timeout"] for call in run_stop_command.call_args_list] == [POC_STOP_TIMEOUT] * 2
+
+    def test_docker_stop_honors_poc_socket_override(self, monkeypatch):
+        from nvflare.tool.poc.poc_commands import _run_stop_command
+
+        monkeypatch.setenv("DOCKER_HOST", "unix:///var/run/docker.sock")
+        monkeypatch.setenv("NVFL_DOCKER_SOCK", "/run/user/1000/docker.sock")
+        completed = SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        with patch("nvflare.tool.poc.poc_commands.subprocess.run", return_value=completed) as run_command:
+            _run_stop_command("site-1", "docker stop site-1", timeout=30)
+
+        assert run_command.call_args.args[0] == ["docker", "stop", "site-1"]
+        assert run_command.call_args.kwargs["env"]["DOCKER_HOST"] == "unix:///run/user/1000/docker.sock"
+
+    def test_docker_process_env_honors_poc_socket_override(self, monkeypatch):
+        from nvflare.tool.poc.poc_commands import prepare_env
+        from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
+
+        monkeypatch.setenv("DOCKER_HOST", "unix:///var/run/docker.sock")
+        monkeypatch.setenv("NVFL_DOCKER_SOCK", "/run/user/1000/docker.sock")
+
+        process_env = prepare_env("site-1", None, {SC.IS_DOCKER_RUN: True})
+
+        assert process_env["DOCKER_HOST"] == "unix:///run/user/1000/docker.sock"
 
     def test_wait_for_poc_services_stopped_reports_lingering_services(self):
         from nvflare.tool.poc.poc_commands import _wait_for_poc_services_stopped

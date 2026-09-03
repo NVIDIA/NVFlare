@@ -2128,8 +2128,49 @@ def _env_with_cli_python_path() -> Dict[str, str]:
     return my_env
 
 
+def _docker_cli_env() -> Dict[str, str]:
+    """Build an environment that targets the daemon selected by POC Docker startup scripts."""
+    docker_env = _env_with_cli_python_path()
+    socket_override = docker_env.get("NVFL_DOCKER_SOCK")
+    if not socket_override:
+        return docker_env
+
+    docker_endpoint = docker_env.get("DOCKER_HOST", "")
+    if not docker_endpoint:
+        # Match start_docker.sh: an active remote context keeps controlling
+        # the outer Docker CLI, while a local context uses the explicit POC
+        # socket override as its endpoint.
+        try:
+            context_result = subprocess.run(
+                ["docker", "context", "show"],
+                env=docker_env,
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+            context_name = context_result.stdout.strip() if context_result.returncode == 0 else ""
+            if context_name:
+                endpoint_result = subprocess.run(
+                    ["docker", "context", "inspect", context_name, "--format", "{{.Endpoints.docker.Host}}"],
+                    env=docker_env,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                    check=False,
+                )
+                if endpoint_result.returncode == 0:
+                    docker_endpoint = endpoint_result.stdout.strip()
+        except (OSError, subprocess.TimeoutExpired):
+            docker_endpoint = ""
+
+    if not docker_endpoint or docker_endpoint.startswith("unix://"):
+        docker_env["DOCKER_HOST"] = f"unix://{socket_override}"
+    return docker_env
+
+
 def prepare_env(service_name, gpu_ids: Optional[List[int]], service_config: Dict):
-    my_env = _env_with_cli_python_path()
+    my_env = _docker_cli_env() if service_config.get(SC.IS_DOCKER_RUN) else _env_with_cli_python_path()
     if gpu_ids:
         my_env["CUDA_VISIBLE_DEVICES"] = ",".join([str(gid) for gid in gpu_ids])
 
@@ -2192,7 +2233,7 @@ def _run_stop_command(service_name: str, cmd_path: str, timeout: float):
     try:
         completed = subprocess.run(
             cmd_path.split(" "),
-            env=_env_with_cli_python_path(),
+            env=_docker_cli_env(),
             capture_output=True,
             text=True,
             timeout=timeout,

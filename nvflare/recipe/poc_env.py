@@ -31,6 +31,7 @@ from nvflare.recipe.utils import collect_non_local_scripts
 from nvflare.tool.poc.poc_commands import (
     POC_START_READY_TIMEOUT,
     _clean_poc,
+    _docker_cli_env,
     _is_live_pid_file,
     _start_poc,
     _stop_poc,
@@ -186,6 +187,7 @@ class PocEnv(ExecEnv):
                 text=True,
                 timeout=5,
                 check=False,
+                env=_docker_cli_env(),
             )
         except (OSError, subprocess.TimeoutExpired):
             return False

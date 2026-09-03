@@ -360,6 +360,7 @@ def test_running_services_uses_docker_container_state(monkeypatch):
         running = command[-1] != "site-1"
         return SimpleNamespace(returncode=0, stdout=f"{str(running).lower()}\n")
 
+    monkeypatch.setenv("DOCKER_HOST", "tcp://docker.example:2375")
     monkeypatch.setattr(poc_env_module.subprocess, "run", inspect_container)
     service_config = {
         SC.FLARE_SERVER: "server",
@@ -369,6 +370,25 @@ def test_running_services_uses_docker_container_state(monkeypatch):
 
     assert PocEnv._running_services({"name": "poc"}, service_config, "/unused") == ["server", "site-2"]
     assert [command[-1] for command in inspected] == ["server", "site-1", "site-2"]
+
+
+def test_docker_liveness_honors_poc_socket_override(monkeypatch):
+    import nvflare.recipe.poc_env as poc_env_module
+
+    calls = []
+
+    def inspect_container(command, **kwargs):
+        calls.append((command, kwargs))
+        return SimpleNamespace(returncode=0, stdout="true\n")
+
+    monkeypatch.setenv("DOCKER_HOST", "unix:///var/run/docker.sock")
+    monkeypatch.setenv("NVFL_DOCKER_SOCK", "/run/user/1000/docker.sock")
+    monkeypatch.setattr(poc_env_module.subprocess, "run", inspect_container)
+
+    assert PocEnv._is_docker_service_running("site-1") is True
+    command, kwargs = calls[0]
+    assert command[-1] == "site-1"
+    assert kwargs["env"]["DOCKER_HOST"] == "unix:///run/user/1000/docker.sock"
 
 
 @patch("nvflare.recipe.poc_env.get_poc_workspace")
