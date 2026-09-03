@@ -231,6 +231,7 @@ def test_failed_readiness_restores_retained_workspace(tmp_path, monkeypatch):
         "setup_service_config",
         lambda path: ({"name": "poc"}, {SC.FLARE_SERVER: "server", SC.FLARE_CLIENTS: ["site-1"]}),
     )
+    monkeypatch.setattr(poc_env_module, "_wait_for_poc_system_ready", lambda *args, **kwargs: True)
     env = PocEnv()
     monkeypatch.setattr(
         env,
@@ -270,6 +271,10 @@ def test_successful_submission_discards_backup_only_after_health_check(tmp_path,
     def verify_ready(*args, **kwargs):
         assert_backup_retained()
 
+    def verify_registered(*args, **kwargs):
+        assert_backup_retained()
+        return True
+
     def submit_job(job):
         assert_backup_retained()
         return "job-id"
@@ -281,6 +286,7 @@ def test_successful_submission_discards_backup_only_after_health_check(tmp_path,
         "setup_service_config",
         lambda path: ({"name": "poc"}, {SC.FLARE_SERVER: "server", SC.FLARE_CLIENTS: ["site-1"]}),
     )
+    monkeypatch.setattr(poc_env_module, "_wait_for_poc_system_ready", verify_registered)
     env = PocEnv()
     monkeypatch.setattr(env, "_wait_for_services_ready", verify_ready)
     monkeypatch.setattr(env, "_get_session_manager", lambda: SimpleNamespace(submit_job=submit_job))
@@ -314,6 +320,7 @@ def test_failed_submission_restores_retained_workspace(tmp_path, monkeypatch):
         "setup_service_config",
         lambda path: ({"name": "poc"}, {SC.FLARE_SERVER: "server", SC.FLARE_CLIENTS: ["site-1"]}),
     )
+    monkeypatch.setattr(poc_env_module, "_wait_for_poc_system_ready", lambda *args, **kwargs: True)
     env = PocEnv()
     monkeypatch.setattr(env, "_wait_for_services_ready", lambda *args, **kwargs: None)
     monkeypatch.setattr(
@@ -341,6 +348,27 @@ def test_wait_for_services_ready_rejects_an_exited_client(monkeypatch):
 
     with pytest.raises(RuntimeError, match="not running: site-1"):
         env._wait_for_services_ready({"name": "poc"}, {SC.FLARE_SERVER: "server", SC.FLARE_CLIENTS: ["site-1"]})
+
+
+def test_running_services_uses_docker_container_state(monkeypatch):
+    import nvflare.recipe.poc_env as poc_env_module
+
+    inspected = []
+
+    def inspect_container(command, **kwargs):
+        inspected.append(command)
+        running = command[-1] != "site-1"
+        return SimpleNamespace(returncode=0, stdout=f"{str(running).lower()}\n")
+
+    monkeypatch.setattr(poc_env_module.subprocess, "run", inspect_container)
+    service_config = {
+        SC.FLARE_SERVER: "server",
+        SC.FLARE_CLIENTS: ["site-1", "site-2"],
+        SC.IS_DOCKER_RUN: True,
+    }
+
+    assert PocEnv._running_services({"name": "poc"}, service_config, "/unused") == ["server", "site-2"]
+    assert [command[-1] for command in inspected] == ["server", "site-1", "site-2"]
 
 
 @patch("nvflare.recipe.poc_env.get_poc_workspace")

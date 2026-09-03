@@ -14,6 +14,7 @@
 
 import os
 import shutil
+import subprocess
 import threading
 import time
 import uuid
@@ -33,6 +34,7 @@ from nvflare.tool.poc.poc_commands import (
     _is_live_pid_file,
     _start_poc,
     _stop_poc,
+    _wait_for_poc_system_ready,
     get_poc_workspace,
     get_prod_dir,
     is_poc_running,
@@ -175,11 +177,29 @@ class PocEnv(ExecEnv):
         os.replace(backup, self.poc_workspace)
 
     @staticmethod
+    def _is_docker_service_running(service_name: str) -> bool:
+        """Return whether Docker reports the named POC container as running."""
+        try:
+            result = subprocess.run(
+                ["docker", "inspect", "--format", "{{.State.Running}}", service_name],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return False
+        return result.returncode == 0 and result.stdout.strip().lower() == "true"
+
+    @staticmethod
     def _running_services(project_config: dict, service_config: dict, poc_workspace: str) -> list[str]:
         """Return managed POC services whose local process is still alive."""
+        service_names = [service_config[SC.FLARE_SERVER], *service_config.get(SC.FLARE_CLIENTS, [])]
+        if service_config.get(SC.IS_DOCKER_RUN):
+            return [name for name in service_names if PocEnv._is_docker_service_running(name)]
+
         project_name = project_config.get("name")
         prod_dir = get_prod_dir(poc_workspace, project_name)
-        service_names = [service_config[SC.FLARE_SERVER], *service_config.get(SC.FLARE_CLIENTS, [])]
         running = []
         for service_name in service_names:
             service_dir = os.path.join(prod_dir, service_name)
@@ -268,9 +288,19 @@ class PocEnv(ExecEnv):
             )
             project_config, service_config = setup_service_config(self.poc_workspace)
             self._wait_for_services_ready(project_config, service_config)
+            if not _wait_for_poc_system_ready(
+                self.poc_workspace,
+                project_config,
+                service_config,
+                services_list=[],
+                excluded=[self.username],
+                timeout_in_sec=POC_START_READY_TIMEOUT,
+            ):
+                raise RuntimeError("POC services were started but no server or clients were selected for readiness")
             # Successful submission proves that the admin connection is ready,
-            # in addition to the local process-health check above. Keep the
-            # retained workspace backup until both checks have passed.
+            # in addition to the process/container and client-registration
+            # checks above. Keep the retained workspace backup until all checks
+            # and submission have passed.
             job_id = self._get_session_manager().submit_job(job)
         except BaseException:
             if self._check_poc_running():
@@ -345,7 +375,9 @@ class PocEnv(ExecEnv):
             # the server exited during startup, stop any surviving local client
             # processes directly so the workspace can be restored safely.
             services_list = []
-            if not is_poc_running(self.poc_workspace, service_config, project_config):
+            if service_config.get(SC.IS_DOCKER_RUN) or not is_poc_running(
+                self.poc_workspace, service_config, project_config
+            ):
                 services_list = self._running_services(project_config, service_config, self.poc_workspace)
             _stop_poc(
                 poc_workspace=self.poc_workspace,
