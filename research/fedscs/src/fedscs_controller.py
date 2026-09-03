@@ -2,9 +2,10 @@ import time
 
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.app_constant import AppConstants
-from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
-from nvflare.app_common.workflows.fedavg import FedAvg
-from nvflare.app_common.workflows.fedavg import center_message
+from nvflare.app_common.aggregators.weighted_aggregation_helper import (
+    WeightedAggregationHelper,
+)
+from nvflare.app_common.workflows.fedavg import FedAvg, center_message
 from nvflare.app_common.utils.fedprox_utils import set_fedprox_metadata
 from nvflare.app_common.utils.tensor_disk_offload_context import (
     cleanup_tensor_disk_offload,
@@ -16,8 +17,8 @@ from nvflare.app_common.app_event_type import AppEventType
 class FedSCS(FedAvg):
     """FedSCS controller.
 
-    Reuses FedAvg orchestration while using FedSCSAggregator
-    for model aggregation.
+    Reuses FedAvg workflow orchestration while using
+    FedSCSAggregator for model aggregation.
     """
 
     def run(self) -> None:
@@ -30,10 +31,13 @@ class FedSCS(FedAvg):
                 job_id=self.fl_ctx.get_job_id("job"),
             )
 
-            if self.enable_tensor_disk_offload and not disk_offload_context.applied:
+            if (
+                self.enable_tensor_disk_offload
+                and not disk_offload_context.applied
+            ):
                 self.warning(
-                    "enable_tensor_disk_offload=True but no active cell is available; "
-                    "falling back to in-memory tensor download"
+                    "enable_tensor_disk_offload=True but no active cell is "
+                    "available; falling back to in-memory tensor download"
                 )
 
             self.info(center_message("Start FedSCS."))
@@ -50,6 +54,7 @@ class FedSCS(FedAvg):
                     model = self.model
                 else:
                     model = FLModel(params=self.model)
+
                 self.info("Using provided model")
             else:
                 model = self.load_model()
@@ -90,7 +95,17 @@ class FedSCS(FedAvg):
                 clients = self.sample_clients(self.num_clients)
 
                 if self.aggregator:
+                    # Reset all round-specific aggregation state.
                     self.aggregator.reset_stats()
+
+                    # Provide the round-start global model to the
+                    # custom FedSCS aggregator. This is required so
+                    # that client updates can be computed as:
+                    #
+                    #     delta_i = client_model_i - global_model
+                    #
+                    # before clipping and FedSCS scoring.
+                    self.aggregator.load_model(model)
                 else:
                     self._aggr_helper = WeightedAggregationHelper(
                         exclude_vars=self.exclude_vars
@@ -103,7 +118,10 @@ class FedSCS(FedAvg):
                 self._params_type = None
                 self._site_metric_weights = {}
 
-                set_fedprox_metadata(model, self.fedprox_mu)
+                set_fedprox_metadata(
+                    model,
+                    self.fedprox_mu,
+                )
 
                 self.send_model(
                     task_name=self.task_name,
@@ -114,13 +132,21 @@ class FedSCS(FedAvg):
 
                 while self.get_num_standing_tasks():
                     if self.abort_signal.triggered:
-                        self.info("Abort signal triggered. Finishing FedSCS.")
+                        self.info(
+                            "Abort signal triggered. "
+                            "Finishing FedSCS."
+                        )
                         return
+
                     time.sleep(self._task_check_period)
 
-                self.event(AppEventType.BEFORE_AGGREGATION)
+                self.event(
+                    AppEventType.BEFORE_AGGREGATION
+                )
 
-                aggregate_results = self._get_aggregated_result()
+                aggregate_results = (
+                    self._get_aggregated_result()
+                )
 
                 self.fire_event_with_data(
                     AppEventType.AFTER_AGGREGATION,
@@ -129,20 +155,26 @@ class FedSCS(FedAvg):
                     aggregate_results,
                 )
 
-                model = self.update_model(model, aggregate_results)
+                model = self.update_model(
+                    model,
+                    aggregate_results,
+                )
 
                 if self.stop_condition:
                     self.info(
-                        f"Round {self.current_round} global metrics: {model.metrics}"
+                        f"Round {self.current_round} "
+                        f"global metrics: {model.metrics}"
                     )
 
                     if self.is_curr_model_better(model):
-                        self.info("New best model found.")
+                        self.info(
+                            "New best model found."
+                        )
                         self.save_model(model)
                     elif self.patience:
                         self.info(
                             "No metric improvement, "
-                            f"num of FL rounds without improvement: "
+                            "num of FL rounds without improvement: "
                             f"{self.num_fl_rounds_without_improvement}"
                         )
 
@@ -157,7 +189,9 @@ class FedSCS(FedAvg):
 
                 self._maybe_cleanup_memory()
 
-            self.info(center_message("Finished FedSCS."))
+            self.info(
+                center_message("Finished FedSCS.")
+            )
 
         finally:
             cleanup_tensor_disk_offload(
