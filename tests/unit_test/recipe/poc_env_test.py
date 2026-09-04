@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import os
+import subprocess
 import tempfile
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -45,6 +46,33 @@ def test_poc_env_initialization_with_custom_values(mock_get_workspace):
         assert env.poc_workspace == temp_dir
         assert env.num_clients == 3
         assert env.gpu_ids == [0, 1]
+
+
+@patch("nvflare.recipe.poc_env.get_poc_workspace")
+def test_poc_env_normalizes_workspace_trailing_separator(mock_get_workspace, tmp_path):
+    workspace = tmp_path / "poc-workspace"
+    mock_get_workspace.return_value = f"{workspace}{os.sep}"
+
+    env = PocEnv()
+
+    assert env.poc_workspace == str(workspace)
+
+
+def test_backup_with_normalized_workspace_is_created_as_sibling(tmp_path, monkeypatch):
+    import nvflare.recipe.poc_env as poc_env_module
+
+    workspace = tmp_path / "poc-workspace"
+    workspace.mkdir()
+    (workspace / "prior-result.txt").write_text("old")
+    monkeypatch.setattr(poc_env_module, "get_poc_workspace", lambda: f"{workspace}{os.sep}")
+    env = PocEnv()
+
+    backup = env._backup_existing_workspace()
+
+    assert backup is not None
+    assert os.path.dirname(backup) == str(tmp_path)
+    assert os.path.basename(backup).startswith("poc-workspace.nvflare-recipe-backup-")
+    assert os.path.exists(os.path.join(backup, "prior-result.txt"))
 
 
 def test_poc_env_validation():
@@ -114,6 +142,26 @@ def test_deploy_preflight_failure_does_not_start_lifecycle(mock_collect_non_loca
 
     assert env.deployment_started is False
     assert env.workspace_owned is False
+
+
+def test_deploy_rejects_project_config_inside_workspace_before_replacement(tmp_path, monkeypatch):
+    import nvflare.recipe.poc_env as poc_env_module
+
+    workspace = tmp_path / "poc-workspace"
+    workspace.mkdir()
+    project_conf = workspace / "project.yml"
+    project_conf.write_text("name: retained")
+    monkeypatch.setattr(poc_env_module, "get_poc_workspace", lambda: str(workspace))
+    monkeypatch.setattr(poc_env_module, "collect_non_local_scripts", lambda job: [])
+    env = PocEnv(project_conf_path=str(project_conf))
+
+    with pytest.raises(ValueError, match="project_conf_path must be outside"):
+        env.deploy(object())
+
+    assert env.deployment_started is False
+    assert env.workspace_owned is False
+    assert project_conf.read_text() == "name: retained"
+    assert not list(tmp_path.glob("poc-workspace.nvflare-recipe-backup-*"))
 
 
 @patch("nvflare.recipe.poc_env.get_poc_workspace")
@@ -391,6 +439,68 @@ def test_docker_liveness_honors_poc_socket_override(monkeypatch):
     assert command[-1] == "site-1"
     assert kwargs["env"]["DOCKER_HOST"] == "unix:///run/user/1000/docker.sock"
     assert "DOCKER_CONTEXT" not in kwargs["env"]
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        subprocess.TimeoutExpired(cmd="docker inspect", timeout=5),
+        OSError("docker is unavailable"),
+    ],
+)
+def test_docker_liveness_fails_closed_when_inspection_cannot_run(monkeypatch, failure):
+    import nvflare.recipe.poc_env as poc_env_module
+
+    monkeypatch.setattr(poc_env_module.subprocess, "run", lambda *args, **kwargs: (_ for _ in ()).throw(failure))
+
+    with pytest.raises(RuntimeError, match="Could not determine Docker POC service state"):
+        PocEnv._is_docker_service_running("server")
+
+
+def test_docker_liveness_distinguishes_missing_container_from_inspection_error(monkeypatch):
+    import nvflare.recipe.poc_env as poc_env_module
+
+    missing = SimpleNamespace(returncode=1, stdout="", stderr="Error: No such object: server")
+    monkeypatch.setattr(poc_env_module.subprocess, "run", lambda *args, **kwargs: missing)
+    assert PocEnv._is_docker_service_running("server") is False
+
+    unavailable = SimpleNamespace(returncode=1, stdout="", stderr="Cannot connect to the Docker daemon")
+    monkeypatch.setattr(poc_env_module.subprocess, "run", lambda *args, **kwargs: unavailable)
+    with pytest.raises(RuntimeError, match="Cannot connect to the Docker daemon"):
+        PocEnv._is_docker_service_running("server")
+
+
+def test_deploy_does_not_move_workspace_when_docker_state_is_unknown(tmp_path, monkeypatch):
+    import nvflare.recipe.poc_env as poc_env_module
+
+    workspace = tmp_path / "retained-docker-workspace"
+    workspace.mkdir()
+    retained_result = workspace / "prior-result.txt"
+    retained_result.write_text("keep me")
+    monkeypatch.setattr(poc_env_module, "get_poc_workspace", lambda: str(workspace))
+    monkeypatch.setattr(poc_env_module, "collect_non_local_scripts", lambda job: [])
+    monkeypatch.setattr(
+        poc_env_module,
+        "setup_service_config",
+        lambda path: (
+            {"name": "poc"},
+            {SC.FLARE_SERVER: "server", SC.FLARE_CLIENTS: ["site-1"], SC.IS_DOCKER_RUN: True},
+        ),
+    )
+    monkeypatch.setattr(
+        PocEnv,
+        "_is_docker_service_running",
+        lambda service_name: (_ for _ in ()).throw(RuntimeError("Docker state is unknown")),
+    )
+    env = PocEnv()
+
+    with pytest.raises(RuntimeError, match="Docker state is unknown"):
+        env.deploy(object())
+
+    assert env.deployment_started is False
+    assert env.workspace_owned is False
+    assert retained_result.read_text() == "keep me"
+    assert not list(tmp_path.glob("retained-docker-workspace.nvflare-recipe-backup-*"))
 
 
 @patch("nvflare.recipe.poc_env.get_poc_workspace")

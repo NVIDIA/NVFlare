@@ -139,7 +139,9 @@ class PocEnv(ExecEnv):
 
         self.clients = v.clients
         self.num_clients = len(v.clients) if v.clients is not None else v.num_clients
-        self.poc_workspace = get_poc_workspace()
+        # Keep transactional backups beside the workspace even when the
+        # configured path has a trailing separator.
+        self.poc_workspace = os.path.normpath(get_poc_workspace())
         self.gpu_ids = v.gpu_ids or []
         self.use_he = v.use_he
         self.project_conf_path = v.project_conf_path
@@ -169,6 +171,24 @@ class PocEnv(ExecEnv):
         os.replace(self.poc_workspace, backup)
         return backup
 
+    def _validate_project_conf_location(self) -> None:
+        """Reject a project config that workspace replacement would move away."""
+        if not self.project_conf_path:
+            return
+
+        workspace = os.path.abspath(self.poc_workspace)
+        project_conf = os.path.abspath(os.path.expanduser(self.project_conf_path))
+        resolved_workspace = os.path.realpath(workspace)
+        resolved_project_conf = os.path.realpath(project_conf)
+        if (
+            os.path.commonpath([workspace, project_conf]) == workspace
+            or os.path.commonpath([resolved_workspace, resolved_project_conf]) == resolved_workspace
+        ):
+            raise ValueError(
+                f"project_conf_path must be outside the POC workspace {self.poc_workspace!r}; "
+                "the workspace is replaced during deployment"
+            )
+
     def _restore_existing_workspace(self, backup: str) -> None:
         """Discard a partial replacement and atomically restore the retained workspace."""
         if os.path.isdir(self.poc_workspace) and not os.path.islink(self.poc_workspace):
@@ -189,9 +209,23 @@ class PocEnv(ExecEnv):
                 check=False,
                 env=_docker_cli_env(),
             )
-        except (OSError, subprocess.TimeoutExpired):
+        except (OSError, subprocess.TimeoutExpired) as error:
+            raise RuntimeError(f"Could not determine Docker POC service state for {service_name!r}") from error
+
+        state = result.stdout.strip().lower()
+        if result.returncode == 0 and state in ("true", "false"):
+            return state == "true"
+
+        error_message = (getattr(result, "stderr", "") or result.stdout).strip()
+        if result.returncode != 0 and any(
+            marker in error_message.lower() for marker in ("no such object", "no such container")
+        ):
             return False
-        return result.returncode == 0 and result.stdout.strip().lower() == "true"
+        detail = f": {error_message}" if error_message else ""
+        raise RuntimeError(
+            f"Could not determine Docker POC service state for {service_name!r} "
+            f"(docker inspect exited {result.returncode}){detail}"
+        )
 
     @staticmethod
     def _running_services(project_config: dict, service_config: dict, poc_workspace: str) -> list[str]:
@@ -261,6 +295,8 @@ class PocEnv(ExecEnv):
                 f"The following scripts do not exist locally: {non_local_scripts}. "
                 f"For PocEnv, all scripts must be present on the local machine."
             )
+
+        self._validate_project_conf_location()
 
         if self._check_poc_running():
             # Keep the stopped workspace until fresh provisioning succeeds, so
