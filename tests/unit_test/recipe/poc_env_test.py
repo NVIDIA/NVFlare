@@ -532,6 +532,28 @@ def test_stop_poc(mock_is_running, mock_clean_poc, mock_stop_poc, mock_setup):
     mock_clean_poc.assert_called_once_with(env.poc_workspace)
 
 
+@patch("nvflare.recipe.poc_env.setup_service_config")
+@patch("nvflare.recipe.poc_env._stop_poc")
+@patch("nvflare.recipe.poc_env._clean_poc")
+@patch("nvflare.recipe.poc_env.is_poc_running")
+def test_stop_preserves_workspace_when_service_state_is_unknown(
+    mock_is_running, mock_clean_poc, mock_stop_poc, mock_setup
+):
+    mock_setup.return_value = ({"name": "test"}, {SC.FLARE_SERVER: "server"})
+    mock_is_running.return_value = True
+    env = PocEnv()
+
+    with patch.object(
+        PocEnv,
+        "_running_services",
+        side_effect=[["server"], RuntimeError("Docker inspection unavailable")],
+    ):
+        env.stop(clean_up=True)
+
+    mock_stop_poc.assert_called_once()
+    mock_clean_poc.assert_not_called()
+
+
 @patch("nvflare.recipe.poc_env.SessionManager")
 @patch("nvflare.recipe.poc_env.setup_service_config")
 @patch("nvflare.recipe.poc_env.get_prod_dir")

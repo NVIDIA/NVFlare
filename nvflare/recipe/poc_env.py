@@ -383,8 +383,11 @@ class PocEnv(ExecEnv):
                     if not self._running_services(project_config, service_config, self.poc_workspace):
                         poc_running = False
                         break
-                except Exception:
-                    poc_running = False
+                except Exception as state_error:
+                    self.logger.warning(f"Could not verify whether POC services stopped: {state_error}")
+                    # Preserve the workspace when service state is unknown. It
+                    # contains the configuration needed for manual cleanup.
+                    poc_running = True
                     break
                 time.sleep(1)
                 count += 1
