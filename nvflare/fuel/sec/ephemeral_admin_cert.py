@@ -39,6 +39,7 @@ EPHEMERAL_ADMIN_CERT_CACHE_DIR = "ephemeral_admin_certs"
 EPHEMERAL_ADMIN_CERT_CLIENT_CERT = "client.crt"
 EPHEMERAL_ADMIN_CERT_CLIENT_KEY = "client.key"
 EPHEMERAL_ADMIN_CERT_CACHE_LOCK = ".lock"
+DEFAULT_EPHEMERAL_ADMIN_CERT_RENEWAL_WINDOW = 12 * 60 * 60
 BUILTIN_EPHEMERAL_ADMIN_CERT_PROVIDERS = {
     "step_ca": "nvflare.fuel.sec.step_ca_admin_cert:obtain_step_ca_admin_cert_files",
 }
@@ -55,7 +56,9 @@ class EphemeralAdminCertFiles:
     expires_at: float = 0.0
     temp_dir: Optional[tempfile.TemporaryDirectory] = field(default=None, repr=False)
 
-    def needs_renewal(self, renewal_window: float = 60.0, now: Optional[float] = None) -> bool:
+    def needs_renewal(
+        self, renewal_window: float = DEFAULT_EPHEMERAL_ADMIN_CERT_RENEWAL_WINDOW, now: Optional[float] = None
+    ) -> bool:
         if not self.expires_at:
             return True
         now = time.time() if now is None else now
@@ -281,7 +284,7 @@ def _cache_key(provider: str, provider_config: Mapping, root_ca_file: str) -> st
 
 
 def get_ephemeral_admin_cert_renewal_window(config: Mapping) -> float:
-    renewal_window = config.get("renewal_window", 60.0)
+    renewal_window = config.get("renewal_window", DEFAULT_EPHEMERAL_ADMIN_CERT_RENEWAL_WINDOW)
     if isinstance(renewal_window, bool):
         raise EphemeralAdminCertError("ephemeral_admin_cert.renewal_window must be a finite number")
     try:

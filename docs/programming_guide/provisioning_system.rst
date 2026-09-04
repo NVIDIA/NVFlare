@@ -499,7 +499,7 @@ Example configuration:
       type: admin
       ephemeral_admin_cert:
         provider: step_ca
-        renewal_window: 60
+        renewal_window: 43200
         provider_config:
           ca_url: https://step-ca.example.com
           provisioner: nvflare-admin-oidc
@@ -517,7 +517,11 @@ expiry. Cached certificate material is stored under
 login is required. The returned certificate must chain to ``rootCA.pem``, match
 its private key, contain a valid FLARE organization and admin role, and be valid
 for the current time. If ``cert_ttl`` is omitted, the built-in ``step_ca``
-provider requests ``24h``.
+provider requests ``24h``. The renewal window defaults to 43,200 seconds (12
+hours). FLARE reacquires credentials before signing when the certificate has no
+more than that much validity remaining. This reserves deployment time but does
+not guarantee when the scheduler starts a job; increase both the issuer
+certificate lifetime and renewal window when deployments may be delayed longer.
 
 SSO users can log in to the default study. A ``project_admin`` can explicitly
 add their certificate CN to another study. Declarative certificate-based study

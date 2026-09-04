@@ -62,7 +62,7 @@ participants:
     type: admin
     ephemeral_admin_cert:
       provider: step_ca
-      renewal_window: 60
+      renewal_window: 43200
       provider_config:
         ca_url: https://step-ca.example.com
         provisioner: nvflare-admin-oidc
@@ -150,11 +150,13 @@ organization or role values.
 
 ## Lifetime and Clone Behavior
 
-The built-in provider requests a 24-hour certificate by default. FLARE does not
-perform revocation checks, so disabling a user prevents new issuance but does
-not invalidate an existing certificate. The lifetime must cover expected queue
-and deployment delays because clients verify that the signing certificate is
-still valid when the job is deployed.
+The built-in provider requests a 24-hour certificate by default, and the renewal
+window defaults to 12 hours. Before signing, FLARE reacquires credentials when
+the certificate has 12 hours or less remaining. This reserves time for
+deployment but does not guarantee when the scheduler starts a job. Operators
+must increase both values when queue and deployment delays may exceed 12
+hours. FLARE does not perform revocation checks, so disabling a user prevents
+new issuance but does not invalidate an existing certificate.
 
 `clone_job` copies the original submitter signature without contacting the
 admin client. A clone can therefore become unusable after the original

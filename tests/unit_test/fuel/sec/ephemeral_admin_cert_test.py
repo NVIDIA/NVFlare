@@ -90,6 +90,7 @@ def _make_admin_cert_files(
     role="lead",
     ca=False,
     extra_extensions=None,
+    validity_hours=24,
 ):
     admin_key, admin_pub_key = generate_keys()
     now = datetime.datetime.now(datetime.timezone.utc)
@@ -99,7 +100,7 @@ def _make_admin_cert_files(
         signing_pri_key=signing_key,
         subject_pub_key=admin_pub_key,
         not_valid_before=now - datetime.timedelta(seconds=1),
-        not_valid_after=now + datetime.timedelta(hours=1),
+        not_valid_after=now + datetime.timedelta(hours=validity_hours),
         ca=ca,
         extra_extensions=extra_extensions,
     )
@@ -178,7 +179,7 @@ def test_step_ca_source_invokes_step_and_cert_works_with_existing_flare_paths(mo
             "provider_config": {
                 "ca_url": "https://step-ca.example.com",
                 "provisioner": "nvflare-admin-oidc",
-                "cert_ttl": "1h",
+                "cert_ttl": "24h",
                 "step_bin": str(fake_step),
             },
         },
@@ -343,7 +344,12 @@ def test_ephemeral_admin_cert_cache_reuses_valid_cert(monkeypatch, tmp_path):
 
 def test_ephemeral_admin_cert_rejects_issued_cert_inside_renewal_window(monkeypatch, tmp_path):
     ca_key, _ca_cert, root_ca_path = _make_root_ca(tmp_path)
-    cert_src, key_src = _make_admin_cert_files(tmp_path, signing_key=ca_key, issuer_identity=Identity("root", "nvidia"))
+    cert_src, key_src = _make_admin_cert_files(
+        tmp_path,
+        signing_key=ca_key,
+        issuer_identity=Identity("root", "nvidia"),
+        validity_hours=1,
+    )
     command_log = tmp_path / "commands.jsonl"
     fake_step = _fake_step(monkeypatch, tmp_path, cert_src=cert_src, key_src=key_src, command_log=command_log)
     config = {
@@ -574,6 +580,10 @@ def test_step_ca_source_accepts_ipv6_loopback_http():
 def test_ephemeral_admin_cert_rejects_non_finite_renewal_window(value):
     with pytest.raises(EphemeralAdminCertError, match="finite number"):
         get_ephemeral_admin_cert_renewal_window({"renewal_window": value})
+
+
+def test_ephemeral_admin_cert_uses_twelve_hour_default_renewal_window():
+    assert get_ephemeral_admin_cert_renewal_window({}) == 12 * 60 * 60
 
 
 @pytest.mark.parametrize("value", [True, float("nan"), float("inf"), float("-inf")])
