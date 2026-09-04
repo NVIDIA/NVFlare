@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from types import SimpleNamespace
+
 import pytest
 
 from nvflare.fuel.common.excepts import ConfigError
@@ -84,12 +86,6 @@ def test_admin_api_renews_expiring_ephemeral_cert_and_resets_connection(monkeypa
     for path in (old_key_file, old_cert_file, new_key_file, new_cert_file):
         path.write_text(path.name, encoding="utf-8")
 
-    class _FakeCell:
-        stopped = False
-
-        def stop(self):
-            self.stopped = True
-
     old_files = EphemeralAdminCertFiles(
         client_key=str(old_key_file),
         client_cert=str(old_cert_file),
@@ -101,9 +97,14 @@ def test_admin_api_renews_expiring_ephemeral_cert_and_resets_connection(monkeypa
         expires_at=9999999999.0,
     )
     issued_files = [old_files, new_files]
+    api_ref = {}
 
     def _fake_obtain(config, root_ca_file):
-        return issued_files.pop(0)
+        result = issued_files.pop(0)
+        if result is new_files:
+            assert api_ref["api"].cell is None
+            assert old_cell.stopped
+        return result
 
     monkeypatch.setattr("nvflare.fuel.hci.client.api.obtain_ephemeral_admin_cert_files", _fake_obtain)
     monkeypatch.setattr("nvflare.fuel.hci.client.api.load_cert_file", lambda path: path)
@@ -129,10 +130,19 @@ def test_admin_api_renews_expiring_ephemeral_cert_and_resets_connection(monkeypa
         },
         cmd_modules=[],
     )
+    api_ref["api"] = api
 
     assert api.client_key == str(old_key_file)
     assert api.user_name == "alice@nvidia.com"
     assert api.fl_ctx_mgr.identity_name == "alice@nvidia.com"
+
+    class _FakeCell:
+        stopped = False
+
+        def stop(self):
+            self.stopped = True
+            api._handle_session_expired(SimpleNamespace(payload="expired"), source_cell=self)
+
     old_cell = _FakeCell()
     api.cell = old_cell
     api.aux_runner = object()
@@ -152,6 +162,8 @@ def test_admin_api_renews_expiring_ephemeral_cert_and_resets_connection(monkeypa
     assert not api.server_sess_active
     assert api.token is None
     assert api.login_result is None
+    assert not api.closed
+    assert not api.session_abort_signal.triggered
 
 
 def test_user_login_builds_command_after_identity_renewal(monkeypatch):

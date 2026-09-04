@@ -401,6 +401,12 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             return False
 
         renewing = self.ephemeral_admin_cert_files is not None
+        if renewing:
+            self._reset_cell()
+            self.closed = False
+            self.shutdown_asked = False
+            self.session_expired_reason = None
+            self.session_abort_signal = Signal()
         try:
             new_files = obtain_ephemeral_admin_cert_files(
                 config=self.ephemeral_admin_cert_config,
@@ -417,22 +423,21 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             self.user_name = get_cn_from_cert(cert)
             if renewing:
                 self.fl_ctx_mgr.identity_name = self.user_name
-        if renewing:
-            self._reset_cell()
         return True
 
     def _reset_cell(self):
         self.server_sess_active = False
         self.token = None
         self.login_result = None
+        cell = self.cell
+        self.cell = None
         try:
             self.shutdown_streamer()
         finally:
             try:
-                if self.cell:
-                    self.cell.stop()
+                if cell:
+                    cell.stop()
             finally:
-                self.cell = None
                 self.aux_runner = None
                 self.object_streamer = None
 
@@ -496,6 +501,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             channel=CellChannel.HCI,
             topic="SESSION_EXPIRED",
             cb=self._handle_session_expired,
+            source_cell=self.cell,
         )
 
         NetAgent(self.cell)
@@ -590,7 +596,9 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
     def get_cell(self):
         return self.cell
 
-    def _handle_session_expired(self, message: CellMessage):
+    def _handle_session_expired(self, message: CellMessage, source_cell=None):
+        if source_cell is not None and source_cell is not self.cell:
+            return
         self.debug("received session timeout from server")
         self.session_expired_reason = str(message.payload or "session expired")
         self.session_abort_signal.trigger(self.session_expired_reason)

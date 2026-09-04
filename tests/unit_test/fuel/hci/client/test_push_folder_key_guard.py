@@ -240,6 +240,7 @@ def test_push_folder_reconnects_when_cell_is_missing_after_failed_renewal_reconn
     api = ctx.get_api.return_value
     api.ensure_client_cert_valid = MagicMock(return_value=False)
     api.cell = None
+    api.is_ready.return_value = False
     api.login.return_value = {"status": APIStatus.SUCCESS}
 
     with (
@@ -253,3 +254,41 @@ def test_push_folder_reconnects_when_cell_is_missing_after_failed_renewal_reconn
     assert result == {}
     api.connect.assert_called_once_with()
     api.login.assert_called_once_with()
+
+
+def test_push_folder_retries_login_when_cell_exists_but_session_is_not_ready(tmp_path):
+    from nvflare.fuel.hci.client.api_status import APIStatus
+
+    upload_dir = str(tmp_path / "upload")
+    download_dir = str(tmp_path / "dl")
+    folder_name = "test_job"
+    os.makedirs(os.path.join(upload_dir, folder_name), exist_ok=True)
+    os.makedirs(download_dir, exist_ok=True)
+
+    key_file = tmp_path / "test.key"
+    key_file.write_text("fake key content")
+    module = FileTransferModule(upload_dir=upload_dir, download_dir=download_dir)
+    args, ctx = _make_push_folder_args_and_ctx(str(key_file), "/path/to/cert.crt", folder_name)
+    api = ctx.get_api.return_value
+    api.ensure_client_cert_valid = MagicMock(return_value=False)
+    api.cell = object()
+    api.is_ready.return_value = False
+    api.login.side_effect = [
+        {"status": APIStatus.ERROR_RUNTIME, "details": "temporary login failure"},
+        {"status": APIStatus.SUCCESS},
+    ]
+
+    with (
+        patch("nvflare.fuel.hci.client.file_transfer.load_private_key_file", return_value=MagicMock()),
+        patch("nvflare.fuel.hci.client.file_transfer.sign_folders"),
+        patch("nvflare.fuel.hci.client.file_transfer.zip_directory_to_file"),
+        patch.object(api, "server_execute", return_value={}) as server_execute,
+    ):
+        first_result = module.push_folder(args, ctx)
+        second_result = module.push_folder(args, ctx)
+
+    assert first_result["status"] == APIStatus.ERROR_RUNTIME
+    assert second_result == {}
+    assert api.connect.call_count == 2
+    assert api.login.call_count == 2
+    server_execute.assert_called_once()
