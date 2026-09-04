@@ -287,9 +287,9 @@ class TestRunIntegration:
         # Simulation environment should return None for status
         assert run.get_status() is None
 
-        # Should return workspace path for results
+        # A Run that was not deployed has no completed result for this attempt.
         result = run.get_result()
-        assert result == "/tmp/test_sim/test_job"
+        assert result is None
 
     def test_run_with_poc_env(self):
         """Test Run with actual PocEnv (mocked dependencies)."""

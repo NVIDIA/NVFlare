@@ -58,9 +58,9 @@ class APISpec(ABC):
         """Initializes NVFlare Client API environment.
 
         Args:
-            rank (str): rank of the process for Client API control-path behavior.
-                In distributed training, use the global process rank (for example torchrun's RANK),
-                not the device-local rank used for GPU placement.
+            rank (str): optional global process-rank override for Client API control-path behavior.
+                When omitted, public Client API initialization resolves the distributed global rank.
+                Never use a device-local rank for this value.
 
         Returns:
             None

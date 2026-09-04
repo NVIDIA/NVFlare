@@ -19,7 +19,7 @@ are handled by the trainer-side Client API.
 """
 
 import math
-from typing import Optional, Union
+from typing import Optional
 
 from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
 from nvflare.apis.dxo import DXO
@@ -40,6 +40,7 @@ from nvflare.client.converter_utils import validate_format_pair
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.private.privacy_manager import Scope
 from nvflare.security.logging import secure_format_exception, secure_format_traceback
+from nvflare.utils.argv_utils import CommandArg, normalize_argv
 
 
 class ExecutionMode:
@@ -68,9 +69,9 @@ class ClientAPIExecutor(Executor):
     def __init__(
         self,
         execution_mode: str,
-        command: Optional[Union[str, list[str]]] = None,
+        command: Optional[CommandArg] = None,
         task_script_path: Optional[str] = None,
-        task_script_args: str = "",
+        task_script_args: Optional[CommandArg] = "",
         launch_once: bool = _DEFAULT_LAUNCH_ONCE,
         launch_timeout: Optional[float] = _DEFAULT_LAUNCH_TIMEOUT,
         shutdown_timeout: Optional[float] = None,
@@ -108,7 +109,8 @@ class ClientAPIExecutor(Executor):
             task_script_path (Optional[str]): in_process only. Path to the user training script the
                 in_process backend runs via TaskScriptRunner. An empty/whitespace-only string is
                 treated as unset. (The in_process backend validates presence and ".py" suffix.)
-            task_script_args (str): in_process only. Arguments appended to task_script_path.
+            task_script_args (Union[str, list[str]]): in_process only. Arguments appended to
+                task_script_path. Pre-tokenized argv preserves exact boundaries without shell parsing.
             launch_once (bool): external_process only. Launch the trainer once per job (default)
                 vs once per task.
             launch_timeout (Optional[float]): external_process only. Bound for the launched
@@ -178,6 +180,7 @@ class ClientAPIExecutor(Executor):
         # Normalize empty entry points before mode-specific validation.
         command = self._normalize_command(command)
         task_script_path = self._normalize_optional_str(task_script_path)
+        task_script_args = self._normalize_script_args(task_script_args)
 
         is_in_process = execution_mode == ExecutionMode.IN_PROCESS
         is_external = execution_mode == ExecutionMode.EXTERNAL_PROCESS
@@ -484,18 +487,20 @@ class ClientAPIExecutor(Executor):
         return value
 
     @staticmethod
-    def _normalize_command(command: Optional[Union[str, list[str]]]) -> Optional[Union[str, list[str]]]:
-        if isinstance(command, str) or command is None:
-            return ClientAPIExecutor._normalize_optional_str(command)
-        if not isinstance(command, list):
-            raise ValueError(f"command must be a string, list of strings, or None, but got {type(command).__name__}")
-        if not command:
+    def _normalize_command(command: Optional[CommandArg]) -> Optional[CommandArg]:
+        normalized = normalize_argv(command, "command", allow_none=True)
+        if isinstance(normalized, str) or normalized is None:
+            return ClientAPIExecutor._normalize_optional_str(normalized)
+        if not normalized:
             return None
-        if not all(isinstance(arg, str) for arg in command):
-            raise ValueError("command argv must contain only strings")
-        if not command[0].strip():
+        if not normalized[0].strip():
             raise ValueError("command argv must start with a non-empty executable")
-        return list(command)
+        return normalized
+
+    @staticmethod
+    def _normalize_script_args(script_args: Optional[CommandArg]) -> CommandArg:
+        normalized = normalize_argv(script_args, "task_script_args", allow_none=True)
+        return "" if normalized is None else normalized
 
     @staticmethod
     def _wrong_mode_error(arg_name: str, value, valid_modes: str, execution_mode: str) -> ValueError:

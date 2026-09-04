@@ -23,6 +23,7 @@ from typing import Mapping, Optional
 from nvflare.app_common.abstract.fl_model import FLModel, MetaKey
 from nvflare.client import api as flare_api
 from nvflare.client.config import ConfigKey, ExchangeFormat
+from nvflare.client.rank import environment_declares_multirank, environment_declares_single_client_api_process
 from nvflare.fuel.utils import fobs
 
 from . import utils
@@ -161,10 +162,10 @@ def patch(
     resolved_rank = _resolve_rank(trainer)
     dist = _torch_dist()
     if dist is None:
-        if _env_declares_multirank():
+        if environment_declares_multirank():
             raise RuntimeError(
-                "HuggingFace Client API detected WORLD_SIZE or LOCAL_WORLD_SIZE > 1, but torch.distributed is not "
-                "initialized. Initialize the distributed process group before flare.patch(trainer)."
+                "HuggingFace Client API detected a multi-process launch, but torch.distributed is not initialized. "
+                "Initialize the distributed process group before flare.patch(trainer)."
             )
         if resolved_rank > 0:
             raise RuntimeError(
@@ -244,6 +245,18 @@ def _validate_repatch_settings(
 
 
 def _resolve_rank(trainer) -> int:
+    if environment_declares_single_client_api_process():
+        dist = _torch_dist()
+        if dist is not None:
+            torch_rank = int(dist.get_rank())
+            if torch_rank != 0:
+                raise RuntimeError(
+                    "HuggingFace Client API single-process marker designates this process as Client API rank 0, "
+                    f"but torch.distributed initialized it as Torch rank {torch_rank}. Set the marker only for "
+                    "Torch rank 0 or remove it from the distributed trainer environment."
+                )
+        return 0
+
     dist = _torch_dist()
     if dist is not None:
         return int(dist.get_rank())
@@ -274,16 +287,6 @@ def _world_size() -> int:
     if dist is None:
         return 1
     return int(dist.get_world_size())
-
-
-def _env_declares_multirank() -> bool:
-    for name in ("WORLD_SIZE", "LOCAL_WORLD_SIZE"):
-        try:
-            if int(os.environ.get(name, "1") or 1) > 1:
-                return True
-        except (TypeError, ValueError):
-            continue
-    return False
 
 
 def _transformers_version_is_verified() -> bool:
