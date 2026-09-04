@@ -119,8 +119,8 @@ issuer generates an RSA keypair and a leaf certificate:
 - a job-ID extension identifying the job
 - `notBefore` backdated a few minutes to tolerate clock skew between the
   issuing server and the sites that validate the cert seconds later
-- `notAfter` = issue time + `job_cert_valid_days` (server startup config
-  `fed_server.json`, `--set`, or `NVFLARE_JOB_CERT_VALID_DAYS`; default 30),
+- `notAfter` = issue time + `job_cert_valid_days` (server `fed_server.json` or
+  `resources.json`, `--set`, or `NVFLARE_JOB_CERT_VALID_DAYS`; default 30),
   clamped to the job CA's own expiry. There is no renewal, so this is the
   maximum job duration; set it for the longest job the server runs.
 
@@ -176,10 +176,12 @@ separate "job credential" configuration key. `ssl_root_cert` remains
 `rootCA.pem`.
 
 - `BaseServer.create_job_cell()` and `FederatedClientBase._create_cell()` use
-  the job credential for the SJ/CJ cell. The CJ also pins its server-role
-  credential to the job cert; otherwise, on listener-enabled sites, the site's
-  server cert would be back-filled from the startup kit and preferred by
-  message-level crypto.
+  the job credential for the SJ/CJ cell, in both TLS roles (client and server
+  certificate). Cellnet back-fills a missing role from `client.crt` /
+  `server.crt` next to `rootCA.pem`; pinning both roles means no site
+  certificate found in the startup directory can ever be presented by a job
+  cell, in TLS or in message-level crypto. The Kubernetes bootstrap cell does
+  the same.
 - The startup content-integrity check (`signature.json` kits) no longer
   requires the site private key in job processes.
 - The job process never registers with the server (it receives the CP's auth
@@ -248,6 +250,15 @@ credential.
 | Kubernetes | startup Secret without `*.key` | `NVFLARE_JOB_CERT` / `NVFLARE_JOB_KEY` in the per-pod credential Secret (`secretKeyRef` env) |
 | Slurm (apptainer / pyxis) | keyless staged copy under the 0700 job dir, bound at `<workspace>/startup` | run dir bind |
 | Slurm (`sandbox: none`) | bare host process — no isolation possible | run dir |
+
+Docker and Slurm job processes reach the CP's internal listener over the
+network. Job binding exists only on mTLS connections, and a clear-text listener
+lets any process that can reach it claim any job FQCN, so in secure mode both
+launchers refuse a parent link that is not mTLS (the client needs a
+`listening_host` with scheme `stcp` and connection security `mtls`). The
+shared-file parent transport is exempt: it carries no certificates and is
+guarded by filesystem permissions, like the in-process launcher's local link.
+Kubernetes job pods connect to the parent's external `stcp` listener with mTLS.
 
 Kubernetes needs the environment route because the pod's bootstrap cell, which
 downloads the run directory, exists before the run directory does. The job

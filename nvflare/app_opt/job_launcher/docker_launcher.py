@@ -86,7 +86,7 @@ _RESERVED_WORKSPACE_CHILD_NAMES = {
 _RESERVED_DEFAULT_KWARGS = RESERVED_DOCKER_KWARGS
 
 
-def _rewrite_parent_url(job_args: dict, site_name: str) -> tuple[dict, str | None]:
+def _rewrite_parent_url(job_args: dict, site_name: str, secure_mode: bool = False) -> tuple[dict, str | None]:
     """Rewrite a parent URL to Docker DNS while preserving its transport security."""
     entry = job_args.get(JobProcessArgs.PARENT_URL)
     if not entry:
@@ -123,6 +123,11 @@ def _rewrite_parent_url(job_args: dict, site_name: str) -> tuple[dict, str | Non
         raise ValueError(f"invalid parent URL {original_url!r}") from e
     if parsed.scheme not in ("tcp", "stcp") or not host or not port:
         raise ValueError(f"parent URL must use {SHARED_FILE_SCHEME}, tcp, or stcp with a host and port")
+    if secure_mode and connection_security != ConnectionSecurity.MTLS:
+        raise ValueError(
+            "secure mode requires an mTLS parent connection for Docker jobs: configure the client's internal "
+            "listener (listening_host) with scheme stcp and connection security mtls"
+        )
     if (parsed.scheme == "stcp") != (connection_security == ConnectionSecurity.MTLS):
         raise ValueError("parent URL scheme does not match parent connection security")
 
@@ -605,7 +610,9 @@ class DockerJobLauncher(JobLauncherSpec):
         # Derive parent_url at runtime: site name (= container name on Docker DNS) + port
         # from the original PARENT_URL in job_args. This avoids baking parent_url into
         # resources.json at provision time.
-        job_args, file_parent_dir = _rewrite_parent_url(job_args, site_name)
+        job_args, file_parent_dir = _rewrite_parent_url(
+            job_args, site_name, secure_mode=fl_ctx.get_prop(FLContextKey.SECURE_MODE, False)
+        )
         if file_parent_dir and file_parent_dir.startswith(self.WORKSPACE_MOUNT):
             raise ValueError(f"shared-file parent directory {file_parent_dir} overlaps the container workspace mount")
 

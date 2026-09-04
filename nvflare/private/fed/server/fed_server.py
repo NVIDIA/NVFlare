@@ -635,10 +635,13 @@ class FederatedServer(BaseServer):
             ssl_cert = server_config[SecureTrainConst.SSL_CERT]
             private_key = server_config[SecureTrainConst.PRIVATE_KEY]
 
+            # both TLS roles use the job credential so directory-based back-fill never picks a site cert
             credentials = {
                 DriverParams.CA_CERT.value: root_cert,
                 DriverParams.SERVER_CERT.value: ssl_cert,
                 DriverParams.SERVER_KEY.value: private_key,
+                DriverParams.CLIENT_CERT.value: ssl_cert,
+                DriverParams.CLIENT_KEY.value: private_key,
             }
 
             conn_security = server_config.get(ConnPropKey.CONNECTION_SECURITY)

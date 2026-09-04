@@ -110,6 +110,7 @@ setting, resolved in this order:
 #. ``--set job_cert_valid_days=<days>`` on the server start command;
 #. a top-level ``"job_cert_valid_days": <days>`` entry in the server's
    ``fed_server.json``;
+#. the same entry in the server's ``resources.json``;
 #. the environment variable ``NVFLARE_JOB_CERT_VALID_DAYS``.
 
 The job CA itself is valid for 360 days, bounded by the root CA. When it has
@@ -123,6 +124,16 @@ Job launchers
 Job processes never need a site private key, so the launchers do not give them
 one. In secure mode each launcher refuses to start a job that has no job
 credential instead of falling back to site certificates.
+
+Docker and Slurm job processes connect to the client's internal listener over
+the network. The job binding described above exists only on an mTLS link, so in
+secure mode both launchers refuse a clear-text parent connection with ``secure
+mode requires an mTLS parent connection``. Give the client a ``listening_host``
+in ``project.yml`` with ``scheme: stcp`` and ``conn_sec: mtls`` (a client
+without one gets the default clear-text ``tcp`` listener). Kubernetes job pods
+already connect to the parent's external ``stcp`` listener with mTLS. The
+shared-file parent transport is exempt: it carries no certificates and relies on
+filesystem permissions.
 
 .. list-table::
    :header-rows: 1
@@ -229,6 +240,10 @@ Failures are recorded in the job's ``job_deploy_detail`` (shown by
    * - ``has no job credential; secure jobs run only on per-job certificates``
        (Docker, Kubernetes, or Slurm launcher)
      - Same cause as above.
+   * - ``secure mode requires an mTLS parent connection`` (Docker or Slurm
+       launcher)
+     - The client's internal listener is clear text. Provision the client with
+       a ``listening_host`` using ``scheme: stcp`` and ``conn_sec: mtls``.
    * - ``authenticated with a certificate bound to job '...' but claimed
        endpoint ... is not part of that job``
      - A process presented another job's certificate. This does not happen in

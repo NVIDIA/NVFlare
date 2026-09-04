@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import os
 from contextlib import nullcontext
 from unittest.mock import ANY, MagicMock, call, patch
@@ -19,13 +20,14 @@ from unittest.mock import ANY, MagicMock, call, patch
 import pytest
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import FLContextKey, RunProcessKey
+from nvflare.apis.fl_constant import ConfigVarName, FLContextKey, RunProcessKey, SystemConfigs
 from nvflare.apis.fl_context import FLContextManager
 from nvflare.apis.job_def import JobMetaKey, RunStatus
 from nvflare.apis.job_launcher_spec import JobReturnCode
 from nvflare.apis.utils.event import fire_event_to_components
 from nvflare.app_common.job_schedulers.job_scheduler import DefaultJobScheduler
 from nvflare.fuel.common.exit_codes import ProcessExitCode
+from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.zip_utils import get_all_file_paths
 from nvflare.private.admin_defs import Message, MsgHeader, ReturnCode
 from nvflare.private.fed.server.job_runner import JobRunner, _FinishedJobState
@@ -297,6 +299,20 @@ def test_start_run_sets_job_clients_meta_before_start_client_job(mock_get_bool, 
     runner._start_run(job_id=job.job_id, job=job, client_sites=client_sites, fl_ctx=fl_ctx)
 
     assert seen_job_clients_meta["value"] == [{"name": "site-1"}, {"name": "site-2"}]
+
+
+@pytest.mark.parametrize(
+    ("section", "file_name"),
+    [(SystemConfigs.STARTUP_CONF, "fed_server.json"), (SystemConfigs.RESOURCES_CONF, "resources.json")],
+)
+def test_job_cert_valid_days_read_from_server_config(tmp_path, section, file_name):
+    (tmp_path / file_name).write_text(json.dumps({ConfigVarName.JOB_CERT_VALID_DAYS: 7}))
+    ConfigService.reset()
+    ConfigService.initialize(section_files={section: file_name}, config_path=[str(tmp_path)])
+    try:
+        assert JobRunner(workspace_root=str(tmp_path)).job_cert_valid_days == 7
+    finally:
+        ConfigService.reset()
 
 
 def test_save_workspace_skips_duplicate_missing_sources(tmp_path):

@@ -120,7 +120,9 @@ class JobRunner(FLComponent):
             name=ConfigVarName.CLIENT_OUTCOME_WAIT_TIMEOUT, conf=SystemConfigs.APPLICATION_CONF, default=900.0
         )
         self.job_cert_valid_days = ConfigService.get_int_var(
-            name=ConfigVarName.JOB_CERT_VALID_DAYS, conf=SystemConfigs.APPLICATION_CONF, default=JOB_CERT_VALID_DAYS
+            name=ConfigVarName.JOB_CERT_VALID_DAYS,
+            conf=[SystemConfigs.STARTUP_CONF, SystemConfigs.RESOURCES_CONF],
+            default=JOB_CERT_VALID_DAYS,
         )
         if self.job_cert_valid_days <= 0:
             raise ValueError(f"{ConfigVarName.JOB_CERT_VALID_DAYS} must be positive, got {self.job_cert_valid_days}")

@@ -28,8 +28,8 @@ from nvflare.app_opt.job_launcher.workspace_cell_transfer import (
     ENV_WORKSPACE_TRANSFER_TOKEN,
     WorkspaceTransferManager,
     _bootstrap_auth_identity_map,
+    _bootstrap_credentials,
     _create_bootstrap_cell,
-    _get_bootstrap_tls_pair,
     _hash_file,
     _install_job_cert,
     _wait_for_bootstrap_ready,
@@ -878,27 +878,31 @@ class TestBootstrapAuthIdentityMap:
         assert captured["auth_identity_map"] == {FQCN.ROOT_SERVER: "gcp-server"}
         assert captured["secure"] is True
         job_cert_dir = str(tmp_path / JOB_ID / "job_cert")
-        assert captured["credentials"][DriverParams.CLIENT_CERT.value] == os.path.join(job_cert_dir, "job.crt")
-        assert captured["credentials"][DriverParams.CLIENT_KEY.value] == os.path.join(job_cert_dir, "job.key")
+        for role in (DriverParams.CLIENT_CERT, DriverParams.SERVER_CERT):
+            assert captured["credentials"][role.value] == os.path.join(job_cert_dir, "job.crt")
+        for role in (DriverParams.CLIENT_KEY, DriverParams.SERVER_KEY):
+            assert captured["credentials"][role.value] == os.path.join(job_cert_dir, "job.key")
 
-    def test_bootstrap_tls_pair_uses_job_credential_in_the_peer_role(self, tmp_path):
+    def test_bootstrap_credentials_pin_both_tls_roles_to_job_credential(self, tmp_path):
         run_dir = tmp_path / JOB_ID
         job_crt = run_dir / "job_cert" / "job.crt"
         job_key = run_dir / "job_cert" / "job.key"
         _write_file(str(job_crt), b"job-cert")
         _write_file(str(job_key), b"job-key")
 
-        cert_path, key_path, cert_key, key_key = _get_bootstrap_tls_pair(str(run_dir), "site-1")
+        credentials = _bootstrap_credentials(str(run_dir), "/startup/rootCA.pem")
 
-        assert (cert_path, key_path) == (str(job_crt), str(job_key))
-        assert (cert_key, key_key) == (DriverParams.CLIENT_CERT.value, DriverParams.CLIENT_KEY.value)
+        assert credentials == {
+            DriverParams.CA_CERT.value: "/startup/rootCA.pem",
+            DriverParams.SERVER_CERT.value: str(job_crt),
+            DriverParams.SERVER_KEY.value: str(job_key),
+            DriverParams.CLIENT_CERT.value: str(job_crt),
+            DriverParams.CLIENT_KEY.value: str(job_key),
+        }
 
-        _, _, cert_key, key_key = _get_bootstrap_tls_pair(str(run_dir), FQCN.ROOT_SERVER)
-        assert (cert_key, key_key) == (DriverParams.SERVER_CERT.value, DriverParams.SERVER_KEY.value)
-
-    def test_bootstrap_tls_pair_requires_job_credential(self, tmp_path):
+    def test_bootstrap_credentials_require_job_credential(self, tmp_path):
         with pytest.raises(RuntimeError, match="requires the job credential"):
-            _get_bootstrap_tls_pair(str(tmp_path / JOB_ID), "site-1")
+            _bootstrap_credentials(str(tmp_path / JOB_ID), "/startup/rootCA.pem")
 
     def test_install_job_cert_writes_run_dir(self, tmp_path):
         args = SimpleNamespace(workspace=str(tmp_path), job_id=JOB_ID, job_cert_pem="cert-pem", job_key_pem="key-pem")

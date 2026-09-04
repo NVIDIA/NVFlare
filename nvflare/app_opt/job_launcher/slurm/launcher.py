@@ -468,6 +468,12 @@ class SlurmJobLauncher(JobLauncherSpec):
             internal_port=self.config.internal_port,
         )
         parent_scheme = urlsplit(str(job_args[JobProcessArgs.PARENT_URL][1])).scheme
+        secure_mode = fl_ctx.get_prop(FLContextKey.SECURE_MODE, False)
+        if secure_mode and parent_scheme != SHARED_FILE_SCHEME and process_connection_security != "mtls":
+            raise SlurmLauncherError(
+                "secure mode requires an mTLS parent connection for Slurm jobs: configure the client's internal "
+                "listener (listening_host) with scheme stcp and connection security mtls"
+            )
         if (parent_scheme == "stcp") != (process_connection_security == "mtls"):
             raise SlurmLauncherError("parent URL scheme does not match parent connection security")
 

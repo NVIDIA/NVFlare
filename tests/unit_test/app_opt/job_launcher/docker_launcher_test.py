@@ -804,7 +804,9 @@ class TestDockerJobLauncherLaunchJob:
         container.id = "abc123"
         dc.containers.run.return_value = container
         dc.containers.get.return_value = _make_container("running")
-        fl_ctx, _ = _make_fl_ctx(workspace_obj=workspace_obj, secure_mode=True)
+        fl_ctx, _ = _make_fl_ctx(
+            workspace_obj=workspace_obj, parent_url="stcp://localhost:8002", parent_conn_sec="mtls", secure_mode=True
+        )
 
         launcher.launch_job(_make_job_meta(), fl_ctx)
 
@@ -823,12 +825,27 @@ class TestDockerJobLauncherLaunchJob:
     def test_secure_launch_without_job_credential_is_refused(self, tmp_path):
         launcher = _make_launcher(workspace="/host/workspace")
         dc = launcher._docker_client
-        fl_ctx, _ = _make_fl_ctx(workspace_obj=_make_workspace_obj(run_dir=str(tmp_path / "job-1")), secure_mode=True)
+        fl_ctx, _ = _make_fl_ctx(
+            workspace_obj=_make_workspace_obj(run_dir=str(tmp_path / "job-1")),
+            parent_url="stcp://localhost:8002",
+            parent_conn_sec="mtls",
+            secure_mode=True,
+        )
 
         with pytest.raises(RuntimeError, match="no job credential"):
             launcher.launch_job(_make_job_meta(), fl_ctx)
 
         dc.containers.run.assert_not_called()
+
+    @pytest.mark.parametrize("parent_conn_sec", [None, "clear"])
+    def test_secure_launch_rejects_clear_parent_link(self, parent_conn_sec):
+        launcher = _make_launcher(workspace="/host/workspace")
+        fl_ctx, _ = _make_fl_ctx(parent_url="tcp://localhost:8002", parent_conn_sec=parent_conn_sec, secure_mode=True)
+
+        with pytest.raises(ValueError, match="requires an mTLS parent connection"):
+            launcher.launch_job(_make_job_meta(), fl_ctx)
+
+        launcher._docker_client.containers.run.assert_not_called()
 
     def test_launch_rejects_job_workspace_path_escape(self):
         launcher = _make_launcher(workspace="/host/workspace")

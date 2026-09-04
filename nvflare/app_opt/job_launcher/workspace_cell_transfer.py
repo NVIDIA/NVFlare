@@ -520,8 +520,12 @@ def _get_root_url(args) -> str:
     raise RuntimeError("unable to determine root_url for workspace transfer bootstrap cell")
 
 
-def _get_bootstrap_tls_pair(run_dir: str, owner_fqcn: str) -> tuple[str, str, str, str]:
-    """The job credential, in the TLS role the bootstrap cell plays (server-side jobs dial as a server)."""
+def _bootstrap_credentials(run_dir: str, root_ca: str) -> dict:
+    """TLS credentials of the bootstrap cell: the job credential in both roles.
+
+    Pinning both roles keeps cellnet's directory-based credential back-fill from ever
+    substituting a site certificate found next to rootCA.pem.
+    """
     job_cert = find_job_cert(run_dir)
     if not job_cert:
         raise RuntimeError(
@@ -529,9 +533,13 @@ def _get_bootstrap_tls_pair(run_dir: str, owner_fqcn: str) -> tuple[str, str, st
             "secure jobs run only on per-job certificates"
         )
     cert_path, key_path = job_cert
-    if FQCN.get_root(owner_fqcn) == FQCN.ROOT_SERVER:
-        return cert_path, key_path, DriverParams.SERVER_CERT.value, DriverParams.SERVER_KEY.value
-    return cert_path, key_path, DriverParams.CLIENT_CERT.value, DriverParams.CLIENT_KEY.value
+    return {
+        DriverParams.CA_CERT.value: root_ca,
+        DriverParams.SERVER_CERT.value: cert_path,
+        DriverParams.SERVER_KEY.value: key_path,
+        DriverParams.CLIENT_CERT.value: cert_path,
+        DriverParams.CLIENT_KEY.value: key_path,
+    }
 
 
 def _load_startup_json(startup_dir: str, filename: str) -> dict | None:
@@ -596,14 +604,7 @@ def _create_bootstrap_cell(args, owner_fqcn: str, secure_mode: bool) -> tuple[Ce
         root_ca = os.path.join(startup_dir, "rootCA.pem")
         if not os.path.exists(root_ca):
             raise RuntimeError(f"workspace transfer requires rootCA.pem in startup dir: {startup_dir}")
-        cert_path, key_path, cert_key, key_key = _get_bootstrap_tls_pair(
-            _run_dir(args.workspace, args.job_id), owner_fqcn
-        )
-        credentials = {
-            DriverParams.CA_CERT.value: root_ca,
-            cert_key: cert_path,
-            key_key: key_path,
-        }
+        credentials = _bootstrap_credentials(_run_dir(args.workspace, args.job_id), root_ca)
         auth_identity_map = _bootstrap_auth_identity_map(startup_dir)
 
     parent_resources = {}
