@@ -1,0 +1,14 @@
+# FedReady research dependencies. Install NVFlare from this checkout while
+# 2.9 is under development, as described in README.md.
+
+# Federated orchestration
+nvflare[PT]~=2.9.0rc
+
+# Data parsing, extraction, and generated-training fixtures
+numpy>=1.24.0
+pillow>=10.0.0
+
+# Generated MONAI/NVFlare training packages
+monai>=1.4.0
+torch>=2.0.0
+tensorboard>=2.20.0,<3

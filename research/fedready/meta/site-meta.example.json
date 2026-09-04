@@ -1,0 +1,161 @@
+{
+  "client_count": 39,
+  "clients": [
+    {
+      "client_id": "DRISHTI_GS",
+      "data_path": "data/DRISHTI_GS"
+    },
+    {
+      "client_id": "STARE",
+      "data_path": "data/STARE"
+    },
+    {
+      "client_id": "IDRID",
+      "data_path": "data/IDRID"
+    },
+    {
+      "client_id": "RIMONE",
+      "data_path": "data/RIMONE"
+    },
+    {
+      "client_id": "REFUGE",
+      "data_path": "data/REFUGE"
+    },
+    {
+      "client_id": "CHASE_DB1",
+      "data_path": "data/CHASE_DB1"
+    },
+    {
+      "client_id": "E_OPHTHA",
+      "data_path": "data/E_OPHTHA"
+    },
+    {
+      "client_id": "LES_AV",
+      "data_path": "data/LES_AV"
+    },
+    {
+      "client_id": "RIGA",
+      "data_path": "data/RIGA"
+    },
+    {
+      "client_id": "MESSIDOR",
+      "data_path": "data/MESSIDOR"
+    },
+    {
+      "client_id": "DRIVE",
+      "data_path": "data/DRIVE"
+    },
+    {
+      "client_id": "ORIGA",
+      "data_path": "data/ORIGA"
+    },
+    {
+      "client_id": "ODIR_5K",
+      "data_path": "data/ODIR_5K"
+    },
+    {
+      "client_id": "RFMID",
+      "data_path": "data/RFMID"
+    },
+    {
+      "client_id": "MESSIDOR_2_DF",
+      "data_path": "data/MESSIDOR_2_DF"
+    },
+    {
+      "client_id": "RETINA_BLOOD_VESSEL_SEGMENTATION_DATASET",
+      "data_path": "data/RETINA_BLOOD_VESSEL_SEGMENTATION_DATASET"
+    },
+    {
+      "client_id": "DDR_DATASET",
+      "data_path": "data/DDR_DATASET"
+    },
+    {
+      "client_id": "HYPERTENSIVE_RETINOPATHY",
+      "data_path": "data/HYPERTENSIVE_RETINOPATHY"
+    },
+    {
+      "client_id": "SUSTECH_PLUS_SYSU_DATASET",
+      "data_path": "data/SUSTECH_PLUS_SYSU_DATASET"
+    },
+    {
+      "client_id": "RITE",
+      "data_path": "data/RITE"
+    },
+    {
+      "client_id": "CLAHE_PLUS_ESRGAN_SPLIT_FD",
+      "data_path": "data/CLAHE_PLUS_ESRGAN_SPLIT_FD"
+    },
+    {
+      "client_id": "RETINA_FUNDUS_DATASET_CHASE_DB1_DRIVE",
+      "data_path": "data/RETINA_FUNDUS_DATASET_CHASE_DB1_DRIVE"
+    },
+    {
+      "client_id": "CATARACT_CLASSIFICATION_DATASET",
+      "data_path": "data/CATARACT_CLASSIFICATION_DATASET"
+    },
+    {
+      "client_id": "MURED",
+      "data_path": "data/MURED"
+    },
+    {
+      "client_id": "ROFT",
+      "data_path": "data/ROFT"
+    },
+    {
+      "client_id": "EYE_DISEASE_IMAGE_DATASET",
+      "data_path": "data/EYE_DISEASE_IMAGE_DATASET"
+    },
+    {
+      "client_id": "FIVES",
+      "data_path": "data/FIVES"
+    },
+    {
+      "client_id": "AMDP_DATASET",
+      "data_path": "data/AMDP_DATASET"
+    },
+    {
+      "client_id": "SMDG",
+      "data_path": "data/SMDG"
+    },
+    {
+      "client_id": "OCULAR_TOXOPLASMOSIS_DATASET",
+      "data_path": "data/OCULAR_TOXOPLASMOSIS_DATASET"
+    },
+    {
+      "client_id": "ONH_SEGMENTATION_DATASET",
+      "data_path": "data/ONH_SEGMENTATION_DATASET"
+    },
+    {
+      "client_id": "DRHAGIS_DATASET",
+      "data_path": "data/DRHAGIS_DATASET"
+    },
+    {
+      "client_id": "CATTLE_RETINAL_FUNDUS_IMAGES",
+      "data_path": "data/CATTLE_RETINAL_FUNDUS_IMAGES"
+    },
+    {
+      "client_id": "PREPROCESSED_EYE_DISEASES_FUNDUS_IMAGES",
+      "data_path": "data/PREPROCESSED_EYE_DISEASES_FUNDUS_IMAGES"
+    },
+    {
+      "client_id": "RETINA_FUNDUS_IMAGE_REGISTRATION_DATASET_FIRE",
+      "data_path": "data/RETINA_FUNDUS_IMAGE_REGISTRATION_DATASET_FIRE"
+    },
+    {
+      "client_id": "1000_FUNDUS_IMAGES_WITH_39_CATEGORIES",
+      "data_path": "data/1000_FUNDUS_IMAGES_WITH_39_CATEGORIES"
+    },
+    {
+      "client_id": "PAPILA_RETINAL_FUNDUS_IMAGES_DATASET",
+      "data_path": "data/PAPILA_RETINAL_FUNDUS_IMAGES_DATASET"
+    },
+    {
+      "client_id": "DIARETDB1",
+      "data_path": "data/DIARETDB1"
+    },
+    {
+      "client_id": "AIROGS",
+      "data_path": "data/AIROGS"
+    }
+  ]
+}
