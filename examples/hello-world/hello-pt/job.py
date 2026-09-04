@@ -1,4 +1,4 @@
-# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025-2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,85 +11,93 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""
-This code show to use NVIDIA FLARE Job Recipe to connect both Federated learning client and server algorithm
-and run it under different environments
-"""
+"""Run the Hello PyTorch FedAvg job in an NVFLARE simulation."""
+
 import argparse
 
-from model import SimpleNetwork
+from model import create_model
+from prepare_data import DATASET_CHOICES, DATASET_PATH, DEFAULT_DATASET
 
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
-from nvflare.recipe import SimEnv, add_experiment_tracking
-from nvflare.recipe.utils import add_cross_site_evaluation
+from nvflare.recipe import SimEnv, add_final_global_evaluation
+
+DEFAULT_NUM_CLIENTS = 2
+DEFAULT_NUM_ROUNDS = 3
+EXPORT_HELP = """NVFlare Recipe export options:
+  --export                    Export the job instead of running it.
+  --export-dir EXPORT_DIR     Parent directory for the exported job (default: ./fl_job).
+"""
 
 
-def define_parser():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--n_clients", type=int, default=2)
-    parser.add_argument("--num_rounds", type=int, default=2)
-    parser.add_argument("--batch_size", type=int, default=16)
-    parser.add_argument("--epochs", type=int, default=2)
-    parser.add_argument("--num_workers", type=int, default=2)
-    parser.add_argument("--synthetic_data", action="store_true")
-    parser.add_argument("--train_size", type=int, default=50000)
-    parser.add_argument("--test_size", type=int, default=10000)
-    parser.add_argument("--train_script", type=str, default="client.py")
-    parser.add_argument("--cross_site_eval", action="store_true")
-    parser.add_argument("--enable_log_streaming", action=argparse.BooleanOptionalAction, default=False)
-    parser.add_argument(
-        "--launch_external_process",
-        action="store_true",
-        help="Run train_script in a separate subprocess instead of in-process.",
+def define_parser() -> argparse.ArgumentParser:
+    # Recipe consumes its system-level export flags before this parser runs, so
+    # list them in the epilog to keep ``python job.py --help`` complete.
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=EXPORT_HELP,
     )
+    parser.add_argument("--n_clients", type=int, default=DEFAULT_NUM_CLIENTS)
+    parser.add_argument("--num_rounds", type=int, default=DEFAULT_NUM_ROUNDS)
+
+    # Keep the zero-argument quickstart deterministic and offline. CIFAR-10 is
+    # still available, but selecting it explicitly permits a dataset download.
+    dataset_group = parser.add_mutually_exclusive_group()
+    dataset_group.add_argument("--dataset", choices=DATASET_CHOICES, dest="dataset")
+    dataset_group.add_argument(
+        "--synthetic_data",
+        action="store_const",
+        const="synthetic",
+        dest="dataset",
+        help="Deprecated alias for --dataset synthetic.",
+    )
+    parser.set_defaults(dataset=DEFAULT_DATASET)
     parser.add_argument(
-        "--client_memory_gc_rounds",
-        type=int,
-        default=0,
-        help="Release model params and run GC every N rounds to keep client RSS flat. 0 = disabled.",
+        "--data_root",
+        default=DATASET_PATH,
+        help="Client-local CIFAR-10 cache path. Ignored for the synthetic dataset.",
     )
 
-    return parser.parse_args()
+    return parser
 
 
-def main():
-    args = define_parser()
-
-    n_clients = args.n_clients
-    num_rounds = args.num_rounds
-    batch_size = args.batch_size
-    epochs = args.epochs
-    train_args = f"--batch_size {batch_size} --epochs {epochs} --num_workers {args.num_workers}"
-    if args.synthetic_data:
-        train_args += f" --synthetic_data --train_size {args.train_size} --test_size {args.test_size}"
+def create_recipe(args):
+    train_args = ["--dataset", args.dataset]
+    if args.dataset == "cifar10":
+        train_args.extend(("--data_root", args.data_root))
 
     recipe = FedAvgRecipe(
         name="hello-pt",
-        min_clients=n_clients,
-        num_rounds=num_rounds,
+        min_clients=args.n_clients,
+        num_rounds=args.num_rounds,
         # Model can be specified as class instance or dict config:
-        model=SimpleNetwork(),
+        model=create_model(),
         # Alternative: model={"class_path": "model.SimpleNetwork", "args": {}},
         # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt",
-        train_script=args.train_script,
+        train_script="client.py",
+        # Pass argv directly so a client-local path containing spaces, quotes,
+        # or apostrophes keeps its exact argument boundary without shell parsing.
         train_args=train_args,
-        launch_external_process=args.launch_external_process,
-        client_memory_gc_rounds=args.client_memory_gc_rounds,
     )
-    add_experiment_tracking(recipe, tracking_type="tensorboard")
+    # Always verify the persisted final global model in the basic quickstart.
+    add_final_global_evaluation(recipe)
 
-    if args.cross_site_eval:
-        add_cross_site_evaluation(recipe)
+    return recipe
 
-    if args.enable_log_streaming:
-        recipe.enable_log_streaming()
 
-    env = SimEnv(num_clients=n_clients)
+def main(argv=None):
+    args = define_parser().parse_args(argv)
+    recipe = create_recipe(args)
+
+    env = SimEnv(num_clients=args.n_clients)
     run = recipe.execute(env)
+    result = run.get_result()
     print()
-    print("Job Status is:", run.get_status())
-    print("Result can be found in :", run.get_result())
+    # SimEnv runs synchronously. A normal return from execute/get_result means
+    # the simulation completed, so keep the beginner-facing message direct.
+    print("Simulation completed successfully.")
+    print("Result can be found in :", result)
     print()
+    return result
 
 
 if __name__ == "__main__":
