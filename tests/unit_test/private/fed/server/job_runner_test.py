@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 from contextlib import nullcontext
 from unittest.mock import ANY, MagicMock, call, patch
 
@@ -25,9 +26,11 @@ from nvflare.apis.job_launcher_spec import JobReturnCode
 from nvflare.apis.utils.event import fire_event_to_components
 from nvflare.app_common.job_schedulers.job_scheduler import DefaultJobScheduler
 from nvflare.fuel.common.exit_codes import ProcessExitCode
+from nvflare.fuel.utils.zip_utils import get_all_file_paths
 from nvflare.private.admin_defs import Message, MsgHeader, ReturnCode
 from nvflare.private.fed.server.job_runner import JobRunner, _FinishedJobState
 from nvflare.private.fed.server.message_send import ClientReply
+from nvflare.private.fed.utils.job_cert_utils import write_job_cert
 
 
 def _patch_job_runner_sleep(side_effect):
@@ -326,6 +329,29 @@ def test_save_workspace_archives_only_existing_deduplicated_sources(tmp_path):
     )
     assert not run_dir.exists()
     assert not result_root.exists()
+
+
+def test_save_workspace_destroys_job_credential_before_archiving(tmp_path):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "app_server").mkdir()
+    (run_dir / "app_server" / "result.txt").write_text("2")
+    write_job_cert(str(run_dir), b"cert", b"key")
+    runner, fl_ctx, job_manager = _make_workspace_save_inputs(str(run_dir), str(run_dir), str(run_dir), str(run_dir))
+    archived = {}
+
+    def _capture(job_id, sources, ctx):
+        archived[job_id] = sorted(
+            os.path.relpath(f, sources[0]) for f in get_all_file_paths(sources[0]) if os.path.isfile(f)
+        )
+        return "/store/job-1/workspace"
+
+    job_manager.save_workspace.side_effect = _capture
+
+    runner._save_workspace(fl_ctx)
+
+    assert archived["job-1"] == [os.path.join("app_server", "result.txt")]
+    assert not run_dir.exists()
 
 
 def test_save_workspace_tolerates_source_disappearing_during_cleanup(tmp_path):

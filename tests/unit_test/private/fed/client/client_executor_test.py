@@ -38,6 +38,7 @@ from nvflare.private.fed.client.client_executor import (
 )
 from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.client.communicator import Communicator
+from nvflare.private.fed.utils.job_cert_utils import find_job_cert, write_job_cert
 
 EXPECTED_REPORTABLE_JOB_FAILURES = {
     ProcessExitCode.EXCEPTION: "exception",
@@ -585,6 +586,33 @@ def test_wait_child_process_reports_failure_return_code_to_server(return_code, r
     fl_ctx.set_prop.assert_any_call(FLContextKey.CURRENT_JOB_ID, "job-1", private=True, sticky=False)
     fl_ctx.set_prop.assert_any_call(FLContextKey.CLIENT_NAME, "site-1", private=True, sticky=False)
     engine.fire_event.assert_called_once_with(EventType.JOB_COMPLETED, fl_ctx)
+
+
+def test_wait_child_process_destroys_job_credential_when_worker_exits(tmp_path):
+    client = MagicMock()
+    client.client_name = "site-1"
+    client.send_request_before_shutdown.return_value.get_header.return_value = ReturnCode.OK
+    job_executor = JobExecutor(client=client, startup="startup")
+    job_handle = MagicMock()
+    job_handle.poll.return_value = JobReturnCode.SUCCESS
+    job_executor.run_processes = {"job-1": {RunProcessKey.JOB_HANDLE: job_handle}}
+    run_dir = tmp_path / "job-1"
+    run_dir.mkdir()
+    (run_dir / "app_site-1").mkdir()
+    write_job_cert(str(run_dir), b"cert", b"key")
+
+    job_executor._wait_child_process_finish(
+        client=client,
+        job_id="job-1",
+        allocated_resource=None,
+        token=None,
+        resource_manager=MagicMock(),
+        workspace=str(tmp_path),
+        fl_ctx=MagicMock(),
+    )
+
+    assert find_job_cert(str(run_dir)) is None
+    assert (run_dir / "app_site-1").is_dir()
 
 
 def test_wait_child_process_preserves_launcher_infrastructure_error_over_rc_file(tmp_path):

@@ -53,6 +53,7 @@ from nvflare.private.fed.utils.job_cert_utils import (
     JobCertError,
     load_job_cert_issuer,
     pack_job_cert_header,
+    remove_job_cert,
     write_job_cert,
 )
 from nvflare.security.logging import secure_format_exception
@@ -637,6 +638,9 @@ class JobRunner(FLComponent):
         else:
             workspace = fl_ctx.get_workspace()
             run_dir = workspace.get_run_dir(job_id)
+            # the archive is served by download_job; the job credential is dead and must not be in it
+            if os.path.isdir(run_dir):
+                remove_job_cert(run_dir)
             result_root = workspace.get_result_root(job_id)
             log_root = workspace.get_log_root(job_id)
             audit_root = workspace.get_audit_root(job_id)

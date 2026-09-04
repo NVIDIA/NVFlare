@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import contextlib
 import datetime
 import os
 import shutil
@@ -77,6 +78,16 @@ def write_job_cert(run_dir: str, cert_chain_pem: bytes, key_pem: bytes):
     with open(cert_path, "wb") as f:
         f.write(cert_chain_pem)
     write_pri_key_file(key_path, key_pem)
+
+
+def remove_job_cert(run_dir: str) -> None:
+    """Destroy a job's credential; it is dead once the job process has exited and must never be archived."""
+    cert_path, key_path = job_cert_paths(run_dir)
+    for path in (cert_path, key_path):
+        with contextlib.suppress(FileNotFoundError):
+            os.remove(path)
+    with contextlib.suppress(OSError):
+        os.rmdir(os.path.dirname(cert_path))
 
 
 def find_job_cert(run_dir: str) -> Optional[Tuple[str, str]]:

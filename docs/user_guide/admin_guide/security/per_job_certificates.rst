@@ -60,6 +60,9 @@ Each running job has its credential at::
    <workspace>/<job id>/job_cert/job.crt    certificate followed by job_ca.crt
    <workspace>/<job id>/job_cert/job.key    private key, mode 0600
 
+Both files are deleted when the job process exits. The job workspace archived
+on the server (``download_job``) never contains them.
+
 Enabling and disabling
 ======================
 

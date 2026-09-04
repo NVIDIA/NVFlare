@@ -133,6 +133,11 @@ The issued credential is a PEM bundle: leaf cert followed by `job_ca.crt`
 (`AppDeployer` recreates the run directory), SP writes the SJ credential into
 the job run directory before the SJ process is launched.
 
+When the job finishes, SP destroys the SJ credential before the run directory
+is archived to the job store, so the workspace served by `download_job` never
+contains it; CP destroys the CJ credential as soon as the CJ process has
+exited. The credential is dead at that point: there is no renewal or reuse.
+
 **CJ (push).** The job deploy message becomes per-site: the shared app bytes
 stay a single payload reference, but each site's message carries an additional
 header with that site's cert bundle and private key. The message travels over

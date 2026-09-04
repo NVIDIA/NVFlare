@@ -34,6 +34,7 @@ from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.defs import CellChannel, CellChannelTopic, JobFailureMsgKey, new_cell_message
 from nvflare.private.fed.utils.fed_utils import get_job_launcher, get_return_code
+from nvflare.private.fed.utils.job_cert_utils import remove_job_cert
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 from .client_status import ClientStatus, get_status_message
@@ -626,6 +627,7 @@ class JobExecutor(ClientExecutor):
         job_handle = self.run_processes.get(job_id, {}).get(RunProcessKey.JOB_HANDLE)
         if job_handle:
             job_handle.wait()
+            remove_job_cert(Workspace.run_dir_path(workspace, job_id))
 
             return_code = get_return_code(job_handle, job_id, workspace, self.logger)
 
