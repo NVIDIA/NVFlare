@@ -23,6 +23,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
+from nvflare.apis.fl_constant import JOB_CLONE_DEPRECATION_MESSAGE, AdminCommandNames
 from nvflare.apis.job_def import DEFAULT_STUDY
 
 try:
@@ -362,6 +363,9 @@ class AdminClient(cmd.Cmd, EventHandler):
             if answer != self.user_name:
                 self.write_string("user name mismatch")
                 return
+
+        if cmd_name.rsplit(".", 1)[-1] == AdminCommandNames.CLONE_JOB:
+            self.write_string(f"WARNING: {JOB_CLONE_DEPRECATION_MESSAGE}")
 
         # execute the command!
         start = time.time()

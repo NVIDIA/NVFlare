@@ -76,6 +76,26 @@ timeouts above are configured consistently for very large models.
 Upcoming Main-Branch Changes
 ============================
 
+Job Clone Deprecation
+---------------------
+
+The ``nvflare job clone`` command, the legacy interactive Admin CLI
+``clone_job`` command, and the Python FLARE API ``clone_job()`` method are
+deprecated for NVFlare 2.10.0. They remain functional during the compatibility
+period, but cloning copies the stored job artifact without running the
+client-side signing path. The clone therefore retains the original
+``__nvfl_sig.json`` signatures and embedded ``__nvfl_submitter.crt``
+certificate, including its signer identity and absolute expiration. Cloning
+does not renew or replace the original signing certificate.
+
+To retry or retrigger a job, re-export or reuse the original local job folder
+and submit it with current credentials so the artifact is signed with the
+current submitter certificate:
+
+.. code-block:: shell
+
+   nvflare job submit -j JOB_FOLDER
+
 Legacy Client API Stack Removal
 -------------------------------
 

@@ -18,6 +18,7 @@ import time
 from typing import List, Optional
 
 from nvflare.apis.fl_constant import (
+    JOB_CLONE_DEPRECATION_MESSAGE,
     SUBMIT_TOKEN_CONFLICT_STATUS,
     SUBMIT_TOKEN_JOB_DELETED_STATUS,
     AdminCommandNames,
@@ -41,6 +42,7 @@ from nvflare.fuel.hci.cmd_arg_utils import (
     validate_required_target_string,
 )
 from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, ProtoKey, ReplyKeyword
+from nvflare.fuel.utils.deprecated import warn_deprecated
 from nvflare.fuel.utils.log_utils import get_obj_logger, validate_site_log_config
 
 from .api_spec import (
@@ -338,12 +340,16 @@ class Session(SessionSpec):
     def clone_job(self, job_id: str) -> str:
         """Create a new job by cloning a specified job.
 
+        .. deprecated:: 2.10.0
+           Use ``nvflare job submit -j JOB_FOLDER`` with the original local job folder.
+
         Args:
             job_id: job to be cloned
 
         Returns: ID of the new job
 
         """
+        warn_deprecated(JOB_CLONE_DEPRECATION_MESSAGE, stacklevel=3)
         self._validate_job_id(job_id)
         result = self._do_command(AdminCommandNames.CLONE_JOB + " " + job_id)
         meta = result[ResultKey.META]

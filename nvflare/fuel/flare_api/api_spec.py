@@ -183,7 +183,10 @@ class SessionSpec(ABC):
 
     @abstractmethod
     def clone_job(self, job_id: str) -> str:
-        """Create a new job by cloning a specified job
+        """Create a new job by cloning a specified job.
+
+        .. deprecated:: 2.10.0
+           Use ``nvflare job submit -j JOB_FOLDER`` with the original local job folder.
 
         Args:
             job_id: job to be cloned
