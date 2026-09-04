@@ -148,18 +148,21 @@ class FedBPTRecipe(Recipe):
         job.to_server(TBAnalyticsReceiver(events=["fed.analytix_log_stats"]), id="receiver")
         job.to_server(RegisterDecomposer(), id="register_decomposer")
 
-        runner = ScriptRunner(
-            script=TRAIN_SCRIPT,
-            script_args=self.train_args,
-            launch_external_process=True,
-            command="python3 -u",
-            framework=FrameworkType.NUMPY,
-            server_expected_format=ExchangeFormat.NUMPY,
-            params_transfer_type=TransferType.FULL,
-            launch_once=True,
-            shutdown_timeout=10.0,
-        )
-        job.to_clients(runner, tasks=["train"])
+        # Keep the source root active while ScriptRunner freezes the path used by
+        # both client configuration and job packaging.
+        with _temporary_sys_path(SRC_DIR):
+            runner = ScriptRunner(
+                script=TRAIN_SCRIPT,
+                script_args=self.train_args,
+                launch_external_process=True,
+                command="python3 -u",
+                framework=FrameworkType.NUMPY,
+                server_expected_format=ExchangeFormat.NUMPY,
+                params_transfer_type=TransferType.FULL,
+                launch_once=True,
+                shutdown_timeout=10.0,
+            )
+            job.to_clients(runner, tasks=["train"])
         job.to_clients(RegisterDecomposer(), id="register_decomposer")
         super().__init__(job)
 

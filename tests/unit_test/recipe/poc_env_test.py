@@ -13,7 +13,9 @@
 # limitations under the License.
 
 import os
+import subprocess
 import tempfile
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -28,6 +30,8 @@ def test_poc_env_initialization():
     assert env.num_clients == 2
     assert env.gpu_ids == []
     assert env.study == "default"
+    assert env.deployment_started is False
+    assert env.workspace_owned is False
 
 
 @patch("nvflare.recipe.poc_env.get_poc_workspace")
@@ -42,6 +46,33 @@ def test_poc_env_initialization_with_custom_values(mock_get_workspace):
         assert env.poc_workspace == temp_dir
         assert env.num_clients == 3
         assert env.gpu_ids == [0, 1]
+
+
+@patch("nvflare.recipe.poc_env.get_poc_workspace")
+def test_poc_env_normalizes_workspace_trailing_separator(mock_get_workspace, tmp_path):
+    workspace = tmp_path / "poc-workspace"
+    mock_get_workspace.return_value = f"{workspace}{os.sep}"
+
+    env = PocEnv()
+
+    assert env.poc_workspace == str(workspace)
+
+
+def test_backup_with_normalized_workspace_is_created_as_sibling(tmp_path, monkeypatch):
+    import nvflare.recipe.poc_env as poc_env_module
+
+    workspace = tmp_path / "poc-workspace"
+    workspace.mkdir()
+    (workspace / "prior-result.txt").write_text("old")
+    monkeypatch.setattr(poc_env_module, "get_poc_workspace", lambda: f"{workspace}{os.sep}")
+    env = PocEnv()
+
+    backup = env._backup_existing_workspace()
+
+    assert backup is not None
+    assert os.path.dirname(backup) == str(tmp_path)
+    assert os.path.basename(backup).startswith("poc-workspace.nvflare-recipe-backup-")
+    assert os.path.exists(os.path.join(backup, "prior-result.txt"))
 
 
 def test_poc_env_validation():
@@ -102,6 +133,491 @@ def test_poc_env_rejects_invalid_study_name():
         PocEnv(study="Bad Study")
 
 
+@patch("nvflare.recipe.poc_env.collect_non_local_scripts", return_value=["missing.py"])
+def test_deploy_preflight_failure_does_not_start_lifecycle(mock_collect_non_local_scripts):
+    env = PocEnv()
+
+    with pytest.raises(ValueError, match="scripts do not exist locally"):
+        env.deploy(object())
+
+    assert env.deployment_started is False
+    assert env.workspace_owned is False
+
+
+def test_deploy_rejects_project_config_inside_workspace_before_replacement(tmp_path, monkeypatch):
+    import nvflare.recipe.poc_env as poc_env_module
+
+    workspace = tmp_path / "poc-workspace"
+    workspace.mkdir()
+    project_conf = workspace / "project.yml"
+    project_conf.write_text("name: retained")
+    monkeypatch.setattr(poc_env_module, "get_poc_workspace", lambda: str(workspace))
+    monkeypatch.setattr(poc_env_module, "collect_non_local_scripts", lambda job: [])
+    env = PocEnv(project_conf_path=str(project_conf))
+
+    with pytest.raises(ValueError, match="project_conf_path must be outside"):
+        env.deploy(object())
+
+    assert env.deployment_started is False
+    assert env.workspace_owned is False
+    assert project_conf.read_text() == "name: retained"
+    assert not list(tmp_path.glob("poc-workspace.nvflare-recipe-backup-*"))
+
+
+@patch("nvflare.recipe.poc_env.get_poc_workspace")
+@patch("nvflare.recipe.poc_env.prepare_poc_provision", side_effect=RuntimeError("provisioning failed"))
+@patch.object(PocEnv, "_check_poc_running", return_value=False)
+@patch("nvflare.recipe.poc_env.collect_non_local_scripts", return_value=[])
+def test_deploy_marks_lifecycle_started_before_provisioning(
+    mock_collect_non_local_scripts, mock_check_poc_running, mock_prepare_poc_provision, mock_get_workspace, tmp_path
+):
+    mock_get_workspace.return_value = str(tmp_path / "new-poc-workspace")
+    env = PocEnv()
+
+    with pytest.raises(RuntimeError, match="provisioning failed"):
+        env.deploy(object())
+
+    assert env.deployment_started is True
+    assert env.workspace_owned is True
+
+
+@patch("nvflare.recipe.poc_env.prepare_poc_provision", side_effect=RuntimeError("provisioning failed"))
+@patch.object(PocEnv, "_check_poc_running", return_value=False)
+@patch("nvflare.recipe.poc_env.collect_non_local_scripts", return_value=[])
+@patch("nvflare.recipe.poc_env.get_poc_workspace")
+def test_failed_provisioning_does_not_claim_existing_workspace(
+    mock_get_workspace, mock_collect_non_local_scripts, mock_check_poc_running, mock_prepare_poc_provision, tmp_path
+):
+    workspace = tmp_path / "retained-poc-workspace"
+    workspace.mkdir()
+    retained_result = workspace / "prior-result.txt"
+    retained_result.write_text("keep me")
+    mock_get_workspace.return_value = str(workspace)
+    env = PocEnv()
+
+    with pytest.raises(RuntimeError, match="provisioning failed"):
+        env.deploy(object())
+
+    assert env.deployment_started is True
+    assert env.workspace_owned is False
+    assert retained_result.read_text() == "keep me"
+    assert not list(tmp_path.glob("retained-poc-workspace.nvflare-recipe-backup-*"))
+
+
+def test_failed_provisioning_restores_workspace_after_partial_writes(tmp_path, monkeypatch):
+    import nvflare.recipe.poc_env as poc_env_module
+
+    workspace = tmp_path / "replaced-poc-workspace"
+    workspace.mkdir()
+    (workspace / "prior-result.txt").write_text("old")
+    monkeypatch.setattr(poc_env_module, "get_poc_workspace", lambda: str(workspace))
+    monkeypatch.setattr(poc_env_module, "collect_non_local_scripts", lambda job: [])
+    monkeypatch.setattr(PocEnv, "_check_poc_running", lambda self: False)
+
+    def write_then_fail(**kwargs):
+        workspace.mkdir()
+        (workspace / "partial-result.txt").write_text("partial")
+        raise RuntimeError("provisioning failed after partial writes")
+
+    monkeypatch.setattr(poc_env_module, "prepare_poc_provision", write_then_fail)
+    env = PocEnv()
+
+    with pytest.raises(RuntimeError, match="failed after partial writes"):
+        env.deploy(object())
+
+    assert env.deployment_started is True
+    assert env.workspace_owned is False
+    assert (workspace / "prior-result.txt").read_text() == "old"
+    assert not (workspace / "partial-result.txt").exists()
+    assert not list(tmp_path.glob("replaced-poc-workspace.nvflare-recipe-backup-*"))
+
+
+def test_rollback_state_error_preserves_partial_workspace_and_backup(tmp_path, monkeypatch):
+    import nvflare.recipe.poc_env as poc_env_module
+
+    workspace = tmp_path / "unknown-rollback-state-workspace"
+    workspace.mkdir()
+    (workspace / "prior-result.txt").write_text("old")
+    monkeypatch.setattr(poc_env_module, "get_poc_workspace", lambda: str(workspace))
+    monkeypatch.setattr(poc_env_module, "collect_non_local_scripts", lambda job: [])
+
+    def write_then_fail(**kwargs):
+        workspace.mkdir()
+        (workspace / "partial-result.txt").write_text("partial")
+        raise RuntimeError("provisioning failed after partial writes")
+
+    monkeypatch.setattr(poc_env_module, "prepare_poc_provision", write_then_fail)
+    env = PocEnv()
+    state_checks = iter([False, RuntimeError("Docker inspection unavailable")])
+
+    def check_state():
+        result = next(state_checks)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    monkeypatch.setattr(env, "_check_poc_running", check_state)
+
+    with pytest.raises(RuntimeError, match="state of partially started services could not be determined") as exc_info:
+        env.deploy(object())
+
+    backups = list(tmp_path.glob("unknown-rollback-state-workspace.nvflare-recipe-backup-*"))
+    assert len(backups) == 1
+    assert str(backups[0]) in str(exc_info.value)
+    assert str(workspace) in str(exc_info.value)
+    assert isinstance(exc_info.value.__cause__, RuntimeError)
+    assert "Docker inspection unavailable" in str(exc_info.value.__cause__)
+    assert env.workspace_owned is True
+    assert (workspace / "partial-result.txt").read_text() == "partial"
+    assert (backups[0] / "prior-result.txt").read_text() == "old"
+
+
+def test_post_stop_state_error_preserves_partial_workspace_and_backup(tmp_path, monkeypatch):
+    import nvflare.recipe.poc_env as poc_env_module
+
+    workspace = tmp_path / "unknown-post-stop-state-workspace"
+    workspace.mkdir()
+    (workspace / "prior-result.txt").write_text("old")
+    monkeypatch.setattr(poc_env_module, "get_poc_workspace", lambda: str(workspace))
+    monkeypatch.setattr(poc_env_module, "collect_non_local_scripts", lambda job: [])
+
+    def write_then_fail(**kwargs):
+        workspace.mkdir()
+        (workspace / "partial-result.txt").write_text("partial")
+        raise RuntimeError("provisioning failed after partial writes")
+
+    monkeypatch.setattr(poc_env_module, "prepare_poc_provision", write_then_fail)
+    env = PocEnv()
+    state_checks = iter([False, True, RuntimeError("Docker inspection unavailable after stop")])
+
+    def check_state():
+        result = next(state_checks)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    stop_calls = []
+    monkeypatch.setattr(env, "_check_poc_running", check_state)
+    monkeypatch.setattr(env, "stop", lambda clean_up: stop_calls.append(clean_up))
+
+    with pytest.raises(RuntimeError, match="could not be determined after stopping") as exc_info:
+        env.deploy(object())
+
+    backups = list(tmp_path.glob("unknown-post-stop-state-workspace.nvflare-recipe-backup-*"))
+    assert stop_calls == [False]
+    assert len(backups) == 1
+    assert str(backups[0]) in str(exc_info.value)
+    assert env.workspace_owned is True
+    assert (workspace / "partial-result.txt").read_text() == "partial"
+    assert (backups[0] / "prior-result.txt").read_text() == "old"
+
+
+def test_rollback_stop_error_preserves_partial_workspace_and_backup(tmp_path, monkeypatch):
+    import nvflare.recipe.poc_env as poc_env_module
+
+    workspace = tmp_path / "failed-rollback-stop-workspace"
+    workspace.mkdir()
+    (workspace / "prior-result.txt").write_text("old")
+    monkeypatch.setattr(poc_env_module, "get_poc_workspace", lambda: str(workspace))
+    monkeypatch.setattr(poc_env_module, "collect_non_local_scripts", lambda job: [])
+
+    def write_then_fail(**kwargs):
+        workspace.mkdir()
+        (workspace / "partial-result.txt").write_text("partial")
+        raise RuntimeError("provisioning failed after partial writes")
+
+    monkeypatch.setattr(poc_env_module, "prepare_poc_provision", write_then_fail)
+    env = PocEnv()
+    state_checks = iter([False, True])
+    monkeypatch.setattr(env, "_check_poc_running", lambda: next(state_checks))
+    monkeypatch.setattr(
+        env,
+        "stop",
+        lambda clean_up: (_ for _ in ()).throw(RuntimeError("Docker stop failed")),
+    )
+
+    with pytest.raises(RuntimeError, match="could not be safely stopped") as exc_info:
+        env.deploy(object())
+
+    backups = list(tmp_path.glob("failed-rollback-stop-workspace.nvflare-recipe-backup-*"))
+    assert len(backups) == 1
+    assert str(backups[0]) in str(exc_info.value)
+    assert env.workspace_owned is True
+    assert (workspace / "partial-result.txt").read_text() == "partial"
+    assert (backups[0] / "prior-result.txt").read_text() == "old"
+
+
+def test_failed_start_restores_retained_workspace(tmp_path, monkeypatch):
+    import nvflare.recipe.poc_env as poc_env_module
+
+    workspace = tmp_path / "start-failure-workspace"
+    workspace.mkdir()
+    (workspace / "prior-result.txt").write_text("old")
+    monkeypatch.setattr(poc_env_module, "get_poc_workspace", lambda: str(workspace))
+    monkeypatch.setattr(poc_env_module, "collect_non_local_scripts", lambda job: [])
+    monkeypatch.setattr(PocEnv, "_check_poc_running", lambda self: False)
+    monkeypatch.setattr(poc_env_module, "prepare_poc_provision", lambda **kwargs: workspace.mkdir())
+
+    def fail_start(**kwargs):
+        raise RuntimeError("start failed")
+
+    monkeypatch.setattr(poc_env_module, "_start_poc", fail_start)
+    env = PocEnv()
+
+    with pytest.raises(RuntimeError, match="start failed"):
+        env.deploy(object())
+
+    assert env.deployment_started is True
+    assert env.workspace_owned is False
+    assert (workspace / "prior-result.txt").read_text() == "old"
+    assert not list(tmp_path.glob("start-failure-workspace.nvflare-recipe-backup-*"))
+
+
+def test_failed_readiness_restores_retained_workspace(tmp_path, monkeypatch):
+    import nvflare.recipe.poc_env as poc_env_module
+
+    workspace = tmp_path / "readiness-failure-workspace"
+    workspace.mkdir()
+    (workspace / "prior-result.txt").write_text("old")
+    monkeypatch.setattr(poc_env_module, "get_poc_workspace", lambda: str(workspace))
+    monkeypatch.setattr(poc_env_module, "collect_non_local_scripts", lambda job: [])
+    monkeypatch.setattr(PocEnv, "_check_poc_running", lambda self: False)
+
+    def prepare_replacement(**kwargs):
+        workspace.mkdir()
+        (workspace / "partial-result.txt").write_text("partial")
+
+    monkeypatch.setattr(poc_env_module, "prepare_poc_provision", prepare_replacement)
+    monkeypatch.setattr(poc_env_module, "_start_poc", lambda **kwargs: None)
+    monkeypatch.setattr(
+        poc_env_module,
+        "setup_service_config",
+        lambda path: ({"name": "poc"}, {SC.FLARE_SERVER: "server", SC.FLARE_CLIENTS: ["site-1"]}),
+    )
+    monkeypatch.setattr(poc_env_module, "_wait_for_poc_system_ready", lambda *args, **kwargs: True)
+    env = PocEnv()
+    monkeypatch.setattr(
+        env,
+        "_wait_for_services_ready",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("POC did not become ready")),
+    )
+
+    with pytest.raises(RuntimeError, match="did not become ready"):
+        env.deploy(object())
+
+    assert env.deployment_started is True
+    assert env.workspace_owned is False
+    assert (workspace / "prior-result.txt").read_text() == "old"
+    assert not (workspace / "partial-result.txt").exists()
+    assert not list(tmp_path.glob("readiness-failure-workspace.nvflare-recipe-backup-*"))
+
+
+def test_successful_submission_discards_backup_only_after_health_check(tmp_path, monkeypatch):
+    import nvflare.recipe.poc_env as poc_env_module
+
+    workspace = tmp_path / "healthy-workspace"
+    workspace.mkdir()
+    (workspace / "prior-result.txt").write_text("old")
+    monkeypatch.setattr(poc_env_module, "get_poc_workspace", lambda: str(workspace))
+    monkeypatch.setattr(poc_env_module, "collect_non_local_scripts", lambda job: [])
+    monkeypatch.setattr(PocEnv, "_check_poc_running", lambda self: False)
+
+    def prepare_replacement(**kwargs):
+        workspace.mkdir()
+        (workspace / "new-workspace.txt").write_text("new")
+
+    def assert_backup_retained():
+        backups = list(tmp_path.glob("healthy-workspace.nvflare-recipe-backup-*"))
+        assert len(backups) == 1
+        assert (backups[0] / "prior-result.txt").read_text() == "old"
+
+    def verify_ready(*args, **kwargs):
+        assert_backup_retained()
+
+    def verify_registered(*args, **kwargs):
+        assert_backup_retained()
+        return True
+
+    def submit_job(job):
+        assert_backup_retained()
+        return "job-id"
+
+    monkeypatch.setattr(poc_env_module, "prepare_poc_provision", prepare_replacement)
+    monkeypatch.setattr(poc_env_module, "_start_poc", lambda **kwargs: None)
+    monkeypatch.setattr(
+        poc_env_module,
+        "setup_service_config",
+        lambda path: ({"name": "poc"}, {SC.FLARE_SERVER: "server", SC.FLARE_CLIENTS: ["site-1"]}),
+    )
+    monkeypatch.setattr(poc_env_module, "_wait_for_poc_system_ready", verify_registered)
+    env = PocEnv()
+    monkeypatch.setattr(env, "_wait_for_services_ready", verify_ready)
+    monkeypatch.setattr(env, "_get_session_manager", lambda: SimpleNamespace(submit_job=submit_job))
+
+    assert env.deploy(object()) == "job-id"
+
+    assert env.workspace_owned is True
+    assert (workspace / "new-workspace.txt").read_text() == "new"
+    assert not (workspace / "prior-result.txt").exists()
+    assert not list(tmp_path.glob("healthy-workspace.nvflare-recipe-backup-*"))
+
+
+def test_failed_submission_restores_retained_workspace(tmp_path, monkeypatch):
+    import nvflare.recipe.poc_env as poc_env_module
+
+    workspace = tmp_path / "submission-failure-workspace"
+    workspace.mkdir()
+    (workspace / "prior-result.txt").write_text("old")
+    monkeypatch.setattr(poc_env_module, "get_poc_workspace", lambda: str(workspace))
+    monkeypatch.setattr(poc_env_module, "collect_non_local_scripts", lambda job: [])
+    monkeypatch.setattr(PocEnv, "_check_poc_running", lambda self: False)
+
+    def prepare_replacement(**kwargs):
+        workspace.mkdir()
+        (workspace / "partial-result.txt").write_text("partial")
+
+    monkeypatch.setattr(poc_env_module, "prepare_poc_provision", prepare_replacement)
+    monkeypatch.setattr(poc_env_module, "_start_poc", lambda **kwargs: None)
+    monkeypatch.setattr(
+        poc_env_module,
+        "setup_service_config",
+        lambda path: ({"name": "poc"}, {SC.FLARE_SERVER: "server", SC.FLARE_CLIENTS: ["site-1"]}),
+    )
+    monkeypatch.setattr(poc_env_module, "_wait_for_poc_system_ready", lambda *args, **kwargs: True)
+    env = PocEnv()
+    monkeypatch.setattr(env, "_wait_for_services_ready", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        env,
+        "_get_session_manager",
+        lambda: SimpleNamespace(submit_job=lambda job: (_ for _ in ()).throw(RuntimeError("job submission failed"))),
+    )
+
+    with pytest.raises(RuntimeError, match="job submission failed"):
+        env.deploy(object())
+
+    assert env.workspace_owned is False
+    assert (workspace / "prior-result.txt").read_text() == "old"
+    assert not (workspace / "partial-result.txt").exists()
+    assert not list(tmp_path.glob("submission-failure-workspace.nvflare-recipe-backup-*"))
+
+
+def test_wait_for_services_ready_rejects_an_exited_client(monkeypatch):
+    import nvflare.recipe.poc_env as poc_env_module
+
+    env = PocEnv()
+    monkeypatch.setattr(poc_env_module, "POC_START_READY_TIMEOUT", 0.01)
+    monkeypatch.setattr(poc_env_module, "POC_READY_POLL_INTERVAL", 0.001)
+    monkeypatch.setattr(env, "_running_services", lambda *args: ["server"])
+
+    with pytest.raises(RuntimeError, match="not running: site-1"):
+        env._wait_for_services_ready({"name": "poc"}, {SC.FLARE_SERVER: "server", SC.FLARE_CLIENTS: ["site-1"]})
+
+
+def test_running_services_uses_docker_container_state(monkeypatch):
+    import nvflare.recipe.poc_env as poc_env_module
+
+    inspected = []
+
+    def inspect_container(command, **kwargs):
+        inspected.append(command)
+        running = command[-1] != "site-1"
+        return SimpleNamespace(returncode=0, stdout=f"{str(running).lower()}\n")
+
+    monkeypatch.setenv("DOCKER_HOST", "tcp://docker.example:2375")
+    monkeypatch.setattr(poc_env_module.subprocess, "run", inspect_container)
+    service_config = {
+        SC.FLARE_SERVER: "server",
+        SC.FLARE_CLIENTS: ["site-1", "site-2"],
+        SC.IS_DOCKER_RUN: True,
+    }
+
+    assert PocEnv._running_services({"name": "poc"}, service_config, "/unused") == ["server", "site-2"]
+    assert [command[-1] for command in inspected] == ["server", "site-1", "site-2"]
+
+
+def test_docker_liveness_honors_poc_socket_override(monkeypatch):
+    import nvflare.recipe.poc_env as poc_env_module
+
+    calls = []
+
+    def inspect_container(command, **kwargs):
+        calls.append((command, kwargs))
+        return SimpleNamespace(returncode=0, stdout="true\n")
+
+    monkeypatch.setenv("DOCKER_HOST", "unix:///var/run/docker.sock")
+    monkeypatch.setenv("DOCKER_CONTEXT", "remote-context")
+    monkeypatch.setenv("NVFL_DOCKER_SOCK", "/run/user/1000/docker.sock")
+    monkeypatch.setattr(poc_env_module.subprocess, "run", inspect_container)
+
+    assert PocEnv._is_docker_service_running("site-1") is True
+    command, kwargs = calls[0]
+    assert command[-1] == "site-1"
+    assert kwargs["env"]["DOCKER_HOST"] == "unix:///run/user/1000/docker.sock"
+    assert "DOCKER_CONTEXT" not in kwargs["env"]
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        subprocess.TimeoutExpired(cmd="docker inspect", timeout=5),
+        OSError("docker is unavailable"),
+    ],
+)
+def test_docker_liveness_fails_closed_when_inspection_cannot_run(monkeypatch, failure):
+    import nvflare.recipe.poc_env as poc_env_module
+
+    monkeypatch.setattr(poc_env_module.subprocess, "run", lambda *args, **kwargs: (_ for _ in ()).throw(failure))
+
+    with pytest.raises(RuntimeError, match="Could not determine Docker POC service state"):
+        PocEnv._is_docker_service_running("server")
+
+
+def test_docker_liveness_distinguishes_missing_container_from_inspection_error(monkeypatch):
+    import nvflare.recipe.poc_env as poc_env_module
+
+    missing = SimpleNamespace(returncode=1, stdout="", stderr="Error: No such object: server")
+    monkeypatch.setattr(poc_env_module.subprocess, "run", lambda *args, **kwargs: missing)
+    assert PocEnv._is_docker_service_running("server") is False
+
+    unavailable = SimpleNamespace(returncode=1, stdout="", stderr="Cannot connect to the Docker daemon")
+    monkeypatch.setattr(poc_env_module.subprocess, "run", lambda *args, **kwargs: unavailable)
+    with pytest.raises(RuntimeError, match="Cannot connect to the Docker daemon"):
+        PocEnv._is_docker_service_running("server")
+
+
+def test_deploy_does_not_move_workspace_when_docker_state_is_unknown(tmp_path, monkeypatch):
+    import nvflare.recipe.poc_env as poc_env_module
+
+    workspace = tmp_path / "retained-docker-workspace"
+    workspace.mkdir()
+    retained_result = workspace / "prior-result.txt"
+    retained_result.write_text("keep me")
+    monkeypatch.setattr(poc_env_module, "get_poc_workspace", lambda: str(workspace))
+    monkeypatch.setattr(poc_env_module, "collect_non_local_scripts", lambda job: [])
+    monkeypatch.setattr(
+        poc_env_module,
+        "setup_service_config",
+        lambda path: (
+            {"name": "poc"},
+            {SC.FLARE_SERVER: "server", SC.FLARE_CLIENTS: ["site-1"], SC.IS_DOCKER_RUN: True},
+        ),
+    )
+    monkeypatch.setattr(
+        PocEnv,
+        "_is_docker_service_running",
+        lambda service_name: (_ for _ in ()).throw(RuntimeError("Docker state is unknown")),
+    )
+    env = PocEnv()
+
+    with pytest.raises(RuntimeError, match="Docker state is unknown"):
+        env.deploy(object())
+
+    assert env.deployment_started is False
+    assert env.workspace_owned is False
+    assert retained_result.read_text() == "keep me"
+    assert not list(tmp_path.glob("retained-docker-workspace.nvflare-recipe-backup-*"))
+
+
 @patch("nvflare.recipe.poc_env.get_poc_workspace")
 @patch("nvflare.recipe.poc_env.get_prod_dir")
 @patch("nvflare.recipe.poc_env.setup_service_config")
@@ -147,12 +663,11 @@ def test_get_admin_startup_kit_path_not_found(mock_setup, mock_get_prod_dir, moc
 def test_stop_poc(mock_is_running, mock_clean_poc, mock_stop_poc, mock_setup):
     """Test stop and clean POC functionality."""
     mock_setup.return_value = ({"name": "test"}, {"server": "server"})
-    # Mock is_poc_running to return True initially (POC is running),
-    # then False (POC stops successfully after _stop_poc is called)
-    mock_is_running.side_effect = [True, False]
+    mock_is_running.return_value = True
 
     env = PocEnv()
-    env.stop(clean_up=True)
+    with patch.object(PocEnv, "_running_services", side_effect=[["server"], []]):
+        env.stop(clean_up=True)
 
     mock_stop_poc.assert_called_once_with(
         poc_workspace=env.poc_workspace, excluded=["admin@nvidia.com"], services_list=[]
