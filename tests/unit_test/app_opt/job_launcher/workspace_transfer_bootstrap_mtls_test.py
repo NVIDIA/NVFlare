@@ -14,6 +14,7 @@
 
 """Live mTLS regression: the workspace-transfer bootstrap cell authenticates to its parent with a job-bound cert."""
 
+import logging
 import multiprocessing as mp
 import os
 import socket
@@ -37,8 +38,23 @@ _CHANNEL = "ws_bootstrap_test"
 _TOPIC = "echo"
 _CONNECT_TIMEOUT = 10.0
 _REJECT_WAIT = 3.0
+_REQUEST_TIMEOUT = 3.0
+_REJECTION_LOG_WAIT = 10.0
 _JOB_ID = str(uuid.uuid4())
 _OTHER_JOB_ID = str(uuid.uuid4())
+
+
+class _RejectionRecorder(logging.Handler):
+    """Forwards the parent's job-binding rejections to the test process."""
+
+    def __init__(self, queue):
+        super().__init__(level=logging.ERROR)
+        self.queue = queue
+
+    def emit(self, record):
+        message = record.getMessage()
+        if "bound to job" in message:
+            self.queue.put(message)
 
 
 def _write_pki(out_dir: str) -> dict:
@@ -83,9 +99,10 @@ def _free_port() -> int:
         return s.getsockname()[1]
 
 
-def _run_parent(root_url, pki, ready_q, stop_ev):
+def _run_parent(root_url, pki, ready_q, stop_ev, reject_q):
     cell = None
     try:
+        logging.getLogger().addHandler(_RejectionRecorder(reject_q))
         credentials = {
             DriverParams.CA_CERT.value: pki["rootCA.pem"],
             DriverParams.SERVER_CERT.value: pki["server.crt"],
@@ -127,12 +144,10 @@ def _run_bootstrap(root_url, pki, cert_name, fqcn, wait, result_q):
         deadline = time.time() + wait
         while time.time() < deadline and not cell.is_cell_connected("server"):
             time.sleep(0.1)
-        connected = cell.is_cell_connected("server")
-        rc = None
-        if connected:
-            reply = cell.send_request(_CHANNEL, _TOPIC, "server", Message(payload="hello"), timeout=5.0)
-            rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
-        result_q.put({"connected": connected, "rc": rc})
+        # the client-side connected flag is transient while the parent is still validating the handshake;
+        # only a completed application request proves the parent accepted this cell
+        reply = cell.send_request(_CHANNEL, _TOPIC, "server", Message(payload="hello"), timeout=_REQUEST_TIMEOUT)
+        result_q.put({"rc": reply.get_header(MessageHeaderKey.RETURN_CODE)})
     except Exception:
         result_q.put({"error": traceback.format_exc()})
     finally:
@@ -145,20 +160,20 @@ def parent(tmp_path_factory):
     ctx = mp.get_context("spawn")
     pki = _write_pki(str(tmp_path_factory.mktemp("pki")))
     root_url = f"stcp://localhost:{_free_port()}"
-    ready_q, stop_ev = ctx.Queue(), ctx.Event()
-    proc = ctx.Process(target=_run_parent, args=(root_url, pki, ready_q, stop_ev))
+    ready_q, reject_q, stop_ev = ctx.Queue(), ctx.Queue(), ctx.Event()
+    proc = ctx.Process(target=_run_parent, args=(root_url, pki, ready_q, stop_ev, reject_q))
     proc.start()
     try:
         status = ready_q.get(timeout=30)
         assert status == "ready", status
-        yield root_url, pki
+        yield root_url, pki, reject_q
     finally:
         stop_ev.set()
         proc.join(15)
 
 
 def _bootstrap(parent, cert_name, wait):
-    root_url, pki = parent
+    root_url, pki, _ = parent
     ctx = mp.get_context("spawn")
     result_q = ctx.Queue()
     fqcn = make_workspace_transfer_fqcn("server", _JOB_ID)
@@ -175,11 +190,18 @@ def _bootstrap(parent, cert_name, wait):
 def test_bootstrap_cell_authenticates_with_its_jobs_cert(parent):
     result = _bootstrap(parent, "job", _CONNECT_TIMEOUT)
 
-    assert result["connected"] is True
     assert result["rc"] == ReturnCode.OK
 
 
 def test_bootstrap_cell_rejected_with_another_jobs_cert(parent):
+    fqcn = make_workspace_transfer_fqcn("server", _JOB_ID)
     result = _bootstrap(parent, "other_job", _REJECT_WAIT)
 
-    assert result["connected"] is False
+    assert result["rc"] != ReturnCode.OK
+    reject_q = parent[2]
+    deadline = time.time() + _REJECTION_LOG_WAIT
+    while True:
+        message = reject_q.get(timeout=max(0.1, deadline - time.time()))
+        if fqcn in message:
+            break
+    assert f"bound to job '{_OTHER_JOB_ID}'" in message

@@ -15,6 +15,7 @@
 """Live mTLS regression: a site parent's internal listener binds job certificates to their job's FQCNs."""
 
 import json
+import logging
 import multiprocessing as mp
 import os
 import socket
@@ -38,8 +39,32 @@ _CHANNEL = "job_binding_test"
 _TOPIC = "echo"
 _CONNECT_TIMEOUT = 10.0
 _REJECT_WAIT = 3.0
+_REQUEST_TIMEOUT = 3.0
+_REJECTION_LOG_WAIT = 10.0
 _JOB_A = str(uuid.uuid4())
 _JOB_B = str(uuid.uuid4())
+
+
+class _RejectionRecorder(logging.Handler):
+    """Forwards the parent's job-binding rejections to the test process."""
+
+    def __init__(self, queue):
+        super().__init__(level=logging.ERROR)
+        self.queue = queue
+
+    def emit(self, record):
+        message = record.getMessage()
+        if "bound to job" in message:
+            self.queue.put(message)
+
+
+def _await_rejection_of(reject_q, fqcn: str) -> str:
+    deadline = time.time() + _REJECTION_LOG_WAIT
+    while time.time() < deadline:
+        message = reject_q.get(timeout=max(0.1, deadline - time.time()))
+        if fqcn in message:
+            return message
+    raise AssertionError(f"parent logged no binding rejection for {fqcn}")
 
 
 def _write_pki(out_dir: str) -> dict:
@@ -112,9 +137,10 @@ def _run_server(root_url, pki, ready_q, stop_ev):
             cell.stop()
 
 
-def _run_site_parent(root_url, pki, config_dir, ready_q, stop_ev):
+def _run_site_parent(root_url, pki, config_dir, ready_q, stop_ev, reject_q):
     cell = None
     try:
+        logging.getLogger().addHandler(_RejectionRecorder(reject_q))
         # the internal listener scheme and security come from comm_config.json, as in a provisioned kit
         ConfigService.initialize(section_files={}, config_path=[config_dir])
         credentials = {
@@ -171,12 +197,10 @@ def _run_job_cell(parent_url, pki, cert_name, fqcn, wait, result_q):
         deadline = time.time() + wait
         while time.time() < deadline and not cell.is_cell_connected("site-1"):
             time.sleep(0.1)
-        connected = cell.is_cell_connected("site-1")
-        rc = None
-        if connected:
-            reply = cell.send_request(_CHANNEL, _TOPIC, "site-1", Message(payload="hello"), timeout=5.0)
-            rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
-        result_q.put({"connected": connected, "rc": rc})
+        # the client-side connected flag is transient while the parent is still validating the handshake;
+        # only a completed application request proves the parent accepted this cell
+        reply = cell.send_request(_CHANNEL, _TOPIC, "site-1", Message(payload="hello"), timeout=_REQUEST_TIMEOUT)
+        result_q.put({"rc": reply.get_header(MessageHeaderKey.RETURN_CODE)})
     except Exception:
         result_q.put({"error": traceback.format_exc()})
     finally:
@@ -195,18 +219,18 @@ def site_parent(tmp_path_factory):
         )
     root_url = f"stcp://localhost:{_free_port()}"
     stop_ev = ctx.Event()
-    server_q, parent_q = ctx.Queue(), ctx.Queue()
+    server_q, parent_q, reject_q = ctx.Queue(), ctx.Queue(), ctx.Queue()
     server = ctx.Process(target=_run_server, args=(root_url, pki, server_q, stop_ev))
     server.start()
     parent = None
     try:
         status = server_q.get(timeout=30)
         assert status == "ready", status
-        parent = ctx.Process(target=_run_site_parent, args=(root_url, pki, config_dir, parent_q, stop_ev))
+        parent = ctx.Process(target=_run_site_parent, args=(root_url, pki, config_dir, parent_q, stop_ev, reject_q))
         parent.start()
         internal_url = parent_q.get(timeout=40)
         assert internal_url.startswith("stcp://"), internal_url
-        yield internal_url, pki
+        yield internal_url, pki, reject_q
     finally:
         stop_ev.set()
         if parent:
@@ -215,7 +239,7 @@ def site_parent(tmp_path_factory):
 
 
 def _job_cell(site_parent, cert_name, fqcn, wait):
-    internal_url, pki = site_parent
+    internal_url, pki, _ = site_parent
     ctx = mp.get_context("spawn")
     result_q = ctx.Queue()
     proc = ctx.Process(target=_run_job_cell, args=(internal_url, pki, cert_name, fqcn, wait, result_q))
@@ -231,11 +255,19 @@ def _job_cell(site_parent, cert_name, fqcn, wait):
 def test_site_parent_accepts_job_cell_with_its_own_job_cert(site_parent):
     result = _job_cell(site_parent, "job_b", f"site-1.{_JOB_B}", _CONNECT_TIMEOUT)
 
-    assert result["connected"] is True
     assert result["rc"] == ReturnCode.OK
 
 
-def test_site_parent_rejects_another_jobs_cert_on_job_fqcn(site_parent):
-    result = _job_cell(site_parent, "job_a", f"site-1.{_JOB_B}", _REJECT_WAIT)
+@pytest.mark.parametrize(
+    "claimed_fqcn",
+    [
+        f"site-1.{_JOB_B}",  # job B's own cell
+        f"site-1.{_JOB_B}.ws_transfer_{_JOB_A}",  # an auxiliary name below job B's cell is still job B's
+    ],
+)
+def test_site_parent_rejects_another_jobs_cert_on_job_fqcn(site_parent, claimed_fqcn):
+    result = _job_cell(site_parent, "job_a", claimed_fqcn, _REJECT_WAIT)
 
-    assert result["connected"] is False
+    assert result["rc"] != ReturnCode.OK
+    rejection = _await_rejection_of(site_parent[2], claimed_fqcn)
+    assert f"bound to job '{_JOB_A}'" in rejection

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional
+from typing import Optional, Tuple
 
 from cryptography import x509
 from cryptography.x509.oid import NameOID
@@ -125,15 +125,23 @@ class CellIdentityResolver:
         return parts[0] if parts else None
 
     def resolve(self, fqcn: str) -> Optional[str]:
+        return self.resolve_owner(fqcn)[0]
+
+    def resolve_owner(self, fqcn: str) -> Tuple[Optional[str], int]:
+        """The identity expected for an FQCN and how many leading segments name that identity's owner.
+
+        A job's cells hang directly off their owner, so the job segment is the first one after the
+        owner's prefix (see FQCN.belongs_to_job).
+        """
         if not fqcn:
-            return None
+            return None, 0
 
         fqcn = FQCN.normalize(fqcn)
+        parts = FQCN.split(fqcn)
         identity = self.exact_identity_map.get(fqcn)
         if identity:
-            return identity
+            return identity, len(parts)
 
-        parts = FQCN.split(fqcn)
         leaf = parts[-1]
         for i in range(len(parts), 0, -1):
             prefix = FQCN.join(parts[:i])
@@ -142,22 +150,22 @@ class CellIdentityResolver:
 
             identity = self.prefix_identity_map.get(prefix)
             if identity:
-                return identity
+                return identity, i
 
         # Network Attach trainers are children of the stable site CP and use
         # that site's provisioned certificate. The dynamic CJ is a sibling and
         # remains the application-level task/result boundary.
         if len(parts) > 1 and leaf.startswith(CLIENT_API_ATTACH_LEAF_PREFIX):
-            return self.resolve(FQCN.join(parts[:-1]))
+            return self.resolve_owner(FQCN.join(parts[:-1]))
 
         identity = self._resolve_local_child_identity(fqcn)
         if identity:
-            return identity
+            return identity, len(FQCN.split(self.local_fqcn))
 
-        return parts[0] if parts else fqcn
+        return parts[0], 1
 
     def require_match(self, fqcn: str, peer_cn: str, peer_desc: str, peer_job_id: Optional[str] = None):
-        expected_cn = self.resolve(fqcn)
+        expected_cn, owner_segments = self.resolve_owner(fqcn)
         if not expected_cn:
             raise ValueError(f"{peer_desc} claimed endpoint '{fqcn}' does not resolve to an expected identity")
 
@@ -165,7 +173,7 @@ class CellIdentityResolver:
             raise ValueError(f"{peer_desc} does not have an authenticated mTLS peer common name")
 
         # A per-job certificate may only authenticate cells of that job.
-        if peer_job_id is not None and not FQCN.belongs_to_job(fqcn, peer_job_id):
+        if peer_job_id is not None and not FQCN.belongs_to_job(fqcn, peer_job_id, owner_segments):
             raise ValueError(
                 f"{peer_desc} authenticated with a certificate bound to job '{peer_job_id}' "
                 f"but claimed endpoint '{fqcn}' is not part of that job"

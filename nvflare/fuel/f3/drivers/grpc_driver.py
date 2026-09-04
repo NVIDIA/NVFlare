@@ -37,7 +37,7 @@ from .driver_params import DriverCap, DriverParams
 from .grpc.qq import QQ
 from .grpc.streamer_pb2 import Frame
 from .grpc.utils import get_grpc_client_credentials, get_grpc_server_credentials, use_aio_grpc
-from .net_utils import MAX_FRAME_SIZE, get_address, get_tcp_urls, ssl_required
+from .net_utils import MAX_FRAME_SIZE, add_grpc_peer_job_id, get_address, get_tcp_urls, ssl_required
 
 GRPC_DEFAULT_OPTIONS = [
     ("grpc.max_send_message_length", MAX_FRAME_SIZE),

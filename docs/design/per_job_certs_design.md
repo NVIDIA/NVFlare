@@ -223,10 +223,13 @@ stops one job's credential from acting as another job's cell:
   `PEER_JOB_ID` connection property next to `PEER_CN`.
 - `CellIdentityResolver.require_match()` rejects a peer whose certificate is
   bound to job X unless the FQCN it claims belongs to that job
-  (`FQCN.belongs_to_job`): the job cell `<site>.X` and its descendants, or an
-  auxiliary job cell named `<name>_X` directly under the site, such as the
+  (`FQCN.belongs_to_job`): the segment right after the owning site's prefix
+  (as resolved for the identity check) must be X — the job cell `<site>.X` and
+  its descendants — or an auxiliary job cell named `<name>_X`, such as the
   Kubernetes workspace-transfer bootstrap cell `server.ws_transfer_X`, which
-  authenticates with the job credential before the job cell exists. The check runs at the
+  authenticates with the job credential before the job cell exists. The
+  position matters: `<site>.Y.ws_transfer_X` is a cell of job Y and is rejected
+  for job X's certificate. The check runs at the
   connection handshake (`ConnManager`) and again on the certificate exchanged
   for message-level crypto (`CredentialManager`), which is the certificate
   later used to decrypt that peer's messages.
