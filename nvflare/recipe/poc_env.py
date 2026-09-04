@@ -50,6 +50,7 @@ STOP_POC_TIMEOUT = 10
 POC_READY_POLL_INTERVAL = 0.2
 POC_READY_STABLE_INTERVAL = 2.0
 DEFAULT_ADMIN_USER = "admin@nvidia.com"
+_RECIPE_WORKSPACE_SUFFIX = ".recipe-"
 
 
 # Internal — not part of the public API
@@ -156,10 +157,25 @@ class PocEnv(ExecEnv):
 
     def _new_poc_workspace(self) -> str:
         """Return a unique Recipe-owned workspace beside the configured POC path."""
-        return f"{self._poc_workspace_root}.recipe-{uuid.uuid4().hex}"
+        return f"{self._poc_workspace_root}{_RECIPE_WORKSPACE_SUFFIX}{uuid.uuid4().hex}"
+
+    def _is_recipe_workspace(self, workspace: str) -> bool:
+        """Return whether the path has this environment's exact sibling-and-UUID form."""
+        root = os.path.abspath(self._poc_workspace_root)
+        candidate = os.path.abspath(workspace)
+        if os.path.dirname(candidate) != os.path.dirname(root):
+            return False
+        prefix = f"{os.path.basename(root)}{_RECIPE_WORKSPACE_SUFFIX}"
+        candidate_name = os.path.basename(candidate)
+        if not candidate_name.startswith(prefix):
+            return False
+        identifier = candidate_name[len(prefix) :]
+        return len(identifier) == 32 and all(c in "0123456789abcdef" for c in identifier.lower())
 
     def _clean_up_failed_deployment(self) -> None:
         """Stop a failed deployment and verify its per-run workspace was cleaned."""
+        if not self._is_recipe_workspace(self.poc_workspace):
+            raise RuntimeError(f"refusing to clean unmanaged POC workspace {self.poc_workspace}")
         self.stop(clean_up=True)
         if self._check_poc_running():
             raise RuntimeError("POC services remain running")
@@ -306,7 +322,8 @@ class PocEnv(ExecEnv):
             except BaseException as cleanup_error:
                 raise RuntimeError(
                     f"POC deployment failed ({deployment_error}); cleanup could not be completed safely "
-                    f"for the per-run workspace {self.poc_workspace}: {cleanup_error}"
+                    f"for the per-run workspace {self.poc_workspace}: {cleanup_error}. Stop any remaining POC "
+                    "services and remove this workspace manually."
                 ) from cleanup_error
             raise
         self.logger.info("POC services started successfully")

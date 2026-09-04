@@ -310,8 +310,25 @@ def test_deploy_reports_incomplete_failure_cleanup(tmp_path, monkeypatch):
 
     assert "submission failed" in str(exc_info.value)
     assert run_workspace in str(exc_info.value)
+    assert "remove this workspace manually" in str(exc_info.value)
     assert "POC services remain running" in str(exc_info.value.__cause__)
     assert os.path.isdir(run_workspace)
+
+
+def test_new_env_preserves_retained_recipe_workspace(tmp_path, monkeypatch):
+    import nvflare.recipe.poc_env as poc_env_module
+
+    configured_workspace = tmp_path / "poc"
+    retained_workspace = tmp_path / f"poc.recipe-{'b' * 32}"
+    retained_workspace.mkdir()
+    retained_result = retained_workspace / "result.txt"
+    retained_result.write_text("keep me")
+    monkeypatch.setattr(poc_env_module, "get_poc_workspace", lambda: str(configured_workspace))
+    env = PocEnv()
+    _configure_successful_deploy(monkeypatch, env)
+
+    assert env.deploy(object()) == "job-id"
+    assert retained_result.read_text() == "keep me"
 
 
 def test_reusing_stopped_env_creates_new_workspace_and_preserves_prior_result(tmp_path, monkeypatch):
