@@ -149,7 +149,8 @@ class FedEvalRecipe(Recipe):
         self.eval_ckpt = eval_ckpt
         self.min_clients = min_clients
         self.eval_script = eval_script
-        self.eval_args = normalize_argv(eval_args, "eval_args")
+        normalized_eval_args = normalize_argv(eval_args, "eval_args", allow_none=True)
+        self.eval_args = "" if normalized_eval_args is None else normalized_eval_args
         self.launch_external_process = launch_external_process
         self.command = normalize_argv(command, "command")
         self.server_expected_format = server_expected_format

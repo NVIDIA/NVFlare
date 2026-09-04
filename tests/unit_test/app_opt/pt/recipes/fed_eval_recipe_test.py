@@ -397,6 +397,20 @@ class TestFedEvalRecipeEdgeCases:
 
         assert recipe.eval_args == ""
 
+    def test_none_eval_args_preserves_empty_argv_compatibility(self, mock_file_system, simple_model):
+        model, checkpoint_path = simple_model
+
+        recipe = FedEvalRecipe(
+            name="test_none_args",
+            model=model,
+            eval_ckpt=checkpoint_path,
+            eval_script="eval.py",
+            eval_args=None,
+            min_clients=1,
+        )
+
+        assert recipe.eval_args == ""
+
     def test_single_client(self, mock_file_system, base_recipe_params, simple_model):
         """Test FedEvalRecipe with single client."""
         model, _ = simple_model
