@@ -479,6 +479,9 @@ workspace is never replaced by Recipe provisioning. Reusing a stopped
 ``PocEnv`` creates another new workspace, so a retained result or log directory
 from an earlier run is not overwritten. Pass ``clean_up=False`` to
 ``Run.get_result()`` to retain the current Recipe workspace for inspection.
+If failure cleanup cannot be verified, the raised error identifies the unique
+workspace for manual cleanup. Other deployments do not scan or delete retained
+Recipe workspaces.
 
 ``ProdEnv`` submits through an admin startup kit. ``login_timeout`` must be
 positive, and ``username`` selects the admin identity. ``PocEnv`` and
