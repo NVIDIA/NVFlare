@@ -32,7 +32,7 @@ README in each subfolder for setup, data, and run instructions.
 
 ## Agent-Assisted Research Workflow
 
-- [FedReady](./agentic-fl/README.md) provides the `agenticfl` reference
+- [FedReady](./fedready/README.md) provides the `fedready` reference
   implementation: a Codex-driven, privacy-bounded workflow for federation
   formation, client-local data adaptation, generated training code, validation
   gates, and NVFlare FedAvg execution.
