@@ -197,6 +197,19 @@ class PocEnv(ExecEnv):
             os.remove(self.poc_workspace)
         os.replace(backup, self.poc_workspace)
 
+    def _raise_rollback_error(self, workspace_backup: Optional[str], error: Exception, reason: str) -> None:
+        """Preserve recovery artifacts and report their locations when rollback is unsafe."""
+        self._workspace_owned = True
+        backup_note = (
+            f"the retained workspace backup remains at {workspace_backup}"
+            if workspace_backup
+            else "there was no retained workspace to back up"
+        )
+        raise RuntimeError(
+            f"POC deployment failed and {reason}; "
+            f"the partial replacement remains at {self.poc_workspace}; {backup_note}"
+        ) from error
+
     @staticmethod
     def _is_docker_service_running(service_name: str) -> bool:
         """Return whether Docker reports the named POC container as running."""
@@ -347,20 +360,30 @@ class PocEnv(ExecEnv):
                 # Do not replace or delete either workspace when service state
                 # is unknown. The active path belongs to this invocation, and
                 # the retained backup remains available for manual recovery.
-                self._workspace_owned = True
-                backup_note = (
-                    f"the retained workspace backup remains at {workspace_backup}"
-                    if workspace_backup
-                    else "there was no retained workspace to back up"
+                self._raise_rollback_error(
+                    workspace_backup,
+                    state_error,
+                    "the state of partially started services could not be determined",
                 )
-                raise RuntimeError(
-                    f"POC deployment failed and the state of partially started services could not be determined; "
-                    f"the partial replacement remains at {self.poc_workspace}; {backup_note}"
-                ) from state_error
 
             if poc_running:
-                self.stop(clean_up=False)
-                if self._check_poc_running():
+                try:
+                    self.stop(clean_up=False)
+                except Exception as stop_error:
+                    self._raise_rollback_error(
+                        workspace_backup,
+                        stop_error,
+                        "partially started services could not be safely stopped",
+                    )
+                try:
+                    poc_running = self._check_poc_running()
+                except Exception as state_error:
+                    self._raise_rollback_error(
+                        workspace_backup,
+                        state_error,
+                        "the state of partially started services could not be determined after stopping",
+                    )
+                if poc_running:
                     self._workspace_owned = True
                     backup_note = (
                         f"the retained workspace backup remains at {workspace_backup}"

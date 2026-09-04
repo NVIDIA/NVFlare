@@ -272,6 +272,81 @@ def test_rollback_state_error_preserves_partial_workspace_and_backup(tmp_path, m
     assert (backups[0] / "prior-result.txt").read_text() == "old"
 
 
+def test_post_stop_state_error_preserves_partial_workspace_and_backup(tmp_path, monkeypatch):
+    import nvflare.recipe.poc_env as poc_env_module
+
+    workspace = tmp_path / "unknown-post-stop-state-workspace"
+    workspace.mkdir()
+    (workspace / "prior-result.txt").write_text("old")
+    monkeypatch.setattr(poc_env_module, "get_poc_workspace", lambda: str(workspace))
+    monkeypatch.setattr(poc_env_module, "collect_non_local_scripts", lambda job: [])
+
+    def write_then_fail(**kwargs):
+        workspace.mkdir()
+        (workspace / "partial-result.txt").write_text("partial")
+        raise RuntimeError("provisioning failed after partial writes")
+
+    monkeypatch.setattr(poc_env_module, "prepare_poc_provision", write_then_fail)
+    env = PocEnv()
+    state_checks = iter([False, True, RuntimeError("Docker inspection unavailable after stop")])
+
+    def check_state():
+        result = next(state_checks)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    stop_calls = []
+    monkeypatch.setattr(env, "_check_poc_running", check_state)
+    monkeypatch.setattr(env, "stop", lambda clean_up: stop_calls.append(clean_up))
+
+    with pytest.raises(RuntimeError, match="could not be determined after stopping") as exc_info:
+        env.deploy(object())
+
+    backups = list(tmp_path.glob("unknown-post-stop-state-workspace.nvflare-recipe-backup-*"))
+    assert stop_calls == [False]
+    assert len(backups) == 1
+    assert str(backups[0]) in str(exc_info.value)
+    assert env.workspace_owned is True
+    assert (workspace / "partial-result.txt").read_text() == "partial"
+    assert (backups[0] / "prior-result.txt").read_text() == "old"
+
+
+def test_rollback_stop_error_preserves_partial_workspace_and_backup(tmp_path, monkeypatch):
+    import nvflare.recipe.poc_env as poc_env_module
+
+    workspace = tmp_path / "failed-rollback-stop-workspace"
+    workspace.mkdir()
+    (workspace / "prior-result.txt").write_text("old")
+    monkeypatch.setattr(poc_env_module, "get_poc_workspace", lambda: str(workspace))
+    monkeypatch.setattr(poc_env_module, "collect_non_local_scripts", lambda job: [])
+
+    def write_then_fail(**kwargs):
+        workspace.mkdir()
+        (workspace / "partial-result.txt").write_text("partial")
+        raise RuntimeError("provisioning failed after partial writes")
+
+    monkeypatch.setattr(poc_env_module, "prepare_poc_provision", write_then_fail)
+    env = PocEnv()
+    state_checks = iter([False, True])
+    monkeypatch.setattr(env, "_check_poc_running", lambda: next(state_checks))
+    monkeypatch.setattr(
+        env,
+        "stop",
+        lambda clean_up: (_ for _ in ()).throw(RuntimeError("Docker stop failed")),
+    )
+
+    with pytest.raises(RuntimeError, match="could not be safely stopped") as exc_info:
+        env.deploy(object())
+
+    backups = list(tmp_path.glob("failed-rollback-stop-workspace.nvflare-recipe-backup-*"))
+    assert len(backups) == 1
+    assert str(backups[0]) in str(exc_info.value)
+    assert env.workspace_owned is True
+    assert (workspace / "partial-result.txt").read_text() == "partial"
+    assert (backups[0] / "prior-result.txt").read_text() == "old"
+
+
 def test_failed_start_restores_retained_workspace(tmp_path, monkeypatch):
     import nvflare.recipe.poc_env as poc_env_module
 
