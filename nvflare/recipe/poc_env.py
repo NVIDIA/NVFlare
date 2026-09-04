@@ -158,6 +158,14 @@ class PocEnv(ExecEnv):
         """Return a unique Recipe-owned workspace beside the configured POC path."""
         return f"{self._poc_workspace_root}.recipe-{uuid.uuid4().hex}"
 
+    def _clean_up_failed_deployment(self) -> None:
+        """Stop a failed deployment and verify its per-run workspace was cleaned."""
+        self.stop(clean_up=True)
+        if self._check_poc_running():
+            raise RuntimeError("POC services remain running")
+        if os.path.exists(self.poc_workspace):
+            raise RuntimeError("the per-run POC workspace could not be removed")
+
     @staticmethod
     def _is_docker_service_running(service_name: str) -> bool:
         """Return whether Docker reports the named POC container as running."""
@@ -290,10 +298,16 @@ class PocEnv(ExecEnv):
             # Successful submission also proves that the admin connection is
             # ready after the process/container and client-registration checks.
             job_id = self._get_session_manager().submit_job(job)
-        except BaseException:
+        except BaseException as deployment_error:
             # This path is unique to the current Recipe execution, so failure
             # cleanup cannot delete a retained CLI workspace or a prior run.
-            self.stop(clean_up=True)
+            try:
+                self._clean_up_failed_deployment()
+            except BaseException as cleanup_error:
+                raise RuntimeError(
+                    f"POC deployment failed ({deployment_error}); cleanup could not be completed safely "
+                    f"for the per-run workspace {self.poc_workspace}: {cleanup_error}"
+                ) from cleanup_error
             raise
         self.logger.info("POC services started successfully")
         return job_id

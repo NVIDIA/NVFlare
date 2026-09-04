@@ -287,6 +287,33 @@ def test_deploy_failure_cleans_only_run_workspace(tmp_path, monkeypatch, failure
     assert not os.path.exists(run_workspace)
 
 
+def test_deploy_reports_incomplete_failure_cleanup(tmp_path, monkeypatch):
+    import nvflare.recipe.poc_env as poc_env_module
+
+    configured_workspace = tmp_path / "poc"
+    monkeypatch.setattr(poc_env_module, "get_poc_workspace", lambda: str(configured_workspace))
+    env = PocEnv()
+
+    def prepare(**kwargs):
+        Path(kwargs["workspace"]).mkdir(parents=True)
+
+    def fail_submission(job):
+        raise RuntimeError("submission failed")
+
+    _configure_successful_deploy(monkeypatch, env, prepare=prepare, submit=fail_submission)
+    monkeypatch.setattr(env, "stop", lambda clean_up: None)
+    monkeypatch.setattr(env, "_check_poc_running", lambda: True)
+    run_workspace = env.poc_workspace
+
+    with pytest.raises(RuntimeError, match="cleanup could not be completed safely") as exc_info:
+        env.deploy(object())
+
+    assert "submission failed" in str(exc_info.value)
+    assert run_workspace in str(exc_info.value)
+    assert "POC services remain running" in str(exc_info.value.__cause__)
+    assert os.path.isdir(run_workspace)
+
+
 def test_reusing_stopped_env_creates_new_workspace_and_preserves_prior_result(tmp_path, monkeypatch):
     import nvflare.recipe.poc_env as poc_env_module
 
