@@ -159,3 +159,4 @@ On import or validation failure, fix the reported contract issue without bypassi
 
 Finalize only when state reports `final_response_allowed=true` for stop, cap, policy, or blocker; then hand off to `nvflare-autofl-report`. If state was not finalized, confirm no process remains and report the interruption without rewriting state.
 
+
