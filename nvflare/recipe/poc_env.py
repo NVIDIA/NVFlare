@@ -341,7 +341,24 @@ class PocEnv(ExecEnv):
             # and submission have passed.
             job_id = self._get_session_manager().submit_job(job)
         except BaseException:
-            if self._check_poc_running():
+            try:
+                poc_running = self._check_poc_running()
+            except Exception as state_error:
+                # Do not replace or delete either workspace when service state
+                # is unknown. The active path belongs to this invocation, and
+                # the retained backup remains available for manual recovery.
+                self._workspace_owned = True
+                backup_note = (
+                    f"the retained workspace backup remains at {workspace_backup}"
+                    if workspace_backup
+                    else "there was no retained workspace to back up"
+                )
+                raise RuntimeError(
+                    f"POC deployment failed and the state of partially started services could not be determined; "
+                    f"the partial replacement remains at {self.poc_workspace}; {backup_note}"
+                ) from state_error
+
+            if poc_running:
                 self.stop(clean_up=False)
                 if self._check_poc_running():
                     self._workspace_owned = True
