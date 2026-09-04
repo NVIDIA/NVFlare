@@ -18,15 +18,25 @@ and the min_sites / required_sites abort logic.
 The test infrastructure stubs out all engine/fl_ctx interaction so that only
 _deploy_job()'s own logic is exercised."""
 
+import os
 from unittest.mock import MagicMock, patch
 
 import pytest
+from cryptography import x509
+from cryptography.hazmat.primitives import serialization
+from cryptography.x509.oid import NameOID
 
 from nvflare.apis.client import Client
-from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.fl_constant import FLContextKey, SecureTrainConst, SiteType
 from nvflare.apis.job_def import Job
+from nvflare.apis.workspace import Workspace
+from nvflare.fuel.f3.drivers.net_utils import get_cert_job_id
+from nvflare.lighter.constants import CertExtensionOID, ProvFileName
+from nvflare.lighter.utils import Identity, generate_cert, generate_keys, serialize_cert, serialize_pri_key
 from nvflare.private.admin_defs import Message, MsgHeader, ReturnCode
+from nvflare.private.defs import RequestHeader
 from nvflare.private.fed.server.job_runner import JobRunner
+from nvflare.private.fed.utils.job_cert_utils import job_cert_paths, read_job_cert, unpack_job_cert_header
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -120,6 +130,85 @@ def test_secure_deploy_fails_without_job_ca(tmp_path):
         runner._deploy_job(job, sites, fl_ctx)
 
     engine.server.admin_server.send_requests_and_get_reply_dict.assert_not_called()
+
+
+def _write_server_kit_with_job_ca(startup):
+    root_key, root_pub = generate_keys()
+    root_cert = generate_cert(Identity("rootCA"), Identity("rootCA"), root_key, root_pub, ca=True)
+    server_key, server_pub = generate_keys()
+    server_cert = generate_cert(Identity("server-cn"), Identity("rootCA"), root_key, server_pub)
+    job_ca_key, job_ca_pub = generate_keys()
+    marker = x509.UnrecognizedExtension(x509.ObjectIdentifier(CertExtensionOID.JOB_CA_MARKER), b"job_ca")
+    job_ca_cert = generate_cert(
+        Identity("job_ca"),
+        Identity("rootCA"),
+        root_key,
+        job_ca_pub,
+        ca=True,
+        ca_path_length=0,
+        extra_extensions=[(marker, False)],
+    )
+    (startup / "rootCA.pem").write_bytes(serialize_cert(root_cert))
+    (startup / "server.crt").write_bytes(serialize_cert(server_cert))
+    (startup / "server.key").write_bytes(serialize_pri_key(server_key))
+    (startup / ProvFileName.JOB_CA_CERT).write_bytes(serialize_cert(job_ca_cert))
+    (startup / ProvFileName.JOB_CA_KEY).write_bytes(serialize_pri_key(job_ca_key))
+
+
+def _common_name(cert):
+    return cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
+
+
+def test_secure_deploy_issues_server_and_client_job_credentials(tmp_path):
+    startup = tmp_path / "startup"
+    startup.mkdir()
+    (tmp_path / "local").mkdir()
+    _write_server_kit_with_job_ca(startup)
+    runner, fl_ctx, engine, job, sites = _build_fl_ctx({"tok-1": _ok_reply()})
+    runner.workspace_root = str(tmp_path)
+    job.get_deployment.return_value = {"app": [SiteType.SERVER, "site-1"]}
+    props = {
+        FLContextKey.SECURE_MODE: True,
+        FLContextKey.SERVER_CONFIG: [{SecureTrainConst.SSL_CERT: str(startup / "server.crt")}],
+    }
+    fl_ctx.get_prop.side_effect = lambda key, default=None: props.get(key, default)
+    fl_ctx.set_prop.side_effect = lambda key, val, **kw: props.__setitem__(key, val)
+    deploy_requests = []
+
+    def make_deploy_message(*_args, **_kwargs):
+        request = Message(topic="deploy", body=b"app")
+        deploy_requests.append(request)
+        return request
+
+    with (
+        patch.object(runner, "_make_deploy_message", side_effect=make_deploy_message),
+        patch("nvflare.private.fed.server.job_runner.AppDeployer") as deployer_cls,
+        patch("nvflare.private.fed.server.job_runner.require_signed_jobs", return_value=False),
+    ):
+        deployer_cls.return_value.deploy.return_value = ""
+        job_id, failed_clients = runner._deploy_job(job, sites, fl_ctx)
+
+    assert (job_id, failed_clients) == ("job-1", [])
+    assert "server: OK" in props[FLContextKey.JOB_DEPLOY_DETAIL]
+
+    run_dir = Workspace(root_dir=str(tmp_path), site_name=SiteType.SERVER).get_run_dir("job-1")
+    sj_cert_pem, sj_key_pem = read_job_cert(run_dir)
+    sj_cert = x509.load_pem_x509_certificate(sj_cert_pem)
+    assert _common_name(sj_cert) == "server-cn"
+    assert get_cert_job_id(sj_cert) == "job-1"
+    assert sj_cert_pem.count(b"BEGIN CERTIFICATE") == 2  # leaf + job CA, chains to the root
+    assert oct(os.stat(job_cert_paths(run_dir)[1]).st_mode & 0o777) == "0o600"
+    assert serialization.load_pem_private_key(sj_key_pem, None).public_key() == sj_cert.public_key()
+
+    [deploy_request] = deploy_requests
+    cj_cert_pem, cj_key_pem = unpack_job_cert_header(deploy_request.get_header(RequestHeader.JOB_CERT))
+    cj_cert = x509.load_pem_x509_certificate(cj_cert_pem)
+    assert _common_name(cj_cert) == "site-1"
+    assert get_cert_job_id(cj_cert) == "job-1"
+    assert cj_cert.issuer == x509.load_pem_x509_certificate((startup / ProvFileName.JOB_CA_CERT).read_bytes()).subject
+    assert cj_cert.public_key() != sj_cert.public_key()
+    assert serialization.load_pem_private_key(cj_key_pem, None).public_key() == cj_cert.public_key()
+    engine.server.admin_server.send_requests_and_get_reply_dict.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
