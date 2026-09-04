@@ -496,3 +496,16 @@ def test_logout_after_expiry_does_not_use_stopped_messenger():
 
     assert api.logout() is None
     api.server_execute.assert_not_called()
+
+
+def test_logout_without_cell_closes_without_sending():
+    api = AdminAPI.__new__(AdminAPI)
+    api.closed = False
+    api.in_logout = False
+    api.cell = None
+    api.close = MagicMock()
+    api.server_execute = MagicMock()
+
+    assert api.logout() is None
+    api.close.assert_called_once_with()
+    api.server_execute.assert_not_called()

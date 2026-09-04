@@ -45,9 +45,9 @@ NVFLARE_STARTUP_KIT_DIR = "NVFLARE_STARTUP_KIT_DIR"
 
 ADMIN_STARTUP_KIT_REQUIRED_FILES = (
     os.path.join("startup", "fed_admin.json"),
-    os.path.join("startup", "client.crt"),
     os.path.join("startup", "rootCA.pem"),
 )
+ADMIN_STATIC_CERT_FILE = os.path.join("startup", "client.crt")
 SITE_STARTUP_KIT_REQUIRED_FILES = (os.path.join("startup", "fed_client.json"),)
 SERVER_STARTUP_KIT_REQUIRED_FILES = (os.path.join("startup", "fed_server.json"),)
 STARTUP_KIT_KIND_ADMIN = "admin"
@@ -236,13 +236,30 @@ def _has_required_files(startup_kit_dir: Path, required_files) -> bool:
     return all((startup_kit_dir / rel_path).is_file() for rel_path in required_files)
 
 
+def _is_admin_startup_kit(startup_kit_dir: Path) -> bool:
+    if not _has_required_files(startup_kit_dir, ADMIN_STARTUP_KIT_REQUIRED_FILES):
+        return False
+    if (startup_kit_dir / ADMIN_STATIC_CERT_FILE).is_file():
+        return True
+
+    try:
+        config = json.loads((startup_kit_dir / "startup" / "fed_admin.json").read_text())
+    except Exception:
+        return False
+
+    admin_config = config.get("admin") if isinstance(config, dict) else None
+    return isinstance(admin_config, dict) and bool(admin_config.get("ephemeral_admin_cert"))
+
+
 def classify_startup_kit(path: str) -> Tuple[str, str]:
     """Return (kind, normalized participant dir) for a generated startup kit."""
     startup_path = _as_existing_dir(path)
     startup_kit_dir = startup_path.parent if startup_path.name == "startup" else startup_path
 
+    if _is_admin_startup_kit(startup_kit_dir):
+        return STARTUP_KIT_KIND_ADMIN, str(startup_kit_dir.resolve())
+
     for kind, required_files in (
-        (STARTUP_KIT_KIND_ADMIN, ADMIN_STARTUP_KIT_REQUIRED_FILES),
         (STARTUP_KIT_KIND_SITE, SITE_STARTUP_KIT_REQUIRED_FILES),
         (STARTUP_KIT_KIND_SERVER, SERVER_STARTUP_KIT_REQUIRED_FILES),
     ):
@@ -465,9 +482,13 @@ def _certificate_expiration_metadata(cert, cert_path: str) -> Tuple[Dict, list]:
     )
 
 
-def _inspect_admin_cert_metadata(startup_dir: str, metadata: Dict) -> None:
+def _inspect_admin_cert_metadata(startup_dir: str, metadata: Dict, has_ephemeral_admin_cert: bool = False) -> None:
     cert_path = os.path.join(startup_dir, "client.crt")
     if not os.path.isfile(cert_path):
+        if has_ephemeral_admin_cert:
+            metadata["certificate"] = {"status": "runtime_issued"}
+            metadata["credential_source"] = "ephemeral_admin_cert"
+            return
         metadata["findings"].append(
             _finding(
                 "STARTUP_KIT_CERT_MISSING",
@@ -526,15 +547,18 @@ def inspect_startup_kit_metadata(path: str) -> Dict:
 
     startup_dir = os.path.join(startup_kit_dir, "startup")
     if kind == STARTUP_KIT_KIND_ADMIN:
+        has_ephemeral_admin_cert = False
         try:
             fed_admin_config = ConfigFactory.load_config("fed_admin.json", [startup_dir])
             if fed_admin_config:
                 config_dict = fed_admin_config.to_dict()
-                metadata["identity"] = config_dict.get("admin", {}).get("username")
+                admin_config = config_dict.get("admin", {})
+                metadata["identity"] = admin_config.get("username")
+                has_ephemeral_admin_cert = bool(admin_config.get("ephemeral_admin_cert"))
         except Exception:
             pass
 
-        _inspect_admin_cert_metadata(startup_dir, metadata)
+        _inspect_admin_cert_metadata(startup_dir, metadata, has_ephemeral_admin_cert=has_ephemeral_admin_cert)
 
     if not metadata["identity"]:
         metadata["identity"] = os.path.basename(startup_kit_dir)

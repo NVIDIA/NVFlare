@@ -163,6 +163,7 @@ class _FakeJobDefManager:
     def __init__(self):
         self.created_meta = None
         self.cloned_meta = None
+        self.content = None
 
     def create(self, meta, uploaded_content, fl_ctx):
         self.created_meta = dict(meta)
@@ -175,6 +176,9 @@ class _FakeJobDefManager:
         result = dict(meta)
         result[JobMetaKey.JOB_ID.value] = "cloned-job-id"
         return result
+
+    def get_content(self, meta, fl_ctx):
+        return self.content
 
 
 class _FakeSubmitTokenJobDefManager:

@@ -24,6 +24,7 @@ from cryptography.x509.oid import NameOID
 from nvflare.lighter.constants import CertFileBasename, CtxKey, ParticipantType, PropKey
 from nvflare.lighter.ctx import ProvisionContext
 from nvflare.lighter.entity import Participant, Project
+from nvflare.lighter.ephemeral_admin import get_admin_ephemeral_cert_config
 from nvflare.lighter.spec import Builder
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys, serialize_cert, serialize_pri_key
 
@@ -265,6 +266,10 @@ class CertBuilder(Builder):
         if participant.type in [ParticipantType.CLIENT, ParticipantType.RELAY]:
             self._build_internal_listener_cert(participant, ctx)
 
+        self._write_root_ca(participant, ctx)
+
+    def _write_root_ca(self, participant: Participant, ctx: ProvisionContext):
+        dest_dir = ctx.get_kit_dir(participant)
         with open(os.path.join(dest_dir, "rootCA.pem"), "wb") as f:
             f.write(self.serialized_cert)
 
@@ -333,7 +338,10 @@ class CertBuilder(Builder):
             self._build_write_cert_pair(relay, CertFileBasename.CLIENT, ctx)
 
         for admin in project.get_admins():
-            self._build_write_cert_pair(admin, CertFileBasename.CLIENT, ctx)
+            if get_admin_ephemeral_cert_config(admin):
+                self._write_root_ca(admin, ctx)
+            else:
+                self._build_write_cert_pair(admin, CertFileBasename.CLIENT, ctx)
 
     def get_pri_key_cert(self, participant: Participant):
         pri_key, pub_key = generate_keys()

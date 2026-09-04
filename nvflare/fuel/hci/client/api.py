@@ -58,6 +58,11 @@ from nvflare.fuel.hci.proto import (
 from nvflare.fuel.hci.reg import CommandEntry, CommandModule, CommandRegister
 from nvflare.fuel.hci.table import Table
 from nvflare.fuel.sec.authn import set_add_auth_headers_filters
+from nvflare.fuel.sec.ephemeral_admin_cert import (
+    get_ephemeral_admin_cert_renewal_window,
+    obtain_ephemeral_admin_cert_files,
+    validate_ephemeral_admin_cert_config,
+)
 from nvflare.fuel.utils.admin_name_utils import new_admin_client_name
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.aux_runner import AuxMsgTarget, AuxRunner
@@ -297,6 +302,18 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         self.ca_cert = admin_config.get(AdminConfigKey.CA_CERT)
         self.client_cert = admin_config.get(AdminConfigKey.CLIENT_CERT)
         self.client_key = admin_config.get(AdminConfigKey.CLIENT_KEY)
+        self.ephemeral_admin_cert_files = None
+        self.ephemeral_admin_cert_config = admin_config.get(AdminConfigKey.EPHEMERAL_ADMIN_CERT)
+        try:
+            if self.ephemeral_admin_cert_config:
+                self.ephemeral_admin_cert_config = validate_ephemeral_admin_cert_config(
+                    self.ephemeral_admin_cert_config
+                )
+            self.ephemeral_admin_cert_renewal_window = get_ephemeral_admin_cert_renewal_window(
+                self.ephemeral_admin_cert_config or {}
+            )
+        except ValueError as ex:
+            raise ConfigError(str(ex)) from ex
         self.uid_source = admin_config.get(AdminConfigKey.UID_SOURCE, UidSource.USER_INPUT)
         self.host = admin_config.get(AdminConfigKey.HOST, "localhost")
         self.port = admin_config.get(AdminConfigKey.PORT, 8002)
@@ -309,6 +326,12 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
 
         if not self.ca_cert:
             raise ConfigError("missing CA Cert file name")
+        if self.ephemeral_admin_cert_config:
+            if self.client_cert or self.client_key:
+                raise ConfigError(
+                    "client_cert and client_key must both be omitted when ephemeral_admin_cert is configured"
+                )
+            self.ensure_client_cert_valid()
         if not self.client_cert:
             raise ConfigError("missing Client Cert file name")
         if not self.client_key:
@@ -369,6 +392,55 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         )
         self.file_download_waiters = {}  # tx_id => Threading.Event
 
+    def ensure_client_cert_valid(self):
+        if not getattr(self, "ephemeral_admin_cert_config", None):
+            return False
+        if self.ephemeral_admin_cert_files and not self.ephemeral_admin_cert_files.needs_renewal(
+            renewal_window=self.ephemeral_admin_cert_renewal_window
+        ):
+            return False
+
+        renewing = self.ephemeral_admin_cert_files is not None
+        if renewing:
+            self._reset_cell()
+            self.closed = False
+            self.shutdown_asked = False
+            self.session_expired_reason = None
+            self.session_abort_signal = Signal()
+        try:
+            new_files = obtain_ephemeral_admin_cert_files(
+                config=self.ephemeral_admin_cert_config,
+                root_ca_file=self.ca_cert,
+            )
+        except Exception as ex:
+            raise ConfigError(f"failed to obtain ephemeral admin certificate: {secure_format_exception(ex)}") from ex
+
+        self.ephemeral_admin_cert_files = new_files
+        self.client_cert = new_files.client_cert
+        self.client_key = new_files.client_key
+        if self.uid_source == UidSource.CERT:
+            cert = load_cert_file(self.client_cert)
+            self.user_name = get_cn_from_cert(cert)
+            if renewing:
+                self.fl_ctx_mgr.identity_name = self.user_name
+        return True
+
+    def _reset_cell(self):
+        self.server_sess_active = False
+        self.token = None
+        self.login_result = None
+        cell = self.cell
+        self.cell = None
+        try:
+            self.shutdown_streamer()
+        finally:
+            try:
+                if cell:
+                    cell.stop()
+            finally:
+                self.aux_runner = None
+                self.object_streamer = None
+
     def new_context(self):
         return self.fl_ctx_mgr.new_context()
 
@@ -387,7 +459,15 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         self._print_hci("Connecting to FLARE ...")
         if self.cell:
             return
+        self.ensure_client_cert_valid()
 
+        try:
+            self._connect_cell(timeout)
+        except Exception:
+            self._reset_cell()
+            raise
+
+    def _connect_cell(self, timeout):
         my_fqcn = new_admin_client_name()
         credentials = {
             DriverParams.CA_CERT.value: self.ca_cert,
@@ -421,6 +501,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             channel=CellChannel.HCI,
             topic="SESSION_EXPIRED",
             cb=self._handle_session_expired,
+            source_cell=self.cell,
         )
 
         NetAgent(self.cell)
@@ -515,7 +596,9 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
     def get_cell(self):
         return self.cell
 
-    def _handle_session_expired(self, message: CellMessage):
+    def _handle_session_expired(self, message: CellMessage, source_cell=None):
+        if source_cell is not None and source_cell is not self.cell:
+            return
         self.debug("received session timeout from server")
         self.session_expired_reason = str(message.payload or "session expired")
         self.session_abort_signal.trigger(self.session_expired_reason)
@@ -620,6 +703,9 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             return None
         if self.in_logout:
             return None
+        if not self.cell:
+            self.close()
+            return None
 
         self.in_logout = True
         try:
@@ -686,8 +772,10 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         Returns:
             A dict of login status and details
         """
+        self.ensure_client_cert_valid()
+        if not self.cell:
+            self.connect()
         command = f"{InternalCommands.CERT_LOGIN} {self.user_name}"
-
         id_asserter = IdentityAsserter(private_key_file=self.client_key, cert_file=self.client_cert)
         cn_signature = id_asserter.sign_common_name(nonce="")
 

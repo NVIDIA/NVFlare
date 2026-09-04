@@ -124,6 +124,7 @@ class AdminClient(cmd.Cmd, EventHandler):
             event_handlers=event_handlers,
             study=study,
         )
+        self.user_name = self.api.user_name
 
         if not os.path.isdir(cli_history_dir):
             os.mkdir(cli_history_dir)
