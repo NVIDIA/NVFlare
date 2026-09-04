@@ -37,22 +37,39 @@ def _job_module_context():
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
 
-    original_model_module = sys.modules.pop("model", None)
+    # Generic sibling module names such as ``prepare_data`` are reused by
+    # other examples. Isolate both imports so repository-wide test order cannot
+    # make this job load another example's cached module.
+    original_sys_path = list(sys.path)
+    original_modules = {name: sys.modules.pop(name, None) for name in ("model", "prepare_data")}
     sys.path.insert(0, example_dir)
     try:
         spec.loader.exec_module(module)
         yield module
     finally:
-        sys.path.pop(0)
-        if original_model_module is not None:
-            sys.modules["model"] = original_model_module
-        else:
-            sys.modules.pop("model", None)
+        sys.path[:] = original_sys_path
+        for name, original in original_modules.items():
+            if original is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = original
 
 
 def _load_job_module():
     with _job_module_context() as module:
         return module
+
+
+def test_job_module_isolated_from_another_examples_cached_sibling(monkeypatch):
+    conflicting_module = SimpleNamespace(DATASET_CHOICES=("other",), DATASET_PATH="other", DEFAULT_DATASET="other")
+    monkeypatch.setitem(sys.modules, "prepare_data", conflicting_module)
+
+    job_module = _load_job_module()
+
+    assert job_module.DATASET_CHOICES == ("synthetic", "cifar10")
+    assert job_module.DATASET_PATH == "/tmp/nvflare/data"
+    assert job_module.DEFAULT_DATASET == "synthetic"
+    assert sys.modules["prepare_data"] is conflicting_module
 
 
 def _load_web_python_snippet(name: str) -> str:
