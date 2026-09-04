@@ -473,6 +473,13 @@ POC mode. Jobs in Docker POC mode specify their SJ/CJ image in recipe launcher
 metadata. When ``project_conf_path`` is supplied, its project definition takes
 precedence over client-count and Docker preparation options.
 
+Each ``PocEnv`` deployment creates a unique Recipe-owned workspace beside the
+workspace configured for the reusable ``nvflare poc`` CLI workflow. The CLI
+workspace is never replaced by Recipe provisioning. Reusing a stopped
+``PocEnv`` creates another new workspace, so a retained result or log directory
+from an earlier run is not overwritten. Pass ``clean_up=False`` to
+``Run.get_result()`` to retain the current Recipe workspace for inspection.
+
 ``ProdEnv`` submits through an admin startup kit. ``login_timeout`` must be
 positive, and ``username`` selects the admin identity. ``PocEnv`` and
 ``ProdEnv`` use ``study`` to select the submission context; see

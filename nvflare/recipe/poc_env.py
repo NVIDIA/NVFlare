@@ -1,4 +1,4 @@
-# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025-2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -50,7 +50,6 @@ STOP_POC_TIMEOUT = 10
 POC_READY_POLL_INTERVAL = 0.2
 POC_READY_STABLE_INTERVAL = 2.0
 DEFAULT_ADMIN_USER = "admin@nvidia.com"
-_WORKSPACE_BACKUP_PREFIX = ".nvflare-recipe-backup-"
 
 
 # Internal — not part of the public API
@@ -92,7 +91,8 @@ class PocEnv(ExecEnv):
     """Proof of Concept execution environment for local testing and development.
 
     This environment sets up a POC deployment on a single machine with multiple
-    processes representing the server, clients, and admin console.
+    processes representing the server, clients, and admin console. Each deployment
+    uses a new Recipe-owned workspace beside the configured CLI POC workspace.
     """
 
     def __init__(
@@ -139,9 +139,11 @@ class PocEnv(ExecEnv):
 
         self.clients = v.clients
         self.num_clients = len(v.clients) if v.clients is not None else v.num_clients
-        # Keep transactional backups beside the workspace even when the
-        # configured path has a trailing separator.
-        self.poc_workspace = os.path.normpath(get_poc_workspace())
+        # The configured POC path belongs to the reusable CLI workflow. Recipe
+        # executions use unique sibling workspaces so they never replace or
+        # restore user-retained POC state.
+        self._poc_workspace_root = os.path.normpath(get_poc_workspace())
+        self.poc_workspace = self._new_poc_workspace()
         self.gpu_ids = v.gpu_ids or []
         self.use_he = v.use_he
         self.project_conf_path = v.project_conf_path
@@ -150,65 +152,11 @@ class PocEnv(ExecEnv):
         self.study = v.study
         self._session_manager = None  # Lazy initialization
         self._session_manager_lock = threading.Lock()
-        self._deployment_started = False
-        self._workspace_owned = False
+        self._workspace_used = False
 
-    @property
-    def deployment_started(self) -> bool:
-        """Whether the latest deploy call passed preflight and began POC preparation."""
-        return self._deployment_started
-
-    @property
-    def workspace_owned(self) -> bool:
-        """Whether the latest deploy created or replaced the active POC workspace."""
-        return self._workspace_owned
-
-    def _backup_existing_workspace(self) -> Optional[str]:
-        """Move a retained workspace aside before provisioning mutates its path."""
-        if not os.path.exists(self.poc_workspace):
-            return None
-        backup = f"{self.poc_workspace}{_WORKSPACE_BACKUP_PREFIX}{uuid.uuid4().hex}"
-        os.replace(self.poc_workspace, backup)
-        return backup
-
-    def _validate_project_conf_location(self) -> None:
-        """Reject a project config that workspace replacement would move away."""
-        if not self.project_conf_path:
-            return
-
-        workspace = os.path.abspath(self.poc_workspace)
-        project_conf = os.path.abspath(os.path.expanduser(self.project_conf_path))
-        resolved_workspace = os.path.realpath(workspace)
-        resolved_project_conf = os.path.realpath(project_conf)
-        if (
-            os.path.commonpath([workspace, project_conf]) == workspace
-            or os.path.commonpath([resolved_workspace, resolved_project_conf]) == resolved_workspace
-        ):
-            raise ValueError(
-                f"project_conf_path must be outside the POC workspace {self.poc_workspace!r}; "
-                "the workspace is replaced during deployment"
-            )
-
-    def _restore_existing_workspace(self, backup: str) -> None:
-        """Discard a partial replacement and atomically restore the retained workspace."""
-        if os.path.isdir(self.poc_workspace) and not os.path.islink(self.poc_workspace):
-            shutil.rmtree(self.poc_workspace)
-        elif os.path.lexists(self.poc_workspace):
-            os.remove(self.poc_workspace)
-        os.replace(backup, self.poc_workspace)
-
-    def _raise_rollback_error(self, workspace_backup: Optional[str], error: Exception, reason: str) -> None:
-        """Preserve recovery artifacts and report their locations when rollback is unsafe."""
-        self._workspace_owned = True
-        backup_note = (
-            f"the retained workspace backup remains at {workspace_backup}"
-            if workspace_backup
-            else "there was no retained workspace to back up"
-        )
-        raise RuntimeError(
-            f"POC deployment failed and {reason}; "
-            f"the partial replacement remains at {self.poc_workspace}; {backup_note}"
-        ) from error
+    def _new_poc_workspace(self) -> str:
+        """Return a unique Recipe-owned workspace beside the configured POC path."""
+        return f"{self._poc_workspace_root}.recipe-{uuid.uuid4().hex}"
 
     @staticmethod
     def _is_docker_service_running(service_name: str) -> bool:
@@ -296,11 +244,6 @@ class PocEnv(ExecEnv):
         Raises:
             ValueError: If scripts do not exist locally.
         """
-        # Reset before non-mutating preflight so callers can distinguish a
-        # rejected job from an invocation that owns a new POC lifecycle.
-        self._deployment_started = False
-        self._workspace_owned = False
-
         # Validate scripts exist locally for POC
         non_local_scripts = collect_non_local_scripts(job)
         if non_local_scripts:
@@ -309,18 +252,14 @@ class PocEnv(ExecEnv):
                 f"For PocEnv, all scripts must be present on the local machine."
             )
 
-        self._validate_project_conf_location()
-
-        if self._check_poc_running():
-            # Keep the stopped workspace until fresh provisioning succeeds, so
-            # a failed replacement can restore its prior logs and results.
-            self.stop(clean_up=False)
+        if self._workspace_used:
             if self._check_poc_running():
-                raise RuntimeError("Existing POC services could not be stopped")
+                raise RuntimeError("This PocEnv already has a running deployment; stop it before deploying another job")
+            self.poc_workspace = self._new_poc_workspace()
+            self._session_manager = None
+        self._workspace_used = True
 
-        self._deployment_started = True
-        workspace_backup = self._backup_existing_workspace()
-        self.logger.info("Preparing and starting fresh POC services...")
+        self.logger.info(f"Preparing and starting POC services in new workspace: {self.poc_workspace}")
         try:
             prepare_poc_provision(
                 clients=self.clients or [],  # Empty list if None, let prepare_clients generate
@@ -348,70 +287,14 @@ class PocEnv(ExecEnv):
                 timeout_in_sec=POC_START_READY_TIMEOUT,
             ):
                 raise RuntimeError("POC services were started but no server or clients were selected for readiness")
-            # Successful submission proves that the admin connection is ready,
-            # in addition to the process/container and client-registration
-            # checks above. Keep the retained workspace backup until all checks
-            # and submission have passed.
+            # Successful submission also proves that the admin connection is
+            # ready after the process/container and client-registration checks.
             job_id = self._get_session_manager().submit_job(job)
         except BaseException:
-            try:
-                poc_running = self._check_poc_running()
-            except Exception as state_error:
-                # Do not replace or delete either workspace when service state
-                # is unknown. The active path belongs to this invocation, and
-                # the retained backup remains available for manual recovery.
-                self._raise_rollback_error(
-                    workspace_backup,
-                    state_error,
-                    "the state of partially started services could not be determined",
-                )
-
-            if poc_running:
-                try:
-                    self.stop(clean_up=False)
-                except Exception as stop_error:
-                    self._raise_rollback_error(
-                        workspace_backup,
-                        stop_error,
-                        "partially started services could not be safely stopped",
-                    )
-                try:
-                    poc_running = self._check_poc_running()
-                except Exception as state_error:
-                    self._raise_rollback_error(
-                        workspace_backup,
-                        state_error,
-                        "the state of partially started services could not be determined after stopping",
-                    )
-                if poc_running:
-                    self._workspace_owned = True
-                    backup_note = (
-                        f"the retained workspace backup remains at {workspace_backup}"
-                        if workspace_backup
-                        else "there was no retained workspace to restore"
-                    )
-                    raise RuntimeError(
-                        f"POC deployment failed and partially started services could not be stopped; " f"{backup_note}"
-                    )
-            if workspace_backup:
-                try:
-                    self._restore_existing_workspace(workspace_backup)
-                except Exception as restore_error:
-                    # The active path contains only this invocation's partial
-                    # replacement. Let the caller clean it, but retain the
-                    # backup for manual recovery.
-                    self._workspace_owned = True
-                    raise RuntimeError(
-                        f"POC deployment failed and the retained workspace could not be restored from {workspace_backup}"
-                    ) from restore_error
-                self._workspace_owned = False
-            else:
-                self._workspace_owned = True
+            # This path is unique to the current Recipe execution, so failure
+            # cleanup cannot delete a retained CLI workspace or a prior run.
+            self.stop(clean_up=True)
             raise
-        else:
-            self._workspace_owned = True
-            if workspace_backup:
-                shutil.rmtree(workspace_backup, ignore_errors=True)
         self.logger.info("POC services started successfully")
         return job_id
 
@@ -451,7 +334,7 @@ class PocEnv(ExecEnv):
             self.logger.info("Stopping existing POC services...")
             # Prefer the coordinated server shutdown while it is reachable. If
             # the server exited during startup, stop any surviving local client
-            # processes directly so the workspace can be restored safely.
+            # processes directly so the per-run workspace can be cleaned safely.
             services_list = []
             if service_config.get(SC.IS_DOCKER_RUN) or not is_poc_running(
                 self.poc_workspace, service_config, project_config
