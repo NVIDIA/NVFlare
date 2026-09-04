@@ -378,12 +378,14 @@ class PocEnv(ExecEnv):
             )
             count = 0
             poc_running = True
+            poc_state_error = None
             while count < STOP_POC_TIMEOUT:
                 try:
                     if not self._running_services(project_config, service_config, self.poc_workspace):
                         poc_running = False
                         break
                 except Exception as state_error:
+                    poc_state_error = state_error
                     self.logger.warning(f"Could not verify whether POC services stopped: {state_error}")
                     # Preserve the workspace when service state is unknown. It
                     # contains the configuration needed for manual cleanup.
@@ -394,14 +396,22 @@ class PocEnv(ExecEnv):
 
             if clean_up:
                 if poc_running:
+                    reason = (
+                        f"service state could not be verified ({poc_state_error})"
+                        if poc_state_error
+                        else f"services are still running after {STOP_POC_TIMEOUT} seconds"
+                    )
                     self.logger.warning(
-                        f"POC still running after {STOP_POC_TIMEOUT} seconds, cannot clean workspace. Skipping cleanup."
+                        f"POC {reason}; preserving workspace {self.poc_workspace}. "
+                        "Stop any remaining services and remove it manually."
                     )
                 else:
                     try:
                         _clean_poc(self.poc_workspace)
                     except Exception as e:
-                        self.logger.debug(f"Failed to clean POC: {e}")
+                        self.logger.warning(
+                            f"Failed to clean POC workspace {self.poc_workspace}: {e}. Remove it manually."
+                        )
         except Exception as e:
             self.logger.warning(f"Failed to stop and clean existing POC: {e}")
         finally:
