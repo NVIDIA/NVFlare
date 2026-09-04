@@ -52,7 +52,7 @@ class NumpyFedAvgRecipe(UnifiedFedAvgRecipe):
         min_clients: Minimum number of clients required to start a training round.
         num_rounds: Number of federated training rounds to execute. Defaults to 2.
         train_script: Path to the training script that will be executed on each client.
-        train_args: Command line arguments to pass to the training script.
+        train_args: Command line arguments to pass to the training script as a string or pre-tokenized argv.
         aggregator: Custom aggregator (ModelAggregator) for combining client model updates.
             Must implement accept_model(), aggregate_model(), reset_stats() methods.
             If None, uses built-in memory-efficient weighted averaging.
@@ -119,11 +119,11 @@ class NumpyFedAvgRecipe(UnifiedFedAvgRecipe):
         min_clients: int,
         num_rounds: int = 2,
         train_script: str,
-        train_args: str = "",
+        train_args: Union[str, list[str]] = "",
         aggregator: Optional[Aggregator] = None,
         aggregator_data_kind: Optional[DataKind] = DataKind.WEIGHTS,
         launch_external_process: bool = False,
-        command: str = "python3 -u",
+        command: Union[str, list[str]] = "python3 -u",
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
         per_site_config: Optional[Dict[str, Dict]] = None,

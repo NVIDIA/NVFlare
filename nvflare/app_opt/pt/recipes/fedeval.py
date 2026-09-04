@@ -22,6 +22,7 @@ from nvflare.job_config.base_fed_job import BaseFedJob
 from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
 from nvflare.recipe.spec import Recipe
 from nvflare.recipe.utils import _apply_legacy_constructor_config, _validate_per_site_targets, validate_ckpt
+from nvflare.utils.argv_utils import normalize_argv
 
 
 # Internal validator
@@ -74,12 +75,13 @@ class FedEvalRecipe(Recipe):
             The file may not exist locally (server-side path).
         min_clients: Minimum number of clients required to start evaluation.
         eval_script: Path to the evaluation script that will be executed on each client.
-        eval_args: Command line arguments to pass to the evaluation script. The string is
-            stored in the job definition and must not contain actual secret values; see
-            :mod:`nvflare.recipe.secrets` for safe runtime references. Defaults to "".
+        eval_args: Command line arguments to pass to the evaluation script, either as a legacy
+            string or pre-tokenized argv. The value is stored in the job definition and must not
+            contain actual secret values; see :mod:`nvflare.recipe.secrets` for safe runtime
+            references. Defaults to "".
         launch_external_process: Whether to launch the script in external process. Defaults to False.
-        command: If launch_external_process=True, command to run script (prepended to script).
-            Defaults to "python3 -u".
+        command: If launch_external_process=True, command to run script (prepended to script),
+            either as a legacy string or pre-tokenized argv. Defaults to "python3 -u".
         server_expected_format: What format to exchange the parameters between server and client.
             Defaults to ExchangeFormat.NUMPY.
         validation_timeout: Timeout for evaluation task in seconds. Defaults to 6000.
@@ -130,9 +132,9 @@ class FedEvalRecipe(Recipe):
         eval_ckpt: str,
         min_clients: int,
         eval_script: str,
-        eval_args: str = "",
+        eval_args: Union[str, list[str]] = "",
         launch_external_process: bool = False,
-        command: str = "python3 -u",
+        command: Union[str, list[str]] = "python3 -u",
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         validation_timeout: int = 6000,
         per_site_config: Optional[Dict[str, Dict]] = None,
@@ -147,9 +149,10 @@ class FedEvalRecipe(Recipe):
         self.eval_ckpt = eval_ckpt
         self.min_clients = min_clients
         self.eval_script = eval_script
-        self.eval_args = eval_args
+        normalized_eval_args = normalize_argv(eval_args, "eval_args", allow_none=True)
+        self.eval_args = "" if normalized_eval_args is None else normalized_eval_args
         self.launch_external_process = launch_external_process
-        self.command = command
+        self.command = normalize_argv(command, "command")
         self.server_expected_format = server_expected_format
         self.validation_timeout = validation_timeout
         legacy_per_site_config = per_site_config
@@ -212,6 +215,10 @@ class FedEvalRecipe(Recipe):
     def _apply_per_site_config(self, config: Dict[str, Dict]) -> None:
         _validate_per_site_targets(config, self.min_clients)
         for site_config in config.values():
+            if site_config.get("eval_args") is not None:
+                site_config["eval_args"] = normalize_argv(site_config["eval_args"], "eval_args")
+            if site_config.get("command") is not None:
+                site_config["command"] = normalize_argv(site_config["command"], "command")
             self._create_client_runner(site_config)
         self.per_site_config = config
 

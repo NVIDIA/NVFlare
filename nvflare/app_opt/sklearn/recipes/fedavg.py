@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Literal, Optional
+from typing import Literal, Optional, Union
 
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.abstract.aggregator import Aggregator
@@ -48,13 +48,13 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
             the model is loaded from this path at runtime (file must exist). Takes precedence
             over model_params when loading.
         train_script: Path to the training script that will be executed on each client.
-        train_args: Command line arguments to pass to the training script.
+        train_args: Command line arguments to pass to the training script as a string or pre-tokenized argv.
         aggregator: Custom aggregator for combining client updates. If None,
             uses InTimeAccumulateWeightedAggregator with aggregator_data_kind.
         aggregator_data_kind: Data kind expected from client results. Clients that return differences
             must label the result with FLModel.params_type=ParamsType.DIFF. Defaults to DataKind.WEIGHTS.
         launch_external_process: Whether to launch the script in external process. Defaults to False.
-        command: If launch_external_process=True, command to run script (prepended to script).
+        command: If launch_external_process=True, command to run script as a string or pre-tokenized argv.
             Defaults to "python3 -u".
         per_site_config: Deprecated constructor form of per-site configuration. New code should call
             ``set_per_site_config(recipe, config)`` immediately after construction. Nested values become
@@ -137,11 +137,11 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
         model_params: Optional[dict] = None,
         model_path: Optional[str] = None,
         train_script: str,
-        train_args: str = "",
+        train_args: Union[str, list[str]] = "",
         aggregator: Optional[Aggregator] = None,
         aggregator_data_kind: DataKind = DataKind.WEIGHTS,
         launch_external_process: bool = False,
-        command: str = "python3 -u",
+        command: Union[str, list[str]] = "python3 -u",
         per_site_config: Optional[dict[str, dict]] = None,
         key_metric: str = "accuracy",
         key_metric_mode: Literal["min", "max"] = "max",

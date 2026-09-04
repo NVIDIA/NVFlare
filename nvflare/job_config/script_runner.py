@@ -14,29 +14,27 @@
 
 import os
 import shlex
-from typing import Optional, Union
+from typing import Optional
 
 from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME, JobMetaKey
 from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor, ExecutionMode
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.fuel.utils.constants import FrameworkType  # noqa: F401 - public re-export
 from nvflare.fuel.utils.secret_utils import has_secret_refs, split_command_preserving_secret_refs
+from nvflare.utils.argv_utils import CommandArg, normalize_argv
 
 from .api import FedJob
 
-_CommandArg = Union[str, list[str]]
 _ADDITIONAL_NODE_COMMAND = "additional_node_command"
 
 
-def _to_external_process_argv(value: _CommandArg, arg_name: str) -> list[str]:
+def _to_external_process_argv(value: CommandArg, arg_name: str) -> list[str]:
     """Return shell-free argv while preserving pre-tokenized values exactly."""
-    if isinstance(value, str):
-        return split_command_preserving_secret_refs(value, posix=True)
-    if not isinstance(value, list):
-        raise ValueError(f"{arg_name} must be a string or list of strings, but got {type(value).__name__}")
-    if not all(isinstance(arg, str) for arg in value):
-        raise ValueError(f"{arg_name} argv must contain only strings")
-    return list(value)
+    normalized = normalize_argv(value, arg_name)
+    assert normalized is not None
+    if isinstance(normalized, str):
+        return split_command_preserving_secret_refs(normalized, posix=True)
+    return normalized
 
 
 def _fill_additional_node_command(job: FedJob, target: str, command: list[str], launch_once: bool) -> None:
@@ -80,9 +78,9 @@ class ScriptRunner:
     def __init__(
         self,
         script: str,
-        script_args: _CommandArg = "",
+        script_args: Optional[CommandArg] = "",
         launch_external_process: bool = False,
-        command: _CommandArg = "python3 -u",
+        command: CommandArg = "python3 -u",
         framework: FrameworkType = FrameworkType.PYTORCH,
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
@@ -98,7 +96,7 @@ class ScriptRunner:
         Args:
             script: Training script path.
             script_args: Arguments appended to the script. Pre-tokenized argv preserves
-                exact argument boundaries for external processes.
+                exact argument boundaries in both execution modes.
             launch_external_process: Select ``external_process`` when ``execution_mode``
                 is omitted; otherwise select ``in_process``.
             command: Command prepended to the script in ``external_process`` mode.
@@ -143,8 +141,11 @@ class ScriptRunner:
             raise ValueError(f"Framework {framework} unsupported")
 
         self._script = script
-        self._script_args = script_args
-        self._command = command
+        normalized_script_args = normalize_argv(script_args, "script_args", allow_none=True)
+        self._script_args = "" if normalized_script_args is None else normalized_script_args
+        normalized_command = normalize_argv(command, "command")
+        assert normalized_command is not None
+        self._command = normalized_command
         self._launch_external_process = execution_mode == ExecutionMode.EXTERNAL_PROCESS
         self._server_expected_format = server_expected_format
         self._framework = framework
