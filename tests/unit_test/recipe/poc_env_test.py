@@ -537,7 +537,7 @@ def test_stop_poc(mock_is_running, mock_clean_poc, mock_stop_poc, mock_setup):
 @patch("nvflare.recipe.poc_env._clean_poc")
 @patch("nvflare.recipe.poc_env.is_poc_running")
 def test_stop_preserves_workspace_when_service_state_is_unknown(
-    mock_is_running, mock_clean_poc, mock_stop_poc, mock_setup
+    mock_is_running, mock_clean_poc, mock_stop_poc, mock_setup, caplog
 ):
     mock_setup.return_value = ({"name": "test"}, {SC.FLARE_SERVER: "server"})
     mock_is_running.return_value = True
@@ -552,6 +552,7 @@ def test_stop_preserves_workspace_when_service_state_is_unknown(
 
     mock_stop_poc.assert_called_once()
     mock_clean_poc.assert_not_called()
+    assert "Stop any remaining services and remove it manually" in caplog.text
 
 
 @patch("nvflare.recipe.poc_env.SessionManager")
