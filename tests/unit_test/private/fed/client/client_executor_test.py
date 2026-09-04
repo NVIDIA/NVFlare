@@ -615,6 +615,53 @@ def test_wait_child_process_destroys_job_credential_when_worker_exits(tmp_path):
     assert (run_dir / "app_site-1").is_dir()
 
 
+def test_wait_child_process_destroys_job_credential_when_wait_raises(tmp_path):
+    client = MagicMock()
+    client.client_name = "site-1"
+    job_executor = JobExecutor(client=client, startup="startup")
+    job_handle = MagicMock()
+    job_handle.wait.side_effect = RuntimeError("launcher lost the job")
+    job_executor.run_processes = {"job-1": {RunProcessKey.JOB_HANDLE: job_handle}}
+    run_dir = tmp_path / "job-1"
+    run_dir.mkdir()
+    write_job_cert(str(run_dir), b"cert", b"key")
+
+    with pytest.raises(RuntimeError, match="lost the job"):
+        job_executor._wait_child_process_finish(
+            client=client,
+            job_id="job-1",
+            allocated_resource=None,
+            token=None,
+            resource_manager=MagicMock(),
+            workspace=str(tmp_path),
+            fl_ctx=MagicMock(),
+        )
+
+    assert find_job_cert(str(run_dir)) is None
+
+
+def test_wait_child_process_destroys_job_credential_without_job_handle(tmp_path):
+    client = MagicMock()
+    client.client_name = "site-1"
+    job_executor = JobExecutor(client=client, startup="startup")
+    job_executor.run_processes = {}
+    run_dir = tmp_path / "job-1"
+    run_dir.mkdir()
+    write_job_cert(str(run_dir), b"cert", b"key")
+
+    job_executor._wait_child_process_finish(
+        client=client,
+        job_id="job-1",
+        allocated_resource=None,
+        token=None,
+        resource_manager=MagicMock(),
+        workspace=str(tmp_path),
+        fl_ctx=MagicMock(),
+    )
+
+    assert find_job_cert(str(run_dir)) is None
+
+
 def test_wait_child_process_preserves_launcher_infrastructure_error_over_rc_file(tmp_path):
     client = MagicMock()
     client.client_name = "site-1"

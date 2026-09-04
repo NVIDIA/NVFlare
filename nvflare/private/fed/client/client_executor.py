@@ -625,10 +625,14 @@ class JobExecutor(ClientExecutor):
     ):
         self.logger.info(f"run ({job_id}): waiting for child worker process to finish.")
         job_handle = self.run_processes.get(job_id, {}).get(RunProcessKey.JOB_HANDLE)
+        run_dir = Workspace.run_dir_path(workspace, job_id)
+        try:
+            if job_handle:
+                job_handle.wait()
+        finally:
+            # the job process is gone, or never started: its credential is dead either way
+            remove_job_cert(run_dir)
         if job_handle:
-            job_handle.wait()
-            remove_job_cert(Workspace.run_dir_path(workspace, job_id))
-
             return_code = get_return_code(job_handle, job_id, workspace, self.logger)
 
             with self.lock:
