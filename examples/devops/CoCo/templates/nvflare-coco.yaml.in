@@ -1,0 +1,189 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: @@SERVER_NAME@@
+  namespace: @@NAMESPACE@@
+spec:
+  selector:
+    app: @@SERVER_NAME@@
+  ports:
+    - {name: fed, port: 8002, targetPort: fed}
+    - {name: admin, port: 8003, targetPort: admin}
+    - {name: parent, port: 8102, targetPort: parent}
+---
+# kind: List keeps both Deployments in one YAML document so the
+# &coco-init-args anchor can be shared. kubectl apply processes all items.
+apiVersion: v1
+kind: List
+items:
+  - apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: @@SERVER_NAME@@
+      namespace: @@NAMESPACE@@
+    spec:
+      replicas: 1
+      strategy: {type: Recreate}
+      selector:
+        matchLabels: {app: @@SERVER_NAME@@}
+      template:
+        metadata:
+          labels: {app: @@SERVER_NAME@@}
+          annotations:
+            io.katacontainers.config.hypervisor.cc_init_data: "@@INIT_DATA@@"
+        spec:
+          runtimeClassName: @@SERVER_RUNTIME_CLASS@@
+          securityContext:
+            fsGroup: @@FS_GROUP@@
+            fsGroupChangePolicy: OnRootMismatch
+          restartPolicy: Always
+          terminationGracePeriodSeconds: 30
+          containers:
+            - name: server
+              image: @@SERVER_IMAGE@@
+              imagePullPolicy: IfNotPresent
+              # Privilege is confined to this participant's isolated Kata VM. It is
+              # required to materialize the guest-local TEE character device; no
+              # hostPath device is passed through from the bare-metal host.
+              securityContext:
+                privileged: true
+                runAsUser: 0
+                runAsGroup: 0
+              command: ["python"]
+              args:
+                - -c
+                - &coco-init-args |
+                  import ctypes, errno, os, stat, sys
+                  name = "@@CPU_ATTESTATION_DEVICE@@"
+                  sysfs = f"/sys/class/misc/{name}/dev"
+                  if not os.path.isfile(sysfs):
+                      raise SystemExit(f"missing guest attestation interface: {sysfs}")
+                  if name == "tdx_guest" and not os.path.isdir("/sys/kernel/config/tsm/report"):
+                      os.makedirs("/sys/kernel/config", exist_ok=True)
+                      libc = ctypes.CDLL(None, use_errno=True)
+                      if libc.mount(b"configfs", b"/sys/kernel/config", b"configfs", 0, None) != 0:
+                          error = ctypes.get_errno()
+                          if error != errno.EBUSY:
+                              raise OSError(error, os.strerror(error), "/sys/kernel/config")
+                  with open(sysfs, encoding="ascii") as sysfs_stream:
+                      major, minor = map(int, sysfs_stream.read().split(":"))
+                  path = f"/dev/{name}"
+                  if not os.path.exists(path):
+                      os.mknod(path, stat.S_IFCHR | 0o600, os.makedev(major, minor))
+                  info = os.stat(path)
+                  if not stat.S_ISCHR(info.st_mode) or os.major(info.st_rdev) != major or os.minor(info.st_rdev) != minor:
+                      raise SystemExit(f"incorrect guest attestation device: {path}")
+                  os.execv(sys.executable, [sys.executable, *sys.argv[1:]])
+                - -u
+                - -m
+                - nvflare.private.fed.app.server.server_train
+                - -m
+                - /var/tmp/nvflare/workspace
+                - -s
+                - fed_server.json
+                - --set
+                - secure_train=true
+                - config_folder=config
+                - org=@@ORG@@
+              ports:
+                - {name: fed, containerPort: 8002}
+                - {name: admin, containerPort: 8003}
+                - {name: parent, containerPort: 8102}
+              resources:
+                requests: {memory: "@@SERVER_MEMORY@@"}
+                limits: {memory: "@@SERVER_MEMORY@@"}
+              volumeMounts:
+                - {name: app-log, mountPath: /applog}
+                - {name: workspace, mountPath: /var/tmp/nvflare/workspace}
+                - {name: startup, mountPath: /var/tmp/nvflare/workspace/startup, readOnly: true}
+                - {name: local, mountPath: /var/tmp/nvflare/workspace/local, readOnly: true}
+                - {name: tdx-attestation, mountPath: /etc/nvflare/tdx-attestation, readOnly: true}
+              env:
+                - name: NV_ATTESTATION_SERVICE_KEY
+                  valueFrom:
+                    secretKeyRef: {name: nvflare-gpu-attestation, key: service-key, optional: true}
+          volumes:
+            - name: app-log
+              emptyDir: {sizeLimit: 256Mi}
+            - name: workspace
+              emptyDir: {sizeLimit: "@@WORKSPACE_SIZE@@"}
+            - name: startup
+              secret: {secretName: @@SERVER_NAME@@-startup}
+            - name: local
+              configMap: {name: @@SERVER_NAME@@-local}
+            - name: tdx-attestation
+              secret: {secretName: nvflare-tdx-attestation, optional: true}
+  - apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: @@CLIENT_NAME@@
+      namespace: @@NAMESPACE@@
+    spec:
+      replicas: 1
+      strategy: {type: Recreate}
+      selector:
+        matchLabels: {app: @@CLIENT_NAME@@}
+      template:
+        metadata:
+          labels: {app: @@CLIENT_NAME@@}
+          annotations:
+            io.katacontainers.config.hypervisor.cc_init_data: "@@INIT_DATA@@"
+        spec:
+          runtimeClassName: @@CLIENT_RUNTIME_CLASS@@
+          securityContext:
+            fsGroup: @@FS_GROUP@@
+            fsGroupChangePolicy: OnRootMismatch
+          restartPolicy: Always
+          terminationGracePeriodSeconds: 30
+          containers:
+            - name: client
+              image: @@CLIENT_IMAGE@@
+              imagePullPolicy: IfNotPresent
+              securityContext:
+                privileged: true
+                runAsUser: 0
+                runAsGroup: 0
+              command: ["python"]
+              args:
+                - -c
+                - *coco-init-args
+                - -u
+                - -m
+                - nvflare.private.fed.app.client.client_train
+                - -m
+                - /var/tmp/nvflare/workspace
+                - -s
+                - fed_client.json
+                - --set
+                - uid=@@CLIENT_NAME@@
+                - secure_train=true
+                - config_folder=config
+                - org=@@ORG@@
+              resources:
+                requests:
+                  memory: "@@CLIENT_MEMORY@@"
+                  @@GPU_RESOURCE@@: "@@CLIENT_GPU_COUNT@@"
+                limits:
+                  memory: "@@CLIENT_MEMORY@@"
+                  @@GPU_RESOURCE@@: "@@CLIENT_GPU_COUNT@@"
+              volumeMounts:
+                - {name: app-log, mountPath: /applog}
+                - {name: workspace, mountPath: /var/tmp/nvflare/workspace}
+                - {name: startup, mountPath: /var/tmp/nvflare/workspace/startup, readOnly: true}
+                - {name: local, mountPath: /var/tmp/nvflare/workspace/local, readOnly: true}
+                - {name: tdx-attestation, mountPath: /etc/nvflare/tdx-attestation, readOnly: true}
+              env:
+                - name: NV_ATTESTATION_SERVICE_KEY
+                  valueFrom:
+                    secretKeyRef: {name: nvflare-gpu-attestation, key: service-key, optional: true}
+          volumes:
+            - name: app-log
+              emptyDir: {sizeLimit: 256Mi}
+            - name: workspace
+              emptyDir: {sizeLimit: "@@WORKSPACE_SIZE@@"}
+            - name: startup
+              secret: {secretName: @@CLIENT_NAME@@-startup}
+            - name: local
+              configMap: {name: @@CLIENT_NAME@@-local}
+            - name: tdx-attestation
+              secret: {secretName: nvflare-tdx-attestation, optional: true}

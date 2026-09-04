@@ -25,6 +25,9 @@ classes, and participants for the clusters you want to test.
 
 - `multicloud/` - YAML-driven NVFlare deployment, status, dashboard, and image
   build/push helpers.
+- `CoCo/` - staged bare-metal AMD SEV-SNP or Intel TDX Confidential Containers
+  deployment, signed-image enforcement, encrypted scratch storage, NVIDIA GPU
+  passthrough, and attestation validation.
 - `openshift/` - OpenShift-specific deployment guide and helper scripts using
   the Kubernetes runtime support.
 - `gcp/gke/`, `aws/eks/`, `azure/aks/` - cloud cluster setup scripts and notes.
