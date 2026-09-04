@@ -1,5 +1,5 @@
 nvflare~=2.9.0rc
-torch==2.12.1
+torch==2.13.0
 torchvision==0.27.1
 psutil  # required at build time by flash_attn
 transformers==5.0.0
