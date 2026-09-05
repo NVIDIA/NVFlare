@@ -164,6 +164,7 @@ class PocEnv(ExecEnv):
         self._session_manager_lock = threading.Lock()
         self._workspace_used = False
         self._runtime_lock_file = None
+        self._deployment_lock = threading.Lock()
 
     def _new_poc_workspace(self) -> str:
         """Return a unique Recipe-owned workspace beside the configured POC path."""
@@ -226,18 +227,45 @@ class PocEnv(ExecEnv):
                         "Stop it before starting this deployment."
                     ) from e
                 raise
-            self._runtime_lock_file = os.fdopen(fd, "a+")
+            lock_file = os.fdopen(fd, "r+")
+            fd = None
+            previous_workspace = lock_file.read().strip()
+            if previous_workspace and self._is_poc_workspace_running(previous_workspace):
+                raise RuntimeError(
+                    f"A prior Recipe PocEnv deployment is still active at {previous_workspace}. "
+                    "Stop its services and remove the workspace manually before starting another deployment."
+                )
+            self._runtime_lock_file = lock_file
         except BaseException:
-            os.close(fd)
+            if fd is not None:
+                os.close(fd)
+            else:
+                lock_file.close()
             raise
 
-    def _release_runtime_lock(self) -> None:
+    def _record_runtime_workspace(self) -> None:
+        """Durably record the workspace whose services own the runtime slot."""
+        lock_file = self._runtime_lock_file
+        if lock_file is None:
+            raise RuntimeError("Recipe POC runtime lock is not held")
+        lock_file.seek(0)
+        lock_file.truncate()
+        lock_file.write(os.path.abspath(self.poc_workspace))
+        lock_file.flush()
+        os.fsync(lock_file.fileno())
+
+    def _release_runtime_lock(self, clear_workspace: bool = False) -> None:
         """Release this environment's Recipe POC runtime slot, if held."""
         lock_file = self._runtime_lock_file
         if lock_file is None:
             return
         self._runtime_lock_file = None
         try:
+            if clear_workspace:
+                lock_file.seek(0)
+                lock_file.truncate()
+                lock_file.flush()
+                os.fsync(lock_file.fileno())
             fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
         finally:
             lock_file.close()
@@ -328,6 +356,15 @@ class PocEnv(ExecEnv):
         Raises:
             ValueError: If scripts do not exist locally.
         """
+        if not self._deployment_lock.acquire(blocking=False):
+            raise RuntimeError("This PocEnv already has a deployment in progress")
+        try:
+            return self._deploy(job)
+        finally:
+            self._deployment_lock.release()
+
+    def _deploy(self, job: FedJob) -> str:
+        """Perform one deployment while the instance deployment guard is held."""
         # Validate scripts exist locally for POC
         non_local_scripts = collect_non_local_scripts(job)
         if non_local_scripts:
@@ -357,6 +394,11 @@ class PocEnv(ExecEnv):
         if self._workspace_used:
             self.poc_workspace = self._new_poc_workspace()
             self._session_manager = None
+        try:
+            self._record_runtime_workspace()
+        except BaseException:
+            self._release_runtime_lock()
+            raise
         self._workspace_used = True
 
         self.logger.info(f"Preparing and starting POC services in new workspace: {self.poc_workspace}")
@@ -428,7 +470,7 @@ class PocEnv(ExecEnv):
                 self.logger.info(f"Removing POC workspace: {self.poc_workspace}")
                 shutil.rmtree(self.poc_workspace, ignore_errors=True)
             self._session_manager = None  # Clear stale session manager
-            self._release_runtime_lock()
+            self._release_runtime_lock(clear_workspace=True)
             return
 
         try:
@@ -484,7 +526,7 @@ class PocEnv(ExecEnv):
                             f"Failed to clean POC workspace {self.poc_workspace}: {e}. Remove it manually."
                         )
             if not poc_running:
-                self._release_runtime_lock()
+                self._release_runtime_lock(clear_workspace=True)
         except Exception as e:
             self.logger.warning(f"Failed to stop and clean existing POC: {e}")
         finally:

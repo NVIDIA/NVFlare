@@ -107,6 +107,72 @@ def test_runtime_lock_propagates_unexpected_lock_error(monkeypatch):
     env._release_runtime_lock()
 
 
+def test_runtime_workspace_record_requires_lock():
+    env = PocEnv()
+
+    with pytest.raises(RuntimeError, match="runtime lock is not held"):
+        env._record_runtime_workspace()
+
+
+def test_deploy_rejects_services_left_by_prior_recipe_process(tmp_path, monkeypatch):
+    import nvflare.recipe.poc_env as poc_env_module
+
+    configured_workspace = tmp_path / "current-poc"
+    prior_workspace = tmp_path / f"prior-poc.recipe-{'a' * 32}"
+    prior_workspace.mkdir()
+    lock_path = Path(poc_env_module._recipe_runtime_lock_path())
+    lock_path.write_text(str(prior_workspace))
+    provisioned_workspaces = []
+    active_workspaces = {str(prior_workspace)}
+
+    monkeypatch.setattr(poc_env_module, "get_poc_workspace", lambda: str(configured_workspace))
+    monkeypatch.setattr(poc_env_module, "collect_non_local_scripts", lambda job: [])
+    monkeypatch.setattr(poc_env_module, "setup_service_config", lambda path: (PROJECT_CONFIG, SERVICE_CONFIG))
+    monkeypatch.setattr(
+        PocEnv,
+        "_running_services",
+        staticmethod(
+            lambda project_config, service_config, workspace: ["server"] if workspace in active_workspaces else []
+        ),
+    )
+    monkeypatch.setattr(
+        poc_env_module,
+        "prepare_poc_provision",
+        lambda **kwargs: provisioned_workspaces.append(kwargs["workspace"]),
+    )
+    env = PocEnv()
+
+    with pytest.raises(RuntimeError, match="prior Recipe PocEnv deployment is still active") as exc_info:
+        env.deploy(object())
+
+    assert str(prior_workspace) in str(exc_info.value)
+    assert provisioned_workspaces == []
+    assert lock_path.read_text() == str(prior_workspace)
+    assert env._runtime_lock_file is None
+
+    active_workspaces.clear()
+
+    def prepare(**kwargs):
+        provisioned_workspaces.append(kwargs["workspace"])
+        Path(kwargs["workspace"]).mkdir(parents=True)
+
+    _configure_successful_deploy(monkeypatch, env, prepare=prepare)
+    assert env.deploy(object()) == "job-id"
+    assert lock_path.read_text() == os.path.abspath(env.poc_workspace)
+    env.stop(clean_up=False)
+    assert lock_path.read_text() == ""
+
+
+def test_deploy_rejects_overlapping_calls_on_same_environment():
+    env = PocEnv()
+    assert env._deployment_lock.acquire(blocking=False)
+    try:
+        with pytest.raises(RuntimeError, match="deployment in progress"):
+            env.deploy(object())
+    finally:
+        env._deployment_lock.release()
+
+
 @patch("nvflare.recipe.poc_env.get_poc_workspace")
 def test_poc_env_initialization_with_custom_values(mock_get_workspace, tmp_path):
     """Test PocEnv initialization with custom values."""
