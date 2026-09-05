@@ -482,7 +482,9 @@ from an earlier run is not overwritten. Pass ``clean_up=False`` to
 File isolation does not isolate default ports or Docker participant names.
 ``PocEnv`` therefore permits only one Recipe-managed POC deployment per host
 for a user and refuses to start while the configured CLI POC deployment is
-running; stop that deployment with ``nvflare poc stop`` first.
+running; stop that deployment with ``nvflare poc stop`` first. The runtime lock
+records the current per-run workspace, allowing a later process to detect and
+reject services left behind by an unexpected process exit.
 If failure cleanup cannot be verified, the raised error identifies the unique
 workspace for manual cleanup. Other deployments do not scan or delete retained
 Recipe workspaces.
