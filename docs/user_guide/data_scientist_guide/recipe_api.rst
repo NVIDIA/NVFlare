@@ -473,6 +473,24 @@ POC mode. Jobs in Docker POC mode specify their SJ/CJ image in recipe launcher
 metadata. When ``project_conf_path`` is supplied, its project definition takes
 precedence over client-count and Docker preparation options.
 
+Each ``PocEnv`` deployment creates a unique Recipe-owned workspace beside the
+workspace configured for the reusable ``nvflare poc`` CLI workflow. The CLI
+workspace is never replaced by Recipe provisioning. Reusing a stopped
+``PocEnv`` creates another new workspace, so a retained result or log directory
+from an earlier run is not overwritten. Pass ``clean_up=False`` to
+``Run.get_result()`` to retain the current Recipe workspace for inspection.
+File isolation does not isolate default ports or Docker participant names.
+``PocEnv`` therefore permits only one Recipe-managed POC deployment per host
+for a user and refuses to start while the configured CLI POC deployment is
+running; stop that deployment with ``nvflare poc stop`` first. The runtime lock
+records the current per-run workspace, allowing a later process to detect and
+reject services left behind by an unexpected process exit. If the recorded
+workspace or its service configuration cannot be read, deployment fails closed
+and reports how to remove the stale record after manually stopping services.
+If failure cleanup cannot be verified, the raised error identifies the unique
+workspace for manual cleanup. Other deployments do not scan or delete retained
+Recipe workspaces.
+
 ``ProdEnv`` submits through an admin startup kit. ``login_timeout`` must be
 positive, and ``username`` selects the admin identity. ``PocEnv`` and
 ``ProdEnv`` use ``study`` to select the submission context; see

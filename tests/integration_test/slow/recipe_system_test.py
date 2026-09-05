@@ -1,4 +1,4 @@
-# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025-2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -26,8 +26,11 @@ TODO: Decide if these should be added to an existing test category or run in a s
 
 import json
 import os
+import shutil
+import time
 
 import numpy as np
+import pytest
 
 from nvflare.apis.fl_constant import WorkspaceConstants
 from nvflare.apis.job_def import RunStatus
@@ -35,6 +38,8 @@ from nvflare.app_common.default_component_policy import DEFAULT_CLASS_ALLOW_LIST
 from nvflare.app_common.np.recipes import NumpyCrossSiteEvalRecipe, NumpyFedAvgRecipe
 from nvflare.recipe import PocEnv, SimEnv
 from nvflare.recipe.utils import add_cross_site_evaluation
+from nvflare.tool.poc.poc_commands import _start_poc, _stop_poc, prepare_poc_provision, setup_service_config
+from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
 
 INTEGRATION_TEST_ROOT = os.path.dirname(os.path.dirname(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(INTEGRATION_TEST_ROOT))
@@ -74,6 +79,72 @@ class TestRecipeSystemIntegration:
         run = recipe.execute(env)
         run.get_result()
         assert run.get_status() == "FINISHED:COMPLETED"
+
+    @pytest.mark.timeout(90)
+    def test_recipe_poc_rejects_running_cli_poc(self, tmp_path, monkeypatch):
+        """A Recipe must not compete with the configured CLI POC for ports or service names."""
+        cli_workspace = tmp_path / "cli-poc"
+        monkeypatch.setenv("NVFLARE_POC_WORKSPACE", str(cli_workspace))
+        prepare_poc_provision(
+            clients=[],
+            number_of_clients=2,
+            workspace=str(cli_workspace),
+            docker_image=None,
+        )
+        project_config, service_config = setup_service_config(str(cli_workspace))
+        cleanup_env = PocEnv(num_clients=2)
+        cleanup_env.poc_workspace = str(cli_workspace)
+        expected_services = {
+            service_config[SC.FLARE_SERVER],
+            *service_config.get(SC.FLARE_CLIENTS, []),
+        }
+
+        try:
+            _start_poc(
+                poc_workspace=str(cli_workspace),
+                gpu_ids=[],
+                excluded=["admin@nvidia.com"],
+                services_list=[],
+            )
+            deadline = time.monotonic() + 30
+            running_services = set()
+            while time.monotonic() < deadline:
+                running_services = set(PocEnv._running_services(project_config, service_config, str(cli_workspace)))
+                if running_services == expected_services:
+                    break
+                time.sleep(0.2)
+            assert running_services == expected_services
+
+            recipe_env = PocEnv(num_clients=2)
+            recipe = NumpyFedAvgRecipe(
+                name="test_active_cli_poc",
+                min_clients=2,
+                train_script=self.client_script_path,
+                model=np.array([0.0] * 10),
+            )
+
+            with pytest.raises(RuntimeError, match="nvflare poc stop"):
+                recipe.execute(recipe_env)
+
+            assert cli_workspace.is_dir()
+            assert not os.path.exists(recipe_env.poc_workspace)
+        finally:
+            cleanup_env.stop(clean_up=False)
+            if cleanup_env._check_poc_running():
+                # If coordinated shutdown loses the server before every client
+                # exits, stop the known temporary-test participants directly.
+                _stop_poc(
+                    poc_workspace=str(cli_workspace),
+                    excluded=["admin@nvidia.com"],
+                    services_list=sorted(expected_services),
+                    project_config=project_config,
+                    service_config=service_config,
+                )
+            shutdown_deadline = time.monotonic() + 15
+            while cleanup_env._check_poc_running() and time.monotonic() < shutdown_deadline:
+                time.sleep(0.2)
+            assert not cleanup_env._check_poc_running()
+            shutil.rmtree(cli_workspace, ignore_errors=True)
 
     def test_hello_numpy_cross_val_training_and_cse(self, tmp_path):
         """End-to-end: training + CSE with hello-numpy-cross-val client (model required; fail-fast on missing params).
