@@ -195,11 +195,17 @@ class PocEnv(ExecEnv):
         if os.path.exists(self.poc_workspace):
             raise RuntimeError("the per-run POC workspace could not be removed")
 
-    def _is_poc_workspace_running(self, workspace: str) -> bool:
+    def _is_poc_workspace_running(self, workspace: str, fail_if_unknown: bool = False) -> bool:
         """Return whether any managed service is running in a POC workspace."""
         try:
             project_config, service_config = setup_service_config(workspace)
-        except Exception:
+        except Exception as e:
+            if fail_if_unknown:
+                raise RuntimeError(
+                    f"Could not determine service state for the previously active Recipe PocEnv workspace {workspace}: "
+                    f"{e}. Stop any remaining services, then remove the stale runtime record "
+                    f"{_recipe_runtime_lock_path()} manually."
+                ) from e
             return False
         return bool(self._running_services(project_config, service_config, workspace))
 
@@ -232,7 +238,7 @@ class PocEnv(ExecEnv):
             lock_file = os.fdopen(fd, "r+")
             fd = None
             previous_workspace = lock_file.read().strip()
-            if previous_workspace and self._is_poc_workspace_running(previous_workspace):
+            if previous_workspace and self._is_poc_workspace_running(previous_workspace, fail_if_unknown=True):
                 raise RuntimeError(
                     f"A prior Recipe PocEnv deployment is still active at {previous_workspace}. "
                     "Stop its services and remove the workspace manually before starting another deployment."
