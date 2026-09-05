@@ -21,11 +21,19 @@ from unittest.mock import patch
 
 import pytest
 
-from nvflare.recipe.poc_env import PocEnv
+from nvflare.recipe.poc_env import PocEnv, _recipe_runtime_lock_path
 from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
 
 PROJECT_CONFIG = {"name": "poc"}
 SERVICE_CONFIG = {SC.FLARE_SERVER: "server", SC.FLARE_CLIENTS: ["site-1"]}
+
+
+@pytest.fixture(autouse=True)
+def _isolated_recipe_runtime_lock(tmp_path, monkeypatch):
+    """Keep process-held Recipe POC locks independent across unit tests."""
+    import nvflare.recipe.poc_env as poc_env_module
+
+    monkeypatch.setattr(poc_env_module, "_recipe_runtime_lock_path", lambda: str(tmp_path / "recipe-poc.lock"))
 
 
 def _configure_successful_deploy(monkeypatch, env, prepare=None, submit=None):
@@ -62,6 +70,41 @@ def test_poc_env_initialization():
     assert env.gpu_ids == []
     assert env.study == "default"
     assert env.poc_workspace.startswith(f"{env._poc_workspace_root}.recipe-")
+
+
+def test_recipe_runtime_lock_path_is_host_and_user_scoped():
+    assert _recipe_runtime_lock_path() == os.path.join(
+        tempfile.gettempdir(), f".nvflare-recipe-poc-{os.geteuid()}.lock"
+    )
+
+
+def test_runtime_lock_rejects_unsafe_lock_file(tmp_path, monkeypatch):
+    import nvflare.recipe.poc_env as poc_env_module
+
+    env = PocEnv()
+    monkeypatch.setattr(poc_env_module.stat, "S_ISREG", lambda mode: False)
+
+    with pytest.raises(RuntimeError, match="unsafe Recipe POC runtime lock"):
+        env._acquire_runtime_lock()
+
+    assert env._runtime_lock_file is None
+
+
+def test_runtime_lock_propagates_unexpected_lock_error(monkeypatch):
+    import nvflare.recipe.poc_env as poc_env_module
+
+    env = PocEnv()
+    monkeypatch.setattr(
+        poc_env_module.fcntl,
+        "flock",
+        lambda fd, operation: (_ for _ in ()).throw(OSError("lock failed")),
+    )
+
+    with pytest.raises(OSError, match="lock failed"):
+        env._acquire_runtime_lock()
+
+    assert env._runtime_lock_file is None
+    env._release_runtime_lock()
 
 
 @patch("nvflare.recipe.poc_env.get_poc_workspace")
@@ -210,6 +253,38 @@ def test_deploy_rejects_running_configured_cli_workspace(tmp_path, monkeypatch):
     assert provision_calls == []
     assert retained_result.read_text() == "keep me"
     assert not os.path.exists(env.poc_workspace)
+    assert env._runtime_lock_file is None
+
+
+def test_deploy_rejects_another_active_recipe_environment(tmp_path, monkeypatch):
+    import nvflare.recipe.poc_env as poc_env_module
+
+    configured_workspace = tmp_path / "poc"
+    monkeypatch.setattr(poc_env_module, "get_poc_workspace", lambda: str(configured_workspace))
+    first = PocEnv()
+    second = PocEnv()
+    provisioned_workspaces = []
+
+    def prepare(**kwargs):
+        provisioned_workspaces.append(kwargs["workspace"])
+        Path(kwargs["workspace"]).mkdir(parents=True)
+
+    _configure_successful_deploy(monkeypatch, first, prepare=prepare)
+    assert first.deploy(object()) == "job-id"
+    held_lock = first._runtime_lock_file
+    first._acquire_runtime_lock()
+    assert first._runtime_lock_file is held_lock
+
+    _configure_successful_deploy(monkeypatch, second, prepare=prepare)
+    with pytest.raises(RuntimeError, match="Another Recipe PocEnv deployment is active"):
+        second.deploy(object())
+
+    assert provisioned_workspaces == [first.poc_workspace]
+
+    first.stop(clean_up=False)
+    assert second.deploy(object()) == "job-id"
+    assert provisioned_workspaces == [first.poc_workspace, second.poc_workspace]
+    second.stop(clean_up=False)
 
 
 def test_deploy_does_not_modify_configured_cli_workspace(tmp_path, monkeypatch):

@@ -332,9 +332,10 @@ such as ``/tmp/nvflare/poc.recipe-<unique-id>``. The reusable ``nvflare poc``
 CLI workspace at ``/tmp/nvflare/poc`` is not replaced by Recipe provisioning.
 The active path is available as ``env.poc_workspace``. Pass ``clean_up=False``
 to ``run.get_result()`` when you want to retain that workspace and its logs
-after the run. The Recipe and CLI deployments still share default ports and
-Docker participant names, so run ``nvflare poc stop`` before starting
-``PocEnv`` when the configured CLI deployment is active.
+after the run. POC deployments still share default ports and Docker participant
+names, so only one Recipe-managed POC deployment can be active on a host for a
+user. Also run ``nvflare poc stop`` before starting ``PocEnv`` when the
+configured CLI deployment is active.
 
 To use a named study, point ``PocEnv`` to a custom project file that defines ``studies:``:
 

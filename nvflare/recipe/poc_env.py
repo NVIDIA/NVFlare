@@ -12,9 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import errno
+import fcntl
 import os
 import shutil
+import stat
 import subprocess
+import tempfile
 import threading
 import time
 import uuid
@@ -51,6 +55,11 @@ POC_READY_POLL_INTERVAL = 0.2
 POC_READY_STABLE_INTERVAL = 2.0
 DEFAULT_ADMIN_USER = "admin@nvidia.com"
 _RECIPE_WORKSPACE_SUFFIX = ".recipe-"
+
+
+def _recipe_runtime_lock_path() -> str:
+    """Return the per-user host lock that serializes Recipe POC runtimes."""
+    return os.path.join(tempfile.gettempdir(), f".nvflare-recipe-poc-{os.geteuid()}.lock")
 
 
 # Internal — not part of the public API
@@ -154,6 +163,7 @@ class PocEnv(ExecEnv):
         self._session_manager = None  # Lazy initialization
         self._session_manager_lock = threading.Lock()
         self._workspace_used = False
+        self._runtime_lock_file = None
 
     def _new_poc_workspace(self) -> str:
         """Return a unique Recipe-owned workspace beside the configured POC path."""
@@ -189,6 +199,48 @@ class PocEnv(ExecEnv):
         except Exception:
             return False
         return bool(self._running_services(project_config, service_config, workspace))
+
+    def _acquire_runtime_lock(self) -> None:
+        """Claim the host's single Recipe-managed POC runtime slot."""
+        if self._runtime_lock_file is not None:
+            return
+
+        lock_path = _recipe_runtime_lock_path()
+        flags = os.O_CREAT | os.O_RDWR
+        if hasattr(os, "O_CLOEXEC"):
+            flags |= os.O_CLOEXEC
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        fd = os.open(lock_path, flags, 0o600)
+        try:
+            lock_stat = os.fstat(fd)
+            if not stat.S_ISREG(lock_stat.st_mode) or lock_stat.st_uid != os.geteuid():
+                raise RuntimeError(f"Refusing to use unsafe Recipe POC runtime lock {lock_path}")
+            os.fchmod(fd, 0o600)
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError as e:
+                if e.errno in (errno.EACCES, errno.EAGAIN):
+                    raise RuntimeError(
+                        "Another Recipe PocEnv deployment is active on this host. "
+                        "Stop it before starting this deployment."
+                    ) from e
+                raise
+            self._runtime_lock_file = os.fdopen(fd, "a+")
+        except BaseException:
+            os.close(fd)
+            raise
+
+    def _release_runtime_lock(self) -> None:
+        """Release this environment's Recipe POC runtime slot, if held."""
+        lock_file = self._runtime_lock_file
+        if lock_file is None:
+            return
+        self._runtime_lock_file = None
+        try:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+        finally:
+            lock_file.close()
 
     @staticmethod
     def _is_docker_service_running(service_name: str) -> bool:
@@ -284,18 +336,25 @@ class PocEnv(ExecEnv):
                 f"For PocEnv, all scripts must be present on the local machine."
             )
 
-        # Unique workspaces isolate files, but POC deployments still share
-        # default ports and Docker participant names. Never compete with the
-        # reusable CLI-managed deployment selected by the user's configuration.
-        if self._is_poc_workspace_running(self._poc_workspace_root):
-            raise RuntimeError(
-                f"The configured CLI POC deployment is running at {self._poc_workspace_root}. "
-                "Stop it with 'nvflare poc stop' before starting a Recipe PocEnv deployment."
-            )
+        if self._workspace_used and self._check_poc_running():
+            raise RuntimeError("This PocEnv already has a running deployment; stop it before deploying another job")
+
+        # Recipe POC workspaces have isolated files but share host ports and
+        # Docker participant names. The process-held lock closes the race
+        # between checking those resources and starting services. It is
+        # released only after this deployment's services have stopped.
+        self._acquire_runtime_lock()
+        try:
+            if self._is_poc_workspace_running(self._poc_workspace_root):
+                raise RuntimeError(
+                    f"The configured CLI POC deployment is running at {self._poc_workspace_root}. "
+                    "Stop it with 'nvflare poc stop' before starting a Recipe PocEnv deployment."
+                )
+        except BaseException:
+            self._release_runtime_lock()
+            raise
 
         if self._workspace_used:
-            if self._check_poc_running():
-                raise RuntimeError("This PocEnv already has a running deployment; stop it before deploying another job")
             self.poc_workspace = self._new_poc_workspace()
             self._session_manager = None
         self._workspace_used = True
@@ -369,6 +428,7 @@ class PocEnv(ExecEnv):
                 self.logger.info(f"Removing POC workspace: {self.poc_workspace}")
                 shutil.rmtree(self.poc_workspace, ignore_errors=True)
             self._session_manager = None  # Clear stale session manager
+            self._release_runtime_lock()
             return
 
         try:
@@ -423,6 +483,8 @@ class PocEnv(ExecEnv):
                         self.logger.warning(
                             f"Failed to clean POC workspace {self.poc_workspace}: {e}. Remove it manually."
                         )
+            if not poc_running:
+                self._release_runtime_lock()
         except Exception as e:
             self.logger.warning(f"Failed to stop and clean existing POC: {e}")
         finally:
