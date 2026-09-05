@@ -207,7 +207,16 @@ class PocEnv(ExecEnv):
                     f"{_recipe_runtime_lock_path()} manually."
                 ) from e
             return False
-        return bool(self._running_services(project_config, service_config, workspace))
+        try:
+            return bool(self._running_services(project_config, service_config, workspace))
+        except Exception as e:
+            if fail_if_unknown:
+                raise RuntimeError(
+                    f"Could not determine service state for the previously active Recipe PocEnv workspace {workspace}: "
+                    f"{e}. Stop any remaining services, then remove the stale runtime record "
+                    f"{_recipe_runtime_lock_path()} manually."
+                ) from e
+            raise
 
     def _acquire_runtime_lock(self) -> None:
         """Claim the host's single Recipe-managed POC runtime slot."""

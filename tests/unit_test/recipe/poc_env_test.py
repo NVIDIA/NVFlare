@@ -197,6 +197,42 @@ def test_deploy_fails_closed_when_prior_runtime_workspace_is_unreadable(tmp_path
     assert env._runtime_lock_file is None
 
 
+def test_deploy_fails_closed_when_prior_runtime_service_state_is_unreadable(tmp_path, monkeypatch):
+    import nvflare.recipe.poc_env as poc_env_module
+
+    configured_workspace = tmp_path / "current-poc"
+    prior_workspace = tmp_path / f"prior-poc.recipe-{'c' * 32}"
+    lock_path = Path(poc_env_module._recipe_runtime_lock_path())
+    lock_path.write_text(str(prior_workspace))
+    provision_calls = []
+
+    monkeypatch.setattr(poc_env_module, "get_poc_workspace", lambda: str(configured_workspace))
+    monkeypatch.setattr(poc_env_module, "collect_non_local_scripts", lambda job: [])
+    monkeypatch.setattr(poc_env_module, "setup_service_config", lambda path: (object(), object()))
+    monkeypatch.setattr(
+        poc_env_module,
+        "prepare_poc_provision",
+        lambda **kwargs: provision_calls.append(kwargs),
+    )
+    env = PocEnv()
+    monkeypatch.setattr(
+        env,
+        "_running_services",
+        lambda project_config, service_config, workspace: (_ for _ in ()).throw(
+            ValueError("service configuration is unusable")
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="Could not determine service state") as exc_info:
+        env.deploy(object())
+
+    assert str(prior_workspace) in str(exc_info.value)
+    assert str(lock_path) in str(exc_info.value)
+    assert provision_calls == []
+    assert lock_path.read_text() == str(prior_workspace)
+    assert env._runtime_lock_file is None
+
+
 def test_deploy_rejects_overlapping_calls_on_same_environment():
     env = PocEnv()
     assert env._deployment_lock.acquire(blocking=False)
