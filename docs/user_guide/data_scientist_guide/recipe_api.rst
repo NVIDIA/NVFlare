@@ -479,6 +479,9 @@ workspace is never replaced by Recipe provisioning. Reusing a stopped
 ``PocEnv`` creates another new workspace, so a retained result or log directory
 from an earlier run is not overwritten. Pass ``clean_up=False`` to
 ``Run.get_result()`` to retain the current Recipe workspace for inspection.
+File isolation does not isolate default ports or Docker participant names, so
+``PocEnv`` refuses to start while the configured CLI POC deployment is running;
+stop that deployment with ``nvflare poc stop`` first.
 If failure cleanup cannot be verified, the raised error identifies the unique
 workspace for manual cleanup. Other deployments do not scan or delete retained
 Recipe workspaces.

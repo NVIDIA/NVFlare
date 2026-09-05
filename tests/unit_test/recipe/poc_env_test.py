@@ -173,6 +173,45 @@ def test_deploy_preflight_failure_does_not_create_workspace(tmp_path, monkeypatc
     assert not os.path.exists(env.poc_workspace)
 
 
+def test_deploy_rejects_running_configured_cli_workspace(tmp_path, monkeypatch):
+    import nvflare.recipe.poc_env as poc_env_module
+
+    configured_workspace = tmp_path / "poc"
+    configured_workspace.mkdir()
+    retained_result = configured_workspace / "prior-result.txt"
+    retained_result.write_text("keep me")
+    provision_calls = []
+    monkeypatch.setattr(poc_env_module, "get_poc_workspace", lambda: str(configured_workspace))
+    monkeypatch.setattr(poc_env_module, "collect_non_local_scripts", lambda job: [])
+    monkeypatch.setattr(
+        poc_env_module,
+        "setup_service_config",
+        lambda path: (PROJECT_CONFIG, SERVICE_CONFIG),
+    )
+    monkeypatch.setattr(
+        PocEnv,
+        "_running_services",
+        staticmethod(
+            lambda project_config, service_config, workspace: (
+                ["server"] if workspace == str(configured_workspace) else []
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        poc_env_module,
+        "prepare_poc_provision",
+        lambda **kwargs: provision_calls.append(kwargs),
+    )
+    env = PocEnv()
+
+    with pytest.raises(RuntimeError, match="nvflare poc stop"):
+        env.deploy(object())
+
+    assert provision_calls == []
+    assert retained_result.read_text() == "keep me"
+    assert not os.path.exists(env.poc_workspace)
+
+
 def test_deploy_does_not_modify_configured_cli_workspace(tmp_path, monkeypatch):
     import nvflare.recipe.poc_env as poc_env_module
 
@@ -313,6 +352,30 @@ def test_deploy_reports_incomplete_failure_cleanup(tmp_path, monkeypatch):
     assert "remove this workspace manually" in str(exc_info.value)
     assert "POC services remain running" in str(exc_info.value.__cause__)
     assert os.path.isdir(run_workspace)
+
+
+@pytest.mark.parametrize("interruption", [KeyboardInterrupt(), SystemExit(2)])
+def test_cleanup_interruption_is_not_converted_to_runtime_error(tmp_path, monkeypatch, interruption):
+    import nvflare.recipe.poc_env as poc_env_module
+
+    monkeypatch.setattr(poc_env_module, "get_poc_workspace", lambda: str(tmp_path / "poc"))
+    env = PocEnv()
+
+    def prepare(**kwargs):
+        Path(kwargs["workspace"]).mkdir(parents=True)
+
+    def fail_submission(job):
+        raise RuntimeError("submission failed")
+
+    _configure_successful_deploy(monkeypatch, env, prepare=prepare, submit=fail_submission)
+    monkeypatch.setattr(
+        env,
+        "_clean_up_failed_deployment",
+        lambda: (_ for _ in ()).throw(interruption),
+    )
+
+    with pytest.raises(type(interruption)):
+        env.deploy(object())
 
 
 def test_new_env_preserves_retained_recipe_workspace(tmp_path, monkeypatch):
