@@ -182,6 +182,14 @@ class PocEnv(ExecEnv):
         if os.path.exists(self.poc_workspace):
             raise RuntimeError("the per-run POC workspace could not be removed")
 
+    def _is_poc_workspace_running(self, workspace: str) -> bool:
+        """Return whether any managed service is running in a POC workspace."""
+        try:
+            project_config, service_config = setup_service_config(workspace)
+        except Exception:
+            return False
+        return bool(self._running_services(project_config, service_config, workspace))
+
     @staticmethod
     def _is_docker_service_running(service_name: str) -> bool:
         """Return whether Docker reports the named POC container as running."""
@@ -276,6 +284,15 @@ class PocEnv(ExecEnv):
                 f"For PocEnv, all scripts must be present on the local machine."
             )
 
+        # Unique workspaces isolate files, but POC deployments still share
+        # default ports and Docker participant names. Never compete with the
+        # reusable CLI-managed deployment selected by the user's configuration.
+        if self._is_poc_workspace_running(self._poc_workspace_root):
+            raise RuntimeError(
+                f"The configured CLI POC deployment is running at {self._poc_workspace_root}. "
+                "Stop it with 'nvflare poc stop' before starting a Recipe PocEnv deployment."
+            )
+
         if self._workspace_used:
             if self._check_poc_running():
                 raise RuntimeError("This PocEnv already has a running deployment; stop it before deploying another job")
@@ -319,7 +336,7 @@ class PocEnv(ExecEnv):
             # cleanup cannot delete a retained CLI workspace or a prior run.
             try:
                 self._clean_up_failed_deployment()
-            except BaseException as cleanup_error:
+            except Exception as cleanup_error:
                 raise RuntimeError(
                     f"POC deployment failed ({deployment_error}); cleanup could not be completed safely "
                     f"for the per-run workspace {self.poc_workspace}: {cleanup_error}. Stop any remaining POC "
@@ -335,13 +352,7 @@ class PocEnv(ExecEnv):
         Returns:
             bool: True if POC is running, False otherwise.
         """
-        try:
-            project_config, service_config = setup_service_config(self.poc_workspace)
-        except Exception:
-            # POC workspace is not initialized yet, so we don't need to stop and clean it
-            return False
-
-        return bool(self._running_services(project_config, service_config, self.poc_workspace))
+        return self._is_poc_workspace_running(self.poc_workspace)
 
     def stop(self, clean_up: bool = False) -> None:
         """Try to stop and clean existing POC.
