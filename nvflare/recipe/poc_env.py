@@ -187,7 +187,9 @@ class PocEnv(ExecEnv):
         """Stop a failed deployment and verify its per-run workspace was cleaned."""
         if not self._is_recipe_workspace(self.poc_workspace):
             raise RuntimeError(f"refusing to clean unmanaged POC workspace {self.poc_workspace}")
-        self.stop(clean_up=True)
+        # deploy() already holds the instance lifecycle guard. Use the private
+        # implementation so failure cleanup cannot deadlock on that guard.
+        self._stop(clean_up=True)
         if self._check_poc_running():
             raise RuntimeError("POC services remain running")
         if os.path.exists(self.poc_workspace):
@@ -463,6 +465,13 @@ class PocEnv(ExecEnv):
         Args:
             clean_up (bool, optional): Whether to clean the POC workspace. Defaults to False.
         """
+        # Wait for an in-progress deployment to finish before inspecting
+        # services or clearing its durable runtime record.
+        with self._deployment_lock:
+            self._stop(clean_up)
+
+    def _stop(self, clean_up: bool = False) -> None:
+        """Stop POC while the caller holds the instance lifecycle guard."""
         # Check if already stopped (idempotent)
         if not self._check_poc_running():
             # POC already stopped or workspace doesn't exist
