@@ -15,6 +15,7 @@
 import os
 import subprocess
 import tempfile
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -171,6 +172,36 @@ def test_deploy_rejects_overlapping_calls_on_same_environment():
             env.deploy(object())
     finally:
         env._deployment_lock.release()
+
+
+def test_stop_waits_for_deployment_to_leave_instance_guard(monkeypatch):
+    env = PocEnv()
+    stop_called = threading.Event()
+    stop_completed = threading.Event()
+    stop_args = []
+
+    def stop_impl(clean_up):
+        stop_args.append(clean_up)
+
+    def call_stop():
+        stop_called.set()
+        env.stop(clean_up=True)
+        stop_completed.set()
+
+    monkeypatch.setattr(env, "_stop", stop_impl)
+    assert env._deployment_lock.acquire(blocking=False)
+    stop_thread = threading.Thread(target=call_stop)
+    stop_thread.start()
+    try:
+        assert stop_called.wait(timeout=1)
+        assert not stop_completed.wait(timeout=0.05)
+    finally:
+        env._deployment_lock.release()
+    stop_thread.join(timeout=1)
+
+    assert not stop_thread.is_alive()
+    assert stop_completed.is_set()
+    assert stop_args == [True]
 
 
 @patch("nvflare.recipe.poc_env.get_poc_workspace")
