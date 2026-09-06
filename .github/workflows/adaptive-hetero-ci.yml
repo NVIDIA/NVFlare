@@ -51,7 +51,7 @@ jobs:
         run: |
           python research/adaptive-hetero-aggregation/nvflare_smoke/job.py \
             --n_clients 3 \
-            --num_rounds 2 \
+            --num_rounds 5 \
             --train_samples 180 \
             --valid_samples 90 \
             --local_epochs 1
