@@ -25,7 +25,6 @@ from torch.utils.data import DataLoader, TensorDataset
 import nvflare.client as flare
 from nvflare.app_common.abstract.fl_model import ParamsType
 
-
 NUM_FEATURES = 6
 NUM_CLASSES = 3
 DEVICE = torch.device("cpu")

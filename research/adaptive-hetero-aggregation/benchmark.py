@@ -26,8 +26,8 @@ import argparse
 import copy
 import json
 import random
-from pathlib import Path
 import sys
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -36,7 +36,6 @@ from sklearn.datasets import make_classification
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
 from adaptive_hetero.policy import AdaptiveHeterogeneityPolicy, AdaptiveWeightingConfig
-
 
 SETTINGS = {
     "mild": {"dirichlet_alpha": 0.50, "shift_scale": 0.30},
@@ -169,9 +168,11 @@ def run_method(method, clients, seed, rounds, num_features, num_classes):
             sample_exponent=0.65,
             representation_exponent=0.70,
             quality_exponent=0.40,
-            fairness_strength=2.20,
-            heterogeneity_threshold=0.20,
+            fairness_strength=1.00,
+            heterogeneity_threshold=0.26,
             heterogeneity_temperature=0.04,
+            heterogeneity_deadband=0.15,
+            max_blend_factor=0.40,
             min_weight=0.02,
             max_weight=0.30,
         )

@@ -14,8 +14,8 @@
 
 """NVFlare ``Aggregator`` adapter for adaptive heterogeneity-aware weighting."""
 
-from dataclasses import dataclass
 import math
+from dataclasses import dataclass
 
 from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
 from nvflare.apis.fl_constant import ReservedKey, ReturnCode

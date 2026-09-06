@@ -27,9 +27,9 @@ if SRC_DIR not in sys.path:
 os.environ["PYTHONPATH"] = SRC_DIR + os.pathsep + os.environ.get("PYTHONPATH", "")
 
 from adaptive_hetero.nvflare_aggregator import AdaptiveHeterogeneityAggregator  # noqa: E402
+
 from nvflare.app_opt.pt.recipes.fedopt import FedOptRecipe  # noqa: E402
 from nvflare.recipe import SimEnv  # noqa: E402
-
 
 NUM_FEATURES = 6
 NUM_CLASSES = 3

@@ -21,8 +21,8 @@ capped sigmoid gradually enables bounded weights combining sub-linear client
 volume, representation benefit, client quality, and minimax-style pressure.
 """
 
-from dataclasses import dataclass
 import math
+from dataclasses import dataclass
 from typing import Sequence
 
 import numpy as np
