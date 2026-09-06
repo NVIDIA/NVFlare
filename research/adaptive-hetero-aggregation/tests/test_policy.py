@@ -20,9 +20,22 @@ from adaptive_hetero.policy import AdaptiveHeterogeneityPolicy, AdaptiveWeightin
 
 def test_bounded_simplex_respects_sum_and_bounds():
     result = project_bounded_simplex([0.95, 0.02, 0.02, 0.01], lower=0.10, upper=0.40)
-    assert np.isclose(result.sum(), 1.0)
+    assert np.isclose(result.sum(), 1.0, atol=1e-12)
     assert np.all(result >= 0.10 - 1e-12)
     assert np.all(result <= 0.40 + 1e-12)
+
+
+def test_bounded_simplex_randomized_stress():
+    rng = np.random.default_rng(20260906)
+    for client_count in (3, 4, 8, 16):
+        lower = 0.01
+        upper = max(0.20, 1.5 / client_count)
+        for _ in range(100):
+            values = rng.lognormal(mean=0.0, sigma=2.0, size=client_count)
+            result = project_bounded_simplex(values, lower=lower, upper=upper)
+            assert np.isclose(result.sum(), 1.0, atol=1e-10)
+            assert np.all(result >= lower - 1e-10)
+            assert np.all(result <= upper + 1e-10)
 
 
 def test_low_heterogeneity_stays_close_to_sample_weighting():
@@ -65,3 +78,8 @@ def test_descriptor_length_mismatch_is_rejected():
 def test_infeasible_bounds_are_rejected():
     with pytest.raises(ValueError, match="infeasible"):
         project_bounded_simplex([0.5, 0.5], lower=0.0, upper=0.4)
+
+
+def test_invalid_config_bounds_are_rejected_early():
+    with pytest.raises(ValueError, match="invalid weight bounds"):
+        AdaptiveHeterogeneityPolicy(AdaptiveWeightingConfig(min_weight=0.5, max_weight=0.2))
