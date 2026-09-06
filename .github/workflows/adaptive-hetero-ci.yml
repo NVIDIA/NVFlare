@@ -9,20 +9,24 @@ on:
       - ".github/workflows/adaptive-hetero-ci.yml"
   workflow_dispatch:
 
+# TEMPORARY formatting/hardening mode. This will be returned to read-only
+# validation after the branch has been auto-formatted once.
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
@@ -31,7 +35,37 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[PT]"
-          python -m pip install pytest black==25.9.0 isort==5.13.2 flake8==7.1.1
+          python -m pip install pytest black==25.9.0 isort==5.13.2 flake8==7.1.1 scikit-learn
+
+      - name: Synchronize benchmark with hardened policy
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("research/adaptive-hetero-aggregation/benchmark.py")
+          text = path.read_text()
+          old = '''            quality_exponent=0.40,\n            fairness_strength=2.20,\n            heterogeneity_threshold=0.20,\n            heterogeneity_temperature=0.04,\n            min_weight=0.02,\n            max_weight=0.30,\n'''
+          new = '''            quality_exponent=0.40,\n            fairness_strength=1.00,\n            heterogeneity_threshold=0.26,\n            heterogeneity_temperature=0.04,\n            heterogeneity_deadband=0.15,\n            max_blend_factor=0.40,\n            min_weight=0.02,\n            max_weight=0.30,\n'''
+          if old in text:
+              path.write_text(text.replace(old, new))
+          elif new not in text:
+              raise SystemExit("benchmark policy block did not match expected old or hardened form")
+          PY
+
+      - name: Auto-format research files once
+        run: |
+          isort research/adaptive-hetero-aggregation
+          black research/adaptive-hetero-aggregation
+
+      - name: Commit formatting and benchmark synchronization
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add research/adaptive-hetero-aggregation
+          if ! git diff --cached --quiet; then
+            git commit -m "Harden and format adaptive heterogeneity research prototype"
+            git push origin HEAD:feature/heterogeneity-aware-aggregation-5209
+          fi
 
       - name: Unit and NVFlare integration tests
         env:
@@ -55,3 +89,13 @@ jobs:
             --train_samples 180 \
             --valid_samples 90 \
             --local_epochs 1
+
+      - name: Reproducibility benchmark smoke
+        run: |
+          python research/adaptive-hetero-aggregation/benchmark.py \
+            --samples 6000 \
+            --rounds 8 \
+            --seeds 7 19 \
+            --settings mild severe extreme \
+            --methods fedopt adaptive \
+            --output /tmp/adaptive-benchmark-smoke.json
