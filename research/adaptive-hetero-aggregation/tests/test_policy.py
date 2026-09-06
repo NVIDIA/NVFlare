@@ -47,10 +47,13 @@ def test_low_heterogeneity_uses_exact_sample_weighting_fallback():
 
 
 def test_high_heterogeneity_but_tiny_metric_gap_uses_exact_fallback():
+    # Balanced volumes isolate the performance-gap gate from sample-weighted
+    # reference effects: the two descriptors are deliberately far apart while
+    # client performance differs by only one percentage point.
     result = AdaptiveHeterogeneityPolicy().compute(
-        sample_counts=[800, 100, 100],
-        descriptors=[[0.95, 0.05], [0.05, 0.95], [0.50, 0.50]],
-        client_metrics=[0.99, 0.98, 1.00],
+        sample_counts=[100, 100],
+        descriptors=[[0.99, 0.01], [0.01, 0.99]],
+        client_metrics=[0.99, 1.00],
     )
     assert result.mean_heterogeneity > 0.15
     assert result.metric_gap < 0.05
