@@ -105,6 +105,9 @@ def make_clients(seed, num_clients, dirichlet_alpha, shift_scale):
 def _train_local(global_vector, model_name, client, learning_rate=0.12, local_steps=2):
     model = _make_model(model_name)
     _load_state_vector(model, global_vector)
+    # Match the real NVFlare client contract: fairness uses the received global
+    # model's validation accuracy, not the locally trained model's accuracy.
+    global_model_accuracy = _evaluate(model, client["validation"])
     features, labels = client["train"]
     for _ in range(local_steps):
         model.zero_grad(set_to_none=True)
@@ -113,7 +116,7 @@ def _train_local(global_vector, model_name, client, learning_rate=0.12, local_st
         with torch.no_grad():
             for parameter in model.parameters():
                 parameter -= learning_rate * parameter.grad
-    return _state_vector(model) - global_vector, _evaluate(model, client["validation"])
+    return _state_vector(model) - global_vector, global_model_accuracy
 
 
 def run_method(method, model_name, clients, seed, rounds, participation_rate):
@@ -145,7 +148,7 @@ def run_method(method, model_name, clients, seed, rounds, participation_rate):
         if method == "fedopt":
             weights = counts / counts.sum()
         elif method == "adaptive":
-            last_diag = policy.compute(counts, descriptors, metrics)
+            last_diag = policy.compute(counts, descriptors, metrics, cohort_key=tuple(active_ids))
             weights = last_diag.weights
         else:
             raise ValueError(f"unknown method: {method}")
@@ -165,8 +168,11 @@ def run_method(method, model_name, clients, seed, rounds, participation_rate):
         "worst_client_accuracy": float(min(accuracies)),
         "client_accuracies": [float(value) for value in accuracies],
         "mean_heterogeneity": 0.0 if last_diag is None else last_diag.mean_heterogeneity,
+        "raw_metric_gap": 0.0 if last_diag is None else last_diag.raw_metric_gap,
         "metric_gap": 0.0 if last_diag is None else last_diag.metric_gap,
+        "candidate_blend_factor": 0.0 if last_diag is None else last_diag.candidate_blend_factor,
         "blend_factor": 0.0 if last_diag is None else last_diag.blend_factor,
+        "activation_streak": 0 if last_diag is None else last_diag.activation_streak,
     }
 
 
