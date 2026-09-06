@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import json
 from pathlib import Path
 
 import pytest
@@ -151,6 +152,22 @@ poc_workspace {
         assert "version = 2" in persisted
         assert 'workspace = "/tmp/nvflare/poc"' in persisted
         assert list(tmp_path.glob("tmp*")) == []
+
+    def test_save_config_uses_final_filename_extension(self, tmp_path):
+        config_path = tmp_path / "client.backup.json"
+        config = CF.parse_string("version = 2")
+
+        save_config(config, str(config_path))
+
+        assert json.loads(config_path.read_text())["version"] == 2
+
+    def test_save_config_supports_compound_default_extension(self, tmp_path):
+        config_path = tmp_path / "client.json.default"
+        config = CF.parse_string("version = 2")
+
+        save_config(config, str(config_path))
+
+        assert json.loads(config_path.read_text())["version"] == 2
 
     @pytest.mark.parametrize(
         "inputs, result", [(([], "a"), ["a"]), ((["a"], "a"), ["a"]), ((["a", "b"], "b"), ["a", "b"])]
