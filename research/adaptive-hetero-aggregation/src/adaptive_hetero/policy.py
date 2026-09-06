@@ -14,12 +14,11 @@
 
 """Adaptive weighting policy for heterogeneous federated learning.
 
-The policy intentionally separates *when* heterogeneity-aware weighting should
-matter from *how* client influence is redistributed. When measured
-heterogeneity is low, weights stay close to ordinary sample weighting. As
-heterogeneity grows, the policy smoothly blends toward bounded weights that
-combine sub-linear sample size, representation benefit, client quality, and a
-minimax-style fairness pressure.
+The policy separates *when* heterogeneity-aware weighting should matter from
+*how* client influence is redistributed. A deadband provides an exact ordinary
+sample-weighting fallback when heterogeneity is small. Above that deadband, a
+capped sigmoid gradually enables bounded weights combining sub-linear client
+volume, representation benefit, client quality, and minimax-style pressure.
 """
 
 from dataclasses import dataclass
@@ -36,9 +35,11 @@ class AdaptiveWeightingConfig:
     sample_exponent: float = 0.65
     representation_exponent: float = 0.70
     quality_exponent: float = 0.40
-    fairness_strength: float = 2.20
-    heterogeneity_threshold: float = 0.20
+    fairness_strength: float = 1.00
+    heterogeneity_threshold: float = 0.26
     heterogeneity_temperature: float = 0.04
+    heterogeneity_deadband: float = 0.15
+    max_blend_factor: float = 0.40
     min_weight: float = 0.02
     max_weight: float = 0.50
     epsilon: float = 1e-12
@@ -78,12 +79,12 @@ def _jensen_shannon(p: np.ndarray, q: np.ndarray) -> float:
 
 
 def project_bounded_simplex(values: Sequence[float], lower: float, upper: float) -> np.ndarray:
-    """Project ``values`` onto ``sum(w)=1`` with element-wise bounds.
+    """Project values onto ``sum(w)=1`` with lower/upper element-wise bounds.
 
-    The Euclidean projection has form ``clip(values - tau, lower, upper)``.
-    A monotone bisection on ``tau`` finds the projection. Any final floating
-    point residual is redistributed only into coordinates that still have room,
-    rather than renormalizing all coordinates and potentially violating a bound.
+    The Euclidean projection has form ``clip(values - tau, lower, upper)``. A
+    monotone bisection finds ``tau``. Any final floating-point residual is
+    redistributed only into coordinates that still have room rather than
+    renormalizing all coordinates and risking a bound violation.
     """
 
     values = np.asarray(values, dtype=np.float64)
@@ -117,7 +118,6 @@ def project_bounded_simplex(values: Sequence[float], lower: float, upper: float)
         else:
             room = projected - lower
             direction = -1.0
-
         remaining = abs(residual)
         for index in np.argsort(room)[::-1]:
             if remaining <= tolerance:
@@ -138,10 +138,9 @@ def project_bounded_simplex(values: Sequence[float], lower: float, upper: float)
 class AdaptiveHeterogeneityPolicy:
     """Compute adaptive aggregation weights from client-level metadata.
 
-    ``client_metrics`` are assumed to be higher-is-better metrics (for example,
-    validation accuracy). ``quality_improvements`` should be comparable within
-    a round and can represent local validation-loss improvement of the submitted
-    update over the received global model.
+    ``client_metrics`` are higher-is-better metrics. ``quality_improvements``
+    should be comparable within a round and can represent validation-loss
+    improvement of the local update over the received global model.
     """
 
     def __init__(self, config: AdaptiveWeightingConfig | None = None):
@@ -158,6 +157,10 @@ class AdaptiveHeterogeneityPolicy:
             raise ValueError("fairness_strength must be non-negative")
         if cfg.heterogeneity_temperature <= 0.0:
             raise ValueError("heterogeneity_temperature must be positive")
+        if cfg.heterogeneity_deadband < 0.0:
+            raise ValueError("heterogeneity_deadband must be non-negative")
+        if not 0.0 < cfg.max_blend_factor <= 1.0:
+            raise ValueError("max_blend_factor must be in (0, 1]")
         if cfg.epsilon <= 0.0:
             raise ValueError("epsilon must be positive")
         if cfg.min_weight < 0.0 or cfg.max_weight <= 0.0 or cfg.min_weight > cfg.max_weight:
@@ -181,8 +184,7 @@ class AdaptiveHeterogeneityPolicy:
             raise ValueError("descriptors must contain one descriptor per client")
 
         normalized_descriptors = [_normalize_distribution(item, cfg.epsilon) for item in descriptors]
-        descriptor_sizes = {item.size for item in normalized_descriptors}
-        if len(descriptor_sizes) != 1:
+        if len({item.size for item in normalized_descriptors}) != 1:
             raise ValueError("all descriptors must have the same length")
         descriptor_matrix = np.stack(normalized_descriptors)
 
@@ -192,9 +194,8 @@ class AdaptiveHeterogeneityPolicy:
         js_values = np.asarray([_jensen_shannon(item, reference) for item in descriptor_matrix], dtype=np.float64)
         mean_heterogeneity = float(np.average(js_values, weights=counts))
 
-        # Representation benefit is not maximum divergence alone. A rarity term
-        # rewards mass on globally underrepresented descriptor bins, while the
-        # bounded novelty term preserves information about distributional shift.
+        # Divergence alone is not treated as usefulness. Rarity rewards mass on
+        # globally underrepresented descriptor bins while novelty captures shift.
         novelty = js_values / max(float(js_values.max()), cfg.epsilon)
         inverse_frequency = 1.0 / np.sqrt(reference + cfg.epsilon)
         inverse_frequency /= float(np.dot(reference, inverse_frequency))
@@ -225,12 +226,19 @@ class AdaptiveHeterogeneityPolicy:
         raw /= raw.sum()
         adaptive_weights = project_bounded_simplex(raw, cfg.min_weight, cfg.max_weight)
 
-        z = (mean_heterogeneity - cfg.heterogeneity_threshold) / cfg.heterogeneity_temperature
-        if z >= 0.0:
-            blend = 1.0 / (1.0 + math.exp(-z))
+        # Below the deadband, preserve the exact ordinary sample-weighting path.
+        # Above it, keep a smooth sigmoid response but cap the intervention so
+        # noisy client-local metrics cannot completely dominate aggregation.
+        if mean_heterogeneity <= cfg.heterogeneity_deadband:
+            blend = 0.0
         else:
-            exp_z = math.exp(z)
-            blend = exp_z / (1.0 + exp_z)
+            z = (mean_heterogeneity - cfg.heterogeneity_threshold) / cfg.heterogeneity_temperature
+            if z >= 0.0:
+                blend = 1.0 / (1.0 + math.exp(-z))
+            else:
+                exp_z = math.exp(z)
+                blend = exp_z / (1.0 + exp_z)
+            blend = min(blend, cfg.max_blend_factor)
 
         weights = (1.0 - blend) * base_weights + blend * adaptive_weights
         weights /= weights.sum()
