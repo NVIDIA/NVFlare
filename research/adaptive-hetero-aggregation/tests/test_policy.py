@@ -91,6 +91,28 @@ def test_material_heterogeneity_and_metric_gap_enable_adaptive_weighting():
     assert np.isclose(result.weights.sum(), 1.0)
 
 
+def test_final_blended_weights_respect_bounds_when_base_weight_is_dominant():
+    policy = _immediate_policy(
+        min_weight=0.05,
+        max_weight=0.50,
+        heterogeneity_threshold=0.0,
+        heterogeneity_deadband=0.0,
+        performance_gap_threshold=0.0,
+        performance_gap_deadband=0.0,
+        max_blend_factor=0.20,
+    )
+    result = policy.compute(
+        sample_counts=[900, 50, 50],
+        descriptors=[[0.99, 0.01], [0.01, 0.99], [0.50, 0.50]],
+        client_metrics=[0.90, 0.40, 0.60],
+    )
+    assert result.blend_factor > 0.0
+    assert result.base_weights[0] == pytest.approx(0.90)
+    assert np.isclose(result.weights.sum(), 1.0)
+    assert np.all(result.weights >= 0.05 - 1e-12)
+    assert np.all(result.weights <= 0.50 + 1e-12)
+
+
 def test_small_client_metric_is_shrunk_toward_federation_mean():
     policy = _immediate_policy(metric_prior_strength=100.0)
     result = policy.compute(
