@@ -38,11 +38,21 @@ NUM_CLASSES = 3
 def main(args):
     torch.manual_seed(args.seed)
     model = torch.nn.Linear(NUM_FEATURES, NUM_CLASSES)
+    # Keep the production safeguards (warm-up + patience + stable cohort), but
+    # remove deadbands in this deterministic smoke so five rounds exercise the
+    # adaptive path instead of validating only the FedOpt fallback path.
     aggregator = AdaptiveHeterogeneityAggregator(
+        metric_prior_strength=0.0,
         min_weight=0.05,
         max_weight=0.60,
-        heterogeneity_threshold=0.08,
+        heterogeneity_threshold=0.0,
         heterogeneity_temperature=0.04,
+        heterogeneity_deadband=0.0,
+        performance_gap_threshold=0.0,
+        performance_gap_deadband=0.0,
+        activation_warmup_rounds=3,
+        activation_patience=2,
+        require_stable_cohort=True,
     )
     client_script = os.path.join(os.path.dirname(__file__), "client.py")
     recipe = FedOptRecipe(
@@ -72,7 +82,7 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--n_clients", type=int, default=3)
-    parser.add_argument("--num_rounds", type=int, default=2)
+    parser.add_argument("--num_rounds", type=int, default=5)
     parser.add_argument("--train_samples", type=int, default=180)
     parser.add_argument("--valid_samples", type=int, default=90)
     parser.add_argument("--local_epochs", type=int, default=1)
