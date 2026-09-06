@@ -9,10 +9,8 @@ on:
       - ".github/workflows/adaptive-hetero-ci.yml"
   workflow_dispatch:
 
-# TEMPORARY formatting mode for the newly added validation files. This is
-# returned to read-only validation after this hardening run.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   validate:
@@ -22,8 +20,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -37,32 +33,17 @@ jobs:
           python -m pip install -e ".[PT]"
           python -m pip install pytest black==25.9.0 isort==5.13.2 flake8==7.1.1 scikit-learn
 
-      - name: Auto-format research files once
+      - name: Formatting and lint checks
         run: |
-          isort research/adaptive-hetero-aggregation
-          black research/adaptive-hetero-aggregation
-
-      - name: Commit formatting if needed
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add research/adaptive-hetero-aggregation
-          if ! git diff --cached --quiet; then
-            git commit -m "Format extended adaptive heterogeneity validation"
-            git push origin HEAD:feature/heterogeneity-aware-aggregation-5209
-          fi
+          black --check research/adaptive-hetero-aggregation
+          isort --check-only research/adaptive-hetero-aggregation
+          flake8 research/adaptive-hetero-aggregation --max-line-length=120
 
       - name: Unit and NVFlare integration tests
         env:
           PYTHONPATH: research/adaptive-hetero-aggregation/src
         run: |
           pytest -q research/adaptive-hetero-aggregation/tests
-
-      - name: Formatting and lint checks
-        run: |
-          black --check research/adaptive-hetero-aggregation
-          isort --check-only research/adaptive-hetero-aggregation
-          flake8 research/adaptive-hetero-aggregation --max-line-length=120
 
       - name: Real NVFlare FedOpt SimEnv smoke run
         env:
@@ -103,3 +84,14 @@ jobs:
             --models linear mlp \
             --methods fedopt adaptive \
             --output /tmp/adaptive-digits-5seed.json
+
+      - name: Partial-participation safety benchmark
+        run: |
+          python research/adaptive-hetero-aggregation/digits_benchmark.py \
+            --rounds 25 \
+            --participation-rate 0.75 \
+            --seeds 7 19 31 \
+            --settings severe extreme \
+            --models linear mlp \
+            --methods fedopt adaptive \
+            --output /tmp/adaptive-digits-partial.json
