@@ -14,7 +14,6 @@
 
 import numpy as np
 import pytest
-
 from adaptive_hetero.policy import AdaptiveHeterogeneityPolicy, AdaptiveWeightingConfig, project_bounded_simplex
 
 

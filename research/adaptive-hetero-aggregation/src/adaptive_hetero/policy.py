@@ -233,20 +233,22 @@ class AdaptiveHeterogeneityPolicy:
         adaptive_weights = project_bounded_simplex(raw, cfg.min_weight, cfg.max_weight)
 
         if mean_heterogeneity <= cfg.heterogeneity_deadband or metric_gap <= cfg.performance_gap_deadband:
-            heterogeneity_gate = 0.0 if mean_heterogeneity <= cfg.heterogeneity_deadband else _sigmoid(
-                (mean_heterogeneity - cfg.heterogeneity_threshold) / cfg.heterogeneity_temperature
+            heterogeneity_gate = (
+                0.0
+                if mean_heterogeneity <= cfg.heterogeneity_deadband
+                else _sigmoid((mean_heterogeneity - cfg.heterogeneity_threshold) / cfg.heterogeneity_temperature)
             )
-            performance_gate = 0.0 if metric_gap <= cfg.performance_gap_deadband else _sigmoid(
-                (metric_gap - cfg.performance_gap_threshold) / cfg.performance_gap_temperature
+            performance_gate = (
+                0.0
+                if metric_gap <= cfg.performance_gap_deadband
+                else _sigmoid((metric_gap - cfg.performance_gap_threshold) / cfg.performance_gap_temperature)
             )
             blend = 0.0
         else:
             heterogeneity_gate = _sigmoid(
                 (mean_heterogeneity - cfg.heterogeneity_threshold) / cfg.heterogeneity_temperature
             )
-            performance_gate = _sigmoid(
-                (metric_gap - cfg.performance_gap_threshold) / cfg.performance_gap_temperature
-            )
+            performance_gate = _sigmoid((metric_gap - cfg.performance_gap_threshold) / cfg.performance_gap_temperature)
             blend = cfg.max_blend_factor * heterogeneity_gate * performance_gate
 
         weights = base_weights.copy() if blend == 0.0 else (1.0 - blend) * base_weights + blend * adaptive_weights

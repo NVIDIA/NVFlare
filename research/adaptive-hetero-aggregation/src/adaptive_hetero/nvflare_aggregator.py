@@ -165,7 +165,9 @@ class AdaptiveHeterogeneityAggregator(Aggregator):
             return False
 
         if self.config.quality_exponent > 0.0 and quality is None:
-            self.log_error(fl_ctx, f"quality metadata is required for {contributor_name!r} when quality weighting is enabled")
+            self.log_error(
+                fl_ctx, f"quality metadata is required for {contributor_name!r} when quality weighting is enabled"
+            )
             return False
 
         if self._descriptor_size is None:
