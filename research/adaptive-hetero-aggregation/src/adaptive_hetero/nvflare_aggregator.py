@@ -15,6 +15,7 @@
 """NVFlare ``Aggregator`` adapter for adaptive heterogeneity-aware weighting."""
 
 from dataclasses import dataclass
+import math
 
 from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
 from nvflare.apis.fl_constant import ReservedKey, ReturnCode
@@ -28,7 +29,7 @@ from .policy import AdaptiveHeterogeneityPolicy, AdaptiveWeightingConfig
 
 
 class AdaptiveMetaKey:
-    """Client metadata keys consumed by the research aggregator."""
+    """Client metadata keys consumed or produced by the research aggregator."""
 
     DISTRIBUTION_DESCRIPTOR = "adaptive_distribution_descriptor"
     CLIENT_METRIC = "adaptive_client_metric"
@@ -52,15 +53,15 @@ class _Contribution:
 class AdaptiveHeterogeneityAggregator(Aggregator):
     """Aggregate ``WEIGHT_DIFF`` updates using adaptive client weights.
 
-    The class is designed to be passed as ``aggregator=`` to PyTorch
-    ``FedOptRecipe``.  FedOpt remains responsible for the server optimizer; this
-    component changes only the weighted mean of client weight differences.
+    The class is designed for PyTorch ``FedOptRecipe``. FedOpt remains
+    responsible for the server optimizer; this component changes only the
+    weighted mean of client weight differences.
 
-    Client training code must attach three metadata values to its outgoing DXO:
+    Required client metadata:
 
-    - ``MetaKey.NUM_STEPS_CURRENT_ROUND`` (or another positive local-volume proxy),
-    - ``AdaptiveMetaKey.DISTRIBUTION_DESCRIPTOR`` (a bounded non-negative vector),
-    - ``AdaptiveMetaKey.CLIENT_METRIC`` (higher is better).
+    - ``MetaKey.NUM_STEPS_CURRENT_ROUND``: positive local-volume proxy;
+    - ``AdaptiveMetaKey.DISTRIBUTION_DESCRIPTOR``: non-empty non-negative vector;
+    - ``AdaptiveMetaKey.CLIENT_METRIC``: finite higher-is-better metric.
 
     ``AdaptiveMetaKey.QUALITY_IMPROVEMENT`` is optional and defaults to zero.
     """
@@ -72,9 +73,11 @@ class AdaptiveHeterogeneityAggregator(Aggregator):
         sample_exponent: float = 0.65,
         representation_exponent: float = 0.70,
         quality_exponent: float = 0.40,
-        fairness_strength: float = 2.20,
-        heterogeneity_threshold: float = 0.20,
+        fairness_strength: float = 1.00,
+        heterogeneity_threshold: float = 0.26,
         heterogeneity_temperature: float = 0.04,
+        heterogeneity_deadband: float = 0.15,
+        max_blend_factor: float = 0.40,
         min_weight: float = 0.02,
         max_weight: float = 0.50,
     ):
@@ -86,18 +89,24 @@ class AdaptiveHeterogeneityAggregator(Aggregator):
             fairness_strength=fairness_strength,
             heterogeneity_threshold=heterogeneity_threshold,
             heterogeneity_temperature=heterogeneity_temperature,
+            heterogeneity_deadband=heterogeneity_deadband,
+            max_blend_factor=max_blend_factor,
             min_weight=min_weight,
             max_weight=max_weight,
         )
         self.policy = AdaptiveHeterogeneityPolicy(self.config)
         self._contributions: dict[str, _Contribution] = {}
         self._processed_algorithm = None
+        self._descriptor_size = None
 
     def reset(self, fl_ctx: FLContext):
+        """Reset per-round state while retaining the configured policy."""
         self._contributions = {}
         self._processed_algorithm = None
+        self._descriptor_size = None
 
     def accept(self, shareable: Shareable, fl_ctx: FLContext) -> bool:
+        """Validate and retain one client contribution for the current round."""
         try:
             dxo = from_shareable(shareable)
         except Exception:
@@ -157,8 +166,27 @@ class AdaptiveHeterogeneityAggregator(Aggregator):
                 f"contributor {contributor_name!r} is missing valid adaptive aggregation metadata",
             )
             return False
-        if sample_count <= 0.0 or not descriptor:
-            self.log_error(fl_ctx, f"invalid sample count or descriptor from {contributor_name!r}")
+
+        if (
+            sample_count <= 0.0
+            or not math.isfinite(sample_count)
+            or not math.isfinite(metric)
+            or not math.isfinite(quality)
+            or not descriptor
+            or any(not math.isfinite(value) or value < 0.0 for value in descriptor)
+            or sum(descriptor) <= 0.0
+        ):
+            self.log_error(fl_ctx, f"invalid adaptive aggregation metadata from {contributor_name!r}")
+            return False
+
+        if self._descriptor_size is None:
+            self._descriptor_size = len(descriptor)
+        elif len(descriptor) != self._descriptor_size:
+            self.log_error(
+                fl_ctx,
+                f"descriptor size mismatch from {contributor_name!r}: "
+                f"expected {self._descriptor_size}, got {len(descriptor)}",
+            )
             return False
 
         self._contributions[contributor_name] = _Contribution(
@@ -173,6 +201,7 @@ class AdaptiveHeterogeneityAggregator(Aggregator):
         return True
 
     def aggregate(self, fl_ctx: FLContext) -> Shareable:
+        """Compute adaptive weights and return the weighted mean update."""
         if not self._contributions:
             raise ValueError("AdaptiveHeterogeneityAggregator cannot aggregate an empty contribution set")
 
