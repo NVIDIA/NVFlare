@@ -48,10 +48,16 @@ def _contribution(name, round_number, value, steps, descriptor, metric, quality=
 
 def test_real_nvflare_aggregation_matches_reported_weights():
     aggregator = AdaptiveHeterogeneityAggregator(
+        metric_prior_strength=0.0,
         heterogeneity_threshold=0.0,
         heterogeneity_temperature=0.02,
         heterogeneity_deadband=0.0,
+        performance_gap_threshold=0.0,
+        performance_gap_deadband=0.0,
         max_blend_factor=0.80,
+        activation_warmup_rounds=0,
+        activation_patience=1,
+        require_stable_cohort=False,
         min_weight=0.10,
         max_weight=0.80,
     )
@@ -68,7 +74,45 @@ def test_real_nvflare_aggregation_matches_reported_weights():
     assert weights["site-2"] > 0.10
     expected = weights["site-1"] * 1.0 + weights["site-2"] * 3.0
     assert np.allclose(result.data["weight"], np.asarray([expected], dtype=np.float32), atol=1e-6)
-    assert 0.0 <= result.meta[AdaptiveMetaKey.BLEND_FACTOR] <= 0.80
+    assert 0.0 < result.meta[AdaptiveMetaKey.BLEND_FACTOR] <= 0.80
+
+
+def test_aggregator_preserves_activation_history_and_resets_on_cohort_change():
+    aggregator = AdaptiveHeterogeneityAggregator(
+        metric_prior_strength=0.0,
+        heterogeneity_threshold=0.0,
+        heterogeneity_deadband=0.0,
+        performance_gap_threshold=0.0,
+        performance_gap_deadband=0.0,
+        activation_warmup_rounds=2,
+        activation_patience=2,
+        require_stable_cohort=True,
+        min_weight=0.10,
+        max_weight=0.90,
+    )
+
+    blends = []
+    for round_number in range(3):
+        ctx = _context(round_number)
+        assert aggregator.accept(
+            _contribution("site-1", round_number, 1.0, 100, [0.99, 0.01], 0.90), ctx
+        )
+        assert aggregator.accept(
+            _contribution("site-2", round_number, 3.0, 100, [0.01, 0.99], 0.50), ctx
+        )
+        result = from_shareable(aggregator.aggregate(ctx))
+        blends.append(result.meta[AdaptiveMetaKey.BLEND_FACTOR])
+
+    assert blends[0] == 0.0
+    assert blends[1] == 0.0
+    assert blends[2] > 0.0
+
+    changed_ctx = _context(3)
+    assert aggregator.accept(_contribution("site-1", 3, 1.0, 100, [0.99, 0.01], 0.90), changed_ctx)
+    assert aggregator.accept(_contribution("site-3", 3, 3.0, 100, [0.01, 0.99], 0.50), changed_ctx)
+    changed = from_shareable(aggregator.aggregate(changed_ctx))
+    assert changed.meta[AdaptiveMetaKey.BLEND_FACTOR] == 0.0
+    assert changed.meta[AdaptiveMetaKey.ACTIVATION_STREAK] == 1
 
 
 def test_rejects_missing_metadata_duplicate_and_wrong_round():
