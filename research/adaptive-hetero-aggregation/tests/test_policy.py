@@ -38,21 +38,26 @@ def test_bounded_simplex_randomized_stress():
             assert np.all(result <= upper + 1e-10)
 
 
-def test_low_heterogeneity_stays_close_to_sample_weighting():
-    policy = AdaptiveHeterogeneityPolicy()
-    result = policy.compute(
+def test_low_heterogeneity_uses_exact_sample_weighting_fallback():
+    result = AdaptiveHeterogeneityPolicy().compute(
         sample_counts=[100, 200, 300],
         descriptors=[[0.50, 0.50], [0.51, 0.49], [0.49, 0.51]],
         client_metrics=[0.80, 0.79, 0.81],
         quality_improvements=[0.1, 0.1, 0.1],
     )
-    assert result.blend_factor < 0.02
-    assert np.max(np.abs(result.weights - result.base_weights)) < 0.01
+    assert result.blend_factor == 0.0
+    assert np.array_equal(result.weights, result.base_weights)
 
 
-def test_high_heterogeneity_increases_minimax_pressure():
+def test_high_heterogeneity_increases_minimax_pressure_when_enabled():
     policy = AdaptiveHeterogeneityPolicy(
-        AdaptiveWeightingConfig(min_weight=0.05, max_weight=0.60, heterogeneity_threshold=0.04)
+        AdaptiveWeightingConfig(
+            min_weight=0.05,
+            max_weight=0.60,
+            heterogeneity_threshold=0.04,
+            heterogeneity_deadband=0.0,
+            max_blend_factor=0.80,
+        )
     )
     result = policy.compute(
         sample_counts=[800, 100, 100],
@@ -65,10 +70,21 @@ def test_high_heterogeneity_increases_minimax_pressure():
     assert np.isclose(result.weights.sum(), 1.0)
 
 
+def test_blend_factor_respects_configured_cap():
+    policy = AdaptiveHeterogeneityPolicy(
+        AdaptiveWeightingConfig(heterogeneity_deadband=0.0, heterogeneity_threshold=0.0, max_blend_factor=0.25)
+    )
+    result = policy.compute(
+        sample_counts=[100, 100],
+        descriptors=[[0.99, 0.01], [0.01, 0.99]],
+        client_metrics=[0.9, 0.5],
+    )
+    assert result.blend_factor <= 0.25
+
+
 def test_descriptor_length_mismatch_is_rejected():
-    policy = AdaptiveHeterogeneityPolicy()
     with pytest.raises(ValueError, match="same length"):
-        policy.compute(
+        AdaptiveHeterogeneityPolicy().compute(
             sample_counts=[100, 100],
             descriptors=[[1.0, 0.0], [1.0, 0.0, 0.0]],
             client_metrics=[0.8, 0.8],
@@ -80,6 +96,8 @@ def test_infeasible_bounds_are_rejected():
         project_bounded_simplex([0.5, 0.5], lower=0.0, upper=0.4)
 
 
-def test_invalid_config_bounds_are_rejected_early():
+def test_invalid_config_values_are_rejected_early():
     with pytest.raises(ValueError, match="invalid weight bounds"):
         AdaptiveHeterogeneityPolicy(AdaptiveWeightingConfig(min_weight=0.5, max_weight=0.2))
+    with pytest.raises(ValueError, match="max_blend_factor"):
+        AdaptiveHeterogeneityPolicy(AdaptiveWeightingConfig(max_blend_factor=1.1))
