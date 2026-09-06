@@ -1,0 +1,105 @@
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import numpy as np
+import torch
+
+from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
+from nvflare.apis.fl_constant import ReservedKey
+from nvflare.apis.fl_context import FLContext
+from nvflare.app_common.app_constant import AppConstants
+from nvflare.app_opt.pt.recipes.fedopt import FedOptRecipe
+
+from adaptive_hetero.nvflare_aggregator import AdaptiveHeterogeneityAggregator, AdaptiveMetaKey
+
+
+def _context(round_number=0):
+    ctx = FLContext()
+    ctx.set_prop(AppConstants.CURRENT_ROUND, round_number, private=True, sticky=False)
+    return ctx
+
+
+def _contribution(name, round_number, value, steps, descriptor, metric, quality=0.0):
+    dxo = DXO(
+        data_kind=DataKind.WEIGHT_DIFF,
+        data={"weight": np.asarray([value], dtype=np.float32)},
+        meta={
+            MetaKey.NUM_STEPS_CURRENT_ROUND: steps,
+            AdaptiveMetaKey.DISTRIBUTION_DESCRIPTOR: descriptor,
+            AdaptiveMetaKey.CLIENT_METRIC: metric,
+            AdaptiveMetaKey.QUALITY_IMPROVEMENT: quality,
+        },
+    )
+    shareable = dxo.to_shareable()
+    shareable.set_peer_props({ReservedKey.IDENTITY_NAME: name})
+    shareable.add_cookie(AppConstants.CONTRIBUTION_ROUND, round_number)
+    return shareable
+
+
+def test_real_nvflare_aggregation_matches_reported_weights():
+    aggregator = AdaptiveHeterogeneityAggregator(
+        heterogeneity_threshold=0.0,
+        heterogeneity_temperature=0.02,
+        min_weight=0.10,
+        max_weight=0.80,
+    )
+    ctx = _context()
+    first = _contribution("site-1", 0, 1.0, 900, [0.95, 0.05], 0.90, 0.10)
+    second = _contribution("site-2", 0, 3.0, 100, [0.05, 0.95], 0.55, 0.10)
+
+    assert aggregator.accept(first, ctx)
+    assert aggregator.accept(second, ctx)
+    result = from_shareable(aggregator.aggregate(ctx))
+
+    weights = result.meta[AdaptiveMetaKey.FINAL_WEIGHTS]
+    assert np.isclose(sum(weights.values()), 1.0)
+    assert weights["site-2"] > 0.10
+    expected = weights["site-1"] * 1.0 + weights["site-2"] * 3.0
+    assert np.allclose(result.data["weight"], np.asarray([expected], dtype=np.float32), atol=1e-6)
+    assert 0.0 <= result.meta[AdaptiveMetaKey.BLEND_FACTOR] <= 1.0
+
+
+def test_rejects_missing_metadata_duplicate_and_wrong_round():
+    aggregator = AdaptiveHeterogeneityAggregator(min_weight=0.10, max_weight=0.80)
+    ctx = _context(round_number=2)
+
+    wrong_round = _contribution("site-1", 1, 1.0, 10, [0.5, 0.5], 0.8)
+    assert not aggregator.accept(wrong_round, ctx)
+
+    missing = DXO(
+        data_kind=DataKind.WEIGHT_DIFF,
+        data={"weight": np.asarray([1.0], dtype=np.float32)},
+        meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 10},
+    ).to_shareable()
+    missing.set_peer_props({ReservedKey.IDENTITY_NAME: "site-1"})
+    missing.add_cookie(AppConstants.CONTRIBUTION_ROUND, 2)
+    assert not aggregator.accept(missing, ctx)
+
+    valid = _contribution("site-1", 2, 1.0, 10, [0.5, 0.5], 0.8)
+    assert aggregator.accept(valid, ctx)
+    assert not aggregator.accept(valid, ctx)
+
+
+def test_fedopt_recipe_accepts_adaptive_aggregator():
+    aggregator = AdaptiveHeterogeneityAggregator(min_weight=0.10, max_weight=0.80)
+    recipe = FedOptRecipe(
+        name="adaptive-hetero-contract-test",
+        min_clients=2,
+        num_rounds=1,
+        model=torch.nn.Linear(2, 2),
+        train_script=__file__,
+        aggregator=aggregator,
+        optimizer_args={"path": "torch.optim.SGD", "args": {"lr": 1.0}},
+    )
+    assert recipe.aggregator is aggregator
