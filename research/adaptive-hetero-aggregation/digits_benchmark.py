@@ -130,7 +130,7 @@ def _train_local(global_vector, model_name, client, learning_rate=0.12, local_st
     return _state_vector(model) - global_vector, global_model_accuracy
 
 
-def run_method(method, model_name, clients, seed, rounds, participation_rate):
+def run_method(method, model_name, clients, seed, rounds, participation_rate, cohort_hold_rounds):
     torch.manual_seed(seed)
     np.random.seed(seed)
     random.seed(seed)
@@ -142,10 +142,14 @@ def run_method(method, model_name, clients, seed, rounds, participation_rate):
     rng = np.random.default_rng(seed + 2003)
     beta1, beta2, epsilon, server_lr = 0.9, 0.99, 1e-8, 0.45
     last_diag = None
+    active_ids = None
+    adaptive_rounds = 0
+    max_observed_blend_factor = 0.0
 
     for round_number in range(1, rounds + 1):
         active_count = max(2, int(np.ceil(len(clients) * participation_rate)))
-        active_ids = sorted(rng.choice(len(clients), active_count, replace=False).tolist())
+        if active_ids is None or (round_number - 1) % cohort_hold_rounds == 0:
+            active_ids = sorted(rng.choice(len(clients), active_count, replace=False).tolist())
         updates, metrics, counts, descriptors = [], [], [], []
         for client_id in active_ids:
             client = clients[client_id]
@@ -161,6 +165,9 @@ def run_method(method, model_name, clients, seed, rounds, participation_rate):
         elif method == "adaptive":
             last_diag = policy.compute(counts, descriptors, metrics, cohort_key=tuple(active_ids))
             weights = last_diag.weights
+            if last_diag.blend_factor > 0.0:
+                adaptive_rounds += 1
+                max_observed_blend_factor = max(max_observed_blend_factor, float(last_diag.blend_factor))
         else:
             raise ValueError(f"unknown method: {method}")
 
@@ -184,6 +191,8 @@ def run_method(method, model_name, clients, seed, rounds, participation_rate):
         "candidate_blend_factor": (0.0 if last_diag is None else last_diag.candidate_blend_factor),
         "blend_factor": 0.0 if last_diag is None else last_diag.blend_factor,
         "activation_streak": 0 if last_diag is None else last_diag.activation_streak,
+        "adaptive_rounds": adaptive_rounds,
+        "max_observed_blend_factor": max_observed_blend_factor,
     }
 
 
@@ -203,6 +212,17 @@ def main():
     parser.add_argument("--clients", type=int, default=8)
     parser.add_argument("--rounds", type=int, default=25)
     parser.add_argument("--participation-rate", type=float, default=1.0)
+    parser.add_argument(
+        "--cohort-hold-rounds",
+        type=int,
+        default=1,
+        help="Keep a sampled participant cohort for this many consecutive rounds before resampling.",
+    )
+    parser.add_argument(
+        "--require-adaptive-activation",
+        action="store_true",
+        help="Fail unless at least one adaptive benchmark run uses a non-zero blend factor.",
+    )
     parser.add_argument("--seeds", type=int, nargs="+", default=[7, 19, 31, 43, 57])
     parser.add_argument("--settings", choices=sorted(SETTINGS), nargs="+", default=list(SETTINGS))
     parser.add_argument("--models", choices=["linear", "mlp"], nargs="+", default=["linear", "mlp"])
@@ -216,6 +236,10 @@ def main():
     args = parser.parse_args()
     if not 0.0 < args.participation_rate <= 1.0:
         raise ValueError("participation-rate must be in (0, 1]")
+    if args.cohort_hold_rounds < 1:
+        raise ValueError("cohort-hold-rounds must be at least 1")
+    if args.require_adaptive_activation and "adaptive" not in args.methods:
+        raise ValueError("require-adaptive-activation requires the adaptive method")
 
     torch.set_num_threads(2)
     report = {"config": vars(args).copy(), "models": {}}
@@ -241,12 +265,23 @@ def main():
                         seed,
                         args.rounds,
                         args.participation_rate,
+                        args.cohort_hold_rounds,
                     )
                     result["seed"] = seed
                     setting_report["runs"][method].append(result)
             for method in args.methods:
                 setting_report["summary"][method] = summarize(setting_report["runs"][method])
             report["models"][model_name][setting_name] = setting_report
+
+    if args.require_adaptive_activation:
+        adaptive_runs = [
+            run
+            for model_report in report["models"].values()
+            for setting_report in model_report.values()
+            for run in setting_report["runs"].get("adaptive", [])
+        ]
+        if not any(run["adaptive_rounds"] > 0 for run in adaptive_runs):
+            raise RuntimeError("adaptive weighting never activated in the requested benchmark")
 
     output = json.dumps(report, indent=2)
     print(output)
