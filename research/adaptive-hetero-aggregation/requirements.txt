@@ -1,0 +1,5 @@
+numpy>=1.26
+scikit-learn>=1.4
+torch>=2.2
+# Install NVFlare from this repository when running the NVFlare adapter.
+pytest>=8.0
