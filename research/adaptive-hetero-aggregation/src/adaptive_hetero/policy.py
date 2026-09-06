@@ -15,8 +15,8 @@
 """Adaptive weighting policy for heterogeneous federated learning.
 
 The policy intentionally separates *when* heterogeneity-aware weighting should
-matter from *how* client influence is redistributed.  When measured
-heterogeneity is low, weights stay close to ordinary sample weighting.  As
+matter from *how* client influence is redistributed. When measured
+heterogeneity is low, weights stay close to ordinary sample weighting. As
 heterogeneity grows, the policy smoothly blends toward bounded weights that
 combine sub-linear sample size, representation benefit, client quality, and a
 minimax-style fairness pressure.
@@ -81,8 +81,9 @@ def project_bounded_simplex(values: Sequence[float], lower: float, upper: float)
     """Project ``values`` onto ``sum(w)=1`` with element-wise bounds.
 
     The Euclidean projection has form ``clip(values - tau, lower, upper)``.
-    A monotone bisection on ``tau`` avoids the common ``clip -> renormalize``
-    bug, where renormalization can violate the upper bound again.
+    A monotone bisection on ``tau`` finds the projection. Any final floating
+    point residual is redistributed only into coordinates that still have room,
+    rather than renormalizing all coordinates and potentially violating a bound.
     """
 
     values = np.asarray(values, dtype=np.float64)
@@ -105,8 +106,32 @@ def project_bounded_simplex(values: Sequence[float], lower: float, upper: float)
             lo_tau = tau
         else:
             hi_tau = tau
+
     projected = np.clip(values - 0.5 * (lo_tau + hi_tau), lower, upper)
-    projected /= projected.sum()
+    residual = 1.0 - float(projected.sum())
+    tolerance = 1e-12
+    if abs(residual) > tolerance:
+        if residual > 0.0:
+            room = upper - projected
+            direction = 1.0
+        else:
+            room = projected - lower
+            direction = -1.0
+
+        remaining = abs(residual)
+        for index in np.argsort(room)[::-1]:
+            if remaining <= tolerance:
+                break
+            delta = min(remaining, float(room[index]))
+            projected[index] += direction * delta
+            remaining -= delta
+        if remaining > 1e-10:
+            raise RuntimeError("failed to satisfy bounded-simplex constraints numerically")
+
+    if not np.isclose(projected.sum(), 1.0, atol=1e-10):
+        raise RuntimeError("bounded-simplex projection does not sum to one")
+    if np.any(projected < lower - 1e-10) or np.any(projected > upper + 1e-10):
+        raise RuntimeError("bounded-simplex projection violated configured bounds")
     return projected
 
 
@@ -114,9 +139,9 @@ class AdaptiveHeterogeneityPolicy:
     """Compute adaptive aggregation weights from client-level metadata.
 
     ``client_metrics`` are assumed to be higher-is-better metrics (for example,
-    validation accuracy).  ``quality_improvements`` should be comparable
-    within a round and can represent local validation-loss improvement of the
-    submitted update over the received global model.
+    validation accuracy). ``quality_improvements`` should be comparable within
+    a round and can represent local validation-loss improvement of the submitted
+    update over the received global model.
     """
 
     def __init__(self, config: AdaptiveWeightingConfig | None = None):
@@ -135,6 +160,8 @@ class AdaptiveHeterogeneityPolicy:
             raise ValueError("heterogeneity_temperature must be positive")
         if cfg.epsilon <= 0.0:
             raise ValueError("epsilon must be positive")
+        if cfg.min_weight < 0.0 or cfg.max_weight <= 0.0 or cfg.min_weight > cfg.max_weight:
+            raise ValueError("invalid weight bounds")
 
     def compute(
         self,
@@ -165,7 +192,7 @@ class AdaptiveHeterogeneityPolicy:
         js_values = np.asarray([_jensen_shannon(item, reference) for item in descriptor_matrix], dtype=np.float64)
         mean_heterogeneity = float(np.average(js_values, weights=counts))
 
-        # Representation benefit is not maximum divergence alone.  A rarity term
+        # Representation benefit is not maximum divergence alone. A rarity term
         # rewards mass on globally underrepresented descriptor bins, while the
         # bounded novelty term preserves information about distributional shift.
         novelty = js_values / max(float(js_values.max()), cfg.epsilon)
@@ -199,7 +226,6 @@ class AdaptiveHeterogeneityPolicy:
         adaptive_weights = project_bounded_simplex(raw, cfg.min_weight, cfg.max_weight)
 
         z = (mean_heterogeneity - cfg.heterogeneity_threshold) / cfg.heterogeneity_temperature
-        # Stable sigmoid.
         if z >= 0.0:
             blend = 1.0 / (1.0 + math.exp(-z))
         else:
