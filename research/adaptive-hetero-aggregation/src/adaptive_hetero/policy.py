@@ -268,9 +268,15 @@ class AdaptiveHeterogeneityPolicy:
         if self._rounds_seen <= cfg.activation_warmup_rounds or self._activation_streak < cfg.activation_patience:
             blend = 0.0
 
-        weights = base_weights.copy() if blend == 0.0 else (1.0 - blend) * base_weights + blend * adaptive_weights
-        if blend != 0.0:
-            weights /= weights.sum()
+        if blend == 0.0:
+            # Preserve exact native FedOpt/sample weighting whenever adaptation is inactive.
+            weights = base_weights.copy()
+        else:
+            blended_weights = (1.0 - blend) * base_weights + blend * adaptive_weights
+            # Bounds are a final-output safety contract, not only an adaptive-candidate
+            # constraint. Re-project after blending so a dominant native base weight
+            # cannot bypass min_weight/max_weight when adaptation is active.
+            weights = project_bounded_simplex(blended_weights, cfg.min_weight, cfg.max_weight)
         return WeightingResult(
             weights=weights,
             base_weights=base_weights,
