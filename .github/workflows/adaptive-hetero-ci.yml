@@ -1,0 +1,57 @@
+name: Adaptive heterogeneity research CI
+
+on:
+  push:
+    branches:
+      - feature/heterogeneity-aware-aggregation-5209
+    paths:
+      - "research/adaptive-hetero-aggregation/**"
+      - ".github/workflows/adaptive-hetero-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install NVFlare and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[PT]"
+          python -m pip install pytest black==25.9.0 isort==5.13.2 flake8==7.1.1
+
+      - name: Unit and NVFlare integration tests
+        env:
+          PYTHONPATH: research/adaptive-hetero-aggregation/src
+        run: |
+          pytest -q research/adaptive-hetero-aggregation/tests
+
+      - name: Formatting and lint checks
+        run: |
+          black --check research/adaptive-hetero-aggregation
+          isort --check-only research/adaptive-hetero-aggregation
+          flake8 research/adaptive-hetero-aggregation --max-line-length=120
+
+      - name: Real NVFlare FedOpt SimEnv smoke run
+        env:
+          PYTHONPATH: research/adaptive-hetero-aggregation/src
+        run: |
+          python research/adaptive-hetero-aggregation/nvflare_smoke/job.py \
+            --n_clients 3 \
+            --num_rounds 2 \
+            --train_samples 180 \
+            --valid_samples 90 \
+            --local_epochs 1
