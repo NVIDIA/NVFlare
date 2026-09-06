@@ -61,7 +61,11 @@ def _evaluate(model, data):
 
 def make_clients(seed, num_clients, dirichlet_alpha, shift_scale):
     dataset = load_digits()
-    features = StandardScaler().fit_transform(dataset.data.astype(np.float32)).astype(np.float32)
+    features = (
+        StandardScaler()
+        .fit_transform(dataset.data.astype(np.float32))
+        .astype(np.float32)
+    )
     labels = dataset.target.astype(np.int64)
     rng = np.random.default_rng(seed)
     client_indices = [[] for _ in range(num_clients)]
@@ -70,11 +74,15 @@ def make_clients(seed, num_clients, dirichlet_alpha, shift_scale):
         rng.shuffle(indices)
         proportions = rng.dirichlet(np.full(num_clients, dirichlet_alpha))
         proportions = 0.90 * proportions + 0.10 / num_clients
-        cuts = (np.cumsum(proportions / proportions.sum()) * len(indices)).astype(int)[:-1]
+        cuts = (np.cumsum(proportions / proportions.sum()) * len(indices)).astype(int)[
+            :-1
+        ]
         for client_id, chunk in enumerate(np.split(indices, cuts)):
             client_indices[client_id].extend(chunk.tolist())
 
-    shifts = rng.normal(0.0, shift_scale, size=(num_clients, NUM_FEATURES)).astype(np.float32)
+    shifts = rng.normal(0.0, shift_scale, size=(num_clients, NUM_FEATURES)).astype(
+        np.float32
+    )
     shift_mask = np.zeros(NUM_FEATURES, dtype=np.float32)
     shift_mask[:16] = 1.0
     clients = []
@@ -134,7 +142,9 @@ def run_method(method, model_name, clients, seed, rounds, participation_rate):
 
     for round_number in range(1, rounds + 1):
         active_count = max(2, int(np.ceil(len(clients) * participation_rate)))
-        active_ids = sorted(rng.choice(len(clients), active_count, replace=False).tolist())
+        active_ids = sorted(
+            rng.choice(len(clients), active_count, replace=False).tolist()
+        )
         updates, metrics, counts, descriptors = [], [], [], []
         for client_id in active_ids:
             client = clients[client_id]
@@ -148,17 +158,23 @@ def run_method(method, model_name, clients, seed, rounds, participation_rate):
         if method == "fedopt":
             weights = counts / counts.sum()
         elif method == "adaptive":
-            last_diag = policy.compute(counts, descriptors, metrics, cohort_key=tuple(active_ids))
+            last_diag = policy.compute(
+                counts, descriptors, metrics, cohort_key=tuple(active_ids)
+            )
             weights = last_diag.weights
         else:
             raise ValueError(f"unknown method: {method}")
 
-        mean_update = sum(float(weight) * update for weight, update in zip(weights, updates))
+        mean_update = sum(
+            float(weight) * update for weight, update in zip(weights, updates)
+        )
         first_moment = beta1 * first_moment + (1.0 - beta1) * mean_update
         second_moment = beta2 * second_moment + (1.0 - beta2) * mean_update.square()
         corrected_moment = first_moment / (1.0 - beta1**round_number)
         corrected_variance = second_moment / (1.0 - beta2**round_number)
-        global_vector += server_lr * corrected_moment / (torch.sqrt(corrected_variance) + epsilon)
+        global_vector += server_lr * corrected_moment / (
+            torch.sqrt(corrected_variance) + epsilon
+        )
 
     _load_state_vector(model, global_vector)
     accuracies = [_evaluate(model, client["validation"]) for client in clients]
@@ -170,7 +186,9 @@ def run_method(method, model_name, clients, seed, rounds, participation_rate):
         "mean_heterogeneity": 0.0 if last_diag is None else last_diag.mean_heterogeneity,
         "raw_metric_gap": 0.0 if last_diag is None else last_diag.raw_metric_gap,
         "metric_gap": 0.0 if last_diag is None else last_diag.metric_gap,
-        "candidate_blend_factor": 0.0 if last_diag is None else last_diag.candidate_blend_factor,
+        "candidate_blend_factor": (
+            0.0 if last_diag is None else last_diag.candidate_blend_factor
+        ),
         "blend_factor": 0.0 if last_diag is None else last_diag.blend_factor,
         "activation_streak": 0 if last_diag is None else last_diag.activation_streak,
     }
@@ -181,9 +199,13 @@ def summarize(runs):
     worst_values = np.asarray([run["worst_client_accuracy"] for run in runs])
     return {
         "global_accuracy_mean": float(global_values.mean()),
-        "global_accuracy_std": float(global_values.std(ddof=1)) if len(runs) > 1 else 0.0,
+        "global_accuracy_std": (
+            float(global_values.std(ddof=1)) if len(runs) > 1 else 0.0
+        ),
         "worst_client_accuracy_mean": float(worst_values.mean()),
-        "worst_client_accuracy_std": float(worst_values.std(ddof=1)) if len(runs) > 1 else 0.0,
+        "worst_client_accuracy_std": (
+            float(worst_values.std(ddof=1)) if len(runs) > 1 else 0.0
+        ),
     }
 
 
@@ -193,9 +215,18 @@ def main():
     parser.add_argument("--rounds", type=int, default=25)
     parser.add_argument("--participation-rate", type=float, default=1.0)
     parser.add_argument("--seeds", type=int, nargs="+", default=[7, 19, 31, 43, 57])
-    parser.add_argument("--settings", choices=sorted(SETTINGS), nargs="+", default=list(SETTINGS))
-    parser.add_argument("--models", choices=["linear", "mlp"], nargs="+", default=["linear", "mlp"])
-    parser.add_argument("--methods", choices=["fedopt", "adaptive"], nargs="+", default=["fedopt", "adaptive"])
+    parser.add_argument(
+        "--settings", choices=sorted(SETTINGS), nargs="+", default=list(SETTINGS)
+    )
+    parser.add_argument(
+        "--models", choices=["linear", "mlp"], nargs="+", default=["linear", "mlp"]
+    )
+    parser.add_argument(
+        "--methods",
+        choices=["fedopt", "adaptive"],
+        nargs="+",
+        default=["fedopt", "adaptive"],
+    )
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     if not 0.0 < args.participation_rate <= 1.0:
@@ -208,17 +239,30 @@ def main():
     for model_name in args.models:
         report["models"][model_name] = {}
         for setting_name in args.settings:
-            setting_report = {"parameters": SETTINGS[setting_name], "runs": {}, "summary": {}}
+            setting_report = {
+                "parameters": SETTINGS[setting_name],
+                "runs": {},
+                "summary": {},
+            }
             for method in args.methods:
                 setting_report["runs"][method] = []
             for seed in args.seeds:
                 clients = make_clients(seed, args.clients, **SETTINGS[setting_name])
                 for method in args.methods:
-                    result = run_method(method, model_name, clients, seed, args.rounds, args.participation_rate)
+                    result = run_method(
+                        method,
+                        model_name,
+                        clients,
+                        seed,
+                        args.rounds,
+                        args.participation_rate,
+                    )
                     result["seed"] = seed
                     setting_report["runs"][method].append(result)
             for method in args.methods:
-                setting_report["summary"][method] = summarize(setting_report["runs"][method])
+                setting_report["summary"][method] = summarize(
+                    setting_report["runs"][method]
+                )
             report["models"][model_name][setting_name] = setting_report
 
     output = json.dumps(report, indent=2)
