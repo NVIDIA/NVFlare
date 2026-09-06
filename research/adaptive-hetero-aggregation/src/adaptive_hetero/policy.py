@@ -12,18 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Adaptive weighting policy for heterogeneous federated learning.
-
-The policy separates *when* heterogeneity-aware weighting should matter from
-*how* client influence is redistributed. Adaptive weighting is enabled only
-when both distribution heterogeneity and normalized client-performance disparity
-are material. This prevents tiny metric differences from being stretched into
-full minimax pressure.
-"""
+"""Conservative adaptive weighting for heterogeneous federated learning."""
 
 import math
 from dataclasses import dataclass
-from typing import Sequence
+from typing import Hashable, Sequence
 
 import numpy as np
 
@@ -32,22 +25,27 @@ import numpy as np
 class AdaptiveWeightingConfig:
     """Configuration for :class:`AdaptiveHeterogeneityPolicy`.
 
-    ``client_metrics`` are expected to be normalized higher-is-better scores in
-    ``[0, 1]``. The explicit scale makes an absolute performance gap meaningful
-    and avoids round-wise min/max normalization amplifying tiny differences.
+    Client metrics must be normalized higher-is-better scores in ``[0, 1]``.
+    Small-client metrics are shrunk toward the sample-weighted federation mean
+    before they are used for fairness pressure. Adaptive weighting also needs
+    sustained evidence for a stable participating cohort.
     """
 
     sample_exponent: float = 0.65
     representation_exponent: float = 0.70
     quality_exponent: float = 0.0
-    fairness_strength: float = 2.0
+    fairness_strength: float = 1.0
+    metric_prior_strength: float = 100.0
     heterogeneity_threshold: float = 0.26
     heterogeneity_temperature: float = 0.04
     heterogeneity_deadband: float = 0.15
     performance_gap_threshold: float = 0.10
     performance_gap_temperature: float = 0.03
     performance_gap_deadband: float = 0.05
-    max_blend_factor: float = 0.40
+    max_blend_factor: float = 0.20
+    activation_warmup_rounds: int = 3
+    activation_patience: int = 2
+    require_stable_cohort: bool = True
     min_weight: float = 0.02
     max_weight: float = 0.50
     epsilon: float = 1e-12
@@ -55,8 +53,6 @@ class AdaptiveWeightingConfig:
 
 @dataclass(frozen=True)
 class WeightingResult:
-    """Diagnostics and final normalized client weights."""
-
     weights: np.ndarray
     base_weights: np.ndarray
     adaptive_weights: np.ndarray
@@ -64,11 +60,15 @@ class WeightingResult:
     representation_scores: np.ndarray
     quality_scores: np.ndarray
     fairness_scores: np.ndarray
+    adjusted_metrics: np.ndarray
     mean_heterogeneity: float
+    raw_metric_gap: float
     metric_gap: float
     heterogeneity_gate: float
     performance_gate: float
+    candidate_blend_factor: float
     blend_factor: float
+    activation_streak: int
 
 
 def _normalize_distribution(values: Sequence[float], epsilon: float) -> np.ndarray:
@@ -97,7 +97,7 @@ def _sigmoid(value: float) -> float:
 
 
 def project_bounded_simplex(values: Sequence[float], lower: float, upper: float) -> np.ndarray:
-    """Project values onto ``sum(w)=1`` with lower/upper element-wise bounds."""
+    """Project values onto ``sum(w)=1`` with element-wise lower/upper bounds."""
 
     values = np.asarray(values, dtype=np.float64)
     if values.ndim != 1 or values.size == 0:
@@ -144,11 +144,17 @@ def project_bounded_simplex(values: Sequence[float], lower: float, upper: float)
 
 
 class AdaptiveHeterogeneityPolicy:
-    """Compute conservative adaptive aggregation weights from client metadata."""
+    """Compute adaptive weights only after stable, sustained evidence."""
 
     def __init__(self, config: AdaptiveWeightingConfig | None = None):
         self.config = config or AdaptiveWeightingConfig()
         self._validate_config()
+        self.reset_state()
+
+    def reset_state(self):
+        self._rounds_seen = 0
+        self._activation_streak = 0
+        self._last_cohort_key: Hashable | None = None
 
     def _validate_config(self):
         cfg = self.config
@@ -156,14 +162,16 @@ class AdaptiveHeterogeneityPolicy:
             raise ValueError("sample_exponent must be in (0, 1]")
         if cfg.representation_exponent < 0.0 or cfg.quality_exponent < 0.0:
             raise ValueError("representation/quality exponents must be non-negative")
-        if cfg.fairness_strength < 0.0:
-            raise ValueError("fairness_strength must be non-negative")
+        if cfg.fairness_strength < 0.0 or cfg.metric_prior_strength < 0.0:
+            raise ValueError("fairness_strength and metric_prior_strength must be non-negative")
         if cfg.heterogeneity_temperature <= 0.0 or cfg.performance_gap_temperature <= 0.0:
             raise ValueError("gate temperatures must be positive")
         if cfg.heterogeneity_deadband < 0.0 or cfg.performance_gap_deadband < 0.0:
             raise ValueError("deadbands must be non-negative")
         if not 0.0 < cfg.max_blend_factor <= 1.0:
             raise ValueError("max_blend_factor must be in (0, 1]")
+        if cfg.activation_warmup_rounds < 0 or cfg.activation_patience < 1:
+            raise ValueError("activation warmup/patience are invalid")
         if cfg.epsilon <= 0.0:
             raise ValueError("epsilon must be positive")
         if cfg.min_weight < 0.0 or cfg.max_weight <= 0.0 or cfg.min_weight > cfg.max_weight:
@@ -175,6 +183,7 @@ class AdaptiveHeterogeneityPolicy:
         descriptors: Sequence[Sequence[float]],
         client_metrics: Sequence[float],
         quality_improvements: Sequence[float] | None = None,
+        cohort_key: Hashable | None = None,
     ) -> WeightingResult:
         cfg = self.config
         counts = np.asarray(sample_counts, dtype=np.float64)
@@ -205,9 +214,12 @@ class AdaptiveHeterogeneityPolicy:
         rarity /= max(float(rarity.max()), cfg.epsilon)
         representation_scores = np.clip(0.5 + 0.9 * novelty + 0.1 * rarity, 0.5, 1.5)
 
-        best_metric = float(metrics.max())
-        absolute_deficit = np.clip(best_metric - metrics, 0.0, 1.0)
-        metric_gap = float(metrics.max() - metrics.min())
+        metric_mean = float(np.average(metrics, weights=counts))
+        reliability = counts / (counts + cfg.metric_prior_strength)
+        adjusted_metrics = reliability * metrics + (1.0 - reliability) * metric_mean
+        raw_metric_gap = float(metrics.max() - metrics.min())
+        metric_gap = float(adjusted_metrics.max() - adjusted_metrics.min())
+        absolute_deficit = np.clip(float(adjusted_metrics.max()) - adjusted_metrics, 0.0, 1.0)
         fairness_scores = np.exp(cfg.fairness_strength * absolute_deficit)
 
         if cfg.quality_exponent == 0.0 or quality_improvements is None:
@@ -220,8 +232,7 @@ class AdaptiveHeterogeneityPolicy:
             if quality_span <= cfg.epsilon:
                 quality = np.ones_like(counts)
             else:
-                scaled_quality = (quality - float(quality.min())) / quality_span
-                quality = 0.75 + 0.50 * scaled_quality
+                quality = 0.75 + 0.50 * (quality - float(quality.min())) / quality_span
 
         raw = (
             np.power(counts, cfg.sample_exponent)
@@ -232,24 +243,30 @@ class AdaptiveHeterogeneityPolicy:
         raw /= raw.sum()
         adaptive_weights = project_bounded_simplex(raw, cfg.min_weight, cfg.max_weight)
 
-        if mean_heterogeneity <= cfg.heterogeneity_deadband or metric_gap <= cfg.performance_gap_deadband:
-            heterogeneity_gate = (
-                0.0
-                if mean_heterogeneity <= cfg.heterogeneity_deadband
-                else _sigmoid((mean_heterogeneity - cfg.heterogeneity_threshold) / cfg.heterogeneity_temperature)
-            )
-            performance_gate = (
-                0.0
-                if metric_gap <= cfg.performance_gap_deadband
-                else _sigmoid((metric_gap - cfg.performance_gap_threshold) / cfg.performance_gap_temperature)
-            )
-            blend = 0.0
+        heterogeneity_gate = (
+            0.0
+            if mean_heterogeneity <= cfg.heterogeneity_deadband
+            else _sigmoid((mean_heterogeneity - cfg.heterogeneity_threshold) / cfg.heterogeneity_temperature)
+        )
+        performance_gate = (
+            0.0
+            if metric_gap <= cfg.performance_gap_deadband
+            else _sigmoid((metric_gap - cfg.performance_gap_threshold) / cfg.performance_gap_temperature)
+        )
+        candidate_blend = cfg.max_blend_factor * heterogeneity_gate * performance_gate
+
+        self._rounds_seen += 1
+        if cfg.require_stable_cohort and self._last_cohort_key is not None and cohort_key != self._last_cohort_key:
+            self._activation_streak = 0
+        self._last_cohort_key = cohort_key
+        if candidate_blend > 0.0:
+            self._activation_streak += 1
         else:
-            heterogeneity_gate = _sigmoid(
-                (mean_heterogeneity - cfg.heterogeneity_threshold) / cfg.heterogeneity_temperature
-            )
-            performance_gate = _sigmoid((metric_gap - cfg.performance_gap_threshold) / cfg.performance_gap_temperature)
-            blend = cfg.max_blend_factor * heterogeneity_gate * performance_gate
+            self._activation_streak = 0
+
+        blend = candidate_blend
+        if self._rounds_seen <= cfg.activation_warmup_rounds or self._activation_streak < cfg.activation_patience:
+            blend = 0.0
 
         weights = base_weights.copy() if blend == 0.0 else (1.0 - blend) * base_weights + blend * adaptive_weights
         if blend != 0.0:
@@ -262,9 +279,13 @@ class AdaptiveHeterogeneityPolicy:
             representation_scores=representation_scores,
             quality_scores=quality,
             fairness_scores=fairness_scores,
+            adjusted_metrics=adjusted_metrics,
             mean_heterogeneity=mean_heterogeneity,
+            raw_metric_gap=raw_metric_gap,
             metric_gap=metric_gap,
             heterogeneity_gate=float(heterogeneity_gate),
             performance_gate=float(performance_gate),
+            candidate_blend_factor=float(candidate_blend),
             blend_factor=float(blend),
+            activation_streak=self._activation_streak,
         )
