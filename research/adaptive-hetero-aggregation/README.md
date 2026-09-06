@@ -1,99 +1,123 @@
 # Adaptive Heterogeneity-Aware Aggregation for FedOpt
 
-This research prototype implements the adaptive weighting idea discussed in
+This opt-in implementation addresses the adaptive client-weighting use case discussed in
 [NVIDIA/NVFlare issue #5209](https://github.com/NVIDIA/NVFlare/issues/5209).
-The goal is not to replace FedAvg, FedOpt, FedCE, or Auto-FedRL. Instead, it
-adds a client-weighting policy that stays close to ordinary sample weighting
-when measured heterogeneity is low and gradually increases representation and
-worst-client pressure when heterogeneity becomes severe.
+It keeps FedOpt as the server optimizer and changes only how client weight differences
+are combined when persistent heterogeneity and client-performance disparity justify an
+adaptive correction.
 
-The prototype is deliberately scoped as a research contribution. It does not
-claim a new federated-learning algorithm, and the results below are from a
-controlled external CPU benchmark rather than an official NVFlare CIFAR-10
-run.
+The implementation is currently isolated under `research/` so the weighting policy,
+metadata contract, safeguards, and integration behavior can be evaluated without
+changing existing NVFlare aggregation defaults.
 
 ## Motivation
 
-Sample-count weighting can allow a very large client to dominate aggregation
-although a smaller client may contain underrepresented patterns. At the same
-time, always using fairness-oriented weights can unnecessarily reduce average
-performance in nearly IID settings. The prototype therefore separates two
-questions:
+Local-volume weighting is a strong default, but a large client can dominate aggregation
+when client distributions differ substantially. Always applying fairness-oriented
+weighting can create the opposite problem by changing aggregation when clients are
+already behaving similarly.
 
-1. **When should aggregation depart from ordinary sample weighting?**
-2. **How should influence be redistributed once heterogeneity is high?**
+The policy therefore answers two separate questions:
 
-FedOpt remains the server optimizer. Only the weighted mean of client weight
-differences changes.
+1. Is there enough persistent evidence to depart from native FedOpt weighting?
+2. If so, how should influence be redistributed while keeping final client weights bounded?
 
 ## Method
 
-For each client `i`, the server receives a positive local-volume proxy `n_i`, a
-non-negative distribution descriptor, a higher-is-better client metric, and an
-optional quality-improvement value.
+For each participating client `i`, the server receives:
 
-The policy computes:
+- a positive local-volume/local-iteration proxy `n_i`;
+- a non-negative distribution descriptor;
+- a normalized higher-is-better client metric in `[0, 1]`;
+- an optional quality-improvement value.
 
-- ordinary base weights `w_base ∝ n_i`;
-- Jensen-Shannon divergence from the sample-weighted reference descriptor;
-- a bounded representation score combining distribution novelty with a smaller
-  rarity term for globally underrepresented descriptor bins;
-- a minimax-style fairness multiplier that increases pressure on clients with
-  weaker current metrics;
-- a bounded quality term based on within-round update improvement;
-- sub-linear sample weighting `n_i^gamma` so volume still matters without being
-  automatically dominant.
-
-The adaptive candidate is projected onto a bounded simplex, so the configured
-minimum/maximum client weights remain valid while the weights sum to one. The
-final weight is a smooth blend:
+The native baseline is:
 
 ```text
-lambda = sigmoid((mean_heterogeneity - threshold) / temperature)
-final_weight = (1 - lambda) * sample_weight + lambda * adaptive_weight
+w_base ∝ n_i
 ```
 
-This smooth transition avoids a hard threshold that could cause the server to
-oscillate between two aggregation regimes across adjacent rounds.
-
-Default research parameters used in the benchmark are:
+The adaptive candidate combines sub-linear local volume, distribution representation,
+and reliability-adjusted fairness pressure:
 
 ```text
-sample_exponent            = 0.65
-representation_exponent    = 0.70
-quality_exponent           = 0.40
-fairness_strength          = 2.20
-heterogeneity_threshold    = 0.20
-heterogeneity_temperature  = 0.04
-min_weight                 = 0.02
-max_weight                 = 0.30  # benchmark uses 8 clients
+w_adaptive ∝ n_i^gamma * representation_i^beta * fairness_i * quality_i^delta
 ```
 
-## Repository Layout
+The candidate is projected onto a bounded simplex. Two gates then control whether it is
+used:
 
 ```text
-adaptive-hetero-aggregation/
-|-- README.md
-|-- benchmark.py
-|-- requirements.txt
-|-- results/
-|   `-- development_5seed_summary.json
-|-- src/adaptive_hetero/
-|   |-- __init__.py
-|   |-- policy.py
-|   `-- nvflare_aggregator.py
-`-- tests/
-    `-- test_policy.py
+candidate_blend = max_blend * heterogeneity_gate * performance_gap_gate
 ```
 
-`policy.py` is independent of NVFlare and contains the weighting logic and
-bounded-simplex projection. `nvflare_aggregator.py` adapts the policy to the
-`Aggregator` interface used by PyTorch `FedOptRecipe` with
-`DataKind.WEIGHT_DIFF`.
+Activation is stateful. The default policy requires a warm-up period, consecutive
+qualifying rounds, and a stable participating cohort. If those conditions are not met,
+the result is the exact native FedOpt/sample-weight fallback.
 
-## NVFlare Metadata Contract
+When adaptation is active:
 
-Each client contribution must provide:
+```text
+blended = (1 - blend) * w_base + blend * w_adaptive
+final_weight = bounded_simplex_projection(blended)
+```
+
+The final projection is important: a dominant native base weight cannot bypass
+`min_weight` or `max_weight` merely because the bounded adaptive candidate is blended
+with it.
+
+## Default Safeguards
+
+The current policy defaults are:
+
+```text
+sample_exponent               = 0.65
+representation_exponent       = 0.70
+quality_exponent              = 0.0
+fairness_strength             = 1.0
+metric_prior_strength         = 100.0
+heterogeneity_threshold       = 0.26
+heterogeneity_temperature     = 0.04
+heterogeneity_deadband        = 0.15
+performance_gap_threshold     = 0.10
+performance_gap_temperature   = 0.03
+performance_gap_deadband      = 0.05
+max_blend_factor              = 0.20
+activation_warmup_rounds      = 3
+activation_patience           = 2
+require_stable_cohort         = True
+min_weight                    = 0.02
+max_weight                    = 0.50
+```
+
+The standalone benchmarks use `max_weight=0.30` for their eight-client setup.
+Quality-based weighting is neutral by default (`quality_exponent=0.0`).
+
+### Metric reliability
+
+Client metrics from small local volumes are shrunk toward the local-volume-weighted
+federation mean before fairness pressure and the performance-gap gate are computed:
+
+```text
+reliability_i = n_i / (n_i + metric_prior_strength)
+adjusted_metric_i = reliability_i * metric_i + (1 - reliability_i) * federation_mean
+```
+
+This reduces sensitivity to noisy small-client measurements without dropping their
+distribution representation signal.
+
+### Cohort stability
+
+When `require_stable_cohort=True`, a change in the participating client set resets the
+activation streak. This prevents evidence from different client populations from being
+combined as if it came from one stable cohort.
+
+## NVFlare Integration
+
+`src/adaptive_hetero/nvflare_aggregator.py` adapts the policy to NVFlare's aggregator
+interface and returns standard `DataKind.WEIGHT_DIFF` output for `FedOptRecipe`.
+
+Each contribution provides:
 
 ```python
 from nvflare.apis.dxo import MetaKey
@@ -105,95 +129,158 @@ dxo.set_meta_prop(AdaptiveMetaKey.CLIENT_METRIC, validation_accuracy)
 dxo.set_meta_prop(AdaptiveMetaKey.QUALITY_IMPROVEMENT, baseline_loss - final_loss)
 ```
 
-The descriptor is intentionally application-defined. A label histogram is easy
-to reproduce for research, but production applications should assess whether a
-chosen descriptor leaks sensitive distribution information and use an
-appropriate privacy-preserving representation when needed.
+`MetaKey.NUM_STEPS_CURRENT_ROUND` is used as the native FedOpt local-iteration/local-volume
+weighting signal. It should not be interpreted as a literal sample count in all
+applications.
 
-The aggregator can then be passed to `FedOptRecipe` as its custom
-`aggregator=` component. FedOpt's server-side optimizer remains unchanged.
+The smoke client reports validation accuracy of the received global model before local
+training as `adaptive_client_metric`, so the client metric has the same round semantics
+across participants.
 
-## Controlled Benchmark
+## Validation Coverage
 
-The development benchmark uses `sklearn.datasets.make_classification` with:
+The dedicated workflow and repository pre-merge checks cover:
 
-- 30,000 samples;
-- 80 features;
-- 10 classes;
-- 8 federated clients;
-- Dirichlet label partitions;
-- client-specific covariate shifts;
-- 40 federated rounds;
-- seeds `7, 19, 31, 43, 57`.
+- policy unit tests and bounded-simplex stress tests;
+- regression coverage for final post-blend min/max weight constraints;
+- malformed metadata and normalized-metric contract checks;
+- empty validation-loader rejection with a descriptive `ValueError`;
+- NVFlare `DXO`, `Shareable`, and `FLContext` integration;
+- stateful warm-up, activation patience, and cohort-reset behavior;
+- real `FedOptRecipe + SimEnv` execution;
+- real NVIDIA FedCE `SimEnv` protocol execution;
+- deterministic synthetic benchmark smoke runs;
+- scikit-learn handwritten-digits runs with linear and MLP models;
+- multiple random seeds and mild/severe/extreme heterogeneity settings;
+- partial participation with held cohorts and an assertion that adaptive weighting
+  actually activates;
+- formatting, lint, license, wheel-build, unit-test, and coverage checks.
 
-Both FedOpt and the adaptive method use the same FedAdam-style server update.
-The only difference is the client aggregation weights.
+The partial-participation benchmark accepts `--cohort-hold-rounds` so a selected cohort
+can remain stable long enough to satisfy activation patience. CI also uses
+`--require-adaptive-activation`; a run that exercises only the FedOpt fallback path is
+therefore not considered sufficient validation of the adaptive path.
 
-| Setting | Method | Global accuracy | Worst-client accuracy |
-| --- | --- | ---: | ---: |
-| Mild | FedOpt | 71.88 ± 0.81% | 64.67 ± 2.84% |
-| Mild | Adaptive | **71.86 ± 0.78%** | **64.87 ± 2.97%** |
-| Severe | FedOpt | 81.39 ± 1.16% | 62.36 ± 2.55% |
-| Severe | Adaptive | **81.28 ± 1.19%** | **65.24 ± 1.98%** |
-| Extreme | FedOpt | 84.46 ± 1.28% | 55.48 ± 3.71% |
-| Extreme | Adaptive | **84.18 ± 1.08%** | **57.48 ± 3.86%** |
+## Benchmarks
 
-Relative to the FedOpt baseline, the adaptive policy changed mean global
-accuracy by **-0.02 pp / -0.11 pp / -0.29 pp** in mild/severe/extreme settings,
-while worst-client accuracy changed by **+0.20 pp / +2.88 pp / +2.00 pp**.
+### Synthetic benchmark
 
-For mild heterogeneity the observed blend factors were only about `0.06-0.09`,
-so the method behaved close to its FedOpt/sample-weight fallback. The complete
-per-seed output is stored in `results/development_5seed_summary.json`.
+`benchmark.py` uses `sklearn.datasets.make_classification` with configurable sample
+count, client count, rounds, random seeds, and heterogeneity settings. The default
+research configuration uses eight clients and compares native-volume FedOpt weighting
+with the adaptive policy under the same FedAdam-style server update.
 
-Run the same benchmark with:
+### Handwritten digits benchmark
 
-```bash
-python benchmark.py \
-  --samples 30000 \
-  --rounds 40 \
-  --seeds 7 19 31 43 57 \
-  --settings mild severe extreme \
-  --methods fedopt adaptive \
-  --output results/development_5seed.json
-```
+`digits_benchmark.py` uses scikit-learn's bundled `load_digits` dataset (1,797 8x8
+handwritten digit images), so no external dataset download is required. It supports:
 
-## Tests
+- linear and MLP models;
+- full or partial participation;
+- deterministic random seeds;
+- configurable cohort hold duration;
+- an optional assertion that the adaptive path activates.
 
-The policy tests cover weight normalization, mathematically valid bounded-simplex
-projection, low-heterogeneity fallback behavior, high-heterogeneity minimax
-pressure, malformed descriptors, and infeasible bounds.
+Example partial-participation validation:
 
 ```bash
-PYTHONPATH=src pytest -q tests/test_policy.py
+python digits_benchmark.py \
+  --rounds 25 \
+  --participation-rate 0.75 \
+  --cohort-hold-rounds 5 \
+  --require-adaptive-activation \
+  --seeds 7 19 31 \
+  --settings severe extreme \
+  --models linear mlp \
+  --methods fedopt adaptive
 ```
 
-Development validation for this branch:
+### Historical development results
+
+`results/development_5seed_summary.json` contains an earlier development-policy run.
+Those values were useful while designing the safeguards but predate the current
+stateful activation, metric-reliability, and final post-blend bounding behavior. They
+should not be treated as final performance claims for the current policy.
+
+## Relationship to Existing NVFlare Work
+
+### FedOpt
+
+FedOpt remains the native baseline and server optimizer. This implementation adds an
+opt-in client-weighting layer and preserves exact baseline weights whenever adaptive
+activation is off.
+
+### FedCE
+
+FedCE uses contribution-related behavior including update-direction and validation
+signals. This policy instead uses explicit distribution representation and
+reliability-adjusted performance disparity. A real FedCE `SimEnv` protocol smoke run is
+included as an integration reference, not as a claim that the two methods are
+algorithmically equivalent.
+
+### Auto-FedRL
+
+Auto-FedRL learns aggregation behavior with reinforcement learning. This implementation
+is deterministic and does not require a separate learned policy or policy-training
+phase. A full numerical Auto-FedRL reproduction is not claimed here because a comparable
+reproduction requires substantially different compute and experiment setup.
+
+## Privacy and Trust Considerations
+
+Distribution descriptors and client metrics are summary metadata, not automatically
+privacy-preserving signals. Depending on the application, they may disclose information
+about local data and may require approved summaries, secure aggregation, differential
+privacy, or another privacy mechanism.
+
+The server also assumes that supplied metadata is trustworthy and comparable across
+clients. Production deployments should define and enforce the metadata contract for the
+specific application.
+
+## Remaining Limitations
+
+Current validation is intentionally broader than the initial implementation, but it is
+not production evidence for every federated workload. Important remaining questions
+include:
+
+- behavior with larger client populations and longer training runs;
+- additional datasets and model architectures;
+- high client-dropout and rapidly changing participation patterns;
+- metadata privacy, trust, and cross-site comparability;
+- communication and runtime overhead at larger scale;
+- application-specific tuning of thresholds and bounds;
+- whether the component should remain under `research/` or evolve into a reusable
+  NVFlare component after maintainer review.
+
+No universal convergence or universal accuracy-improvement claim is made.
+
+## Repository Layout
 
 ```text
-5 passed
-Python syntax compilation passed for policy, benchmark, tests, and NVFlare adapter
+adaptive-hetero-aggregation/
+|-- README.md
+|-- benchmark.py
+|-- digits_benchmark.py
+|-- requirements.txt
+|-- fedce_smoke/
+|-- nvflare_smoke/
+|-- results/
+|-- src/adaptive_hetero/
+|   |-- __init__.py
+|   |-- policy.py
+|   `-- nvflare_aggregator.py
+`-- tests/
+    |-- test_nvflare_aggregator.py
+    |-- test_nvflare_smoke_client.py
+    `-- test_policy.py
 ```
 
-## What Still Needs to Be Validated Before an Upstream PR
+## Running Tests
 
-This branch is intentionally a first implementation rather than a claim that the
-feature is already production-ready. Before proposing it upstream, the strongest
-next validation would be:
+From `research/adaptive-hetero-aggregation/`:
 
-- run the adapter inside the current NVFlare simulator with the real
-  `FedOptRecipe`;
-- compare against NVFlare's actual FedCE implementation and the existing
-  Auto-FedRL research example rather than only the controlled FedOpt baseline;
-- add a public image benchmark such as CIFAR-10 with Dirichlet label skew;
-- add partial-participation experiments;
-- test descriptor privacy and metric comparability assumptions;
-- add NVFlare integration tests for malformed/missing client metadata and
-  changing client sets.
-
-These checks are important because a client-local metric is not automatically
-comparable across sites, and distribution descriptors can disclose information
-unless designed carefully.
+```bash
+PYTHONPATH=src pytest -q tests
+```
 
 ## License
 
