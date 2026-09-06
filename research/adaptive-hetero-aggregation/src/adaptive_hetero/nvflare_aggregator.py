@@ -36,9 +36,12 @@ class AdaptiveMetaKey:
     QUALITY_IMPROVEMENT = "adaptive_quality_improvement"
     FINAL_WEIGHTS = "adaptive_final_weights"
     MEAN_HETEROGENEITY = "adaptive_mean_heterogeneity"
+    RAW_METRIC_GAP = "adaptive_raw_metric_gap"
     METRIC_GAP = "adaptive_metric_gap"
     PERFORMANCE_GATE = "adaptive_performance_gate"
+    CANDIDATE_BLEND_FACTOR = "adaptive_candidate_blend_factor"
     BLEND_FACTOR = "adaptive_blend_factor"
+    ACTIVATION_STREAK = "adaptive_activation_streak"
 
 
 @dataclass
@@ -56,8 +59,11 @@ class AdaptiveHeterogeneityAggregator(Aggregator):
     """Aggregate ``WEIGHT_DIFF`` updates using conservative adaptive weights.
 
     ``CLIENT_METRIC`` must be a normalized higher-is-better value in ``[0, 1]``.
-    Quality weighting is disabled by default because local quality improvements
-    are not automatically comparable across clients.
+    Small-client metrics are reliability-shrunk before fairness pressure is
+    computed. Adaptive weighting requires persistent evidence from a stable
+    participating cohort. Quality weighting is disabled by default because
+    local quality-improvement values are not automatically comparable across
+    sites.
     """
 
     expected_data_kind = DataKind.WEIGHT_DIFF
@@ -67,14 +73,18 @@ class AdaptiveHeterogeneityAggregator(Aggregator):
         sample_exponent: float = 0.65,
         representation_exponent: float = 0.70,
         quality_exponent: float = 0.0,
-        fairness_strength: float = 2.0,
+        fairness_strength: float = 1.0,
+        metric_prior_strength: float = 100.0,
         heterogeneity_threshold: float = 0.26,
         heterogeneity_temperature: float = 0.04,
         heterogeneity_deadband: float = 0.15,
         performance_gap_threshold: float = 0.10,
         performance_gap_temperature: float = 0.03,
         performance_gap_deadband: float = 0.05,
-        max_blend_factor: float = 0.40,
+        max_blend_factor: float = 0.20,
+        activation_warmup_rounds: int = 3,
+        activation_patience: int = 2,
+        require_stable_cohort: bool = True,
         min_weight: float = 0.02,
         max_weight: float = 0.50,
     ):
@@ -84,6 +94,7 @@ class AdaptiveHeterogeneityAggregator(Aggregator):
             representation_exponent=representation_exponent,
             quality_exponent=quality_exponent,
             fairness_strength=fairness_strength,
+            metric_prior_strength=metric_prior_strength,
             heterogeneity_threshold=heterogeneity_threshold,
             heterogeneity_temperature=heterogeneity_temperature,
             heterogeneity_deadband=heterogeneity_deadband,
@@ -91,6 +102,9 @@ class AdaptiveHeterogeneityAggregator(Aggregator):
             performance_gap_temperature=performance_gap_temperature,
             performance_gap_deadband=performance_gap_deadband,
             max_blend_factor=max_blend_factor,
+            activation_warmup_rounds=activation_warmup_rounds,
+            activation_patience=activation_patience,
+            require_stable_cohort=require_stable_cohort,
             min_weight=min_weight,
             max_weight=max_weight,
         )
@@ -100,6 +114,7 @@ class AdaptiveHeterogeneityAggregator(Aggregator):
         self._descriptor_size = None
 
     def reset(self, fl_ctx: FLContext):
+        """Clear per-round contributions while preserving activation history."""
         self._contributions = {}
         self._processed_algorithm = None
         self._descriptor_size = None
@@ -200,6 +215,7 @@ class AdaptiveHeterogeneityAggregator(Aggregator):
             descriptors=[item.descriptor for item in contributions],
             client_metrics=[item.metric for item in contributions],
             quality_improvements=quality_values,
+            cohort_key=tuple(names),
         )
 
         helper = WeightedAggregationHelper()
@@ -216,9 +232,12 @@ class AdaptiveHeterogeneityAggregator(Aggregator):
             meta={
                 AdaptiveMetaKey.FINAL_WEIGHTS: {name: float(weight) for name, weight in zip(names, result.weights)},
                 AdaptiveMetaKey.MEAN_HETEROGENEITY: result.mean_heterogeneity,
+                AdaptiveMetaKey.RAW_METRIC_GAP: result.raw_metric_gap,
                 AdaptiveMetaKey.METRIC_GAP: result.metric_gap,
                 AdaptiveMetaKey.PERFORMANCE_GATE: result.performance_gate,
+                AdaptiveMetaKey.CANDIDATE_BLEND_FACTOR: result.candidate_blend_factor,
                 AdaptiveMetaKey.BLEND_FACTOR: result.blend_factor,
+                AdaptiveMetaKey.ACTIVATION_STREAK: result.activation_streak,
             },
         )
         if self._processed_algorithm is not None:
