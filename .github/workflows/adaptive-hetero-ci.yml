@@ -3,7 +3,14 @@ name: Adaptive heterogeneity research CI
 on:
   push:
     branches:
+      - main
       - feature/heterogeneity-aware-aggregation-5209
+    paths:
+      - "research/adaptive-hetero-aggregation/**"
+      - ".github/workflows/adaptive-hetero-ci.yml"
+  pull_request:
+    branches:
+      - main
     paths:
       - "research/adaptive-hetero-aggregation/**"
       - ".github/workflows/adaptive-hetero-ci.yml"
@@ -85,11 +92,13 @@ jobs:
             --methods fedopt adaptive \
             --output /tmp/adaptive-digits-5seed.json
 
-      - name: Partial-participation safety benchmark
+      - name: Partial-participation adaptive-path benchmark
         run: |
           python research/adaptive-hetero-aggregation/digits_benchmark.py \
             --rounds 25 \
             --participation-rate 0.75 \
+            --cohort-hold-rounds 5 \
+            --require-adaptive-activation \
             --seeds 7 19 31 \
             --settings severe extreme \
             --models linear mlp \
