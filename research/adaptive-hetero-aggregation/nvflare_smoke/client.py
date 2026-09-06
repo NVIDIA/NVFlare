@@ -77,6 +77,8 @@ def _evaluate(model: nn.Module, loader: DataLoader) -> tuple[float, float]:
             total_loss += float(criterion(logits, labels).item())
             correct += int((logits.argmax(dim=1) == labels).sum().item())
             total += int(labels.numel())
+    if total == 0:
+        raise ValueError("validation data loader must contain at least one example")
     return total_loss / total, correct / total
 
 
