@@ -169,6 +169,15 @@ poc_workspace {
 
         assert json.loads(config_path.read_text())["version"] == 2
 
+    def test_save_config_rejects_unsupported_trailing_suffix(self, tmp_path):
+        config_path = tmp_path / "client.json.backup"
+        config = CF.parse_string("version = 2")
+
+        with pytest.raises(ValueError, match="invalid file extension"):
+            save_config(config, str(config_path))
+
+        assert not config_path.exists()
+
     @pytest.mark.parametrize(
         "inputs, result", [(([], "a"), ["a"]), ((["a"], "a"), ["a"]), ((["a", "b"], "b"), ["a", "b"])]
     )
