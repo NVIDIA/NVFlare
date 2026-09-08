@@ -14,8 +14,10 @@
 
 import os
 import shutil
+import subprocess
 import threading
 import time
+import uuid
 from typing import Optional
 
 from pydantic import BaseModel, conint, model_validator
@@ -27,9 +29,13 @@ from nvflare.job_config.api import FedJob
 from nvflare.recipe.spec import ExecEnv
 from nvflare.recipe.utils import collect_non_local_scripts
 from nvflare.tool.poc.poc_commands import (
+    POC_START_READY_TIMEOUT,
     _clean_poc,
+    _docker_cli_env,
+    _is_live_pid_file,
     _start_poc,
     _stop_poc,
+    _wait_for_poc_system_ready,
     get_poc_workspace,
     get_prod_dir,
     is_poc_running,
@@ -41,8 +47,10 @@ from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
 from .session_mgr import SessionManager
 
 STOP_POC_TIMEOUT = 10
-SERVICE_START_TIMEOUT = 3
+POC_READY_POLL_INTERVAL = 0.2
+POC_READY_STABLE_INTERVAL = 2.0
 DEFAULT_ADMIN_USER = "admin@nvidia.com"
+_WORKSPACE_BACKUP_PREFIX = ".nvflare-recipe-backup-"
 
 
 # Internal — not part of the public API
@@ -131,7 +139,9 @@ class PocEnv(ExecEnv):
 
         self.clients = v.clients
         self.num_clients = len(v.clients) if v.clients is not None else v.num_clients
-        self.poc_workspace = get_poc_workspace()
+        # Keep transactional backups beside the workspace even when the
+        # configured path has a trailing separator.
+        self.poc_workspace = os.path.normpath(get_poc_workspace())
         self.gpu_ids = v.gpu_ids or []
         self.use_he = v.use_he
         self.project_conf_path = v.project_conf_path
@@ -140,6 +150,139 @@ class PocEnv(ExecEnv):
         self.study = v.study
         self._session_manager = None  # Lazy initialization
         self._session_manager_lock = threading.Lock()
+        self._deployment_started = False
+        self._workspace_owned = False
+
+    @property
+    def deployment_started(self) -> bool:
+        """Whether the latest deploy call passed preflight and began POC preparation."""
+        return self._deployment_started
+
+    @property
+    def workspace_owned(self) -> bool:
+        """Whether the latest deploy created or replaced the active POC workspace."""
+        return self._workspace_owned
+
+    def _backup_existing_workspace(self) -> Optional[str]:
+        """Move a retained workspace aside before provisioning mutates its path."""
+        if not os.path.exists(self.poc_workspace):
+            return None
+        backup = f"{self.poc_workspace}{_WORKSPACE_BACKUP_PREFIX}{uuid.uuid4().hex}"
+        os.replace(self.poc_workspace, backup)
+        return backup
+
+    def _validate_project_conf_location(self) -> None:
+        """Reject a project config that workspace replacement would move away."""
+        if not self.project_conf_path:
+            return
+
+        workspace = os.path.abspath(self.poc_workspace)
+        project_conf = os.path.abspath(os.path.expanduser(self.project_conf_path))
+        resolved_workspace = os.path.realpath(workspace)
+        resolved_project_conf = os.path.realpath(project_conf)
+        if (
+            os.path.commonpath([workspace, project_conf]) == workspace
+            or os.path.commonpath([resolved_workspace, resolved_project_conf]) == resolved_workspace
+        ):
+            raise ValueError(
+                f"project_conf_path must be outside the POC workspace {self.poc_workspace!r}; "
+                "the workspace is replaced during deployment"
+            )
+
+    def _restore_existing_workspace(self, backup: str) -> None:
+        """Discard a partial replacement and atomically restore the retained workspace."""
+        if os.path.isdir(self.poc_workspace) and not os.path.islink(self.poc_workspace):
+            shutil.rmtree(self.poc_workspace)
+        elif os.path.lexists(self.poc_workspace):
+            os.remove(self.poc_workspace)
+        os.replace(backup, self.poc_workspace)
+
+    def _raise_rollback_error(self, workspace_backup: Optional[str], error: Exception, reason: str) -> None:
+        """Preserve recovery artifacts and report their locations when rollback is unsafe."""
+        self._workspace_owned = True
+        backup_note = (
+            f"the retained workspace backup remains at {workspace_backup}"
+            if workspace_backup
+            else "there was no retained workspace to back up"
+        )
+        raise RuntimeError(
+            f"POC deployment failed and {reason}; "
+            f"the partial replacement remains at {self.poc_workspace}; {backup_note}"
+        ) from error
+
+    @staticmethod
+    def _is_docker_service_running(service_name: str) -> bool:
+        """Return whether Docker reports the named POC container as running."""
+        try:
+            result = subprocess.run(
+                ["docker", "inspect", "--format", "{{.State.Running}}", service_name],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+                env=_docker_cli_env(),
+            )
+        except (OSError, subprocess.TimeoutExpired) as error:
+            raise RuntimeError(f"Could not determine Docker POC service state for {service_name!r}") from error
+
+        state = result.stdout.strip().lower()
+        if result.returncode == 0 and state in ("true", "false"):
+            return state == "true"
+
+        error_message = (getattr(result, "stderr", "") or result.stdout).strip()
+        if result.returncode != 0 and any(
+            marker in error_message.lower() for marker in ("no such object", "no such container")
+        ):
+            return False
+        detail = f": {error_message}" if error_message else ""
+        raise RuntimeError(
+            f"Could not determine Docker POC service state for {service_name!r} "
+            f"(docker inspect exited {result.returncode}){detail}"
+        )
+
+    @staticmethod
+    def _running_services(project_config: dict, service_config: dict, poc_workspace: str) -> list[str]:
+        """Return managed POC services whose local process is still alive."""
+        service_names = [service_config[SC.FLARE_SERVER], *service_config.get(SC.FLARE_CLIENTS, [])]
+        if service_config.get(SC.IS_DOCKER_RUN):
+            return [name for name in service_names if PocEnv._is_docker_service_running(name)]
+
+        project_name = project_config.get("name")
+        prod_dir = get_prod_dir(poc_workspace, project_name)
+        running = []
+        for service_name in service_names:
+            service_dir = os.path.join(prod_dir, service_name)
+            if _is_live_pid_file(os.path.join(service_dir, "pid.fl")) or _is_live_pid_file(
+                os.path.join(service_dir, "daemon_pid.fl")
+            ):
+                running.append(service_name)
+        return running
+
+    def _wait_for_services_ready(self, project_config: dict, service_config: dict) -> None:
+        """Wait until every managed service remains alive through a stabilization interval."""
+        expected_services = [service_config[SC.FLARE_SERVER], *service_config.get(SC.FLARE_CLIENTS, [])]
+        if not expected_services:
+            raise RuntimeError("POC provisioning did not configure a server or clients")
+
+        deadline = time.monotonic() + POC_START_READY_TIMEOUT
+        all_running_since = None
+        running_services = []
+        while time.monotonic() < deadline:
+            running_services = self._running_services(project_config, service_config, self.poc_workspace)
+            if set(running_services) == set(expected_services):
+                if all_running_since is None:
+                    all_running_since = time.monotonic()
+                elif time.monotonic() - all_running_since >= POC_READY_STABLE_INTERVAL:
+                    return
+            else:
+                all_running_since = None
+            time.sleep(POC_READY_POLL_INTERVAL)
+
+        missing_services = sorted(set(expected_services) - set(running_services))
+        raise RuntimeError(
+            f"POC services did not remain healthy within {POC_START_READY_TIMEOUT} seconds; "
+            f"not running: {', '.join(missing_services)}"
+        )
 
     def deploy(self, job: FedJob) -> str:
         """Deploy a FedJob to the POC environment.
@@ -153,6 +296,11 @@ class PocEnv(ExecEnv):
         Raises:
             ValueError: If scripts do not exist locally.
         """
+        # Reset before non-mutating preflight so callers can distinguish a
+        # rejected job from an invocation that owns a new POC lifecycle.
+        self._deployment_started = False
+        self._workspace_owned = False
+
         # Validate scripts exist locally for POC
         non_local_scripts = collect_non_local_scripts(job)
         if non_local_scripts:
@@ -161,33 +309,111 @@ class PocEnv(ExecEnv):
                 f"For PocEnv, all scripts must be present on the local machine."
             )
 
+        self._validate_project_conf_location()
+
         if self._check_poc_running():
-            self.stop(clean_up=True)
+            # Keep the stopped workspace until fresh provisioning succeeds, so
+            # a failed replacement can restore its prior logs and results.
+            self.stop(clean_up=False)
+            if self._check_poc_running():
+                raise RuntimeError("Existing POC services could not be stopped")
 
+        self._deployment_started = True
+        workspace_backup = self._backup_existing_workspace()
         self.logger.info("Preparing and starting fresh POC services...")
-        prepare_poc_provision(
-            clients=self.clients or [],  # Empty list if None, let prepare_clients generate
-            number_of_clients=self.num_clients,
-            workspace=self.poc_workspace,
-            docker_image=self.docker_image,
-            use_he=self.use_he,
-            project_conf_path=self.project_conf_path,
-            examples_dir=None,
-        )
+        try:
+            prepare_poc_provision(
+                clients=self.clients or [],  # Empty list if None, let prepare_clients generate
+                number_of_clients=self.num_clients,
+                workspace=self.poc_workspace,
+                docker_image=self.docker_image,
+                use_he=self.use_he,
+                project_conf_path=self.project_conf_path,
+                examples_dir=None,
+            )
+            _start_poc(
+                poc_workspace=self.poc_workspace,
+                gpu_ids=self.gpu_ids,
+                excluded=[self.username],
+                services_list=[],
+            )
+            project_config, service_config = setup_service_config(self.poc_workspace)
+            self._wait_for_services_ready(project_config, service_config)
+            if not _wait_for_poc_system_ready(
+                self.poc_workspace,
+                project_config,
+                service_config,
+                services_list=[],
+                excluded=[self.username],
+                timeout_in_sec=POC_START_READY_TIMEOUT,
+            ):
+                raise RuntimeError("POC services were started but no server or clients were selected for readiness")
+            # Successful submission proves that the admin connection is ready,
+            # in addition to the process/container and client-registration
+            # checks above. Keep the retained workspace backup until all checks
+            # and submission have passed.
+            job_id = self._get_session_manager().submit_job(job)
+        except BaseException:
+            try:
+                poc_running = self._check_poc_running()
+            except Exception as state_error:
+                # Do not replace or delete either workspace when service state
+                # is unknown. The active path belongs to this invocation, and
+                # the retained backup remains available for manual recovery.
+                self._raise_rollback_error(
+                    workspace_backup,
+                    state_error,
+                    "the state of partially started services could not be determined",
+                )
 
-        _start_poc(
-            poc_workspace=self.poc_workspace,
-            gpu_ids=self.gpu_ids,
-            excluded=[self.username],
-            services_list=[],
-        )
+            if poc_running:
+                try:
+                    self.stop(clean_up=False)
+                except Exception as stop_error:
+                    self._raise_rollback_error(
+                        workspace_backup,
+                        stop_error,
+                        "partially started services could not be safely stopped",
+                    )
+                try:
+                    poc_running = self._check_poc_running()
+                except Exception as state_error:
+                    self._raise_rollback_error(
+                        workspace_backup,
+                        state_error,
+                        "the state of partially started services could not be determined after stopping",
+                    )
+                if poc_running:
+                    self._workspace_owned = True
+                    backup_note = (
+                        f"the retained workspace backup remains at {workspace_backup}"
+                        if workspace_backup
+                        else "there was no retained workspace to restore"
+                    )
+                    raise RuntimeError(
+                        f"POC deployment failed and partially started services could not be stopped; " f"{backup_note}"
+                    )
+            if workspace_backup:
+                try:
+                    self._restore_existing_workspace(workspace_backup)
+                except Exception as restore_error:
+                    # The active path contains only this invocation's partial
+                    # replacement. Let the caller clean it, but retain the
+                    # backup for manual recovery.
+                    self._workspace_owned = True
+                    raise RuntimeError(
+                        f"POC deployment failed and the retained workspace could not be restored from {workspace_backup}"
+                    ) from restore_error
+                self._workspace_owned = False
+            else:
+                self._workspace_owned = True
+            raise
+        else:
+            self._workspace_owned = True
+            if workspace_backup:
+                shutil.rmtree(workspace_backup, ignore_errors=True)
         self.logger.info("POC services started successfully")
-
-        # Give services time to start up
-        time.sleep(SERVICE_START_TIMEOUT)
-
-        # Submit job using SessionManager
-        return self._get_session_manager().submit_job(job)
+        return job_id
 
     def _check_poc_running(self) -> bool:
         """Check if POC services are currently running.
@@ -201,10 +427,7 @@ class PocEnv(ExecEnv):
             # POC workspace is not initialized yet, so we don't need to stop and clean it
             return False
 
-        if not is_poc_running(self.poc_workspace, service_config, project_config):
-            return False
-
-        return True
+        return bool(self._running_services(project_config, service_config, self.poc_workspace))
 
     def stop(self, clean_up: bool = False) -> None:
         """Try to stop and clean existing POC.
@@ -226,16 +449,24 @@ class PocEnv(ExecEnv):
         try:
             project_config, service_config = setup_service_config(self.poc_workspace)
             self.logger.info("Stopping existing POC services...")
+            # Prefer the coordinated server shutdown while it is reachable. If
+            # the server exited during startup, stop any surviving local client
+            # processes directly so the workspace can be restored safely.
+            services_list = []
+            if service_config.get(SC.IS_DOCKER_RUN) or not is_poc_running(
+                self.poc_workspace, service_config, project_config
+            ):
+                services_list = self._running_services(project_config, service_config, self.poc_workspace)
             _stop_poc(
                 poc_workspace=self.poc_workspace,
                 excluded=[self.username],  # Exclude admin console (consistent with start)
-                services_list=[],
+                services_list=services_list,
             )
             count = 0
             poc_running = True
             while count < STOP_POC_TIMEOUT:
                 try:
-                    if not is_poc_running(self.poc_workspace, service_config, project_config):
+                    if not self._running_services(project_config, service_config, self.poc_workspace):
                         poc_running = False
                         break
                 except Exception:

@@ -31,6 +31,7 @@ from nvflare.app_opt.job_launcher.slurm.config import (
 )
 from nvflare.client.api_spec import CLIENT_API_TYPE_KEY
 from nvflare.client.cell.bootstrap import BOOTSTRAP_FILE_ENV_VAR, CELL_API_TYPE, bootstrap_file_name
+from nvflare.client.rank import CLIENT_API_PROCESS_COUNT_ENV_VAR
 
 _ENV_NNODES = "NVFL_NNODES"
 _ENV_NODE_RANK = "NVFL_NODE_RANK"
@@ -72,6 +73,7 @@ export NVFL_NODE_RANK="$((10#${SLURM_NODEID}))"
 
 @@NVFLARE_BACKEND_SETUP@@
 if [[ "${NVFL_NODE_RANK}" == "0" ]]; then
+@@NVFLARE_RANK0_SETUP@@
   _nvfl_command=(@@NVFLARE_RANK0_COMMAND@@)
 else
 @@NVFLARE_NONZERO_SETUP@@
@@ -219,6 +221,7 @@ def _render_node_script(plan: LaunchPlan, config: SlurmConfig) -> str:
     worker_words = _build_worker_words(plan)
     node_words = [shlex.quote(word) for word in plan.additional_node_command]
     credential_names = (JobProcessEnv.AUTH_TOKEN, JobProcessEnv.TOKEN_SIGNATURE, JobProcessEnv.SSID)
+    rank0_setup = [f"  export {CLIENT_API_PROCESS_COUNT_ENV_VAR}=1"]
     nonzero_setup = [
         f"  unset {' '.join(credential_names)}",
         f"  export {CLIENT_API_TYPE_KEY}={CELL_API_TYPE}",
@@ -233,6 +236,7 @@ def _render_node_script(plan: LaunchPlan, config: SlurmConfig) -> str:
             )
         )
         rank0_command = _apptainer_exec_words(plan, plan.run_dir) + worker_words
+        rank0_setup.append(f"  export APPTAINERENV_{CLIENT_API_PROCESS_COUNT_ENV_VAR}=1")
         nonzero_setup.append(f"  unset {' '.join(f'APPTAINERENV_{name}' for name in credential_names)}")
         nonzero_setup.append(f'  export APPTAINERENV_{CLIENT_API_TYPE_KEY}="${{{CLIENT_API_TYPE_KEY}}}"')
         nonzero_setup.append(f'  export APPTAINERENV_{BOOTSTRAP_FILE_ENV_VAR}="${{{BOOTSTRAP_FILE_ENV_VAR}}}"')
@@ -245,6 +249,7 @@ def _render_node_script(plan: LaunchPlan, config: SlurmConfig) -> str:
     return _render_shell_template(
         _NODE_SCRIPT_TEMPLATE,
         backend_setup=backend_setup,
+        rank0_setup="\n".join(rank0_setup),
         rank0_command=" ".join(rank0_command),
         nonzero_setup="\n".join(nonzero_setup),
         nonzero_command=" ".join(nonzero_command),

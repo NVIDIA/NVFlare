@@ -32,6 +32,7 @@ class BaseAppConfig(ABC):
         self.task_result_filters = []  # list of tuples: (task_set, list of filters)
         self.components: Dict[str, object] = {}
         self.ext_scripts = []
+        self._ext_script_destinations = {}
         self.ext_dirs = []
         self.file_sources = []
         self.handlers: [FLComponent] = []
@@ -60,6 +61,14 @@ class BaseAppConfig(ABC):
             raise RuntimeError(f"Could not locate external script: {ext_script}")
 
         self.ext_scripts.append(ext_script)
+
+    def _set_ext_script_destination(self, ext_script: str, destination: str):
+        """Keep an explicit packaged path for a registered external script."""
+        if ext_script not in self.ext_scripts:
+            raise RuntimeError(f"external script is not registered: {ext_script}")
+        destinations = self._ext_script_destinations.setdefault(ext_script, [])
+        if destination not in destinations:
+            destinations.append(destination)
 
     def add_ext_dir(self, ext_dir: str):
         if not (os.path.isdir(ext_dir) and os.path.exists(ext_dir)):

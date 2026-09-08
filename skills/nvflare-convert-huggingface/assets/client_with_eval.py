@@ -13,7 +13,7 @@ best-model selection is required. Set it to ``False`` only for a valid
 train-only source path.
 
 The entry is rankless for CPU, single-GPU, and other single-process training.
-The Hugging Face Client API resolves an initialized process-group rank or global
+The public Client API resolves an initialized process-group rank or global
 ``RANK`` and rejects an unresolved multi-process launch. For a preserved
 multi-GPU launch, follow
 ``references/huggingface-state-and-distributed.md``.

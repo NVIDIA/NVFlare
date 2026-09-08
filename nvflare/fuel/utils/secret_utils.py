@@ -707,10 +707,11 @@ def _contains_secret_ref_outside_keys(
                 supported_value_depth == 1
                 and isinstance(key, str)
                 and key in supported_value_keys
-                and isinstance(item, str)
+                and (isinstance(item, str) or (isinstance(item, list) and all(isinstance(arg, str) for arg in item)))
             ):
-                # These runtime boundaries consume direct string fields. Do not exempt a nested
-                # mapping/list merely because its parent happens to use a supported field name.
+                # These runtime boundaries consume direct string fields or pre-tokenized argv.
+                # Do not exempt arbitrary nested values merely because their parent happens to
+                # use a supported field name.
                 continue
             if _contains_secret_ref_outside_keys(item, supported_value_keys, max(supported_value_depth - 1, 0)):
                 return True
