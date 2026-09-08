@@ -18,7 +18,6 @@ import os
 import shutil
 import stat
 import subprocess
-import tempfile
 import threading
 import time
 import uuid
@@ -56,9 +55,9 @@ DEFAULT_ADMIN_USER = "admin@nvidia.com"
 _RECIPE_WORKSPACE_SUFFIX = ".recipe-"
 
 
-def _recipe_runtime_lock_path() -> str:
-    """Return the per-user host lock that serializes Recipe POC runtimes."""
-    return os.path.join(tempfile.gettempdir(), f".nvflare-recipe-poc-{os.geteuid()}.lock")
+def _recipe_runtime_lock_path(poc_workspace_root: str) -> str:
+    """Return the per-user runtime lock beside the configured POC workspace."""
+    return f"{os.path.abspath(poc_workspace_root)}.recipe-{os.geteuid()}.lock"
 
 
 # Internal — not part of the public API
@@ -189,6 +188,14 @@ class PocEnv(ExecEnv):
             raise RuntimeError(f"refusing to remove unmanaged POC workspace {self.poc_workspace}")
         shutil.rmtree(self.poc_workspace)
 
+    def _raise_unknown_service_state(self, workspace: str, error: Exception) -> None:
+        """Raise recovery guidance when a Recipe workspace cannot be inspected."""
+        raise RuntimeError(
+            f"Could not determine service state for the Recipe PocEnv workspace {workspace}: "
+            f"{error}. Stop any remaining services, then remove the stale runtime record "
+            f"{_recipe_runtime_lock_path(self._poc_workspace_root)} manually."
+        ) from error
+
     def _clean_up_failed_deployment(self) -> None:
         """Stop a failed deployment and verify its per-run workspace was cleaned."""
         if not self._is_recipe_workspace(self.poc_workspace):
@@ -207,21 +214,13 @@ class PocEnv(ExecEnv):
             project_config, service_config = setup_service_config(workspace)
         except Exception as e:
             if fail_if_unknown:
-                raise RuntimeError(
-                    f"Could not determine service state for the Recipe PocEnv workspace {workspace}: "
-                    f"{e}. Stop any remaining services, then remove the stale runtime record "
-                    f"{_recipe_runtime_lock_path()} manually."
-                ) from e
+                self._raise_unknown_service_state(workspace, e)
             return False
         try:
             return bool(self._running_services(project_config, service_config, workspace))
         except Exception as e:
             if fail_if_unknown:
-                raise RuntimeError(
-                    f"Could not determine service state for the Recipe PocEnv workspace {workspace}: "
-                    f"{e}. Stop any remaining services, then remove the stale runtime record "
-                    f"{_recipe_runtime_lock_path()} manually."
-                ) from e
+                self._raise_unknown_service_state(workspace, e)
             raise
 
     def _acquire_runtime_lock(self) -> None:
@@ -229,7 +228,8 @@ class PocEnv(ExecEnv):
         if self._runtime_lock_file is not None:
             return
 
-        lock_path = _recipe_runtime_lock_path()
+        lock_path = _recipe_runtime_lock_path(self._poc_workspace_root)
+        os.makedirs(os.path.dirname(lock_path), exist_ok=True)
         flags = os.O_CREAT | os.O_RDWR
         if hasattr(os, "O_CLOEXEC"):
             flags |= os.O_CLOEXEC
@@ -410,11 +410,6 @@ class PocEnv(ExecEnv):
                     f"The configured CLI POC deployment is running at {self._poc_workspace_root}. "
                     "Stop it with 'nvflare poc stop' before starting a Recipe PocEnv deployment."
                 )
-        except BaseException:
-            self._release_runtime_lock()
-            raise
-
-        try:
             self._record_runtime_workspace()
         except BaseException:
             self._release_runtime_lock()

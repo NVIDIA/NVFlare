@@ -34,7 +34,9 @@ def _isolated_recipe_runtime_lock(tmp_path, monkeypatch):
     """Keep process-held Recipe POC locks independent across unit tests."""
     import nvflare.recipe.poc_env as poc_env_module
 
-    monkeypatch.setattr(poc_env_module, "_recipe_runtime_lock_path", lambda: str(tmp_path / "recipe-poc.lock"))
+    monkeypatch.setattr(
+        poc_env_module, "_recipe_runtime_lock_path", lambda _workspace_root: str(tmp_path / "recipe-poc.lock")
+    )
 
 
 def _configure_successful_deploy(monkeypatch, env, prepare=None, submit=None):
@@ -73,10 +75,16 @@ def test_poc_env_initialization():
     assert env.poc_workspace.startswith(f"{env._poc_workspace_root}.recipe-")
 
 
-def test_recipe_runtime_lock_path_is_host_and_user_scoped():
-    assert _recipe_runtime_lock_path() == os.path.join(
-        tempfile.gettempdir(), f".nvflare-recipe-poc-{os.geteuid()}.lock"
-    )
+def test_recipe_runtime_lock_path_is_independent_of_process_temp_dir(tmp_path, monkeypatch):
+    configured_workspace = tmp_path / "shared" / "poc"
+    expected = f"{configured_workspace}.recipe-{os.geteuid()}.lock"
+
+    monkeypatch.setenv("TMPDIR", str(tmp_path / "process-a"))
+    first_path = _recipe_runtime_lock_path(str(configured_workspace))
+    monkeypatch.setenv("TMPDIR", str(tmp_path / "process-b"))
+
+    assert first_path == expected
+    assert _recipe_runtime_lock_path(str(configured_workspace)) == expected
 
 
 def test_runtime_lock_rejects_unsafe_lock_file(tmp_path, monkeypatch):
@@ -121,7 +129,7 @@ def test_deploy_rejects_services_left_by_prior_recipe_process(tmp_path, monkeypa
     configured_workspace = tmp_path / "current-poc"
     prior_workspace = tmp_path / f"prior-poc.recipe-{'a' * 32}"
     prior_workspace.mkdir()
-    lock_path = Path(poc_env_module._recipe_runtime_lock_path())
+    lock_path = Path(poc_env_module._recipe_runtime_lock_path(str(configured_workspace)))
     lock_path.write_text(str(prior_workspace))
     provisioned_workspaces = []
     active_workspaces = {str(prior_workspace)}
@@ -169,7 +177,7 @@ def test_deploy_fails_closed_when_prior_runtime_workspace_is_unreadable(tmp_path
 
     configured_workspace = tmp_path / "current-poc"
     missing_prior_workspace = tmp_path / f"missing-poc.recipe-{'b' * 32}"
-    lock_path = Path(poc_env_module._recipe_runtime_lock_path())
+    lock_path = Path(poc_env_module._recipe_runtime_lock_path(str(configured_workspace)))
     lock_path.write_text(str(missing_prior_workspace))
     provision_calls = []
 
@@ -202,7 +210,7 @@ def test_deploy_fails_closed_when_prior_runtime_service_state_is_unreadable(tmp_
 
     configured_workspace = tmp_path / "current-poc"
     prior_workspace = tmp_path / f"prior-poc.recipe-{'c' * 32}"
-    lock_path = Path(poc_env_module._recipe_runtime_lock_path())
+    lock_path = Path(poc_env_module._recipe_runtime_lock_path(str(configured_workspace)))
     lock_path.write_text(str(prior_workspace))
     provision_calls = []
 
@@ -584,7 +592,8 @@ def test_deploy_reports_incomplete_failure_cleanup(tmp_path, monkeypatch):
         raise RuntimeError("submission failed")
 
     _configure_successful_deploy(monkeypatch, env, prepare=prepare, submit=fail_submission)
-    monkeypatch.setattr(env, "stop", lambda clean_up: None)
+    stop_args = []
+    monkeypatch.setattr(env, "_stop", lambda clean_up: stop_args.append(clean_up))
     monkeypatch.setattr(env, "_check_poc_running", lambda: True)
     run_workspace = env.poc_workspace
 
@@ -596,6 +605,7 @@ def test_deploy_reports_incomplete_failure_cleanup(tmp_path, monkeypatch):
     assert "remove this workspace manually" in str(exc_info.value)
     assert "POC services remain running" in str(exc_info.value.__cause__)
     assert os.path.isdir(run_workspace)
+    assert stop_args == [True]
 
 
 def test_deploy_preserves_workspace_and_lock_when_metadata_is_lost_after_start(tmp_path, monkeypatch):
@@ -619,7 +629,7 @@ def test_deploy_preserves_workspace_and_lock_when_metadata_is_lost_after_start(t
     monkeypatch.setattr(PocEnv, "_running_services", staticmethod(lambda *args: []))
     env = PocEnv()
     run_workspace = env.poc_workspace
-    lock_path = Path(poc_env_module._recipe_runtime_lock_path())
+    lock_path = Path(poc_env_module._recipe_runtime_lock_path(str(configured_workspace)))
 
     try:
         with pytest.raises(RuntimeError, match="cleanup could not be completed safely") as exc_info:
