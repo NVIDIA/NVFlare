@@ -34,7 +34,6 @@ from nvflare.recipe.spec import ExecEnv
 from nvflare.recipe.utils import collect_non_local_scripts
 from nvflare.tool.poc.poc_commands import (
     POC_START_READY_TIMEOUT,
-    _clean_poc,
     _docker_cli_env,
     _is_live_pid_file,
     _start_poc,
@@ -162,7 +161,8 @@ class PocEnv(ExecEnv):
         self.study = v.study
         self._session_manager = None  # Lazy initialization
         self._session_manager_lock = threading.Lock()
-        self._workspace_used = False
+        self._deployment_started = False
+        self._services_may_have_started = False
         self._runtime_lock_file = None
         self._deployment_lock = threading.Lock()
 
@@ -183,6 +183,12 @@ class PocEnv(ExecEnv):
         identifier = candidate_name[len(prefix) :]
         return len(identifier) == 32 and all(c in "0123456789abcdef" for c in identifier.lower())
 
+    def _remove_recipe_workspace(self) -> None:
+        """Remove only this environment's Recipe-owned workspace."""
+        if not self._is_recipe_workspace(self.poc_workspace):
+            raise RuntimeError(f"refusing to remove unmanaged POC workspace {self.poc_workspace}")
+        shutil.rmtree(self.poc_workspace)
+
     def _clean_up_failed_deployment(self) -> None:
         """Stop a failed deployment and verify its per-run workspace was cleaned."""
         if not self._is_recipe_workspace(self.poc_workspace):
@@ -202,7 +208,7 @@ class PocEnv(ExecEnv):
         except Exception as e:
             if fail_if_unknown:
                 raise RuntimeError(
-                    f"Could not determine service state for the previously active Recipe PocEnv workspace {workspace}: "
+                    f"Could not determine service state for the Recipe PocEnv workspace {workspace}: "
                     f"{e}. Stop any remaining services, then remove the stale runtime record "
                     f"{_recipe_runtime_lock_path()} manually."
                 ) from e
@@ -212,7 +218,7 @@ class PocEnv(ExecEnv):
         except Exception as e:
             if fail_if_unknown:
                 raise RuntimeError(
-                    f"Could not determine service state for the previously active Recipe PocEnv workspace {workspace}: "
+                    f"Could not determine service state for the Recipe PocEnv workspace {workspace}: "
                     f"{e}. Stop any remaining services, then remove the stale runtime record "
                     f"{_recipe_runtime_lock_path()} manually."
                 ) from e
@@ -382,6 +388,9 @@ class PocEnv(ExecEnv):
 
     def _deploy(self, job: FedJob) -> str:
         """Perform one deployment while the instance deployment guard is held."""
+        if self._deployment_started:
+            raise RuntimeError("This PocEnv has already been used; create a new PocEnv for another deployment")
+
         # Validate scripts exist locally for POC
         non_local_scripts = collect_non_local_scripts(job)
         if non_local_scripts:
@@ -389,9 +398,6 @@ class PocEnv(ExecEnv):
                 f"The following scripts do not exist locally: {non_local_scripts}. "
                 f"For PocEnv, all scripts must be present on the local machine."
             )
-
-        if self._workspace_used and self._check_poc_running():
-            raise RuntimeError("This PocEnv already has a running deployment; stop it before deploying another job")
 
         # Recipe POC workspaces have isolated files but share host ports and
         # Docker participant names. The process-held lock closes the race
@@ -408,18 +414,16 @@ class PocEnv(ExecEnv):
             self._release_runtime_lock()
             raise
 
-        if self._workspace_used:
-            self.poc_workspace = self._new_poc_workspace()
-            self._session_manager = None
         try:
             self._record_runtime_workspace()
         except BaseException:
             self._release_runtime_lock()
             raise
-        self._workspace_used = True
-
         self.logger.info(f"Preparing and starting POC services in new workspace: {self.poc_workspace}")
         try:
+            # A PocEnv owns one provisioning lifecycle. Mark it consumed at
+            # the point provisioning begins, even if this attempt later fails.
+            self._deployment_started = True
             prepare_poc_provision(
                 clients=self.clients or [],  # Empty list if None, let prepare_clients generate
                 number_of_clients=self.num_clients,
@@ -429,6 +433,10 @@ class PocEnv(ExecEnv):
                 project_conf_path=self.project_conf_path,
                 examples_dir=None,
             )
+            # Startup can leave some services running even if it raises. From
+            # this point onward, missing service metadata is an unknown state
+            # and cleanup must preserve both the workspace and runtime lock.
+            self._services_may_have_started = True
             _start_poc(
                 poc_workspace=self.poc_workspace,
                 gpu_ids=self.gpu_ids,
@@ -470,7 +478,7 @@ class PocEnv(ExecEnv):
         Returns:
             bool: True if POC is running, False otherwise.
         """
-        return self._is_poc_workspace_running(self.poc_workspace)
+        return self._is_poc_workspace_running(self.poc_workspace, fail_if_unknown=self._services_may_have_started)
 
     def stop(self, clean_up: bool = False) -> None:
         """Try to stop and clean existing POC.
@@ -492,8 +500,12 @@ class PocEnv(ExecEnv):
             # POC already stopped or workspace doesn't exist
             if clean_up and os.path.exists(self.poc_workspace):
                 self.logger.info(f"Removing POC workspace: {self.poc_workspace}")
-                shutil.rmtree(self.poc_workspace, ignore_errors=True)
+                try:
+                    self._remove_recipe_workspace()
+                except Exception as e:
+                    self.logger.warning(f"Failed to clean POC workspace {self.poc_workspace}: {e}. Remove it manually.")
             self._session_manager = None  # Clear stale session manager
+            self._services_may_have_started = False
             self._release_runtime_lock(clear_workspace=True)
             return
 
@@ -544,12 +556,13 @@ class PocEnv(ExecEnv):
                     )
                 else:
                     try:
-                        _clean_poc(self.poc_workspace)
+                        self._remove_recipe_workspace()
                     except Exception as e:
                         self.logger.warning(
                             f"Failed to clean POC workspace {self.poc_workspace}: {e}. Remove it manually."
                         )
             if not poc_running:
+                self._services_may_have_started = False
                 self._release_runtime_lock(clear_workspace=True)
         except Exception as e:
             self.logger.warning(f"Failed to stop and clean existing POC: {e}")

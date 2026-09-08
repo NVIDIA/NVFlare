@@ -332,13 +332,15 @@ such as ``/tmp/nvflare/poc.recipe-<unique-id>``. The reusable ``nvflare poc``
 CLI workspace at ``/tmp/nvflare/poc`` is not replaced by Recipe provisioning.
 The active path is available as ``env.poc_workspace``. Pass ``clean_up=False``
 to ``run.get_result()`` when you want to retain that workspace and its logs
-after the run. POC deployments still share default ports and Docker participant
-names, so only one Recipe-managed POC deployment can be active on a host for a
-user. Also run ``nvflare poc stop`` before starting ``PocEnv`` when the
-configured CLI deployment is active. If the Recipe process exits unexpectedly,
-the next deployment checks the recorded per-run workspace and refuses to start
-while any of its services remain active. It also fails closed with manual
-recovery guidance if that recorded workspace is missing or unreadable.
+after the run. Each ``PocEnv`` instance owns one provisioning lifecycle; create
+a new instance for another deployment after provisioning has begun. POC
+deployments still share default ports and Docker participant names, so only one
+Recipe-managed POC deployment can be active on a host for a user. Also run
+``nvflare poc stop`` before starting ``PocEnv`` when the configured CLI
+deployment is active. If the Recipe process exits unexpectedly, the next
+deployment checks the recorded per-run workspace and refuses to start while any
+of its services remain active. It also fails closed with manual recovery
+guidance if that recorded workspace is missing or unreadable.
 
 To use a named study, point ``PocEnv`` to a custom project file that defines ``studies:``:
 

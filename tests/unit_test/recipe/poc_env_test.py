@@ -521,6 +521,9 @@ def test_failed_provisioning_cleans_only_run_workspace(tmp_path, monkeypatch):
     assert retained_result.read_text() == "keep me"
     assert not os.path.exists(run_workspace)
 
+    with pytest.raises(RuntimeError, match="already been used"):
+        env.deploy(object())
+
 
 @pytest.mark.parametrize("failure_stage", ["start", "readiness", "submission"])
 def test_deploy_failure_cleans_only_run_workspace(tmp_path, monkeypatch, failure_stage):
@@ -595,6 +598,42 @@ def test_deploy_reports_incomplete_failure_cleanup(tmp_path, monkeypatch):
     assert os.path.isdir(run_workspace)
 
 
+def test_deploy_preserves_workspace_and_lock_when_metadata_is_lost_after_start(tmp_path, monkeypatch):
+    import nvflare.recipe.poc_env as poc_env_module
+
+    configured_workspace = tmp_path / "poc"
+    monkeypatch.setattr(poc_env_module, "get_poc_workspace", lambda: str(configured_workspace))
+    monkeypatch.setattr(poc_env_module, "collect_non_local_scripts", lambda job: [])
+
+    def prepare(**kwargs):
+        Path(kwargs["workspace"]).mkdir(parents=True)
+
+    def setup(workspace):
+        if workspace == str(configured_workspace):
+            return PROJECT_CONFIG, SERVICE_CONFIG
+        raise RuntimeError("service configuration unavailable after startup")
+
+    monkeypatch.setattr(poc_env_module, "prepare_poc_provision", prepare)
+    monkeypatch.setattr(poc_env_module, "_start_poc", lambda **kwargs: None)
+    monkeypatch.setattr(poc_env_module, "setup_service_config", setup)
+    monkeypatch.setattr(PocEnv, "_running_services", staticmethod(lambda *args: []))
+    env = PocEnv()
+    run_workspace = env.poc_workspace
+    lock_path = Path(poc_env_module._recipe_runtime_lock_path())
+
+    try:
+        with pytest.raises(RuntimeError, match="cleanup could not be completed safely") as exc_info:
+            env.deploy(object())
+
+        assert "service configuration unavailable after startup" in str(exc_info.value)
+        assert "Could not determine service state" in str(exc_info.value.__cause__)
+        assert Path(run_workspace).is_dir()
+        assert env._runtime_lock_file is not None
+        assert lock_path.read_text() == os.path.abspath(run_workspace)
+    finally:
+        env._release_runtime_lock()
+
+
 @pytest.mark.parametrize("interruption", [KeyboardInterrupt(), SystemExit(2)])
 def test_cleanup_interruption_is_not_converted_to_runtime_error(tmp_path, monkeypatch, interruption):
     import nvflare.recipe.poc_env as poc_env_module
@@ -635,7 +674,7 @@ def test_new_env_preserves_retained_recipe_workspace(tmp_path, monkeypatch):
     assert retained_result.read_text() == "keep me"
 
 
-def test_reusing_stopped_env_creates_new_workspace_and_preserves_prior_result(tmp_path, monkeypatch):
+def test_reusing_stopped_env_is_rejected_and_preserves_its_workspace(tmp_path, monkeypatch):
     import nvflare.recipe.poc_env as poc_env_module
 
     configured_workspace = tmp_path / "poc"
@@ -650,32 +689,14 @@ def test_reusing_stopped_env_creates_new_workspace_and_preserves_prior_result(tm
     _configure_successful_deploy(monkeypatch, env, prepare=prepare)
 
     assert env.deploy(object()) == "job-id"
-    first_workspace = env.poc_workspace
+    run_workspace = env.poc_workspace
     env.stop(clean_up=False)
-    assert (Path(first_workspace) / "run-result.txt").read_text() == "complete"
 
-    assert env.deploy(object()) == "job-id"
-    second_workspace = env.poc_workspace
-
-    assert second_workspace != first_workspace
-    assert Path(second_workspace).is_dir()
-    assert (Path(first_workspace) / "run-result.txt").read_text() == "complete"
-
-
-def test_redeploy_rejects_running_workspace_without_rotating(tmp_path, monkeypatch):
-    import nvflare.recipe.poc_env as poc_env_module
-
-    monkeypatch.setattr(poc_env_module, "get_poc_workspace", lambda: str(tmp_path / "poc"))
-    env = PocEnv()
-    _configure_successful_deploy(monkeypatch, env)
-    assert env.deploy(object()) == "job-id"
-    active_workspace = env.poc_workspace
-    monkeypatch.setattr(env, "_check_poc_running", lambda: True)
-
-    with pytest.raises(RuntimeError, match="already has a running deployment"):
+    with pytest.raises(RuntimeError, match="already been used"):
         env.deploy(object())
 
-    assert env.poc_workspace == active_workspace
+    assert env.poc_workspace == run_workspace
+    assert (Path(run_workspace) / "run-result.txt").read_text() == "complete"
 
 
 def test_stop_cleanup_removes_only_run_workspace(tmp_path, monkeypatch):
@@ -817,31 +838,33 @@ def test_get_admin_startup_kit_path_not_found(mock_setup, mock_get_prod_dir, moc
 
 @patch("nvflare.recipe.poc_env.setup_service_config")
 @patch("nvflare.recipe.poc_env._stop_poc")
-@patch("nvflare.recipe.poc_env._clean_poc")
+@patch("nvflare.recipe.poc_env.shutil.rmtree")
 @patch("nvflare.recipe.poc_env.is_poc_running")
-def test_stop_poc(mock_is_running, mock_clean_poc, mock_stop_poc, mock_setup):
+def test_stop_poc(mock_is_running, mock_remove_workspace, mock_stop_poc, mock_setup):
     """Test stop and clean POC functionality."""
     mock_setup.return_value = ({"name": "test"}, {SC.FLARE_SERVER: "server"})
     mock_is_running.return_value = True
     env = PocEnv()
 
-    with patch.object(PocEnv, "_running_services", side_effect=[["server"], []]):
-        env.stop(clean_up=True)
+    with patch("nvflare.tool.poc.poc_commands._clean_poc_config") as mock_clean_poc_config:
+        with patch.object(PocEnv, "_running_services", side_effect=[["server"], []]):
+            env.stop(clean_up=True)
 
     mock_stop_poc.assert_called_once_with(
         poc_workspace=env.poc_workspace,
         excluded=["admin@nvidia.com"],
         services_list=[],
     )
-    mock_clean_poc.assert_called_once_with(env.poc_workspace)
+    mock_remove_workspace.assert_called_once_with(env.poc_workspace)
+    mock_clean_poc_config.assert_not_called()
 
 
 @patch("nvflare.recipe.poc_env.setup_service_config")
 @patch("nvflare.recipe.poc_env._stop_poc")
-@patch("nvflare.recipe.poc_env._clean_poc")
+@patch("nvflare.recipe.poc_env.shutil.rmtree")
 @patch("nvflare.recipe.poc_env.is_poc_running")
 def test_stop_preserves_workspace_when_service_state_is_unknown(
-    mock_is_running, mock_clean_poc, mock_stop_poc, mock_setup, caplog
+    mock_is_running, mock_remove_workspace, mock_stop_poc, mock_setup, caplog
 ):
     mock_setup.return_value = ({"name": "test"}, {SC.FLARE_SERVER: "server"})
     mock_is_running.return_value = True
@@ -855,7 +878,7 @@ def test_stop_preserves_workspace_when_service_state_is_unknown(
         env.stop(clean_up=True)
 
     mock_stop_poc.assert_called_once()
-    mock_clean_poc.assert_not_called()
+    mock_remove_workspace.assert_not_called()
     assert "Stop any remaining services and remove it manually" in caplog.text
 
 
