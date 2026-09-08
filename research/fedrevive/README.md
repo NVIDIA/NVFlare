@@ -39,7 +39,10 @@ also removes the prepared true proportions from its server-side manifest copy.
 The paper does not report the number of Gaussian probe inputs. This
 implementation uses 64, matching its reported synthesis batch size. One
 reusable probing model serves all 1,000 logical clients; persistent estimator
-state is only one ten-element sum and one count per observed client.
+state is only one ten-element sum and one count per observed client. Use
+`--class-proportion-probe-count` to change the total for a sensitivity run;
+probes are forwarded in chunks of at most 64 so peak device memory remains
+bounded.
 
 All settings use $K_{synth}=2$, $K_{KD}=10$, and an eight-model teacher buffer
 ($c=8$). Distillation still occurs on every eligible stale arrival after

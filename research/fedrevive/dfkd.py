@@ -80,14 +80,16 @@ class ClassProportionProxyEstimator:
         num_uploads: int = 2,
         temperature: float = 0.8,
         batch_size: int = 64,
+        forward_batch_size: int = 64,
         seed: int = 10,
     ):
-        if num_uploads < 1 or batch_size < 1 or temperature <= 0:
-            raise ValueError("num_uploads, batch_size, and temperature must be positive")
+        if num_uploads < 1 or batch_size < 1 or forward_batch_size < 1 or temperature <= 0:
+            raise ValueError("num_uploads, batch_size, forward_batch_size, and temperature must be positive")
         self.device = device
         self.num_uploads = int(num_uploads)
         self.temperature = float(temperature)
         self.batch_size = int(batch_size)
+        self.forward_batch_size = int(forward_batch_size)
         self._model = create_model().to(device)
         self._model.eval()
         for parameter in self._model.parameters():
@@ -106,17 +108,24 @@ class ClassProportionProxyEstimator:
         if count < self.num_uploads:
             load_model_params(self._model, uploaded_model, target_device=self.device)
             self._model.eval()
-            probes = torch.randn(
-                self.batch_size,
-                3,
-                32,
-                32,
-                generator=self._probe_rng,
-                device="cpu",
-            ).to(self.device)
+            probability_sum = torch.zeros(10, device=self.device)
             with torch.no_grad():
-                logits = self._model(probes)
-                upload_proxy = torch.softmax(logits / self.temperature, dim=1).mean(dim=0).cpu()
+                for offset in range(0, self.batch_size, self.forward_batch_size):
+                    chunk_size = min(self.forward_batch_size, self.batch_size - offset)
+                    # The logical probe batch may be large for sensitivity
+                    # experiments. Generate and forward it in bounded chunks
+                    # so peak device memory does not scale with probe count.
+                    probes = torch.randn(
+                        chunk_size,
+                        3,
+                        32,
+                        32,
+                        generator=self._probe_rng,
+                        device="cpu",
+                    ).to(self.device)
+                    logits = self._model(probes)
+                    probability_sum.add_(torch.softmax(logits / self.temperature, dim=1).sum(dim=0))
+            upload_proxy = (probability_sum / self.batch_size).cpu()
             self._proxy_sums[client_name] = (
                 self._proxy_sums.get(client_name, torch.zeros_like(upload_proxy)) + upload_proxy
             )

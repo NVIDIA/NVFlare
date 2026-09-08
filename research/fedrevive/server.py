@@ -213,14 +213,20 @@ class FedReviveServer:
         max_model_versions: int = 50000,
         class_proportion_source: ClassProportionSource | str = ClassProportionSource.TRUE_HISTOGRAM,
         generation_interval: int = 1,
+        class_proportion_probe_count: int = 64,
     ):
         self.method = Method(method)
         self.class_proportion_source = ClassProportionSource(class_proportion_source)
         self.generation_interval = int(generation_interval)
+        self.class_proportion_probe_count = int(class_proportion_probe_count)
         if self.method is not Method.FEDREVIVE and (
-            self.class_proportion_source is not ClassProportionSource.TRUE_HISTOGRAM or self.generation_interval != 1
+            self.class_proportion_source is not ClassProportionSource.TRUE_HISTOGRAM
+            or self.generation_interval != 1
+            or self.class_proportion_probe_count != 64
         ):
-            raise ValueError("class-proportion and generation options are only configurable for FedRevive")
+            raise ValueError(
+                "class-proportion, probe-count, and generation options are only configurable for FedRevive"
+            )
         preset = FIGURE_2_METHOD_CONFIGS[self.method]
         self.data_root = data_root
         self.prepared_data_root = prepared_data_root
@@ -250,9 +256,11 @@ class FedReviveServer:
             or self.max_model_versions < 1
             or self.max_parallel < 0
             or self.generation_interval < 1
+            or self.class_proportion_probe_count < 1
         ):
             raise ValueError(
-                "server_lr, eval_interval, max_model_versions, and generation_interval must be positive; "
+                "server_lr, eval_interval, max_model_versions, generation_interval, and "
+                "class_proportion_probe_count must be positive; "
                 "max_parallel must be >= 0"
             )
 
@@ -288,7 +296,10 @@ class FedReviveServer:
         # completion timing: FedBuff is sensitive to the resulting arrival and
         # staleness sequence, particularly under the paper's shifted schedule.
         self._runtime_rng = np.random.RandomState(self.run_seed)
-        self._dfkd_config = DFKDConfig(generation_interval=self.generation_interval)
+        self._dfkd_config = DFKDConfig(
+            generation_interval=self.generation_interval,
+            proxy_batch_size=self.class_proportion_probe_count,
+        )
         self._teacher_buffer = TeacherBuffer(self._dfkd_config.teacher_buffer_size)
         self._reviver = None
         self._proxy_estimator = None

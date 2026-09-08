@@ -82,6 +82,12 @@ def define_parser():
         default=1,
         help="Generate synthetic data every N global model versions",
     )
+    parser.add_argument(
+        "--class-proportion-probe-count",
+        type=int,
+        default=64,
+        help="Number of Gaussian inputs used for each class-proportion probe",
+    )
     parser.add_argument("--max-time", type=float, default=200.0, help="Simulated-time budget")
     parser.add_argument("--max-model-versions", type=int, default=50000)
     parser.add_argument("--data-root", default="/tmp/cifar10")
@@ -147,12 +153,14 @@ def validate_args(args):
         )
     if args.max_parallel > args.num_clients:
         raise ValueError("--max-parallel must not exceed --num-clients")
-    if args.generation_interval < 1:
-        raise ValueError("--generation-interval must be positive")
+    if args.generation_interval < 1 or args.class_proportion_probe_count < 1:
+        raise ValueError("--generation-interval and --class-proportion-probe-count must be positive")
     if args.method != Method.FEDREVIVE.value and (
-        args.class_proportion_source != ClassProportionSource.TRUE_HISTOGRAM.value or args.generation_interval != 1
+        args.class_proportion_source != ClassProportionSource.TRUE_HISTOGRAM.value
+        or args.generation_interval != 1
+        or args.class_proportion_probe_count != 64
     ):
-        raise ValueError("class-proportion and generation options are only configurable with --method fedrevive")
+        raise ValueError("class-proportion, probe-count, and generation options require --method fedrevive")
 
 
 def make_recipe(args):
@@ -186,6 +194,7 @@ def make_recipe(args):
         max_model_versions=args.max_model_versions,
         class_proportion_source=args.class_proportion_source,
         generation_interval=args.generation_interval,
+        class_proportion_probe_count=args.class_proportion_probe_count,
     )
     client = FedReviveClient(
         data_root=args.data_root,
@@ -257,6 +266,7 @@ def main():
     print(f"  Simulated-time budget: {args.max_time}")
     print(f"  Delay schedule: {args.delay_schedule}")
     print(f"  Class-proportion source: {args.class_proportion_source}")
+    print(f"  Class-proportion probe count: {args.class_proportion_probe_count}")
     print(f"  Generation interval: {args.generation_interval}")
     print("=" * 80)
     run = recipe.execute(SimEnv(num_clients=args.num_clients, workspace_root=args.workspace_root))
