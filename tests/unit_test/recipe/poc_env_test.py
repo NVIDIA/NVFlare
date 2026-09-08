@@ -35,7 +35,8 @@ def _isolated_recipe_runtime_lock(tmp_path, monkeypatch):
     """Keep process-held Recipe POC locks independent across unit tests."""
     import nvflare.recipe.poc_env as poc_env_module
 
-    monkeypatch.setattr(poc_env_module, "_recipe_runtime_lock_path", lambda: str(tmp_path / "recipe-poc.lock"))
+    lock_path = str(tmp_path / "recipe-poc.lock")
+    monkeypatch.setattr(poc_env_module, "_recipe_runtime_lock_path", lambda: lock_path)
 
 
 def _configure_successful_deploy(monkeypatch, env, prepare=None, submit=None):
@@ -89,13 +90,42 @@ def test_recipe_runtime_lock_path_is_independent_of_process_configuration(tmp_pa
     assert _recipe_runtime_lock_path() == expected
 
 
+def test_recipe_runtime_lock_path_uses_environment_home_without_passwd_entry(tmp_path, monkeypatch):
+    monkeypatch.setattr(pwd, "getpwuid", lambda uid: (_ for _ in ()).throw(KeyError(uid)))
+    monkeypatch.setenv("HOME", str(tmp_path / "container-home"))
+
+    assert _recipe_runtime_lock_path() == str(tmp_path / "container-home" / ".nvflare" / "recipe-poc-runtime.lock")
+
+
+def test_runtime_lock_falls_back_when_preferred_home_is_not_writable(tmp_path, monkeypatch):
+    import nvflare.recipe.poc_env as poc_env_module
+
+    preferred = str(tmp_path / "read-only-home" / ".nvflare" / "recipe-poc-runtime.lock")
+    fallback = str(tmp_path / "writable-home" / ".nvflare" / "recipe-poc-runtime.lock")
+    monkeypatch.setattr(poc_env_module, "_recipe_runtime_lock_paths", lambda: [preferred, fallback])
+    original_open = os.open
+
+    def open_lock(path, flags, mode=0o777):
+        if path == preferred:
+            raise PermissionError("preferred home is read-only")
+        return original_open(path, flags, mode)
+
+    monkeypatch.setattr(poc_env_module.os, "open", open_lock)
+    env = PocEnv()
+
+    env._acquire_runtime_lock()
+
+    assert env._runtime_lock_path == fallback
+    env._release_runtime_lock()
+
+
 def test_runtime_lock_rejects_unsafe_lock_directory(tmp_path, monkeypatch):
     import nvflare.recipe.poc_env as poc_env_module
 
     unsafe_dir = tmp_path / "unsafe-lock-dir"
     unsafe_dir.mkdir(mode=0o777)
     unsafe_dir.chmod(0o777)
-    monkeypatch.setattr(poc_env_module, "_recipe_runtime_lock_path", lambda: str(unsafe_dir / "recipe.lock"))
+    monkeypatch.setattr(poc_env_module, "_recipe_runtime_lock_paths", lambda: [str(unsafe_dir / "recipe.lock")])
     env = PocEnv()
 
     with pytest.raises(RuntimeError, match="unsafe Recipe POC runtime lock directory"):

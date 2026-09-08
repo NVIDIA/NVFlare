@@ -57,9 +57,25 @@ _RECIPE_WORKSPACE_SUFFIX = ".recipe-"
 
 
 def _recipe_runtime_lock_path() -> str:
-    """Return the environment-independent runtime lock for the OS user."""
-    user_home = pwd.getpwuid(os.geteuid()).pw_dir
+    """Return the preferred runtime lock for the OS user."""
+    try:
+        user_home = pwd.getpwuid(os.geteuid()).pw_dir
+    except KeyError:
+        user_home = os.environ.get("HOME")
+    if not user_home:
+        raise RuntimeError("Could not determine a home directory for the Recipe POC runtime lock")
     return os.path.join(user_home, ".nvflare", "recipe-poc-runtime.lock")
+
+
+def _recipe_runtime_lock_paths() -> list[str]:
+    """Return preferred and environment-home fallback lock paths."""
+    paths = [_recipe_runtime_lock_path()]
+    env_home = os.environ.get("HOME")
+    if env_home:
+        fallback = os.path.join(env_home, ".nvflare", "recipe-poc-runtime.lock")
+        if fallback not in paths:
+            paths.append(fallback)
+    return paths
 
 
 # Internal — not part of the public API
@@ -165,6 +181,7 @@ class PocEnv(ExecEnv):
         self._deployment_started = False
         self._services_may_have_started = False
         self._runtime_lock_file = None
+        self._runtime_lock_path = None
         self._deployment_lock = threading.Lock()
 
     def _new_poc_workspace(self) -> str:
@@ -192,10 +209,11 @@ class PocEnv(ExecEnv):
 
     def _raise_unknown_service_state(self, workspace: str, error: Exception) -> None:
         """Raise recovery guidance when a Recipe workspace cannot be inspected."""
+        lock_path = self._runtime_lock_path or _recipe_runtime_lock_path()
         raise RuntimeError(
             f"Could not determine service state for the Recipe PocEnv workspace {workspace}: "
             f"{error}. Stop any remaining services, then remove the stale runtime record "
-            f"{_recipe_runtime_lock_path()} manually."
+            f"{lock_path} manually."
         ) from error
 
     def _clean_up_failed_deployment(self) -> None:
@@ -230,22 +248,32 @@ class PocEnv(ExecEnv):
         if self._runtime_lock_file is not None:
             return
 
-        lock_path = _recipe_runtime_lock_path()
-        lock_dir = os.path.dirname(lock_path)
-        os.makedirs(lock_dir, mode=0o700, exist_ok=True)
-        lock_dir_stat = os.stat(lock_dir)
-        if (
-            not stat.S_ISDIR(lock_dir_stat.st_mode)
-            or lock_dir_stat.st_uid != os.geteuid()
-            or lock_dir_stat.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
-        ):
-            raise RuntimeError(f"Refusing to use unsafe Recipe POC runtime lock directory {lock_dir}")
         flags = os.O_CREAT | os.O_RDWR
         if hasattr(os, "O_CLOEXEC"):
             flags |= os.O_CLOEXEC
         if hasattr(os, "O_NOFOLLOW"):
             flags |= os.O_NOFOLLOW
-        fd = os.open(lock_path, flags, 0o600)
+
+        fd = None
+        location_errors = []
+        for lock_path in _recipe_runtime_lock_paths():
+            try:
+                lock_dir = os.path.dirname(lock_path)
+                os.makedirs(lock_dir, mode=0o700, exist_ok=True)
+                lock_dir_stat = os.stat(lock_dir)
+                if (
+                    not stat.S_ISDIR(lock_dir_stat.st_mode)
+                    or lock_dir_stat.st_uid != os.geteuid()
+                    or lock_dir_stat.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
+                ):
+                    raise RuntimeError(f"Refusing to use unsafe Recipe POC runtime lock directory {lock_dir}")
+                fd = os.open(lock_path, flags, 0o600)
+                break
+            except (OSError, RuntimeError) as e:
+                location_errors.append(f"{lock_path}: {e}")
+        if fd is None:
+            raise RuntimeError("Could not use a secure Recipe POC runtime lock location: " + "; ".join(location_errors))
+
         try:
             lock_stat = os.fstat(fd)
             if not stat.S_ISREG(lock_stat.st_mode) or lock_stat.st_uid != os.geteuid():
@@ -260,6 +288,7 @@ class PocEnv(ExecEnv):
                         "Stop it before starting this deployment."
                     ) from e
                 raise
+            self._runtime_lock_path = lock_path
             lock_file = os.fdopen(fd, "r+")
             fd = None
             previous_workspace = lock_file.read().strip()
@@ -270,6 +299,7 @@ class PocEnv(ExecEnv):
                 )
             self._runtime_lock_file = lock_file
         except BaseException:
+            self._runtime_lock_path = None
             if fd is not None:
                 os.close(fd)
             else:
@@ -293,6 +323,7 @@ class PocEnv(ExecEnv):
         if lock_file is None:
             return
         self._runtime_lock_file = None
+        self._runtime_lock_path = None
         try:
             if clear_workspace:
                 lock_file.seek(0)
