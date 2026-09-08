@@ -23,7 +23,7 @@ from unittest.mock import patch
 
 import pytest
 
-from nvflare.recipe.poc_env import PocEnv, _recipe_runtime_lock_path
+from nvflare.recipe.poc_env import PocEnv, _recipe_runtime_lock_paths
 from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
 
 PROJECT_CONFIG = {"name": "poc"}
@@ -37,6 +37,7 @@ def _isolated_recipe_runtime_lock(tmp_path, monkeypatch):
 
     lock_path = str(tmp_path / "recipe-poc.lock")
     monkeypatch.setattr(poc_env_module, "_recipe_runtime_lock_path", lambda: lock_path)
+    monkeypatch.setattr(poc_env_module, "_recipe_runtime_lock_paths", lambda: [lock_path])
 
 
 def _configure_successful_deploy(monkeypatch, env, prepare=None, submit=None):
@@ -81,20 +82,29 @@ def test_recipe_runtime_lock_path_is_independent_of_process_configuration(tmp_pa
     monkeypatch.setenv("TMPDIR", str(tmp_path / "process-a"))
     monkeypatch.setenv("HOME", str(tmp_path / "home-a"))
     monkeypatch.setenv("NVFLARE_POC_WORKSPACE", str(tmp_path / "workspace-a"))
-    first_path = _recipe_runtime_lock_path()
+    first_path = _recipe_runtime_lock_paths()[0]
     monkeypatch.setenv("TMPDIR", str(tmp_path / "process-b"))
     monkeypatch.setenv("HOME", str(tmp_path / "home-b"))
     monkeypatch.setenv("NVFLARE_POC_WORKSPACE", str(tmp_path / "workspace-b"))
 
     assert first_path == expected
-    assert _recipe_runtime_lock_path() == expected
+    assert _recipe_runtime_lock_paths()[0] == expected
 
 
-def test_recipe_runtime_lock_path_uses_environment_home_without_passwd_entry(tmp_path, monkeypatch):
+def test_recipe_runtime_lock_paths_ignore_environment_home_without_passwd_entry(tmp_path, monkeypatch):
+    effective_uid = os.geteuid()
+    runtime_root = f"/run/user/{effective_uid}"
+    original_isdir = os.path.isdir
     monkeypatch.setattr(pwd, "getpwuid", lambda uid: (_ for _ in ()).throw(KeyError(uid)))
-    monkeypatch.setenv("HOME", str(tmp_path / "container-home"))
+    monkeypatch.setattr(os.path, "isdir", lambda path: path == runtime_root or original_isdir(path))
+    monkeypatch.setenv("HOME", str(tmp_path / "container-home-a"))
+    first_paths = _recipe_runtime_lock_paths()
+    monkeypatch.setenv("HOME", str(tmp_path / "container-home-b"))
+    second_paths = _recipe_runtime_lock_paths()
 
-    assert _recipe_runtime_lock_path() == str(tmp_path / "container-home" / ".nvflare" / "recipe-poc-runtime.lock")
+    assert first_paths == second_paths
+    assert os.path.join(runtime_root, "nvflare", "recipe-poc-runtime.lock") in first_paths
+    assert all(str(tmp_path / "container-home") not in path for path in first_paths)
 
 
 def test_runtime_lock_falls_back_when_preferred_home_is_not_writable(tmp_path, monkeypatch):

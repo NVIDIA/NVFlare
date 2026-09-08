@@ -57,24 +57,48 @@ _RECIPE_WORKSPACE_SUFFIX = ".recipe-"
 
 
 def _recipe_runtime_lock_path() -> str:
-    """Return the preferred runtime lock for the OS user."""
-    try:
-        user_home = pwd.getpwuid(os.geteuid()).pw_dir
-    except KeyError:
-        user_home = os.environ.get("HOME")
-    if not user_home:
-        raise RuntimeError("Could not determine a home directory for the Recipe POC runtime lock")
-    return os.path.join(user_home, ".nvflare", "recipe-poc-runtime.lock")
+    """Return the preferred environment-independent runtime lock."""
+    return _recipe_runtime_lock_paths()[0]
 
 
 def _recipe_runtime_lock_paths() -> list[str]:
-    """Return preferred and environment-home fallback lock paths."""
-    paths = [_recipe_runtime_lock_path()]
-    env_home = os.environ.get("HOME")
-    if env_home:
-        fallback = os.path.join(env_home, ".nvflare", "recipe-poc-runtime.lock")
-        if fallback not in paths:
-            paths.append(fallback)
+    """Return trusted runtime lock paths derived from the effective OS user."""
+    lock_dirs = []
+    try:
+        user_home = pwd.getpwuid(os.geteuid()).pw_dir
+    except KeyError:
+        pass
+    else:
+        if user_home:
+            lock_dirs.append(os.path.join(user_home, ".nvflare"))
+
+    effective_uid = os.geteuid()
+    for user_runtime_root in (f"/run/user/{effective_uid}", f"/var/run/user/{effective_uid}"):
+        if os.path.isdir(user_runtime_root):
+            lock_dirs.append(os.path.join(user_runtime_root, "nvflare"))
+
+    getconf = "/usr/bin/getconf"
+    if os.path.isfile(getconf):
+        try:
+            result = subprocess.run(
+                [getconf, "DARWIN_USER_TEMP_DIR"], capture_output=True, text=True, timeout=5, check=False
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+        else:
+            if result.returncode == 0 and result.stdout.strip():
+                lock_dirs.append(os.path.join(result.stdout.strip(), "nvflare"))
+
+    paths = []
+    for lock_dir in lock_dirs:
+        lock_path = os.path.join(os.path.realpath(lock_dir), "recipe-poc-runtime.lock")
+        if lock_path not in paths:
+            paths.append(lock_path)
+    if not paths:
+        raise RuntimeError(
+            "Could not determine a stable per-user Recipe POC runtime lock location; "
+            "configure an OS account home or user runtime directory"
+        )
     return paths
 
 
