@@ -15,6 +15,7 @@
 import errno
 import fcntl
 import os
+import pwd
 import shutil
 import stat
 import subprocess
@@ -56,8 +57,9 @@ _RECIPE_WORKSPACE_SUFFIX = ".recipe-"
 
 
 def _recipe_runtime_lock_path() -> str:
-    """Return the environment-independent, per-user host runtime lock."""
-    return os.path.join(os.path.realpath("/tmp"), f".nvflare-recipe-poc-{os.geteuid()}.lock")
+    """Return the environment-independent runtime lock for the OS user."""
+    user_home = pwd.getpwuid(os.geteuid()).pw_dir
+    return os.path.join(user_home, ".nvflare", "recipe-poc-runtime.lock")
 
 
 # Internal — not part of the public API
@@ -229,6 +231,15 @@ class PocEnv(ExecEnv):
             return
 
         lock_path = _recipe_runtime_lock_path()
+        lock_dir = os.path.dirname(lock_path)
+        os.makedirs(lock_dir, mode=0o700, exist_ok=True)
+        lock_dir_stat = os.stat(lock_dir)
+        if (
+            not stat.S_ISDIR(lock_dir_stat.st_mode)
+            or lock_dir_stat.st_uid != os.geteuid()
+            or lock_dir_stat.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
+        ):
+            raise RuntimeError(f"Refusing to use unsafe Recipe POC runtime lock directory {lock_dir}")
         flags = os.O_CREAT | os.O_RDWR
         if hasattr(os, "O_CLOEXEC"):
             flags |= os.O_CLOEXEC

@@ -479,6 +479,9 @@ workspace is never replaced by Recipe provisioning. A ``PocEnv`` owns one
 provisioning lifecycle and cannot be reused after provisioning begins; create a
 new instance for another deployment. Pass ``clean_up=False`` to
 ``Run.get_result()`` to retain the Recipe workspace for inspection.
+``Run.abort()`` aborts the job without stopping the environment, so executing
+again with that same ``PocEnv`` raises. Call ``Run.get_result()`` or
+``PocEnv.stop()``, then create a new environment for the next execution.
 File isolation does not isolate default ports or Docker participant names.
 ``PocEnv`` therefore permits only one Recipe-managed POC deployment per host
 for a user and refuses to start while the configured CLI POC deployment is

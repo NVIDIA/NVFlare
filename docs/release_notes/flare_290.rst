@@ -442,14 +442,6 @@ recipe framework:
   ``fedprox-tf`` manual pattern as a concrete recipe. TensorFlow clients
   can still combine a FedAvg recipe with ``TFFedProxLoss`` explicitly.
 
-- **``PocEnv`` instances are now one-shot.** After ``deploy()`` begins
-  provisioning, the same instance rejects later deployments even after
-  ``stop()``. This replaces the 2.8 auto-stop-and-redeploy behavior.
-  ``Run.abort()`` aborts the job without stopping its environment, so an
-  abort followed by another execution with the same ``PocEnv`` raises. Call
-  ``Run.get_result()`` or ``PocEnv.stop()``, then create a new ``PocEnv``
-  before executing another Recipe.
-
 **Streaming and Collaboration API** — narrower audience: sites moving
 large models, and early adopters of the Technical Preview Collaboration
 API:

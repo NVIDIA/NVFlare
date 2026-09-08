@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import os
+import pwd
 import subprocess
 import tempfile
 import threading
@@ -74,16 +75,33 @@ def test_poc_env_initialization():
 
 
 def test_recipe_runtime_lock_path_is_independent_of_process_configuration(tmp_path, monkeypatch):
-    expected = os.path.join(os.path.realpath("/tmp"), f".nvflare-recipe-poc-{os.geteuid()}.lock")
+    expected = os.path.join(pwd.getpwuid(os.geteuid()).pw_dir, ".nvflare", "recipe-poc-runtime.lock")
 
     monkeypatch.setenv("TMPDIR", str(tmp_path / "process-a"))
+    monkeypatch.setenv("HOME", str(tmp_path / "home-a"))
     monkeypatch.setenv("NVFLARE_POC_WORKSPACE", str(tmp_path / "workspace-a"))
     first_path = _recipe_runtime_lock_path()
     monkeypatch.setenv("TMPDIR", str(tmp_path / "process-b"))
+    monkeypatch.setenv("HOME", str(tmp_path / "home-b"))
     monkeypatch.setenv("NVFLARE_POC_WORKSPACE", str(tmp_path / "workspace-b"))
 
     assert first_path == expected
     assert _recipe_runtime_lock_path() == expected
+
+
+def test_runtime_lock_rejects_unsafe_lock_directory(tmp_path, monkeypatch):
+    import nvflare.recipe.poc_env as poc_env_module
+
+    unsafe_dir = tmp_path / "unsafe-lock-dir"
+    unsafe_dir.mkdir(mode=0o777)
+    unsafe_dir.chmod(0o777)
+    monkeypatch.setattr(poc_env_module, "_recipe_runtime_lock_path", lambda: str(unsafe_dir / "recipe.lock"))
+    env = PocEnv()
+
+    with pytest.raises(RuntimeError, match="unsafe Recipe POC runtime lock directory"):
+        env._acquire_runtime_lock()
+
+    assert env._runtime_lock_file is None
 
 
 def test_runtime_lock_rejects_unsafe_lock_file(tmp_path, monkeypatch):
