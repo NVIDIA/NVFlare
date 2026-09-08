@@ -67,11 +67,11 @@ class DFKDConfig:
 class ClassProportionProxyEstimator:
     """Estimate and freeze per-client class proportions from regular uploads.
 
-    Paper-aligned FedRevive probes each client's first two uploaded models with
-    Gaussian inputs, averages the temperature-scaled softmax predictions, and
-    then fixes that proxy.  The estimator owns one reusable model and only a
-    ten-value running sum plus count per logical client, so enabling it does
-    not turn the 1,000-client population into 1,000 resident models.
+    The estimator probes each client's first two uploaded models with Gaussian
+    inputs, averages the temperature-scaled softmax predictions, and then fixes
+    that estimate. It owns one reusable model and only a ten-value running sum
+    plus count per logical client, so enabling it does not turn the 1,000-client
+    population into 1,000 resident models.
     """
 
     def __init__(
@@ -414,9 +414,9 @@ class DFKDReviver:
             metrics = self._synthesize(teachers, distributions, self.student_model, current_version)
             metrics["synthesis_performed"] = True
         else:
-            # Paper-aligned T_gen=10 reuses the bounded synthetic pool between
-            # generator updates while still performing KD for every eligible
-            # client arrival.  No model snapshot is retained for this reuse.
+            # The periodic configuration reuses the bounded synthetic pool
+            # between generator updates while still performing KD for every
+            # eligible client arrival. No model snapshot is retained for reuse.
             metrics = {"synthesis_performed": False, "synthesis_time": 0.0}
         if current_version > self.config.warmup_versions:
             for parameter in self.student_model.parameters():

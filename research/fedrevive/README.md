@@ -20,38 +20,41 @@ FLARE CIFAR-10 examples.
 CIFAR-100, FEMNIST, 20NewsGroups, DD-FedRevive, and AFL-DW are outside this
 initial contribution.
 
-The default `continuous` mode uses each client's prepared class proportions and
-synthesizes on every eligible update. The optional `paper-aligned` mode instead
-implements the published proxy estimator and periodic generator schedule; the
-distinction is explicit in the CLI and saved results.
+Two configurations expose the class-proportion source and generator frequency
+as a coupled experiment setting. The default `true-histogram-frequent`
+configuration uses each client's prepared class proportions and synthesizes on
+every eligible update. The `estimated-histogram-periodic` configuration uses a
+server-side estimator and synthesizes every ten model versions. The selected
+configuration is explicit in the CLI and saved results.
 
-## FedRevive modes
+## FedRevive configurations
 
-Select the published method with `--fedrevive-mode paper-aligned`. For each
-logical client, the server probes only its first two ordinarily uploaded models
-with fresh i.i.d. Gaussian CIFAR-shaped inputs. It averages the resulting
-softmax vectors using the CIFAR-10 probe temperature $T_{probe}=0.8$, uses the
-first estimate as a running proxy until the second arrives, and then freezes
-the average. This adds no client computation, label histogram, or message
-field. The implementation discards the prepared manifest's oracle proportions
-from its server-side copy in this mode.
+Select the estimated configuration with
+`--fedrevive-config estimated-histogram-periodic`. For each logical client, the
+server probes only its first two ordinarily uploaded models with fresh i.i.d.
+Gaussian CIFAR-shaped inputs. It averages the resulting softmax vectors using
+the CIFAR-10 probe temperature $T_{probe}=0.8$, uses the first estimate as a
+running proxy until the second arrives, and then freezes the average. This adds
+no client computation, label histogram, or message field. The implementation
+discards the prepared manifest's true proportions from its server-side copy in
+this configuration.
 
 The paper does not report the number of Gaussian probe inputs. This
 implementation uses 64, matching its reported synthesis batch size. One
 reusable probing model serves all 1,000 logical clients; persistent estimator
 state is only one ten-element sum and one count per observed client.
 
-The two modes expose the following synthesis and class-proportion choices:
+The two configurations are:
 
-| Mode | Class proportions | Generator interval $T_{gen}$ |
+| Configuration | Class proportions | Generator interval $T_{gen}$ |
 |---|---|---:|
-| `continuous` (default) | Prepared true histogram | Every eligible update |
-| `paper-aligned` | First-two-upload server proxy | 10 server versions |
+| `true-histogram-frequent` (default) | Prepared true histogram | Every eligible update |
+| `estimated-histogram-periodic` | First-two-upload server estimate | 10 server versions |
 
 Both use $K_{synth}=2$, $K_{KD}=10$, and an eight-model teacher buffer
 ($c=8$). Distillation still occurs on every eligible stale arrival after
-warmup; between periodic synthesis steps, paper-aligned mode reuses the bounded
-synthetic pool.
+warmup; between periodic synthesis steps, the estimated-histogram configuration
+reuses the bounded synthetic pool.
 
 ## Unified scheduling and aggregation
 
@@ -151,10 +154,10 @@ $$
 $$
 
 DFKD starts after model version 50 when the accepted update has nonzero
-staleness. In default continuous mode, every such eligible update performs
-all four steps below. In paper-aligned mode, steps 1--3 occur only when the
-model version is divisible by $T_{gen}=10$, while step 4 still occurs per
-eligible update after the version-100 warmup:
+staleness. With `true-histogram-frequent`, every such eligible update performs
+all four steps below. With `estimated-histogram-periodic`, steps 1--3 occur only
+when the model version is divisible by $T_{gen}=10$, while step 4 still occurs
+per eligible update after the version-100 warmup:
 
 1. adapts a fast copy of the persistent generator for two synthesis steps;
 2. applies a Reptile update to the persistent generator;
@@ -180,7 +183,7 @@ All synthesis and KD work is server-side. No synthetic data is sent to clients.
 | Local iterations | 25 |
 | Teacher buffer | 8 models |
 | Synthesis batch / steps | 64 / 2 |
-| Generator interval | 10 versions in paper-aligned mode |
+| Generator interval | 1 or 10 versions, selected by FedRevive configuration |
 | Generator / latent learning rate | 0.003 / 0.001 |
 | KD batch / iterations / learning rate | 32 per teacher / 10 / $10^{-4}$ |
 | DFKD weights | adversarial 0.1, feature 0.003, one-hot 1.0 |
@@ -260,11 +263,11 @@ python job.py --method fedrevive \
   --max-time 200 --setup-seed 10 --run-seed 10
 ```
 
-To run the published proxy and periodic-synthesis formulation:
+To run with estimated class proportions and periodic synthesis:
 
 ```bash
 python job.py --method fedrevive \
-  --fedrevive-mode paper-aligned \
+  --fedrevive-config estimated-histogram-periodic \
   --data-root /tmp/cifar10 --prepared-data-root /tmp/fedrevive/cifar10 \
   --max-time 200 --setup-seed 10 --run-seed 10
 ```
@@ -286,9 +289,9 @@ python job.py --method fedrevive \
   --max-time 100 --setup-seed 10 --run-seed 10
 ```
 
-Add `--fedrevive-mode paper-aligned` to that command to combine the published
-class-proportion proxy and periodic generator schedule with the shifted delay
-schedule.
+Add `--fedrevive-config estimated-histogram-periodic` to the FedRevive command
+to combine estimated class proportions and periodic generation with the
+shifted delay schedule.
 
 A CUDA-capable GPU is recommended for both client training and FedRevive's
 server-side DFKD. Device selection defaults to `auto`; use `--client-device

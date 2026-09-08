@@ -33,11 +33,11 @@ class Method(str, Enum):
     FEDREVIVE = "fedrevive"
 
 
-class FedReviveMode(str, Enum):
-    """Select continuous synthesis or the periodic schedule from the paper."""
+class FedReviveConfig(str, Enum):
+    """Select the class-proportion source and generator frequency."""
 
-    CONTINUOUS = "continuous"
-    PAPER_ALIGNED = "paper-aligned"
+    TRUE_HISTOGRAM_FREQUENT = "true-histogram-frequent"
+    ESTIMATED_HISTOGRAM_PERIODIC = "estimated-histogram-periodic"
 
 
 @dataclass(frozen=True)
@@ -116,7 +116,7 @@ class TeacherBuffer:
     def update_class_proxy(self, client_name: str, class_proxy: torch.Tensor) -> None:
         """Apply a client's newest running proxy to its buffered teachers.
 
-        A paper-aligned proxy changes once, when the client's second upload is
+        An estimated proxy changes once, when the client's second upload is
         averaged with its first.  Teacher entries represent model snapshots,
         but their class weights are client-level state and should immediately
         see that finalized estimate even if an older model remains buffered.

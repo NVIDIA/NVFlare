@@ -33,7 +33,7 @@ for _variable in (
 
 from client import FedReviveClient
 from data import DELAY_SCHEDULES, load_manifest, prepare_cifar10
-from fedrevive import FIGURE_2_METHOD_CONFIGS, FedReviveMode, Method
+from fedrevive import FIGURE_2_METHOD_CONFIGS, FedReviveConfig, Method
 from server import FedReviveServer
 
 from nvflare.collab import CollabRecipe
@@ -71,10 +71,10 @@ def define_parser():
     )
     parser.add_argument("--server-lr", type=float, default=None)
     parser.add_argument(
-        "--fedrevive-mode",
-        choices=[mode.value for mode in FedReviveMode],
-        default=FedReviveMode.CONTINUOUS.value,
-        help="Use continuous synthesis or the proxy/T_gen settings in the published paper",
+        "--fedrevive-config",
+        choices=[config.value for config in FedReviveConfig],
+        default=FedReviveConfig.TRUE_HISTOGRAM_FREQUENT.value,
+        help="Select the class-proportion source and generator frequency",
     )
     parser.add_argument("--max-time", type=float, default=200.0, help="Simulated-time budget")
     parser.add_argument("--max-model-versions", type=int, default=50000)
@@ -141,8 +141,8 @@ def validate_args(args):
         )
     if args.max_parallel > args.num_clients:
         raise ValueError("--max-parallel must not exceed --num-clients")
-    if args.method != Method.FEDREVIVE.value and args.fedrevive_mode != FedReviveMode.CONTINUOUS.value:
-        raise ValueError("--fedrevive-mode paper-aligned is only valid with --method fedrevive")
+    if args.method != Method.FEDREVIVE.value and args.fedrevive_config != FedReviveConfig.TRUE_HISTOGRAM_FREQUENT.value:
+        raise ValueError("--fedrevive-config is only configurable with --method fedrevive")
 
 
 def make_recipe(args):
@@ -174,7 +174,7 @@ def make_recipe(args):
         setup_seed=args.setup_seed,
         run_seed=args.run_seed,
         max_model_versions=args.max_model_versions,
-        fedrevive_mode=args.fedrevive_mode,
+        fedrevive_config=args.fedrevive_config,
     )
     client = FedReviveClient(
         data_root=args.data_root,
@@ -245,7 +245,7 @@ def main():
     print(f"  In-time accumulation: {args.in_time}")
     print(f"  Simulated-time budget: {args.max_time}")
     print(f"  Delay schedule: {args.delay_schedule}")
-    print(f"  FedRevive mode: {args.fedrevive_mode}")
+    print(f"  FedRevive configuration: {args.fedrevive_config}")
     print("=" * 80)
     run = recipe.execute(SimEnv(num_clients=args.num_clients, workspace_root=args.workspace_root))
     print("Job Status:", run.get_status())
