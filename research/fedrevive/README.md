@@ -83,6 +83,16 @@ event fires. The server accepts completed calls in simulated upload order, so
 host scheduling does not change logical participation, model snapshots, or
 staleness.
 
+This workflow also illustrates the flexibility of CollabAPI. Nonblocking
+`collab.get_clients(...).train(...)` calls let the server express logical
+scheduling, result ordering, and algorithm state directly in Python, while
+`@collab.publish` exposes the corresponding client operation. The same behavior
+can be implemented with FLARE's lower-level `Controller` and `Executor` APIs,
+but doing so requires explicit `Task` and `Shareable` construction, callback
+and result correlation, and additional lifecycle bookkeeping. The resource
+controls below remain application logic rather than automatic CollabAPI
+behavior.
+
 ### Resource controls
 
 Replaying a deterministic logical arrival sequence creates a resource-control
