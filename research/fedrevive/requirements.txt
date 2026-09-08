@@ -1,0 +1,5 @@
+kornia
+numpy
+tensorboard
+torch
+torchvision
