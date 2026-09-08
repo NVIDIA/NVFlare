@@ -266,7 +266,6 @@ class DFKDReviver:
             self.generator.parameters(),
             lr=self.config.generator_lr,
             betas=(0.5, 0.999),
-            eps=0,
         )
         self.pool = SyntheticPool(self.config.max_images, output_dir=output_dir)
         self.teacher_models = [create_model().to(device) for _ in range(self.config.teacher_buffer_size)]

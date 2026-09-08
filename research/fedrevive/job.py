@@ -29,7 +29,7 @@ for _variable in (
     "OPENBLAS_NUM_THREADS",
     "NUMEXPR_NUM_THREADS",
 ):
-    os.environ[_variable] = "1"
+    os.environ.setdefault(_variable, "1")
 
 from client import FedReviveClient
 from data import DELAY_SCHEDULES, load_manifest, prepare_cifar10
