@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import os
-import pwd
 import subprocess
 import tempfile
 import threading
@@ -23,7 +22,7 @@ from unittest.mock import patch
 
 import pytest
 
-from nvflare.recipe.poc_env import PocEnv, _recipe_runtime_lock_paths
+from nvflare.recipe.poc_env import PocEnv, _host_user_runtime_dir, _recipe_runtime_lock_path
 from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
 
 PROJECT_CONFIG = {"name": "poc"}
@@ -37,7 +36,6 @@ def _isolated_recipe_runtime_lock(tmp_path, monkeypatch):
 
     lock_path = str(tmp_path / "recipe-poc.lock")
     monkeypatch.setattr(poc_env_module, "_recipe_runtime_lock_path", lambda: lock_path)
-    monkeypatch.setattr(poc_env_module, "_recipe_runtime_lock_paths", lambda: [lock_path])
 
 
 def _configure_successful_deploy(monkeypatch, env, prepare=None, submit=None):
@@ -77,65 +75,109 @@ def test_poc_env_initialization():
 
 
 def test_recipe_runtime_lock_path_is_independent_of_process_configuration(tmp_path, monkeypatch):
-    expected = os.path.join(pwd.getpwuid(os.geteuid()).pw_dir, ".nvflare", "recipe-poc-runtime.lock")
+    import nvflare.recipe.poc_env as poc_env_module
+
+    runtime_root = str(tmp_path / "host-runtime")
+    expected = os.path.join(runtime_root, "nvflare-recipe-poc", "runtime.lock")
+    monkeypatch.setattr(poc_env_module, "_host_user_runtime_dir", lambda: runtime_root)
 
     monkeypatch.setenv("TMPDIR", str(tmp_path / "process-a"))
     monkeypatch.setenv("HOME", str(tmp_path / "home-a"))
     monkeypatch.setenv("NVFLARE_POC_WORKSPACE", str(tmp_path / "workspace-a"))
-    first_path = _recipe_runtime_lock_paths()[0]
+    first_path = _recipe_runtime_lock_path()
     monkeypatch.setenv("TMPDIR", str(tmp_path / "process-b"))
     monkeypatch.setenv("HOME", str(tmp_path / "home-b"))
     monkeypatch.setenv("NVFLARE_POC_WORKSPACE", str(tmp_path / "workspace-b"))
 
     assert first_path == expected
-    assert _recipe_runtime_lock_paths()[0] == expected
+    assert _recipe_runtime_lock_path() == expected
 
 
-def test_recipe_runtime_lock_paths_ignore_environment_home_without_passwd_entry(tmp_path, monkeypatch):
-    effective_uid = os.geteuid()
-    runtime_root = f"/run/user/{effective_uid}"
-    original_isdir = os.path.isdir
-    monkeypatch.setattr(pwd, "getpwuid", lambda uid: (_ for _ in ()).throw(KeyError(uid)))
-    monkeypatch.setattr(os.path, "isdir", lambda path: path == runtime_root or original_isdir(path))
-    monkeypatch.setenv("HOME", str(tmp_path / "container-home-a"))
-    first_paths = _recipe_runtime_lock_paths()
-    monkeypatch.setenv("HOME", str(tmp_path / "container-home-b"))
-    second_paths = _recipe_runtime_lock_paths()
-
-    assert first_paths == second_paths
-    assert os.path.join(runtime_root, "nvflare", "recipe-poc-runtime.lock") in first_paths
-    assert all(str(tmp_path / "container-home") not in path for path in first_paths)
-
-
-def test_runtime_lock_falls_back_when_preferred_home_is_not_writable(tmp_path, monkeypatch):
+def test_host_user_runtime_dir_is_uid_based_and_ignores_process_environment(tmp_path, monkeypatch):
     import nvflare.recipe.poc_env as poc_env_module
 
-    preferred = str(tmp_path / "read-only-home" / ".nvflare" / "recipe-poc-runtime.lock")
-    fallback = str(tmp_path / "writable-home" / ".nvflare" / "recipe-poc-runtime.lock")
-    monkeypatch.setattr(poc_env_module, "_recipe_runtime_lock_paths", lambda: [preferred, fallback])
-    original_open = os.open
+    effective_uid = os.geteuid()
+    shared_root = tmp_path / "tmp"
+    shared_root.mkdir(mode=0o1777)
+    shared_root.chmod(0o1777)
+    monkeypatch.setattr(poc_env_module, "_SHARED_RUNTIME_ROOT", str(shared_root))
+    monkeypatch.setenv("TMPDIR", str(tmp_path / "process-a"))
+    monkeypatch.setenv("HOME", str(tmp_path / "home-a"))
+    monkeypatch.setenv("NVFLARE_POC_WORKSPACE", str(tmp_path / "workspace-a"))
+    first_path = _host_user_runtime_dir()
+    monkeypatch.setenv("TMPDIR", str(tmp_path / "process-b"))
+    monkeypatch.setenv("HOME", str(tmp_path / "home-b"))
+    monkeypatch.setenv("NVFLARE_POC_WORKSPACE", str(tmp_path / "workspace-b"))
+    second_path = _host_user_runtime_dir()
 
-    def open_lock(path, flags, mode=0o777):
-        if path == preferred:
-            raise PermissionError("preferred home is read-only")
-        return original_open(path, flags, mode)
+    assert first_path == second_path
+    assert Path(first_path).parent == shared_root
+    assert Path(first_path).name.startswith(f".nvflare-recipe-poc-{effective_uid}-")
 
-    monkeypatch.setattr(poc_env_module.os, "open", open_lock)
+
+def test_host_user_runtime_dir_bootstraps_private_uid_directory_without_os_runtime(tmp_path, monkeypatch):
+    import nvflare.recipe.poc_env as poc_env_module
+
+    effective_uid = os.geteuid()
+    home = tmp_path / "writable-home"
+    home.mkdir(mode=0o700)
+    shared_root = tmp_path / "tmp"
+    shared_root.mkdir(mode=0o1777)
+    shared_root.chmod(0o1777)
+    symlink_target = tmp_path / "attacker-target"
+    symlink_target.mkdir()
+    attacker_path = shared_root / f".nvflare-recipe-poc-{effective_uid}-precreated"
+    attacker_path.symlink_to(symlink_target, target_is_directory=True)
+    attacker_file = shared_root / f".nvflare-recipe-poc-{effective_uid}-precreated-file"
+    attacker_file.write_text("not a runtime directory")
+    monkeypatch.setattr(poc_env_module, "_SHARED_RUNTIME_ROOT", str(shared_root))
+    monkeypatch.setenv("HOME", str(home))
+    first_path = _host_user_runtime_dir()
+    monkeypatch.setenv("HOME", str(tmp_path / "different-home"))
+    second_path = _host_user_runtime_dir()
+
+    assert first_path == second_path
+    assert Path(first_path).parent == shared_root
+    assert Path(first_path).name.startswith(f".nvflare-recipe-poc-{effective_uid}-")
+    assert Path(first_path) != attacker_path
+    assert Path(first_path) != attacker_file
+    assert Path(first_path).stat().st_mode & 0o777 == 0o700
+
+
+def test_host_user_runtime_dir_rejects_nonsticky_shared_root(tmp_path, monkeypatch):
+    import nvflare.recipe.poc_env as poc_env_module
+
+    shared_root = tmp_path / "unsafe-tmp"
+    shared_root.mkdir(mode=0o777)
+    shared_root.chmod(0o777)
+    monkeypatch.setattr(poc_env_module, "_SHARED_RUNTIME_ROOT", str(shared_root))
+
+    with pytest.raises(RuntimeError, match="Refusing to bootstrap"):
+        _host_user_runtime_dir()
+
+
+def test_runtime_lock_normalizes_owned_lock_directory(tmp_path, monkeypatch):
+    import nvflare.recipe.poc_env as poc_env_module
+
+    lock_dir = tmp_path / "nvflare-recipe-poc"
+    lock_dir.mkdir(mode=0o775)
+    lock_dir.chmod(0o775)
+    monkeypatch.setattr(poc_env_module, "_recipe_runtime_lock_path", lambda: str(lock_dir / "runtime.lock"))
     env = PocEnv()
-
     env._acquire_runtime_lock()
 
-    assert env._runtime_lock_path == fallback
+    assert lock_dir.stat().st_mode & 0o777 == 0o700
     env._release_runtime_lock()
 
 
 def test_runtime_lock_rejects_unsafe_lock_directory(tmp_path, monkeypatch):
     import nvflare.recipe.poc_env as poc_env_module
 
-    unsafe_dir = tmp_path / "unsafe-lock-dir"
-    unsafe_dir.mkdir(mode=0o777)
-    unsafe_dir.chmod(0o777)
-    monkeypatch.setattr(poc_env_module, "_recipe_runtime_lock_paths", lambda: [str(unsafe_dir / "recipe.lock")])
+    target_dir = tmp_path / "target-lock-dir"
+    target_dir.mkdir()
+    unsafe_dir = tmp_path / "symlinked-lock-dir"
+    unsafe_dir.symlink_to(target_dir, target_is_directory=True)
+    monkeypatch.setattr(poc_env_module, "_recipe_runtime_lock_path", lambda: str(unsafe_dir / "runtime.lock"))
     env = PocEnv()
 
     with pytest.raises(RuntimeError, match="unsafe Recipe POC runtime lock directory"):
@@ -180,6 +222,62 @@ def test_runtime_workspace_record_requires_lock():
         env._record_runtime_workspace()
 
 
+def test_deploy_records_workspace_after_provisioning_and_before_start(tmp_path, monkeypatch):
+    import nvflare.recipe.poc_env as poc_env_module
+
+    configured_workspace = tmp_path / "poc"
+    monkeypatch.setattr(poc_env_module, "get_poc_workspace", lambda: str(configured_workspace))
+    env = PocEnv()
+    lock_path = Path(poc_env_module._recipe_runtime_lock_path())
+    observed_records = {}
+
+    def prepare(**kwargs):
+        observed_records["during_provisioning"] = lock_path.read_text()
+        Path(kwargs["workspace"]).mkdir(parents=True)
+
+    _configure_successful_deploy(monkeypatch, env, prepare=prepare)
+
+    def start(**kwargs):
+        observed_records["at_start"] = lock_path.read_text()
+
+    monkeypatch.setattr(poc_env_module, "_start_poc", start)
+
+    assert env.deploy(object()) == "job-id"
+    assert observed_records == {
+        "during_provisioning": "",
+        "at_start": os.path.abspath(env.poc_workspace),
+    }
+    env.stop(clean_up=False)
+
+
+def test_stop_clears_runtime_record_before_removing_workspace(tmp_path, monkeypatch):
+    import nvflare.recipe.poc_env as poc_env_module
+
+    configured_workspace = tmp_path / "poc"
+    monkeypatch.setattr(poc_env_module, "get_poc_workspace", lambda: str(configured_workspace))
+    env = PocEnv()
+    _configure_successful_deploy(monkeypatch, env)
+    assert env.deploy(object()) == "job-id"
+    monkeypatch.setattr(env, "_check_poc_running", lambda: True)
+    monkeypatch.setattr(env, "_running_services", lambda *args, **kwargs: [])
+    monkeypatch.setattr(poc_env_module, "is_poc_running", lambda *args, **kwargs: True)
+    monkeypatch.setattr(poc_env_module, "_stop_poc", lambda **kwargs: None)
+    lock_path = Path(poc_env_module._recipe_runtime_lock_path())
+    original_remove = env._remove_recipe_workspace
+    record_at_removal = []
+
+    def remove_workspace():
+        record_at_removal.append(lock_path.read_text())
+        original_remove()
+
+    monkeypatch.setattr(env, "_remove_recipe_workspace", remove_workspace)
+
+    env.stop(clean_up=True)
+
+    assert record_at_removal == [""]
+    assert not os.path.exists(env.poc_workspace)
+
+
 def test_deploy_rejects_services_left_by_prior_recipe_process(tmp_path, monkeypatch):
     import nvflare.recipe.poc_env as poc_env_module
 
@@ -219,6 +317,7 @@ def test_deploy_rejects_services_left_by_prior_recipe_process(tmp_path, monkeypa
     active_workspaces.clear()
 
     def prepare(**kwargs):
+        assert lock_path.read_text() == ""
         provisioned_workspaces.append(kwargs["workspace"])
         Path(kwargs["workspace"]).mkdir(parents=True)
 
@@ -487,13 +586,14 @@ def test_deploy_rejects_running_configured_cli_workspace(tmp_path, monkeypatch):
     assert env._runtime_lock_file is None
 
 
-def test_deploy_rejects_another_active_recipe_environment(tmp_path, monkeypatch):
+def test_deploy_rejects_active_recipe_environment_with_different_workspace_root(tmp_path, monkeypatch):
     import nvflare.recipe.poc_env as poc_env_module
 
-    configured_workspace = tmp_path / "poc"
-    monkeypatch.setattr(poc_env_module, "get_poc_workspace", lambda: str(configured_workspace))
+    configured_workspaces = iter((tmp_path / "poc-a", tmp_path / "poc-b"))
+    monkeypatch.setattr(poc_env_module, "get_poc_workspace", lambda: str(next(configured_workspaces)))
     first = PocEnv()
     second = PocEnv()
+    assert first._poc_workspace_root != second._poc_workspace_root
     provisioned_workspaces = []
 
     def prepare(**kwargs):

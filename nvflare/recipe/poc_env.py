@@ -15,10 +15,10 @@
 import errno
 import fcntl
 import os
-import pwd
 import shutil
 import stat
 import subprocess
+import tempfile
 import threading
 import time
 import uuid
@@ -54,52 +54,81 @@ POC_READY_POLL_INTERVAL = 0.2
 POC_READY_STABLE_INTERVAL = 2.0
 DEFAULT_ADMIN_USER = "admin@nvidia.com"
 _RECIPE_WORKSPACE_SUFFIX = ".recipe-"
+_RECIPE_RUNTIME_LOCK_DIR = "nvflare-recipe-poc"
+_RECIPE_RUNTIME_LOCK_FILE = "runtime.lock"
+_SHARED_RUNTIME_ROOT = "/tmp"
+
+
+def _private_temp_runtime_dir(effective_uid: int) -> str:
+    """Bootstrap a stable private UID directory below the host-local /tmp."""
+    shared_root = os.path.realpath(_SHARED_RUNTIME_ROOT)
+    root_flags = os.O_RDONLY
+    if hasattr(os, "O_CLOEXEC"):
+        root_flags |= os.O_CLOEXEC
+    if hasattr(os, "O_DIRECTORY"):
+        root_flags |= os.O_DIRECTORY
+    if hasattr(os, "O_NOFOLLOW"):
+        root_flags |= os.O_NOFOLLOW
+
+    try:
+        root_fd = os.open(shared_root, root_flags)
+    except OSError as e:
+        raise RuntimeError(f"Could not open shared host runtime directory {shared_root}: {e}") from e
+    root_locked = False
+    try:
+        root_stat = os.fstat(root_fd)
+        writable_by_others = root_stat.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
+        if (
+            not stat.S_ISDIR(root_stat.st_mode)
+            or root_stat.st_uid not in (0, effective_uid)
+            or (writable_by_others and not root_stat.st_mode & stat.S_ISVTX)
+        ):
+            raise RuntimeError(f"Refusing to bootstrap a Recipe POC runtime directory below {shared_root}")
+
+        # Serialize discovery and creation by locking the shared directory
+        # inode. Unlike a predictable file in /tmp, another user cannot
+        # pre-create or replace this inode to cause a persistent denial of
+        # service. The lock is held only for this short bootstrap operation.
+        fcntl.flock(root_fd, fcntl.LOCK_EX)
+        root_locked = True
+        prefix = f".nvflare-recipe-poc-{effective_uid}-"
+        private_dirs = []
+        with os.scandir(shared_root) as entries:
+            for entry in entries:
+                if not entry.name.startswith(prefix):
+                    continue
+                try:
+                    entry_stat = entry.stat(follow_symlinks=False)
+                except OSError:
+                    continue
+                if (
+                    stat.S_ISDIR(entry_stat.st_mode)
+                    and entry_stat.st_uid == effective_uid
+                    and not entry_stat.st_mode & (stat.S_IRWXG | stat.S_IRWXO)
+                ):
+                    private_dirs.append(entry.path)
+        if private_dirs:
+            return os.path.realpath(min(private_dirs))
+
+        private_dir = tempfile.mkdtemp(prefix=prefix, dir=shared_root)
+        os.chmod(private_dir, 0o700)
+        return os.path.realpath(private_dir)
+    finally:
+        try:
+            if root_locked:
+                fcntl.flock(root_fd, fcntl.LOCK_UN)
+        finally:
+            os.close(root_fd)
+
+
+def _host_user_runtime_dir() -> str:
+    """Return one canonical host-local runtime directory for the effective UID."""
+    return _private_temp_runtime_dir(os.geteuid())
 
 
 def _recipe_runtime_lock_path() -> str:
-    """Return the preferred environment-independent runtime lock."""
-    return _recipe_runtime_lock_paths()[0]
-
-
-def _recipe_runtime_lock_paths() -> list[str]:
-    """Return trusted runtime lock paths derived from the effective OS user."""
-    lock_dirs = []
-    try:
-        user_home = pwd.getpwuid(os.geteuid()).pw_dir
-    except KeyError:
-        pass
-    else:
-        if user_home:
-            lock_dirs.append(os.path.join(user_home, ".nvflare"))
-
-    effective_uid = os.geteuid()
-    for user_runtime_root in (f"/run/user/{effective_uid}", f"/var/run/user/{effective_uid}"):
-        if os.path.isdir(user_runtime_root):
-            lock_dirs.append(os.path.join(user_runtime_root, "nvflare"))
-
-    getconf = "/usr/bin/getconf"
-    if os.path.isfile(getconf):
-        try:
-            result = subprocess.run(
-                [getconf, "DARWIN_USER_TEMP_DIR"], capture_output=True, text=True, timeout=5, check=False
-            )
-        except (OSError, subprocess.TimeoutExpired):
-            pass
-        else:
-            if result.returncode == 0 and result.stdout.strip():
-                lock_dirs.append(os.path.join(result.stdout.strip(), "nvflare"))
-
-    paths = []
-    for lock_dir in lock_dirs:
-        lock_path = os.path.join(os.path.realpath(lock_dir), "recipe-poc-runtime.lock")
-        if lock_path not in paths:
-            paths.append(lock_path)
-    if not paths:
-        raise RuntimeError(
-            "Could not determine a stable per-user Recipe POC runtime lock location; "
-            "configure an OS account home or user runtime directory"
-        )
-    return paths
+    """Return the canonical host-local lock for the effective OS user."""
+    return os.path.join(_host_user_runtime_dir(), _RECIPE_RUNTIME_LOCK_DIR, _RECIPE_RUNTIME_LOCK_FILE)
 
 
 # Internal — not part of the public API
@@ -278,25 +307,27 @@ class PocEnv(ExecEnv):
         if hasattr(os, "O_NOFOLLOW"):
             flags |= os.O_NOFOLLOW
 
-        fd = None
-        location_errors = []
-        for lock_path in _recipe_runtime_lock_paths():
-            try:
-                lock_dir = os.path.dirname(lock_path)
-                os.makedirs(lock_dir, mode=0o700, exist_ok=True)
-                lock_dir_stat = os.stat(lock_dir)
-                if (
-                    not stat.S_ISDIR(lock_dir_stat.st_mode)
-                    or lock_dir_stat.st_uid != os.geteuid()
-                    or lock_dir_stat.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
-                ):
-                    raise RuntimeError(f"Refusing to use unsafe Recipe POC runtime lock directory {lock_dir}")
-                fd = os.open(lock_path, flags, 0o600)
-                break
-            except (OSError, RuntimeError) as e:
-                location_errors.append(f"{lock_path}: {e}")
-        if fd is None:
-            raise RuntimeError("Could not use a secure Recipe POC runtime lock location: " + "; ".join(location_errors))
+        lock_path = _recipe_runtime_lock_path()
+        lock_dir = os.path.dirname(lock_path)
+        try:
+            os.makedirs(lock_dir, mode=0o700, exist_ok=True)
+            lock_dir_stat = os.lstat(lock_dir)
+            if not stat.S_ISDIR(lock_dir_stat.st_mode) or lock_dir_stat.st_uid != os.geteuid():
+                raise RuntimeError(f"Refusing to use unsafe Recipe POC runtime lock directory {lock_dir}")
+            # A pre-existing owner-controlled directory may have been created
+            # under a permissive umask. Normalize this dedicated directory,
+            # then verify it again before opening the lock file.
+            os.chmod(lock_dir, 0o700)
+            lock_dir_stat = os.lstat(lock_dir)
+            if (
+                not stat.S_ISDIR(lock_dir_stat.st_mode)
+                or lock_dir_stat.st_uid != os.geteuid()
+                or lock_dir_stat.st_mode & (stat.S_IRWXG | stat.S_IRWXO)
+            ):
+                raise RuntimeError(f"Refusing to use unsafe Recipe POC runtime lock directory {lock_dir}")
+            fd = os.open(lock_path, flags, 0o600)
+        except (OSError, RuntimeError) as e:
+            raise RuntimeError(f"Could not use secure Recipe POC runtime lock {lock_path}: {e}") from e
 
         try:
             lock_stat = os.fstat(fd)
@@ -321,6 +352,8 @@ class PocEnv(ExecEnv):
                     f"A prior Recipe PocEnv deployment is still active at {previous_workspace}. "
                     "Stop its services and remove the workspace manually before starting another deployment."
                 )
+            if previous_workspace:
+                self._write_runtime_workspace(lock_file, "")
             self._runtime_lock_file = lock_file
         except BaseException:
             self._runtime_lock_path = None
@@ -330,16 +363,21 @@ class PocEnv(ExecEnv):
                 lock_file.close()
             raise
 
+    @staticmethod
+    def _write_runtime_workspace(lock_file, workspace: str) -> None:
+        """Durably replace the workspace stored in an acquired runtime lock."""
+        lock_file.seek(0)
+        lock_file.truncate()
+        lock_file.write(workspace)
+        lock_file.flush()
+        os.fsync(lock_file.fileno())
+
     def _record_runtime_workspace(self) -> None:
-        """Durably record the workspace whose services own the runtime slot."""
+        """Durably record the workspace whose services may own the runtime slot."""
         lock_file = self._runtime_lock_file
         if lock_file is None:
             raise RuntimeError("Recipe POC runtime lock is not held")
-        lock_file.seek(0)
-        lock_file.truncate()
-        lock_file.write(os.path.abspath(self.poc_workspace))
-        lock_file.flush()
-        os.fsync(lock_file.fileno())
+        self._write_runtime_workspace(lock_file, os.path.abspath(self.poc_workspace))
 
     def _release_runtime_lock(self, clear_workspace: bool = False) -> None:
         """Release this environment's Recipe POC runtime slot, if held."""
@@ -350,10 +388,7 @@ class PocEnv(ExecEnv):
         self._runtime_lock_path = None
         try:
             if clear_workspace:
-                lock_file.seek(0)
-                lock_file.truncate()
-                lock_file.flush()
-                os.fsync(lock_file.fileno())
+                self._write_runtime_workspace(lock_file, "")
             fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
         finally:
             lock_file.close()
@@ -475,7 +510,6 @@ class PocEnv(ExecEnv):
                     f"The configured CLI POC deployment is running at {self._poc_workspace_root}. "
                     "Stop it with 'nvflare poc stop' before starting a Recipe PocEnv deployment."
                 )
-            self._record_runtime_workspace()
         except BaseException:
             self._release_runtime_lock()
             raise
@@ -493,6 +527,11 @@ class PocEnv(ExecEnv):
                 project_conf_path=self.project_conf_path,
                 examples_dir=None,
             )
+            # Provisioning only creates files. Record the workspace after it
+            # succeeds but before startup can leave services behind, avoiding
+            # a stale missing-workspace record if the process exits during
+            # provisioning.
+            self._record_runtime_workspace()
             # Startup can leave some services running even if it raises. From
             # this point onward, missing service metadata is an unknown state
             # and cleanup must preserve both the workspace and runtime lock.
@@ -558,15 +597,19 @@ class PocEnv(ExecEnv):
         # Check if already stopped (idempotent)
         if not self._check_poc_running():
             # POC already stopped or workspace doesn't exist
+            self._session_manager = None  # Clear stale session manager
+            self._services_may_have_started = False
+            # Once no service can still use this workspace, clear its durable
+            # record and release the runtime slot before removing files. A
+            # process exit during deletion can then leave only an inert,
+            # uniquely named directory rather than a blocking stale record.
+            self._release_runtime_lock(clear_workspace=True)
             if clean_up and os.path.exists(self.poc_workspace):
                 self.logger.info(f"Removing POC workspace: {self.poc_workspace}")
                 try:
                     self._remove_recipe_workspace()
                 except Exception as e:
                     self.logger.warning(f"Failed to clean POC workspace {self.poc_workspace}: {e}. Remove it manually.")
-            self._session_manager = None  # Clear stale session manager
-            self._services_may_have_started = False
-            self._release_runtime_lock(clear_workspace=True)
             return
 
         try:
@@ -603,8 +646,8 @@ class PocEnv(ExecEnv):
                 time.sleep(1)
                 count += 1
 
-            if clean_up:
-                if poc_running:
+            if poc_running:
+                if clean_up:
                     reason = (
                         f"service state could not be verified ({poc_state_error})"
                         if poc_state_error
@@ -614,16 +657,16 @@ class PocEnv(ExecEnv):
                         f"POC {reason}; preserving workspace {self.poc_workspace}. "
                         "Stop any remaining services and remove it manually."
                     )
-                else:
+            else:
+                self._services_may_have_started = False
+                self._release_runtime_lock(clear_workspace=True)
+                if clean_up:
                     try:
                         self._remove_recipe_workspace()
                     except Exception as e:
                         self.logger.warning(
                             f"Failed to clean POC workspace {self.poc_workspace}: {e}. Remove it manually."
                         )
-            if not poc_running:
-                self._services_may_have_started = False
-                self._release_runtime_lock(clear_workspace=True)
         except Exception as e:
             self.logger.warning(f"Failed to stop and clean existing POC: {e}")
         finally:
