@@ -17,9 +17,7 @@ Supported execution modes are:
 - multi-node client jobs as launcher-owned node groups, bare or containerized;
 - trusted bare multi-node jobs with application-owned fan-out.
 
-The deployment targets one Slurm cluster, with scheduler routing controlled by trusted site policy. The internal
-worker-to-parent TCP connection uses mTLS by default. `job_launcher.internal_connection_security: clear` is an
-explicit insecure opt-out for a trusted, isolated site network.
+The deployment targets one Slurm cluster, with scheduler routing controlled by trusted site policy.
 
 ## Main components
 
@@ -40,6 +38,26 @@ requested, whether it was a user abort, the pending timer, accounting miss count
 the client or server framework calls
 `JobHandle.wait()` once in a background thread. For Slurm, `wait()` polls the scheduler and accounting until the
 allocation is terminal, cleans the job artifacts, and returns control to normal NVFlare completion handling.
+
+## Worker-to-parent transport
+
+The default internal worker-to-parent transport is TCP with mTLS.
+`job_launcher.internal_connection_security: clear` is an explicit insecure opt-out for a trusted, isolated site
+network.
+
+When compute nodes cannot reach the client parent over TCP but share a protected POSIX-coherent filesystem, the site
+can instead use the `shared-file` transport. `backbone.connect_generation: 1` routes job traffic through the client
+parent, and `internal.resources.root_dir` must be an absolute path visible at the same path on the parent and all
+compute nodes. Shared-file transport provides no encryption; filesystem ownership and permissions are its access
+control boundary.
+
+Bare workers access the shared filesystem directly. For Apptainer and Pyxis, the launcher bind-mounts the transport
+root read-write at the same absolute path. A containerized client job configured with
+`client_api_attach.scheme: shared-file` receives the same kind of mount for its Attach `root_dir`. This is a separate
+CJ-to-trainer channel, not the worker-to-parent channel. Bare client jobs and network Attach do not add this mount.
+
+See [Shared-File Worker Channel](../user_guide/admin_guide/deployment/slurm_job_launcher.rst#shared-file-worker-channel)
+for configuration, permission, and tuning details.
 
 ## Deployment and workspace
 

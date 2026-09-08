@@ -40,7 +40,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 
-from nvflare.collab import CollabRecipe, collab, simple_logging
+from nvflare.collab import CollabRecipe, collab
 from nvflare.recipe import SimEnv
 
 
@@ -136,7 +136,6 @@ def main():
     parser.add_argument("--num-clients", type=int, default=2)
     parser.add_argument("--num-rounds", type=int, default=3)
     args = parser.parse_args()
-    simple_logging()
     recipe = make_recipe(args)
     run = recipe.execute(make_env(recipe))
     print("Job Status:", run.get_status())

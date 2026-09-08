@@ -31,7 +31,7 @@ import torch.optim as optim
 from torch.utils.data import default_collate
 from torchvision import datasets, transforms
 
-from nvflare.collab import CollabRecipe, collab, simple_logging
+from nvflare.collab import CollabRecipe, collab
 from nvflare.recipe import SimEnv
 
 BATCH_SIZE = 64
@@ -118,7 +118,6 @@ def make_recipe():
 
 
 def main():
-    simple_logging()
     run = make_recipe().execute(SimEnv(num_clients=1))
     print("Job Status:", run.get_status())
     print("Results at:", run.get_result())

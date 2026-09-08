@@ -42,11 +42,11 @@ class FedProxRecipe(FedAvgRecipe):
         min_clients: Minimum number of clients required to start a training round.
         num_rounds: Number of federated training rounds. Defaults to 2.
         train_script: Client training script path.
-        train_args: Command-line arguments passed to the client training script.
+        train_args: Command-line arguments passed to the client training script as a string or pre-tokenized argv.
         aggregator: Optional custom model aggregator.
         aggregator_data_kind: Data kind accepted by the aggregator.
         launch_external_process: Whether to launch the client script externally.
-        command: Command prepended to the script for external launches.
+        command: Command prepended to the script for external launches as a string or pre-tokenized argv.
         server_expected_format: Parameter format expected by the server.
         params_transfer_type: Full-model or model-difference transfer.
         model_persistor: Optional custom model persistor.
@@ -81,11 +81,11 @@ class FedProxRecipe(FedAvgRecipe):
         min_clients: int,
         num_rounds: int = 2,
         train_script: str,
-        train_args: str = "",
+        train_args: Union[str, list[str]] = "",
         aggregator: Optional[Aggregator] = None,
         aggregator_data_kind: Optional[DataKind] = DataKind.WEIGHTS,
         launch_external_process: bool = False,
-        command: str = "python3 -u",
+        command: Union[str, list[str]] = "python3 -u",
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
         model_persistor: Optional[ModelPersistor] = None,
