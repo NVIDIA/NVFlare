@@ -127,13 +127,13 @@ The step-ca template must map an exact, allowlisted IdP role to one
 `(organization, FLARE role)` pair. Organization and role must not be accepted as
 independent user-controlled claims.
 
-Example mappings for one project and organization:
+Example mappings for project `demo` and organization `hospital-a`:
 
 ```text
-nvflare-demo-example-project_admin -> (example, project_admin)
-nvflare-demo-example-org_admin     -> (example, org_admin)
-nvflare-demo-example-lead          -> (example, lead)
-nvflare-demo-example-member        -> (example, member)
+nvflare-demo-hospital-a-project_admin -> (hospital-a, project_admin)
+nvflare-demo-hospital-a-org_admin     -> (hospital-a, org_admin)
+nvflare-demo-hospital-a-lead          -> (hospital-a, lead)
+nvflare-demo-hospital-a-member        -> (hospital-a, member)
 ```
 
 When several mapped roles for the same organization are present, the template

@@ -529,12 +529,12 @@ authorization will be added separately.
 
 The certificate provider must map authenticated IdP claims to one allowed
 ``(organization, role)`` pair. For example, an IdP role such as
-``nvflare-demo-example-project_admin`` can map to organization ``example`` and
-role ``project_admin``. Perform this mapping in the step-ca X.509 template (or
-in the IdP), using exact allowlisted values. Do not accept organization and role
-as independent user-controlled claims. If several allowed roles for the same
-organization are present, select the highest privilege; fail closed if the
-organization is ambiguous.
+``nvflare-demo-hospital-a-project_admin`` can map to organization
+``hospital-a`` and role ``project_admin``. Perform this mapping in the step-ca
+X.509 template (or in the IdP), using exact allowlisted values. Do not accept
+organization and role as independent user-controlled claims. If several allowed
+roles for the same organization are present, select the highest privilege; fail
+closed if the organization is ambiguous.
 
 Custom certificate providers can be configured with
 ``provider: module:function``. FLARE calls the function as
