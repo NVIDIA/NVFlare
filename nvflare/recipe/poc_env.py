@@ -55,9 +55,9 @@ DEFAULT_ADMIN_USER = "admin@nvidia.com"
 _RECIPE_WORKSPACE_SUFFIX = ".recipe-"
 
 
-def _recipe_runtime_lock_path(poc_workspace_root: str) -> str:
-    """Return the per-user runtime lock beside the configured POC workspace."""
-    return f"{os.path.abspath(poc_workspace_root)}.recipe-{os.geteuid()}.lock"
+def _recipe_runtime_lock_path() -> str:
+    """Return the environment-independent, per-user host runtime lock."""
+    return os.path.join(os.path.realpath("/tmp"), f".nvflare-recipe-poc-{os.geteuid()}.lock")
 
 
 # Internal — not part of the public API
@@ -193,7 +193,7 @@ class PocEnv(ExecEnv):
         raise RuntimeError(
             f"Could not determine service state for the Recipe PocEnv workspace {workspace}: "
             f"{error}. Stop any remaining services, then remove the stale runtime record "
-            f"{_recipe_runtime_lock_path(self._poc_workspace_root)} manually."
+            f"{_recipe_runtime_lock_path()} manually."
         ) from error
 
     def _clean_up_failed_deployment(self) -> None:
@@ -228,8 +228,7 @@ class PocEnv(ExecEnv):
         if self._runtime_lock_file is not None:
             return
 
-        lock_path = _recipe_runtime_lock_path(self._poc_workspace_root)
-        os.makedirs(os.path.dirname(lock_path), exist_ok=True)
+        lock_path = _recipe_runtime_lock_path()
         flags = os.O_CREAT | os.O_RDWR
         if hasattr(os, "O_CLOEXEC"):
             flags |= os.O_CLOEXEC
