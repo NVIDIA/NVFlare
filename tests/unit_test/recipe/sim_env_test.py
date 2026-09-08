@@ -21,6 +21,7 @@ import pytest
 
 from nvflare.apis.fl_constant import WorkspaceConstants
 from nvflare.apis.fl_exception import UnsafeComponentError
+from nvflare.apis.job_def import RunStatus
 from nvflare.app_common.default_component_policy import DEFAULT_CLASS_ALLOW_LIST
 from nvflare.app_common.widgets.component_path_authorizer import CLASS_ALLOW_LIST, ComponentPathAuthorizer
 from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
@@ -82,6 +83,17 @@ def test_sim_env_validation():
     assert env.num_threads == 3
 
 
+def test_sim_env_status_tracks_synchronous_deployment(tmp_path):
+    job = _make_job()
+    env = SimEnv(num_clients=2, workspace_root=str(tmp_path))
+
+    assert env.get_job_status(job.name) is None
+
+    _deploy_with_mocked_simulator(env, job)
+
+    assert env.get_job_status(job.name) == RunStatus.FINISHED_COMPLETED.value
+
+
 def test_sim_env_process_workspace_override_takes_precedence(tmp_path, monkeypatch):
     job = _make_job()
     isolated_workspace = tmp_path / "isolated"
@@ -108,16 +120,52 @@ def test_sim_env_deploy_with_explicit_clients_does_not_pass_n_clients(tmp_path):
     assert not env.last_run_failed
 
 
-def test_sim_env_deploy_raises_on_failed_simulation(tmp_path):
+@pytest.mark.parametrize(
+    "return_code,expected_status",
+    [(2, RunStatus.FINISHED_EXECUTION_EXCEPTION), (-9, RunStatus.FINISHED_ABNORMAL)],
+)
+def test_sim_env_deploy_raises_on_failed_simulation(tmp_path, return_code, expected_status):
+    job = _make_job()
+    env = SimEnv(num_clients=2, workspace_root=str(tmp_path))
+    failed_workspace = tmp_path / job.name
+    failed_workspace.mkdir()
+    (failed_workspace / "partial-result.txt").write_text("created before the simulator failed")
+
+    with patch("nvflare.recipe.sim_env.collect_non_local_scripts", return_value=[]):
+        with patch.object(job, "simulator_run", return_value=return_code):
+            with pytest.raises(RuntimeError, match=f"Simulation failed with return code {return_code}"):
+                env.deploy(job)
+
+    assert env.last_run_failed
+    assert env.get_job_status(job.name) == expected_status.value
+    assert env.get_job_result(job.name) is None
+
+
+def test_sim_env_deploy_records_exception_as_failed_to_run(tmp_path):
     job = _make_job()
     env = SimEnv(num_clients=2, workspace_root=str(tmp_path))
 
     with patch("nvflare.recipe.sim_env.collect_non_local_scripts", return_value=[]):
-        with patch.object(job, "simulator_run", return_value=2):
-            with pytest.raises(RuntimeError, match="Simulation failed with return code 2"):
+        with patch.object(job, "simulator_run", side_effect=RuntimeError("startup failed")):
+            with pytest.raises(RuntimeError, match="startup failed"):
                 env.deploy(job)
 
     assert env.last_run_failed
+    assert env.get_job_status(job.name) == RunStatus.FAILED_TO_RUN.value
+
+
+@pytest.mark.parametrize("error_type", [KeyboardInterrupt, SystemExit])
+def test_sim_env_deploy_records_base_exception_as_failed_to_run(tmp_path, error_type):
+    job = _make_job()
+    env = SimEnv(num_clients=2, workspace_root=str(tmp_path))
+
+    with patch("nvflare.recipe.sim_env.collect_non_local_scripts", return_value=[]):
+        with patch.object(job, "simulator_run", side_effect=error_type):
+            with pytest.raises(error_type):
+                env.deploy(job)
+
+    assert env.last_run_failed
+    assert env.get_job_status(job.name) == RunStatus.FAILED_TO_RUN.value
 
 
 def test_sim_env_bootstraps_standard_component_policy(tmp_path):
@@ -191,6 +239,23 @@ def test_sim_env_rejects_invalid_resources_file(tmp_path):
                 env.deploy(job)
 
     mock_run.assert_not_called()
+    assert env.last_run_failed
+    assert env.get_job_status(job.name) == RunStatus.FAILED_TO_RUN.value
+
+
+def test_sim_env_preflight_failure_has_no_result_path(tmp_path):
+    job = _make_job("missing-script")
+    env = SimEnv(num_clients=2, workspace_root=str(tmp_path))
+    stale_result = tmp_path / job.name
+    stale_result.mkdir()
+    (stale_result / "old-result.txt").write_text("from an earlier run")
+
+    with patch("nvflare.recipe.sim_env.collect_non_local_scripts", return_value=["missing.py"]):
+        with pytest.raises(ValueError, match="missing.py"):
+            env.deploy(job)
+
+    assert env.get_job_status(job.name) == RunStatus.FAILED_TO_RUN.value
+    assert env.get_job_result(job.name) is None
 
 
 def test_sim_env_byoc_job_does_not_expand_standard_policy(tmp_path):

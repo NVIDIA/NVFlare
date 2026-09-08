@@ -30,6 +30,7 @@ import os
 import numpy as np
 
 from nvflare.apis.fl_constant import WorkspaceConstants
+from nvflare.apis.job_def import RunStatus
 from nvflare.app_common.default_component_policy import DEFAULT_CLASS_ALLOW_LIST
 from nvflare.app_common.np.recipes import NumpyCrossSiteEvalRecipe, NumpyFedAvgRecipe
 from nvflare.recipe import PocEnv, SimEnv
@@ -58,7 +59,7 @@ class TestRecipeSystemIntegration:
         )
         run = recipe.execute(env)
         assert run.get_job_id() == "test_integration"
-        assert run.get_status() is None
+        assert run.get_status() == RunStatus.FINISHED_COMPLETED.value
         assert run.get_result() == "/tmp/test_integration/test_integration"
 
     def test_end_to_end_poc_workflow(self):
