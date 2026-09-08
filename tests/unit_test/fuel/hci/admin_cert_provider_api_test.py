@@ -20,7 +20,7 @@ from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.hci.client.api import AdminAPI
 from nvflare.fuel.hci.client.api_spec import AdminConfigKey
 from nvflare.fuel.hci.proto import InternalCommands
-from nvflare.fuel.sec.ephemeral_admin_cert import EphemeralAdminCertFiles
+from nvflare.fuel.sec.admin_cert_provider import AdminCertFiles
 
 
 def test_admin_api_hydrates_missing_cert_pair_from_step_ca(monkeypatch, tmp_path):
@@ -28,7 +28,7 @@ def test_admin_api_hydrates_missing_cert_pair_from_step_ca(monkeypatch, tmp_path
     cert_file = tmp_path / "client.crt"
     key_file.write_text("key", encoding="utf-8")
     cert_file.write_text("cert", encoding="utf-8")
-    resolved_files = EphemeralAdminCertFiles(client_key=str(key_file), client_cert=str(cert_file))
+    resolved_files = AdminCertFiles(client_key=str(key_file), client_cert=str(cert_file))
     captured = {}
 
     def _fake_obtain(config, root_ca_file):
@@ -36,14 +36,14 @@ def test_admin_api_hydrates_missing_cert_pair_from_step_ca(monkeypatch, tmp_path
         captured["root_ca_file"] = root_ca_file
         return resolved_files
 
-    monkeypatch.setattr("nvflare.fuel.hci.client.api.obtain_ephemeral_admin_cert_files", _fake_obtain)
+    monkeypatch.setattr("nvflare.fuel.hci.client.api.obtain_admin_cert_files", _fake_obtain)
 
     api = AdminAPI(
         user_name="alice@nvidia.com",
         admin_config={
             AdminConfigKey.PROJECT_NAME: "project",
             AdminConfigKey.CA_CERT: "rootCA.pem",
-            AdminConfigKey.EPHEMERAL_ADMIN_CERT: {
+            AdminConfigKey.ADMIN_CERT_PROVIDER: {
                 "provider": "step_ca",
                 "provider_config": {
                     "ca_url": "https://step-ca.example.com",
@@ -56,19 +56,19 @@ def test_admin_api_hydrates_missing_cert_pair_from_step_ca(monkeypatch, tmp_path
 
     assert api.client_key == str(key_file)
     assert api.client_cert == str(cert_file)
-    assert api.ephemeral_admin_cert_files is resolved_files
+    assert api.admin_cert_files is resolved_files
     assert "subject" not in captured["config"]
     assert captured["root_ca_file"] == "rootCA.pem"
 
 
-def test_admin_api_reports_invalid_ephemeral_renewal_window_as_config_error():
+def test_admin_api_reports_invalid_admin_cert_renewal_window_as_config_error():
     with pytest.raises(ConfigError, match="renewal_window must be a finite number"):
         AdminAPI(
             user_name="alice@nvidia.com",
             admin_config={
                 AdminConfigKey.PROJECT_NAME: "project",
                 AdminConfigKey.CA_CERT: "rootCA.pem",
-                AdminConfigKey.EPHEMERAL_ADMIN_CERT: {
+                AdminConfigKey.ADMIN_CERT_PROVIDER: {
                     "provider": "step_ca",
                     "renewal_window": "one minute",
                     "provider_config": {},
@@ -78,7 +78,7 @@ def test_admin_api_reports_invalid_ephemeral_renewal_window_as_config_error():
         )
 
 
-def test_admin_api_renews_expiring_ephemeral_cert_and_resets_connection(monkeypatch, tmp_path):
+def test_admin_api_renews_expiring_provider_cert_and_resets_connection(monkeypatch, tmp_path):
     old_key_file = tmp_path / "old.key"
     old_cert_file = tmp_path / "old.crt"
     new_key_file = tmp_path / "new.key"
@@ -86,12 +86,12 @@ def test_admin_api_renews_expiring_ephemeral_cert_and_resets_connection(monkeypa
     for path in (old_key_file, old_cert_file, new_key_file, new_cert_file):
         path.write_text(path.name, encoding="utf-8")
 
-    old_files = EphemeralAdminCertFiles(
+    old_files = AdminCertFiles(
         client_key=str(old_key_file),
         client_cert=str(old_cert_file),
         expires_at=1.0,
     )
-    new_files = EphemeralAdminCertFiles(
+    new_files = AdminCertFiles(
         client_key=str(new_key_file),
         client_cert=str(new_cert_file),
         expires_at=9999999999.0,
@@ -106,7 +106,7 @@ def test_admin_api_renews_expiring_ephemeral_cert_and_resets_connection(monkeypa
             assert old_cell.stopped
         return result
 
-    monkeypatch.setattr("nvflare.fuel.hci.client.api.obtain_ephemeral_admin_cert_files", _fake_obtain)
+    monkeypatch.setattr("nvflare.fuel.hci.client.api.obtain_admin_cert_files", _fake_obtain)
     monkeypatch.setattr("nvflare.fuel.hci.client.api.load_cert_file", lambda path: path)
     monkeypatch.setattr(
         "nvflare.fuel.hci.client.api.get_cn_from_cert",
@@ -119,7 +119,7 @@ def test_admin_api_renews_expiring_ephemeral_cert_and_resets_connection(monkeypa
             AdminConfigKey.PROJECT_NAME: "project",
             AdminConfigKey.CA_CERT: "rootCA.pem",
             AdminConfigKey.UID_SOURCE: "cert",
-            AdminConfigKey.EPHEMERAL_ADMIN_CERT: {
+            AdminConfigKey.ADMIN_CERT_PROVIDER: {
                 "provider": "step_ca",
                 "renewal_window": 60.0,
                 "provider_config": {

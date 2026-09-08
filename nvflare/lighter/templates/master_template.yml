@@ -11,7 +11,7 @@ readme_am: |
   in your environment.  After installation, you can run the fl_admin.sh file to start communicating to the admin server.
 
   Admin credentials are configured in startup/fed_admin.json. Static admin packages include client.crt and client.key;
-  ephemeral admin packages obtain them at runtime. Safeguard all admin private keys.
+  admin certificate provider packages obtain them at runtime. Safeguard all admin private keys.
 
 readme_fc: |
   *********************************

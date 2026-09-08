@@ -52,21 +52,21 @@ The security of the system comes from the PKI credentials in the Startup Kits. A
 
     :ref:`NVFlare Dashboard <nvflare_dashboard_ui>` is a website that supports user and site registration. Users will be able to download their Startup Kits (and other artifacts) from the website.
 
-Ephemeral Admin Certificates
-----------------------------
+Admin Certificate Providers
+---------------------------
 For admin users, NVFLARE can also provision startup kits that do not contain a
 static admin certificate or private key. In this mode, the admin startup kit
-contains an ``ephemeral_admin_cert`` provider configuration. When the admin
-client starts, it asks that provider for a short-lived admin certificate and
-private key, validates the returned certificate against the project
+contains an ``admin_cert_provider`` configuration. When the admin client
+starts, it asks that provider for an admin certificate and private key,
+validates the returned certificate against the project
 ``rootCA.pem``, and then uses the normal certificate login and job-signing path.
-Valid ephemeral admin cert/key material is cached under
-``~/.nvflare/ephemeral_admin_certs`` so repeated CLI commands do not require a
-new browser login until the certificate is invalid, expired, or close to
-expiry. The cache is private to the OS user, so administrators should not share
-an OS account. The startup kit can use a generic name such as
-``sso-admin-kit``; the actual admin identity comes from the certificate issued
-after SSO login.
+Valid provider-issued admin cert/key material is cached under
+``~/.nvflare/admin_certificates`` so repeated CLI commands do not invoke the
+provider until the certificate is invalid, expired, or close to expiry. With
+an SSO-backed provider, this avoids a browser flow for each command. The cache
+is private to the OS user, so administrators should not share an OS account.
+The startup kit can use a generic name such as ``sso-admin-kit``; the actual
+admin identity comes from the issued certificate.
 
 The built-in provider is ``step_ca``. With this provider, step-ca owns OIDC
 login, role claim handling, and certificate issuance. The issued certificate

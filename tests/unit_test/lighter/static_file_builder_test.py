@@ -100,7 +100,7 @@ class TestStaticFileBuilder:
         builder = StaticFileBuilder(scheme=scheme)
         assert builder.scheme == scheme
 
-    def test_ephemeral_admin_cert_config_omits_static_client_cert_material(self):
+    def test_admin_cert_provider_config_omits_static_client_cert_material(self):
         config = _modify_fed_admin_config(
             json.dumps(
                 {
@@ -112,7 +112,7 @@ class TestStaticFileBuilder:
                     }
                 }
             ),
-            ephemeral_admin_cert={
+            admin_cert_provider={
                 "provider": "step_ca",
                 "renewal_window": 60,
                 "provider_config": {
@@ -128,7 +128,7 @@ class TestStaticFileBuilder:
         assert admin["username"] == ""
         assert admin["uid_source"] == "cert"
         assert admin["ca_cert"] == "rootCA.pem"
-        assert admin["ephemeral_admin_cert"] == {
+        assert admin["admin_cert_provider"] == {
             "provider": "step_ca",
             "renewal_window": 60,
             "provider_config": {

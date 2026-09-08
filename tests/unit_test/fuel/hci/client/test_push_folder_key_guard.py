@@ -45,7 +45,7 @@ def _make_push_folder_args_and_ctx(key_path, cert_path, folder_name="test_job"):
     api = MagicMock()
     api.client_key = key_path
     api.client_cert = cert_path
-    api.ephemeral_admin_cert_config = None
+    api.admin_cert_provider_config = None
 
     ctx = MagicMock()
     ctx.get_command_entry.return_value = _make_cmd_entry()
@@ -197,7 +197,7 @@ def test_push_folder_preserves_submit_args_after_folder(tmp_path):
     assert command == "admin.push_folder test_job --submit-token retry-1"
 
 
-def test_push_folder_refreshes_ephemeral_cert_before_signing(tmp_path):
+def test_push_folder_refreshes_provider_cert_before_signing(tmp_path):
     upload_dir = str(tmp_path / "upload")
     download_dir = str(tmp_path / "dl")
     folder_name = "test_job"
@@ -210,7 +210,7 @@ def test_push_folder_refreshes_ephemeral_cert_before_signing(tmp_path):
     args, ctx = _make_push_folder_args_and_ctx(str(key_file), "/path/to/cert.crt", folder_name)
     api = ctx.get_api.return_value
     api.ensure_client_cert_valid = MagicMock()
-    api.ephemeral_admin_cert_config = {"provider": "step_ca"}
+    api.admin_cert_provider_config = {"provider": "step_ca"}
 
     with (
         patch("nvflare.fuel.hci.client.file_transfer.load_private_key_file", return_value=MagicMock()),

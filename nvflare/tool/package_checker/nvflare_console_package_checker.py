@@ -16,7 +16,7 @@ import json
 import os
 import shutil
 
-from nvflare.fuel.sec.ephemeral_admin_cert import validate_ephemeral_admin_cert_config
+from nvflare.fuel.sec.admin_cert_provider import validate_admin_cert_provider_config
 from nvflare.fuel.sec.step_ca_admin_cert import validate_step_ca_admin_cert_config
 
 from .client_package_checker import ClientPackageChecker
@@ -41,21 +41,21 @@ class NVFlareConsolePackageChecker(ClientPackageChecker):
                 config = json.load(f)
         except (OSError, json.JSONDecodeError):
             return super().check_dry_run()
-        ephemeral_config = config.get("admin", {}).get("ephemeral_admin_cert")
-        if ephemeral_config:
+        provider_config = config.get("admin", {}).get("admin_cert_provider")
+        if provider_config:
             try:
-                ephemeral_config = validate_ephemeral_admin_cert_config(ephemeral_config)
+                provider_config = validate_admin_cert_provider_config(provider_config)
                 root_ca_file = os.path.join(startup, "rootCA.pem")
                 if not os.path.isfile(root_ca_file):
                     raise ValueError(f"missing project root certificate: {root_ca_file}")
-                if ephemeral_config["provider"] == "step_ca":
-                    provider_config = validate_step_ca_admin_cert_config(ephemeral_config["provider_config"])
-                    step_bin = str(provider_config.get("step_bin") or "step")
+                if provider_config["provider"] == "step_ca":
+                    step_ca_config = validate_step_ca_admin_cert_config(provider_config["provider_config"])
+                    step_bin = str(step_ca_config.get("step_bin") or "step")
                     if not shutil.which(step_bin):
                         raise ValueError(f"step CLI is not available: {step_bin}")
             except ValueError as ex:
                 self.add_report(
-                    "Check ephemeral admin certificate",
+                    "Check admin certificate provider",
                     str(ex),
                     "Correct the startup kit configuration and install the configured certificate provider.",
                 )

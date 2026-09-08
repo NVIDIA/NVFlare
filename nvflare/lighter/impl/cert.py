@@ -21,10 +21,10 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.x509.oid import NameOID
 
+from nvflare.lighter.admin_cert_provider import get_admin_cert_provider_config
 from nvflare.lighter.constants import CertFileBasename, CtxKey, ParticipantType, PropKey
 from nvflare.lighter.ctx import ProvisionContext
 from nvflare.lighter.entity import Participant, Project
-from nvflare.lighter.ephemeral_admin import get_admin_ephemeral_cert_config
 from nvflare.lighter.spec import Builder
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys, serialize_cert, serialize_pri_key
 
@@ -338,7 +338,7 @@ class CertBuilder(Builder):
             self._build_write_cert_pair(relay, CertFileBasename.CLIENT, ctx)
 
         for admin in project.get_admins():
-            if get_admin_ephemeral_cert_config(admin):
+            if get_admin_cert_provider_config(admin):
                 self._write_root_ca(admin, ctx)
             else:
                 self._build_write_cert_pair(admin, CertFileBasename.CLIENT, ctx)

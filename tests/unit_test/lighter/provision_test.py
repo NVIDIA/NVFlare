@@ -61,7 +61,7 @@ class TestProvision:
         assert [p.name for p in project.get_clients()] == ["client1"]
         assert [p.name for p in project.get_admins()] == ["admin1@org.com"]
 
-    def test_prepare_project_accepts_ephemeral_admin_without_org_or_role(self):
+    def test_prepare_project_accepts_admin_cert_provider_without_org_or_role(self):
         project_config = {
             "api_version": 3,
             "name": "mytest",
@@ -71,7 +71,7 @@ class TestProvision:
                 {
                     "type": "admin",
                     "name": "sso-admin-kit",
-                    "ephemeral_admin_cert": {
+                    "admin_cert_provider": {
                         "provider": "step_ca",
                         "provider_config": {
                             "ca_url": "https://step-ca.example.com",
@@ -88,7 +88,7 @@ class TestProvision:
         assert admin.name == "sso-admin-kit"
         assert not admin.org
         assert admin.get_prop("role") is None
-        assert admin.get_prop("ephemeral_admin_cert")["provider"] == "step_ca"
+        assert admin.get_prop("admin_cert_provider")["provider"] == "step_ca"
 
     def test_prepare_project_requires_api_version_4_for_studies(self):
         project_config = self._base_project(

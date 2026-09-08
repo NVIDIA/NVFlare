@@ -248,7 +248,7 @@ def _is_admin_startup_kit(startup_kit_dir: Path) -> bool:
         return False
 
     admin_config = config.get("admin") if isinstance(config, dict) else None
-    return isinstance(admin_config, dict) and bool(admin_config.get("ephemeral_admin_cert"))
+    return isinstance(admin_config, dict) and bool(admin_config.get("admin_cert_provider"))
 
 
 def classify_startup_kit(path: str) -> Tuple[str, str]:
@@ -482,12 +482,12 @@ def _certificate_expiration_metadata(cert, cert_path: str) -> Tuple[Dict, list]:
     )
 
 
-def _inspect_admin_cert_metadata(startup_dir: str, metadata: Dict, has_ephemeral_admin_cert: bool = False) -> None:
+def _inspect_admin_cert_metadata(startup_dir: str, metadata: Dict, has_admin_cert_provider: bool = False) -> None:
     cert_path = os.path.join(startup_dir, "client.crt")
     if not os.path.isfile(cert_path):
-        if has_ephemeral_admin_cert:
+        if has_admin_cert_provider:
             metadata["certificate"] = {"status": "runtime_issued"}
-            metadata["credential_source"] = "ephemeral_admin_cert"
+            metadata["credential_source"] = "admin_cert_provider"
             return
         metadata["findings"].append(
             _finding(
@@ -547,18 +547,18 @@ def inspect_startup_kit_metadata(path: str) -> Dict:
 
     startup_dir = os.path.join(startup_kit_dir, "startup")
     if kind == STARTUP_KIT_KIND_ADMIN:
-        has_ephemeral_admin_cert = False
+        has_admin_cert_provider = False
         try:
             fed_admin_config = ConfigFactory.load_config("fed_admin.json", [startup_dir])
             if fed_admin_config:
                 config_dict = fed_admin_config.to_dict()
                 admin_config = config_dict.get("admin", {})
                 metadata["identity"] = admin_config.get("username")
-                has_ephemeral_admin_cert = bool(admin_config.get("ephemeral_admin_cert"))
+                has_admin_cert_provider = bool(admin_config.get("admin_cert_provider"))
         except Exception:
             pass
 
-        _inspect_admin_cert_metadata(startup_dir, metadata, has_ephemeral_admin_cert=has_ephemeral_admin_cert)
+        _inspect_admin_cert_metadata(startup_dir, metadata, has_admin_cert_provider=has_admin_cert_provider)
 
     if not metadata["identity"]:
         metadata["identity"] = os.path.basename(startup_kit_dir)

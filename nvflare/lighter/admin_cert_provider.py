@@ -14,16 +14,16 @@
 
 from typing import Optional
 
-from nvflare.fuel.sec.ephemeral_admin_cert import validate_ephemeral_admin_cert_config
+from nvflare.fuel.sec.admin_cert_provider import validate_admin_cert_provider_config
 from nvflare.lighter.constants import PropKey
 
 
-def get_admin_ephemeral_cert_config(admin) -> Optional[dict]:
-    config = admin.get_prop(PropKey.EPHEMERAL_ADMIN_CERT)
+def get_admin_cert_provider_config(admin) -> Optional[dict]:
+    config = admin.get_prop(PropKey.ADMIN_CERT_PROVIDER)
     if not config:
         return None
-    scope = f"admin {admin.name}.{PropKey.EPHEMERAL_ADMIN_CERT}"
+    scope = f"admin {admin.name}.{PropKey.ADMIN_CERT_PROVIDER}"
     try:
-        return validate_ephemeral_admin_cert_config(config)
+        return validate_admin_cert_provider_config(config)
     except ValueError as ex:
         raise ValueError(f"invalid {scope}: {ex}") from ex

@@ -57,12 +57,12 @@ from nvflare.fuel.hci.proto import (
 )
 from nvflare.fuel.hci.reg import CommandEntry, CommandModule, CommandRegister
 from nvflare.fuel.hci.table import Table
-from nvflare.fuel.sec.authn import set_add_auth_headers_filters
-from nvflare.fuel.sec.ephemeral_admin_cert import (
-    get_ephemeral_admin_cert_renewal_window,
-    obtain_ephemeral_admin_cert_files,
-    validate_ephemeral_admin_cert_config,
+from nvflare.fuel.sec.admin_cert_provider import (
+    get_admin_cert_renewal_window,
+    obtain_admin_cert_files,
+    validate_admin_cert_provider_config,
 )
+from nvflare.fuel.sec.authn import set_add_auth_headers_filters
 from nvflare.fuel.utils.admin_name_utils import new_admin_client_name
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.aux_runner import AuxMsgTarget, AuxRunner
@@ -302,16 +302,12 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         self.ca_cert = admin_config.get(AdminConfigKey.CA_CERT)
         self.client_cert = admin_config.get(AdminConfigKey.CLIENT_CERT)
         self.client_key = admin_config.get(AdminConfigKey.CLIENT_KEY)
-        self.ephemeral_admin_cert_files = None
-        self.ephemeral_admin_cert_config = admin_config.get(AdminConfigKey.EPHEMERAL_ADMIN_CERT)
+        self.admin_cert_files = None
+        self.admin_cert_provider_config = admin_config.get(AdminConfigKey.ADMIN_CERT_PROVIDER)
         try:
-            if self.ephemeral_admin_cert_config:
-                self.ephemeral_admin_cert_config = validate_ephemeral_admin_cert_config(
-                    self.ephemeral_admin_cert_config
-                )
-            self.ephemeral_admin_cert_renewal_window = get_ephemeral_admin_cert_renewal_window(
-                self.ephemeral_admin_cert_config or {}
-            )
+            if self.admin_cert_provider_config:
+                self.admin_cert_provider_config = validate_admin_cert_provider_config(self.admin_cert_provider_config)
+            self.admin_cert_renewal_window = get_admin_cert_renewal_window(self.admin_cert_provider_config or {})
         except ValueError as ex:
             raise ConfigError(str(ex)) from ex
         self.uid_source = admin_config.get(AdminConfigKey.UID_SOURCE, UidSource.USER_INPUT)
@@ -326,10 +322,10 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
 
         if not self.ca_cert:
             raise ConfigError("missing CA Cert file name")
-        if self.ephemeral_admin_cert_config:
+        if self.admin_cert_provider_config:
             if self.client_cert or self.client_key:
                 raise ConfigError(
-                    "client_cert and client_key must both be omitted when ephemeral_admin_cert is configured"
+                    "client_cert and client_key must both be omitted when admin_cert_provider is configured"
                 )
             self.ensure_client_cert_valid()
         if not self.client_cert:
@@ -393,14 +389,14 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         self.file_download_waiters = {}  # tx_id => Threading.Event
 
     def ensure_client_cert_valid(self):
-        if not getattr(self, "ephemeral_admin_cert_config", None):
+        if not getattr(self, "admin_cert_provider_config", None):
             return False
-        if self.ephemeral_admin_cert_files and not self.ephemeral_admin_cert_files.needs_renewal(
-            renewal_window=self.ephemeral_admin_cert_renewal_window
+        if self.admin_cert_files and not self.admin_cert_files.needs_renewal(
+            renewal_window=self.admin_cert_renewal_window
         ):
             return False
 
-        renewing = self.ephemeral_admin_cert_files is not None
+        renewing = self.admin_cert_files is not None
         if renewing:
             self._reset_cell()
             self.closed = False
@@ -408,14 +404,14 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             self.session_expired_reason = None
             self.session_abort_signal = Signal()
         try:
-            new_files = obtain_ephemeral_admin_cert_files(
-                config=self.ephemeral_admin_cert_config,
+            new_files = obtain_admin_cert_files(
+                config=self.admin_cert_provider_config,
                 root_ca_file=self.ca_cert,
             )
         except Exception as ex:
-            raise ConfigError(f"failed to obtain ephemeral admin certificate: {secure_format_exception(ex)}") from ex
+            raise ConfigError(f"failed to obtain admin certificate: {secure_format_exception(ex)}") from ex
 
-        self.ephemeral_admin_cert_files = new_files
+        self.admin_cert_files = new_files
         self.client_cert = new_files.client_cert
         self.client_key = new_files.client_key
         if self.uid_source == UidSource.CERT:

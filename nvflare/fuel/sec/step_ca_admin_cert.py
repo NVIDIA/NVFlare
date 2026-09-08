@@ -20,14 +20,14 @@ from typing import Mapping, Sequence
 from urllib.parse import urlparse
 
 from nvflare.fuel.sec.admin_cert import ADMIN_CERT_PLACEHOLDER_CN
-from nvflare.fuel.sec.ephemeral_admin_cert import EphemeralAdminCertError, EphemeralAdminCertFiles
+from nvflare.fuel.sec.admin_cert_provider import AdminCertFiles, AdminCertProviderError
 
 DEFAULT_STEP_CA_CERT_TTL = "24h"
 DEFAULT_STEP_CA_REQUEST_NAME = ADMIN_CERT_PLACEHOLDER_CN
 DEFAULT_STEP_CA_COMMAND_TIMEOUT = 300.0
 
 
-def obtain_step_ca_admin_cert_files(config: Mapping, root_ca_file: str) -> EphemeralAdminCertFiles:
+def obtain_step_ca_admin_cert_files(config: Mapping, root_ca_file: str) -> AdminCertFiles:
     config = validate_step_ca_admin_cert_config(config)
     command_timeout = config["command_timeout"]
     temp_dir = tempfile.TemporaryDirectory(prefix="nvflare-step-ca-admin-")
@@ -45,7 +45,7 @@ def obtain_step_ca_admin_cert_files(config: Mapping, root_ca_file: str) -> Ephem
         temp_dir.cleanup()
         raise
 
-    return EphemeralAdminCertFiles(
+    return AdminCertFiles(
         client_key=key_path,
         client_cert=cert_path,
         temp_dir=temp_dir,
@@ -54,14 +54,14 @@ def obtain_step_ca_admin_cert_files(config: Mapping, root_ca_file: str) -> Ephem
 
 def validate_step_ca_admin_cert_config(config: Mapping) -> dict:
     if not isinstance(config, Mapping):
-        raise EphemeralAdminCertError(f"step_ca provider_config must be a mapping but got {type(config)}")
+        raise AdminCertProviderError(f"step_ca provider_config must be a mapping but got {type(config)}")
     result = dict(config)
     ca_url = result.get("ca_url")
     if not ca_url:
-        raise EphemeralAdminCertError("step_ca provider_config.ca_url is required")
+        raise AdminCertProviderError("step_ca provider_config.ca_url is required")
     _validate_step_ca_url(str(ca_url))
     if not result.get("provisioner"):
-        raise EphemeralAdminCertError("step_ca provider_config.provisioner is required")
+        raise AdminCertProviderError("step_ca provider_config.provisioner is required")
     result["command_timeout"] = _command_timeout(result)
     return result
 
@@ -88,15 +88,15 @@ def _command_timeout(config: Mapping) -> float:
     if command_timeout_config is None or command_timeout_config == "":
         return DEFAULT_STEP_CA_COMMAND_TIMEOUT
     if isinstance(command_timeout_config, bool):
-        raise EphemeralAdminCertError("step_ca provider_config.command_timeout must be a finite number")
+        raise AdminCertProviderError("step_ca provider_config.command_timeout must be a finite number")
     try:
         command_timeout = float(command_timeout_config)
     except (TypeError, ValueError) as ex:
-        raise EphemeralAdminCertError("step_ca provider_config.command_timeout must be a finite number") from ex
+        raise AdminCertProviderError("step_ca provider_config.command_timeout must be a finite number") from ex
     if not math.isfinite(command_timeout):
-        raise EphemeralAdminCertError("step_ca provider_config.command_timeout must be a finite number")
+        raise AdminCertProviderError("step_ca provider_config.command_timeout must be a finite number")
     if command_timeout <= 0.0:
-        raise EphemeralAdminCertError("step_ca provider_config.command_timeout must be greater than zero")
+        raise AdminCertProviderError("step_ca provider_config.command_timeout must be greater than zero")
     return command_timeout
 
 
@@ -111,13 +111,13 @@ def _run_step(
             timeout=timeout,
         )
     except OSError as ex:
-        raise EphemeralAdminCertError(
+        raise AdminCertProviderError(
             "cannot execute the 'step' CLI; install it or configure step_ca provider_config.step_bin"
         ) from ex
     except subprocess.TimeoutExpired as ex:
-        raise EphemeralAdminCertError(f"step ca certificate timed out after {timeout} seconds") from ex
+        raise AdminCertProviderError(f"step ca certificate timed out after {timeout} seconds") from ex
     except subprocess.CalledProcessError as ex:
-        raise EphemeralAdminCertError(f"step ca certificate failed with exit code {ex.returncode}") from ex
+        raise AdminCertProviderError(f"step ca certificate failed with exit code {ex.returncode}") from ex
 
 
 def _validate_step_ca_url(url: str):
@@ -126,4 +126,4 @@ def _validate_step_ca_url(url: str):
         return
     if parsed.scheme == "http" and parsed.hostname in {"127.0.0.1", "::1", "localhost"}:
         return
-    raise EphemeralAdminCertError("step_ca provider_config.ca_url must use https; http is only allowed for localhost")
+    raise AdminCertProviderError("step_ca provider_config.ca_url must use https; http is only allowed for localhost")

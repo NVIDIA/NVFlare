@@ -1,9 +1,11 @@
-# Ephemeral Admin Certificates with step-ca
+# Admin Certificate Providers
 
 ## Goal
 
-Allow an admin to authenticate with OIDC and receive a short-lived FLARE admin
-certificate without adding OIDC handling to the FLARE server or clients.
+Allow an admin startup kit to obtain its certificate and private key from a
+configured provider instead of containing static credentials. The built-in
+`step_ca` provider supports OIDC without adding OIDC handling to FLARE servers
+or clients.
 
 ```text
 admin CLI -> step CLI -> step-ca -> OIDC provider
@@ -32,7 +34,7 @@ certificate` and is not sent to the OIDC provider or FLARE server.
 
 ## Runtime Behavior
 
-An ephemeral admin startup kit contains `ephemeral_admin_cert` instead of
+A provider-backed admin startup kit contains `admin_cert_provider` instead of
 static `client.crt` and `client.key` files. The admin client:
 
 1. Loads a valid cached credential or invokes its configured provider.
@@ -49,7 +51,7 @@ OIDC token format, server login mode, or server-signed job manifest to FLARE.
 
 ## Provisioning
 
-Static and ephemeral admins can coexist in one `project.yml`:
+Static and provider-backed admins can coexist in one `project.yml`:
 
 ```yaml
 participants:
@@ -60,7 +62,7 @@ participants:
 
   - name: sso-admin-kit
     type: admin
-    ephemeral_admin_cert:
+    admin_cert_provider:
       provider: step_ca
       renewal_window: 43200
       provider_config:
@@ -70,7 +72,7 @@ participants:
         command_timeout: 300
 ```
 
-The ephemeral participant omits `org` and `role`; both come from the issued
+The provider-backed participant omits `org` and `role`; both come from the issued
 certificate. Its name identifies a generic startup kit, not a user. The kit
 contains `rootCA.pem` and provider configuration but no static admin
 certificate or private key. Server and site startup kits are unchanged.
@@ -81,11 +83,11 @@ authorization will be added separately.
 
 ## Provider and Cache
 
-`ephemeral_admin_cert.provider` is a built-in provider name or a
+`admin_cert_provider.provider` is a built-in provider name or a
 `module:function` path. Its exact contract is:
 
 ```python
-def obtain(config: Mapping, root_ca_file: str) -> EphemeralAdminCertFiles:
+def obtain(config: Mapping, root_ca_file: str) -> AdminCertFiles:
     ...
 ```
 
@@ -95,7 +97,7 @@ FLARE can clean it up. FLARE derives `expires_at` from the validated certificate
 and applies the same validation to built-in and custom provider results.
 
 Valid credentials are cached per OS user under
-`~/.nvflare/ephemeral_admin_certs`. The cache entry is bound to the provider
+`~/.nvflare/admin_certificates`. The cache entry is bound to the provider
 configuration and project root. Files are private to the OS user, concurrent
 CLI processes serialize acquisition, and credentials are published atomically
 only after both files have been copied.

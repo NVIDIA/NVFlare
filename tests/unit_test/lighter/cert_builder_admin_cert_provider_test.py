@@ -18,14 +18,14 @@ from nvflare.lighter.entity import Participant, Project
 from nvflare.lighter.impl.cert import CertBuilder
 
 
-def test_cert_builder_omits_static_admin_cert_for_ephemeral_cert(tmp_path):
+def test_cert_builder_omits_static_admin_cert_for_admin_cert_provider(tmp_path):
     server = Participant(type=ParticipantType.SERVER, name="server", org="nvidia")
     admin = Participant(
         type=ParticipantType.ADMIN,
         name="sso-admin-kit",
         org=None,
         props={
-            "ephemeral_admin_cert": {
+            "admin_cert_provider": {
                 "provider": "step_ca",
                 "provider_config": {
                     "ca_url": "https://step-ca.example.com",

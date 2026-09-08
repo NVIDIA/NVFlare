@@ -256,10 +256,10 @@ class Participant(Entity):
         """
         Entity.__init__(self, f"{type}::{name}", name, props, parent=project)
 
-        ephemeral_admin = type == ParticipantType.ADMIN and bool(props and props.get(PropKey.EPHEMERAL_ADMIN_CERT))
+        admin_cert_provider = type == ParticipantType.ADMIN and bool(props and props.get(PropKey.ADMIN_CERT_PROVIDER))
         if type in DEFINED_PARTICIPANT_TYPES:
             err, reason = name_check(name, type)
-            if err and ephemeral_admin:
+            if err and admin_cert_provider:
                 err, reason = name_check(name, "admin_kit")
             if err:
                 raise ValueError(reason)
@@ -269,19 +269,21 @@ class Participant(Entity):
                 raise ValueError(reason)
             print(f"Warning: participant type '{type}' of {name} is not a defined type {DEFINED_PARTICIPANT_TYPES}")
 
-        if ephemeral_admin and org:
-            raise ValueError(f"ephemeral admin '{name}' must not define org; org comes from issued cert")
+        if admin_cert_provider and org:
+            raise ValueError(f"admin '{name}' with admin_cert_provider must not define org; org comes from issued cert")
         if org:
             err, reason = name_check(org, "org")
             if err:
                 raise ValueError(reason)
-        elif not ephemeral_admin:
+        elif not admin_cert_provider:
             raise ValueError(f"missing participant {PropKey.ORG}")
 
         if type == ParticipantType.ADMIN:
-            if ephemeral_admin:
+            if admin_cert_provider:
                 if props.get(PropKey.ROLE):
-                    raise ValueError(f"ephemeral admin '{name}' must not define role; role comes from issued cert")
+                    raise ValueError(
+                        f"admin '{name}' with admin_cert_provider must not define role; role comes from issued cert"
+                    )
             elif not props:
                 raise ValueError(f"missing role for admin '{name}'")
             else:

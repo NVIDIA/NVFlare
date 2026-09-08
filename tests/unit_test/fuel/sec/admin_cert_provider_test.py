@@ -25,12 +25,12 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import NameOID
 
-from nvflare.fuel.sec.ephemeral_admin_cert import (
-    EphemeralAdminCertError,
-    EphemeralAdminCertFiles,
-    get_ephemeral_admin_cert_renewal_window,
-    obtain_ephemeral_admin_cert_files,
-    validate_ephemeral_admin_cert_files,
+from nvflare.fuel.sec.admin_cert_provider import (
+    AdminCertFiles,
+    AdminCertProviderError,
+    get_admin_cert_renewal_window,
+    obtain_admin_cert_files,
+    validate_admin_cert_files,
 )
 from nvflare.fuel.sec.step_ca_admin_cert import (
     DEFAULT_STEP_CA_REQUEST_NAME,
@@ -110,8 +110,8 @@ def _make_admin_cert_files(
     return cert_src, key_src
 
 
-def _custom_ephemeral_provider(config, root_ca_file):
-    return EphemeralAdminCertFiles(
+def _custom_admin_cert_provider(config, root_ca_file):
+    return AdminCertFiles(
         client_key=config["key_path"],
         client_cert=config["cert_path"],
         expires_at=config.get("expires_at", 0.0),
@@ -173,7 +173,7 @@ def test_step_ca_source_invokes_step_and_cert_works_with_existing_flare_paths(mo
     command_log = tmp_path / "commands.jsonl"
     fake_step = _fake_step(monkeypatch, tmp_path, cert_src=cert_src, key_src=key_src, command_log=command_log)
 
-    files = obtain_ephemeral_admin_cert_files(
+    files = obtain_admin_cert_files(
         config={
             "provider": "step_ca",
             "provider_config": {
@@ -245,7 +245,7 @@ def test_step_ca_source_accepts_intermediate_chain(monkeypatch, tmp_path):
     command_log = tmp_path / "commands.jsonl"
     fake_step = _fake_step(monkeypatch, tmp_path, cert_src=cert_src, key_src=key_src, command_log=command_log)
 
-    files = obtain_ephemeral_admin_cert_files(
+    files = obtain_admin_cert_files(
         config={
             "provider": "step_ca",
             "provider_config": {
@@ -270,7 +270,7 @@ def test_step_ca_source_accepts_intermediate_chain(monkeypatch, tmp_path):
         files.cleanup()
 
 
-def test_custom_ephemeral_admin_cert_provider_path_is_supported(tmp_path):
+def test_custom_admin_cert_provider_path_is_supported(tmp_path):
     ca_key, _ca_cert, root_ca_path = _make_root_ca(tmp_path)
     cert_path, key_path = _make_admin_cert_files(
         tmp_path,
@@ -278,9 +278,9 @@ def test_custom_ephemeral_admin_cert_provider_path_is_supported(tmp_path):
         issuer_identity=Identity("root", "nvidia"),
     )
 
-    files = obtain_ephemeral_admin_cert_files(
+    files = obtain_admin_cert_files(
         config={
-            "provider": "tests.unit_test.fuel.sec.ephemeral_admin_cert_test:_custom_ephemeral_provider",
+            "provider": "tests.unit_test.fuel.sec.admin_cert_provider_test:_custom_admin_cert_provider",
             "provider_config": {
                 "cert_path": str(cert_path),
                 "key_path": str(key_path),
@@ -296,7 +296,7 @@ def test_custom_ephemeral_admin_cert_provider_path_is_supported(tmp_path):
     assert files.expires_at > time.time()
 
 
-def test_ephemeral_admin_cert_uses_validated_certificate_expiry(tmp_path):
+def test_admin_cert_provider_uses_validated_certificate_expiry(tmp_path):
     ca_key, _ca_cert, root_ca_path = _make_root_ca(tmp_path)
     cert_path, key_path = _make_admin_cert_files(
         tmp_path,
@@ -304,9 +304,9 @@ def test_ephemeral_admin_cert_uses_validated_certificate_expiry(tmp_path):
         issuer_identity=Identity("root", "nvidia"),
     )
 
-    files = obtain_ephemeral_admin_cert_files(
+    files = obtain_admin_cert_files(
         config={
-            "provider": "tests.unit_test.fuel.sec.ephemeral_admin_cert_test:_custom_ephemeral_provider",
+            "provider": "tests.unit_test.fuel.sec.admin_cert_provider_test:_custom_admin_cert_provider",
             "provider_config": {
                 "cert_path": str(cert_path),
                 "key_path": str(key_path),
@@ -320,7 +320,7 @@ def test_ephemeral_admin_cert_uses_validated_certificate_expiry(tmp_path):
     assert files.expires_at == cert.not_valid_after_utc.timestamp()
 
 
-def test_ephemeral_admin_cert_cache_reuses_valid_cert(monkeypatch, tmp_path):
+def test_admin_cert_provider_cache_reuses_valid_cert(monkeypatch, tmp_path):
     ca_key, _ca_cert, root_ca_path = _make_root_ca(tmp_path)
     cert_src, key_src = _make_admin_cert_files(tmp_path, signing_key=ca_key, issuer_identity=Identity("root", "nvidia"))
     command_log = tmp_path / "commands.jsonl"
@@ -334,15 +334,15 @@ def test_ephemeral_admin_cert_cache_reuses_valid_cert(monkeypatch, tmp_path):
         },
     }
 
-    first = obtain_ephemeral_admin_cert_files(config=config, root_ca_file=str(root_ca_path))
-    second = obtain_ephemeral_admin_cert_files(config=config, root_ca_file=str(root_ca_path))
+    first = obtain_admin_cert_files(config=config, root_ca_file=str(root_ca_path))
+    second = obtain_admin_cert_files(config=config, root_ca_file=str(root_ca_path))
 
     assert len(_read_command_log(command_log)) == 1
     assert first.client_cert == second.client_cert
     assert first.client_key == second.client_key
 
 
-def test_ephemeral_admin_cert_rejects_issued_cert_inside_renewal_window(monkeypatch, tmp_path):
+def test_admin_cert_provider_rejects_issued_cert_inside_renewal_window(monkeypatch, tmp_path):
     ca_key, _ca_cert, root_ca_path = _make_root_ca(tmp_path)
     cert_src, key_src = _make_admin_cert_files(
         tmp_path,
@@ -362,13 +362,13 @@ def test_ephemeral_admin_cert_rejects_issued_cert_inside_renewal_window(monkeypa
         },
     }
 
-    with pytest.raises(EphemeralAdminCertError, match="remain valid beyond the renewal window"):
-        obtain_ephemeral_admin_cert_files(config=config, root_ca_file=str(root_ca_path))
+    with pytest.raises(AdminCertProviderError, match="remain valid beyond the renewal window"):
+        obtain_admin_cert_files(config=config, root_ca_file=str(root_ca_path))
 
     assert len(_read_command_log(command_log)) == 1
 
 
-def test_ephemeral_admin_cert_cache_removes_orphaned_staging_directory(monkeypatch, tmp_path):
+def test_admin_cert_provider_cache_removes_orphaned_staging_directory(monkeypatch, tmp_path):
     ca_key, _ca_cert, root_ca_path = _make_root_ca(tmp_path)
     cert_src, key_src = _make_admin_cert_files(tmp_path, signing_key=ca_key, issuer_identity=Identity("root", "nvidia"))
     command_log = tmp_path / "commands.jsonl"
@@ -382,20 +382,20 @@ def test_ephemeral_admin_cert_cache_removes_orphaned_staging_directory(monkeypat
         },
     }
 
-    obtain_ephemeral_admin_cert_files(config=config, root_ca_file=str(root_ca_path))
-    cache_root = Path.home() / ".nvflare" / "ephemeral_admin_certs"
+    obtain_admin_cert_files(config=config, root_ca_file=str(root_ca_path))
+    cache_root = Path.home() / ".nvflare" / "admin_certificates"
     cache_dir = next(path for path in cache_root.iterdir() if path.is_dir())
     orphan = cache_dir / ".new-orphan"
     orphan.mkdir()
     (orphan / "client.key").write_text("partial", encoding="utf-8")
 
-    obtain_ephemeral_admin_cert_files(config=config, root_ca_file=str(root_ca_path))
+    obtain_admin_cert_files(config=config, root_ca_file=str(root_ca_path))
 
     assert not orphan.exists()
     assert len(_read_command_log(command_log)) == 1
 
 
-def test_ephemeral_admin_cert_cache_refreshes_invalid_cache(monkeypatch, tmp_path):
+def test_admin_cert_provider_cache_refreshes_invalid_cache(monkeypatch, tmp_path):
     ca_key, _ca_cert, root_ca_path = _make_root_ca(tmp_path)
     cert_src, key_src = _make_admin_cert_files(tmp_path, signing_key=ca_key, issuer_identity=Identity("root", "nvidia"))
     command_log = tmp_path / "commands.jsonl"
@@ -409,18 +409,18 @@ def test_ephemeral_admin_cert_cache_refreshes_invalid_cache(monkeypatch, tmp_pat
         },
     }
 
-    files = obtain_ephemeral_admin_cert_files(config=config, root_ca_file=str(root_ca_path))
+    files = obtain_admin_cert_files(config=config, root_ca_file=str(root_ca_path))
     with open(files.client_key, "w", encoding="utf-8") as f:
         f.write("not a private key")
 
-    refreshed_files = obtain_ephemeral_admin_cert_files(config=config, root_ca_file=str(root_ca_path))
+    refreshed_files = obtain_admin_cert_files(config=config, root_ca_file=str(root_ca_path))
 
     assert len(_read_command_log(command_log)) == 2
     assert os.path.isfile(refreshed_files.client_cert)
     assert os.path.isfile(refreshed_files.client_key)
 
 
-def test_ephemeral_admin_cert_cache_serializes_concurrent_acquisition(monkeypatch, tmp_path):
+def test_admin_cert_provider_cache_serializes_concurrent_acquisition(monkeypatch, tmp_path):
     ca_key, _ca_cert, root_ca_path = _make_root_ca(tmp_path)
     cert_src, key_src = _make_admin_cert_files(tmp_path, signing_key=ca_key, issuer_identity=Identity("root", "nvidia"))
     provider_started = threading.Event()
@@ -432,15 +432,15 @@ def test_ephemeral_admin_cert_cache_serializes_concurrent_acquisition(monkeypatc
         provider_calls += 1
         provider_started.set()
         assert provider_release.wait(timeout=5)
-        return EphemeralAdminCertFiles(client_key=str(key_src), client_cert=str(cert_src))
+        return AdminCertFiles(client_key=str(key_src), client_cert=str(cert_src))
 
-    monkeypatch.setattr("nvflare.fuel.sec.ephemeral_admin_cert._load_provider", lambda _provider_name: _provider)
+    monkeypatch.setattr("nvflare.fuel.sec.admin_cert_provider._load_provider", lambda _provider_name: _provider)
     config = {"provider": "test.provider:obtain_certificate", "provider_config": {}}
 
     with ThreadPoolExecutor(max_workers=2) as executor:
-        first_future = executor.submit(obtain_ephemeral_admin_cert_files, config, str(root_ca_path))
+        first_future = executor.submit(obtain_admin_cert_files, config, str(root_ca_path))
         assert provider_started.wait(timeout=5)
-        second_future = executor.submit(obtain_ephemeral_admin_cert_files, config, str(root_ca_path))
+        second_future = executor.submit(obtain_admin_cert_files, config, str(root_ca_path))
         provider_release.set()
         first = first_future.result(timeout=5)
         second = second_future.result(timeout=5)
@@ -459,7 +459,7 @@ def test_ephemeral_admin_cert_cache_serializes_concurrent_acquisition(monkeypatc
         ("nvidia", "", "unstructuredName"),
     ],
 )
-def test_validate_ephemeral_admin_cert_files_rejects_missing_identity_field(tmp_path, org, role, missing_field):
+def test_validate_admin_cert_files_rejects_missing_identity_field(tmp_path, org, role, missing_field):
     ca_key, _ca_cert, root_ca_path = _make_root_ca(tmp_path)
     admin_key, admin_pub_key = generate_keys()
     cert = generate_cert(
@@ -472,11 +472,11 @@ def test_validate_ephemeral_admin_cert_files_rejects_missing_identity_field(tmp_
     cert_path = tmp_path / "client.crt"
     _write_key_cert(key_path, cert_path, admin_key, [cert])
 
-    with pytest.raises(EphemeralAdminCertError, match=missing_field):
-        validate_ephemeral_admin_cert_files(str(cert_path), str(key_path), str(root_ca_path))
+    with pytest.raises(AdminCertProviderError, match=missing_field):
+        validate_admin_cert_files(str(cert_path), str(key_path), str(root_ca_path))
 
 
-def test_validate_ephemeral_admin_cert_files_rejects_non_rsa_key(tmp_path):
+def test_validate_admin_cert_files_rejects_non_rsa_key(tmp_path):
     ca_key, _ca_cert, root_ca_path = _make_root_ca(tmp_path)
     admin_key = ec.generate_private_key(ec.SECP256R1())
     cert = generate_cert(
@@ -489,11 +489,11 @@ def test_validate_ephemeral_admin_cert_files_rejects_non_rsa_key(tmp_path):
     cert_path = tmp_path / "client.crt"
     _write_key_cert(key_path, cert_path, admin_key, [cert])
 
-    with pytest.raises(EphemeralAdminCertError, match="must use RSA"):
-        validate_ephemeral_admin_cert_files(str(cert_path), str(key_path), str(root_ca_path))
+    with pytest.raises(AdminCertProviderError, match="must use RSA"):
+        validate_admin_cert_files(str(cert_path), str(key_path), str(root_ca_path))
 
 
-def test_validate_ephemeral_admin_cert_files_reports_unreadable_private_key(tmp_path):
+def test_validate_admin_cert_files_reports_unreadable_private_key(tmp_path):
     ca_key, _ca_cert, root_ca_path = _make_root_ca(tmp_path)
     cert_path, key_path = _make_admin_cert_files(
         tmp_path, signing_key=ca_key, issuer_identity=Identity("root", "nvidia")
@@ -507,11 +507,11 @@ def test_validate_ephemeral_admin_cert_files_reports_unreadable_private_key(tmp_
         )
     )
 
-    with pytest.raises(EphemeralAdminCertError, match="unencrypted PEM private key"):
-        validate_ephemeral_admin_cert_files(str(cert_path), str(key_path), str(root_ca_path))
+    with pytest.raises(AdminCertProviderError, match="unencrypted PEM private key"):
+        validate_admin_cert_files(str(cert_path), str(key_path), str(root_ca_path))
 
 
-def test_validate_ephemeral_admin_cert_files_preserves_validity_failure_detail(tmp_path):
+def test_validate_admin_cert_files_preserves_validity_failure_detail(tmp_path):
     ca_key, _ca_cert, root_ca_path = _make_root_ca(tmp_path)
     admin_key, admin_pub_key = generate_keys()
     now = datetime.datetime.now(datetime.timezone.utc)
@@ -527,16 +527,16 @@ def test_validate_ephemeral_admin_cert_files_preserves_validity_failure_detail(t
     cert_path = tmp_path / "client.crt"
     _write_key_cert(key_path, cert_path, admin_key, [cert])
 
-    with pytest.raises(EphemeralAdminCertError, match="chain validation failed:.*not valid"):
-        validate_ephemeral_admin_cert_files(str(cert_path), str(key_path), str(root_ca_path))
+    with pytest.raises(AdminCertProviderError, match="chain validation failed:.*not valid"):
+        validate_admin_cert_files(str(cert_path), str(key_path), str(root_ca_path))
 
 
 def test_step_ca_source_reports_step_failure(monkeypatch, tmp_path):
     _ca_key, _ca_cert, root_ca_path = _make_root_ca(tmp_path)
     fake_step = _fake_step(monkeypatch, tmp_path, exit_code=1)
 
-    with pytest.raises(EphemeralAdminCertError, match="step ca certificate failed"):
-        obtain_ephemeral_admin_cert_files(
+    with pytest.raises(AdminCertProviderError, match="step ca certificate failed"):
+        obtain_admin_cert_files(
             config={
                 "provider": "step_ca",
                 "provider_config": {
@@ -558,7 +558,7 @@ def test_step_ca_source_requires_explicit_provisioner(monkeypatch, tmp_path):
         lambda **_kwargs: pytest.fail("temporary directory created before config validation"),
     )
 
-    with pytest.raises(EphemeralAdminCertError, match="provisioner"):
+    with pytest.raises(AdminCertProviderError, match="provisioner"):
         obtain_step_ca_admin_cert_files(
             config={"ca_url": "https://step-ca.example.com", "step_bin": str(fake_step)},
             root_ca_file=str(root_ca_path),
@@ -566,7 +566,7 @@ def test_step_ca_source_requires_explicit_provisioner(monkeypatch, tmp_path):
 
 
 def test_step_ca_source_requires_ca_url():
-    with pytest.raises(EphemeralAdminCertError, match="ca_url is required"):
+    with pytest.raises(AdminCertProviderError, match="ca_url is required"):
         validate_step_ca_admin_cert_config({"provisioner": "nvflare-admin-oidc"})
 
 
@@ -577,18 +577,18 @@ def test_step_ca_source_accepts_ipv6_loopback_http():
 
 
 @pytest.mark.parametrize("value", [True, float("nan"), float("inf"), float("-inf")])
-def test_ephemeral_admin_cert_rejects_non_finite_renewal_window(value):
-    with pytest.raises(EphemeralAdminCertError, match="finite number"):
-        get_ephemeral_admin_cert_renewal_window({"renewal_window": value})
+def test_admin_cert_provider_rejects_non_finite_renewal_window(value):
+    with pytest.raises(AdminCertProviderError, match="finite number"):
+        get_admin_cert_renewal_window({"renewal_window": value})
 
 
-def test_ephemeral_admin_cert_uses_twelve_hour_default_renewal_window():
-    assert get_ephemeral_admin_cert_renewal_window({}) == 12 * 60 * 60
+def test_admin_cert_provider_uses_twelve_hour_default_renewal_window():
+    assert get_admin_cert_renewal_window({}) == 12 * 60 * 60
 
 
 @pytest.mark.parametrize("value", [True, float("nan"), float("inf"), float("-inf")])
 def test_step_ca_source_rejects_non_finite_command_timeout(value):
-    with pytest.raises(EphemeralAdminCertError, match="finite number"):
+    with pytest.raises(AdminCertProviderError, match="finite number"):
         validate_step_ca_admin_cert_config(
             {
                 "ca_url": "https://step-ca.example.com",
@@ -602,7 +602,7 @@ def test_step_ca_source_times_out_step_command(monkeypatch, tmp_path):
     _ca_key, _ca_cert, root_ca_path = _make_root_ca(tmp_path)
     fake_step = _fake_step(monkeypatch, tmp_path, sleep=2)
 
-    with pytest.raises(EphemeralAdminCertError, match="timed out"):
+    with pytest.raises(AdminCertProviderError, match="timed out"):
         obtain_step_ca_admin_cert_files(
             config={
                 "ca_url": "https://step-ca.example.com",
@@ -620,7 +620,7 @@ def test_step_ca_source_reports_unexecutable_step_binary(tmp_path):
     step_bin.write_text("not executable", encoding="utf-8")
     step_bin.chmod(0o600)
 
-    with pytest.raises(EphemeralAdminCertError, match="cannot execute the 'step' CLI"):
+    with pytest.raises(AdminCertProviderError, match="cannot execute the 'step' CLI"):
         obtain_step_ca_admin_cert_files(
             config={
                 "ca_url": "https://step-ca.example.com",
@@ -641,8 +641,8 @@ def test_step_ca_source_rejects_placeholder_common_name(monkeypatch, tmp_path):
     )
     fake_step = _fake_step(monkeypatch, tmp_path, cert_src=cert_src, key_src=key_src)
 
-    with pytest.raises(EphemeralAdminCertError, match="commonName"):
-        obtain_ephemeral_admin_cert_files(
+    with pytest.raises(AdminCertProviderError, match="commonName"):
+        obtain_admin_cert_files(
             config={
                 "provider": "step_ca",
                 "provider_config": {
@@ -655,8 +655,8 @@ def test_step_ca_source_rejects_placeholder_common_name(monkeypatch, tmp_path):
         )
 
 
-def test_ephemeral_cert_files_need_renewal_inside_window():
-    cert_files = EphemeralAdminCertFiles(
+def test_admin_cert_files_need_renewal_inside_window():
+    cert_files = AdminCertFiles(
         client_key="client.key",
         client_cert="client.crt",
         expires_at=time.time() + 30.0,

@@ -21,7 +21,7 @@ from nvflare.tool.package_checker.package_checker import CheckStatus, PackageChe
 from nvflare.tool.package_checker.utils import NVFlareRole
 
 
-def _write_ephemeral_admin_config(package_dir):
+def _write_admin_cert_provider_config(package_dir):
     startup = package_dir / "startup"
     startup.mkdir()
     (startup / "fed_admin.json").write_text(
@@ -31,7 +31,7 @@ def _write_ephemeral_admin_config(package_dir):
                     "host": "localhost",
                     "port": 8003,
                     "scheme": "grpc",
-                    "ephemeral_admin_cert": {
+                    "admin_cert_provider": {
                         "provider": "step_ca",
                         "provider_config": {
                             "ca_url": "https://step-ca.example.com",
@@ -46,8 +46,8 @@ def _write_ephemeral_admin_config(package_dir):
     (startup / "rootCA.pem").write_text("root", encoding="utf-8")
 
 
-def test_server_check_uses_non_interactive_reachability_for_ephemeral_admin(tmp_path):
-    _write_ephemeral_admin_config(tmp_path)
+def test_server_check_uses_non_interactive_reachability_for_admin_cert_provider(tmp_path):
+    _write_admin_cert_provider_config(tmp_path)
     rule = CheckServerAvailable(name="Check server available", role=NVFlareRole.ADMIN)
 
     with patch(
@@ -61,8 +61,8 @@ def test_server_check_uses_non_interactive_reachability_for_ephemeral_admin(tmp_
     grpc_check.assert_not_called()
 
 
-def test_console_check_skips_interactive_dry_run_for_ephemeral_admin(tmp_path):
-    _write_ephemeral_admin_config(tmp_path)
+def test_console_check_skips_interactive_dry_run_for_admin_cert_provider(tmp_path):
+    _write_admin_cert_provider_config(tmp_path)
     checker = NVFlareConsolePackageChecker()
     checker.init(str(tmp_path))
 
@@ -79,11 +79,11 @@ def test_console_check_skips_interactive_dry_run_for_ephemeral_admin(tmp_path):
     inherited_check.assert_not_called()
 
 
-def test_console_check_rejects_invalid_ephemeral_config(tmp_path):
-    _write_ephemeral_admin_config(tmp_path)
+def test_console_check_rejects_invalid_admin_cert_provider_config(tmp_path):
+    _write_admin_cert_provider_config(tmp_path)
     config_path = tmp_path / "startup" / "fed_admin.json"
     config = json.loads(config_path.read_text(encoding="utf-8"))
-    config["admin"]["ephemeral_admin_cert"] = True
+    config["admin"]["admin_cert_provider"] = True
     config_path.write_text(json.dumps(config), encoding="utf-8")
     checker = NVFlareConsolePackageChecker()
     checker.init(str(tmp_path))
@@ -93,7 +93,7 @@ def test_console_check_rejects_invalid_ephemeral_config(tmp_path):
 
 
 def test_console_check_rejects_missing_root_ca(tmp_path):
-    _write_ephemeral_admin_config(tmp_path)
+    _write_admin_cert_provider_config(tmp_path)
     (tmp_path / "startup" / "rootCA.pem").unlink()
     checker = NVFlareConsolePackageChecker()
     checker.init(str(tmp_path))
@@ -103,7 +103,7 @@ def test_console_check_rejects_missing_root_ca(tmp_path):
 
 
 def test_console_check_rejects_missing_step_cli(tmp_path):
-    _write_ephemeral_admin_config(tmp_path)
+    _write_admin_cert_provider_config(tmp_path)
     checker = NVFlareConsolePackageChecker()
     checker.init(str(tmp_path))
 
@@ -112,8 +112,8 @@ def test_console_check_rejects_missing_step_cli(tmp_path):
     assert "step CLI is not available" in checker.report[str(tmp_path.resolve())][-1][1]
 
 
-def test_server_check_rejects_unsupported_scheme_before_ephemeral_probe(tmp_path):
-    _write_ephemeral_admin_config(tmp_path)
+def test_server_check_rejects_unsupported_scheme_before_admin_cert_provider_probe(tmp_path):
+    _write_admin_cert_provider_config(tmp_path)
     config_path = tmp_path / "startup" / "fed_admin.json"
     config = json.loads(config_path.read_text(encoding="utf-8"))
     config["admin"]["scheme"] = "ws"

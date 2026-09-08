@@ -19,6 +19,7 @@ import shutil
 
 from nvflare.app_common.default_component_policy import DEFAULT_CLASS_ALLOW_LIST
 from nvflare.lighter import utils
+from nvflare.lighter.admin_cert_provider import get_admin_cert_provider_config
 from nvflare.lighter.constants import (
     CommConfigArg,
     ConnSecurity,
@@ -30,7 +31,6 @@ from nvflare.lighter.constants import (
     TemplateSectionKey,
 )
 from nvflare.lighter.entity import Participant
-from nvflare.lighter.ephemeral_admin import get_admin_ephemeral_cert_config
 from nvflare.lighter.spec import Builder, Project, ProvisionContext
 
 _logger = logging.getLogger(__name__)
@@ -661,8 +661,8 @@ class StaticFileBuilder(Builder):
         if not conn_sec:
             conn_sec = ConnSecurity.MTLS
 
-        ephemeral_admin_cert = get_admin_ephemeral_cert_config(admin)
-        uid_source = "cert" if ephemeral_admin_cert else "user_input"
+        admin_cert_provider = get_admin_cert_provider_config(admin)
+        uid_source = "cert" if admin_cert_provider else "user_input"
         provision_mode = ctx.get_provision_mode()
         if provision_mode == ProvisionMode.POC:
             uid_source = "cert"
@@ -673,7 +673,7 @@ class StaticFileBuilder(Builder):
 
         replacement_dict = {
             "project_name": project.name,
-            "username": "" if provision_mode == ProvisionMode.POC or ephemeral_admin_cert else admin.name,
+            "username": "" if provision_mode == ProvisionMode.POC or admin_cert_provider else admin.name,
             "server_identity": self._get_auth_identity(server),
             "scheme": self.scheme,
             "conn_sec": conn_sec,
@@ -687,7 +687,7 @@ class StaticFileBuilder(Builder):
             file_name=ProvFileName.FED_ADMIN_JSON,
             replacement=replacement_dict,
             content_modify_cb=_modify_fed_admin_config,
-            ephemeral_admin_cert=ephemeral_admin_cert,
+            admin_cert_provider=admin_cert_provider,
         )
 
         # create default resources in local
@@ -1066,8 +1066,8 @@ def _remove_undefined_port(section: str) -> str:
         return section
 
 
-def _modify_fed_admin_config(section: str, ephemeral_admin_cert=None) -> str:
-    if not ephemeral_admin_cert:
+def _modify_fed_admin_config(section: str, admin_cert_provider=None) -> str:
+    if not admin_cert_provider:
         return section
 
     admin_config = json.loads(section)
@@ -1076,7 +1076,7 @@ def _modify_fed_admin_config(section: str, ephemeral_admin_cert=None) -> str:
     admin.pop("client_cert", None)
     admin["username"] = ""
     admin["uid_source"] = "cert"
-    admin[PropKey.EPHEMERAL_ADMIN_CERT] = dict(ephemeral_admin_cert)
+    admin[PropKey.ADMIN_CERT_PROVIDER] = dict(admin_cert_provider)
     return json.dumps(admin_config, indent=2)
 
 
