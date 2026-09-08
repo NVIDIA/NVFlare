@@ -99,7 +99,11 @@ assignments are still created at the same simulated time, while idle physical
 workers execute pending assignments. Results are accepted only in simulated
 finish-time order. `--max-parallel` separately caps concurrent Collab RPCs (2
 by default). These host controls do not change logical participation,
-snapshots, staleness, buffer boundaries, or simulated time.
+snapshots, staleness, buffer boundaries, or simulated time. The server creates
+logical work in `FedReviveServer._dispatch_open_slots()`, maps it onto the
+bounded worker pool in `FedReviveServer._dispatch_pending_assignments()`, and
+recycles a worker in `FedReviveServer._record_physical_outcome()` without
+accepting that result ahead of its simulated upload event.
 
 Each physical worker multiplexes many logical clients. A logical client's
 prepared shard and runtime profile persist on disk, while the worker reuses a
@@ -110,6 +114,12 @@ physical pool and `--max-parallel` small bounds simulator processes, Collab call
 threads, dataset copies, and CUDA contexts without changing logical `K=100`.
 The launcher also fixes native BLAS/OpenMP pools to one thread per worker so
 sequential RPCs cannot accumulate idle native thread teams and their stacks.
+`FedReviveClient.initialize()` creates the reusable dataset and model;
+`FedReviveClient._logical_indices()` loads the selected logical shard; and
+`FedReviveClient.train()` discards per-assignment state, moves the model back to
+CPU, clears the CUDA cache, and calls `client._trim_process_memory()` around
+successive assignments to release allocator pages no longer used by the
+previous call.
 
 Returned client tensors are downloaded directly into a temporary offload
 directory inside the server run directory. The server keeps only lazy tensor
@@ -120,7 +130,14 @@ without keeping all out-of-order client models in memory; the complete offload
 directory is also removed when the workflow exits or aborts. This applies to
 the sequence-following wait queue. Once accepted, FedAvg and FedBuff updates
 are folded into the in-time accumulator by default; FedRevive's eight-model
-teacher buffer remains separate algorithmic state.
+teacher buffer remains separate algorithmic state. Specifically,
+`FedReviveServer._setup_tensor_disk_offload()` enables the lazy tensor store,
+`FedReviveServer._wait_for_next_event()` holds early results until logically
+due, and `FedReviveServer._process_outcome()` materializes and cleans up one
+accepted result at a time through `FedReviveServer._materialize_result()`;
+discarded results are cleaned through
+`FedReviveServer._release_outcome_result()`. `InTimeUpdateBuffer.add()` and
+`InTimeUpdateBuffer.aggregate()` maintain the running FedAvg/FedBuff accumulator.
 
 Assignment base snapshots use a second, reference-counted disk cache. The
 arbitrary arrival schedule can leave many jobs based on older global versions,
@@ -132,6 +149,16 @@ rather than anonymous RAM without changing staleness or update values. A fixed
 pool of result-watch threads likewise bounds nonblocking-call bookkeeping by
 the number of physical sites. Both temporary caches are removed at workflow
 shutdown; final models and experiment results are unaffected.
+`_SnapshotStore.retain()`, `_SnapshotStore.load()`, and
+`_SnapshotStore.release()` implement the snapshot lifecycle used by
+`FedReviveServer._dispatch_open_slots()`,
+`FedReviveServer._dispatch_pending_assignments()`, and
+`FedReviveServer._process_outcome()`. The bounded watcher pool is managed by
+`FedReviveServer._start_call_watchers()`,
+`FedReviveServer._consume_call_results()`, and
+`FedReviveServer._stop_call_watchers()`; `_SnapshotStore.cleanup()` and
+`FedReviveServer._clear_completed_outcomes()` cover normal shutdown and abort
+cleanup.
 
 ## FedRevive update
 
