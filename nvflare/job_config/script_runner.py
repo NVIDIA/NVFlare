@@ -158,17 +158,37 @@ class ScriptRunner:
         self._execution_mode = execution_mode
         self._params_exchange_format = params_exchange_format
 
-    def _external_process_argv(self) -> list[str]:
+    def _external_process_argv(self, packaged_script_path: Optional[str]) -> list[str]:
         command = _to_external_process_argv(self._command, "command")
-        script = os.path.basename(self._script) if os.path.isabs(self._script) else self._script
+        # Preserve the established external-process command for an absolute script
+        # that is expected to exist only on the target production client.
+        script = packaged_script_path
+        if script is None:
+            script = os.path.basename(self._script) if os.path.isabs(self._script) else self._script
         command.append(f"custom/{script}")
         command.extend(_to_external_process_argv(self._script_args, "script_args"))
         return command
+
+    def _packaged_script_path(self, job: FedJob) -> Optional[str]:
+        """Choose a stable client-relative path only when this process can bundle the script."""
+        # Match FedApp._add_resource(), which intentionally gives directories
+        # precedence when a filesystem abstraction reports both classifications.
+        if os.path.isdir(self._script):
+            return None
+        if not os.path.isfile(self._script):
+            return None
+        if os.path.isabs(self._script):
+            # Freeze the exporter's established sys.path-relative destination now.
+            # The authoring environment may change before export, and separate source
+            # directories must not collapse to the same basename.
+            return job.job._get_relative_script(self._script)
+        return self._script
 
     def add_to_fed_job(self, job: FedJob, ctx, **kwargs):
         """Adds the configured ClientAPIExecutor and script resource to the job."""
         job.check_kwargs(args_to_check=kwargs, args_expected={"tasks": False})
         tasks = kwargs.get("tasks", ["*"])
+        packaged_script_path = self._packaged_script_path(job)
 
         common_args = {
             "execution_mode": self._execution_mode,
@@ -179,7 +199,7 @@ class ScriptRunner:
             "cuda_empty_cache": self._cuda_empty_cache,
         }
         if self._execution_mode == ExecutionMode.EXTERNAL_PROCESS:
-            command = self._external_process_argv()
+            command = self._external_process_argv(packaged_script_path)
             _fill_additional_node_command(job, ctx.target, command, self._launch_once)
             executor = ClientAPIExecutor(
                 command=command,
@@ -189,12 +209,22 @@ class ScriptRunner:
                 **common_args,
             )
         else:
+            # Locally available absolute paths identify authoring-machine source files,
+            # so execute their bundled relative path. An unavailable absolute path is a
+            # supported reference to a script pre-installed on a production client.
+            task_script_path = packaged_script_path or self._script
             executor = ClientAPIExecutor(
-                task_script_path=self._script,
+                task_script_path=task_script_path,
                 task_script_args=self._script_args,
                 **common_args,
             )
 
         job.add_executor(executor, tasks=tasks, ctx=ctx)
         job.add_resources(resources=[self._script], ctx=ctx)
+        if packaged_script_path is not None:
+            # ScriptRunner and the exporter are part of the same job-config layer. Store
+            # the selected destination privately so packaging cannot derive a different
+            # path later from a changed working directory or sys.path.
+            app_config = job._get_app(ctx).app_config
+            app_config._set_ext_script_destination(self._script, packaged_script_path)
         return {}
