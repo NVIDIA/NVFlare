@@ -20,41 +20,31 @@ FLARE CIFAR-10 examples.
 CIFAR-100, FEMNIST, 20NewsGroups, DD-FedRevive, and AFL-DW are outside this
 initial contribution.
 
-Two configurations expose the class-proportion source and generator frequency
-as a coupled experiment setting. The default `true-histogram-frequent`
-configuration uses each client's prepared class proportions and synthesizes on
-every eligible update. The `estimated-histogram-periodic` configuration uses a
-server-side estimator and synthesizes every ten model versions. The selected
-configuration is explicit in the CLI and saved results.
+The class-proportion source and generator interval are independent experiment
+options. `--class-proportion-source true-histogram` reads each client's
+prepared class histogram, while `--class-proportion-source estimated` derives
+it entirely on the server from ordinary model uploads. `--generation-interval`
+controls how many global model versions elapse between synthesis steps.
 
-## FedRevive configurations
+## Class-proportion estimation
 
-Select the estimated configuration with
-`--fedrevive-config estimated-histogram-periodic`. For each logical client, the
-server probes only its first two ordinarily uploaded models with fresh i.i.d.
+When `--class-proportion-source estimated` is selected, the server probes only
+each logical client's first two ordinarily uploaded models with fresh i.i.d.
 Gaussian CIFAR-shaped inputs. It averages the resulting softmax vectors using
 the CIFAR-10 probe temperature $T_{probe}=0.8$, uses the first estimate as a
 running proxy until the second arrives, and then freezes the average. This adds
 no client computation, label histogram, or message field. The implementation
-discards the prepared manifest's true proportions from its server-side copy in
-this configuration.
+also removes the prepared true proportions from its server-side manifest copy.
 
 The paper does not report the number of Gaussian probe inputs. This
 implementation uses 64, matching its reported synthesis batch size. One
 reusable probing model serves all 1,000 logical clients; persistent estimator
 state is only one ten-element sum and one count per observed client.
 
-The two configurations are:
-
-| Configuration | Class proportions | Generator interval $T_{gen}$ |
-|---|---|---:|
-| `true-histogram-frequent` (default) | Prepared true histogram | Every eligible update |
-| `estimated-histogram-periodic` | First-two-upload server estimate | 10 server versions |
-
-Both use $K_{synth}=2$, $K_{KD}=10$, and an eight-model teacher buffer
+All settings use $K_{synth}=2$, $K_{KD}=10$, and an eight-model teacher buffer
 ($c=8$). Distillation still occurs on every eligible stale arrival after
-warmup; between periodic synthesis steps, the estimated-histogram configuration
-reuses the bounded synthetic pool.
+warmup. When the generation interval is greater than one, the bounded synthetic
+pool is reused between synthesis steps.
 
 ## Unified scheduling and aggregation
 
@@ -92,6 +82,16 @@ training time when each download event fires and upload time when each training
 event fires. The server accepts completed calls in simulated upload order, so
 host scheduling does not change logical participation, model snapshots, or
 staleness.
+
+### Resource controls
+
+Replaying a deterministic logical arrival sequence creates a resource-control
+challenge: physical RPCs can finish out of order, and many active assignments
+can refer to old global versions. Keeping every completed client model and
+every assignment snapshot in RAM makes memory grow with logical concurrency
+and can eventually exhaust the host. The implementation therefore separates
+the logical experiment (`K`, seeded events, and staleness) from the bounded
+physical execution pool and moves waiting model state to disk.
 
 The number of physical Collab sites is an execution-pool setting and need not
 equal `K`. The simulator uses 2 sites by default: all `K=100` logical
@@ -154,10 +154,9 @@ $$
 $$
 
 DFKD starts after model version 50 when the accepted update has nonzero
-staleness. With `true-histogram-frequent`, every such eligible update performs
-all four steps below. With `estimated-histogram-periodic`, steps 1--3 occur only
-when the model version is divisible by $T_{gen}=10$, while step 4 still occurs
-per eligible update after the version-100 warmup:
+staleness. Steps 1--3 occur when the model version is divisible by
+`--generation-interval`, while step 4 still occurs for every eligible update
+after the version-100 warmup:
 
 1. adapts a fast copy of the persistent generator for two synthesis steps;
 2. applies a Reptile update to the persistent generator;
@@ -183,7 +182,7 @@ All synthesis and KD work is server-side. No synthetic data is sent to clients.
 | Local iterations | 25 |
 | Teacher buffer | 8 models |
 | Synthesis batch / steps | 64 / 2 |
-| Generator interval | 1 or 10 versions, selected by FedRevive configuration |
+| Generator interval | Configurable; 1 by default |
 | Generator / latent learning rate | 0.003 / 0.001 |
 | KD batch / iterations / learning rate | 32 per teacher / 10 / $10^{-4}$ |
 | DFKD weights | adversarial 0.1, feature 0.003, one-hot 1.0 |
@@ -259,6 +258,7 @@ python job.py --method fedbuff \
   --max-time 200 --setup-seed 10 --run-seed 10
 
 python job.py --method fedrevive \
+  --class-proportion-source true-histogram --generation-interval 1 \
   --data-root /tmp/cifar10 --prepared-data-root /tmp/fedrevive/cifar10 \
   --max-time 200 --setup-seed 10 --run-seed 10
 ```
@@ -267,7 +267,7 @@ To run with estimated class proportions and periodic synthesis:
 
 ```bash
 python job.py --method fedrevive \
-  --fedrevive-config estimated-histogram-periodic \
+  --class-proportion-source estimated --generation-interval 10 \
   --data-root /tmp/cifar10 --prepared-data-root /tmp/fedrevive/cifar10 \
   --max-time 200 --setup-seed 10 --run-seed 10
 ```
@@ -284,14 +284,15 @@ python job.py --method fedbuff \
 
 python job.py --method fedrevive \
   --delay-schedule shifted \
+  --class-proportion-source true-histogram --generation-interval 1 \
   --data-root /tmp/cifar10 \
   --prepared-data-root /tmp/fedrevive/cifar10_shifted \
   --max-time 100 --setup-seed 10 --run-seed 10
 ```
 
-Add `--fedrevive-config estimated-histogram-periodic` to the FedRevive command
-to combine estimated class proportions and periodic generation with the
-shifted delay schedule.
+Use `--class-proportion-source estimated --generation-interval 10` instead to
+combine estimated class proportions and periodic generation with the shifted
+delay schedule.
 
 A CUDA-capable GPU is recommended for both client training and FedRevive's
 server-side DFKD. Device selection defaults to `auto`; use `--client-device

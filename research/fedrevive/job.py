@@ -33,7 +33,7 @@ for _variable in (
 
 from client import FedReviveClient
 from data import DELAY_SCHEDULES, load_manifest, prepare_cifar10
-from fedrevive import FIGURE_2_METHOD_CONFIGS, FedReviveConfig, Method
+from fedrevive import FIGURE_2_METHOD_CONFIGS, ClassProportionSource, Method
 from server import FedReviveServer
 
 from nvflare.collab import CollabRecipe
@@ -71,10 +71,16 @@ def define_parser():
     )
     parser.add_argument("--server-lr", type=float, default=None)
     parser.add_argument(
-        "--fedrevive-config",
-        choices=[config.value for config in FedReviveConfig],
-        default=FedReviveConfig.TRUE_HISTOGRAM_FREQUENT.value,
-        help="Select the class-proportion source and generator frequency",
+        "--class-proportion-source",
+        choices=[source.value for source in ClassProportionSource],
+        default=ClassProportionSource.TRUE_HISTOGRAM.value,
+        help="How FedRevive obtains each client's class proportions",
+    )
+    parser.add_argument(
+        "--generation-interval",
+        type=int,
+        default=1,
+        help="Generate synthetic data every N global model versions",
     )
     parser.add_argument("--max-time", type=float, default=200.0, help="Simulated-time budget")
     parser.add_argument("--max-model-versions", type=int, default=50000)
@@ -141,8 +147,12 @@ def validate_args(args):
         )
     if args.max_parallel > args.num_clients:
         raise ValueError("--max-parallel must not exceed --num-clients")
-    if args.method != Method.FEDREVIVE.value and args.fedrevive_config != FedReviveConfig.TRUE_HISTOGRAM_FREQUENT.value:
-        raise ValueError("--fedrevive-config is only configurable with --method fedrevive")
+    if args.generation_interval < 1:
+        raise ValueError("--generation-interval must be positive")
+    if args.method != Method.FEDREVIVE.value and (
+        args.class_proportion_source != ClassProportionSource.TRUE_HISTOGRAM.value or args.generation_interval != 1
+    ):
+        raise ValueError("class-proportion and generation options are only configurable with --method fedrevive")
 
 
 def make_recipe(args):
@@ -174,7 +184,8 @@ def make_recipe(args):
         setup_seed=args.setup_seed,
         run_seed=args.run_seed,
         max_model_versions=args.max_model_versions,
-        fedrevive_config=args.fedrevive_config,
+        class_proportion_source=args.class_proportion_source,
+        generation_interval=args.generation_interval,
     )
     client = FedReviveClient(
         data_root=args.data_root,
@@ -245,7 +256,8 @@ def main():
     print(f"  In-time accumulation: {args.in_time}")
     print(f"  Simulated-time budget: {args.max_time}")
     print(f"  Delay schedule: {args.delay_schedule}")
-    print(f"  FedRevive configuration: {args.fedrevive_config}")
+    print(f"  Class-proportion source: {args.class_proportion_source}")
+    print(f"  Generation interval: {args.generation_interval}")
     print("=" * 80)
     run = recipe.execute(SimEnv(num_clients=args.num_clients, workspace_root=args.workspace_root))
     print("Job Status:", run.get_status())

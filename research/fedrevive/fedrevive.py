@@ -33,11 +33,11 @@ class Method(str, Enum):
     FEDREVIVE = "fedrevive"
 
 
-class FedReviveConfig(str, Enum):
-    """Select the class-proportion source and generator frequency."""
+class ClassProportionSource(str, Enum):
+    """Select how the server obtains each client's class proportions."""
 
-    TRUE_HISTOGRAM_FREQUENT = "true-histogram-frequent"
-    ESTIMATED_HISTOGRAM_PERIODIC = "estimated-histogram-periodic"
+    TRUE_HISTOGRAM = "true-histogram"
+    ESTIMATED = "estimated"
 
 
 @dataclass(frozen=True)

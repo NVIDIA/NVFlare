@@ -33,7 +33,7 @@ from dfkd import ClassProportionProxyEstimator, DFKDConfig, DFKDReviver
 from fedrevive import (
     FIGURE_2_METHOD_CONFIGS,
     BufferedUpdate,
-    FedReviveConfig,
+    ClassProportionSource,
     InTimeUpdateBuffer,
     Method,
     TeacherBuffer,
@@ -211,12 +211,16 @@ class FedReviveServer:
         setup_seed: int = 10,
         run_seed: int = 10,
         max_model_versions: int = 50000,
-        fedrevive_config: FedReviveConfig | str = FedReviveConfig.TRUE_HISTOGRAM_FREQUENT,
+        class_proportion_source: ClassProportionSource | str = ClassProportionSource.TRUE_HISTOGRAM,
+        generation_interval: int = 1,
     ):
         self.method = Method(method)
-        self.fedrevive_config = FedReviveConfig(fedrevive_config)
-        if self.method is not Method.FEDREVIVE and self.fedrevive_config is not FedReviveConfig.TRUE_HISTOGRAM_FREQUENT:
-            raise ValueError("FedRevive configuration is only configurable for FedRevive")
+        self.class_proportion_source = ClassProportionSource(class_proportion_source)
+        self.generation_interval = int(generation_interval)
+        if self.method is not Method.FEDREVIVE and (
+            self.class_proportion_source is not ClassProportionSource.TRUE_HISTOGRAM or self.generation_interval != 1
+        ):
+            raise ValueError("class-proportion and generation options are only configurable for FedRevive")
         preset = FIGURE_2_METHOD_CONFIGS[self.method]
         self.data_root = data_root
         self.prepared_data_root = prepared_data_root
@@ -240,9 +244,16 @@ class FedReviveServer:
             raise ValueError("max_time, num_active_jobs, and buffer_size must be positive")
         if not 1 <= self.min_open_slots <= self.num_active_jobs:
             raise ValueError("min_open_slots must be between 1 and num_active_jobs")
-        if self.server_lr <= 0 or self.eval_interval < 1 or self.max_model_versions < 1 or self.max_parallel < 0:
+        if (
+            self.server_lr <= 0
+            or self.eval_interval < 1
+            or self.max_model_versions < 1
+            or self.max_parallel < 0
+            or self.generation_interval < 1
+        ):
             raise ValueError(
-                "server_lr, eval_interval, and max_model_versions must be positive; max_parallel must be >= 0"
+                "server_lr, eval_interval, max_model_versions, and generation_interval must be positive; "
+                "max_parallel must be >= 0"
             )
 
         self.logger = get_obj_logger(self)
@@ -277,9 +288,7 @@ class FedReviveServer:
         # completion timing: FedBuff is sensitive to the resulting arrival and
         # staleness sequence, particularly under the paper's shifted schedule.
         self._runtime_rng = np.random.RandomState(self.run_seed)
-        self._dfkd_config = DFKDConfig(
-            generation_interval=(10 if self.fedrevive_config is FedReviveConfig.ESTIMATED_HISTOGRAM_PERIODIC else 1)
-        )
+        self._dfkd_config = DFKDConfig(generation_interval=self.generation_interval)
         self._teacher_buffer = TeacherBuffer(self._dfkd_config.teacher_buffer_size)
         self._reviver = None
         self._proxy_estimator = None
@@ -405,7 +414,7 @@ class FedReviveServer:
     def _init_data(self):
         self._manifest = load_manifest(self.prepared_data_root)
         logical_count = int(self._manifest["num_logical_clients"])
-        if self.fedrevive_config is FedReviveConfig.ESTIMATED_HISTOGRAM_PERIODIC:
+        if self.class_proportion_source is ClassProportionSource.ESTIMATED:
             # The estimated-histogram configuration must not expose the true
             # label proportions to its server-side update path.
             self._manifest.pop("class_proportions", None)
@@ -495,7 +504,7 @@ class FedReviveServer:
             self._reviver = DFKDReviver(
                 self._device(), output_dir=os.path.join(self._run_dir, "dfkd"), config=self._dfkd_config
             )
-            if self.fedrevive_config is FedReviveConfig.ESTIMATED_HISTOGRAM_PERIODIC:
+            if self.class_proportion_source is ClassProportionSource.ESTIMATED:
                 # The estimator consumes only ordinary uploaded weights and
                 # runs entirely on the server.  No label histogram or other
                 # auxiliary metadata crosses the Collab boundary.
@@ -515,7 +524,8 @@ class FedReviveServer:
         self.logger.info(
             f"[{collab.call_info}] method={self.method.value} K={self.num_active_jobs} "
             f"B={self.buffer_size} O={self.min_open_slots} in_time={self.in_time} max_time={self.max_time} "
-            f"fedrevive_config={self.fedrevive_config.value}"
+            f"class_proportion_source={self.class_proportion_source.value} "
+            f"generation_interval={self.generation_interval}"
         )
         try:
             # Offload must be active before dispatch: otherwise every early
@@ -570,7 +580,8 @@ class FedReviveServer:
                 "min_open_slots": self.min_open_slots,
                 "in_time": self.in_time,
                 "server_lr": self.server_lr,
-                "fedrevive_config": self.fedrevive_config.value,
+                "class_proportion_source": self.class_proportion_source.value,
+                "generation_interval": self.generation_interval,
                 "dfkd": (
                     {
                         "generator_steps": self._dfkd_config.generator_steps,
@@ -579,8 +590,8 @@ class FedReviveServer:
                         "teacher_buffer_size": self._dfkd_config.teacher_buffer_size,
                         "class_proportion_source": (
                             "two-upload-proxy"
-                            if self.fedrevive_config is FedReviveConfig.ESTIMATED_HISTOGRAM_PERIODIC
-                            else "prepared-label-histogram"
+                            if self.class_proportion_source is ClassProportionSource.ESTIMATED
+                            else ClassProportionSource.TRUE_HISTOGRAM.value
                         ),
                         "proxy_num_uploads": self._dfkd_config.proxy_num_uploads,
                         "proxy_temperature": self._dfkd_config.proxy_temperature,
@@ -859,7 +870,7 @@ class FedReviveServer:
             distilled_update = None
             dfkd_metrics = None
             if self.method is Method.FEDREVIVE:
-                if self.fedrevive_config is FedReviveConfig.ESTIMATED_HISTOGRAM_PERIODIC:
+                if self.class_proportion_source is ClassProportionSource.ESTIMATED:
                     proxy = self._proxy_estimator.estimate(job.logical_name, updated_model)
                     # If the same logical client still has an older model in
                     # the c=8 teacher buffer, its class weights are client
