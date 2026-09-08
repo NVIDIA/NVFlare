@@ -209,8 +209,8 @@ class FedReviveClient:
         )
 
         # Logical-client state is the prepared shard on disk plus its manifest
-        # profile.  The reference creates a fresh Adam optimizer per assignment,
-        # so discarding it here preserves algorithm semantics.  DataLoader and
+        # profile.  A fresh Adam optimizer is used for every assignment, so it
+        # can be discarded here without losing client state.  DataLoader and
         # iterator deletion also closes any per-assignment loader workers.  Keep
         # only one reusable model on CPU between calls and release CUDA caches;
         # this bounds resources by physical sites instead of logical K.

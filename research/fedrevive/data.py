@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""CIFAR-10 preparation and transforms matching the reference simulator."""
+"""CIFAR-10 preparation and transforms for the FedRevive experiments."""
 
 import json
 import random
@@ -90,9 +90,8 @@ def _make_runtime_profiles(num_clients: int, delay_schedule: str) -> list[dict[s
         profiles.append(
             {
                 # Select all three means even when a distribution has one
-                # member.  The reference simulator consumes one RNG draw for
-                # every mean, so preserving that detail is required for the
-                # later client-selection and duration streams to align.
+                # member.  Consuming one RNG draw for each property keeps the
+                # later client-selection and duration streams reproducible.
                 "train_mean": _select_mean(schedule["train"]),
                 "download_mean": _select_mean(schedule["download"]),
                 "upload_mean": _select_mean(schedule["upload"]),
@@ -146,7 +145,7 @@ def prepare_cifar10(
     split_seed: int = 42,
     delay_schedule: str = "default",
 ) -> Path:
-    """Create the reference train split, logical shards, proxies, and runtimes."""
+    """Create the train split, logical shards, proxies, and runtime profiles."""
 
     if num_logical_clients < 1 or client_data_size < 1:
         raise ValueError("num_logical_clients and client_data_size must be >= 1")

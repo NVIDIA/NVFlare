@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Reference-compatible CIFAR-10 ResNet-18 and model-state helpers."""
+"""CIFAR-10 ResNet-18 and model-state helpers for FedRevive."""
 
 from collections import OrderedDict
 

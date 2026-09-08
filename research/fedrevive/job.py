@@ -73,8 +73,8 @@ def define_parser():
     parser.add_argument(
         "--fedrevive-mode",
         choices=[mode.value for mode in FedReviveMode],
-        default=FedReviveMode.REPRODUCTION.value,
-        help="Use local-simulator compatibility or the proxy/T_gen settings in the published paper",
+        default=FedReviveMode.CONTINUOUS.value,
+        help="Use continuous synthesis or the proxy/T_gen settings in the published paper",
     )
     parser.add_argument("--max-time", type=float, default=200.0, help="Simulated-time budget")
     parser.add_argument("--max-model-versions", type=int, default=50000)
@@ -141,7 +141,7 @@ def validate_args(args):
         )
     if args.max_parallel > args.num_clients:
         raise ValueError("--max-parallel must not exceed --num-clients")
-    if args.method != Method.FEDREVIVE.value and args.fedrevive_mode != FedReviveMode.REPRODUCTION.value:
+    if args.method != Method.FEDREVIVE.value and args.fedrevive_mode != FedReviveMode.CONTINUOUS.value:
         raise ValueError("--fedrevive-mode paper-aligned is only valid with --method fedrevive")
 
 

@@ -131,7 +131,7 @@ class ClassProportionProxyEstimator:
 
 
 class DFKDGenerator(nn.Module):
-    """Class-conditional generator used by the reference implementation."""
+    """Class-conditional generator used by FedRevive."""
 
     def __init__(self, latent_size: int = 256, features: int = 128, num_classes: int = 10):
         super().__init__()

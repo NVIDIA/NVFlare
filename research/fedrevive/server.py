@@ -211,11 +211,11 @@ class FedReviveServer:
         setup_seed: int = 10,
         run_seed: int = 10,
         max_model_versions: int = 50000,
-        fedrevive_mode: FedReviveMode | str = FedReviveMode.REPRODUCTION,
+        fedrevive_mode: FedReviveMode | str = FedReviveMode.CONTINUOUS,
     ):
         self.method = Method(method)
         self.fedrevive_mode = FedReviveMode(fedrevive_mode)
-        if self.method is not Method.FEDREVIVE and self.fedrevive_mode is not FedReviveMode.REPRODUCTION:
+        if self.method is not Method.FEDREVIVE and self.fedrevive_mode is not FedReviveMode.CONTINUOUS:
             raise ValueError("paper-aligned mode is only valid for FedRevive")
         preset = FIGURE_2_METHOD_CONFIGS[self.method]
         self.data_root = data_root
@@ -406,7 +406,7 @@ class FedReviveServer:
         self._manifest = load_manifest(self.prepared_data_root)
         logical_count = int(self._manifest["num_logical_clients"])
         if self.fedrevive_mode is FedReviveMode.PAPER_ALIGNED:
-            # The same prepared splits support the oracle reproduction mode,
+            # The same prepared splits support continuous synthesis with oracle proportions,
             # but the published algorithm must make those label histograms
             # unavailable to its server-side update path.
             self._manifest.pop("class_proportions", None)
@@ -770,9 +770,9 @@ class FedReviveServer:
             if event.phase == "train":
                 heapq.heappop(self._event_heap)
                 self._simulated_time = event.finish_time
-                # The reference makes a logical client eligible again after
-                # local training, before its upload completes.  Releasing it at
-                # physical RPC completion would couple selection to host speed.
+                # A logical client becomes eligible again after local training,
+                # before its upload completes.  Releasing it at physical RPC
+                # completion would couple selection to host speed.
                 if not job.logical_released:
                     self._available_logical.append(job.logical_name)
                     self._available_logical.sort(key=lambda name: int(name.split("-", 1)[1]))

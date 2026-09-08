@@ -14,18 +14,16 @@ staleness-dependent coefficient blends the client and distilled updates.
 
 The initial scope is the CIFAR-10 comparison of FedAvg, FedBuff, and FedRevive.
 It uses the model, data partition, runtime distributions, and training settings
-from the standalone simulator used for the paper. It is intentionally separate
-from the other NVIDIA FLARE CIFAR-10 examples.
+reported in the paper. It is intentionally separate from the other NVIDIA
+FLARE CIFAR-10 examples.
 
 CIFAR-100, FEMNIST, 20NewsGroups, DD-FedRevive, and AFL-DW are outside this
 initial contribution.
 
-The local simulator currently uses each client's true class proportions and
-synthesizes on every eligible update. The default `reproduction` mode preserves
-those choices so its curve can be compared directly with that code. The
-optional `paper-aligned` mode instead implements the published proxy estimator
-and periodic generator schedule; the distinction is explicit in the CLI and
-saved results.
+The default `continuous` mode uses each client's prepared class proportions and
+synthesizes on every eligible update. The optional `paper-aligned` mode instead
+implements the published proxy estimator and periodic generator schedule; the
+distinction is explicit in the CLI and saved results.
 
 ## FedRevive modes
 
@@ -43,12 +41,11 @@ implementation uses 64, matching its reported synthesis batch size. One
 reusable probing model serves all 1,000 logical clients; persistent estimator
 state is only one ten-element sum and one count per observed client.
 
-The two modes differ only where needed to distinguish the local simulator from
-the published algorithm:
+The two modes expose the following synthesis and class-proportion choices:
 
 | Mode | Class proportions | Generator interval $T_{gen}$ |
 |---|---|---:|
-| `reproduction` (default) | Prepared true histogram | Every eligible update |
+| `continuous` (default) | Prepared true histogram | Every eligible update |
 | `paper-aligned` | First-two-upload server proxy | 10 server versions |
 
 Both use $K_{synth}=2$, $K_{KD}=10$, and an eight-model teacher buffer
@@ -71,7 +68,7 @@ computed against the exact model snapshot used by that assignment. By default,
 `--in-time` adds each accepted delta to a running sum and retains only that sum
 and a count. This is a storage optimization: the global model is still updated
 only after `B` contributions. Use `--no-in-time` to retain the individual
-deltas until that same boundary. The Figure 2 presets are:
+deltas until that same boundary. The method presets are:
 
 | Method | `K` | `B` | `O` | Server learning rate |
 |---|---:|---:|---:|---:|
@@ -86,12 +83,12 @@ and creates a version from each arrival. Explicit CLI overrides allow other
 `K/B/O` configurations.
 
 The Collab calls are genuinely nonblocking. Physical sites perform PyTorch
-training while the server keeps other calls in flight. For reproducible
-comparison with the event simulator, the server uses the same seeded event
-order: it selects clients, then samples training time when each download event
-fires and upload time when each training event fires. The server accepts
-completed calls in simulated upload order, so host scheduling does not change
-logical participation, model snapshots, or staleness.
+training while the server keeps other calls in flight. For reproducible runs,
+the server uses a seeded logical event order: it selects clients, then samples
+training time when each download event fires and upload time when each training
+event fires. The server accepts completed calls in simulated upload order, so
+host scheduling does not change logical participation, model snapshots, or
+staleness.
 
 The number of physical Collab sites is an execution-pool setting and need not
 equal `K`. The simulator uses 2 sites by default: all `K=100` logical
@@ -103,21 +100,19 @@ snapshots, staleness, buffer boundaries, or simulated time.
 
 Each physical worker multiplexes many logical clients. A logical client's
 prepared shard and runtime profile persist on disk, while the worker reuses a
-single model. Adam is intentionally recreated for every assignment, matching
-the reference simulator. After returning the CPU model state, the worker moves
-its reusable model back to CPU, clears unused CUDA allocations, and returns
-freed model-transfer pages to the OS. Keeping the physical pool and
-`--max-parallel` small bounds simulator processes, Collab
-call threads, dataset copies, and CUDA contexts without changing logical
-`K=100`. The launcher also fixes native BLAS/OpenMP pools to one thread per
-worker so sequential RPCs cannot accumulate idle native thread teams and their
-stacks.
+single model. Adam is recreated for every assignment. After returning the CPU
+model state, the worker moves its reusable model back to CPU, clears unused
+CUDA allocations, and returns freed model-transfer pages to the OS. Keeping the
+physical pool and `--max-parallel` small bounds simulator processes, Collab call
+threads, dataset copies, and CUDA contexts without changing logical `K=100`.
+The launcher also fixes native BLAS/OpenMP pools to one thread per worker so
+sequential RPCs cannot accumulate idle native thread teams and their stacks.
 
 Returned client tensors are downloaded directly into a temporary offload
 directory inside the server run directory. The server keeps only lazy tensor
 references while a physically completed result waits for its seeded simulated
 upload event. It materializes that model only when the event becomes due, then
-deletes its files immediately. This preserves the reference completion order
+deletes its files immediately. This preserves the seeded completion order
 without keeping all out-of-order client models in memory; the complete offload
 directory is also removed when the workflow exits or aborts. This applies to
 the sequence-following wait queue. Once accepted, FedAvg and FedBuff updates
@@ -156,7 +151,7 @@ $$
 $$
 
 DFKD starts after model version 50 when the accepted update has nonzero
-staleness. In default reproduction mode, every such eligible update performs
+staleness. In default continuous mode, every such eligible update performs
 all four steps below. In paper-aligned mode, steps 1--3 occur only when the
 model version is divisible by $T_{gen}=10$, while step 4 still occurs per
 eligible update after the version-100 warmup:
@@ -196,7 +191,7 @@ is exponential with a mean drawn from 1.0, 1.3, or 1.6 with probabilities
 0.25, 0.50, and 0.25. Download time is 0.1. Upload time is uniform within 0.02
 of a client mean drawn equally from 0.15 and 0.25.
 
-Figure 3 uses the paper's shifted delay schedule to test sensitivity to the
+The paper's Figure 3 uses a shifted delay schedule to test sensitivity to the
 arrival process: every client's exponential local-training mean is 0.1,
 download time is 0.02, and upload time is uniform within 0.01 of a persistent
 client mean drawn equally from 0.05 and 0.10. All algorithm and optimization
@@ -228,7 +223,7 @@ python prepare_data.py \
   --setup-seed 10
 ```
 
-Prepare a separate manifest for the shifted Figure 3 schedule. The same seed
+Prepare a separate manifest for the shifted delay schedule. The same seed
 recreates the identical logical CIFAR-10 shards while recording the alternate
 runtime profiles:
 
@@ -244,7 +239,7 @@ python prepare_data.py \
 ```
 
 The prepared manifest and shards live outside the repository. Logical shards
-can overlap, matching the reference simulator's wraparound allocation when the
+can overlap because deterministic wraparound allocation is used when the
 requested population exceeds the available training examples.
 
 ## Run the experiments
@@ -274,10 +269,16 @@ python job.py --method fedrevive \
   --max-time 200 --setup-seed 10 --run-seed 10
 ```
 
-After establishing the Figure 2 baseline, run FedRevive under the shifted
-schedule by selecting its matching manifest explicitly:
+After establishing the default-schedule baseline, run FedBuff and FedRevive
+under the shifted schedule by selecting its matching manifest explicitly:
 
 ```bash
+python job.py --method fedbuff \
+  --delay-schedule shifted \
+  --data-root /tmp/cifar10 \
+  --prepared-data-root /tmp/fedrevive/cifar10_shifted \
+  --max-time 100 --setup-seed 10 --run-seed 10
+
 python job.py --method fedrevive \
   --delay-schedule shifted \
   --data-root /tmp/cifar10 \
@@ -314,49 +315,45 @@ evaluate every asynchronous version, which would interrupt asynchronous
 progress and make the evaluation load method-dependent.
 
 FedAvg is evaluated after each global version. FedBuff and FedRevive are
-evaluated every ten versions, matching the standalone reference cadence. A
-final evaluation is added only when the last version was not already evaluated.
+evaluated every ten versions to keep centralized evaluation cost bounded and
+consistent between the asynchronous methods. A final evaluation is added only
+when the last version was not already evaluated.
 Because progression uses sampled simulated time, centralized evaluation changes
 host runtime but not client completion order or simulated time.
 
 The server writes `accuracy_history.json`, `results.json`, a final model, DFKD
 pool checkpoints, and TensorBoard events in the NVFlare run directory.
 
-## Established reference baseline
+## Results
 
-Before running the Collab port, the standalone simulator was run for seed 10
-with a 200-unit simulated-time budget. These are the direct reproduction
-targets for the first NVFlare run:
+The following raw curves come directly from centralized evaluations produced
+by the Collab workflow with seed 10. They are single-seed results rather than
+the paper's three-seed averages.
+
+### Default delay schedule
+
+Figure 1 shows all three method presets over 200 simulated-time units.
+
+![FedAvg, FedBuff, and FedRevive under the default delay schedule](figs/figure_1.png)
 
 | Method | Versions at stop | Final accuracy | Best accuracy |
 |---|---:|---:|---:|
-| FedAvg | 28 | 0.4110 | 0.4110 |
-| FedBuff | 6,248 | 0.6608 | 0.6858 |
-| FedRevive | 12,677 | 0.7451 | 0.7682 |
+| FedAvg | 28 | 0.4022 | 0.4056 |
+| FedBuff | 6,343 | 0.6111 | 0.6659 |
+| FedRevive | 12,687 | 0.7612 | 0.7712 |
 
-The FedRevive result is consistent with the approximately 0.75 accuracy near
-simulated time 200 in the paper's raw curve. These are single-seed raw results,
-not the paper's three-seed averages or running-average summary.
+### Shifted delay schedule
 
-## Shifted-delay comparison
+Figure 2 shows FedBuff and FedRevive over 100 simulated-time units after only
+the delay schedule is changed. FedBuff exhibits large fluctuations and reduced
+accuracy, while FedRevive remains stable under the shifted arrival process.
 
-The reference simulator and Collab implementation were also run with seed 10
-for 100 simulated-time units under the Figure 3 shifted delay schedule. The
-thin traces below are raw centralized evaluations; the emphasized curves use
-the same ten-point moving average and are compared after interpolation onto a
-shared simulated-time grid.
+![FedBuff and FedRevive under the shifted delay schedule](figs/figure_2.png)
 
-![Shifted-delay comparison](figs/shifted_comparison.png)
-
-| Method | Smoothed RMSE | Reference final accuracy | Collab final accuracy |
+| Method | Versions at stop | Final accuracy | Best accuracy |
 |---|---:|---:|---:|
-| FedBuff | 0.0604 | 0.2820 | 0.3019 |
-| FedRevive | 0.0172 | 0.8302 | 0.7917 |
-
-FedBuff exhibits large arrival-schedule-dependent fluctuations in both
-implementations, while the FedRevive trajectories remain closely aligned and
-substantially more stable under the same schedule. These are single-seed
-reproduction results rather than the paper's three-seed averages.
+| FedBuff | 25,662 | 0.3019 | 0.4886 |
+| FedRevive | 51,325 | 0.7917 | 0.8325 |
 
 ## Repository layout
 
@@ -364,7 +361,8 @@ reproduction results rather than the paper's three-seed averages.
 fedrevive/
 ├── README.md
 ├── figs/
-│   └── shifted_comparison.png
+│   ├── figure_1.png
+│   └── figure_2.png
 ├── requirements.txt
 ├── prepare_data.py
 ├── data.py

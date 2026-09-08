@@ -34,9 +34,9 @@ class Method(str, Enum):
 
 
 class FedReviveMode(str, Enum):
-    """Select compatibility with the local simulator or the published method."""
+    """Select continuous synthesis or the periodic schedule from the paper."""
 
-    REPRODUCTION = "reproduction"
+    CONTINUOUS = "continuous"
     PAPER_ALIGNED = "paper-aligned"
 
 
@@ -194,7 +194,7 @@ class AggregationResult:
 
 
 def cosine_staleness_beta(staleness: int, max_staleness: float) -> float:
-    """Return the clipped cosine FedRevive mixing weight from the reference code."""
+    """Return the clipped cosine FedRevive mixing weight."""
 
     if staleness < 0:
         raise ValueError("staleness must be >= 0")
