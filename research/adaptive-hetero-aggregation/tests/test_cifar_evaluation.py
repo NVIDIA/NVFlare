@@ -90,6 +90,21 @@ def test_train_validation_split_is_disjoint_and_exhaustive(tmp_path, monkeypatch
         assert len(train) == 16
 
 
+def test_training_clients_use_held_out_training_validation_not_cifar_test():
+    client_files = (
+        "baseline_sgd_client.py",
+        "fedprox_client.py",
+        "scaffold_client.py",
+        "fedce_client.py",
+        "adaptive_client.py",
+    )
+    for filename in client_files:
+        source = (EVAL_DIR / filename).read_text()
+        assert "create_local_datasets" in source
+        assert "train=False" not in source
+        assert "create_datasets(" not in source
+
+
 def test_summary_reports_ci_and_paired_split_seed_deltas():
     rows = []
     for seed, adaptive, fedavg in ((7, 0.80, 0.75), (19, 0.82, 0.78), (31, 0.81, 0.77)):
