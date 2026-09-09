@@ -51,6 +51,7 @@ from data.cifar10_data_split import split_and_save  # noqa: E402
 from eval_split import create_eval_splits, create_train_validation_splits  # noqa: E402
 from evaluate_result import evaluate_workspace  # noqa: E402
 from model import ModerateCNN  # noqa: E402
+from protocol import PROTOCOL_VERSION  # noqa: E402
 
 from nvflare.apis.dxo import DataKind  # noqa: E402
 from nvflare.app_opt.pt.recipes import FedAvgRecipe, FedCERecipe, FedOptRecipe, FedProxRecipe  # noqa: E402
@@ -246,6 +247,7 @@ def main(args):
         device_name=args.eval_device,
     )
     record = {
+        "protocol_version": PROTOCOL_VERSION,
         "method": args.method,
         "alpha": args.alpha,
         "seed": args.seed,
