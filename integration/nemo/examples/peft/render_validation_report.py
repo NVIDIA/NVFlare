@@ -36,12 +36,18 @@ def render(run_root: Path, exit_code: int) -> str:
     artifacts = run_root / "artifacts"
     acceptance = _json(artifacts / "acceptance.json")
     split = _json(run_root / "data_split" / "split_manifest.json")
+    blocked = _text(artifacts / "BLOCKED.txt", "")
     stage_rows = []
     timings = artifacts / "stage_timings.csv"
     if timings.is_file():
         with timings.open() as f:
             stage_rows = list(csv.DictReader(f))
-    status = "PASSED" if acceptance and acceptance.get("passed") and exit_code == 0 else "BLOCKED/FAILED"
+    if blocked:
+        status = "BLOCKED"
+    elif acceptance and acceptance.get("passed") and exit_code == 0:
+        status = "PASSED"
+    else:
+        status = "FAILED"
     lines = [
         "# Nemotron 3.5 Lightning H100 validation",
         "",
@@ -58,7 +64,6 @@ def render(run_root: Path, exit_code: int) -> str:
         "intra-client distributed training.",
         "",
     ]
-    blocked = _text(artifacts / "BLOCKED.txt", "")
     feasibility = _text(artifacts / "SINGLE_GPU_FEASIBILITY_FAILURE.txt", "")
     if blocked or feasibility:
         lines.extend(["## Blocking result", "", blocked or feasibility, ""])
@@ -102,16 +107,25 @@ def render(run_root: Path, exit_code: int) -> str:
         for row in stage_rows:
             lines.append(f"| {row['stage']} | {row['elapsed_seconds']} | {row['exit_code']} |")
         lines.append("")
-    lines.extend(
-        [
-            "## Evidence",
-            "",
-            "Commands and stdout/stderr are in `logs/`; GPU telemetry is in `logs/gpu_telemetry.csv`; client and "
-            "server adapter checkpoints and round manifests are in `runs/`; exact evaluation outputs are in "
-            "`evaluation/`; resolved configuration and package versions are in `artifacts/`.",
-            "",
-        ]
-    )
+    lines.extend(["## Evidence", ""])
+    if blocked:
+        lines.extend(
+            [
+                "The host runner log and Docker error are in `logs/`; commit, hardware, socket, and exit-code "
+                "evidence are in `artifacts/`. Container, model, dataset, training, and evaluation artifacts were "
+                "not created because the Docker prerequisite failed.",
+                "",
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                "Commands and stdout/stderr are in `logs/`; GPU telemetry is in `logs/gpu_telemetry.csv`; client and "
+                "server adapter checkpoints and round manifests are in `runs/`; exact evaluation outputs are in "
+                "`evaluation/`; resolved configuration and package versions are in `artifacts/`.",
+                "",
+            ]
+        )
     return "\n".join(lines)
 
 
