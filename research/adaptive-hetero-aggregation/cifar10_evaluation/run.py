@@ -14,9 +14,10 @@
 
 """Run matched NVIDIA FLARE CIFAR-10 experiments for adaptive aggregation.
 
-All methods use the same Dirichlet training partition for a given
-``(n_clients, alpha, seed)``. Full and partial participation differ only in the
-number of clients sampled by the server each round.
+All methods use the same Dirichlet training partition and initial server-model
+seed for a given ``(n_clients, alpha, seed)``. After training, every method is
+evaluated by the same post-training evaluator on the full CIFAR-10 test set and
+on identical site-specific test partitions.
 """
 
 import argparse
@@ -40,13 +41,12 @@ EVAL_DIR = Path(__file__).resolve().parent
 for path in (str(PROJECT_SRC), str(CIFAR_SRC), str(EVAL_DIR)):
     if path not in sys.path:
         sys.path.insert(0, path)
-os.environ["PYTHONPATH"] = os.pathsep.join(
-    [str(PROJECT_SRC), str(CIFAR_SRC), os.environ.get("PYTHONPATH", "")]
-)
+os.environ["PYTHONPATH"] = os.pathsep.join([str(PROJECT_SRC), str(CIFAR_SRC), os.environ.get("PYTHONPATH", "")])
 
 from adaptive_hetero.model_aggregator import AdaptiveHeterogeneityModelAggregator  # noqa: E402
 from data.cifar10_data_split import split_and_save  # noqa: E402
 from eval_split import create_eval_splits  # noqa: E402
+from evaluate_result import evaluate_workspace  # noqa: E402
 from model import ModerateCNN  # noqa: E402
 
 from nvflare.apis.dxo import DataKind  # noqa: E402
@@ -86,12 +86,14 @@ def _common_train_args(args, train_idx_root: str) -> str:
 
 
 def _local_metric_train_args(args, train_idx_root: str, eval_idx_root: str) -> str:
-    return (
-        f"{_common_train_args(args, train_idx_root)} --eval_idx_root {eval_idx_root} --seed {args.seed}"
-    )
+    return f"{_common_train_args(args, train_idx_root)} --eval_idx_root {eval_idx_root} --seed {args.seed}"
 
 
 def _build_recipe(args, train_idx_root: str, eval_idx_root: str, round_clients: int):
+    # This controls the server's initial model and the Dirichlet partition seed.
+    # NVIDIA's stock CIFAR baseline client scripts do not expose a client RNG
+    # argument, so local augmentation/minibatch stochasticity remains part of
+    # run-to-run variance and is not claimed to be identically paired.
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
     random.seed(args.seed)
@@ -180,6 +182,13 @@ def _build_recipe(args, train_idx_root: str, eval_idx_root: str, round_clients: 
     )
 
 
+def _append_jsonl(path: str, row: dict):
+    output = Path(path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with output.open("a") as stream:
+        stream.write(json.dumps(row, sort_keys=True) + "\n")
+
+
 def main(args):
     if args.n_clients < 2:
         raise ValueError("CIFAR-10 evaluation requires at least two clients")
@@ -210,7 +219,18 @@ def main(args):
     )
     run = recipe.execute(env)
     status = str(run.get_status())
-    result = run.get_result()
+    if "COMPLETED" not in status.upper():
+        raise RuntimeError(f"CIFAR-10 evaluation did not complete successfully: {status}")
+
+    job_workspace = os.path.join(workspace_root, recipe.name)
+    evaluation = evaluate_workspace(
+        workspace=job_workspace,
+        eval_idx_root=eval_idx_root,
+        n_clients=args.n_clients,
+        batch_size=args.eval_batch_size,
+        num_workers=args.eval_num_workers,
+        device_name=args.eval_device,
+    )
     record = {
         "method": args.method,
         "alpha": args.alpha,
@@ -224,14 +244,16 @@ def main(args):
         "lr": args.lr,
         "train_idx_root": train_idx_root,
         "eval_idx_root": eval_idx_root,
-        "workspace_root": workspace_root,
+        "workspace": job_workspace,
         "job_name": recipe.name,
         "status": status,
-        "result": str(result),
+        "result": str(run.get_result()),
+        "pairing_scope": "dirichlet_split_and_server_initialization",
+        **evaluation,
     }
-    print("CIFAR10_EVAL_RUN " + json.dumps(record, sort_keys=True), flush=True)
-    if "COMPLETED" not in status.upper():
-        raise RuntimeError(f"CIFAR-10 evaluation did not complete successfully: {status}")
+    print("CIFAR10_EVAL_RESULT " + json.dumps(record, sort_keys=True), flush=True)
+    if args.results_jsonl:
+        _append_jsonl(args.results_jsonl, record)
 
 
 if __name__ == "__main__":
@@ -252,6 +274,10 @@ if __name__ == "__main__":
     parser.add_argument("--gpu_config", type=str, default=None)
     parser.add_argument("--workspace_root", default="/tmp/nvflare/adaptive_hetero_cifar10")
     parser.add_argument("--split_root", default="/tmp/cifar10_splits/adaptive_hetero_eval")
+    parser.add_argument("--results_jsonl", default=None)
+    parser.add_argument("--eval_batch_size", type=int, default=256)
+    parser.add_argument("--eval_num_workers", type=int, default=0)
+    parser.add_argument("--eval_device", default=None)
 
     parser.add_argument("--sample_exponent", type=float, default=0.65)
     parser.add_argument("--representation_exponent", type=float, default=0.70)
