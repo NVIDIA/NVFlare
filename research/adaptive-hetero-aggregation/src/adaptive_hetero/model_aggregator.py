@@ -39,6 +39,11 @@ class AdaptiveHeterogeneityModelAggregator(ModelAggregator):
     uses ``AdaptiveMetaKey.SAMPLE_COUNT`` for the policy's sample-based terms.
     Per-site final weights remain server-side in ``last_weights`` and are not
     copied into the returned global model metadata.
+
+    Federation-level activation telemetry is accumulated across valid rounds and
+    copied into aggregate metadata. This allows research runs to distinguish a
+    genuinely active adaptive policy from a conservative fallback-only run
+    without exposing per-site aggregation weights.
     """
 
     expected_data_kind = None
@@ -104,8 +109,15 @@ class AdaptiveHeterogeneityModelAggregator(ModelAggregator):
         self.policy = AdaptiveHeterogeneityPolicy(self.config)
         self._results: Dict[str, FLModel] = {}
         self.last_weights: Dict[str, float] = {}
+        self._aggregation_rounds = 0
+        self._active_rounds = 0
+        self._active_blend_sum = 0.0
+        self._max_observed_blend = 0.0
+        self._cohort_change_count = 0
+        self._last_valid_cohort = None
 
     def reset_stats(self):
+        """Clear current-round results while preserving cross-round telemetry."""
         self._results = {}
 
     @staticmethod
@@ -181,6 +193,18 @@ class AdaptiveHeterogeneityModelAggregator(ModelAggregator):
         model.meta = meta
         self._results[client_name] = model
 
+    def _telemetry_meta(self) -> dict:
+        activation_rate = self._active_rounds / self._aggregation_rounds if self._aggregation_rounds else 0.0
+        mean_active_blend = self._active_blend_sum / self._active_rounds if self._active_rounds else 0.0
+        return {
+            AdaptiveMetaKey.AGGREGATION_ROUNDS: self._aggregation_rounds,
+            AdaptiveMetaKey.ACTIVE_ROUNDS: self._active_rounds,
+            AdaptiveMetaKey.ACTIVATION_RATE: activation_rate,
+            AdaptiveMetaKey.MEAN_ACTIVE_BLEND_FACTOR: mean_active_blend,
+            AdaptiveMetaKey.MAX_OBSERVED_BLEND_FACTOR: self._max_observed_blend,
+            AdaptiveMetaKey.COHORT_CHANGE_COUNT: self._cohort_change_count,
+        }
+
     def aggregate_model(self) -> FLModel:
         if not self._results:
             # The unified FedAvg controller expects an FLModel from a custom
@@ -194,10 +218,16 @@ class AdaptiveHeterogeneityModelAggregator(ModelAggregator):
                 meta={
                     "nr_aggregated": 0,
                     "adaptive_empty_result": True,
+                    **self._telemetry_meta(),
                 },
             )
 
         clients = sorted(self._results)
+        cohort = tuple(clients)
+        if self._last_valid_cohort is not None and cohort != self._last_valid_cohort:
+            self._cohort_change_count += 1
+        self._last_valid_cohort = cohort
+
         results = [self._results[client] for client in clients]
         steps = np.asarray(
             [float(result.meta[FLMetaKey.NUM_STEPS_CURRENT_ROUND]) for result in results], dtype=np.float64
@@ -212,8 +242,14 @@ class AdaptiveHeterogeneityModelAggregator(ModelAggregator):
             client_metrics=[float(result.meta[AdaptiveMetaKey.CLIENT_METRIC]) for result in results],
             base_weights=native_weights,
             quality_improvements=quality_values,
-            cohort_key=tuple(clients),
+            cohort_key=cohort,
         )
+
+        self._aggregation_rounds += 1
+        self._max_observed_blend = max(self._max_observed_blend, float(policy_result.blend_factor))
+        if policy_result.blend_factor > 0.0:
+            self._active_rounds += 1
+            self._active_blend_sum += float(policy_result.blend_factor)
 
         params_helper = WeightedAggregationHelper()
         metrics_helper = WeightedAggregationHelper()
@@ -256,6 +292,7 @@ class AdaptiveHeterogeneityModelAggregator(ModelAggregator):
                 AdaptiveMetaKey.ACTIVATION_STREAK: policy_result.activation_streak,
                 AdaptiveMetaKey.BOUNDS_FEASIBLE: policy_result.bounds_feasible,
                 "nr_aggregated": len(clients),
+                **self._telemetry_meta(),
             },
         )
         self.reset_stats()
