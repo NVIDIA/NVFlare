@@ -29,7 +29,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--job-dir", default="/tmp/nvflare/jobs/job_config")
     parser.add_argument("--num_rounds", type=int, default=2)
+    parser.add_argument("--train_size", type=int, default=None, help="Synthetic training samples per client.")
     args = parser.parse_args()
+    if args.train_size is not None and args.train_size <= 0:
+        parser.error("--train_size must be positive")
+
+    train_args = ["--dataset", "synthetic"]
+    if args.train_size is not None:
+        train_args.extend(("--train_size", str(args.train_size)))
 
     recipe = FedAvgRecipe(
         name="hello-pt",
@@ -37,7 +44,7 @@ def main():
         num_rounds=args.num_rounds,
         model=create_model(),
         train_script=str(HELLO_PT_DIR / "client.py"),
-        train_args=["--dataset", "synthetic"],
+        train_args=train_args,
     )
     recipe.enable_log_streaming()
     recipe.export(job_dir=args.job_dir)

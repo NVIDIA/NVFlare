@@ -113,8 +113,14 @@ def test_help_includes_recipe_export_options():
     assert "--export-dir EXPORT_DIR" in help_text
 
 
-@pytest.mark.parametrize("cell_id, expected_rounds", [("nvflare-cli-export-code", 2), ("nvflare-cli-abort-code", 20)])
-def test_cli_notebook_exports_bundled_job_with_log_streaming(tmp_path, cell_id, expected_rounds):
+@pytest.mark.parametrize(
+    "cell_id, expected_rounds, expected_train_args",
+    [
+        ("nvflare-cli-export-code", 2, ["--dataset", "synthetic"]),
+        ("nvflare-cli-abort-code", 20, ["--dataset", "synthetic", "--train_size", "8192"]),
+    ],
+)
+def test_cli_notebook_exports_bundled_job_with_log_streaming(tmp_path, cell_id, expected_rounds, expected_train_args):
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
     tutorial_dir = os.path.join(repo_root, "examples", "tutorials")
     with open(os.path.join(tutorial_dir, "nvflare_cli.ipynb")) as notebook_file:
@@ -138,7 +144,7 @@ def test_cli_notebook_exports_bundled_job_with_log_streaming(tmp_path, cell_id, 
     client = json.loads((job_dir / "app/config/config_fed_client.json").read_text())
     server = json.loads((job_dir / "app/config/config_fed_server.json").read_text())
     assert client["executors"][0]["executor"]["args"]["task_script_path"] == "client.py"
-    assert client["executors"][0]["executor"]["args"]["task_script_args"] == ["--dataset", "synthetic"]
+    assert client["executors"][0]["executor"]["args"]["task_script_args"] == expected_train_args
     assert server["workflows"][0]["args"]["num_rounds"] == expected_rounds
     assert any(component["path"].endswith(".JobLogStreamer") for component in client["components"])
     assert any(component["path"].endswith(".JobLogReceiver") for component in server["components"])
