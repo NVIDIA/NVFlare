@@ -173,12 +173,9 @@ def test_nemo_peft_recipe_exports_modern_fedavg_config(tmp_path):
     controller = server_config["workflows"][0]
     assert controller["path"] == "nvflare.app_common.workflows.fedavg.FedAvg"
     assert controller["args"]["num_clients"] == 2
-    persistor = next(
-        c
-        for c in server_config["components"]
-        if c["path"] == "nvflare.app_opt.pt.file_model_persistor.PTFileModelPersistor"
-    )
+    persistor = next(c for c in server_config["components"] if c["path"].endswith(".AdapterPTFileModelPersistor"))
     assert persistor["args"]["load_device"] == "cpu"
+    assert (job_dir / "app_server" / "custom" / "adapter_checkpoint.py").exists()
 
 
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required for multi-round adapter aggregation checks")
@@ -258,6 +255,81 @@ def test_nemo_peft_automodel_config_uses_helper_files(tmp_path):
     assert config["model"]["_target_"].endswith(f"{expected_model_suffix}:from_pretrained_with_adapter")
     assert config["model"]["incoming_adapter_dir"] == incoming_adapter_dir
     assert "peft_config" not in config["model"]
+
+
+def test_lightning35_profile_uses_native_recipe_and_official_lora_defaults(tmp_path):
+    client_module = _load_client_module()
+    args = _args(tmp_path, tmp_path / "init_adapter.pt")
+    args.model_profile = "lightning35"
+    for name in (
+        "model_name_or_path",
+        "tokenizer_name_or_path",
+        "learning_rate",
+        "lora_rank",
+        "lora_alpha",
+        "lora_dropout",
+        "target_modules",
+        "exclude_modules",
+        "use_triton_lora",
+        "tp_size",
+        "cp_size",
+        "ep_size",
+        "activation_checkpointing",
+    ):
+        setattr(args, name, None)
+    args.seed = 43
+    args.model_revision = "model-revision"
+    args.tokenizer_revision = "model-revision"
+    args.train_file = str(tmp_path / "train.jsonl")
+
+    config = client_module._default_automodel_config(args, str(tmp_path / "checkpoints"), str(tmp_path / "incoming"))
+
+    assert config["recipe"].startswith("federated_automodel_trainer.")
+    assert config["model"]["_target_"] == "nemo_automodel.NeMoAutoModelForCausalLM.from_pretrained"
+    assert config["model"]["backend"] == {
+        "_target_": "nemo_automodel.components.models.common.BackendConfig",
+        "attn": "te",
+        "linear": "torch",
+        "rms_norm": "torch_fp32",
+        "experts": "torch_mm",
+        "dispatcher": "torch",
+    }
+    assert config["model"]["num_nextn_predict_layers"] == 2
+    assert config["model"]["mtp_use_repeated_layer"] is True
+    assert config["model"]["mtp_loss_scaling_factor"] == 0.1
+    assert config["peft"]["dim"] == 8
+    assert config["peft"]["alpha"] == 32
+    assert config["peft"]["dropout"] == 0.0
+    assert config["peft"]["exclude_modules"] == ["*.out_proj"]
+    assert config["peft"].get("match_all_linear", False) is False
+    assert config["distributed"]["tp_size"] == 1
+    assert config["distributed"]["cp_size"] == 1
+    assert config["distributed"]["ep_size"] == 1
+    assert config["checkpoint"]["restore_from"].endswith("incoming")
+    assert config["optimizer"]["lr"] == 5e-5
+    assert config["seed"] == 43
+
+
+def test_lightning35_explicit_cli_values_override_profile(monkeypatch):
+    job_module = _load_job_module()
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "job.py",
+            "--model_profile=lightning35",
+            "--learning_rate=0.0002",
+            "--lora_alpha=64",
+            "--no-use_triton_lora",
+        ],
+    )
+
+    args = job_module.define_parser()
+
+    assert args.model_name_or_path == "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16"
+    assert args.learning_rate == 2e-4
+    assert args.lora_alpha == 64
+    assert args.use_triton_lora is False
 
 
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required to import the AutoModel client helper")
@@ -372,6 +444,10 @@ def test_nemo_peft_dataset_balances_limited_training_window():
     labels = [dataset[index]["label"].strip() for index in indices]
 
     assert labels == ["neutral", "positive", "negative", "neutral", "positive", "negative"]
+
+    recycled = module._balanced_indices(dataset, limit_dataset_samples=20, seed=42, recycle_samples=True)
+    assert len(recycled) == 20
+    assert recycled == module._balanced_indices(dataset, 20, seed=42, recycle_samples=True)
 
 
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required to import the prediction helper")

@@ -39,12 +39,28 @@
 
 import argparse
 import glob
+import hashlib
 import json
 import os
 from pprint import pprint
 
 import numpy as np
 import pandas as pd
+
+
+def file_sha256(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def load_sentences(path):
+    if not path:
+        return set()
+    data = pd.read_json(path, lines=True)
+    return {str(sentence).strip() for sentence in data["sentence"]}
 
 
 def clean_files(data_root, ext):
@@ -64,7 +80,7 @@ def get_site_class_summary(train_labels, site_idx):
     for site, data_idx in site_idx.items():
         unq, unq_cnt = np.unique(train_labels[data_idx], return_counts=True)
         tmp = {unq[i]: int(unq_cnt[i]) for i in range(len(unq))}
-        class_sum[f"site-{site+1}"] = tmp
+        class_sum[f"site-{site + 1}"] = tmp
     return class_sum
 
 
@@ -115,13 +131,13 @@ def array_to_dataframe(data_array):
     data_dict = {"sentence": [], "label": []}
     for p in data_array:
         p = p.tolist()
-        data_dict["sentence"].append(p[1])
-        data_dict["label"].append(p[2])
+        data_dict["sentence"].append(p[-2])
+        data_dict["label"].append(p[-1])
 
     return pd.DataFrame(data_dict)
 
 
-def split_data(data_path, out_dir, num_clients, site_name_prefix, seed, alpha):
+def split_data(data_path, out_dir, num_clients, site_name_prefix, seed, alpha, validation_path=None, test_path=None):
     np.random.seed(seed)
 
     # use pandas to read jsonl format
@@ -150,6 +166,7 @@ def split_data(data_path, out_dir, num_clients, site_name_prefix, seed, alpha):
     pprint(class_sum)
 
     train_data = np.asarray(train_data)
+    output_files = []
     for idx in range(num_clients):
         train_indices = site_idx[idx]
         split = train_data[train_indices]
@@ -158,10 +175,58 @@ def split_data(data_path, out_dir, num_clients, site_name_prefix, seed, alpha):
 
         if not os.path.isdir(out_dir):
             os.makedirs(out_dir)
-        out_file = os.path.join(out_dir, f"alpha{alpha}_{site_name_prefix}{idx+1}.jsonl")
+        out_file = os.path.join(out_dir, f"alpha{alpha}_{site_name_prefix}{idx + 1}.jsonl")
 
         df.to_json(out_file, orient="records", lines=True)
-        print(f"Save split {idx+1} of {num_clients} with {len(split)} entries to {out_file}")
+        print(f"Save split {idx + 1} of {num_clients} with {len(split)} entries to {out_file}")
+        output_files.append(out_file)
+
+    split_sentence_sets = [load_sentences(path) for path in output_files]
+    for left in range(len(split_sentence_sets)):
+        for right in range(left + 1, len(split_sentence_sets)):
+            overlap = split_sentence_sets[left] & split_sentence_sets[right]
+            if overlap:
+                raise ValueError(
+                    f"Sentence overlap between site-{left + 1} and site-{right + 1}: {sorted(overlap)[:3]}"
+                )
+    train_sentences = set().union(*split_sentence_sets)
+    validation_sentences = load_sentences(validation_path)
+    test_sentences = load_sentences(test_path)
+    split_pairs = {
+        "train_validation": train_sentences & validation_sentences,
+        "train_test": train_sentences & test_sentences,
+        "validation_test": validation_sentences & test_sentences,
+    }
+    overlaps = {name: sorted(values)[:3] for name, values in split_pairs.items() if values}
+    if overlaps:
+        raise ValueError(f"Sentence-level dataset split overlap: {overlaps}")
+
+    files = {"source_train": data_path}
+    files.update({f"site-{index + 1}": path for index, path in enumerate(output_files)})
+    if validation_path:
+        files["validation"] = validation_path
+    if test_path:
+        files["test"] = test_path
+    manifest = {
+        "schema_version": 1,
+        "seed": seed,
+        "alpha": alpha,
+        "num_clients": num_clients,
+        "sentence_level_disjoint": True,
+        "files": {},
+    }
+    for name, path in files.items():
+        frame = pd.read_json(path, lines=True)
+        manifest["files"][name] = {
+            "path": os.path.abspath(path),
+            "sha256": file_sha256(path),
+            "rows": len(frame),
+            "class_counts": {str(key).strip(): int(value) for key, value in frame["label"].value_counts().items()},
+        }
+    manifest_path = os.path.join(out_dir, "split_manifest.json")
+    with open(manifest_path, "w") as f:
+        json.dump(manifest, f, indent=2, sort_keys=True)
+    print(f"Saved reproducibility manifest to {manifest_path}")
 
 
 if __name__ == "__main__":
@@ -171,6 +236,8 @@ if __name__ == "__main__":
     parser.add_argument("--num_clients", type=int, help="Total number of clients", default=3)
     parser.add_argument("--random_seed", type=int, help="Random seed", default=0)
     parser.add_argument("--site_name_prefix", type=str, help="Site name prefix", default="site-")
+    parser.add_argument("--validation_path", type=str, default=None)
+    parser.add_argument("--test_path", type=str, default=None)
     parser.add_argument(
         "--alpha",
         type=float,
@@ -187,4 +254,6 @@ if __name__ == "__main__":
         site_name_prefix=args.site_name_prefix,
         seed=args.random_seed,
         alpha=args.alpha,
+        validation_path=args.validation_path,
+        test_path=args.test_path,
     )

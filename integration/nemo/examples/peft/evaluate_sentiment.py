@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Evaluate Financial PhraseBank sentiment predictions for Nemotron 3 Nano PEFT."""
+"""Evaluate Financial PhraseBank sentiment predictions for Nemotron 3 PEFT."""
 
 from __future__ import annotations
 
@@ -19,8 +19,11 @@ import argparse
 import csv
 import json
 import os
+import tempfile
 from collections import Counter, defaultdict
 
+import adapter_checkpoint
+import model_profiles
 import torch
 
 LABELS = ("neutral", "positive", "negative")
@@ -30,7 +33,11 @@ DEFAULT_CHOICE_MAP = "neutral=neutral,positive=positive,negative=negative"
 
 def define_parser():
     parser = argparse.ArgumentParser(description="Evaluate sentiment labels by exact label log-probability scoring.")
-    parser.add_argument("--model_name_or_path", required=True)
+    model_profiles.add_model_profile_argument(parser)
+    parser.add_argument("--model_name_or_path", default=None)
+    parser.add_argument("--tokenizer_name_or_path", default=None)
+    parser.add_argument("--model_revision", default=None)
+    parser.add_argument("--tokenizer_revision", default=None)
     parser.add_argument("--adapter_dir", default=None)
     parser.add_argument(
         "--validation_file",
@@ -40,11 +47,26 @@ def define_parser():
         "--test_file",
         default="./data/FinancialPhraseBank-v1.0/financial_phrase_bank_test.jsonl",
     )
-    parser.add_argument("--output_dir", default="./models/nemotron3_nano_exact_eval")
+    parser.add_argument(
+        "--validation_only",
+        action="store_true",
+        help="Evaluate validation only; use this for intermediate rounds to keep the test split untouched.",
+    )
+    parser.add_argument("--output_dir", default=None)
     parser.add_argument("--prompt_template", default=DEFAULT_PROMPT_TEMPLATE)
     parser.add_argument("--choice_map", default=DEFAULT_CHOICE_MAP)
     parser.add_argument("--batch_size", type=int, default=8)
     parser.add_argument("--device_map", default="auto")
+    parser.add_argument("--lora_rank", type=int, default=None)
+    parser.add_argument("--lora_alpha", type=int, default=None)
+    parser.add_argument("--lora_dropout", type=float, default=None)
+    parser.add_argument("--target_modules", default=None)
+    parser.add_argument("--exclude_modules", default=None)
+    parser.add_argument("--use_triton_lora", action=argparse.BooleanOptionalAction, default=None)
+    parser.add_argument("--tp_size", type=int, default=None)
+    parser.add_argument("--cp_size", type=int, default=None)
+    parser.add_argument("--ep_size", type=int, default=None)
+    parser.add_argument("--activation_checkpointing", action=argparse.BooleanOptionalAction, default=None)
     parser.add_argument("--positive_bias", type=float, default=0.0)
     parser.add_argument("--negative_bias", type=float, default=0.0)
     parser.add_argument(
@@ -55,7 +77,13 @@ def define_parser():
     )
     parser.add_argument("--bias_search_max", type=float, default=12.0)
     parser.add_argument("--bias_search_step", type=float, default=0.1)
-    return parser.parse_args()
+    args = model_profiles.resolve_model_profile(parser.parse_args())
+    if args.output_dir is None:
+        suffix = (
+            "nemotron35_lightning_exact_eval" if model_profiles.is_lightning35(args) else "nemotron3_nano_exact_eval"
+        )
+        args.output_dir = os.path.join(".", "models", suffix)
+    return args
 
 
 def parse_choice_map(value: str) -> dict[str, str]:
@@ -100,6 +128,7 @@ def score_rows(
         for label in LABELS:
             choice = choice_map[label]
             input_ids = tokenizer(f"{prompt} {choice}", return_tensors="pt", add_special_tokens=False).input_ids
+            response_token_count = int(input_ids.shape[1]) - prompt_len
             candidates_by_len[int(input_ids.shape[1])].append(
                 {
                     "row_idx": row_idx,
@@ -107,6 +136,7 @@ def score_rows(
                     "choice": choice,
                     "prompt_len": prompt_len,
                     "input_ids": input_ids.squeeze(0),
+                    "response_token_count": response_token_count,
                 }
             )
 
@@ -125,6 +155,8 @@ def score_rows(
                     log_probs = torch.log_softmax(label_logits, dim=-1)
                     token_scores = log_probs.gather(-1, target.unsqueeze(-1)).squeeze(-1)
                     scores[item["row_idx"]][item["label"]] = float(token_scores.sum().item())
+                    if item["label"] == rows[item["row_idx"]]["expected"]:
+                        scores[item["row_idx"]]["__gold_response_token_count"] = item["response_token_count"]
     return scores
 
 
@@ -143,7 +175,9 @@ def apply_bias(
 def summarize(rows: list[dict[str, str]], row_scores: list[dict[str, float]]) -> dict:
     predictions = []
     for idx, (row, scores) in enumerate(zip(rows, row_scores)):
-        prediction = max(scores, key=scores.get)
+        prediction = max(LABELS, key=scores.get)
+        gold_score = scores[row["expected"]]
+        gold_token_count = int(scores.get("__gold_response_token_count", 0))
         predictions.append(
             {
                 "index": idx,
@@ -154,7 +188,9 @@ def summarize(rows: list[dict[str, str]], row_scores: list[dict[str, float]]) ->
                 "neutral_score": scores["neutral"],
                 "positive_score": scores["positive"],
                 "negative_score": scores["negative"],
-                "margin": scores[prediction] - max(v for k, v in scores.items() if k != prediction),
+                "margin": scores[prediction] - max(scores[label] for label in LABELS if label != prediction),
+                "gold_log_probability": gold_score,
+                "gold_response_token_count": gold_token_count,
             }
         )
 
@@ -183,11 +219,15 @@ def summarize(rows: list[dict[str, str]], row_scores: list[dict[str, float]]) ->
         }
 
     correct = sum(row["match"] for row in predictions)
+    response_token_count = sum(row["gold_response_token_count"] for row in predictions)
+    response_token_nll = -sum(row["gold_log_probability"] for row in predictions)
     return {
         "total": len(predictions),
         "correct": correct,
         "accuracy": correct / len(predictions),
         "macro_f1": sum(f1s) / len(f1s),
+        "response_token_loss": response_token_nll / response_token_count if response_token_count else None,
+        "response_token_count": response_token_count,
         "label_counts": dict(counts),
         "prediction_counts": dict(pred_counts),
         "confusion": confusion,
@@ -250,15 +290,23 @@ def _summary_without_predictions(summary: dict) -> dict:
 
 
 def load_model(args):
+    if model_profiles.is_lightning35(args):
+        return _load_lightning_model(args)
+
     from peft import PeftModel
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
-    tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path, trust_remote_code=True)
+    tokenizer = AutoTokenizer.from_pretrained(
+        args.tokenizer_name_or_path,
+        revision=args.tokenizer_revision,
+        trust_remote_code=True,
+    )
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
     model = AutoModelForCausalLM.from_pretrained(
         args.model_name_or_path,
+        revision=args.model_revision,
         trust_remote_code=True,
         torch_dtype=torch.bfloat16,
         device_map=args.device_map,
@@ -267,6 +315,89 @@ def load_model(args):
     if args.adapter_dir:
         model = PeftModel.from_pretrained(model, args.adapter_dir)
         model.eval()
+    return model, tokenizer
+
+
+def _split_modules(value: str) -> list[str]:
+    if not value or value == "all-linear":
+        return []
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def _lightning_profile_settings(args) -> dict:
+    return model_profiles.adapter_compatibility_settings(args)
+
+
+def _load_lightning_model(args):
+    if not torch.cuda.is_available():
+        raise RuntimeError("The lightning35 native backend requires a CUDA GPU.")
+    from nemo_automodel import NeMoAutoModelForCausalLM, NeMoAutoTokenizer
+    from nemo_automodel.components._peft.lora import PeftConfig
+    from nemo_automodel.components.checkpoint import CheckpointingConfig
+    from nemo_automodel.components.models.common import BackendConfig
+
+    tokenizer = NeMoAutoTokenizer.from_pretrained(
+        args.tokenizer_name_or_path,
+        revision=args.tokenizer_revision,
+        trust_remote_code=True,
+    )
+    peft_config = None
+    if args.adapter_dir:
+        peft_config = PeftConfig(
+            target_modules=_split_modules(args.target_modules),
+            exclude_modules=_split_modules(args.exclude_modules),
+            match_all_linear=args.target_modules == "all-linear" and not args.exclude_modules,
+            dim=args.lora_rank,
+            alpha=args.lora_alpha,
+            dropout=args.lora_dropout,
+            use_triton=args.use_triton_lora,
+        )
+    model = NeMoAutoModelForCausalLM.from_pretrained(
+        args.model_name_or_path,
+        revision=args.model_revision,
+        trust_remote_code=True,
+        torch_dtype=torch.bfloat16,
+        peft_config=peft_config,
+        num_nextn_predict_layers=2,
+        mtp_use_repeated_layer=True,
+        mtp_loss_scaling_factor=0.1,
+        backend=BackendConfig(
+            attn="te",
+            linear="torch",
+            rms_norm="torch_fp32",
+            experts="torch_mm",
+            dispatcher="torch",
+        ),
+    )
+    if args.adapter_dir:
+        incoming_state = adapter_checkpoint.strip_model_prefix(adapter_checkpoint.load_adapter_state(args.adapter_dir))
+        manifest = adapter_checkpoint.load_adapter_manifest(args.adapter_dir)
+        adapter_checkpoint.validate_adapter_manifest(
+            manifest,
+            incoming_state,
+            expected={
+                "model_profile": args.model_profile,
+                "base_model_name_or_path": args.model_name_or_path,
+                "base_model_revision": args.model_revision,
+                "tokenizer_name_or_path": args.tokenizer_name_or_path,
+                "tokenizer_revision": args.tokenizer_revision,
+                "profile_settings": _lightning_profile_settings(args),
+            },
+        )
+        with tempfile.TemporaryDirectory(prefix="nvflare_lightning35_eval_") as temp_dir:
+            adapter_checkpoint.save_hf_adapter_state_dir(
+                incoming_state,
+                temp_dir,
+                adapter_manifest=manifest,
+            )
+            checkpointer = CheckpointingConfig(is_peft=True).build(dp_rank=0, tp_rank=0, pp_rank=0)
+            checkpointer.load_model(model, temp_dir)
+        unexpected_trainable = [
+            name for name, param in model.named_parameters() if param.requires_grad and "lora_" not in name
+        ]
+        if unexpected_trainable:
+            raise RuntimeError(f"Base parameters are trainable during evaluation: {unexpected_trainable[:10]}")
+    model.eval()
     return model, tokenizer
 
 
@@ -285,26 +416,33 @@ def main():
         args.prompt_template,
         choice_map,
     )
-    test_rows, test_scores, test_summary = eval_split(
-        "test",
-        args.test_file,
-        args.output_dir,
-        model,
-        tokenizer,
-        args.batch_size,
-        args.prompt_template,
-        choice_map,
-    )
+    test_rows = test_scores = test_summary = None
+    if not args.validation_only:
+        test_rows, test_scores, test_summary = eval_split(
+            "test",
+            args.test_file,
+            args.output_dir,
+            model,
+            tokenizer,
+            args.batch_size,
+            args.prompt_template,
+            choice_map,
+        )
 
     summary = {
         "model_name_or_path": args.model_name_or_path,
+        "model_profile": args.model_profile,
+        "model_revision": args.model_revision,
+        "tokenizer_name_or_path": args.tokenizer_name_or_path,
+        "tokenizer_revision": args.tokenizer_revision,
         "adapter_dir": args.adapter_dir,
         "prompt_template": args.prompt_template,
         "choice_map": choice_map,
         "scoring": "padding_free_grouped_by_exact_sequence_length",
         "validation": val_summary,
-        "test": test_summary,
     }
+    if test_summary is not None:
+        summary["test"] = test_summary
 
     if args.positive_bias or args.negative_bias:
         summary["fixed_bias"] = {
@@ -312,23 +450,25 @@ def main():
             "validation": _summary_without_predictions(
                 summarize(val_rows, apply_bias(val_scores, args.positive_bias, args.negative_bias))
             ),
-            "test": _summary_without_predictions(
-                summarize(test_rows, apply_bias(test_scores, args.positive_bias, args.negative_bias))
-            ),
         }
+        if test_rows is not None:
+            summary["fixed_bias"]["test"] = _summary_without_predictions(
+                summarize(test_rows, apply_bias(test_scores, args.positive_bias, args.negative_bias))
+            )
 
     if args.search_validation_bias:
         bias = best_bias(val_rows, val_scores, args.bias_search_max, args.bias_search_step)
         summary["best_validation_bias"] = {
             "biases": bias["biases"],
             "validation": _summary_without_predictions(bias["summary"]),
-            "test": _summary_without_predictions(
+        }
+        if test_rows is not None:
+            summary["best_validation_bias"]["test"] = _summary_without_predictions(
                 summarize(
                     test_rows,
                     apply_bias(test_scores, bias["biases"]["positive"], bias["biases"]["negative"]),
                 )
-            ),
-        }
+            )
 
     os.makedirs(args.output_dir, exist_ok=True)
     with open(os.path.join(args.output_dir, "summary.json"), "w") as f:

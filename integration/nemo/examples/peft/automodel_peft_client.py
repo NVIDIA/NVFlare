@@ -28,6 +28,7 @@ from string import Template
 from typing import Any, Mapping
 
 import adapter_checkpoint
+import model_profiles
 import torch
 
 import nvflare.client as flare
@@ -40,7 +41,12 @@ DEFAULT_TARGET_MODULES = "all-linear"
 def define_parser():
     parser = argparse.ArgumentParser(description="Federated NeMo AutoModel PEFT client.")
     parser.add_argument("--backend", choices=("automodel", "mock"), default="automodel")
-    parser.add_argument("--model_name_or_path", default=DEFAULT_MODEL_NAME_OR_PATH)
+    model_profiles.add_model_profile_argument(parser)
+    parser.add_argument("--model_name_or_path", default=None)
+    parser.add_argument("--tokenizer_name_or_path", default=None)
+    parser.add_argument("--model_revision", default=None)
+    parser.add_argument("--tokenizer_revision", default=None)
+    parser.add_argument("--adapter_contract", default=None)
     parser.add_argument("--train_file", required=True)
     parser.add_argument("--validation_file", default=None)
     parser.add_argument("--work_dir", default="./automodel_peft_work")
@@ -78,17 +84,21 @@ def define_parser():
         default=False,
         help="Format examples with the tokenizer chat template instead of raw prompt-completion text.",
     )
-    parser.add_argument("--learning_rate", type=float, default=2e-4)
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--learning_rate", type=float, default=None)
     parser.add_argument("--micro_batch_size", type=int, default=1)
     parser.add_argument("--global_batch_size", type=int, default=1)
     parser.add_argument("--gradient_accumulation_steps", type=int, default=1)
-    parser.add_argument("--lora_rank", type=int, default=8)
-    parser.add_argument("--lora_alpha", type=int, default=16)
-    parser.add_argument("--lora_dropout", type=float, default=0.05)
-    parser.add_argument("--target_modules", default=DEFAULT_TARGET_MODULES)
-    parser.add_argument("--tp_size", type=int, default=1)
-    parser.add_argument("--cp_size", type=int, default=1)
-    parser.add_argument("--use_triton_lora", action="store_true")
+    parser.add_argument("--lora_rank", type=int, default=None)
+    parser.add_argument("--lora_alpha", type=int, default=None)
+    parser.add_argument("--lora_dropout", type=float, default=None)
+    parser.add_argument("--target_modules", default=None)
+    parser.add_argument("--exclude_modules", default=None)
+    parser.add_argument("--tp_size", type=int, default=None)
+    parser.add_argument("--cp_size", type=int, default=None)
+    parser.add_argument("--ep_size", type=int, default=None)
+    parser.add_argument("--use_triton_lora", action=argparse.BooleanOptionalAction, default=None)
+    parser.add_argument("--activation_checkpointing", action=argparse.BooleanOptionalAction, default=None)
     parser.add_argument(
         "--server_tensor_device",
         default="cpu",
@@ -98,7 +108,7 @@ def define_parser():
         ),
     )
     parser.add_argument("--mock_delta", type=float, default=0.01)
-    return parser.parse_args()
+    return model_profiles.resolve_model_profile(parser.parse_args())
 
 
 def _read_metrics(metrics_file: str) -> dict[str, float]:
@@ -136,7 +146,10 @@ def _build_peft_config(args) -> dict[str, Any]:
         "dropout": args.lora_dropout,
         "use_triton": args.use_triton_lora,
     }
-    if args.target_modules == "all-linear":
+    exclude_modules = _split_target_modules(args.exclude_modules)
+    if exclude_modules:
+        config["exclude_modules"] = exclude_modules
+    if args.target_modules == "all-linear" and not exclude_modules:
         config["match_all_linear"] = True
     return config
 
@@ -152,6 +165,8 @@ def _model_factory_target() -> str:
 
 
 def _default_automodel_config(args, checkpoint_dir: str, incoming_adapter_dir: str) -> dict[str, Any]:
+    args = model_profiles.resolve_model_profile(args)
+    seed = getattr(args, "seed", 42)
     dataset_factory_target = _dataset_factory_target()
     validation = {
         "_target_": dataset_factory_target,
@@ -161,14 +176,42 @@ def _default_automodel_config(args, checkpoint_dir: str, incoming_adapter_dir: s
         "padding": False,
         "truncation": True,
     }
-    config = {
-        "recipe": "TrainFinetuneRecipeForNextTokenPrediction",
-        "model": {
-            "_target_": _model_factory_target(),
+    if model_profiles.is_lightning35(args):
+        validation["tokenizer"] = {
+            "pretrained_model_name_or_path": args.tokenizer_name_or_path,
+            "revision": args.tokenizer_revision,
+        }
+    model_config = {
+        "_target_": _model_factory_target(),
+        "pretrained_model_name_or_path": args.model_name_or_path,
+        "incoming_adapter_dir": incoming_adapter_dir,
+        "trust_remote_code": True,
+    }
+    recipe = "TrainFinetuneRecipeForNextTokenPrediction"
+    if model_profiles.is_lightning35(args):
+        recipe = "federated_automodel_trainer." "FederatedTrainFinetuneRecipeForNextTokenPrediction"
+        model_config = {
+            "_target_": "nemo_automodel.NeMoAutoModelForCausalLM.from_pretrained",
             "pretrained_model_name_or_path": args.model_name_or_path,
-            "incoming_adapter_dir": incoming_adapter_dir,
+            "revision": args.model_revision,
             "trust_remote_code": True,
-        },
+            "torch_dtype": "bfloat16",
+            "num_nextn_predict_layers": 2,
+            "mtp_use_repeated_layer": True,
+            "mtp_loss_scaling_factor": 0.1,
+            "backend": {
+                "_target_": "nemo_automodel.components.models.common.BackendConfig",
+                "attn": "te",
+                "linear": "torch",
+                "rms_norm": "torch_fp32",
+                "experts": "torch_mm",
+                "dispatcher": "torch",
+            },
+        }
+    config = {
+        "recipe": recipe,
+        "seed": seed,
+        "model": model_config,
         "peft": _build_peft_config(args),
         "dataset": {
             "_target_": dataset_factory_target,
@@ -181,7 +224,7 @@ def _default_automodel_config(args, checkpoint_dir: str, incoming_adapter_dir: s
             "truncation": True,
         },
         "step_scheduler": {
-            "num_epochs": 1,
+            "num_epochs": None if model_profiles.is_lightning35(args) else 1,
             "max_steps": max(1, args.max_steps),
             "global_batch_size": args.global_batch_size,
             "local_batch_size": args.micro_batch_size,
@@ -200,7 +243,7 @@ def _default_automodel_config(args, checkpoint_dir: str, incoming_adapter_dir: s
             "enabled": True,
             "checkpoint_dir": checkpoint_dir,
             "model_save_format": "safetensors",
-            "save_consolidated": False,
+            "save_consolidated": "final" if model_profiles.is_lightning35(args) else False,
         },
         "distributed": {
             "strategy": "fsdp2",
@@ -210,6 +253,28 @@ def _default_automodel_config(args, checkpoint_dir: str, incoming_adapter_dir: s
             "sequence_parallel": False,
         },
     }
+    if model_profiles.is_lightning35(args):
+        config["checkpoint"]["restore_from"] = incoming_adapter_dir
+        config["distributed"]["ep_size"] = args.ep_size
+        config["distributed"]["activation_checkpointing"] = args.activation_checkpointing
+        config["dataset"]["seed"] = seed
+        config["dataset"]["recycle_samples"] = True
+        config["dataset"]["tokenizer"] = {
+            "pretrained_model_name_or_path": args.tokenizer_name_or_path,
+            "revision": args.tokenizer_revision,
+        }
+        config["optimizer"] = {
+            "_target_": "torch.optim.AdamW",
+            "betas": [0.9, 0.95],
+            "eps": 1e-8,
+            "lr": args.learning_rate,
+            "weight_decay": 0.1,
+        }
+        config["lr_scheduler"] = {
+            "lr_decay_style": "cosine",
+            "lr_warmup_steps": min(10, max(0, args.max_steps - 1)),
+            "min_lr": min(1e-5, args.learning_rate),
+        }
     if args.validation_file:
         config["validation_dataset"] = validation
         config["validation_dataloader"] = {
@@ -242,6 +307,11 @@ def _template_context(args, checkpoint_dir: str, incoming_adapter_dir: str, outp
         "lora_alpha": str(args.lora_alpha),
         "lora_dropout": str(args.lora_dropout),
         "target_modules": args.target_modules,
+        "exclude_modules": args.exclude_modules,
+        "model_profile": args.model_profile,
+        "model_revision": args.model_revision or "",
+        "tokenizer_revision": args.tokenizer_revision or "",
+        "seed": str(args.seed),
     }
 
 
@@ -308,7 +378,22 @@ def _run_automodel_round(args, round_dir: str, incoming_state: Mapping[str, torc
         "lora_dropout": args.lora_dropout,
         "target_modules": args.target_modules,
     }
-    adapter_checkpoint.save_hf_adapter_state_dir(incoming_state, incoming_adapter_dir, adapter_config=adapter_config)
+    profile_settings = _profile_settings(args)
+    manifest = adapter_checkpoint.build_adapter_manifest(
+        incoming_state,
+        model_profile=args.model_profile,
+        model_name_or_path=args.model_name_or_path,
+        tokenizer_name_or_path=args.tokenizer_name_or_path,
+        model_revision=args.model_revision,
+        tokenizer_revision=args.tokenizer_revision,
+        profile_settings=profile_settings,
+    )
+    adapter_checkpoint.save_hf_adapter_state_dir(
+        incoming_state,
+        incoming_adapter_dir,
+        adapter_config=adapter_config,
+        adapter_manifest=manifest,
+    )
     config_path = _write_automodel_config(args, round_dir, incoming_adapter_dir, output_adapter_dir)
 
     command = [args.automodel_command]
@@ -322,11 +407,22 @@ def _run_automodel_round(args, round_dir: str, incoming_state: Mapping[str, torc
         command.extend(shlex.split(extra_args))
 
     env = _build_subprocess_env()
+    report_path = os.path.join(round_dir, "automodel_report.json")
+    if model_profiles.is_lightning35(args):
+        env.update(
+            {
+                "NVFLARE_AUTOMODEL_REPORT": report_path,
+                "NVFLARE_LOADED_ADAPTER_DIR": os.path.join(round_dir, "loaded_adapter"),
+                "NVFLARE_MODEL_PROFILE": args.model_profile,
+                "NVFLARE_OUTPUT_ADAPTER_DIR": output_adapter_dir,
+                "NVFLARE_PROFILE_SETTINGS": json.dumps(profile_settings, sort_keys=True),
+            }
+        )
 
     print(f"Running NeMo AutoModel: {shlex.join(command)}")
     subprocess.run(command, cwd=round_dir, check=True, env=env)
 
-    adapter_dir = _latest_adapter_dir(checkpoint_dir) or output_adapter_dir
+    adapter_dir = _latest_adapter_dir(output_adapter_dir) or _latest_adapter_dir(checkpoint_dir) or output_adapter_dir
     if not os.path.isdir(adapter_dir):
         raise FileNotFoundError(
             "NeMo AutoModel did not produce a PEFT adapter directory. "
@@ -334,8 +430,14 @@ def _run_automodel_round(args, round_dir: str, incoming_state: Mapping[str, torc
         )
 
     updated_state = adapter_checkpoint.load_adapter_state(adapter_dir)
+    report = {}
+    if os.path.isfile(report_path):
+        with open(report_path) as f:
+            report = json.load(f)
     metrics = _read_metrics(os.path.join(round_dir, "metrics.json"))
-    return updated_state, metrics, max(1, args.max_steps)
+    steps = int(report.get("actual_optimizer_steps", max(1, args.max_steps)))
+    metrics.update({key: float(value) for key, value in report.items() if isinstance(value, (int, float))})
+    return updated_state, {**metrics, "_automodel_report": report}, steps
 
 
 def _mock_round(args, state_dict: Mapping[str, torch.Tensor]) -> tuple[dict, dict, int]:
@@ -346,6 +448,31 @@ def _mock_round(args, state_dict: Mapping[str, torch.Tensor]) -> tuple[dict, dic
         else:
             updated[key] = value.clone()
     return updated, {"mock_loss": 0.0}, max(1, args.max_steps)
+
+
+def _profile_settings(args) -> dict[str, Any]:
+    return model_profiles.adapter_compatibility_settings(args)
+
+
+def _validate_incoming_contract(args, incoming_state: Mapping[str, torch.Tensor]) -> None:
+    if not model_profiles.is_lightning35(args):
+        return
+    if not args.adapter_contract:
+        raise ValueError("The lightning35 profile requires --adapter_contract.")
+    with open(args.adapter_contract) as f:
+        contract = json.load(f)
+    adapter_checkpoint.validate_adapter_contract(
+        contract,
+        incoming_state,
+        expected={
+            "model_profile": args.model_profile,
+            "base_model_name_or_path": args.model_name_or_path,
+            "base_model_revision": args.model_revision,
+            "tokenizer_name_or_path": args.tokenizer_name_or_path,
+            "tokenizer_revision": args.tokenizer_revision,
+            "profile_settings": _profile_settings(args),
+        },
+    )
 
 
 def _resolve_server_tensor_device(device_name: str) -> torch.device:
@@ -387,6 +514,8 @@ def main():
         round_dir = os.path.abspath(os.path.join(args.work_dir, f"{client_name}_round_{current_round}"))
         os.makedirs(round_dir, exist_ok=True)
         incoming_state = adapter_checkpoint.strip_model_prefix(input_model.params or {})
+        incoming_state = adapter_checkpoint.align_adapter_state_strict(incoming_state, incoming_state)
+        _validate_incoming_contract(args, incoming_state)
         print(
             f"site={client_name}, round={current_round}, "
             f"received_adapter_mb={adapter_checkpoint.state_dict_size_mb(incoming_state):.2f}"
@@ -397,10 +526,61 @@ def main():
         else:
             updated_state, metrics, steps = _run_automodel_round(args, round_dir, incoming_state)
 
-        updated_state = adapter_checkpoint.match_adapter_state_to_reference(updated_state, incoming_state)
-        if not updated_state:
-            raise RuntimeError("No common adapter keys between the received and updated adapter states.")
-        updated_params = adapter_checkpoint.add_model_prefix(updated_state)
+        automodel_report = metrics.pop("_automodel_report", {})
+        updated_state = adapter_checkpoint.align_adapter_state_strict(
+            updated_state,
+            incoming_state,
+            normalize_peft_prefixes=not model_profiles.is_lightning35(args),
+        )
+        if steps <= 0:
+            raise RuntimeError(f"Local training completed without optimizer steps: {steps}")
+        exchange_state = (
+            OrderedDict((key, value.float()) for key, value in updated_state.items())
+            if model_profiles.is_lightning35(args)
+            else updated_state
+        )
+        outgoing_manifest = adapter_checkpoint.build_adapter_manifest(
+            exchange_state,
+            model_profile=args.model_profile,
+            model_name_or_path=args.model_name_or_path,
+            tokenizer_name_or_path=args.tokenizer_name_or_path,
+            model_revision=args.model_revision,
+            tokenizer_revision=args.tokenizer_revision,
+            profile_settings=_profile_settings(args),
+        )
+        outgoing_adapter_dir = os.path.join(round_dir, "outgoing_adapter")
+        checkpoint_location = adapter_checkpoint.save_hf_adapter_state_dir(
+            exchange_state,
+            outgoing_adapter_dir,
+            adapter_manifest=outgoing_manifest,
+        )
+        received_hash = adapter_checkpoint.state_hash(incoming_state)
+        outgoing_hash = adapter_checkpoint.state_hash(exchange_state)
+        loaded_hash = automodel_report.get("loaded_adapter_hash", received_hash)
+        loaded_matches_received = automodel_report.get(
+            "loaded_matches_received_after_dtype_cast", loaded_hash == received_hash
+        )
+        if not loaded_matches_received:
+            raise RuntimeError(f"Loaded adapter {loaded_hash} does not reproduce received adapter {received_hash}.")
+        round_manifest = {
+            "schema_version": 1,
+            "site_name": client_name,
+            "round": current_round,
+            "model_profile": args.model_profile,
+            "received_adapter_hash": received_hash,
+            "loaded_adapter_hash": loaded_hash,
+            "outgoing_adapter_hash": outgoing_hash,
+            "received_tensor_count": len(incoming_state),
+            "loaded_tensor_count": automodel_report.get("loaded_tensor_count", len(incoming_state)),
+            "outgoing_tensor_count": len(exchange_state),
+            "actual_optimizer_steps": steps,
+            "update_norm": adapter_checkpoint.update_norm(incoming_state, exchange_state),
+            "checkpoint_location": os.path.abspath(checkpoint_location),
+            "automodel_report": automodel_report,
+        }
+        with open(os.path.join(round_dir, "round_manifest.json"), "w") as f:
+            json.dump(round_manifest, f, indent=2, sort_keys=True)
+        updated_params = adapter_checkpoint.add_model_prefix(exchange_state)
         params_type, params = _build_param_update(updated_params, server_tensor_device)
         meta = {FLMetaKey.NUM_STEPS_CURRENT_ROUND: steps}
         flare.send(flare.FLModel(params_type=params_type, params=params, metrics=metrics, meta=meta))
