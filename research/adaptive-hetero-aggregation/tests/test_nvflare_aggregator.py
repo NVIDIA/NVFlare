@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
+
 import numpy as np
 import torch
 from adaptive_hetero.nvflare_aggregator import AdaptiveHeterogeneityAggregator, AdaptiveMetaKey
@@ -20,7 +22,9 @@ from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
 from nvflare.apis.fl_constant import ReservedKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.app_constant import AppConstants
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.app_opt.pt.recipes.fedopt import FedOptRecipe
+from nvflare.client.config import TransferType
 
 
 def _context(round_number=0):
@@ -81,10 +85,7 @@ def test_real_nvflare_aggregation_matches_server_side_weights():
 
 
 def test_native_fallback_uses_optimizer_steps_not_sample_count():
-    aggregator = AdaptiveHeterogeneityAggregator(
-        metric_prior_strength=0.0,
-        activation_warmup_rounds=3,
-    )
+    aggregator = AdaptiveHeterogeneityAggregator(metric_prior_strength=0.0, activation_warmup_rounds=3)
     ctx = _context()
     assert aggregator.accept(
         _contribution("site-1", 0, 1.0, 9, [0.5, 0.5], 0.8, sample_count=100), ctx
@@ -191,14 +192,18 @@ def test_rejects_nonfinite_negative_and_mismatched_descriptors():
     assert not aggregator.accept(_contribution("site-2", 0, 1.0, 10, [0.2, 0.3, 0.5], 0.8), ctx)
 
 
-def test_constructor_arguments_are_exposed_for_fedjob_serialization():
-    aggregator = AdaptiveHeterogeneityAggregator(
+def _custom_aggregator():
+    return AdaptiveHeterogeneityAggregator(
         metric_prior_strength=7.0,
         heterogeneity_threshold=0.12,
         max_blend_factor=0.15,
         min_weight=0.03,
         max_weight=0.70,
     )
+
+
+def test_constructor_arguments_are_exposed_for_fedjob_serialization():
+    aggregator = _custom_aggregator()
     assert aggregator.metric_prior_strength == 7.0
     assert aggregator.heterogeneity_threshold == 0.12
     assert aggregator.max_blend_factor == 0.15
@@ -206,10 +211,48 @@ def test_constructor_arguments_are_exposed_for_fedjob_serialization():
     assert aggregator.max_weight == 0.70
 
 
-def test_fedopt_recipe_accepts_adaptive_aggregator():
+def test_fedjob_export_preserves_non_default_aggregator_arguments(tmp_path):
+    aggregator = _custom_aggregator()
+    recipe = FedOptRecipe(
+        name="adaptive-hetero-serialization-test",
+        min_clients=2,
+        num_rounds=1,
+        model=torch.nn.Linear(2, 2),
+        train_script=__file__,
+        aggregator=aggregator,
+        optimizer_args={"path": "torch.optim.SGD", "args": {"lr": 1.0}},
+    )
+    recipe.export(str(tmp_path))
+
+    config_path = tmp_path / recipe.name / "app" / "config" / "config_fed_server.json"
+    server_config = json.loads(config_path.read_text())
+    serialized = next(component for component in server_config["components"] if component["id"] == "aggregator")
+    assert serialized["args"]["metric_prior_strength"] == 7.0
+    assert serialized["args"]["heterogeneity_threshold"] == 0.12
+    assert serialized["args"]["max_blend_factor"] == 0.15
+    assert serialized["args"]["min_weight"] == 0.03
+    assert serialized["args"]["max_weight"] == 0.70
+
+
+def test_fedavg_recipe_accepts_generic_adaptive_aggregator():
+    aggregator = AdaptiveHeterogeneityAggregator()
+    recipe = FedAvgRecipe(
+        name="adaptive-hetero-fedavg-contract-test",
+        min_clients=2,
+        num_rounds=1,
+        model=torch.nn.Linear(2, 2),
+        train_script=__file__,
+        aggregator=aggregator,
+        aggregator_data_kind=DataKind.WEIGHT_DIFF,
+        params_transfer_type=TransferType.DIFF,
+    )
+    assert recipe.aggregator is aggregator
+
+
+def test_fedopt_recipe_accepts_generic_adaptive_aggregator():
     aggregator = AdaptiveHeterogeneityAggregator(min_weight=0.10, max_weight=0.80)
     recipe = FedOptRecipe(
-        name="adaptive-hetero-contract-test",
+        name="adaptive-hetero-fedopt-contract-test",
         min_clients=2,
         num_rounds=1,
         model=torch.nn.Linear(2, 2),
