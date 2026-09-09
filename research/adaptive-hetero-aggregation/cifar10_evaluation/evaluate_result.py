@@ -21,7 +21,10 @@ Every method is evaluated from the final server checkpoint on:
   (``client_accuracies`` and ``worst_client_accuracy``).
 
 Using one evaluator for all methods avoids comparing adaptive/FedCE client-side
-metrics against stock baseline clients that evaluate on a different test set.
+metrics against baseline clients evaluated on a different test set. For adaptive
+runs, federation-level activation telemetry persisted in the final checkpoint is
+returned alongside accuracy so fallback-only partial-participation runs are
+visible in the evidence.
 """
 
 import argparse
@@ -37,12 +40,24 @@ from torchvision import datasets, transforms
 
 PROJECT_DIR = Path(__file__).resolve().parents[1]
 REPO_ROOT = PROJECT_DIR.parents[1]
+PROJECT_SRC = PROJECT_DIR / "src"
 CIFAR_SRC = REPO_ROOT / "examples" / "advanced" / "cifar10" / "pt" / "src"
-if str(CIFAR_SRC) not in sys.path:
-    sys.path.insert(0, str(CIFAR_SRC))
+for path in (str(PROJECT_SRC), str(CIFAR_SRC)):
+    if path not in sys.path:
+        sys.path.insert(0, path)
 
+from adaptive_hetero.nvflare_aggregator import AdaptiveMetaKey  # noqa: E402
 from data.cifar10_data_utils import CIFAR10_ROOT  # noqa: E402
 from model import ModerateCNN  # noqa: E402
+
+ADAPTIVE_TELEMETRY_KEYS = (
+    AdaptiveMetaKey.AGGREGATION_ROUNDS,
+    AdaptiveMetaKey.ACTIVE_ROUNDS,
+    AdaptiveMetaKey.ACTIVATION_RATE,
+    AdaptiveMetaKey.MEAN_ACTIVE_BLEND_FACTOR,
+    AdaptiveMetaKey.MAX_OBSERVED_BLEND_FACTOR,
+    AdaptiveMetaKey.COHORT_CHANGE_COUNT,
+)
 
 
 def find_server_checkpoint(workspace: str) -> Path:
@@ -68,15 +83,30 @@ def find_server_checkpoint(workspace: str) -> Path:
     return candidates[0]
 
 
+def _checkpoint_payload(checkpoint_path: str | Path) -> dict:
+    checkpoint = torch.load(Path(checkpoint_path), map_location="cpu", weights_only=True)
+    if not isinstance(checkpoint, dict) or not checkpoint:
+        raise ValueError(f"unsupported checkpoint format in {checkpoint_path}")
+    return checkpoint
+
+
 def checkpoint_state_dict(checkpoint_path: str | Path) -> dict:
     """Load the model state dict from NVFlare's PyTorch checkpoint format."""
 
-    checkpoint = torch.load(Path(checkpoint_path), map_location="cpu", weights_only=True)
-    if isinstance(checkpoint, dict) and isinstance(checkpoint.get("model"), dict):
+    checkpoint = _checkpoint_payload(checkpoint_path)
+    if isinstance(checkpoint.get("model"), dict):
         return checkpoint["model"]
-    if isinstance(checkpoint, dict) and checkpoint and all(isinstance(key, str) for key in checkpoint):
+    if all(isinstance(key, str) for key in checkpoint):
         return checkpoint
     raise ValueError(f"unsupported checkpoint format in {checkpoint_path}")
+
+
+def checkpoint_meta(checkpoint_path: str | Path) -> dict:
+    """Return persisted NVFlare model metadata when available."""
+
+    checkpoint = _checkpoint_payload(checkpoint_path)
+    meta = checkpoint.get("meta_props")
+    return dict(meta) if isinstance(meta, dict) else {}
 
 
 def _test_dataset(download: bool = False):
@@ -131,6 +161,7 @@ def evaluate_workspace(
         raise ValueError("n_clients must be positive")
 
     checkpoint_path = find_server_checkpoint(workspace)
+    checkpoint_metadata = checkpoint_meta(checkpoint_path)
     device = torch.device(device_name or ("cuda:0" if torch.cuda.is_available() else "cpu"))
     model = ModerateCNN()
     model.load_state_dict(checkpoint_state_dict(checkpoint_path), strict=True)
@@ -156,6 +187,7 @@ def evaluate_workspace(
         client_counts[site_name] = int(indices.size)
 
     values = np.asarray(list(client_accuracies.values()), dtype=np.float64)
+    telemetry = {key: checkpoint_metadata[key] for key in ADAPTIVE_TELEMETRY_KEYS if key in checkpoint_metadata}
     return {
         "checkpoint": str(checkpoint_path),
         "global_accuracy": float(global_accuracy),
@@ -165,6 +197,7 @@ def evaluate_workspace(
         "client_accuracy_gap": float(values.max() - values.min()),
         "client_accuracies": client_accuracies,
         "client_eval_counts": client_counts,
+        "adaptive_telemetry": telemetry,
     }
 
 
