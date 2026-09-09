@@ -2694,7 +2694,7 @@ def _add_training_package(job: FedJob, *, package_dir: Path, target: str) -> Non
     if package_dir.name == "src":
         job.add_file_to(str(package_dir), target, dest_dir="src", app_folder_type="custom")
     elif (package_dir / "__init__.py").exists():
-        job.add_file_to(str(package_dir.parent), target, app_folder_type="custom")
+        job.add_file_to(str(package_dir), target, dest_dir=package_dir.name, app_folder_type="custom")
     else:
         job.add_file_to(str(package_dir), target, app_folder_type="custom")
 

@@ -35,6 +35,7 @@ from fedready.job_data import (
 from fedready.job_train import (
     LOCAL_TRAINING_SIMULATION_SCHEMA_VERSION,
     FedAvgTrainingConfig,
+    _add_training_package,
     _completed_preflight_before_aio_cleanup_error,
     _dataset_root_from_extraction_summary_path,
     _default_training_session_id,
@@ -49,6 +50,22 @@ from nvflare.app_common.executors.task_script_runner import TaskScriptRunner
 
 
 class NVFlareJobTestCase(unittest.TestCase):
+    def test_training_package_export_uses_integrity_root(self) -> None:
+        with TemporaryDirectory() as tmp:
+            package_dir = Path(tmp) / "fedready_task_training"
+            package_dir.mkdir()
+            (package_dir / "__init__.py").touch()
+            job = mock.Mock()
+
+            _add_training_package(job, package_dir=package_dir, target="server")
+
+            job.add_file_to.assert_called_once_with(
+                str(package_dir),
+                "server",
+                dest_dir=package_dir.name,
+                app_folder_type="custom",
+            )
+
     def test_training_package_must_match_local_preflight_digest(self) -> None:
         with TemporaryDirectory() as tmp:
             package_dir = Path(tmp) / "fedready_task_training"
