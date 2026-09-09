@@ -12,13 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Summarize matched CIFAR-10 runs with 95% confidence intervals.
-
-Input is JSONL with one completed run per line. Each row must contain
-``method``, ``alpha``, ``participation_rate``, ``seed``, ``global_accuracy``,
-and ``worst_client_accuracy``. Optional client-level fields are preserved in
-the raw results but are not required by this summary.
-"""
+"""Summarize matched CIFAR-10 runs with 95% confidence intervals."""
 
 import argparse
 import json
@@ -32,7 +26,7 @@ from scipy.stats import t
 METRICS = ("global_accuracy", "worst_client_accuracy")
 
 
-def _load_rows(path: str) -> list[dict]:
+def _load_rows(path: str, protocol_version: str | None = None) -> list[dict]:
     rows = []
     with open(path) as source:
         for line_number, line in enumerate(source, start=1):
@@ -42,12 +36,15 @@ def _load_rows(path: str) -> list[dict]:
                 row = json.loads(line)
             except json.JSONDecodeError as exc:
                 raise ValueError(f"invalid JSON on line {line_number} of {path}") from exc
+            if protocol_version is not None and row.get("protocol_version") != protocol_version:
+                continue
             for key in ("method", "alpha", "participation_rate", "seed", *METRICS):
                 if key not in row:
                     raise ValueError(f"line {line_number} is missing required field {key!r}")
             rows.append(row)
     if not rows:
-        raise ValueError("results file contains no runs")
+        suffix = "" if protocol_version is None else f" for protocol {protocol_version!r}"
+        raise ValueError(f"results file contains no runs{suffix}")
     return rows
 
 
@@ -57,7 +54,14 @@ def _ci(values) -> dict:
         raise ValueError("confidence interval input must contain finite values")
     mean = float(values.mean())
     if values.size == 1:
-        return {"n": 1, "mean": mean, "std": 0.0, "ci95_low": None, "ci95_high": None, "half_width": None}
+        return {
+            "n": 1,
+            "mean": mean,
+            "std": 0.0,
+            "ci95_low": None,
+            "ci95_high": None,
+            "half_width": None,
+        }
     std = float(values.std(ddof=1))
     critical = float(t.ppf(0.975, df=values.size - 1))
     half_width = critical * std / math.sqrt(values.size)
@@ -73,9 +77,19 @@ def _ci(values) -> dict:
 
 def summarize(rows: list[dict], reference_method: str = "adaptive") -> dict:
     grouped = defaultdict(list)
+    seen = set()
     for row in rows:
-        key = (float(row["alpha"]), float(row["participation_rate"]), str(row["method"]))
-        grouped[key].append(row)
+        unique_key = (
+            str(row["method"]),
+            float(row["alpha"]),
+            float(row["participation_rate"]),
+            int(row["seed"]),
+        )
+        if unique_key in seen:
+            raise ValueError(f"duplicate completed run for condition {unique_key}")
+        seen.add(unique_key)
+        group_key = (float(row["alpha"]), float(row["participation_rate"]), str(row["method"]))
+        grouped[group_key].append(row)
 
     summaries = []
     for (alpha, participation_rate, method), group in sorted(grouped.items()):
@@ -97,9 +111,7 @@ def summarize(rows: list[dict], reference_method: str = "adaptive") -> dict:
             for row in rows
             if float(row["alpha"]) == alpha and float(row["participation_rate"]) == participation_rate
         ]
-        reference = {
-            int(row["seed"]): row for row in condition_rows if str(row["method"]) == reference_method
-        }
+        reference = {int(row["seed"]): row for row in condition_rows if str(row["method"]) == reference_method}
         methods = sorted({str(row["method"]) for row in condition_rows if str(row["method"]) != reference_method})
         for method in methods:
             baseline = {int(row["seed"]): row for row in condition_rows if str(row["method"]) == method}
@@ -129,8 +141,10 @@ def summarize(rows: list[dict], reference_method: str = "adaptive") -> dict:
 
 
 def main(args):
-    rows = _load_rows(args.input)
+    rows = _load_rows(args.input, protocol_version=args.protocol_version)
     result = summarize(rows, reference_method=args.reference_method)
+    if args.protocol_version is not None:
+        result["protocol_version"] = args.protocol_version
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
@@ -142,4 +156,5 @@ if __name__ == "__main__":
     parser.add_argument("--input", required=True, help="JSONL file with one completed run per line")
     parser.add_argument("--output", required=True, help="Destination JSON summary")
     parser.add_argument("--reference_method", default="adaptive")
+    parser.add_argument("--protocol_version", default=None)
     main(parser.parse_args())
