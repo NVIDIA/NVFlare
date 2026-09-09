@@ -15,12 +15,15 @@
 """CIFAR-10 client for the adaptive aggregation evaluation.
 
 The training loop follows NVIDIA FLARE's standard PyTorch CIFAR-10 FedAvg
-example. It adds only the metadata required by the adaptive aggregation policy.
+example. It adds the adaptive metadata and evaluates the received global model
+on a deterministic site-specific CIFAR-10 test partition so performance
+heterogeneity is measured locally rather than on the same test set at every site.
 """
 
 import argparse
 import copy
 import json
+import os
 import re
 
 import numpy as np
@@ -29,6 +32,7 @@ import torch.nn as nn
 import torch.optim as optim
 from data.cifar10_data_utils import create_data_loaders, create_datasets
 from model import ModerateCNN
+from torch.utils.data import Subset
 from train_utils import compute_model_diff, evaluate, get_lr_values
 
 import nvflare.client as flare
@@ -53,6 +57,16 @@ def _class_descriptor(train_dataset) -> list[float]:
     return np.bincount(targets, minlength=NUM_CLASSES).astype(np.float64).tolist()
 
 
+def _local_validation_dataset(valid_dataset, eval_idx_root: str, site_name: str):
+    path = os.path.join(eval_idx_root, f"{site_name}.npy")
+    if not os.path.isfile(path):
+        raise ValueError(f"missing local evaluation split for {site_name}: {path}")
+    indices = np.load(path).astype(np.int64)
+    if indices.size == 0:
+        raise ValueError(f"local evaluation split for {site_name} is empty")
+    return Subset(valid_dataset, indices.tolist())
+
+
 def main(args):
     flare.init()
     site_name = flare.get_site_name()
@@ -70,15 +84,17 @@ def main(args):
     scheduler = None
 
     print(f"Create datasets for site {site_name}")
-    train_dataset, valid_dataset = create_datasets(site_name, train_idx_root=args.train_idx_root)
+    train_dataset, full_valid_dataset = create_datasets(site_name, train_idx_root=args.train_idx_root)
+    local_valid_dataset = _local_validation_dataset(full_valid_dataset, args.eval_idx_root, site_name)
     train_loader, valid_loader = create_data_loaders(
-        train_dataset, valid_dataset, batch_size=args.batch_size, num_workers=args.num_workers
+        train_dataset, local_valid_dataset, batch_size=args.batch_size, num_workers=args.num_workers
     )
     if len(train_loader) == 0 or len(valid_loader) == 0:
         raise ValueError("CIFAR-10 evaluation requires non-empty training and validation loaders")
 
     descriptor = _class_descriptor(train_dataset)
     sample_count = len(train_dataset)
+    validation_count = len(local_valid_dataset)
     summary_writer = SummaryWriter()
 
     while flare.is_running():
@@ -144,8 +160,9 @@ def main(args):
                 {
                     "client": site_name,
                     "round": current_round,
-                    "global_accuracy": val_acc_global_model,
+                    "local_validation_accuracy": val_acc_global_model,
                     "sample_count": sample_count,
+                    "validation_count": validation_count,
                     "steps": steps,
                 },
                 sort_keys=True,
@@ -158,6 +175,7 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--train_idx_root", required=True)
+    parser.add_argument("--eval_idx_root", required=True)
     parser.add_argument("--aggregation_epochs", type=int, default=4)
     parser.add_argument("--lr", type=float, default=5e-2)
     parser.add_argument("--batch_size", type=int, default=64)
