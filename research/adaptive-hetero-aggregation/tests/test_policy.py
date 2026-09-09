@@ -58,6 +58,18 @@ def test_low_heterogeneity_uses_exact_sample_weighting_fallback():
     assert np.array_equal(result.weights, result.base_weights)
 
 
+def test_explicit_native_weights_are_preserved_during_fallback():
+    result = AdaptiveHeterogeneityPolicy().compute(
+        sample_counts=[100, 100],
+        base_weights=[0.9, 0.1],
+        descriptors=[[0.5, 0.5], [0.5, 0.5]],
+        client_metrics=[0.8, 0.8],
+    )
+    assert result.blend_factor == 0.0
+    assert np.allclose(result.base_weights, [0.9, 0.1])
+    assert np.allclose(result.weights, [0.9, 0.1])
+
+
 def test_high_heterogeneity_but_tiny_metric_gap_uses_exact_fallback():
     result = _immediate_policy().compute(
         sample_counts=[100, 100],
@@ -111,6 +123,44 @@ def test_final_blended_weights_respect_bounds_when_base_weight_is_dominant():
     assert np.isclose(result.weights.sum(), 1.0)
     assert np.all(result.weights >= 0.05 - 1e-12)
     assert np.all(result.weights <= 0.50 + 1e-12)
+
+
+def test_infeasible_configured_bounds_fall_back_for_large_cohort():
+    client_count = 51
+    policy = _immediate_policy(
+        min_weight=0.02,
+        max_weight=0.50,
+        heterogeneity_threshold=0.0,
+        heterogeneity_deadband=0.0,
+        performance_gap_threshold=0.0,
+        performance_gap_deadband=0.0,
+    )
+    descriptors = [[0.99, 0.01] if index % 2 == 0 else [0.01, 0.99] for index in range(client_count)]
+    metrics = [0.9 if index % 2 == 0 else 0.4 for index in range(client_count)]
+    base_weights = np.arange(1, client_count + 1, dtype=np.float64)
+    base_weights /= base_weights.sum()
+    result = policy.compute(
+        sample_counts=np.ones(client_count),
+        base_weights=base_weights,
+        descriptors=descriptors,
+        client_metrics=metrics,
+    )
+    assert not result.bounds_feasible
+    assert result.blend_factor == 0.0
+    assert np.allclose(result.weights, base_weights)
+
+
+def test_infeasible_configured_bounds_fall_back_for_single_client():
+    policy = _immediate_policy(max_weight=0.50)
+    result = policy.compute(
+        sample_counts=[100],
+        base_weights=[1.0],
+        descriptors=[[0.5, 0.5]],
+        client_metrics=[0.8],
+    )
+    assert not result.bounds_feasible
+    assert result.blend_factor == 0.0
+    assert np.allclose(result.weights, [1.0])
 
 
 def test_small_client_metric_is_shrunk_toward_federation_mean():
@@ -218,7 +268,17 @@ def test_descriptor_length_mismatch_is_rejected():
         )
 
 
-def test_infeasible_bounds_are_rejected():
+def test_invalid_native_weights_are_rejected():
+    with pytest.raises(ValueError, match="base_weights"):
+        AdaptiveHeterogeneityPolicy().compute(
+            sample_counts=[100, 100],
+            base_weights=[1.0],
+            descriptors=[[0.5, 0.5], [0.5, 0.5]],
+            client_metrics=[0.8, 0.8],
+        )
+
+
+def test_infeasible_bounds_are_rejected_by_projection_primitive():
     with pytest.raises(ValueError, match="infeasible"):
         project_bounded_simplex([0.5, 0.5], lower=0.0, upper=0.4)
 
