@@ -17,7 +17,7 @@ import torch
 from adaptive_hetero.nvflare_aggregator import AdaptiveHeterogeneityAggregator, AdaptiveMetaKey
 
 from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
-from nvflare.apis.fl_constant import ReservedKey
+from nvflare.apis.fl_constant import ReservedKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_opt.pt.recipes.fedopt import FedOptRecipe
@@ -29,12 +29,14 @@ def _context(round_number=0):
     return ctx
 
 
-def _contribution(name, round_number, value, steps, descriptor, metric, quality=0.0):
+def _contribution(name, round_number, value, steps, descriptor, metric, quality=0.0, sample_count=None):
+    sample_count = steps if sample_count is None else sample_count
     dxo = DXO(
         data_kind=DataKind.WEIGHT_DIFF,
         data={"weight": np.asarray([value], dtype=np.float32)},
         meta={
             MetaKey.NUM_STEPS_CURRENT_ROUND: steps,
+            AdaptiveMetaKey.SAMPLE_COUNT: sample_count,
             AdaptiveMetaKey.DISTRIBUTION_DESCRIPTOR: descriptor,
             AdaptiveMetaKey.CLIENT_METRIC: metric,
             AdaptiveMetaKey.QUALITY_IMPROVEMENT: quality,
@@ -46,7 +48,7 @@ def _contribution(name, round_number, value, steps, descriptor, metric, quality=
     return shareable
 
 
-def test_real_nvflare_aggregation_matches_reported_weights():
+def test_real_nvflare_aggregation_matches_server_side_weights():
     aggregator = AdaptiveHeterogeneityAggregator(
         metric_prior_strength=0.0,
         heterogeneity_threshold=0.0,
@@ -62,23 +64,40 @@ def test_real_nvflare_aggregation_matches_reported_weights():
         max_weight=0.80,
     )
     ctx = _context()
-    first = _contribution("site-1", 0, 1.0, 900, [0.95, 0.05], 0.90, 0.10)
-    second = _contribution("site-2", 0, 3.0, 100, [0.05, 0.95], 0.55, 0.10)
+    first = _contribution("site-1", 0, 1.0, 900, [0.95, 0.05], 0.90, 0.10, sample_count=900)
+    second = _contribution("site-2", 0, 3.0, 100, [0.05, 0.95], 0.55, 0.10, sample_count=100)
 
     assert aggregator.accept(first, ctx)
     assert aggregator.accept(second, ctx)
     result = from_shareable(aggregator.aggregate(ctx))
 
-    weights = result.meta[AdaptiveMetaKey.FINAL_WEIGHTS]
+    weights = aggregator.last_weights
     assert np.isclose(sum(weights.values()), 1.0)
     assert weights["site-2"] > 0.10
     expected = weights["site-1"] * 1.0 + weights["site-2"] * 3.0
-    assert np.allclose(
-        result.data["weight"],
-        np.asarray([expected], dtype=np.float32),
-        atol=1e-6,
-    )
+    assert np.allclose(result.data["weight"], np.asarray([expected], dtype=np.float32), atol=1e-6)
     assert 0.0 < result.meta[AdaptiveMetaKey.BLEND_FACTOR] <= 0.80
+    assert "adaptive_final_weights" not in result.meta
+
+
+def test_native_fallback_uses_optimizer_steps_not_sample_count():
+    aggregator = AdaptiveHeterogeneityAggregator(
+        metric_prior_strength=0.0,
+        activation_warmup_rounds=3,
+    )
+    ctx = _context()
+    assert aggregator.accept(
+        _contribution("site-1", 0, 1.0, 9, [0.5, 0.5], 0.8, sample_count=100), ctx
+    )
+    assert aggregator.accept(
+        _contribution("site-2", 0, 3.0, 1, [0.5, 0.5], 0.8, sample_count=100), ctx
+    )
+    result = from_shareable(aggregator.aggregate(ctx))
+
+    assert result.meta[AdaptiveMetaKey.BLEND_FACTOR] == 0.0
+    assert aggregator.last_weights["site-1"] == 0.9
+    assert aggregator.last_weights["site-2"] == 0.1
+    assert np.allclose(result.data["weight"], np.asarray([1.2], dtype=np.float32), atol=1e-6)
 
 
 def test_aggregator_preserves_activation_history_and_resets_on_cohort_change():
@@ -99,12 +118,10 @@ def test_aggregator_preserves_activation_history_and_resets_on_cohort_change():
     for round_number in range(3):
         ctx = _context(round_number)
         assert aggregator.accept(
-            _contribution("site-1", round_number, 1.0, 100, [0.99, 0.01], 0.90),
-            ctx,
+            _contribution("site-1", round_number, 1.0, 10, [0.99, 0.01], 0.90, sample_count=100), ctx
         )
         assert aggregator.accept(
-            _contribution("site-2", round_number, 3.0, 100, [0.01, 0.99], 0.50),
-            ctx,
+            _contribution("site-2", round_number, 3.0, 10, [0.01, 0.99], 0.50, sample_count=100), ctx
         )
         result = from_shareable(aggregator.aggregate(ctx))
         blends.append(result.meta[AdaptiveMetaKey.BLEND_FACTOR])
@@ -114,11 +131,32 @@ def test_aggregator_preserves_activation_history_and_resets_on_cohort_change():
     assert blends[2] > 0.0
 
     changed_ctx = _context(3)
-    assert aggregator.accept(_contribution("site-1", 3, 1.0, 100, [0.99, 0.01], 0.90), changed_ctx)
-    assert aggregator.accept(_contribution("site-3", 3, 3.0, 100, [0.01, 0.99], 0.50), changed_ctx)
+    assert aggregator.accept(
+        _contribution("site-1", 3, 1.0, 10, [0.99, 0.01], 0.90, sample_count=100), changed_ctx
+    )
+    assert aggregator.accept(
+        _contribution("site-3", 3, 3.0, 10, [0.01, 0.99], 0.50, sample_count=100), changed_ctx
+    )
     changed = from_shareable(aggregator.aggregate(changed_ctx))
     assert changed.meta[AdaptiveMetaKey.BLEND_FACTOR] == 0.0
     assert changed.meta[AdaptiveMetaKey.ACTIVATION_STREAK] == 1
+
+
+def test_default_bounds_support_single_client():
+    aggregator = AdaptiveHeterogeneityAggregator()
+    ctx = _context()
+    assert aggregator.accept(
+        _contribution("site-1", 0, 2.0, 5, [0.5, 0.5], 0.8, sample_count=100), ctx
+    )
+    result = from_shareable(aggregator.aggregate(ctx))
+    assert aggregator.last_weights == {"site-1": 1.0}
+    assert np.allclose(result.data["weight"], np.asarray([2.0], dtype=np.float32))
+
+
+def test_empty_round_returns_empty_result_instead_of_raising():
+    aggregator = AdaptiveHeterogeneityAggregator()
+    reply = aggregator.aggregate(_context())
+    assert reply.get_return_code() == ReturnCode.EMPTY_RESULT
 
 
 def test_rejects_missing_metadata_duplicate_and_wrong_round():
@@ -151,6 +189,21 @@ def test_rejects_nonfinite_negative_and_mismatched_descriptors():
 
     assert aggregator.accept(_contribution("site-1", 0, 1.0, 10, [0.5, 0.5], 0.8), ctx)
     assert not aggregator.accept(_contribution("site-2", 0, 1.0, 10, [0.2, 0.3, 0.5], 0.8), ctx)
+
+
+def test_constructor_arguments_are_exposed_for_fedjob_serialization():
+    aggregator = AdaptiveHeterogeneityAggregator(
+        metric_prior_strength=7.0,
+        heterogeneity_threshold=0.12,
+        max_blend_factor=0.15,
+        min_weight=0.03,
+        max_weight=0.70,
+    )
+    assert aggregator.metric_prior_strength == 7.0
+    assert aggregator.heterogeneity_threshold == 0.12
+    assert aggregator.max_blend_factor == 0.15
+    assert aggregator.min_weight == 0.03
+    assert aggregator.max_weight == 0.70
 
 
 def test_fedopt_recipe_accepts_adaptive_aggregator():
