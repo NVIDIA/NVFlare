@@ -985,8 +985,8 @@ def test_remove_docker_network_uses_selected_daemon_and_clears_identity(monkeypa
 
 
 @pytest.mark.parametrize("initially_running", [False, True])
-@pytest.mark.parametrize("failure", ["active_endpoints", "daemon_error", "os_error", "timeout"])
-def test_stop_preserves_workspace_on_network_failure_and_can_retry(
+@pytest.mark.parametrize("failure", ["active_endpoints", "persistent_endpoints", "daemon_error", "os_error", "timeout"])
+def test_stop_retries_busy_docker_network_and_preserves_on_failure(
     tmp_path, monkeypatch, caplog, initially_running, failure
 ):
     import nvflare.recipe.poc_env as poc_env_module
@@ -1017,22 +1017,44 @@ def test_stop_preserves_workspace_on_network_failure_and_can_retry(
     monkeypatch.setattr(poc_env_module, "_stop_poc", stop)
     # Exercise network removal itself; other Docker environment probes are unrelated here.
     monkeypatch.setattr(poc_env_module, "_docker_cli_env", lambda: {})
+    clock = {"now": 0.0}
+    monkeypatch.setattr(poc_env_module, "STOP_POC_TIMEOUT", 0.4)
+    monkeypatch.setattr(
+        poc_env_module,
+        "time",
+        SimpleNamespace(
+            monotonic=lambda: clock["now"],
+            sleep=lambda duration: clock.update(now=clock["now"] + duration),
+        ),
+    )
     network_calls = []
+    network_recovered = False
 
     def remove_network(command, **kwargs):
         network_calls.append(command)
         assert command == ["docker", "network", "rm", "nvflare-recipe-run"]
-        if len(network_calls) == 1:
+        if not network_recovered and (len(network_calls) == 1 or failure == "persistent_endpoints"):
             if failure == "os_error":
                 raise OSError("Docker unavailable")
             if failure == "timeout":
                 raise subprocess.TimeoutExpired(command, timeout=5)
-            message = "network has active endpoints" if failure == "active_endpoints" else "Docker daemon unavailable"
+            message = "network has active endpoints" if "endpoints" in failure else "Docker daemon unavailable"
             return SimpleNamespace(returncode=1, stdout="", stderr=message)
         return SimpleNamespace(returncode=0, stdout="nvflare-recipe-run\n", stderr="")
 
     monkeypatch.setattr(poc_env_module.subprocess, "run", remove_network)
     env.stop(clean_up=True)
+
+    if failure == "active_endpoints":
+        # A single stop must finish cleanup once auto-removed job containers detach.
+        assert not workspace.exists()
+        assert env._docker_network_name is None
+        assert env._services_may_have_started is False
+        assert env._session_manager is None
+        assert len(network_calls) == 2
+        assert len(stop_calls) == int(initially_running)
+        assert "preserving workspace" not in caplog.text
+        return
 
     assert retained_result.read_text() == "keep me"
     assert env._docker_network_name == "nvflare-recipe-run"
@@ -1040,13 +1062,21 @@ def test_stop_preserves_workspace_on_network_failure_and_can_retry(
     assert env._session_manager is None
     assert f"preserving workspace {workspace}" in caplog.text
     assert "retry PocEnv.stop(clean_up=True)" in caplog.text
+    if failure == "persistent_endpoints":
+        assert len(network_calls) > 1
+        assert clock["now"] <= poc_env_module.STOP_POC_TIMEOUT
+        assert "active endpoints" in caplog.text
+    else:
+        assert len(network_calls) == 1
 
+    attempts_before_recovery = len(network_calls)
+    network_recovered = True
     env.stop(clean_up=True)
 
     assert not workspace.exists()
     assert env._docker_network_name is None
     assert env._services_may_have_started is False
-    assert len(network_calls) == 2
+    assert len(network_calls) == attempts_before_recovery + 1
     assert len(stop_calls) == int(initially_running)
 
 

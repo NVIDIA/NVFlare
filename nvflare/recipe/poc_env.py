@@ -206,32 +206,47 @@ class PocEnv(ExecEnv):
         self._docker_network_name = f"nvflare-recipe-{deployment_id}"
 
     def _remove_docker_network(self) -> None:
-        """Remove this deployment's Docker network after its containers stop."""
+        """Remove the network, allowing time for auto-removed job containers to detach."""
         if not self._docker_network_name:
             return
-        try:
-            result = subprocess.run(
-                ["docker", "network", "rm", self._docker_network_name],
-                capture_output=True,
-                text=True,
-                timeout=5,
-                check=False,
-                env=_docker_cli_env(),
-            )
-        except (OSError, subprocess.TimeoutExpired) as error:
-            raise RuntimeError(f"could not remove Docker network {self._docker_network_name!r}") from error
+        docker_env = _docker_cli_env()
+        deadline = time.monotonic() + STOP_POC_TIMEOUT
+        error_message = "cleanup deadline reached"
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise RuntimeError(
+                    f"could not remove Docker network {self._docker_network_name!r} "
+                    f"within {STOP_POC_TIMEOUT} seconds: {error_message}"
+                )
+            try:
+                result = subprocess.run(
+                    ["docker", "network", "rm", self._docker_network_name],
+                    capture_output=True,
+                    text=True,
+                    timeout=min(5, remaining),
+                    check=False,
+                    env=docker_env,
+                )
+            except (OSError, subprocess.TimeoutExpired) as error:
+                raise RuntimeError(f"could not remove Docker network {self._docker_network_name!r}") from error
 
-        error_message = (getattr(result, "stderr", "") or result.stdout).strip()
-        if result.returncode == 0 or any(
-            marker in error_message.lower() for marker in ("no such network", "not found")
-        ):
-            self._docker_network_name = None
-            return
-        detail = f": {error_message}" if error_message else ""
-        raise RuntimeError(
-            f"could not remove Docker network {self._docker_network_name!r} "
-            f"(docker network rm exited {result.returncode}){detail}"
-        )
+            error_message = (getattr(result, "stderr", "") or result.stdout).strip()
+            if result.returncode == 0 or any(
+                marker in error_message.lower() for marker in ("no such network", "not found")
+            ):
+                self._docker_network_name = None
+                return
+            if "active endpoints" not in error_message.lower():
+                detail = f": {error_message}" if error_message else ""
+                raise RuntimeError(
+                    f"could not remove Docker network {self._docker_network_name!r} "
+                    f"(docker network rm exited {result.returncode}){detail}"
+                )
+            # Parent shutdown can finish before --rm job containers release their
+            # network endpoints. Let Docker finish without disconnecting containers
+            # or removing their workspace while they may still be using it.
+            time.sleep(min(POC_READY_POLL_INTERVAL, max(0, deadline - time.monotonic())))
 
     def _with_docker_container_names(self, workspace: str, service_config: dict) -> dict:
         """Attach this deployment's Docker-name mapping to current-workspace service state."""
