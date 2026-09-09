@@ -20,11 +20,12 @@ import subprocess
 import sys
 from pathlib import Path
 
+from protocol import PROTOCOL_VERSION
+
 DEFAULT_METHODS = ("fedavg", "fedprox", "scaffold", "fedce", "adaptive")
 DEFAULT_SEEDS = (7, 19, 31, 43, 57)
 DEFAULT_ALPHAS = (0.1, 0.5)
 DEFAULT_PARTICIPATION = (1.0, 0.75)
-PROTOCOL_VERSION = "cifar10_dirichlet_trainval_test_v2"
 
 
 def _completed_keys(path: Path) -> set[tuple]:
