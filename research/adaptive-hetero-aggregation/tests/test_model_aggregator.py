@@ -42,8 +42,8 @@ def _result(name, value, steps, samples, descriptor, metric, round_number=0):
     )
 
 
-def test_model_aggregator_uses_same_policy_contract_without_broadcasting_weights():
-    aggregator = AdaptiveHeterogeneityModelAggregator(
+def _always_active_aggregator():
+    return AdaptiveHeterogeneityModelAggregator(
         metric_prior_strength=0.0,
         heterogeneity_threshold=0.0,
         heterogeneity_deadband=0.0,
@@ -56,6 +56,10 @@ def test_model_aggregator_uses_same_policy_contract_without_broadcasting_weights
         min_weight=0.05,
         max_weight=0.80,
     )
+
+
+def test_model_aggregator_uses_same_policy_contract_without_broadcasting_weights():
+    aggregator = _always_active_aggregator()
     aggregator.accept_model(_result("site-1", 1.0, 9, 900, [0.95, 0.05], 0.90))
     aggregator.accept_model(_result("site-2", 3.0, 1, 100, [0.05, 0.95], 0.50))
     result = aggregator.aggregate_model()
@@ -66,6 +70,29 @@ def test_model_aggregator_uses_same_policy_contract_without_broadcasting_weights
     assert np.allclose(result.params["weight"], np.asarray([expected], dtype=np.float32), atol=1e-6)
     assert result.meta[AdaptiveMetaKey.BLEND_FACTOR] > 0.0
     assert "adaptive_final_weights" not in result.meta
+    assert result.meta[AdaptiveMetaKey.AGGREGATION_ROUNDS] == 1
+    assert result.meta[AdaptiveMetaKey.ACTIVE_ROUNDS] == 1
+    assert result.meta[AdaptiveMetaKey.ACTIVATION_RATE] == 1.0
+    assert result.meta[AdaptiveMetaKey.MEAN_ACTIVE_BLEND_FACTOR] > 0.0
+    assert result.meta[AdaptiveMetaKey.MAX_OBSERVED_BLEND_FACTOR] > 0.0
+    assert result.meta[AdaptiveMetaKey.COHORT_CHANGE_COUNT] == 0
+
+
+def test_model_aggregator_tracks_cumulative_cohort_changes():
+    aggregator = _always_active_aggregator()
+    aggregator.accept_model(_result("site-1", 1.0, 1, 100, [0.9, 0.1], 0.9, round_number=0))
+    aggregator.accept_model(_result("site-2", 2.0, 1, 100, [0.1, 0.9], 0.5, round_number=0))
+    first = aggregator.aggregate_model()
+
+    aggregator.accept_model(_result("site-1", 1.0, 1, 100, [0.9, 0.1], 0.9, round_number=1))
+    aggregator.accept_model(_result("site-3", 2.0, 1, 100, [0.1, 0.9], 0.5, round_number=1))
+    second = aggregator.aggregate_model()
+
+    assert first.meta[AdaptiveMetaKey.AGGREGATION_ROUNDS] == 1
+    assert second.meta[AdaptiveMetaKey.AGGREGATION_ROUNDS] == 2
+    assert second.meta[AdaptiveMetaKey.ACTIVE_ROUNDS] == 2
+    assert second.meta[AdaptiveMetaKey.ACTIVATION_RATE] == 1.0
+    assert second.meta[AdaptiveMetaKey.COHORT_CHANGE_COUNT] == 1
 
 
 def test_model_aggregator_native_fallback_is_weighted_by_steps():
@@ -78,6 +105,9 @@ def test_model_aggregator_native_fallback_is_weighted_by_steps():
     assert aggregator.last_weights["site-1"] == 0.9
     assert aggregator.last_weights["site-2"] == 0.1
     assert np.allclose(result.params["weight"], np.asarray([1.2], dtype=np.float32), atol=1e-6)
+    assert result.meta[AdaptiveMetaKey.AGGREGATION_ROUNDS] == 1
+    assert result.meta[AdaptiveMetaKey.ACTIVE_ROUNDS] == 0
+    assert result.meta[AdaptiveMetaKey.ACTIVATION_RATE] == 0.0
 
 
 def test_model_aggregator_empty_round_is_safe_noop_diff():
@@ -89,6 +119,8 @@ def test_model_aggregator_empty_round_is_safe_noop_diff():
     assert result.metrics is None
     assert result.meta["nr_aggregated"] == 0
     assert result.meta["adaptive_empty_result"] is True
+    assert result.meta[AdaptiveMetaKey.AGGREGATION_ROUNDS] == 0
+    assert result.meta[AdaptiveMetaKey.ACTIVE_ROUNDS] == 0
     assert aggregator.last_weights == {}
 
 
