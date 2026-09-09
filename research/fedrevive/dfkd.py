@@ -406,8 +406,8 @@ class DFKDReviver:
         global_model: ModelState,
         teacher_states: list[TeacherState],
         current_version: int,
-    ) -> tuple[ModelState, dict[str, float]]:
-        """Refresh synthetic data when due, then return the per-update student delta."""
+    ) -> tuple[ModelState | None, dict[str, float]]:
+        """Refresh synthetic data when due and return a delta only after KD runs."""
 
         if not teacher_states:
             raise ValueError("FedRevive requires at least one teacher")
@@ -426,6 +426,7 @@ class DFKDReviver:
             # between generator updates while still performing KD for every
             # eligible client arrival. No model snapshot is retained for reuse.
             metrics = {"synthesis_performed": False, "synthesis_time": 0.0}
+        distilled_update = None
         if current_version > self.config.warmup_versions:
             for parameter in self.student_model.parameters():
                 parameter.requires_grad_(True)
@@ -457,10 +458,11 @@ class DFKDReviver:
                     optimizer.step()
                     losses.append(loss.item())
             metrics["kd_loss"] = sum(losses) / len(losses) if losses else 0.0
+            if losses:
+                distilled_update = get_model_diff(self.student_model, global_model, target_device="cpu")
         else:
             metrics["kd_loss"] = 0.0
 
-        delta = get_model_diff(self.student_model, global_model, target_device="cpu")
         for parameter in self.student_model.parameters():
             parameter.requires_grad_(True)
-        return delta, metrics
+        return distilled_update, metrics
