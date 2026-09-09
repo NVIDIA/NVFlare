@@ -20,7 +20,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from protocol import PROTOCOL_VERSION
+from protocol import PROTOCOL_VERSION, canonical_config_hash, common_run_config, method_run_config
 
 DEFAULT_METHODS = ("fedavg", "fedprox", "scaffold", "fedce", "adaptive")
 DEFAULT_SEEDS = (7, 19, 31, 43, 57)
@@ -28,24 +28,64 @@ DEFAULT_ALPHAS = (0.1, 0.5)
 DEFAULT_PARTICIPATION = (1.0, 0.75)
 
 
-def _completed_keys(path: Path) -> set[tuple]:
+def _expected_common_hash(args) -> str:
+    return canonical_config_hash(
+        common_run_config(
+            n_clients=args.n_clients,
+            num_rounds=args.num_rounds,
+            aggregation_epochs=args.aggregation_epochs,
+            batch_size=args.batch_size,
+            lr=args.lr,
+            validation_fraction=args.validation_fraction,
+        )
+    )
+
+
+def _expected_method_hash(args, method: str) -> str:
+    return canonical_config_hash(
+        method_run_config(
+            method,
+            fedprox_mu=args.fedprox_mu,
+            fedce_mode=args.fedce_mode,
+            sample_exponent=args.sample_exponent,
+            representation_exponent=args.representation_exponent,
+            metric_prior_strength=args.metric_prior_strength,
+            max_blend_factor=args.max_blend_factor,
+            activation_warmup_rounds=args.activation_warmup_rounds,
+            activation_patience=args.activation_patience,
+            min_weight=args.min_weight,
+            max_weight=args.max_weight,
+            allow_changing_cohort_evidence=args.allow_changing_cohort_evidence,
+        )
+    )
+
+
+def _completed_keys(path: Path, args) -> set[tuple]:
+    """Return completed rows only when their full configuration matches this campaign."""
+
     if not path.is_file():
         return set()
+    common_hash = _expected_common_hash(args)
+    method_hashes = {method: _expected_method_hash(args, method) for method in args.methods}
     keys = set()
     with path.open() as source:
         for line in source:
             if not line.strip():
                 continue
             row = json.loads(line)
-            if row.get("protocol_version") != PROTOCOL_VERSION:
+            method = str(row.get("method", ""))
+            if row.get("protocol_version") != PROTOCOL_VERSION or method not in method_hashes:
+                continue
+            if row.get("common_config_hash") != common_hash:
+                continue
+            if row.get("method_config_hash") != method_hashes[method]:
                 continue
             keys.add(
                 (
-                    str(row["method"]),
+                    method,
                     float(row["alpha"]),
                     float(row["participation_rate"]),
                     int(row["seed"]),
-                    float(row["validation_fraction"]),
                 )
             )
     return keys
@@ -130,7 +170,7 @@ def main(args):
     if args.fresh and results_path.exists():
         results_path.unlink()
 
-    completed = _completed_keys(results_path) if args.resume else set()
+    completed = _completed_keys(results_path, args) if args.resume else set()
     planned = []
     for alpha in args.alphas:
         for participation in args.participation_rates:
@@ -138,18 +178,13 @@ def main(args):
                 if method == "fedopt" and participation < 1.0:
                     continue
                 for seed in args.seeds:
-                    key = (
-                        method,
-                        float(alpha),
-                        float(participation),
-                        int(seed),
-                        float(args.validation_fraction),
-                    )
+                    key = (method, float(alpha), float(participation), int(seed))
                     if key in completed:
                         continue
                     planned.append((method, float(alpha), float(participation), int(seed)))
 
     print(f"Protocol: {PROTOCOL_VERSION}")
+    print(f"Common configuration hash: {_expected_common_hash(args)}")
     print(f"Planned CIFAR-10 runs: {len(planned)}")
     for index, (method, alpha, participation, seed) in enumerate(planned, start=1):
         command = _run_command(args, method, alpha, participation, seed)
@@ -179,6 +214,8 @@ def main(args):
         "adaptive",
         "--protocol_version",
         PROTOCOL_VERSION,
+        "--common_config_hash",
+        _expected_common_hash(args),
         "--require_complete",
         "--methods",
         *args.methods,
@@ -189,6 +226,8 @@ def main(args):
         "--seeds",
         *[str(value) for value in args.seeds],
     ]
+    for method in args.methods:
+        summary_command.extend(["--method_config_hash", f"{method}={_expected_method_hash(args, method)}"])
     subprocess.run(summary_command, check=True)
 
 
