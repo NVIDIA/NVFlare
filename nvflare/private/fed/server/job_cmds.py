@@ -225,7 +225,10 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 ),
                 CommandSpec(
                     name=AdminCommandNames.CLONE_JOB,
-                    description="clone a job with a new job_id",
+                    description=(
+                        "[DEPRECATED] clone a job with a new job_id; use "
+                        "'nvflare job submit -j JOB_FOLDER' with the original local job folder"
+                    ),
                     usage=f"{AdminCommandNames.CLONE_JOB} job_id",
                     handler_func=self.clone_job,
                     authz_func=self.authorize_job,

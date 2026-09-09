@@ -426,6 +426,7 @@ class DockerJobLauncher(JobLauncherSpec):
 
     WORKSPACE_MOUNT = "/var/tmp/nvflare/workspace"
     STUDY_DATA_PATH_FILE = "local/study_data.yaml"
+    NETWORK_ENV = "NVFL_DOCKER_NETWORK"
 
     DEFAULT_PYTHON_PATH = "/usr/local/bin/python"
 
@@ -446,7 +447,8 @@ class DockerJobLauncher(JobLauncherSpec):
                        is mounted read-write at /var/tmp/nvflare/workspace/<job_id>. If not provided,
                        reads from NVFL_DOCKER_WORKSPACE environment variable. Must be the HOST path
                        because it is passed directly to the Docker daemon as a volume bind source.
-            network: Docker network name. Must already exist.
+            network: Docker network name. Must already exist. The parent runtime can override it with
+                     ``NVFL_DOCKER_NETWORK`` so parent and job containers use the same runtime-selected network.
             python_path: Deprecated alias for default_python_path.
             timeout: max seconds to wait for container to reach RUNNING state (default 30).
             default_job_container_kwargs: site-level default docker run kwargs applied to every job
@@ -473,7 +475,7 @@ class DockerJobLauncher(JobLauncherSpec):
             workspace = os.environ.get("NVFL_DOCKER_WORKSPACE")
 
         self.workspace = workspace
-        self.network = network
+        self.network = os.environ.get(self.NETWORK_ENV, network)
         self.default_python_path = default_python_path if default_python_path is not None else python_path
         if self.default_python_path is None:
             self.default_python_path = self.DEFAULT_PYTHON_PATH

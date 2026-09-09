@@ -473,6 +473,28 @@ POC mode. Jobs in Docker POC mode specify their SJ/CJ image in recipe launcher
 metadata. When ``project_conf_path`` is supplied, its project definition takes
 precedence over client-count and Docker preparation options.
 
+Each ``PocEnv`` instance creates a unique Recipe-owned workspace beside the
+workspace configured for the reusable ``nvflare poc`` CLI workflow. The CLI
+workspace is never replaced by Recipe provisioning. A ``PocEnv`` owns one
+provisioning lifecycle and cannot be reused after provisioning begins; create a
+new instance for another deployment. Pass ``clean_up=False`` to
+``Run.get_result()`` to retain the Recipe workspace for inspection.
+``Run.abort()`` aborts the job without stopping the environment, so executing
+again with that same ``PocEnv`` raises. Call ``Run.get_result()`` or
+``PocEnv.stop()``, then create a new environment for the next execution.
+File isolation does not isolate configured server ports. Before starting local
+processes, ``PocEnv`` checks those ports and rejects resources already in use.
+Docker Recipe deployments use unique per-workspace container and network names,
+so a deployment that loses a concurrent port race cannot observe or stop the
+other deployment's containers. The local port probe is also used for a local
+Docker daemon; for a remote ``DOCKER_HOST`` or Docker context, daemon-side
+startup and readiness checks are authoritative because local loopback is a
+different host. ``PocEnv`` also refuses to start while the configured CLI POC
+deployment is running; stop that deployment with ``nvflare poc stop`` first. If
+failure cleanup cannot be verified, the raised error identifies the unique
+Recipe workspace for manual cleanup. Other deployments do not scan or delete
+retained Recipe workspaces.
+
 ``ProdEnv`` submits through an admin startup kit. ``login_timeout`` must be
 positive, and ``username`` selects the admin identity. ``PocEnv`` and
 ``ProdEnv`` use ``study`` to select the submission context; see
