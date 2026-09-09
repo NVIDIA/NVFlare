@@ -852,9 +852,15 @@ class FedReviveServer:
                 self._release_outcome_result(outcome)
                 return
             if outcome.error is not None:
+                if self.method is Method.FEDAVG:
+                    raise RuntimeError(
+                        f"FedAvg cohort incomplete: assignment {job.assignment_id} failed: {outcome.error}"
+                    )
                 self.logger.warning(f"assignment {job.assignment_id} failed: {outcome.error}")
                 return
             if outcome.result is None:
+                if self.method is Method.FEDAVG:
+                    raise RuntimeError(f"FedAvg cohort incomplete: assignment {job.assignment_id} returned no result")
                 self.logger.warning(f"assignment {job.assignment_id} returned no result")
                 return
 
