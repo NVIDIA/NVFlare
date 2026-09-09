@@ -12,14 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Run matched NVIDIA FLARE CIFAR-10 experiments for adaptive aggregation.
-
-For each ``(n_clients, alpha, seed)`` NVIDIA FLARE's standard Dirichlet split is
-created once. Every method trains on the same site-local training subset and
-uses a held-out validation subset carved only from CIFAR-10 training data. The
-official CIFAR-10 test set is untouched until the common post-training evaluator
-runs.
-"""
+"""Run matched NVIDIA FLARE CIFAR-10 experiments for adaptive aggregation."""
 
 import argparse
 import json
@@ -103,8 +96,6 @@ def _common_train_args(args, train_idx_root: str, validation_idx_root: str) -> s
 
 
 def _build_recipe(args, train_idx_root: str, validation_idx_root: str, round_clients: int):
-    # All methods share the server initialization seed, Dirichlet partition,
-    # per-site training/validation subsets, and per-site client RNG seed.
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
     random.seed(args.seed)
@@ -208,6 +199,12 @@ def _configs(args) -> tuple[dict, dict, dict, dict]:
         batch_size=args.batch_size,
         lr=args.lr,
         validation_fraction=args.validation_fraction,
+        num_workers=args.num_workers,
+        num_threads=args.num_threads,
+        gpu_config=args.gpu_config,
+        eval_batch_size=args.eval_batch_size,
+        eval_num_workers=args.eval_num_workers,
+        eval_device=args.eval_device,
     )
     method = method_run_config(
         args.method,
