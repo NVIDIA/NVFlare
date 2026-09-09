@@ -149,6 +149,9 @@ def main():
     # The client writer is transport-only and does not require TensorBoard.
     # An optional server-side tracking receiver decides whether to persist it.
     summary_writer = SummaryWriter()
+    num_train_batches = len(train_loader)
+    if num_train_batches == 0:
+        raise ValueError("Training data_loader produced no batches; check --train_size and --batch_size.")
 
     while flare.is_running():
         # (4) receives FLModel from NVFlare
@@ -182,7 +185,7 @@ def main():
             continue
 
         model.train()
-        steps = args.epochs * len(train_loader)
+        steps = args.epochs * num_train_batches
         for epoch in range(args.epochs):
             running_loss = 0.0
             for i, batch in enumerate(train_loader):
@@ -195,7 +198,7 @@ def main():
                 optimizer.step()
 
                 running_loss += cost.item()
-            avg_loss = running_loss / len(train_loader)
+            avg_loss = running_loss / num_train_batches
             print(f"site={client_name}, epoch={epoch + 1}/{args.epochs}, loss={avg_loss:.4f}")
             global_step = input_model.current_round * args.epochs + epoch
             summary_writer.add_scalar(tag="train_loss", scalar=avg_loss, global_step=global_step)
