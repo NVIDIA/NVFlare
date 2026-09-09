@@ -17,10 +17,11 @@
 import math
 from dataclasses import dataclass
 
+import numpy as np
 from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
 from nvflare.apis.fl_constant import ReservedKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import Shareable
+from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
 from nvflare.app_common.app_constant import AppConstants
@@ -33,8 +34,8 @@ class AdaptiveMetaKey:
 
     DISTRIBUTION_DESCRIPTOR = "adaptive_distribution_descriptor"
     CLIENT_METRIC = "adaptive_client_metric"
+    SAMPLE_COUNT = "adaptive_sample_count"
     QUALITY_IMPROVEMENT = "adaptive_quality_improvement"
-    FINAL_WEIGHTS = "adaptive_final_weights"
     MEAN_HETEROGENEITY = "adaptive_mean_heterogeneity"
     RAW_METRIC_GAP = "adaptive_raw_metric_gap"
     METRIC_GAP = "adaptive_metric_gap"
@@ -42,6 +43,7 @@ class AdaptiveMetaKey:
     CANDIDATE_BLEND_FACTOR = "adaptive_candidate_blend_factor"
     BLEND_FACTOR = "adaptive_blend_factor"
     ACTIVATION_STREAK = "adaptive_activation_streak"
+    BOUNDS_FEASIBLE = "adaptive_bounds_feasible"
 
 
 @dataclass
@@ -49,6 +51,7 @@ class _Contribution:
     name: str
     round_number: int
     data: dict
+    local_steps: float
     sample_count: float
     descriptor: list[float]
     metric: float
@@ -58,12 +61,15 @@ class _Contribution:
 class AdaptiveHeterogeneityAggregator(Aggregator):
     """Aggregate ``WEIGHT_DIFF`` updates using conservative adaptive weights.
 
+    The native fallback uses ``NUM_STEPS_CURRENT_ROUND`` exactly as NVFlare's
+    standard weighted aggregator does. The adaptive policy receives a separate
+    actual training-example count through ``AdaptiveMetaKey.SAMPLE_COUNT`` so
+    sample-based reliability and representation calculations do not confuse
+    optimizer steps with examples.
+
     ``CLIENT_METRIC`` must be a normalized higher-is-better value in ``[0, 1]``.
-    Small-client metrics are reliability-shrunk before fairness pressure is
-    computed. Adaptive weighting requires persistent evidence from a stable
-    participating cohort. Quality weighting is disabled by default because
-    local quality-improvement values are not automatically comparable across
-    sites.
+    Quality weighting is disabled by default because local quality-improvement
+    values are not automatically comparable across sites.
     """
 
     expected_data_kind = DataKind.WEIGHT_DIFF
@@ -85,33 +91,57 @@ class AdaptiveHeterogeneityAggregator(Aggregator):
         activation_warmup_rounds: int = 3,
         activation_patience: int = 2,
         require_stable_cohort: bool = True,
-        min_weight: float = 0.02,
-        max_weight: float = 0.50,
+        min_weight: float = 0.0,
+        max_weight: float = 1.0,
     ):
         super().__init__()
+
+        # Keep constructor arguments as public attributes. NVFlare's FedJob
+        # component serializer reconstructs custom components from constructor
+        # arguments, so hiding them only inside a nested config loses non-default
+        # values when the job is exported to the server.
+        self.sample_exponent = sample_exponent
+        self.representation_exponent = representation_exponent
+        self.quality_exponent = quality_exponent
+        self.fairness_strength = fairness_strength
+        self.metric_prior_strength = metric_prior_strength
+        self.heterogeneity_threshold = heterogeneity_threshold
+        self.heterogeneity_temperature = heterogeneity_temperature
+        self.heterogeneity_deadband = heterogeneity_deadband
+        self.performance_gap_threshold = performance_gap_threshold
+        self.performance_gap_temperature = performance_gap_temperature
+        self.performance_gap_deadband = performance_gap_deadband
+        self.max_blend_factor = max_blend_factor
+        self.activation_warmup_rounds = activation_warmup_rounds
+        self.activation_patience = activation_patience
+        self.require_stable_cohort = require_stable_cohort
+        self.min_weight = min_weight
+        self.max_weight = max_weight
+
         self.config = AdaptiveWeightingConfig(
-            sample_exponent=sample_exponent,
-            representation_exponent=representation_exponent,
-            quality_exponent=quality_exponent,
-            fairness_strength=fairness_strength,
-            metric_prior_strength=metric_prior_strength,
-            heterogeneity_threshold=heterogeneity_threshold,
-            heterogeneity_temperature=heterogeneity_temperature,
-            heterogeneity_deadband=heterogeneity_deadband,
-            performance_gap_threshold=performance_gap_threshold,
-            performance_gap_temperature=performance_gap_temperature,
-            performance_gap_deadband=performance_gap_deadband,
-            max_blend_factor=max_blend_factor,
-            activation_warmup_rounds=activation_warmup_rounds,
-            activation_patience=activation_patience,
-            require_stable_cohort=require_stable_cohort,
-            min_weight=min_weight,
-            max_weight=max_weight,
+            sample_exponent=self.sample_exponent,
+            representation_exponent=self.representation_exponent,
+            quality_exponent=self.quality_exponent,
+            fairness_strength=self.fairness_strength,
+            metric_prior_strength=self.metric_prior_strength,
+            heterogeneity_threshold=self.heterogeneity_threshold,
+            heterogeneity_temperature=self.heterogeneity_temperature,
+            heterogeneity_deadband=self.heterogeneity_deadband,
+            performance_gap_threshold=self.performance_gap_threshold,
+            performance_gap_temperature=self.performance_gap_temperature,
+            performance_gap_deadband=self.performance_gap_deadband,
+            max_blend_factor=self.max_blend_factor,
+            activation_warmup_rounds=self.activation_warmup_rounds,
+            activation_patience=self.activation_patience,
+            require_stable_cohort=self.require_stable_cohort,
+            min_weight=self.min_weight,
+            max_weight=self.max_weight,
         )
         self.policy = AdaptiveHeterogeneityPolicy(self.config)
         self._contributions: dict[str, _Contribution] = {}
         self._processed_algorithm = None
         self._descriptor_size = None
+        self.last_weights: dict[str, float] = {}
 
     def reset(self, fl_ctx: FLContext):
         """Clear per-round contributions while preserving activation history."""
@@ -152,11 +182,13 @@ class AdaptiveHeterogeneityAggregator(Aggregator):
                 self.log_error(fl_ctx, "all updates must use the same processed algorithm")
                 return False
 
-        sample_count = dxo.get_meta_prop(MetaKey.NUM_STEPS_CURRENT_ROUND)
+        local_steps = dxo.get_meta_prop(MetaKey.NUM_STEPS_CURRENT_ROUND)
+        sample_count = dxo.get_meta_prop(AdaptiveMetaKey.SAMPLE_COUNT)
         descriptor = dxo.get_meta_prop(AdaptiveMetaKey.DISTRIBUTION_DESCRIPTOR)
         metric = dxo.get_meta_prop(AdaptiveMetaKey.CLIENT_METRIC)
         quality = dxo.get_meta_prop(AdaptiveMetaKey.QUALITY_IMPROVEMENT, None)
         try:
+            local_steps = float(local_steps)
             sample_count = float(sample_count)
             metric = float(metric)
             descriptor = [float(value) for value in descriptor]
@@ -166,7 +198,9 @@ class AdaptiveHeterogeneityAggregator(Aggregator):
             return False
 
         if (
-            sample_count <= 0.0
+            local_steps <= 0.0
+            or not math.isfinite(local_steps)
+            or sample_count <= 0.0
             or not math.isfinite(sample_count)
             or not math.isfinite(metric)
             or metric < 0.0
@@ -195,6 +229,7 @@ class AdaptiveHeterogeneityAggregator(Aggregator):
             name=contributor_name,
             round_number=int(contribution_round),
             data=dxo.data,
+            local_steps=local_steps,
             sample_count=sample_count,
             descriptor=descriptor,
             metric=metric,
@@ -204,16 +239,22 @@ class AdaptiveHeterogeneityAggregator(Aggregator):
 
     def aggregate(self, fl_ctx: FLContext) -> Shareable:
         if not self._contributions:
-            raise ValueError("AdaptiveHeterogeneityAggregator cannot aggregate an empty contribution set")
+            self.log_warning(fl_ctx, "no valid contributions were accepted for this aggregation round")
+            self.last_weights = {}
+            self.reset(fl_ctx)
+            return make_reply(ReturnCode.EMPTY_RESULT)
 
         names = sorted(self._contributions)
         contributions = [self._contributions[name] for name in names]
         qualities = [item.quality_improvement for item in contributions]
         quality_values = None if self.config.quality_exponent == 0.0 else qualities
+        local_steps = np.asarray([item.local_steps for item in contributions], dtype=np.float64)
+        native_weights = local_steps / local_steps.sum()
         result = self.policy.compute(
             sample_counts=[item.sample_count for item in contributions],
             descriptors=[item.descriptor for item in contributions],
             client_metrics=[item.metric for item in contributions],
+            base_weights=native_weights,
             quality_improvements=quality_values,
             cohort_key=tuple(names),
         )
@@ -226,11 +267,15 @@ class AdaptiveHeterogeneityAggregator(Aggregator):
                 contributor_name=item.name,
                 contribution_round=item.round_number,
             )
+
+        # Per-site weights are intentionally kept server-side. Putting the table
+        # in aggregated DXO metadata would copy it into the global model and
+        # broadcast every participant's weight to all clients.
+        self.last_weights = {name: float(weight) for name, weight in zip(names, result.weights)}
         dxo = DXO(
             data_kind=DataKind.WEIGHT_DIFF,
             data=helper.get_result(),
             meta={
-                AdaptiveMetaKey.FINAL_WEIGHTS: {name: float(weight) for name, weight in zip(names, result.weights)},
                 AdaptiveMetaKey.MEAN_HETEROGENEITY: result.mean_heterogeneity,
                 AdaptiveMetaKey.RAW_METRIC_GAP: result.raw_metric_gap,
                 AdaptiveMetaKey.METRIC_GAP: result.metric_gap,
@@ -238,6 +283,7 @@ class AdaptiveHeterogeneityAggregator(Aggregator):
                 AdaptiveMetaKey.CANDIDATE_BLEND_FACTOR: result.candidate_blend_factor,
                 AdaptiveMetaKey.BLEND_FACTOR: result.blend_factor,
                 AdaptiveMetaKey.ACTIVATION_STREAK: result.activation_streak,
+                AdaptiveMetaKey.BOUNDS_FEASIBLE: result.bounds_feasible,
             },
         )
         if self._processed_algorithm is not None:
