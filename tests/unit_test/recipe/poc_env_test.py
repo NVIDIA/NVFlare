@@ -22,20 +22,11 @@ from unittest.mock import patch
 
 import pytest
 
-from nvflare.recipe.poc_env import PocEnv, _host_user_runtime_dir, _recipe_runtime_lock_path
+from nvflare.recipe.poc_env import PocEnv
 from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
 
 PROJECT_CONFIG = {"name": "poc"}
 SERVICE_CONFIG = {SC.FLARE_SERVER: "server", SC.FLARE_CLIENTS: ["site-1"]}
-
-
-@pytest.fixture(autouse=True)
-def _isolated_recipe_runtime_lock(tmp_path, monkeypatch):
-    """Keep process-held Recipe POC locks independent across unit tests."""
-    import nvflare.recipe.poc_env as poc_env_module
-
-    lock_path = str(tmp_path / "recipe-poc.lock")
-    monkeypatch.setattr(poc_env_module, "_recipe_runtime_lock_path", lambda: lock_path)
 
 
 def _configure_successful_deploy(monkeypatch, env, prepare=None, submit=None):
@@ -72,329 +63,6 @@ def test_poc_env_initialization():
     assert env.gpu_ids == []
     assert env.study == "default"
     assert env.poc_workspace.startswith(f"{env._poc_workspace_root}.recipe-")
-
-
-def test_recipe_runtime_lock_path_is_independent_of_process_configuration(tmp_path, monkeypatch):
-    import nvflare.recipe.poc_env as poc_env_module
-
-    runtime_root = str(tmp_path / "host-runtime")
-    expected = os.path.join(runtime_root, "nvflare-recipe-poc", "runtime.lock")
-    monkeypatch.setattr(poc_env_module, "_host_user_runtime_dir", lambda: runtime_root)
-
-    monkeypatch.setenv("TMPDIR", str(tmp_path / "process-a"))
-    monkeypatch.setenv("HOME", str(tmp_path / "home-a"))
-    monkeypatch.setenv("NVFLARE_POC_WORKSPACE", str(tmp_path / "workspace-a"))
-    first_path = _recipe_runtime_lock_path()
-    monkeypatch.setenv("TMPDIR", str(tmp_path / "process-b"))
-    monkeypatch.setenv("HOME", str(tmp_path / "home-b"))
-    monkeypatch.setenv("NVFLARE_POC_WORKSPACE", str(tmp_path / "workspace-b"))
-
-    assert first_path == expected
-    assert _recipe_runtime_lock_path() == expected
-
-
-def test_host_user_runtime_dir_is_uid_based_and_ignores_process_environment(tmp_path, monkeypatch):
-    import nvflare.recipe.poc_env as poc_env_module
-
-    effective_uid = os.geteuid()
-    shared_root = tmp_path / "tmp"
-    shared_root.mkdir(mode=0o1777)
-    shared_root.chmod(0o1777)
-    monkeypatch.setattr(poc_env_module, "_SHARED_RUNTIME_ROOT", str(shared_root))
-    monkeypatch.setenv("TMPDIR", str(tmp_path / "process-a"))
-    monkeypatch.setenv("HOME", str(tmp_path / "home-a"))
-    monkeypatch.setenv("NVFLARE_POC_WORKSPACE", str(tmp_path / "workspace-a"))
-    first_path = _host_user_runtime_dir()
-    monkeypatch.setenv("TMPDIR", str(tmp_path / "process-b"))
-    monkeypatch.setenv("HOME", str(tmp_path / "home-b"))
-    monkeypatch.setenv("NVFLARE_POC_WORKSPACE", str(tmp_path / "workspace-b"))
-    second_path = _host_user_runtime_dir()
-
-    assert first_path == second_path
-    assert Path(first_path).parent == shared_root
-    assert Path(first_path).name.startswith(f".nvflare-recipe-poc-{effective_uid}-")
-
-
-def test_host_user_runtime_dir_bootstraps_private_uid_directory_without_os_runtime(tmp_path, monkeypatch):
-    import nvflare.recipe.poc_env as poc_env_module
-
-    effective_uid = os.geteuid()
-    home = tmp_path / "writable-home"
-    home.mkdir(mode=0o700)
-    shared_root = tmp_path / "tmp"
-    shared_root.mkdir(mode=0o1777)
-    shared_root.chmod(0o1777)
-    symlink_target = tmp_path / "attacker-target"
-    symlink_target.mkdir()
-    attacker_path = shared_root / f".nvflare-recipe-poc-{effective_uid}-precreated"
-    attacker_path.symlink_to(symlink_target, target_is_directory=True)
-    attacker_file = shared_root / f".nvflare-recipe-poc-{effective_uid}-precreated-file"
-    attacker_file.write_text("not a runtime directory")
-    monkeypatch.setattr(poc_env_module, "_SHARED_RUNTIME_ROOT", str(shared_root))
-    monkeypatch.setenv("HOME", str(home))
-    first_path = _host_user_runtime_dir()
-    monkeypatch.setenv("HOME", str(tmp_path / "different-home"))
-    second_path = _host_user_runtime_dir()
-
-    assert first_path == second_path
-    assert Path(first_path).parent == shared_root
-    assert Path(first_path).name.startswith(f".nvflare-recipe-poc-{effective_uid}-")
-    assert Path(first_path) != attacker_path
-    assert Path(first_path) != attacker_file
-    assert Path(first_path).stat().st_mode & 0o777 == 0o700
-
-
-def test_host_user_runtime_dir_rejects_nonsticky_shared_root(tmp_path, monkeypatch):
-    import nvflare.recipe.poc_env as poc_env_module
-
-    shared_root = tmp_path / "unsafe-tmp"
-    shared_root.mkdir(mode=0o777)
-    shared_root.chmod(0o777)
-    monkeypatch.setattr(poc_env_module, "_SHARED_RUNTIME_ROOT", str(shared_root))
-
-    with pytest.raises(RuntimeError, match="Refusing to bootstrap"):
-        _host_user_runtime_dir()
-
-
-def test_runtime_lock_normalizes_owned_lock_directory(tmp_path, monkeypatch):
-    import nvflare.recipe.poc_env as poc_env_module
-
-    lock_dir = tmp_path / "nvflare-recipe-poc"
-    lock_dir.mkdir(mode=0o775)
-    lock_dir.chmod(0o775)
-    monkeypatch.setattr(poc_env_module, "_recipe_runtime_lock_path", lambda: str(lock_dir / "runtime.lock"))
-    env = PocEnv()
-    env._acquire_runtime_lock()
-
-    assert lock_dir.stat().st_mode & 0o777 == 0o700
-    env._release_runtime_lock()
-
-
-def test_runtime_lock_rejects_unsafe_lock_directory(tmp_path, monkeypatch):
-    import nvflare.recipe.poc_env as poc_env_module
-
-    target_dir = tmp_path / "target-lock-dir"
-    target_dir.mkdir()
-    unsafe_dir = tmp_path / "symlinked-lock-dir"
-    unsafe_dir.symlink_to(target_dir, target_is_directory=True)
-    monkeypatch.setattr(poc_env_module, "_recipe_runtime_lock_path", lambda: str(unsafe_dir / "runtime.lock"))
-    env = PocEnv()
-
-    with pytest.raises(RuntimeError, match="unsafe Recipe POC runtime lock directory"):
-        env._acquire_runtime_lock()
-
-    assert env._runtime_lock_file is None
-
-
-def test_runtime_lock_rejects_unsafe_lock_file(tmp_path, monkeypatch):
-    import nvflare.recipe.poc_env as poc_env_module
-
-    env = PocEnv()
-    monkeypatch.setattr(poc_env_module.stat, "S_ISREG", lambda mode: False)
-
-    with pytest.raises(RuntimeError, match="unsafe Recipe POC runtime lock"):
-        env._acquire_runtime_lock()
-
-    assert env._runtime_lock_file is None
-
-
-def test_runtime_lock_propagates_unexpected_lock_error(monkeypatch):
-    import nvflare.recipe.poc_env as poc_env_module
-
-    env = PocEnv()
-    monkeypatch.setattr(
-        poc_env_module.fcntl,
-        "flock",
-        lambda fd, operation: (_ for _ in ()).throw(OSError("lock failed")),
-    )
-
-    with pytest.raises(OSError, match="lock failed"):
-        env._acquire_runtime_lock()
-
-    assert env._runtime_lock_file is None
-    env._release_runtime_lock()
-
-
-def test_runtime_workspace_record_requires_lock():
-    env = PocEnv()
-
-    with pytest.raises(RuntimeError, match="runtime lock is not held"):
-        env._record_runtime_workspace()
-
-
-def test_deploy_records_workspace_after_provisioning_and_before_start(tmp_path, monkeypatch):
-    import nvflare.recipe.poc_env as poc_env_module
-
-    configured_workspace = tmp_path / "poc"
-    monkeypatch.setattr(poc_env_module, "get_poc_workspace", lambda: str(configured_workspace))
-    env = PocEnv()
-    lock_path = Path(poc_env_module._recipe_runtime_lock_path())
-    observed_records = {}
-
-    def prepare(**kwargs):
-        observed_records["during_provisioning"] = lock_path.read_text()
-        Path(kwargs["workspace"]).mkdir(parents=True)
-
-    _configure_successful_deploy(monkeypatch, env, prepare=prepare)
-
-    def start(**kwargs):
-        observed_records["at_start"] = lock_path.read_text()
-
-    monkeypatch.setattr(poc_env_module, "_start_poc", start)
-
-    assert env.deploy(object()) == "job-id"
-    assert observed_records == {
-        "during_provisioning": "",
-        "at_start": os.path.abspath(env.poc_workspace),
-    }
-    env.stop(clean_up=False)
-
-
-def test_stop_clears_runtime_record_before_removing_workspace(tmp_path, monkeypatch):
-    import nvflare.recipe.poc_env as poc_env_module
-
-    configured_workspace = tmp_path / "poc"
-    monkeypatch.setattr(poc_env_module, "get_poc_workspace", lambda: str(configured_workspace))
-    env = PocEnv()
-    _configure_successful_deploy(monkeypatch, env)
-    assert env.deploy(object()) == "job-id"
-    monkeypatch.setattr(env, "_check_poc_running", lambda: True)
-    monkeypatch.setattr(env, "_running_services", lambda *args, **kwargs: [])
-    monkeypatch.setattr(poc_env_module, "is_poc_running", lambda *args, **kwargs: True)
-    monkeypatch.setattr(poc_env_module, "_stop_poc", lambda **kwargs: None)
-    lock_path = Path(poc_env_module._recipe_runtime_lock_path())
-    original_remove = env._remove_recipe_workspace
-    record_at_removal = []
-
-    def remove_workspace():
-        record_at_removal.append(lock_path.read_text())
-        original_remove()
-
-    monkeypatch.setattr(env, "_remove_recipe_workspace", remove_workspace)
-
-    env.stop(clean_up=True)
-
-    assert record_at_removal == [""]
-    assert not os.path.exists(env.poc_workspace)
-
-
-def test_deploy_rejects_services_left_by_prior_recipe_process(tmp_path, monkeypatch):
-    import nvflare.recipe.poc_env as poc_env_module
-
-    configured_workspace = tmp_path / "current-poc"
-    prior_workspace = tmp_path / f"prior-poc.recipe-{'a' * 32}"
-    prior_workspace.mkdir()
-    lock_path = Path(poc_env_module._recipe_runtime_lock_path())
-    lock_path.write_text(str(prior_workspace))
-    provisioned_workspaces = []
-    active_workspaces = {str(prior_workspace)}
-
-    monkeypatch.setattr(poc_env_module, "get_poc_workspace", lambda: str(configured_workspace))
-    monkeypatch.setattr(poc_env_module, "collect_non_local_scripts", lambda job: [])
-    monkeypatch.setattr(poc_env_module, "setup_service_config", lambda path: (PROJECT_CONFIG, SERVICE_CONFIG))
-    monkeypatch.setattr(
-        PocEnv,
-        "_running_services",
-        staticmethod(
-            lambda project_config, service_config, workspace: ["server"] if workspace in active_workspaces else []
-        ),
-    )
-    monkeypatch.setattr(
-        poc_env_module,
-        "prepare_poc_provision",
-        lambda **kwargs: provisioned_workspaces.append(kwargs["workspace"]),
-    )
-    env = PocEnv()
-
-    with pytest.raises(RuntimeError, match="prior Recipe PocEnv deployment is still active") as exc_info:
-        env.deploy(object())
-
-    assert str(prior_workspace) in str(exc_info.value)
-    assert provisioned_workspaces == []
-    assert lock_path.read_text() == str(prior_workspace)
-    assert env._runtime_lock_file is None
-
-    active_workspaces.clear()
-
-    def prepare(**kwargs):
-        assert lock_path.read_text() == ""
-        provisioned_workspaces.append(kwargs["workspace"])
-        Path(kwargs["workspace"]).mkdir(parents=True)
-
-    _configure_successful_deploy(monkeypatch, env, prepare=prepare)
-    assert env.deploy(object()) == "job-id"
-    assert lock_path.read_text() == os.path.abspath(env.poc_workspace)
-    env.stop(clean_up=False)
-    assert lock_path.read_text() == ""
-
-
-def test_deploy_fails_closed_when_prior_runtime_workspace_is_unreadable(tmp_path, monkeypatch):
-    import nvflare.recipe.poc_env as poc_env_module
-
-    configured_workspace = tmp_path / "current-poc"
-    missing_prior_workspace = tmp_path / f"missing-poc.recipe-{'b' * 32}"
-    lock_path = Path(poc_env_module._recipe_runtime_lock_path())
-    lock_path.write_text(str(missing_prior_workspace))
-    provision_calls = []
-
-    monkeypatch.setattr(poc_env_module, "get_poc_workspace", lambda: str(configured_workspace))
-    monkeypatch.setattr(poc_env_module, "collect_non_local_scripts", lambda job: [])
-    monkeypatch.setattr(
-        poc_env_module,
-        "setup_service_config",
-        lambda path: (_ for _ in ()).throw(ValueError("project configuration is unavailable")),
-    )
-    monkeypatch.setattr(
-        poc_env_module,
-        "prepare_poc_provision",
-        lambda **kwargs: provision_calls.append(kwargs),
-    )
-    env = PocEnv()
-
-    with pytest.raises(RuntimeError, match="Could not determine service state") as exc_info:
-        env.deploy(object())
-
-    assert str(missing_prior_workspace) in str(exc_info.value)
-    assert str(lock_path) in str(exc_info.value)
-    assert provision_calls == []
-    assert lock_path.read_text() == str(missing_prior_workspace)
-    assert env._runtime_lock_file is None
-
-
-def test_deploy_fails_closed_when_prior_runtime_service_state_is_unreadable(tmp_path, monkeypatch):
-    import nvflare.recipe.poc_env as poc_env_module
-
-    configured_workspace = tmp_path / "current-poc"
-    prior_workspace = tmp_path / f"prior-poc.recipe-{'c' * 32}"
-    lock_path = Path(poc_env_module._recipe_runtime_lock_path())
-    lock_path.write_text(str(prior_workspace))
-    provision_calls = []
-
-    monkeypatch.setattr(poc_env_module, "get_poc_workspace", lambda: str(configured_workspace))
-    monkeypatch.setattr(poc_env_module, "collect_non_local_scripts", lambda job: [])
-    monkeypatch.setattr(poc_env_module, "setup_service_config", lambda path: (object(), object()))
-    monkeypatch.setattr(
-        poc_env_module,
-        "prepare_poc_provision",
-        lambda **kwargs: provision_calls.append(kwargs),
-    )
-    env = PocEnv()
-    monkeypatch.setattr(
-        env,
-        "_running_services",
-        lambda project_config, service_config, workspace: (_ for _ in ()).throw(
-            ValueError("service configuration is unusable")
-        ),
-    )
-
-    with pytest.raises(RuntimeError, match="Could not determine service state") as exc_info:
-        env.deploy(object())
-
-    assert str(prior_workspace) in str(exc_info.value)
-    assert str(lock_path) in str(exc_info.value)
-    assert provision_calls == []
-    assert lock_path.read_text() == str(prior_workspace)
-    assert env._runtime_lock_file is None
 
 
 def test_deploy_rejects_overlapping_calls_on_same_environment():
@@ -583,39 +251,91 @@ def test_deploy_rejects_running_configured_cli_workspace(tmp_path, monkeypatch):
     assert provision_calls == []
     assert retained_result.read_text() == "keep me"
     assert not os.path.exists(env.poc_workspace)
-    assert env._runtime_lock_file is None
 
 
-def test_deploy_rejects_active_recipe_environment_with_different_workspace_root(tmp_path, monkeypatch):
+def test_deploy_rejects_unavailable_shared_port_before_start(tmp_path, monkeypatch):
     import nvflare.recipe.poc_env as poc_env_module
+    import nvflare.tool.poc.poc_commands as poc_commands
 
-    configured_workspaces = iter((tmp_path / "poc-a", tmp_path / "poc-b"))
-    monkeypatch.setattr(poc_env_module, "get_poc_workspace", lambda: str(next(configured_workspaces)))
-    first = PocEnv()
-    second = PocEnv()
-    assert first._poc_workspace_root != second._poc_workspace_root
+    configured_workspace = tmp_path / "poc"
+    project_config = {
+        "name": "poc",
+        "participants": [
+            {
+                "name": "server",
+                "type": "server",
+                "fed_learn_port": 18002,
+                "admin_port": 18003,
+            }
+        ],
+    }
+    monkeypatch.setattr(poc_env_module, "get_poc_workspace", lambda: str(configured_workspace))
+    monkeypatch.setattr(poc_env_module, "collect_non_local_scripts", lambda job: [])
     provisioned_workspaces = []
+    start_calls = []
+    checked_ports = []
 
     def prepare(**kwargs):
         provisioned_workspaces.append(kwargs["workspace"])
         Path(kwargs["workspace"]).mkdir(parents=True)
 
-    _configure_successful_deploy(monkeypatch, first, prepare=prepare)
-    assert first.deploy(object()) == "job-id"
-    held_lock = first._runtime_lock_file
-    first._acquire_runtime_lock()
-    assert first._runtime_lock_file is held_lock
+    monkeypatch.setattr(poc_env_module, "prepare_poc_provision", prepare)
+    monkeypatch.setattr(poc_env_module, "setup_service_config", lambda path: (project_config, SERVICE_CONFIG))
 
-    _configure_successful_deploy(monkeypatch, second, prepare=prepare)
-    with pytest.raises(RuntimeError, match="Another Recipe PocEnv deployment is active"):
-        second.deploy(object())
+    def check_port(port, host):
+        checked_ports.append((port, host))
+        return (False, "in_use") if port == 18002 else (True, None)
 
-    assert provisioned_workspaces == [first.poc_workspace]
+    monkeypatch.setattr(poc_commands, "_is_local_port_available", check_port)
+    monkeypatch.setattr(poc_env_module, "_start_poc", lambda **kwargs: start_calls.append(kwargs))
+    env = PocEnv()
 
-    first.stop(clean_up=False)
-    assert second.deploy(object()) == "job-id"
-    assert provisioned_workspaces == [first.poc_workspace, second.poc_workspace]
-    second.stop(clean_up=False)
+    with pytest.raises(RuntimeError, match="POC service port preflight failed") as exc_info:
+        env.deploy(object())
+
+    assert "18002" in str(exc_info.value)
+    assert checked_ports == [(18002, "127.0.0.1"), (18003, "127.0.0.1")]
+    assert provisioned_workspaces == [env.poc_workspace]
+    assert start_calls == []
+    assert not os.path.exists(env.poc_workspace)
+
+
+def test_deploy_rejects_existing_docker_participant_name_without_stopping_it(tmp_path, monkeypatch):
+    import nvflare.recipe.poc_env as poc_env_module
+
+    configured_workspace = tmp_path / "poc"
+    docker_service_config = {**SERVICE_CONFIG, SC.IS_DOCKER_RUN: True}
+    monkeypatch.setattr(poc_env_module, "get_poc_workspace", lambda: str(configured_workspace))
+    env = PocEnv(docker_image="nvflare:test")
+    start_calls = []
+    stop_calls = []
+
+    def prepare(**kwargs):
+        Path(kwargs["workspace"]).mkdir(parents=True)
+
+    monkeypatch.setattr(poc_env_module, "collect_non_local_scripts", lambda job: [])
+    monkeypatch.setattr(poc_env_module, "prepare_poc_provision", prepare)
+    monkeypatch.setattr(
+        poc_env_module,
+        "setup_service_config",
+        lambda path: (PROJECT_CONFIG, docker_service_config),
+    )
+    monkeypatch.setattr(poc_env_module, "_build_poc_port_preflight", lambda project_config: {"conflicts": []})
+    monkeypatch.setattr(
+        PocEnv,
+        "_get_docker_service_state",
+        staticmethod(lambda service_name: False if service_name == "server" else None),
+    )
+    monkeypatch.setattr(poc_env_module, "_start_poc", lambda **kwargs: start_calls.append(kwargs))
+    monkeypatch.setattr(poc_env_module, "_stop_poc", lambda **kwargs: stop_calls.append(kwargs))
+
+    with pytest.raises(RuntimeError, match=r"container name\(s\) already exist") as exc_info:
+        env.deploy(object())
+
+    assert "server" in str(exc_info.value)
+    assert start_calls == []
+    assert stop_calls == []
+    assert not os.path.exists(env.poc_workspace)
 
 
 def test_deploy_does_not_modify_configured_cli_workspace(tmp_path, monkeypatch):
@@ -765,40 +485,40 @@ def test_deploy_reports_incomplete_failure_cleanup(tmp_path, monkeypatch):
     assert stop_args == [True]
 
 
-def test_deploy_preserves_workspace_and_lock_when_metadata_is_lost_after_start(tmp_path, monkeypatch):
+def test_deploy_preserves_workspace_when_metadata_is_lost_after_start(tmp_path, monkeypatch):
     import nvflare.recipe.poc_env as poc_env_module
 
     configured_workspace = tmp_path / "poc"
     monkeypatch.setattr(poc_env_module, "get_poc_workspace", lambda: str(configured_workspace))
     monkeypatch.setattr(poc_env_module, "collect_non_local_scripts", lambda job: [])
+    startup_attempted = False
 
     def prepare(**kwargs):
         Path(kwargs["workspace"]).mkdir(parents=True)
 
     def setup(workspace):
-        if workspace == str(configured_workspace):
+        if workspace == str(configured_workspace) or not startup_attempted:
             return PROJECT_CONFIG, SERVICE_CONFIG
         raise RuntimeError("service configuration unavailable after startup")
 
+    def start(**kwargs):
+        nonlocal startup_attempted
+        startup_attempted = True
+        raise RuntimeError("start failed after losing service configuration")
+
     monkeypatch.setattr(poc_env_module, "prepare_poc_provision", prepare)
-    monkeypatch.setattr(poc_env_module, "_start_poc", lambda **kwargs: None)
+    monkeypatch.setattr(poc_env_module, "_start_poc", start)
     monkeypatch.setattr(poc_env_module, "setup_service_config", setup)
     monkeypatch.setattr(PocEnv, "_running_services", staticmethod(lambda *args: []))
     env = PocEnv()
     run_workspace = env.poc_workspace
-    lock_path = Path(poc_env_module._recipe_runtime_lock_path())
 
-    try:
-        with pytest.raises(RuntimeError, match="cleanup could not be completed safely") as exc_info:
-            env.deploy(object())
+    with pytest.raises(RuntimeError, match="cleanup could not be completed safely") as exc_info:
+        env.deploy(object())
 
-        assert "service configuration unavailable after startup" in str(exc_info.value)
-        assert "Could not determine service state" in str(exc_info.value.__cause__)
-        assert Path(run_workspace).is_dir()
-        assert env._runtime_lock_file is not None
-        assert lock_path.read_text() == os.path.abspath(run_workspace)
-    finally:
-        env._release_runtime_lock()
+    assert "service configuration unavailable after startup" in str(exc_info.value)
+    assert "Could not determine service state" in str(exc_info.value.__cause__)
+    assert Path(run_workspace).is_dir()
 
 
 @pytest.mark.parametrize("interruption", [KeyboardInterrupt(), SystemExit(2)])

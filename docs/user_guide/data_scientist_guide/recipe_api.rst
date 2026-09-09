@@ -483,21 +483,15 @@ new instance for another deployment. Pass ``clean_up=False`` to
 again with that same ``PocEnv`` raises. Call ``Run.get_result()`` or
 ``PocEnv.stop()``, then create a new environment for the next execution.
 File isolation does not isolate default ports or Docker participant names.
-``PocEnv`` therefore permits only one Recipe-managed POC deployment per host
-for a user and refuses to start while the configured CLI POC deployment is
-running; stop that deployment with ``nvflare poc stop`` first. The runtime lock
-uses one canonical host-local per-user directory rather than the home or
-process-configured temporary directory. It securely bootstraps a stable,
-randomly named, owner-only directory below the canonical host ``/tmp``, including
-for arbitrary UIDs without an NSS entry. The lock records the current per-run
-workspace immediately before service startup, allowing a later process to
-detect and reject services left behind by an unexpected process exit. Once all
-services are confirmed stopped, the record is cleared before workspace
-deletion. If the recorded workspace or its service configuration cannot be
-read, deployment fails closed and reports how to remove the stale record after
-manually stopping services. If failure cleanup cannot be verified, the raised
-error identifies the unique workspace for manual cleanup. Other deployments do
-not scan or delete retained Recipe workspaces.
+Before starting services, ``PocEnv`` checks the configured server ports and, in
+Docker mode, participant container names, and rejects resources already used by
+another deployment. It also refuses to start while the configured CLI POC
+deployment is running; stop that deployment with ``nvflare poc stop`` first. If
+two deployments race between preflight and startup, the losing deployment fails
+during startup or readiness checks and cleans only its own unique workspace. If
+failure cleanup cannot be verified, the raised error identifies that workspace
+for manual cleanup. Other deployments do not scan or delete retained Recipe
+workspaces.
 
 ``ProdEnv`` submits through an admin startup kit. ``login_timeout`` must be
 positive, and ``username`` selects the admin identity. ``PocEnv`` and
