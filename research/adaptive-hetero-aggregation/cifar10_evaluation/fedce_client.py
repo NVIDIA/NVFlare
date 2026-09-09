@@ -54,6 +54,12 @@ def _local_validation_dataset(valid_dataset, eval_idx_root: str, site_name: str)
     return Subset(valid_dataset, indices.tolist())
 
 
+def _historical_minus_score(observed_minus_accuracies) -> float:
+    if not observed_minus_accuracies:
+        raise ValueError("at least one FedCE minus-model observation is required")
+    return 1.0 - float(np.mean(observed_minus_accuracies))
+
+
 def main(args):
     flare.init()
     client_name = flare.get_site_name()
@@ -80,7 +86,7 @@ def main(args):
 
     writer = SummaryWriter()
     previous_local_state = None
-    minus_scores = {}
+    observed_minus_accuracies = []
 
     while flare.is_running():
         input_model = flare.receive()
@@ -104,16 +110,19 @@ def main(args):
         contribution_weight = PTFedCEHelper.get_contribution_weight(input_model, client_name)
 
         minus_accuracy = None
-        if current_round == 0:
-            minus_scores[current_round] = 0.0
+        first_participation = previous_local_state is None
+        if first_participation:
+            # FedCE has no leave-one-out local model before a client has trained
+            # once. This is the same neutral initialization used by the official
+            # round-0 client, and it also makes late first participation safe in
+            # a partial-participation experiment.
+            observed_minus_accuracies.append(0.0)
         else:
-            if previous_local_state is None:
-                raise RuntimeError("FedCE previous local state is unavailable after round 0")
             minus_model = PTFedCEHelper.make_minus_model(initial_model, previous_local_state, contribution_weight)
             minus_model.to(DEVICE)
             minus_accuracy = evaluate(minus_model, valid_loader)
             writer.add_scalar("val_acc_minus_model", minus_accuracy, global_step=current_round)
-            minus_scores[current_round] = minus_accuracy
+            observed_minus_accuracies.append(minus_accuracy)
             del minus_model
         writer.add_scalar("FedCE_Coef", contribution_weight, global_step=current_round)
 
@@ -140,10 +149,8 @@ def main(args):
 
         model_diff, diff_norm = compute_model_diff(model, initial_model)
         writer.add_scalar("diff_norm", diff_norm.item(), global_step=current_round)
-        previous_local_state = {
-            name: value.detach().cpu().clone() for name, value in model.state_dict().items()
-        }
-        historical_minus_score = 1.0 - float(np.mean([minus_scores[i] for i in range(current_round + 1)]))
+        previous_local_state = {name: value.detach().cpu().clone() for name, value in model.state_dict().items()}
+        historical_minus_score = _historical_minus_score(observed_minus_accuracies)
 
         result = FLModel(
             params=model_diff,
@@ -158,6 +165,7 @@ def main(args):
                 {
                     "client": client_name,
                     "round": current_round,
+                    "first_participation": first_participation,
                     "local_validation_accuracy": global_accuracy,
                     "minus_accuracy": minus_accuracy,
                     "contribution_weight": contribution_weight,
