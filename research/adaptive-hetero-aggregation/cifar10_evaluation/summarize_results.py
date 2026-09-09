@@ -65,12 +65,14 @@ def validate_complete_matrix(
     This prevents a partially completed campaign from being rendered as the
     maintainer-requested main result table. FedOpt is optional context and, when
     requested, is expected only for full participation because the campaign
-    runner deliberately excludes partial FedOpt runs.
+    runner deliberately excludes partial FedOpt runs. Extra rows from the same
+    protocol are permitted; only the explicitly requested matrix is required.
     """
 
-    actual = {_condition_key(row) for row in rows}
-    if len(actual) != len(rows):
+    actual_keys = [_condition_key(row) for row in rows]
+    if len(set(actual_keys)) != len(actual_keys):
         raise ValueError("results contain duplicate method/alpha/participation/seed rows")
+    actual = set(actual_keys)
 
     expected = set()
     for method in methods:
@@ -82,14 +84,10 @@ def validate_complete_matrix(
                     expected.add((method, float(alpha), float(participation), int(seed)))
 
     missing = sorted(expected - actual)
-    unexpected = sorted(actual - expected)
-    if missing or unexpected:
-        details = []
-        if missing:
-            details.append(f"missing {len(missing)} rows; first entries: {missing[:8]}")
-        if unexpected:
-            details.append(f"unexpected {len(unexpected)} rows; first entries: {unexpected[:8]}")
-        raise ValueError("incomplete or mismatched CIFAR-10 evidence matrix: " + "; ".join(details))
+    if missing:
+        raise ValueError(
+            f"incomplete CIFAR-10 evidence matrix: missing {len(missing)} rows; first entries: {missing[:8]}"
+        )
 
 
 def _ci(values) -> dict:
@@ -187,6 +185,14 @@ def _format_ci(stats: dict) -> str:
     return f"{mean:.2f}% ± {half_width:.2f} pp"
 
 
+def _format_delta(stats: dict) -> str:
+    mean = 100.0 * float(stats["mean"])
+    if stats["half_width"] is None:
+        return f"{mean:+.2f} pp (n=1; CI unavailable)"
+    half_width = 100.0 * float(stats["half_width"])
+    return f"{mean:+.2f} ± {half_width:.2f} pp"
+
+
 def render_markdown(summary: dict) -> str:
     """Render full and partial participation together as main results."""
 
@@ -233,13 +239,13 @@ def render_markdown(summary: dict) -> str:
     )
     for item in summary["paired_comparisons"]:
         lines.append(
-            "| {alpha:g} | {participation:.0%} | {baseline} | {n} | {global_ci} | {worst_ci} |".format(
+            "| {alpha:g} | {participation:.0%} | {baseline} | {n} | {global_delta} | {worst_delta} |".format(
                 alpha=item["alpha"],
                 participation=item["participation_rate"],
                 baseline=item["baseline_method"],
                 n=len(item["seeds"]),
-                global_ci=_format_ci(item["delta_reference_minus_baseline"]["global_accuracy"]),
-                worst_ci=_format_ci(item["delta_reference_minus_baseline"]["worst_client_accuracy"]),
+                global_delta=_format_delta(item["delta_reference_minus_baseline"]["global_accuracy"]),
+                worst_delta=_format_delta(item["delta_reference_minus_baseline"]["worst_client_accuracy"]),
             )
         )
     lines.append("")
