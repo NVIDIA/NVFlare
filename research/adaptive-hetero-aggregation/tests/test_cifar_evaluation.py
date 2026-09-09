@@ -26,8 +26,9 @@ if str(EVAL_DIR) not in sys.path:
 
 from eval_split import _integer_allocation  # noqa: E402
 from evaluate_result import checkpoint_state_dict, find_server_checkpoint  # noqa: E402
+from protocol import PROTOCOL_VERSION  # noqa: E402
 from run_campaign import _completed_keys  # noqa: E402
-from summarize_results import summarize  # noqa: E402
+from summarize_results import _load_rows, summarize  # noqa: E402
 
 
 def test_find_server_checkpoint_prefers_final_round_model(tmp_path):
@@ -93,18 +94,20 @@ def test_summary_reports_ci_and_paired_split_seed_deltas():
     assert paired["delta_reference_minus_baseline"]["global_accuracy"]["mean"] > 0.0
 
 
-def test_campaign_resume_uses_method_condition_and_seed(tmp_path):
+def test_campaign_resume_uses_protocol_condition_seed_and_validation_fraction(tmp_path):
     path = tmp_path / "runs.jsonl"
-    path.write_text(
-        json.dumps(
-            {
-                "method": "adaptive",
-                "alpha": 0.1,
-                "participation_rate": 0.75,
-                "seed": 19,
-            }
-        )
-        + "\n"
-    )
+    current = {
+        "protocol_version": PROTOCOL_VERSION,
+        "method": "adaptive",
+        "alpha": 0.1,
+        "participation_rate": 0.75,
+        "seed": 19,
+        "validation_fraction": 0.10,
+        "global_accuracy": 0.8,
+        "worst_client_accuracy": 0.7,
+    }
+    stale = dict(current, protocol_version="older_protocol", seed=7)
+    path.write_text(json.dumps(current) + "\n" + json.dumps(stale) + "\n")
 
-    assert _completed_keys(path) == {("adaptive", 0.1, 0.75, 19)}
+    assert _completed_keys(path) == {("adaptive", 0.1, 0.75, 19, 0.10)}
+    assert _load_rows(str(path), protocol_version=PROTOCOL_VERSION) == [current]
