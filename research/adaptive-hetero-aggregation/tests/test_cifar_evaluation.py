@@ -15,6 +15,7 @@
 import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -26,10 +27,107 @@ if str(EVAL_DIR) not in sys.path:
     sys.path.insert(0, str(EVAL_DIR))
 
 import eval_split  # noqa: E402
-from evaluate_result import checkpoint_state_dict, find_server_checkpoint  # noqa: E402
-from protocol import PROTOCOL_VERSION  # noqa: E402
+from evaluate_result import checkpoint_meta, checkpoint_state_dict, find_server_checkpoint  # noqa: E402
+from protocol import (  # noqa: E402
+    PROTOCOL_VERSION,
+    canonical_config_hash,
+    common_run_config,
+    condition_config,
+    method_run_config,
+)
 from run_campaign import _completed_keys  # noqa: E402
-from summarize_results import _load_rows, render_markdown, summarize, validate_complete_matrix  # noqa: E402
+from summarize_results import (  # noqa: E402
+    _load_rows,
+    render_markdown,
+    summarize,
+    validate_complete_matrix,
+    validate_config_provenance,
+)
+
+
+def _campaign_args(methods=None):
+    return SimpleNamespace(
+        methods=methods or ["fedavg", "adaptive"],
+        n_clients=8,
+        num_rounds=50,
+        aggregation_epochs=4,
+        batch_size=64,
+        lr=5e-2,
+        validation_fraction=0.10,
+        fedprox_mu=0.01,
+        fedce_mode="plus",
+        sample_exponent=0.65,
+        representation_exponent=0.70,
+        metric_prior_strength=100.0,
+        max_blend_factor=0.20,
+        activation_warmup_rounds=3,
+        activation_patience=2,
+        min_weight=0.0,
+        max_weight=1.0,
+        allow_changing_cohort_evidence=False,
+    )
+
+
+def _result_row(method: str, participation: float, seed: int, accuracy: float, args=None, alpha: float = 0.1) -> dict:
+    args = args or _campaign_args()
+    common = common_run_config(
+        n_clients=args.n_clients,
+        num_rounds=args.num_rounds,
+        aggregation_epochs=args.aggregation_epochs,
+        batch_size=args.batch_size,
+        lr=args.lr,
+        validation_fraction=args.validation_fraction,
+    )
+    method_config = method_run_config(
+        method,
+        fedprox_mu=args.fedprox_mu,
+        fedce_mode=args.fedce_mode,
+        sample_exponent=args.sample_exponent,
+        representation_exponent=args.representation_exponent,
+        metric_prior_strength=args.metric_prior_strength,
+        max_blend_factor=args.max_blend_factor,
+        activation_warmup_rounds=args.activation_warmup_rounds,
+        activation_patience=args.activation_patience,
+        min_weight=args.min_weight,
+        max_weight=args.max_weight,
+        allow_changing_cohort_evidence=args.allow_changing_cohort_evidence,
+    )
+    condition = condition_config(alpha, participation, seed)
+    experiment = {
+        "protocol_version": PROTOCOL_VERSION,
+        "common": common,
+        "method": method_config,
+        "condition": condition,
+    }
+    row = {
+        "protocol_version": PROTOCOL_VERSION,
+        "method": method,
+        "alpha": alpha,
+        "participation_rate": participation,
+        "seed": seed,
+        "global_accuracy": accuracy,
+        "worst_client_accuracy": accuracy - 0.10,
+        "validation_fraction": args.validation_fraction,
+        "common_config": common,
+        "common_config_hash": canonical_config_hash(common),
+        "method_config": method_config,
+        "method_config_hash": canonical_config_hash(method_config),
+        "condition_config": condition,
+        "experiment_config": experiment,
+        "experiment_config_hash": canonical_config_hash(experiment),
+    }
+    if method == "adaptive":
+        row["adaptive_telemetry"] = {
+            "adaptive_aggregation_rounds": 50,
+            "adaptive_active_rounds": 20,
+            "adaptive_activation_rate": 0.4,
+            "adaptive_mean_active_blend_factor": 0.12,
+            "adaptive_max_observed_blend_factor": 0.18,
+            "adaptive_cohort_change_count": 3 if participation < 1.0 else 0,
+        }
+    else:
+        row["adaptive_telemetry"] = {}
+    return row
 
 
 def test_find_server_checkpoint_prefers_final_round_model(tmp_path):
@@ -43,15 +141,17 @@ def test_find_server_checkpoint_prefers_final_round_model(tmp_path):
     assert find_server_checkpoint(str(tmp_path)) == final
 
 
-def test_checkpoint_state_dict_supports_nvflare_pt_format(tmp_path):
+def test_checkpoint_state_dict_and_meta_support_nvflare_pt_format(tmp_path):
     path = tmp_path / "FL_global_model.pt"
     expected = {"weight": torch.tensor([1.0, 2.0])}
-    torch.save({"model": expected, "meta": {}}, path)
+    telemetry = {"adaptive_active_rounds": 4, "adaptive_activation_rate": 0.4}
+    torch.save({"model": expected, "meta_props": telemetry}, path)
 
     loaded = checkpoint_state_dict(path)
 
     assert set(loaded) == {"weight"}
     assert torch.equal(loaded["weight"], expected["weight"])
+    assert checkpoint_meta(path) == telemetry
 
 
 def test_integer_allocation_preserves_total_and_nonnegativity():
@@ -106,18 +206,7 @@ def test_training_clients_use_held_out_training_validation_not_cifar_test():
         assert "create_datasets(" not in source
 
 
-def _result_row(method: str, participation: float, seed: int, accuracy: float) -> dict:
-    return {
-        "method": method,
-        "alpha": 0.1,
-        "participation_rate": participation,
-        "seed": seed,
-        "global_accuracy": accuracy,
-        "worst_client_accuracy": accuracy - 0.10,
-    }
-
-
-def test_summary_reports_ci_and_paired_split_seed_deltas():
+def test_summary_reports_ci_paired_deltas_and_activation_rate():
     rows = []
     for seed, adaptive, fedavg in ((7, 0.80, 0.75), (19, 0.82, 0.78), (31, 0.81, 0.77)):
         rows.extend(
@@ -132,6 +221,7 @@ def test_summary_reports_ci_and_paired_split_seed_deltas():
     adaptive_summary = next(item for item in result["summaries"] if item["method"] == "adaptive")
     assert adaptive_summary["metrics"]["global_accuracy"]["n"] == 3
     assert adaptive_summary["metrics"]["global_accuracy"]["ci95_low"] is not None
+    assert adaptive_summary["adaptive_telemetry"]["activation_rate"]["mean"] == pytest.approx(0.4)
     paired = result["paired_comparisons"][0]
     assert paired["seeds"] == [7, 19, 31]
     assert paired["delta_reference_minus_baseline"]["global_accuracy"]["mean"] > 0.0
@@ -152,7 +242,7 @@ def test_complete_matrix_rejects_missing_partial_participation_row():
         validate_complete_matrix(rows, methods, [0.1], [1.0, 0.75], seeds)
 
 
-def test_complete_matrix_and_markdown_include_partial_participation_main_results():
+def test_complete_matrix_and_markdown_include_partial_participation_and_activation():
     methods = ["fedavg", "adaptive"]
     seeds = [7, 19]
     rows = []
@@ -169,24 +259,39 @@ def test_complete_matrix_and_markdown_include_partial_participation_main_results
     assert "participation=75%" in markdown
     assert "fedavg" in markdown
     assert "adaptive" in markdown
+    assert "Adaptive activation" in markdown
+    assert "40.0%" in markdown
     assert "Paired adaptive-minus-baseline deltas" in markdown
     assert "+4.00" in markdown
 
 
-def test_campaign_resume_uses_protocol_condition_seed_and_validation_fraction(tmp_path):
-    path = tmp_path / "runs.jsonl"
-    current = {
-        "protocol_version": PROTOCOL_VERSION,
-        "method": "adaptive",
-        "alpha": 0.1,
-        "participation_rate": 0.75,
-        "seed": 19,
-        "validation_fraction": 0.10,
-        "global_accuracy": 0.8,
-        "worst_client_accuracy": 0.7,
-    }
-    stale = dict(current, protocol_version="older_protocol", seed=7)
-    path.write_text(json.dumps(current) + "\n" + json.dumps(stale) + "\n")
+def test_provenance_rejects_mixed_method_configuration():
+    rows = [_result_row("fedavg", 1.0, 7, 0.75), _result_row("adaptive", 1.0, 7, 0.80)]
+    changed = _campaign_args()
+    changed.max_blend_factor = 0.35
+    rows.append(_result_row("adaptive", 1.0, 19, 0.81, args=changed))
 
-    assert _completed_keys(path) == {("adaptive", 0.1, 0.75, 19, 0.10)}
-    assert _load_rows(str(path), protocol_version=PROTOCOL_VERSION) == [current]
+    with pytest.raises(ValueError, match="multiple method configurations"):
+        validate_config_provenance(rows)
+
+
+def test_provenance_rejects_missing_or_inconsistent_adaptive_telemetry():
+    row = _result_row("adaptive", 0.75, 7, 0.80)
+    row["adaptive_telemetry"]["adaptive_activation_rate"] = 0.9
+
+    with pytest.raises(ValueError, match="inconsistent activation rate"):
+        validate_config_provenance([row])
+
+
+def test_campaign_resume_ignores_stale_protocol_and_mismatched_configuration(tmp_path):
+    args = _campaign_args()
+    path = tmp_path / "runs.jsonl"
+    current = _result_row("adaptive", 0.75, 19, 0.8, args=args)
+    stale = dict(current, protocol_version="older_protocol", seed=7)
+    changed = _campaign_args()
+    changed.max_blend_factor = 0.35
+    mismatched = _result_row("adaptive", 0.75, 31, 0.8, args=changed)
+    path.write_text(json.dumps(current) + "\n" + json.dumps(stale) + "\n" + json.dumps(mismatched) + "\n")
+
+    assert _completed_keys(path, args) == {("adaptive", 0.1, 0.75, 19)}
+    assert _load_rows(str(path), protocol_version=PROTOCOL_VERSION) == [current, mismatched]
