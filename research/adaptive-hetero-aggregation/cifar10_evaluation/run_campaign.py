@@ -173,10 +173,21 @@ def main(args):
         args.results_jsonl,
         "--output",
         args.summary_json,
+        "--markdown_output",
+        args.results_markdown,
         "--reference_method",
         "adaptive",
         "--protocol_version",
         PROTOCOL_VERSION,
+        "--require_complete",
+        "--methods",
+        *args.methods,
+        "--alphas",
+        *[str(value) for value in args.alphas],
+        "--participation_rates",
+        *[str(value) for value in args.participation_rates],
+        "--seeds",
+        *[str(value) for value in args.seeds],
     ]
     subprocess.run(summary_command, check=True)
 
@@ -210,6 +221,7 @@ if __name__ == "__main__":
     parser.add_argument("--split_root", default="/tmp/cifar10_splits/adaptive_hetero_eval")
     parser.add_argument("--results_jsonl", default="results/cifar10_runs.jsonl")
     parser.add_argument("--summary_json", default="results/cifar10_summary.json")
+    parser.add_argument("--results_markdown", default="results/cifar10_main_results.md")
     parser.add_argument("--resume", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--fresh", action="store_true")
     parser.add_argument("--dry_run", action="store_true")
