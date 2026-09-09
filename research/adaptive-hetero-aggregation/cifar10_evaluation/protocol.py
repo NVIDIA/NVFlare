@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Versioning and canonical hashing for comparable CIFAR-10 result rows."""
+"""Versioning and canonical configuration for comparable CIFAR-10 runs."""
 
 import hashlib
 import json
@@ -25,3 +25,110 @@ def canonical_config_hash(config: dict) -> str:
 
     encoded = json.dumps(config, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def common_run_config(
+    n_clients: int,
+    num_rounds: int,
+    aggregation_epochs: int,
+    batch_size: int,
+    lr: float,
+    validation_fraction: float,
+) -> dict:
+    """Settings that must be shared by every method in a comparison campaign."""
+
+    return {
+        "dataset": "CIFAR-10",
+        "model": "ModerateCNN",
+        "partitioner": "NVFlare Dirichlet",
+        "n_clients": int(n_clients),
+        "num_rounds": int(num_rounds),
+        "aggregation_epochs": int(aggregation_epochs),
+        "batch_size": int(batch_size),
+        "client_lr": float(lr),
+        "client_optimizer": "torch.optim.SGD",
+        "client_momentum": 0.9,
+        "client_scheduler": "CosineAnnealingLR",
+        "cosine_lr_eta_min_factor": 0.01,
+        "validation_fraction": float(validation_fraction),
+        "final_evaluator": "common untouched CIFAR-10 test evaluator",
+    }
+
+
+def method_run_config(
+    method: str,
+    *,
+    fedprox_mu: float,
+    fedce_mode: str,
+    sample_exponent: float,
+    representation_exponent: float,
+    metric_prior_strength: float,
+    max_blend_factor: float,
+    activation_warmup_rounds: int,
+    activation_patience: int,
+    min_weight: float,
+    max_weight: float,
+    allow_changing_cohort_evidence: bool,
+) -> dict:
+    """Return all method-specific settings that affect one campaign method."""
+
+    if method == "fedavg":
+        return {
+            "method": "fedavg",
+            "aggregator": "native FedAvg weighted WEIGHT_DIFF",
+        }
+    if method == "fedopt":
+        return {
+            "method": "fedopt",
+            "server_optimizer": "torch.optim.SGD",
+            "server_lr": 1.0,
+            "server_momentum": 0.6,
+            "participation": "full-only reference",
+        }
+    if method == "fedprox":
+        return {
+            "method": "fedprox",
+            "fedprox_mu": float(fedprox_mu),
+        }
+    if method == "scaffold":
+        return {
+            "method": "scaffold",
+            "fedproxloss_mu": 0.0,
+        }
+    if method == "fedce":
+        return {
+            "method": "fedce",
+            "fedce_mode": str(fedce_mode),
+        }
+    if method == "adaptive":
+        return {
+            "method": "adaptive",
+            "sample_exponent": float(sample_exponent),
+            "representation_exponent": float(representation_exponent),
+            "quality_exponent": 0.0,
+            "fairness_strength": 1.0,
+            "metric_prior_strength": float(metric_prior_strength),
+            "heterogeneity_threshold": 0.26,
+            "heterogeneity_temperature": 0.04,
+            "heterogeneity_deadband": 0.15,
+            "performance_gap_threshold": 0.10,
+            "performance_gap_temperature": 0.03,
+            "performance_gap_deadband": 0.05,
+            "max_blend_factor": float(max_blend_factor),
+            "activation_warmup_rounds": int(activation_warmup_rounds),
+            "activation_patience": int(activation_patience),
+            "require_stable_cohort": not bool(allow_changing_cohort_evidence),
+            "min_weight": float(min_weight),
+            "max_weight": float(max_weight),
+        }
+    raise ValueError(f"unsupported CIFAR-10 method {method!r}")
+
+
+def condition_config(alpha: float, participation_rate: float, seed: int) -> dict:
+    """Variables intentionally changed across experimental conditions."""
+
+    return {
+        "alpha": float(alpha),
+        "participation_rate": float(participation_rate),
+        "seed": int(seed),
+    }
