@@ -46,11 +46,18 @@ os.environ["PYTHONPATH"] = os.pathsep.join(
 )
 
 from adaptive_hetero.model_aggregator import AdaptiveHeterogeneityModelAggregator  # noqa: E402
+from adaptive_hetero.nvflare_aggregator import AdaptiveMetaKey  # noqa: E402
 from data.cifar10_data_split import split_and_save  # noqa: E402
 from eval_split import create_eval_splits, create_train_validation_splits  # noqa: E402
 from evaluate_result import evaluate_workspace  # noqa: E402
 from model import ModerateCNN  # noqa: E402
-from protocol import PROTOCOL_VERSION  # noqa: E402
+from protocol import (  # noqa: E402
+    PROTOCOL_VERSION,
+    canonical_config_hash,
+    common_run_config,
+    condition_config,
+    method_run_config,
+)
 
 from nvflare.apis.dxo import DataKind  # noqa: E402
 from nvflare.app_opt.pt.recipes import FedAvgRecipe, FedCERecipe, FedOptRecipe, FedProxRecipe  # noqa: E402
@@ -59,6 +66,14 @@ from nvflare.client.config import TransferType  # noqa: E402
 from nvflare.recipe import SimEnv  # noqa: E402
 
 METHODS = ("fedavg", "fedopt", "fedprox", "scaffold", "fedce", "adaptive")
+ADAPTIVE_REQUIRED_TELEMETRY = (
+    AdaptiveMetaKey.AGGREGATION_ROUNDS,
+    AdaptiveMetaKey.ACTIVE_ROUNDS,
+    AdaptiveMetaKey.ACTIVATION_RATE,
+    AdaptiveMetaKey.MEAN_ACTIVE_BLEND_FACTOR,
+    AdaptiveMetaKey.MAX_OBSERVED_BLEND_FACTOR,
+    AdaptiveMetaKey.COHORT_CHANGE_COUNT,
+)
 
 
 def _client_script(method: str) -> str:
@@ -185,6 +200,39 @@ def _append_jsonl(path: str, row: dict):
         stream.write(json.dumps(row, sort_keys=True) + "\n")
 
 
+def _configs(args) -> tuple[dict, dict, dict, dict]:
+    common = common_run_config(
+        n_clients=args.n_clients,
+        num_rounds=args.num_rounds,
+        aggregation_epochs=args.aggregation_epochs,
+        batch_size=args.batch_size,
+        lr=args.lr,
+        validation_fraction=args.validation_fraction,
+    )
+    method = method_run_config(
+        args.method,
+        fedprox_mu=args.fedprox_mu,
+        fedce_mode=args.fedce_mode,
+        sample_exponent=args.sample_exponent,
+        representation_exponent=args.representation_exponent,
+        metric_prior_strength=args.metric_prior_strength,
+        max_blend_factor=args.max_blend_factor,
+        activation_warmup_rounds=args.activation_warmup_rounds,
+        activation_patience=args.activation_patience,
+        min_weight=args.min_weight,
+        max_weight=args.max_weight,
+        allow_changing_cohort_evidence=args.allow_changing_cohort_evidence,
+    )
+    condition = condition_config(args.alpha, args.participation_rate, args.seed)
+    experiment = {
+        "protocol_version": PROTOCOL_VERSION,
+        "common": common,
+        "method": method,
+        "condition": condition,
+    }
+    return common, method, condition, experiment
+
+
 def main(args):
     if args.n_clients < 2:
         raise ValueError("CIFAR-10 evaluation requires at least two clients")
@@ -193,6 +241,7 @@ def main(args):
     if not 0.0 < args.validation_fraction < 1.0:
         raise ValueError("validation_fraction must be in (0, 1)")
 
+    common_config, method_config, condition, experiment_config = _configs(args)
     round_clients = _round_clients(args.n_clients, args.participation_rate)
     assignment_prefix = os.path.join(args.split_root, "dirichlet_assignment")
     assignment_root = split_and_save(
@@ -237,6 +286,15 @@ def main(args):
         num_workers=args.eval_num_workers,
         device_name=args.eval_device,
     )
+    if args.method == "adaptive":
+        telemetry = evaluation.get("adaptive_telemetry") or {}
+        missing_telemetry = [key for key in ADAPTIVE_REQUIRED_TELEMETRY if key not in telemetry]
+        if missing_telemetry:
+            raise RuntimeError(
+                "adaptive CIFAR-10 run completed without required activation telemetry: "
+                + ", ".join(missing_telemetry)
+            )
+
     record = {
         "protocol_version": PROTOCOL_VERSION,
         "method": args.method,
@@ -250,6 +308,13 @@ def main(args):
         "batch_size": args.batch_size,
         "lr": args.lr,
         "validation_fraction": args.validation_fraction,
+        "common_config": common_config,
+        "common_config_hash": canonical_config_hash(common_config),
+        "method_config": method_config,
+        "method_config_hash": canonical_config_hash(method_config),
+        "condition_config": condition,
+        "experiment_config": experiment_config,
+        "experiment_config_hash": canonical_config_hash(experiment_config),
         "assignment_root": assignment_root,
         "train_idx_root": train_idx_root,
         "validation_idx_root": validation_idx_root,
