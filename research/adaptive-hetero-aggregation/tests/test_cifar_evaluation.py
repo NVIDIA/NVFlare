@@ -54,6 +54,12 @@ def _campaign_args(methods=None):
         batch_size=64,
         lr=5e-2,
         validation_fraction=0.10,
+        num_workers=2,
+        num_threads=None,
+        gpu_config=None,
+        eval_batch_size=256,
+        eval_num_workers=0,
+        eval_device=None,
         fedprox_mu=0.01,
         fedce_mode="plus",
         sample_exponent=0.65,
@@ -77,6 +83,12 @@ def _result_row(method: str, participation: float, seed: int, accuracy: float, a
         batch_size=args.batch_size,
         lr=args.lr,
         validation_fraction=args.validation_fraction,
+        num_workers=args.num_workers,
+        num_threads=args.num_threads,
+        gpu_config=args.gpu_config,
+        eval_batch_size=args.eval_batch_size,
+        eval_num_workers=args.eval_num_workers,
+        eval_device=args.eval_device,
     )
     method_config = method_run_config(
         method,
@@ -272,6 +284,16 @@ def test_provenance_rejects_mixed_method_configuration():
     rows.append(_result_row("adaptive", 1.0, 19, 0.81, args=changed))
 
     with pytest.raises(ValueError, match="multiple method configurations"):
+        validate_config_provenance(rows)
+
+
+def test_provenance_rejects_mixed_execution_configuration():
+    rows = [_result_row("fedavg", 1.0, 7, 0.75), _result_row("adaptive", 1.0, 7, 0.80)]
+    changed = _campaign_args()
+    changed.num_threads = 2
+    rows.append(_result_row("adaptive", 1.0, 19, 0.81, args=changed))
+
+    with pytest.raises(ValueError, match="multiple common experiment configurations"):
         validate_config_provenance(rows)
 
 
