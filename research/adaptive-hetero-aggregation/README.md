@@ -8,23 +8,22 @@ bounded adaptive correction only after persistent client-distribution heterogene
 client-performance disparity are both observed. The implementation is related to
 [NVIDIA/NVFlare issue #5209](https://github.com/NVIDIA/NVFlare/issues/5209).
 
-The current pull request is intentionally a draft. Engineering behavior is covered by focused tests
-and NVFlare integration paths, while the maintainer-requested standard CIFAR-10 comparison and a
-public method write-up still need to be completed before this should be treated as a validated
-research example or production evidence.
+The pull request remains a draft. Engineering behavior is covered by focused tests and NVFlare
+integration paths, while the maintainer-requested CIFAR-10 comparison and public method write-up
+must still be completed before this should be treated as validated research evidence.
 
 ## Papers and Links
 
 - NVFlare issue: [#5209](https://github.com/NVIDIA/NVFlare/issues/5209)
 - Pull request: [#5273](https://github.com/NVIDIA/NVFlare/pull/5273)
-- Preprint/workshop paper: not yet published; this remains a requirement before research acceptance.
+- Preprint/workshop paper: not yet published; this remains a requirement for research acceptance.
 
 ## Objective
 
 The objective is to test whether a federated server can preserve native aggregation under ordinary
 conditions while giving controlled additional influence to clients that contribute persistently
 under-represented data distributions and exhibit a material performance gap. The implementation is
-kept opt-in and is designed to fail back to native weighting rather than force adaptive behavior.
+opt-in and falls back to native weighting rather than forcing adaptive behavior.
 
 ## Method Summary
 
@@ -36,8 +35,8 @@ For each participating client `i`, the adaptive policy receives:
 - an optional quality-improvement value.
 
 The adapters separately retain NVFlare's native local-step weighting signal from
-`NUM_STEPS_CURRENT_ROUND`. This distinction is important: `NUM_STEPS_CURRENT_ROUND` is the number of
-completed local optimizer steps, not the number of training examples.
+`NUM_STEPS_CURRENT_ROUND`. `NUM_STEPS_CURRENT_ROUND` is the number of completed local optimizer
+steps, not the number of training examples.
 
 The adaptive candidate is conceptually:
 
@@ -68,7 +67,7 @@ blended = (1 - blend) * w_native + blend * w_adaptive
 final_weight = bounded_simplex_projection(blended)
 ```
 
-If configured bounds become infeasible for the current cohort size, the round conservatively falls
+If configured bounds are infeasible for the current cohort size, the round conservatively falls
 back to native aggregation instead of failing.
 
 ### Default safeguards
@@ -100,10 +99,12 @@ size. Tighter bounds can be configured for experiments with a known client count
 
 The weighting policy is independent of the server optimizer. Two adapters expose the same policy:
 
-- `AdaptiveHeterogeneityAggregator` implements the Shareable/DXO `Aggregator` interface and is used
-  by the FedOpt integration and smoke path in this project;
+- `AdaptiveHeterogeneityAggregator` implements the Shareable/DXO `Aggregator` interface;
 - `AdaptiveHeterogeneityModelAggregator` implements the unified `ModelAggregator` interface used by
   the current FedAvg recipe.
+
+The method is therefore presented as a generic aggregation policy rather than a FedOpt-specific
+algorithm. The FedOpt path remains useful as an integration/reference smoke path.
 
 Each adaptive contribution supplies:
 
@@ -118,14 +119,15 @@ dxo.set_meta_prop(AdaptiveMetaKey.CLIENT_METRIC, validation_accuracy)
 dxo.set_meta_prop(AdaptiveMetaKey.QUALITY_IMPROVEMENT, baseline_loss - final_loss)
 ```
 
-`NUM_STEPS_CURRENT_ROUND` is used only for the native NVFlare weighting fallback. Sample-based
-representation and metric reliability use `AdaptiveMetaKey.SAMPLE_COUNT`.
+`NUM_STEPS_CURRENT_ROUND` is used only for native NVFlare weighting. Sample-based representation and
+metric reliability use `AdaptiveMetaKey.SAMPLE_COUNT`.
 
-Per-site final weights remain server-side and are not copied into aggregated model metadata. This
-avoids broadcasting every participant's aggregation weight to all clients.
+Per-site final weights remain server-side and are not copied into aggregated model metadata, so a
+participant does not receive every other participant's final aggregation weight through the global
+model.
 
 If no Shareable/DXO contribution is accepted, the adapter returns `ReturnCode.EMPTY_RESULT`. The
-unified FedAvg `ModelAggregator` returns an empty DIFF no-op in the analogous case.
+unified `ModelAggregator` returns an empty DIFF no-op in the analogous empty-round case.
 
 ## Current Engineering Validation
 
@@ -145,54 +147,77 @@ Focused checks cover:
 - real `DXO`, `Shareable`, `FLContext`, `FLModel`, `WeightedAggregationHelper`, and Recipe paths;
 - a lightweight `FedOptRecipe + SimEnv` smoke path;
 - a real FedCE protocol smoke path;
-- synthetic and scikit-learn digits development benchmarks.
+- synthetic and scikit-learn digits development benchmarks;
+- CIFAR experiment split/result helper tests.
 
-These checks establish implementation behavior only. They are not the final scientific evidence
-requested for acceptance into `research/`.
+These checks establish implementation behavior only. They are not final scientific evidence.
 
 No project-specific GitHub Actions workflow is included. The research workload stays inside this
 project directory and is run intentionally rather than gating unrelated repository merges.
 
 ## Standard CIFAR-10 Evaluation
 
-`cifar10_evaluation/` implements the standard non-IID evaluation requested by the maintainers. It
-reuses NVIDIA FLARE's `ModerateCNN`, CIFAR-10 utilities, and Dirichlet partitioner.
+`cifar10_evaluation/` implements the non-IID evaluation requested by the maintainers. It reuses
+NVIDIA FLARE's `ModerateCNN`, CIFAR-10 utilities, Dirichlet splitter, recipes, and algorithm helpers.
 
-For a fixed `(alpha, seed)`, every method receives the same Dirichlet training split and the server
-model is initialized from the same seed. The runner supports:
+The supported methods are:
 
 - FedAvg;
-- FedOpt as a full-participation reference;
+- FedOpt as an optional full-participation reference;
 - FedProx;
 - SCAFFOLD;
 - FedCE;
 - adaptive heterogeneity-aware aggregation.
 
+### Train/validation/test separation
+
+For each `(n_clients, alpha, seed)`:
+
+1. NVIDIA FLARE's standard Dirichlet splitter assigns CIFAR-10 **training** examples to sites.
+2. Each site's assignment is deterministically split into a training subset and a held-out local
+   validation subset; the default validation fraction is 10%.
+3. Every compared method uses the same site training subset and the same held-out validation subset.
+4. Adaptive performance metadata and FedCE leave-one-out metrics use only the held-out training
+   validation subset.
+5. The official CIFAR-10 **test set is not read during federated training**.
+6. After training, the common evaluator loads the final server checkpoint and evaluates the test set.
+
+Matched FedAvg/FedOpt/FedProx/SCAFFOLD clients preserve the corresponding NVIDIA FLARE algorithmic
+training behavior while replacing per-round test-set evaluation with the held-out training
+validation subset.
+
 ### Common post-training evaluator
 
-NVIDIA's stock CIFAR clients evaluate against the complete CIFAR-10 test set at every site. That is
-appropriate for ordinary global accuracy but does not provide a client-specific performance
-measure. `eval_split.py` therefore creates deterministic site-specific test partitions whose class
-mixtures follow the corresponding Dirichlet training partitions.
+`eval_split.py` creates deterministic site-specific partitions of the untouched CIFAR-10 test set.
+Their class mixtures follow the original Dirichlet training assignments.
 
-`evaluate_result.py` then evaluates the **final server checkpoint from every method using the same
-post-training protocol**:
+`evaluate_result.py` evaluates the final server checkpoint from every method using the same protocol:
 
 - `global_accuracy`: accuracy on the complete CIFAR-10 test set;
 - `client_accuracies`: accuracy on each site-specific test partition;
-- `worst_client_accuracy`: the minimum client accuracy;
-- `mean_client_accuracy`, best-client accuracy, and client accuracy gap.
+- `worst_client_accuracy`: minimum client accuracy;
+- `mean_client_accuracy`, best-client accuracy, and client-accuracy gap.
 
-This makes headline FedAvg/FedProx/SCAFFOLD/FedCE/adaptive results comparable even though the
-algorithms use different client training scripts.
+This keeps the headline FedAvg/FedProx/SCAFFOLD/FedCE/adaptive result definitions identical.
 
 ### Reproducibility and pairing
 
-The experiment `seed` controls the Dirichlet split and server-model initialization. NVIDIA's stock
-baseline client scripts do not all expose a client-side RNG argument, so local minibatch and data-
-augmentation stochasticity is treated as part of run-to-run variance. Paired comparisons are
-therefore paired by **Dirichlet split and server initialization**, not claimed to have identical
-client-side stochastic trajectories.
+The experiment seed controls:
+
+- the Dirichlet assignment;
+- the deterministic train/validation split;
+- server-model initialization;
+- each site's PyTorch/NumPy client RNG seed.
+
+The result record therefore declares pairing by Dirichlet split, server initialization, and client
+seed. Different algorithms can still consume randomness differently, so reproducibility does not
+imply identical optimization trajectories.
+
+### Protocol versioning
+
+Every completed result row is tagged with a protocol version. The campaign's resume logic and the
+summary script ignore rows from an older protocol version so stale experiments cannot silently enter
+new confidence intervals.
 
 ### Confidence intervals
 
@@ -203,8 +228,7 @@ client-side stochastic trajectories.
 - sample standard deviation;
 - two-sided 95% Student-t confidence interval.
 
-It also reports paired adaptive-minus-baseline confidence intervals for common split/initialization
-seeds.
+It also reports paired adaptive-minus-baseline confidence intervals for common seeds.
 
 ## Setup
 
@@ -222,26 +246,28 @@ pip install -e .
 pip install -r research/adaptive-hetero-aggregation/requirements.txt
 ```
 
-The main CIFAR-10 experiments are substantially faster with CUDA-capable GPUs. The lightweight unit,
+The full CIFAR-10 campaign is substantially faster with CUDA-capable GPUs. The lightweight unit,
 synthetic, and digits checks can run on CPU.
 
 ## Data Preparation
 
 No dataset is committed to this project.
 
-The CIFAR-10 runner reuses NVIDIA FLARE's standard splitter. On first use, torchvision downloads
-CIFAR-10 under:
+On first use, torchvision downloads CIFAR-10 under:
 
 ```text
 /tmp/cifar10
 ```
 
-Dirichlet training splits are generated under the configured `--split_root` (default:
-`/tmp/cifar10_splits/adaptive_hetero_eval`). Site-specific evaluation splits are generated alongside
-them. For a fixed `(n_clients, alpha, seed)`, all compared methods reuse the same split directories.
+The configured `--split_root` contains four deterministic products for a condition:
 
-The small development benchmarks use scikit-learn generated data or the bundled `load_digits`
-dataset and require no separate download.
+- the original Dirichlet training assignment;
+- the common per-site training subset;
+- the common per-site held-out training validation subset;
+- the site-specific final-test partitions.
+
+For a fixed `(n_clients, alpha, seed, validation_fraction)`, all compared methods reuse the same
+split directories.
 
 ## Run Instructions
 
@@ -275,8 +301,8 @@ python cifar10_evaluation/run.py \
   --results_jsonl results/cifar10_runs.jsonl
 ```
 
-The command trains the federation, evaluates the final server checkpoint with the common evaluator,
-prints one `CIFAR10_EVAL_RESULT` JSON record, and optionally appends it to the supplied JSONL file.
+A completed run evaluates the final server checkpoint, prints one `CIFAR10_EVAL_RESULT` JSON record,
+and optionally appends it to the supplied JSONL file.
 
 ### Maintainer-requested comparison campaign
 
@@ -286,7 +312,8 @@ The default campaign is:
 - Dirichlet alpha: `0.1` and `0.5`;
 - seeds: `7, 19, 31, 43, 57`;
 - participation: `1.0` and `0.75`;
-- 8 clients, 50 rounds, 4 local epochs.
+- 8 clients, 50 rounds, 4 local epochs;
+- 10% held-out validation from each site's CIFAR-10 training assignment.
 
 Run it intentionally with:
 
@@ -300,8 +327,9 @@ Inspect the matrix without training:
 python cifar10_evaluation/run_campaign.py --dry_run
 ```
 
-The campaign is resumable by default. Completed `(method, alpha, participation, seed)` rows already
-in `results/cifar10_runs.jsonl` are skipped. Use `--fresh` to start a new result file.
+The campaign is resumable. A current-protocol `(method, alpha, participation, seed,
+validation_fraction)` row is skipped when it is already present in `results/cifar10_runs.jsonl`.
+Use `--fresh` to start a new result file.
 
 Add FedOpt as a full-participation reference with:
 
@@ -319,18 +347,21 @@ Generated artifacts are written to:
 
 ## Expected Results
 
-At this draft stage, no final numerical performance claims are checked in. A successful single run
-must produce a `CIFAR10_EVAL_RESULT` record containing at least:
+No final CIFAR-10 numerical performance claim is checked in yet. A successful run produces a
+`CIFAR10_EVAL_RESULT` record containing at least:
 
 ```text
+protocol_version
 method
 alpha
 participation_rate
 seed
+validation_fraction
 global_accuracy
 worst_client_accuracy
 client_accuracies
 checkpoint
+test_data_used_during_training = false
 ```
 
 A completed campaign should produce confidence-interval tables covering FedAvg, FedProx, SCAFFOLD,
@@ -342,7 +373,7 @@ included blend factors that are unreachable with the current `max_blend_factor=0
 
 ## Evidence Still Required Before Research Acceptance
 
-The infrastructure requested by the maintainer is now present, but the final evidence is not yet
+The requested implementation and evaluation infrastructure is present, but final evidence is not yet
 claimed. Before the draft should be considered merge-ready under `research/`, it still needs:
 
 1. completed matched CIFAR-10 runs against FedProx, SCAFFOLD, and FedCE;
@@ -355,29 +386,28 @@ claimed. Before the draft should be considered merge-ready under `research/`, it
 
 `benchmark.py` uses `sklearn.datasets.make_classification` for fast synthetic checks.
 
-`digits_benchmark.py` uses scikit-learn's `load_digits` dataset (1,797 8x8 handwritten-digit images)
-and supports linear/MLP models, multiple seeds, and full or partial participation. These remain
-development tools rather than headline evidence.
+`digits_benchmark.py` uses scikit-learn's `load_digits` dataset and supports linear/MLP models,
+multiple seeds, and full or partial participation. These remain development tools rather than
+headline evidence.
 
 ## Relationship to Existing NVFlare Work
 
 ### FedAvg and FedOpt
 
 The method is an aggregation policy rather than a server optimizer. The unified FedAvg path uses
-`AdaptiveHeterogeneityModelAggregator`; the FedOpt smoke/reference path uses
+`AdaptiveHeterogeneityModelAggregator`; the Shareable/DXO path uses
 `AdaptiveHeterogeneityAggregator`. Both delegate weighting to the same policy.
 
 ### FedProx and SCAFFOLD
 
 FedProx and SCAFFOLD address non-IID optimization drift through client/local optimization changes.
-They are required baselines because they target a related heterogeneity problem through different
-mechanisms.
+They are included as standard heterogeneity baselines.
 
 ### FedCE
 
 FedCE estimates client contribution using update-direction and leave-one-out validation behavior.
-`fedce_client.py` adapts the real NVFlare FedCE protocol to the same CIFAR-10 experiment rather than
-using a synthetic approximation.
+`fedce_client.py` uses the real NVFlare FedCE helper contract and the same held-out training
+validation protocol as the other methods.
 
 ### Auto-FedRL
 
@@ -415,11 +445,16 @@ adaptive-hetero-aggregation/
 |-- cifar10_evaluation/
 |   |-- __init__.py
 |   |-- adaptive_client.py
+|   |-- baseline_sgd_client.py
 |   |-- eval_split.py
 |   |-- evaluate_result.py
 |   |-- fedce_client.py
+|   |-- fedprox_client.py
+|   |-- local_data.py
+|   |-- protocol.py
 |   |-- run.py
 |   |-- run_campaign.py
+|   |-- scaffold_client.py
 |   `-- summarize_results.py
 |-- fedce_smoke/
 |-- nvflare_smoke/
@@ -440,8 +475,7 @@ adaptive-hetero-aggregation/
 
 Project dependencies are listed in `requirements.txt`. This draft is developed against the current
 NVIDIA FLARE `main` branch used by PR #5273 because it relies on current Recipe and
-`ModelAggregator` behavior. Install NVFlare from the repository source as shown in **Setup** until a
-released package contains the required APIs.
+`ModelAggregator` behavior.
 
 ## License
 
