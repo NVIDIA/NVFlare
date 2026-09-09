@@ -183,7 +183,19 @@ class AdaptiveHeterogeneityModelAggregator(ModelAggregator):
 
     def aggregate_model(self) -> FLModel:
         if not self._results:
-            raise ValueError("adaptive aggregation cannot aggregate an empty result set")
+            # The unified FedAvg controller expects an FLModel from a custom
+            # ModelAggregator. An empty DIFF is a safe no-op update and avoids
+            # panicking the job when no client result is available for a round.
+            self.last_weights = {}
+            return FLModel(
+                params={},
+                params_type=ParamsType.DIFF,
+                metrics=None,
+                meta={
+                    "nr_aggregated": 0,
+                    "adaptive_empty_result": True,
+                },
+            )
 
         clients = sorted(self._results)
         results = [self._results[client] for client in clients]
@@ -227,9 +239,7 @@ class AdaptiveHeterogeneityModelAggregator(ModelAggregator):
                         contribution_round=current_round,
                     )
 
-        self.last_weights = {
-            client: float(weight) for client, weight in zip(clients, policy_result.weights)
-        }
+        self.last_weights = {client: float(weight) for client, weight in zip(clients, policy_result.weights)}
         metrics = metrics_helper.get_result() if all_metrics and metrics_helper.total else None
         aggregated = FLModel(
             params=params_helper.get_result(),
