@@ -188,8 +188,18 @@ def test_multinode_batch_exports_node_group_contract_and_delegates_to_srun(tmp_p
     assert "--kill-on-bad-exit=1" in command_line
     assert "--wait=0" in command_line
     assert "--label" in command_line
+    assert "--gres=gpu:1" in command_line
     assert f"{job_dir}/node.sh" in command_line
     assert "worker.module" not in command_line
+
+
+def test_multinode_batch_without_gpus_does_not_request_gres(tmp_path):
+    plan = replace(_multinode_plan(tmp_path), resources=JobResources(nodes=2))
+
+    script, _ = _render_batch_script(plan, _job_dir(tmp_path), _config(tmp_path))
+
+    command_line = next(line for line in script.splitlines() if line.startswith("_nvfl_command="))
+    assert "--gres" not in command_line
 
 
 def test_site_port_range_overrides_the_default_rendezvous_ports(tmp_path):
@@ -215,6 +225,8 @@ def test_apptainer_node_group_containerizes_each_rank_on_its_node(tmp_path):
     assert 'export APPTAINERENV_NVFL_MASTER_ADDR="${NVFL_MASTER_ADDR}"' in batch
 
     assert 'export APPTAINERENV_NVFL_NODE_RANK="${NVFL_NODE_RANK}"' in node
+    assert "export NVFLARE_CLIENT_API_PROCESS_COUNT=1" in node
+    assert "export APPTAINERENV_NVFLARE_CLIENT_API_PROCESS_COUNT=1" in node
     gpu_env_names = ("CUDA_VISIBLE_DEVICES", "GPU_DEVICE_ORDINAL", "ROCR_VISIBLE_DEVICES")
     assert f"unset {' '.join(f'APPTAINERENV_{name}' for name in gpu_env_names)}" in node
     for name in gpu_env_names:

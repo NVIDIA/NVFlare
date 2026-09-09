@@ -807,7 +807,7 @@
           },
           {
             "name": "train_args",
-            "type": "str",
+            "type": "Union[str, list[str]]",
             "required": false,
             "default": "",
             "kind": "keyword_only"
@@ -835,7 +835,7 @@
           },
           {
             "name": "command",
-            "type": "str",
+            "type": "Union[str, list[str]]",
             "required": false,
             "default": "python3 -u",
             "kind": "keyword_only"
@@ -1265,7 +1265,7 @@
           },
           {
             "name": "train_args",
-            "type": "str",
+            "type": "Union[str, list[str]]",
             "required": false,
             "default": "",
             "kind": "keyword_only"
@@ -1293,7 +1293,7 @@
           },
           {
             "name": "command",
-            "type": "str",
+            "type": "Union[str, list[str]]",
             "required": false,
             "default": "python3 -u",
             "kind": "keyword_only"
@@ -1493,7 +1493,7 @@
           },
           {
             "name": "train_args",
-            "type": "str",
+            "type": "Union[str, list[str]]",
             "required": false,
             "default": "",
             "kind": "keyword_only"
@@ -1521,7 +1521,7 @@
           },
           {
             "name": "command",
-            "type": "str",
+            "type": "Union[str, list[str]]",
             "required": false,
             "default": "python3 -u",
             "kind": "keyword_only"
@@ -1759,7 +1759,7 @@
           },
           {
             "name": "train_args",
-            "type": "str",
+            "type": "Union[str, list[str]]",
             "required": false,
             "default": "",
             "kind": "keyword_only"
@@ -1787,7 +1787,7 @@
           },
           {
             "name": "command",
-            "type": "str",
+            "type": "Union[str, list[str]]",
             "required": false,
             "default": "python3 -u",
             "kind": "keyword_only"
@@ -1927,7 +1927,7 @@
           },
           {
             "name": "train_args",
-            "type": "str",
+            "type": "Union[str, list[str]]",
             "required": false,
             "default": "",
             "kind": "keyword_only"
@@ -1955,7 +1955,7 @@
           },
           {
             "name": "command",
-            "type": "str",
+            "type": "Union[str, list[str]]",
             "required": false,
             "default": "python3 -u",
             "kind": "keyword_only"
@@ -2160,7 +2160,7 @@
           },
           {
             "name": "train_args",
-            "type": "str",
+            "type": "Union[str, list[str]]",
             "required": false,
             "default": "",
             "kind": "keyword_only"
@@ -2188,7 +2188,7 @@
           },
           {
             "name": "command",
-            "type": "str",
+            "type": "Union[str, list[str]]",
             "required": false,
             "default": "python3 -u",
             "kind": "keyword_only"
@@ -2370,7 +2370,7 @@
           },
           {
             "name": "eval_args",
-            "type": "str",
+            "type": "Union[str, list[str]]",
             "required": false,
             "default": "",
             "kind": "keyword_only"
@@ -2384,7 +2384,7 @@
           },
           {
             "name": "command",
-            "type": "str",
+            "type": "Union[str, list[str]]",
             "required": false,
             "default": "python3 -u",
             "kind": "keyword_only"
@@ -2860,7 +2860,7 @@
           },
           {
             "name": "train_args",
-            "type": "str",
+            "type": "Union[str, list[str]]",
             "required": false,
             "default": "",
             "kind": "keyword_only"
@@ -2888,7 +2888,7 @@
           },
           {
             "name": "command",
-            "type": "str",
+            "type": "Union[str, list[str]]",
             "required": false,
             "default": "python3 -u",
             "kind": "keyword_only"
@@ -3248,7 +3248,7 @@
           },
           {
             "name": "train_args",
-            "type": "str",
+            "type": "Union[str, list[str]]",
             "required": false,
             "default": "",
             "kind": "keyword_only"
@@ -3262,7 +3262,7 @@
           },
           {
             "name": "command",
-            "type": "str",
+            "type": "Union[str, list[str]]",
             "required": false,
             "default": "python3 -u",
             "kind": "keyword_only"
@@ -3808,7 +3808,7 @@
           },
           {
             "name": "train_args",
-            "type": "str",
+            "type": "Union[str, list[str]]",
             "required": false,
             "default": "",
             "kind": "keyword_only"
@@ -3822,7 +3822,7 @@
           },
           {
             "name": "command",
-            "type": "str",
+            "type": "Union[str, list[str]]",
             "required": false,
             "default": "python3 -u",
             "kind": "keyword_only"
@@ -3969,7 +3969,7 @@
           },
           {
             "name": "command",
-            "type": "str",
+            "type": "Union[str, list[str]]",
             "required": false,
             "default": "python3 -u",
             "kind": "positional_or_keyword"

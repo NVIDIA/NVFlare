@@ -137,7 +137,7 @@ Use `run_script()` only during the validation phase after loading `references/hu
   second copy of the global model.
 - Must follow the Client API initialization and conditional rank contract in
   `../nvflare-shared/references/conversion-common.md`. Keep the generated client
-  rankless; `nvflare.client.hf.init()` owns distributed-rank resolution and
+  rankless; the public Client API owns distributed-rank resolution and
   rejection. Load `references/huggingface-state-and-distributed.md` only for a
   distributed multi-process source path.
 - Must preserve source evaluation. When per-round global-model evaluation is

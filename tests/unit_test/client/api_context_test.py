@@ -155,6 +155,7 @@ class TestPublicAPIInit:
         [
             (None, "0", "0"),
             ("1", 1, "1"),
+            ("+0", 0, "0"),
         ],
     )
     def test_explicit_then_implicit_effective_rank_reuses_context(
@@ -174,3 +175,16 @@ class TestPublicAPIInit:
         assert implicit_context is explicit_context
         context_cls.assert_called_once_with(rank=expected_rank, config_file=None)
         assert list(public_api.context_dict) == [(expected_rank, None)]
+
+    def test_unresolved_multirank_fails_before_context_creation(self, monkeypatch):
+        monkeypatch.delenv("RANK", raising=False)
+        monkeypatch.setenv("WORLD_SIZE", "2")
+        monkeypatch.setattr(public_api, "context_dict", {})
+        monkeypatch.setattr(public_api, "default_context", None)
+        monkeypatch.setattr("nvflare.client.rank.get_initialized_torch_distributed_rank", lambda: None)
+
+        with patch.object(public_api, "APIContext") as context_cls:
+            with pytest.raises(RuntimeError, match="global RANK is unavailable"):
+                public_api.init()
+
+        context_cls.assert_not_called()

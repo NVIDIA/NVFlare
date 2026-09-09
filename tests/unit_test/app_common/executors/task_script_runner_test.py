@@ -113,6 +113,45 @@ class TestTaskScriptRunner(unittest.TestCase):
             "Bearer resolved",
         ]
 
+    def test_pre_tokenized_args_preserve_exact_boundaries(self):
+        data_root = "/mnt/O'Brien cache"
+        wrapper = TaskScriptRunner(
+            custom_dir=self.nvflare_root,
+            script_path="nvflare/cli.py",
+            script_args=["--data_root", data_root, "--label", 'a"b', "--regex", r"\d+"],
+        )
+
+        assert wrapper.get_sys_argv()[1:] == ["--data_root", data_root, "--label", 'a"b', "--regex", r"\d+"]
+
+    def test_pre_tokenized_args_are_copied(self):
+        script_args = ["--data_root", "/data/cifar cache"]
+        wrapper = TaskScriptRunner(
+            custom_dir=self.nvflare_root,
+            script_path="nvflare/cli.py",
+            script_args=script_args,
+        )
+        script_args[-1] = "/changed"
+
+        assert wrapper.get_sys_argv()[1:] == ["--data_root", "/data/cifar cache"]
+
+    def test_legacy_multiple_embedded_apostrophes_remain_separate_arguments(self):
+        wrapper = TaskScriptRunner(
+            custom_dir=self.nvflare_root,
+            script_path="nvflare/cli.py",
+            script_args="--first O'Brien --last D'Angelo",
+        )
+
+        assert wrapper.get_sys_argv()[1:] == ["--first", "O'Brien", "--last", "D'Angelo"]
+
+    def test_invalid_pre_tokenized_args_are_rejected(self):
+        for script_args in (["--epochs", 1], ("--epochs", "1"), 1):
+            with self.subTest(script_args=script_args), pytest.raises(ValueError, match="script_args"):
+                TaskScriptRunner(
+                    custom_dir=self.nvflare_root,
+                    script_path="nvflare/cli.py",
+                    script_args=script_args,
+                )
+
     def test_secret_file_ref_content_is_one_argument(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             secret_path = os.path.join(temp_dir, "api-key")
