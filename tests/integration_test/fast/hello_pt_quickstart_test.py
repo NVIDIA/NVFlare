@@ -34,17 +34,19 @@ def _load_job_module():
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
 
-    original_model_module = sys.modules.pop("model", None)
+    original_sys_path = list(sys.path)
+    original_modules = {name: sys.modules.pop(name, None) for name in ("model", "prepare_data")}
     sys.path.insert(0, EXAMPLE_DIR)
     try:
         spec.loader.exec_module(module)
         yield module
     finally:
-        sys.path.pop(0)
-        if original_model_module is not None:
-            sys.modules["model"] = original_model_module
-        else:
-            sys.modules.pop("model", None)
+        sys.path[:] = original_sys_path
+        for name, original in original_modules.items():
+            if original is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = original
 
 
 def test_zero_flag_hello_pt_produces_learned_loadable_final_model(tmp_path, monkeypatch):

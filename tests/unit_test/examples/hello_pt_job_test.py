@@ -18,6 +18,7 @@ import json
 import os
 import re
 import shlex
+import subprocess
 import sys
 from contextlib import contextmanager
 from types import SimpleNamespace
@@ -110,6 +111,39 @@ def test_help_includes_recipe_export_options():
 
     assert "--export" in help_text
     assert "--export-dir EXPORT_DIR" in help_text
+
+
+@pytest.mark.parametrize("cell_id, expected_rounds", [("nvflare-cli-export-code", 2), ("nvflare-cli-abort-code", 20)])
+def test_cli_notebook_exports_bundled_job_with_log_streaming(tmp_path, cell_id, expected_rounds):
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+    tutorial_dir = os.path.join(repo_root, "examples", "tutorials")
+    with open(os.path.join(tutorial_dir, "nvflare_cli.ipynb")) as notebook_file:
+        notebook = json.load(notebook_file)
+    cell = next(cell for cell in notebook["cells"] if cell.get("id") == cell_id)
+    command = shlex.split(cell["source"][0].removeprefix("!"))
+    assert command[0] == "python"
+    command[0] = sys.executable
+    command[command.index("--job-dir") + 1] = str(tmp_path)
+    subprocess.run(
+        command,
+        cwd=tutorial_dir,
+        env={**os.environ, "PYTHONPATH": os.pathsep.join((repo_root, os.environ.get("PYTHONPATH", "")))},
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=30,
+    )
+
+    job_dir = tmp_path / "hello-pt"
+    client = json.loads((job_dir / "app/config/config_fed_client.json").read_text())
+    server = json.loads((job_dir / "app/config/config_fed_server.json").read_text())
+    assert client["executors"][0]["executor"]["args"]["task_script_path"] == "client.py"
+    assert client["executors"][0]["executor"]["args"]["task_script_args"] == ["--dataset", "synthetic"]
+    assert server["workflows"][0]["args"]["num_rounds"] == expected_rounds
+    assert any(component["path"].endswith(".JobLogStreamer") for component in client["components"])
+    assert any(component["path"].endswith(".JobLogReceiver") for component in server["components"])
+    assert (job_dir / "meta.json").is_file()
+    assert {"client.py", "model.py", "prepare_data.py"} <= {path.name for path in (job_dir / "app/custom").glob("*.py")}
 
 
 def test_website_pytorch_snippets_are_internally_consistent():
