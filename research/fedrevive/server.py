@@ -21,8 +21,8 @@ import os
 import queue
 import random
 import shutil
-import tempfile
 import threading
+import time
 from collections import deque
 from dataclasses import dataclass
 
@@ -48,7 +48,6 @@ from torchvision import datasets
 from nvflare.app_common.utils.tensor_disk_offload_context import cleanup_tensor_disk_offload, setup_tensor_disk_offload
 from nvflare.app_opt.pt.lazy_tensor_dict import LazyTensorDict
 from nvflare.collab import collab
-from nvflare.collab.api import ContextKey
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
@@ -203,7 +202,6 @@ class FedReviveServer:
         min_open_slots: int | None = None,
         server_lr: float | None = None,
         call_timeout: float = 3600.0,
-        max_parallel: int = 12,
         device: str | None = None,
         eval_batch_size: int = 300,
         eval_interval: int | None = None,
@@ -236,7 +234,6 @@ class FedReviveServer:
         self.min_open_slots = preset.min_open_slots if min_open_slots is None else int(min_open_slots)
         self.server_lr = preset.server_lr if server_lr is None else float(server_lr)
         self.call_timeout = float(call_timeout)
-        self.max_parallel = int(max_parallel)
         self.device = device
         self.eval_batch_size = int(eval_batch_size)
         self.eval_interval = (
@@ -254,14 +251,12 @@ class FedReviveServer:
             self.server_lr <= 0
             or self.eval_interval < 1
             or self.max_model_versions < 1
-            or self.max_parallel < 0
             or self.generation_interval < 1
             or self.class_proportion_probe_count < 1
         ):
             raise ValueError(
                 "server_lr, eval_interval, max_model_versions, generation_interval, and "
-                "class_proportion_probe_count must be positive; "
-                "max_parallel must be >= 0"
+                "class_proportion_probe_count must be positive"
             )
 
         self.logger = get_obj_logger(self)
@@ -335,34 +330,43 @@ class FedReviveServer:
         """
 
         # Keep the offload tree with the user-selected persistent workspace,
-        # not /tmp (which may be a small tmpfs).  Change tempfile configuration
-        # only while the NVFlare helper allocates its tree, and restore it even
-        # if setup fails.  cleanup_tensor_disk_offload handles every exit path.
-        previous_tempdir = tempfile.tempdir
-        tempfile.tempdir = self._run_dir
-        try:
-            context = setup_tensor_disk_offload(
-                engine=collab.fl_ctx.get_engine(),
-                enabled=True,
-                job_id=collab.fl_ctx.get_job_id(),
-            )
-        finally:
-            tempfile.tempdir = previous_tempdir
+        # not /tmp (which may be a small tmpfs). The context helper owns setup,
+        # restoration, and cleanup without changing process-global temp state.
+        context = setup_tensor_disk_offload(
+            engine=collab.fl_ctx.get_engine(),
+            enabled=True,
+            job_id=collab.fl_ctx.get_job_id(),
+            root_dir=self._run_dir,
+        )
         if not context.applied:
             raise RuntimeError("tensor disk offload requires an active NVFlare Cell")
         self.logger.info(f"completed client results will be staged under {context.root_dir}")
         return context
 
     @staticmethod
-    def _release_outcome_result(outcome: _ClientOutcome):
+    def _release_result(result):
+        """Unlink tensor-offload files after a result is consumed or discarded."""
+
+        if not isinstance(result, (tuple, list)) or not result:
+            return
+        model = result[0]
+        if isinstance(model, LazyTensorDict):
+            model.cleanup()
+        elif isinstance(model, dict):
+            for value in model.values():
+                release = getattr(value, "release", None)
+                if callable(release):
+                    release()
+
+    @classmethod
+    def _release_outcome_result(cls, outcome: _ClientOutcome):
         """Drop one queued result and unlink any lazy tensor backing files."""
 
         result = outcome.result
         # Break the owning reference first so an exception cannot leave a full
         # result reachable through the scheduler bookkeeping.
         outcome.result = None
-        if isinstance(result, (tuple, list)) and result and isinstance(result[0], LazyTensorDict):
-            result[0].cleanup()
+        cls._release_result(result)
 
     def _clear_completed_outcomes(self):
         for outcome in self._completed_outcomes.values():
@@ -485,7 +489,7 @@ class FedReviveServer:
             "final": final,
         }
         self._history.append(record)
-        self._writer.add_scalar("test/accuracy", record["accuracy"], self._simulated_time)
+        self._writer.add_scalar("test/accuracy", record["accuracy"], self._model_version, walltime=self._simulated_time)
         self._writer.flush()
         with open(os.path.join(self._run_dir, "accuracy_history.json"), "w", encoding="utf-8") as stream:
             json.dump(self._history, stream, indent=2)
@@ -509,8 +513,7 @@ class FedReviveServer:
         self._snapshot_store = _SnapshotStore(os.path.join(self._run_dir, "assignment_snapshots"))
         self._init_data()
         initial_model = get_model_params(create_model(), target_device="cpu")
-        inherited_model = collab.get_prop(ContextKey.RESULT, initial_model)
-        self._global_model = {name: value.detach().cpu().clone() for name, value in inherited_model.items()}
+        self._global_model = {name: value.detach().cpu().clone() for name, value in initial_model.items()}
         if self.method is Method.FEDREVIVE:
             self._reviver = DFKDReviver(
                 self._device(), output_dir=os.path.join(self._run_dir, "dfkd"), config=self._dfkd_config
@@ -716,7 +719,7 @@ class FedReviveServer:
             results = group(
                 blocking=False,
                 timeout=self.call_timeout,
-                parallel=self.max_parallel,
+                parallel=0,
                 process_resp_cb=self._accept_train_result,
             ).train(
                 assignment_by_physical,
@@ -742,16 +745,29 @@ class FedReviveServer:
         return None
 
     def _watch_call_failures(self, results, assignment_by_physical):
-        for _ in results:
-            pass
-        for physical_name, error in results.failures.items():
-            self._outcomes.put(
-                _ClientOutcome(
-                    physical_name=physical_name,
-                    assignment_id=assignment_by_physical[physical_name],
-                    error=error,
+        reported = set()
+        while True:
+            # ResultQueue records failures as soon as each site completes, but
+            # its iterator waits for the whole group. Poll the same protected
+            # state so one failed site is reported even if a peer is still
+            # training or waits until the call timeout.
+            with results.update_lock:
+                failures = tuple(results.failures.items())
+                complete = results.num_whole_items_received >= results.limit
+            for physical_name, error in failures:
+                if physical_name in reported:
+                    continue
+                reported.add(physical_name)
+                self._outcomes.put(
+                    _ClientOutcome(
+                        physical_name=physical_name,
+                        assignment_id=assignment_by_physical[physical_name],
+                        error=error,
+                    )
                 )
-            )
+            if complete:
+                return
+            time.sleep(0.1)
 
     def _wait_for_any_outcome(self):
         while True:
@@ -812,6 +828,9 @@ class FedReviveServer:
             if outcome is not None:
                 heapq.heappop(self._event_heap)
                 self._simulated_time = event.finish_time
+                if self._simulated_time >= self.max_time:
+                    self._completed_outcomes[assignment_id] = outcome
+                    return None
                 return outcome
             self._record_physical_outcome(self._wait_for_any_outcome())
         raise RuntimeError("No scheduled event remains")
@@ -852,17 +871,9 @@ class FedReviveServer:
                 self._release_outcome_result(outcome)
                 return
             if outcome.error is not None:
-                if self.method is Method.FEDAVG:
-                    raise RuntimeError(
-                        f"FedAvg cohort incomplete: assignment {job.assignment_id} failed: {outcome.error}"
-                    )
-                self.logger.warning(f"assignment {job.assignment_id} failed: {outcome.error}")
-                return
+                raise RuntimeError(f"assignment {job.assignment_id} failed: {outcome.error}")
             if outcome.result is None:
-                if self.method is Method.FEDAVG:
-                    raise RuntimeError(f"FedAvg cohort incomplete: assignment {job.assignment_id} returned no result")
-                self.logger.warning(f"assignment {job.assignment_id} returned no result")
-                return
+                raise RuntimeError(f"assignment {job.assignment_id} returned no result")
 
             # Materialize one client model at a time.  Remove the lazy payload
             # from the outcome before loading it, then unlink backing files
@@ -873,8 +884,7 @@ class FedReviveServer:
             try:
                 updated_model, metrics, metadata = self._materialize_result(result)
             finally:
-                if isinstance(result, (tuple, list)) and result and isinstance(result[0], LazyTensorDict):
-                    result[0].cleanup()
+                self._release_result(result)
                 del result
             if (
                 int(metadata["assignment_id"]) != job.assignment_id

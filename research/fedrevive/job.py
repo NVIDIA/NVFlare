@@ -114,12 +114,6 @@ def define_parser():
         help="Accumulate accepted deltas in place; --no-in-time retains all B deltas (higher memory)",
     )
     parser.add_argument("--call-timeout", type=float, default=3600.0)
-    parser.add_argument(
-        "--max-parallel",
-        type=int,
-        default=2,
-        help="Maximum host-side in-flight Collab calls; keep this at or below --num-clients",
-    )
     parser.add_argument("--server-device", choices=("auto", "cpu", "cuda"), default="auto")
     parser.add_argument("--client-device", choices=("auto", "cpu", "cuda"), default="auto")
     parser.add_argument(
@@ -147,12 +141,8 @@ def validate_args(args):
         raise ValueError("--num-clients and --num-logical-clients must be >= 1")
     if args.max_time <= 0 or args.local_iterations < 1 or args.local_batch_size < 1:
         raise ValueError("--max-time, --local-iterations, and --local-batch-size must be positive")
-    if args.local_lr <= 0 or args.call_timeout <= 0 or args.num_workers < 0 or args.max_parallel < 0:
-        raise ValueError(
-            "--local-lr and --call-timeout must be positive; --num-workers and --max-parallel must be nonnegative"
-        )
-    if args.max_parallel > args.num_clients:
-        raise ValueError("--max-parallel must not exceed --num-clients")
+    if args.local_lr <= 0 or args.call_timeout <= 0 or args.num_workers < 0:
+        raise ValueError("--local-lr and --call-timeout must be positive; --num-workers must be nonnegative")
     if args.generation_interval < 1 or args.class_proportion_probe_count < 1:
         raise ValueError("--generation-interval and --class-proportion-probe-count must be positive")
     if args.method != Method.FEDREVIVE.value and (
@@ -184,7 +174,6 @@ def make_recipe(args):
         min_open_slots=open_slots,
         server_lr=args.server_lr,
         call_timeout=args.call_timeout,
-        max_parallel=args.max_parallel,
         device=_device(args.server_device),
         eval_batch_size=args.eval_batch_size,
         eval_interval=args.eval_interval,

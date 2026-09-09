@@ -15,6 +15,7 @@ README in each subfolder for setup, data, and run instructions.
 
 | Project | Description |
 | --- | --- |
+| [FedRevive: Reviving Stale Updates with Data-Free Knowledge Distillation](./fedrevive/README.md) | CollabAPI implementation of FedAvg, FedBuff, and FedRevive under reproducible asynchronous arrival schedules ([arXiv 2025](https://arxiv.org/abs/2511.00655)). |
 | [FedCoRe: Federated Cross-Modal Representation Completion](./fedcore/README.md) | Missing-image completion with Qwen3-VL, valid-supervision aggregation, and an MNIST public quickstart ([arXiv 2026](https://arxiv.org/abs/2608.18311)). |
 | [Privacy-Preserving Federated Fraud Detection in Payment Transactions with NVIDIA FLARE](./fsi-fraud-detection/README.md) | Payment fraud detection across heterogeneous financial institutions ([arXiv 2026](https://arxiv.org/abs/2603.13617)). |
 | [FedUMM: Federated Learning for Unified Multimodal Models](./fedumm/README.md) | Federated unified multimodal model training with parameter-efficient updates ([arXiv 2026](https://arxiv.org/abs/2601.15390)). |

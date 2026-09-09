@@ -110,21 +110,21 @@ The number of physical Collab sites is an execution-pool setting and need not
 equal `K`. The simulator uses 2 sites by default: all `K=100` logical
 assignments are still created at the same simulated time, while idle physical
 workers execute pending assignments. Results are accepted only in simulated
-finish-time order. `--max-parallel` separately caps concurrent Collab RPCs (2
-by default). These host controls do not change logical participation,
-snapshots, staleness, buffer boundaries, or simulated time. The server creates
-logical work in `FedReviveServer._dispatch_open_slots()`, maps it onto the
-bounded worker pool in `FedReviveServer._dispatch_pending_assignments()`, and
-recycles a worker in `FedReviveServer._record_physical_outcome()` without
-accepting that result ahead of its simulated upload event.
+finish-time order. The physical-site count therefore bounds concurrent Collab
+RPCs. This host control does not change logical participation, snapshots,
+staleness, buffer boundaries, or simulated time. The server creates logical
+work in `FedReviveServer._dispatch_open_slots()`, maps it onto the bounded
+worker pool in `FedReviveServer._dispatch_pending_assignments()`, and recycles
+a worker in `FedReviveServer._record_physical_outcome()` without accepting that
+result ahead of its simulated upload event.
 
 Each physical worker multiplexes many logical clients. A logical client's
 prepared shard and runtime profile persist on disk, while the worker reuses a
 single model. Adam is recreated for every assignment. After returning the CPU
 model state, the worker moves its reusable model back to CPU, clears unused
 CUDA allocations, and returns freed model-transfer pages to the OS. Keeping the
-physical pool and `--max-parallel` small bounds simulator processes, Collab call
-threads, dataset copies, and CUDA contexts without changing logical `K=100`.
+physical pool small bounds simulator processes, Collab call threads, dataset
+copies, and CUDA contexts without changing logical `K=100`.
 The launcher also fixes native BLAS/OpenMP pools to one thread per worker so
 sequential RPCs cannot accumulate idle native thread teams and their stacks.
 `FedReviveClient.initialize()` creates the reusable dataset and model;
@@ -249,7 +249,6 @@ Run from this directory using an NVIDIA FLARE `main` checkout:
 
 ```bash
 cd research/fedrevive
-python -m pip install -e ../..
 python -m pip install -r requirements.txt
 ```
 
@@ -418,6 +417,15 @@ The raw accuracy curves have a Pearson correlation of 0.9986 and a pointwise
 mean absolute difference of 0.0091. Thus, the lightweight estimated setting
 closely follows the true-histogram trajectory while avoiding client label
 statistics and reducing synthesis frequency.
+
+## License
+
+This contribution is provided under the repository's Apache License 2.0. It
+does not copy third-party implementation code, pretrained models, or assets.
+It uses PyTorch and TorchVision under their BSD-style license, Kornia and
+TensorBoard under Apache License 2.0, and downloads the
+[CIFAR-10 dataset](https://www.cs.toronto.edu/~kriz/cifar.html) through
+TorchVision. Those dependencies and data retain their respective terms.
 
 ## Repository layout
 
