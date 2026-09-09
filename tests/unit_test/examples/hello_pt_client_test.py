@@ -13,42 +13,33 @@
 # limitations under the License.
 
 import importlib.util
-import os
-import sys
 from collections import Counter
 
 import pytest
+
+from tests.hello_pt_test_utils import load_hello_pt_module
 
 HAS_PT = importlib.util.find_spec("torch") is not None
 pytestmark = pytest.mark.skipif(not HAS_PT, reason="PyTorch is not installed")
 
 
-def _load_hello_pt_module(file_name: str, module_name: str):
-    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-    example_dir = os.path.join(repo_root, "examples", "hello-world", "hello-pt")
-    module_path = os.path.join(example_dir, file_name)
-    spec = importlib.util.spec_from_file_location(module_name, module_path)
-    module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-
-    original_modules = {name: sys.modules.pop(name, None) for name in ("model", "prepare_data")}
-    sys.path.insert(0, example_dir)
+@pytest.fixture(scope="module")
+def torchvision_module():
     try:
-        spec.loader.exec_module(module)
-    finally:
-        sys.path.pop(0)
-        for name, original_module in original_modules.items():
-            if original_module is not None:
-                sys.modules[name] = original_module
-            else:
-                sys.modules.pop(name, None)
-    return module
+        return pytest.importorskip("torchvision")
+    except RuntimeError as error:
+        pytest.skip(f"torchvision cannot be imported with this PyTorch installation: {error}")
+
+
+def _load_hello_pt_module(file_name):
+    with load_hello_pt_module(file_name) as module:
+        return module
 
 
 def test_hello_pt_evaluate_rejects_empty_data_loader():
     import torch
 
-    client_module = _load_hello_pt_module("client.py", "hello_pt_client")
+    client_module = _load_hello_pt_module("client.py")
     model = torch.nn.Linear(1, 2)
 
     with pytest.raises(ValueError, match="Evaluation data_loader produced no samples"):
@@ -60,7 +51,7 @@ def test_hello_pt_evaluate_rejects_empty_data_loader():
 def test_hello_pt_evaluate_uses_evaluation_mode():
     import torch
 
-    client_module = _load_hello_pt_module("client.py", "hello_pt_client_eval_mode")
+    client_module = _load_hello_pt_module("client.py")
 
     class ModeTrackingModel(torch.nn.Module):
         def __init__(self):
@@ -79,11 +70,10 @@ def test_hello_pt_evaluate_uses_evaluation_mode():
     assert model.observed_modes == [False]
 
 
-def test_cifar_data_loaders_use_prepared_data_without_downloading(monkeypatch, tmp_path):
+def test_cifar_data_loaders_use_prepared_data_without_downloading(monkeypatch, tmp_path, torchvision_module):
     import torch
-    import torchvision
 
-    client_module = _load_hello_pt_module("client.py", "hello_pt_client_cifar")
+    client_module = _load_hello_pt_module("client.py")
     calls = []
 
     class FakeDataset(torch.utils.data.Dataset):
@@ -96,7 +86,11 @@ def test_cifar_data_loaders_use_prepared_data_without_downloading(monkeypatch, t
         def __getitem__(self, index):
             return torch.zeros((3, 32, 32)), index
 
-    monkeypatch.setattr(torchvision.datasets, "CIFAR10", FakeDataset)
+    monkeypatch.setattr(torchvision_module.datasets, "CIFAR10", FakeDataset)
+    batch_dir = tmp_path / "cifar-10-batches-py"
+    batch_dir.mkdir()
+    for name in [f"data_batch_{i}" for i in range(1, 6)] + ["test_batch", "batches.meta"]:
+        (batch_dir / name).touch()
 
     train_loader, test_loader = client_module.create_data_loaders(
         "cifar10", "site-1", 20, 10, 2, 0, data_root=str(tmp_path)
@@ -107,10 +101,25 @@ def test_cifar_data_loaders_use_prepared_data_without_downloading(monkeypatch, t
     assert all(call["root"] == str(tmp_path) for call in calls)
 
 
+@pytest.mark.parametrize("partial_cache", [False, True])
+def test_cifar_data_loaders_explain_missing_preparation(tmp_path, partial_cache):
+    client_module = _load_hello_pt_module("client.py")
+    if partial_cache:
+        batch_dir = tmp_path / "cifar-10-batches-py"
+        batch_dir.mkdir()
+        (batch_dir / "data_batch_1").touch()
+
+    with pytest.raises(FileNotFoundError, match="python prepare_data.py --data_root") as error:
+        client_module.create_data_loaders("cifar10", "site-1", 20, 10, 2, 0, data_root=str(tmp_path))
+
+    assert str(tmp_path) in str(error.value)
+    assert "test_batch" in str(error.value)
+
+
 def test_synthetic_data_is_deterministic_and_disjoint_by_site_and_split():
     import torch
 
-    data_module = _load_hello_pt_module("prepare_data.py", "hello_pt_prepare_data")
+    data_module = _load_hello_pt_module("prepare_data.py")
     dataset_type = data_module.SyntheticImageDataset
 
     train_1 = dataset_type(site_name="site-1", split="train", size=20)
@@ -128,7 +137,7 @@ def test_synthetic_data_is_deterministic_and_disjoint_by_site_and_split():
 
 
 def test_synthetic_data_is_balanced_and_encodes_the_label():
-    data_module = _load_hello_pt_module("prepare_data.py", "hello_pt_prepare_signal")
+    data_module = _load_hello_pt_module("prepare_data.py")
     dataset = data_module.SyntheticImageDataset(site_name="site-1", split="train", size=100)
 
     assert Counter(dataset.labels.tolist()) == {label: 10 for label in range(data_module.NUM_CLASSES)}
@@ -142,7 +151,7 @@ def test_synthetic_data_is_balanced_and_encodes_the_label():
 def test_recipe_model_initialization_is_reproducible_and_isolated():
     import torch
 
-    model_module = _load_hello_pt_module("model.py", "hello_pt_model")
+    model_module = _load_hello_pt_module("model.py")
 
     rng_state = torch.random.get_rng_state()
     first_model = model_module.create_model()
@@ -158,12 +167,10 @@ def test_recipe_model_initialization_is_reproducible_and_isolated():
     assert model_module.SimpleNetwork().seed is None
 
 
-def test_prepare_data_downloads_both_cifar_splits(monkeypatch, tmp_path, capsys):
-    import torchvision
-
-    data_module = _load_hello_pt_module("prepare_data.py", "hello_pt_prepare_download")
+def test_prepare_data_downloads_both_cifar_splits(monkeypatch, tmp_path, capsys, torchvision_module):
+    data_module = _load_hello_pt_module("prepare_data.py")
     calls = []
-    monkeypatch.setattr(torchvision.datasets, "CIFAR10", lambda **kwargs: calls.append(kwargs))
+    monkeypatch.setattr(torchvision_module.datasets, "CIFAR10", lambda **kwargs: calls.append(kwargs))
 
     data_module.main(["--data_root", str(tmp_path)])
 

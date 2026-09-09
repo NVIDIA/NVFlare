@@ -18,7 +18,14 @@ import argparse
 
 import torch
 from model import create_model
-from prepare_data import DATASET_CHOICES, DATASET_PATH, DEFAULT_DATASET, SyntheticImageDataset, stable_seed
+from prepare_data import (
+    DATASET_CHOICES,
+    DATASET_PATH,
+    DEFAULT_DATASET,
+    SyntheticImageDataset,
+    stable_seed,
+    validate_cifar10,
+)
 from torch import nn
 from torch.optim import SGD
 
@@ -62,6 +69,7 @@ def create_data_loaders(dataset, site_name, train_size, test_size, batch_size, n
         train_set = SyntheticImageDataset(site_name=site_name, split="train", size=train_size)
         test_set = SyntheticImageDataset(site_name=site_name, split="eval", size=test_size)
     else:
+        validate_cifar10(data_root)
         import torchvision
         from torchvision.transforms import Compose, Normalize, ToTensor
 

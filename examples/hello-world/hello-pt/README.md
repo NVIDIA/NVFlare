@@ -211,6 +211,10 @@ python prepare_data.py --data_root /data/cifar
 python job.py --dataset cifar10 --data_root /data/cifar
 ```
 
+If required cache files are missing, `job.py` stops before starting the simulator
+and prints the preparation command for the selected path. Exporting a job does
+not require a local cache; prepare the data on its execution clients instead.
+
 All simulated clients then read the same logical CIFAR-10 training and test
 datasets from that shared cache. This option is useful for experimentation but
 does not demonstrate a federated data partition. The default synthetic path

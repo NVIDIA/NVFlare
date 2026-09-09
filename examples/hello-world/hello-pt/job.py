@@ -14,12 +14,14 @@
 """Run the Hello PyTorch FedAvg job in an NVFLARE simulation."""
 
 import argparse
+from pathlib import Path
 
 from model import create_model
-from prepare_data import DATASET_CHOICES, DATASET_PATH, DEFAULT_DATASET
+from prepare_data import DATASET_CHOICES, DATASET_PATH, DEFAULT_DATASET, validate_cifar10
 
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.recipe import SimEnv, add_final_global_evaluation
+from nvflare.recipe.spec import _peek_recipe_args
 
 DEFAULT_NUM_CLIENTS = 2
 DEFAULT_NUM_ROUNDS = 3
@@ -40,7 +42,7 @@ def define_parser() -> argparse.ArgumentParser:
     parser.add_argument("--num_rounds", type=int, default=DEFAULT_NUM_ROUNDS)
 
     # Keep the zero-argument quickstart deterministic and offline. CIFAR-10 is
-    # still available, but selecting it explicitly permits a dataset download.
+    # still available after preparing its cache with prepare_data.py.
     dataset_group = parser.add_mutually_exclusive_group()
     dataset_group.add_argument("--dataset", choices=DATASET_CHOICES, dest="dataset")
     dataset_group.add_argument(
@@ -86,6 +88,12 @@ def create_recipe(args):
 
 def main(argv=None):
     args = define_parser().parse_args(argv)
+    # Recipe consumes export flags at import time. An exported job's data may
+    # exist only on remote clients; validate the local cache only for simulation.
+    export_only, _ = _peek_recipe_args()
+    if args.dataset == "cifar10" and not export_only:
+        args.data_root = str(Path(args.data_root).expanduser().resolve())
+        validate_cifar10(args.data_root)
     recipe = create_recipe(args)
 
     env = SimEnv(num_clients=args.n_clients)

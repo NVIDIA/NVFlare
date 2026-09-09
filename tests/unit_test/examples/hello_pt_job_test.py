@@ -20,57 +20,37 @@ import re
 import shlex
 import subprocess
 import sys
-from contextlib import contextmanager
 from types import SimpleNamespace
 
 import pytest
+
+from tests.hello_pt_test_utils import load_hello_pt_module
 
 HAS_PT = importlib.util.find_spec("torch") is not None
 pytestmark = pytest.mark.skipif(not HAS_PT, reason="PyTorch is not installed")
 
 
-@contextmanager
-def _job_module_context():
-    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-    example_dir = os.path.join(repo_root, "examples", "hello-world", "hello-pt")
-    module_path = os.path.join(example_dir, "job.py")
-    spec = importlib.util.spec_from_file_location("hello_pt_job", module_path)
-    module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-
-    # Generic sibling module names such as ``prepare_data`` are reused by
-    # other examples. Isolate both imports so repository-wide test order cannot
-    # make this job load another example's cached module.
-    original_sys_path = list(sys.path)
-    original_modules = {name: sys.modules.pop(name, None) for name in ("model", "prepare_data")}
-    sys.path.insert(0, example_dir)
-    try:
-        spec.loader.exec_module(module)
-        yield module
-    finally:
-        sys.path[:] = original_sys_path
-        for name, original in original_modules.items():
-            if original is None:
-                sys.modules.pop(name, None)
-            else:
-                sys.modules[name] = original
-
-
 def _load_job_module():
-    with _job_module_context() as module:
+    with load_hello_pt_module("job.py") as module:
         return module
 
 
-def test_job_module_isolated_from_another_examples_cached_sibling(monkeypatch):
+@pytest.mark.parametrize("file_name", ["job.py", "client.py"])
+def test_example_module_isolated_from_another_examples_cached_sibling(monkeypatch, file_name):
     conflicting_module = SimpleNamespace(DATASET_CHOICES=("other",), DATASET_PATH="other", DEFAULT_DATASET="other")
     monkeypatch.setitem(sys.modules, "prepare_data", conflicting_module)
+    conflicting_model = SimpleNamespace()
+    monkeypatch.setitem(sys.modules, "model", conflicting_model)
+    original_sys_path = list(sys.path)
 
-    job_module = _load_job_module()
+    with load_hello_pt_module(file_name) as module:
+        assert module.DATASET_CHOICES == ("synthetic", "cifar10")
+        assert module.DATASET_PATH == "/tmp/nvflare/data"
+        assert module.DEFAULT_DATASET == "synthetic"
 
-    assert job_module.DATASET_CHOICES == ("synthetic", "cifar10")
-    assert job_module.DATASET_PATH == "/tmp/nvflare/data"
-    assert job_module.DEFAULT_DATASET == "synthetic"
     assert sys.modules["prepare_data"] is conflicting_module
+    assert sys.modules["model"] is conflicting_model
+    assert sys.path == original_sys_path
 
 
 def _load_web_python_snippet(name: str) -> str:
@@ -235,6 +215,44 @@ def test_default_recipe_uses_final_global_evaluation(monkeypatch):
     assert calls == [("final", recipe)]
 
 
+def test_cifar_main_rejects_missing_data_before_creating_environment(tmp_path, monkeypatch):
+    job_module = _load_job_module()
+    monkeypatch.setattr(job_module, "SimEnv", lambda **kwargs: pytest.fail("simulation must not start"))
+    monkeypatch.setattr(job_module, "create_recipe", lambda args: pytest.fail("recipe must not be constructed"))
+
+    with pytest.raises(FileNotFoundError, match="python prepare_data.py --data_root"):
+        job_module.main(["--dataset", "cifar10", "--data_root", str(tmp_path)])
+
+
+def test_cifar_cli_export_does_not_require_local_data(tmp_path):
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+    example_dir = os.path.join(repo_root, "examples", "hello-world", "hello-pt")
+    remote_cache = str(tmp_path / "remote site's cache")
+    subprocess.run(
+        [
+            sys.executable,
+            "job.py",
+            "--export",
+            "--export-dir",
+            str(tmp_path / "export"),
+            "--dataset",
+            "cifar10",
+            "--data_root",
+            remote_cache,
+        ],
+        cwd=example_dir,
+        env={**os.environ, "PYTHONPATH": os.pathsep.join((repo_root, os.environ.get("PYTHONPATH", "")))},
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=30,
+    )
+    client_config = tmp_path / "export" / "hello-pt" / "app" / "config" / "config_fed_client.json"
+    executor_args = json.loads(client_config.read_text())["executors"][0]["executor"]["args"]
+    assert executor_args["task_script_args"] == ["--dataset", "cifar10", "--data_root", remote_cache]
+    assert not os.path.exists(remote_cache)
+
+
 def test_cifar_recipe_preserves_data_root_with_spaces(monkeypatch):
     job_module = _load_job_module()
     recipe_kwargs = {}
@@ -282,7 +300,7 @@ def test_export_serializes_the_recipe_model_seed(tmp_path, monkeypatch):
     )
     monkeypatch.chdir(example_dir)
 
-    with _job_module_context() as job_module:
+    with load_hello_pt_module("job.py") as job_module:
         recipe = job_module.create_recipe(job_module.define_parser().parse_args([]))
         recipe.export(job_dir=str(tmp_path))
 

@@ -16,6 +16,8 @@
 
 import argparse
 import hashlib
+import shlex
+from pathlib import Path
 
 import torch
 from torch.utils.data import Dataset
@@ -27,6 +29,7 @@ DATASET_CHOICES = ("synthetic", "cifar10")
 DEFAULT_DATASET = "synthetic"
 _BASE_SEED = 202610
 _VALID_SPLITS = ("train", "eval")
+_CIFAR10_FILES = tuple(f"data_batch_{i}" for i in range(1, 6)) + ("test_batch", "batches.meta")
 
 
 def stable_seed(site_name: str, purpose: str) -> int:
@@ -78,6 +81,17 @@ class SyntheticImageDataset(Dataset):
 
     def __getitem__(self, index):
         return self.images[index], self.labels[index]
+
+
+def validate_cifar10(data_root: str):
+    """Reject a missing or incomplete CIFAR-10 cache without downloading it."""
+    batch_dir = Path(data_root).expanduser() / "cifar-10-batches-py"
+    missing = [name for name in _CIFAR10_FILES if not (batch_dir / name).is_file()]
+    if missing:
+        command = f"python prepare_data.py --data_root {shlex.quote(str(data_root))}"
+        raise FileNotFoundError(
+            f"Missing CIFAR-10 files under {batch_dir}: {', '.join(missing)}. Run `{command}` before starting clients."
+        )
 
 
 def download_cifar10(data_root: str = DATASET_PATH):

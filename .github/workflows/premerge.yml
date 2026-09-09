@@ -124,9 +124,9 @@ jobs:
         run: >-
           python3 -m pytest -q
           tests/integration_test/fast/client_api_external_process_lifecycle_test.py
-      # This is the executable acceptance gate for the documented zero-argument
-      # Hello PyTorch path.
-      - name: Run Hello PyTorch learning quickstart
+      # Check the zero-argument learning gate and actual client-model submission
+      # and evaluation across sites using the shared Hello PyTorch client.
+      - name: Run Hello PyTorch learning and evaluation
         if: ${{ matrix.os == 'ubuntu-24.04' && matrix.python-version == '3.12' }}
         timeout-minutes: 5
         run: >-

@@ -12,45 +12,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import importlib.util
 import json
 import os
-import sys
-from contextlib import contextmanager
+from pathlib import Path
 
 import torch
 
-from nvflare.recipe import SimEnv
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv, add_cross_site_evaluation
+from tests.hello_pt_test_utils import load_hello_pt_module
 
 INTEGRATION_TEST_ROOT = os.path.dirname(os.path.dirname(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(INTEGRATION_TEST_ROOT))
 EXAMPLE_DIR = os.path.join(REPO_ROOT, "examples", "hello-world", "hello-pt")
 
 
-@contextmanager
-def _load_job_module():
-    module_path = os.path.join(EXAMPLE_DIR, "job.py")
-    spec = importlib.util.spec_from_file_location("hello_pt_quickstart_job", module_path)
-    module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-
-    original_sys_path = list(sys.path)
-    original_modules = {name: sys.modules.pop(name, None) for name in ("model", "prepare_data")}
-    sys.path.insert(0, EXAMPLE_DIR)
-    try:
-        spec.loader.exec_module(module)
-        yield module
-    finally:
-        sys.path[:] = original_sys_path
-        for name, original in original_modules.items():
-            if original is None:
-                sys.modules.pop(name, None)
-            else:
-                sys.modules[name] = original
-
-
 def test_zero_flag_hello_pt_produces_learned_loadable_final_model(tmp_path, monkeypatch):
-    with _load_job_module() as job_module:
+    with load_hello_pt_module("job.py") as job_module:
         monkeypatch.chdir(EXAMPLE_DIR)
         existing_pythonpath = os.environ.get("PYTHONPATH")
         source_pythonpath = REPO_ROOT if not existing_pythonpath else os.pathsep.join((REPO_ROOT, existing_pythonpath))
@@ -91,5 +69,36 @@ def test_zero_flag_hello_pt_produces_learned_loadable_final_model(tmp_path, monk
 
     artifact_path = os.path.join(server_run_dir, "app_server", "FL_global_model.pt")
     artifact = torch.load(artifact_path, map_location="cpu", weights_only=True)
-    with _load_job_module() as job_module:
+    with load_hello_pt_module("job.py") as job_module:
         job_module.create_model().load_state_dict(artifact["model"])
+
+
+def test_hello_pt_submits_and_cross_evaluates_client_models(tmp_path, monkeypatch):
+    # Exercise submit_model and the complete client/server evaluation matrix.
+    # The beginner entry point deliberately exposes only final-global evaluation.
+    monkeypatch.setenv("PYTHONPATH", os.pathsep.join((REPO_ROOT, os.environ.get("PYTHONPATH", ""))))
+    with load_hello_pt_module("job.py") as job_module:
+        recipe = FedAvgRecipe(
+            name="hello-pt-cross-site",
+            min_clients=2,
+            num_rounds=1,
+            model=job_module.create_model(),
+            train_script=os.path.join(EXAMPLE_DIR, "client.py"),
+            train_args=["--dataset", "synthetic"],
+        )
+        add_cross_site_evaluation(recipe)
+        run = recipe.execute(SimEnv(num_clients=2, workspace_root=str(tmp_path / "simulation")))
+        result_path = run.get_result()
+
+    evaluation_dir = Path(result_path) / "server" / "simulate_job" / "cross_site_val"
+    results = json.loads((evaluation_dir / "cross_val_results.json").read_text())
+    sites = {"site-1", "site-2"}
+    expected_models = sites | {"SRV_FL_global_model.pt"}
+    assert set(results) == sites
+    for site in sites:
+        assert expected_models <= results[site].keys()
+        for model in expected_models:
+            assert 0.0 <= results[site][model]["accuracy"] <= 100.0
+            assert (evaluation_dir / "result_shareables" / f"{site}_{model}").is_file()
+    for model in expected_models:
+        assert (evaluation_dir / "model_shareables" / model).is_file()
