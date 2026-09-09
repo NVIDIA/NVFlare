@@ -26,18 +26,23 @@ from nvflare.apis.job_def import DEFAULT_STUDY
 from nvflare.apis.utils.format_check import name_check
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.job_config.api import FedJob
+from nvflare.lighter.utils import load_yaml
 from nvflare.recipe.spec import ExecEnv
 from nvflare.recipe.utils import collect_non_local_scripts
 from nvflare.tool.poc.poc_commands import (
+    POC_DEFAULT_ADMIN_PORT,
+    POC_DEFAULT_FED_LEARN_PORT,
     POC_START_READY_TIMEOUT,
     _build_poc_port_preflight,
     _docker_cli_env,
+    _get_docker_endpoint,
     _is_live_pid_file,
     _start_poc,
     _stop_poc,
     _wait_for_poc_system_ready,
     get_poc_workspace,
     get_prod_dir,
+    is_docker_run,
     is_poc_running,
     prepare_poc_provision,
     setup_service_config,
@@ -51,6 +56,7 @@ POC_READY_POLL_INTERVAL = 0.2
 POC_READY_STABLE_INTERVAL = 2.0
 DEFAULT_ADMIN_USER = "admin@nvidia.com"
 _RECIPE_WORKSPACE_SUFFIX = ".recipe-"
+_RECIPE_DOCKER_CONTAINER_NAMES = "_recipe_docker_container_names"
 
 
 # Internal — not part of the public API
@@ -155,6 +161,8 @@ class PocEnv(ExecEnv):
         self._session_manager_lock = threading.Lock()
         self._deployment_started = False
         self._services_may_have_started = False
+        self._docker_container_names = {}
+        self._docker_network_name = None
         self._deployment_lock = threading.Lock()
 
     def _new_poc_workspace(self) -> str:
@@ -179,6 +187,61 @@ class PocEnv(ExecEnv):
         if not self._is_recipe_workspace(self.poc_workspace):
             raise RuntimeError(f"refusing to remove unmanaged POC workspace {self.poc_workspace}")
         shutil.rmtree(self.poc_workspace)
+
+    def _configure_docker_identities(self, service_config: dict) -> None:
+        """Assign unique per-workspace Docker identities without changing FL identities."""
+        self._docker_container_names = {}
+        self._docker_network_name = None
+        if not service_config.get(SC.IS_DOCKER_RUN):
+            return
+        if not self._is_recipe_workspace(self.poc_workspace):
+            raise RuntimeError(f"cannot create Recipe Docker names for unmanaged workspace {self.poc_workspace}")
+
+        deployment_id = os.path.basename(self.poc_workspace).rsplit(_RECIPE_WORKSPACE_SUFFIX, 1)[1]
+        service_names = [service_config[SC.FLARE_SERVER], *service_config.get(SC.FLARE_CLIENTS, [])]
+        self._docker_container_names = {
+            service_name: f"nvflare-recipe-{deployment_id}-{uuid.uuid5(uuid.NAMESPACE_OID, service_name).hex}"
+            for service_name in service_names
+        }
+        self._docker_network_name = f"nvflare-recipe-{deployment_id}"
+
+    def _remove_docker_network(self) -> None:
+        """Remove this deployment's Docker network after its containers stop."""
+        if not self._docker_network_name:
+            return
+        try:
+            result = subprocess.run(
+                ["docker", "network", "rm", self._docker_network_name],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+                env=_docker_cli_env(),
+            )
+        except (OSError, subprocess.TimeoutExpired) as error:
+            raise RuntimeError(f"could not remove Docker network {self._docker_network_name!r}") from error
+
+        error_message = (getattr(result, "stderr", "") or result.stdout).strip()
+        if result.returncode == 0 or any(
+            marker in error_message.lower() for marker in ("no such network", "not found")
+        ):
+            self._docker_network_name = None
+            return
+        detail = f": {error_message}" if error_message else ""
+        raise RuntimeError(
+            f"could not remove Docker network {self._docker_network_name!r} "
+            f"(docker network rm exited {result.returncode}){detail}"
+        )
+
+    def _with_docker_container_names(self, workspace: str, service_config: dict) -> dict:
+        """Attach this deployment's Docker-name mapping to current-workspace service state."""
+        if (
+            self._docker_container_names
+            and os.path.abspath(workspace) == os.path.abspath(self.poc_workspace)
+            and service_config.get(SC.IS_DOCKER_RUN)
+        ):
+            return {**service_config, _RECIPE_DOCKER_CONTAINER_NAMES: self._docker_container_names}
+        return service_config
 
     def _raise_unknown_service_state(self, workspace: str, error: Exception) -> None:
         """Raise recovery guidance when a Recipe workspace cannot be inspected."""
@@ -212,6 +275,7 @@ class PocEnv(ExecEnv):
             if fail_if_unknown:
                 self._raise_unknown_service_state(workspace, e)
             return False
+        service_config = self._with_docker_container_names(workspace, service_config)
         try:
             return bool(self._running_services(project_config, service_config, workspace))
         except Exception as e:
@@ -255,22 +319,38 @@ class PocEnv(ExecEnv):
         return PocEnv._get_docker_service_state(service_name) is True
 
     @staticmethod
+    def _docker_daemon_is_local() -> bool:
+        """Return whether Docker targets a verified local Unix-socket daemon."""
+        return _get_docker_endpoint(_docker_cli_env()).startswith("unix://")
+
+    @staticmethod
+    def _ensure_ports_available(project_config: dict, is_docker: bool) -> None:
+        """Reject configured ports already owned by another local deployment."""
+        # A loopback bind is authoritative only when Docker uses the local
+        # Unix-socket daemon. Remote-daemon conflicts fail at Docker startup.
+        if not is_docker or PocEnv._docker_daemon_is_local():
+            port_conflicts = _build_poc_port_preflight(project_config).get("conflicts", [])
+            if port_conflicts:
+                details = "; ".join(conflict.get("message", str(conflict)) for conflict in port_conflicts)
+                raise RuntimeError(
+                    f"POC service port preflight failed: {details}. Stop the process or other Recipe PocEnv using "
+                    "the configured port(s) before starting this PocEnv; 'nvflare poc stop' only stops the "
+                    "configured CLI deployment."
+                )
+
+    @staticmethod
     def _ensure_shared_resources_available(project_config: dict, service_config: dict) -> None:
         """Reject ports or Docker names already owned by another POC deployment."""
-        port_conflicts = _build_poc_port_preflight(project_config).get("conflicts", [])
-        if port_conflicts:
-            details = "; ".join(conflict.get("message", str(conflict)) for conflict in port_conflicts)
-            raise RuntimeError(
-                f"POC service port preflight failed: {details}. Stop the process using the configured port(s) "
-                "before starting this PocEnv."
-            )
+        is_docker = service_config.get(SC.IS_DOCKER_RUN)
+        PocEnv._ensure_ports_available(project_config, is_docker)
 
-        if service_config.get(SC.IS_DOCKER_RUN):
+        if is_docker:
             service_names = [service_config[SC.FLARE_SERVER], *service_config.get(SC.FLARE_CLIENTS, [])]
+            container_names = service_config.get(_RECIPE_DOCKER_CONTAINER_NAMES, {})
             existing_services = [
-                service_name
+                container_names.get(service_name, service_name)
                 for service_name in service_names
-                if PocEnv._get_docker_service_state(service_name) is not None
+                if PocEnv._get_docker_service_state(container_names.get(service_name, service_name)) is not None
             ]
             if existing_services:
                 raise RuntimeError(
@@ -278,12 +358,34 @@ class PocEnv(ExecEnv):
                     f"{', '.join(existing_services)}. Stop and remove them before starting this PocEnv."
                 )
 
+    def _preflight_ports_before_provision(self) -> None:
+        """Check intended ports before provisioning consumes this one-shot environment."""
+        if self.project_conf_path:
+            project_config = load_yaml(self.project_conf_path)
+            is_docker = is_docker_run(project_config)
+        else:
+            project_config = {
+                "participants": [
+                    {
+                        "name": "server",
+                        "type": "server",
+                        "fed_learn_port": POC_DEFAULT_FED_LEARN_PORT,
+                        "admin_port": POC_DEFAULT_ADMIN_PORT,
+                    }
+                ]
+            }
+            is_docker = bool(self.docker_image)
+        self._ensure_ports_available(project_config, is_docker)
+
     @staticmethod
     def _running_services(project_config: dict, service_config: dict, poc_workspace: str) -> list[str]:
         """Return managed POC services whose local process is still alive."""
         service_names = [service_config[SC.FLARE_SERVER], *service_config.get(SC.FLARE_CLIENTS, [])]
         if service_config.get(SC.IS_DOCKER_RUN):
-            return [name for name in service_names if PocEnv._is_docker_service_running(name)]
+            container_names = service_config.get(_RECIPE_DOCKER_CONTAINER_NAMES, {})
+            return [
+                name for name in service_names if PocEnv._is_docker_service_running(container_names.get(name, name))
+            ]
 
         project_name = project_config.get("name")
         prod_dir = get_prod_dir(poc_workspace, project_name)
@@ -359,6 +461,7 @@ class PocEnv(ExecEnv):
                 f"The configured CLI POC deployment is running at {self._poc_workspace_root}. "
                 "Stop it with 'nvflare poc stop' before starting a Recipe PocEnv deployment."
             )
+        self._preflight_ports_before_provision()
         self.logger.info(f"Preparing and starting POC services in new workspace: {self.poc_workspace}")
         try:
             # A PocEnv owns one provisioning lifecycle. Mark it consumed at
@@ -374,19 +477,27 @@ class PocEnv(ExecEnv):
                 examples_dir=None,
             )
             project_config, service_config = setup_service_config(self.poc_workspace)
-            # Recipe workspaces isolate files, but POC servers still bind host
-            # ports and Docker mode still uses participant names as container
-            # names. Check those shared resources immediately before startup.
+            self._configure_docker_identities(service_config)
+            service_config = self._with_docker_container_names(self.poc_workspace, service_config)
+            # Recipe workspaces isolate files, while POC servers still bind
+            # configured ports. Docker deployments additionally get unique
+            # container and network identities so cleanup cannot cross runs.
             self._ensure_shared_resources_available(project_config, service_config)
             # Startup can leave some services running even if it raises. From
             # this point onward, missing service metadata is an unknown state
             # and cleanup must preserve the workspace.
             self._services_may_have_started = True
+            start_args = {
+                "poc_workspace": self.poc_workspace,
+                "gpu_ids": self.gpu_ids,
+                "excluded": [self.username],
+                "services_list": [],
+            }
+            if self._docker_container_names:
+                start_args["docker_container_names"] = self._docker_container_names
+                start_args["docker_network_name"] = self._docker_network_name
             _start_poc(
-                poc_workspace=self.poc_workspace,
-                gpu_ids=self.gpu_ids,
-                excluded=[self.username],
-                services_list=[],
+                **start_args,
             )
             self._wait_for_services_ready(project_config, service_config)
             if not _wait_for_poc_system_ready(
@@ -439,21 +550,49 @@ class PocEnv(ExecEnv):
 
     def _stop(self, clean_up: bool = False) -> None:
         """Stop POC while the caller holds the instance lifecycle guard."""
-        # Check if already stopped (idempotent)
-        if not self._check_poc_running():
-            # POC already stopped or workspace doesn't exist
-            self._session_manager = None  # Clear stale session manager
-            self._services_may_have_started = False
-            if clean_up and os.path.exists(self.poc_workspace):
-                self.logger.info(f"Removing POC workspace: {self.poc_workspace}")
-                try:
-                    self._remove_recipe_workspace()
-                except Exception as e:
-                    self.logger.warning(f"Failed to clean POC workspace {self.poc_workspace}: {e}. Remove it manually.")
-            return
-
         try:
+            try:
+                poc_running = self._check_poc_running()
+            except Exception as state_error:
+                # State can be unknown when provisioned metadata is damaged.
+                # Still make the normal stop attempt, but do not remove the
+                # workspace or reset the uncertainty flag without verification.
+                self.logger.warning(f"Could not determine whether POC services are running: {state_error}")
+                stop_args = {
+                    "poc_workspace": self.poc_workspace,
+                    "excluded": [self.username],
+                    "services_list": [],
+                }
+                if self._docker_container_names:
+                    stop_args["docker_container_names"] = self._docker_container_names
+                try:
+                    _stop_poc(**stop_args)
+                except Exception as stop_error:
+                    self.logger.warning(f"Could not stop POC services with unknown state: {stop_error}")
+                if clean_up:
+                    self.logger.warning(
+                        f"POC service state could not be verified; preserving workspace {self.poc_workspace}. "
+                        "Stop any remaining services and remove it manually."
+                    )
+                return
+
+            # Check if already stopped (idempotent)
+            if not poc_running:
+                # POC already stopped or workspace doesn't exist
+                self._remove_docker_network()
+                self._services_may_have_started = False
+                if clean_up and os.path.exists(self.poc_workspace):
+                    self.logger.info(f"Removing POC workspace: {self.poc_workspace}")
+                    try:
+                        self._remove_recipe_workspace()
+                    except Exception as e:
+                        self.logger.warning(
+                            f"Failed to clean POC workspace {self.poc_workspace}: {e}. Remove it manually."
+                        )
+                return
+
             project_config, service_config = setup_service_config(self.poc_workspace)
+            service_config = self._with_docker_container_names(self.poc_workspace, service_config)
             self.logger.info("Stopping existing POC services...")
             # Prefer the coordinated server shutdown while it is reachable. If
             # the server exited during startup, stop any surviving local client
@@ -463,10 +602,15 @@ class PocEnv(ExecEnv):
                 self.poc_workspace, service_config, project_config
             ):
                 services_list = self._running_services(project_config, service_config, self.poc_workspace)
+            stop_args = {
+                "poc_workspace": self.poc_workspace,
+                "excluded": [self.username],  # Exclude admin console (consistent with start)
+                "services_list": services_list,
+            }
+            if self._docker_container_names:
+                stop_args["docker_container_names"] = self._docker_container_names
             _stop_poc(
-                poc_workspace=self.poc_workspace,
-                excluded=[self.username],  # Exclude admin console (consistent with start)
-                services_list=services_list,
+                **stop_args,
             )
             count = 0
             poc_running = True
@@ -498,6 +642,7 @@ class PocEnv(ExecEnv):
                         "Stop any remaining services and remove it manually."
                     )
             else:
+                self._remove_docker_network()
                 self._services_may_have_started = False
                 if clean_up:
                     try:

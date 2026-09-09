@@ -453,6 +453,12 @@ class TestDockerJobLauncherInit:
                 DockerJobLauncher.__init__(launcher, workspace=None)
         assert launcher.workspace == "/host/ws"
 
+    def test_network_read_from_parent_runtime_env(self):
+        with patch.dict("os.environ", {"NVFL_DOCKER_NETWORK": "nvflare-recipe-run"}):
+            launcher = _make_launcher(network="configured-network")
+
+        assert launcher.network == "nvflare-recipe-run"
+
     def test_raises_if_default_job_container_kwargs_contains_reserved_key(self):
         for reserved in (
             "volumes",

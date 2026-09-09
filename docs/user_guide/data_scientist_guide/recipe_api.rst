@@ -482,16 +482,18 @@ new instance for another deployment. Pass ``clean_up=False`` to
 ``Run.abort()`` aborts the job without stopping the environment, so executing
 again with that same ``PocEnv`` raises. Call ``Run.get_result()`` or
 ``PocEnv.stop()``, then create a new environment for the next execution.
-File isolation does not isolate default ports or Docker participant names.
-Before starting services, ``PocEnv`` checks the configured server ports and, in
-Docker mode, participant container names, and rejects resources already used by
-another deployment. It also refuses to start while the configured CLI POC
+File isolation does not isolate configured server ports. Before starting local
+processes, ``PocEnv`` checks those ports and rejects resources already in use.
+Docker Recipe deployments use unique per-workspace container and network names,
+so a deployment that loses a concurrent port race cannot observe or stop the
+other deployment's containers. The local port probe is also used for a verified
+local Docker daemon; for a remote ``DOCKER_HOST`` or Docker context, daemon-side
+startup and readiness checks are authoritative because local loopback is a
+different host. ``PocEnv`` also refuses to start while the configured CLI POC
 deployment is running; stop that deployment with ``nvflare poc stop`` first. If
-two deployments race between preflight and startup, the losing deployment fails
-during startup or readiness checks and cleans only its own unique workspace. If
-failure cleanup cannot be verified, the raised error identifies that workspace
-for manual cleanup. Other deployments do not scan or delete retained Recipe
-workspaces.
+failure cleanup cannot be verified, the raised error identifies the unique
+Recipe workspace for manual cleanup. Other deployments do not scan or delete
+retained Recipe workspaces.
 
 ``ProdEnv`` submits through an admin startup kit. ``login_timeout`` must be
 positive, and ``username`` selects the admin identity. ``PocEnv`` and

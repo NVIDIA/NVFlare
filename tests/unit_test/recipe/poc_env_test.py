@@ -43,6 +43,7 @@ def _configure_successful_deploy(monkeypatch, env, prepare=None, submit=None):
             return "job-id"
 
     monkeypatch.setattr(poc_env_module, "collect_non_local_scripts", lambda job: [])
+    monkeypatch.setattr(env, "_preflight_ports_before_provision", lambda: None)
     monkeypatch.setattr(poc_env_module, "prepare_poc_provision", prepare)
     monkeypatch.setattr(poc_env_module, "_start_poc", lambda **kwargs: None)
     monkeypatch.setattr(
@@ -253,7 +254,47 @@ def test_deploy_rejects_running_configured_cli_workspace(tmp_path, monkeypatch):
     assert not os.path.exists(env.poc_workspace)
 
 
-def test_deploy_rejects_unavailable_shared_port_before_start(tmp_path, monkeypatch):
+def test_deploy_rejects_unavailable_custom_port_before_provision(tmp_path, monkeypatch):
+    import nvflare.recipe.poc_env as poc_env_module
+    import nvflare.tool.poc.poc_commands as poc_commands
+
+    configured_workspace = tmp_path / "poc"
+    project_conf = tmp_path / "project.yml"
+    project_conf.write_text(
+        "participants:\n"
+        "  - name: server\n"
+        "    type: server\n"
+        "    fed_learn_port: 18002\n"
+        "    admin_port: 18003\n"
+    )
+    provision_calls = []
+    checked_ports = []
+    monkeypatch.setattr(poc_env_module, "get_poc_workspace", lambda: str(configured_workspace))
+    monkeypatch.setattr(poc_env_module, "collect_non_local_scripts", lambda job: [])
+    monkeypatch.setattr(
+        poc_env_module,
+        "prepare_poc_provision",
+        lambda **kwargs: provision_calls.append(kwargs),
+    )
+
+    def check_port(port, host):
+        checked_ports.append((port, host))
+        return (False, "in_use") if port == 18002 else (True, None)
+
+    monkeypatch.setattr(poc_commands, "_is_local_port_available", check_port)
+    env = PocEnv(project_conf_path=str(project_conf))
+
+    with pytest.raises(RuntimeError, match="other Recipe PocEnv") as exc_info:
+        env.deploy(object())
+
+    assert "18002" in str(exc_info.value)
+    assert checked_ports == [(18002, "127.0.0.1"), (18003, "127.0.0.1")]
+    assert provision_calls == []
+    assert env._deployment_started is False
+    assert not os.path.exists(env.poc_workspace)
+
+
+def test_deploy_rechecks_ports_after_provision(tmp_path, monkeypatch):
     import nvflare.recipe.poc_env as poc_env_module
     import nvflare.tool.poc.poc_commands as poc_commands
 
@@ -294,10 +335,51 @@ def test_deploy_rejects_unavailable_shared_port_before_start(tmp_path, monkeypat
         env.deploy(object())
 
     assert "18002" in str(exc_info.value)
-    assert checked_ports == [(18002, "127.0.0.1"), (18003, "127.0.0.1")]
+    assert checked_ports == [
+        (8002, "127.0.0.1"),
+        (8003, "127.0.0.1"),
+        (18002, "127.0.0.1"),
+        (18003, "127.0.0.1"),
+    ]
     assert provisioned_workspaces == [env.poc_workspace]
+    assert env._deployment_started is True
     assert start_calls == []
     assert not os.path.exists(env.poc_workspace)
+
+
+def test_remote_docker_daemon_skips_local_loopback_port_preflight(monkeypatch):
+    import nvflare.recipe.poc_env as poc_env_module
+
+    docker_service_config = {**SERVICE_CONFIG, SC.IS_DOCKER_RUN: True}
+    monkeypatch.setenv("DOCKER_CONTEXT", "remote-builder")
+    monkeypatch.delenv("DOCKER_HOST", raising=False)
+    monkeypatch.setattr(poc_env_module, "_get_docker_endpoint", lambda docker_env: "ssh://docker.example")
+    monkeypatch.setattr(
+        poc_env_module,
+        "_build_poc_port_preflight",
+        lambda project_config: pytest.fail("local port preflight must not inspect a remote Docker host"),
+    )
+    monkeypatch.setattr(PocEnv, "_get_docker_service_state", staticmethod(lambda _container_name: None))
+
+    PocEnv._ensure_shared_resources_available(PROJECT_CONFIG, docker_service_config)
+
+
+def test_local_docker_daemon_keeps_local_loopback_port_preflight(monkeypatch):
+    import nvflare.recipe.poc_env as poc_env_module
+
+    docker_service_config = {**SERVICE_CONFIG, SC.IS_DOCKER_RUN: True}
+    port_checks = []
+    monkeypatch.setattr(poc_env_module, "_get_docker_endpoint", lambda docker_env: "unix:///var/run/docker.sock")
+    monkeypatch.setattr(
+        poc_env_module,
+        "_build_poc_port_preflight",
+        lambda project_config: port_checks.append(project_config) or {"conflicts": []},
+    )
+    monkeypatch.setattr(PocEnv, "_get_docker_service_state", staticmethod(lambda _container_name: None))
+
+    PocEnv._ensure_shared_resources_available(PROJECT_CONFIG, docker_service_config)
+
+    assert port_checks == [PROJECT_CONFIG]
 
 
 def test_deploy_rejects_existing_docker_participant_name_without_stopping_it(tmp_path, monkeypatch):
@@ -320,22 +402,113 @@ def test_deploy_rejects_existing_docker_participant_name_without_stopping_it(tmp
         "setup_service_config",
         lambda path: (PROJECT_CONFIG, docker_service_config),
     )
-    monkeypatch.setattr(poc_env_module, "_build_poc_port_preflight", lambda project_config: {"conflicts": []})
-    monkeypatch.setattr(
-        PocEnv,
-        "_get_docker_service_state",
-        staticmethod(lambda service_name: False if service_name == "server" else None),
-    )
+    monkeypatch.setattr(PocEnv, "_docker_daemon_is_local", staticmethod(lambda: False))
+    inspected_names = []
+
+    def container_state(container_name):
+        inspected_names.append(container_name)
+        return False if container_name.startswith("nvflare-recipe-") else None
+
+    monkeypatch.setattr(PocEnv, "_get_docker_service_state", staticmethod(container_state))
     monkeypatch.setattr(poc_env_module, "_start_poc", lambda **kwargs: start_calls.append(kwargs))
     monkeypatch.setattr(poc_env_module, "_stop_poc", lambda **kwargs: stop_calls.append(kwargs))
 
     with pytest.raises(RuntimeError, match=r"container name\(s\) already exist") as exc_info:
         env.deploy(object())
 
-    assert "server" in str(exc_info.value)
+    assert env._docker_container_names["server"] in str(exc_info.value)
+    assert env._docker_container_names["server"] in inspected_names
     assert start_calls == []
     assert stop_calls == []
     assert not os.path.exists(env.poc_workspace)
+
+
+def test_concurrent_docker_deploy_failure_stops_only_its_own_containers(tmp_path, monkeypatch):
+    import nvflare.recipe.poc_env as poc_env_module
+
+    configured_workspace = tmp_path / "poc"
+    docker_service_config = {**SERVICE_CONFIG, SC.IS_DOCKER_RUN: True}
+    monkeypatch.setattr(poc_env_module, "get_poc_workspace", lambda: str(configured_workspace))
+    first = PocEnv(docker_image="nvflare:test")
+    second = PocEnv(docker_image="nvflare:test")
+    start_barrier = threading.Barrier(2)
+    state_lock = threading.Lock()
+    running_containers = set()
+    stop_calls = []
+    removed_networks = []
+
+    def prepare(**kwargs):
+        Path(kwargs["workspace"]).mkdir(parents=True)
+
+    def container_state(container_name):
+        with state_lock:
+            return True if container_name in running_containers else None
+
+    def start(**kwargs):
+        with state_lock:
+            running_containers.update(kwargs["docker_container_names"].values())
+        start_barrier.wait(timeout=2)
+        if kwargs["poc_workspace"] == second.poc_workspace:
+            raise RuntimeError("simulated losing Docker startup")
+
+    def stop(**kwargs):
+        names = dict(kwargs["docker_container_names"])
+        stop_calls.append(names)
+        with state_lock:
+            for container_name in names.values():
+                running_containers.discard(container_name)
+
+    def remove_network(env):
+        removed_networks.append(env._docker_network_name)
+        env._docker_network_name = None
+
+    monkeypatch.setattr(poc_env_module, "collect_non_local_scripts", lambda job: [])
+    monkeypatch.setattr(poc_env_module, "prepare_poc_provision", prepare)
+    monkeypatch.setattr(
+        poc_env_module,
+        "setup_service_config",
+        lambda path: (PROJECT_CONFIG, docker_service_config),
+    )
+    monkeypatch.setattr(PocEnv, "_docker_daemon_is_local", staticmethod(lambda: False))
+    monkeypatch.setattr(PocEnv, "_get_docker_service_state", staticmethod(container_state))
+    monkeypatch.setattr(PocEnv, "_wait_for_services_ready", lambda *args, **kwargs: None)
+    monkeypatch.setattr(PocEnv, "_remove_docker_network", remove_network)
+    monkeypatch.setattr(poc_env_module, "_wait_for_poc_system_ready", lambda *args, **kwargs: True)
+    monkeypatch.setattr(poc_env_module, "_start_poc", start)
+    monkeypatch.setattr(poc_env_module, "_stop_poc", stop)
+    monkeypatch.setattr(
+        PocEnv,
+        "_get_session_manager",
+        lambda self: SimpleNamespace(submit_job=lambda job: "job-id"),
+    )
+
+    results = {}
+
+    def deploy(name, env):
+        try:
+            results[name] = env.deploy(object())
+        except BaseException as error:
+            results[name] = error
+
+    first_thread = threading.Thread(target=deploy, args=("first", first))
+    second_thread = threading.Thread(target=deploy, args=("second", second))
+    first_thread.start()
+    second_thread.start()
+    first_thread.join(timeout=3)
+    second_thread.join(timeout=3)
+
+    assert not first_thread.is_alive()
+    assert not second_thread.is_alive()
+    assert results["first"] == "job-id"
+    assert isinstance(results["second"], RuntimeError)
+    assert "simulated losing Docker startup" in str(results["second"])
+    assert set(first._docker_container_names.values()).isdisjoint(second._docker_container_names.values())
+    assert first._docker_network_name != removed_networks[0]
+    assert stop_calls == [second._docker_container_names]
+    assert running_containers == set(first._docker_container_names.values())
+    second_service_config = second._with_docker_container_names(second.poc_workspace, docker_service_config)
+    assert second._running_services(PROJECT_CONFIG, second_service_config, second.poc_workspace) == []
+    assert not os.path.exists(second.poc_workspace)
 
 
 def test_deploy_does_not_modify_configured_cli_workspace(tmp_path, monkeypatch):
@@ -690,6 +863,28 @@ def test_docker_liveness_distinguishes_missing_container_from_inspection_error(m
         PocEnv._is_docker_service_running("server")
 
 
+def test_remove_docker_network_uses_selected_daemon_and_clears_identity(monkeypatch):
+    import nvflare.recipe.poc_env as poc_env_module
+
+    env = PocEnv()
+    env._docker_network_name = "nvflare-recipe-run"
+    docker_env = {"DOCKER_HOST": "ssh://docker.example"}
+    completed = SimpleNamespace(returncode=0, stdout="nvflare-recipe-run\n", stderr="")
+    calls = []
+    monkeypatch.setattr(poc_env_module, "_docker_cli_env", lambda: docker_env)
+    monkeypatch.setattr(
+        poc_env_module.subprocess,
+        "run",
+        lambda *args, **kwargs: calls.append((args, kwargs)) or completed,
+    )
+
+    env._remove_docker_network()
+
+    assert calls[0][0][0] == ["docker", "network", "rm", "nvflare-recipe-run"]
+    assert calls[0][1]["env"] is docker_env
+    assert env._docker_network_name is None
+
+
 @patch("nvflare.recipe.poc_env.get_poc_workspace")
 @patch("nvflare.recipe.poc_env.get_prod_dir")
 @patch("nvflare.recipe.poc_env.setup_service_config")
@@ -767,6 +962,74 @@ def test_stop_preserves_workspace_when_service_state_is_unknown(
     mock_stop_poc.assert_called_once()
     mock_remove_workspace.assert_not_called()
     assert "Stop any remaining services and remove it manually" in caplog.text
+
+
+def test_stop_with_unreadable_service_metadata_is_repeatable_and_attempts_shutdown(tmp_path, monkeypatch, caplog):
+    import nvflare.recipe.poc_env as poc_env_module
+
+    monkeypatch.setattr(poc_env_module, "get_poc_workspace", lambda: str(tmp_path / "poc"))
+    env = PocEnv()
+    Path(env.poc_workspace).mkdir(parents=True)
+    env._services_may_have_started = True
+    env._session_manager = object()
+    stop_calls = []
+    monkeypatch.setattr(
+        poc_env_module,
+        "setup_service_config",
+        lambda _workspace: (_ for _ in ()).throw(RuntimeError("service metadata unreadable")),
+    )
+
+    def stop(**kwargs):
+        stop_calls.append(kwargs)
+        raise RuntimeError("shutdown metadata unreadable")
+
+    monkeypatch.setattr(poc_env_module, "_stop_poc", stop)
+
+    env.stop(clean_up=True)
+    env.stop(clean_up=True)
+
+    assert len(stop_calls) == 2
+    assert all(call["poc_workspace"] == env.poc_workspace for call in stop_calls)
+    assert Path(env.poc_workspace).is_dir()
+    assert env._services_may_have_started is True
+    assert env._session_manager is None
+    assert "preserving workspace" in caplog.text
+
+
+def test_stop_is_idempotent_after_successful_deploy(tmp_path, monkeypatch):
+    import nvflare.recipe.poc_env as poc_env_module
+
+    configured_workspace = tmp_path / "poc"
+    monkeypatch.setattr(poc_env_module, "get_poc_workspace", lambda: str(configured_workspace))
+    env = PocEnv()
+    runtime_running = {"value": False}
+    stop_calls = []
+    _configure_successful_deploy(monkeypatch, env)
+    monkeypatch.setattr(
+        poc_env_module,
+        "_start_poc",
+        lambda **kwargs: runtime_running.update(value=True),
+    )
+    monkeypatch.setattr(
+        PocEnv,
+        "_running_services",
+        staticmethod(lambda *_args: ["server"] if runtime_running["value"] else []),
+    )
+    monkeypatch.setattr(poc_env_module, "is_poc_running", lambda *_args: True)
+
+    def stop(**kwargs):
+        stop_calls.append(kwargs)
+        runtime_running["value"] = False
+
+    monkeypatch.setattr(poc_env_module, "_stop_poc", stop)
+
+    assert env.deploy(object()) == "job-id"
+    env.stop(clean_up=True)
+    env.stop(clean_up=True)
+
+    assert len(stop_calls) == 1
+    assert not Path(env.poc_workspace).exists()
+    assert env._services_may_have_started is False
 
 
 @patch("nvflare.recipe.poc_env.SessionManager")
