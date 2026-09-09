@@ -77,6 +77,34 @@ def _validate_hash_payload(row: dict, config_key: str, hash_key: str) -> None:
         raise ValueError(f"result row {_condition_key(row)} has an invalid {hash_key}")
 
 
+def _validate_nested_provenance(row: dict) -> None:
+    method = str(row["method"])
+    condition = row.get("condition_config")
+    experiment = row.get("experiment_config")
+    if not isinstance(condition, dict):
+        raise ValueError(f"result row {_condition_key(row)} is missing condition_config provenance")
+    expected_condition = {
+        "alpha": float(row["alpha"]),
+        "participation_rate": float(row["participation_rate"]),
+        "seed": int(row["seed"]),
+    }
+    if condition != expected_condition:
+        raise ValueError(f"result row {_condition_key(row)} has inconsistent condition_config provenance")
+    method_config = row["method_config"]
+    if method_config.get("method") != method:
+        raise ValueError(f"result row {_condition_key(row)} has inconsistent method_config provenance")
+    if not isinstance(experiment, dict):
+        raise ValueError(f"result row {_condition_key(row)} is missing experiment_config provenance")
+    expected_experiment = {
+        "protocol_version": row.get("protocol_version"),
+        "common": row["common_config"],
+        "method": method_config,
+        "condition": condition,
+    }
+    if experiment != expected_experiment:
+        raise ValueError(f"result row {_condition_key(row)} has inconsistent experiment_config provenance")
+
+
 def _validate_adaptive_telemetry(row: dict) -> None:
     telemetry = row.get("adaptive_telemetry")
     if not isinstance(telemetry, dict):
@@ -110,7 +138,7 @@ def validate_config_provenance(
     expected_common_hash: str | None = None,
     expected_method_hashes: dict[str, str] | None = None,
 ) -> None:
-    """Reject rows produced by incompatible common or method configurations."""
+    """Reject rows produced by incompatible or internally inconsistent configurations."""
 
     common_hashes = set()
     per_method_hashes = defaultdict(set)
@@ -119,6 +147,7 @@ def validate_config_provenance(
         _validate_hash_payload(row, "common_config", "common_config_hash")
         _validate_hash_payload(row, "method_config", "method_config_hash")
         _validate_hash_payload(row, "experiment_config", "experiment_config_hash")
+        _validate_nested_provenance(row)
         common_hash = row["common_config_hash"]
         method = str(row["method"])
         method_hash = row["method_config_hash"]
