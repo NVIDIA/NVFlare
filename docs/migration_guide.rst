@@ -84,7 +84,7 @@ The ``nvflare job clone`` command, the legacy interactive Admin CLI
 deprecated for NVFlare 2.10.0. They remain functional during the compatibility
 period, but cloning copies the stored job artifact without running the
 client-side signing path. The clone therefore retains the original
-``__nvfl_sig.json`` signatures and embedded ``__nvfl_submitter.crt``
+``.__nvfl_sig.json`` signatures and embedded ``.__nvfl_submitter.crt``
 certificate, including its signer identity and absolute expiration. Cloning
 does not renew or replace the original signing certificate.
 
@@ -95,6 +95,13 @@ current submitter certificate:
 .. code-block:: shell
 
    nvflare job submit -j JOB_FOLDER
+
+If you no longer have the original local job folder, the clone command remains
+available during the compatibility period. For a finished job, you can download
+the job, reuse the job definition automatically extracted from ``job.zip``, and
+submit that folder with current credentials. Downloading currently requires the
+job to have finished, so this recovery path does not cover every case supported
+by cloning.
 
 Legacy Client API Stack Removal
 -------------------------------

@@ -443,8 +443,8 @@ Clone an existing job:
 ``nvflare job clone`` remains available during the compatibility period and
 continues to return ``source_job_id`` and ``new_job_id``. However, it copies the
 stored artifact without invoking the client-side signing path. The clone keeps
-the original ``__nvfl_sig.json`` signatures and embedded
-``__nvfl_submitter.crt`` certificate, including the original signer identity
+the original ``.__nvfl_sig.json`` signatures and embedded
+``.__nvfl_submitter.crt`` certificate, including the original signer identity
 and absolute certificate expiration. Cloning does not renew or replace that
 certificate.
 
@@ -454,6 +454,13 @@ and submit it with current credentials:
 .. code-block:: shell
 
    nvflare job submit -j JOB_FOLDER
+
+If you no longer have the original local job folder, the clone command remains
+available during the compatibility period. For a finished job, you can download
+the job, reuse the job definition automatically extracted from ``job.zip``, and
+submit that folder with current credentials. Downloading currently requires the
+job to have finished, so this recovery path does not cover every case supported
+by cloning.
 
 Abort a running job:
 
