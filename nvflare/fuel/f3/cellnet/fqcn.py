@@ -17,26 +17,6 @@ from nvflare.fuel.common.fqn import FQN
 class FQCN(FQN):
     VALID_PATTERN = "^[A-Za-z0-9_.~-]*$"
 
-    # A job's cells hang directly off the owning site: <owner>.<job_id> (the job cell) and its
-    # descendants, or an auxiliary cell <owner>.<name>_<job_id> (e.g. the workspace-transfer
-    # bootstrap cell). Nothing deeper counts: a cell under another job's cell is that job's.
-    JOB_AUX_SEPARATOR = "_"
-
-    @staticmethod
-    def job_aux_name(name: str, job_id: str) -> str:
-        return f"{name}{FQCN.JOB_AUX_SEPARATOR}{job_id}"
-
-    @staticmethod
-    def belongs_to_job(fqcn: str, job_id: str, owner_segments: int = 1) -> bool:
-        """True if the segment right after the owner's prefix is the job id or a <name>_<job id> auxiliary name."""
-        if not job_id:
-            return False
-        parts = FQCN.split(FQCN.normalize(fqcn))
-        if len(parts) <= owner_segments:
-            return False
-        job_segment = parts[owner_segments]
-        return job_segment == job_id or job_segment.endswith(FQCN.JOB_AUX_SEPARATOR + job_id)
-
 
 # A network Attach trainer connects beneath the stable site CP and authenticates
 # with that physical parent's provisioned identity.

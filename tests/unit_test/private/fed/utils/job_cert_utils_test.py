@@ -23,7 +23,7 @@ from cryptography.x509.oid import NameOID
 
 from nvflare.apis.fl_constant import SecureTrainConst
 from nvflare.fuel.f3.cellnet.cell_cipher import SimpleCellCipher
-from nvflare.fuel.f3.drivers.net_utils import get_cert_job_id
+from nvflare.fuel.sec.cert_uri import CELL_URI_KIND, cert_uri_values, job_ca_marker_uri
 from nvflare.lighter.constants import ProvFileName
 from nvflare.lighter.utils import (
     Identity,
@@ -34,7 +34,6 @@ from nvflare.lighter.utils import (
     verify_cert_chain,
 )
 from nvflare.private.fed.utils.job_cert_utils import (
-    JOB_CA_MARKER_OID,
     JOB_CERT_BACKDATE,
     JOB_CERT_FILE_NAME,
     JOB_CERT_VALID_DAYS,
@@ -42,13 +41,17 @@ from nvflare.private.fed.utils.job_cert_utils import (
     JobCertError,
     apply_job_cert_config,
     find_job_cert,
+    get_cert_job_id,
     has_job_ca_marker,
+    job_cell_scopes,
+    job_cert_uris,
     job_startup_files,
     load_job_cert_issuer,
     pack_job_cert_header,
     read_job_cert,
     stage_job_startup_dir,
     unpack_job_cert_header,
+    workspace_transfer_cell_name,
     write_job_cert,
 )
 
@@ -67,7 +70,6 @@ def _write_job_ca(startup_dir, ca_lifetime=datetime.timedelta(days=360), expired
         not_valid_after = now + ca_lifetime
 
     ca_key, ca_pub = generate_keys()
-    marker = x509.UnrecognizedExtension(JOB_CA_MARKER_OID, b"job_ca")
     ca_cert = generate_cert(
         Identity("job_ca.test"),
         Identity("root"),
@@ -77,7 +79,7 @@ def _write_job_ca(startup_dir, ca_lifetime=datetime.timedelta(days=360), expired
         ca_path_length=0,
         not_valid_before=not_valid_before,
         not_valid_after=not_valid_after,
-        extra_extensions=[(marker, False)],
+        uri_names=[job_ca_marker_uri()],
     )
 
     with open(os.path.join(startup_dir, ProvFileName.JOB_CA_CERT), "wb") as f:
@@ -109,7 +111,7 @@ def test_issued_cert_chains_to_root_and_carries_job_id(tmp_path):
     issuer = load_job_cert_issuer(str(tmp_path))
     assert issuer is not None
 
-    cert_pem, key_pem = issuer.issue("site-1", "job-123")
+    cert_pem, key_pem = issuer.issue("site-1", "job-123", "site-1")
 
     chain = x509.load_pem_x509_certificates(cert_pem)
     assert len(chain) == 2
@@ -118,6 +120,7 @@ def test_issued_cert_chains_to_root_and_carries_job_id(tmp_path):
     verify_cert_chain(leaf_cert=leaf, intermediate_certs=[intermediate], root_ca_cert=root_cert)
     assert leaf.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value == "site-1"
     assert get_cert_job_id(leaf) == "job-123"
+    assert cert_uri_values(leaf, CELL_URI_KIND) == job_cell_scopes("site-1", "job-123")
     assert has_job_ca_marker(intermediate) and not has_job_ca_marker(leaf)
     expected_lifetime = datetime.timedelta(days=JOB_CERT_VALID_DAYS) + JOB_CERT_BACKDATE
     assert leaf.not_valid_after_utc - leaf.not_valid_before_utc == expected_lifetime
@@ -128,7 +131,7 @@ def test_issued_cert_validity_clamped_to_job_ca(tmp_path):
     _, ca_cert = _write_job_ca(str(tmp_path), ca_lifetime=datetime.timedelta(days=1))
     issuer = load_job_cert_issuer(str(tmp_path))
 
-    cert_pem, _ = issuer.issue("site-1", "job-123")
+    cert_pem, _ = issuer.issue("site-1", "job-123", "site-1")
 
     leaf = x509.load_pem_x509_certificates(cert_pem)[0]
     assert leaf.not_valid_after_utc == ca_cert.not_valid_after_utc.replace(microsecond=0)
@@ -138,7 +141,7 @@ def test_issue_honors_valid_days(tmp_path):
     _write_job_ca(str(tmp_path))
     issuer = load_job_cert_issuer(str(tmp_path))
 
-    cert_pem, _ = issuer.issue("site-1", "job-123", valid_days=3)
+    cert_pem, _ = issuer.issue("site-1", "job-123", "site-1", valid_days=3)
 
     leaf = x509.load_pem_x509_certificates(cert_pem)[0]
     assert leaf.not_valid_after_utc - leaf.not_valid_before_utc == datetime.timedelta(days=3) + JOB_CERT_BACKDATE
@@ -148,13 +151,38 @@ def test_issue_many_issues_one_credential_per_site(tmp_path):
     _write_job_ca(str(tmp_path))
     issuer = load_job_cert_issuer(str(tmp_path))
 
-    creds = issuer.issue_many(["site-1", "site-2"], "job-123")
+    creds = issuer.issue_many({"site-1": "site-1", "site-2": "relay-1.site-2"}, "job-123")
 
     assert set(creds) == {"site-1", "site-2"}
     leaves = {name: x509.load_pem_x509_certificates(cert_pem)[0] for name, (cert_pem, _) in creds.items()}
     assert {leaf.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value for leaf in leaves.values()} == set(creds)
     assert leaves["site-1"].public_key() != leaves["site-2"].public_key()
-    assert issuer.issue_many([], "job-123") == {}
+    assert cert_uri_values(leaves["site-2"], CELL_URI_KIND) == job_cell_scopes("relay-1.site-2", "job-123")
+    assert issuer.issue_many({}, "job-123") == {}
+
+
+def test_job_cert_uris_name_the_job_and_its_cells():
+    assert workspace_transfer_cell_name("job-1") == "ws_transfer_job-1"
+    assert job_cell_scopes("relay-1.site-1", "job-1") == ["relay-1.site-1.job-1", "relay-1.site-1.ws_transfer_job-1"]
+    assert job_cert_uris("site-1", "job-1") == [
+        "https://nvidia.com/nvflare/v1/job/job-1",
+        "https://nvidia.com/nvflare/v1/cell/site-1.job-1",
+        "https://nvidia.com/nvflare/v1/cell/site-1.ws_transfer_job-1",
+    ]
+
+
+def test_get_cert_job_id_rejects_a_cert_claiming_several_jobs():
+    key, pub_key = generate_keys()
+    cert = generate_cert(
+        Identity("site-1"),
+        Identity("site-1"),
+        key,
+        pub_key,
+        uri_names=["https://nvidia.com/nvflare/v1/job/job-1", "https://nvidia.com/nvflare/v1/job/job-2"],
+    )
+
+    with pytest.raises(ValueError, match="several jobs"):
+        get_cert_job_id(cert)
 
 
 def test_pack_unpack_job_cert_header_round_trip():
@@ -223,8 +251,8 @@ def test_cell_cipher_works_with_job_cert_chains(tmp_path):
     root_cert, _ = _write_job_ca(str(tmp_path))
     issuer = load_job_cert_issuer(str(tmp_path))
 
-    sj_cert_pem, sj_key_pem = issuer.issue("server", "job-123")
-    cj_cert_pem, cj_key_pem = issuer.issue("site-1", "job-123")
+    sj_cert_pem, sj_key_pem = issuer.issue("server", "job-123", "server")
+    cj_cert_pem, cj_key_pem = issuer.issue("site-1", "job-123", "site-1")
 
     sj_cipher = SimpleCellCipher(
         root_cert,

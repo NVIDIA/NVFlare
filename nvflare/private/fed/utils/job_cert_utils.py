@@ -17,14 +17,22 @@ import datetime
 import os
 import shutil
 from concurrent.futures import ThreadPoolExecutor
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from cryptography import x509
 
 from nvflare.apis.fl_constant import FLContextKey, SecureTrainConst
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.identity import get_cert_common_name
-from nvflare.fuel.f3.drivers.net_utils import JOB_ID_EXTENSION_OID
-from nvflare.lighter.constants import CertExtensionOID, ProvFileName
+from nvflare.fuel.sec.cert_uri import (
+    CA_URI_KIND,
+    CELL_URI_KIND,
+    JOB_CA_URI_VALUE,
+    JOB_URI_KIND,
+    cert_uri,
+    cert_uri_values,
+)
+from nvflare.lighter.constants import ProvFileName
 from nvflare.lighter.utils import (
     Identity,
     bounded_validity,
@@ -60,7 +68,36 @@ NO_JOB_CREDENTIAL = (
 _PROP_CERT = "cert"
 _PROP_KEY = "key"
 
-JOB_CA_MARKER_OID = x509.ObjectIdentifier(CertExtensionOID.JOB_CA_MARKER)
+WORKSPACE_TRANSFER_CELL_NAME = "ws_transfer"
+
+
+def workspace_transfer_cell_name(job_id: str) -> str:
+    """Name of the job's workspace-transfer bootstrap cell, directly under the site that owns the job."""
+    return f"{WORKSPACE_TRANSFER_CELL_NAME}_{job_id}"
+
+
+def job_cell_scopes(owner_fqcn: str, job_id: str) -> List[str]:
+    """Cells a job credential may claim: the job cell (with its descendants) and the bootstrap cell."""
+    return [FQCN.join([owner_fqcn, job_id]), FQCN.join([owner_fqcn, workspace_transfer_cell_name(job_id)])]
+
+
+def job_cert_uris(owner_fqcn: str, job_id: str) -> List[str]:
+    return [cert_uri(JOB_URI_KIND, job_id)] + [cert_uri(CELL_URI_KIND, s) for s in job_cell_scopes(owner_fqcn, job_id)]
+
+
+def get_cert_job_id(cert: x509.Certificate) -> Optional[str]:
+    """Job a per-job certificate belongs to; None for a site certificate."""
+    job_ids = cert_uri_values(cert, JOB_URI_KIND)
+    if not job_ids:
+        return None
+    if len(job_ids) > 1:
+        raise ValueError(f"certificate claims several jobs: {job_ids}")
+    return job_ids[0]
+
+
+def has_job_ca_marker(cert: x509.Certificate) -> bool:
+    """True for the job CA certificate: anything it issued is job-scoped and never a site identity."""
+    return JOB_CA_URI_VALUE in cert_uri_values(cert, CA_URI_KIND)
 
 
 class JobCertError(RuntimeError):
@@ -164,14 +201,6 @@ def unpack_job_cert_header(header) -> Optional[Tuple[bytes, bytes]]:
         return None
 
 
-def has_job_ca_marker(cert: x509.Certificate) -> bool:
-    try:
-        cert.extensions.get_extension_for_oid(JOB_CA_MARKER_OID)
-        return True
-    except x509.ExtensionNotFound:
-        return False
-
-
 class JobCertIssuer:
     """Issues short-lived per-job certificates signed by the provisioned job CA.
 
@@ -185,15 +214,22 @@ class JobCertIssuer:
         self.ca_key = ca_key
         self.ca_cn = get_cert_common_name(self.ca_cert)
 
-    def issue(self, site_name: str, job_id: str, valid_days: int = JOB_CERT_VALID_DAYS) -> Tuple[bytes, bytes]:
+    def issue(
+        self, site_name: str, job_id: str, owner_fqcn: str, valid_days: int = JOB_CERT_VALID_DAYS
+    ) -> Tuple[bytes, bytes]:
         """Issue a per-job credential for one site.
+
+        Args:
+            site_name: CN of the site, as its own certificate presents it
+            job_id: the job the credential belongs to
+            owner_fqcn: FQCN of the site's parent cell (CP or server) under which the job's cells live
+            valid_days: validity, clamped to the job CA's own
 
         Returns:
             (cert_chain_pem, key_pem): leaf cert followed by the job CA cert, and the private key.
         """
         pri_key, pub_key = generate_keys()
         not_valid_before, not_valid_after = bounded_validity(self.ca_cert, valid_days, backdate=JOB_CERT_BACKDATE)
-        job_id_ext = x509.UnrecognizedExtension(JOB_ID_EXTENSION_OID, job_id.encode("utf-8"))
         cert = generate_cert(
             subject=Identity(site_name),
             issuer=Identity(self.ca_cn),
@@ -201,19 +237,21 @@ class JobCertIssuer:
             subject_pub_key=pub_key,
             not_valid_before=not_valid_before,
             not_valid_after=not_valid_after,
-            extra_extensions=[(job_id_ext, False)],
+            uri_names=job_cert_uris(owner_fqcn, job_id),
         )
         return serialize_cert(cert) + self.ca_cert_pem, serialize_pri_key(pri_key)
 
     def issue_many(
-        self, site_names: Iterable[str], job_id: str, valid_days: int = JOB_CERT_VALID_DAYS
+        self, site_owners: Dict[str, str], job_id: str, valid_days: int = JOB_CERT_VALID_DAYS
     ) -> Dict[str, Tuple[bytes, bytes]]:
-        """Issue credentials for several sites at once; RSA key generation dominates and runs in parallel."""
-        names = list(site_names)
+        """Issue credentials for several sites (name -> owner FQCN); RSA key generation runs in parallel."""
+        names = list(site_owners)
         if not names:
             return {}
         with ThreadPoolExecutor(max_workers=min(8, len(names))) as pool:
-            return dict(zip(names, pool.map(lambda name: self.issue(name, job_id, valid_days), names)))
+            return dict(
+                zip(names, pool.map(lambda name: self.issue(name, job_id, site_owners[name], valid_days), names))
+            )
 
 
 def load_job_cert_issuer(startup_dir: str) -> JobCertIssuer:

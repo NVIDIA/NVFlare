@@ -17,20 +17,23 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from cryptography import x509
+from cryptography.hazmat.primitives import serialization
 
 from nvflare.fuel.f3.drivers import aio_grpc_driver, grpc_driver
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
-from nvflare.fuel.f3.drivers.net_utils import JOB_ID_EXTENSION_OID
+from nvflare.fuel.sec.cert_uri import CELL_URI_KIND, cert_uri
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys, serialize_cert
 
 
-def _cert_pem(common_name: str, job_id=None) -> bytes:
+def _cert_pem(common_name: str, scoped: bool) -> bytes:
     key, pub_key = generate_keys()
-    extensions = None
-    if job_id:
-        extensions = [(x509.UnrecognizedExtension(JOB_ID_EXTENSION_OID, job_id.encode("utf-8")), False)]
-    cert = generate_cert(Identity(common_name), Identity(common_name), key, pub_key, extra_extensions=extensions)
+    uri_names = [cert_uri(CELL_URI_KIND, "site-1.job-1")] if scoped else None
+    cert = generate_cert(Identity(common_name), Identity(common_name), key, pub_key, uri_names=uri_names)
     return serialize_cert(cert)
+
+
+def _der(pem: bytes) -> bytes:
+    return x509.load_pem_x509_certificate(pem).public_bytes(serialization.Encoding.DER)
 
 
 def _authenticated_context(cert_pem: bytes):
@@ -46,28 +49,30 @@ def _server():
     return server
 
 
-@pytest.mark.parametrize("job_id", ["job-1", None])
-def test_grpc_servicer_records_peer_identity_of_authenticated_stream(job_id):
+@pytest.mark.parametrize("scoped", [True, False])
+def test_grpc_servicer_records_peer_identity_of_authenticated_stream(scoped):
     servicer = grpc_driver.Servicer(_server())
+    pem = _cert_pem("site-1", scoped)
 
     with (
         patch.object(grpc_driver, "StreamConnection") as connection_cls,
         patch.object(grpc_driver.threading, "Thread"),
     ):
         connection_cls.return_value.generate_output.return_value = iter([])
-        list(servicer.Stream(iter([]), _authenticated_context(_cert_pem("site-1", job_id))))
+        list(servicer.Stream(iter([]), _authenticated_context(pem)))
 
     conn_props = connection_cls.call_args.args[2]
     assert conn_props[DriverParams.PEER_CN.value] == "site-1"
-    assert conn_props.get(DriverParams.PEER_JOB_ID.value) == job_id
+    assert conn_props[DriverParams.PEER_CERT.value] == _der(pem)
 
 
-@pytest.mark.parametrize("job_id", ["job-1", None])
-def test_aio_grpc_servicer_records_peer_identity_of_authenticated_stream(job_id):
+@pytest.mark.parametrize("scoped", [True, False])
+def test_aio_grpc_servicer_records_peer_identity_of_authenticated_stream(scoped):
     servicer = aio_grpc_driver.Servicer(_server(), aio_ctx=MagicMock())
+    pem = _cert_pem("site-1", scoped)
 
     async def consume():
-        async for _ in servicer.Stream(iter([]), _authenticated_context(_cert_pem("site-1", job_id))):
+        async for _ in servicer.Stream(iter([]), _authenticated_context(pem)):
             pass
 
     with patch.object(aio_grpc_driver, "AioStreamSession") as session_cls:
@@ -76,4 +81,4 @@ def test_aio_grpc_servicer_records_peer_identity_of_authenticated_stream(job_id)
 
     conn_props = session_cls.call_args.kwargs["conn_props"]
     assert conn_props[DriverParams.PEER_CN.value] == "site-1"
-    assert conn_props.get(DriverParams.PEER_JOB_ID.value) == job_id
+    assert conn_props[DriverParams.PEER_CERT.value] == _der(pem)

@@ -21,7 +21,8 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.x509.oid import NameOID
 
-from nvflare.lighter.constants import CertExtensionOID, CertFileBasename, CtxKey, ParticipantType, PropKey, ProvFileName
+from nvflare.fuel.sec.cert_uri import job_ca_marker_uri
+from nvflare.lighter.constants import CertFileBasename, CtxKey, ParticipantType, PropKey, ProvFileName
 from nvflare.lighter.ctx import ProvisionContext
 from nvflare.lighter.entity import Participant, Project
 from nvflare.lighter.spec import Builder
@@ -370,8 +371,7 @@ class CertBuilder(Builder):
             pri_key, pub_key = generate_keys()
             now, not_valid_after = self._bounded_not_valid_after("job CA")
             # the marker lets site-scope verification reject anything this CA issues by
-            # issuer, even a cert minted without the job-ID extension by a stolen CA key
-            marker = x509.UnrecognizedExtension(x509.ObjectIdentifier(CertExtensionOID.JOB_CA_MARKER), b"job_ca")
+            # issuer, even a cert minted without the job URI by a stolen CA key
             cert = self._generate_cert(
                 subject,
                 None,
@@ -382,7 +382,7 @@ class CertBuilder(Builder):
                 ca_path_length=0,
                 not_valid_before=now,
                 not_valid_after=not_valid_after,
-                extra_extensions=[(marker, False)],
+                uri_names=[job_ca_marker_uri()],
             )
             cert_pem = serialize_cert(cert)
             key_pem = serialize_pri_key(pri_key)
@@ -443,6 +443,7 @@ class CertBuilder(Builder):
         extra_extensions=None,
         not_valid_before=None,
         not_valid_after=None,
+        uri_names=None,
     ):
         if server:
             # This is to generate a server cert.
@@ -463,6 +464,7 @@ class CertBuilder(Builder):
             extra_extensions=extra_extensions,
             not_valid_before=not_valid_before,
             not_valid_after=not_valid_after,
+            uri_names=uri_names,
         )
 
     def finalize(self, project: Project, ctx: ProvisionContext):

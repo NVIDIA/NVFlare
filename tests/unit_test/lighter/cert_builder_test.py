@@ -21,7 +21,8 @@ from unittest.mock import patch
 import pytest
 from cryptography import x509
 
-from nvflare.lighter.constants import CertExtensionOID, CtxKey, ParticipantType, ProvFileName
+from nvflare.fuel.sec.cert_uri import CA_URI_KIND, JOB_CA_URI_VALUE, cert_uri_values
+from nvflare.lighter.constants import CtxKey, ParticipantType, ProvFileName
 from nvflare.lighter.entity import Participant, Project
 from nvflare.lighter.impl.cert import CertBuilder
 from nvflare.lighter.impl.workspace import WorkspaceBuilder
@@ -179,7 +180,7 @@ def test_job_ca_written_to_server_kit_by_default(tmp_path):
     assert basic_constraints.value.path_length == 0
     key_usage = job_ca_cert.extensions.get_extension_for_class(x509.KeyUsage)
     assert key_usage.value.key_cert_sign is True
-    job_ca_cert.extensions.get_extension_for_oid(x509.ObjectIdentifier(CertExtensionOID.JOB_CA_MARKER))
+    assert cert_uri_values(job_ca_cert, CA_URI_KIND) == [JOB_CA_URI_VALUE]
     verify_cert(job_ca_cert, ctx[CtxKey.ROOT_CERT].public_key())
     assert job_ca_cert.not_valid_after_utc <= ctx[CtxKey.ROOT_CERT].not_valid_after_utc
 

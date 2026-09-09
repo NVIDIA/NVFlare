@@ -36,9 +36,9 @@ rootCA (private key exists only during provisioning)
 ├── server.crt / server.key        server startup kit      (unchanged)
 ├── client.crt / client.key        client startup kits     (unchanged)
 └── job_ca.crt / job_ca.key        server startup kit ONLY (new)
-        CA:TRUE, pathlen:0, job-CA marker extension
+        CA:TRUE, pathlen:0, job-CA marker URI
         └── per-job leaf certs, issued at job deploy time
-              CN=<site name>, job_id extension, bounded validity
+              CN=<site name>, job and cell-scope URIs, bounded validity
 ```
 
 Because the job CA chains to the existing root, no participant needs a new
@@ -47,25 +47,31 @@ trust anchor: a job cert presented together with `job_ca.crt` validates against
 `verify_cert_chain()`.
 
 Leaf certs keep `CN=<site name>` so every existing common-name-based identity
-check continues to pass. The job binding is carried in a certificate extension
-holding the job ID.
+check continues to pass. The job binding is carried in URI Subject Alternative
+Names (see below).
 
 Only SP ever holds the job CA key. CP receives issued certificates; it does no
 signing.
 
-### Extension OIDs
+### Certificate URIs
 
-Both extensions live under NVIDIA's IANA private enterprise arc
-(`1.3.6.1.4.1.5703`), sub-arc `300`:
+Certificate attributes are https URI Subject Alternative Names under a root the
+project owns, `https://nvidia.com/nvflare/v1/`. A private X.509 extension would
+need an OID allocated under NVIDIA's enterprise arc (no reachable registrar),
+and UUID-based `2.25` OIDs break Go's x509 parser; a domain-owned URI is
+globally unique without a registry and is parsed natively by Go, `cryptography`
+and OpenSSL. Readers match the root exactly, ignore URIs on other hosts, and
+fail closed on a malformed URI under the root (`nvflare/fuel/sec/cert_uri.py`).
 
-| OID | Placed on | Meaning |
+| URI | Placed on | Read by |
 | --- | --------- | ------- |
-| `1.3.6.1.4.1.5703.300.1` | job leaf certs | the job ID the credential is bound to |
-| `1.3.6.1.4.1.5703.300.2` | the job CA cert | "issued by the job CA" marker |
+| `.../v1/job/<job id>` | job leaf certs | FL layer: site-scope rejection, log messages |
+| `.../v1/ca/job` | the job CA cert | FL layer: rejects anything the job CA issued at site scope |
+| `.../v1/cell/<FQCN>` (one per allowed cell) | job leaf certs | cellnet: the cells the certificate may claim |
 
-Both are non-critical, so standard TLS stacks ignore them; only FLARE code reads
-them. Neither can be stripped: the marker is inside the root-signed job CA cert,
-the job ID inside the job-CA-signed leaf.
+None of them is critical, so standard TLS stacks ignore them. None can be
+stripped: the marker is inside the root-signed job CA cert, the job and cell
+URIs inside the job-CA-signed leaf.
 
 ## Provisioning
 
@@ -116,7 +122,10 @@ issuer generates an RSA keypair and a leaf certificate:
   CJ it is the registered client name (registration enforces that this equals
   the client cert's CN) — so whatever identity enforcement passed with site
   certs passes with job certs
-- a job-ID extension identifying the job
+- URI SANs naming the job and the cells the credential may claim: `<owner>.<job id>`
+  (the job cell and, implicitly, its descendants) and `<owner>.ws_transfer_<job id>`
+  (the workspace-transfer bootstrap cell), where `<owner>` is the site's CP FQCN or
+  `server`; behind a relay the CP FQCN already carries the relay prefix
 - `notBefore` backdated a few minutes to tolerate clock skew between the
   issuing server and the sites that validate the cert seconds later
 - `notAfter` = issue time + `job_cert_valid_days` (server `fed_server.json` or
@@ -201,13 +210,13 @@ cert chain). All site-scope identity assertions funnel through
 the client's verification of the server), and no job cell ever legitimately
 asserts identity there. Two rejections cover two distinct threats:
 
-1. **Leaked job leaf key**: any certificate carrying the job-ID extension is
-   rejected. This is keyed on the extension, not the issuer, so it holds
+1. **Leaked job leaf key**: any certificate carrying the job URI is
+   rejected. This is keyed on the URI, not the issuer, so it holds
    regardless of which CA issued the certificate (which also keeps future HA
    setups with multiple job CAs simple).
 2. **Stolen job CA key**: an attacker holding `job_ca.key` can mint a clean
-   site-named leaf *without* the extension. The job CA certificate therefore
-   carries a root-signed marker extension, and any presented chain containing
+   site-named leaf *without* the job URI. The job CA certificate therefore
+   carries a root-signed marker URI, and any presented chain containing
    a marked CA is rejected. The attacker cannot strip the marker (the job CA
    cert is signed by the root) and cannot validate without presenting it.
 
@@ -219,20 +228,20 @@ admin identity; its blast radius is job cells only.
 Site-scope rejection stops a job credential from acting as a site. Job binding
 stops one job's credential from acting as another job's cell:
 
-- Every TLS driver exposes the peer certificate's job-ID extension as the
-  `PEER_JOB_ID` connection property next to `PEER_CN`.
-- `CellIdentityResolver.require_match()` rejects a peer whose certificate is
-  bound to job X unless the FQCN it claims belongs to that job
-  (`FQCN.belongs_to_job`): the segment right after the owning site's prefix
-  (as resolved for the identity check) must be X — the job cell `<site>.X` and
-  its descendants — or an auxiliary job cell named `<name>_X`, such as the
-  Kubernetes workspace-transfer bootstrap cell `server.ws_transfer_X`, which
-  authenticates with the job credential before the job cell exists. The
-  position matters: `<site>.Y.ws_transfer_X` is a cell of job Y and is rejected
-  for job X's certificate. The check runs at the
-  connection handshake (`ConnManager`) and again on the certificate exchanged
-  for message-level crypto (`CredentialManager`), which is the certificate
-  later used to decrypt that peer's messages.
+- Every TLS driver exposes the authenticated peer certificate as the
+  `PEER_CERT` connection property next to `PEER_CN`. Drivers parse nothing.
+- Cellnet knows one generic rule, in its own vocabulary: a certificate may carry
+  cell-scope URIs, and a peer presenting one may only claim an FQCN equal to or
+  under one of those cells (`cell_scopes` / `fqcn_in_scopes` in
+  `nvflare/fuel/f3/cellnet/identity.py`, built on `FQCN.is_ancestor`). The
+  check runs at the connection handshake (`ConnManager`) and again on the
+  certificate exchanged for message-level crypto (`CredentialManager`). A
+  certificate without cell URIs is unrestricted, as site certificates are.
+- Which cells a job credential lists is decided where it is issued
+  (`job_cell_scopes` in `nvflare/private/fed/utils/job_cert_utils.py`): the job
+  cell and the bootstrap cell under the owning CP or server. Cellnet carries no
+  job vocabulary; `site-1.<job B>.ws_transfer_<job A>` is under job B's cell
+  and is rejected for job A's certificate.
 
 The rule is one-directional on purpose: it constrains what a job cert may
 claim, not which cert a job FQCN must present. Refusing to start a job cell

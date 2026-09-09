@@ -45,6 +45,8 @@ from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.identity import CellIdentityResolver
 from nvflare.fuel.f3.cellnet.utils import make_reply, new_cell_message
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
+from nvflare.lighter.utils import Identity, generate_cert, generate_keys
+from nvflare.private.fed.utils.job_cert_utils import job_cert_uris
 
 JOB_ID = "abc12345-dead-beef-0000-111122223333"
 
@@ -117,9 +119,15 @@ class TestGetOrCreate:
         resolver = CellIdentityResolver(local_fqcn=owner_fqcn, prefix_identity_map={owner_fqcn: owner_cn})
         fqcn = make_workspace_transfer_fqcn(owner_fqcn, JOB_ID)
 
-        resolver.require_match(fqcn, owner_cn, "bootstrap", peer_job_id=JOB_ID)
-        with pytest.raises(ValueError, match="bound to job"):
-            resolver.require_match(fqcn, owner_cn, "bootstrap", peer_job_id="other-job")
+        def job_credential(job_id):
+            key, pub_key = generate_keys()
+            return generate_cert(
+                Identity(owner_cn), Identity(owner_cn), key, pub_key, uri_names=job_cert_uris(owner_fqcn, job_id)
+            )
+
+        resolver.require_match(fqcn, owner_cn, "bootstrap", peer_cert=job_credential(JOB_ID))
+        with pytest.raises(ValueError, match="outside that scope"):
+            resolver.require_match(fqcn, owner_cn, "bootstrap", peer_cert=job_credential("other-job"))
 
     def test_returns_same_manager_for_same_cell(self):
         owner_cell = _FakeCell(fqcn="site-1.parent")

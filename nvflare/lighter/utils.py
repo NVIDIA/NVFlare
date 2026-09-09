@@ -84,6 +84,7 @@ def generate_cert(
     not_valid_after=None,
     extra_extensions=None,
     ca_path_length=None,
+    uri_names=None,
 ):
     now = not_valid_before or datetime.datetime.now(datetime.timezone.utc)
     cert_not_valid_after = not_valid_after or now + datetime.timedelta(days=valid_days)
@@ -137,12 +138,10 @@ def generate_cert(
             seen_extension_oids.add(extension.oid)
             builder = builder.add_extension(extension, critical=critical)
 
-    builder = builder.add_extension(
-        x509.SubjectAlternativeName(
-            build_subject_alt_names(server_default_host, server_additional_hosts, subject.name)
-        ),
-        critical=False,
-    )
+    subject_alt_names = build_subject_alt_names(server_default_host, server_additional_hosts, subject.name)
+    if uri_names:
+        subject_alt_names.extend(x509.UniformResourceIdentifier(uri) for uri in uri_names)
+    builder = builder.add_extension(x509.SubjectAlternativeName(subject_alt_names), critical=False)
     return builder.sign(signing_pri_key, hashes.SHA256(), default_backend())
 
 

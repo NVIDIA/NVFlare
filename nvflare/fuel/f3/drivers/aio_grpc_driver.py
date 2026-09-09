@@ -39,7 +39,7 @@ from .base_driver import BaseDriver
 from .driver_params import DriverCap, DriverParams
 from .grpc.streamer_pb2 import Frame
 from .grpc.utils import get_grpc_client_credentials, get_grpc_server_credentials, use_aio_grpc
-from .net_utils import MAX_FRAME_SIZE, add_grpc_peer_job_id, get_address, get_tcp_urls, ssl_required
+from .net_utils import MAX_FRAME_SIZE, add_grpc_peer_cert, get_address, get_tcp_urls, ssl_required
 
 GRPC_DEFAULT_OPTIONS = [
     ("grpc.max_send_message_length", MAX_FRAME_SIZE),
@@ -200,7 +200,7 @@ class Servicer(StreamerServicer):
             cn_names = auth_context.get("x509_common_name")
             if cn_names:
                 conn_props[DriverParams.PEER_CN.value] = cn_names[0].decode("utf-8")
-                add_grpc_peer_job_id(conn_props, auth_context)
+                add_grpc_peer_cert(conn_props, auth_context)
 
             connection = AioStreamSession(
                 aio_ctx=self.aio_ctx,

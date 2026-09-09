@@ -22,14 +22,13 @@ import time
 import traceback
 
 import pytest
-from cryptography import x509
 
 from nvflare.app_opt.job_launcher.workspace_cell_transfer import make_workspace_transfer_fqcn
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.message import Message
-from nvflare.lighter.constants import CertExtensionOID
+from nvflare.fuel.sec.cert_uri import job_ca_marker_uri
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys, serialize_cert, serialize_pri_key
 from nvflare.private.fed.utils.job_cert_utils import JobCertIssuer
 
@@ -45,7 +44,7 @@ _OTHER_JOB_ID = "22222222-0000-4000-8000-000000000002"
 
 
 class _RejectionRecorder(logging.Handler):
-    """Forwards the parent's job-binding rejections to the test process."""
+    """Forwards the parent's certificate-scope rejections to the test process."""
 
     def __init__(self, queue):
         super().__init__(level=logging.ERROR)
@@ -53,7 +52,7 @@ class _RejectionRecorder(logging.Handler):
 
     def emit(self, record):
         message = record.getMessage()
-        if "bound to job" in message:
+        if "outside that scope" in message:
             self.queue.put(message)
 
 
@@ -63,7 +62,6 @@ def _write_pki(out_dir: str) -> dict:
     srv_key, srv_pub = generate_keys()
     srv_cert = generate_cert(Identity("server"), Identity("rootCA"), root_key, srv_pub, server_default_host="localhost")
     jca_key, jca_pub = generate_keys()
-    marker = x509.UnrecognizedExtension(x509.ObjectIdentifier(CertExtensionOID.JOB_CA_MARKER), b"job_ca")
     jca_cert = generate_cert(
         Identity("job_ca"),
         Identity("rootCA"),
@@ -71,11 +69,11 @@ def _write_pki(out_dir: str) -> dict:
         jca_pub,
         ca=True,
         ca_path_length=0,
-        extra_extensions=[(marker, False)],
+        uri_names=[job_ca_marker_uri()],
     )
     issuer = JobCertIssuer(serialize_cert(jca_cert), jca_key)
-    job_crt, job_key = issuer.issue("server", _JOB_ID)
-    other_crt, other_key = issuer.issue("server", _OTHER_JOB_ID)
+    job_crt, job_key = issuer.issue("server", _JOB_ID, "server")
+    other_crt, other_key = issuer.issue("server", _OTHER_JOB_ID, "server")
     files = {
         "rootCA.pem": serialize_cert(root_cert),
         "server.crt": serialize_cert(srv_cert),
@@ -204,4 +202,4 @@ def test_bootstrap_cell_rejected_with_another_jobs_cert(parent):
         message = reject_q.get(timeout=max(0.1, deadline - time.time()))
         if fqcn in message:
             break
-    assert f"bound to job '{_OTHER_JOB_ID}'" in message
+    assert f"server.{_OTHER_JOB_ID}" in message  # the certificate's own scope is named in the rejection

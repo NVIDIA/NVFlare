@@ -62,6 +62,7 @@ from nvflare.private.fed.utils.job_cert_utils import (
     JOB_CERT_FILE_NAME,
     JOB_KEY_FILE_NAME,
     find_job_cert,
+    workspace_transfer_cell_name,
     write_job_cert,
 )
 from nvflare.security.logging import secure_format_exception
@@ -80,7 +81,6 @@ PER_REQUEST_TIMEOUT = 300.0
 BOOTSTRAP_CONNECT_TIMEOUT = 30.0
 BOOTSTRAP_CONNECT_POLL_INTERVAL = 0.1
 
-_BOOTSTRAP_CELL_NAME = "ws_transfer"
 _DEFAULT_WORKSPACE_DOWNLOAD_EXCLUDES = frozenset({"local/study_data.yaml", "local/study_runtime.yaml"})
 _RESOURCE_CONFIG_NAMES = ("resources.json", "resources.json.default")
 _K8S_LAUNCHER_COMPONENT_ID = "k8s_launcher"
@@ -259,7 +259,7 @@ def _hash_file(path: str) -> str:
 
 
 def make_workspace_transfer_fqcn(owner_fqcn: str, job_id: str) -> str:
-    return FQCN.join([owner_fqcn, FQCN.job_aux_name(_BOOTSTRAP_CELL_NAME, job_id)])
+    return FQCN.join([owner_fqcn, workspace_transfer_cell_name(job_id)])
 
 
 def _cleanup_files(paths) -> None:

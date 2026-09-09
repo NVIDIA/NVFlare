@@ -16,7 +16,6 @@ from typing import Optional
 from cryptography import x509
 from cryptography.x509.oid import NameOID
 
-from nvflare.fuel.f3.drivers.net_utils import get_cert_job_id
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.lighter.utils import (
     load_crt,
@@ -28,7 +27,7 @@ from nvflare.lighter.utils import (
     verify_cert_chain,
     verify_content,
 )
-from nvflare.private.fed.utils.job_cert_utils import has_job_ca_marker
+from nvflare.private.fed.utils.job_cert_utils import get_cert_job_id, has_job_ca_marker
 from nvflare.security.logging import secure_format_exception
 
 
@@ -163,9 +162,9 @@ def _validate_identity_cert_usage(cert, expected_eku, intermediate_certs=None):
     """Enforce certificate usage restrictions for the common-name challenge.
 
     Per-job certificates are scoped to one job's cells and must never assert site, admin,
-    or server identity: a leaf carrying the job-ID extension is rejected, and so is any
+    or server identity: a leaf carrying the job URI is rejected, and so is any
     chain containing the job-CA marker (a stolen job CA key can mint leaves without the
-    extension, but cannot strip the root-signed marker off the CA cert it must present).
+    extension, but cannot strip the root-signed marker URI off the CA cert it must present).
 
     Legacy FLARE certificates may omit KeyUsage and ExtendedKeyUsage, so absent
     extensions remain unrestricted. When present, they must allow the signing

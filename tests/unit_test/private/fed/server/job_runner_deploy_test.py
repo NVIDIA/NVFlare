@@ -30,13 +30,19 @@ from nvflare.apis.client import Client
 from nvflare.apis.fl_constant import FLContextKey, SecureTrainConst, SiteType
 from nvflare.apis.job_def import Job
 from nvflare.apis.workspace import Workspace
-from nvflare.fuel.f3.drivers.net_utils import get_cert_job_id
-from nvflare.lighter.constants import CertExtensionOID, ProvFileName
+from nvflare.fuel.sec.cert_uri import CELL_URI_KIND, cert_uri_values, job_ca_marker_uri
+from nvflare.lighter.constants import ProvFileName
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys, serialize_cert, serialize_pri_key
 from nvflare.private.admin_defs import Message, MsgHeader, ReturnCode
 from nvflare.private.defs import RequestHeader
 from nvflare.private.fed.server.job_runner import JobRunner
-from nvflare.private.fed.utils.job_cert_utils import job_cert_paths, read_job_cert, unpack_job_cert_header
+from nvflare.private.fed.utils.job_cert_utils import (
+    get_cert_job_id,
+    job_cell_scopes,
+    job_cert_paths,
+    read_job_cert,
+    unpack_job_cert_header,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -82,6 +88,7 @@ def _build_fl_ctx(token_to_reply: dict, job_id="job-1", min_sites=None, required
         c = MagicMock(spec=Client)
         c.token = token
         c.name = client_name
+        c.get_fqcn.return_value = client_name
         client_objects.append(c)
         sites[client_name] = MagicMock()
 
@@ -138,7 +145,6 @@ def _write_server_kit_with_job_ca(startup):
     server_key, server_pub = generate_keys()
     server_cert = generate_cert(Identity("server-cn"), Identity("rootCA"), root_key, server_pub)
     job_ca_key, job_ca_pub = generate_keys()
-    marker = x509.UnrecognizedExtension(x509.ObjectIdentifier(CertExtensionOID.JOB_CA_MARKER), b"job_ca")
     job_ca_cert = generate_cert(
         Identity("job_ca"),
         Identity("rootCA"),
@@ -146,7 +152,7 @@ def _write_server_kit_with_job_ca(startup):
         job_ca_pub,
         ca=True,
         ca_path_length=0,
-        extra_extensions=[(marker, False)],
+        uri_names=[job_ca_marker_uri()],
     )
     (startup / "rootCA.pem").write_bytes(serialize_cert(root_cert))
     (startup / "server.crt").write_bytes(serialize_cert(server_cert))
@@ -196,6 +202,7 @@ def test_secure_deploy_issues_server_and_client_job_credentials(tmp_path):
     sj_cert = x509.load_pem_x509_certificate(sj_cert_pem)
     assert _common_name(sj_cert) == "server-cn"
     assert get_cert_job_id(sj_cert) == "job-1"
+    assert cert_uri_values(sj_cert, CELL_URI_KIND) == job_cell_scopes(SiteType.SERVER, "job-1")
     assert sj_cert_pem.count(b"BEGIN CERTIFICATE") == 2  # leaf + job CA, chains to the root
     assert oct(os.stat(job_cert_paths(run_dir)[1]).st_mode & 0o777) == "0o600"
     assert serialization.load_pem_private_key(sj_key_pem, None).public_key() == sj_cert.public_key()
@@ -205,6 +212,7 @@ def test_secure_deploy_issues_server_and_client_job_credentials(tmp_path):
     cj_cert = x509.load_pem_x509_certificate(cj_cert_pem)
     assert _common_name(cj_cert) == "site-1"
     assert get_cert_job_id(cj_cert) == "job-1"
+    assert cert_uri_values(cj_cert, CELL_URI_KIND) == job_cell_scopes("site-1", "job-1")
     assert cj_cert.issuer == x509.load_pem_x509_certificate((startup / ProvFileName.JOB_CA_CERT).read_bytes()).subject
     assert cj_cert.public_key() != sj_cert.public_key()
     assert serialization.load_pem_private_key(cj_key_pem, None).public_key() == cj_cert.public_key()

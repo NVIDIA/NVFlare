@@ -33,7 +33,8 @@ Provisioning creates a job-signing intermediate CA — ``job_ca.crt`` and
 ``job_ca.key`` — in the **server** startup kit only. It is signed by the project
 root CA, so no participant needs a new trust anchor. When a job is deployed, the
 server issues one certificate per participating site (``CN=<site name>``, with
-an extension carrying the job ID), writes the server job's credential into the
+URI Subject Alternative Names naming the job and the cells it may act as),
+writes the server job's credential into the
 job's run directory, and sends each client its own credential inside the deploy
 message over the existing mutually authenticated channel. Every site verifies
 these certificates against the ``rootCA.pem`` it already has.
@@ -183,8 +184,8 @@ intermediate CA certificate with:
 
 - ``basicConstraints = critical, CA:TRUE, pathlen:0``;
 - ``keyUsage = critical, digitalSignature, keyCertSign, cRLSign``;
-- the job-CA marker: a **non-critical** extension with OID
-  ``1.3.6.1.4.1.5703.300.2`` (any value). Sites use it to reject anything the
+- the job-CA marker: a URI Subject Alternative Name
+  ``https://nvidia.com/nvflare/v1/ca/job``. Sites use it to reject anything the
   job CA signed when a site identity is asserted, so it must be present.
 
 The root CA certificate in ``rootCA.pem`` must itself carry a ``keyUsage``
@@ -202,7 +203,7 @@ An OpenSSL extension section that produces this:
    keyUsage = critical, digitalSignature, keyCertSign, cRLSign
    subjectKeyIdentifier = hash
    authorityKeyIdentifier = keyid:always
-   1.3.6.1.4.1.5703.300.2 = ASN1:UTF8String:job_ca
+   subjectAltName = URI:https://nvidia.com/nvflare/v1/ca/job
 
 .. code-block:: bash
 
@@ -244,7 +245,7 @@ Failures are recorded in the job's ``job_deploy_detail`` (shown by
        launcher)
      - The client's internal listener is clear text. Provision the client with
        a ``listening_host`` using ``scheme: stcp`` and ``conn_sec: mtls``.
-   * - ``authenticated with a certificate bound to job '...' but claimed
-       endpoint ... is not part of that job``
+   * - ``authenticated with a certificate restricted to cells [...] but claimed
+       endpoint ... is outside that scope``
      - A process presented another job's certificate. This does not happen in
        normal operation; investigate the site.

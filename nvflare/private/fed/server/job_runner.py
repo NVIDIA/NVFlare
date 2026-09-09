@@ -38,6 +38,7 @@ from nvflare.apis.job_launcher_spec import JobReturnCode
 from nvflare.apis.job_scheduler_spec import DispatchInfo
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.exit_codes import ProcessExitCode
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.identity import get_cert_common_name_from_file
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE
@@ -255,8 +256,8 @@ class JobRunner(FLComponent):
                 # cert (registration enforces CN == client name)
                 job_creds = {}
                 if job_cert_issuer:
-                    site_names = [c.name for c in clients]
-                    job_creds = job_cert_issuer.issue_many(site_names, job.job_id, self.job_cert_valid_days)
+                    site_owners = {c.name: c.get_fqcn() or c.name for c in clients}
+                    job_creds = job_cert_issuer.issue_many(site_owners, job.job_id, self.job_cert_valid_days)
 
                 for c in clients:
                     assert isinstance(c, Client)
@@ -281,7 +282,7 @@ class JobRunner(FLComponent):
             # "server")
             server_cert_path = fl_ctx.get_prop(FLContextKey.SERVER_CONFIG)[0][SecureTrainConst.SSL_CERT]
             server_cn = get_cert_common_name_from_file(server_cert_path)
-            cert_pem, key_pem = job_cert_issuer.issue(server_cn, job.job_id, self.job_cert_valid_days)
+            cert_pem, key_pem = job_cert_issuer.issue(server_cn, job.job_id, FQCN.ROOT_SERVER, self.job_cert_valid_days)
             write_job_cert(workspace.get_run_dir(job.job_id), cert_pem, key_pem)
 
         abort_job = False

@@ -23,7 +23,6 @@ from nvflare.fuel.f3.cellnet.cell_cipher import SimpleCellCipher
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.identity import CellIdentityResolver, get_cert_common_name
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
-from nvflare.fuel.f3.drivers.net_utils import get_cert_job_id
 from nvflare.fuel.f3.endpoint import Endpoint
 from nvflare.fuel.f3.message import Message
 
@@ -120,7 +119,7 @@ class CredentialManager:
                     fqcn,
                     get_cert_common_name(peer_cert),
                     f"certificate for {fqcn}",
-                    peer_job_id=get_cert_job_id(peer_cert),
+                    peer_cert=peer_cert,
                 )
             except ValueError as ex:
                 raise RuntimeError(str(ex))

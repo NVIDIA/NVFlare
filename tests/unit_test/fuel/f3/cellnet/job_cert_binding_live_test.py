@@ -23,14 +23,13 @@ import time
 import traceback
 
 import pytest
-from cryptography import x509
 
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.message import Message
+from nvflare.fuel.sec.cert_uri import job_ca_marker_uri
 from nvflare.fuel.utils.config_service import ConfigService
-from nvflare.lighter.constants import CertExtensionOID
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys, serialize_cert, serialize_pri_key
 from nvflare.private.fed.utils.job_cert_utils import JobCertIssuer
 
@@ -46,7 +45,7 @@ _JOB_B = "bbbbbbbb-0000-4000-8000-00000000000b"
 
 
 class _RejectionRecorder(logging.Handler):
-    """Forwards the parent's job-binding rejections to the test process."""
+    """Forwards the parent's certificate-scope rejections to the test process."""
 
     def __init__(self, queue):
         super().__init__(level=logging.ERROR)
@@ -54,7 +53,7 @@ class _RejectionRecorder(logging.Handler):
 
     def emit(self, record):
         message = record.getMessage()
-        if "bound to job" in message:
+        if "outside that scope" in message:
             self.queue.put(message)
 
 
@@ -79,7 +78,6 @@ def _write_pki(out_dir: str) -> dict:
         Identity("site-1"), Identity("rootCA"), root_key, site_pub, server_default_host="localhost"
     )
     jca_key, jca_pub = generate_keys()
-    marker = x509.UnrecognizedExtension(x509.ObjectIdentifier(CertExtensionOID.JOB_CA_MARKER), b"job_ca")
     jca_cert = generate_cert(
         Identity("job_ca"),
         Identity("rootCA"),
@@ -87,11 +85,11 @@ def _write_pki(out_dir: str) -> dict:
         jca_pub,
         ca=True,
         ca_path_length=0,
-        extra_extensions=[(marker, False)],
+        uri_names=[job_ca_marker_uri()],
     )
     issuer = JobCertIssuer(serialize_cert(jca_cert), jca_key)
-    job_a_crt, job_a_key = issuer.issue("site-1", _JOB_A)
-    job_b_crt, job_b_key = issuer.issue("site-1", _JOB_B)
+    job_a_crt, job_a_key = issuer.issue("site-1", _JOB_A, "site-1")
+    job_b_crt, job_b_key = issuer.issue("site-1", _JOB_B, "site-1")
     files = {
         "rootCA.pem": serialize_cert(root_cert),
         "server.crt": serialize_cert(server_cert),
@@ -271,4 +269,4 @@ def test_site_parent_rejects_another_jobs_cert_on_job_fqcn(site_parent, claimed_
 
     assert result["rc"] != ReturnCode.OK
     rejection = _await_rejection_of(site_parent[2], claimed_fqcn)
-    assert f"bound to job '{_JOB_A}'" in rejection
+    assert f"site-1.{_JOB_A}" in rejection  # the certificate's own scope is named in the rejection
