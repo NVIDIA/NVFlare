@@ -30,6 +30,13 @@ exec > >(tee -a "${RUN_ROOT}/logs/host_runner.log") 2>&1
 set -x
 git -C "${SOURCE_DIR}" rev-parse HEAD >"${RUN_ROOT}/artifacts/commit_sha.txt"
 git -C "${SOURCE_DIR}" status --short >"${RUN_ROOT}/artifacts/git_status.txt"
+uname -a >"${RUN_ROOT}/artifacts/uname.txt"
+id >"${RUN_ROOT}/artifacts/user_identity.txt"
+free -h >"${RUN_ROOT}/artifacts/host_memory.txt"
+ls -l /var/run/docker.sock >"${RUN_ROOT}/artifacts/docker_socket.txt" 2>&1 || true
+nvidia-smi -L >"${RUN_ROOT}/artifacts/nvidia_smi_L.txt"
+nvidia-smi --query-gpu=index,name,memory.total,memory.used,utilization.gpu --format=csv \
+    >"${RUN_ROOT}/artifacts/gpu_preflight.csv"
 printf 'stage,start_epoch,end_epoch,elapsed_seconds,exit_code\n' >"${RUN_ROOT}/artifacts/stage_timings.csv"
 
 cleanup() {
@@ -60,8 +67,6 @@ if [[ ! -f "${SOURCE_DATA_DIR}/financial_phrase_bank_train.jsonl" ]]; then
 fi
 cp -a "${SOURCE_DATA_DIR}/." "${RUN_ROOT}/data/"
 
-nvidia-smi -L >"${RUN_ROOT}/artifacts/nvidia_smi_L.txt"
-nvidia-smi --query-gpu=index,name,memory.total,memory.used,utilization.gpu --format=csv >"${RUN_ROOT}/artifacts/gpu_preflight.csv"
 GPU_ID="${GPU_ID:-$(nvidia-smi --query-gpu=index,memory.used --format=csv,noheader,nounits | sort -t, -k2n | head -1 | cut -d, -f1 | tr -d ' ')}"
 nvidia-smi --query-gpu=timestamp,index,memory.used,memory.total,utilization.gpu,power.draw --format=csv -l 10 \
     >"${RUN_ROOT}/logs/gpu_telemetry.csv" &

@@ -62,6 +62,18 @@ def render(run_root: Path, exit_code: int) -> str:
     feasibility = _text(artifacts / "SINGLE_GPU_FEASIBILITY_FAILURE.txt", "")
     if blocked or feasibility:
         lines.extend(["## Blocking result", "", blocked or feasibility, ""])
+    hardware = _text(artifacts / "gpu_preflight.csv", "")
+    host_memory = _text(artifacts / "host_memory.txt", "")
+    docker_socket = _text(artifacts / "docker_socket.txt", "")
+    if hardware or host_memory or docker_socket:
+        lines.extend(["## Host preflight", ""])
+        for title, value in (
+            ("GPU inventory", hardware),
+            ("Host memory", host_memory),
+            ("Docker socket", docker_socket),
+        ):
+            if value:
+                lines.extend([f"### {title}", "", "```text", value, "```", ""])
     if split:
         lines.extend(["## Dataset", "", f"Split seed: `{split['seed']}`; Dirichlet alpha: `{split['alpha']}`.", ""])
         lines.extend(["| File | SHA-256 | Rows | Class counts |", "| --- | --- | ---: | --- |"])
