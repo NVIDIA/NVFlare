@@ -297,7 +297,7 @@ def test_provenance_rejects_mixed_execution_configuration():
         validate_config_provenance(rows)
 
 
-def test_provenance_rejects_missing_or_inconsistent_adaptive_telemetry():
+def test_provenance_rejects_inconsistent_adaptive_telemetry():
     row = _result_row("adaptive", 0.75, 7, 0.80)
     row["adaptive_telemetry"]["adaptive_activation_rate"] = 0.9
 
