@@ -175,10 +175,12 @@ def main(argv=None):
     recipe = create_recipe(args)
     env = create_environment(args)
 
+    # PocEnv handles deployment failures and preserves the workspace if service
+    # shutdown cannot be verified. Only monitor a successfully submitted run.
+    run = recipe.execute(env)
     try:
-        run = recipe.execute(env)
-        # PocEnv downloads into its own workspace. Retain that workspace after
-        # success so the result and service logs at the printed path still exist.
+        # Retain the POC workspace after success so the printed result path and
+        # service logs remain accessible.
         result = run.get_result(clean_up=args.env != "poc")
         status = None if args.env == "sim" else run.get_status()
         if result is None:
@@ -186,10 +188,9 @@ def main(argv=None):
         if args.env != "sim" and status not in SUCCESS_STATUSES:
             raise RuntimeError(f"Job completed with unsuccessful status: {status}")
     except (Exception, KeyboardInterrupt):
-        # Only delete a POC workspace that this invocation created or replaced.
-        # A provisioning failure can otherwise leave an older retained result in
-        # the shared path, and that prior workspace must be preserved.
-        if args.env == "poc" and env.workspace_owned:
+        # Each PocEnv has a unique workspace, so monitoring failure cleanup only
+        # targets this run. Previously retained results belong to other paths.
+        if args.env == "poc":
             env.stop(clean_up=True)
         raise
 

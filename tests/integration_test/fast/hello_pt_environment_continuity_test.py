@@ -66,7 +66,13 @@ def _read_final_accuracies(result_path):
 def test_hello_pt_reuses_the_application_in_poc(tmp_path, monkeypatch, capsys):
     poc_env_module = importlib.import_module("nvflare.recipe.poc_env")
     poc_workspace = tmp_path / "poc-workspace"
+    poc_workspace.mkdir()
+    retained_result = poc_workspace / "retained-result"
+    retained_result.write_text("previous CLI result")
     monkeypatch.setattr(poc_env_module, "get_poc_workspace", lambda: str(poc_workspace))
+    # Keep admin transfers inside this test's workspace instead of linking them
+    # to a developer's NVFLARE_HOME/examples directory.
+    monkeypatch.delenv("NVFLARE_HOME", raising=False)
     monkeypatch.chdir(ADVANCED_DIR)
 
     existing_pythonpath = os.environ.get("PYTHONPATH")
@@ -87,7 +93,14 @@ def test_hello_pt_reuses_the_application_in_poc(tmp_path, monkeypatch, capsys):
     # Environment continuity means the fixed POC run reproduces the same
     # site-1/site-2 final accuracies as the deterministic simulation.
     assert _read_final_accuracies(poc_result) == _read_final_accuracies(simulation_result)
-    assert poc_workspace.is_dir()
+    recipe_workspaces = list(tmp_path.glob("poc-workspace.recipe-*"))
+    assert len(recipe_workspaces) == 1
+    assert result_path.is_relative_to(recipe_workspaces[0].resolve())
+    assert not poc_env_module.PocEnv._running_services(
+        *poc_env_module.setup_service_config(str(recipe_workspaces[0])), str(recipe_workspaces[0])
+    )
+    assert list(poc_workspace.iterdir()) == [retained_result]
+    assert retained_result.read_text() == "previous CLI result"
     output = capsys.readouterr().out
     assert "Job Status is: FINISHED:COMPLETED" in output
     assert f"Result can be found in: {poc_result}" in output

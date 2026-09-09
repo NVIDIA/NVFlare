@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import importlib
 import importlib.util
 import json
 import sys
@@ -218,7 +219,7 @@ def test_main_preserves_successful_poc_result(tmp_path, monkeypatch, capsys):
         get_result=lambda clean_up: calls.append(("get-result", clean_up)) or str(result_dir),
         get_status=lambda: calls.append(("get-status",)) or job_module.SUCCESS_STATUS,
     )
-    env = SimpleNamespace(deployment_started=True, stop=lambda clean_up: calls.append(("stop", clean_up)))
+    env = SimpleNamespace(stop=lambda clean_up: calls.append(("stop", clean_up)))
     recipe = SimpleNamespace(execute=lambda value: calls.append(("execute", value)) or run)
     monkeypatch.setattr(job_module, "create_recipe", lambda args: recipe)
     monkeypatch.setattr(job_module, "create_environment", lambda args: env)
@@ -256,9 +257,6 @@ def test_main_turns_real_run_monitoring_failure_into_error(monkeypatch):
     stop_calls = []
 
     class FailingPocEnv:
-        deployment_started = True
-        workspace_owned = True
-
         def get_job_result(self, job_id, timeout):
             raise RuntimeError("monitor unavailable")
 
@@ -280,23 +278,35 @@ def test_main_turns_real_run_monitoring_failure_into_error(monkeypatch):
     assert stop_calls == [False, True]
 
 
-@pytest.mark.parametrize("workspace_owned, expected_stop_calls", [(False, []), (True, [True])])
-def test_main_cleans_only_a_poc_workspace_owned_by_this_invocation(workspace_owned, expected_stop_calls, monkeypatch):
-    job_module = _load_job_module()
-    stop_calls = []
-    env = SimpleNamespace(
-        deployment_started=True,
-        workspace_owned=workspace_owned,
-        stop=lambda clean_up: stop_calls.append(clean_up),
-    )
-    recipe = SimpleNamespace(execute=lambda value: (_ for _ in ()).throw(RuntimeError("deployment failed")))
-    monkeypatch.setattr(job_module, "create_recipe", lambda args: recipe)
-    monkeypatch.setattr(job_module, "create_environment", lambda args: env)
+@pytest.mark.parametrize("error_type", [RuntimeError, KeyboardInterrupt])
+def test_main_leaves_failed_deployment_cleanup_to_poc_env(tmp_path, monkeypatch, error_type):
+    poc_env_module = importlib.import_module("nvflare.recipe.poc_env")
+    cli_workspace = tmp_path / "poc"
+    prior_workspace = tmp_path / ("poc.recipe-" + "1" * 32)
+    for workspace in (cli_workspace, prior_workspace):
+        workspace.mkdir()
+        (workspace / "retained-result").write_text("previous result")
+    monkeypatch.setattr(poc_env_module, "get_poc_workspace", lambda: str(cli_workspace))
 
-    with pytest.raises(RuntimeError, match="deployment failed"):
-        job_module.main(["--env", "poc"])
+    def fail_provisioning(*, workspace, **kwargs):
+        Path(workspace).mkdir()
+        (Path(workspace) / "partial-provisioning").write_text("incomplete")
+        raise error_type("provisioning failed")
 
-    assert stop_calls == expected_stop_calls
+    monkeypatch.setattr(poc_env_module, "prepare_poc_provision", fail_provisioning)
+    with _job_module_context() as job_module:
+        env = job_module.create_environment(job_module.parse_args(["--env", "poc"]))
+        monkeypatch.setattr(env, "_preflight_ports_before_provision", lambda: None)
+        monkeypatch.setattr(env, "stop", lambda **kwargs: pytest.fail("caller must not repeat deployment cleanup"))
+        monkeypatch.setattr(job_module, "create_environment", lambda args: env)
+
+        with pytest.raises(error_type, match="provisioning failed"):
+            job_module.main(["--env", "poc"])
+
+    assert not Path(env.poc_workspace).exists()
+    for workspace in (cli_workspace, prior_workspace):
+        assert list(workspace.iterdir()) == [workspace / "retained-result"]
+        assert (workspace / "retained-result").read_text() == "previous result"
 
 
 def test_main_rejects_unsuccessful_poc_status(tmp_path, monkeypatch):
@@ -305,11 +315,7 @@ def test_main_rejects_unsuccessful_poc_status(tmp_path, monkeypatch):
     result_dir = tmp_path / "failed-result"
     result_dir.mkdir()
     run = SimpleNamespace(get_result=lambda clean_up: str(result_dir), get_status=lambda: "FINISHED:ABORTED")
-    env = SimpleNamespace(
-        deployment_started=True,
-        workspace_owned=True,
-        stop=lambda clean_up: stop_calls.append(clean_up),
-    )
+    env = SimpleNamespace(stop=lambda clean_up: stop_calls.append(clean_up))
     recipe = SimpleNamespace(execute=lambda value: run)
     monkeypatch.setattr(job_module, "create_recipe", lambda args: recipe)
     monkeypatch.setattr(job_module, "create_environment", lambda args: env)

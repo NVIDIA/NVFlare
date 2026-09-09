@@ -42,11 +42,14 @@ downloads the result, and stops the services. It needs permission to start proce
 POC ports. The POC lifecycle belongs to this invocation, so provisioning and process startup occur for every job and
 make this deliberately slower than simulation.
 
-On success, the command retains the POC workspace so the printed result path and service logs remain available. Copy
-results you want to keep before another POC run replaces the workspace. If provisioning, submission, or monitoring
-fails after this invocation begins its POC lifecycle, the command stops the processes, removes that failed workspace,
-and exits nonzero. Before provisioning, a stopped retained workspace is moved aside atomically. If provisioning fails,
-the partial replacement is removed and the retained workspace is restored with its prior results and logs intact.
+Each invocation uses a unique workspace beside the configured CLI POC workspace, with a `.recipe-<UUID>` suffix.
+On success, the command retains that workspace so the printed result path and service logs remain available across
+later runs. The configured CLI workspace and earlier Recipe results are preserved. Stop any running CLI POC with
+`nvflare poc stop` before starting this example, since the services still need the same local ports.
+
+If provisioning, submission, or monitoring fails, the command exits nonzero and cleans up the failed run's workspace
+after confirming that its services have stopped. If shutdown cannot be verified, `PocEnv` preserves that workspace
+and reports recovery instructions so its service configuration remains available for manual cleanup.
 
 ## Connect to an existing production system
 
