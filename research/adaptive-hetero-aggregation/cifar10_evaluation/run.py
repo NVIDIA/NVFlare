@@ -43,7 +43,7 @@ for path in (str(PROJECT_SRC), str(CIFAR_SRC), str(EVAL_DIR)):
     if path not in sys.path:
         sys.path.insert(0, path)
 os.environ["PYTHONPATH"] = os.pathsep.join(
-    [str(PROJECT_SRC), str(CIFAR_SRC), os.environ.get("PYTHONPATH", "")]
+    [str(PROJECT_SRC), str(CIFAR_SRC), str(EVAL_DIR), os.environ.get("PYTHONPATH", "")]
 )
 
 from adaptive_hetero.model_aggregator import AdaptiveHeterogeneityModelAggregator  # noqa: E402
