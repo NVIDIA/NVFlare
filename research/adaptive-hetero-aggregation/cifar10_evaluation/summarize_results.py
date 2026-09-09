@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Summarize matched CIFAR-10 runs with 95% confidence intervals."""
+"""Summarize matched CIFAR-10 runs with provenance and 95% confidence intervals."""
 
 import argparse
 import json
@@ -23,7 +23,17 @@ from pathlib import Path
 import numpy as np
 from scipy.stats import t
 
+from protocol import canonical_config_hash
+
 METRICS = ("global_accuracy", "worst_client_accuracy")
+ADAPTIVE_TELEMETRY_FIELDS = (
+    "adaptive_aggregation_rounds",
+    "adaptive_active_rounds",
+    "adaptive_activation_rate",
+    "adaptive_mean_active_blend_factor",
+    "adaptive_max_observed_blend_factor",
+    "adaptive_cohort_change_count",
+)
 
 
 def _load_rows(path: str, protocol_version: str | None = None) -> list[dict]:
@@ -57,18 +67,90 @@ def _condition_key(row: dict) -> tuple[str, float, float, int]:
     )
 
 
-def validate_complete_matrix(
-    rows: list[dict], methods: list[str], alphas: list[float], participation_rates: list[float], seeds: list[int]
+def _validate_hash_payload(row: dict, config_key: str, hash_key: str) -> None:
+    config = row.get(config_key)
+    digest = row.get(hash_key)
+    if not isinstance(config, dict) or not isinstance(digest, str) or not digest:
+        raise ValueError(f"result row {_condition_key(row)} is missing {config_key}/{hash_key} provenance")
+    actual = canonical_config_hash(config)
+    if actual != digest:
+        raise ValueError(f"result row {_condition_key(row)} has an invalid {hash_key}")
+
+
+def _validate_adaptive_telemetry(row: dict) -> None:
+    telemetry = row.get("adaptive_telemetry")
+    if not isinstance(telemetry, dict):
+        raise ValueError(f"adaptive result row {_condition_key(row)} is missing activation telemetry")
+    missing = [key for key in ADAPTIVE_TELEMETRY_FIELDS if key not in telemetry]
+    if missing:
+        raise ValueError(f"adaptive result row {_condition_key(row)} is missing telemetry fields: {missing}")
+
+    rounds = int(telemetry["adaptive_aggregation_rounds"])
+    active_rounds = int(telemetry["adaptive_active_rounds"])
+    activation_rate = float(telemetry["adaptive_activation_rate"])
+    mean_active_blend = float(telemetry["adaptive_mean_active_blend_factor"])
+    max_blend = float(telemetry["adaptive_max_observed_blend_factor"])
+    cohort_changes = int(telemetry["adaptive_cohort_change_count"])
+    values = (activation_rate, mean_active_blend, max_blend)
+    if rounds <= 0 or active_rounds < 0 or active_rounds > rounds or cohort_changes < 0:
+        raise ValueError(f"adaptive result row {_condition_key(row)} has invalid activation counts")
+    if not all(math.isfinite(value) for value in values):
+        raise ValueError(f"adaptive result row {_condition_key(row)} has non-finite activation telemetry")
+    if not 0.0 <= activation_rate <= 1.0 or not 0.0 <= mean_active_blend <= 1.0 or not 0.0 <= max_blend <= 1.0:
+        raise ValueError(f"adaptive result row {_condition_key(row)} has out-of-range activation telemetry")
+    expected_rate = active_rounds / rounds
+    if not math.isclose(activation_rate, expected_rate, rel_tol=1e-9, abs_tol=1e-12):
+        raise ValueError(f"adaptive result row {_condition_key(row)} has inconsistent activation rate")
+    if active_rounds == 0 and (mean_active_blend != 0.0 or max_blend != 0.0):
+        raise ValueError(f"adaptive result row {_condition_key(row)} reports blend without active rounds")
+
+
+def validate_config_provenance(
+    rows: list[dict],
+    expected_common_hash: str | None = None,
+    expected_method_hashes: dict[str, str] | None = None,
 ) -> None:
-    """Require every requested method/condition/seed exactly once.
+    """Reject rows produced by incompatible common or method configurations."""
 
-    This prevents a partially completed campaign from being rendered as the
-    maintainer-requested main result table. FedOpt is optional context and, when
-    requested, is expected only for full participation because the campaign
-    runner deliberately excludes partial FedOpt runs. Extra rows from the same
-    protocol are permitted; only the explicitly requested matrix is required.
-    """
+    common_hashes = set()
+    per_method_hashes = defaultdict(set)
+    expected_method_hashes = expected_method_hashes or {}
+    for row in rows:
+        _validate_hash_payload(row, "common_config", "common_config_hash")
+        _validate_hash_payload(row, "method_config", "method_config_hash")
+        _validate_hash_payload(row, "experiment_config", "experiment_config_hash")
+        common_hash = row["common_config_hash"]
+        method = str(row["method"])
+        method_hash = row["method_config_hash"]
+        common_hashes.add(common_hash)
+        per_method_hashes[method].add(method_hash)
+        if expected_common_hash is not None and common_hash != expected_common_hash:
+            raise ValueError(f"result row {_condition_key(row)} does not match the requested common configuration")
+        expected_method_hash = expected_method_hashes.get(method)
+        if expected_method_hash is not None and method_hash != expected_method_hash:
+            raise ValueError(f"result row {_condition_key(row)} does not match the requested {method} configuration")
+        if method == "adaptive":
+            _validate_adaptive_telemetry(row)
 
+    if len(common_hashes) != 1:
+        raise ValueError("results mix multiple common experiment configurations")
+    mixed_methods = {method: hashes for method, hashes in per_method_hashes.items() if len(hashes) != 1}
+    if mixed_methods:
+        raise ValueError(f"results mix multiple method configurations: {sorted(mixed_methods)}")
+
+
+def validate_complete_matrix(
+    rows: list[dict],
+    methods: list[str],
+    alphas: list[float],
+    participation_rates: list[float],
+    seeds: list[int],
+    expected_common_hash: str | None = None,
+    expected_method_hashes: dict[str, str] | None = None,
+) -> None:
+    """Require every requested method/condition/seed exactly once with one configuration."""
+
+    validate_config_provenance(rows, expected_common_hash, expected_method_hashes)
     actual_keys = [_condition_key(row) for row in rows]
     if len(set(actual_keys)) != len(actual_keys):
         raise ValueError("results contain duplicate method/alpha/participation/seed rows")
@@ -130,15 +212,32 @@ def summarize(rows: list[dict], reference_method: str = "adaptive") -> dict:
 
     summaries = []
     for (alpha, participation_rate, method), group in sorted(grouped.items()):
-        summaries.append(
-            {
-                "alpha": alpha,
-                "participation_rate": participation_rate,
-                "method": method,
-                "seeds": sorted(int(row["seed"]) for row in group),
-                "metrics": {metric: _ci([float(row[metric]) for row in group]) for metric in METRICS},
+        item = {
+            "alpha": alpha,
+            "participation_rate": participation_rate,
+            "method": method,
+            "seeds": sorted(int(row["seed"]) for row in group),
+            "metrics": {metric: _ci([float(row[metric]) for row in group]) for metric in METRICS},
+        }
+        if method == "adaptive" and all(isinstance(row.get("adaptive_telemetry"), dict) for row in group):
+            item["adaptive_telemetry"] = {
+                "activation_rate": _ci(
+                    [float(row["adaptive_telemetry"]["adaptive_activation_rate"]) for row in group]
+                ),
+                "active_rounds": _ci(
+                    [float(row["adaptive_telemetry"]["adaptive_active_rounds"]) for row in group]
+                ),
+                "mean_active_blend_factor": _ci(
+                    [float(row["adaptive_telemetry"]["adaptive_mean_active_blend_factor"]) for row in group]
+                ),
+                "max_observed_blend_factor": _ci(
+                    [float(row["adaptive_telemetry"]["adaptive_max_observed_blend_factor"]) for row in group]
+                ),
+                "cohort_change_count": _ci(
+                    [float(row["adaptive_telemetry"]["adaptive_cohort_change_count"]) for row in group]
+                ),
             }
-        )
+        summaries.append(item)
 
     paired = []
     conditions = sorted({(float(row["alpha"]), float(row["participation_rate"])) for row in rows})
@@ -193,6 +292,18 @@ def _format_delta(stats: dict) -> str:
     return f"{mean:+.2f} ± {half_width:.2f} pp"
 
 
+def _format_activation(item: dict) -> str:
+    telemetry = item.get("adaptive_telemetry")
+    if not telemetry:
+        return "—"
+    rate = telemetry["activation_rate"]
+    mean = 100.0 * float(rate["mean"])
+    if rate["half_width"] is None:
+        return f"{mean:.1f}%"
+    half_width = 100.0 * float(rate["half_width"])
+    return f"{mean:.1f}% ± {half_width:.1f} pp"
+
+
 def render_markdown(summary: dict) -> str:
     """Render full and partial participation together as main results."""
 
@@ -201,6 +312,7 @@ def render_markdown(summary: dict) -> str:
         "",
         "Values are means across matched seeds with two-sided 95% Student-t confidence intervals.",
         "Global and worst-client accuracy use the common post-training evaluator.",
+        "Adaptive activation rate is the fraction of valid aggregation rounds with a non-zero blend; a low rate makes conservative fallback behavior explicit.",
         "",
     ]
     groups = defaultdict(list)
@@ -212,17 +324,18 @@ def render_markdown(summary: dict) -> str:
             [
                 f"## Dirichlet alpha={alpha:g}, participation={participation_rate:.0%}",
                 "",
-                "| Method | Seeds | Global accuracy | Worst-client accuracy |",
-                "| --- | ---: | ---: | ---: |",
+                "| Method | Seeds | Global accuracy | Worst-client accuracy | Adaptive activation |",
+                "| --- | ---: | ---: | ---: | ---: |",
             ]
         )
         for item in sorted(items, key=lambda value: value["method"]):
             lines.append(
-                "| {method} | {n} | {global_ci} | {worst_ci} |".format(
+                "| {method} | {n} | {global_ci} | {worst_ci} | {activation} |".format(
                     method=item["method"],
                     n=len(item["seeds"]),
                     global_ci=_format_ci(item["metrics"]["global_accuracy"]),
                     worst_ci=_format_ci(item["metrics"]["worst_client_accuracy"]),
+                    activation=_format_activation(item),
                 )
             )
         lines.append("")
@@ -252,13 +365,40 @@ def render_markdown(summary: dict) -> str:
     return "\n".join(lines)
 
 
+def _method_hashes(values: list[str]) -> dict[str, str]:
+    result = {}
+    for value in values:
+        if "=" not in value:
+            raise ValueError("--method_config_hash entries must use METHOD=HASH")
+        method, digest = value.split("=", 1)
+        if not method or not digest:
+            raise ValueError("--method_config_hash entries must use non-empty METHOD=HASH")
+        result[method] = digest
+    return result
+
+
 def main(args):
     rows = _load_rows(args.input, protocol_version=args.protocol_version)
+    expected_method_hashes = _method_hashes(args.method_config_hash)
     if args.require_complete:
-        validate_complete_matrix(rows, args.methods, args.alphas, args.participation_rates, args.seeds)
+        validate_complete_matrix(
+            rows,
+            args.methods,
+            args.alphas,
+            args.participation_rates,
+            args.seeds,
+            expected_common_hash=args.common_config_hash,
+            expected_method_hashes=expected_method_hashes,
+        )
+    elif args.common_config_hash or expected_method_hashes:
+        validate_config_provenance(rows, args.common_config_hash, expected_method_hashes)
     result = summarize(rows, reference_method=args.reference_method)
     if args.protocol_version is not None:
         result["protocol_version"] = args.protocol_version
+    if args.common_config_hash is not None:
+        result["common_config_hash"] = args.common_config_hash
+    if expected_method_hashes:
+        result["method_config_hashes"] = expected_method_hashes
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
@@ -276,6 +416,8 @@ if __name__ == "__main__":
     parser.add_argument("--markdown_output", default=None, help="Optional reviewer-facing Markdown main-results table")
     parser.add_argument("--reference_method", default="adaptive")
     parser.add_argument("--protocol_version", default=None)
+    parser.add_argument("--common_config_hash", default=None)
+    parser.add_argument("--method_config_hash", action="append", default=[])
     parser.add_argument("--require_complete", action="store_true")
     parser.add_argument("--methods", nargs="+", default=["fedavg", "fedprox", "scaffold", "fedce", "adaptive"])
     parser.add_argument("--alphas", nargs="+", type=float, default=[0.1, 0.5])
