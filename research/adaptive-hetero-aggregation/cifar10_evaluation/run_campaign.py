@@ -37,6 +37,12 @@ def _expected_common_hash(args) -> str:
             batch_size=args.batch_size,
             lr=args.lr,
             validation_fraction=args.validation_fraction,
+            num_workers=args.num_workers,
+            num_threads=args.num_threads,
+            gpu_config=args.gpu_config,
+            eval_batch_size=args.eval_batch_size,
+            eval_num_workers=args.eval_num_workers,
+            eval_device=args.eval_device,
         )
     )
 
