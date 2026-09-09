@@ -17,6 +17,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import pytest
 import torch
 
 PROJECT_DIR = Path(__file__).resolve().parents[1]
@@ -28,7 +29,7 @@ import eval_split  # noqa: E402
 from evaluate_result import checkpoint_state_dict, find_server_checkpoint  # noqa: E402
 from protocol import PROTOCOL_VERSION  # noqa: E402
 from run_campaign import _completed_keys  # noqa: E402
-from summarize_results import _load_rows, summarize  # noqa: E402
+from summarize_results import _load_rows, render_markdown, summarize, validate_complete_matrix  # noqa: E402
 
 
 def test_find_server_checkpoint_prefers_final_round_model(tmp_path):
@@ -105,27 +106,24 @@ def test_training_clients_use_held_out_training_validation_not_cifar_test():
         assert "create_datasets(" not in source
 
 
+def _result_row(method: str, participation: float, seed: int, accuracy: float) -> dict:
+    return {
+        "method": method,
+        "alpha": 0.1,
+        "participation_rate": participation,
+        "seed": seed,
+        "global_accuracy": accuracy,
+        "worst_client_accuracy": accuracy - 0.10,
+    }
+
+
 def test_summary_reports_ci_and_paired_split_seed_deltas():
     rows = []
     for seed, adaptive, fedavg in ((7, 0.80, 0.75), (19, 0.82, 0.78), (31, 0.81, 0.77)):
         rows.extend(
             [
-                {
-                    "method": "adaptive",
-                    "alpha": 0.1,
-                    "participation_rate": 1.0,
-                    "seed": seed,
-                    "global_accuracy": adaptive,
-                    "worst_client_accuracy": adaptive - 0.10,
-                },
-                {
-                    "method": "fedavg",
-                    "alpha": 0.1,
-                    "participation_rate": 1.0,
-                    "seed": seed,
-                    "global_accuracy": fedavg,
-                    "worst_client_accuracy": fedavg - 0.12,
-                },
+                _result_row("adaptive", 1.0, seed, adaptive),
+                _result_row("fedavg", 1.0, seed, fedavg),
             ]
         )
 
@@ -137,6 +135,42 @@ def test_summary_reports_ci_and_paired_split_seed_deltas():
     paired = result["paired_comparisons"][0]
     assert paired["seeds"] == [7, 19, 31]
     assert paired["delta_reference_minus_baseline"]["global_accuracy"]["mean"] > 0.0
+
+
+def test_complete_matrix_rejects_missing_partial_participation_row():
+    methods = ["fedavg", "adaptive"]
+    seeds = [7, 19]
+    rows = []
+    for method in methods:
+        for participation in (1.0, 0.75):
+            for seed in seeds:
+                if method == "fedavg" and participation == 0.75 and seed == 19:
+                    continue
+                rows.append(_result_row(method, participation, seed, 0.75))
+
+    with pytest.raises(ValueError, match="incomplete CIFAR-10 evidence matrix"):
+        validate_complete_matrix(rows, methods, [0.1], [1.0, 0.75], seeds)
+
+
+def test_complete_matrix_and_markdown_include_partial_participation_main_results():
+    methods = ["fedavg", "adaptive"]
+    seeds = [7, 19]
+    rows = []
+    for method in methods:
+        for participation in (1.0, 0.75):
+            for seed in seeds:
+                accuracy = 0.80 if method == "adaptive" else 0.76
+                rows.append(_result_row(method, participation, seed, accuracy))
+
+    validate_complete_matrix(rows, methods, [0.1], [1.0, 0.75], seeds)
+    markdown = render_markdown(summarize(rows))
+
+    assert "participation=100%" in markdown
+    assert "participation=75%" in markdown
+    assert "fedavg" in markdown
+    assert "adaptive" in markdown
+    assert "Paired adaptive-minus-baseline deltas" in markdown
+    assert "+4.00" in markdown
 
 
 def test_campaign_resume_uses_protocol_condition_seed_and_validation_fraction(tmp_path):
