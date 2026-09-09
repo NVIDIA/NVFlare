@@ -12,21 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""FedCE CIFAR-10 client using the same training protocol as the matched benchmark."""
+"""FedCE CIFAR-10 client using held-out training validation data."""
 
 import argparse
 import copy
 import json
-import os
 import re
 
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from data.cifar10_data_utils import create_data_loaders, create_datasets
+from data.cifar10_data_utils import create_data_loaders
+from local_data import create_local_datasets
 from model import ModerateCNN
-from torch.utils.data import Subset
 from train_utils import compute_model_diff, evaluate, get_lr_values
 
 import nvflare.client as flare
@@ -42,16 +41,6 @@ def _site_seed(base_seed: int, site_name: str) -> int:
     if not match:
         raise ValueError(f"expected site name ending in an integer, got {site_name!r}")
     return base_seed + int(match.group(1)) - 1
-
-
-def _local_validation_dataset(valid_dataset, eval_idx_root: str, site_name: str):
-    path = os.path.join(eval_idx_root, f"{site_name}.npy")
-    if not os.path.isfile(path):
-        raise ValueError(f"missing local evaluation split for {site_name}: {path}")
-    indices = np.load(path).astype(np.int64)
-    if indices.size == 0:
-        raise ValueError(f"local evaluation split for {site_name} is empty")
-    return Subset(valid_dataset, indices.tolist())
 
 
 def _historical_minus_score(observed_minus_accuracies) -> float:
@@ -76,10 +65,13 @@ def main(args):
     optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=0.9)
     scheduler = None
 
-    train_dataset, full_valid_dataset = create_datasets(client_name, train_idx_root=args.train_idx_root)
-    local_valid_dataset = _local_validation_dataset(full_valid_dataset, args.eval_idx_root, client_name)
+    train_dataset, validation_dataset = create_local_datasets(
+        client_name,
+        train_idx_root=args.train_idx_root,
+        validation_idx_root=args.validation_idx_root,
+    )
     train_loader, valid_loader = create_data_loaders(
-        train_dataset, local_valid_dataset, batch_size=args.batch_size, num_workers=args.num_workers
+        train_dataset, validation_dataset, batch_size=args.batch_size, num_workers=args.num_workers
     )
     if len(train_loader) == 0 or len(valid_loader) == 0:
         raise ValueError("FedCE CIFAR-10 evaluation requires non-empty training and validation loaders")
@@ -113,9 +105,8 @@ def main(args):
         first_participation = previous_local_state is None
         if first_participation:
             # FedCE has no leave-one-out local model before a client has trained
-            # once. This is the same neutral initialization used by the official
-            # round-0 client, and it also makes late first participation safe in
-            # a partial-participation experiment.
+            # once. Use the official round-0 neutral initialization for a client
+            # whose first participation happens later in a sampled federation.
             observed_minus_accuracies.append(0.0)
         else:
             minus_model = PTFedCEHelper.make_minus_model(initial_model, previous_local_state, contribution_weight)
@@ -181,7 +172,7 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--train_idx_root", required=True)
-    parser.add_argument("--eval_idx_root", required=True)
+    parser.add_argument("--validation_idx_root", required=True)
     parser.add_argument("--aggregation_epochs", type=int, default=4)
     parser.add_argument("--lr", type=float, default=5e-2)
     parser.add_argument("--batch_size", type=int, default=64)
