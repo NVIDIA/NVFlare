@@ -80,6 +80,18 @@ def test_model_aggregator_native_fallback_is_weighted_by_steps():
     assert np.allclose(result.params["weight"], np.asarray([1.2], dtype=np.float32), atol=1e-6)
 
 
+def test_model_aggregator_empty_round_is_safe_noop_diff():
+    aggregator = AdaptiveHeterogeneityModelAggregator()
+    result = aggregator.aggregate_model()
+
+    assert result.params_type == ParamsType.DIFF
+    assert result.params == {}
+    assert result.metrics is None
+    assert result.meta["nr_aggregated"] == 0
+    assert result.meta["adaptive_empty_result"] is True
+    assert aggregator.last_weights == {}
+
+
 def test_unified_fedavg_recipe_serializes_adaptive_model_aggregator(tmp_path):
     aggregator = AdaptiveHeterogeneityModelAggregator(
         metric_prior_strength=7.0,
