@@ -14,10 +14,11 @@
 
 """Run matched NVIDIA FLARE CIFAR-10 experiments for adaptive aggregation.
 
-All methods use the same Dirichlet training partition and initial server-model
-seed for a given ``(n_clients, alpha, seed)``. After training, every method is
-evaluated by the same post-training evaluator on the full CIFAR-10 test set and
-on identical site-specific test partitions.
+For each ``(n_clients, alpha, seed)`` NVIDIA FLARE's standard Dirichlet split is
+created once. Every method trains on the same site-local training subset. The
+adaptive and FedCE methods use held-out validation examples carved only from the
+CIFAR-10 training set. The official CIFAR-10 test set is untouched until the
+common post-training evaluator runs.
 """
 
 import argparse
@@ -41,11 +42,13 @@ EVAL_DIR = Path(__file__).resolve().parent
 for path in (str(PROJECT_SRC), str(CIFAR_SRC), str(EVAL_DIR)):
     if path not in sys.path:
         sys.path.insert(0, path)
-os.environ["PYTHONPATH"] = os.pathsep.join([str(PROJECT_SRC), str(CIFAR_SRC), os.environ.get("PYTHONPATH", "")])
+os.environ["PYTHONPATH"] = os.pathsep.join(
+    [str(PROJECT_SRC), str(CIFAR_SRC), os.environ.get("PYTHONPATH", "")]
+)
 
 from adaptive_hetero.model_aggregator import AdaptiveHeterogeneityModelAggregator  # noqa: E402
 from data.cifar10_data_split import split_and_save  # noqa: E402
-from eval_split import create_eval_splits  # noqa: E402
+from eval_split import create_eval_splits, create_train_validation_splits  # noqa: E402
 from evaluate_result import evaluate_workspace  # noqa: E402
 from model import ModerateCNN  # noqa: E402
 
@@ -85,11 +88,14 @@ def _common_train_args(args, train_idx_root: str) -> str:
     )
 
 
-def _local_metric_train_args(args, train_idx_root: str, eval_idx_root: str) -> str:
-    return f"{_common_train_args(args, train_idx_root)} --eval_idx_root {eval_idx_root} --seed {args.seed}"
+def _local_metric_train_args(args, train_idx_root: str, validation_idx_root: str) -> str:
+    return (
+        f"{_common_train_args(args, train_idx_root)} "
+        f"--validation_idx_root {validation_idx_root} --seed {args.seed}"
+    )
 
 
-def _build_recipe(args, train_idx_root: str, eval_idx_root: str, round_clients: int):
+def _build_recipe(args, train_idx_root: str, validation_idx_root: str, round_clients: int):
     # This controls the server's initial model and the Dirichlet partition seed.
     # NVIDIA's stock CIFAR baseline client scripts do not expose a client RNG
     # argument, so local augmentation/minibatch stochasticity remains part of
@@ -154,7 +160,7 @@ def _build_recipe(args, train_idx_root: str, eval_idx_root: str, round_clients: 
             num_rounds=args.num_rounds,
             model=model,
             train_script=_client_script(args.method),
-            train_args=_local_metric_train_args(args, train_idx_root, eval_idx_root),
+            train_args=_local_metric_train_args(args, train_idx_root, validation_idx_root),
             fedce_mode=args.fedce_mode,
         )
 
@@ -175,7 +181,7 @@ def _build_recipe(args, train_idx_root: str, eval_idx_root: str, round_clients: 
         num_rounds=args.num_rounds,
         model=model,
         train_script=_client_script(args.method),
-        train_args=_local_metric_train_args(args, train_idx_root, eval_idx_root),
+        train_args=_local_metric_train_args(args, train_idx_root, validation_idx_root),
         aggregator=aggregator,
         aggregator_data_kind=DataKind.WEIGHT_DIFF,
         params_transfer_type=TransferType.DIFF,
@@ -196,20 +202,28 @@ def main(args):
         raise ValueError("alpha must be greater than zero")
 
     round_clients = _round_clients(args.n_clients, args.participation_rate)
-    split_prefix = os.path.join(args.split_root, "shared_train")
-    train_idx_root = split_and_save(
-        split_dir_prefix=split_prefix,
+    assignment_prefix = os.path.join(args.split_root, "dirichlet_assignment")
+    assignment_root = split_and_save(
+        split_dir_prefix=assignment_prefix,
         num_sites=args.n_clients,
         alpha=args.alpha,
         seed=args.seed,
     )
-    eval_idx_root = os.path.join(
-        args.split_root,
-        f"shared_eval_{args.n_clients}sites_alpha{args.alpha:.2f}_seed{args.seed}",
+    suffix = f"{args.n_clients}sites_alpha{args.alpha:.2f}_seed{args.seed}"
+    train_idx_root = os.path.join(args.split_root, f"shared_train_{suffix}")
+    validation_idx_root = os.path.join(args.split_root, f"shared_validation_{suffix}")
+    test_idx_root = os.path.join(args.split_root, f"shared_test_{suffix}")
+    create_train_validation_splits(
+        assignment_root=assignment_root,
+        train_output_root=train_idx_root,
+        validation_output_root=validation_idx_root,
+        n_clients=args.n_clients,
+        seed=args.seed,
+        validation_fraction=args.validation_fraction,
     )
-    create_eval_splits(train_idx_root, eval_idx_root, args.n_clients, args.seed)
+    create_eval_splits(assignment_root, test_idx_root, args.n_clients, args.seed)
 
-    recipe = _build_recipe(args, train_idx_root, eval_idx_root, round_clients)
+    recipe = _build_recipe(args, train_idx_root, validation_idx_root, round_clients)
     workspace_root = os.path.abspath(args.workspace_root)
     env = SimEnv(
         num_clients=args.n_clients,
@@ -225,7 +239,7 @@ def main(args):
     job_workspace = os.path.join(workspace_root, recipe.name)
     evaluation = evaluate_workspace(
         workspace=job_workspace,
-        eval_idx_root=eval_idx_root,
+        eval_idx_root=test_idx_root,
         n_clients=args.n_clients,
         batch_size=args.eval_batch_size,
         num_workers=args.eval_num_workers,
@@ -242,13 +256,17 @@ def main(args):
         "aggregation_epochs": args.aggregation_epochs,
         "batch_size": args.batch_size,
         "lr": args.lr,
+        "validation_fraction": args.validation_fraction,
+        "assignment_root": assignment_root,
         "train_idx_root": train_idx_root,
-        "eval_idx_root": eval_idx_root,
+        "validation_idx_root": validation_idx_root,
+        "test_idx_root": test_idx_root,
         "workspace": job_workspace,
         "job_name": recipe.name,
         "status": status,
         "result": str(run.get_result()),
         "pairing_scope": "dirichlet_split_and_server_initialization",
+        "test_data_used_during_training": False,
         **evaluation,
     }
     print("CIFAR10_EVAL_RESULT " + json.dumps(record, sort_keys=True), flush=True)
@@ -264,6 +282,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_rounds", type=int, default=50)
     parser.add_argument("--alpha", type=float, default=0.1)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--validation_fraction", type=float, default=0.10)
     parser.add_argument("--num_workers", type=int, default=2)
     parser.add_argument("--num_threads", type=int, default=None)
     parser.add_argument("--lr", type=float, default=5e-2)
