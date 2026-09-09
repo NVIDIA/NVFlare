@@ -21,7 +21,6 @@ import os
 import socket
 import time
 import traceback
-import uuid
 
 import pytest
 from cryptography import x509
@@ -41,8 +40,9 @@ _CONNECT_TIMEOUT = 10.0
 _REJECT_WAIT = 3.0
 _REQUEST_TIMEOUT = 3.0
 _REJECTION_LOG_WAIT = 10.0
-_JOB_A = str(uuid.uuid4())
-_JOB_B = str(uuid.uuid4())
+# fixed ids: pytest-xdist requires identical test ids on every worker
+_JOB_A = "aaaaaaaa-0000-4000-8000-00000000000a"
+_JOB_B = "bbbbbbbb-0000-4000-8000-00000000000b"
 
 
 class _RejectionRecorder(logging.Handler):
@@ -261,9 +261,10 @@ def test_site_parent_accepts_job_cell_with_its_own_job_cert(site_parent):
 @pytest.mark.parametrize(
     "claimed_fqcn",
     [
-        f"site-1.{_JOB_B}",  # job B's own cell
+        f"site-1.{_JOB_B}",
         f"site-1.{_JOB_B}.ws_transfer_{_JOB_A}",  # an auxiliary name below job B's cell is still job B's
     ],
+    ids=["job_b_cell", "aux_cell_below_job_b"],
 )
 def test_site_parent_rejects_another_jobs_cert_on_job_fqcn(site_parent, claimed_fqcn):
     result = _job_cell(site_parent, "job_a", claimed_fqcn, _REJECT_WAIT)

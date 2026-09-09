@@ -20,7 +20,6 @@ import os
 import socket
 import time
 import traceback
-import uuid
 
 import pytest
 from cryptography import x509
@@ -40,8 +39,9 @@ _CONNECT_TIMEOUT = 10.0
 _REJECT_WAIT = 3.0
 _REQUEST_TIMEOUT = 3.0
 _REJECTION_LOG_WAIT = 10.0
-_JOB_ID = str(uuid.uuid4())
-_OTHER_JOB_ID = str(uuid.uuid4())
+# fixed ids: pytest-xdist requires identical test ids on every worker
+_JOB_ID = "11111111-0000-4000-8000-000000000001"
+_OTHER_JOB_ID = "22222222-0000-4000-8000-000000000002"
 
 
 class _RejectionRecorder(logging.Handler):
