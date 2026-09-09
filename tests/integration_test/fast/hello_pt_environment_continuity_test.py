@@ -13,42 +13,16 @@
 # limitations under the License.
 
 import importlib
-import importlib.util
 import json
 import os
-import sys
-from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
 
 from nvflare.recipe import SimEnv
+from tests.hello_pt_test_utils import REPO_ROOT, load_hello_pt_module
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
 ADVANCED_DIR = REPO_ROOT / "examples" / "advanced" / "hello-pt-environments"
-HELLO_PT_DIR = REPO_ROOT / "examples" / "hello-world" / "hello-pt"
-
-
-@contextmanager
-def _load_job_module():
-    module_path = ADVANCED_DIR / "job.py"
-    spec = importlib.util.spec_from_file_location("hello_pt_environment_continuity_job", module_path)
-    module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-
-    original_sys_path = list(sys.path)
-    original_modules = {name: sys.modules.pop(name, None) for name in ("model", "prepare_data")}
-    sys.path.insert(0, str(ADVANCED_DIR))
-    try:
-        spec.loader.exec_module(module)
-        yield module
-    finally:
-        sys.path[:] = original_sys_path
-        for name, original in original_modules.items():
-            if original is None:
-                sys.modules.pop(name, None)
-            else:
-                sys.modules[name] = original
 
 
 def _read_final_accuracies(result_path):
@@ -81,7 +55,7 @@ def test_hello_pt_reuses_the_application_in_poc(tmp_path, monkeypatch, capsys):
         source_pythonpath = os.pathsep.join((source_pythonpath, existing_pythonpath))
     monkeypatch.setenv("PYTHONPATH", source_pythonpath)
 
-    with _load_job_module() as job_module:
+    with load_hello_pt_module("job.py", example_dir=ADVANCED_DIR) as job_module:
         simulation_recipe = job_module.create_recipe(job_module.parse_args([]))
         simulation_run = simulation_recipe.execute(SimEnv(num_clients=2, workspace_root=str(tmp_path / "simulation")))
         simulation_result = simulation_run.get_result()

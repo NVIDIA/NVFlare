@@ -15,46 +15,21 @@
 import importlib
 import importlib.util
 import json
-import sys
-from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 from nvflare.recipe.run import Run
+from tests.hello_pt_test_utils import HELLO_PT_DIR, REPO_ROOT, load_hello_pt_module
 
 HAS_PT = importlib.util.find_spec("torch") is not None
 pytestmark = pytest.mark.skipif(not HAS_PT, reason="PyTorch is not installed")
-REPO_ROOT = Path(__file__).resolve().parents[3]
 ADVANCED_DIR = REPO_ROOT / "examples" / "advanced" / "hello-pt-environments"
-HELLO_PT_DIR = REPO_ROOT / "examples" / "hello-world" / "hello-pt"
-
-
-@contextmanager
-def _job_module_context():
-    module_path = ADVANCED_DIR / "job.py"
-    spec = importlib.util.spec_from_file_location("hello_pt_environments_job", module_path)
-    module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-
-    original_sys_path = list(sys.path)
-    original_modules = {name: sys.modules.pop(name, None) for name in ("model", "prepare_data")}
-    sys.path.insert(0, str(ADVANCED_DIR))
-    try:
-        spec.loader.exec_module(module)
-        yield module
-    finally:
-        sys.path[:] = original_sys_path
-        for name, original in original_modules.items():
-            if original is None:
-                sys.modules.pop(name, None)
-            else:
-                sys.modules[name] = original
 
 
 def _load_job_module():
-    with _job_module_context() as module:
+    with load_hello_pt_module("job.py", example_dir=ADVANCED_DIR) as module:
         return module
 
 
@@ -294,7 +269,7 @@ def test_main_leaves_failed_deployment_cleanup_to_poc_env(tmp_path, monkeypatch,
         raise error_type("provisioning failed")
 
     monkeypatch.setattr(poc_env_module, "prepare_poc_provision", fail_provisioning)
-    with _job_module_context() as job_module:
+    with load_hello_pt_module("job.py", example_dir=ADVANCED_DIR) as job_module:
         env = job_module.create_environment(job_module.parse_args(["--env", "poc"]))
         monkeypatch.setattr(env, "_preflight_ports_before_provision", lambda: None)
         monkeypatch.setattr(env, "stop", lambda **kwargs: pytest.fail("caller must not repeat deployment cleanup"))
@@ -327,7 +302,7 @@ def test_main_rejects_unsuccessful_poc_status(tmp_path, monkeypatch):
 
 
 def test_exported_job_uses_the_bundled_shared_application(tmp_path, monkeypatch):
-    with _job_module_context() as job_module:
+    with load_hello_pt_module("job.py", example_dir=ADVANCED_DIR) as job_module:
         args = job_module.parse_args([])
         recipe = job_module.create_recipe(args)
         env = job_module.create_environment(args)
