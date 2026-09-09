@@ -12,6 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from .model_aggregator import AdaptiveHeterogeneityModelAggregator
+from .nvflare_aggregator import AdaptiveHeterogeneityAggregator, AdaptiveMetaKey
 from .policy import AdaptiveHeterogeneityPolicy, AdaptiveWeightingConfig, WeightingResult
 
-__all__ = ["AdaptiveHeterogeneityPolicy", "AdaptiveWeightingConfig", "WeightingResult"]
+__all__ = [
+    "AdaptiveHeterogeneityAggregator",
+    "AdaptiveHeterogeneityModelAggregator",
+    "AdaptiveHeterogeneityPolicy",
+    "AdaptiveMetaKey",
+    "AdaptiveWeightingConfig",
+    "WeightingResult",
+]
