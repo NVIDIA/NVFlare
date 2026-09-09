@@ -48,6 +48,50 @@ def _load_rows(path: str, protocol_version: str | None = None) -> list[dict]:
     return rows
 
 
+def _condition_key(row: dict) -> tuple[str, float, float, int]:
+    return (
+        str(row["method"]),
+        float(row["alpha"]),
+        float(row["participation_rate"]),
+        int(row["seed"]),
+    )
+
+
+def validate_complete_matrix(
+    rows: list[dict], methods: list[str], alphas: list[float], participation_rates: list[float], seeds: list[int]
+) -> None:
+    """Require every requested method/condition/seed exactly once.
+
+    This prevents a partially completed campaign from being rendered as the
+    maintainer-requested main result table. FedOpt is optional context and, when
+    requested, is expected only for full participation because the campaign
+    runner deliberately excludes partial FedOpt runs.
+    """
+
+    actual = {_condition_key(row) for row in rows}
+    if len(actual) != len(rows):
+        raise ValueError("results contain duplicate method/alpha/participation/seed rows")
+
+    expected = set()
+    for method in methods:
+        for alpha in alphas:
+            for participation in participation_rates:
+                if method == "fedopt" and participation < 1.0:
+                    continue
+                for seed in seeds:
+                    expected.add((method, float(alpha), float(participation), int(seed)))
+
+    missing = sorted(expected - actual)
+    unexpected = sorted(actual - expected)
+    if missing or unexpected:
+        details = []
+        if missing:
+            details.append(f"missing {len(missing)} rows; first entries: {missing[:8]}")
+        if unexpected:
+            details.append(f"unexpected {len(unexpected)} rows; first entries: {unexpected[:8]}")
+        raise ValueError("incomplete or mismatched CIFAR-10 evidence matrix: " + "; ".join(details))
+
+
 def _ci(values) -> dict:
     values = np.asarray(values, dtype=np.float64)
     if values.ndim != 1 or values.size == 0 or not np.all(np.isfinite(values)):
@@ -79,12 +123,7 @@ def summarize(rows: list[dict], reference_method: str = "adaptive") -> dict:
     grouped = defaultdict(list)
     seen = set()
     for row in rows:
-        unique_key = (
-            str(row["method"]),
-            float(row["alpha"]),
-            float(row["participation_rate"]),
-            int(row["seed"]),
-        )
+        unique_key = _condition_key(row)
         if unique_key in seen:
             raise ValueError(f"duplicate completed run for condition {unique_key}")
         seen.add(unique_key)
@@ -140,14 +179,87 @@ def summarize(rows: list[dict], reference_method: str = "adaptive") -> dict:
     return {"summaries": summaries, "paired_comparisons": paired}
 
 
+def _format_ci(stats: dict) -> str:
+    mean = 100.0 * float(stats["mean"])
+    if stats["half_width"] is None:
+        return f"{mean:.2f}% (n=1; CI unavailable)"
+    half_width = 100.0 * float(stats["half_width"])
+    return f"{mean:.2f}% ± {half_width:.2f} pp"
+
+
+def render_markdown(summary: dict) -> str:
+    """Render full and partial participation together as main results."""
+
+    lines = [
+        "# CIFAR-10 Main Results",
+        "",
+        "Values are means across matched seeds with two-sided 95% Student-t confidence intervals.",
+        "Global and worst-client accuracy use the common post-training evaluator.",
+        "",
+    ]
+    groups = defaultdict(list)
+    for item in summary["summaries"]:
+        groups[(float(item["alpha"]), float(item["participation_rate"]))].append(item)
+
+    for (alpha, participation_rate), items in sorted(groups.items()):
+        lines.extend(
+            [
+                f"## Dirichlet alpha={alpha:g}, participation={participation_rate:.0%}",
+                "",
+                "| Method | Seeds | Global accuracy | Worst-client accuracy |",
+                "| --- | ---: | ---: | ---: |",
+            ]
+        )
+        for item in sorted(items, key=lambda value: value["method"]):
+            lines.append(
+                "| {method} | {n} | {global_ci} | {worst_ci} |".format(
+                    method=item["method"],
+                    n=len(item["seeds"]),
+                    global_ci=_format_ci(item["metrics"]["global_accuracy"]),
+                    worst_ci=_format_ci(item["metrics"]["worst_client_accuracy"]),
+                )
+            )
+        lines.append("")
+
+    lines.extend(
+        [
+            "## Paired adaptive-minus-baseline deltas",
+            "",
+            "Positive values favor adaptive aggregation. Neutral and negative deltas are retained.",
+            "",
+            "| Alpha | Participation | Baseline | Seeds | Global delta | Worst-client delta |",
+            "| ---: | ---: | --- | ---: | ---: | ---: |",
+        ]
+    )
+    for item in summary["paired_comparisons"]:
+        lines.append(
+            "| {alpha:g} | {participation:.0%} | {baseline} | {n} | {global_ci} | {worst_ci} |".format(
+                alpha=item["alpha"],
+                participation=item["participation_rate"],
+                baseline=item["baseline_method"],
+                n=len(item["seeds"]),
+                global_ci=_format_ci(item["delta_reference_minus_baseline"]["global_accuracy"]),
+                worst_ci=_format_ci(item["delta_reference_minus_baseline"]["worst_client_accuracy"]),
+            )
+        )
+    lines.append("")
+    return "\n".join(lines)
+
+
 def main(args):
     rows = _load_rows(args.input, protocol_version=args.protocol_version)
+    if args.require_complete:
+        validate_complete_matrix(rows, args.methods, args.alphas, args.participation_rates, args.seeds)
     result = summarize(rows, reference_method=args.reference_method)
     if args.protocol_version is not None:
         result["protocol_version"] = args.protocol_version
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
+    if args.markdown_output:
+        markdown_output = Path(args.markdown_output)
+        markdown_output.parent.mkdir(parents=True, exist_ok=True)
+        markdown_output.write_text(render_markdown(result))
     print(json.dumps(result, indent=2, sort_keys=True))
 
 
@@ -155,6 +267,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", required=True, help="JSONL file with one completed run per line")
     parser.add_argument("--output", required=True, help="Destination JSON summary")
+    parser.add_argument("--markdown_output", default=None, help="Optional reviewer-facing Markdown main-results table")
     parser.add_argument("--reference_method", default="adaptive")
     parser.add_argument("--protocol_version", default=None)
+    parser.add_argument("--require_complete", action="store_true")
+    parser.add_argument("--methods", nargs="+", default=["fedavg", "fedprox", "scaffold", "fedce", "adaptive"])
+    parser.add_argument("--alphas", nargs="+", type=float, default=[0.1, 0.5])
+    parser.add_argument("--participation_rates", nargs="+", type=float, default=[1.0, 0.75])
+    parser.add_argument("--seeds", nargs="+", type=int, default=[7, 19, 31, 43, 57])
     main(parser.parse_args())
