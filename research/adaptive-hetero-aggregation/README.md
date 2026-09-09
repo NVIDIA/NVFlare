@@ -9,14 +9,17 @@ client-performance disparity are both observed. The implementation is related to
 [NVIDIA/NVFlare issue #5209](https://github.com/NVIDIA/NVFlare/issues/5209).
 
 The pull request remains a draft. Engineering behavior is covered by focused tests and NVFlare
-integration paths, while the maintainer-requested CIFAR-10 comparison and public method write-up
-must still be completed before this should be treated as validated research evidence.
+integration paths. The maintainer-requested CIFAR-10 campaign still needs to be executed before this
+should be treated as validated research evidence. A public method write-up was also identified by the
+maintainer as a separate requirement for eventual `research/` acceptance; that publication item is
+not part of this revision.
 
 ## Papers and Links
 
 - NVFlare issue: [#5209](https://github.com/NVIDIA/NVFlare/issues/5209)
 - Pull request: [#5273](https://github.com/NVIDIA/NVFlare/pull/5273)
-- Preprint/workshop paper: not yet published; this remains a requirement for research acceptance.
+- Preprint/workshop paper: not published; this remains a separate maintainer requirement for eventual
+  research acceptance and is not created by this revision.
 
 ## Objective
 
@@ -129,6 +132,25 @@ model.
 If no Shareable/DXO contribution is accepted, the adapter returns `ReturnCode.EMPTY_RESULT`. The
 unified `ModelAggregator` returns an empty DIFF no-op in the analogous empty-round case.
 
+### Federation-level activation telemetry
+
+The unified `ModelAggregator` records only federation-level activation diagnostics across valid
+rounds. These do not expose per-site final weights. The persisted telemetry includes:
+
+```text
+adaptive_aggregation_rounds
+adaptive_active_rounds
+adaptive_activation_rate
+adaptive_mean_active_blend_factor
+adaptive_max_observed_blend_factor
+adaptive_cohort_change_count
+```
+
+NVFlare carries aggregate metadata into the global `FLModel` and persists it as checkpoint
+`meta_props`. The common post-training evaluator therefore reads these counters from the final
+server checkpoint. This makes fallback-heavy partial-participation runs visible instead of allowing
+a run labelled `adaptive` to silently appear equivalent to an actively adapting run.
+
 ## Current Engineering Validation
 
 Focused checks cover:
@@ -142,13 +164,16 @@ Focused checks cover:
 - malformed or missing adaptive metadata;
 - empty-round behavior for both aggregator interfaces;
 - server-side-only per-site weight diagnostics;
+- cumulative adaptive activation and cohort-change telemetry;
 - custom constructor argument serialization through exported NVFlare jobs;
 - unified FedAvg `ModelAggregator` serialization;
 - real `DXO`, `Shareable`, `FLContext`, `FLModel`, `WeightedAggregationHelper`, and Recipe paths;
 - a lightweight `FedOptRecipe + SimEnv` smoke path;
+- a regression proving the smoke configuration reaches a non-zero adaptive blend;
 - a real FedCE protocol smoke path;
 - synthetic and scikit-learn digits development benchmarks;
-- CIFAR experiment split/result helper tests.
+- CIFAR train/validation/test separation;
+- CIFAR result-provenance, configuration-hash, completeness, and reporting tests.
 
 These checks establish implementation behavior only. They are not final scientific evidence.
 
@@ -196,7 +221,8 @@ Their class mixtures follow the original Dirichlet training assignments.
 - `global_accuracy`: accuracy on the complete CIFAR-10 test set;
 - `client_accuracies`: accuracy on each site-specific test partition;
 - `worst_client_accuracy`: minimum client accuracy;
-- `mean_client_accuracy`, best-client accuracy, and client-accuracy gap.
+- `mean_client_accuracy`, best-client accuracy, and client-accuracy gap;
+- federation-level adaptive activation telemetry when present in the checkpoint.
 
 This keeps the headline FedAvg/FedProx/SCAFFOLD/FedCE/adaptive result definitions identical.
 
@@ -213,13 +239,28 @@ The result record therefore declares pairing by Dirichlet split, server initiali
 seed. Different algorithms can still consume randomness differently, so reproducibility does not
 imply identical optimization trajectories.
 
-### Protocol versioning
+### Protocol versioning and configuration provenance
 
-Every completed result row is tagged with a protocol version. The campaign's resume logic and the
-summary script ignore rows from an older protocol version so stale experiments cannot silently enter
-new confidence intervals.
+Current result rows use protocol `cifar10_dirichlet_trainval_test_v3`.
 
-### Confidence intervals
+Every completed row stores:
+
+- `common_config` and `common_config_hash` for dataset/model/training/execution/evaluator settings;
+- `method_config` and `method_config_hash` for method-specific settings such as FedProx `mu`, FedCE
+  mode, or adaptive policy parameters;
+- `condition_config` for `alpha`, participation rate, and seed;
+- `experiment_config` and `experiment_config_hash` for the complete nested configuration.
+
+Hashes are SHA-256 digests of canonical JSON. The campaign's resume logic skips a row only when the
+protocol, common configuration hash, and method configuration hash all match the current campaign.
+Changing a method hyperparameter, worker/thread/GPU setting, or evaluator setting causes the row to
+be rerun rather than silently reused.
+
+The summary step independently recomputes configuration hashes, rejects mixed common or per-method
+configurations, requires the requested method/condition/seed matrix, and requires coherent adaptive
+activation telemetry on every adaptive row. Older protocol rows are ignored.
+
+### Confidence intervals and activation reporting
 
 `summarize_results.py` reports, for global and worst-client accuracy:
 
@@ -228,7 +269,10 @@ new confidence intervals.
 - sample standard deviation;
 - two-sided 95% Student-t confidence interval.
 
-It also reports paired adaptive-minus-baseline confidence intervals for common seeds.
+It also reports paired adaptive-minus-baseline confidence intervals for common seeds. The reviewer-
+facing Markdown table includes adaptive activation rate, defined as the fraction of valid aggregation
+rounds with a non-zero blend. Neutral and negative accuracy deltas and low/zero activation rates are
+retained rather than filtered out.
 
 ## Setup
 
@@ -302,7 +346,8 @@ python cifar10_evaluation/run.py \
 ```
 
 A completed run evaluates the final server checkpoint, prints one `CIFAR10_EVAL_RESULT` JSON record,
-and optionally appends it to the supplied JSONL file.
+and optionally appends it to the supplied JSONL file. Adaptive rows are rejected if the final
+checkpoint does not contain the required activation telemetry.
 
 ### Maintainer-requested comparison campaign
 
@@ -327,9 +372,10 @@ Inspect the matrix without training:
 python cifar10_evaluation/run_campaign.py --dry_run
 ```
 
-The campaign is resumable. A current-protocol `(method, alpha, participation, seed,
-validation_fraction)` row is skipped when it is already present in `results/cifar10_runs.jsonl`.
-Use `--fresh` to start a new result file.
+The campaign is resumable. A row is skipped only when its protocol version, common configuration
+hash, method configuration hash, method, alpha, participation rate, and seed match the current
+campaign. Incompatible or stale rows remain in the JSONL for auditability but are not treated as
+completed work. Use `--fresh` to start a new result file.
 
 Add FedOpt as a full-participation reference with:
 
@@ -343,7 +389,8 @@ Generated artifacts are written to:
 - NVFlare simulation workspaces: `/tmp/nvflare/adaptive_hetero_cifar10` by default;
 - data splits: `/tmp/cifar10_splits/adaptive_hetero_eval` by default;
 - run rows: `results/cifar10_runs.jsonl` by default;
-- confidence-interval summary: `results/cifar10_summary.json` by default.
+- confidence-interval summary: `results/cifar10_summary.json` by default;
+- reviewer-facing main result tables: `results/cifar10_main_results.md` by default.
 
 ## Expected Results
 
@@ -357,16 +404,28 @@ alpha
 participation_rate
 seed
 validation_fraction
+common_config
+common_config_hash
+method_config
+method_config_hash
+condition_config
+experiment_config
+experiment_config_hash
 global_accuracy
 worst_client_accuracy
 client_accuracies
+adaptive_telemetry
 checkpoint
 test_data_used_during_training = false
 ```
 
-A completed campaign should produce confidence-interval tables covering FedAvg, FedProx, SCAFFOLD,
-FedCE, and adaptive aggregation under full and partial participation. Neutral and negative results
-must be retained alongside improvements.
+For adaptive runs, `adaptive_telemetry` must contain valid cumulative aggregation/activation counts,
+activation rate, mean/max observed blend, and cohort-change count. The main Markdown tables expose
+activation rate next to accuracy so a conservative fallback-heavy run is visible.
+
+A completed campaign must contain the full requested method/alpha/participation/seed matrix before
+reviewer-facing tables are generated. Those tables cover FedAvg, FedProx, SCAFFOLD, FedCE, and
+adaptive aggregation under full and partial participation and retain neutral or negative results.
 
 Previous checked-in development numbers were removed because they predated the current policy and
 included blend factors that are unreachable with the current `max_blend_factor=0.20` setting.
@@ -374,13 +433,16 @@ included blend factors that are unreachable with the current `max_blend_factor=0
 ## Evidence Still Required Before Research Acceptance
 
 The requested implementation and evaluation infrastructure is present, but final evidence is not yet
-claimed. Before the draft should be considered merge-ready under `research/`, it still needs:
+claimed. The remaining non-publication evidence work is:
 
-1. completed matched CIFAR-10 runs against FedProx, SCAFFOLD, and FedCE;
-2. confidence-interval tables generated from those completed runs;
-3. partial-participation results in the main result tables;
-4. transparent reporting of neutral or negative results;
-5. a public method write-up such as a preprint or workshop paper.
+1. execute the documented matched CIFAR-10 campaign against FedProx, SCAFFOLD, and FedCE;
+2. generate and report the resulting confidence-interval tables;
+3. include partial-participation results and adaptive activation rates in the main result tables;
+4. retain and report neutral or negative outcomes.
+
+The maintainer separately identified a public method write-up such as a preprint or workshop paper as
+a requirement for eventual `research/` acceptance. That publication item is not created or addressed
+by this revision.
 
 ## Existing Development Benchmarks
 
@@ -409,6 +471,10 @@ FedCE estimates client contribution using update-direction and leave-one-out val
 `fedce_client.py` uses the real NVFlare FedCE helper contract and the same held-out training
 validation protocol as the other methods.
 
+FedCE is documented by NVFlare as assuming full participation. The 75% participation run is included
+for completeness and must be interpreted with that limitation; the adapted client handles a site's
+first participation occurring after round 0 without inventing a previous local model.
+
 ### Auto-FedRL
 
 Auto-FedRL learns aggregation behavior with reinforcement learning. It remains relevant context but
@@ -431,6 +497,10 @@ The method has not yet been established as broadly effective. Remaining work inc
 standard CIFAR-10 campaign, evaluating larger client populations and additional model/dataset
 settings, quantifying runtime/communication overhead, and validating deployment-specific privacy and
 metadata-trust controls.
+
+With the default stable-cohort safeguard, partial participation may reduce or eliminate adaptive
+activation when the sampled client set changes frequently. This is intentional conservative behavior
+and is now measured explicitly rather than hidden.
 
 No universal convergence, production-readiness, or universal accuracy-improvement claim is made.
 
@@ -485,6 +555,5 @@ remain subject to their respective licenses and terms.
 
 ## Citation
 
-A preferred citation/BibTeX entry will be added when the public preprint or workshop paper required
-for research acceptance is available. Until then, this draft should be referenced by the NVFlare
-issue/PR rather than cited as a published method.
+A preferred citation/BibTeX entry can be added if a public method write-up becomes available. Until
+then, this draft should be referenced by the NVFlare issue/PR rather than cited as a published method.
