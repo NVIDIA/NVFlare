@@ -34,6 +34,12 @@ def common_run_config(
     batch_size: int,
     lr: float,
     validation_fraction: float,
+    num_workers: int,
+    num_threads: int | None,
+    gpu_config: str | None,
+    eval_batch_size: int,
+    eval_num_workers: int,
+    eval_device: str | None,
 ) -> dict:
     """Settings that must be shared by every method in a comparison campaign."""
 
@@ -51,7 +57,16 @@ def common_run_config(
         "client_scheduler": "CosineAnnealingLR",
         "cosine_lr_eta_min_factor": 0.01,
         "validation_fraction": float(validation_fraction),
+        "client_num_workers": int(num_workers),
+        "simulation_num_threads": None if num_threads is None else int(num_threads),
+        "gpu_config": gpu_config,
+        "client_rng": "base_seed + site_index - 1",
+        "torch_cudnn_benchmark": False,
+        "torch_cudnn_deterministic": True,
         "final_evaluator": "common untouched CIFAR-10 test evaluator",
+        "eval_batch_size": int(eval_batch_size),
+        "eval_num_workers": int(eval_num_workers),
+        "eval_device": eval_device,
     }
 
 
