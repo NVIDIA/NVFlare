@@ -654,6 +654,11 @@ class PocEnv(ExecEnv):
                         )
         except Exception as e:
             self.logger.warning(f"Failed to stop and clean existing POC: {e}")
+            if clean_up:
+                self.logger.warning(
+                    f"POC cleanup could not be completed; preserving workspace {self.poc_workspace}. "
+                    "Stop any remaining services or job containers, then retry PocEnv.stop(clean_up=True)."
+                )
         finally:
             self._session_manager = None  # Clear stale session manager
 
