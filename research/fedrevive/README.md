@@ -399,6 +399,26 @@ accuracy, while FedRevive remains stable under the shifted arrival process.
 | FedBuff | 25,662 | 0.3019 | 0.4886 |
 | FedRevive | 51,325 | 0.7917 | 0.8325 |
 
+### FedRevive configuration options
+
+Figure 3 compares the two FedRevive configurations shown in the run commands:
+true client histograms with synthesis at every version, and server-estimated
+class proportions using 64 Gaussian probes with synthesis every ten versions.
+Both runs use seed 10 and the same 1,270 centralized evaluation points, model
+versions, and simulated arrival times.
+
+![FedRevive configuration comparison](figs/figure_3.png)
+
+| Class-proportion source | Generation interval | Final accuracy | Best accuracy | Final 51-evaluation mean |
+|---|---:|---:|---:|---:|
+| True histogram | 1 | 0.7612 | 0.7712 | 0.7483 |
+| Estimated (64 probes) | 10 | 0.7462 | 0.7566 | 0.7376 |
+
+The raw accuracy curves have a Pearson correlation of 0.9986 and a pointwise
+mean absolute difference of 0.0091. Thus, the lightweight estimated setting
+closely follows the true-histogram trajectory while avoiding client label
+statistics and reducing synthesis frequency.
+
 ## Repository layout
 
 ```text
@@ -406,7 +426,8 @@ fedrevive/
 ├── README.md
 ├── figs/
 │   ├── figure_1.png
-│   └── figure_2.png
+│   ├── figure_2.png
+│   └── figure_3.png
 ├── requirements.txt
 ├── prepare_data.py
 ├── data.py
