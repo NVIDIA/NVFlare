@@ -17,6 +17,7 @@
 import argparse
 import os
 import sys
+from pathlib import Path
 
 import torch
 
@@ -26,13 +27,61 @@ if SRC_DIR not in sys.path:
     sys.path.insert(0, SRC_DIR)
 os.environ["PYTHONPATH"] = SRC_DIR + os.pathsep + os.environ.get("PYTHONPATH", "")
 
-from adaptive_hetero.nvflare_aggregator import AdaptiveHeterogeneityAggregator  # noqa: E402
+from adaptive_hetero.nvflare_aggregator import AdaptiveHeterogeneityAggregator, AdaptiveMetaKey  # noqa: E402
 
+from nvflare.app_common.app_constant import DefaultCheckpointFileName  # noqa: E402
 from nvflare.app_opt.pt.recipes.fedopt import FedOptRecipe  # noqa: E402
 from nvflare.recipe import SimEnv  # noqa: E402
 
 NUM_FEATURES = 6
 NUM_CLASSES = 3
+
+
+def _torch_load_checkpoint(path: Path) -> dict:
+    try:
+        checkpoint = torch.load(path, map_location="cpu", weights_only=True)
+    except TypeError:
+        checkpoint = torch.load(path, map_location="cpu")
+    if not isinstance(checkpoint, dict):
+        raise RuntimeError(f"unexpected checkpoint payload at {path}: {type(checkpoint).__name__}")
+    return checkpoint
+
+
+def _final_checkpoint_blend(result_workspace: str) -> tuple[float, Path]:
+    """Return the final server-side blend factor persisted by the FedOpt smoke run."""
+
+    if not result_workspace:
+        raise RuntimeError("NVFlare smoke run did not return a result workspace")
+    root = Path(result_workspace)
+    if not root.is_dir():
+        raise RuntimeError(f"NVFlare smoke result workspace does not exist: {root}")
+
+    candidates = [
+        path
+        for path in root.rglob(DefaultCheckpointFileName.GLOBAL_MODEL)
+        if "server" in path.parts
+    ]
+    if len(candidates) != 1:
+        raise RuntimeError(
+            f"expected exactly one server {DefaultCheckpointFileName.GLOBAL_MODEL} checkpoint under {root}, "
+            f"found {len(candidates)}"
+        )
+
+    checkpoint_path = candidates[0]
+    checkpoint = _torch_load_checkpoint(checkpoint_path)
+    meta = checkpoint.get("meta_props") or {}
+    if not isinstance(meta, dict):
+        raise RuntimeError(f"checkpoint meta_props must be a dict: {checkpoint_path}")
+    blend = meta.get(AdaptiveMetaKey.BLEND_FACTOR)
+    if blend is None:
+        raise RuntimeError(
+            f"final server checkpoint is missing {AdaptiveMetaKey.BLEND_FACTOR!r}: {checkpoint_path}"
+        )
+    try:
+        blend = float(blend)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise RuntimeError(f"invalid persisted adaptive blend factor {blend!r}") from exc
+    return blend, checkpoint_path
 
 
 def main(args):
@@ -73,11 +122,20 @@ def main(args):
 
     run = recipe.execute(SimEnv(num_clients=args.n_clients))
     status = str(run.get_status())
-    result = run.get_result()
+    result_workspace = run.get_result()
     print(f"ADAPTIVE_HETERO_SMOKE_STATUS={status}")
-    print(f"ADAPTIVE_HETERO_SMOKE_RESULT={result}")
+    print(f"ADAPTIVE_HETERO_SMOKE_RESULT={result_workspace}")
     if "COMPLETED" not in status.upper():
         raise RuntimeError(f"NVFlare smoke run did not complete successfully: {status}")
+
+    blend_factor, checkpoint_path = _final_checkpoint_blend(result_workspace)
+    print(f"ADAPTIVE_HETERO_SMOKE_FINAL_BLEND={blend_factor}")
+    print(f"ADAPTIVE_HETERO_SMOKE_CHECKPOINT={checkpoint_path}")
+    if blend_factor <= 0.0:
+        raise RuntimeError(
+            "NVFlare smoke run completed without exercising adaptive weighting; "
+            f"final persisted blend factor was {blend_factor}"
+        )
 
 
 if __name__ == "__main__":
