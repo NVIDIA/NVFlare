@@ -14,6 +14,7 @@
 
 import json
 import os
+import sys
 import tempfile
 from unittest.mock import Mock, patch
 
@@ -544,6 +545,132 @@ class TestExecutionModeSelection:
         config = json.loads(config_path.read_text())
 
         assert config["executors"][0]["executor"]["args"]["command"] == expected
+
+    @pytest.mark.parametrize("execution_mode", ["in_process", "external_process"])
+    def test_absolute_script_destination_survives_sys_path_change(self, tmp_path, monkeypatch, execution_mode):
+        from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
+        from nvflare.job_config.api import FedJob
+
+        source_dir = tmp_path / "src"
+        source_dir.mkdir()
+        script = source_dir / "client.py"
+        script.write_text("# test trainer\n")
+        original_sys_path = list(sys.path)
+        monkeypatch.setattr(sys, "path", [str(tmp_path), *original_sys_path])
+
+        job = FedJob(name=f"stable-{execution_mode}")
+        job.to_server(ScatterAndGather(min_clients=1, num_rounds=1, wait_time_after_min_received=0))
+        job.to_clients(ScriptRunner(script=str(script), execution_mode=execution_mode))
+
+        # Export under a different import root. Configuration and packaging must
+        # continue using the single destination selected when the runner was added.
+        monkeypatch.setattr(sys, "path", [str(source_dir), *original_sys_path])
+        export_dir = tmp_path / "export"
+        job.export_job(str(export_dir))
+
+        job_dir = export_dir / job.name
+        config = json.loads((job_dir / "app" / "config" / "config_fed_client.json").read_text())
+        executor_args = config["executors"][0]["executor"]["args"]
+        if execution_mode == "external_process":
+            assert executor_args["command"][2] == "custom/src/client.py"
+        else:
+            assert executor_args["task_script_path"] == "src/client.py"
+        assert (job_dir / "app" / "custom" / "src" / "client.py").is_file()
+        assert not (job_dir / "app" / "custom" / "client.py").exists()
+
+    def test_missing_absolute_in_process_script_remains_a_production_client_path(self, tmp_path):
+        from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor
+        from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
+        from nvflare.job_config.api import FedJob
+
+        remote_script = "/preinstalled/scripts/remote_train.py"
+        job = FedJob(name="remote-script")
+        job.to_server(ScatterAndGather(min_clients=1, num_rounds=1, wait_time_after_min_received=0))
+        job.to_clients(ScriptRunner(script=remote_script, execution_mode="in_process"))
+
+        app_config = job._deploy_map["@ALL"].app_config
+        executor = app_config.executors[0].executor
+        assert isinstance(executor, ClientAPIExecutor)
+        assert executor._task_script_path == remote_script
+        assert app_config._ext_script_destinations == {}
+
+        export_dir = tmp_path / "export"
+        job.export_job(str(export_dir))
+        config = json.loads((export_dir / job.name / "app" / "config" / "config_fed_client.json").read_text())
+        assert config["executors"][0]["executor"]["args"]["task_script_path"] == remote_script
+        assert not list((export_dir / job.name / "app" / "custom").rglob("remote_train.py"))
+
+    def test_distinct_absolute_scripts_keep_unique_relative_destinations(self, tmp_path, monkeypatch):
+        from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
+        from nvflare.job_config.api import FedJob
+
+        project_dir = tmp_path / "project"
+        site_1_dir = project_dir / "site-1"
+        site_2_dir = project_dir / "site-2"
+        site_1_dir.mkdir(parents=True)
+        site_2_dir.mkdir(parents=True)
+        site_1_script = site_1_dir / "client.py"
+        site_2_script = site_2_dir / "client.py"
+        site_1_script.write_text("SITE = 1\n")
+        site_2_script.write_text("SITE = 2\n")
+        monkeypatch.setattr(sys, "path", [str(project_dir)])
+
+        job = FedJob(name="unique-scripts")
+        job.to_server(ScatterAndGather(min_clients=1, num_rounds=1, wait_time_after_min_received=0))
+        job.to_clients(ScriptRunner(script=str(site_1_script), execution_mode="in_process"), tasks=["site-1-train"])
+        job.to_clients(ScriptRunner(script=str(site_2_script), execution_mode="in_process"), tasks=["site-2-train"])
+        export_dir = tmp_path / "export"
+        job.export_job(str(export_dir))
+
+        job_dir = export_dir / job.name
+        config = json.loads((job_dir / "app" / "config" / "config_fed_client.json").read_text())
+        task_paths = [entry["executor"]["args"]["task_script_path"] for entry in config["executors"]]
+        assert task_paths == ["site-1/client.py", "site-2/client.py"]
+        assert (job_dir / "app" / "custom" / "site-1" / "client.py").read_text() == "SITE = 1\n"
+        assert (job_dir / "app" / "custom" / "site-2" / "client.py").read_text() == "SITE = 2\n"
+
+    def test_same_absolute_script_is_copied_to_each_frozen_destination(self, tmp_path, monkeypatch):
+        from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
+        from nvflare.job_config.api import FedJob
+
+        project_dir = tmp_path / "project"
+        source_dir = project_dir / "src"
+        source_dir.mkdir(parents=True)
+        script = source_dir / "client.py"
+        script.write_text("VALUE = 1\n")
+
+        job = FedJob(name="reused-script")
+        job.to_server(ScatterAndGather(min_clients=1, num_rounds=1, wait_time_after_min_received=0))
+        monkeypatch.setattr(sys, "path", [str(project_dir)])
+        job.to_clients(ScriptRunner(script=str(script), execution_mode="in_process"), tasks=["nested-train"])
+        monkeypatch.setattr(sys, "path", [str(source_dir)])
+        job.to_clients(ScriptRunner(script=str(script), execution_mode="in_process"), tasks=["flat-train"])
+
+        export_dir = tmp_path / "export"
+        job.export_job(str(export_dir))
+
+        job_dir = export_dir / job.name
+        config = json.loads((job_dir / "app" / "config" / "config_fed_client.json").read_text())
+        task_paths = [entry["executor"]["args"]["task_script_path"] for entry in config["executors"]]
+        assert task_paths == ["src/client.py", "client.py"]
+        assert (job_dir / "app" / "custom" / "src" / "client.py").read_text() == "VALUE = 1\n"
+        assert (job_dir / "app" / "custom" / "client.py").read_text() == "VALUE = 1\n"
+
+    def test_resource_classification_matches_directory_precedence(self):
+        from nvflare.job_config.api import FedJob
+
+        with (
+            patch("os.path.isdir", return_value=True),
+            patch("os.path.isfile", return_value=True),
+            patch("os.path.exists", return_value=True),
+        ):
+            job = FedJob(name="filesystem-abstraction")
+            job.to_clients(ScriptRunner(script="client.py", execution_mode="in_process"))
+
+        app_config = job._deploy_map["@ALL"].app_config
+        assert app_config.ext_scripts == []
+        assert app_config.ext_dirs == ["client.py"]
+        assert app_config._ext_script_destinations == {}
 
     def test_launch_flag_conflicts_with_explicit_in_process_mode(self):
         with pytest.raises(ValueError, match="launch_external_process=True requires"):
