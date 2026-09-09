@@ -24,7 +24,7 @@ EVAL_DIR = PROJECT_DIR / "cifar10_evaluation"
 if str(EVAL_DIR) not in sys.path:
     sys.path.insert(0, str(EVAL_DIR))
 
-from eval_split import _integer_allocation  # noqa: E402
+import eval_split  # noqa: E402
 from evaluate_result import checkpoint_state_dict, find_server_checkpoint  # noqa: E402
 from protocol import PROTOCOL_VERSION  # noqa: E402
 from run_campaign import _completed_keys  # noqa: E402
@@ -54,10 +54,40 @@ def test_checkpoint_state_dict_supports_nvflare_pt_format(tmp_path):
 
 
 def test_integer_allocation_preserves_total_and_nonnegativity():
-    allocated = _integer_allocation(17, np.asarray([0.1, 0.2, 0.7]))
+    allocated = eval_split._integer_allocation(17, np.asarray([0.1, 0.2, 0.7]))
 
     assert allocated.sum() == 17
     assert np.all(allocated >= 0)
+
+
+def test_train_validation_split_is_disjoint_and_exhaustive(tmp_path, monkeypatch):
+    assignment_root = tmp_path / "assignment"
+    train_root = tmp_path / "train"
+    validation_root = tmp_path / "validation"
+    assignment_root.mkdir()
+    site1 = np.arange(0, 20, dtype=np.int64)
+    site2 = np.arange(20, 40, dtype=np.int64)
+    np.save(assignment_root / "site-1.npy", site1)
+    np.save(assignment_root / "site-2.npy", site2)
+    labels = np.asarray([index % 10 for index in range(40)], dtype=np.int64)
+    monkeypatch.setattr(eval_split, "load_cifar10_data", lambda: labels)
+
+    eval_split.create_train_validation_splits(
+        assignment_root=str(assignment_root),
+        train_output_root=str(train_root),
+        validation_output_root=str(validation_root),
+        n_clients=2,
+        seed=7,
+        validation_fraction=0.20,
+    )
+
+    for site_name, assigned in (("site-1", site1), ("site-2", site2)):
+        train = np.load(train_root / f"{site_name}.npy")
+        validation = np.load(validation_root / f"{site_name}.npy")
+        assert set(train).isdisjoint(set(validation))
+        assert set(train) | set(validation) == set(assigned)
+        assert len(validation) == 4
+        assert len(train) == 16
 
 
 def test_summary_reports_ci_and_paired_split_seed_deltas():
