@@ -26,6 +26,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import math
 import os
 import py_compile
 import re
@@ -37,6 +38,7 @@ import sys
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Mapping
+from urllib.parse import quote
 
 from fedready.agents import ServerAgent
 from fedready.agents.bridge import build_agent_backend
@@ -1923,8 +1925,6 @@ def validate_training_code_spec(
     validated = dict(spec)
     package_dir = _resolve_training_package_dir(str(spec["package_dir"]), code_workspace=code_workspace)
     validated["package_dir"] = str(package_dir.resolve())
-    if require_local_simulation:
-        validated["package_integrity"] = build_training_package_integrity(package_dir)
     return validated
 
 
@@ -2058,12 +2058,9 @@ def _training_code_spec_validation_errors(
                         "details": str(exc),
                     }
                 )
-    # Package integrity is recorded by FedReady as provenance after local
-    # preflight, but it is not a deterministic admission gate here. Artifact
-    # immutability and deployment integrity belong to the FL/job system rather
-    # than the coding-agent validation loop.
     if require_local_simulation and not errors:
         errors.extend(_training_local_simulation_errors(spec))
+        errors.extend(_training_package_integrity_errors(spec, package_dir=package_dir))
     return errors
 
 
@@ -2101,6 +2098,30 @@ def build_training_package_integrity(package_dir: str | Path) -> dict[str, Any]:
         "file_count": len(files),
         "files": files,
     }
+
+
+def _training_package_integrity_errors(spec: dict[str, Any], *, package_dir: Path) -> list[dict[str, Any]]:
+    """Bind local preflight approval to the exact package being exported."""
+
+    recorded = spec.get("package_integrity")
+    current = build_training_package_integrity(package_dir)
+    if not isinstance(recorded, dict):
+        return [
+            {
+                "kind": "package_integrity_missing",
+                "message": "training package must be revalidated by local SimEnv preflight before export",
+            }
+        ]
+    if recorded != current:
+        return [
+            {
+                "kind": "package_integrity_mismatch",
+                "message": "training package changed after local SimEnv preflight; run preflight again before export",
+                "preflight_sha256": recorded.get("sha256"),
+                "current_sha256": current["sha256"],
+            }
+        ]
+    return []
 
 
 def _training_local_simulation_errors(spec: dict[str, Any]) -> list[dict[str, Any]]:
@@ -2318,9 +2339,10 @@ def summarize_simulator_status(workspace: str | Path) -> dict[str, Any]:
     metric_paths = sorted(path for path in root.rglob(DEFAULT_METRICS_JSONL))
     metric_artifacts = [str(path) for path in metric_paths]
     nonempty_metric_artifacts = [str(path) for path in metric_paths if path.is_file() and path.stat().st_size > 0]
+    valid_metric_artifacts = [str(path) for path in metric_paths if _metric_artifact_has_valid_records(path)]
     has_empty_results = bool(empty_result_clients)
     has_non_tensor_params = bool(non_tensor_param_warnings)
-    has_metric_artifact = bool(nonempty_metric_artifacts)
+    has_metric_artifact = bool(valid_metric_artifacts)
     completed_with_warnings = bool(error_count or has_empty_results)
     warning_codes: list[str] = []
     if error_count:
@@ -2339,6 +2361,7 @@ def summarize_simulator_status(workspace: str | Path) -> dict[str, Any]:
         "global_model_paths": model_paths,
         "metric_artifacts": metric_artifacts,
         "nonempty_metric_artifacts": nonempty_metric_artifacts,
+        "valid_metric_artifacts": valid_metric_artifacts,
         "metric_artifact_available": has_metric_artifact,
         "persisted_global_model": bool(model_paths),
         "aggregated_result_messages": aggregated_result_messages[-3:],
@@ -2346,6 +2369,38 @@ def summarize_simulator_status(workspace: str | Path) -> dict[str, Any]:
         "warning_codes": warning_codes,
         "succeeded": (finished_fedavg and not has_non_tensor_params and bool(model_paths) and has_metric_artifact),
     }
+
+
+def _metric_artifact_has_valid_records(path: Path) -> bool:
+    """Accept non-empty JSONL containing finite aggregate metric values."""
+
+    try:
+        records = [line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        if not records:
+            return False
+        for line in records:
+            record = json.loads(line)
+            if not isinstance(record, dict):
+                return False
+            round_value = record.get("round")
+            if round_value is not None and (
+                isinstance(round_value, bool)
+                or not isinstance(round_value, (int, float))
+                or not math.isfinite(float(round_value))
+            ):
+                return False
+            metrics = [
+                float(value)
+                for name, value in record.items()
+                if name not in {"round", "client_id"}
+                and isinstance(value, (int, float))
+                and not isinstance(value, bool)
+            ]
+            if not metrics or not all(math.isfinite(value) for value in metrics):
+                return False
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError):
+        return False
+    return True
 
 
 def _runtime_attempt_job_name(base_job_name: str, attempt: int) -> str:
@@ -2609,7 +2664,9 @@ def _format_task_args(
     dataset_root: str | None = None,
 ) -> str:
     values = {
-        "dataset_root": shlex.quote(dataset_root or config.dataset_root),
+        # TaskScriptRunner uses whitespace splitting, so encode the path as one
+        # token; the client runtime launcher decodes it before local access.
+        "dataset_root": quote(dataset_root or config.dataset_root, safe="/"),
         "client_id": shlex.quote(client_id),
         "local_epochs": config.local_epochs,
         "batch_size": config.batch_size,

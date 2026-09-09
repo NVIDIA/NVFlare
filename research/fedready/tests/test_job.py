@@ -25,6 +25,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from fedready import job_data, job_train
+from fedready.flare import fedready_training_client_runtime
 from fedready.job_data import (
     _default_session_id,
     _safe_workspace_slug,
@@ -32,14 +33,126 @@ from fedready.job_data import (
     resolve_experiment_workspace,
 )
 from fedready.job_train import (
+    LOCAL_TRAINING_SIMULATION_SCHEMA_VERSION,
+    FedAvgTrainingConfig,
     _completed_preflight_before_aio_cleanup_error,
     _dataset_root_from_extraction_summary_path,
     _default_training_session_id,
+    _format_client_runtime_task_args,
+    build_training_package_integrity,
+    summarize_simulator_status,
+    validate_training_code_spec,
 )
 from fedready.utils.io import safe_path_slug
 
+from nvflare.app_common.executors.task_script_runner import TaskScriptRunner
+
 
 class NVFlareJobTestCase(unittest.TestCase):
+    def test_training_package_must_match_local_preflight_digest(self) -> None:
+        with TemporaryDirectory() as tmp:
+            package_dir = Path(tmp) / "fedready_task_training"
+            package_dir.mkdir()
+            (package_dir / "train.py").write_text("print('preflighted')\n", encoding="utf-8")
+            (package_dir / "model.py").write_text("class Model:\n    pass\n", encoding="utf-8")
+            spec = {
+                "schema_version": "fedready.training_code_spec.v1",
+                "status": "implemented",
+                "package_dir": str(package_dir),
+                "entry_script": "train.py",
+                "model_class_path": "fedready_task_training.model.Model",
+                "package_integrity": build_training_package_integrity(package_dir),
+                "local_simulation": {
+                    "schema_version": LOCAL_TRAINING_SIMULATION_SCHEMA_VERSION,
+                    "status": "passed",
+                    "client_deployment": False,
+                    "metric_artifact_available": True,
+                    "nonempty_metric_artifacts": ["fedready_training_metrics.jsonl"],
+                },
+            }
+
+            validate_training_code_spec(spec)
+            (package_dir / "train.py").write_text("raise RuntimeError('changed')\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "changed after local SimEnv preflight"):
+                validate_training_code_spec(spec)
+
+    def test_simulator_status_requires_valid_finite_metric_records(self) -> None:
+        with TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            server_dir = workspace / "server"
+            client_dir = workspace / "MOCK_CLIENT"
+            server_dir.mkdir()
+            client_dir.mkdir()
+            (server_dir / "log.json").write_text(
+                json.dumps({"levelname": "INFO", "message": "Finished FedAvg"}) + "\n",
+                encoding="utf-8",
+            )
+            (server_dir / "FL_global_model.pt").write_bytes(b"model")
+            metrics_path = client_dir / "fedready_training_metrics.jsonl"
+
+            for invalid in ("not JSON\n", '{"round": 0, "loss": NaN}\n'):
+                with self.subTest(invalid=invalid):
+                    metrics_path.write_text(invalid, encoding="utf-8")
+                    status = summarize_simulator_status(workspace)
+                    self.assertFalse(status["metric_artifact_available"])
+                    self.assertFalse(status["succeeded"])
+
+            metrics_path.write_text('{"round": 0, "loss": 0.25}\n', encoding="utf-8")
+            status = summarize_simulator_status(workspace)
+            self.assertTrue(status["metric_artifact_available"])
+            self.assertTrue(status["succeeded"])
+
+    def test_task_script_runner_preserves_space_containing_preflight_path(self) -> None:
+        with TemporaryDirectory() as tmp:
+            dataset_root = Path(tmp) / "my project" / "mock_data"
+            dataset_root.mkdir(parents=True)
+            package_dir = Path(job_train.__file__).resolve().parent
+            script_args = _format_client_runtime_task_args(
+                client_id="MOCK_CLIENT",
+                training_plan={"data_contract": {"record_type": "classification"}},
+                training_code_spec={
+                    "entry_script": "../job_train.py",
+                    "package_dir": str(package_dir),
+                },
+                config=FedAvgTrainingConfig(dataset_root=str(dataset_root)),
+                train_sample_count=1,
+                validation_sample_count=1,
+                test_sample_count=0,
+            )
+            launcher_path = Path(fedready_training_client_runtime.__file__).resolve()
+            runner = TaskScriptRunner(
+                custom_dir=str(launcher_path.parent),
+                script_path=launcher_path.name,
+                script_args=script_args,
+                redirect_print_to_log=False,
+            )
+            argv = runner.get_sys_argv()
+            forwarded_argv: list[str] = []
+
+            def capture_run_path(*_args, **_kwargs) -> None:
+                forwarded_argv.extend(sys.argv)
+
+            with (
+                mock.patch.object(sys, "argv", ["test_job.py"]),
+                mock.patch.object(
+                    fedready_training_client_runtime,
+                    "_validate_prepared_dataset",
+                    return_value={},
+                ) as validate_dataset,
+                mock.patch.object(fedready_training_client_runtime, "_write_report"),
+                mock.patch.object(
+                    fedready_training_client_runtime.runpy,
+                    "run_path",
+                    side_effect=capture_run_path,
+                ),
+            ):
+                fedready_training_client_runtime.main(argv[1:])
+
+            self.assertEqual(validate_dataset.call_args.kwargs["dataset_root"], dataset_root.resolve())
+            dataset_arg = forwarded_argv.index("--dataset-root")
+            self.assertEqual(forwarded_argv[dataset_arg + 1], str(dataset_root.resolve()))
+
     def test_exact_task_session_ids_fit_one_filesystem_component(self) -> None:
         task = "binary glaucoma classification " + ("with explicit local evidence " * 80)
         data_session = _default_session_id(task)

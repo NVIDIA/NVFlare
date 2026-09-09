@@ -30,6 +30,7 @@ import runpy
 import sys
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote
 
 from fedready.data.parser import validate_client_id
 from fedready.data.qc import visual_qc_decision_passed
@@ -99,7 +100,7 @@ def main(argv: list[str] | None = None) -> None:
 
 
 def _resolve_dataset_root(value: str) -> Path:
-    root = Path(value).expanduser()
+    root = Path(unquote(value)).expanduser()
     if root.is_absolute():
         return root.resolve()
     candidates = [Path.cwd(), *Path.cwd().parents]
