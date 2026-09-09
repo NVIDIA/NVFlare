@@ -126,6 +126,7 @@ def main(args):
             metrics={"accuracy": before_accuracy, "local_post_accuracy": after_accuracy},
             meta={
                 "NUM_STEPS_CURRENT_ROUND": steps,
+                "adaptive_sample_count": len(train_dataset),
                 "adaptive_distribution_descriptor": descriptor,
                 "adaptive_client_metric": before_accuracy,
                 "adaptive_quality_improvement": before_loss - after_loss,
