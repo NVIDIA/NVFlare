@@ -22,9 +22,11 @@ number of clients sampled by the server each round.
 import argparse
 import json
 import os
+import random
 import sys
 from pathlib import Path
 
+import numpy as np
 import torch
 
 PROJECT_DIR = Path(__file__).resolve().parents[1]
@@ -33,8 +35,9 @@ PROJECT_SRC = PROJECT_DIR / "src"
 CIFAR_PT_DIR = REPO_ROOT / "examples" / "advanced" / "cifar10" / "pt"
 CIFAR_SRC = CIFAR_PT_DIR / "src"
 CIFAR_SIM = CIFAR_PT_DIR / "cifar10-sim"
+EVAL_DIR = Path(__file__).resolve().parent
 
-for path in (str(PROJECT_SRC), str(CIFAR_SRC), str(Path(__file__).resolve().parent)):
+for path in (str(PROJECT_SRC), str(CIFAR_SRC), str(EVAL_DIR)):
     if path not in sys.path:
         sys.path.insert(0, path)
 os.environ["PYTHONPATH"] = os.pathsep.join(
@@ -47,17 +50,19 @@ from eval_split import create_eval_splits  # noqa: E402
 from model import ModerateCNN  # noqa: E402
 
 from nvflare.apis.dxo import DataKind  # noqa: E402
-from nvflare.app_opt.pt.recipes import FedAvgRecipe, FedOptRecipe, FedProxRecipe  # noqa: E402
+from nvflare.app_opt.pt.recipes import FedAvgRecipe, FedCERecipe, FedOptRecipe, FedProxRecipe  # noqa: E402
 from nvflare.app_opt.pt.recipes.scaffold import ScaffoldRecipe  # noqa: E402
 from nvflare.client.config import TransferType  # noqa: E402
 from nvflare.recipe import SimEnv  # noqa: E402
 
-METHODS = ("fedavg", "fedopt", "fedprox", "scaffold", "adaptive")
+METHODS = ("fedavg", "fedopt", "fedprox", "scaffold", "fedce", "adaptive")
 
 
 def _client_script(method: str) -> str:
     if method == "adaptive":
-        return str(Path(__file__).resolve().parent / "adaptive_client.py")
+        return str(EVAL_DIR / "adaptive_client.py")
+    if method == "fedce":
+        return str(EVAL_DIR / "fedce_client.py")
     directory = {
         "fedavg": "cifar10_fedavg",
         "fedopt": "cifar10_fedopt",
@@ -80,8 +85,16 @@ def _common_train_args(args, train_idx_root: str) -> str:
     )
 
 
+def _local_metric_train_args(args, train_idx_root: str, eval_idx_root: str) -> str:
+    return (
+        f"{_common_train_args(args, train_idx_root)} --eval_idx_root {eval_idx_root} --seed {args.seed}"
+    )
+
+
 def _build_recipe(args, train_idx_root: str, eval_idx_root: str, round_clients: int):
     torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
+    random.seed(args.seed)
     model = ModerateCNN()
     common = _common_train_args(args, train_idx_root)
     name = (
@@ -109,7 +122,6 @@ def _build_recipe(args, train_idx_root: str, eval_idx_root: str, round_clients: 
             model=model,
             train_script=_client_script(args.method),
             train_args=common,
-            aggregator_data_kind=DataKind.WEIGHT_DIFF,
             optimizer_args={"path": "torch.optim.SGD", "args": {"lr": 1.0, "momentum": 0.6}},
             device="cpu" if args.gpu_config is None else "cuda:0",
         )
@@ -133,6 +145,16 @@ def _build_recipe(args, train_idx_root: str, eval_idx_root: str, round_clients: 
             train_script=_client_script(args.method),
             train_args=common,
         )
+    if args.method == "fedce":
+        return FedCERecipe(
+            name=name,
+            min_clients=round_clients,
+            num_rounds=args.num_rounds,
+            model=model,
+            train_script=_client_script(args.method),
+            train_args=_local_metric_train_args(args, train_idx_root, eval_idx_root),
+            fedce_mode=args.fedce_mode,
+        )
 
     aggregator = AdaptiveHeterogeneityModelAggregator(
         sample_exponent=args.sample_exponent,
@@ -145,16 +167,13 @@ def _build_recipe(args, train_idx_root: str, eval_idx_root: str, round_clients: 
         min_weight=args.min_weight,
         max_weight=args.max_weight,
     )
-    adaptive_args = (
-        f"{common} --eval_idx_root {eval_idx_root} --seed {args.seed}"
-    )
     return FedAvgRecipe(
         name=name,
         min_clients=round_clients,
         num_rounds=args.num_rounds,
         model=model,
         train_script=_client_script(args.method),
-        train_args=adaptive_args,
+        train_args=_local_metric_train_args(args, train_idx_root, eval_idx_root),
         aggregator=aggregator,
         aggregator_data_kind=DataKind.WEIGHT_DIFF,
         params_transfer_type=TransferType.DIFF,
@@ -229,6 +248,7 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--aggregation_epochs", type=int, default=4)
     parser.add_argument("--fedprox_mu", type=float, default=0.01)
+    parser.add_argument("--fedce_mode", choices=("plus", "times"), default="plus")
     parser.add_argument("--gpu_config", type=str, default=None)
     parser.add_argument("--workspace_root", default="/tmp/nvflare/adaptive_hetero_cifar10")
     parser.add_argument("--split_root", default="/tmp/cifar10_splits/adaptive_hetero_eval")
