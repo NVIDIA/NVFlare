@@ -305,6 +305,16 @@ def test_provenance_rejects_inconsistent_adaptive_telemetry():
         validate_config_provenance([row])
 
 
+def test_provenance_rejects_nested_condition_mismatch_even_if_hash_is_recomputed():
+    row = _result_row("adaptive", 0.75, 7, 0.80)
+    row["condition_config"] = {"alpha": 0.5, "participation_rate": 0.75, "seed": 7}
+    row["experiment_config"]["condition"] = row["condition_config"]
+    row["experiment_config_hash"] = canonical_config_hash(row["experiment_config"])
+
+    with pytest.raises(ValueError, match="inconsistent condition_config provenance"):
+        validate_config_provenance([row])
+
+
 def test_campaign_resume_ignores_stale_protocol_and_mismatched_configuration(tmp_path):
     args = _campaign_args()
     path = tmp_path / "runs.jsonl"
