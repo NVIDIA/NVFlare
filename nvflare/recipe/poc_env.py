@@ -320,8 +320,9 @@ class PocEnv(ExecEnv):
 
     @staticmethod
     def _docker_daemon_is_local() -> bool:
-        """Return whether Docker targets a verified local Unix-socket daemon."""
-        return _get_docker_endpoint(_docker_cli_env()).startswith("unix://")
+        """Return whether Docker startup targets the local Unix-socket daemon."""
+        endpoint = _get_docker_endpoint(_docker_cli_env())
+        return not endpoint or endpoint.startswith("unix://")
 
     @staticmethod
     def _ensure_ports_available(project_config: dict, is_docker: bool) -> None:

@@ -364,12 +364,13 @@ def test_remote_docker_daemon_skips_local_loopback_port_preflight(monkeypatch):
     PocEnv._ensure_shared_resources_available(PROJECT_CONFIG, docker_service_config)
 
 
-def test_local_docker_daemon_keeps_local_loopback_port_preflight(monkeypatch):
+@pytest.mark.parametrize("endpoint", ["", "unix:///var/run/docker.sock"])
+def test_local_or_unknown_docker_endpoint_keeps_local_loopback_port_preflight(monkeypatch, endpoint):
     import nvflare.recipe.poc_env as poc_env_module
 
     docker_service_config = {**SERVICE_CONFIG, SC.IS_DOCKER_RUN: True}
     port_checks = []
-    monkeypatch.setattr(poc_env_module, "_get_docker_endpoint", lambda docker_env: "unix:///var/run/docker.sock")
+    monkeypatch.setattr(poc_env_module, "_get_docker_endpoint", lambda docker_env: endpoint)
     monkeypatch.setattr(
         poc_env_module,
         "_build_poc_port_preflight",

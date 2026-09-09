@@ -486,8 +486,8 @@ File isolation does not isolate configured server ports. Before starting local
 processes, ``PocEnv`` checks those ports and rejects resources already in use.
 Docker Recipe deployments use unique per-workspace container and network names,
 so a deployment that loses a concurrent port race cannot observe or stop the
-other deployment's containers. The local port probe is also used for a verified
-local Docker daemon; for a remote ``DOCKER_HOST`` or Docker context, daemon-side
+other deployment's containers. The local port probe is also used for a local
+Docker daemon; for a remote ``DOCKER_HOST`` or Docker context, daemon-side
 startup and readiness checks are authoritative because local loopback is a
 different host. ``PocEnv`` also refuses to start while the configured CLI POC
 deployment is running; stop that deployment with ``nvflare poc stop`` first. If
