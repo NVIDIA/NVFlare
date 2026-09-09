@@ -29,6 +29,9 @@ class AdaptiveWeightingConfig:
     Small-client metrics are shrunk toward the sample-weighted federation mean
     before they are used for fairness pressure. Adaptive weighting also needs
     sustained evidence for a stable participating cohort.
+
+    Weight bounds are optional safeguards. The defaults are unbounded so the
+    policy remains feasible for any positive number of participating clients.
     """
 
     sample_exponent: float = 0.65
@@ -46,8 +49,8 @@ class AdaptiveWeightingConfig:
     activation_warmup_rounds: int = 3
     activation_patience: int = 2
     require_stable_cohort: bool = True
-    min_weight: float = 0.02
-    max_weight: float = 0.50
+    min_weight: float = 0.0
+    max_weight: float = 1.0
     epsilon: float = 1e-12
 
 
@@ -69,6 +72,7 @@ class WeightingResult:
     candidate_blend_factor: float
     blend_factor: float
     activation_streak: int
+    bounds_feasible: bool
 
 
 def _normalize_distribution(values: Sequence[float], epsilon: float) -> np.ndarray:
@@ -82,6 +86,16 @@ def _normalize_distribution(values: Sequence[float], epsilon: float) -> np.ndarr
         raise ValueError("distribution descriptor must have positive mass")
     array = np.clip(array / total, epsilon, None)
     return array / array.sum()
+
+
+def _normalize_weights(values: Sequence[float], count: int, epsilon: float) -> np.ndarray:
+    array = np.asarray(values, dtype=np.float64)
+    if array.shape != (count,) or not np.all(np.isfinite(array)) or np.any(array < 0.0):
+        raise ValueError("base_weights must be finite, non-negative, and match sample_counts")
+    total = float(array.sum())
+    if total <= epsilon:
+        raise ValueError("base_weights must have positive mass")
+    return array / total
 
 
 def _jensen_shannon(p: np.ndarray, q: np.ndarray) -> float:
@@ -182,6 +196,7 @@ class AdaptiveHeterogeneityPolicy:
         sample_counts: Sequence[float],
         descriptors: Sequence[Sequence[float]],
         client_metrics: Sequence[float],
+        base_weights: Sequence[float] | None = None,
         quality_improvements: Sequence[float] | None = None,
         cohort_key: Hashable | None = None,
     ) -> WeightingResult:
@@ -202,7 +217,11 @@ class AdaptiveHeterogeneityPolicy:
             raise ValueError("all descriptors must have the same length")
         descriptor_matrix = np.stack(normalized_descriptors)
 
-        base_weights = counts / counts.sum()
+        native_weights = (
+            counts / counts.sum()
+            if base_weights is None
+            else _normalize_weights(base_weights, counts.size, cfg.epsilon)
+        )
         reference = _normalize_distribution(np.average(descriptor_matrix, axis=0, weights=counts), cfg.epsilon)
         js_values = np.asarray([_jensen_shannon(item, reference) for item in descriptor_matrix], dtype=np.float64)
         mean_heterogeneity = float(np.average(js_values, weights=counts))
@@ -241,7 +260,6 @@ class AdaptiveHeterogeneityPolicy:
             * np.power(quality, cfg.quality_exponent)
         )
         raw /= raw.sum()
-        adaptive_weights = project_bounded_simplex(raw, cfg.min_weight, cfg.max_weight)
 
         heterogeneity_gate = (
             0.0
@@ -253,7 +271,20 @@ class AdaptiveHeterogeneityPolicy:
             if metric_gap <= cfg.performance_gap_deadband
             else _sigmoid((metric_gap - cfg.performance_gap_threshold) / cfg.performance_gap_temperature)
         )
-        candidate_blend = cfg.max_blend_factor * heterogeneity_gate * performance_gate
+
+        bounds_feasible = bool(
+            cfg.min_weight * counts.size <= 1.0 + cfg.epsilon
+            and cfg.max_weight * counts.size >= 1.0 - cfg.epsilon
+        )
+        if bounds_feasible:
+            adaptive_weights = project_bounded_simplex(raw, cfg.min_weight, cfg.max_weight)
+            candidate_blend = cfg.max_blend_factor * heterogeneity_gate * performance_gate
+        else:
+            # User-configured bounds can become infeasible when the cohort size
+            # changes. Treat that as a conservative native-aggregation fallback
+            # rather than failing the federated round.
+            adaptive_weights = native_weights.copy()
+            candidate_blend = 0.0
 
         self._rounds_seen += 1
         if cfg.require_stable_cohort and self._last_cohort_key is not None and cohort_key != self._last_cohort_key:
@@ -269,17 +300,14 @@ class AdaptiveHeterogeneityPolicy:
             blend = 0.0
 
         if blend == 0.0:
-            # Preserve exact native FedOpt/sample weighting whenever adaptation is inactive.
-            weights = base_weights.copy()
+            weights = native_weights.copy()
         else:
-            blended_weights = (1.0 - blend) * base_weights + blend * adaptive_weights
-            # Bounds are a final-output safety contract, not only an adaptive-candidate
-            # constraint. Re-project after blending so a dominant native base weight
-            # cannot bypass min_weight/max_weight when adaptation is active.
+            blended_weights = (1.0 - blend) * native_weights + blend * adaptive_weights
             weights = project_bounded_simplex(blended_weights, cfg.min_weight, cfg.max_weight)
+
         return WeightingResult(
             weights=weights,
-            base_weights=base_weights,
+            base_weights=native_weights,
             adaptive_weights=adaptive_weights,
             client_js_divergence=js_values,
             representation_scores=representation_scores,
@@ -294,4 +322,5 @@ class AdaptiveHeterogeneityPolicy:
             candidate_blend_factor=float(candidate_blend),
             blend_factor=float(blend),
             activation_streak=self._activation_streak,
+            bounds_feasible=bounds_feasible,
         )
