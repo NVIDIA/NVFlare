@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Fast CPU-only end-to-end smoke run using real FedOptRecipe and SimEnv."""
+"""Fast CPU-only end-to-end smoke run using the generic aggregator with FedOptRecipe."""
 
 import argparse
 import os
@@ -38,9 +38,10 @@ NUM_CLASSES = 3
 def main(args):
     torch.manual_seed(args.seed)
     model = torch.nn.Linear(NUM_FEATURES, NUM_CLASSES)
-    # Keep the production safeguards (warm-up + patience + stable cohort), but
-    # remove deadbands in this deterministic smoke so five rounds exercise the
-    # adaptive path instead of validating only the FedOpt fallback path.
+    # Use deliberately permissive gates in this smoke run while preserving the
+    # production warm-up, patience, and stable-cohort safeguards. Constructor
+    # arguments are public attributes so FedJob serializes these values into the
+    # server-side component rather than reconstructing it with defaults.
     aggregator = AdaptiveHeterogeneityAggregator(
         metric_prior_strength=0.0,
         min_weight=0.05,
