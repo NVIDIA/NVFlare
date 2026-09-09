@@ -15,10 +15,10 @@
 """Run matched NVIDIA FLARE CIFAR-10 experiments for adaptive aggregation.
 
 For each ``(n_clients, alpha, seed)`` NVIDIA FLARE's standard Dirichlet split is
-created once. Every method trains on the same site-local training subset. The
-adaptive and FedCE methods use held-out validation examples carved only from the
-CIFAR-10 training set. The official CIFAR-10 test set is untouched until the
-common post-training evaluator runs.
+created once. Every method trains on the same site-local training subset and
+uses a held-out validation subset carved only from CIFAR-10 training data. The
+official CIFAR-10 test set is untouched until the common post-training evaluator
+runs.
 """
 
 import argparse
@@ -36,7 +36,6 @@ REPO_ROOT = PROJECT_DIR.parents[1]
 PROJECT_SRC = PROJECT_DIR / "src"
 CIFAR_PT_DIR = REPO_ROOT / "examples" / "advanced" / "cifar10" / "pt"
 CIFAR_SRC = CIFAR_PT_DIR / "src"
-CIFAR_SIM = CIFAR_PT_DIR / "cifar10-sim"
 EVAL_DIR = Path(__file__).resolve().parent
 
 for path in (str(PROJECT_SRC), str(CIFAR_SRC), str(EVAL_DIR)):
@@ -63,17 +62,15 @@ METHODS = ("fedavg", "fedopt", "fedprox", "scaffold", "fedce", "adaptive")
 
 
 def _client_script(method: str) -> str:
-    if method == "adaptive":
-        return str(EVAL_DIR / "adaptive_client.py")
-    if method == "fedce":
-        return str(EVAL_DIR / "fedce_client.py")
-    directory = {
-        "fedavg": "cifar10_fedavg",
-        "fedopt": "cifar10_fedopt",
-        "fedprox": "cifar10_fedprox",
-        "scaffold": "cifar10_scaffold",
+    filename = {
+        "fedavg": "baseline_sgd_client.py",
+        "fedopt": "baseline_sgd_client.py",
+        "fedprox": "fedprox_client.py",
+        "scaffold": "scaffold_client.py",
+        "fedce": "fedce_client.py",
+        "adaptive": "adaptive_client.py",
     }[method]
-    return str(CIFAR_SIM / directory / "client.py")
+    return str(EVAL_DIR / filename)
 
 
 def _round_clients(n_clients: int, participation_rate: float) -> int:
@@ -82,30 +79,22 @@ def _round_clients(n_clients: int, participation_rate: float) -> int:
     return max(2, min(n_clients, int(round(n_clients * participation_rate))))
 
 
-def _common_train_args(args, train_idx_root: str) -> str:
+def _common_train_args(args, train_idx_root: str, validation_idx_root: str) -> str:
     return (
-        f"--train_idx_root {train_idx_root} --num_workers {args.num_workers} --lr {args.lr} "
-        f"--batch_size {args.batch_size} --aggregation_epochs {args.aggregation_epochs}"
-    )
-
-
-def _local_metric_train_args(args, train_idx_root: str, validation_idx_root: str) -> str:
-    return (
-        f"{_common_train_args(args, train_idx_root)} "
-        f"--validation_idx_root {validation_idx_root} --seed {args.seed}"
+        f"--train_idx_root {train_idx_root} --validation_idx_root {validation_idx_root} "
+        f"--num_workers {args.num_workers} --lr {args.lr} --batch_size {args.batch_size} "
+        f"--aggregation_epochs {args.aggregation_epochs} --seed {args.seed}"
     )
 
 
 def _build_recipe(args, train_idx_root: str, validation_idx_root: str, round_clients: int):
-    # This controls the server's initial model and the Dirichlet partition seed.
-    # NVIDIA's stock CIFAR baseline client scripts do not expose a client RNG
-    # argument, so local augmentation/minibatch stochasticity remains part of
-    # run-to-run variance and is not claimed to be identically paired.
+    # All methods share the server initialization seed, Dirichlet partition,
+    # per-site training/validation subsets, and per-site client RNG seed.
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
     random.seed(args.seed)
     model = ModerateCNN()
-    common = _common_train_args(args, train_idx_root)
+    common = _common_train_args(args, train_idx_root, validation_idx_root)
     name = (
         f"adaptive_hetero_cifar10_{args.method}_alpha{args.alpha:g}_seed{args.seed}_"
         f"p{args.participation_rate:g}"
@@ -161,7 +150,7 @@ def _build_recipe(args, train_idx_root: str, validation_idx_root: str, round_cli
             num_rounds=args.num_rounds,
             model=model,
             train_script=_client_script(args.method),
-            train_args=_local_metric_train_args(args, train_idx_root, validation_idx_root),
+            train_args=common,
             fedce_mode=args.fedce_mode,
         )
 
@@ -182,7 +171,7 @@ def _build_recipe(args, train_idx_root: str, validation_idx_root: str, round_cli
         num_rounds=args.num_rounds,
         model=model,
         train_script=_client_script(args.method),
-        train_args=_local_metric_train_args(args, train_idx_root, validation_idx_root),
+        train_args=common,
         aggregator=aggregator,
         aggregator_data_kind=DataKind.WEIGHT_DIFF,
         params_transfer_type=TransferType.DIFF,
@@ -201,6 +190,8 @@ def main(args):
         raise ValueError("CIFAR-10 evaluation requires at least two clients")
     if args.alpha <= 0.0:
         raise ValueError("alpha must be greater than zero")
+    if not 0.0 < args.validation_fraction < 1.0:
+        raise ValueError("validation_fraction must be in (0, 1)")
 
     round_clients = _round_clients(args.n_clients, args.participation_rate)
     assignment_prefix = os.path.join(args.split_root, "dirichlet_assignment")
@@ -267,7 +258,7 @@ def main(args):
         "job_name": recipe.name,
         "status": status,
         "result": str(run.get_result()),
-        "pairing_scope": "dirichlet_split_and_server_initialization",
+        "pairing_scope": "dirichlet_split_server_initialization_and_client_seed",
         "test_data_used_during_training": False,
         **evaluation,
     }
