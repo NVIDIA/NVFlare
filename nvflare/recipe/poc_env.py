@@ -205,19 +205,25 @@ class PocEnv(ExecEnv):
         }
         self._docker_network_name = f"nvflare-recipe-{deployment_id}"
 
-    def _remove_docker_network(self) -> None:
+    def _remove_docker_network(self, deadline: Optional[float] = None) -> None:
         """Remove the network, allowing time for auto-removed job containers to detach."""
         if not self._docker_network_name:
             return
+        if deadline is None:
+            deadline = time.monotonic() + STOP_POC_TIMEOUT
+        if time.monotonic() >= deadline:
+            raise RuntimeError(
+                f"POC shutdown deadline expired before removing Docker network {self._docker_network_name!r}"
+            )
         docker_env = _docker_cli_env()
-        deadline = time.monotonic() + STOP_POC_TIMEOUT
-        error_message = "cleanup deadline reached"
+        error_message = None
         while True:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
+                detail = f": {error_message}" if error_message else ""
                 raise RuntimeError(
                     f"could not remove Docker network {self._docker_network_name!r} "
-                    f"within {STOP_POC_TIMEOUT} seconds: {error_message}"
+                    f"before the POC shutdown deadline{detail}"
                 )
             try:
                 result = subprocess.run(
@@ -628,10 +634,12 @@ class PocEnv(ExecEnv):
             _stop_poc(
                 **stop_args,
             )
-            count = 0
+            # Service exit and network teardown share one wait budget after the
+            # shutdown command; slow endpoint detachment must not add another one.
+            deadline = time.monotonic() + STOP_POC_TIMEOUT
             poc_running = True
             poc_state_error = None
-            while count < STOP_POC_TIMEOUT:
+            while time.monotonic() < deadline:
                 try:
                     if not self._running_services(project_config, service_config, self.poc_workspace):
                         poc_running = False
@@ -643,8 +651,7 @@ class PocEnv(ExecEnv):
                     # contains the configuration needed for manual cleanup.
                     poc_running = True
                     break
-                time.sleep(1)
-                count += 1
+                time.sleep(min(1, max(0, deadline - time.monotonic())))
 
             if poc_running:
                 if clean_up:
@@ -658,7 +665,7 @@ class PocEnv(ExecEnv):
                         "Stop any remaining services and remove it manually."
                     )
             else:
-                self._remove_docker_network()
+                self._remove_docker_network(deadline=deadline)
                 self._services_may_have_started = False
                 if clean_up:
                     try:

@@ -522,7 +522,7 @@ def test_concurrent_docker_deploy_failure_stops_only_its_own_containers(tmp_path
             for container_name in names.values():
                 running_containers.discard(container_name)
 
-    def remove_network(env):
+    def remove_network(env, deadline=None):
         removed_networks.append(env._docker_network_name)
         env._docker_network_name = None
 
@@ -1078,6 +1078,100 @@ def test_stop_retries_busy_docker_network_and_preserves_on_failure(
     assert env._services_may_have_started is False
     assert len(network_calls) == attempts_before_recovery + 1
     assert len(stop_calls) == int(initially_running)
+
+
+@pytest.mark.parametrize("expired_before_lookup", [False, True])
+def test_network_cleanup_does_not_run_after_shared_deadline(monkeypatch, expired_before_lookup):
+    import nvflare.recipe.poc_env as poc_env_module
+
+    env = PocEnv()
+    env._docker_network_name = "nvflare-recipe-run"
+    clock = {"now": 1.0 if expired_before_lookup else 0.0}
+    monkeypatch.setattr(poc_env_module, "time", SimpleNamespace(monotonic=lambda: clock["now"]))
+
+    def docker_env():
+        assert not expired_before_lookup
+        clock["now"] = 1.0
+        return {}
+
+    monkeypatch.setattr(poc_env_module, "_docker_cli_env", docker_env)
+    monkeypatch.setattr(
+        poc_env_module.subprocess,
+        "run",
+        lambda *args, **kwargs: pytest.fail("network removal must not start after the shared deadline"),
+    )
+    with pytest.raises(RuntimeError, match="deadline") as exc_info:
+        env._remove_docker_network(deadline=1.0)
+
+    assert "nvflare-recipe-run" in str(exc_info.value)
+    assert env._docker_network_name == "nvflare-recipe-run"
+
+
+@pytest.mark.parametrize("network_release_time", [1.4, None])
+def test_stop_shares_service_wait_deadline_with_network_cleanup(tmp_path, monkeypatch, caplog, network_release_time):
+    import nvflare.recipe.poc_env as poc_env_module
+
+    monkeypatch.setattr(poc_env_module, "get_poc_workspace", lambda: str(tmp_path / "poc"))
+    env = PocEnv(docker_image="nvflare:test")
+    workspace = Path(env.poc_workspace)
+    workspace.mkdir()
+    env._docker_network_name = "nvflare-recipe-run"
+    env._services_may_have_started = True
+    env._session_manager = object()
+    clock = {"now": 0.0}
+    monkeypatch.setattr(poc_env_module, "STOP_POC_TIMEOUT", 2.0)
+    monkeypatch.setattr(
+        poc_env_module,
+        "time",
+        SimpleNamespace(
+            monotonic=lambda: clock["now"],
+            sleep=lambda duration: clock.update(now=clock["now"] + duration),
+        ),
+    )
+    monkeypatch.setattr(poc_env_module, "_docker_cli_env", lambda: {})
+    monkeypatch.setattr(
+        poc_env_module,
+        "setup_service_config",
+        lambda path: (PROJECT_CONFIG, {**SERVICE_CONFIG, SC.IS_DOCKER_RUN: True}),
+    )
+    stop_requested = False
+
+    def stop(**kwargs):
+        nonlocal stop_requested
+        stop_requested = True
+
+    monkeypatch.setattr(poc_env_module, "_stop_poc", stop)
+    network_calls = []
+
+    def docker(command, **kwargs):
+        if command[:2] == ["docker", "inspect"]:
+            # Parent services finish one second after receiving the stop request.
+            running = not stop_requested or clock["now"] < 1.0
+            return SimpleNamespace(returncode=0, stdout=str(running).lower(), stderr="")
+        assert command == ["docker", "network", "rm", "nvflare-recipe-run"]
+        network_calls.append((clock["now"], kwargs["timeout"]))
+        if network_release_time is not None and clock["now"] >= network_release_time:
+            return SimpleNamespace(returncode=0, stdout="nvflare-recipe-run", stderr="")
+        return SimpleNamespace(returncode=1, stdout="", stderr="network has active endpoints")
+
+    monkeypatch.setattr(poc_env_module.subprocess, "run", docker)
+    env.stop(clean_up=True)
+
+    assert stop_requested
+    assert network_calls[0][0] == 1.0
+    assert all(0 < timeout <= 2.0 - started for started, timeout in network_calls)
+    assert clock["now"] <= 2.0
+    assert env._session_manager is None
+    if network_release_time is None:
+        assert clock["now"] == pytest.approx(2.0)
+        assert workspace.exists()
+        assert env._docker_network_name == "nvflare-recipe-run"
+        assert env._services_may_have_started is True
+        assert "active endpoints" in caplog.text
+    else:
+        assert not workspace.exists()
+        assert env._docker_network_name is None
+        assert env._services_may_have_started is False
 
 
 @patch("nvflare.recipe.poc_env.get_poc_workspace")
