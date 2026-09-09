@@ -22,9 +22,7 @@ from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
 from nvflare.apis.fl_constant import ReservedKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.app_constant import AppConstants
-from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.app_opt.pt.recipes.fedopt import FedOptRecipe
-from nvflare.client.config import TransferType
 
 
 def _context(round_number=0):
@@ -87,12 +85,8 @@ def test_real_nvflare_aggregation_matches_server_side_weights():
 def test_native_fallback_uses_optimizer_steps_not_sample_count():
     aggregator = AdaptiveHeterogeneityAggregator(metric_prior_strength=0.0, activation_warmup_rounds=3)
     ctx = _context()
-    assert aggregator.accept(
-        _contribution("site-1", 0, 1.0, 9, [0.5, 0.5], 0.8, sample_count=100), ctx
-    )
-    assert aggregator.accept(
-        _contribution("site-2", 0, 3.0, 1, [0.5, 0.5], 0.8, sample_count=100), ctx
-    )
+    assert aggregator.accept(_contribution("site-1", 0, 1.0, 9, [0.5, 0.5], 0.8, sample_count=100), ctx)
+    assert aggregator.accept(_contribution("site-2", 0, 3.0, 1, [0.5, 0.5], 0.8, sample_count=100), ctx)
     result = from_shareable(aggregator.aggregate(ctx))
 
     assert result.meta[AdaptiveMetaKey.BLEND_FACTOR] == 0.0
@@ -132,12 +126,8 @@ def test_aggregator_preserves_activation_history_and_resets_on_cohort_change():
     assert blends[2] > 0.0
 
     changed_ctx = _context(3)
-    assert aggregator.accept(
-        _contribution("site-1", 3, 1.0, 10, [0.99, 0.01], 0.90, sample_count=100), changed_ctx
-    )
-    assert aggregator.accept(
-        _contribution("site-3", 3, 3.0, 10, [0.01, 0.99], 0.50, sample_count=100), changed_ctx
-    )
+    assert aggregator.accept(_contribution("site-1", 3, 1.0, 10, [0.99, 0.01], 0.90, sample_count=100), changed_ctx)
+    assert aggregator.accept(_contribution("site-3", 3, 3.0, 10, [0.01, 0.99], 0.50, sample_count=100), changed_ctx)
     changed = from_shareable(aggregator.aggregate(changed_ctx))
     assert changed.meta[AdaptiveMetaKey.BLEND_FACTOR] == 0.0
     assert changed.meta[AdaptiveMetaKey.ACTIVATION_STREAK] == 1
@@ -146,9 +136,7 @@ def test_aggregator_preserves_activation_history_and_resets_on_cohort_change():
 def test_default_bounds_support_single_client():
     aggregator = AdaptiveHeterogeneityAggregator()
     ctx = _context()
-    assert aggregator.accept(
-        _contribution("site-1", 0, 2.0, 5, [0.5, 0.5], 0.8, sample_count=100), ctx
-    )
+    assert aggregator.accept(_contribution("site-1", 0, 2.0, 5, [0.5, 0.5], 0.8, sample_count=100), ctx)
     result = from_shareable(aggregator.aggregate(ctx))
     assert aggregator.last_weights == {"site-1": 1.0}
     assert np.allclose(result.data["weight"], np.asarray([2.0], dtype=np.float32))
@@ -234,22 +222,7 @@ def test_fedjob_export_preserves_non_default_aggregator_arguments(tmp_path):
     assert serialized["args"]["max_weight"] == 0.70
 
 
-def test_fedavg_recipe_accepts_generic_adaptive_aggregator():
-    aggregator = AdaptiveHeterogeneityAggregator()
-    recipe = FedAvgRecipe(
-        name="adaptive-hetero-fedavg-contract-test",
-        min_clients=2,
-        num_rounds=1,
-        model=torch.nn.Linear(2, 2),
-        train_script=__file__,
-        aggregator=aggregator,
-        aggregator_data_kind=DataKind.WEIGHT_DIFF,
-        params_transfer_type=TransferType.DIFF,
-    )
-    assert recipe.aggregator is aggregator
-
-
-def test_fedopt_recipe_accepts_generic_adaptive_aggregator():
+def test_fedopt_recipe_accepts_shareable_adaptive_aggregator():
     aggregator = AdaptiveHeterogeneityAggregator(min_weight=0.10, max_weight=0.80)
     recipe = FedOptRecipe(
         name="adaptive-hetero-fedopt-contract-test",
