@@ -12,6 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Version identifier for comparable CIFAR-10 result rows."""
+"""Versioning and canonical hashing for comparable CIFAR-10 result rows."""
 
-PROTOCOL_VERSION = "cifar10_dirichlet_trainval_test_v2"
+import hashlib
+import json
+
+PROTOCOL_VERSION = "cifar10_dirichlet_trainval_test_v3"
+
+
+def canonical_config_hash(config: dict) -> str:
+    """Return a stable SHA-256 digest for a JSON-compatible configuration."""
+
+    encoded = json.dumps(config, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
