@@ -24,6 +24,7 @@ DEFAULT_METHODS = ("fedavg", "fedprox", "scaffold", "fedce", "adaptive")
 DEFAULT_SEEDS = (7, 19, 31, 43, 57)
 DEFAULT_ALPHAS = (0.1, 0.5)
 DEFAULT_PARTICIPATION = (1.0, 0.75)
+PROTOCOL_VERSION = "cifar10_dirichlet_trainval_test_v2"
 
 
 def _completed_keys(path: Path) -> set[tuple]:
@@ -35,12 +36,15 @@ def _completed_keys(path: Path) -> set[tuple]:
             if not line.strip():
                 continue
             row = json.loads(line)
+            if row.get("protocol_version") != PROTOCOL_VERSION:
+                continue
             keys.add(
                 (
                     str(row["method"]),
                     float(row["alpha"]),
                     float(row["participation_rate"]),
                     int(row["seed"]),
+                    float(row["validation_fraction"]),
                 )
             )
     return keys
@@ -58,6 +62,8 @@ def _run_command(args, method: str, alpha: float, participation: float, seed: in
         str(participation),
         "--seed",
         str(seed),
+        "--validation_fraction",
+        str(args.validation_fraction),
         "--n_clients",
         str(args.n_clients),
         "--num_rounds",
@@ -131,11 +137,18 @@ def main(args):
                 if method == "fedopt" and participation < 1.0:
                     continue
                 for seed in args.seeds:
-                    key = (method, float(alpha), float(participation), int(seed))
+                    key = (
+                        method,
+                        float(alpha),
+                        float(participation),
+                        int(seed),
+                        float(args.validation_fraction),
+                    )
                     if key in completed:
                         continue
                     planned.append((method, float(alpha), float(participation), int(seed)))
 
+    print(f"Protocol: {PROTOCOL_VERSION}")
     print(f"Planned CIFAR-10 runs: {len(planned)}")
     for index, (method, alpha, participation, seed) in enumerate(planned, start=1):
         command = _run_command(args, method, alpha, participation, seed)
@@ -161,6 +174,8 @@ def main(args):
         args.summary_json,
         "--reference_method",
         "adaptive",
+        "--protocol_version",
+        PROTOCOL_VERSION,
     ]
     subprocess.run(summary_command, check=True)
 
@@ -181,6 +196,7 @@ if __name__ == "__main__":
     parser.add_argument("--aggregation_epochs", type=int, default=4)
     parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--lr", type=float, default=5e-2)
+    parser.add_argument("--validation_fraction", type=float, default=0.10)
     parser.add_argument("--num_workers", type=int, default=2)
     parser.add_argument("--num_threads", type=int, default=None)
     parser.add_argument("--gpu_config", default=None)
