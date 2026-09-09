@@ -2,14 +2,18 @@
 
 This draft research implementation addresses the adaptive client-weighting use case discussed in
 [NVIDIA/NVFlare issue #5209](https://github.com/NVIDIA/NVFlare/issues/5209).
-It implements a generic NVFlare `Aggregator` for `DataKind.WEIGHT_DIFF` updates. The same
-aggregation mechanism can be used with FedAvg-style aggregation or with FedOpt server-side
-optimization; FedOpt is not a requirement of the weighting policy itself.
 
-The pull request is intentionally kept in draft while the method is strengthened with a standard
-non-IID benchmark, additional baselines, confidence intervals, partial-participation results, and a
-public method write-up. It should not yet be treated as a validated NVIDIA FLARE research example
-or as production evidence.
+The weighting policy is independent of the server optimizer. Two adapters expose the same policy to
+NVFlare workflows:
+
+- `AdaptiveHeterogeneityAggregator` implements the Shareable/DXO `Aggregator` interface used by
+  workflows such as the FedOpt integration in this project;
+- `AdaptiveHeterogeneityModelAggregator` implements the unified `ModelAggregator` interface used by
+  the current FedAvg recipe.
+
+The pull request is intentionally kept in draft while the standard non-IID evaluation and public
+method write-up are completed. It should not yet be treated as a validated NVIDIA FLARE research
+example or as production evidence.
 
 ## Motivation
 
@@ -32,7 +36,7 @@ For each participating client `i`, the adaptive policy receives:
 - a normalized higher-is-better client metric in `[0, 1]`;
 - an optional quality-improvement value.
 
-The NVFlare adapter separately retains the framework's native local-step weighting signal from
+The NVFlare adapters separately retain the framework's native local-step weighting signal from
 `NUM_STEPS_CURRENT_ROUND`. This distinction is important: `NUM_STEPS_CURRENT_ROUND` is the number
 of completed local optimizer steps, not the number of training examples.
 
@@ -115,10 +119,7 @@ from one stable cohort.
 
 ## NVFlare Metadata Contract
 
-`src/adaptive_hetero/nvflare_aggregator.py` implements the generic NVFlare `Aggregator` interface
-for `DataKind.WEIGHT_DIFF` contributions.
-
-Each contribution provides:
+Each adaptive contribution provides:
 
 ```python
 from nvflare.apis.dxo import MetaKey
@@ -135,13 +136,14 @@ dxo.set_meta_prop(AdaptiveMetaKey.QUALITY_IMPROVEMENT, baseline_loss - final_los
 sample exponent, federation reference distribution, and metric-reliability calculation use
 `AdaptiveMetaKey.SAMPLE_COUNT`.
 
-Per-site final weights are kept server-side and are not placed in aggregated DXO metadata, because
-aggregated metadata is copied into the global model and may be broadcast to participants. Returned
+Per-site final weights are kept server-side and are not placed in aggregated model metadata, because
+aggregated metadata may be copied into the global model and broadcast to participants. Returned
 adaptive metadata contains only federation-level diagnostics such as mean heterogeneity, metric gap,
 blend factor, and whether configured bounds were feasible.
 
-If a round has no accepted contributions, the aggregator returns `ReturnCode.EMPTY_RESULT` rather
-than raising an exception that aborts the job.
+The Shareable/DXO adapter returns `ReturnCode.EMPTY_RESULT` if no contribution is accepted. The
+unified FedAvg `ModelAggregator` returns an empty DIFF no-op in the analogous empty-round case, so an
+empty round does not fail solely because the adaptive component has nothing to combine.
 
 ## Current Engineering Validation
 
@@ -155,10 +157,11 @@ The project includes focused checks for:
 - one-client and large-cohort bound feasibility;
 - final active min/max constraints when bounds are configured;
 - malformed or missing adaptive metadata;
-- all-rejected-round handling through `ReturnCode.EMPTY_RESULT`;
+- empty-round behavior for both aggregator interfaces;
 - server-side-only per-site weight diagnostics;
-- custom aggregator constructor arguments required by NVFlare `FedJob` serialization;
-- real `DXO`, `Shareable`, `FLContext`, `WeightedAggregationHelper`, and Recipe integration;
+- custom constructor arguments required by NVFlare `FedJob` serialization;
+- exported FedOpt and unified FedAvg job configuration with non-default adaptive settings;
+- real `DXO`, `Shareable`, `FLContext`, `FLModel`, `WeightedAggregationHelper`, and Recipe integration;
 - a lightweight `FedOptRecipe + SimEnv` smoke path;
 - a FedCE protocol smoke path;
 - synthetic and scikit-learn digits development benchmarks.
@@ -170,22 +173,124 @@ No project-specific GitHub Actions workflow is added. Reproducibility commands a
 configuration stay inside this project directory so the research workload does not gate unrelated
 repository merges.
 
-## Required Evaluation Before Research Acceptance
+## Standard CIFAR-10 Evaluation
 
-The current draft is being prepared for the evaluation requested by NVIDIA FLARE maintainers:
+`cifar10_evaluation/` implements the standard non-IID evaluation requested by the maintainers.
+It reuses NVIDIA FLARE's `ModerateCNN`, CIFAR-10 data utilities, and Dirichlet partitioner.
+For a fixed `(alpha, seed)`, every method receives the same training partition and the server model is
+initialized from the same seed.
 
-1. use a standard non-IID benchmark, with Dirichlet CIFAR-10 as the primary target;
-2. compare against FedAvg/FedOpt native weighting, FedProx, SCAFFOLD, and FedCE;
-3. use matched datasets, partitions, model architecture, training budgets, and random seeds;
-4. report confidence intervals, including paired adaptive-minus-baseline intervals where applicable;
-5. include partial participation in the main result tables rather than treating it only as a smoke test;
-6. report both global performance and client-level/worst-client behavior;
-7. publish a public method write-up such as a preprint or workshop paper before treating the code as
-   a reference research implementation.
+The comparison runner currently supports:
 
-NVIDIA FLARE already contains Dirichlet CIFAR-10 examples for FedAvg, FedOpt, FedProx, and SCAFFOLD.
-The intended evaluation will reuse those conventions rather than create an unrelated benchmark
-protocol. FedCE requires an equivalent CIFAR-10 adaptation for an apples-to-apples comparison.
+- FedAvg;
+- FedOpt as a full-participation reference;
+- FedProx;
+- SCAFFOLD;
+- FedCE;
+- adaptive heterogeneity-aware aggregation.
+
+### Common post-training evaluator
+
+NVIDIA's stock CIFAR clients evaluate against the complete CIFAR-10 test set at every site. That is
+appropriate for ordinary global accuracy but does not create a client-specific performance measure.
+The adaptive method requires a meaningful client-performance disparity signal, and the requested
+scientific comparison also needs a common worst-client metric.
+
+`eval_split.py` therefore creates deterministic site-specific CIFAR-10 test partitions whose class
+mixtures follow the corresponding Dirichlet training partitions. `evaluate_result.py` evaluates the
+**final server checkpoint of every method through the same evaluator**:
+
+- `global_accuracy`: accuracy on the complete CIFAR-10 test set;
+- `client_accuracies`: accuracy on each identical site-specific evaluation partition;
+- `worst_client_accuracy`: minimum client accuracy;
+- `mean_client_accuracy`, best-client accuracy, and client accuracy gap.
+
+This post-training evaluation is method-independent, so headline FedAvg/FedProx/SCAFFOLD/FedCE and
+adaptive results are not mixed across different validation protocols.
+
+### Reproducibility and pairing
+
+The `seed` controls the Dirichlet split and server-model initialization. NVIDIA's stock CIFAR
+baseline client scripts do not all expose a client-side RNG argument, so local minibatch and data-
+augmentation stochasticity is treated as part of run-to-run variance. Paired comparisons are
+therefore described as paired by **Dirichlet split and server initialization**, not as identical
+client-side stochastic trajectories.
+
+### One run
+
+From `research/adaptive-hetero-aggregation/`:
+
+```bash
+python cifar10_evaluation/run.py \
+  --method adaptive \
+  --alpha 0.1 \
+  --seed 7 \
+  --participation_rate 1.0 \
+  --results_jsonl results/cifar10_runs.jsonl
+```
+
+The command trains the federation, evaluates the final server checkpoint with the common evaluator,
+prints a `CIFAR10_EVAL_RESULT` JSON record, and optionally appends that record to the supplied JSONL
+file.
+
+### Maintainer-requested comparison campaign
+
+`run_campaign.py` is an intentional research workload, not a repository CI gate. Its defaults are:
+
+- methods: FedAvg, FedProx, SCAFFOLD, FedCE, adaptive;
+- Dirichlet alpha: `0.1` and `0.5`;
+- seeds: `7, 19, 31, 43, 57`;
+- participation: `1.0` and `0.75`;
+- 8 clients, 50 rounds, 4 local epochs.
+
+Run the full default matrix with:
+
+```bash
+python cifar10_evaluation/run_campaign.py
+```
+
+Inspect the matrix without training:
+
+```bash
+python cifar10_evaluation/run_campaign.py --dry_run
+```
+
+The campaign is resumable by default: completed `(method, alpha, participation, seed)` rows already
+present in `results/cifar10_runs.jsonl` are skipped. Use `--fresh` to start a new result file.
+
+FedOpt can be added as a full-participation reference:
+
+```bash
+python cifar10_evaluation/run_campaign.py \
+  --methods fedavg fedopt fedprox scaffold fedce adaptive
+```
+
+### Confidence intervals
+
+`summarize_results.py` consumes the JSONL rows emitted by the common evaluator and reports, for each
+method/condition:
+
+- sample size;
+- mean;
+- sample standard deviation;
+- two-sided 95% Student-t confidence interval for global and worst-client accuracy.
+
+It also reports paired adaptive-minus-baseline confidence intervals for common split/initialization
+seeds. `run_campaign.py` calls the summarizer automatically after the requested runs complete.
+
+## Evidence Still Required Before Research Acceptance
+
+The evaluation infrastructure is now present, but quantitative claims must not be added until the
+full matched campaign has actually completed. Before this draft should be treated as a merge-ready
+`research/` contribution, it still needs:
+
+1. completed CIFAR-10 runs against FedProx, SCAFFOLD, and FedCE under the documented protocol;
+2. confidence-interval tables generated from those completed runs;
+3. partial-participation results included in the main result tables;
+4. transparent reporting of neutral or negative results as well as improvements;
+5. a public method write-up such as a preprint or workshop paper.
+
+The current repository does not claim that those final evidence items already exist.
 
 ## Existing Development Benchmarks
 
@@ -209,22 +314,24 @@ the standard evaluation protocol.
 
 ### FedAvg and FedOpt
 
-The custom component is an aggregation policy rather than a server optimizer. It can therefore be
-used with FedAvg-style weight-difference aggregation and can also feed FedOpt's server-side optimizer.
-When adaptive activation is off, the adapter preserves the native local-step weighting signal.
+The custom method is an aggregation policy rather than a server optimizer. The unified FedAvg path
+uses `AdaptiveHeterogeneityModelAggregator`, while the FedOpt smoke/reference path uses
+`AdaptiveHeterogeneityAggregator`. Both delegate client weighting to the same policy implementation.
+When adaptive activation is off, native local-step weighting is preserved.
 
 ### FedProx and SCAFFOLD
 
 FedProx and SCAFFOLD primarily modify local/client optimization to address non-IID optimization drift.
 They are required baselines because they solve a related heterogeneity problem through a different
-mechanism. The final evaluation will compare them under the same non-IID partitions and training
-budget.
+mechanism. The standard campaign runs them under the same Dirichlet partitions, architecture, and
+training budget used for the adaptive method.
 
 ### FedCE
 
 FedCE dynamically estimates client contribution using gradient/update and validation behavior. It is
-the closest existing NVFlare contribution-aware aggregation baseline and will be included in the
-standard benchmark comparison rather than represented only by a protocol smoke test.
+the closest existing NVFlare contribution-aware aggregation baseline. `fedce_client.py` adapts the
+real NVFlare FedCE leave-one-out validation contract to the same CIFAR-10 setup; it is not a
+synthetic approximation of FedCE.
 
 ### Auto-FedRL
 
@@ -246,9 +353,7 @@ controls.
 
 The method has not yet been established as broadly effective. Remaining work includes:
 
-- standard non-IID CIFAR-10 evaluation against the requested baselines;
-- statistically supported confidence intervals;
-- partial-participation headline results;
+- completing and reporting the standard non-IID CIFAR-10 campaign;
 - larger client populations and longer training runs;
 - additional datasets and model architectures;
 - metadata privacy, trust, and cross-site comparability;
@@ -265,13 +370,25 @@ adaptive-hetero-aggregation/
 |-- benchmark.py
 |-- digits_benchmark.py
 |-- requirements.txt
+|-- cifar10_evaluation/
+|   |-- __init__.py
+|   |-- adaptive_client.py
+|   |-- eval_split.py
+|   |-- evaluate_result.py
+|   |-- fedce_client.py
+|   |-- run.py
+|   |-- run_campaign.py
+|   `-- summarize_results.py
 |-- fedce_smoke/
 |-- nvflare_smoke/
 |-- src/adaptive_hetero/
 |   |-- __init__.py
-|   |-- policy.py
-|   `-- nvflare_aggregator.py
+|   |-- model_aggregator.py
+|   |-- nvflare_aggregator.py
+|   `-- policy.py
 `-- tests/
+    |-- test_cifar_evaluation.py
+    |-- test_model_aggregator.py
     |-- test_nvflare_aggregator.py
     |-- test_nvflare_smoke_client.py
     `-- test_policy.py
