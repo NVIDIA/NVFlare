@@ -44,6 +44,12 @@ class AdaptiveMetaKey:
     BLEND_FACTOR = "adaptive_blend_factor"
     ACTIVATION_STREAK = "adaptive_activation_streak"
     BOUNDS_FEASIBLE = "adaptive_bounds_feasible"
+    AGGREGATION_ROUNDS = "adaptive_aggregation_rounds"
+    ACTIVE_ROUNDS = "adaptive_active_rounds"
+    ACTIVATION_RATE = "adaptive_activation_rate"
+    MEAN_ACTIVE_BLEND_FACTOR = "adaptive_mean_active_blend_factor"
+    MAX_OBSERVED_BLEND_FACTOR = "adaptive_max_observed_blend_factor"
+    COHORT_CHANGE_COUNT = "adaptive_cohort_change_count"
 
 
 @dataclass
