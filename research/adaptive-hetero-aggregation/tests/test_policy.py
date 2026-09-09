@@ -103,6 +103,35 @@ def test_material_heterogeneity_and_metric_gap_enable_adaptive_weighting():
     assert np.isclose(result.weights.sum(), 1.0)
 
 
+def test_serialized_smoke_configuration_reaches_adaptive_path():
+    policy = AdaptiveHeterogeneityPolicy(
+        AdaptiveWeightingConfig(
+            metric_prior_strength=0.0,
+            min_weight=0.05,
+            max_weight=0.60,
+            heterogeneity_threshold=0.0,
+            heterogeneity_temperature=0.04,
+            heterogeneity_deadband=0.0,
+            performance_gap_threshold=0.0,
+            performance_gap_deadband=0.0,
+            activation_warmup_rounds=3,
+            activation_patience=2,
+            require_stable_cohort=True,
+        )
+    )
+    kwargs = dict(
+        sample_counts=[180, 180, 180],
+        descriptors=[[0.90, 0.08, 0.02], [0.02, 0.90, 0.08], [0.08, 0.02, 0.90]],
+        client_metrics=[0.90, 0.60, 0.72],
+        cohort_key=("site-1", "site-2", "site-3"),
+    )
+
+    blends = [policy.compute(**kwargs).blend_factor for _ in range(5)]
+
+    assert blends[:3] == [0.0, 0.0, 0.0]
+    assert any(blend > 0.0 for blend in blends[3:])
+
+
 def test_final_blended_weights_respect_bounds_when_base_weight_is_dominant():
     policy = _immediate_policy(
         min_weight=0.05,
