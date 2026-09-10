@@ -18,9 +18,9 @@ set -Eeuo pipefail
 IMAGE_TAG="nvcr.io/nvidia/nemo-automodel:26.04"
 SOURCE_DIR="${CHECKOUT_DIR:-$(git rev-parse --show-toplevel)}"
 TIMESTAMP="${RUN_TIMESTAMP:-$(date -u +%Y%m%dT%H%M%SZ)}"
-RUN_ROOT="${RUN_ROOT:-/scratch/hroth/Code/nvflare/nemotron-nano-regression-${TIMESTAMP}}"
+RUN_ROOT="${RUN_ROOT:-/tmp/nvflare/nemotron-nano-regression-${TIMESTAMP}}"
 CACHE_ROOT="${CACHE_ROOT:-${RUN_ROOT}/cache/huggingface}"
-SOURCE_DATA_DIR="${SOURCE_DATA_DIR:-/scratch/hroth/Code/nvflare/nemotron-peft-h100-20260604-113217/integration/nemo/examples/peft/data/FinancialPhraseBank-v1.0}"
+SOURCE_DATA_DIR="${SOURCE_DATA_DIR:-${SOURCE_DIR}/integration/nemo/examples/peft/data/FinancialPhraseBank-v1.0}"
 GPU_ID="${GPU_ID:-$(nvidia-smi --query-gpu=index,memory.used --format=csv,noheader,nounits | sort -t, -k2n | head -1 | cut -d, -f1 | tr -d ' ')}"
 
 mkdir -p "${RUN_ROOT}"/{artifacts,data,logs,workspace} "${CACHE_ROOT}"
@@ -59,7 +59,7 @@ python data/split_financial_phrase_data.py --alpha=10.0 --random_seed=0 --num_cl
   --test_path=/host_out/data/financial_phrase_bank_test.jsonl --out_dir=/host_out/data_split
 python prepare_initial_adapter.py --model_profile=nano --output=/host_out/artifacts/initial_adapter.pt
 python job.py --model_profile=nano --n_clients=2 --num_rounds=2 --num_threads=1 --gpu="[0]" \
-  --max_steps=2 --seq_length=128 --train_split_dir=/host_out/data_split \
+  --max_steps=2 --seq_length=128 --fp32_adapter_exchange --train_split_dir=/host_out/data_split \
   --validation_file=/host_out/data/financial_phrase_bank_val.jsonl \
   --workspace=/host_out/workspace --initial_adapter_ckpt=/host_out/artifacts/initial_adapter.pt
 python verify_federated_run.py --client_work_dir=/host_out/workspace/automodel_work \

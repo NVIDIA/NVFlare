@@ -240,7 +240,8 @@ Run the complete staged validation from a retained `tmux` session on the H100 ho
 
 ```bash
 tmux new -s nvflare-lightning35
-CHECKOUT_DIR=/scratch/hroth/Code/nvflare/nemotron35-lightning-checkout \
+CHECKOUT_DIR=/path/to/NVFlare \
+  RUN_ROOT=/path/to/validation-output \
   ./integration/nemo/examples/peft/run_h100_lightning35.sh
 ```
 
@@ -255,8 +256,8 @@ revision checks still run before training.
 
 The runner preserves client adapters and manifests, every server round aggregate, exact-label evaluation output,
 commands, package versions, exit codes, timing logs, and GPU telemetry under a timestamped directory in
-`/scratch/hroth/Code/nvflare/`. `verify_federated_run.py` independently computes every aggregate in FP32 using the
-actual optimizer-step weights. The final acceptance check requires both seeds to lower held-out validation
+`RUN_ROOT` (or `/tmp/nvflare/` by default). `verify_federated_run.py` independently computes every aggregate in FP32
+using the actual optimizer-step weights. The final acceptance check requires both seeds to lower held-out validation
 response-token loss and their mean final test Macro-F1 to equal or exceed the base model. Intermediate rounds evaluate
 validation only; only the predetermined final round is evaluated on test.
 
