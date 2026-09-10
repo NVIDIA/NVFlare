@@ -19,21 +19,28 @@ from pathlib import Path
 
 # Reuse the beginner example's real model, client, and data code. This example
 # changes orchestration and execution environment, not the learning application.
-HELLO_PT_DIR = Path(__file__).resolve().parents[2] / "hello-world" / "hello-pt"
+HELLO_PT_DIR = Path(__file__).resolve().parent.parent.parent / "hello-world" / "hello-pt"
+if not all((HELLO_PT_DIR / name).is_file() for name in ("client.py", "model.py", "prepare_data.py")):
+    raise SystemExit("This example requires examples/hello-world/hello-pt. Run it from a full NVFlare checkout.")
 sys.path.insert(0, str(HELLO_PT_DIR))
 
 from model import create_model  # noqa: E402
-from prepare_data import DATASET_CHOICES, DATASET_PATH, DEFAULT_DATASET  # noqa: E402
+from prepare_data import add_dataset_arguments, validate_cifar10  # noqa: E402
 
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
-from nvflare.recipe import PocEnv, ProdEnv, SimEnv, add_experiment_tracking, add_final_global_evaluation
+from nvflare.recipe import (
+    PocEnv,
+    ProdEnv,
+    SimEnv,
+    add_experiment_tracking,
+    add_final_global_evaluation,
+    export_requested,
+)
+from nvflare.recipe.prod_env import DEFAULT_ADMIN_USER
 from nvflare.recipe.utils import add_cross_site_evaluation
 
 DEFAULT_NUM_CLIENTS = 2
 DEFAULT_NUM_ROUNDS = 3
-SUCCESS_STATUS = "FINISHED:COMPLETED"
-LEGACY_SUCCESS_STATUS = "FINISHED_OK"
-SUCCESS_STATUSES = {SUCCESS_STATUS, LEGACY_SUCCESS_STATUS}
 EXPORT_HELP = """NVFlare Recipe export options:
   --export                    Export the job instead of running it.
   --export-dir EXPORT_DIR     Parent directory for the exported job (default: ./fl_job).
@@ -46,8 +53,12 @@ def define_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=EXPORT_HELP,
     )
-    parser.add_argument("--n_clients", type=int, default=DEFAULT_NUM_CLIENTS)
-    parser.add_argument("--num_rounds", type=int, default=DEFAULT_NUM_ROUNDS)
+    parser.add_argument(
+        "--n_clients", type=int, default=DEFAULT_NUM_CLIENTS, help="Number of participating clients (default: 2)."
+    )
+    parser.add_argument(
+        "--num_rounds", type=int, default=DEFAULT_NUM_ROUNDS, help="Number of federated training rounds (default: 3)."
+    )
     parser.add_argument(
         "--env",
         choices=("sim", "poc", "prod"),
@@ -65,27 +76,22 @@ def define_parser() -> argparse.ArgumentParser:
         help="Production admin identity. Must match the startup kit; defaults to admin@nvidia.com.",
     )
 
-    dataset_group = parser.add_mutually_exclusive_group()
-    dataset_group.add_argument("--dataset", choices=DATASET_CHOICES, dest="dataset")
-    dataset_group.add_argument(
-        "--synthetic_data",
-        action="store_const",
-        const="synthetic",
-        dest="dataset",
-        help="Deprecated alias for --dataset synthetic.",
-    )
-    parser.set_defaults(dataset=DEFAULT_DATASET)
-    parser.add_argument(
-        "--data_root",
-        default=DATASET_PATH,
-        help="Client-local CIFAR-10 cache path. Ignored for the synthetic dataset.",
-    )
+    add_dataset_arguments(parser)
 
     # Defaults for these optional overrides remain owned by the shared client.
-    parser.add_argument("--batch_size", type=int, default=None)
-    parser.add_argument("--epochs", type=int, default=None)
-    parser.add_argument("--learning_rate", type=float, default=None)
-    parser.add_argument("--num_workers", type=int, default=None)
+    parser.add_argument("--batch_size", type=int, default=None, help="Local training batch size (client default: 32).")
+    parser.add_argument(
+        "--epochs", type=int, default=None, help="Local epochs per federated round (client default: 1)."
+    )
+    parser.add_argument(
+        "--learning_rate",
+        type=float,
+        default=None,
+        help="SGD learning rate (client default: 0.1 for synthetic, 0.01 for CIFAR-10).",
+    )
+    parser.add_argument(
+        "--num_workers", type=int, default=None, help="Data-loader worker processes (client default: 0)."
+    )
     parser.add_argument(
         "--evaluation",
         choices=("none", "final", "cross-site"),
@@ -116,6 +122,8 @@ def define_parser() -> argparse.ArgumentParser:
 def parse_args(argv=None):
     parser = define_parser()
     args = parser.parse_args(argv)
+    if args.client_memory_gc_rounds < 0:
+        parser.error("--client_memory_gc_rounds must be >= 0")
     if args.env == "prod" and not args.startup_kit:
         parser.error("--startup-kit is required with --env prod")
     if args.env != "prod" and args.startup_kit:
@@ -165,33 +173,43 @@ def create_environment(args):
         return SimEnv(num_clients=args.n_clients)
     if args.env == "poc":
         return PocEnv(num_clients=args.n_clients)
-    if args.username:
-        return ProdEnv(startup_kit_location=args.startup_kit, username=args.username)
-    return ProdEnv(startup_kit_location=args.startup_kit)
+    return ProdEnv(startup_kit_location=args.startup_kit, username=args.username or DEFAULT_ADMIN_USER)
 
 
 def main(argv=None):
     args = parse_args(argv)
+    if args.dataset == "cifar10" and args.env != "prod" and not export_requested():
+        args.data_root = str(Path(args.data_root).expanduser().resolve())
+        try:
+            validate_cifar10(args.data_root, prepare_script="../../hello-world/hello-pt/prepare_data.py")
+        except FileNotFoundError as e:
+            raise SystemExit(str(e)) from None
     recipe = create_recipe(args)
     env = create_environment(args)
 
     # PocEnv handles deployment failures and preserves the workspace if service
     # shutdown cannot be verified. Only monitor a successfully submitted run.
     run = recipe.execute(env)
+    result = None
     try:
         # Retain the POC workspace after success so the printed result path and
         # service logs remain accessible.
         result = run.get_result(clean_up=args.env != "poc")
-        status = None if args.env == "sim" else run.get_status()
+        status = run.get_status()
         if result is None:
-            raise RuntimeError("Job monitoring did not return a result. Review the execution-environment logs.")
-        if args.env != "sim" and status not in SUCCESS_STATUSES:
+            raise RuntimeError("Job monitoring did not return a result.")
+        if not run.succeeded():
             raise RuntimeError(f"Job completed with unsuccessful status: {status}")
-    except (Exception, KeyboardInterrupt):
-        # Each PocEnv has a unique workspace, so monitoring failure cleanup only
-        # targets this run. Previously retained results belong to other paths.
+    except BaseException:
         if args.env == "poc":
-            env.stop(clean_up=True)
+            # A downloaded failed-job result and its service logs are useful
+            # diagnostics. Only remove this run when no result was obtained.
+            env.stop(clean_up=result is None)
+            if result is not None:
+                print("Result can be found in:", result, file=sys.stderr)
+                print("POC workspace retained:", env.poc_workspace, file=sys.stderr)
+                for log in sorted(Path(env.poc_workspace).rglob("poc_console.log")):
+                    print("Service log:", log, file=sys.stderr)
         raise
 
     print()
@@ -200,6 +218,8 @@ def main(argv=None):
     else:
         print("Job Status is:", status)
     print("Result can be found in:", result)
+    if args.env == "poc":
+        print("POC workspace retained:", env.poc_workspace)
     print()
     return result
 

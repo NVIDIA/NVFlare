@@ -3,6 +3,8 @@
 This advanced continuation moves the [Hello PyTorch](../../hello-world/hello-pt/README.md) application from local
 simulation to a local POC federation and then to a provisioned production system. It reuses the beginner example's
 actual `client.py`, `model.py`, and `prepare_data.py`; only the Recipe options and execution environment change.
+Keep this directory in a full NVFlare checkout alongside `examples/hello-world/hello-pt`; copying this directory alone
+does not include the shared application.
 
 Complete the beginner simulation first so you already understand its training, evaluation, and artifacts:
 
@@ -27,9 +29,10 @@ python -m pip install -r requirements.txt
 | Production | `ProdEnv` connects to an already-running system through an authorized admin startup kit. | `python job.py --env prod --startup-kit <admin-kit> --username <admin-identity>` |
 
 The Recipe, model, client script, data code, and local training loop stay the same across all three stages. With the
-fixed defaults, both simulation and POC report 75% final accuracy on site-1 and 77% on site-2. Premerge CI enforces
-that equivalence in addition to production construction/export; it does not claim that ordinary CI owns a live
-provisioned production federation.
+fixed seeds, local runs currently report 75% final accuracy on site-1 and 77% on site-2; these are observations,
+not benchmark claims or exact CI thresholds. Premerge CI checks that simulation and POC produce identical per-site
+final accuracies. Unit tests cover production argument handling, environment construction, and job export; they do
+not connect to a live production federation.
 
 ## Run a job-scoped local POC
 
@@ -43,13 +46,40 @@ POC ports. The POC lifecycle belongs to this invocation, so provisioning and pro
 make this deliberately slower than simulation.
 
 Each invocation uses a unique workspace beside the configured CLI POC workspace, with a `.recipe-<UUID>` suffix.
-On success, the command retains that workspace so the printed result path and service logs remain available across
+On success, the command prints and retains that workspace so the result and service logs remain available across
 later runs. The configured CLI workspace and earlier Recipe results are preserved. Stop any running CLI POC with
 `nvflare poc stop` before starting this example, since the services still need the same local ports.
 
-If provisioning, submission, or monitoring fails, the command exits nonzero and cleans up the failed run's workspace
-after confirming that its services have stopped. If shutdown cannot be verified, `PocEnv` preserves that workspace
-and reports recovery instructions so its service configuration remains available for manual cleanup.
+If a job returns a downloaded result but its status is unsuccessful or unavailable, the command stops the services,
+retains the result and workspace, prints the result path and `poc_console.log` locations, and exits nonzero. This keeps
+the client errors available for diagnosis. Monitoring errors or interruptions before a result is obtained trigger
+service shutdown and workspace cleanup. `PocEnv` handles deployment failures itself. If shutdown cannot be verified,
+it preserves the workspace and reports recovery instructions.
+
+If `NVFLARE_HOME` is set, POC admin transfers use `$NVFLARE_HOME/examples`, so downloaded results can be outside the
+retained POC workspace. The printed result path is authoritative. To keep downloads inside the run workspace,
+unset `NVFLARE_HOME` before running this example. Removing a retained workspace does not remove externally downloaded
+results.
+
+### Stop an interrupted run and remove retained artifacts
+
+An interrupted Recipe run has its own workspace. Target that exact path to stop its services; an ordinary
+`nvflare poc stop` targets the separate CLI workspace. For example, substitute the workspace printed by your run:
+
+```bash
+NVFLARE_POC_WORKSPACE="/tmp/nvflare/poc.recipe-<UUID>" nvflare poc stop
+```
+
+If the process was killed before it printed the workspace, locate the run's `.recipe-<UUID>` directory beside the
+configured CLI POC workspace and inspect its service logs. After confirming its services have stopped and saving any
+artifacts you need, remove that specific directory:
+
+```bash
+rm -rf "/tmp/nvflare/poc.recipe-<UUID>"
+```
+
+Remove any downloaded result outside that workspace separately, using the printed result path. Each invocation
+retains its own directory, so repeat this for the particular old runs you no longer need.
 
 ## Connect to an existing production system
 
@@ -84,7 +114,7 @@ nvflare job submit -j /tmp/nvflare/jobs/hello-pt
 
 # Replace JOB_ID with the ID printed by the submit command.
 nvflare job monitor JOB_ID
-nvflare job download JOB_ID
+nvflare job download JOB_ID -o /tmp/nvflare/hello-pt-results
 
 # Keep the POC running for more jobs, then stop it when finished.
 nvflare poc stop
@@ -100,7 +130,7 @@ nvflare job submit -j /tmp/nvflare/jobs/hello-pt
 
 # Replace JOB_ID with the ID printed by the submit command.
 nvflare job monitor JOB_ID
-nvflare job download JOB_ID
+nvflare job download JOB_ID -o /tmp/nvflare/hello-pt-results
 ```
 
 Unlike `PocEnv`, `nvflare job submit` does not own the system lifecycle: it assumes the selected POC or production
@@ -136,6 +166,9 @@ python job.py --client_memory_gc_rounds 1
 python job.py --epochs 2 --batch_size 16 --learning_rate 0.05 --num_workers 0
 ```
 
+The shared client defaults to one local epoch, batch size 32, and no data-loader worker processes. Its SGD learning
+rate is 0.1 for synthetic images and 0.01 for CIFAR-10 unless `--learning_rate` overrides it.
+
 `--evaluation none` produces a plain FedAvg job without post-training model evaluation. The default remains
 `--evaluation final`, matching the beginner quickstart. `--evaluation cross-site` additionally collects each client's
 latest local model and evaluates all submitted client and server models.
@@ -150,8 +183,11 @@ python ../../hello-world/hello-pt/prepare_data.py --data_root "/data/cifar cache
 python job.py --dataset cifar10 --data_root "/data/cifar cache"
 ```
 
-Clients open that cache with downloads disabled, so concurrent processes do not race while writing it. This option is
-useful for experimentation but is not a federated data partition.
+For simulation and POC, the script rejects missing or empty cache files before constructing or starting the job and
+prints the preparation command without a traceback. Export skips this local check. Clients open the cache with
+downloads disabled, so concurrent processes do not race while writing it. The preflight checks file presence and
+nonzero size; torchvision performs its own integrity checks when loading. This option is useful for experimentation
+but is not a federated data partition.
 
 For production, `--data_root` is a path on each client—not on the admin machine running `job.py`. Every site operator
 must prepare CIFAR-10 at that same local path before the job is submitted. Running `prepare_data.py` beside the admin

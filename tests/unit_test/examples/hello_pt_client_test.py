@@ -90,7 +90,7 @@ def test_cifar_data_loaders_use_prepared_data_without_downloading(monkeypatch, t
     batch_dir = tmp_path / "cifar-10-batches-py"
     batch_dir.mkdir()
     for name in [f"data_batch_{i}" for i in range(1, 6)] + ["test_batch", "batches.meta"]:
-        (batch_dir / name).touch()
+        (batch_dir / name).write_bytes(b"test dataset stub")
 
     train_loader, test_loader = client_module.create_data_loaders(
         "cifar10", "site-1", 20, 10, 2, 0, data_root=str(tmp_path)
@@ -177,3 +177,13 @@ def test_prepare_data_downloads_both_cifar_splits(monkeypatch, tmp_path, capsys,
     assert [(call["train"], call["download"]) for call in calls] == [(True, True), (False, True)]
     assert all(call["root"] == str(tmp_path) for call in calls)
     assert f"CIFAR-10 is ready under {tmp_path}" in capsys.readouterr().out
+
+
+def test_cifar_preflight_rejects_present_but_empty_files(tmp_path):
+    data_module = _load_hello_pt_module("prepare_data.py")
+    batch_dir = tmp_path / "cifar-10-batches-py"
+    batch_dir.mkdir()
+    for name in [f"data_batch_{i}" for i in range(1, 6)] + ["test_batch", "batches.meta"]:
+        (batch_dir / name).touch()
+    with pytest.raises(FileNotFoundError, match="Missing or empty CIFAR-10 files"):
+        data_module.validate_cifar10(str(tmp_path))

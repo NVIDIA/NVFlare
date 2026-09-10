@@ -78,3 +78,34 @@ def test_hello_pt_reuses_the_application_in_poc(tmp_path, monkeypatch, capsys):
     output = capsys.readouterr().out
     assert "Job Status is: FINISHED:COMPLETED" in output
     assert f"Result can be found in: {poc_result}" in output
+
+
+@pytest.mark.timeout(180)
+def test_failed_poc_job_retains_download_and_client_error_logs(tmp_path, monkeypatch, capsys):
+    poc_env_module = importlib.import_module("nvflare.recipe.poc_env")
+    monkeypatch.setattr(poc_env_module, "get_poc_workspace", lambda: str(tmp_path / "poc"))
+    monkeypatch.delenv("NVFLARE_HOME", raising=False)
+    monkeypatch.setenv("PYTHONPATH", os.pathsep.join((str(REPO_ROOT), os.environ.get("PYTHONPATH", ""))))
+    monkeypatch.chdir(ADVANCED_DIR)
+
+    with load_hello_pt_module("job.py", example_dir=ADVANCED_DIR) as job_module:
+        # Invalid client batch size intentionally fails during actual client
+        # execution, after provisioning and submission, without a data download.
+        with pytest.raises(RuntimeError, match="unsuccessful status: FINISHED"):
+            job_module.main(["--env", "poc", "--num_rounds", "1", "--batch_size", "0"])
+
+    output = capsys.readouterr().err
+    result_line = next(line for line in output.splitlines() if line.startswith("Result can be found in:"))
+    result_path = Path(result_line.split(":", 1)[1].strip())
+    assert result_path.is_dir()
+    workspaces = list(tmp_path.glob("poc.recipe-*"))
+    assert len(workspaces) == 1
+    workspace = workspaces[0]
+    logs = list(workspace.rglob("poc_console.log"))
+    assert logs
+    assert any("batch_size should be a positive integer" in log.read_text() for log in logs)
+    assert str(workspace) in output
+    assert all(str(log) in output for log in logs)
+    assert not poc_env_module.PocEnv._running_services(
+        *poc_env_module.setup_service_config(str(workspace)), str(workspace)
+    )

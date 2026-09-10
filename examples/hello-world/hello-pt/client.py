@@ -18,14 +18,7 @@ import argparse
 
 import torch
 from model import create_model
-from prepare_data import (
-    DATASET_CHOICES,
-    DATASET_PATH,
-    DEFAULT_DATASET,
-    SyntheticImageDataset,
-    stable_seed,
-    validate_cifar10,
-)
+from prepare_data import DATASET_PATH, SyntheticImageDataset, add_dataset_arguments, stable_seed, validate_cifar10
 from torch import nn
 from torch.optim import SGD
 
@@ -102,23 +95,9 @@ def main():
     parser.add_argument("--learning_rate", type=float, default=None)
     parser.add_argument("--batch_size", type=int, default=DEFAULT_BATCH_SIZE)
     parser.add_argument("--num_workers", type=int, default=DEFAULT_NUM_WORKERS)
-    dataset_group = parser.add_mutually_exclusive_group()
-    dataset_group.add_argument("--dataset", choices=DATASET_CHOICES, dest="dataset")
-    dataset_group.add_argument(
-        "--synthetic_data",
-        action="store_const",
-        const="synthetic",
-        dest="dataset",
-        help="Deprecated alias for --dataset synthetic.",
-    )
-    parser.set_defaults(dataset=DEFAULT_DATASET)
+    add_dataset_arguments(parser)
     parser.add_argument("--train_size", type=int, default=DEFAULT_TRAIN_SIZE)
     parser.add_argument("--test_size", type=int, default=DEFAULT_TEST_SIZE)
-    parser.add_argument(
-        "--data_root",
-        default=DATASET_PATH,
-        help="Client-local CIFAR-10 cache path. Ignored for the synthetic dataset.",
-    )
     args = parser.parse_args()
     learning_rate = args.learning_rate
     if learning_rate is None:
