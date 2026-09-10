@@ -21,6 +21,7 @@ import json
 import os
 import tempfile
 from collections import Counter, defaultdict
+from contextlib import contextmanager
 
 import adapter_checkpoint
 import model_profiles
@@ -328,6 +329,25 @@ def _lightning_profile_settings(args) -> dict:
     return model_profiles.adapter_compatibility_settings(args)
 
 
+@contextmanager
+def _single_process_group(work_dir: str):
+    if not torch.distributed.is_available():
+        raise RuntimeError("Native Lightning adapter loading requires torch.distributed.")
+    created = not torch.distributed.is_initialized()
+    if created:
+        torch.distributed.init_process_group(
+            backend="nccl",
+            init_method=f"file://{os.path.join(work_dir, 'process_group_init')}",
+            rank=0,
+            world_size=1,
+        )
+    try:
+        yield
+    finally:
+        if created:
+            torch.distributed.destroy_process_group()
+
+
 def _load_lightning_model(args):
     if not torch.cuda.is_available():
         raise RuntimeError("The lightning35 native backend requires a CUDA GPU.")
@@ -391,7 +411,8 @@ def _load_lightning_model(args):
                 adapter_manifest=manifest,
             )
             checkpointer = CheckpointingConfig(is_peft=True).build(dp_rank=0, tp_rank=0, pp_rank=0)
-            checkpointer.load_model(model, temp_dir)
+            with _single_process_group(temp_dir):
+                checkpointer.load_model(model, temp_dir)
         unexpected_trainable = [
             name for name, param in model.named_parameters() if param.requires_grad and "lora_" not in name
         ]

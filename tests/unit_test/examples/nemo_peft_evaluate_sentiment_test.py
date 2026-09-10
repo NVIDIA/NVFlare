@@ -89,3 +89,30 @@ def test_evaluate_sentiment_parse_choice_map_validates_labels():
 
     with pytest.raises(ValueError, match="Unknown label"):
         evaluate_sentiment.parse_choice_map("neutral=neutral,positive=up,other=down")
+
+
+@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required to import the evaluator")
+def test_lightning_adapter_load_creates_temporary_single_process_group(monkeypatch, tmp_path):
+    evaluate_sentiment = _load_evaluate_module()
+    calls = []
+    monkeypatch.setattr(evaluate_sentiment.torch.distributed, "is_available", lambda: True)
+    monkeypatch.setattr(evaluate_sentiment.torch.distributed, "is_initialized", lambda: False)
+    monkeypatch.setattr(
+        evaluate_sentiment.torch.distributed,
+        "init_process_group",
+        lambda **kwargs: calls.append(("init", kwargs)),
+    )
+    monkeypatch.setattr(
+        evaluate_sentiment.torch.distributed,
+        "destroy_process_group",
+        lambda: calls.append(("destroy", None)),
+    )
+
+    with evaluate_sentiment._single_process_group(str(tmp_path)):
+        calls.append(("body", None))
+
+    assert [name for name, _ in calls] == ["init", "body", "destroy"]
+    assert calls[0][1]["backend"] == "nccl"
+    assert calls[0][1]["rank"] == 0
+    assert calls[0][1]["world_size"] == 1
+    assert calls[0][1]["init_method"].startswith("file://")
