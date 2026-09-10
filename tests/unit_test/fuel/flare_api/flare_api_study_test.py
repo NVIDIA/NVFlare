@@ -168,7 +168,7 @@ def test_try_connect_raises_on_login_failure():
     session.api = SimpleNamespace(
         closed=False,
         connect=lambda timeout: None,
-        login=lambda: {
+        login=lambda timeout: {
             ResultKey.STATUS: APIStatus.ERROR_AUTHENTICATION,
             ResultKey.DETAILS: "Incorrect user name or password",
         },
@@ -183,7 +183,7 @@ def test_try_connect_preserves_auth_code():
     session.api = SimpleNamespace(
         closed=False,
         connect=lambda timeout: None,
-        login=lambda: {
+        login=lambda timeout: {
             ResultKey.STATUS: APIStatus.ERROR_AUTHENTICATION,
             ResultKey.DETAILS: "unknown study 'study-a'",
             "auth_code": "AUTH_UNKNOWN_STUDY",
@@ -201,7 +201,7 @@ def test_try_connect_raises_no_connection_on_server_connection_error():
     session.api = SimpleNamespace(
         closed=False,
         connect=lambda timeout: None,
-        login=lambda: {
+        login=lambda timeout: {
             ResultKey.STATUS: APIStatus.ERROR_SERVER_CONNECTION,
             ResultKey.DETAILS: "server unavailable",
         },
@@ -209,3 +209,39 @@ def test_try_connect_raises_no_connection_on_server_connection_error():
 
     with pytest.raises(NoConnection, match="server unavailable"):
         session.try_connect(5.0)
+
+
+@pytest.mark.parametrize("timeout", [30.0, None])
+def test_try_connect_shares_seconds_budget_with_login(monkeypatch, timeout):
+    session = _make_session_for_study(DEFAULT_STUDY)
+    clock = [100.0]
+    budgets = []
+
+    def connect(seconds):
+        assert seconds == 30.0
+        clock[0] += 12.0
+
+    def login(timeout):
+        budgets.append(timeout)
+        return {ResultKey.STATUS: APIStatus.SUCCESS}
+
+    session.api = SimpleNamespace(closed=False, default_login_timeout=30.0, connect=connect, login=login)
+    monkeypatch.setattr("nvflare.fuel.flare_api.flare_api.time.monotonic", lambda: clock[0])
+    session.try_connect(timeout)
+    assert budgets == [18.0]
+
+
+def test_try_connect_does_not_login_after_transport_consumes_budget(monkeypatch):
+    session = _make_session_for_study(DEFAULT_STUDY)
+    clock = [100.0]
+
+    def connect(seconds):
+        clock[0] += seconds
+
+    def login(timeout):
+        pytest.fail("login must not start after the timeout")
+
+    session.api = SimpleNamespace(closed=False, connect=connect, login=login)
+    monkeypatch.setattr("nvflare.fuel.flare_api.flare_api.time.monotonic", lambda: clock[0])
+    with pytest.raises(NoConnection, match="exhausted the timeout"):
+        session.try_connect(30.0)

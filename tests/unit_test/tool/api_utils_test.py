@@ -153,7 +153,7 @@ def test_wait_for_system_start_bounds_blocking_session_cleanup(monkeypatch, read
         def __init__(self, **kwargs):
             pass
 
-        def try_connect(self, timeout, *, deadline=None):
+        def try_connect(self, timeout):
             if not ready:
                 raise NoConnection("server is not reachable")
 

@@ -161,7 +161,7 @@ def wait_for_system_start(
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise TimeoutError("readiness deadline reached before connecting to the admin server")
-            sess.try_connect(min(conn_timeout, remaining), deadline=deadline)
+            sess.try_connect(min(conn_timeout, remaining))
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise TimeoutError("readiness deadline reached before checking system status")

@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import json
+import math
 import os
 import time
 from typing import List, Optional
@@ -204,44 +205,36 @@ class Session(SessionSpec):
         if isinstance(session_expired_reason, str) and session_expired_reason:
             raise SessionExpired(session_expired_reason)
 
-    def try_connect(self, timeout: Optional[float], *, deadline: Optional[float] = None) -> None:
+    def try_connect(self, timeout: Optional[float]) -> None:
         """Establish the admin transport connection and log in.
 
         Args:
-            timeout: Transport authentication timeout in seconds; must be positive,
-                or None to use the admin configuration's login timeout. This
-                argument alone does not limit the subsequent admin login retries.
-            deadline: Optional absolute time in seconds from ``time.monotonic()``.
-                Pass it by keyword, for example ``deadline=time.monotonic() + 30.0``.
-                After transport authentication, login requests (including command-list
-                retrieval) and retry sleeps share the remaining budget. None preserves
-                the configured login retry count and per-command timeouts. This is
-                neither a duration nor a wall-clock timestamp from ``time.time()``.
-                It does not interrupt transport authentication or bound later session
-                operations such as ``get_system_info()`` or ``close()``.
+            timeout: Total connection and login budget in seconds, for example
+                ``session.try_connect(30.0)``. Must be a finite positive number,
+                or None to use the admin configuration's login timeout.
+                Login requests, command-list retrieval, and retry sleeps use
+                the budget remaining after transport authentication. Later
+                session operations have their own timeouts.
 
         Raises:
-            NoConnection: Transport authentication fails, the deadline has already
-                expired after authentication, or login reports a connection failure.
+            ValueError: The timeout is not a finite positive number.
+            NoConnection: Transport authentication fails, consumes the budget,
+                or login reports a connection failure.
             SessionClosed: The session is closed.
             SessionExpired: The session has expired.
             AuthenticationError: Admin login rejects the credentials.
             AuthorizationError: Admin login denies access.
-            InternalError: Login otherwise fails, including deadline exhaustion
-                during login requests or retries.
-
-        Example:
-            Allow up to ten seconds for transport authentication, then use the
-            remaining time from a thirty-second budget for admin login::
-
-                import time
-
-                deadline = time.monotonic() + 30.0
-                session.try_connect(timeout=10.0, deadline=deadline)
+            InternalError: Login otherwise fails, including timeout during login.
         """
         self._raise_if_session_expired()
         if self.api.closed:
             raise SessionClosed("session closed")
+
+        if timeout is None:
+            timeout = self.api.default_login_timeout
+        if not isinstance(timeout, (int, float)) or not math.isfinite(timeout) or timeout <= 0:
+            raise ValueError("timeout must be a finite positive number of seconds")
+        deadline = time.monotonic() + timeout
 
         try:
             self.api.connect(timeout)
@@ -250,12 +243,10 @@ class Session(SessionSpec):
             if "cannot connect to server" in message or "cannot authenticate to server" in message:
                 raise NoConnection(message) from e
             raise
-        if deadline is not None:
-            if time.monotonic() >= deadline:
-                raise NoConnection("admin connection exhausted the readiness deadline")
-            result = self.api.login(deadline=deadline)
-        else:
-            result = self.api.login()
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise NoConnection("admin connection exhausted the timeout")
+        result = self.api.login(timeout=remaining)
         status = result.get(ResultKey.STATUS) if isinstance(result, dict) else None
         details = result.get(ResultKey.DETAILS, "") if isinstance(result, dict) else ""
         if status == APIStatus.SUCCESS:

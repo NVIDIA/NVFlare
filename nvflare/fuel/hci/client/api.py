@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 import shutil
 import sys
@@ -679,26 +680,30 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         if self._login_deadline is not None and time.monotonic() >= self._login_deadline:
             raise TimeoutError("admin login deadline reached")
 
-    def login(self, deadline: Optional[float] = None) -> dict:
+    def login(self, timeout: Optional[float] = None) -> dict:
         """Log in over an already established admin transport connection.
 
         Args:
-            deadline: Optional absolute time in seconds from ``time.monotonic()``,
-                for example ``api.login(deadline=time.monotonic() + 30.0)``.
-                Each login and command-list request uses at most the remaining
-                budget, subject to the existing command timeout. Retry sleeps
-                are also capped by the remaining budget. None uses the configured
-                retry count and per-command timeouts without an overall deadline.
-                Supply a monotonic timestamp, not a duration or ``time.time()`` value.
-                The deadline applies only to this login call, not later commands.
+            timeout: Total login budget in seconds, for example ``api.login(30.0)``.
+                Must be a finite positive number. Each login and command-list
+                request uses the remaining budget, capped by the command timeout.
+                Retry sleeps share that budget. None preserves the configured
+                retry count and per-command timeouts without an overall limit.
+                This timeout applies only to login, not later commands.
 
         Returns:
-            A result dictionary with ``status`` and ``details``. Deadline exhaustion
-            returns ``APIStatus.ERROR_RUNTIME`` with an explanatory detail; it does
-            not raise ``TimeoutError`` to the caller.
+            A dictionary with ``status`` and ``details``. Login timeout returns
+            ``APIStatus.ERROR_RUNTIME`` with an explanatory detail.
+
+        Raises:
+            ValueError: The timeout is not a finite positive number or None.
         """
+        if timeout is not None and (
+            not isinstance(timeout, (int, float)) or not math.isfinite(timeout) or timeout <= 0
+        ):
+            raise ValueError("timeout must be a finite positive number of seconds or None")
         previous_deadline = self._login_deadline
-        self._login_deadline = deadline
+        self._login_deadline = time.monotonic() + timeout if timeout is not None else None
         try:
             self.fire_session_event(EventType.BEFORE_LOGIN)
             result = self._try_login()
