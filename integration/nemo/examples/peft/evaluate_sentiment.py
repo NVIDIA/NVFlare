@@ -20,7 +20,7 @@ import csv
 import json
 import os
 import tempfile
-from collections import Counter, defaultdict
+from collections import Counter, OrderedDict, defaultdict
 from contextlib import contextmanager
 
 import adapter_checkpoint
@@ -335,14 +335,21 @@ def _lightning_profile_settings(args) -> dict:
 
 def _verify_loaded_adapter_state(model, incoming_state) -> dict:
     loaded_state = {key: value.detach().cpu() for key, value in model.state_dict().items() if "lora_" in key}
-    loaded_state = adapter_checkpoint.align_adapter_state_strict(
-        loaded_state,
-        incoming_state,
-        normalize_peft_prefixes=True,
-    )
+    expected_live_state = OrderedDict()
+    incoming_to_live = {}
+    for incoming_key, value in incoming_state.items():
+        live_key = incoming_key
+        if live_key.startswith(adapter_checkpoint.HF_PEFT_BASE_MODEL_PREFIX):
+            live_key = live_key[len(adapter_checkpoint.HF_PEFT_BASE_MODEL_PREFIX) :]
+        if live_key in expected_live_state:
+            raise ValueError(f"Duplicate live adapter key after PEFT wrapper removal: {live_key}")
+        expected_live_state[live_key] = value
+        incoming_to_live[incoming_key] = live_key
+    loaded_state = adapter_checkpoint.align_adapter_state_strict(loaded_state, expected_live_state)
     mismatches = []
     for key, incoming_value in incoming_state.items():
-        if not torch.equal(loaded_state[key], incoming_value.to(loaded_state[key].dtype)):
+        loaded_value = loaded_state[incoming_to_live[key]]
+        if not torch.equal(loaded_value, incoming_value.to(loaded_value.dtype)):
             mismatches.append(key)
     if mismatches:
         raise RuntimeError(f"Native evaluation adapter reload changed {len(mismatches)} tensors: {mismatches[:5]}")
