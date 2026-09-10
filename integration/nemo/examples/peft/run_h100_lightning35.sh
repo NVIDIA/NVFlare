@@ -98,7 +98,8 @@ run_stage() {
     return "${stage_status}"
 }
 
-run_stage setup "python -m pip install -e /workspace && python - <<'PY'
+run_stage setup "git config --global --add safe.directory /workspace || true
+NVFL_BASE_VERSION=2.10.0 python -m pip install -e /workspace && python - <<'PY'
 import importlib.metadata as m
 import json
 import torch

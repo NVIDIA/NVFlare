@@ -40,7 +40,8 @@ docker run --rm --gpus "device=${GPU_ID}" --ipc=host --ulimit memlock=-1 --ulimi
     -v "${RUN_ROOT}/cache/huggingface:/hf_cache" -w /workspace/integration/nemo/examples/peft \
     "${IMAGE_DIGEST}" bash -lc '
 set -Eeuo pipefail
-python -m pip install -e /workspace
+git config --global --add safe.directory /workspace || true
+NVFL_BASE_VERSION=2.10.0 python -m pip install -e /workspace
 python data/split_financial_phrase_data.py --alpha=10.0 --random_seed=0 --num_clients=2 \
   --data_path=/host_out/data/financial_phrase_bank_train.jsonl \
   --validation_path=/host_out/data/financial_phrase_bank_val.jsonl \
