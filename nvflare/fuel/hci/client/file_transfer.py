@@ -308,25 +308,22 @@ class FileTransferModule(CommandModule):
         if not os.path.isdir(full_path):
             return {"status": APIStatus.ERROR_RUNTIME, "details": f"'{full_path}' is not a valid folder."}
 
-        # sign folders and files (skip gracefully when key is absent — e.g. simulator)
         api = ctx.get_api()
-        ensure_client_cert_valid = getattr(api, "ensure_client_cert_valid", None)
-        if ensure_client_cert_valid:
+        try:
+            api.ensure_client_cert_valid()
+        except Exception as e:
+            return {"status": APIStatus.ERROR_RUNTIME, "details": f"Failed to refresh admin certificate: {e}"}
+        if not api.is_ready():
             try:
-                ensure_client_cert_valid()
+                api.connect()
+                login_result = api.login()
             except Exception as e:
-                return {"status": APIStatus.ERROR_RUNTIME, "details": f"Failed to refresh admin certificate: {e}"}
-            if not api.is_ready():
-                try:
-                    api.connect()
-                    login_result = api.login()
-                except Exception as e:
-                    return {
-                        "status": APIStatus.ERROR_RUNTIME,
-                        "details": f"Failed to reconnect with refreshed admin certificate: {e}",
-                    }
-                if login_result.get("status") != APIStatus.SUCCESS:
-                    return login_result
+                return {
+                    "status": APIStatus.ERROR_RUNTIME,
+                    "details": f"Failed to reconnect with refreshed admin certificate: {e}",
+                }
+            if login_result.get("status") != APIStatus.SUCCESS:
+                return login_result
         client_key_file_path = api.client_key
         if client_key_file_path and os.path.exists(client_key_file_path) and api.client_cert:
             try:

@@ -17,6 +17,8 @@
 import os
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from nvflare.fuel.hci.client.file_transfer import FileTransferModule
 from nvflare.fuel.hci.reg import CommandEntry
 
@@ -222,6 +224,37 @@ def test_push_folder_refreshes_provider_cert_before_signing(tmp_path):
 
     api.ensure_client_cert_valid.assert_called_once_with()
     assert server_execute.call_args.args[0] == "admin.push_folder test_job"
+
+
+@pytest.mark.parametrize("has_refresh_hook", [True, False])
+def test_push_folder_stops_when_certificate_refresh_fails_or_is_missing(tmp_path, has_refresh_hook):
+    from nvflare.fuel.hci.client.api_status import APIStatus
+
+    upload_dir = tmp_path / "upload"
+    (upload_dir / "test_job").mkdir(parents=True)
+    download_dir = tmp_path / "dl"
+    download_dir.mkdir()
+    key_file = tmp_path / "test.key"
+    key_file.write_text("fake key content")
+    module = FileTransferModule(upload_dir=str(upload_dir), download_dir=str(download_dir))
+    args, ctx = _make_push_folder_args_and_ctx(str(key_file), "/path/to/cert.crt")
+    api = ctx.get_api.return_value
+    if has_refresh_hook:
+        api.ensure_client_cert_valid.side_effect = ValueError("certificate provider failed")
+    else:
+        del api.ensure_client_cert_valid
+
+    with (
+        patch("nvflare.fuel.hci.client.file_transfer.sign_folders") as sign,
+        patch("nvflare.fuel.hci.client.file_transfer.zip_directory_to_file") as zip_folder,
+    ):
+        result = module.push_folder(args, ctx)
+
+    assert result["status"] == APIStatus.ERROR_RUNTIME
+    assert "Failed to refresh admin certificate" in result["details"]
+    sign.assert_not_called()
+    zip_folder.assert_not_called()
+    api.server_execute.assert_not_called()
 
 
 def test_push_folder_reconnects_when_cell_is_missing_after_failed_renewal_reconnect(tmp_path):
