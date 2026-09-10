@@ -42,6 +42,17 @@ def _load_evaluate_module():
         sys.path.remove(example_dir)
 
 
+def _load_assess_module():
+    example_dir = _example_dir()
+    spec = importlib.util.spec_from_file_location(
+        "nemo_peft_assess_validation", os.path.join(example_dir, "assess_validation.py")
+    )
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required to import the evaluator")
 def test_evaluate_sentiment_summarizes_scores_and_validation_bias():
     evaluate_sentiment = _load_evaluate_module()
@@ -116,3 +127,31 @@ def test_lightning_adapter_load_creates_temporary_single_process_group(monkeypat
     assert calls[0][1]["rank"] == 0
     assert calls[0][1]["world_size"] == 1
     assert calls[0][1]["init_method"].startswith("file://")
+
+
+def test_lightning_reload_comparison_allows_bounded_loss_variation():
+    assess_validation = _load_assess_module()
+    validation = {
+        "response_token_loss": 1.75,
+        "response_token_count": 100,
+        "accuracy": 0.5,
+        "macro_f1": 0.4,
+        "confusion": {"neutral": {"neutral": 1}},
+        "prediction_counts": {"neutral": 1},
+    }
+    first = {"validation": validation}
+    second = {"validation": {**validation, "response_token_loss": 1.7504}}
+
+    report = assess_validation.verify_reload_reproducibility(first, second)
+
+    assert report["response_token_loss_delta"] == pytest.approx(4e-4)
+    with pytest.raises(ValueError, match="response-token loss delta"):
+        assess_validation.verify_reload_reproducibility(
+            first,
+            {"validation": {**validation, "response_token_loss": 1.751}},
+        )
+    with pytest.raises(ValueError, match="changed evaluation metrics"):
+        assess_validation.verify_reload_reproducibility(
+            first,
+            {"validation": {**validation, "accuracy": 0.4}},
+        )

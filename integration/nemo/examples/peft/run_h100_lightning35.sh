@@ -186,13 +186,11 @@ fi
 run_stage smoke_eval_a "FINAL=\$(find /host_out/runs/${SMOKE_LABEL}/workspace -path '*/server_rounds/round_0/FL_global_model.pt' -print -quit); python evaluate_sentiment.py ${IDENTITY} --no-search_validation_bias --validation_only --adapter_dir=\${FINAL} --validation_file=/host_out/data/financial_phrase_bank_val.jsonl --output_dir=/host_out/evaluation/smoke_a"
 run_stage smoke_eval_b "FINAL=\$(find /host_out/runs/${SMOKE_LABEL}/workspace -path '*/server_rounds/round_0/FL_global_model.pt' -print -quit); python evaluate_sentiment.py ${IDENTITY} --no-search_validation_bias --validation_only --adapter_dir=\${FINAL} --validation_file=/host_out/data/financial_phrase_bank_val.jsonl --output_dir=/host_out/evaluation/smoke_b"
 run_stage smoke_reload_compare "python - <<'PY'
+import assess_validation
 import json
 a=json.load(open('/host_out/evaluation/smoke_a/summary.json'))
 b=json.load(open('/host_out/evaluation/smoke_b/summary.json'))
-for split in ('validation',):
-    for metric in ('response_token_loss','accuracy','macro_f1','confusion','prediction_counts'):
-        assert a[split][metric] == b[split][metric], (split, metric)
-print('native reload scores match')
+print(json.dumps(assess_validation.verify_reload_reproducibility(a, b), indent=2))
 PY"
 
 run_federation continuity 3 3 2 42 "${ACTIVATION_ARG}"

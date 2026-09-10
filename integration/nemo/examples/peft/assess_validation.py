@@ -20,6 +20,8 @@ import glob
 import json
 import math
 
+RELOAD_LOSS_TOLERANCE = 5e-4
+
 
 def _load(path):
     with open(path) as f:
@@ -28,6 +30,27 @@ def _load(path):
 
 def _client_manifests(root):
     return [_load(path) for path in sorted(glob.glob(f"{root}/**/round_manifest.json", recursive=True))]
+
+
+def verify_reload_reproducibility(first: dict, second: dict) -> dict:
+    first_validation = first["validation"]
+    second_validation = second["validation"]
+    exact_metrics = ("response_token_count", "accuracy", "macro_f1", "confusion", "prediction_counts")
+    mismatches = [name for name in exact_metrics if first_validation[name] != second_validation[name]]
+    if mismatches:
+        raise ValueError(f"Native adapter reload changed evaluation metrics: {mismatches}")
+    first_loss = float(first_validation["response_token_loss"])
+    second_loss = float(second_validation["response_token_loss"])
+    loss_delta = abs(first_loss - second_loss)
+    if not math.isfinite(first_loss) or not math.isfinite(second_loss) or loss_delta > RELOAD_LOSS_TOLERANCE:
+        raise ValueError(
+            f"Native adapter reload response-token loss delta {loss_delta} exceeds {RELOAD_LOSS_TOLERANCE}"
+        )
+    return {
+        "exact_metrics": list(exact_metrics),
+        "response_token_loss_delta": loss_delta,
+        "response_token_loss_tolerance": RELOAD_LOSS_TOLERANCE,
+    }
 
 
 def main():

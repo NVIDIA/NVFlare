@@ -260,6 +260,10 @@ actual optimizer-step weights. The final acceptance check requires both seeds to
 response-token loss and their mean final test Macro-F1 to equal or exceed the base model. Intermediate rounds evaluate
 validation only; only the predetermined final round is evaluated on test.
 
+The smoke reload gate requires identical accuracy, Macro-F1, confusion matrix, prediction counts, and response-token
+count across two clean native loads. It allows an absolute response-token-loss difference of at most `5e-4` for
+non-bit-exact Transformer Engine reductions.
+
 Docker access must work before launching. The runner reports a blocked prerequisite and exits without changing
 `/var/run/docker.sock` ownership or permissions. `run_h100_nano_regression.sh` supplies the separate two-client,
 two-round Nano regression in its documented `26.04` image.
