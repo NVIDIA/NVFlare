@@ -185,7 +185,7 @@ def test_wait_for_system_start_bounds_blocking_session_cleanup(monkeypatch, stat
                 assert "server is not reachable" not in str(exc_info.value)
                 assert "readiness could not be confirmed" in str(exc_info.value)
         assert time.monotonic() - start < 0.5
-        assert close_started.is_set()
+        assert close_started.wait(1)
     finally:
         release_close.set()
         assert close_finished.wait(1)
@@ -351,13 +351,16 @@ def test_readiness_rejects_zero_timeout(parameter):
 def test_readiness_does_not_retry_session_configuration_errors():
     from nvflare.tool.api_utils import wait_for_system_start
 
+    close_started = threading.Event()
     session = MagicMock()
+    session.close.side_effect = close_started.set
     session.try_connect.side_effect = ValueError("timeout must be a finite positive number of seconds")
     with patch("nvflare.tool.api_utils.Session", return_value=session) as factory:
         with pytest.raises(ValueError, match="timeout must be a finite positive"):
             wait_for_system_start(1, "/tmp/prod", second_to_wait=0)
     factory.assert_called_once()
     session.try_connect.assert_called_once()
+    assert close_started.wait(1)
     session.close.assert_called_once()
 
 
