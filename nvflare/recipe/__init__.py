@@ -19,6 +19,7 @@ from .prod_env import ProdEnv
 from .run import Run
 from .secrets import PotentialSecretWarning, UnsupportedSecretRefWarning, secret_file_ref, secret_ref
 from .sim_env import SimEnv
+from .spec import export_requested
 from .utils import (
     add_cross_site_evaluation,
     add_experiment_tracking,
@@ -32,6 +33,7 @@ __all__ = [
     "PocEnv",
     "ProdEnv",
     "Run",
+    "export_requested",
     "add_experiment_tracking",
     "add_cross_site_evaluation",
     "add_final_global_evaluation",

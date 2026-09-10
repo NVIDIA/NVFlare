@@ -1136,3 +1136,16 @@ class TestClientPlacementHardening:
         recipe = self._make_recipe()
         with pytest.raises(ValueError, match="invalid client name"):
             recipe.add_client_config({"timeout": 600}, clients=[bad_site])
+
+
+@pytest.mark.parametrize("flags,expected", [([], False), (["--export"], True), (["--export-dir", "/tmp/out"], False)])
+def test_public_export_requested_reflects_consumed_flags(flags, expected):
+    import subprocess
+    import sys
+
+    code = (
+        "from nvflare.recipe import export_requested; import sys; "
+        "print(export_requested()); print(sys.argv[1:]); print(export_requested())"
+    )
+    result = subprocess.run([sys.executable, "-c", code, *flags], capture_output=True, text=True, check=True)
+    assert result.stdout.splitlines() == [str(expected), "[]", str(expected)]

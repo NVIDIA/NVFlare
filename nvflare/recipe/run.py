@@ -15,6 +15,7 @@
 import threading
 from typing import Optional
 
+from nvflare.apis.job_def import RunStatus
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.recipe.spec import ExecEnv
 
@@ -73,6 +74,16 @@ class Run:
             except Exception as e:
                 self.logger.warning(f"Failed to get job status: {e}")
                 return None
+
+    def succeeded(self) -> bool:
+        """Return whether the job has completed successfully, without waiting.
+
+        Accepts the current completed status and the legacy ``FINISHED_OK``
+        status returned by older admin APIs. Running, failed, aborted, and
+        unavailable statuses return False. After ``get_result()``, this uses
+        the cached status and does not contact the stopped environment.
+        """
+        return self.get_status() in (RunStatus.FINISHED_COMPLETED.value, "FINISHED_OK")
 
     def get_result(self, timeout: float = 0.0, clean_up: bool = True) -> Optional[str]:
         """Get the result workspace of the run.

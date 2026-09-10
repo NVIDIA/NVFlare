@@ -106,6 +106,17 @@ def _peek_recipe_args() -> tuple:
     return _RECIPE_EXPORT, _RECIPE_EXPORT_DIR
 
 
+def export_requested() -> bool:
+    """Return whether the Recipe CLI was invoked with ``--export``.
+
+    Recipe consumes its CLI flags when imported. Use this query after importing
+    ``nvflare.recipe`` to skip checks that require local execution resources
+    when exporting a job for another system. This does not consume flags again
+    or change export settings; ``--export-dir`` alone does not request export.
+    """
+    return _RECIPE_EXPORT
+
+
 from nvflare.apis.filter import Filter
 from nvflare.app_common.widgets.decomposer_reg import DecomposerRegister
 from nvflare.fuel.utils.fobs import Decomposer

@@ -316,3 +316,32 @@ class TestRunIntegration:
             with patch.object(prod_env, "abort_job") as mock_abort:
                 run.abort()
                 mock_abort.assert_called_once_with("prod_test_job")
+
+
+@pytest.mark.parametrize(
+    "status,expected",
+    [
+        ("FINISHED:COMPLETED", True),
+        ("FINISHED_OK", True),
+        ("RUNNING", False),
+        ("FINISHED:ABORTED", False),
+        ("FINISHED:EXECUTION_EXCEPTION", False),
+        (None, False),
+    ],
+)
+def test_succeeded_uses_live_and_cached_status(status, expected):
+    env = MagicMock()
+    env.get_job_status.return_value = status
+    env.get_job_result.return_value = "/tmp/result"
+    run = Run(env, "test-job")
+    assert run.succeeded() is expected
+    run.get_result(clean_up=False)
+    env.get_job_status.reset_mock()
+    assert run.succeeded() is expected
+    env.get_job_status.assert_not_called()
+
+
+def test_succeeded_returns_false_when_status_lookup_fails():
+    env = MagicMock()
+    env.get_job_status.side_effect = RuntimeError("admin connection unavailable")
+    assert Run(env, "test-job").succeeded() is False
