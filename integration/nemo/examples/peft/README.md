@@ -73,13 +73,17 @@ python data/split_financial_phrase_data.py \
   --data_path=data/FinancialPhraseBank-v1.0/financial_phrase_bank_train.jsonl \
   --validation_path=data/FinancialPhraseBank-v1.0/financial_phrase_bank_val.jsonl \
   --test_path=data/FinancialPhraseBank-v1.0/financial_phrase_bank_test.jsonl \
+  --remove_train_overlap \
   --random_seed=0 \
   --num_clients=3 \
   --out_dir=data/FinancialPhraseBank-v1.0_split
 ```
 
-The splitter writes `split_manifest.json` with file hashes, class counts, and the sentence-disjointness check. Create
-this split once and reuse it for every training seed.
+The splitter groups duplicate training sentences onto one site. With `--remove_train_overlap`, it removes training rows
+whose sentence occurs in validation or test while leaving validation and test unchanged. It writes the prepared training
+file and `split_manifest.json` with source/prepared hashes, removal counts, class counts, and the sentence-disjointness
+check. Create this split once and reuse it for every training seed. Omit `--remove_train_overlap` to reject such input
+overlap instead of resolving it.
 
 ## Initial Adapter
 

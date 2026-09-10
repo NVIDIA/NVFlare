@@ -81,6 +81,16 @@ def render(run_root: Path, exit_code: int) -> str:
                 lines.extend([f"### {title}", "", "```text", value, "```", ""])
     if split:
         lines.extend(["## Dataset", "", f"Split seed: `{split['seed']}`; Dirichlet alpha: `{split['alpha']}`.", ""])
+        resolution = split.get("overlap_resolution")
+        if resolution:
+            lines.extend(
+                [
+                    f"Training overlap policy: `{resolution['policy']}`; removed rows: "
+                    f"`{resolution['removed_rows']}` across `{resolution['removed_unique_sentences']}` unique "
+                    "sentences. Validation and test were unchanged.",
+                    "",
+                ]
+            )
         lines.extend(["| File | SHA-256 | Rows | Class counts |", "| --- | --- | ---: | --- |"])
         for name, value in split["files"].items():
             lines.append(

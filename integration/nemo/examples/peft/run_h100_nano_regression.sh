@@ -42,7 +42,7 @@ docker run --rm --gpus "device=${GPU_ID}" --ipc=host --ulimit memlock=-1 --ulimi
 set -Eeuo pipefail
 git config --global --add safe.directory /workspace || true
 NVFL_BASE_VERSION=2.10.0 python -m pip install -e /workspace
-python data/split_financial_phrase_data.py --alpha=10.0 --random_seed=0 --num_clients=2 \
+python data/split_financial_phrase_data.py --alpha=10.0 --random_seed=0 --num_clients=2 --remove_train_overlap \
   --data_path=/host_out/data/financial_phrase_bank_train.jsonl \
   --validation_path=/host_out/data/financial_phrase_bank_val.jsonl \
   --test_path=/host_out/data/financial_phrase_bank_test.jsonl --out_dir=/host_out/data_split

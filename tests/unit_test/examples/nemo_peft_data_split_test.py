@@ -90,3 +90,52 @@ def test_financial_phrase_split_rejects_sentence_overlap(tmp_path):
 
     with pytest.raises(ValueError, match="Sentence-level dataset split overlap"):
         module.split_data(str(train), str(tmp_path / "split"), 3, "site-", 0, 10.0, str(validation), None)
+
+
+def test_financial_phrase_split_groups_duplicates_and_removes_only_train_overlap(tmp_path):
+    module = _load_split_module()
+    labels = (" negative", " neutral", " positive")
+    train_rows = [
+        {"id": index, "sentence": f"unique training sentence {index}", "label": labels[index % len(labels)]}
+        for index in range(90)
+    ]
+    duplicate = {"id": 90, "sentence": train_rows[0]["sentence"], "label": train_rows[0]["label"]}
+    held_out_overlap = {"id": 91, "sentence": "held-out sentence", "label": " neutral"}
+    train = tmp_path / "train.jsonl"
+    validation = tmp_path / "validation.jsonl"
+    test = tmp_path / "test.jsonl"
+    _write_rows(train, train_rows + [duplicate, held_out_overlap])
+    _write_rows(validation, [{"sentence": "held-out sentence", "label": " neutral"}])
+    _write_rows(test, [{"sentence": "test only", "label": " positive"}])
+
+    output = tmp_path / "split"
+    module.split_data(
+        str(train),
+        str(output),
+        3,
+        "site-",
+        0,
+        10.0,
+        str(validation),
+        str(test),
+        remove_train_overlap=True,
+    )
+
+    site_rows = []
+    duplicate_sites = []
+    for site_idx in range(1, 4):
+        rows = [json.loads(line) for line in open(output / f"alpha10.0_site-{site_idx}.jsonl")]
+        site_rows.extend(rows)
+        if sum(row["sentence"] == train_rows[0]["sentence"] for row in rows):
+            duplicate_sites.append(site_idx)
+    assert len(site_rows) == len(train_rows) + 1
+    assert len(duplicate_sites) == 1
+    assert sum(row["sentence"] == train_rows[0]["sentence"] for row in site_rows) == 2
+    assert all(row["sentence"] != "held-out sentence" for row in site_rows)
+    with open(output / "split_manifest.json") as f:
+        manifest = json.load(f)
+    assert manifest["overlap_resolution"] == {
+        "policy": "remove_from_train",
+        "removed_rows": 1,
+        "removed_unique_sentences": 1,
+    }

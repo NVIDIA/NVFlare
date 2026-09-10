@@ -84,6 +84,15 @@ def get_site_class_summary(train_labels, site_idx):
     return class_sum
 
 
+def write_class_summary(path, num_clients, alpha, class_sum):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as sum_file:
+        sum_file.write(f"Number of clients: {num_clients} \n")
+        sum_file.write(f"Dirichlet sampling parameter: {alpha} \n")
+        sum_file.write("Class counts for each client: \n")
+        sum_file.write(json.dumps(class_sum))
+
+
 def partition_data(train_labels, label_names, num_sites, alpha, sum_file_name: str = None):
     min_size = 0
     N = len(train_labels)
@@ -137,13 +146,44 @@ def array_to_dataframe(data_array):
     return pd.DataFrame(data_dict)
 
 
-def split_data(data_path, out_dir, num_clients, site_name_prefix, seed, alpha, validation_path=None, test_path=None):
+def split_data(
+    data_path,
+    out_dir,
+    num_clients,
+    site_name_prefix,
+    seed,
+    alpha,
+    validation_path=None,
+    test_path=None,
+    remove_train_overlap=False,
+):
     np.random.seed(seed)
 
     # use pandas to read jsonl format
     train_data = pd.read_json(data_path, lines=True)
     assert len(train_data) > 0, f"No data loaded from {data_path}"
     print(f"Loaded training data with {len(train_data)} entries")
+
+    os.makedirs(out_dir, exist_ok=True)
+    validation_sentences = load_sentences(validation_path)
+    test_sentences = load_sentences(test_path)
+    reserved_sentences = validation_sentences | test_sentences
+    normalized_train_sentences = train_data["sentence"].astype(str).str.strip()
+    overlap_mask = normalized_train_sentences.isin(reserved_sentences)
+    removed_rows = int(overlap_mask.sum())
+    removed_sentences = sorted(set(normalized_train_sentences[overlap_mask]))
+    if removed_rows:
+        if not remove_train_overlap:
+            raise ValueError(
+                "Sentence-level dataset split overlap: "
+                f"train contains {removed_rows} rows for {len(removed_sentences)} validation/test sentences; "
+                f"examples={removed_sentences[:3]}"
+            )
+        train_data = train_data.loc[~overlap_mask].copy()
+        print(f"Removed {removed_rows} training rows overlapping validation/test sentences.")
+
+    prepared_train_path = os.path.join(out_dir, "financial_phrase_bank_train_disjoint.jsonl")
+    train_data.to_json(prepared_train_path, orient="records", lines=True)
 
     # shuffle the data
     train_data = train_data.sample(frac=1, random_state=seed)
@@ -155,13 +195,31 @@ def split_data(data_path, out_dir, num_clients, site_name_prefix, seed, alpha, v
     # Clean NeMo memmap data before running a new data split
     clean_memmap(out_dir)
 
-    site_idx, class_sum = partition_data(
-        train_labels,
+    sentence_groups = {}
+    for row_idx, row in enumerate(train_data[["sentence", "label"]].itertuples(index=False)):
+        sentence_groups.setdefault(str(row.sentence).strip(), []).append(row_idx)
+    group_labels = []
+    group_rows = []
+    for sentence, row_indices in sentence_groups.items():
+        labels = {str(train_labels.iloc[row_idx]) for row_idx in row_indices}
+        if len(labels) != 1:
+            raise ValueError(f"Conflicting labels for duplicate training sentence {sentence!r}: {sorted(labels)}")
+        group_labels.append(next(iter(labels)))
+        group_rows.append(row_indices)
+
+    group_site_idx, _ = partition_data(
+        group_labels,
         label_names,
         num_clients,
         alpha=alpha,
-        sum_file_name=os.path.join(out_dir, f"summary_alpha{alpha}.txt"),
+        sum_file_name=None,
     )
+    site_idx = {
+        site: [row_idx for group_idx in group_indices for row_idx in group_rows[group_idx]]
+        for site, group_indices in group_site_idx.items()
+    }
+    class_sum = get_site_class_summary(np.asarray(train_labels), site_idx)
+    write_class_summary(os.path.join(out_dir, f"summary_alpha{alpha}.txt"), num_clients, alpha, class_sum)
     print(f"After split Dirichlet sampling with alpha={alpha}")
     pprint(class_sum)
 
@@ -190,8 +248,6 @@ def split_data(data_path, out_dir, num_clients, site_name_prefix, seed, alpha, v
                     f"Sentence overlap between site-{left + 1} and site-{right + 1}: {sorted(overlap)[:3]}"
                 )
     train_sentences = set().union(*split_sentence_sets)
-    validation_sentences = load_sentences(validation_path)
-    test_sentences = load_sentences(test_path)
     split_pairs = {
         "train_validation": train_sentences & validation_sentences,
         "train_test": train_sentences & test_sentences,
@@ -201,7 +257,7 @@ def split_data(data_path, out_dir, num_clients, site_name_prefix, seed, alpha, v
     if overlaps:
         raise ValueError(f"Sentence-level dataset split overlap: {overlaps}")
 
-    files = {"source_train": data_path}
+    files = {"source_train": data_path, "prepared_train": prepared_train_path}
     files.update({f"site-{index + 1}": path for index, path in enumerate(output_files)})
     if validation_path:
         files["validation"] = validation_path
@@ -213,6 +269,11 @@ def split_data(data_path, out_dir, num_clients, site_name_prefix, seed, alpha, v
         "alpha": alpha,
         "num_clients": num_clients,
         "sentence_level_disjoint": True,
+        "overlap_resolution": {
+            "policy": "remove_from_train" if remove_train_overlap else "reject",
+            "removed_rows": removed_rows,
+            "removed_unique_sentences": len(removed_sentences),
+        },
         "files": {},
     }
     for name, path in files.items():
@@ -239,6 +300,11 @@ if __name__ == "__main__":
     parser.add_argument("--validation_path", type=str, default=None)
     parser.add_argument("--test_path", type=str, default=None)
     parser.add_argument(
+        "--remove_train_overlap",
+        action="store_true",
+        help="Remove training rows whose sentence occurs in validation or test; validation and test remain unchanged.",
+    )
+    parser.add_argument(
         "--alpha",
         type=float,
         help="Alpha value to control the Dirichlet sampling strategy for creating a heterogeneous partition. "
@@ -256,4 +322,5 @@ if __name__ == "__main__":
         alpha=args.alpha,
         validation_path=args.validation_path,
         test_path=args.test_path,
+        remove_train_overlap=args.remove_train_overlap,
     )

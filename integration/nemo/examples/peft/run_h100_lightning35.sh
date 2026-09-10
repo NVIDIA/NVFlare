@@ -130,7 +130,7 @@ IDENTITY="--model_profile=lightning35 --model_name_or_path=${MODEL_ID} --tokeniz
 TRAIN_COMMON="${IDENTITY} --seq_length=512 --micro_batch_size=1 --global_batch_size=1 --learning_rate=5e-5"
 DATA_ARGS="--train_split_dir=/host_out/data_split --validation_file=/host_out/data/financial_phrase_bank_val.jsonl --alpha=10.0"
 
-run_stage data "python data/split_financial_phrase_data.py --alpha=10.0 --random_seed=0 --num_clients=3 --data_path=/host_out/data/financial_phrase_bank_train.jsonl --validation_path=/host_out/data/financial_phrase_bank_val.jsonl --test_path=/host_out/data/financial_phrase_bank_test.jsonl --out_dir=/host_out/data_split"
+run_stage data "python data/split_financial_phrase_data.py --alpha=10.0 --random_seed=0 --num_clients=3 --remove_train_overlap --data_path=/host_out/data/financial_phrase_bank_train.jsonl --validation_path=/host_out/data/financial_phrase_bank_val.jsonl --test_path=/host_out/data/financial_phrase_bank_test.jsonl --out_dir=/host_out/data_split"
 run_stage cpu_init "python - <<'PY'
 import adapter_checkpoint
 import job
