@@ -822,6 +822,7 @@ class FederatedServer(BaseServer):
                     fl_ctx.set_prop(key=FLContextKey.CLIENT_TYPE, value=client_type, private=False, sticky=False)
 
                 client_name = request.get_header(CellMessageHeaderKeys.CLIENT_NAME)
+                fl_ctx.set_prop(key=FLContextKey.CLIENT_NAME, value=client_name, private=True, sticky=False)
                 site_config = self._get_validated_site_config(data, client_name)
                 if site_config is not None and client_type != ClientType.REGULAR:
                     self.logger.warning(f"dropping site config from non-regular client {client_name}: {client_type}")
