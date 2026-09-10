@@ -1,4 +1,1 @@
-nvflare[PT]~=2.7.2rc
-torch
-torchvision
-tensorboard
+nvflare[PT]>=2.10.0rc0,<2.11
