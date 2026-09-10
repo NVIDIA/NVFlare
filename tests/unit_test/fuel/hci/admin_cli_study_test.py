@@ -209,6 +209,31 @@ def test_admin_client_passes_study_to_admin_api(tmp_path):
     assert client.user_name == "cert-admin@example.com"
 
 
+@pytest.mark.parametrize(
+    "confirmation,stale_name,answer,accepted",
+    [
+        (CommandInfo.CONFIRM_AUTH, "", "bob@example.com", True),
+        (CommandInfo.CONFIRM_AUTH, "alice@example.com", "alice@example.com", False),
+        (CommandInfo.CONFIRM_USER_NAME, "alice@example.com", "bob@example.com", True),
+        (CommandInfo.CONFIRM_USER_NAME, "alice@example.com", "alice@example.com", False),
+    ],
+)
+def test_admin_client_confirmation_uses_current_api_identity(confirmation, stale_name, answer, accepted):
+    client, captured = _make_admin_client_for_study(DEFAULT_STUDY)
+    client.user_name = stale_name
+    client.api.user_name = "bob@example.com"
+    client.api.check_command = lambda _line: confirmation
+    output = []
+    client.write_string = output.append
+
+    with patch.object(client, "_user_input", return_value=answer) as user_input:
+        client._do_default("shutdown all")
+
+    user_input.assert_called_once_with("Confirm with User Name: ")
+    assert ("line" in captured) == accepted
+    assert output == ([] if accepted else ["user name mismatch"])
+
+
 def test_admin_client_run_reports_login_rejection_and_skips_cmdloop():
     calls = []
     output = []
