@@ -136,13 +136,16 @@ def test_wait_for_system_start_timeout_message_uses_expected_clients(monkeypatch
     assert "99 clients" not in message
 
 
-def test_wait_for_system_start_bounds_blocking_session_cleanup(monkeypatch):
+@pytest.mark.parametrize("ready", [False, True])
+def test_wait_for_system_start_bounds_blocking_session_cleanup(monkeypatch, ready):
     from nvflare.fuel.flare_api.api_spec import NoConnection
     from nvflare.tool.api_utils import SystemStartTimeout, wait_for_system_start
 
     monkeypatch.setattr(cli_output, "_output_format", "txt")
     release_close = threading.Event()
     close_started = threading.Event()
+    close_finished = threading.Event()
+    sys_info = MagicMock(client_info=[ClientInfo("site-1", None)])
 
     class BlockingCloseSession:
         api = MagicMock()
@@ -150,26 +153,95 @@ def test_wait_for_system_start_bounds_blocking_session_cleanup(monkeypatch):
         def __init__(self, **kwargs):
             pass
 
-        def try_connect(self, timeout):
-            raise NoConnection("server is not reachable")
+        def try_connect(self, timeout, *, deadline=None):
+            if not ready:
+                raise NoConnection("server is not reachable")
+
+        def get_system_info(self):
+            return sys_info
 
         def close(self):
             close_started.set()
             release_close.wait(2)
+            close_finished.set()
 
     start = time.monotonic()
     try:
         with patch("nvflare.tool.api_utils.Session", BlockingCloseSession):
-            with pytest.raises(SystemStartTimeout, match="session cleanup did not finish"):
-                wait_for_system_start(
-                    1,
-                    "/tmp/prod",
-                    second_to_wait=0,
-                    timeout_in_sec=0.05,
-                    poll_interval=0,
-                    conn_timeout=0.01,
-                )
+            kwargs = dict(second_to_wait=0, timeout_in_sec=0.05, poll_interval=0, conn_timeout=0.01)
+            if ready:
+                assert wait_for_system_start(1, "/tmp/prod", **kwargs) is sys_info
+            else:
+                with pytest.raises(SystemStartTimeout, match="session cleanup did not finish"):
+                    wait_for_system_start(1, "/tmp/prod", **kwargs)
         assert time.monotonic() - start < 0.5
         assert close_started.is_set()
     finally:
         release_close.set()
+        assert close_finished.wait(1)
+
+
+@pytest.mark.parametrize("failure", ["stalled_login", "retry_sleep", "stalled_command_list"])
+def test_readiness_deadline_bounds_real_admin_login(monkeypatch, failure):
+    import json
+    from types import SimpleNamespace
+
+    from nvflare.fuel.flare_api.flare_api import Session
+    from nvflare.fuel.hci.client.api import AdminAPI
+    from nvflare.fuel.hci.client.api_spec import AdminConfigKey
+    from nvflare.tool.api_utils import SystemStartTimeout, wait_for_system_start
+
+    api = AdminAPI(
+        admin_config={
+            AdminConfigKey.CA_CERT: "ca.pem",
+            AdminConfigKey.CLIENT_CERT: "client.pem",
+            AdminConfigKey.CLIENT_KEY: "client.key",
+        },
+        user_name="admin",
+        cmd_modules=[],
+    )
+    session = Session.__new__(Session)
+    session.api = api
+    request_budgets = []
+
+    def stalled_request(**kwargs):
+        if not api.in_logout:
+            request_budgets.append(kwargs["timeout"])
+            if failure == "stalled_command_list" and len(request_budgets) == 1:
+                time.sleep(0.02)
+                return SimpleNamespace(payload=json.dumps({"data": [{"type": "string", "data": "OK"}]}))
+            if failure != "retry_sleep":
+                time.sleep(kwargs["timeout"])
+        return SimpleNamespace(payload=None)
+
+    api.cell = MagicMock()
+    api.cell.send_request.side_effect = stalled_request
+    # Transport is already established; retain the real Session.try_connect,
+    # AdminAPI.login, retry loop, and command path down to the network boundary.
+    monkeypatch.setattr(api, "connect", lambda timeout: None)
+    monkeypatch.setattr("nvflare.fuel.hci.client.api.IdentityAsserter", MagicMock())
+    monkeypatch.setattr("nvflare.tool.api_utils.Session", lambda **kwargs: session)
+    start = time.monotonic()
+    with pytest.raises(SystemStartTimeout, match="admin login deadline reached"):
+        wait_for_system_start(1, "/tmp/prod", second_to_wait=0, timeout_in_sec=0.1, poll_interval=0)
+    assert time.monotonic() - start < 1.0
+    assert len(request_budgets) == (2 if failure == "stalled_command_list" else 1)
+    assert 0 < request_budgets[0] <= 0.1
+    if failure == "stalled_command_list":
+        assert 0 < request_budgets[1] < request_budgets[0]
+    assert api._login_deadline is None
+
+
+def test_readiness_rejects_status_received_after_deadline(monkeypatch):
+    from nvflare.tool.api_utils import SystemStartTimeout, wait_for_system_start
+
+    sess = MagicMock()
+
+    def late_status():
+        time.sleep(0.05)
+        return MagicMock(client_info=[ClientInfo("site-1", None)])
+
+    sess.get_system_info.side_effect = late_status
+    monkeypatch.setattr("nvflare.tool.api_utils.Session", lambda **kwargs: sess)
+    with pytest.raises(SystemStartTimeout, match="while checking system status"):
+        wait_for_system_start(1, "/tmp/prod", second_to_wait=0, timeout_in_sec=0.02)

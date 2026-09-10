@@ -347,6 +347,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             self._debug = admin_config.get(AdminConfigKey.WITH_DEBUG, False)
 
         self.cmd_timeout = None
+        self._login_deadline = None
 
         # for login
         self.token = None
@@ -641,6 +642,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
     def _try_login(self):
         resp = None
         for i in range(self.auto_login_max_tries):
+            self._check_login_deadline()
             try:
                 self.fire_session_event(EventType.TRYING_LOGIN, "Trying to login, please wait ...")
             except Exception as ex:
@@ -651,6 +653,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
                 }
 
             resp = self._user_login()
+            self._check_login_deadline()
 
             status = resp.get(ResultKey.STATUS)
             if status in [APIStatus.SUCCESS, APIStatus.ERROR_AUTHENTICATION, APIStatus.ERROR_CERT]:
@@ -659,7 +662,11 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
                 else:
                     self.fire_session_event(EventType.LOGIN_FAILURE)
                 return resp
-            time.sleep(AUTO_LOGIN_INTERVAL)
+            if i + 1 < self.auto_login_max_tries:
+                delay = AUTO_LOGIN_INTERVAL
+                if self._login_deadline is not None:
+                    delay = min(delay, max(0.0, self._login_deadline - time.monotonic()))
+                time.sleep(delay)
         if resp is None:
             resp = {
                 ResultKey.STATUS: APIStatus.ERROR_RUNTIME,
@@ -668,7 +675,14 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             self.fire_session_event(EventType.LOGIN_FAILURE)
         return resp
 
-    def login(self):
+    def _check_login_deadline(self):
+        if self._login_deadline is not None and time.monotonic() >= self._login_deadline:
+            raise TimeoutError("admin login deadline reached")
+
+    def login(self, deadline=None):
+        """Log in, optionally bounding requests and retries by a monotonic deadline."""
+        previous_deadline = self._login_deadline
+        self._login_deadline = deadline
         try:
             self.fire_session_event(EventType.BEFORE_LOGIN)
             result = self._try_login()
@@ -678,6 +692,8 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
                 ResultKey.STATUS: APIStatus.ERROR_RUNTIME,
                 ResultKey.DETAILS: f"Exception occurred ({secure_format_exception(e)}) when trying to login - please try later",
             }
+        finally:
+            self._login_deadline = previous_deadline
         return result
 
     def _load_client_cmds_from_modules(self, cmd_modules):
@@ -834,6 +850,12 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         timeout = self.cmd_timeout
         if not timeout:
             timeout = 5.0
+        if self._login_deadline is not None:
+            self._check_login_deadline()
+            timeout = min(timeout, self._login_deadline - time.monotonic())
+            if timeout <= 0:
+                raise TimeoutError("admin login deadline reached")
+            conn.update_meta({MetaKey.CMD_TIMEOUT: timeout})
 
         requester = ctx.get_requester()
         if requester:

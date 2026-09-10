@@ -161,12 +161,14 @@ def wait_for_system_start(
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise TimeoutError("readiness deadline reached before connecting to the admin server")
-            sess.try_connect(min(conn_timeout, remaining))
+            sess.try_connect(min(conn_timeout, remaining), deadline=deadline)
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise TimeoutError("readiness deadline reached before checking system status")
             sess.api.set_command_timeout(remaining)
             sys_info = sess.get_system_info()
+            if time.monotonic() >= deadline:
+                raise TimeoutError("readiness deadline reached while checking system status")
             client_names = _client_names(sys_info.client_info)
             ready_count = len(sys_info.client_info)
             expected_count = len(expected_client_set) if expected_client_set else num_clients
@@ -199,12 +201,12 @@ def wait_for_system_start(
                 if close_error:
                     last_error = f"{last_error}; {close_error}" if last_error else close_error
 
-        if cleanup_timed_out:
-            break
         if ready_sys_info is not None:
             print_human(_format_ready_clients(client_names, ready_count, expected_count))
             print_human("\nReady to go.")
             return ready_sys_info
+        if cleanup_timed_out:
+            break
 
         remaining = deadline - time.monotonic()
         if flare_not_ready and remaining > 0:

@@ -204,7 +204,8 @@ class Session(SessionSpec):
         if isinstance(session_expired_reason, str) and session_expired_reason:
             raise SessionExpired(session_expired_reason)
 
-    def try_connect(self, timeout):
+    def try_connect(self, timeout, *, deadline=None):
+        """Connect and log in, optionally sharing an absolute monotonic deadline."""
         self._raise_if_session_expired()
         if self.api.closed:
             raise SessionClosed("session closed")
@@ -216,7 +217,12 @@ class Session(SessionSpec):
             if "cannot connect to server" in message or "cannot authenticate to server" in message:
                 raise NoConnection(message) from e
             raise
-        result = self.api.login()
+        if deadline is not None:
+            if time.monotonic() >= deadline:
+                raise NoConnection("admin connection exhausted the readiness deadline")
+            result = self.api.login(deadline=deadline)
+        else:
+            result = self.api.login()
         status = result.get(ResultKey.STATUS) if isinstance(result, dict) else None
         details = result.get(ResultKey.DETAILS, "") if isinstance(result, dict) else ""
         if status == APIStatus.SUCCESS:
