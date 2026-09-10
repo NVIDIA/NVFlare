@@ -114,6 +114,7 @@ def render(run_root: Path, exit_code: int) -> str:
         status = "FAILED"
 
     training_commit = _text(artifacts / "commit_sha.txt")
+    parser_fix_commit = _text(artifacts / "acceptance_parser_fix_commit_sha.txt", "")
     validation_commit = _text(artifacts / "validation_fix_commit_sha.txt", "")
     selected_gpu = _text(artifacts / "selected_gpu.txt")
     lines = [
@@ -124,7 +125,9 @@ def render(run_root: Path, exit_code: int) -> str:
         f"- NVFlare training commit: `{training_commit}`",
     ]
     if validation_commit and validation_commit != training_commit:
-        lines.append(f"- Post-run validator commit: `{validation_commit}`")
+        lines.append(f"- Final validation code commit: `{validation_commit}`")
+    if parser_fix_commit:
+        lines.append(f"- Acceptance parser fix commit: `{parser_fix_commit}`")
     lines.extend(
         [
             "- Requested NVFlare base: `0cf98f8a5ba2b17350074a7a4c52aaa0323e01bb`",
