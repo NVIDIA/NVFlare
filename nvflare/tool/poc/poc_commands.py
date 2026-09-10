@@ -1817,7 +1817,6 @@ def _wait_for_poc_system_ready(
             second_to_wait=0,
             timeout_in_sec=timeout_in_sec,
             poll_interval=1.0,
-            conn_timeout=1.0,
             expected_clients=expected_clients,
         )
     except SystemStartTimeout:

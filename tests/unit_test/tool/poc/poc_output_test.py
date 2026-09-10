@@ -1165,6 +1165,29 @@ class TestPocOutput:
                     timeout_in_sec=1,
                 )
 
+    def test_wait_for_poc_system_ready_uses_default_admin_connection_timeout(self, tmp_path):
+        from nvflare.tool.poc.poc_commands import _wait_for_poc_system_ready
+        from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
+
+        project_config = {"name": "test_project"}
+        service_config = {
+            SC.FLARE_SERVER: "server",
+            SC.FLARE_PROJ_ADMIN: "admin@nvidia.com",
+            SC.FLARE_CLIENTS: ["site-1"],
+        }
+
+        with patch("nvflare.tool.poc.poc_commands.wait_for_system_start") as wait_for_start:
+            assert _wait_for_poc_system_ready(
+                str(tmp_path),
+                project_config,
+                service_config,
+                services_list=[],
+                excluded=[],
+                timeout_in_sec=30,
+            )
+
+        assert "conn_timeout" not in wait_for_start.call_args.kwargs
+
     # ------------------------------------------------------------------ poc prepare parsers
 
     def test_poc_prepare_parser_has_force_flag(self):

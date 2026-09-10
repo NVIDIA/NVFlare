@@ -12,8 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
+import threading
 import time
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from nvflare.fuel.flare_api.api_spec import JobNotFound, NoConnection, TargetType
 from nvflare.fuel.flare_api.flare_api import Session
@@ -30,6 +31,27 @@ def _client_names(client_info: list) -> List[str]:
 def _format_ready_clients(client_names: List[str], ready_count: int, expected_count: int) -> str:
     names = f" ({', '.join(client_names)})" if client_names else ""
     return f"Clients ready: {ready_count}/{expected_count}{names}"
+
+
+def _close_session_before_deadline(sess: Session, deadline: float) -> Tuple[Optional[str], bool]:
+    """Close a readiness-probe session without exceeding its overall deadline."""
+    close_errors = []
+    close_finished = threading.Event()
+
+    def _close():
+        try:
+            sess.close()
+        except Exception as e:
+            close_errors.append(str(e))
+        finally:
+            close_finished.set()
+
+    close_thread = threading.Thread(target=_close, name="poc-readiness-session-close", daemon=True)
+    close_thread.start()
+    remaining = max(deadline - time.monotonic(), 0.0)
+    if not close_finished.wait(remaining):
+        return "admin session cleanup did not finish before the readiness deadline", True
+    return (close_errors[0] if close_errors else None), False
 
 
 def shutdown_system(
@@ -127,16 +149,23 @@ def wait_for_system_start(
     # just in case try to connect before server started
     flare_not_ready = True
     expected_client_set = set(expected_clients or [])
-    start = time.time()
-    deadline = start + timeout_in_sec
+    deadline = time.monotonic() + timeout_in_sec
     admin_user_dir = os.path.join(prod_dir, username)
     last_error = None
-    while flare_not_ready and time.time() < deadline:
+    while flare_not_ready and time.monotonic() < deadline:
         sess = None
+        ready_sys_info = None
+        cleanup_timed_out = False
         try:
             sess = Session(username=username, startup_path=admin_user_dir, secure_mode=secure_mode)
-            remaining = max(deadline - time.time(), 0.1)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("readiness deadline reached before connecting to the admin server")
             sess.try_connect(min(conn_timeout, remaining))
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("readiness deadline reached before checking system status")
+            sess.api.set_command_timeout(remaining)
             sys_info = sess.get_system_info()
             client_names = _client_names(sys_info.client_info)
             ready_count = len(sys_info.client_info)
@@ -158,9 +187,7 @@ def wait_for_system_start(
                     last_error = f"{ready_count} of {num_clients} clients registered"
                     print_human(f"Waiting for clients: {ready_count}/{expected_count} ready")
             else:
-                print_human(_format_ready_clients(client_names, ready_count, expected_count))
-                print_human("\nReady to go.")
-                return sys_info
+                ready_sys_info = sys_info
         except NoConnection:
             # server is not up yet
             last_error = "server is not reachable"
@@ -168,12 +195,18 @@ def wait_for_system_start(
             last_error = str(e)
         finally:
             if sess:
-                try:
-                    sess.close()
-                except Exception as e:
-                    last_error = str(e)
+                close_error, cleanup_timed_out = _close_session_before_deadline(sess, deadline)
+                if close_error:
+                    last_error = f"{last_error}; {close_error}" if last_error else close_error
 
-        remaining = deadline - time.time()
+        if cleanup_timed_out:
+            break
+        if ready_sys_info is not None:
+            print_human(_format_ready_clients(client_names, ready_count, expected_count))
+            print_human("\nReady to go.")
+            return ready_sys_info
+
+        remaining = deadline - time.monotonic()
         if flare_not_ready and remaining > 0:
             time.sleep(min(poll_interval, remaining))
 
