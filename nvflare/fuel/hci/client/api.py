@@ -347,7 +347,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             self._debug = admin_config.get(AdminConfigKey.WITH_DEBUG, False)
 
         self.cmd_timeout = None
-        self._login_deadline = None
+        self._login_deadline: Optional[float] = None
 
         # for login
         self.token = None
@@ -679,8 +679,24 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         if self._login_deadline is not None and time.monotonic() >= self._login_deadline:
             raise TimeoutError("admin login deadline reached")
 
-    def login(self, deadline=None):
-        """Log in, optionally bounding requests and retries by a monotonic deadline."""
+    def login(self, deadline: Optional[float] = None) -> dict:
+        """Log in over an already established admin transport connection.
+
+        Args:
+            deadline: Optional absolute time in seconds from ``time.monotonic()``,
+                for example ``api.login(deadline=time.monotonic() + 30.0)``.
+                Each login and command-list request uses at most the remaining
+                budget, subject to the existing command timeout. Retry sleeps
+                are also capped by the remaining budget. None uses the configured
+                retry count and per-command timeouts without an overall deadline.
+                Supply a monotonic timestamp, not a duration or ``time.time()`` value.
+                The deadline applies only to this login call, not later commands.
+
+        Returns:
+            A result dictionary with ``status`` and ``details``. Deadline exhaustion
+            returns ``APIStatus.ERROR_RUNTIME`` with an explanatory detail; it does
+            not raise ``TimeoutError`` to the caller.
+        """
         previous_deadline = self._login_deadline
         self._login_deadline = deadline
         try:

@@ -204,8 +204,41 @@ class Session(SessionSpec):
         if isinstance(session_expired_reason, str) and session_expired_reason:
             raise SessionExpired(session_expired_reason)
 
-    def try_connect(self, timeout, *, deadline=None):
-        """Connect and log in, optionally sharing an absolute monotonic deadline."""
+    def try_connect(self, timeout: Optional[float], *, deadline: Optional[float] = None) -> None:
+        """Establish the admin transport connection and log in.
+
+        Args:
+            timeout: Transport authentication timeout in seconds; must be positive,
+                or None to use the admin configuration's login timeout. This
+                argument alone does not limit the subsequent admin login retries.
+            deadline: Optional absolute time in seconds from ``time.monotonic()``.
+                Pass it by keyword, for example ``deadline=time.monotonic() + 30.0``.
+                After transport authentication, login requests (including command-list
+                retrieval) and retry sleeps share the remaining budget. None preserves
+                the configured login retry count and per-command timeouts. This is
+                neither a duration nor a wall-clock timestamp from ``time.time()``.
+                It does not interrupt transport authentication or bound later session
+                operations such as ``get_system_info()`` or ``close()``.
+
+        Raises:
+            NoConnection: Transport authentication fails, the deadline has already
+                expired after authentication, or login reports a connection failure.
+            SessionClosed: The session is closed.
+            SessionExpired: The session has expired.
+            AuthenticationError: Admin login rejects the credentials.
+            AuthorizationError: Admin login denies access.
+            InternalError: Login otherwise fails, including deadline exhaustion
+                during login requests or retries.
+
+        Example:
+            Allow up to ten seconds for transport authentication, then use the
+            remaining time from a thirty-second budget for admin login::
+
+                import time
+
+                deadline = time.monotonic() + 30.0
+                session.try_connect(timeout=10.0, deadline=deadline)
+        """
         self._raise_if_session_expired()
         if self.api.closed:
             raise SessionClosed("session closed")
