@@ -110,6 +110,25 @@ def _profile_settings(args) -> dict:
     return model_profiles.adapter_compatibility_settings(args)
 
 
+def _initialization_native_args(args, train_file: str):
+    values = vars(args).copy()
+    values.update(
+        train_file=train_file,
+        validation_file=None,
+        seq_length=32,
+        limit_train_samples=1,
+        limit_validation_samples=None,
+        balance_train_labels=True,
+        use_chat_template=False,
+        learning_rate=5e-5,
+        micro_batch_size=1,
+        global_batch_size=1,
+        gradient_accumulation_steps=1,
+        max_steps=1,
+    )
+    return SimpleNamespace(**values)
+
+
 def _create_lightning_adapter_state(args):
     import automodel_peft_client
     import yaml
@@ -118,21 +137,7 @@ def _create_lightning_adapter_state(args):
         train_file = os.path.join(temp_dir, "initialization_sample.jsonl")
         with open(train_file, "w") as f:
             f.write(json.dumps({"sentence": "The agreement is valid for four years .", "label": " neutral"}) + "\n")
-        native_args = SimpleNamespace(
-            **vars(args),
-            train_file=train_file,
-            validation_file=None,
-            seq_length=32,
-            limit_train_samples=1,
-            limit_validation_samples=None,
-            balance_train_labels=True,
-            use_chat_template=False,
-            learning_rate=5e-5,
-            micro_batch_size=1,
-            global_batch_size=1,
-            gradient_accumulation_steps=1,
-            max_steps=1,
-        )
+        native_args = _initialization_native_args(args, train_file)
         output_root = os.path.join(temp_dir, "native_adapter")
         config = automodel_peft_client._default_automodel_config(
             native_args,

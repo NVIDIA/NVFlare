@@ -34,11 +34,15 @@ def _example_dir():
 
 def _load_job_module():
     example_dir = _example_dir()
-    spec = importlib.util.spec_from_file_location("nemo_peft_job", os.path.join(example_dir, "job.py"))
-    module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(module)
-    return module
+    sys.path.insert(0, example_dir)
+    try:
+        spec = importlib.util.spec_from_file_location("nemo_peft_job", os.path.join(example_dir, "job.py"))
+        module = importlib.util.module_from_spec(spec)
+        assert spec.loader is not None
+        spec.loader.exec_module(module)
+        return module
+    finally:
+        sys.path.remove(example_dir)
 
 
 def _load_client_module():
@@ -62,6 +66,21 @@ def _load_predict_module():
     try:
         spec = importlib.util.spec_from_file_location(
             "nemo_peft_predict_sentiment", os.path.join(example_dir, "predict_sentiment.py")
+        )
+        module = importlib.util.module_from_spec(spec)
+        assert spec.loader is not None
+        spec.loader.exec_module(module)
+        return module
+    finally:
+        sys.path.remove(example_dir)
+
+
+def _load_prepare_module():
+    example_dir = _example_dir()
+    sys.path.insert(0, example_dir)
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "nemo_peft_prepare_initial_adapter", os.path.join(example_dir, "prepare_initial_adapter.py")
         )
         module = importlib.util.module_from_spec(spec)
         assert spec.loader is not None
@@ -330,6 +349,19 @@ def test_lightning35_explicit_cli_values_override_profile(monkeypatch):
     assert args.learning_rate == 2e-4
     assert args.lora_alpha == 64
     assert args.use_triton_lora is False
+
+
+def test_lightning35_initialization_overrides_existing_training_values(tmp_path):
+    prepare_module = _load_prepare_module()
+    args = SimpleNamespace(learning_rate=2e-4, seq_length=512, max_steps=300, model_profile="lightning35")
+
+    native_args = prepare_module._initialization_native_args(args, str(tmp_path / "sample.jsonl"))
+
+    assert native_args.learning_rate == 5e-5
+    assert native_args.seq_length == 32
+    assert native_args.max_steps == 1
+    assert native_args.train_file == str(tmp_path / "sample.jsonl")
+    assert native_args.model_profile == "lightning35"
 
 
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required to import the AutoModel client helper")
