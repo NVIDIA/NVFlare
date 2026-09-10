@@ -1,0 +1,47 @@
+# Private role configuration and backups (templates remain tracked).
+platform.env
+platform.env.*
+!platform.env.example
+config.env
+*.env
+!*.example.env
+!coco/public/kata-platform.env
+!workload.example.env
+# Credentials, generated public trust, and approved deployment inputs.
+*.key
+*.crt
+*.pem
+*.csr
+*.srl
+*.password
+image_key
+auth.json
+username
+password
+admin-token
+approved-workload-launch-profile.json
+platform-reference-values.json
+*-pod.yaml
+workload-source.yaml
+# Generated runtime artifacts, private evidence, caches and local reports.
+*.tgz
+*.tar*
+*.qcow2
+*.img
+*.bin
+*.log
+*.lock
+*.pyc
+__pycache__/
+.venv/
+state/
+secrets/
+releases/
+handoff/
+handoffs/
+incoming*/
+platform-reference-work/
+platform-tools/
+operations/
+recovery/
+coco-app

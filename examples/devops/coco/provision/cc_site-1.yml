@@ -1,0 +1,30 @@
+compute_env: confidential_containers
+cc_cpu_mechanism: amd_sev_snp
+cc_gpu: nvidia
+role: client
+
+# Authenticate this AS signing PUBLIC key with the secure-services owner.
+# It is NOT the KBS TLS certificate or the KBS administration key.
+cc_issuers:
+  - id: coco_authorizer
+    path: nvflare.app_opt.confidential_computing.coco_authorizer.CoCoAuthorizer
+    token_expiration: 300
+    args:
+      trustee_public_key_file: ./trustee-as-public.pem
+      token_url: http://127.0.0.1:8006/aa/token
+cc_attestation:
+  check_frequency: 120
+
+# Paths are relative to this file; dockerfile is relative to context.
+image_build:
+  context: ./site-1
+  dockerfile: Dockerfile
+
+# Choose a new, unique release for every client/image/key/policy tuple.
+release_name: site-1-v1
+registry_repository: workloads/site-1
+platform_config: ../admin/platform.env
+
+# Add only reviewed application module names baked into the image.
+# class_allow_list:
+#   - my_application.

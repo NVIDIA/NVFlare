@@ -432,6 +432,7 @@ def provision(
         return None
 
     project = prepare_project(project_dict, add_user_full_path, add_client_full_path)
+    project.set_prop("_project_file", os.path.abspath(project_full_path))
     builders = prepare_builders(project_dict)
     packager = prepare_packager(project_dict)
     provisioner = Provisioner(workspace_full_path, builders, packager)

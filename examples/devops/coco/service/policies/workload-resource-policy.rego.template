@@ -1,0 +1,43 @@
+# Merge this fragment into the trusted service administrator's global
+# package policy. Do not add another package/import/default declaration.
+
+${prefix}_expected_initdata := ${initdata}
+${prefix}_expected_image := ${image}
+${prefix}_expected_args := ${args}
+${prefix}_expected_trust_vector := {
+    "executables": 3,
+    "hardware": 2,
+    "configuration": 3,
+    "file-system": 0,
+    "instance-identity": 0,
+    "runtime-opaque": 0,
+    "storage-opaque": 0,
+    "sourced-data": 0,
+}
+
+${path_rules}
+
+${prefix}_approved_trust_vector(submod) if {
+    submod["ear.trustworthiness-vector"] == ${prefix}_expected_trust_vector
+}
+
+${prefix}_approved_container(container) if {
+    container["OCI"]["Annotations"]["io.kubernetes.cri.image-name"] == ${prefix}_expected_image
+    container["OCI"]["Process"]["Args"] == ${prefix}_expected_args
+}
+
+allow if {
+    data.plugin == "resource"
+    ${prefix}_authorized_path(data["resource-path"])
+    count(input.submods) == 2
+    ${prefix}_approved_trust_vector(input.submods.cpu0)
+    ${prefix}_approved_trust_vector(input.submods.gpu0)
+
+    cpu := input.submods.cpu0
+    cpu["ear.veraison.annotated-evidence"]["init_data"] == ${prefix}_expected_initdata
+    ${prefix}_expected_image in cpu["ear.trustee.identifiers"]["validated"]["container_images"]
+
+    containers := cpu["ear.veraison.annotated-evidence"]["init_data_claims"]["agent_policy_claims"]["containers"]
+    some container in containers
+    ${prefix}_approved_container(container)
+}
