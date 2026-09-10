@@ -335,7 +335,11 @@ def _lightning_profile_settings(args) -> dict:
 
 def _verify_loaded_adapter_state(model, incoming_state) -> dict:
     loaded_state = {key: value.detach().cpu() for key, value in model.state_dict().items() if "lora_" in key}
-    loaded_state = adapter_checkpoint.align_adapter_state_strict(loaded_state, incoming_state)
+    loaded_state = adapter_checkpoint.align_adapter_state_strict(
+        loaded_state,
+        incoming_state,
+        normalize_peft_prefixes=True,
+    )
     mismatches = []
     for key, incoming_value in incoming_state.items():
         if not torch.equal(loaded_state[key], incoming_value.to(loaded_state[key].dtype)):

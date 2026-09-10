@@ -165,11 +165,14 @@ def test_lightning_evaluation_verifies_loaded_adapter_values():
     evaluate_sentiment = _load_evaluate_module()
     incoming = OrderedDict(
         {
-            "layers.0.lora_A.weight": torch.tensor([[1.0, 2.0]]),
-            "layers.0.lora_B.weight": torch.tensor([[3.0], [4.0]]),
+            "base_model.model.layers.0.lora_A.weight": torch.tensor([[1.0, 2.0]]),
+            "base_model.model.layers.0.lora_B.weight": torch.tensor([[3.0], [4.0]]),
         }
     )
-    loaded = {key: value.to(torch.bfloat16) for key, value in incoming.items()}
+    loaded = {
+        evaluate_sentiment.adapter_checkpoint.canonical_adapter_key(key): value.to(torch.bfloat16)
+        for key, value in incoming.items()
+    }
 
     class Model:
         @staticmethod
@@ -183,6 +186,6 @@ def test_lightning_evaluation_verifies_loaded_adapter_values():
 
     assert report["loaded_tensor_count"] == 2
     assert report["loaded_matches_received_after_dtype_cast"] is True
-    incoming["layers.0.lora_B.weight"][0, 0] = 8.0
+    incoming["base_model.model.layers.0.lora_B.weight"][0, 0] = 8.0
     with pytest.raises(RuntimeError, match="reload changed 1 tensors"):
         evaluate_sentiment._verify_loaded_adapter_state(Model(), incoming)
