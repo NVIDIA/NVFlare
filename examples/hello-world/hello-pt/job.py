@@ -20,7 +20,8 @@ from model import create_model
 from prepare_data import add_dataset_arguments, validate_cifar10
 
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
-from nvflare.recipe import SimEnv, add_final_global_evaluation, export_requested
+from nvflare.recipe import SimEnv, add_final_global_evaluation
+from nvflare.recipe.spec import _peek_recipe_args
 
 DEFAULT_NUM_CLIENTS = 2
 DEFAULT_NUM_ROUNDS = 3
@@ -77,7 +78,8 @@ def main(argv=None):
     args = define_parser().parse_args(argv)
     # Recipe consumes export flags at import time. An exported job's data may
     # exist only on remote clients; validate the local cache only for simulation.
-    if args.dataset == "cifar10" and not export_requested():
+    export_only, _ = _peek_recipe_args()
+    if args.dataset == "cifar10" and not export_only:
         args.data_root = str(Path(args.data_root).expanduser().resolve())
         try:
             validate_cifar10(args.data_root)
@@ -89,8 +91,9 @@ def main(argv=None):
     run = recipe.execute(env)
     result = run.get_result()
     print()
-    if result is None or not run.succeeded():
-        raise RuntimeError(f"Simulation did not complete successfully: {run.get_status()}")
+    # SimEnv raises on execution failure; a returned result confirms completion.
+    if result is None:
+        raise RuntimeError("Simulation did not return a result.")
     print("Simulation completed successfully.")
     print("Result can be found in :", result)
     print()

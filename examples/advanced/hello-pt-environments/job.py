@@ -27,20 +27,16 @@ sys.path.insert(0, str(HELLO_PT_DIR))
 from model import create_model  # noqa: E402
 from prepare_data import add_dataset_arguments, validate_cifar10  # noqa: E402
 
+from nvflare.apis.job_def import RunStatus
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
-from nvflare.recipe import (
-    PocEnv,
-    ProdEnv,
-    SimEnv,
-    add_experiment_tracking,
-    add_final_global_evaluation,
-    export_requested,
-)
+from nvflare.recipe import PocEnv, ProdEnv, SimEnv, add_experiment_tracking, add_final_global_evaluation
 from nvflare.recipe.prod_env import DEFAULT_ADMIN_USER
+from nvflare.recipe.spec import _peek_recipe_args
 from nvflare.recipe.utils import add_cross_site_evaluation
 
 DEFAULT_NUM_CLIENTS = 2
 DEFAULT_NUM_ROUNDS = 3
+SUCCESS_STATUSES = {RunStatus.FINISHED_COMPLETED.value, "FINISHED_OK"}
 EXPORT_HELP = """NVFlare Recipe export options:
   --export                    Export the job instead of running it.
   --export-dir EXPORT_DIR     Parent directory for the exported job (default: ./fl_job).
@@ -178,7 +174,8 @@ def create_environment(args):
 
 def main(argv=None):
     args = parse_args(argv)
-    if args.dataset == "cifar10" and args.env != "prod" and not export_requested():
+    export_only, _ = _peek_recipe_args()
+    if args.dataset == "cifar10" and args.env != "prod" and not export_only:
         args.data_root = str(Path(args.data_root).expanduser().resolve())
         try:
             validate_cifar10(args.data_root, prepare_script="../../hello-world/hello-pt/prepare_data.py")
@@ -198,7 +195,7 @@ def main(argv=None):
         status = run.get_status()
         if result is None:
             raise RuntimeError("Job monitoring did not return a result.")
-        if not run.succeeded():
+        if status not in SUCCESS_STATUSES:
             raise RuntimeError(f"Job completed with unsuccessful status: {status}")
     except BaseException:
         if args.env == "poc":

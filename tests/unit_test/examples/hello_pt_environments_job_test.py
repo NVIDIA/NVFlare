@@ -195,7 +195,6 @@ def test_main_preserves_successful_poc_result(tmp_path, monkeypatch, capsys):
     run = SimpleNamespace(
         get_result=lambda clean_up: calls.append(("get-result", clean_up)) or str(result_dir),
         get_status=lambda: calls.append(("get-status",)) or "FINISHED:COMPLETED",
-        succeeded=lambda: True,
     )
     env = SimpleNamespace(stop=lambda clean_up: calls.append(("stop", clean_up)), poc_workspace=str(tmp_path))
     recipe = SimpleNamespace(execute=lambda value: calls.append(("execute", value)) or run)
@@ -218,7 +217,6 @@ def test_main_accepts_legacy_production_success_status(tmp_path, monkeypatch, ca
     run = SimpleNamespace(
         get_result=lambda clean_up: str(result_dir),
         get_status=lambda: "FINISHED_OK",
-        succeeded=lambda: True,
     )
     env = SimpleNamespace()
     recipe = SimpleNamespace(execute=lambda value: run)
@@ -280,9 +278,7 @@ def test_main_retains_result_and_logs_on_unsuccessful_poc_status(tmp_path, monke
     result_dir.mkdir()
     log = tmp_path / "poc_console.log"
     log.write_text("client failure details")
-    run = SimpleNamespace(
-        get_result=lambda clean_up: str(result_dir), get_status=lambda: status, succeeded=lambda: False
-    )
+    run = SimpleNamespace(get_result=lambda clean_up: str(result_dir), get_status=lambda: status)
 
     def stop(clean_up):
         stop_calls.append(clean_up)
@@ -361,9 +357,7 @@ def test_cifar_production_does_not_check_admin_local_cache(monkeypatch):
     monkeypatch.setattr(
         job_module, "validate_cifar10", lambda *args, **kwargs: pytest.fail("cache belongs to remote clients")
     )
-    run = SimpleNamespace(
-        get_result=lambda clean_up: "/tmp/result", get_status=lambda: "FINISHED_OK", succeeded=lambda: True
-    )
+    run = SimpleNamespace(get_result=lambda clean_up: "/tmp/result", get_status=lambda: "FINISHED_OK")
     monkeypatch.setattr(job_module, "create_recipe", lambda args: SimpleNamespace(execute=lambda env: run))
     monkeypatch.setattr(job_module, "create_environment", lambda args: object())
     assert job_module.main(["--env", "prod", "--startup-kit", "/tmp/admin", "--dataset", "cifar10"]) == "/tmp/result"

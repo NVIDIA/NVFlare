@@ -165,7 +165,7 @@ def test_website_pytorch_snippets_are_internally_consistent():
     assert {token for token in shlex.split(train_args[0]) if token.startswith("--")} <= client_options
 
 
-def test_main_reports_simulation_success_using_public_success_check(tmp_path, monkeypatch, capsys):
+def test_main_reports_simulation_success(tmp_path, monkeypatch, capsys):
     job_module = _load_job_module()
     result_dir = tmp_path / "simulation-result"
     result_dir.mkdir()
@@ -173,7 +173,6 @@ def test_main_reports_simulation_success_using_public_success_check(tmp_path, mo
 
     run = SimpleNamespace(
         get_result=lambda: calls.append(("get_result",)) or str(result_dir),
-        succeeded=lambda: calls.append(("succeeded",)) or True,
     )
     env = object()
     recipe = SimpleNamespace(execute=lambda value: calls.append(("execute", value)) or run)
@@ -183,7 +182,7 @@ def test_main_reports_simulation_success_using_public_success_check(tmp_path, mo
     result = job_module.main([])
 
     assert result == str(result_dir)
-    assert calls == [("execute", env), ("get_result",), ("succeeded",)]
+    assert calls == [("execute", env), ("get_result",)]
     output = capsys.readouterr().out
     assert "Simulation completed successfully." in output
     assert "Job Status is: None" not in output
