@@ -1,5 +1,5 @@
 ## Description: <br>
-Internal NVFLARE conversion references and templates used only when another NVFLARE skill directs to a shared workflow, policy, or asset. <br>
+Internal NVFLARE conversion references and templates used only when another NVFLARE skill directs the agent to a shared workflow, policy, or asset. <br>
 
 This skill is ready for commercial/non-commercial use. <br>
 
@@ -9,7 +9,7 @@ NVIDIA <br>
 ### License/Terms of Use: <br>
 Apache 2.0 <br>
 ## Use Case: <br>
-Developers and engineers converting ML training code to NVIDIA FLARE federated learning use this skill's shared references and templates when directed by another NVFLARE conversion skill. <br>
+Developers and engineers building federated learning workflows use this shared reference library for NVFLARE conversion policies, templates, and guidance. <br>
 
 ### Deployment Geography for Use: <br>
 Global <br>
@@ -25,22 +25,22 @@ Risk: Review before execution as proposals could introduce incorrect or misleadi
 Mitigation: Review and scan skill before deployment. <br>
 
 ## Reference(s): <br>
-- [Common Conversion Rules](references/conversion-common.md) <br>
-- [Shared ML-To-FL Conversion Workflow](references/conversion-workflow.md) <br>
-- [Dependency Install Before Import Preflight](references/dependency-install.md) <br>
-- [Metrics And Artifact Reporting](references/metrics-and-artifact-reporting.md) <br>
-- [PyTorch Family Recipe Construction](references/pytorch-family-recipe-construction.md) <br>
-- [PyTorch Family Recipe Selection](references/pytorch-family-recipe-selection.md) <br>
-- [PyTorch Model Exchange](references/pytorch-model-exchange.md) <br>
-- [Runtime Output Guidance](references/runtime-output-guidance.md) <br>
-- [Site Data And Paths](references/site-data-and-paths.md) <br>
-- [Validation Evidence](references/validation-evidence.md) <br>
+- [conversion-common.md](references/conversion-common.md) <br>
+- [conversion-workflow.md](references/conversion-workflow.md) <br>
+- [dependency-install.md](references/dependency-install.md) <br>
+- [metrics-and-artifact-reporting.md](references/metrics-and-artifact-reporting.md) <br>
+- [pytorch-family-recipe-construction.md](references/pytorch-family-recipe-construction.md) <br>
+- [pytorch-family-recipe-selection.md](references/pytorch-family-recipe-selection.md) <br>
+- [pytorch-model-exchange.md](references/pytorch-model-exchange.md) <br>
+- [runtime-output-guidance.md](references/runtime-output-guidance.md) <br>
+- [site-data-and-paths.md](references/site-data-and-paths.md) <br>
+- [validation-evidence.md](references/validation-evidence.md) <br>
 - [NVIDIA FLARE Documentation](https://nvflare.readthedocs.io/en/main) <br>
 - [NVIDIA FLARE Paper](https://arxiv.org/abs/2210.13291) <br>
 
 
 ## Skill Output: <br>
-**Output Type(s):** [Configuration instructions, Analysis] <br>
+**Output Type(s):** [Configuration instructions, Code templates] <br>
 **Output Format:** [Markdown with inline code blocks] <br>
 **Output Parameters:** [1D] <br>
 **Other Properties Related to Output:** [None] <br>
@@ -52,36 +52,36 @@ Mitigation: Review and scan skill before deployment. <br>
 
 
 ## Evaluation Tasks: <br>
-Evaluated against 3 evaluation tasks (3 positive), each in an isolated sandbox pod. <br>
+Evaluated against 3 evaluation tasks (3 positive) with 3 attempts per task across 2 agents in isolated sandbox pods. <br>
 
 ## Evaluation Metrics Used: <br>
 Reported benchmark dimensions: <br>
-- Security: Whether the skill is safe to use: checks for unsafe operations, secret leakage, and unauthorized access. <br>
+- Security: Whether the skill is safe to use, checking for unsafe operations, secret leakage, and unauthorized access. <br>
 - Correctness: Whether the answer is correct against the reference answer. <br>
-- Discoverability: Whether the right skill was loaded when needed: skill selection, decoy avoidance, and workflow execution. <br>
-- Effectiveness: Whether the skill helped complete the task: goal completion (50%) and expected workflow adherence (50%). <br>
-- Efficiency: Whether wasted tool calls and token usage were avoided: tool-call productivity (50%) and token efficiency (50%). <br>
+- Discoverability: Whether the right skill was loaded when needed and decoys were avoided. <br>
+- Effectiveness: Whether the skill helped complete the user's goal (50% goal accuracy + 50% behavior check). <br>
+- Efficiency: Whether the skill avoided wasted tool calls and token usage (50% tool productivity + 50% token efficiency). <br>
 
 Underlying evaluation signals used in this run: <br>
 - `security`: Unsafe operations, secret leakage, and unauthorized access. <br>
-- `skill_execution`: Whether the expected skill was selected, decoys were avoided, and the workflow executed. <br>
-- `skill_efficiency`: Tool-call productivity (legacy wire id; routing is scored under Discoverability). <br>
 - `accuracy`: Final-answer correctness against the reference answer. <br>
+- `skill_execution`: Whether the expected skill was selected, decoys were avoided, and the workflow executed. <br>
 - `goal_accuracy`: Whether the user's goal was achieved. <br>
 - `behavior_check`: Whether the expected workflow behavior was followed. <br>
-- `token_efficiency`: Actual uncached prompt plus completion usage. <br>
+- `skill_efficiency`: Tool-call productivity. <br>
+- `token_efficiency`: Actual uncached prompt plus completion token usage. <br>
 
 
 
 ## Evaluation Results: <br>
 | Measure | Claude Code (Baseline → Skill Uplift) | Codex (Baseline → Skill Uplift) |
 |---|---:|---:|
-| Overall | 83.4% | 82.2% |
-| Security | 83.3% → 100.0% (+16.7 points) | 66.7% → 100.0% (+33.3 points) |
-| Correctness | 100.0% → 100.0% (±0.0 points) | 93.3% → 86.7% (-6.6 points) |
-| Discoverability | 71.7% | 66.7% |
-| Effectiveness | 60.8% → 66.7% (+5.9 points) | 70.0% → 70.0% (±0.0 points) |
-| Efficiency | 78.8% | 87.4% |
+| Overall | 82.1% | 78.3% |
+| Security | 83.3% → 83.3% (±0.0 points) | 33.3% → 66.7% (+33.4 points) |
+| Correctness | 86.7% → 100.0% (+13.3 points) | 93.3% → 100.0% (+6.7 points) |
+| Discoverability | 71.7% | 63.3% |
+| Effectiveness | 75.0% → 78.3% (+3.3 points) | 73.3% → 88.3% (+15.0 points) |
+| Efficiency | 77.3% | 73.0% |
 
 ## Skill Version(s): <br>
 0.1.0 (source: frontmatter) <br>
