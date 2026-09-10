@@ -80,7 +80,7 @@ printf '%s\n' "${IMAGE_DIGEST}" >"${RUN_ROOT}/artifacts/container_digest.txt"
 
 docker run -d --name "${CONTAINER_NAME}" --gpus "device=${GPU_ID}" --ipc=host \
     --ulimit memlock=-1 --ulimit stack=67108864 \
-    -e HF_TOKEN -e HF_HOME=/hf_cache -e TRANSFORMERS_CACHE=/hf_cache \
+    -e HF_TOKEN -e HF_HOME=/hf_cache -e HF_HUB_CACHE=/hf_cache -e TRANSFORMERS_CACHE=/hf_cache \
     -v "${SOURCE_DIR}:/workspace" -v "${RUN_ROOT}:/host_out" \
     -v "${CACHE_ROOT}:/hf_cache" \
     -w "${EXAMPLE_DIR}" "${IMAGE_DIGEST}" sleep infinity
