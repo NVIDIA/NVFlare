@@ -135,6 +135,7 @@ def _args(tmp_path, initial_adapter_ckpt):
         cp_size=1,
         use_triton_lora=False,
         server_tensor_device="cpu",
+        fp32_adapter_exchange=False,
         mock_delta=0.01,
     )
 

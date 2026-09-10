@@ -116,6 +116,22 @@ def test_client_builds_full_adapter_update():
     assert torch.equal(params["model.layer.lora_A.weight"], torch.full((2, 2), 0.5))
 
 
+@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required for adapter exchange dtype tests")
+def test_client_fp32_exchange_is_opt_in_for_nano_and_required_for_lightning():
+    import torch
+
+    automodel_peft_client = _load_example_module("automodel_peft_client")
+    state = {"model.layer.lora_A.weight": torch.ones((2, 2), dtype=torch.bfloat16)}
+
+    def exchange_state(profile, fp32_adapter_exchange):
+        args = type("Args", (), {"model_profile": profile, "fp32_adapter_exchange": fp32_adapter_exchange})()
+        return automodel_peft_client._prepare_exchange_state(args, state)
+
+    assert exchange_state("nano", False)["model.layer.lora_A.weight"].dtype == torch.bfloat16
+    assert exchange_state("nano", True)["model.layer.lora_A.weight"].dtype == torch.float32
+    assert exchange_state("lightning35", False)["model.layer.lora_A.weight"].dtype == torch.float32
+
+
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required for adapter namespace tests")
 def test_client_preserves_nano_mapping_but_requires_exact_lightning_state():
     import torch

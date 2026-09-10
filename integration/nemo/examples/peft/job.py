@@ -95,6 +95,15 @@ def define_parser():
         default="cpu",
         help="Outgoing adapter tensor device for the Client API script: auto, cpu, cuda:0, etc.",
     )
+    parser.add_argument(
+        "--fp32_adapter_exchange",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "Cast outgoing adapter tensors to FP32 before federation. Lightning always uses FP32 exchange; "
+            "this opt-in flag enables the same aggregation precision for Nano without changing its default."
+        ),
+    )
     parser.add_argument("--mock_delta", type=float, default=0.01)
     parser.add_argument("--mock_site_steps", default=None, help="Comma-separated per-site mock weights for CPU tests.")
     parser.add_argument("--mock_site_deltas", default=None, help="Comma-separated per-site mock tensor deltas.")
@@ -190,6 +199,10 @@ def _build_train_args(args, train_file: str, site_name: str) -> str:
         "--mock_delta",
         str(mock_delta),
     ]
+    if args.fp32_adapter_exchange:
+        train_args.append("--fp32_adapter_exchange")
+    else:
+        train_args.append("--no-fp32_adapter_exchange")
     if model_profiles.is_lightning35(args):
         train_args.extend(["--adapter_contract", "custom/adapter_contract.json"])
     if args.balance_train_labels:

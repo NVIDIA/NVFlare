@@ -107,6 +107,15 @@ def define_parser():
             "Use 'auto' to match CUDA visibility, or set cuda:0 explicitly if the server should receive GPU tensors."
         ),
     )
+    parser.add_argument(
+        "--fp32_adapter_exchange",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "Cast outgoing adapter tensors to FP32 before federation. Lightning always uses FP32 exchange; "
+            "this opt-in flag enables the same aggregation precision for Nano without changing its default."
+        ),
+    )
     parser.add_argument("--mock_delta", type=float, default=0.01)
     return model_profiles.resolve_model_profile(parser.parse_args())
 
@@ -510,6 +519,12 @@ def _align_updated_state_for_exchange(args, updated_state, incoming_state):
     return matched
 
 
+def _prepare_exchange_state(args, updated_state):
+    if model_profiles.is_lightning35(args) or args.fp32_adapter_exchange:
+        return OrderedDict((key, value.float()) for key, value in updated_state.items())
+    return updated_state
+
+
 def main():
     args = define_parser()
     signal.signal(signal.SIGTERM, lambda _signum, _frame: sys.exit(0))
@@ -543,11 +558,8 @@ def main():
         updated_state = _align_updated_state_for_exchange(args, updated_state, incoming_state)
         if steps <= 0:
             raise RuntimeError(f"Local training completed without optimizer steps: {steps}")
-        exchange_state = (
-            OrderedDict((key, value.float()) for key, value in updated_state.items())
-            if model_profiles.is_lightning35(args)
-            else updated_state
-        )
+        use_fp32_exchange = model_profiles.is_lightning35(args) or args.fp32_adapter_exchange
+        exchange_state = _prepare_exchange_state(args, updated_state)
         outgoing_manifest = adapter_checkpoint.build_adapter_manifest(
             exchange_state,
             model_profile=args.model_profile,
@@ -582,6 +594,7 @@ def main():
             "received_tensor_count": len(incoming_state),
             "loaded_tensor_count": automodel_report.get("loaded_tensor_count", len(incoming_state)),
             "outgoing_tensor_count": len(exchange_state),
+            "fp32_adapter_exchange": use_fp32_exchange,
             "actual_optimizer_steps": steps,
             "update_norm": adapter_checkpoint.update_norm(incoming_state, exchange_state),
             "checkpoint_location": os.path.abspath(checkpoint_location),

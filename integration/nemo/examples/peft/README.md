@@ -268,6 +268,10 @@ Docker access must work before launching. The runner reports a blocked prerequis
 `/var/run/docker.sock` ownership or permissions. `run_h100_nano_regression.sh` supplies the separate two-client,
 two-round Nano regression in its documented `26.04` image.
 
+Nano preserves its native adapter dtype during exchange by default. Add `--fp32_adapter_exchange` to a Nano `job.py`
+run when the server must accumulate adapters in FP32, such as an independently verified model-comparison campaign.
+Lightning exchange is always FP32.
+
 ## Adapter Continuity Across Rounds
 
 This example uses multi-round FedAvg for the federated setting. The external AutoModel process may restart on each
