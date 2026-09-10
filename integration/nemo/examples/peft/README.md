@@ -249,6 +249,10 @@ cache, resolves one model/tokenizer revision, installs the mounted NVFlare check
 stages sequentially. It stops when a required gate fails. If the two-step smoke runs out of memory, it retries that
 workload with activation checkpointing; a second failure is recorded as a single-GPU feasibility failure.
 
+The cache normally lives below the timestamped run directory. To resume after a runner failure without downloading the
+pinned snapshot again, set `CACHE_ROOT` to the previous attempt's `cache/huggingface` directory. The model and tokenizer
+revision checks still run before training.
+
 The runner preserves client adapters and manifests, every server round aggregate, exact-label evaluation output,
 commands, package versions, exit codes, timing logs, and GPU telemetry under a timestamped directory in
 `/scratch/hroth/Code/nvflare/`. `verify_federated_run.py` independently computes every aggregate in FP32 using the

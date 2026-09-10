@@ -20,14 +20,16 @@ MODEL_ID="nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16"
 SOURCE_DIR="${CHECKOUT_DIR:-$(git rev-parse --show-toplevel)}"
 TIMESTAMP="${RUN_TIMESTAMP:-$(date -u +%Y%m%dT%H%M%SZ)}"
 RUN_ROOT="${RUN_ROOT:-/scratch/hroth/Code/nvflare/nemotron35-lightning-${TIMESTAMP}}"
+CACHE_ROOT="${CACHE_ROOT:-${RUN_ROOT}/cache/huggingface}"
 SOURCE_DATA_DIR="${SOURCE_DATA_DIR:-/scratch/hroth/Code/nvflare/nemotron-peft-h100-20260604-113217/integration/nemo/examples/peft/data/FinancialPhraseBank-v1.0}"
 CONTAINER_NAME="nvflare-lightning35-${TIMESTAMP,,}"
 EXAMPLE_DIR="/workspace/integration/nemo/examples/peft"
 TELEMETRY_PID=""
 
-mkdir -p "${RUN_ROOT}"/{artifacts,cache/huggingface,data,logs,runs,evaluation}
+mkdir -p "${RUN_ROOT}"/{artifacts,data,logs,runs,evaluation} "${CACHE_ROOT}"
 exec > >(tee -a "${RUN_ROOT}/logs/host_runner.log") 2>&1
 set -x
+printf '%s\n' "${CACHE_ROOT}" >"${RUN_ROOT}/artifacts/cache_root.txt"
 git -C "${SOURCE_DIR}" rev-parse HEAD >"${RUN_ROOT}/artifacts/commit_sha.txt"
 git -C "${SOURCE_DIR}" status --short >"${RUN_ROOT}/artifacts/git_status.txt"
 uname -a >"${RUN_ROOT}/artifacts/uname.txt"
@@ -80,7 +82,7 @@ docker run -d --name "${CONTAINER_NAME}" --gpus "device=${GPU_ID}" --ipc=host \
     --ulimit memlock=-1 --ulimit stack=67108864 \
     -e HF_TOKEN -e HF_HOME=/hf_cache -e TRANSFORMERS_CACHE=/hf_cache \
     -v "${SOURCE_DIR}:/workspace" -v "${RUN_ROOT}:/host_out" \
-    -v "${RUN_ROOT}/cache/huggingface:/hf_cache" \
+    -v "${CACHE_ROOT}:/hf_cache" \
     -w "${EXAMPLE_DIR}" "${IMAGE_DIGEST}" sleep infinity
 
 run_stage() {
