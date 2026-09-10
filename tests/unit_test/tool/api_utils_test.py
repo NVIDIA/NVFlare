@@ -69,7 +69,8 @@ def test_wait_for_system_start_uses_ten_second_default_connection_budget(monkeyp
     with patch("nvflare.tool.api_utils.Session", return_value=sess):
         wait_for_system_start(1, "/tmp/prod", second_to_wait=0, timeout_in_sec=30)
 
-    assert 9.0 < sess.try_connect.call_args.args[0] <= 10.0
+    assert 29.0 < sess.try_connect.call_args.args[0] <= 30.0
+    assert sess.try_connect.call_args.kwargs["connect_timeout"] == 10.0
 
 
 def test_wait_for_system_start_reports_missing_expected_clients_concisely(capsys, monkeypatch):
@@ -153,7 +154,7 @@ def test_wait_for_system_start_bounds_blocking_session_cleanup(monkeypatch, read
         def __init__(self, **kwargs):
             pass
 
-        def try_connect(self, timeout):
+        def try_connect(self, timeout, *, connect_timeout=None):
             if not ready:
                 raise NoConnection("server is not reachable")
 
@@ -245,3 +246,66 @@ def test_readiness_rejects_status_received_after_deadline(monkeypatch):
     monkeypatch.setattr("nvflare.tool.api_utils.Session", lambda **kwargs: sess)
     with pytest.raises(SystemStartTimeout, match="while checking system status"):
         wait_for_system_start(1, "/tmp/prod", second_to_wait=0, timeout_in_sec=0.02)
+
+
+def test_slow_transport_leaves_outer_readiness_budget_for_real_login(monkeypatch):
+    import json
+    from types import SimpleNamespace
+
+    from nvflare.fuel.flare_api import flare_api
+    from nvflare.fuel.hci.client import api as admin_api
+    from nvflare.fuel.hci.client.api_spec import AdminConfigKey
+    from nvflare.tool import api_utils
+
+    # Advance a virtual clock at the transport/network boundaries while retaining
+    # the real Session, login requests, and login result processing.
+    clock = [100.0]
+
+    def advance(seconds):
+        clock[0] += seconds
+
+    timer = SimpleNamespace(monotonic=lambda: clock[0], time=lambda: clock[0], sleep=advance)
+    for module in (api_utils, flare_api, admin_api):
+        monkeypatch.setattr(module, "time", timer)
+    api = admin_api.AdminAPI(
+        admin_config={
+            AdminConfigKey.CA_CERT: "ca.pem",
+            AdminConfigKey.CLIENT_CERT: "client.pem",
+            AdminConfigKey.CLIENT_KEY: "client.key",
+        },
+        user_name="admin",
+        cmd_modules=[],
+    )
+    session = flare_api.Session.__new__(flare_api.Session)
+    session.api = api
+    requests = []
+
+    def connect(timeout):
+        assert timeout == 10.0
+        advance(9.0)
+
+    def respond(**kwargs):
+        if api.in_logout:
+            return SimpleNamespace(payload=None)
+        requests.append(kwargs["timeout"])
+        if len(requests) == 1:
+            # Login needs more than the one second left from transport's cap.
+            advance(min(2.0, kwargs["timeout"]))
+            if kwargs["timeout"] < 2.0:
+                return SimpleNamespace(payload=None)
+            data = [{"type": "string", "data": "OK"}]
+        else:
+            data = [{"type": "table", "rows": []}]
+        return SimpleNamespace(payload=json.dumps({"data": data}))
+
+    api.cell = MagicMock()
+    api.cell.send_request.side_effect = respond
+    sys_info = MagicMock(client_info=[ClientInfo("site-1", None)])
+    monkeypatch.setattr(api, "connect", connect)
+    monkeypatch.setattr(admin_api, "IdentityAsserter", MagicMock())
+    monkeypatch.setattr(session, "get_system_info", lambda: sys_info)
+    monkeypatch.setattr(api_utils, "Session", lambda **kwargs: session)
+
+    assert api_utils.wait_for_system_start(1, "/tmp/prod", second_to_wait=0, timeout_in_sec=30) is sys_info
+    assert requests == [5.0, 5.0]
+    assert clock[0] == 111.0

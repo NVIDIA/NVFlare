@@ -205,7 +205,7 @@ class Session(SessionSpec):
         if isinstance(session_expired_reason, str) and session_expired_reason:
             raise SessionExpired(session_expired_reason)
 
-    def try_connect(self, timeout: Optional[float]) -> None:
+    def try_connect(self, timeout: Optional[float], *, connect_timeout: Optional[float] = None) -> None:
         """Establish the admin transport connection and log in.
 
         Args:
@@ -215,9 +215,14 @@ class Session(SessionSpec):
                 Login requests, command-list retrieval, and retry sleeps use
                 the budget remaining after transport authentication. Later
                 session operations have their own timeouts.
+            connect_timeout: Optional transport authentication limit in seconds,
+                capped by the total timeout. For example,
+                ``session.try_connect(30, connect_timeout=10)`` allows transport
+                authentication up to ten seconds and login the remainder of the
+                thirty-second total. None lets transport use the total budget.
 
         Raises:
-            ValueError: The timeout is not a finite positive number.
+            ValueError: A supplied timeout is not a finite positive number.
             NoConnection: Transport authentication fails, consumes the budget,
                 or login reports a connection failure.
             SessionClosed: The session is closed.
@@ -234,10 +239,14 @@ class Session(SessionSpec):
             timeout = self.api.default_login_timeout
         if not isinstance(timeout, (int, float)) or not math.isfinite(timeout) or timeout <= 0:
             raise ValueError("timeout must be a finite positive number of seconds")
+        if connect_timeout is not None and (
+            not isinstance(connect_timeout, (int, float)) or not math.isfinite(connect_timeout) or connect_timeout <= 0
+        ):
+            raise ValueError("connect_timeout must be a finite positive number of seconds or None")
         deadline = time.monotonic() + timeout
 
         try:
-            self.api.connect(timeout)
+            self.api.connect(min(timeout, connect_timeout) if connect_timeout is not None else timeout)
         except FLCommunicationError as e:
             message = str(e)
             if "cannot connect to server" in message or "cannot authenticate to server" in message:

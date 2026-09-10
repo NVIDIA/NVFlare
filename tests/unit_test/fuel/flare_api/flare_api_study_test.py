@@ -212,14 +212,15 @@ def test_try_connect_raises_no_connection_on_server_connection_error():
 
 
 @pytest.mark.parametrize("timeout", [30.0, None])
-def test_try_connect_shares_seconds_budget_with_login(monkeypatch, timeout):
+@pytest.mark.parametrize("connect_timeout", [None, 10.0, 60.0])
+def test_try_connect_shares_seconds_budget_with_login(monkeypatch, timeout, connect_timeout):
     session = _make_session_for_study(DEFAULT_STUDY)
     clock = [100.0]
     budgets = []
 
     def connect(seconds):
-        assert seconds == 30.0
-        clock[0] += 12.0
+        assert seconds == (min(30.0, connect_timeout) if connect_timeout is not None else 30.0)
+        clock[0] += 9.0
 
     def login(timeout):
         budgets.append(timeout)
@@ -227,8 +228,8 @@ def test_try_connect_shares_seconds_budget_with_login(monkeypatch, timeout):
 
     session.api = SimpleNamespace(closed=False, default_login_timeout=30.0, connect=connect, login=login)
     monkeypatch.setattr("nvflare.fuel.flare_api.flare_api.time.monotonic", lambda: clock[0])
-    session.try_connect(timeout)
-    assert budgets == [18.0]
+    session.try_connect(timeout, connect_timeout=connect_timeout)
+    assert budgets == [21.0]
 
 
 def test_try_connect_does_not_login_after_transport_consumes_budget(monkeypatch):
@@ -245,3 +246,13 @@ def test_try_connect_does_not_login_after_transport_consumes_budget(monkeypatch)
     monkeypatch.setattr("nvflare.fuel.flare_api.flare_api.time.monotonic", lambda: clock[0])
     with pytest.raises(NoConnection, match="exhausted the timeout"):
         session.try_connect(30.0)
+
+
+@pytest.mark.parametrize("invalid", [0, -1, float("nan"), float("inf"), "30"])
+@pytest.mark.parametrize("parameter", ["timeout", "connect_timeout"])
+def test_try_connect_rejects_invalid_seconds_before_transport(invalid, parameter):
+    session = _make_session_for_study(DEFAULT_STUDY)
+    session.api = SimpleNamespace(closed=False)
+    options = {"timeout": 30, parameter: invalid}
+    with pytest.raises(ValueError, match="finite positive"):
+        session.try_connect(**options)
