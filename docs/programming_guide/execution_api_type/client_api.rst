@@ -491,7 +491,7 @@ For complete working examples of using Client API with Job Recipes across differ
 
 **Hello World Examples** (Recommended for beginners):
 
-- PyTorch: :ref:`hello_pt_job_api` - CIFAR-10 image classification
+- PyTorch: :ref:`hello_pt_job_api` - Deterministic image classification with an optional CIFAR-10 path
 - NumPy: :github_nvflare_link:`hello-numpy <examples/hello-world/hello-numpy>` - Basic FL concepts
 - PyTorch Lightning: :github_nvflare_link:`hello-lightning <examples/hello-world/hello-lightning>` - Lightning integration
 - TensorFlow: :ref:`hello_tf_job_api` - MNIST classification

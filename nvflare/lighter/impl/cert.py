@@ -22,6 +22,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.x509.oid import NameOID
 
 from nvflare.fuel.sec.cert_uri import job_ca_marker_uri
+from nvflare.lighter.admin_cert_provider import get_admin_cert_provider_config
 from nvflare.lighter.constants import CertFileBasename, CtxKey, ParticipantType, PropKey, ProvFileName
 from nvflare.lighter.ctx import ProvisionContext
 from nvflare.lighter.entity import Participant, Project
@@ -278,6 +279,10 @@ class CertBuilder(Builder):
         if participant.type in [ParticipantType.CLIENT, ParticipantType.RELAY]:
             self._build_internal_listener_cert(participant, ctx)
 
+        self._write_root_ca(participant, ctx)
+
+    def _write_root_ca(self, participant: Participant, ctx: ProvisionContext):
+        dest_dir = ctx.get_kit_dir(participant)
         with open(os.path.join(dest_dir, "rootCA.pem"), "wb") as f:
             f.write(self.serialized_cert)
 
@@ -345,7 +350,10 @@ class CertBuilder(Builder):
             self._build_write_cert_pair(relay, CertFileBasename.CLIENT, ctx)
 
         for admin in project.get_admins():
-            self._build_write_cert_pair(admin, CertFileBasename.CLIENT, ctx)
+            if get_admin_cert_provider_config(admin):
+                self._write_root_ca(admin, ctx)
+            else:
+                self._build_write_cert_pair(admin, CertFileBasename.CLIENT, ctx)
 
     def _build_write_job_ca(self, project: Project, server: Participant, ctx: ProvisionContext):
         """Generate the job-signing intermediate CA and write it to the server startup kit.
