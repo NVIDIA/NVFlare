@@ -254,7 +254,7 @@ class Session(SessionSpec):
             raise
         remaining = deadline - time.monotonic()
         if remaining <= 0:
-            raise NoConnection("admin connection exhausted the timeout")
+            raise NoConnection("Timed out connecting to the admin server.")
         result = self.api.login(timeout=remaining)
         status = result.get(ResultKey.STATUS) if isinstance(result, dict) else None
         details = result.get(ResultKey.DETAILS, "") if isinstance(result, dict) else ""

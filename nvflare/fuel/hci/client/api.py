@@ -678,7 +678,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
 
     def _check_login_deadline(self):
         if self._login_deadline is not None and time.monotonic() >= self._login_deadline:
-            raise TimeoutError("admin login deadline reached")
+            raise TimeoutError("Timed out waiting for the admin server to complete login.")
 
     def login(self, timeout: Optional[float] = None) -> dict:
         """Log in over an already established admin transport connection.
@@ -708,6 +708,11 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             self.fire_session_event(EventType.BEFORE_LOGIN)
             result = self._try_login()
             self.debug(f"login result is {result}")
+        except TimeoutError:
+            result = {
+                ResultKey.STATUS: APIStatus.ERROR_RUNTIME,
+                ResultKey.DETAILS: "Timed out waiting for the admin server to complete login.",
+            }
         except Exception as e:
             result = {
                 ResultKey.STATUS: APIStatus.ERROR_RUNTIME,
@@ -875,7 +880,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             self._check_login_deadline()
             timeout = min(timeout, self._login_deadline - time.monotonic())
             if timeout <= 0:
-                raise TimeoutError("admin login deadline reached")
+                raise TimeoutError("Timed out waiting for the admin server to complete login.")
             conn.update_meta({MetaKey.CMD_TIMEOUT: timeout})
 
         requester = ctx.get_requester()

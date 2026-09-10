@@ -1061,8 +1061,9 @@ class TestPocOutput:
         assert "After ready, submit jobs with: nvflare job submit -j <job_folder>" in captured.out
         assert captured.err == ""
 
-    def test_start_poc_readiness_timeout_exits_connection_failed(self, capsys, tmp_path):
-        from nvflare.tool.api_utils import SystemStartTimeout
+    @pytest.mark.parametrize("failure", ["readiness", "cleanup", "config"])
+    def test_start_poc_readiness_timeout_exits_connection_failed(self, capsys, tmp_path, failure):
+        from nvflare.tool.api_utils import SystemStartCleanupTimeout, SystemStartTimeout
         from nvflare.tool.poc.poc_commands import start_poc
         from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
 
@@ -1090,17 +1091,33 @@ class TestPocOutput:
             patch("nvflare.tool.poc.poc_commands._is_local_port_available", return_value=(True, None)),
             patch(
                 "nvflare.tool.poc.poc_commands._wait_for_poc_system_ready",
-                side_effect=SystemStartTimeout("cannot connect to server with 1 clients within 30 sec"),
+                side_effect={
+                    "readiness": SystemStartTimeout("Could not confirm readiness within 30 seconds."),
+                    "cleanup": SystemStartCleanupTimeout("Timed out closing the admin session."),
+                    "config": ValueError("conn_timeout must be a finite positive number of seconds"),
+                }[failure],
             ),
         ):
             with pytest.raises(SystemExit) as exc_info:
                 start_poc(args)
 
-        assert exc_info.value.code == 2
         data = json.loads(capsys.readouterr().out)
-        assert data["error_code"] == "CONNECTION_FAILED"
-        assert data["exit_code"] == 2
-        assert "--no-wait" in data["hint"]
+        if failure == "config":
+            assert exc_info.value.code == 4
+            assert data["error_code"] == "INVALID_ARGS"
+            assert "conn_timeout" in data["message"]
+        else:
+            assert exc_info.value.code == 2
+            assert data["error_code"] == "CONNECTION_FAILED"
+            assert data["exit_code"] == 2
+            assert "nvflare system status" in data["hint"]
+            assert "server/client logs" not in data["hint"]
+            if failure == "cleanup":
+                assert "closing the admin session" in data["message"]
+                assert "startup timeout" not in data["message"]
+            else:
+                assert "--timeout <seconds>" in data["hint"]
+                assert "--no-wait" in data["hint"]
 
     def test_start_poc_service_failure_exits_service_failed(self, capsys, tmp_path):
         from nvflare.tool.poc.poc_commands import PocServiceStartError, start_poc
@@ -1142,7 +1159,8 @@ class TestPocOutput:
         assert "nvflare poc start" in data["hint"]
         assert "admin@nvidia.com" in data["message"]
 
-    def test_wait_for_poc_system_ready_wraps_unexpected_wait_errors(self, tmp_path):
+    @pytest.mark.parametrize("error_type", [RuntimeError, ValueError])
+    def test_wait_for_poc_system_ready_wraps_only_unexpected_wait_errors(self, tmp_path, error_type):
         from nvflare.tool.api_utils import SystemStartTimeout
         from nvflare.tool.poc.poc_commands import _wait_for_poc_system_ready
         from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
@@ -1154,8 +1172,9 @@ class TestPocOutput:
             SC.FLARE_CLIENTS: ["site-1"],
         }
 
-        with patch("nvflare.tool.poc.poc_commands.wait_for_system_start", side_effect=RuntimeError("boom")):
-            with pytest.raises(SystemStartTimeout, match="boom"):
+        with patch("nvflare.tool.poc.poc_commands.wait_for_system_start", side_effect=error_type("boom")):
+            expected_error = ValueError if error_type is ValueError else SystemStartTimeout
+            with pytest.raises(expected_error, match="boom"):
                 _wait_for_poc_system_ready(
                     str(tmp_path),
                     project_config,

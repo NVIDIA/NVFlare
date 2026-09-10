@@ -244,7 +244,7 @@ def test_try_connect_does_not_login_after_transport_consumes_budget(monkeypatch)
 
     session.api = SimpleNamespace(closed=False, connect=connect, login=login)
     monkeypatch.setattr("nvflare.fuel.flare_api.flare_api.time.monotonic", lambda: clock[0])
-    with pytest.raises(NoConnection, match="exhausted the timeout"):
+    with pytest.raises(NoConnection, match="Timed out connecting to the admin server"):
         session.try_connect(30.0)
 
 

@@ -137,10 +137,10 @@ def test_wait_for_system_start_timeout_message_uses_expected_clients(monkeypatch
     assert "99 clients" not in message
 
 
-@pytest.mark.parametrize("ready", [False, True])
-def test_wait_for_system_start_bounds_blocking_session_cleanup(monkeypatch, ready):
+@pytest.mark.parametrize("state", ["unreachable", "partial", "ready", "config"])
+def test_wait_for_system_start_bounds_blocking_session_cleanup(monkeypatch, state):
     from nvflare.fuel.flare_api.api_spec import NoConnection
-    from nvflare.tool.api_utils import SystemStartTimeout, wait_for_system_start
+    from nvflare.tool.api_utils import SystemStartCleanupTimeout, wait_for_system_start
 
     monkeypatch.setattr(cli_output, "_output_format", "txt")
     release_close = threading.Event()
@@ -155,7 +155,9 @@ def test_wait_for_system_start_bounds_blocking_session_cleanup(monkeypatch, read
             pass
 
         def try_connect(self, timeout, *, connect_timeout=None):
-            if not ready:
+            if state == "config":
+                raise ValueError("invalid admin configuration")
+            if state == "unreachable":
                 raise NoConnection("server is not reachable")
 
         def get_system_info(self):
@@ -170,11 +172,18 @@ def test_wait_for_system_start_bounds_blocking_session_cleanup(monkeypatch, read
     try:
         with patch("nvflare.tool.api_utils.Session", BlockingCloseSession):
             kwargs = dict(second_to_wait=0, timeout_in_sec=0.05, poll_interval=0, conn_timeout=0.01)
-            if ready:
+            if state == "ready":
                 assert wait_for_system_start(1, "/tmp/prod", **kwargs) is sys_info
-            else:
-                with pytest.raises(SystemStartTimeout, match="session cleanup did not finish"):
+            elif state == "config":
+                kwargs["timeout_in_sec"] = 30
+                with pytest.raises(ValueError, match="invalid admin configuration"):
                     wait_for_system_start(1, "/tmp/prod", **kwargs)
+            else:
+                with pytest.raises(SystemStartCleanupTimeout, match="Timed out closing the admin session") as exc_info:
+                    wait_for_system_start(2, "/tmp/prod", **kwargs)
+                assert "clients registered" not in str(exc_info.value)
+                assert "server is not reachable" not in str(exc_info.value)
+                assert "readiness could not be confirmed" in str(exc_info.value)
         assert time.monotonic() - start < 0.5
         assert close_started.is_set()
     finally:
@@ -223,8 +232,13 @@ def test_readiness_deadline_bounds_real_admin_login(monkeypatch, failure):
     monkeypatch.setattr("nvflare.fuel.hci.client.api.IdentityAsserter", MagicMock())
     monkeypatch.setattr("nvflare.tool.api_utils.Session", lambda **kwargs: session)
     start = time.monotonic()
-    with pytest.raises(SystemStartTimeout, match="admin login deadline reached"):
+    with pytest.raises(
+        SystemStartTimeout, match="Timed out waiting for the admin server to complete login"
+    ) as exc_info:
         wait_for_system_start(1, "/tmp/prod", second_to_wait=0, timeout_in_sec=0.1, poll_interval=0)
+    assert "please try later" not in str(exc_info.value)
+    assert "deadline" not in str(exc_info.value)
+    assert "budget" not in str(exc_info.value)
     assert time.monotonic() - start < 1.0
     assert len(request_budgets) == (2 if failure == "stalled_command_list" else 1)
     assert 0 < request_budgets[0] <= 0.1
@@ -244,7 +258,7 @@ def test_readiness_rejects_status_received_after_deadline(monkeypatch):
 
     sess.get_system_info.side_effect = late_status
     monkeypatch.setattr("nvflare.tool.api_utils.Session", lambda **kwargs: sess)
-    with pytest.raises(SystemStartTimeout, match="while checking system status"):
+    with pytest.raises(SystemStartTimeout, match="Timed out waiting for the admin server to return system status"):
         wait_for_system_start(1, "/tmp/prod", second_to_wait=0, timeout_in_sec=0.02)
 
 
@@ -309,3 +323,58 @@ def test_slow_transport_leaves_outer_readiness_budget_for_real_login(monkeypatch
     assert api_utils.wait_for_system_start(1, "/tmp/prod", second_to_wait=0, timeout_in_sec=30) is sys_info
     assert requests == [5.0, 5.0]
     assert clock[0] == 111.0
+
+
+@pytest.mark.parametrize("parameter", ["timeout_in_sec", "conn_timeout", "poll_interval", "second_to_wait"])
+@pytest.mark.parametrize("value", [-1, float("inf"), float("nan"), "30", None, True])
+def test_readiness_rejects_invalid_time_settings_before_any_work(parameter, value):
+    from nvflare.tool.api_utils import wait_for_system_start
+
+    with patch("nvflare.tool.api_utils.Session") as session, patch("nvflare.tool.api_utils.time.sleep") as sleep:
+        with pytest.raises(ValueError, match=parameter + " must be a finite"):
+            wait_for_system_start(1, "/tmp/prod", **{parameter: value})
+    session.assert_not_called()
+    sleep.assert_not_called()
+
+
+@pytest.mark.parametrize("parameter", ["timeout_in_sec", "conn_timeout"])
+def test_readiness_rejects_zero_timeout(parameter):
+    from nvflare.tool.api_utils import wait_for_system_start
+
+    with patch("nvflare.tool.api_utils.Session") as session, patch("nvflare.tool.api_utils.time.sleep") as sleep:
+        with pytest.raises(ValueError, match=parameter + " must be a finite positive"):
+            wait_for_system_start(1, "/tmp/prod", **{parameter: 0})
+    session.assert_not_called()
+    sleep.assert_not_called()
+
+
+def test_readiness_does_not_retry_session_configuration_errors():
+    from nvflare.tool.api_utils import wait_for_system_start
+
+    session = MagicMock()
+    session.try_connect.side_effect = ValueError("timeout must be a finite positive number of seconds")
+    with patch("nvflare.tool.api_utils.Session", return_value=session) as factory:
+        with pytest.raises(ValueError, match="timeout must be a finite positive"):
+            wait_for_system_start(1, "/tmp/prod", second_to_wait=0)
+    factory.assert_called_once()
+    session.try_connect.assert_called_once()
+    session.close.assert_called_once()
+
+
+def test_readiness_prints_wait_duration_before_connecting(capsys, monkeypatch):
+    from nvflare.tool.api_utils import wait_for_system_start
+
+    monkeypatch.setattr(cli_output, "_output_format", "txt")
+    session = MagicMock()
+    session.get_system_info.return_value = MagicMock(client_info=[ClientInfo("site-1", None)])
+
+    def connect(timeout, *, connect_timeout):
+        output = capsys.readouterr().out
+        assert "Connecting and logging in to the admin server" in output
+        assert "seconds remaining" in output
+        assert "deadline" not in output
+        assert connect_timeout == 10.0
+
+    session.try_connect.side_effect = connect
+    with patch("nvflare.tool.api_utils.Session", return_value=session):
+        wait_for_system_start(1, "/tmp/prod", second_to_wait=0)

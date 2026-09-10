@@ -43,7 +43,7 @@ from nvflare.lighter.utils import (
     update_server_default_host,
     update_storage_locations,
 )
-from nvflare.tool.api_utils import SystemStartTimeout, shutdown_system, wait_for_system_start
+from nvflare.tool.api_utils import SystemStartCleanupTimeout, SystemStartTimeout, shutdown_system, wait_for_system_start
 from nvflare.tool.kit.kit_config import (
     STARTUP_KIT_KIND_ADMIN,
     STARTUP_KIT_KIND_SITE,
@@ -1720,13 +1720,23 @@ def start_poc(cmd_args):
                     timeout_in_sec=ready_timeout,
                 )
             ready = wait_performed
+        except ValueError as e:
+            output_error("INVALID_ARGS", exit_code=4, detail=str(e))
+            raise SystemExit(4)
         except SystemStartTimeout as e:
+            cleanup_failed = isinstance(e, SystemStartCleanupTimeout)
             output_error_message(
                 "CONNECTION_FAILED",
-                message="POC system did not become ready before the startup timeout.",
+                message=(
+                    "POC readiness check stopped while closing the admin session."
+                    if cleanup_failed
+                    else "POC readiness could not be confirmed within the startup timeout."
+                ),
                 hint=(
-                    "Check the POC server/client logs, or use 'nvflare poc start --no-wait' "
-                    "for fire-and-forget startup."
+                    "The services may still be running. Check them with 'nvflare system status'."
+                    if cleanup_failed
+                    else "Check 'nvflare system status'. On a slow host, allow more startup time with "
+                    "'nvflare poc start --timeout <seconds>', or use '--no-wait' and check status before submitting jobs."
                 ),
                 exit_code=2,
                 detail=str(e),
@@ -1819,7 +1829,7 @@ def _wait_for_poc_system_ready(
             poll_interval=1.0,
             expected_clients=expected_clients,
         )
-    except SystemStartTimeout:
+    except (SystemStartTimeout, ValueError):
         raise
     except Exception as e:
         raise SystemStartTimeout(str(e)) from e
