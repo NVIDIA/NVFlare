@@ -15,6 +15,7 @@
 import importlib.util
 import os
 import sys
+from collections import OrderedDict
 
 import pytest
 
@@ -155,3 +156,33 @@ def test_lightning_reload_comparison_allows_bounded_loss_variation():
             first,
             {"validation": {**validation, "accuracy": 0.4}},
         )
+
+
+@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required to verify adapter tensors")
+def test_lightning_evaluation_verifies_loaded_adapter_values():
+    import torch
+
+    evaluate_sentiment = _load_evaluate_module()
+    incoming = OrderedDict(
+        {
+            "layers.0.lora_A.weight": torch.tensor([[1.0, 2.0]]),
+            "layers.0.lora_B.weight": torch.tensor([[3.0], [4.0]]),
+        }
+    )
+    loaded = {key: value.to(torch.bfloat16) for key, value in incoming.items()}
+
+    class Model:
+        @staticmethod
+        def state_dict():
+            return {
+                **loaded,
+                "layers.0.weight": torch.ones(2, 2),
+            }
+
+    report = evaluate_sentiment._verify_loaded_adapter_state(Model(), incoming)
+
+    assert report["loaded_tensor_count"] == 2
+    assert report["loaded_matches_received_after_dtype_cast"] is True
+    incoming["layers.0.lora_B.weight"][0, 0] = 8.0
+    with pytest.raises(RuntimeError, match="reload changed 1 tensors"):
+        evaluate_sentiment._verify_loaded_adapter_state(Model(), incoming)

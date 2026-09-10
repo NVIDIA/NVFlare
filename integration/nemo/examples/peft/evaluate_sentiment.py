@@ -57,6 +57,7 @@ def define_parser():
     parser.add_argument("--prompt_template", default=DEFAULT_PROMPT_TEMPLATE)
     parser.add_argument("--choice_map", default=DEFAULT_CHOICE_MAP)
     parser.add_argument("--batch_size", type=int, default=8)
+    parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--device_map", default="auto")
     parser.add_argument("--lora_rank", type=int, default=None)
     parser.add_argument("--lora_alpha", type=int, default=None)
@@ -291,6 +292,9 @@ def _summary_without_predictions(summary: dict) -> dict:
 
 
 def load_model(args):
+    torch.manual_seed(args.seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(args.seed)
     if model_profiles.is_lightning35(args):
         return _load_lightning_model(args)
 
@@ -327,6 +331,23 @@ def _split_modules(value: str) -> list[str]:
 
 def _lightning_profile_settings(args) -> dict:
     return model_profiles.adapter_compatibility_settings(args)
+
+
+def _verify_loaded_adapter_state(model, incoming_state) -> dict:
+    loaded_state = {key: value.detach().cpu() for key, value in model.state_dict().items() if "lora_" in key}
+    loaded_state = adapter_checkpoint.align_adapter_state_strict(loaded_state, incoming_state)
+    mismatches = []
+    for key, incoming_value in incoming_state.items():
+        if not torch.equal(loaded_state[key], incoming_value.to(loaded_state[key].dtype)):
+            mismatches.append(key)
+    if mismatches:
+        raise RuntimeError(f"Native evaluation adapter reload changed {len(mismatches)} tensors: {mismatches[:5]}")
+    return {
+        "received_adapter_hash": adapter_checkpoint.state_hash(incoming_state),
+        "loaded_adapter_hash": adapter_checkpoint.state_hash(loaded_state),
+        "loaded_tensor_count": len(loaded_state),
+        "loaded_matches_received_after_dtype_cast": True,
+    }
 
 
 @contextmanager
@@ -413,6 +434,7 @@ def _load_lightning_model(args):
             checkpointer = CheckpointingConfig(is_peft=True).build(dp_rank=0, tp_rank=0, pp_rank=0)
             with _single_process_group(temp_dir):
                 checkpointer.load_model(model, temp_dir)
+        _verify_loaded_adapter_state(model, incoming_state)
         unexpected_trainable = [
             name for name, param in model.named_parameters() if param.requires_grad and "lora_" not in name
         ]
