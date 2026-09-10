@@ -497,6 +497,19 @@ def _build_param_update(
     return flare.ParamsType.FULL, _move_tensor_params(updated_params, device)
 
 
+def _align_updated_state_for_exchange(args, updated_state, incoming_state):
+    if model_profiles.is_lightning35(args):
+        return adapter_checkpoint.align_adapter_state_strict(updated_state, incoming_state)
+
+    # Preserve the Nano example's existing Hugging Face-to-AutoModel mapping. AutoModel also patches lm_head for
+    # match_all_linear, while the Hugging Face initializer excludes it for CAUSAL_LM. The federated Nano adapter
+    # therefore remains in the original incoming namespace and does not add the locally initialized lm_head pair.
+    matched = adapter_checkpoint.match_adapter_state_to_reference(updated_state, incoming_state)
+    if not matched:
+        raise RuntimeError("No common adapter keys between the received and updated adapter states.")
+    return matched
+
+
 def main():
     args = define_parser()
     signal.signal(signal.SIGTERM, lambda _signum, _frame: sys.exit(0))
@@ -527,11 +540,7 @@ def main():
             updated_state, metrics, steps = _run_automodel_round(args, round_dir, incoming_state)
 
         automodel_report = metrics.pop("_automodel_report", {})
-        updated_state = adapter_checkpoint.align_adapter_state_strict(
-            updated_state,
-            incoming_state,
-            normalize_peft_prefixes=not model_profiles.is_lightning35(args),
-        )
+        updated_state = _align_updated_state_for_exchange(args, updated_state, incoming_state)
         if steps <= 0:
             raise RuntimeError(f"Local training completed without optimizer steps: {steps}")
         exchange_state = (

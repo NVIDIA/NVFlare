@@ -116,6 +116,28 @@ def test_client_builds_full_adapter_update():
     assert torch.equal(params["model.layer.lora_A.weight"], torch.full((2, 2), 0.5))
 
 
+@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required for adapter namespace tests")
+def test_client_preserves_nano_mapping_but_requires_exact_lightning_state():
+    import torch
+
+    automodel_peft_client = _load_example_module("automodel_peft_client")
+    incoming = {"base_model.model.layer.lora_A.weight": torch.zeros((2, 2))}
+    updated = {
+        "base_model.model.layer.lora_A.weight": torch.ones((2, 2)),
+        "lm_head.lora_A.weight": torch.ones((2, 2)),
+    }
+
+    nano = automodel_peft_client._align_updated_state_for_exchange(
+        type("Args", (), {"model_profile": "nano"})(), updated, incoming
+    )
+    assert list(nano) == ["base_model.model.layer.lora_A.weight"]
+
+    with pytest.raises(ValueError, match="unexpected=1"):
+        automodel_peft_client._align_updated_state_for_exchange(
+            type("Args", (), {"model_profile": "lightning35"})(), updated, incoming
+        )
+
+
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required for strict adapter validation tests")
 def test_strict_adapter_validation_rejects_partial_unexpected_shape_duplicate_and_nonfinite():
     adapter_checkpoint = _load_example_module("adapter_checkpoint")

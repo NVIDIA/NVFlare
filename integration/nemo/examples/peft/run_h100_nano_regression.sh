@@ -19,13 +19,24 @@ IMAGE_TAG="nvcr.io/nvidia/nemo-automodel:26.04"
 SOURCE_DIR="${CHECKOUT_DIR:-$(git rev-parse --show-toplevel)}"
 TIMESTAMP="${RUN_TIMESTAMP:-$(date -u +%Y%m%dT%H%M%SZ)}"
 RUN_ROOT="${RUN_ROOT:-/scratch/hroth/Code/nvflare/nemotron-nano-regression-${TIMESTAMP}}"
+CACHE_ROOT="${CACHE_ROOT:-${RUN_ROOT}/cache/huggingface}"
 SOURCE_DATA_DIR="${SOURCE_DATA_DIR:-/scratch/hroth/Code/nvflare/nemotron-peft-h100-20260604-113217/integration/nemo/examples/peft/data/FinancialPhraseBank-v1.0}"
 GPU_ID="${GPU_ID:-$(nvidia-smi --query-gpu=index,memory.used --format=csv,noheader,nounits | sort -t, -k2n | head -1 | cut -d, -f1 | tr -d ' ')}"
 
-mkdir -p "${RUN_ROOT}"/{artifacts,cache/huggingface,data,logs,workspace}
+mkdir -p "${RUN_ROOT}"/{artifacts,data,logs,workspace} "${CACHE_ROOT}"
+printf '%s\n' "${GPU_ID}" >"${RUN_ROOT}/artifacts/selected_gpu.txt"
+printf '%s\n' "${CACHE_ROOT}" >"${RUN_ROOT}/artifacts/cache_root.txt"
 cp -a "${SOURCE_DATA_DIR}/." "${RUN_ROOT}/data/"
 exec > >(tee -a "${RUN_ROOT}/logs/nano_runner.log") 2>&1
 set -x
+
+record_exit() {
+    status=$?
+    trap - EXIT
+    printf '%s\n' "${status}" >"${RUN_ROOT}/artifacts/nano_regression_exit_code.txt"
+    exit "${status}"
+}
+trap record_exit EXIT
 
 if ! docker info >/dev/null 2>&1; then
     echo "Docker is unavailable; the Nano regression was not started." >"${RUN_ROOT}/artifacts/BLOCKED.txt"
@@ -37,7 +48,7 @@ printf '%s\n' "${IMAGE_DIGEST}" >"${RUN_ROOT}/artifacts/container_digest.txt"
 
 docker run --rm --gpus "device=${GPU_ID}" --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 \
     -e HF_TOKEN -e HF_HOME=/hf_cache -v "${SOURCE_DIR}:/workspace" -v "${RUN_ROOT}:/host_out" \
-    -v "${RUN_ROOT}/cache/huggingface:/hf_cache" -w /workspace/integration/nemo/examples/peft \
+    -v "${CACHE_ROOT}:/hf_cache" -w /workspace/integration/nemo/examples/peft \
     "${IMAGE_DIGEST}" bash -lc '
 set -Eeuo pipefail
 git config --global --add safe.directory /workspace || true
@@ -51,9 +62,12 @@ python job.py --model_profile=nano --n_clients=2 --num_rounds=2 --num_threads=1 
   --max_steps=2 --seq_length=128 --train_split_dir=/host_out/data_split \
   --validation_file=/host_out/data/financial_phrase_bank_val.jsonl \
   --workspace=/host_out/workspace --initial_adapter_ckpt=/host_out/artifacts/initial_adapter.pt
-FINAL=$(find /host_out/workspace -name FL_global_model.pt -print -quit)
+python verify_federated_run.py --client_work_dir=/host_out/workspace/automodel_work \
+  --server_root=/host_out/workspace --num_clients=2 --num_rounds=2 \
+  --output=/host_out/artifacts/continuity.json
+FINAL=$(find /host_out/workspace -path '*/server_rounds/round_1/FL_global_model.pt' -print -quit)
+test -n "${FINAL}"
 python predict_sentiment.py --model_profile=nano --server_model="${FINAL}" \
   --output_dir=/host_out/artifacts/final_adapter --output_json=/host_out/artifacts/predictions.json
 test -s /host_out/artifacts/predictions.json
 '
-printf '%s\n' 0 >"${RUN_ROOT}/artifacts/nano_regression_exit_code.txt"

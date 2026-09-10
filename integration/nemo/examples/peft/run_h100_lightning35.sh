@@ -70,6 +70,7 @@ fi
 cp -a "${SOURCE_DATA_DIR}/." "${RUN_ROOT}/data/"
 
 GPU_ID="${GPU_ID:-$(nvidia-smi --query-gpu=index,memory.used --format=csv,noheader,nounits | sort -t, -k2n | head -1 | cut -d, -f1 | tr -d ' ')}"
+printf '%s\n' "${GPU_ID}" >"${RUN_ROOT}/artifacts/selected_gpu.txt"
 nvidia-smi --query-gpu=timestamp,index,memory.used,memory.total,utilization.gpu,power.draw --format=csv -l 10 \
     >"${RUN_ROOT}/logs/gpu_telemetry.csv" &
 TELEMETRY_PID=$!
@@ -208,8 +209,16 @@ run_stage acceptance "python assess_validation.py --base_summary=/host_out/evalu
 run_stage provenance "git -C /workspace rev-parse HEAD > /host_out/artifacts/commit_sha.txt && python -m pip freeze > /host_out/artifacts/pip_freeze.txt && cp /host_out/runs/learning_seed42/workspace/automodel_work/site-1/site-1_round_0/finetune_config.yaml /host_out/artifacts/resolved_training_config.yaml"
 
 if [[ "${RUN_NANO_REGRESSION:-1}" == "1" ]]; then
+    nano_start="$(date +%s)"
+    set +e
     CHECKOUT_DIR="${SOURCE_DIR}" RUN_ROOT="${RUN_ROOT}/nano_regression" SOURCE_DATA_DIR="${RUN_ROOT}/data" \
         GPU_ID="${GPU_ID}" "${SOURCE_DIR}/integration/nemo/examples/peft/run_h100_nano_regression.sh"
+    nano_status=$?
+    set -e
+    nano_end="$(date +%s)"
+    printf '%s,%s,%s,%s,%s\n' nano_regression "${nano_start}" "${nano_end}" "$((nano_end - nano_start))" \
+        "${nano_status}" >>"${RUN_ROOT}/artifacts/stage_timings.csv"
+    [[ "${nano_status}" == "0" ]] || exit "${nano_status}"
 fi
 
 cat >"${RUN_ROOT}/artifacts/SCOPE.txt" <<'EOF'
