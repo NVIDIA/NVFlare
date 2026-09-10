@@ -232,6 +232,14 @@ class ReservedTopic:
     STOP_CELLNET = "__stop_cellnet__"
 
 
+JOB_CLONE_DEPRECATION_MESSAGE = (
+    "Job cloning is deprecated. Cloning preserves the original signing certificate and its expiration; it does not "
+    "renew or replace the certificate. Re-export or reuse the original local job folder and submit it with current "
+    "credentials using 'nvflare job submit -j JOB_FOLDER' so the artifact is signed with the current submitter "
+    "certificate."
+)
+
+
 class AdminCommandNames:
 
     REGISTER_STUDY = "register_study"

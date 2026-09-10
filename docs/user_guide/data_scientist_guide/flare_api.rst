@@ -86,9 +86,14 @@ can be run:
     # get job meta dictionary with job info
     job_meta_dict = sess.get_job_meta(job_id)
 
-    # submit a copy of an existing job with clone_job
-    new_job_id = sess.clone_job(job_id)
-    print(new_job_id + " was submitted as a clone of " + job_id)
+    # submit a new copy from the original local job folder
+    new_job_id = sess.submit_job("/path/to/JOB_FOLDER")
+
+.. deprecated:: 2.10.0
+   ``sess.clone_job(job_id)`` remains functional during the compatibility
+   period, but it preserves the original signing certificate and its
+   expiration. Re-export or reuse the original local job folder and submit it
+   with current credentials instead.
 
 .. _flare_api_monitor_job:
 

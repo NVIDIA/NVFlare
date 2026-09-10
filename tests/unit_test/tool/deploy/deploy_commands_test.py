@@ -293,8 +293,9 @@ def test_prepare_docker_client_copies_and_patches_runtime_files(tmp_path, capsys
     script = script_bytes.decode()
     assert "@@NVFLARE_" not in script
     assert "repo/nvflare:dev" in script
-    assert 'NETWORK_NAME="nvflare-test"' in script
-    assert "--network-alias" not in script
+    assert 'NETWORK_NAME=${NVFLARE_POC_NETWORK_NAME:-"nvflare-test"}' in script
+    assert 'NETWORK_ALIAS_ARGS=(--network-alias "$LOGICAL_CONTAINER_NAME")' in script
+    assert "    --network-alias server " not in script
     assert "/var/tmp/nvflare/workspace/startup/sub_start.sh" not in script
     assert "/usr/local/bin/python3" in script
     assert "nvflare.private.fed.app.client.client_train" in script
@@ -343,6 +344,9 @@ def test_prepare_docker_start_script_handles_docker_socket_path_and_groups(tmp_p
     capsys.readouterr()
 
     script = (output / "startup" / "start_docker.sh").read_text()
+    assert "LOGICAL_CONTAINER_NAME=site-1" in script
+    assert "CONTAINER_NAME=${NVFLARE_POC_CONTAINER_NAME:-$LOGICAL_CONTAINER_NAME}" in script
+    assert 'NETWORK_NAME=${NVFLARE_POC_NETWORK_NAME:-"nvflare-network"}' in script
     assert 'DOCKER_SOCK="${NVFL_DOCKER_SOCK:-/var/run/docker.sock}"' in script
     assert 'DOCKER_ENDPOINT="${DOCKER_HOST:-}"' in script
     assert "docker context inspect" in script
@@ -359,7 +363,7 @@ def test_prepare_docker_start_script_handles_docker_socket_path_and_groups(tmp_p
     assert "DOCKER_HOST_URI" not in script
     assert 'DOCKER_CLI_ARGS=(--host "unix://$DOCKER_SOCK")' in script
     assert 'if ! docker "${DOCKER_CLI_ARGS[@]}" info' in script
-    assert 'if ! docker "${DOCKER_CLI_ARGS[@]}" network ls' in script
+    assert 'if ! docker "${DOCKER_CLI_ARGS[@]}" network inspect' in script
     assert 'docker "${DOCKER_CLI_ARGS[@]}" network create' in script
     assert 'docker "${DOCKER_CLI_ARGS[@]}" run' in script
     assert (
@@ -377,6 +381,7 @@ def test_prepare_docker_start_script_handles_docker_socket_path_and_groups(tmp_p
     assert "--entrypoint /usr/local/bin/python3" in script
     assert "stat.S_ISSOCK" in script
     assert '--mount "type=bind,src=$DOCKER_SOCK,dst=/var/run/docker.sock"' in script
+    assert '-e NVFL_DOCKER_NETWORK="$NETWORK_NAME"' in script
     assert '-v "$DOCKER_SOCK":/var/run/docker.sock' not in script
     assert "-v /var/run/docker.sock:/var/run/docker.sock" not in script
 
@@ -400,6 +405,8 @@ def test_prepare_docker_start_script_allows_daemon_host_socket_path(tmp_path, ca
     monkeypatch.setenv("DOCKER_HOST", "tcp://dind:2375")
     monkeypatch.setenv("NVFL_DOCKER_SOCK", str(daemon_socket))
     monkeypatch.setenv("NVFL_TEST_REMOTE_SOCK_GID", "2375")
+    monkeypatch.setenv("NVFLARE_POC_CONTAINER_NAME", "nvflare-recipe-site-1")
+    monkeypatch.setenv("NVFLARE_POC_NETWORK_NAME", "nvflare-recipe-network")
 
     result = subprocess.run(
         ["bash", str(output / "startup" / "start_docker.sh")],
@@ -412,10 +419,14 @@ def test_prepare_docker_start_script_allows_daemon_host_socket_path(tmp_path, ca
     assert "Using Docker socket on daemon host" in result.stdout
     calls = docker_log.read_text().splitlines()
     assert calls[0] == "info"
-    assert calls[1].startswith("network ls")
+    assert calls[1] == "network inspect nvflare-recipe-network"
     probe_call = next(call for call in calls if "--entrypoint /usr/local/bin/python3" in call)
     assert f"--mount type=bind,src={daemon_socket},dst=/var/run/docker.sock" in probe_call
     run_call = next(call for call in calls if call.startswith("run --name"))
+    assert run_call.startswith("run --name nvflare-recipe-site-1")
+    assert "--network nvflare-recipe-network" in run_call
+    assert "--network-alias site-1" in run_call
+    assert "-e NVFL_DOCKER_NETWORK=nvflare-recipe-network" in run_call
     assert "--host" not in run_call
     assert "--group-add 2375" in run_call
     assert f"--mount type=bind,src={daemon_socket},dst=/var/run/docker.sock" in run_call
@@ -596,7 +607,9 @@ def test_prepare_docker_server_adds_logical_server_network_alias(tmp_path, capsy
     capsys.readouterr()
 
     script = (output / "startup" / "start_docker.sh").read_text()
-    assert "--name abc.aws.com" in script
+    assert "LOGICAL_CONTAINER_NAME=abc.aws.com" in script
+    assert "CONTAINER_NAME=${NVFLARE_POC_CONTAINER_NAME:-$LOGICAL_CONTAINER_NAME}" in script
+    assert '--name "$CONTAINER_NAME"' in script
     assert "--network-alias server" in script
 
 

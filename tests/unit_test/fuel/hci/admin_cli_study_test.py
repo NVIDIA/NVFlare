@@ -95,6 +95,21 @@ def test_clone_job_does_not_send_session_study_cmd_props():
     assert captured["props"] is None
 
 
+def test_clone_job_warns_and_still_executes():
+    client, captured = _make_admin_client_for_study("multiple-sclerosis")
+    output = []
+    client.write_string = output.append
+
+    client._do_default("clone_job job-1")
+
+    assert captured["line"] == "clone_job job-1"
+    assert len(output) == 1
+    assert "deprecated" in output[0].lower()
+    assert "original signing certificate" in output[0]
+    assert "nvflare job submit -j JOB_FOLDER" in output[0]
+    assert "current submitter certificate" in output[0]
+
+
 def test_admin_main_passes_launch_study_to_admin_client():
     captured = {}
     fake_conf = SimpleNamespace(

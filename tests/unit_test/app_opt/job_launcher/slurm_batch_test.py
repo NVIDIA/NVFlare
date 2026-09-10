@@ -188,8 +188,18 @@ def test_multinode_batch_exports_node_group_contract_and_delegates_to_srun(tmp_p
     assert "--kill-on-bad-exit=1" in command_line
     assert "--wait=0" in command_line
     assert "--label" in command_line
+    assert "--gres=gpu:1" in command_line
     assert f"{job_dir}/node.sh" in command_line
     assert "worker.module" not in command_line
+
+
+def test_multinode_batch_without_gpus_does_not_request_gres(tmp_path):
+    plan = replace(_multinode_plan(tmp_path), resources=JobResources(nodes=2))
+
+    script, _ = _render_batch_script(plan, _job_dir(tmp_path), _config(tmp_path))
+
+    command_line = next(line for line in script.splitlines() if line.startswith("_nvfl_command="))
+    assert "--gres" not in command_line
 
 
 def test_site_port_range_overrides_the_default_rendezvous_ports(tmp_path):
