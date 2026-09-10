@@ -342,6 +342,9 @@ def render(run_root: Path, exit_code: int) -> str:
                 "",
             ]
         )
+        initial_failure = _text(run_root / "nano_regression_failed" / "artifacts" / "FAILURE.txt", "")
+        if initial_failure:
+            lines.extend([f"Retained initial-attempt result: {initial_failure}", ""])
 
     if stage_rows:
         lines.extend(["## Stages", "", "| Stage | Seconds | Exit code |", "| --- | ---: | ---: |"])
