@@ -158,6 +158,15 @@ def test_lightning_reload_comparison_allows_bounded_loss_variation():
         )
 
 
+def test_acceptance_reads_current_and_legacy_training_metric_layouts():
+    assess_validation = _load_assess_module()
+    current = {"automodel_report": {"last_training_record": {"loss": 0.2, "grad_norm": 1.5}}}
+    legacy = {"automodel_report": {"last_training_record": {"metrics": {"loss": 0.3, "grad_norm": 1.6}}}}
+
+    assert assess_validation._last_training_metrics(current) == {"loss": 0.2, "grad_norm": 1.5}
+    assert assess_validation._last_training_metrics(legacy) == {"loss": 0.3, "grad_norm": 1.6}
+
+
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required to verify adapter tensors")
 def test_lightning_evaluation_verifies_loaded_adapter_values():
     import torch

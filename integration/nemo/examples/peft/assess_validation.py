@@ -53,6 +53,11 @@ def verify_reload_reproducibility(first: dict, second: dict) -> dict:
     }
 
 
+def _last_training_metrics(manifest: dict) -> dict:
+    record = manifest.get("automodel_report", {}).get("last_training_record", {})
+    return record.get("metrics", record)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base_summary", required=True)
@@ -74,7 +79,7 @@ def main():
         trainable = manifest.get("automodel_report", {}).get("trainable_tensor_count", 0)
         if trainable <= 0:
             failures.append("smoke did not report trainable LoRA tensors")
-        training_metrics = manifest.get("automodel_report", {}).get("last_training_record", {}).get("metrics", {})
+        training_metrics = _last_training_metrics(manifest)
         for name in ("loss", "grad_norm"):
             value = training_metrics.get(name)
             if value is None or not math.isfinite(float(value)):
