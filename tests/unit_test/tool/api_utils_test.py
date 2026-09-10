@@ -378,3 +378,41 @@ def test_readiness_prints_wait_duration_before_connecting(capsys, monkeypatch):
     session.try_connect.side_effect = connect
     with patch("nvflare.tool.api_utils.Session", return_value=session):
         wait_for_system_start(1, "/tmp/prod", second_to_wait=0)
+
+
+@pytest.mark.parametrize("failure_source", ["status_request", "status_parsing"])
+def test_readiness_retries_value_error_after_connection(failure_source):
+    from nvflare.tool.api_utils import wait_for_system_start
+
+    sys_info = MagicMock(client_info=[ClientInfo("site-1", None)])
+    sessions = [MagicMock(), MagicMock()]
+    for session in sessions:
+        session.get_system_info.return_value = sys_info
+    parsing_results = [["site-1"], ["site-1"]]
+    error = ValueError("incomplete status response")
+    if failure_source == "status_request":
+        sessions[0].get_system_info.side_effect = error
+    else:
+        parsing_results[0] = error
+
+    with (
+        patch("nvflare.tool.api_utils.Session", side_effect=sessions) as factory,
+        patch("nvflare.tool.api_utils._client_names", side_effect=parsing_results),
+    ):
+        assert wait_for_system_start(1, "/tmp/prod", second_to_wait=0, poll_interval=0) is sys_info
+
+    assert factory.call_count == 2
+    for session in sessions:
+        session.try_connect.assert_called_once()
+        session.close.assert_called_once()
+
+
+def test_readiness_does_not_retry_session_constructor_value_error():
+    from nvflare.tool.api_utils import wait_for_system_start
+
+    error = ValueError("invalid admin configuration")
+    with patch("nvflare.tool.api_utils.Session", side_effect=error) as factory:
+        with pytest.raises(ValueError) as exc_info:
+            wait_for_system_start(1, "/tmp/prod", second_to_wait=0)
+    assert exc_info.value is error
+    factory.assert_called_once()

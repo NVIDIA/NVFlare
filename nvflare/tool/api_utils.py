@@ -178,13 +178,23 @@ def wait_for_system_start(
         sess = None
         ready_sys_info = None
         cleanup_timed_out = False
+        configuration_error = None
         try:
-            sess = Session(username=username, startup_path=admin_user_dir, secure_mode=secure_mode)
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise TimeoutError("Timed out before connecting to the admin server.")
-            print_human(f"Connecting and logging in to the admin server (up to {remaining:.1f} seconds remaining)...")
-            sess.try_connect(remaining, connect_timeout=conn_timeout)
+            try:
+                sess = Session(username=username, startup_path=admin_user_dir, secure_mode=secure_mode)
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError("Timed out before connecting to the admin server.")
+                print_human(
+                    f"Connecting and logging in to the admin server (up to {remaining:.1f} seconds remaining)..."
+                )
+                sess.try_connect(remaining, connect_timeout=conn_timeout)
+            except ValueError as e:
+                # Only session setup errors are caller errors; status/parsing
+                # failures below can be transient and should remain retryable.
+                configuration_error = e
+                deadline = time.monotonic()
+                raise
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise TimeoutError("Timed out before requesting system status.")
@@ -213,10 +223,6 @@ def wait_for_system_start(
                     print_human(f"Waiting for clients: {ready_count}/{expected_count} ready")
             else:
                 ready_sys_info = sys_info
-        except ValueError:
-            # Start cleanup without delaying an error the caller must correct.
-            deadline = time.monotonic()
-            raise
         except NoConnection as e:
             last_error = str(e) or "server is not reachable"
         except Exception as e:
@@ -227,6 +233,8 @@ def wait_for_system_start(
                 if close_error and not cleanup_timed_out:
                     print_human(f"Warning: could not close the admin session: {close_error}")
 
+        if configuration_error is not None:
+            raise configuration_error
         if ready_sys_info is not None:
             print_human(_format_ready_clients(client_names, ready_count, expected_count))
             print_human("\nReady to go.")
