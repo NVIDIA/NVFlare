@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -52,7 +52,8 @@ pod["metadata"]["name"] = "gpu-check"
 pod["metadata"]["namespace"] = namespace
 container["securityContext"] = {"privileged": False, "runAsUser": 0, "allowPrivilegeEscalation": False}
 container["command"] = ["/bin/bash", "-c"]
-container["args"] = ["""set -Eeuo pipefail
+container["args"] = [
+    """set -Eeuo pipefail
 echo 'GPU devices inside the non-privileged confidential container:'
 ls -l /dev/nvidia* || true
 command -v nvidia-smi
@@ -62,7 +63,8 @@ nvidia-smi -q
 /gpu-probe/cuda-probe
 echo GPU_SMOKE_TEST_PASS
 sleep 15
-"""]
+"""
+]
 container["volumeMounts"] = [{"name": "gpu-probe", "mountPath": "/gpu-probe", "readOnly": True}]
 pod["spec"]["volumes"] = [{"name": "gpu-probe", "configMap": {"name": "gpu-probe", "defaultMode": 0o555}}]
 pod_path = out / "pod.yaml"
