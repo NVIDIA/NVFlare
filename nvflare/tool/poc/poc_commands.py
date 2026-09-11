@@ -32,6 +32,7 @@ from pyhocon import ConfigFactory as CF
 
 from nvflare.cli_exception import CLIException
 from nvflare.cli_unknown_cmd_exception import CLIUnknownCmdException
+from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.utils.gpu_utils import get_host_gpu_ids
 from nvflare.lighter.constants import CtxKey, PropKey, ProvisionMode
 from nvflare.lighter.prov_utils import prepare_builders, prepare_packager
@@ -43,7 +44,7 @@ from nvflare.lighter.utils import (
     update_server_default_host,
     update_storage_locations,
 )
-from nvflare.tool.api_utils import SystemStartCleanupTimeout, SystemStartTimeout, shutdown_system, wait_for_system_start
+from nvflare.tool.api_utils import SystemStartTimeout, shutdown_system, wait_for_system_start
 from nvflare.tool.kit.kit_config import (
     STARTUP_KIT_KIND_ADMIN,
     STARTUP_KIT_KIND_SITE,
@@ -1723,21 +1724,21 @@ def start_poc(cmd_args):
         except ValueError as e:
             output_error("INVALID_ARGS", exit_code=4, detail=str(e))
             raise SystemExit(4)
+        except ConfigError as e:
+            output_error_message(
+                "INVALID_CONFIG",
+                message="POC admin session configuration is invalid.",
+                hint="Check the admin startup kit configuration and certificates.",
+                exit_code=4,
+                detail=str(e),
+            )
+            raise SystemExit(4)
         except SystemStartTimeout as e:
-            cleanup_failed = isinstance(e, SystemStartCleanupTimeout)
             output_error_message(
                 "CONNECTION_FAILED",
-                message=(
-                    "POC readiness check stopped while closing the admin session."
-                    if cleanup_failed
-                    else "POC readiness could not be confirmed within the startup timeout."
-                ),
-                hint=(
-                    "The services may still be running. Check them with 'nvflare system status'."
-                    if cleanup_failed
-                    else "Check 'nvflare system status'. On a slow host, allow more startup time with "
-                    "'nvflare poc start --timeout <seconds>', or use '--no-wait' and check status before submitting jobs."
-                ),
+                message="POC readiness could not be confirmed within the startup timeout.",
+                hint="Check 'nvflare system status'. On a slow host, allow more startup time with "
+                "'nvflare poc start --timeout <seconds>', or use '--no-wait' and check status before submitting jobs.",
                 exit_code=2,
                 detail=str(e),
             )
@@ -1829,7 +1830,7 @@ def _wait_for_poc_system_ready(
             poll_interval=1.0,
             expected_clients=expected_clients,
         )
-    except (SystemStartTimeout, ValueError):
+    except (SystemStartTimeout, ValueError, ConfigError):
         raise
     except Exception as e:
         raise SystemStartTimeout(str(e)) from e

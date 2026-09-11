@@ -1061,10 +1061,11 @@ class TestPocOutput:
         assert "After ready, submit jobs with: nvflare job submit -j <job_folder>" in captured.out
         assert captured.err == ""
 
-    @pytest.mark.parametrize("failure", ["readiness", "cleanup", "config"])
+    @pytest.mark.parametrize("failure", ["readiness", "args", "config"])
     def test_start_poc_readiness_timeout_exits_connection_failed(self, capsys, tmp_path, failure):
-        from nvflare.tool.api_utils import SystemStartCleanupTimeout, SystemStartTimeout
-        from nvflare.tool.poc.poc_commands import start_poc
+        from nvflare.fuel.common.excepts import ConfigError
+        from nvflare.tool.api_utils import SystemStartTimeout
+        from nvflare.tool.poc.poc_commands import _wait_for_poc_system_ready, start_poc
         from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
 
         args = MagicMock()
@@ -1074,7 +1075,10 @@ class TestPocOutput:
         args.study = None
         args.no_wait = False
 
-        project_config = {"participants": [{"name": "server", "type": "server"}, {"name": "site-1", "type": "client"}]}
+        project_config = {
+            "name": "example",
+            "participants": [{"name": "server", "type": "server"}, {"name": "site-1", "type": "client"}],
+        }
         service_config = {
             SC.FLARE_SERVER: "server",
             SC.FLARE_PROJ_ADMIN: "admin@nvidia.com",
@@ -1082,6 +1086,7 @@ class TestPocOutput:
         }
 
         with (
+            patch("nvflare.tool.api_utils.Session", side_effect=ConfigError("invalid admin certificate settings")),
             patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=str(tmp_path)),
             patch("nvflare.tool.poc.poc_commands.get_service_list", return_value=[]),
             patch("nvflare.tool.poc.poc_commands.get_excluded", return_value=[]),
@@ -1093,8 +1098,8 @@ class TestPocOutput:
                 "nvflare.tool.poc.poc_commands._wait_for_poc_system_ready",
                 side_effect={
                     "readiness": SystemStartTimeout("Could not confirm readiness within 30 seconds."),
-                    "cleanup": SystemStartCleanupTimeout("Timed out closing the admin session."),
-                    "config": ValueError("conn_timeout must be a finite positive number of seconds"),
+                    "args": ValueError("conn_timeout must be a finite positive number of seconds"),
+                    "config": _wait_for_poc_system_ready,
                 }[failure],
             ),
         ):
@@ -1102,22 +1107,23 @@ class TestPocOutput:
                 start_poc(args)
 
         data = json.loads(capsys.readouterr().out)
-        if failure == "config":
+        if failure == "args":
             assert exc_info.value.code == 4
             assert data["error_code"] == "INVALID_ARGS"
             assert "conn_timeout" in data["message"]
+        elif failure == "config":
+            assert exc_info.value.code == 4
+            assert data["error_code"] == "INVALID_CONFIG"
+            assert "invalid admin certificate settings" in data["message"]
         else:
             assert exc_info.value.code == 2
             assert data["error_code"] == "CONNECTION_FAILED"
             assert data["exit_code"] == 2
             assert "nvflare system status" in data["hint"]
             assert "server/client logs" not in data["hint"]
-            if failure == "cleanup":
-                assert "closing the admin session" in data["message"]
-                assert "startup timeout" not in data["message"]
-            else:
-                assert "--timeout <seconds>" in data["hint"]
-                assert "--no-wait" in data["hint"]
+            assert "--timeout <seconds>" in data["hint"]
+            assert "--no-wait" in data["hint"]
+            assert "closing the admin session" not in data["message"]
 
     def test_start_poc_service_failure_exits_service_failed(self, capsys, tmp_path):
         from nvflare.tool.poc.poc_commands import PocServiceStartError, start_poc

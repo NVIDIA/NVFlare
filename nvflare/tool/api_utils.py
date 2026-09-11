@@ -19,16 +19,13 @@ from concurrent.futures import Future
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from typing import List, Optional
 
+from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.flare_api.api_spec import JobNotFound, NoConnection, TargetType
 from nvflare.fuel.flare_api.flare_api import Session
 
 
 class SystemStartTimeout(RuntimeError):
     pass
-
-
-class SystemStartCleanupTimeout(SystemStartTimeout):
-    """The readiness check stopped because its admin session could not close in time."""
 
 
 def _client_names(client_info: list) -> List[str]:
@@ -164,20 +161,18 @@ def wait_for_system_start(
     expected_client_set = set(expected_clients or [])
     expected_count = len(expected_client_set) if expected_client_set else num_clients
 
-    operation = "connecting and logging in to the admin server"
     last_error = None
 
     def remaining_time():
         return 0.0 if stopped.is_set() else max(0.0, deadline - time.monotonic())
 
     def probe():
-        nonlocal operation, last_error
+        nonlocal last_error
         # Keep the whole session lifecycle in one worker: transport and streamed
         # requests use idle timeouts and cannot enforce a total elapsed limit.
         while remaining_time() > 0:
             sess = None
             try:
-                operation = "connecting and logging in to the admin server"
                 print_human(
                     f"Connecting and logging in to the admin server "
                     f"(up to {remaining_time():.1f} seconds remaining)..."
@@ -186,17 +181,20 @@ def wait_for_system_start(
                     sess = Session(
                         username=username, startup_path=os.path.join(prod_dir, username), secure_mode=secure_mode
                     )
-                    remaining = remaining_time()
-                    if remaining <= 0:
-                        return
+                except (AssertionError, ValueError, RuntimeError, ConfigError) as e:
+                    outcome.set_exception(ConfigError(f"Cannot initialize the admin session: {e}"))
+                    return
+                remaining = remaining_time()
+                if remaining <= 0:
+                    return
+                try:
                     sess.try_connect(min(conn_timeout, remaining))
-                except ValueError as e:
+                except ConfigError as e:
                     outcome.set_exception(e)
                     return
                 remaining = remaining_time()
                 if remaining <= 0:
                     return
-                operation = "waiting for the admin server to return system status"
                 sess.api.set_command_timeout(remaining)
                 sys_info = sess.get_system_info()
                 if remaining_time() <= 0:
@@ -223,16 +221,11 @@ def wait_for_system_start(
                 return
             finally:
                 if sess is not None:
-                    previous_operation = operation
-                    operation = "closing the admin session"
                     try:
                         sess.close()
                     except Exception as e:
                         if not stopped.is_set():
                             print_human(f"Warning: could not close the admin session: {e}")
-                    finally:
-                        operation = previous_operation
-            operation = "waiting for the server and clients to become ready"
             stopped.wait(min(poll_interval, remaining_time()))
 
     # ThreadPoolExecutor joins workers at interpreter exit, even with shutdown(wait=False).
@@ -253,8 +246,6 @@ def wait_for_system_start(
         # owns its session and closes it when the underlying operation returns.
         stopped.set()
 
-    if operation == "closing the admin session":
-        raise SystemStartCleanupTimeout("Timed out closing the admin session. System readiness could not be confirmed.")
     detail = f" Last observation: {last_error}" if last_error else ""
     client_target = (
         f"expected clients {', '.join(sorted(expected_client_set))}"
@@ -262,6 +253,5 @@ def wait_for_system_start(
         else f"{num_clients} clients"
     )
     raise SystemStartTimeout(
-        f"Could not confirm that the server and {client_target} were ready within {timeout_in_sec} seconds. "
-        f"Timed out {operation}.{detail}"
+        f"Could not confirm that the server and {client_target} were ready within {timeout_in_sec} seconds.{detail}"
     )

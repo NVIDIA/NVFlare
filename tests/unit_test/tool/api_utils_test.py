@@ -19,6 +19,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.flare_api.api_spec import ClientInfo, ServerInfo
 from nvflare.tool import cli_output
 
@@ -151,7 +152,7 @@ def test_wait_for_system_start_timeout_message_uses_expected_clients(monkeypatch
 @pytest.mark.parametrize("state", ["unreachable", "partial", "ready", "config"])
 def test_wait_for_system_start_bounds_blocking_session_cleanup(monkeypatch, state):
     from nvflare.fuel.flare_api.api_spec import NoConnection
-    from nvflare.tool.api_utils import SystemStartCleanupTimeout, wait_for_system_start
+    from nvflare.tool.api_utils import SystemStartTimeout, wait_for_system_start
 
     monkeypatch.setattr(cli_output, "_output_format", "txt")
     release_close = threading.Event()
@@ -167,7 +168,7 @@ def test_wait_for_system_start_bounds_blocking_session_cleanup(monkeypatch, stat
 
         def try_connect(self, timeout):
             if state == "config":
-                raise ValueError("invalid admin configuration")
+                raise ConfigError("invalid admin configuration")
             if state == "unreachable":
                 raise NoConnection("server is not reachable")
 
@@ -187,14 +188,17 @@ def test_wait_for_system_start_bounds_blocking_session_cleanup(monkeypatch, stat
                 assert wait_for_system_start(1, "/tmp/prod", **kwargs) is sys_info
             elif state == "config":
                 kwargs["timeout_in_sec"] = 30
-                with pytest.raises(ValueError, match="invalid admin configuration"):
+                with pytest.raises(ConfigError, match="invalid admin configuration"):
                     wait_for_system_start(1, "/tmp/prod", **kwargs)
             else:
-                with pytest.raises(SystemStartCleanupTimeout, match="Timed out closing the admin session") as exc_info:
+                with pytest.raises(SystemStartTimeout, match="Could not confirm") as exc_info:
                     wait_for_system_start(2, "/tmp/prod", **kwargs)
-                assert "clients registered" not in str(exc_info.value)
-                assert "server is not reachable" not in str(exc_info.value)
-                assert "readiness could not be confirmed" in str(exc_info.value)
+                assert type(exc_info.value) is SystemStartTimeout
+                assert "closing" not in str(exc_info.value)
+                if state == "partial":
+                    assert "Last observation: Waiting for clients: 1/2 ready" in str(exc_info.value)
+                else:
+                    assert "Last observation: server is not reachable" in str(exc_info.value)
         assert elapsed() < 0.5
         assert close_started.wait(1)
     finally:
@@ -331,8 +335,8 @@ def test_readiness_rejects_zero_timeout(parameter):
     sleep.assert_not_called()
 
 
-@pytest.mark.parametrize("failure_source", ["status_request", "status_parsing"])
-def test_readiness_retries_value_error_after_connection(failure_source):
+@pytest.mark.parametrize("failure_source", ["connection", "status_request", "status_parsing"])
+def test_readiness_retries_value_error_during_connection_and_status(failure_source):
     from nvflare.tool.api_utils import wait_for_system_start
 
     sys_info = MagicMock(client_info=[ClientInfo("site-1", None)])
@@ -343,7 +347,9 @@ def test_readiness_retries_value_error_after_connection(failure_source):
         session.get_system_info.return_value = sys_info
     parsing_results = [["site-1"], ["site-1"]]
     error = ValueError("incomplete status response")
-    if failure_source == "status_request":
+    if failure_source == "connection":
+        sessions[0].try_connect.side_effect = error
+    elif failure_source == "status_request":
         sessions[0].get_system_info.side_effect = error
     else:
         parsing_results[0] = error
@@ -361,14 +367,15 @@ def test_readiness_retries_value_error_after_connection(failure_source):
         session.close.assert_called_once()
 
 
-def test_readiness_does_not_retry_session_constructor_value_error():
+@pytest.mark.parametrize("error_type", [AssertionError, ValueError, RuntimeError, ConfigError])
+def test_readiness_does_not_retry_session_constructor_configuration_errors(error_type):
     from nvflare.tool.api_utils import wait_for_system_start
 
-    error = ValueError("invalid admin configuration")
+    error = error_type("invalid admin configuration")
     with patch("nvflare.tool.api_utils.Session", side_effect=error) as factory:
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(ConfigError, match="invalid admin configuration") as exc_info:
             wait_for_system_start(1, "/tmp/prod", second_to_wait=0)
-    assert exc_info.value is error
+    assert "Cannot initialize the admin session" in str(exc_info.value)
     factory.assert_called_once()
 
 
@@ -459,7 +466,7 @@ def test_readiness_bounds_real_authentication_and_stream_waits(monkeypatch, phas
     monkeypatch.setattr(api_utils, "Session", lambda **kwargs: session)
     elapsed = _synchronize_probe_start(monkeypatch, entered)
     try:
-        with pytest.raises(api_utils.SystemStartTimeout, match="connecting and logging in"):
+        with pytest.raises(api_utils.SystemStartTimeout, match="Could not confirm"):
             api_utils.wait_for_system_start(1, "/tmp/prod", second_to_wait=0, timeout_in_sec=0.1)
         assert elapsed() < 0.5
         assert entered.is_set()
@@ -506,3 +513,27 @@ def test_slow_successful_transport_is_not_evidence_of_shutdown(monkeypatch, oper
         assert result["already_stopped"] is False
         session.shutdown.assert_called_once()
     session.api.login.assert_called()
+
+
+@pytest.mark.parametrize("missing", ["startup_directory", "startup_folder", "site_config", "admin_section"])
+def test_real_session_configuration_errors_fail_without_retry(tmp_path, missing):
+    from nvflare.fuel.flare_api import flare_api
+    from nvflare.tool import api_utils
+
+    if missing != "startup_directory":
+        (tmp_path / "admin").mkdir()
+    if missing in ("site_config", "admin_section"):
+        (tmp_path / "admin" / "startup").mkdir()
+    if missing == "admin_section":
+        (tmp_path / "admin" / "local").mkdir()
+    with (
+        patch.object(api_utils, "Session", wraps=flare_api.Session) as factory,
+        patch.object(
+            flare_api, "secure_load_admin_config", return_value=SimpleNamespace(get_admin_config=lambda: None)
+        ),
+    ):
+        started = time.monotonic()
+        with pytest.raises(ConfigError, match="startup kit does not exist|missing .* folder|Missing admin section"):
+            api_utils.wait_for_system_start(1, str(tmp_path), second_to_wait=0, timeout_in_sec=30)
+        assert time.monotonic() - started < 2
+    factory.assert_called_once()
