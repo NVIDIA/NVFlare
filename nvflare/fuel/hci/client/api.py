@@ -91,6 +91,10 @@ MAX_AUTO_LOGIN_TRIES = 300
 AUTO_LOGIN_INTERVAL = 1.5
 
 
+class AdminCertAcquisitionError(ConfigError):
+    """Certificate acquisition failed; the provider may be temporarily unavailable."""
+
+
 class FileWaiter(threading.Event):
 
     def __init__(self, tx_id):
@@ -409,7 +413,9 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
                 root_ca_file=self.ca_cert,
             )
         except Exception as ex:
-            raise ConfigError(f"failed to obtain admin certificate: {secure_format_exception(ex)}") from ex
+            raise AdminCertAcquisitionError(
+                f"failed to obtain admin certificate: {secure_format_exception(ex)}"
+            ) from ex
 
         self.admin_cert_files = new_files
         self.client_cert = new_files.client_cert

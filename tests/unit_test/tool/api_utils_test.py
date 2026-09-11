@@ -21,6 +21,7 @@ import pytest
 
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.flare_api.api_spec import ClientInfo, ServerInfo
+from nvflare.fuel.hci.client.api import AdminCertAcquisitionError
 from nvflare.tool import cli_output
 
 
@@ -149,7 +150,7 @@ def test_wait_for_system_start_timeout_message_uses_expected_clients(monkeypatch
     assert "99 clients" not in message
 
 
-@pytest.mark.parametrize("state", ["unreachable", "partial", "ready", "config"])
+@pytest.mark.parametrize("state", ["unreachable", "partial", "ready", "renewal"])
 def test_wait_for_system_start_bounds_blocking_session_cleanup(monkeypatch, state):
     from nvflare.fuel.flare_api.api_spec import NoConnection
     from nvflare.tool.api_utils import SystemStartTimeout, wait_for_system_start
@@ -167,8 +168,8 @@ def test_wait_for_system_start_bounds_blocking_session_cleanup(monkeypatch, stat
             pass
 
         def try_connect(self, timeout):
-            if state == "config":
-                raise ConfigError("invalid admin configuration")
+            if state == "renewal":
+                raise AdminCertAcquisitionError("certificate service unavailable")
             if state == "unreachable":
                 raise NoConnection("server is not reachable")
 
@@ -186,10 +187,6 @@ def test_wait_for_system_start_bounds_blocking_session_cleanup(monkeypatch, stat
             kwargs = dict(second_to_wait=0, timeout_in_sec=0.05, poll_interval=0, conn_timeout=0.01)
             if state == "ready":
                 assert wait_for_system_start(1, "/tmp/prod", **kwargs) is sys_info
-            elif state == "config":
-                kwargs["timeout_in_sec"] = 30
-                with pytest.raises(ConfigError, match="invalid admin configuration"):
-                    wait_for_system_start(1, "/tmp/prod", **kwargs)
             else:
                 with pytest.raises(SystemStartTimeout, match="Could not confirm") as exc_info:
                     wait_for_system_start(2, "/tmp/prod", **kwargs)
@@ -197,6 +194,8 @@ def test_wait_for_system_start_bounds_blocking_session_cleanup(monkeypatch, stat
                 assert "closing" not in str(exc_info.value)
                 if state == "partial":
                     assert "Last observation: Waiting for clients: 1/2 ready" in str(exc_info.value)
+                elif state == "renewal":
+                    assert "Last observation: certificate service unavailable" in str(exc_info.value)
                 else:
                     assert "Last observation: server is not reachable" in str(exc_info.value)
         assert elapsed() < 0.5
@@ -367,7 +366,9 @@ def test_readiness_retries_value_error_during_connection_and_status(failure_sour
         session.close.assert_called_once()
 
 
-@pytest.mark.parametrize("error_type", [AssertionError, ValueError, RuntimeError, ConfigError])
+@pytest.mark.parametrize(
+    "error_type", [AssertionError, ValueError, TypeError, FileNotFoundError, RuntimeError, ConfigError]
+)
 def test_readiness_does_not_retry_session_constructor_configuration_errors(error_type):
     from nvflare.tool.api_utils import wait_for_system_start
 
@@ -515,25 +516,100 @@ def test_slow_successful_transport_is_not_evidence_of_shutdown(monkeypatch, oper
     session.api.login.assert_called()
 
 
-@pytest.mark.parametrize("missing", ["startup_directory", "startup_folder", "site_config", "admin_section"])
+@pytest.mark.parametrize(
+    "missing", ["startup_directory", "startup_folder", "site_config", "admin_section", "admin_file", "download_dir"]
+)
 def test_real_session_configuration_errors_fail_without_retry(tmp_path, missing):
+    import json
+
     from nvflare.fuel.flare_api import flare_api
     from nvflare.tool import api_utils
 
     if missing != "startup_directory":
         (tmp_path / "admin").mkdir()
-    if missing in ("site_config", "admin_section"):
+    if missing not in ("startup_directory", "startup_folder"):
         (tmp_path / "admin" / "startup").mkdir()
-    if missing == "admin_section":
+    if missing in ("admin_section", "admin_file", "download_dir"):
         (tmp_path / "admin" / "local").mkdir()
-    with (
-        patch.object(api_utils, "Session", wraps=flare_api.Session) as factory,
-        patch.object(
-            flare_api, "secure_load_admin_config", return_value=SimpleNamespace(get_admin_config=lambda: None)
-        ),
-    ):
+    if missing in ("admin_section", "download_dir"):
+        config = {} if missing == "admin_section" else {"admin": {"upload_dir": "transfer", "download_dir": None}}
+        (tmp_path / "admin" / "startup" / "fed_admin.json").write_text(json.dumps(config))
+
+    with patch.object(api_utils, "Session", wraps=flare_api.Session) as factory:
         started = time.monotonic()
-        with pytest.raises(ConfigError, match="startup kit does not exist|missing .* folder|Missing admin section"):
+        with pytest.raises(ConfigError, match="Cannot initialize the admin session"):
             api_utils.wait_for_system_start(1, str(tmp_path), second_to_wait=0, timeout_in_sec=30)
         assert time.monotonic() - started < 2
     factory.assert_called_once()
+
+
+@pytest.mark.parametrize("phase", ["initial", "renewal"])
+@pytest.mark.parametrize("recovers", [True, False])
+def test_certificate_acquisition_failures_retry_with_real_session(tmp_path, monkeypatch, phase, recovers):
+    import json
+
+    from nvflare.fuel.flare_api import flare_api
+    from nvflare.fuel.hci.client import api as admin_api
+    from nvflare.fuel.sec.admin_cert_provider import AdminCertFiles
+    from nvflare.tool import api_utils
+
+    startup = tmp_path / "admin" / "startup"
+    startup.mkdir(parents=True)
+    (tmp_path / "admin" / "local").mkdir()
+    config = {
+        "admin": {
+            "ca_cert": "rootCA.pem",
+            "upload_dir": "transfer",
+            "download_dir": "transfer",
+            "admin_cert_provider": {"provider": "step_ca", "provider_config": {}},
+        }
+    }
+    (startup / "fed_admin.json").write_text(json.dumps(config))
+    expired = AdminCertFiles(client_key="old.key", client_cert="old.pem", expires_at=1)
+    renewed = AdminCertFiles(client_key="new.key", client_cert="new.pem", expires_at=9999999999)
+    entered = threading.Event()
+    requests, workers, sessions = [], set(), []
+    failed_at = 2 if phase == "renewal" else 1
+
+    def obtain(**kwargs):
+        workers.add(threading.current_thread())
+        requests.append(kwargs)
+        if len(requests) >= 2:
+            entered.set()
+        if phase == "renewal" and len(requests) == 1:
+            return expired
+        if len(requests) == failed_at or not recovers:
+            raise OSError("certificate service temporarily unavailable")
+        return renewed
+
+    def connect_cell(api, timeout):
+        api.cell = MagicMock()
+
+    def construct(**kwargs):
+        session = flare_api.Session(**kwargs)
+        sessions.append(session)
+        return session
+
+    info = MagicMock(client_info=[ClientInfo("site-1", None)])
+    monkeypatch.setattr(admin_api, "obtain_admin_cert_files", obtain)
+    monkeypatch.setattr(admin_api.AdminAPI, "_connect_cell", connect_cell)
+    monkeypatch.setattr(admin_api.AdminAPI, "login", lambda self: {"status": admin_api.APIStatus.SUCCESS})
+    monkeypatch.setattr(admin_api.AdminAPI, "logout", lambda self: self.close())
+    monkeypatch.setattr(flare_api.Session, "get_system_info", lambda self: info)
+    monkeypatch.setattr(api_utils, "Session", construct)
+    elapsed = _synchronize_probe_start(monkeypatch, entered)
+    try:
+        kwargs = dict(second_to_wait=0, timeout_in_sec=0.1, poll_interval=0.01, secure_mode=True)
+        if recovers:
+            assert api_utils.wait_for_system_start(1, str(tmp_path), **kwargs) is info
+            assert len(requests) == failed_at + 1
+        else:
+            with pytest.raises(api_utils.SystemStartTimeout, match="certificate service temporarily unavailable"):
+                api_utils.wait_for_system_start(1, str(tmp_path), **kwargs)
+        assert elapsed() < 0.5
+    finally:
+        for worker in workers:
+            worker.join(1)
+            assert not worker.is_alive()
+    assert len(requests) >= 2
+    assert all(session.api.closed for session in sessions)

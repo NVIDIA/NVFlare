@@ -22,6 +22,7 @@ from typing import List, Optional
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.flare_api.api_spec import JobNotFound, NoConnection, TargetType
 from nvflare.fuel.flare_api.flare_api import Session
+from nvflare.fuel.hci.client.api import AdminCertAcquisitionError
 
 
 class SystemStartTimeout(RuntimeError):
@@ -181,17 +182,16 @@ def wait_for_system_start(
                     sess = Session(
                         username=username, startup_path=os.path.join(prod_dir, username), secure_mode=secure_mode
                     )
-                except (AssertionError, ValueError, RuntimeError, ConfigError) as e:
+                except AdminCertAcquisitionError:
+                    # Initial certificate issuance can perform provider I/O here.
+                    raise
+                except (AssertionError, ValueError, TypeError, OSError, RuntimeError, ConfigError) as e:
                     outcome.set_exception(ConfigError(f"Cannot initialize the admin session: {e}"))
                     return
                 remaining = remaining_time()
                 if remaining <= 0:
                     return
-                try:
-                    sess.try_connect(min(conn_timeout, remaining))
-                except ConfigError as e:
-                    outcome.set_exception(e)
-                    return
+                sess.try_connect(min(conn_timeout, remaining))
                 remaining = remaining_time()
                 if remaining <= 0:
                     return
