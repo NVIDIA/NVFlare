@@ -167,36 +167,39 @@ def wait_for_system_start(
     operation = "connecting and logging in to the admin server"
     last_error = None
 
+    def remaining_time():
+        return 0.0 if stopped.is_set() else max(0.0, deadline - time.monotonic())
+
     def probe():
         nonlocal operation, last_error
         # Keep the whole session lifecycle in one worker: transport and streamed
         # requests use idle timeouts and cannot enforce a total elapsed limit.
-        while not stopped.is_set() and time.monotonic() < deadline:
+        while remaining_time() > 0:
             sess = None
             try:
                 operation = "connecting and logging in to the admin server"
                 print_human(
                     f"Connecting and logging in to the admin server "
-                    f"(up to {max(0.0, deadline - time.monotonic()):.1f} seconds remaining)..."
+                    f"(up to {remaining_time():.1f} seconds remaining)..."
                 )
                 try:
                     sess = Session(
                         username=username, startup_path=os.path.join(prod_dir, username), secure_mode=secure_mode
                     )
-                    remaining = deadline - time.monotonic()
-                    if stopped.is_set() or remaining <= 0:
+                    remaining = remaining_time()
+                    if remaining <= 0:
                         return
                     sess.try_connect(min(conn_timeout, remaining))
                 except ValueError as e:
                     outcome.set_exception(e)
                     return
-                remaining = deadline - time.monotonic()
-                if stopped.is_set() or remaining <= 0:
+                remaining = remaining_time()
+                if remaining <= 0:
                     return
                 operation = "waiting for the admin server to return system status"
                 sess.api.set_command_timeout(remaining)
                 sys_info = sess.get_system_info()
-                if stopped.is_set() or time.monotonic() >= deadline:
+                if remaining_time() <= 0:
                     return
                 client_names = _client_names(sys_info.client_info)
                 ready_count = len(sys_info.client_info)
@@ -230,12 +233,14 @@ def wait_for_system_start(
                     finally:
                         operation = previous_operation
             operation = "waiting for the server and clients to become ready"
-            stopped.wait(min(poll_interval, max(0.0, deadline - time.monotonic())))
+            stopped.wait(min(poll_interval, remaining_time()))
 
+    # ThreadPoolExecutor joins workers at interpreter exit, even with shutdown(wait=False).
+    # A daemon worker lets the CLI exit if the underlying operation never returns.
     threading.Thread(target=probe, name="poc-readiness", daemon=True).start()
     try:
         try:
-            observed_at, sys_info, ready_message = outcome.result(timeout=max(0.0, deadline - time.monotonic()))
+            observed_at, sys_info, ready_message = outcome.result(timeout=remaining_time())
         except FutureTimeoutError:
             pass
         else:
