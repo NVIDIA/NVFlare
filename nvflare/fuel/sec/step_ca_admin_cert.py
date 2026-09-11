@@ -117,7 +117,11 @@ def _run_step(
     except subprocess.TimeoutExpired as ex:
         raise AdminCertProviderRequestError(f"step ca certificate timed out after {timeout} seconds") from ex
     except subprocess.CalledProcessError as ex:
-        raise AdminCertProviderRequestError(f"step ca certificate failed with exit code {ex.returncode}") from ex
+        # step uses the same exit code for configuration and request errors.
+        # Only explicit timeouts above are safe to retry automatically.
+        raise AdminCertProviderError(
+            f"step ca certificate failed with exit code {ex.returncode}; see the step CLI output for details"
+        ) from ex
 
 
 def _validate_step_ca_url(url: str):

@@ -633,6 +633,8 @@ def test_certificate_acquisition_failures_retry_with_real_session(tmp_path, monk
         ("step_missing", "cannot execute"),
         ("step_not_executable", "cannot execute"),
         ("ca_unreadable", "Is a directory"),
+        ("unknown_provisioner", "step ca certificate failed with exit code 1"),
+        ("invalid_ttl", "step ca certificate failed with exit code 1"),
     ],
 )
 def test_real_provider_configuration_errors_fail_without_retry(tmp_path, monkeypatch, failure, message):
@@ -657,6 +659,25 @@ def test_real_provider_configuration_errors_fail_without_retry(tmp_path, monkeyp
     provider_config = {"ca_url": "https://ca.example.com", "provisioner": "admin", "step_bin": str(step_bin)}
     if failure in ("ca_url", "provisioner"):
         del provider_config[failure]
+    rejected = failure in ("unknown_provisioner", "invalid_ttl")
+    invocation_log = tmp_path / "step-invocations.json"
+    if rejected:
+        import sys
+
+        flag, value = (
+            ("--provisioner", "unknown-provisioner") if failure == "unknown_provisioner" else ("--not-after", "0s")
+        )
+        provider_config["provisioner" if failure == "unknown_provisioner" else "cert_ttl"] = value
+        # A real subprocess models step's indistinguishable exit-1 failures.
+        # It records the argv so the test verifies the configured value reaches it.
+        step_bin.write_text(
+            f"#!{sys.executable}\n"
+            "import json, sys\n"
+            f"with open({str(invocation_log)!r}, 'w') as out: json.dump(sys.argv[1:], out)\n"
+            f"print({f'rejected {flag}: {value}'!r}, file=sys.stderr)\n"
+            "sys.exit(1)\n"
+        )
+        step_bin.chmod(0o700)
     provider = {"provider": "step_ca", "provider_config": provider_config}
     if failure == "provider":
         provider["provider"] = "invalid-provider"
@@ -679,6 +700,9 @@ def test_real_provider_configuration_errors_fail_without_retry(tmp_path, monkeyp
         assert not isinstance(exc_info.value, AdminCertAcquisitionError)
         assert time.monotonic() - started < 2
     factory.assert_called_once()
+    if rejected:
+        argv = json.loads(invocation_log.read_text())
+        assert argv[argv.index(flag) + 1] == value
 
 
 @pytest.mark.parametrize("connector", ["internal", "adhoc"])
