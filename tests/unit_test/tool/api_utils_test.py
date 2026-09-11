@@ -14,12 +14,36 @@
 
 import threading
 import time
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from nvflare.fuel.flare_api.api_spec import ClientInfo, ServerInfo
 from nvflare.tool import cli_output
+
+
+def _synchronize_probe_start(monkeypatch, entered):
+    """Exclude worker scheduling/setup from the blocked-operation timeout test."""
+    from nvflare.tool import api_utils
+
+    started_at = None
+
+    def elapsed():
+        return 0.0 if started_at is None else time.monotonic() - started_at
+
+    class SynchronizedThread(threading.Thread):
+        def start(self):
+            nonlocal started_at
+            super().start()
+            assert entered.wait(5), "readiness worker did not reach the tested phase"
+            started_at = time.monotonic()
+
+    # The deadline is computed before Thread.start(), so freeze only the probe's
+    # clock until phase entry. Transport and streaming retain their real clocks.
+    monkeypatch.setattr(api_utils, "time", SimpleNamespace(monotonic=elapsed, sleep=time.sleep))
+    monkeypatch.setattr(api_utils, "threading", SimpleNamespace(Thread=SynchronizedThread, Event=threading.Event))
+    return elapsed
 
 
 @pytest.mark.parametrize("connection_options", [{}, {"conn_timeout": 0.1}])
@@ -152,10 +176,10 @@ def test_wait_for_system_start_bounds_blocking_session_cleanup(monkeypatch, stat
 
         def close(self):
             close_started.set()
-            release_close.wait(2)
+            release_close.wait(5)
             close_finished.set()
 
-    start = time.monotonic()
+    elapsed = _synchronize_probe_start(monkeypatch, close_started)
     try:
         with patch("nvflare.tool.api_utils.Session", BlockingCloseSession):
             kwargs = dict(second_to_wait=0, timeout_in_sec=0.05, poll_interval=0, conn_timeout=0.01)
@@ -171,7 +195,7 @@ def test_wait_for_system_start_bounds_blocking_session_cleanup(monkeypatch, stat
                 assert "clients registered" not in str(exc_info.value)
                 assert "server is not reachable" not in str(exc_info.value)
                 assert "readiness could not be confirmed" in str(exc_info.value)
-        assert time.monotonic() - start < 0.5
+        assert elapsed() < 0.5
         assert close_started.wait(1)
     finally:
         release_close.set()
@@ -190,7 +214,7 @@ def test_readiness_bounds_blocked_operations_and_cleans_up_after_return(monkeypa
 
     def block():
         entered.set()
-        assert release.wait(2)
+        assert release.wait(5)
         return info
 
     def construct(**kwargs):
@@ -203,11 +227,11 @@ def test_readiness_bounds_blocked_operations_and_cleans_up_after_return(monkeypa
     elif phase == "status":
         session.get_system_info.side_effect = block
     monkeypatch.setattr(api_utils, "Session", construct)
+    elapsed = _synchronize_probe_start(monkeypatch, entered)
     try:
-        start = time.monotonic()
         with pytest.raises(api_utils.SystemStartTimeout):
             api_utils.wait_for_system_start(1, "/tmp/prod", second_to_wait=0, timeout_in_sec=0.1)
-        assert time.monotonic() - start < 0.5
+        assert elapsed() < 0.5
         assert entered.is_set()
         assert not closed.is_set()
     finally:
@@ -222,7 +246,6 @@ def test_readiness_bounds_blocked_operations_and_cleans_up_after_return(monkeypa
 
 def test_slow_transport_leaves_outer_readiness_budget_for_real_login(monkeypatch):
     import json
-    from types import SimpleNamespace
 
     from nvflare.fuel.flare_api import flare_api
     from nvflare.fuel.hci.client import api as admin_api
@@ -352,7 +375,6 @@ def test_readiness_does_not_retry_session_constructor_value_error():
 @pytest.mark.parametrize("phase", ["authentication", "login_stream", "command_list_stream", "login_retry"])
 def test_readiness_bounds_real_authentication_and_stream_waits(monkeypatch, phase):
     import json
-    from types import SimpleNamespace
 
     from nvflare.fuel.f3.cellnet.cell import Cell
     from nvflare.fuel.f3.cellnet.defs import ReturnCode
@@ -385,10 +407,9 @@ def test_readiness_bounds_real_authentication_and_stream_waits(monkeypatch, phas
         calls.append(kwargs["timeout"])
         if phase == "authentication":
             entered.set()
-            assert release.wait(2)
+            assert release.wait(5)
             return make_reply(ReturnCode.TARGET_UNREACHABLE)
         if phase == "login_retry":
-            entered.set()
             return make_reply(ReturnCode.COMM_ERROR)
         if phase == "command_list_stream" and len(calls) == 1:
             return SimpleNamespace(payload=json.dumps({"data": [{"type": "string", "data": "OK"}]}))
@@ -407,7 +428,16 @@ def test_readiness_bounds_real_authentication_and_stream_waits(monkeypatch, phas
         api.cell = cell
         api.set_command_timeout(0.01)
         api.auto_login_max_tries = 1
-        if phase != "login_retry":
+        if phase == "login_retry":
+
+            def retry_sleep(delay):
+                assert delay == admin_api.AUTO_LOGIN_INTERVAL
+                entered.set()
+                assert release.wait(5)
+
+            # Exercise the real retry loop with its sleep held until teardown.
+            monkeypatch.setattr(admin_api, "time", SimpleNamespace(time=time.time, sleep=retry_sleep))
+        else:
             monkeypatch.setattr(admin_api, "AUTO_LOGIN_INTERVAL", 0)
         monkeypatch.setattr(admin_api, "IdentityAsserter", MagicMock())
         stream = Cell.__new__(Cell)
@@ -415,22 +445,23 @@ def test_readiness_bounds_real_authentication_and_stream_waits(monkeypatch, phas
 
         def get_progress():
             progress.append(1)
+            if len(progress) == 2:
+                entered.set()
             return len(progress)
 
         future = SimpleNamespace(error=None, waiter=release, get_progress=get_progress)
 
         def send_blob(**kwargs):
-            entered.set()
             return future
 
         stream.send_blob = send_blob
 
     monkeypatch.setattr(api_utils, "Session", lambda **kwargs: session)
+    elapsed = _synchronize_probe_start(monkeypatch, entered)
     try:
-        start = time.monotonic()
         with pytest.raises(api_utils.SystemStartTimeout, match="connecting and logging in"):
             api_utils.wait_for_system_start(1, "/tmp/prod", second_to_wait=0, timeout_in_sec=0.1)
-        assert time.monotonic() - start < 0.5
+        assert elapsed() < 0.5
         assert entered.is_set()
         assert not closed.is_set()
         if phase == "authentication":
@@ -446,7 +477,6 @@ def test_readiness_bounds_real_authentication_and_stream_waits(monkeypatch, phas
 
 @pytest.mark.parametrize("operation", ["wait_for_shutdown", "shutdown"])
 def test_slow_successful_transport_is_not_evidence_of_shutdown(monkeypatch, operation):
-    from types import SimpleNamespace
 
     from nvflare.fuel.flare_api import flare_api
     from nvflare.fuel.hci.client.api import APIStatus, ResultKey
