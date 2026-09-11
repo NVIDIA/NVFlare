@@ -1061,11 +1061,10 @@ class TestPocOutput:
         assert "After ready, submit jobs with: nvflare job submit -j <job_folder>" in captured.out
         assert captured.err == ""
 
-    @pytest.mark.parametrize("failure", ["readiness", "args", "config"])
+    @pytest.mark.parametrize("failure", ["readiness", "args"])
     def test_start_poc_readiness_timeout_exits_connection_failed(self, capsys, tmp_path, failure):
-        from nvflare.fuel.common.excepts import ConfigError
         from nvflare.tool.api_utils import SystemStartTimeout
-        from nvflare.tool.poc.poc_commands import _wait_for_poc_system_ready, start_poc
+        from nvflare.tool.poc.poc_commands import start_poc
         from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
 
         args = MagicMock()
@@ -1086,7 +1085,6 @@ class TestPocOutput:
         }
 
         with (
-            patch("nvflare.tool.api_utils.Session", side_effect=ConfigError("invalid admin certificate settings")),
             patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=str(tmp_path)),
             patch("nvflare.tool.poc.poc_commands.get_service_list", return_value=[]),
             patch("nvflare.tool.poc.poc_commands.get_excluded", return_value=[]),
@@ -1099,7 +1097,6 @@ class TestPocOutput:
                 side_effect={
                     "readiness": SystemStartTimeout("Could not confirm readiness within 30 seconds."),
                     "args": ValueError("conn_timeout must be a finite positive number of seconds"),
-                    "config": _wait_for_poc_system_ready,
                 }[failure],
             ),
         ):
@@ -1111,10 +1108,6 @@ class TestPocOutput:
             assert exc_info.value.code == 4
             assert data["error_code"] == "INVALID_ARGS"
             assert "conn_timeout" in data["message"]
-        elif failure == "config":
-            assert exc_info.value.code == 4
-            assert data["error_code"] == "INVALID_CONFIG"
-            assert "invalid admin certificate settings" in data["message"]
         else:
             assert exc_info.value.code == 2
             assert data["error_code"] == "CONNECTION_FAILED"

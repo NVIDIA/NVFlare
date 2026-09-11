@@ -21,8 +21,7 @@ import pytest
 
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.flare_api.api_spec import ClientInfo, ServerInfo
-from nvflare.fuel.hci.client.api import AdminCertAcquisitionError
-from nvflare.fuel.sec.admin_cert_provider import AdminCertProviderRequestError
+from nvflare.fuel.sec.admin_cert_provider import AdminCertProviderError
 from nvflare.tool import cli_output
 
 
@@ -151,7 +150,7 @@ def test_wait_for_system_start_timeout_message_uses_expected_clients(monkeypatch
     assert "99 clients" not in message
 
 
-@pytest.mark.parametrize("state", ["unreachable", "partial", "ready", "renewal", "config"])
+@pytest.mark.parametrize("state", ["unreachable", "partial", "ready", "renewal"])
 def test_wait_for_system_start_bounds_blocking_session_cleanup(monkeypatch, state):
     from nvflare.fuel.flare_api.api_spec import NoConnection
     from nvflare.tool.api_utils import SystemStartTimeout, wait_for_system_start
@@ -169,10 +168,8 @@ def test_wait_for_system_start_bounds_blocking_session_cleanup(monkeypatch, stat
             pass
 
         def try_connect(self, timeout):
-            if state == "config":
-                raise ConfigError("invalid communication configuration")
             if state == "renewal":
-                raise AdminCertAcquisitionError("certificate service unavailable")
+                raise ConfigError("certificate service unavailable")
             if state == "unreachable":
                 raise NoConnection("server is not reachable")
 
@@ -190,10 +187,6 @@ def test_wait_for_system_start_bounds_blocking_session_cleanup(monkeypatch, stat
             kwargs = dict(second_to_wait=0, timeout_in_sec=0.05, poll_interval=0, conn_timeout=0.01)
             if state == "ready":
                 assert wait_for_system_start(1, "/tmp/prod", **kwargs) is sys_info
-            elif state == "config":
-                kwargs["timeout_in_sec"] = 30
-                with pytest.raises(ConfigError, match="invalid communication configuration"):
-                    wait_for_system_start(2, "/tmp/prod", **kwargs)
             else:
                 with pytest.raises(SystemStartTimeout, match="Could not confirm") as exc_info:
                     wait_for_system_start(2, "/tmp/prod", **kwargs)
@@ -341,8 +334,9 @@ def test_readiness_rejects_zero_timeout(parameter):
     sleep.assert_not_called()
 
 
+@pytest.mark.parametrize("failure_type", [ValueError, ConfigError])
 @pytest.mark.parametrize("failure_source", ["connection", "status_request", "status_parsing"])
-def test_readiness_retries_value_error_during_connection_and_status(failure_source):
+def test_readiness_preserves_session_error_retries(failure_source, failure_type):
     from nvflare.tool.api_utils import wait_for_system_start
 
     sys_info = MagicMock(client_info=[ClientInfo("site-1", None)])
@@ -352,7 +346,7 @@ def test_readiness_retries_value_error_during_connection_and_status(failure_sour
     for session in sessions:
         session.get_system_info.return_value = sys_info
     parsing_results = [["site-1"], ["site-1"]]
-    error = ValueError("incomplete status response")
+    error = failure_type("session request failed")
     if failure_source == "connection":
         sessions[0].try_connect.side_effect = error
     elif failure_source == "status_request":
@@ -371,20 +365,6 @@ def test_readiness_retries_value_error_during_connection_and_status(failure_sour
     for session in sessions:
         session.try_connect.assert_called_once()
         session.close.assert_called_once()
-
-
-@pytest.mark.parametrize(
-    "error_type", [AssertionError, ValueError, TypeError, FileNotFoundError, RuntimeError, ConfigError]
-)
-def test_readiness_does_not_retry_session_constructor_configuration_errors(error_type):
-    from nvflare.tool.api_utils import wait_for_system_start
-
-    error = error_type("invalid admin configuration")
-    with patch("nvflare.tool.api_utils.Session", side_effect=error) as factory:
-        with pytest.raises(ConfigError, match="invalid admin configuration") as exc_info:
-            wait_for_system_start(1, "/tmp/prod", second_to_wait=0)
-    assert "Cannot initialize the admin session" in str(exc_info.value)
-    factory.assert_called_once()
 
 
 @pytest.mark.parametrize("phase", ["authentication", "login_stream", "command_list_stream", "login_retry"])
@@ -523,34 +503,7 @@ def test_slow_successful_transport_is_not_evidence_of_shutdown(monkeypatch, oper
     session.api.login.assert_called()
 
 
-@pytest.mark.parametrize(
-    "missing", ["startup_directory", "startup_folder", "site_config", "admin_section", "admin_file", "download_dir"]
-)
-def test_real_session_configuration_errors_fail_without_retry(tmp_path, missing):
-    import json
-
-    from nvflare.fuel.flare_api import flare_api
-    from nvflare.tool import api_utils
-
-    if missing != "startup_directory":
-        (tmp_path / "admin").mkdir()
-    if missing not in ("startup_directory", "startup_folder"):
-        (tmp_path / "admin" / "startup").mkdir()
-    if missing in ("admin_section", "admin_file", "download_dir"):
-        (tmp_path / "admin" / "local").mkdir()
-    if missing in ("admin_section", "download_dir"):
-        config = {} if missing == "admin_section" else {"admin": {"upload_dir": "transfer", "download_dir": None}}
-        (tmp_path / "admin" / "startup" / "fed_admin.json").write_text(json.dumps(config))
-
-    with patch.object(api_utils, "Session", wraps=flare_api.Session) as factory:
-        started = time.monotonic()
-        with pytest.raises(ConfigError, match="Cannot initialize the admin session"):
-            api_utils.wait_for_system_start(1, str(tmp_path), second_to_wait=0, timeout_in_sec=30)
-        assert time.monotonic() - started < 2
-    factory.assert_called_once()
-
-
-@pytest.mark.parametrize("failure_type", [ConnectionError, AdminCertProviderRequestError])
+@pytest.mark.parametrize("failure_type", [ConnectionError, AdminCertProviderError, OSError])
 @pytest.mark.parametrize("phase", ["initial", "renewal"])
 @pytest.mark.parametrize("recovers", [True, False])
 def test_certificate_acquisition_failures_retry_with_real_session(tmp_path, monkeypatch, phase, recovers, failure_type):
@@ -621,137 +574,3 @@ def test_certificate_acquisition_failures_retry_with_real_session(tmp_path, monk
             assert not worker.is_alive()
     assert len(requests) >= 2
     assert all(session.api.closed for session in sessions)
-
-
-@pytest.mark.parametrize(
-    "failure, message",
-    [
-        ("ca_url", "ca_url is required"),
-        ("provisioner", "provisioner is required"),
-        ("provider", "built-in provider name"),
-        ("provider_import", "cannot load admin certificate provider"),
-        ("step_missing", "cannot execute"),
-        ("step_not_executable", "cannot execute"),
-        ("ca_unreadable", "Is a directory"),
-        ("unknown_provisioner", "step ca certificate failed with exit code 1"),
-        ("invalid_ttl", "step ca certificate failed with exit code 1"),
-    ],
-)
-def test_real_provider_configuration_errors_fail_without_retry(tmp_path, monkeypatch, failure, message):
-    import json
-
-    from nvflare.fuel.flare_api import flare_api
-    from nvflare.fuel.sec import admin_cert_provider
-    from nvflare.tool import api_utils
-
-    startup = tmp_path / "admin" / "startup"
-    startup.mkdir(parents=True)
-    (tmp_path / "admin" / "local").mkdir()
-    root_ca = startup / "rootCA.pem"
-    if failure == "ca_unreadable":
-        root_ca.mkdir()
-    else:
-        root_ca.write_text("unused: acquisition fails before certificate verification")
-    step_bin = tmp_path / "step"
-    if failure == "step_not_executable":
-        step_bin.write_text("not executable")
-        step_bin.chmod(0o600)
-    provider_config = {"ca_url": "https://ca.example.com", "provisioner": "admin", "step_bin": str(step_bin)}
-    if failure in ("ca_url", "provisioner"):
-        del provider_config[failure]
-    rejected = failure in ("unknown_provisioner", "invalid_ttl")
-    invocation_log = tmp_path / "step-invocations.json"
-    if rejected:
-        import sys
-
-        flag, value = (
-            ("--provisioner", "unknown-provisioner") if failure == "unknown_provisioner" else ("--not-after", "0s")
-        )
-        provider_config["provisioner" if failure == "unknown_provisioner" else "cert_ttl"] = value
-        # A real subprocess models step's indistinguishable exit-1 failures.
-        # It records the argv so the test verifies the configured value reaches it.
-        step_bin.write_text(
-            f"#!{sys.executable}\n"
-            "import json, sys\n"
-            f"with open({str(invocation_log)!r}, 'w') as out: json.dump(sys.argv[1:], out)\n"
-            f"print({f'rejected {flag}: {value}'!r}, file=sys.stderr)\n"
-            "sys.exit(1)\n"
-        )
-        step_bin.chmod(0o700)
-    provider = {"provider": "step_ca", "provider_config": provider_config}
-    if failure == "provider":
-        provider["provider"] = "invalid-provider"
-    elif failure == "provider_import":
-        provider["provider"] = "missing_nvflare_cert_provider:obtain"
-    config = {
-        "admin": {
-            "ca_cert": str(root_ca),
-            "upload_dir": "transfer",
-            "download_dir": "transfer",
-            "admin_cert_provider": provider,
-        }
-    }
-    (startup / "fed_admin.json").write_text(json.dumps(config))
-    monkeypatch.setattr(admin_cert_provider, "_cache_base_dir", lambda: tmp_path / "cache")
-    with patch.object(api_utils, "Session", wraps=flare_api.Session) as factory:
-        started = time.monotonic()
-        with pytest.raises(ConfigError, match=message) as exc_info:
-            api_utils.wait_for_system_start(1, str(tmp_path), second_to_wait=0, timeout_in_sec=30, secure_mode=True)
-        assert not isinstance(exc_info.value, AdminCertAcquisitionError)
-        assert time.monotonic() - started < 2
-    factory.assert_called_once()
-    if rejected:
-        argv = json.loads(invocation_log.read_text())
-        assert argv[argv.index(flag) + 1] == value
-
-
-@pytest.mark.parametrize("connector", ["internal", "adhoc"])
-def test_real_connection_configuration_error_fails_without_retry(tmp_path, monkeypatch, connector):
-    import json
-
-    from nvflare.fuel.f3.comm_config import CommConfigurator
-    from nvflare.fuel.flare_api import flare_api
-    from nvflare.fuel.utils.config_service import ConfigService
-    from nvflare.lighter.utils import Identity, generate_cert, generate_keys, serialize_cert, serialize_pri_key
-    from nvflare.tool import api_utils
-
-    startup = tmp_path / "admin" / "startup"
-    startup.mkdir(parents=True)
-    (tmp_path / "admin" / "local").mkdir()
-    key, public_key = generate_keys()
-    identity = Identity("admin", "test")
-    cert = generate_cert(subject=identity, issuer=identity, signing_pri_key=key, subject_pub_key=public_key, ca=True)
-    (startup / "rootCA.pem").write_bytes(serialize_cert(cert))
-    (startup / "client.crt").write_bytes(serialize_cert(cert))
-    (startup / "client.key").write_bytes(serialize_pri_key(key))
-    config = {
-        "admin": {
-            "ca_cert": "rootCA.pem",
-            "client_cert": "client.crt",
-            "client_key": "client.key",
-            "upload_dir": "transfer",
-            "download_dir": "transfer",
-        }
-    }
-    (startup / "fed_admin.json").write_text(json.dumps(config))
-    (tmp_path / "comm_config.json").write_text(json.dumps({connector: "not a mapping"}))
-    monkeypatch.setattr(ConfigService, "_config_path", [str(tmp_path)])
-    monkeypatch.setattr(CommConfigurator, "_config_loaded", False)
-    monkeypatch.setattr(CommConfigurator, "_configuration", None)
-    closed = threading.Event()
-    real_close = flare_api.Session.close
-
-    def close(session):
-        try:
-            real_close(session)
-        finally:
-            closed.set()
-
-    monkeypatch.setattr(flare_api.Session, "close", close)
-    with patch.object(api_utils, "Session", wraps=flare_api.Session) as factory:
-        started = time.monotonic()
-        with pytest.raises(ConfigError, match=f"'{connector}' must be dict"):
-            api_utils.wait_for_system_start(1, str(tmp_path), second_to_wait=0, timeout_in_sec=30, secure_mode=True)
-        assert time.monotonic() - started < 2
-        assert closed.wait(2)
-    factory.assert_called_once()

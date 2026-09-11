@@ -49,10 +49,6 @@ class AdminCertProviderError(ValueError):
     """Raised when admin certificate acquisition fails."""
 
 
-class AdminCertProviderRequestError(AdminCertProviderError):
-    """A provider request failed and may succeed on retry; local validation errors must not use this type."""
-
-
 @dataclass
 class AdminCertFiles:
     client_key: str
@@ -95,14 +91,7 @@ def obtain_admin_cert_files(config: Mapping, root_ca_file: str) -> AdminCertFile
             return cached_files
 
         provider_func = _load_provider(provider)
-        try:
-            files = provider_func(config=provider_config, root_ca_file=root_ca_file)
-        except (AdminCertProviderError, OSError) as ex:
-            if provider in BUILTIN_ADMIN_CERT_PROVIDERS or provider in BUILTIN_ADMIN_CERT_PROVIDERS.values():
-                raise
-            # Legacy custom providers use these types for acquisition failures.
-            # Keep retries at the provider boundary, after local setup succeeds.
-            raise AdminCertProviderRequestError(str(ex)) from ex
+        files = provider_func(config=provider_config, root_ca_file=root_ca_file)
         if not isinstance(files, AdminCertFiles):
             raise AdminCertProviderError(f"admin certificate provider returned {type(files)}")
 

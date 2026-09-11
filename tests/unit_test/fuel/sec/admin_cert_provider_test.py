@@ -28,7 +28,6 @@ from cryptography.x509.oid import NameOID
 from nvflare.fuel.sec.admin_cert_provider import (
     AdminCertFiles,
     AdminCertProviderError,
-    AdminCertProviderRequestError,
     get_admin_cert_renewal_window,
     obtain_admin_cert_files,
     validate_admin_cert_files,
@@ -536,7 +535,7 @@ def test_step_ca_source_reports_step_failure(monkeypatch, tmp_path):
     _ca_key, _ca_cert, root_ca_path = _make_root_ca(tmp_path)
     fake_step = _fake_step(monkeypatch, tmp_path, exit_code=1)
 
-    with pytest.raises(AdminCertProviderError, match="step ca certificate failed") as exc_info:
+    with pytest.raises(AdminCertProviderError, match="step ca certificate failed"):
         obtain_admin_cert_files(
             config={
                 "provider": "step_ca",
@@ -546,25 +545,6 @@ def test_step_ca_source_reports_step_failure(monkeypatch, tmp_path):
                     "step_bin": str(fake_step),
                 },
             },
-            root_ca_file=str(root_ca_path),
-        )
-
-    assert not isinstance(exc_info.value, AdminCertProviderRequestError)
-
-
-@pytest.mark.parametrize("error_type", [AdminCertProviderError, OSError])
-def test_custom_provider_request_failure_keeps_retry_classification(tmp_path, monkeypatch, error_type):
-    import sys
-
-    _, _, root_ca_path = _make_root_ca(tmp_path)
-
-    def fail(config, root_ca_file):
-        raise error_type("certificate service unavailable")
-
-    monkeypatch.setattr(sys.modules[__name__], "_custom_admin_cert_provider", fail)
-    with pytest.raises(AdminCertProviderRequestError, match="certificate service unavailable"):
-        obtain_admin_cert_files(
-            config={"provider": f"{__name__}:_custom_admin_cert_provider"},
             root_ca_file=str(root_ca_path),
         )
 
@@ -622,7 +602,7 @@ def test_step_ca_source_times_out_step_command(monkeypatch, tmp_path):
     _ca_key, _ca_cert, root_ca_path = _make_root_ca(tmp_path)
     fake_step = _fake_step(monkeypatch, tmp_path, sleep=2)
 
-    with pytest.raises(AdminCertProviderRequestError, match="timed out"):
+    with pytest.raises(AdminCertProviderError, match="timed out"):
         obtain_step_ca_admin_cert_files(
             config={
                 "ca_url": "https://step-ca.example.com",

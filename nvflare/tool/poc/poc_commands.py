@@ -32,7 +32,6 @@ from pyhocon import ConfigFactory as CF
 
 from nvflare.cli_exception import CLIException
 from nvflare.cli_unknown_cmd_exception import CLIUnknownCmdException
-from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.utils.gpu_utils import get_host_gpu_ids
 from nvflare.lighter.constants import CtxKey, PropKey, ProvisionMode
 from nvflare.lighter.prov_utils import prepare_builders, prepare_packager
@@ -1724,15 +1723,6 @@ def start_poc(cmd_args):
         except ValueError as e:
             output_error("INVALID_ARGS", exit_code=4, detail=str(e))
             raise SystemExit(4)
-        except ConfigError as e:
-            output_error_message(
-                "INVALID_CONFIG",
-                message="POC admin session configuration is invalid.",
-                hint="Check the admin startup kit configuration and certificates.",
-                exit_code=4,
-                detail=str(e),
-            )
-            raise SystemExit(4)
         except SystemStartTimeout as e:
             output_error_message(
                 "CONNECTION_FAILED",
@@ -1830,7 +1820,7 @@ def _wait_for_poc_system_ready(
             poll_interval=1.0,
             expected_clients=expected_clients,
         )
-    except (SystemStartTimeout, ValueError, ConfigError):
+    except (SystemStartTimeout, ValueError):
         raise
     except Exception as e:
         raise SystemStartTimeout(str(e)) from e

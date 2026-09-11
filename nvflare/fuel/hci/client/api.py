@@ -58,7 +58,6 @@ from nvflare.fuel.hci.proto import (
 from nvflare.fuel.hci.reg import CommandEntry, CommandModule, CommandRegister
 from nvflare.fuel.hci.table import Table
 from nvflare.fuel.sec.admin_cert_provider import (
-    AdminCertProviderRequestError,
     get_admin_cert_renewal_window,
     obtain_admin_cert_files,
     validate_admin_cert_provider_config,
@@ -90,10 +89,6 @@ _CMD_TYPE_SERVER = 2
 
 MAX_AUTO_LOGIN_TRIES = 300
 AUTO_LOGIN_INTERVAL = 1.5
-
-
-class AdminCertAcquisitionError(ConfigError):
-    """Certificate acquisition failed; the provider may be temporarily unavailable."""
 
 
 class FileWaiter(threading.Event):
@@ -413,10 +408,6 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
                 config=self.admin_cert_provider_config,
                 root_ca_file=self.ca_cert,
             )
-        except (AdminCertProviderRequestError, ConnectionError, TimeoutError) as ex:
-            raise AdminCertAcquisitionError(
-                f"failed to obtain admin certificate: {secure_format_exception(ex)}"
-            ) from ex
         except Exception as ex:
             raise ConfigError(f"failed to obtain admin certificate: {secure_format_exception(ex)}") from ex
 
