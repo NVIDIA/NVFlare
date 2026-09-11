@@ -15,7 +15,6 @@
 """Regression tests for sanitized configuration and vendored dependency boundaries."""
 
 import ast
-import os
 import re
 import shutil
 import subprocess
