@@ -21,7 +21,7 @@ from cryptography.x509 import Certificate
 
 from nvflare.fuel.f3.cellnet.cell_cipher import SimpleCellCipher
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
-from nvflare.fuel.f3.cellnet.identity import CellIdentityResolver, get_cert_common_name_from_pem
+from nvflare.fuel.f3.cellnet.identity import CellIdentityResolver, get_cert_common_name
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.endpoint import Endpoint
 from nvflare.fuel.f3.message import Message
@@ -113,9 +113,14 @@ class CredentialManager:
             raise RuntimeError(f"missing certificate for {fqcn}")
 
         if self.enforce_identity:
-            cn = get_cert_common_name_from_pem(cert)
+            peer_cert = x509.load_pem_x509_certificate(cert)
             try:
-                self.identity_resolver.require_match(fqcn, cn, f"certificate for {fqcn}")
+                self.identity_resolver.require_match(
+                    fqcn,
+                    get_cert_common_name(peer_cert),
+                    f"certificate for {fqcn}",
+                    peer_cert=peer_cert,
+                )
             except ValueError as ex:
                 raise RuntimeError(str(ex))
 

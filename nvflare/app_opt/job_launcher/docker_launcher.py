@@ -50,6 +50,7 @@ from nvflare.app_opt.job_launcher.study_runtime import (
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.drivers.file_driver import SCHEME as SHARED_FILE_SCHEME
 from nvflare.fuel.f3.drivers.file_driver import parse_file_url
+from nvflare.private.fed.utils.job_cert_utils import job_startup_files, require_job_cert
 from nvflare.utils.job_launcher_utils import (
     DOCKER_JOB_CONTAINER_KWARGS,
     get_client_job_args,
@@ -85,7 +86,7 @@ _RESERVED_WORKSPACE_CHILD_NAMES = {
 _RESERVED_DEFAULT_KWARGS = RESERVED_DOCKER_KWARGS
 
 
-def _rewrite_parent_url(job_args: dict, site_name: str) -> tuple[dict, str | None]:
+def _rewrite_parent_url(job_args: dict, site_name: str, secure_mode: bool = False) -> tuple[dict, str | None]:
     """Rewrite a parent URL to Docker DNS while preserving its transport security."""
     entry = job_args.get(JobProcessArgs.PARENT_URL)
     if not entry:
@@ -122,6 +123,11 @@ def _rewrite_parent_url(job_args: dict, site_name: str) -> tuple[dict, str | Non
         raise ValueError(f"invalid parent URL {original_url!r}") from e
     if parsed.scheme not in ("tcp", "stcp") or not host or not port:
         raise ValueError(f"parent URL must use {SHARED_FILE_SCHEME}, tcp, or stcp with a host and port")
+    if secure_mode and connection_security != ConnectionSecurity.MTLS:
+        raise ValueError(
+            "secure mode requires an mTLS parent connection for Docker jobs: configure the client's internal "
+            "listener (listening_host) with scheme stcp and connection security mtls"
+        )
     if (parsed.scheme == "stcp") != (connection_security == ConnectionSecurity.MTLS):
         raise ValueError("parent URL scheme does not match parent connection security")
 
@@ -606,7 +612,9 @@ class DockerJobLauncher(JobLauncherSpec):
         # Derive parent_url at runtime: site name (= container name on Docker DNS) + port
         # from the original PARENT_URL in job_args. This avoids baking parent_url into
         # resources.json at provision time.
-        job_args, file_parent_dir = _rewrite_parent_url(job_args, site_name)
+        job_args, file_parent_dir = _rewrite_parent_url(
+            job_args, site_name, secure_mode=fl_ctx.get_prop(FLContextKey.SECURE_MODE, False)
+        )
         if file_parent_dir and file_parent_dir.startswith(self.WORKSPACE_MOUNT):
             raise ValueError(f"shared-file parent directory {file_parent_dir} overlaps the container workspace mount")
 
@@ -722,8 +730,23 @@ class DockerJobLauncher(JobLauncherSpec):
 
         self.logger.info(f"launching job {job_id} as container {container_name} using image {job_image}")
 
+        if workspace_obj is None:
+            raise RuntimeError(f"missing {FLContextKey.WORKSPACE_OBJECT} in FLContext")
+        require_job_cert(fl_ctx, workspace_obj.get_run_dir(job_id))
+
         docker_client = self._get_docker_client()
         try:
+            # bind the kit file by file: site private keys never enter the job container;
+            # the job credential arrives through the read-write job workspace bind
+            startup_mounts = [
+                docker.types.Mount(
+                    target=posixpath.join(container_startup_dir, fname),
+                    source=os.path.join(host_startup_dir, fname),
+                    type="bind",
+                    read_only=True,
+                )
+                for fname in job_startup_files(workspace_obj.get_startup_kit_dir())
+            ]
             mounts = [
                 docker.types.Mount(
                     target=self.WORKSPACE_MOUNT,
@@ -732,12 +755,7 @@ class DockerJobLauncher(JobLauncherSpec):
                     read_only=False,
                     tmpfs_mode=_WORKSPACE_TMPFS_MODE,
                 ),
-                docker.types.Mount(
-                    target=container_startup_dir,
-                    source=host_startup_dir,
-                    type="bind",
-                    read_only=True,
-                ),
+                *startup_mounts,
                 docker.types.Mount(target=container_local_dir, source=host_local_dir, type="bind", read_only=True),
                 docker.types.Mount(
                     target=container_job_workspace,

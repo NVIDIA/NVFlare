@@ -27,6 +27,7 @@ from nvflare.lighter.utils import (
     verify_cert_chain,
     verify_content,
 )
+from nvflare.private.fed.utils.job_cert_utils import get_cert_job_id, has_job_ca_marker
 from nvflare.security.logging import secure_format_exception
 
 
@@ -138,7 +139,7 @@ class IdentityVerifier:
                     cert_to_be_verified=asserter_cert,
                     root_ca_public_key=self.root_public_key,
                 )
-            _validate_identity_cert_usage(asserter_cert, expected_eku)
+            _validate_identity_cert_usage(asserter_cert, expected_eku, intermediate_certs)
         except Exception as ex:
             raise InvalidAsserterCert(str(ex)) from ex
 
@@ -157,13 +158,24 @@ class IdentityVerifier:
         return True
 
 
-def _validate_identity_cert_usage(cert, expected_eku):
+def _validate_identity_cert_usage(cert, expected_eku, intermediate_certs=None):
     """Enforce certificate usage restrictions for the common-name challenge.
+
+    Per-job certificates are scoped to one job's cells and must never assert site, admin,
+    or server identity: a leaf carrying the job URI is rejected, and so is any
+    chain containing the job-CA marker (a stolen job CA key can mint leaves without the
+    extension, but cannot strip the root-signed marker URI off the CA cert it must present).
 
     Legacy FLARE certificates may omit KeyUsage and ExtendedKeyUsage, so absent
     extensions remain unrestricted. When present, they must allow the signing
     operation and the caller-specific authentication purpose.
     """
+    if get_cert_job_id(cert) is not None:
+        raise ValueError("job-scoped certificate cannot be used to assert site identity")
+    for chain_cert in (cert, *(intermediate_certs or ())):
+        if has_job_ca_marker(chain_cert):
+            raise ValueError("certificate issued by the job CA cannot assert site identity")
+
     try:
         key_usage = cert.extensions.get_extension_for_class(x509.KeyUsage).value
     except x509.ExtensionNotFound:

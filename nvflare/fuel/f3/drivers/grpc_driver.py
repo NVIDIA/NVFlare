@@ -37,7 +37,7 @@ from .driver_params import DriverCap, DriverParams
 from .grpc.qq import QQ
 from .grpc.streamer_pb2 import Frame
 from .grpc.utils import get_grpc_client_credentials, get_grpc_server_credentials, use_aio_grpc
-from .net_utils import MAX_FRAME_SIZE, get_address, get_tcp_urls, ssl_required
+from .net_utils import MAX_FRAME_SIZE, add_grpc_peer_cert, get_address, get_tcp_urls, ssl_required
 
 GRPC_DEFAULT_OPTIONS = [
     ("grpc.max_send_message_length", MAX_FRAME_SIZE),
@@ -136,9 +136,11 @@ class Servicer(StreamerServicer):
             DriverParams.PEER_ADDR.value: context.peer(),
             DriverParams.LOCAL_ADDR.value: get_address(self.server.connector.params),
         }
-        cn_names = context.auth_context().get("x509_common_name")
+        auth_context = context.auth_context()
+        cn_names = auth_context.get("x509_common_name")
         if cn_names:
             conn_props[DriverParams.PEER_CN.value] = cn_names[0].decode("utf-8")
+            add_grpc_peer_cert(conn_props, auth_context)
 
         try:
             self.logger.debug(f"SERVER started Stream CB in thread {ct.name}")

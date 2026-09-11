@@ -107,6 +107,7 @@ NVIDIA FLARE
    system_architecture/security_overview
    user_guide/admin_guide/security/terminologies_and_roles
    Identity & Access Control <user_guide/admin_guide/security/identity_security>
+   Per-Job Certificates <user_guide/admin_guide/security/per_job_certificates>
    user_guide/admin_guide/security/site_policy_management
    Network & Communication <user_guide/admin_guide/security/communication_security>
    Data Privacy & Filters <user_guide/admin_guide/security/data_privacy_protection>

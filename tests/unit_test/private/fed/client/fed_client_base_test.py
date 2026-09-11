@@ -16,7 +16,22 @@ import threading
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+from nvflare.apis.fl_constant import ConnPropKey, SecureTrainConst
+from nvflare.fuel.f3.drivers.driver_params import DriverParams
+from nvflare.private.fed.client import fed_client_base
 from nvflare.private.fed.client.fed_client_base import FederatedClientBase
+
+_SITE_ARGS = {
+    SecureTrainConst.SSL_ROOT_CERT: "rootCA.pem",
+    SecureTrainConst.SSL_CERT: "client.crt",
+    SecureTrainConst.PRIVATE_KEY: "client.key",
+}
+# in a job process the configer has already made the job credential the ssl_cert / ssl_private_key
+_JOB_ARGS = {
+    SecureTrainConst.SSL_ROOT_CERT: "rootCA.pem",
+    SecureTrainConst.SSL_CERT: "job.crt",
+    SecureTrainConst.PRIVATE_KEY: "job.key",
+}
 
 
 def _make_client():
@@ -30,6 +45,58 @@ def _make_client():
     client.terminate = MagicMock()
     client.logout_client = MagicMock()
     return client
+
+
+def _create_cell_credentials(monkeypatch, job_id, client_args):
+    captured = {}
+
+    class _FakeCell:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+        def start(self):
+            pass
+
+        def stop(self):
+            pass
+
+    conn_props = {ConnPropKey.CP_CONN_PROPS: {ConnPropKey.FQCN: "site-1", ConnPropKey.URL: "tcp://cp:1"}}
+    monkeypatch.setattr(fed_client_base, "Cell", _FakeCell)
+    monkeypatch.setattr(fed_client_base, "NetAgent", lambda cell: MagicMock())
+    monkeypatch.setattr(fed_client_base.mpm, "add_cleanup_cb", lambda cb: None)
+    monkeypatch.setattr(
+        fed_client_base, "get_scope_property", lambda name, key, default=None: conn_props.get(key, default)
+    )
+
+    client = _make_client()
+    client.secure_train = True
+    client.client_args = dict(client_args)
+    client.args = SimpleNamespace(job_id=job_id)
+    client.communicator = MagicMock()
+    client.engine_create_timeout = 1.0
+    client.cell_check_frequency = 0.001
+    client.engine = MagicMock()
+    client.client_runner = MagicMock()
+
+    client._create_cell("localhost:8002", "grpc")
+    return captured["credentials"]
+
+
+def test_cp_cell_uses_site_credential(monkeypatch):
+    credentials = _create_cell_credentials(monkeypatch, None, _SITE_ARGS)
+
+    assert credentials[DriverParams.CLIENT_CERT.value] == "client.crt"
+    assert credentials[DriverParams.CLIENT_KEY.value] == "client.key"
+    assert DriverParams.SERVER_CERT.value not in credentials
+
+
+def test_cj_cell_uses_job_credential_in_both_tls_roles(monkeypatch):
+    credentials = _create_cell_credentials(monkeypatch, "job-1", _JOB_ARGS)
+
+    assert credentials[DriverParams.CLIENT_CERT.value] == "job.crt"
+    assert credentials[DriverParams.CLIENT_KEY.value] == "job.key"
+    assert credentials[DriverParams.SERVER_CERT.value] == "job.crt"
+    assert credentials[DriverParams.SERVER_KEY.value] == "job.key"
 
 
 def test_send_request_before_shutdown_skips_after_close():

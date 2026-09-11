@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 import sys
 from unittest.mock import MagicMock, patch
 
@@ -19,6 +20,7 @@ import pytest
 
 from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.private.fed.utils.fed_utils import security_init, security_init_for_job
+from nvflare.private.fed.utils.job_cert_utils import write_job_cert
 
 
 @pytest.fixture(autouse=True)
@@ -37,6 +39,10 @@ def _make_workspace(startup_dir):
     ws.get_audit_file_path.return_value = startup_dir + "/audit.log"
     ws.get_authorization_file_path.return_value = None
     ws.get_study_registry_file_path.return_value = startup_dir + "/study_registry.json"
+    # secure job processes refuse to start without their per-job credential
+    run_dir = os.path.join(os.path.dirname(startup_dir), "job-1")
+    write_job_cert(run_dir, b"job-cert", b"job-key")
+    ws.get_run_dir.return_value = run_dir
     return ws
 
 

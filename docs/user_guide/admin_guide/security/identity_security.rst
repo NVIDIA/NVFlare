@@ -31,7 +31,12 @@ The security of the system comes from the PKI credentials in the Startup Kits. A
     - The Project Admin, who is responsible for the provisioning process of the study, should protect the study's configuration files and store created Startup Kits securely.
     - When distributing Startup Kits, the Project Admin should use trusted communication methods, and never send passwords of the Startup Kits in the same communication. It is preferred to send the Kits and passwords with different communication methods.
     - Org Admin and users must protect their Startup Kits and only use them for intended purposes.
- 
+
+Job processes do not use the site's certificate and private key. In secure mode
+every job process runs on a short-lived certificate issued for that job alone,
+and container and scheduler launchers withhold the site private keys from job
+processes. See :ref:`per_job_certificates`.
+
 .. note::
 
     The provisioning tools generate X.509 certificates with 2048-bit RSA

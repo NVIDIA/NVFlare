@@ -21,6 +21,9 @@ from ssl import SSLContext
 from typing import Any, Optional
 from urllib.parse import parse_qsl, urlencode, urlparse
 
+from cryptography import x509
+from cryptography.hazmat.primitives import serialization
+
 from nvflare.apis.fl_constant import ConnectionSecurity
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
@@ -115,6 +118,28 @@ def get_ssl_context(params: dict, ssl_server: bool) -> Optional[SSLContext]:
         ctx.load_cert_chain(certfile=cert_path, keyfile=key_path)
 
     return ctx
+
+
+def get_peer_cert_der(ssl_object) -> Optional[bytes]:
+    """DER of the peer certificate of an established TLS connection (SSLSocket or SSLObject)."""
+    if not ssl_object:
+        return None
+    return ssl_object.getpeercert(binary_form=True) or None
+
+
+def add_peer_cert(conn_props: dict, ssl_object) -> None:
+    """Record the authenticated peer certificate next to PEER_CN (TLS socket connections)."""
+    der = get_peer_cert_der(ssl_object)
+    if der:
+        conn_props[DriverParams.PEER_CERT.value] = der
+
+
+def add_grpc_peer_cert(conn_props: dict, auth_context: dict) -> None:
+    """Record the authenticated peer certificate next to PEER_CN (gRPC server-side connections)."""
+    pem_certs = auth_context.get("x509_pem_cert") if auth_context else None
+    if pem_certs:
+        cert = x509.load_pem_x509_certificate(pem_certs[0])
+        conn_props[DriverParams.PEER_CERT.value] = cert.public_bytes(serialization.Encoding.DER)
 
 
 def get_address(params: dict) -> str:

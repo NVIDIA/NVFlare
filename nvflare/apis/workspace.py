@@ -229,9 +229,14 @@ class Workspace:
     def get_root_dir(self) -> str:
         return self.root_dir
 
+    @staticmethod
+    def run_dir_path(root_dir: str, job_id: str) -> str:
+        """Run directory of job_id under root_dir; usable before the workspace exists on disk."""
+        job_id = Workspace._check_job_id(job_id)
+        return Workspace._join_under_root(root_dir, WorkspaceConstants.WORKSPACE_PREFIX + job_id)
+
     def get_run_dir(self, job_id: str) -> str:
-        job_id = self._check_job_id(job_id)
-        return self._join_under_root(self.root_dir, WorkspaceConstants.WORKSPACE_PREFIX + job_id)
+        return self.run_dir_path(self.root_dir, job_id)
 
     def get_app_dir(self, job_id: str) -> str:
         return os.path.join(self.get_run_dir(job_id), WorkspaceConstants.APP_PREFIX + self.site_name)

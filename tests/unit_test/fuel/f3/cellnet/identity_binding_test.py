@@ -35,21 +35,30 @@ from nvflare.fuel.f3.cellnet.cell_cipher import (
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.f3.cellnet.credential_manager import CERT_CONTENT, CredentialManager
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessageType, ReturnCode
-from nvflare.fuel.f3.cellnet.identity import ADMIN_LISTENER_KEY, CellIdentityResolver
+from nvflare.fuel.f3.cellnet.identity import ADMIN_LISTENER_KEY, CellIdentityResolver, cell_scopes, fqcn_in_scopes
 from nvflare.fuel.f3.cellnet.utils import make_reply
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
+from nvflare.fuel.f3.drivers.net_utils import add_grpc_peer_cert, add_peer_cert
 from nvflare.fuel.f3.endpoint import Endpoint
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.sfm.conn_manager import ConnManager
 from nvflare.fuel.f3.sfm.constants import HandshakeKeys
 from nvflare.fuel.f3.sfm.sfm_conn import SfmConnection
+from nvflare.fuel.sec.cert_uri import CELL_URI_KIND, cert_uri
 from nvflare.fuel.utils.constants import Mode
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys
 
 
 class _FakeConnection:
-    def __init__(self, peer_cn, conn_security=ConnectionSecurity.MTLS, mode=Mode.PASSIVE, admin_listener=False):
+    def __init__(
+        self,
+        peer_cn,
+        conn_security=ConnectionSecurity.MTLS,
+        mode=Mode.PASSIVE,
+        admin_listener=False,
+        peer_cert=None,
+    ):
         self.name = "CN-test"
         self.closed = False
         self.connector = SimpleNamespace(
@@ -64,6 +73,8 @@ class _FakeConnection:
         self.conn_props = {}
         if peer_cn is not None:
             self.conn_props[DriverParams.PEER_CN.value] = peer_cn
+        if peer_cert is not None:
+            self.conn_props[DriverParams.PEER_CERT.value] = peer_cert
 
     def get_conn_properties(self):
         return self.conn_props
@@ -87,6 +98,30 @@ def _cert_pem(common_name: str):
         .sign(key, hashes.SHA256())
     )
     return cert.public_bytes(serialization.Encoding.PEM)
+
+
+_JOB_SCOPES = ["site-1.job-123", "site-1.ws_transfer_job-123"]
+
+
+def _scoped_cert_pem(common_name: str, scopes=None, uris=None):
+    key, pub_key = generate_keys()
+    uri_names = list(uris or []) + [cert_uri(CELL_URI_KIND, scope) for scope in (scopes or [])]
+    cert = generate_cert(
+        subject=Identity(common_name),
+        issuer=Identity(common_name),
+        signing_pri_key=key,
+        subject_pub_key=pub_key,
+        uri_names=uri_names,
+    )
+    return cert.public_bytes(serialization.Encoding.PEM)
+
+
+def _cert(pem: bytes) -> x509.Certificate:
+    return x509.load_pem_x509_certificate(pem)
+
+
+def _der(pem: bytes) -> bytes:
+    return _cert(pem).public_bytes(serialization.Encoding.DER)
 
 
 def _make_chained_cell_cipher_cert():
@@ -419,6 +454,150 @@ def test_mtls_certificate_cache_accepts_configured_auth_identity_for_site_cert_c
 
     assert manager.process_response(message) == cert
     assert manager.cert_cache["site-1.job-123"] == cert
+
+
+@pytest.mark.parametrize(
+    "fqcn, expected",
+    [
+        ("site-1.job-123", True),
+        ("site-1.job-123.sub-1", True),
+        ("site-1.ws_transfer_job-123", True),
+        ("site-1", False),
+        ("site-1.job-999", False),
+        ("site-1.ws_transfer_job-999", False),
+        ("site-1.job-1234", False),
+        ("site-1.job-999.ws_transfer_job-123", False),
+        ("site-1.job-999.job-123", False),
+        ("relay-1.site-1.job-123", False),
+    ],
+)
+def test_fqcn_in_scopes(fqcn, expected):
+    assert fqcn_in_scopes(fqcn, _JOB_SCOPES) is expected
+
+
+def test_cell_scopes_of_unrestricted_and_scoped_certs():
+    assert cell_scopes(_cert(_cert_pem("site-1"))) == []
+    assert cell_scopes(_cert(_scoped_cert_pem("site-1", _JOB_SCOPES))) == _JOB_SCOPES
+    # URIs on other hosts, and NVFlare URIs of other kinds, are not cell scopes
+    other = _scoped_cert_pem(
+        "site-1", uris=["https://example.com/nvflare/v1/cell/site-1", "https://nvidia.com/nvflare/v1/job/job-123"]
+    )
+    assert cell_scopes(_cert(other)) == []
+
+
+@pytest.mark.parametrize(
+    "uri",
+    [
+        "https://nvidia.com/nvflare/v1/cell/",
+        "https://nvidia.com/nvflare/v1/cell/a/b",
+        "https://nvidia.com/nvflare/v2/cell/a",
+        "https://nvidia.com/nvflare/cell",
+    ],
+)
+def test_cell_scopes_reject_malformed_nvflare_uri(uri):
+    with pytest.raises(ValueError):
+        cell_scopes(_cert(_scoped_cert_pem("site-1", uris=[uri])))
+
+
+def test_identity_resolver_enforces_certificate_scope():
+    resolver = CellIdentityResolver(local_fqcn="server", prefix_identity_map={"site-1": "site-1"})
+    scoped = _cert(_scoped_cert_pem("site-1", _JOB_SCOPES))
+
+    for fqcn in ("site-1.job-123", "site-1.job-123.sub-1", "site-1.ws_transfer_job-123"):
+        resolver.require_match(fqcn, "site-1", "connection", peer_cert=scoped)
+    for fqcn in ("site-1", "site-1.job-999", "site-1.ws_transfer_job-999", "site-1.job-999.ws_transfer_job-123"):
+        with pytest.raises(ValueError, match="outside that scope"):
+            resolver.require_match(fqcn, "site-1", "connection", peer_cert=scoped)
+    with pytest.raises(ValueError, match="outside that scope"):
+        resolver.require_match(
+            "_admin_9af49fef-235f-41bd-9296-12fd09eacb2a", "admin@nvidia.com", "connection admin", peer_cert=scoped
+        )
+
+
+def test_identity_resolver_leaves_unrestricted_cert_alone():
+    resolver = CellIdentityResolver(local_fqcn="server", prefix_identity_map={"site-1": "site-1"})
+    site_cert = _cert(_cert_pem("site-1"))
+
+    resolver.require_match("site-1", "site-1", "connection cp", peer_cert=site_cert)
+    resolver.require_match("site-1.job-123", "site-1", "connection cj", peer_cert=site_cert)
+
+
+def test_identity_resolver_enforces_scope_behind_relay():
+    resolver = CellIdentityResolver(local_fqcn="relay-1", prefix_identity_map={"relay-1.site-1": "site-1"})
+    scoped = _cert(_scoped_cert_pem("site-1", ["relay-1.site-1.job-123"]))
+
+    resolver.require_match("relay-1.site-1.job-123", "site-1", "connection cj", peer_cert=scoped)
+    with pytest.raises(ValueError, match="outside that scope"):
+        resolver.require_match("relay-1.site-1", "site-1", "connection cp", peer_cert=scoped)
+
+
+def test_identity_resolver_rejects_malformed_scope_uri():
+    resolver = CellIdentityResolver(local_fqcn="server", prefix_identity_map={"site-1": "site-1"})
+    malformed = _cert(_scoped_cert_pem("site-1", uris=["https://nvidia.com/nvflare/v1/cell/"]))
+
+    with pytest.raises(ValueError, match="malformed"):
+        resolver.require_match("site-1.job-123", "site-1", "connection cj", peer_cert=malformed)
+
+
+@pytest.mark.parametrize("endpoint_name", ["site-1.job-123", "site-1.ws_transfer_job-123"])
+def test_mtls_handshake_accepts_scoped_cert_inside_its_scope(endpoint_name):
+    manager = _conn_manager(identity_map={"site-1": "site-1"})
+    conn = _FakeConnection(peer_cn="site-1", peer_cert=_der(_scoped_cert_pem("site-1", _JOB_SCOPES)))
+    sfm_conn = SfmConnection(conn, Endpoint("server"))
+
+    manager.update_endpoint(sfm_conn, {HandshakeKeys.ENDPOINT_NAME: endpoint_name})
+
+    assert endpoint_name in manager.sfm_endpoints
+    assert not conn.closed
+
+
+@pytest.mark.parametrize(
+    "endpoint_name", ["site-1.job-999", "site-1", "site-1.ws_transfer_job-999", "site-1.job-999.ws_transfer_job-123"]
+)
+def test_mtls_handshake_rejects_scoped_cert_outside_its_scope(endpoint_name):
+    manager = _conn_manager(identity_map={"site-1": "site-1"})
+    conn = _FakeConnection(peer_cn="site-1", peer_cert=_der(_scoped_cert_pem("site-1", _JOB_SCOPES)))
+    sfm_conn = SfmConnection(conn, Endpoint("server"))
+
+    with pytest.raises(CommError) as ex:
+        manager.update_endpoint(sfm_conn, {HandshakeKeys.ENDPOINT_NAME: endpoint_name})
+
+    assert ex.value.code == CommError.BAD_DATA
+    assert endpoint_name not in manager.sfm_endpoints
+    assert conn.closed
+
+
+def test_mtls_certificate_cache_enforces_certificate_scope():
+    resolver = CellIdentityResolver(local_fqcn="server", prefix_identity_map={"site-1": "site-1"})
+    manager = CredentialManager(Endpoint("server"), identity_resolver=resolver, enforce_identity=True)
+    cert = _scoped_cert_pem("site-1", _JOB_SCOPES)
+
+    own_job = Message(headers={MessageHeaderKey.ORIGIN: "site-1.job-123"}, payload={CERT_CONTENT: cert})
+    assert manager.process_response(own_job) == cert
+
+    for origin in ("site-1", "site-1.job-999", "site-1.job-999.ws_transfer_job-123"):
+        with pytest.raises(RuntimeError, match="outside that scope"):
+            manager.process_response(Message(headers={MessageHeaderKey.ORIGIN: origin}, payload={CERT_CONTENT: cert}))
+        assert origin not in manager.cert_cache
+
+
+def test_peer_cert_exposure():
+    pem = _scoped_cert_pem("site-1", _JOB_SCOPES)
+    der = _der(pem)
+
+    props = {}
+    add_peer_cert(props, SimpleNamespace(getpeercert=lambda binary_form=False: der))
+    assert props[DriverParams.PEER_CERT.value] == der
+    props = {}
+    add_peer_cert(props, None)
+    assert props == {}
+
+    props = {}
+    add_grpc_peer_cert(props, {"x509_pem_cert": [pem]})
+    assert props[DriverParams.PEER_CERT.value] == der
+    props = {}
+    add_grpc_peer_cert(props, {"x509_common_name": [b"site-1"]})
+    assert props == {}
 
 
 def test_cell_cipher_accepts_leaf_certificate_with_intermediate_chain():

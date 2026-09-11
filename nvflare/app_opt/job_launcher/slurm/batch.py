@@ -223,7 +223,7 @@ def _render_node_script(plan: LaunchPlan, config: SlurmConfig) -> str:
     """
     worker_words = _build_worker_words(plan)
     node_words = [shlex.quote(word) for word in plan.additional_node_command]
-    credential_names = (JobProcessEnv.AUTH_TOKEN, JobProcessEnv.TOKEN_SIGNATURE, JobProcessEnv.SSID)
+    credential_names = JobProcessEnv.ALL
     rank0_setup = [f"  export {CLIENT_API_PROCESS_COUNT_ENV_VAR}=1"]
     nonzero_setup = [
         f"  unset {' '.join(credential_names)}",

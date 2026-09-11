@@ -138,6 +138,7 @@ def _manager(tmp_path, adapter=None, monotonic=None, **config_kwargs):
 def _plan(tmp_path, pending_timeout=5, setup="", sandbox="none", image=None):
     run_dir = tmp_path / "job-1"
     run_dir.mkdir(exist_ok=True)
+    (tmp_path / "startup").mkdir(exist_ok=True)
     return LaunchPlan(
         job_id="job-1",
         site_name="site-1",
@@ -353,7 +354,23 @@ def test_pyxis_node_group_writes_node_script_and_mounts_job_artifacts(tmp_path):
     assert "python3 -m trainer" in node_script.read_text(encoding="utf-8")
     batch = Path(handle.job_dir, "batch.sh").read_text(encoding="utf-8")
     assert f"{handle.job_dir}:{handle.job_dir}:ro" in batch
-    assert f"{tmp_path / 'startup'}:{tmp_path / 'startup'}:ro" in batch
+    assert f"{Path(handle.job_dir, 'startup')}:{tmp_path / 'startup'}:ro" in batch
+
+
+def test_sandbox_gets_keyless_staged_startup_kit(tmp_path):
+    startup = tmp_path / "startup"
+    startup.mkdir()
+    for name in ("rootCA.pem", "client.crt", "client.key"):
+        (startup / name).write_text(name)
+    adapter = Adapter()
+    manager = _manager(tmp_path, adapter)
+
+    handle = manager.launch(_plan(tmp_path, sandbox="apptainer", image="/image.sif"))
+
+    staged = Path(handle.job_dir, "startup")
+    assert sorted(p.name for p in staged.iterdir()) == ["client.crt", "rootCA.pem"]
+    assert f"{staged}:{tmp_path / 'startup'}:ro" in adapter.submitted_batch
+    assert f"{tmp_path / 'startup'}:{tmp_path / 'startup'}:ro" not in adapter.submitted_batch
 
 
 def test_submission_uses_site_timeout(tmp_path):
@@ -574,9 +591,9 @@ def test_apptainer_startup_and_resolver_mounts_use_compute_node_paths(tmp_path, 
     adapter = Adapter()
     manager = _manager(tmp_path, adapter)
 
-    manager.launch(_plan(tmp_path, sandbox="apptainer", image="/image.sif"))
+    handle = manager.launch(_plan(tmp_path, sandbox="apptainer", image="/image.sif"))
 
-    assert f"{tmp_path / 'startup'}:{tmp_path / 'startup'}:ro" in adapter.submitted_batch
+    assert f"{Path(handle.job_dir, 'startup')}:{tmp_path / 'startup'}:ro" in adapter.submitted_batch
     assert f"{CONTAINER_RESOLV_CONF}:{CONTAINER_RESOLV_CONF}:ro" in adapter.submitted_batch
     assert parent_target not in adapter.submitted_batch
 

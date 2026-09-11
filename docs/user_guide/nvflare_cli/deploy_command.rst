@@ -25,6 +25,15 @@ Kubernetes, or Slurm.
    carrying only ``clientAuth`` or only ``serverAuth`` — must be re-provisioned
    before using these runtimes. Kits whose certificates carry no EKU (unrestricted) remain compatible and do not need re-provisioning.
 
+.. note::
+
+   In secure mode, jobs run on :ref:`per-job certificates <per_job_certificates>`
+   issued by the server, and these runtimes never ship the site private keys
+   to job processes. The **server** startup kit must contain the job CA
+   (``job_ca.crt`` / ``job_ca.key``), which ``nvflare provision`` adds by
+   default. Server kits provisioned before this feature must be re-provisioned
+   or every job deploy fails.
+
 For Kubernetes deployment workflow, see :ref:`helm_chart`. For the Slurm
 deployment workflow and security checklist, see :ref:`slurm_job_launcher`. For
 job-level runtime settings, see :ref:`launcher_spec`.
