@@ -14,14 +14,12 @@
 """Run the Hello PyTorch FedAvg job in an NVFLARE simulation."""
 
 import argparse
-from pathlib import Path
 
 from model import create_model
-from prepare_data import DATASET_CHOICES, DATASET_PATH, DEFAULT_DATASET, validate_cifar10
+from prepare_data import add_dataset_arguments
 
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.recipe import SimEnv, add_final_global_evaluation
-from nvflare.recipe.spec import _peek_recipe_args
 
 DEFAULT_NUM_CLIENTS = 2
 DEFAULT_NUM_ROUNDS = 3
@@ -38,26 +36,14 @@ def define_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=EXPORT_HELP,
     )
-    parser.add_argument("--n_clients", type=int, default=DEFAULT_NUM_CLIENTS)
-    parser.add_argument("--num_rounds", type=int, default=DEFAULT_NUM_ROUNDS)
-
-    # Keep the zero-argument quickstart deterministic and offline. CIFAR-10 is
-    # still available after preparing its cache with prepare_data.py.
-    dataset_group = parser.add_mutually_exclusive_group()
-    dataset_group.add_argument("--dataset", choices=DATASET_CHOICES, dest="dataset")
-    dataset_group.add_argument(
-        "--synthetic_data",
-        action="store_const",
-        const="synthetic",
-        dest="dataset",
-        help="Deprecated alias for --dataset synthetic.",
-    )
-    parser.set_defaults(dataset=DEFAULT_DATASET)
     parser.add_argument(
-        "--data_root",
-        default=DATASET_PATH,
-        help="Client-local CIFAR-10 cache path. Ignored for the synthetic dataset.",
+        "--n_clients", type=int, default=DEFAULT_NUM_CLIENTS, help="Number of participating clients (default: 2)."
     )
+    parser.add_argument(
+        "--num_rounds", type=int, default=DEFAULT_NUM_ROUNDS, help="Number of federated training rounds (default: 3)."
+    )
+
+    add_dataset_arguments(parser)
 
     return parser
 
@@ -88,20 +74,15 @@ def create_recipe(args):
 
 def main(argv=None):
     args = define_parser().parse_args(argv)
-    # Recipe consumes export flags at import time. An exported job's data may
-    # exist only on remote clients; validate the local cache only for simulation.
-    export_only, _ = _peek_recipe_args()
-    if args.dataset == "cifar10" and not export_only:
-        args.data_root = str(Path(args.data_root).expanduser().resolve())
-        validate_cifar10(args.data_root)
     recipe = create_recipe(args)
 
     env = SimEnv(num_clients=args.n_clients)
     run = recipe.execute(env)
     result = run.get_result()
     print()
-    # SimEnv runs synchronously. A normal return from execute/get_result means
-    # the simulation completed, so keep the beginner-facing message direct.
+    # SimEnv raises on execution failure; a returned result confirms completion.
+    if result is None:
+        raise RuntimeError("Simulation did not return a result.")
     print("Simulation completed successfully.")
     print("Result can be found in :", result)
     print()
