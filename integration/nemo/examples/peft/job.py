@@ -23,14 +23,11 @@ import shlex
 
 import adapter_checkpoint
 import model_profiles
-from adapter_checkpoint import AdapterPTFileModelPersistor
+from adapter_persistor import AdapterPTFileModelPersistor
 
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.recipe import SimEnv, set_per_site_config
-
-DEFAULT_MODEL_NAME_OR_PATH = "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16"
-DEFAULT_INITIAL_ADAPTER_CKPT = "./models/nemotron3_nano_lora_init.pt"
 
 
 def define_parser():
@@ -204,7 +201,7 @@ def _build_train_args(args, train_file: str, site_name: str) -> str:
     else:
         train_args.append("--no-fp32_adapter_exchange")
     if model_profiles.is_lightning35(args):
-        train_args.extend(["--adapter_contract", "custom/adapter_contract.json"])
+        train_args.extend(["--adapter_contract", adapter_checkpoint.ADAPTER_CONTRACT_FILE])
     if args.balance_train_labels:
         train_args.append("--balance_train_labels")
     else:
@@ -248,10 +245,6 @@ def _site_override(value: str | None, site_index: int, fallback, converter):
     return result
 
 
-def _profile_settings(args) -> dict:
-    return model_profiles.adapter_compatibility_settings(args)
-
-
 def _validate_inputs(args) -> None:
     args = model_profiles.resolve_model_profile(args)
     if not os.path.isfile(args.initial_adapter_ckpt):
@@ -278,14 +271,7 @@ def _validate_inputs(args) -> None:
         adapter_checkpoint.validate_adapter_manifest(
             manifest,
             state,
-            expected={
-                "model_profile": args.model_profile,
-                "base_model_name_or_path": args.model_name_or_path,
-                "base_model_revision": args.model_revision,
-                "tokenizer_name_or_path": args.tokenizer_name_or_path,
-                "tokenizer_revision": args.tokenizer_revision,
-                "profile_settings": _profile_settings(args),
-            },
+            expected=model_profiles.adapter_identity(args),
         )
 
 
@@ -300,19 +286,12 @@ def create_recipe(args):
         train_file = _build_train_file(train_split_dir, args.alpha, site_idx)
         per_site_config[site_name] = {"train_args": _build_train_args(args, train_file, site_name)}
 
-    manifest_template = {
-        "model_profile": args.model_profile,
-        "base_model_name_or_path": args.model_name_or_path,
-        "base_model_revision": args.model_revision,
-        "tokenizer_name_or_path": args.tokenizer_name_or_path,
-        "tokenizer_revision": args.tokenizer_revision,
-        "profile_settings": _profile_settings(args),
-    }
+    adapter_identity = model_profiles.adapter_identity(args)
     model_persistor = AdapterPTFileModelPersistor(
         source_ckpt_file_full_name=os.path.abspath(args.initial_adapter_ckpt),
         allow_numpy_conversion=False,
         load_device="cpu",
-        manifest_template=manifest_template,
+        adapter_identity=adapter_identity,
     )
     recipe = FedAvgRecipe(
         name="nemotron35-lightning-peft" if model_profiles.is_lightning35(args) else "nemotron3-nano-peft",
@@ -336,12 +315,13 @@ def create_recipe(args):
     recipe.add_client_file("model_profiles.py", clients=client_names)
     if model_profiles.is_lightning35(args):
         initial_manifest = adapter_checkpoint.load_adapter_manifest(args.initial_adapter_ckpt)
-        contract_path = os.path.join(os.path.abspath(args.workspace), "adapter_contract.json")
+        contract_path = os.path.join(os.path.abspath(args.workspace), adapter_checkpoint.ADAPTER_CONTRACT_FILE)
         os.makedirs(os.path.dirname(contract_path), exist_ok=True)
         with open(contract_path, "w") as f:
             json.dump(initial_manifest, f, indent=2, sort_keys=True)
         recipe.add_client_file(contract_path, clients=client_names)
     recipe.add_server_file("adapter_checkpoint.py")
+    recipe.add_server_file("adapter_persistor.py")
     _configure_timeouts(
         recipe,
         client_names,

@@ -25,8 +25,6 @@ from types import SimpleNamespace
 import adapter_checkpoint
 import model_profiles
 
-DEFAULT_MODEL_NAME_OR_PATH = "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16"
-
 
 def define_parser():
     parser = argparse.ArgumentParser(description="Prepare an initial LoRA adapter checkpoint for NVFlare FedAvg.")
@@ -78,6 +76,7 @@ def _create_adapter_state(args):
     from transformers import AutoModelForCausalLM
 
     model_kwargs = {
+        "revision": args.model_revision,
         "torch_dtype": torch.bfloat16,
         "low_cpu_mem_usage": True,
         "trust_remote_code": True,
@@ -104,10 +103,6 @@ def _create_adapter_state(args):
     )
     model = get_peft_model(model, lora_config)
     return get_peft_model_state_dict(model), lora_config.to_dict()
-
-
-def _profile_settings(args) -> dict:
-    return model_profiles.adapter_compatibility_settings(args)
 
 
 def _initialization_native_args(args, train_file: str):
@@ -188,16 +183,9 @@ def main():
     state = adapter_checkpoint.align_adapter_state_strict(state, state)
     if model_profiles.is_lightning35(args):
         state = {key: value.float() for key, value in state.items()}
-    manifest = existing_manifest or adapter_checkpoint.build_adapter_manifest(
-        state,
-        model_profile=args.model_profile,
-        model_name_or_path=args.model_name_or_path,
-        tokenizer_name_or_path=args.tokenizer_name_or_path,
-        model_revision=args.model_revision,
-        tokenizer_revision=args.tokenizer_revision,
-        profile_settings=_profile_settings(args),
-    )
-    adapter_checkpoint.validate_adapter_manifest(manifest, state)
+    adapter_identity = model_profiles.adapter_identity(args)
+    manifest = existing_manifest or adapter_checkpoint.build_adapter_manifest(state, identity=adapter_identity)
+    adapter_checkpoint.validate_adapter_manifest(manifest, state, expected=adapter_identity)
     nvflare_state = adapter_checkpoint.add_model_prefix(state)
     adapter_checkpoint.save_nvflare_adapter_checkpoint(
         nvflare_state,

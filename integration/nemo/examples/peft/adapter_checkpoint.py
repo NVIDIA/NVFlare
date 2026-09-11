@@ -31,19 +31,20 @@ PERSISTENCE_KEY_META_PROPS = "meta_props"
 ADAPTER_CONFIG_KEY = "adapter_config"
 ADAPTER_MANIFEST_KEY = "adapter_manifest"
 ADAPTER_MANIFEST_FILE = "nvflare_adapter_manifest.json"
+ADAPTER_CONTRACT_FILE = "adapter_contract.json"
 NVFLARE_MODEL_PREFIX = "model."
 HF_PEFT_BASE_MODEL_PREFIX = "base_model.model."
 
 
-def _metadata_safe(value: Any) -> Any:
+def metadata_safe(value: Any) -> Any:
     if isinstance(value, Enum):
         return value.value
     if isinstance(value, Mapping):
-        return {str(k): _metadata_safe(v) for k, v in value.items()}
+        return {str(k): metadata_safe(v) for k, v in value.items()}
     if isinstance(value, (list, tuple)):
-        return [_metadata_safe(v) for v in value]
+        return [metadata_safe(v) for v in value]
     if isinstance(value, set):
-        return sorted(_metadata_safe(v) for v in value)
+        return sorted(metadata_safe(v) for v in value)
     if value is None or isinstance(value, (bool, int, float, str)):
         return value
     return str(value)
@@ -172,11 +173,11 @@ def save_nvflare_adapter_checkpoint(
     data[PERSISTENCE_KEY_TRAIN_CONF] = dict(train_conf or {"train": {"model": "Nemotron3NanoLoRA"}})
     meta_props = {}
     if adapter_config:
-        safe_adapter_config = _metadata_safe(adapter_config)
+        safe_adapter_config = metadata_safe(adapter_config)
         data[ADAPTER_CONFIG_KEY] = safe_adapter_config
         meta_props[ADAPTER_CONFIG_KEY] = safe_adapter_config
     if adapter_manifest:
-        safe_manifest = _metadata_safe(adapter_manifest)
+        safe_manifest = metadata_safe(adapter_manifest)
         data[ADAPTER_MANIFEST_KEY] = safe_manifest
         meta_props[ADAPTER_MANIFEST_KEY] = safe_manifest
     if meta_props:
@@ -211,13 +212,28 @@ def match_adapter_state_to_reference(
     state_dict: Mapping[str, torch.Tensor],
     reference_state_dict: Mapping[str, torch.Tensor],
 ) -> OrderedDict[str, torch.Tensor]:
-    """Map adapter tensors to the reference key namespace using canonical LoRA parameter names."""
-    state_by_canonical_key = {canonical_adapter_key(key): value for key, value in state_dict.items()}
+    """Map a complete adapter subset to the reference namespace and reject invalid tensors."""
+    state = _canonical_state(state_dict, normalize_peft_prefixes=True)
+    reference = _canonical_state(reference_state_dict, normalize_peft_prefixes=True)
+    missing = sorted(set(reference) - set(state))
+    if missing:
+        raise ValueError(f"Adapter key mismatch: missing={len(missing)} {missing[:5]}")
+
     matched = OrderedDict()
-    for reference_key in reference_state_dict:
-        canonical_key = canonical_adapter_key(reference_key)
-        if canonical_key in state_by_canonical_key:
-            matched[reference_key] = state_by_canonical_key[canonical_key]
+    for canonical_key, (reference_key, reference_value) in reference.items():
+        _source_key, value = state[canonical_key]
+        if not isinstance(value, torch.Tensor):
+            raise TypeError(f"Adapter value for {reference_key} is not a tensor.")
+        if tuple(value.shape) != tuple(reference_value.shape):
+            raise ValueError(
+                f"Adapter shape mismatch for {reference_key}: got {tuple(value.shape)}, "
+                f"expected {tuple(reference_value.shape)}"
+            )
+        if torch.is_floating_point(value) and not torch.isfinite(value).all():
+            raise ValueError(f"Adapter tensor contains non-finite values: {reference_key}")
+        matched[reference_key] = value.detach().cpu()
+    if not matched:
+        raise ValueError("Adapter state is empty.")
     return matched
 
 
@@ -300,21 +316,23 @@ def update_norm(incoming_state: Mapping[str, torch.Tensor], outgoing_state: Mapp
 def build_adapter_manifest(
     state_dict: Mapping[str, torch.Tensor],
     *,
-    model_profile: str,
-    model_name_or_path: str,
-    tokenizer_name_or_path: str,
-    model_revision: str | None,
-    tokenizer_revision: str | None,
-    profile_settings: Mapping[str, Any],
+    identity: Mapping[str, Any],
 ) -> dict[str, Any]:
+    required_identity = {
+        "model_profile",
+        "base_model_name_or_path",
+        "base_model_revision",
+        "tokenizer_name_or_path",
+        "tokenizer_revision",
+        "profile_settings",
+    }
+    missing = sorted(required_identity - set(identity))
+    unexpected = sorted(set(identity) - required_identity)
+    if missing or unexpected:
+        raise ValueError(f"Adapter identity mismatch: missing={missing}, unexpected={unexpected}")
     return {
         "schema_version": 1,
-        "model_profile": model_profile,
-        "base_model_name_or_path": model_name_or_path,
-        "base_model_revision": model_revision,
-        "tokenizer_name_or_path": tokenizer_name_or_path,
-        "tokenizer_revision": tokenizer_revision,
-        "profile_settings": _metadata_safe(profile_settings),
+        **metadata_safe(identity),
         "adapter_hash": state_hash(state_dict),
         "tensor_count": len(state_dict),
         "expected_tensors": tensor_specs(state_dict),
@@ -379,10 +397,10 @@ def save_hf_adapter_state_dir(
     os.makedirs(output_dir, exist_ok=True)
     if adapter_config:
         with open(os.path.join(output_dir, "adapter_config.json"), "w") as f:
-            json.dump(_metadata_safe(adapter_config), f, indent=2, sort_keys=True)
+            json.dump(metadata_safe(adapter_config), f, indent=2, sort_keys=True)
     if adapter_manifest:
         with open(os.path.join(output_dir, ADAPTER_MANIFEST_FILE), "w") as f:
-            json.dump(_metadata_safe(adapter_manifest), f, indent=2, sort_keys=True)
+            json.dump(metadata_safe(adapter_manifest), f, indent=2, sort_keys=True)
 
     try:
         from safetensors.torch import save_file
@@ -393,60 +411,3 @@ def save_hf_adapter_state_dir(
         adapter_file = os.path.join(output_dir, "pytorch_model.bin")
         torch.save(OrderedDict((key, value.detach().cpu()) for key, value in state_dict.items()), adapter_file)
     return adapter_file
-
-
-def make_adapter_persistor_class():
-    """Create the example-local persistor without importing NVFlare for checkpoint-only tools."""
-    from nvflare.app_common.abstract.model import ModelLearnable
-    from nvflare.app_common.app_constant import AppConstants
-    from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
-
-    class AdapterPTFileModelPersistor(PTFileModelPersistor):
-        def __init__(self, *args, manifest_template: dict | None = None, **kwargs):
-            super().__init__(*args, **kwargs)
-            self.manifest_template = dict(manifest_template or {})
-
-        def save_model(self, ml: ModelLearnable, fl_ctx):
-            manager = self._get_persistence_manager(fl_ctx)
-            manager.update(ml)
-            state = strip_model_prefix(manager.var_dict)
-            state = align_adapter_state_strict(state, state)
-            manifest = build_adapter_manifest(
-                state,
-                model_profile=self.manifest_template.get("model_profile", "nano"),
-                model_name_or_path=self.manifest_template.get("base_model_name_or_path", ""),
-                tokenizer_name_or_path=self.manifest_template.get("tokenizer_name_or_path", ""),
-                model_revision=self.manifest_template.get("base_model_revision"),
-                tokenizer_revision=self.manifest_template.get("tokenizer_revision"),
-                profile_settings=self.manifest_template.get("profile_settings", {}),
-            )
-            manager.other_props[ADAPTER_MANIFEST_KEY] = manifest
-            if manager.meta is None:
-                manager.meta = {}
-            manager.meta[ADAPTER_MANIFEST_KEY] = manifest
-            self.save_model_file(self._ckpt_save_path)
-
-            current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
-            if current_round is None:
-                return
-            round_dir = os.path.join(self.log_dir, "server_rounds", f"round_{int(current_round)}")
-            os.makedirs(round_dir, exist_ok=True)
-            round_checkpoint = os.path.join(round_dir, self.global_model_file_name)
-            self.save_model_file(round_checkpoint)
-            round_manifest = {
-                "schema_version": 1,
-                "round": int(current_round),
-                "aggregate_adapter_hash": manifest["adapter_hash"],
-                "tensor_count": manifest["tensor_count"],
-                "checkpoint_location": os.path.abspath(round_checkpoint),
-                "aggregation_stats": _metadata_safe(fl_ctx.get_prop(AppConstants.AGGREGATION_STATS) or {}),
-            }
-            with open(os.path.join(round_dir, "round_manifest.json"), "w") as f:
-                json.dump(round_manifest, f, indent=2, sort_keys=True)
-
-    AdapterPTFileModelPersistor.__module__ = __name__
-    AdapterPTFileModelPersistor.__qualname__ = "AdapterPTFileModelPersistor"
-    return AdapterPTFileModelPersistor
-
-
-AdapterPTFileModelPersistor = make_adapter_persistor_class()

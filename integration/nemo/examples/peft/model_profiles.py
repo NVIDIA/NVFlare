@@ -57,7 +57,21 @@ PROFILES = {
     },
 }
 
-PROFILE_FIELDS = tuple(next(iter(PROFILES.values())))
+NATIVE_MODEL_SETTINGS = {
+    NANO_PROFILE: {},
+    LIGHTNING35_PROFILE: {
+        "backend": {
+            "attn": "te",
+            "linear": "torch",
+            "rms_norm": "torch_fp32",
+            "experts": "torch_mm",
+            "dispatcher": "torch",
+        },
+        "num_nextn_predict_layers": 2,
+        "mtp_use_repeated_layer": True,
+        "mtp_loss_scaling_factor": 0.1,
+    },
+}
 
 
 def add_model_profile_argument(parser) -> None:
@@ -98,9 +112,17 @@ def is_lightning35(args) -> bool:
     return getattr(args, "model_profile", NANO_PROFILE) == LIGHTNING35_PROFILE
 
 
+def native_model_settings(args) -> dict:
+    """Return native model construction settings for the selected profile."""
+    profile_name = getattr(args, "model_profile", NANO_PROFILE)
+    if profile_name not in NATIVE_MODEL_SETTINGS:
+        raise ValueError(f"Unknown model profile: {profile_name}")
+    return deepcopy(NATIVE_MODEL_SETTINGS[profile_name])
+
+
 def adapter_compatibility_settings(args) -> dict:
     """Return settings that must remain identical when a native adapter is loaded."""
-    return {
+    settings = {
         "lora_rank": args.lora_rank,
         "lora_alpha": args.lora_alpha,
         "lora_dropout": args.lora_dropout,
@@ -110,14 +132,26 @@ def adapter_compatibility_settings(args) -> dict:
         "tp_size": args.tp_size,
         "cp_size": args.cp_size,
         "ep_size": args.ep_size,
-        "backend": {
-            "attn": "te",
-            "linear": "torch",
-            "rms_norm": "torch_fp32",
-            "experts": "torch_mm",
-            "dispatcher": "torch",
-        },
-        "num_nextn_predict_layers": 2,
-        "mtp_use_repeated_layer": True,
-        "mtp_loss_scaling_factor": 0.1,
     }
+    settings.update(native_model_settings(args))
+    return settings
+
+
+def adapter_identity(args) -> dict:
+    """Return the immutable model, tokenizer, and profile identity for an adapter."""
+    args = resolve_model_profile(args)
+    return {
+        "model_profile": args.model_profile,
+        "base_model_name_or_path": args.model_name_or_path,
+        "base_model_revision": args.model_revision,
+        "tokenizer_name_or_path": args.tokenizer_name_or_path,
+        "tokenizer_revision": args.tokenizer_revision,
+        "profile_settings": adapter_compatibility_settings(args),
+    }
+
+
+def default_server_model_path(args) -> str:
+    """Return the default final server checkpoint path for the selected profile."""
+    args = resolve_model_profile(args)
+    job_name = "nemotron35-lightning-peft" if is_lightning35(args) else "nemotron3-nano-peft"
+    return f"{args.workspace}/{job_name}/server/simulate_job/app_server/FL_global_model.pt"

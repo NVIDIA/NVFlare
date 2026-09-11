@@ -23,12 +23,6 @@ import adapter_checkpoint
 import model_profiles
 import torch
 
-DEFAULT_MODEL_NAME_OR_PATH = "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16"
-DEFAULT_SERVER_MODEL = (
-    "/tmp/nvflare/nemotron3_nano_peft/" "nemotron3-nano-peft/server/simulate_job/app_server/FL_global_model.pt"
-)
-DEFAULT_TARGET_MODULES = "down_proj,in_proj,out_proj,up_proj"
-
 SENTIMENT_LABELS = ("neutral", "positive", "negative")
 NOTEBOOK_EXAMPLES = [
     ("The products have a low salt and fat content . sentiment:", "neutral"),
@@ -63,9 +57,10 @@ def define_parser():
     parser.add_argument("--ep_size", type=int, default=None)
     parser.add_argument("--activation_checkpointing", action=argparse.BooleanOptionalAction, default=None)
     parser.add_argument("--device_map", default="auto")
+    parser.add_argument("--seed", type=int, default=42)
     args = model_profiles.resolve_model_profile(parser.parse_args())
     if args.server_model is None:
-        args.server_model = DEFAULT_SERVER_MODEL
+        args.server_model = model_profiles.default_server_model_path(args)
     if args.output_dir is None:
         name = "nemotron35_lightning_lora_final" if model_profiles.is_lightning35(args) else "nemotron3_nano_lora_final"
         args.output_dir = os.path.join(".", "models", name)

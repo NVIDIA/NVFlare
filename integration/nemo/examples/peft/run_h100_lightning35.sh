@@ -31,7 +31,8 @@ exec > >(tee -a "${RUN_ROOT}/logs/host_runner.log") 2>&1
 set -x
 printf '%s\n' "${CACHE_ROOT}" >"${RUN_ROOT}/artifacts/cache_root.txt"
 git -C "${SOURCE_DIR}" rev-parse HEAD >"${RUN_ROOT}/artifacts/commit_sha.txt"
-git -C "${SOURCE_DIR}" status --short >"${RUN_ROOT}/artifacts/git_status.txt"
+GIT_STATUS="$(git -C "${SOURCE_DIR}" status --short)"
+printf '%s\n' "${GIT_STATUS}" >"${RUN_ROOT}/artifacts/git_status.txt"
 uname -a >"${RUN_ROOT}/artifacts/uname.txt"
 id >"${RUN_ROOT}/artifacts/user_identity.txt"
 free -h >"${RUN_ROOT}/artifacts/host_memory.txt"
@@ -55,6 +56,12 @@ cleanup() {
 }
 trap cleanup EXIT
 
+if [[ -n "${GIT_STATUS}" && "${ALLOW_DIRTY_CHECKOUT:-0}" != "1" ]]; then
+    echo "The validation checkout has uncommitted changes; commit them or set ALLOW_DIRTY_CHECKOUT=1." \
+        >"${RUN_ROOT}/artifacts/BLOCKED.txt"
+    exit 2
+fi
+
 if ! docker info >"${RUN_ROOT}/logs/docker_info.txt" 2>&1; then
     cat >"${RUN_ROOT}/artifacts/BLOCKED.txt" <<'EOF'
 Docker is unavailable to this user. Restore normal access to /var/run/docker.sock through the host administrator,
@@ -70,8 +77,29 @@ fi
 cp -a "${SOURCE_DATA_DIR}/." "${RUN_ROOT}/data/"
 
 GPU_ID="${GPU_ID:-$(nvidia-smi --query-gpu=index,memory.used --format=csv,noheader,nounits | sort -t, -k2n | head -1 | cut -d, -f1 | tr -d ' ')}"
+if [[ ! "${GPU_ID}" =~ ^[0-9]+$ ]]; then
+    echo "GPU_ID must identify exactly one GPU by numeric index; got ${GPU_ID@Q}." \
+        >"${RUN_ROOT}/artifacts/BLOCKED.txt"
+    exit 2
+fi
+GPU_INFO="$(nvidia-smi --id="${GPU_ID}" --query-gpu=name,memory.free --format=csv,noheader,nounits)"
+GPU_NAME="${GPU_INFO%,*}"
+GPU_FREE_MIB="${GPU_INFO##*,}"
+GPU_FREE_MIB="${GPU_FREE_MIB// /}"
+MIN_FREE_GPU_MEMORY_MIB="${MIN_FREE_GPU_MEMORY_MIB:-80000}"
+if [[ "${GPU_NAME}" != *H100* ]]; then
+    echo "Selected GPU ${GPU_ID} is ${GPU_NAME}; this runner requires an H100." \
+        >"${RUN_ROOT}/artifacts/BLOCKED.txt"
+    exit 2
+fi
+if (( GPU_FREE_MIB < MIN_FREE_GPU_MEMORY_MIB )); then
+    echo "Selected GPU ${GPU_ID} has ${GPU_FREE_MIB} MiB free; ${MIN_FREE_GPU_MEMORY_MIB} MiB is required." \
+        >"${RUN_ROOT}/artifacts/BLOCKED.txt"
+    exit 2
+fi
 printf '%s\n' "${GPU_ID}" >"${RUN_ROOT}/artifacts/selected_gpu.txt"
-nvidia-smi --query-gpu=timestamp,index,memory.used,memory.total,utilization.gpu,power.draw --format=csv -l 10 \
+nvidia-smi --id="${GPU_ID}" \
+    --query-gpu=timestamp,index,memory.used,memory.total,utilization.gpu,power.draw --format=csv -l 10 \
     >"${RUN_ROOT}/logs/gpu_telemetry.csv" &
 TELEMETRY_PID=$!
 
@@ -129,35 +157,31 @@ open('/host_out/artifacts/tokenizer_revision.txt', 'w').write(revision + '\n')
 PY"
 MODEL_REVISION="$(cat "${RUN_ROOT}/artifacts/model_revision.txt")"
 
-IDENTITY="--model_profile=lightning35 --model_name_or_path=${MODEL_ID} --tokenizer_name_or_path=${MODEL_ID} --model_revision=${MODEL_REVISION} --tokenizer_revision=${MODEL_REVISION} --lora_rank=8 --lora_alpha=32 --lora_dropout=0 --target_modules=all-linear --exclude_modules='*.out_proj' --use_triton_lora --tp_size=1 --cp_size=1 --ep_size=1"
-TRAIN_COMMON="${IDENTITY} --seq_length=512 --micro_batch_size=1 --global_batch_size=1 --learning_rate=5e-5"
+PROFILE_ARGS="--model_profile=lightning35 --model_revision=${MODEL_REVISION} --tokenizer_revision=${MODEL_REVISION}"
+TRAIN_COMMON="${PROFILE_ARGS} --seq_length=512 --micro_batch_size=1 --global_batch_size=1"
 DATA_ARGS="--train_split_dir=/host_out/data_split --validation_file=/host_out/data/financial_phrase_bank_val.jsonl --alpha=10.0"
 
 run_stage data "python data/split_financial_phrase_data.py --alpha=10.0 --random_seed=0 --num_clients=3 --remove_train_overlap --data_path=/host_out/data/financial_phrase_bank_train.jsonl --validation_path=/host_out/data/financial_phrase_bank_val.jsonl --test_path=/host_out/data/financial_phrase_bank_test.jsonl --out_dir=/host_out/data_split"
 run_stage cpu_init "python - <<'PY'
 import adapter_checkpoint
-import job
 import model_profiles
 import torch
 from types import SimpleNamespace
 state={'model.test.lora_A.weight': torch.zeros((2, 2), dtype=torch.float32)}
 plain=adapter_checkpoint.strip_model_prefix(state)
-profile=SimpleNamespace(model_profile='lightning35', **model_profiles.profile_defaults('lightning35'))
+profile_values=model_profiles.profile_defaults('lightning35')
+profile_values.update(model_profile='lightning35', model_revision='${MODEL_REVISION}', tokenizer_revision='${MODEL_REVISION}')
+profile=SimpleNamespace(**profile_values)
 manifest=adapter_checkpoint.build_adapter_manifest(
     plain,
-    model_profile='lightning35',
-    model_name_or_path='${MODEL_ID}',
-    tokenizer_name_or_path='${MODEL_ID}',
-    model_revision='${MODEL_REVISION}',
-    tokenizer_revision='${MODEL_REVISION}',
-    profile_settings=job._profile_settings(profile),
+    identity=model_profiles.adapter_identity(profile),
 )
 adapter_checkpoint.save_nvflare_adapter_checkpoint(state, '/host_out/artifacts/cpu_initial_adapter.pt', adapter_manifest=manifest)
 PY"
 run_stage cpu_federation "python job.py ${TRAIN_COMMON} --backend=mock --n_clients=3 --num_rounds=3 --num_threads=1 --max_steps=1 --mock_site_steps=1,2,4 --mock_site_deltas=0.1,0.2,0.4 --workspace=/host_out/runs/cpu_federation/workspace --initial_adapter_ckpt=/host_out/artifacts/cpu_initial_adapter.pt"
 run_stage cpu_federation_verify "python verify_federated_run.py --client_work_dir=/host_out/runs/cpu_federation/workspace/automodel_work --server_root=/host_out/runs/cpu_federation/workspace --num_clients=3 --num_rounds=3 --output=/host_out/runs/cpu_federation/continuity.json"
-run_stage initialize "python prepare_initial_adapter.py ${IDENTITY} --seed=42 --output=/host_out/artifacts/initial_adapter.pt"
-run_stage base_eval "python evaluate_sentiment.py ${IDENTITY} --no-search_validation_bias --validation_file=/host_out/data/financial_phrase_bank_val.jsonl --test_file=/host_out/data/financial_phrase_bank_test.jsonl --output_dir=/host_out/evaluation/base"
+run_stage initialize "python prepare_initial_adapter.py ${PROFILE_ARGS} --seed=42 --output=/host_out/artifacts/initial_adapter.pt"
+run_stage base_eval "python evaluate_sentiment.py ${PROFILE_ARGS} --no-search_validation_bias --validation_file=/host_out/data/financial_phrase_bank_val.jsonl --test_file=/host_out/data/financial_phrase_bank_test.jsonl --output_dir=/host_out/evaluation/base"
 
 run_federation() {
     label="$1"
@@ -184,8 +208,8 @@ else
     ACTIVATION_ARG="--no-activation_checkpointing"
 fi
 
-run_stage smoke_eval_a "FINAL=\$(find /host_out/runs/${SMOKE_LABEL}/workspace -path '*/server_rounds/round_0/FL_global_model.pt' -print -quit); python evaluate_sentiment.py ${IDENTITY} --no-search_validation_bias --validation_only --adapter_dir=\${FINAL} --validation_file=/host_out/data/financial_phrase_bank_val.jsonl --output_dir=/host_out/evaluation/smoke_a"
-run_stage smoke_eval_b "FINAL=\$(find /host_out/runs/${SMOKE_LABEL}/workspace -path '*/server_rounds/round_0/FL_global_model.pt' -print -quit); python evaluate_sentiment.py ${IDENTITY} --no-search_validation_bias --validation_only --adapter_dir=\${FINAL} --validation_file=/host_out/data/financial_phrase_bank_val.jsonl --output_dir=/host_out/evaluation/smoke_b"
+run_stage smoke_eval_a "FINAL=\$(find /host_out/runs/${SMOKE_LABEL}/workspace -path '*/server_rounds/round_0/FL_global_model.pt' -print -quit); python evaluate_sentiment.py ${PROFILE_ARGS} --no-search_validation_bias --validation_only --adapter_dir=\${FINAL} --validation_file=/host_out/data/financial_phrase_bank_val.jsonl --output_dir=/host_out/evaluation/smoke_a"
+run_stage smoke_eval_b "FINAL=\$(find /host_out/runs/${SMOKE_LABEL}/workspace -path '*/server_rounds/round_0/FL_global_model.pt' -print -quit); python evaluate_sentiment.py ${PROFILE_ARGS} --no-search_validation_bias --validation_only --adapter_dir=\${FINAL} --validation_file=/host_out/data/financial_phrase_bank_val.jsonl --output_dir=/host_out/evaluation/smoke_b"
 run_stage smoke_reload_compare "python - <<'PY'
 import assess_validation
 import json
@@ -200,9 +224,9 @@ for seed in 42 43; do
     label="learning_seed${seed}"
     run_federation "${label}" 3 3 300 "${seed}" "${ACTIVATION_ARG}"
     for round in 0 1 2; do
-        run_stage "${label}_round${round}_val" "CKPT=\$(find /host_out/runs/${label}/workspace -path \"*/server_rounds/round_${round}/FL_global_model.pt\" -print -quit); python evaluate_sentiment.py ${IDENTITY} --no-search_validation_bias --validation_only --adapter_dir=\${CKPT} --validation_file=/host_out/data/financial_phrase_bank_val.jsonl --output_dir=/host_out/evaluation/${label}/round_${round}_validation"
+        run_stage "${label}_round${round}_val" "CKPT=\$(find /host_out/runs/${label}/workspace -path \"*/server_rounds/round_${round}/FL_global_model.pt\" -print -quit); python evaluate_sentiment.py ${PROFILE_ARGS} --no-search_validation_bias --validation_only --adapter_dir=\${CKPT} --validation_file=/host_out/data/financial_phrase_bank_val.jsonl --output_dir=/host_out/evaluation/${label}/round_${round}_validation"
     done
-    run_stage "${label}_final_test" "CKPT=\$(find /host_out/runs/${label}/workspace -path '*/server_rounds/round_2/FL_global_model.pt' -print -quit); python evaluate_sentiment.py ${IDENTITY} --no-search_validation_bias --adapter_dir=\${CKPT} --validation_file=/host_out/data/financial_phrase_bank_val.jsonl --test_file=/host_out/data/financial_phrase_bank_test.jsonl --output_dir=/host_out/evaluation/${label}/final"
+    run_stage "${label}_final_test" "CKPT=\$(find /host_out/runs/${label}/workspace -path '*/server_rounds/round_2/FL_global_model.pt' -print -quit); python evaluate_sentiment.py ${PROFILE_ARGS} --no-search_validation_bias --adapter_dir=\${CKPT} --validation_file=/host_out/data/financial_phrase_bank_val.jsonl --test_file=/host_out/data/financial_phrase_bank_test.jsonl --output_dir=/host_out/evaluation/${label}/final"
 done
 
 run_stage acceptance "python assess_validation.py --base_summary=/host_out/evaluation/base/summary.json --smoke_client_root=/host_out/runs/${SMOKE_LABEL}/workspace/automodel_work --continuity_report=/host_out/runs/continuity/continuity.json --seed_summary=/host_out/evaluation/learning_seed42/final/summary.json --seed_summary=/host_out/evaluation/learning_seed43/final/summary.json --output=/host_out/artifacts/acceptance.json"

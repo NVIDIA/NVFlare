@@ -329,10 +329,6 @@ def _split_modules(value: str) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
-def _lightning_profile_settings(args) -> dict:
-    return model_profiles.adapter_compatibility_settings(args)
-
-
 def _verify_loaded_adapter_state(model, incoming_state) -> dict:
     loaded_state = {key: value.detach().cpu() for key, value in model.state_dict().items() if "lora_" in key}
     expected_live_state = OrderedDict()
@@ -388,6 +384,7 @@ def _load_lightning_model(args):
     from nemo_automodel.components.checkpoint import CheckpointingConfig
     from nemo_automodel.components.models.common import BackendConfig
 
+    native_settings = model_profiles.native_model_settings(args)
     tokenizer = NeMoAutoTokenizer.from_pretrained(
         args.tokenizer_name_or_path,
         revision=args.tokenizer_revision,
@@ -404,22 +401,15 @@ def _load_lightning_model(args):
             dropout=args.lora_dropout,
             use_triton=args.use_triton_lora,
         )
+    backend = BackendConfig(**native_settings.pop("backend"))
     model = NeMoAutoModelForCausalLM.from_pretrained(
         args.model_name_or_path,
         revision=args.model_revision,
         trust_remote_code=True,
         torch_dtype=torch.bfloat16,
         peft_config=peft_config,
-        num_nextn_predict_layers=2,
-        mtp_use_repeated_layer=True,
-        mtp_loss_scaling_factor=0.1,
-        backend=BackendConfig(
-            attn="te",
-            linear="torch",
-            rms_norm="torch_fp32",
-            experts="torch_mm",
-            dispatcher="torch",
-        ),
+        backend=backend,
+        **native_settings,
     )
     if args.adapter_dir:
         incoming_state = adapter_checkpoint.strip_model_prefix(adapter_checkpoint.load_adapter_state(args.adapter_dir))
@@ -427,14 +417,7 @@ def _load_lightning_model(args):
         adapter_checkpoint.validate_adapter_manifest(
             manifest,
             incoming_state,
-            expected={
-                "model_profile": args.model_profile,
-                "base_model_name_or_path": args.model_name_or_path,
-                "base_model_revision": args.model_revision,
-                "tokenizer_name_or_path": args.tokenizer_name_or_path,
-                "tokenizer_revision": args.tokenizer_revision,
-                "profile_settings": _lightning_profile_settings(args),
-            },
+            expected=model_profiles.adapter_identity(args),
         )
         with tempfile.TemporaryDirectory(prefix="nvflare_lightning35_eval_") as temp_dir:
             adapter_checkpoint.save_hf_adapter_state_dir(

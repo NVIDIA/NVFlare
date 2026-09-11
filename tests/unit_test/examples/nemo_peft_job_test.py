@@ -196,6 +196,7 @@ def test_nemo_peft_recipe_exports_modern_fedavg_config(tmp_path):
     persistor = next(c for c in server_config["components"] if c["path"].endswith(".AdapterPTFileModelPersistor"))
     assert persistor["args"]["load_device"] == "cpu"
     assert (job_dir / "app_server" / "custom" / "adapter_checkpoint.py").exists()
+    assert (job_dir / "app_server" / "custom" / "adapter_persistor.py").exists()
 
 
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required for multi-round adapter aggregation checks")
@@ -330,6 +331,24 @@ def test_lightning35_profile_uses_native_recipe_and_official_lora_defaults(tmp_p
     assert config["seed"] == 43
 
 
+def test_lightning35_native_settings_have_one_profile_source(monkeypatch, tmp_path):
+    client_module = _load_client_module()
+    args = _args(tmp_path, tmp_path / "init_adapter.pt")
+    args.model_profile = "lightning35"
+    args.train_file = str(tmp_path / "train.jsonl")
+    monkeypatch.setitem(
+        client_module.model_profiles.NATIVE_MODEL_SETTINGS["lightning35"]["backend"],
+        "attn",
+        "torch",
+    )
+
+    config = client_module._default_automodel_config(args, str(tmp_path / "checkpoints"), str(tmp_path / "incoming"))
+    identity = client_module.model_profiles.adapter_identity(args)
+
+    assert config["model"]["backend"]["attn"] == "torch"
+    assert identity["profile_settings"]["backend"]["attn"] == "torch"
+
+
 def test_lightning35_explicit_cli_values_override_profile(monkeypatch):
     job_module = _load_job_module()
     monkeypatch.setattr(
@@ -388,6 +407,106 @@ def test_nemo_peft_latest_adapter_dir_prefers_numeric_step_when_mtime_ties(tmp_p
         os.utime(adapter_dir, (1000, 1000))
 
     assert client_module._latest_adapter_dir(str(checkpoint_dir)) == str(step_10)
+
+
+def test_lightning_contract_resolution_is_independent_of_process_working_directory(monkeypatch, tmp_path):
+    client_module = _load_client_module()
+    custom_dir = tmp_path / "app" / "custom"
+    packaged_dir = custom_dir / "workspace" / "run"
+    packaged_dir.mkdir(parents=True)
+    contract = packaged_dir / "adapter_contract.json"
+    contract.write_text("{}")
+    monkeypatch.setattr(client_module, "__file__", str(custom_dir / "automodel_peft_client.py"))
+
+    with _chdir(tmp_path):
+        resolved = client_module._resolve_packaged_contract("adapter_contract.json")
+
+    assert resolved == str(contract)
+
+
+@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required to export the Lightning adapter contract")
+def test_lightning35_recipe_exports_resolvable_contract_and_persistor(tmp_path):
+    import torch
+
+    sys.path.insert(0, _example_dir())
+    try:
+        import adapter_checkpoint
+        import model_profiles
+    finally:
+        sys.path.remove(_example_dir())
+
+    args = _args(tmp_path, tmp_path / "init_adapter.pt")
+    args.model_profile = "lightning35"
+    args.model_revision = "revision"
+    args.tokenizer_revision = "revision"
+    args = model_profiles.resolve_model_profile(args)
+    state = {"model.layer.lora_A.weight": torch.zeros((2, 2), dtype=torch.float32)}
+    plain_state = adapter_checkpoint.strip_model_prefix(state)
+    manifest = adapter_checkpoint.build_adapter_manifest(
+        plain_state,
+        identity=model_profiles.adapter_identity(args),
+    )
+    adapter_checkpoint.save_nvflare_adapter_checkpoint(
+        state,
+        args.initial_adapter_ckpt,
+        adapter_manifest=manifest,
+    )
+    job_module = _load_job_module()
+
+    with _chdir(_example_dir()):
+        recipe = job_module.create_recipe(args)
+        recipe.export(str(tmp_path / "exported"))
+
+    job_dir = tmp_path / "exported" / "nemotron35-lightning-peft"
+    client_dir = job_dir / "app_site-1"
+    with open(client_dir / "config" / "config_fed_client.json") as f:
+        client_config = json.load(f)
+    executor = next(
+        entry["executor"]
+        for entry in client_config["executors"]
+        if entry["executor"]["path"].endswith(".ClientAPIExecutor")
+    )
+    command = executor["args"]["command"]
+    assert command[command.index("--adapter_contract") + 1] == adapter_checkpoint.ADAPTER_CONTRACT_FILE
+    assert len(list((client_dir / "custom").rglob(adapter_checkpoint.ADAPTER_CONTRACT_FILE))) == 1
+    assert (job_dir / "app_server" / "custom" / "adapter_persistor.py").exists()
+
+
+@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required for Nano adapter alignment")
+def test_nano_exchange_rejects_a_partial_updated_adapter(tmp_path):
+    import torch
+
+    client_module = _load_client_module()
+    args = _args(tmp_path, tmp_path / "init_adapter.pt")
+    incoming = {
+        "base_model.model.layer.lora_A.weight": torch.zeros((2, 2)),
+        "base_model.model.layer.lora_B.weight": torch.zeros((2, 2)),
+    }
+    partial = {"layer.lora_A.weight": torch.ones((2, 2))}
+
+    with pytest.raises(ValueError, match="missing=1"):
+        client_module._align_updated_state_for_exchange(args, partial, incoming)
+
+
+@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required to import prediction helpers")
+def test_lightning_prediction_parser_propagates_seed_and_profile_default_path(monkeypatch):
+    predict_module = _load_predict_module()
+    monkeypatch.setattr(sys, "argv", ["predict_sentiment.py", "--model_profile=lightning35", "--seed=43"])
+
+    args = predict_module.define_parser()
+
+    assert args.seed == 43
+    assert "nemotron35_lightning_peft/nemotron35-lightning-peft" in args.server_model
+
+
+def test_notebook_uses_profile_specific_evaluation_adapter_and_disjoint_split():
+    with open(os.path.join(_example_dir(), "peft.ipynb")) as f:
+        notebook = json.load(f)
+    source = "\n".join("".join(cell.get("source", [])) for cell in notebook["cells"])
+
+    assert 'EVALUATION_ADAPTER = SERVER_MODEL if MODEL_PROFILE == "lightning35" else FINAL_ADAPTER' in source
+    assert "evaluate_sentiment.py {PROFILE_ARGS} --adapter_dir {EVALUATION_ADAPTER}" in source
+    assert "--remove_train_overlap" in source
 
 
 def test_nemo_peft_dataset_prompt_matches_notebook_inference():

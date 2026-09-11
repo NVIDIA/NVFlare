@@ -12,10 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import ast
 import importlib.util
 import os
 import sys
 from enum import Enum
+from pathlib import Path
 
 import pytest
 
@@ -25,6 +27,19 @@ HAS_SAFETENSORS = importlib.util.find_spec("safetensors") is not None
 
 class _ExamplePeftType(Enum):
     LORA = "LORA"
+
+
+def _adapter_identity(**overrides):
+    identity = {
+        "model_profile": "lightning35",
+        "base_model_name_or_path": "model",
+        "base_model_revision": "abc",
+        "tokenizer_name_or_path": "model",
+        "tokenizer_revision": "abc",
+        "profile_settings": {"lora_rank": 8},
+    }
+    identity.update(overrides)
+    return identity
 
 
 def _example_dir():
@@ -200,12 +215,7 @@ def test_adapter_manifest_rejects_hash_and_profile_conflicts():
     state = {"layer.lora_A.weight": torch.ones((2, 2))}
     manifest = adapter_checkpoint.build_adapter_manifest(
         state,
-        model_profile="lightning35",
-        model_name_or_path="model",
-        tokenizer_name_or_path="model",
-        model_revision="abc",
-        tokenizer_revision="abc",
-        profile_settings={"lora_rank": 8},
+        identity=_adapter_identity(),
     )
     adapter_checkpoint.validate_adapter_manifest(manifest, state, {"model_profile": "lightning35"})
     with pytest.raises(ValueError, match="hash"):
@@ -225,12 +235,7 @@ def test_adapter_contract_rejects_partial_and_stale_inputs():
     }
     contract = adapter_checkpoint.build_adapter_manifest(
         state,
-        model_profile="lightning35",
-        model_name_or_path="model",
-        tokenizer_name_or_path="model",
-        model_revision="abc",
-        tokenizer_revision="abc",
-        profile_settings={"lora_rank": 8},
+        identity=_adapter_identity(),
     )
     adapter_checkpoint.validate_adapter_contract(
         contract,
@@ -245,6 +250,36 @@ def test_adapter_contract_rejects_partial_and_stale_inputs():
             state,
             {"model_profile": "lightning35", "base_model_revision": "stale-revision"},
         )
+
+
+@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required for adapter manifest tests")
+def test_adapter_manifest_requires_one_complete_identity_mapping():
+    adapter_checkpoint = _load_example_module("adapter_checkpoint")
+    import torch
+
+    state = {"layer.lora_A.weight": torch.ones((2, 2))}
+    with pytest.raises(ValueError, match="missing=.*tokenizer_revision"):
+        adapter_checkpoint.build_adapter_manifest(
+            state,
+            identity={key: value for key, value in _adapter_identity().items() if key != "tokenizer_revision"},
+        )
+    with pytest.raises(ValueError, match="unexpected=.*duplicate_model_name"):
+        adapter_checkpoint.build_adapter_manifest(
+            state,
+            identity={**_adapter_identity(), "duplicate_model_name": "model"},
+        )
+
+
+def test_adapter_checkpoint_module_remains_independent_of_nvflare_imports():
+    source = Path(_example_dir(), "adapter_checkpoint.py").read_text()
+    imports = []
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Import):
+            imports.extend(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imports.append(node.module)
+
+    assert all(not module.startswith("nvflare") for module in imports)
 
 
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required for independent FedAvg tests")

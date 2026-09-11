@@ -34,9 +34,6 @@ import torch
 import nvflare.client as flare
 from nvflare.apis.fl_constant import FLMetaKey
 
-DEFAULT_MODEL_NAME_OR_PATH = "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16"
-DEFAULT_TARGET_MODULES = "all-linear"
-
 
 def define_parser():
     parser = argparse.ArgumentParser(description="Federated NeMo AutoModel PEFT client.")
@@ -199,23 +196,18 @@ def _default_automodel_config(args, checkpoint_dir: str, incoming_adapter_dir: s
     recipe = "TrainFinetuneRecipeForNextTokenPrediction"
     if model_profiles.is_lightning35(args):
         recipe = "federated_automodel_trainer." "FederatedTrainFinetuneRecipeForNextTokenPrediction"
+        native_settings = model_profiles.native_model_settings(args)
         model_config = {
             "_target_": "nemo_automodel.NeMoAutoModelForCausalLM.from_pretrained",
             "pretrained_model_name_or_path": args.model_name_or_path,
             "revision": args.model_revision,
             "trust_remote_code": True,
             "torch_dtype": "bfloat16",
-            "num_nextn_predict_layers": 2,
-            "mtp_use_repeated_layer": True,
-            "mtp_loss_scaling_factor": 0.1,
             "backend": {
                 "_target_": "nemo_automodel.components.models.common.BackendConfig",
-                "attn": "te",
-                "linear": "torch",
-                "rms_norm": "torch_fp32",
-                "experts": "torch_mm",
-                "dispatcher": "torch",
+                **native_settings.pop("backend"),
             },
+            **native_settings,
         }
     config = {
         "recipe": recipe,
@@ -387,15 +379,10 @@ def _run_automodel_round(args, round_dir: str, incoming_state: Mapping[str, torc
         "lora_dropout": args.lora_dropout,
         "target_modules": args.target_modules,
     }
-    profile_settings = _profile_settings(args)
+    adapter_identity = model_profiles.adapter_identity(args)
     manifest = adapter_checkpoint.build_adapter_manifest(
         incoming_state,
-        model_profile=args.model_profile,
-        model_name_or_path=args.model_name_or_path,
-        tokenizer_name_or_path=args.tokenizer_name_or_path,
-        model_revision=args.model_revision,
-        tokenizer_revision=args.tokenizer_revision,
-        profile_settings=profile_settings,
+        identity=adapter_identity,
     )
     adapter_checkpoint.save_hf_adapter_state_dir(
         incoming_state,
@@ -424,7 +411,7 @@ def _run_automodel_round(args, round_dir: str, incoming_state: Mapping[str, torc
                 "NVFLARE_LOADED_ADAPTER_DIR": os.path.join(round_dir, "loaded_adapter"),
                 "NVFLARE_MODEL_PROFILE": args.model_profile,
                 "NVFLARE_OUTPUT_ADAPTER_DIR": output_adapter_dir,
-                "NVFLARE_PROFILE_SETTINGS": json.dumps(profile_settings, sort_keys=True),
+                "NVFLARE_PROFILE_SETTINGS": json.dumps(adapter_identity["profile_settings"], sort_keys=True),
             }
         )
 
@@ -459,8 +446,25 @@ def _mock_round(args, state_dict: Mapping[str, torch.Tensor]) -> tuple[dict, dic
     return updated, {"mock_loss": 0.0}, max(1, args.max_steps)
 
 
-def _profile_settings(args) -> dict[str, Any]:
-    return model_profiles.adapter_compatibility_settings(args)
+def _resolve_packaged_contract(path: str) -> str:
+    if os.path.isabs(path):
+        return path
+
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    direct_path = os.path.join(script_dir, path)
+    if os.path.isfile(direct_path):
+        return direct_path
+
+    matches = []
+    basename = os.path.basename(path)
+    for root, _dirs, files in os.walk(script_dir):
+        if basename in files:
+            matches.append(os.path.join(root, basename))
+    if len(matches) != 1:
+        raise FileNotFoundError(
+            f"Expected one packaged adapter contract named {basename!r} under {script_dir}, found {len(matches)}."
+        )
+    return matches[0]
 
 
 def _validate_incoming_contract(args, incoming_state: Mapping[str, torch.Tensor]) -> None:
@@ -468,19 +472,13 @@ def _validate_incoming_contract(args, incoming_state: Mapping[str, torch.Tensor]
         return
     if not args.adapter_contract:
         raise ValueError("The lightning35 profile requires --adapter_contract.")
-    with open(args.adapter_contract) as f:
+    contract_path = _resolve_packaged_contract(args.adapter_contract)
+    with open(contract_path) as f:
         contract = json.load(f)
     adapter_checkpoint.validate_adapter_contract(
         contract,
         incoming_state,
-        expected={
-            "model_profile": args.model_profile,
-            "base_model_name_or_path": args.model_name_or_path,
-            "base_model_revision": args.model_revision,
-            "tokenizer_name_or_path": args.tokenizer_name_or_path,
-            "tokenizer_revision": args.tokenizer_revision,
-            "profile_settings": _profile_settings(args),
-        },
+        expected=model_profiles.adapter_identity(args),
     )
 
 
@@ -514,8 +512,6 @@ def _align_updated_state_for_exchange(args, updated_state, incoming_state):
     # match_all_linear, while the Hugging Face initializer excludes it for CAUSAL_LM. The federated Nano adapter
     # therefore remains in the original incoming namespace and does not add the locally initialized lm_head pair.
     matched = adapter_checkpoint.match_adapter_state_to_reference(updated_state, incoming_state)
-    if not matched:
-        raise RuntimeError("No common adapter keys between the received and updated adapter states.")
     return matched
 
 
@@ -562,12 +558,7 @@ def main():
         exchange_state = _prepare_exchange_state(args, updated_state)
         outgoing_manifest = adapter_checkpoint.build_adapter_manifest(
             exchange_state,
-            model_profile=args.model_profile,
-            model_name_or_path=args.model_name_or_path,
-            tokenizer_name_or_path=args.tokenizer_name_or_path,
-            model_revision=args.model_revision,
-            tokenizer_revision=args.tokenizer_revision,
-            profile_settings=_profile_settings(args),
+            identity=model_profiles.adapter_identity(args),
         )
         outgoing_adapter_dir = os.path.join(round_dir, "outgoing_adapter")
         checkpoint_location = adapter_checkpoint.save_hf_adapter_state_dir(
