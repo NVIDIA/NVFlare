@@ -30,6 +30,7 @@ import yaml
 from nvflare.lighter.cc_provision.impl.coco import resolve_cc_config, validate_coco_config
 from nvflare.lighter.constants import PropKey, ProvFileName
 from nvflare.lighter.spec import Packager
+from nvflare.lighter.utils import load_yaml
 
 COMMAND = ["/opt/nvflare/startup/sub_start.sh", "--once", "--verify"]
 
@@ -62,7 +63,7 @@ class CoCoPackager(Packager):
             if not cc_path:
                 continue
             config_path = Path(resolve_cc_config(project, cc_path))
-            config = yaml.safe_load(config_path.read_text())
+            config = load_yaml(config_path)
             validate_coco_config(config)
             if participant.type != "client":
                 raise ValueError("CoCoPackager supports clients only")
