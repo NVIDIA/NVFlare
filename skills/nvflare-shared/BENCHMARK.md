@@ -1,4 +1,4 @@
-# Skill Benchmark: nvflare-autofl
+# Skill Benchmark: nvflare-shared
 
 > ⚠️ **Overall verdict: INCOMPLETE — Required evidence is missing**
 
@@ -6,12 +6,12 @@ One or more required evaluation tiers did not complete, so this benchmark is not
 
 ## Evaluation Metadata
 
-- Skill: `nvflare-autofl`
+- Skill: `nvflare-shared`
 - Evaluation date: 2026-09-10
 - Evaluator version: `1.5.6`
 - Agents: Claude Code (`aws/anthropic/bedrock-claude-opus-4-8`), Codex (`openai/openai/gpt-5.5`)
-- Tasks: 7 evaluation tasks (7 positive)
-- Dataset digest: `sha256:47bb5f4f9de5f1a56ecb009c45deee42349c7c12a196a16f05072e36e82b36ec` (skill-evaluator-dataset-snapshot/1)
+- Tasks: 3 evaluation tasks (3 positive)
+- Dataset digest: `sha256:0267fb75cdd17b87a2fc8e8a481b55058ed90097b92f97f5a9c8dba18724d58e` (skill-evaluator-dataset-snapshot/1)
 - Attempts per task: 3
 - Environment: `k8s-sandbox`
 - Tier 2 evidence: required for publication
@@ -33,12 +33,12 @@ The three-tier evaluation checks whether the skill:
 
 | Measure | Claude Code (Baseline → Skill Uplift) | Codex (Baseline → Skill Uplift) |
 |---|---:|---:|
-| Overall | Not available | 74.2% — baseline ran, but no comparable score was available; uplift unavailable |
-| Security | Not available | 81.8% → 100.0% (+18.2 points) |
-| Correctness | Not available | 67.3% → 72.5% (+5.2 points) |
-| Discoverability | Not available | 63.8% — baseline ran, but no comparable score was available; uplift unavailable |
-| Effectiveness | Not available | 32.6% → 44.0% (+11.4 points) |
-| Efficiency | Not available | 90.7% — baseline ran, but no comparable score was available; uplift unavailable |
+| Overall | 82.1% — baseline ran, but no comparable score was available; uplift unavailable | 78.3% — baseline ran, but no comparable score was available; uplift unavailable |
+| Security | 83.3% → 83.3% (±0.0 points) | 33.3% → 66.7% (+33.4 points) |
+| Correctness | 86.7% → 100.0% (+13.3 points) | 93.3% → 100.0% (+6.7 points) |
+| Discoverability | 71.7% — baseline ran, but no comparable score was available; uplift unavailable | 63.3% — baseline ran, but no comparable score was available; uplift unavailable |
+| Effectiveness | 75.0% → 78.3% (+3.3 points) | 73.3% → 88.3% (+15.0 points) |
+| Efficiency | 77.3% — baseline ran, but no comparable score was available; uplift unavailable | 73.0% — baseline ran, but no comparable score was available; uplift unavailable |
 
 **How to read this table:** baseline is the same task attempted without the target skill. Scores are rounded to one decimal; threshold-adjacent values use additional precision so their displayed band matches the verdict. Uplift is derived from those displayed scores and shown in percentage points.
 
@@ -50,23 +50,15 @@ Actual Tier 3 execution usage is reported for every observed agent/case pair and
 
 | Agent | Dataset case | With skill | Without skill | Delta | Change | Coverage |
 |---|---|---:|---:|---:|---:|---|
-| claude-code | All cases | 2,787,776 | 12,920,494 | N/A | N/A | skill 7/7; base 12/21 |
-| claude-code | autofl-diversify-after-family-repeat | 199,145 | 237,320 | -38,175 | -16.09% | skill 1/1; base 1/1 |
-| claude-code | autofl-global-negative-web-app | 1,332,620 | 1,103,231 | +229,389 | +20.79% | skill 1/1; base 1/1 |
-| claude-code | autofl-literature-batch-before-tuning | 365,684 | 367,017 | N/A | N/A | skill 1/1; base 2/2 |
-| claude-code | autofl-natural-phrasing-low-accuracy | 176,241 | 670,093 | N/A | N/A | skill 1/1; base 3/3 |
-| claude-code | autofl-negative-diagnose-job | 287,173 | 186,391 | +100,782 | +54.07% | skill 1/1; base 1/1 |
-| claude-code | autofl-negative-pytorch-conversion | 216,377 | 152,619 | +63,758 | +41.78% | skill 1/1; base 1/1 |
-| claude-code | autofl-optimize-existing-job | 210,536 | 10,203,823 | N/A | N/A | skill 1/1; base 3/3 |
-| codex | All cases | 954,809 | 2,244,651 | N/A | N/A | skill 8/8; base 11/11 |
-| codex | autofl-diversify-after-family-repeat | 89,523 | 71,042 | +18,481 | +26.01% | skill 1/1; base 1/1 |
-| codex | autofl-global-negative-web-app | 250,708 | 258,849 | -8,141 | -3.15% | skill 1/1; base 1/1 |
-| codex | autofl-literature-batch-before-tuning | 85,720 | 43,608 | +42,112 | +96.57% | skill 1/1; base 1/1 |
-| codex | autofl-natural-phrasing-low-accuracy | 115,796 | 314,398 | N/A | N/A | skill 1/1; base 3/3 |
-| codex | autofl-negative-diagnose-job | 248,899 | 115,188 | N/A | N/A | skill 2/2; base 1/1 |
-| codex | autofl-negative-pytorch-conversion | 100,970 | 69,411 | +31,559 | +45.47% | skill 1/1; base 1/1 |
-| codex | autofl-optimize-existing-job | 63,193 | 1,372,155 | N/A | N/A | skill 1/1; base 3/3 |
-| ALL AGENTS | Dataset aggregate | 3,742,585 | 15,165,145 | N/A | N/A | skill 15/15; base 23/32 |
+| claude-code | All cases | 1,466,475 | 2,119,004 | -652,529 | -30.79% | skill 3/3; base 3/3 |
+| claude-code | shared-global-negative-web-app | 1,028,700 | 1,074,720 | -46,020 | -4.28% | skill 1/1; base 1/1 |
+| claude-code | shared-negative-direct-conversion | 171,628 | 373,946 | -202,318 | -54.10% | skill 1/1; base 1/1 |
+| claude-code | shared-recover-incomplete-installation | 266,147 | 670,338 | -404,191 | -60.30% | skill 1/1; base 1/1 |
+| codex | All cases | 1,069,570 | 920,865 | +148,705 | +16.15% | skill 3/3; base 3/3 |
+| codex | shared-global-negative-web-app | 437,267 | 402,190 | +35,077 | +8.72% | skill 1/1; base 1/1 |
+| codex | shared-negative-direct-conversion | 440,340 | 360,025 | +80,315 | +22.31% | skill 1/1; base 1/1 |
+| codex | shared-recover-incomplete-installation | 191,963 | 158,650 | +33,313 | +21.00% | skill 1/1; base 1/1 |
+| ALL AGENTS | Dataset aggregate | 2,536,045 | 3,039,869 | -503,824 | -16.57% | skill 6/6; base 6/6 |
 
 Prompt tokens include cached reads, so total tokens are `prompt + completion` (cached is not added twice). The Efficiency score uses `(prompt - cached) + completion`. N/A means the relevant trajectory counters were not available; coverage is never estimated.
 
@@ -76,7 +68,7 @@ Prompt tokens include cached reads, so total tokens are `prompt + completion` (c
 |---|---|---|---|
 | Tier 1 | Static validation | **PASSED** | 1 validator(s); 0 finding(s) |
 | Tier 2 | Semantic deduplication | **NOT RUN** | No result was recorded |
-| Tier 3 | Live agent evaluation | **PASS** | 2 agent(s); 7 task(s) |
+| Tier 3 | Live agent evaluation | **PASS** | 2 agent(s); 3 task(s) |
 
 ## Findings and Observations
 
@@ -84,7 +76,7 @@ Prompt tokens include cached reads, so total tokens are `prompt + completion` (c
 <summary>Show detailed findings and successful checks</summary>
 
 - Schema & Repository Governance: Found skill manifest: SKILL.md
-- AGENT_EVAL: Tier 3 evaluation complete: verdict PASS; best agent codex
+- AGENT_EVAL: Tier 3 evaluation complete: verdict PASS; best agent claude-code
 
 </details>
 
