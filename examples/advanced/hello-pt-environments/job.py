@@ -25,13 +25,12 @@ if not all((HELLO_PT_DIR / name).is_file() for name in ("client.py", "model.py",
 sys.path.insert(0, str(HELLO_PT_DIR))
 
 from model import create_model  # noqa: E402
-from prepare_data import add_dataset_arguments, validate_cifar10  # noqa: E402
+from prepare_data import add_dataset_arguments  # noqa: E402
 
 from nvflare.apis.job_def import RunStatus
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.recipe import PocEnv, ProdEnv, SimEnv, add_experiment_tracking, add_final_global_evaluation
 from nvflare.recipe.prod_env import DEFAULT_ADMIN_USER
-from nvflare.recipe.spec import _peek_recipe_args
 from nvflare.recipe.utils import add_cross_site_evaluation
 
 DEFAULT_NUM_CLIENTS = 2
@@ -174,13 +173,6 @@ def create_environment(args):
 
 def main(argv=None):
     args = parse_args(argv)
-    export_only, _ = _peek_recipe_args()
-    if args.dataset == "cifar10" and args.env != "prod" and not export_only:
-        args.data_root = str(Path(args.data_root).expanduser().resolve())
-        try:
-            validate_cifar10(args.data_root, prepare_script="../../hello-world/hello-pt/prepare_data.py")
-        except FileNotFoundError as e:
-            raise SystemExit(str(e)) from None
     recipe = create_recipe(args)
     env = create_environment(args)
 

@@ -213,19 +213,12 @@ def test_default_recipe_uses_final_global_evaluation(monkeypatch):
     assert calls == [("final", recipe)]
 
 
-def test_cifar_main_rejects_missing_data_before_creating_environment(tmp_path, monkeypatch):
-    job_module = _load_job_module()
-    monkeypatch.setattr(job_module, "SimEnv", lambda **kwargs: pytest.fail("simulation must not start"))
-    monkeypatch.setattr(job_module, "create_recipe", lambda args: pytest.fail("recipe must not be constructed"))
-
-    with pytest.raises(SystemExit, match="python prepare_data.py --data_root"):
-        job_module.main(["--dataset", "cifar10", "--data_root", str(tmp_path)])
-
-
-def test_cifar_cli_export_does_not_require_local_data(tmp_path):
+@pytest.mark.parametrize("relative_cache", [False, True])
+def test_cifar_cli_export_does_not_require_local_data(tmp_path, relative_cache):
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
     example_dir = os.path.join(repo_root, "examples", "hello-world", "hello-pt")
-    remote_cache = str(tmp_path / "remote site's cache")
+    cache_path = tmp_path / "remote site's cache"
+    remote_cache = os.path.relpath(cache_path, example_dir) if relative_cache else str(cache_path)
     subprocess.run(
         [
             sys.executable,
@@ -248,7 +241,7 @@ def test_cifar_cli_export_does_not_require_local_data(tmp_path):
     client_config = tmp_path / "export" / "hello-pt" / "app" / "config" / "config_fed_client.json"
     executor_args = json.loads(client_config.read_text())["executors"][0]["executor"]["args"]
     assert executor_args["task_script_args"] == ["--dataset", "cifar10", "--data_root", remote_cache]
-    assert not os.path.exists(remote_cache)
+    assert not cache_path.exists()
 
 
 def test_cifar_recipe_preserves_data_root_with_spaces(monkeypatch):

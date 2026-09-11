@@ -101,13 +101,17 @@ def test_cifar_data_loaders_use_prepared_data_without_downloading(monkeypatch, t
     assert all(call["root"] == str(tmp_path) for call in calls)
 
 
-@pytest.mark.parametrize("partial_cache", [False, True])
-def test_cifar_data_loaders_explain_missing_preparation(tmp_path, partial_cache):
+@pytest.mark.parametrize("cache_state", ["missing", "partial", "empty"])
+def test_cifar_data_loaders_explain_missing_preparation(tmp_path, cache_state):
     client_module = _load_hello_pt_module("client.py")
-    if partial_cache:
+    if cache_state != "missing":
         batch_dir = tmp_path / "cifar-10-batches-py"
         batch_dir.mkdir()
-        (batch_dir / "data_batch_1").touch()
+        names = ["data_batch_1"]
+        if cache_state == "empty":
+            names = [f"data_batch_{i}" for i in range(1, 6)] + ["test_batch", "batches.meta"]
+        for name in names:
+            (batch_dir / name).touch()
 
     with pytest.raises(FileNotFoundError, match="python prepare_data.py --data_root") as error:
         client_module.create_data_loaders("cifar10", "site-1", 20, 10, 2, 0, data_root=str(tmp_path))

@@ -337,53 +337,12 @@ def test_monitoring_interruption_stops_poc(monkeypatch, error_type):
     assert calls == [True]
 
 
-@pytest.mark.parametrize("env_name", ["sim", "poc"])
-@pytest.mark.parametrize("empty_files", [False, True])
-def test_local_cifar_preflight_runs_before_recipe_or_environment(tmp_path, monkeypatch, env_name, empty_files):
-    job_module = _load_job_module()
-    if empty_files:
-        batches = tmp_path / "cifar-10-batches-py"
-        batches.mkdir()
-        for name in [f"data_batch_{i}" for i in range(1, 6)] + ["test_batch", "batches.meta"]:
-            (batches / name).touch()
-    monkeypatch.setattr(job_module, "create_recipe", lambda args: pytest.fail("recipe must not be created"))
-    monkeypatch.setattr(job_module, "create_environment", lambda args: pytest.fail("environment must not start"))
-    with pytest.raises(SystemExit, match="python ../../hello-world/hello-pt/prepare_data.py"):
-        job_module.main(["--env", env_name, "--dataset", "cifar10", "--data_root", str(tmp_path)])
-
-
-def test_cifar_production_does_not_check_admin_local_cache(monkeypatch):
-    job_module = _load_job_module()
-    monkeypatch.setattr(
-        job_module, "validate_cifar10", lambda *args, **kwargs: pytest.fail("cache belongs to remote clients")
-    )
-    run = SimpleNamespace(get_result=lambda clean_up: "/tmp/result", get_status=lambda: "FINISHED_OK")
-    monkeypatch.setattr(job_module, "create_recipe", lambda args: SimpleNamespace(execute=lambda env: run))
-    monkeypatch.setattr(job_module, "create_environment", lambda args: object())
-    assert job_module.main(["--env", "prod", "--startup-kit", "/tmp/admin", "--dataset", "cifar10"]) == "/tmp/result"
-
-
 def test_negative_memory_gc_interval_is_rejected_before_execution(monkeypatch, capsys):
     job_module = _load_job_module()
     monkeypatch.setattr(job_module, "create_recipe", lambda args: pytest.fail("recipe must not be created"))
     with pytest.raises(SystemExit, match="2"):
         job_module.main(["--client_memory_gc_rounds", "-1"])
     assert "--client_memory_gc_rounds must be >= 0" in capsys.readouterr().err
-
-
-@pytest.mark.parametrize("example_dir", [HELLO_PT_DIR, ADVANCED_DIR])
-def test_cifar_cli_error_has_preparation_command_without_traceback(tmp_path, example_dir):
-    result = subprocess.run(
-        [sys.executable, "job.py", "--dataset", "cifar10", "--data_root", str(tmp_path)],
-        cwd=example_dir,
-        env={**os.environ, "PYTHONPATH": str(REPO_ROOT)},
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-    assert result.returncode != 0
-    assert "prepare_data.py --data_root" in result.stderr
-    assert "Traceback" not in result.stderr
 
 
 def test_copied_example_reports_missing_shared_application(tmp_path):

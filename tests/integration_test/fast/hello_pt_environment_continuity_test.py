@@ -81,7 +81,8 @@ def test_hello_pt_reuses_the_application_in_poc(tmp_path, monkeypatch, capsys):
 
 
 @pytest.mark.timeout(180)
-def test_failed_poc_job_retains_download_and_client_error_logs(tmp_path, monkeypatch, capsys):
+@pytest.mark.parametrize("missing_cifar", [False, True])
+def test_failed_poc_job_retains_download_and_client_error_logs(tmp_path, monkeypatch, capsys, missing_cifar):
     poc_env_module = importlib.import_module("nvflare.recipe.poc_env")
     monkeypatch.setattr(poc_env_module, "get_poc_workspace", lambda: str(tmp_path / "poc"))
     monkeypatch.delenv("NVFLARE_HOME", raising=False)
@@ -89,10 +90,16 @@ def test_failed_poc_job_retains_download_and_client_error_logs(tmp_path, monkeyp
     monkeypatch.chdir(ADVANCED_DIR)
 
     with load_hello_pt_module("job.py", example_dir=ADVANCED_DIR) as job_module:
-        # Invalid client batch size intentionally fails during actual client
-        # execution, after provisioning and submission, without a data download.
+        # Both failures must occur on the clients after deployment and leave
+        # the diagnostic logs available, without downloading data.
+        if missing_cifar:
+            client_args = ["--dataset", "cifar10", "--data_root", str(tmp_path / "missing")]
+            expected_error = "python prepare_data.py --data_root"
+        else:
+            client_args = ["--batch_size", "0"]
+            expected_error = "batch_size should be a positive integer"
         with pytest.raises(RuntimeError, match="unsuccessful status: FINISHED"):
-            job_module.main(["--env", "poc", "--num_rounds", "1", "--batch_size", "0"])
+            job_module.main(["--env", "poc", "--num_rounds", "1", *client_args])
 
     output = capsys.readouterr().err
     result_line = next(line for line in output.splitlines() if line.startswith("Result can be found in:"))
@@ -103,7 +110,7 @@ def test_failed_poc_job_retains_download_and_client_error_logs(tmp_path, monkeyp
     workspace = workspaces[0]
     logs = list(workspace.rglob("poc_console.log"))
     assert logs
-    assert any("batch_size should be a positive integer" in log.read_text() for log in logs)
+    assert any(expected_error in log.read_text() for log in logs)
     assert str(workspace) in output
     assert all(str(log) in output for log in logs)
     assert not poc_env_module.PocEnv._running_services(

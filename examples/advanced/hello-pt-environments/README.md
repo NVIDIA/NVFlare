@@ -183,9 +183,11 @@ python ../../hello-world/hello-pt/prepare_data.py --data_root "/data/cifar cache
 python job.py --dataset cifar10 --data_root "/data/cifar cache"
 ```
 
-For simulation and POC, the script rejects missing or empty cache files before constructing or starting the job and
-prints the preparation command without a traceback. Export skips this local check. Clients open the cache with
-downloads disabled, so concurrent processes do not race while writing it. The preflight checks file presence and
+Each client checks for missing or empty cache files when loading data and reports the preparation command in its
+error log. This happens after simulation or POC starts; `job.py` does not validate the cache, and exports do not
+require local data. Failed POC jobs retain their results and service logs as described above. Use an absolute
+client-local `--data_root` path to avoid depending on a client process's working directory. Clients open the cache
+with downloads disabled, so concurrent processes do not race while writing it. The client checks file presence and
 nonzero size; torchvision performs its own integrity checks when loading. This option is useful for experimentation
 but is not a federated data partition.
 

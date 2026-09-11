@@ -212,8 +212,10 @@ python prepare_data.py --data_root /data/cifar
 python job.py --dataset cifar10 --data_root /data/cifar
 ```
 
-If required cache files are missing or empty, `job.py` stops before starting the simulator
-and prints the preparation command for the selected path. Exporting a job does
+Each client checks for missing or empty cache files when loading data and reports
+the preparation command in its error log. This happens after the simulator starts;
+`job.py` does not validate the cache. Use an absolute client-local `--data_root` path
+to avoid depending on a client process's working directory. Exporting a job does
 not require a local cache; prepare the data on its execution clients instead.
 
 All simulated clients then read the same logical CIFAR-10 training and test
