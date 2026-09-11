@@ -14,7 +14,6 @@
 
 from __future__ import annotations
 
-import math
 import os
 import shutil
 import sys
@@ -348,7 +347,6 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             self._debug = admin_config.get(AdminConfigKey.WITH_DEBUG, False)
 
         self.cmd_timeout = None
-        self._login_deadline: Optional[float] = None
 
         # for login
         self.token = None
@@ -643,7 +641,6 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
     def _try_login(self):
         resp = None
         for i in range(self.auto_login_max_tries):
-            self._check_login_deadline()
             try:
                 self.fire_session_event(EventType.TRYING_LOGIN, "Trying to login, please wait ...")
             except Exception as ex:
@@ -654,7 +651,6 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
                 }
 
             resp = self._user_login()
-            self._check_login_deadline()
 
             status = resp.get(ResultKey.STATUS)
             if status in [APIStatus.SUCCESS, APIStatus.ERROR_AUTHENTICATION, APIStatus.ERROR_CERT]:
@@ -663,11 +659,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
                 else:
                     self.fire_session_event(EventType.LOGIN_FAILURE)
                 return resp
-            if i + 1 < self.auto_login_max_tries:
-                delay = AUTO_LOGIN_INTERVAL
-                if self._login_deadline is not None:
-                    delay = min(delay, max(0.0, self._login_deadline - time.monotonic()))
-                time.sleep(delay)
+            time.sleep(AUTO_LOGIN_INTERVAL)
         if resp is None:
             resp = {
                 ResultKey.STATUS: APIStatus.ERROR_RUNTIME,
@@ -676,50 +668,16 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             self.fire_session_event(EventType.LOGIN_FAILURE)
         return resp
 
-    def _check_login_deadline(self):
-        if self._login_deadline is not None and time.monotonic() >= self._login_deadline:
-            raise TimeoutError("Timed out waiting for the admin server to complete login.")
-
-    def login(self, timeout: Optional[float] = None) -> dict:
-        """Log in over an already established admin transport connection.
-
-        Args:
-            timeout: Total login budget in seconds, for example ``api.login(30.0)``.
-                Must be a finite positive number. Each login and command-list
-                request uses the remaining budget, capped by the command timeout.
-                Retry sleeps share that budget. None preserves the configured
-                retry count and per-command timeouts without an overall limit.
-                This timeout applies only to login, not later commands.
-
-        Returns:
-            A dictionary with ``status`` and ``details``. Login timeout returns
-            ``APIStatus.ERROR_RUNTIME`` with an explanatory detail.
-
-        Raises:
-            ValueError: The timeout is not a finite positive number or None.
-        """
-        if timeout is not None and (
-            not isinstance(timeout, (int, float)) or not math.isfinite(timeout) or timeout <= 0
-        ):
-            raise ValueError("timeout must be a finite positive number of seconds or None")
-        previous_deadline = self._login_deadline
-        self._login_deadline = time.monotonic() + timeout if timeout is not None else None
+    def login(self):
         try:
             self.fire_session_event(EventType.BEFORE_LOGIN)
             result = self._try_login()
             self.debug(f"login result is {result}")
-        except TimeoutError:
-            result = {
-                ResultKey.STATUS: APIStatus.ERROR_RUNTIME,
-                ResultKey.DETAILS: "Timed out waiting for the admin server to complete login.",
-            }
         except Exception as e:
             result = {
                 ResultKey.STATUS: APIStatus.ERROR_RUNTIME,
                 ResultKey.DETAILS: f"Exception occurred ({secure_format_exception(e)}) when trying to login - please try later",
             }
-        finally:
-            self._login_deadline = previous_deadline
         return result
 
     def _load_client_cmds_from_modules(self, cmd_modules):
@@ -876,12 +834,6 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         timeout = self.cmd_timeout
         if not timeout:
             timeout = 5.0
-        if self._login_deadline is not None:
-            self._check_login_deadline()
-            timeout = min(timeout, self._login_deadline - time.monotonic())
-            if timeout <= 0:
-                raise TimeoutError("Timed out waiting for the admin server to complete login.")
-            conn.update_meta({MetaKey.CMD_TIMEOUT: timeout})
 
         requester = ctx.get_requester()
         if requester:

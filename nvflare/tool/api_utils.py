@@ -15,7 +15,9 @@ import math
 import os
 import threading
 import time
-from typing import List, Optional, Tuple
+from concurrent.futures import Future
+from concurrent.futures import TimeoutError as FutureTimeoutError
+from typing import List, Optional
 
 from nvflare.fuel.flare_api.api_spec import JobNotFound, NoConnection, TargetType
 from nvflare.fuel.flare_api.flare_api import Session
@@ -36,27 +38,6 @@ def _client_names(client_info: list) -> List[str]:
 def _format_ready_clients(client_names: List[str], ready_count: int, expected_count: int) -> str:
     names = f" ({', '.join(client_names)})" if client_names else ""
     return f"Clients ready: {ready_count}/{expected_count}{names}"
-
-
-def _close_session_before_deadline(sess: Session, deadline: float) -> Tuple[Optional[str], bool]:
-    """Close a readiness-probe session without exceeding its overall deadline."""
-    close_errors = []
-    close_finished = threading.Event()
-
-    def _close():
-        try:
-            sess.close()
-        except Exception as e:
-            close_errors.append(str(e))
-        finally:
-            close_finished.set()
-
-    close_thread = threading.Thread(target=_close, name="poc-readiness-session-close", daemon=True)
-    close_thread.start()
-    remaining = max(deadline - time.monotonic(), 0.0)
-    if not close_finished.wait(remaining):
-        return "Timed out closing the admin session. System readiness could not be confirmed.", True
-    return (close_errors[0] if close_errors else None), False
 
 
 def shutdown_system(
@@ -146,6 +127,15 @@ def wait_for_system_start(
     conn_timeout: float = 10.0,
     expected_clients: Optional[List[str]] = None,
 ):
+    """Wait for readiness for up to timeout_in_sec seconds after second_to_wait.
+
+    conn_timeout is passed to transport authentication (default ten seconds).
+    The caller's wait covers session creation, login, status requests and cleanup,
+    even when an underlying idle timeout is extended by network progress. One
+    daemon worker owns the session; it is not forcibly cancelled on timeout and
+    closes the session when the pending operation returns. Confirmed readiness
+    is returned without waiting for cleanup. No general Session API is changed.
+    """
     from nvflare.tool.cli_output import print_human
 
     # Reject caller errors before sleeping, creating a session, or retrying.
@@ -168,84 +158,98 @@ def wait_for_system_start(
     if second_to_wait > 0:
         print_human(f"wait for {second_to_wait} seconds before FL system is up")
         time.sleep(second_to_wait)
-    # just in case try to connect before server started
-    flare_not_ready = True
-    expected_client_set = set(expected_clients or [])
     deadline = time.monotonic() + timeout_in_sec
-    admin_user_dir = os.path.join(prod_dir, username)
+    outcome = Future()
+    stopped = threading.Event()
+    expected_client_set = set(expected_clients or [])
+    expected_count = len(expected_client_set) if expected_client_set else num_clients
+
+    operation = "connecting and logging in to the admin server"
     last_error = None
-    while flare_not_ready and time.monotonic() < deadline:
-        sess = None
-        ready_sys_info = None
-        cleanup_timed_out = False
-        configuration_error = None
-        try:
+
+    def probe():
+        nonlocal operation, last_error
+        # Keep the whole session lifecycle in one worker: transport and streamed
+        # requests use idle timeouts and cannot enforce a total elapsed limit.
+        while not stopped.is_set() and time.monotonic() < deadline:
+            sess = None
             try:
-                sess = Session(username=username, startup_path=admin_user_dir, secure_mode=secure_mode)
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    raise TimeoutError("Timed out before connecting to the admin server.")
+                operation = "connecting and logging in to the admin server"
                 print_human(
-                    f"Connecting and logging in to the admin server (up to {remaining:.1f} seconds remaining)..."
+                    f"Connecting and logging in to the admin server "
+                    f"(up to {max(0.0, deadline - time.monotonic()):.1f} seconds remaining)..."
                 )
-                sess.try_connect(remaining, connect_timeout=conn_timeout)
-            except ValueError as e:
-                # Only session setup errors are caller errors; status/parsing
-                # failures below can be transient and should remain retryable.
-                configuration_error = e
-                deadline = time.monotonic()
-                raise
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise TimeoutError("Timed out before requesting system status.")
-            sess.api.set_command_timeout(remaining)
-            sys_info = sess.get_system_info()
-            if time.monotonic() >= deadline:
-                raise TimeoutError("Timed out waiting for the admin server to return system status.")
-            client_names = _client_names(sys_info.client_info)
-            ready_count = len(sys_info.client_info)
-            expected_count = len(expected_client_set) if expected_client_set else num_clients
-            if expected_client_set:
-                registered_clients = set(client_names)
-                missing_clients = sorted(expected_client_set - registered_clients)
-                flare_not_ready = bool(missing_clients)
-            else:
-                missing_clients = []
-                flare_not_ready = ready_count < num_clients
-            if flare_not_ready:
-                if missing_clients:
-                    last_error = f"waiting for clients: {', '.join(missing_clients)}"
-                    print_human(
-                        f"Waiting for clients: {', '.join(missing_clients)} ({ready_count}/{expected_count} ready)"
+                try:
+                    sess = Session(
+                        username=username, startup_path=os.path.join(prod_dir, username), secure_mode=secure_mode
                     )
-                else:
-                    last_error = f"{ready_count} of {num_clients} clients registered"
-                    print_human(f"Waiting for clients: {ready_count}/{expected_count} ready")
-            else:
-                ready_sys_info = sys_info
-        except NoConnection as e:
-            last_error = str(e) or "server is not reachable"
-        except Exception as e:
-            last_error = str(e)
-        finally:
-            if sess:
-                close_error, cleanup_timed_out = _close_session_before_deadline(sess, deadline)
-                if close_error and not cleanup_timed_out:
-                    print_human(f"Warning: could not close the admin session: {close_error}")
+                    remaining = deadline - time.monotonic()
+                    if stopped.is_set() or remaining <= 0:
+                        return
+                    sess.try_connect(min(conn_timeout, remaining))
+                except ValueError as e:
+                    outcome.set_exception(e)
+                    return
+                remaining = deadline - time.monotonic()
+                if stopped.is_set() or remaining <= 0:
+                    return
+                operation = "waiting for the admin server to return system status"
+                sess.api.set_command_timeout(remaining)
+                sys_info = sess.get_system_info()
+                if stopped.is_set() or time.monotonic() >= deadline:
+                    return
+                client_names = _client_names(sys_info.client_info)
+                ready_count = len(sys_info.client_info)
+                missing = sorted(expected_client_set - set(client_names))
+                if not missing and (expected_client_set or ready_count >= num_clients):
+                    outcome.set_result(
+                        (time.monotonic(), sys_info, _format_ready_clients(client_names, ready_count, expected_count))
+                    )
+                    return
+                waiting = (
+                    f"Waiting for clients: {', '.join(missing)} ({ready_count}/{expected_count} ready)"
+                    if missing
+                    else f"Waiting for clients: {ready_count}/{expected_count} ready"
+                )
+                last_error = waiting
+                print_human(waiting)
+            except Exception as e:
+                last_error = str(e)
+            except BaseException as e:
+                outcome.set_exception(e)
+                return
+            finally:
+                if sess is not None:
+                    previous_operation = operation
+                    operation = "closing the admin session"
+                    try:
+                        sess.close()
+                    except Exception as e:
+                        if not stopped.is_set():
+                            print_human(f"Warning: could not close the admin session: {e}")
+                    finally:
+                        operation = previous_operation
+            operation = "waiting for the server and clients to become ready"
+            stopped.wait(min(poll_interval, max(0.0, deadline - time.monotonic())))
 
-        if configuration_error is not None:
-            raise configuration_error
-        if ready_sys_info is not None:
-            print_human(_format_ready_clients(client_names, ready_count, expected_count))
-            print_human("\nReady to go.")
-            return ready_sys_info
-        if cleanup_timed_out:
-            raise SystemStartCleanupTimeout(close_error)
+    threading.Thread(target=probe, name="poc-readiness", daemon=True).start()
+    try:
+        try:
+            observed_at, sys_info, ready_message = outcome.result(timeout=max(0.0, deadline - time.monotonic()))
+        except FutureTimeoutError:
+            pass
+        else:
+            if observed_at < deadline:
+                print_human(ready_message)
+                print_human("\nReady to go.")
+                return sys_info
+    finally:
+        # Never start another attempt after the caller returns. A blocked worker
+        # owns its session and closes it when the underlying operation returns.
+        stopped.set()
 
-        remaining = deadline - time.monotonic()
-        if flare_not_ready and remaining > 0:
-            time.sleep(min(poll_interval, remaining))
-
+    if operation == "closing the admin session":
+        raise SystemStartCleanupTimeout("Timed out closing the admin session. System readiness could not be confirmed.")
     detail = f" Last observation: {last_error}" if last_error else ""
     client_target = (
         f"expected clients {', '.join(sorted(expected_client_set))}"
@@ -253,5 +257,6 @@ def wait_for_system_start(
         else f"{num_clients} clients"
     )
     raise SystemStartTimeout(
-        f"Could not confirm that the server and {client_target} were ready within {timeout_in_sec} seconds.{detail}"
+        f"Could not confirm that the server and {client_target} were ready within {timeout_in_sec} seconds. "
+        f"Timed out {operation}.{detail}"
     )

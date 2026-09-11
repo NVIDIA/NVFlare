@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import json
-import math
 import os
 import time
 from typing import List, Optional
@@ -205,57 +204,19 @@ class Session(SessionSpec):
         if isinstance(session_expired_reason, str) and session_expired_reason:
             raise SessionExpired(session_expired_reason)
 
-    def try_connect(self, timeout: Optional[float], *, connect_timeout: Optional[float] = None) -> None:
-        """Establish the admin transport connection and log in.
-
-        Args:
-            timeout: Total connection and login budget in seconds, for example
-                ``session.try_connect(30.0)``. Must be a finite positive number,
-                or None to use the admin configuration's login timeout.
-                Login requests, command-list retrieval, and retry sleeps use
-                the budget remaining after transport authentication. Later
-                session operations have their own timeouts.
-            connect_timeout: Optional transport authentication limit in seconds,
-                capped by the total timeout. For example,
-                ``session.try_connect(30, connect_timeout=10)`` allows transport
-                authentication up to ten seconds and login the remainder of the
-                thirty-second total. None lets transport use the total budget.
-
-        Raises:
-            ValueError: A supplied timeout is not a finite positive number.
-            NoConnection: Transport authentication fails, consumes the budget,
-                or login reports a connection failure.
-            SessionClosed: The session is closed.
-            SessionExpired: The session has expired.
-            AuthenticationError: Admin login rejects the credentials.
-            AuthorizationError: Admin login denies access.
-            InternalError: Login otherwise fails, including timeout during login.
-        """
+    def try_connect(self, timeout):
         self._raise_if_session_expired()
         if self.api.closed:
             raise SessionClosed("session closed")
 
-        if timeout is None:
-            timeout = self.api.default_login_timeout
-        if not isinstance(timeout, (int, float)) or not math.isfinite(timeout) or timeout <= 0:
-            raise ValueError("timeout must be a finite positive number of seconds")
-        if connect_timeout is not None and (
-            not isinstance(connect_timeout, (int, float)) or not math.isfinite(connect_timeout) or connect_timeout <= 0
-        ):
-            raise ValueError("connect_timeout must be a finite positive number of seconds or None")
-        deadline = time.monotonic() + timeout
-
         try:
-            self.api.connect(min(timeout, connect_timeout) if connect_timeout is not None else timeout)
+            self.api.connect(timeout)
         except FLCommunicationError as e:
             message = str(e)
             if "cannot connect to server" in message or "cannot authenticate to server" in message:
                 raise NoConnection(message) from e
             raise
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            raise NoConnection("Timed out connecting to the admin server.")
-        result = self.api.login(timeout=remaining)
+        result = self.api.login()
         status = result.get(ResultKey.STATUS) if isinstance(result, dict) else None
         details = result.get(ResultKey.DETAILS, "") if isinstance(result, dict) else ""
         if status == APIStatus.SUCCESS:

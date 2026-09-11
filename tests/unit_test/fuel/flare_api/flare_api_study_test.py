@@ -168,7 +168,7 @@ def test_try_connect_raises_on_login_failure():
     session.api = SimpleNamespace(
         closed=False,
         connect=lambda timeout: None,
-        login=lambda timeout: {
+        login=lambda: {
             ResultKey.STATUS: APIStatus.ERROR_AUTHENTICATION,
             ResultKey.DETAILS: "Incorrect user name or password",
         },
@@ -183,7 +183,7 @@ def test_try_connect_preserves_auth_code():
     session.api = SimpleNamespace(
         closed=False,
         connect=lambda timeout: None,
-        login=lambda timeout: {
+        login=lambda: {
             ResultKey.STATUS: APIStatus.ERROR_AUTHENTICATION,
             ResultKey.DETAILS: "unknown study 'study-a'",
             "auth_code": "AUTH_UNKNOWN_STUDY",
@@ -201,7 +201,7 @@ def test_try_connect_raises_no_connection_on_server_connection_error():
     session.api = SimpleNamespace(
         closed=False,
         connect=lambda timeout: None,
-        login=lambda timeout: {
+        login=lambda: {
             ResultKey.STATUS: APIStatus.ERROR_SERVER_CONNECTION,
             ResultKey.DETAILS: "server unavailable",
         },
@@ -209,50 +209,3 @@ def test_try_connect_raises_no_connection_on_server_connection_error():
 
     with pytest.raises(NoConnection, match="server unavailable"):
         session.try_connect(5.0)
-
-
-@pytest.mark.parametrize("timeout", [30.0, None])
-@pytest.mark.parametrize("connect_timeout", [None, 10.0, 60.0])
-def test_try_connect_shares_seconds_budget_with_login(monkeypatch, timeout, connect_timeout):
-    session = _make_session_for_study(DEFAULT_STUDY)
-    clock = [100.0]
-    budgets = []
-
-    def connect(seconds):
-        assert seconds == (min(30.0, connect_timeout) if connect_timeout is not None else 30.0)
-        clock[0] += 9.0
-
-    def login(timeout):
-        budgets.append(timeout)
-        return {ResultKey.STATUS: APIStatus.SUCCESS}
-
-    session.api = SimpleNamespace(closed=False, default_login_timeout=30.0, connect=connect, login=login)
-    monkeypatch.setattr("nvflare.fuel.flare_api.flare_api.time.monotonic", lambda: clock[0])
-    session.try_connect(timeout, connect_timeout=connect_timeout)
-    assert budgets == [21.0]
-
-
-def test_try_connect_does_not_login_after_transport_consumes_budget(monkeypatch):
-    session = _make_session_for_study(DEFAULT_STUDY)
-    clock = [100.0]
-
-    def connect(seconds):
-        clock[0] += seconds
-
-    def login(timeout):
-        pytest.fail("login must not start after the timeout")
-
-    session.api = SimpleNamespace(closed=False, connect=connect, login=login)
-    monkeypatch.setattr("nvflare.fuel.flare_api.flare_api.time.monotonic", lambda: clock[0])
-    with pytest.raises(NoConnection, match="Timed out connecting to the admin server"):
-        session.try_connect(30.0)
-
-
-@pytest.mark.parametrize("invalid", [0, -1, float("nan"), float("inf"), "30"])
-@pytest.mark.parametrize("parameter", ["timeout", "connect_timeout"])
-def test_try_connect_rejects_invalid_seconds_before_transport(invalid, parameter):
-    session = _make_session_for_study(DEFAULT_STUDY)
-    session.api = SimpleNamespace(closed=False)
-    options = {"timeout": 30, parameter: invalid}
-    with pytest.raises(ValueError, match="finite positive"):
-        session.try_connect(**options)
