@@ -43,7 +43,7 @@ def validate_coco_config(config):
     allowed = {
         "compute_env",
         "cc_cpu_mechanism",
-        "cc_gpu",
+        CCConfigKey.CC_GPU,
         "role",
         "image_build",
         "release_name",
@@ -58,7 +58,7 @@ def validate_coco_config(config):
     for key, value in {
         "compute_env": CCConfigValue.CONFIDENTIAL_CONTAINERS,
         "cc_cpu_mechanism": CCConfigValue.AMD_SEV_SNP,
-        "cc_gpu": "nvidia",
+        CCConfigKey.CC_GPU: "nvidia",
         "role": "client",
     }.items():
         if config.get(key) != value:
