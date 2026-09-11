@@ -3,7 +3,9 @@
 [NVIDIA NeMo™](https://developer.nvidia.com/nemo) is an end-to-end cloud-native enterprise framework for developers to 
 build, customize, and deploy generative AI models with billions of parameters.
 
-Here, we show how NVFlare utilizes features from NeMo to run LLM tasks in federated environments with several [examples](./examples).
+Here, we show how NVFlare utilizes features from NeMo to run LLM tasks in federated environments with several
+[examples](./examples). These include adapter-only PEFT for Nemotron 3 Nano and Nemotron 3.5 Lightning, plus full-model
+SFT for Nemotron 3 Nano.
 
 ## Requirements
 
