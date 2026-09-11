@@ -191,7 +191,13 @@ def wait_for_system_start(
                 remaining = remaining_time()
                 if remaining <= 0:
                     return
-                sess.try_connect(min(conn_timeout, remaining))
+                try:
+                    sess.try_connect(min(conn_timeout, remaining))
+                except AdminCertAcquisitionError:
+                    raise
+                except ConfigError as e:
+                    outcome.set_exception(e)
+                    return
                 remaining = remaining_time()
                 if remaining <= 0:
                     return

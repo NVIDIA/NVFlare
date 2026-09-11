@@ -28,6 +28,7 @@ from cryptography.x509.oid import NameOID
 from nvflare.fuel.sec.admin_cert_provider import (
     AdminCertFiles,
     AdminCertProviderError,
+    AdminCertProviderRequestError,
     get_admin_cert_renewal_window,
     obtain_admin_cert_files,
     validate_admin_cert_files,
@@ -535,7 +536,7 @@ def test_step_ca_source_reports_step_failure(monkeypatch, tmp_path):
     _ca_key, _ca_cert, root_ca_path = _make_root_ca(tmp_path)
     fake_step = _fake_step(monkeypatch, tmp_path, exit_code=1)
 
-    with pytest.raises(AdminCertProviderError, match="step ca certificate failed"):
+    with pytest.raises(AdminCertProviderRequestError, match="step ca certificate failed"):
         obtain_admin_cert_files(
             config={
                 "provider": "step_ca",
@@ -602,7 +603,7 @@ def test_step_ca_source_times_out_step_command(monkeypatch, tmp_path):
     _ca_key, _ca_cert, root_ca_path = _make_root_ca(tmp_path)
     fake_step = _fake_step(monkeypatch, tmp_path, sleep=2)
 
-    with pytest.raises(AdminCertProviderError, match="timed out"):
+    with pytest.raises(AdminCertProviderRequestError, match="timed out"):
         obtain_step_ca_admin_cert_files(
             config={
                 "ca_url": "https://step-ca.example.com",

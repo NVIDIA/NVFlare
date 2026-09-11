@@ -49,6 +49,10 @@ class AdminCertProviderError(ValueError):
     """Raised when admin certificate acquisition fails."""
 
 
+class AdminCertProviderRequestError(AdminCertProviderError):
+    """A provider request failed and may succeed on retry; local validation errors must not use this type."""
+
+
 @dataclass
 class AdminCertFiles:
     client_key: str

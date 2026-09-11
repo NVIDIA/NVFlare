@@ -58,6 +58,7 @@ from nvflare.fuel.hci.proto import (
 from nvflare.fuel.hci.reg import CommandEntry, CommandModule, CommandRegister
 from nvflare.fuel.hci.table import Table
 from nvflare.fuel.sec.admin_cert_provider import (
+    AdminCertProviderRequestError,
     get_admin_cert_renewal_window,
     obtain_admin_cert_files,
     validate_admin_cert_provider_config,
@@ -412,10 +413,12 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
                 config=self.admin_cert_provider_config,
                 root_ca_file=self.ca_cert,
             )
-        except Exception as ex:
+        except (AdminCertProviderRequestError, ConnectionError, TimeoutError) as ex:
             raise AdminCertAcquisitionError(
                 f"failed to obtain admin certificate: {secure_format_exception(ex)}"
             ) from ex
+        except Exception as ex:
+            raise ConfigError(f"failed to obtain admin certificate: {secure_format_exception(ex)}") from ex
 
         self.admin_cert_files = new_files
         self.client_cert = new_files.client_cert

@@ -20,7 +20,7 @@ from typing import Mapping, Sequence
 from urllib.parse import urlparse
 
 from nvflare.fuel.sec.admin_cert import ADMIN_CERT_PLACEHOLDER_CN
-from nvflare.fuel.sec.admin_cert_provider import AdminCertFiles, AdminCertProviderError
+from nvflare.fuel.sec.admin_cert_provider import AdminCertFiles, AdminCertProviderError, AdminCertProviderRequestError
 
 DEFAULT_STEP_CA_CERT_TTL = "24h"
 DEFAULT_STEP_CA_REQUEST_NAME = ADMIN_CERT_PLACEHOLDER_CN
@@ -115,9 +115,9 @@ def _run_step(
             "cannot execute the 'step' CLI; install it or configure step_ca provider_config.step_bin"
         ) from ex
     except subprocess.TimeoutExpired as ex:
-        raise AdminCertProviderError(f"step ca certificate timed out after {timeout} seconds") from ex
+        raise AdminCertProviderRequestError(f"step ca certificate timed out after {timeout} seconds") from ex
     except subprocess.CalledProcessError as ex:
-        raise AdminCertProviderError(f"step ca certificate failed with exit code {ex.returncode}") from ex
+        raise AdminCertProviderRequestError(f"step ca certificate failed with exit code {ex.returncode}") from ex
 
 
 def _validate_step_ca_url(url: str):
