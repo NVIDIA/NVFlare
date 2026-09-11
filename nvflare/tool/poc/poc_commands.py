@@ -1720,14 +1720,15 @@ def start_poc(cmd_args):
                     timeout_in_sec=ready_timeout,
                 )
             ready = wait_performed
+        except ValueError as e:
+            output_error("INVALID_ARGS", exit_code=4, detail=str(e))
+            raise SystemExit(4)
         except SystemStartTimeout as e:
             output_error_message(
                 "CONNECTION_FAILED",
-                message="POC system did not become ready before the startup timeout.",
-                hint=(
-                    "Check the POC server/client logs, or use 'nvflare poc start --no-wait' "
-                    "for fire-and-forget startup."
-                ),
+                message="POC readiness could not be confirmed within the startup timeout.",
+                hint="Check 'nvflare system status'. On a slow host, allow more startup time with "
+                "'nvflare poc start --timeout <seconds>', or use '--no-wait' and check status before submitting jobs.",
                 exit_code=2,
                 detail=str(e),
             )
@@ -1817,10 +1818,9 @@ def _wait_for_poc_system_ready(
             second_to_wait=0,
             timeout_in_sec=timeout_in_sec,
             poll_interval=1.0,
-            conn_timeout=1.0,
             expected_clients=expected_clients,
         )
-    except SystemStartTimeout:
+    except (SystemStartTimeout, ValueError):
         raise
     except Exception as e:
         raise SystemStartTimeout(str(e)) from e

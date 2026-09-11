@@ -11,8 +11,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import math
 import os
+import threading
 import time
+from concurrent.futures import Future
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from typing import List, Optional
 
 from nvflare.fuel.flare_api.api_spec import JobNotFound, NoConnection, TargetType
@@ -119,68 +123,128 @@ def wait_for_system_start(
     conn_timeout: float = 10.0,
     expected_clients: Optional[List[str]] = None,
 ):
+    """Wait for readiness for up to timeout_in_sec seconds after second_to_wait.
+
+    conn_timeout is passed to transport authentication (default ten seconds).
+    The caller's wait covers session creation, login, status requests and cleanup,
+    even when an underlying idle timeout is extended by network progress. One
+    daemon worker owns the session; it is not forcibly cancelled on timeout and
+    closes the session when the pending operation returns. Confirmed readiness
+    is returned without waiting for cleanup. No general Session API is changed.
+    """
     from nvflare.tool.cli_output import print_human
+
+    # Reject caller errors before sleeping, creating a session, or retrying.
+    for name, value, allow_zero in (
+        ("timeout_in_sec", timeout_in_sec, False),
+        ("conn_timeout", conn_timeout, False),
+        ("poll_interval", poll_interval, True),
+        ("second_to_wait", second_to_wait, True),
+    ):
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+            or value < 0
+            or (value == 0 and not allow_zero)
+        ):
+            required = "non-negative" if allow_zero else "positive"
+            raise ValueError(f"{name} must be a finite {required} number of seconds")
 
     if second_to_wait > 0:
         print_human(f"wait for {second_to_wait} seconds before FL system is up")
         time.sleep(second_to_wait)
-    # just in case try to connect before server started
-    flare_not_ready = True
+    deadline = time.monotonic() + timeout_in_sec
+    outcome = Future()
+    stopped = threading.Event()
     expected_client_set = set(expected_clients or [])
-    start = time.time()
-    deadline = start + timeout_in_sec
-    admin_user_dir = os.path.join(prod_dir, username)
+    expected_count = len(expected_client_set) if expected_client_set else num_clients
+
     last_error = None
-    while flare_not_ready and time.time() < deadline:
-        sess = None
-        try:
-            sess = Session(username=username, startup_path=admin_user_dir, secure_mode=secure_mode)
-            remaining = max(deadline - time.time(), 0.1)
-            sess.try_connect(min(conn_timeout, remaining))
-            sys_info = sess.get_system_info()
-            client_names = _client_names(sys_info.client_info)
-            ready_count = len(sys_info.client_info)
-            expected_count = len(expected_client_set) if expected_client_set else num_clients
-            if expected_client_set:
-                registered_clients = set(client_names)
-                missing_clients = sorted(expected_client_set - registered_clients)
-                flare_not_ready = bool(missing_clients)
-            else:
-                missing_clients = []
-                flare_not_ready = ready_count < num_clients
-            if flare_not_ready:
-                if missing_clients:
-                    last_error = f"waiting for clients: {', '.join(missing_clients)}"
-                    print_human(
-                        f"Waiting for clients: {', '.join(missing_clients)} ({ready_count}/{expected_count} ready)"
+
+    def remaining_time():
+        return 0.0 if stopped.is_set() else max(0.0, deadline - time.monotonic())
+
+    def probe():
+        nonlocal last_error
+        # Keep the whole session lifecycle in one worker: transport and streamed
+        # requests use idle timeouts and cannot enforce a total elapsed limit.
+        while remaining_time() > 0:
+            sess = None
+            try:
+                print_human(
+                    f"Connecting and logging in to the admin server "
+                    f"(up to {remaining_time():.1f} seconds remaining)..."
+                )
+                sess = Session(
+                    username=username, startup_path=os.path.join(prod_dir, username), secure_mode=secure_mode
+                )
+                remaining = remaining_time()
+                if remaining <= 0:
+                    return
+                sess.try_connect(min(conn_timeout, remaining))
+                remaining = remaining_time()
+                if remaining <= 0:
+                    return
+                sess.api.set_command_timeout(remaining)
+                sys_info = sess.get_system_info()
+                if remaining_time() <= 0:
+                    return
+                client_names = _client_names(sys_info.client_info)
+                ready_count = len(sys_info.client_info)
+                missing = sorted(expected_client_set - set(client_names))
+                if not missing and (expected_client_set or ready_count >= num_clients):
+                    outcome.set_result(
+                        (time.monotonic(), sys_info, _format_ready_clients(client_names, ready_count, expected_count))
                     )
-                else:
-                    last_error = f"{ready_count} of {num_clients} clients registered"
-                    print_human(f"Waiting for clients: {ready_count}/{expected_count} ready")
-            else:
-                print_human(_format_ready_clients(client_names, ready_count, expected_count))
+                    return
+                waiting = (
+                    f"Waiting for clients: {', '.join(missing)} ({ready_count}/{expected_count} ready)"
+                    if missing
+                    else f"Waiting for clients: {ready_count}/{expected_count} ready"
+                )
+                last_error = waiting
+                print_human(waiting)
+            except Exception as e:
+                # Preserve existing retries: session/provider exceptions do not
+                # reliably distinguish configuration errors from request failures.
+                last_error = str(e)
+            except BaseException as e:
+                outcome.set_exception(e)
+                return
+            finally:
+                if sess is not None:
+                    try:
+                        sess.close()
+                    except Exception as e:
+                        if not stopped.is_set():
+                            print_human(f"Warning: could not close the admin session: {e}")
+            stopped.wait(min(poll_interval, remaining_time()))
+
+    # ThreadPoolExecutor joins workers at interpreter exit, even with shutdown(wait=False).
+    # A daemon worker lets the CLI exit if the underlying operation never returns.
+    threading.Thread(target=probe, name="poc-readiness", daemon=True).start()
+    try:
+        try:
+            observed_at, sys_info, ready_message = outcome.result(timeout=remaining_time())
+        except FutureTimeoutError:
+            pass
+        else:
+            if observed_at < deadline:
+                print_human(ready_message)
                 print_human("\nReady to go.")
                 return sys_info
-        except NoConnection:
-            # server is not up yet
-            last_error = "server is not reachable"
-        except Exception as e:
-            last_error = str(e)
-        finally:
-            if sess:
-                try:
-                    sess.close()
-                except Exception as e:
-                    last_error = str(e)
+    finally:
+        # Never start another attempt after the caller returns. A blocked worker
+        # owns its session and closes it when the underlying operation returns.
+        stopped.set()
 
-        remaining = deadline - time.time()
-        if flare_not_ready and remaining > 0:
-            time.sleep(min(poll_interval, remaining))
-
-    detail = f"; last error: {last_error}" if last_error else ""
+    detail = f" Last observation: {last_error}" if last_error else ""
     client_target = (
         f"expected clients {', '.join(sorted(expected_client_set))}"
         if expected_client_set
         else f"{num_clients} clients"
     )
-    raise SystemStartTimeout(f"cannot connect to server with {client_target} within {timeout_in_sec} sec{detail}")
+    raise SystemStartTimeout(
+        f"Could not confirm that the server and {client_target} were ready within {timeout_in_sec} seconds.{detail}"
+    )
