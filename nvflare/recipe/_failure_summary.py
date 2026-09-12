@@ -21,7 +21,7 @@ from itertools import islice
 from pathlib import Path
 
 from nvflare.apis.fl_constant import ReturnCode
-from nvflare.fuel.utils.log_utils import wrap_log_message
+from nvflare.fuel.utils.log_utils import _read_log_tail, wrap_log_message
 
 _MAX_LOG_BYTES = 1024 * 1024
 _MAX_LOG_FILES = 20
@@ -94,12 +94,7 @@ def _display(value, limit=512):
 def _first_error(path):
     """Read the first ERROR in a bounded recent snapshot of one site's log."""
     with path.open("rb") as stream:
-        stream.seek(0, 2)
-        start = max(0, stream.tell() - _MAX_LOG_BYTES)
-        stream.seek(start)
-        if start:
-            stream.readline(_MAX_LOG_BYTES)
-        data = stream.read(_MAX_LOG_BYTES)
+        data, _ = _read_log_tail(stream, _MAX_LOG_BYTES, whole_lines=True)
     for record in _records(data, path.name == "error_log.txt"):
         if not isinstance(record, dict) or record.get("levelname") not in ("ERROR", "CRITICAL"):
             continue
@@ -138,28 +133,32 @@ def failure_summary(result=None, *, since=None):
     try:
         groups = {}
         root = Path(result) if result else None
-        candidates = []
+        candidates = set()
         client_logs_available = False
         if root:
             folders = [root, root / "workspace", *islice(root.glob("failure-logs-*"), _MAX_LOG_FILES)]
             for folder in folders:
-                for site_dir in (folder, *islice(folder.glob("*/"), _MAX_LOG_FILES)):
-                    path = site_dir / "log.json"
-                    candidates.append(path if path.is_file() else site_dir / "error_log.txt")
-            paths = sorted(set(candidates))[:_MAX_LOG_FILES]
-            for path in paths:
-                if not path.is_file() or root.resolve() not in path.resolve().parents:
-                    continue
-                if since is not None and path.stat().st_mtime < since:
-                    continue
-                if path.parent not in (root, root / "workspace") and path.parent.name != "server":
-                    client_logs_available = True
-                try:
-                    details = _first_error(path)
-                except (OSError, ValueError):
-                    continue
-                if details:
-                    groups.setdefault(details, []).append(path)
+                candidates.update((folder, *islice(folder.glob("*/"), _MAX_LOG_FILES)))
+            files_read = 0
+            for site_dir in sorted(candidates):
+                for filename in ("log.json", "error_log.txt"):
+                    path = site_dir / filename
+                    if not path.is_file() or root.resolve() not in path.resolve().parents:
+                        continue
+                    if since is not None and path.stat().st_mtime < since:
+                        continue
+                    if files_read >= _MAX_LOG_FILES:
+                        break
+                    files_read += 1
+                    if site_dir not in (root, root / "workspace") and site_dir.name != "server":
+                        client_logs_available = True
+                    try:
+                        details = _first_error(path)
+                    except (OSError, ValueError):
+                        continue
+                    if details:
+                        groups.setdefault(details, []).append(path)
+                        break  # Prefer JSON, but fall back when its tail has no usable error.
         # An application traceback identifies the failing code more directly
         # than the resulting server abort. Do not order machines by wall clock.
         items = sorted(groups.items(), key=lambda item: not item[0][3])

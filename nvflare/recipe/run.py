@@ -135,12 +135,13 @@ class Run:
             finally:
                 self._stopped = True
 
-            status_label = {"completed": "✓ Completed", "failed": "✗ Failed"}.get(
+            status_label = {"completed": "✓ Completed", "failed": "✗ Failed", "not_scheduled": "✗ Not scheduled"}.get(
                 outcome, self._cached_status or "Status unavailable"
             )
             print(summary_header(status_label, elapsed, context=self._summary_context), flush=True)
-            if failure_report:
+            if failure_report or outcome == "not_scheduled":
                 print(f"\n  Status    {self._cached_status}", flush=True)
+            if failure_report:
                 print(failure_report, flush=True)
             if report:
                 print(report, flush=True)

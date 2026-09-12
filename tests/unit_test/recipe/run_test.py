@@ -446,3 +446,16 @@ def test_summary_keeps_multirow_metrics_on_separate_aligned_lines(tmp_path):
     summary = result_summary(tmp_path)
     rows = [line.split() for line in summary.splitlines() if re.match(r"^  [123] +", line)]
     assert rows == [["1", "1", "20"], ["2", "30", "55"], ["3", "70", "65"]]
+
+
+def test_unscheduled_job_has_distinct_outcome_without_training_errors(tmp_path, capsys):
+    env = MagicMock()
+    env.get_job_result.return_value = str(tmp_path)
+    env.get_job_status.return_value = "FINISHED:CAN_NOT_SCHEDULE"
+    Run(env, "unscheduled-job").get_result()
+    output = capsys.readouterr().out
+    assert "✗ Not scheduled" in output
+    assert "Status    FINISHED:CAN_NOT_SCHEDULE" in output
+    assert "✗ Failed" not in output
+    assert "Failure details" not in output
+    assert "Check server and client logs" not in output

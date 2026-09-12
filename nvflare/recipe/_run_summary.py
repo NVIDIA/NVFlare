@@ -18,7 +18,7 @@ import json
 from itertools import islice
 from pathlib import Path
 
-from nvflare.fuel.utils.log_utils import format_metric_table, wrap_log_message
+from nvflare.fuel.utils.log_utils import _read_log_tail, format_metric_table, wrap_log_message
 
 
 def summary_header(outcome, elapsed, *, context=""):
@@ -71,13 +71,9 @@ def result_summary(result):
             try:
                 round_path = metrics / "round_metrics.jsonl"
                 with round_path.open("rb") as stream:
-                    stream.seek(0, 2)
-                    start = max(0, stream.tell() - 1048576)
-                    stream.seek(start)
-                    if start:
-                        stream.readline(1048576)  # Ignore a partial first record.
-                    records = stream.read(1048576).splitlines()[-11:]
-                truncated = start > 0 or len(records) > 10
+                    data, truncated = _read_log_tail(stream, 1048576, whole_lines=True)
+                records = data.splitlines()[-11:]
+                truncated = truncated or len(records) > 10
                 records = records[-10:]
                 rows = []
                 for raw in records:

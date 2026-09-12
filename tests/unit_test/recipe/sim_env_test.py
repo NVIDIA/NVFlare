@@ -315,13 +315,14 @@ def test_sim_env_byoc_job_does_not_expand_standard_policy(tmp_path):
         sys.modules.pop(spec.name, None)
 
 
-def test_empty_clients_reaches_real_simulator_boundary_as_resolved_count(tmp_path):
+@pytest.mark.parametrize("log_config", ["concise", "full"])
+def test_empty_clients_reaches_real_simulator_boundary_as_resolved_count(tmp_path, log_config):
     from nvflare.app_common.np.np_trainer import NPTrainer
 
     job = _make_job("empty-client-list")
     job.to_server(ScatterAndGather(min_clients=2, num_rounds=1))
     job.to_clients(NPTrainer())
-    env = SimEnv(num_clients=2, clients=[], workspace_root=str(tmp_path))
+    env = SimEnv(num_clients=2, clients=[], workspace_root=str(tmp_path), log_config=log_config)
     # Keep FedJob.simulator_run, client resolution and job export real. Only
     # intercept the OS boundary to inspect the actual simulator command.
     with _mock_simulator_popen() as popen:
@@ -331,3 +332,4 @@ def test_empty_clients_reaches_real_simulator_boundary_as_resolved_count(tmp_pat
     assert command[command.index("-n") + 1] == "2"
     assert command[command.index("-c") + 1] == "site-1,site-2"
     assert command[command.index("-t") + 1] == "2"
+    assert f"-l{log_config}" in command

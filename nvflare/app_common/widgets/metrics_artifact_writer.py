@@ -125,7 +125,7 @@ class MetricsArtifactWriter(Widget):
     def _log_progress_metrics(self, label, metrics):
         values = {m["name"]: m["value"] for m in metrics}
         if not values:
-            self.logger.getChild("progress").info(f"  {json.dumps(label[:128])} · no metrics reported")
+            self.logger.getChild("progress").info(f"  {json.dumps(label[:128])} · no displayable metrics")
             return
         columns = list(values)[:2]
         # Clients and aggregators may report different metrics. Repeat the
@@ -253,6 +253,7 @@ class MetricsArtifactWriter(Widget):
         if skipped:
             self._extend_round_skipped(current_round, skipped)
         if not metrics:
+            self._log_progress_metrics(site_name, [])
             return
         sites = self._round_sites.setdefault(current_round, [])
         if len(sites) >= self.max_sites_per_round:

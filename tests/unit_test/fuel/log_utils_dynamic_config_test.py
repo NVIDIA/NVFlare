@@ -257,3 +257,27 @@ def test_metric_table_missing_values_are_not_reported_as_zero():
     table = format_metric_table([("site-1", {"loss": 0.25}), ("site-2", {"accuracy": 1})])
     assert table.splitlines()[1].split() == ["site-1", "0.25", "—"]
     assert table.splitlines()[2].split() == ["site-2", "—", "1"]
+
+
+@pytest.mark.parametrize("whole_lines", [False, True])
+@pytest.mark.parametrize("size", [0, 5, 16, 4096])
+def test_shared_log_tail_bounds_reads_and_preserves_byte_or_record_contract(size, whole_lines):
+    from nvflare.fuel.utils.log_utils import _read_log_tail
+
+    class TrackedStream(io.BytesIO):
+        bytes_read = 0
+
+        def read(self, size=-1):
+            data = super().read(size)
+            self.bytes_read += len(data)
+            return data
+
+    data = (b"old record\n" * size) + b"final record\n" if size else b""
+    stream = TrackedStream(data)
+    tail, truncated = _read_log_tail(stream, 32, whole_lines=whole_lines)
+    expected = data[-32:]
+    if len(data) > 32 and whole_lines:
+        expected = expected.partition(b"\n")[2]
+    assert tail == expected
+    assert truncated == (len(data) > 32)
+    assert stream.bytes_read <= 32
