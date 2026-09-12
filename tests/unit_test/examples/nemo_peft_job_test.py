@@ -34,11 +34,15 @@ def _example_dir():
 
 def _load_job_module():
     example_dir = _example_dir()
-    spec = importlib.util.spec_from_file_location("nemo_peft_job", os.path.join(example_dir, "job.py"))
-    module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(module)
-    return module
+    sys.path.insert(0, example_dir)
+    try:
+        spec = importlib.util.spec_from_file_location("nemo_peft_job", os.path.join(example_dir, "job.py"))
+        module = importlib.util.module_from_spec(spec)
+        assert spec.loader is not None
+        spec.loader.exec_module(module)
+        return module
+    finally:
+        sys.path.remove(example_dir)
 
 
 def _load_client_module():
@@ -62,6 +66,21 @@ def _load_predict_module():
     try:
         spec = importlib.util.spec_from_file_location(
             "nemo_peft_predict_sentiment", os.path.join(example_dir, "predict_sentiment.py")
+        )
+        module = importlib.util.module_from_spec(spec)
+        assert spec.loader is not None
+        spec.loader.exec_module(module)
+        return module
+    finally:
+        sys.path.remove(example_dir)
+
+
+def _load_prepare_module():
+    example_dir = _example_dir()
+    sys.path.insert(0, example_dir)
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "nemo_peft_prepare_initial_adapter", os.path.join(example_dir, "prepare_initial_adapter.py")
         )
         module = importlib.util.module_from_spec(spec)
         assert spec.loader is not None
@@ -116,6 +135,7 @@ def _args(tmp_path, initial_adapter_ckpt):
         cp_size=1,
         use_triton_lora=False,
         server_tensor_device="cpu",
+        fp32_adapter_exchange=False,
         mock_delta=0.01,
     )
 
@@ -173,12 +193,10 @@ def test_nemo_peft_recipe_exports_modern_fedavg_config(tmp_path):
     controller = server_config["workflows"][0]
     assert controller["path"] == "nvflare.app_common.workflows.fedavg.FedAvg"
     assert controller["args"]["num_clients"] == 2
-    persistor = next(
-        c
-        for c in server_config["components"]
-        if c["path"] == "nvflare.app_opt.pt.file_model_persistor.PTFileModelPersistor"
-    )
+    persistor = next(c for c in server_config["components"] if c["path"].endswith(".AdapterPTFileModelPersistor"))
     assert persistor["args"]["load_device"] == "cpu"
+    assert (job_dir / "app_server" / "custom" / "adapter_checkpoint.py").exists()
+    assert (job_dir / "app_server" / "custom" / "adapter_persistor.py").exists()
 
 
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required for multi-round adapter aggregation checks")
@@ -260,6 +278,112 @@ def test_nemo_peft_automodel_config_uses_helper_files(tmp_path):
     assert "peft_config" not in config["model"]
 
 
+def test_lightning35_profile_uses_native_recipe_and_official_lora_defaults(tmp_path):
+    client_module = _load_client_module()
+    args = _args(tmp_path, tmp_path / "init_adapter.pt")
+    args.model_profile = "lightning35"
+    for name in (
+        "model_name_or_path",
+        "tokenizer_name_or_path",
+        "learning_rate",
+        "lora_rank",
+        "lora_alpha",
+        "lora_dropout",
+        "target_modules",
+        "exclude_modules",
+        "use_triton_lora",
+        "tp_size",
+        "cp_size",
+        "ep_size",
+        "activation_checkpointing",
+    ):
+        setattr(args, name, None)
+    args.seed = 43
+    args.model_revision = "model-revision"
+    args.tokenizer_revision = "model-revision"
+    args.train_file = str(tmp_path / "train.jsonl")
+
+    config = client_module._default_automodel_config(args, str(tmp_path / "checkpoints"), str(tmp_path / "incoming"))
+
+    assert config["recipe"].startswith("federated_automodel_trainer.")
+    assert config["model"]["_target_"] == "nemo_automodel.NeMoAutoModelForCausalLM.from_pretrained"
+    assert config["model"]["backend"] == {
+        "_target_": "nemo_automodel.components.models.common.BackendConfig",
+        "attn": "te",
+        "linear": "torch",
+        "rms_norm": "torch_fp32",
+        "experts": "torch_mm",
+        "dispatcher": "torch",
+    }
+    assert config["model"]["num_nextn_predict_layers"] == 2
+    assert config["model"]["mtp_use_repeated_layer"] is True
+    assert config["model"]["mtp_loss_scaling_factor"] == 0.1
+    assert config["peft"]["dim"] == 8
+    assert config["peft"]["alpha"] == 32
+    assert config["peft"]["dropout"] == 0.0
+    assert config["peft"]["exclude_modules"] == ["*.out_proj"]
+    assert config["peft"].get("match_all_linear", False) is False
+    assert config["distributed"]["tp_size"] == 1
+    assert config["distributed"]["cp_size"] == 1
+    assert config["distributed"]["ep_size"] == 1
+    assert config["checkpoint"]["restore_from"].endswith("incoming")
+    assert config["optimizer"]["lr"] == 5e-5
+    assert config["seed"] == 43
+
+
+def test_lightning35_native_settings_have_one_profile_source(monkeypatch, tmp_path):
+    client_module = _load_client_module()
+    args = _args(tmp_path, tmp_path / "init_adapter.pt")
+    args.model_profile = "lightning35"
+    args.train_file = str(tmp_path / "train.jsonl")
+    monkeypatch.setitem(
+        client_module.model_profiles.NATIVE_MODEL_SETTINGS["lightning35"]["backend"],
+        "attn",
+        "torch",
+    )
+
+    config = client_module._default_automodel_config(args, str(tmp_path / "checkpoints"), str(tmp_path / "incoming"))
+    identity = client_module.model_profiles.adapter_identity(args)
+
+    assert config["model"]["backend"]["attn"] == "torch"
+    assert identity["profile_settings"]["backend"]["attn"] == "torch"
+
+
+def test_lightning35_explicit_cli_values_override_profile(monkeypatch):
+    job_module = _load_job_module()
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "job.py",
+            "--model_profile=lightning35",
+            "--learning_rate=0.0002",
+            "--lora_alpha=64",
+            "--no-use_triton_lora",
+        ],
+    )
+
+    args = job_module.define_parser()
+
+    assert args.model_name_or_path == "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16"
+    assert args.learning_rate == 2e-4
+    assert args.lora_alpha == 64
+    assert args.use_triton_lora is False
+
+
+def test_lightning35_initialization_overrides_existing_training_values(tmp_path):
+    prepare_module = _load_prepare_module()
+    args = SimpleNamespace(learning_rate=2e-4, seq_length=512, max_steps=300, model_profile="lightning35")
+
+    native_args = prepare_module._initialization_native_args(args, str(tmp_path / "sample.jsonl"))
+
+    assert native_args.learning_rate == 5e-5
+    assert native_args.seq_length == 32
+    assert native_args.max_steps == 1
+    assert native_args.train_file == str(tmp_path / "sample.jsonl")
+    assert native_args.model_profile == "lightning35"
+
+
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required to import the AutoModel client helper")
 def test_nemo_peft_automodel_env_preserves_existing_pythonpath(monkeypatch):
     client_module = _load_client_module()
@@ -283,6 +407,106 @@ def test_nemo_peft_latest_adapter_dir_prefers_numeric_step_when_mtime_ties(tmp_p
         os.utime(adapter_dir, (1000, 1000))
 
     assert client_module._latest_adapter_dir(str(checkpoint_dir)) == str(step_10)
+
+
+def test_lightning_contract_resolution_is_independent_of_process_working_directory(monkeypatch, tmp_path):
+    client_module = _load_client_module()
+    custom_dir = tmp_path / "app" / "custom"
+    packaged_dir = custom_dir / "workspace" / "run"
+    packaged_dir.mkdir(parents=True)
+    contract = packaged_dir / "adapter_contract.json"
+    contract.write_text("{}")
+    monkeypatch.setattr(client_module, "__file__", str(custom_dir / "automodel_peft_client.py"))
+
+    with _chdir(tmp_path):
+        resolved = client_module._resolve_packaged_contract("adapter_contract.json")
+
+    assert resolved == str(contract)
+
+
+@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required to export the Lightning adapter contract")
+def test_lightning35_recipe_exports_resolvable_contract_and_persistor(tmp_path):
+    import torch
+
+    sys.path.insert(0, _example_dir())
+    try:
+        import adapter_checkpoint
+        import model_profiles
+    finally:
+        sys.path.remove(_example_dir())
+
+    args = _args(tmp_path, tmp_path / "init_adapter.pt")
+    args.model_profile = "lightning35"
+    args.model_revision = "revision"
+    args.tokenizer_revision = "revision"
+    args = model_profiles.resolve_model_profile(args)
+    state = {"model.layer.lora_A.weight": torch.zeros((2, 2), dtype=torch.float32)}
+    plain_state = adapter_checkpoint.strip_model_prefix(state)
+    manifest = adapter_checkpoint.build_adapter_manifest(
+        plain_state,
+        identity=model_profiles.adapter_identity(args),
+    )
+    adapter_checkpoint.save_nvflare_adapter_checkpoint(
+        state,
+        args.initial_adapter_ckpt,
+        adapter_manifest=manifest,
+    )
+    job_module = _load_job_module()
+
+    with _chdir(_example_dir()):
+        recipe = job_module.create_recipe(args)
+        recipe.export(str(tmp_path / "exported"))
+
+    job_dir = tmp_path / "exported" / "nemotron35-lightning-peft"
+    client_dir = job_dir / "app_site-1"
+    with open(client_dir / "config" / "config_fed_client.json") as f:
+        client_config = json.load(f)
+    executor = next(
+        entry["executor"]
+        for entry in client_config["executors"]
+        if entry["executor"]["path"].endswith(".ClientAPIExecutor")
+    )
+    command = executor["args"]["command"]
+    assert command[command.index("--adapter_contract") + 1] == adapter_checkpoint.ADAPTER_CONTRACT_FILE
+    assert len(list((client_dir / "custom").rglob(adapter_checkpoint.ADAPTER_CONTRACT_FILE))) == 1
+    assert (job_dir / "app_server" / "custom" / "adapter_persistor.py").exists()
+
+
+@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required for Nano adapter alignment")
+def test_nano_exchange_rejects_a_partial_updated_adapter(tmp_path):
+    import torch
+
+    client_module = _load_client_module()
+    args = _args(tmp_path, tmp_path / "init_adapter.pt")
+    incoming = {
+        "base_model.model.layer.lora_A.weight": torch.zeros((2, 2)),
+        "base_model.model.layer.lora_B.weight": torch.zeros((2, 2)),
+    }
+    partial = {"layer.lora_A.weight": torch.ones((2, 2))}
+
+    with pytest.raises(ValueError, match="missing=1"):
+        client_module._align_updated_state_for_exchange(args, partial, incoming)
+
+
+@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required to import prediction helpers")
+def test_lightning_prediction_parser_propagates_seed_and_profile_default_path(monkeypatch):
+    predict_module = _load_predict_module()
+    monkeypatch.setattr(sys, "argv", ["predict_sentiment.py", "--model_profile=lightning35", "--seed=43"])
+
+    args = predict_module.define_parser()
+
+    assert args.seed == 43
+    assert "nemotron35_lightning_peft/nemotron35-lightning-peft" in args.server_model
+
+
+def test_notebook_uses_profile_specific_evaluation_adapter_and_disjoint_split():
+    with open(os.path.join(_example_dir(), "peft.ipynb")) as f:
+        notebook = json.load(f)
+    source = "\n".join("".join(cell.get("source", [])) for cell in notebook["cells"])
+
+    assert 'EVALUATION_ADAPTER = SERVER_MODEL if MODEL_PROFILE == "lightning35" else FINAL_ADAPTER' in source
+    assert "evaluate_sentiment.py {PROFILE_ARGS} --adapter_dir {EVALUATION_ADAPTER}" in source
+    assert "--remove_train_overlap" in source
 
 
 def test_nemo_peft_dataset_prompt_matches_notebook_inference():
@@ -372,6 +596,10 @@ def test_nemo_peft_dataset_balances_limited_training_window():
     labels = [dataset[index]["label"].strip() for index in indices]
 
     assert labels == ["neutral", "positive", "negative", "neutral", "positive", "negative"]
+
+    recycled = module._balanced_indices(dataset, limit_dataset_samples=20, seed=42, recycle_samples=True)
+    assert len(recycled) == 20
+    assert recycled == module._balanced_indices(dataset, 20, seed=42, recycle_samples=True)
 
 
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required to import the prediction helper")

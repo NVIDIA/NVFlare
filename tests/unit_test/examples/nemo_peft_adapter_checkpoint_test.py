@@ -12,10 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import ast
 import importlib.util
 import os
 import sys
 from enum import Enum
+from pathlib import Path
 
 import pytest
 
@@ -25,6 +27,19 @@ HAS_SAFETENSORS = importlib.util.find_spec("safetensors") is not None
 
 class _ExamplePeftType(Enum):
     LORA = "LORA"
+
+
+def _adapter_identity(**overrides):
+    identity = {
+        "model_profile": "lightning35",
+        "base_model_name_or_path": "model",
+        "base_model_revision": "abc",
+        "tokenizer_name_or_path": "model",
+        "tokenizer_revision": "abc",
+        "profile_settings": {"lora_rank": 8},
+    }
+    identity.update(overrides)
+    return identity
 
 
 def _example_dir():
@@ -114,6 +129,179 @@ def test_client_builds_full_adapter_update():
     assert params_type == automodel_peft_client.flare.ParamsType.FULL
     assert params["model.layer.lora_A.weight"].device.type == "cpu"
     assert torch.equal(params["model.layer.lora_A.weight"], torch.full((2, 2), 0.5))
+
+
+@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required for adapter exchange dtype tests")
+def test_client_fp32_exchange_is_opt_in_for_nano_and_required_for_lightning():
+    import torch
+
+    automodel_peft_client = _load_example_module("automodel_peft_client")
+    state = {"model.layer.lora_A.weight": torch.ones((2, 2), dtype=torch.bfloat16)}
+
+    def exchange_state(profile, fp32_adapter_exchange):
+        args = type("Args", (), {"model_profile": profile, "fp32_adapter_exchange": fp32_adapter_exchange})()
+        return automodel_peft_client._prepare_exchange_state(args, state)
+
+    assert exchange_state("nano", False)["model.layer.lora_A.weight"].dtype == torch.bfloat16
+    assert exchange_state("nano", True)["model.layer.lora_A.weight"].dtype == torch.float32
+    assert exchange_state("lightning35", False)["model.layer.lora_A.weight"].dtype == torch.float32
+
+
+@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required for adapter namespace tests")
+def test_client_preserves_nano_mapping_but_requires_exact_lightning_state():
+    import torch
+
+    automodel_peft_client = _load_example_module("automodel_peft_client")
+    incoming = {"base_model.model.layer.lora_A.weight": torch.zeros((2, 2))}
+    updated = {
+        "base_model.model.layer.lora_A.weight": torch.ones((2, 2)),
+        "lm_head.lora_A.weight": torch.ones((2, 2)),
+    }
+
+    nano = automodel_peft_client._align_updated_state_for_exchange(
+        type("Args", (), {"model_profile": "nano"})(), updated, incoming
+    )
+    assert list(nano) == ["base_model.model.layer.lora_A.weight"]
+
+    with pytest.raises(ValueError, match="unexpected=1"):
+        automodel_peft_client._align_updated_state_for_exchange(
+            type("Args", (), {"model_profile": "lightning35"})(), updated, incoming
+        )
+
+
+@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required for strict adapter validation tests")
+def test_strict_adapter_validation_rejects_partial_unexpected_shape_duplicate_and_nonfinite():
+    adapter_checkpoint = _load_example_module("adapter_checkpoint")
+    import torch
+
+    reference = {
+        "base_model.model.layer.lora_A.weight": torch.zeros((2, 2)),
+        "base_model.model.layer.lora_B.weight": torch.zeros((2, 2)),
+    }
+    with pytest.raises(ValueError, match="missing=1"):
+        adapter_checkpoint.align_adapter_state_strict(
+            {"layer.lora_A.weight": torch.zeros((2, 2))}, reference, normalize_peft_prefixes=True
+        )
+    with pytest.raises(ValueError, match="unexpected=1"):
+        adapter_checkpoint.align_adapter_state_strict(
+            {**reference, "extra.lora_A.weight": torch.zeros((2, 2))}, reference
+        )
+    with pytest.raises(ValueError, match="shape mismatch"):
+        adapter_checkpoint.align_adapter_state_strict(
+            {**reference, "base_model.model.layer.lora_A.weight": torch.zeros((3, 2))}, reference
+        )
+    with pytest.raises(ValueError, match="Duplicate adapter key"):
+        adapter_checkpoint.align_adapter_state_strict(
+            {
+                "layer.lora_A.weight": torch.zeros((2, 2)),
+                "base_model.model.layer.lora_A.weight": torch.zeros((2, 2)),
+                "layer.lora_B.weight": torch.zeros((2, 2)),
+            },
+            reference,
+            normalize_peft_prefixes=True,
+        )
+    with pytest.raises(ValueError, match="non-finite"):
+        adapter_checkpoint.align_adapter_state_strict(
+            {**reference, "base_model.model.layer.lora_A.weight": torch.full((2, 2), float("nan"))},
+            reference,
+        )
+
+
+@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required for adapter manifest tests")
+def test_adapter_manifest_rejects_hash_and_profile_conflicts():
+    adapter_checkpoint = _load_example_module("adapter_checkpoint")
+    import torch
+
+    state = {"layer.lora_A.weight": torch.ones((2, 2))}
+    manifest = adapter_checkpoint.build_adapter_manifest(
+        state,
+        identity=_adapter_identity(),
+    )
+    adapter_checkpoint.validate_adapter_manifest(manifest, state, {"model_profile": "lightning35"})
+    with pytest.raises(ValueError, match="hash"):
+        adapter_checkpoint.validate_adapter_manifest(manifest, {"layer.lora_A.weight": torch.zeros((2, 2))})
+    with pytest.raises(ValueError, match="conflict"):
+        adapter_checkpoint.validate_adapter_manifest(manifest, state, {"model_profile": "nano"})
+
+
+@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required for adapter contract tests")
+def test_adapter_contract_rejects_partial_and_stale_inputs():
+    adapter_checkpoint = _load_example_module("adapter_checkpoint")
+    import torch
+
+    state = {
+        "layer.lora_A.weight": torch.ones((2, 2)),
+        "layer.lora_B.weight": torch.zeros((2, 2)),
+    }
+    contract = adapter_checkpoint.build_adapter_manifest(
+        state,
+        identity=_adapter_identity(),
+    )
+    adapter_checkpoint.validate_adapter_contract(
+        contract,
+        state,
+        {"model_profile": "lightning35", "base_model_revision": "abc"},
+    )
+    with pytest.raises(ValueError, match="tensor count"):
+        adapter_checkpoint.validate_adapter_contract(contract, {"layer.lora_A.weight": state["layer.lora_A.weight"]})
+    with pytest.raises(ValueError, match="conflict"):
+        adapter_checkpoint.validate_adapter_contract(
+            contract,
+            state,
+            {"model_profile": "lightning35", "base_model_revision": "stale-revision"},
+        )
+
+
+@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required for adapter manifest tests")
+def test_adapter_manifest_requires_one_complete_identity_mapping():
+    adapter_checkpoint = _load_example_module("adapter_checkpoint")
+    import torch
+
+    state = {"layer.lora_A.weight": torch.ones((2, 2))}
+    with pytest.raises(ValueError, match="missing=.*tokenizer_revision"):
+        adapter_checkpoint.build_adapter_manifest(
+            state,
+            identity={key: value for key, value in _adapter_identity().items() if key != "tokenizer_revision"},
+        )
+    with pytest.raises(ValueError, match="unexpected=.*duplicate_model_name"):
+        adapter_checkpoint.build_adapter_manifest(
+            state,
+            identity={**_adapter_identity(), "duplicate_model_name": "model"},
+        )
+
+
+def test_adapter_checkpoint_module_remains_independent_of_nvflare_imports():
+    source = Path(_example_dir(), "adapter_checkpoint.py").read_text()
+    imports = []
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Import):
+            imports.extend(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imports.append(node.module)
+
+    assert all(not module.startswith("nvflare") for module in imports)
+
+
+@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required for independent FedAvg tests")
+def test_independent_fp32_fedavg_matches_three_unequal_clients_for_three_rounds():
+    import torch
+
+    verify = _load_example_module("verify_federated_run")
+    from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
+
+    global_state = {"layer.lora_A.weight": torch.zeros((2,), dtype=torch.float32)}
+    weights = [1.0, 2.0, 4.0]
+    for round_idx in range(3):
+        client_states = [
+            {"layer.lora_A.weight": global_state["layer.lora_A.weight"] + delta} for delta in (0.25, 0.5, 1.0)
+        ]
+        helper = WeightedAggregationHelper()
+        for site_idx, (state, weight) in enumerate(zip(client_states, weights), start=1):
+            helper.add(state, weight, f"site-{site_idx}", round_idx)
+        global_state = helper.get_result()
+        report = verify.verify_aggregate(client_states, weights, global_state)
+        assert report["max_abs_error"] == 0.0
+    assert torch.equal(global_state["layer.lora_A.weight"], torch.full((2,), 2.25))
 
 
 @pytest.mark.skipif(not HAS_TORCH or not HAS_SAFETENSORS, reason="PyTorch and safetensors are required")

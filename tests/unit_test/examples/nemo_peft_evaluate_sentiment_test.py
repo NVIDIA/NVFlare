@@ -15,6 +15,7 @@
 import importlib.util
 import os
 import sys
+from collections import OrderedDict
 
 import pytest
 
@@ -40,6 +41,17 @@ def _load_evaluate_module():
         return module
     finally:
         sys.path.remove(example_dir)
+
+
+def _load_assess_module():
+    example_dir = _example_dir()
+    spec = importlib.util.spec_from_file_location(
+        "nemo_peft_assess_validation", os.path.join(example_dir, "assess_validation.py")
+    )
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
 
 
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required to import the evaluator")
@@ -89,3 +101,100 @@ def test_evaluate_sentiment_parse_choice_map_validates_labels():
 
     with pytest.raises(ValueError, match="Unknown label"):
         evaluate_sentiment.parse_choice_map("neutral=neutral,positive=up,other=down")
+
+
+@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required to import the evaluator")
+def test_lightning_adapter_load_creates_temporary_single_process_group(monkeypatch, tmp_path):
+    evaluate_sentiment = _load_evaluate_module()
+    calls = []
+    monkeypatch.setattr(evaluate_sentiment.torch.distributed, "is_available", lambda: True)
+    monkeypatch.setattr(evaluate_sentiment.torch.distributed, "is_initialized", lambda: False)
+    monkeypatch.setattr(
+        evaluate_sentiment.torch.distributed,
+        "init_process_group",
+        lambda **kwargs: calls.append(("init", kwargs)),
+    )
+    monkeypatch.setattr(
+        evaluate_sentiment.torch.distributed,
+        "destroy_process_group",
+        lambda: calls.append(("destroy", None)),
+    )
+
+    with evaluate_sentiment._single_process_group(str(tmp_path)):
+        calls.append(("body", None))
+
+    assert [name for name, _ in calls] == ["init", "body", "destroy"]
+    assert calls[0][1]["backend"] == "nccl"
+    assert calls[0][1]["rank"] == 0
+    assert calls[0][1]["world_size"] == 1
+    assert calls[0][1]["init_method"].startswith("file://")
+
+
+def test_lightning_reload_comparison_allows_bounded_loss_variation():
+    assess_validation = _load_assess_module()
+    validation = {
+        "response_token_loss": 1.75,
+        "response_token_count": 100,
+        "accuracy": 0.5,
+        "macro_f1": 0.4,
+        "confusion": {"neutral": {"neutral": 1}},
+        "prediction_counts": {"neutral": 1},
+    }
+    first = {"validation": validation}
+    second = {"validation": {**validation, "response_token_loss": 1.7504}}
+
+    report = assess_validation.verify_reload_reproducibility(first, second)
+
+    assert report["response_token_loss_delta"] == pytest.approx(4e-4)
+    with pytest.raises(ValueError, match="response-token loss delta"):
+        assess_validation.verify_reload_reproducibility(
+            first,
+            {"validation": {**validation, "response_token_loss": 1.751}},
+        )
+    with pytest.raises(ValueError, match="changed evaluation metrics"):
+        assess_validation.verify_reload_reproducibility(
+            first,
+            {"validation": {**validation, "accuracy": 0.4}},
+        )
+
+
+def test_acceptance_reads_current_and_legacy_training_metric_layouts():
+    assess_validation = _load_assess_module()
+    current = {"automodel_report": {"last_training_record": {"loss": 0.2, "grad_norm": 1.5}}}
+    legacy = {"automodel_report": {"last_training_record": {"metrics": {"loss": 0.3, "grad_norm": 1.6}}}}
+
+    assert assess_validation._last_training_metrics(current) == {"loss": 0.2, "grad_norm": 1.5}
+    assert assess_validation._last_training_metrics(legacy) == {"loss": 0.3, "grad_norm": 1.6}
+
+
+@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required to verify adapter tensors")
+def test_lightning_evaluation_verifies_loaded_adapter_values():
+    import torch
+
+    evaluate_sentiment = _load_evaluate_module()
+    incoming = OrderedDict(
+        {
+            "base_model.model.model.layers.0.lora_A.weight": torch.tensor([[1.0, 2.0]]),
+            "base_model.model.model.layers.0.lora_B.weight": torch.tensor([[3.0], [4.0]]),
+        }
+    )
+    loaded = {
+        key.removeprefix(evaluate_sentiment.adapter_checkpoint.HF_PEFT_BASE_MODEL_PREFIX): value.to(torch.bfloat16)
+        for key, value in incoming.items()
+    }
+
+    class Model:
+        @staticmethod
+        def state_dict():
+            return {
+                **loaded,
+                "layers.0.weight": torch.ones(2, 2),
+            }
+
+    report = evaluate_sentiment._verify_loaded_adapter_state(Model(), incoming)
+
+    assert report["loaded_tensor_count"] == 2
+    assert report["loaded_matches_received_after_dtype_cast"] is True
+    incoming["base_model.model.model.layers.0.lora_B.weight"][0, 0] = 8.0
+    with pytest.raises(RuntimeError, match="reload changed 1 tensors"):
+        evaluate_sentiment._verify_loaded_adapter_state(Model(), incoming)
