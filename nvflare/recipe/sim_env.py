@@ -26,6 +26,7 @@ from nvflare.app_common.default_component_policy import DEFAULT_CLASS_ALLOW_LIST
 from nvflare.app_common.widgets.component_path_authorizer import CLASS_ALLOW_LIST
 from nvflare.job_config.api import FedJob
 from nvflare.recipe._failure_summary import failure_summary
+from nvflare.recipe._run_summary import summary_header
 
 from .spec import ExecEnv
 from .utils import collect_non_local_scripts
@@ -121,6 +122,7 @@ class SimEnv(ExecEnv):
         self.last_run_failed = False
 
         started_at = time.time()
+        started_timer = time.monotonic()
         try:
             # Validate scripts exist locally for simulation
             non_local_scripts = collect_non_local_scripts(job)
@@ -150,10 +152,11 @@ class SimEnv(ExecEnv):
             raise RuntimeError(
                 f"Simulation failed with return code {run_status}. "
                 f"Logs are in per-site subdirectories under {os.path.join(self.workspace_root, job_id)}, "
-                "e.g. server/log.txt and server/error_log.txt\n\n"
-                + " RUN SUMMARY ".center(72, "=")
-                + "\n\n  ✗ Simulation failed\n"
+                "e.g. server/log.txt and server/error_log.txt\n"
+                + summary_header("✗ Failed", time.monotonic() - started_timer)
+                + f"\n\n  Status    {status.value}\n"
                 + failure_summary(workspace, since=started_at)
+                + f"\n  Results   {workspace}"
             )
         self._record_status(job_id, RunStatus.FINISHED_COMPLETED)
         return job_id

@@ -20,7 +20,7 @@ from typing import Optional
 from nvflare.apis.job_def import RunStatus
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.recipe._failure_summary import failure_summary
-from nvflare.recipe._run_summary import result_summary
+from nvflare.recipe._run_summary import result_summary, summary_header
 from nvflare.recipe.spec import ExecEnv
 
 
@@ -140,17 +140,17 @@ class Run:
             finally:
                 self._stopped = True
 
-            print("\n" + " RUN SUMMARY ".center(72, "="), flush=True)
             status_label = (
                 "✓ Completed"
                 if self._cached_status == RunStatus.FINISHED_COMPLETED.value
                 else (self._cached_status or "Status unavailable")
             )
-            print(f"\n  {status_label}".ljust(64) + f"{elapsed:.1f}s", flush=True)
+            print(summary_header("✗ Failed" if failure_report else status_label, elapsed), flush=True)
+            if failure_report:
+                print(f"\n  Status    {self._cached_status}", flush=True)
+                print(failure_report, flush=True)
             if report:
                 print(report, flush=True)
-            if failure_report:
-                print(failure_report, flush=True)
 
             if result:
                 if os.path.isdir(result):

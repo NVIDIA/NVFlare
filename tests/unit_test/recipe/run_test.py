@@ -51,6 +51,11 @@ class TestRunClass:
 
         assert self.run.get_result(clean_up=False) == str(tmp_path)
         output = capsys.readouterr().out
+        assert " RUN SUMMARY ".center(72, "=") in output
+        if status == "FINISHED:EXECUTION_EXCEPTION":
+            assert "  ✗ Failed" in output
+            assert "  Status    FINISHED:EXECUTION_EXCEPTION" in output
+            assert "  Workspace" not in output
         assert ("✓ Completed" if status == "FINISHED:COMPLETED" else status or "Status unavailable") in output
         assert f"Results   {tmp_path}" in output
         assert "success" not in output.lower()

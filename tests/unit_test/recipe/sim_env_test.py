@@ -148,9 +148,14 @@ def test_sim_env_deploy_raises_on_failed_simulation(tmp_path, return_code, expec
 
     with patch("nvflare.recipe.sim_env.collect_non_local_scripts", return_value=[]):
         with patch.object(job, "simulator_run", return_value=return_code):
-            with pytest.raises(RuntimeError, match=f"Simulation failed with return code {return_code}"):
+            with pytest.raises(RuntimeError, match=f"Simulation failed with return code {return_code}") as error:
                 env.deploy(job)
 
+    summary = str(error.value).split("RUN SUMMARY", 1)[1]
+    assert "  ✗ Failed" in summary
+    assert f"  Status    {expected_status.value}" in summary
+    assert f"  Results   {failed_workspace}" in summary
+    assert "  Workspace" not in summary
     assert env.last_run_failed
     assert env.get_job_status(job.name) == expected_status.value
     assert env.get_job_result(job.name) is None
