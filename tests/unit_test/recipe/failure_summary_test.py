@@ -57,12 +57,18 @@ def _write_log(root, site, text, plain_text=False):
 
 @pytest.mark.parametrize("layout", [".", "workspace"])
 @pytest.mark.parametrize("plain_text", [False, True])
-def test_groups_client_errors_and_omits_only_the_linked_abort(tmp_path, layout, plain_text):
+@pytest.mark.parametrize("workflow", ["train", "train[0]"])
+def test_groups_client_errors_and_omits_only_the_linked_abort(tmp_path, layout, plain_text, workflow):
     root = tmp_path / layout
     for site in ("site-1", "site-2"):
         _write_log(root, site, _record(_client_trace(site)) + _record("fire abort event"), plain_text)
     _write_log(
-        root, "server", _record("downstream invalid DXO", context="[peer=site-1, peer_rc=TASK_ABORTED]"), plain_text
+        root,
+        "server",
+        _record(
+            "downstream invalid DXO", context=f"[wf={workflow}, peer=site-1, task={workflow}, peer_rc=TASK_ABORTED]"
+        ),
+        plain_text,
     )
     output = failure_summary(tmp_path)
     assert output.count("FileNotFoundError: missing training.npy") == 1
@@ -122,11 +128,14 @@ def test_summary_does_not_follow_log_symlinks_outside_result(tmp_path):
     assert "outside result" not in failure_summary(result)
 
 
-def test_failed_run_summarizes_before_cleanup_and_only_once(tmp_path, capsys):
+@pytest.mark.parametrize(
+    "status", ["FINISHED:EXECUTION_EXCEPTION", "FAILED", "FINISHED_EXCEPTION", "ABORTED", "ABANDONED"]
+)
+def test_failed_run_summarizes_before_cleanup_and_only_once(tmp_path, capsys, status):
     _write_log(tmp_path, "workspace", _record("OSError: checkpoint write failed", name="ModelPersistor"))
     env = MagicMock()
     env.get_job_result.return_value = str(tmp_path)
-    env.get_job_status.return_value = "FINISHED:EXECUTION_EXCEPTION"
+    env.get_job_status.return_value = status
     env.stop.side_effect = lambda **kwargs: (tmp_path / "workspace" / "log.json").unlink()
     run = Run(env, "failed-job")
     assert run.get_result() == str(tmp_path)
@@ -134,7 +143,8 @@ def test_failed_run_summarizes_before_cleanup_and_only_once(tmp_path, capsys):
     assert "RUN SUMMARY" in output
     assert "OSError: checkpoint write failed" in output
     assert "✓ Completed" not in output
-    assert run.get_status() == "FINISHED:EXECUTION_EXCEPTION"
+    assert "✗ Failed" in output
+    assert run.get_status() == status
     run.get_result()
     assert capsys.readouterr().out == ""
 
@@ -154,8 +164,13 @@ def test_existing_client_error_streams_are_saved_and_summarized(tmp_path):
         },
         "unavailable": {"site-3": "streaming disabled"},
     }
+    response = session.get_job_logs.return_value
+    session.list_job_components.return_value = ["workspace", *[f"ERRORLOG_{site}" for site in response["logs"]]]
+    session.get_job_logs.side_effect = lambda job_id, target, **kwargs: {"logs": {target: response["logs"][target]}}
     collect_client_errors(session, "job-id", str(tmp_path))
-    session.get_job_logs.assert_called_once_with("job-id", target="all", log_file_name="error_log.txt")
+    assert session.get_job_logs.call_count == 2
+    assert {call.kwargs["target"] for call in session.get_job_logs.call_args_list} == {"site-1", "site-2"}
+    assert all(call.kwargs["max_bytes"] == 1024 * 1024 for call in session.get_job_logs.call_args_list)
     output = failure_summary(tmp_path)
     assert output.count("FileNotFoundError: missing training.npy") == 1
     assert "site-1, site-2 / TaskScriptRunner" in output
@@ -170,8 +185,12 @@ def test_client_error_download_is_bounded(tmp_path):
     session.get_job_logs.return_value = {
         "logs": {f"site-{n}": "X" * (1024 * 1024) + "\nlast line\n" for n in range(25)}
     }
+    session.list_job_components.return_value = [f"ERRORLOG_site-{n}" for n in range(25)]
     collect_client_errors(session, "job-id", str(tmp_path))
     paths = list(tmp_path.rglob("error_log.txt"))
     assert len(paths) == 20
+    assert session.get_job_logs.call_count == 20
+    assert all(call.kwargs["target"] != "all" for call in session.get_job_logs.call_args_list)
+    assert all(call.kwargs["max_bytes"] == 1024 * 1024 for call in session.get_job_logs.call_args_list)
     assert all(path.stat().st_size <= 1024 * 1024 for path in paths)
     assert all(path.read_text() == "last line\n" for path in paths)

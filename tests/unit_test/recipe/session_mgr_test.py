@@ -120,17 +120,29 @@ def test_monitor_bounds_replay_and_memory_across_many_refreshes(capsys):
     session.get_job_logs.assert_called_with("job-id", target="server", log_file_name="log.json", tail_lines=200)
 
 
-@pytest.mark.parametrize("failed", [False, True])
-def test_error_log_retrieval_failure_preserves_result_and_closes_session(tmp_path, failed):
+@pytest.mark.parametrize(
+    "status,failed",
+    [
+        ("FINISHED:COMPLETED", False),
+        ("FINISHED_OK", False),
+        ("FINISHED:EXECUTION_EXCEPTION", True),
+        ("FAILED", True),
+        ("FINISHED_EXCEPTION", True),
+        ("ABORTED", True),
+        ("ABANDONED", True),
+    ],
+)
+def test_error_log_retrieval_failure_preserves_result_and_closes_session(tmp_path, status, failed):
     session = MagicMock()
 
     def monitor(*args, **kwargs):
-        kwargs["cb_run_counter"]["status"] = "FINISHED:EXECUTION_EXCEPTION" if failed else "FINISHED:COMPLETED"
+        kwargs["cb_run_counter"]["status"] = status
         return MonitorReturnCode.JOB_FINISHED
 
     session.monitor_job.side_effect = monitor
     session.download_job_result.return_value = str(tmp_path)
     session.get_job_logs.side_effect = RuntimeError("logs unavailable")
+    session.list_job_components.return_value = ["ERRORLOG_site-1"]
     manager = SessionManager({})
     manager._get_session = MagicMock(return_value=session)
     assert manager.get_job_result("job-id") == str(tmp_path)

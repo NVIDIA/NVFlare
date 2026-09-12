@@ -44,7 +44,7 @@ class TestRunClass:
         """Test get_job_id method."""
         assert self.run.get_job_id() == self.job_id
 
-    @pytest.mark.parametrize("status", ["FINISHED:COMPLETED", "FINISHED:EXECUTION_EXCEPTION", None])
+    @pytest.mark.parametrize("status", ["FINISHED:COMPLETED", "FINISHED_OK", "FINISHED:EXECUTION_EXCEPTION", None])
     def test_result_presentation_uses_status_without_inferring_success(self, tmp_path, capsys, status):
         self.mock_env.get_job_result.return_value = str(tmp_path)
         self.mock_env.get_job_status.return_value = status
@@ -56,7 +56,9 @@ class TestRunClass:
             assert "  ✗ Failed" in output
             assert "  Status    FINISHED:EXECUTION_EXCEPTION" in output
             assert "  Workspace" not in output
-        assert ("✓ Completed" if status == "FINISHED:COMPLETED" else status or "Status unavailable") in output
+        assert (
+            "✓ Completed" if status in ("FINISHED:COMPLETED", "FINISHED_OK") else status or "Status unavailable"
+        ) in output
         assert f"Results   {tmp_path}" in output
         assert "success" not in output.lower()
         # Reading the cached result neither repeats output nor queries the environment.

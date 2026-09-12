@@ -36,13 +36,22 @@ _TEXT_ERROR = re.compile(
 def collect_client_errors(session, job_id, result):
     """Retain existing, site-authorized error streams alongside a failed result.
 
-    The job-log API bounds each transfer; retain at most 20 client tails of
-    1 MiB each. No new streaming is enabled and no client is contacted here.
+    Enumerate stored error-log components before requesting at most 20 client
+    tails of 1 MiB each, bounded on the server before transfer. No new streaming
+    is enabled and no client is contacted here.
     """
-    logs = session.get_job_logs(job_id, target="all", log_file_name="error_log.txt").get("logs", {})
+    components = session.list_job_components(job_id) or []
+    sites = dict.fromkeys(c.removeprefix("ERRORLOG_") for c in components if c.startswith("ERRORLOG_"))
     folder = None
-    for site, content in islice(logs.items(), _MAX_LOG_FILES):
-        if site == "server" or not re.fullmatch(r"[\w.-]+", site) or site in (".", "..") or not content:
+    for site in islice(sites, _MAX_LOG_FILES):
+        if site == "server" or not re.fullmatch(r"[\w.-]+", site) or site in (".", ".."):
+            continue
+        content = (
+            session.get_job_logs(job_id, target=site, log_file_name="error_log.txt", max_bytes=_MAX_LOG_BYTES)
+            .get("logs", {})
+            .get(site)
+        )
+        if not content:
             continue
         if folder is None:
             folder = Path(tempfile.mkdtemp(prefix="failure-logs-", dir=result))
@@ -59,7 +68,7 @@ def _records(data, plain_text):
         for match in _TEXT_ERROR.finditer(data.decode("utf-8", errors="replace")):
             # Text formatters render FL context before the message; JSON keeps
             # it in a separate field. Preserve that field for peer attribution.
-            context = re.match(r"^(\[\w+=[^\]\n]*\])(?: - |: )(.*)", match[3], re.DOTALL)
+            context = re.match(r"^(\[\w+=[^\n]*?\])(?: - |: )(.*)", match[3], re.DOTALL)
             yield dict(
                 name=match[1],
                 levelname=match[2],

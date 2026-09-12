@@ -17,7 +17,7 @@ import threading
 import time
 from typing import Optional
 
-from nvflare.apis.job_def import RunStatus
+from nvflare.fuel.flare_api.flare_api import _job_status_outcome
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.recipe._failure_summary import failure_summary
 from nvflare.recipe._run_summary import result_summary, summary_header
@@ -118,14 +118,8 @@ class Run:
 
             report = ""
             failure_report = ""
-            if self._cached_status in (
-                RunStatus.FINISHED_ABORTED.value,
-                RunStatus.FINISHED_EXECUTION_EXCEPTION.value,
-                RunStatus.FINISHED_ABNORMAL.value,
-                RunStatus.FINISHED_CANT_SCHEDULE.value,
-                RunStatus.FAILED_TO_RUN.value,
-                RunStatus.ABANDONED.value,
-            ):
+            outcome = _job_status_outcome(self._cached_status)
+            if outcome == "failed":
                 failure_report = failure_summary(result)
             if result and os.path.isdir(result):
                 try:
@@ -140,12 +134,10 @@ class Run:
             finally:
                 self._stopped = True
 
-            status_label = (
-                "✓ Completed"
-                if self._cached_status == RunStatus.FINISHED_COMPLETED.value
-                else (self._cached_status or "Status unavailable")
+            status_label = {"completed": "✓ Completed", "failed": "✗ Failed"}.get(
+                outcome, self._cached_status or "Status unavailable"
             )
-            print(summary_header("✗ Failed" if failure_report else status_label, elapsed), flush=True)
+            print(summary_header(status_label, elapsed), flush=True)
             if failure_report:
                 print(f"\n  Status    {self._cached_status}", flush=True)
                 print(failure_report, flush=True)

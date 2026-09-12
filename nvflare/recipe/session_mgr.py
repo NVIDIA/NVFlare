@@ -20,9 +20,8 @@ import tempfile
 import time
 from typing import Dict, Optional
 
-from nvflare.apis.job_def import RunStatus
 from nvflare.fuel.flare_api.api_spec import MonitorReturnCode
-from nvflare.fuel.flare_api.flare_api import Session, new_secure_session
+from nvflare.fuel.flare_api.flare_api import Session, _job_status_outcome, new_secure_session
 from nvflare.fuel.utils.job_secret_scanner import warn_on_potential_secrets_in_job_dir
 from nvflare.fuel.utils.log_utils import FL_LOG_LEVEL, LogMode, ProgressFormatter, get_module_logger
 from nvflare.job_config.api import FedJob
@@ -144,7 +143,7 @@ class SessionManager:
         if rc == MonitorReturnCode.JOB_FINISHED:
             print("Downloading job results...", flush=True)
             result = sess.download_job_result(job_id)
-            if result and cb_run_counter.get("status") not in (None, RunStatus.FINISHED_COMPLETED.value):
+            if result and _job_status_outcome(cb_run_counter.get("status")) == "failed":
                 try:
                     collect_client_errors(sess, job_id, result)
                 except Exception as ex:
