@@ -560,9 +560,8 @@ Repeated calls return the cached result without repeating the summary.
 For diagnostics, inspect ``log.txt`` and ``error_log.txt`` in the workspace's site
 directories. POC service output is also recorded in ``poc_console.log``. The
 concise console shows workflow progress, warnings, and errors; detailed
-application output remains in the diagnostic files. Set
-``FL_LOG_LEVEL=full`` to see those messages on the console; existing file logging
-is unchanged. See :ref:`logging_configuration` for logging configuration.
+application output remains in the diagnostic files. Select ``full`` logging to see those messages on the console; detailed file
+logging is unchanged. See :ref:`logging_configuration` for logging configuration.
 
 Training recipes that produce aggregation metrics log the locations of their
 existing summary and round files when the summary is written. See
@@ -574,16 +573,23 @@ aggregation summary.
 Focused Progress View
 ---------------------
 
-To focus on round progress and results, use the existing logging configuration
-with the existing ``concise`` mode:
+Concise is the simulator default. Run the recipe normally to see round progress
+and the end summary; no environment variable or extra option is required:
 
 .. code-block:: bash
 
-   FL_LOG_LEVEL=concise python job.py
+   python job.py
 
-For a simulation you can also set ``SimEnv(log_config="concise", ...)``.
-Concise is already the simulator default. No additional log mode is needed.
-The existing ``msg_only``, ``full``, and ``verbose`` modes remain available.
+To change verbosity, use the simulator's existing ``-l`` / ``--log_config``
+option. For example, run an exported job with detailed console output:
+
+.. code-block:: bash
+
+   nvflare simulator ./fl_job/hello-pt -n 2 -l full
+
+In a recipe, use ``SimEnv(num_clients=2, log_config="full")``. Example scripts
+that expose ``--log_config`` can also accept that option directly. The existing
+``concise``, ``msg_only``, ``full``, and ``verbose`` modes remain available.
 
 The console and ``log_fl.txt`` show readable progress messages and warnings/errors,
 with display lines wrapped to 80 characters. Detailed application prints, epoch
@@ -604,9 +610,10 @@ relabelled as an evaluation of the final saved model. Jobs that do not use these
 reporting components still have job-status and diagnostic output, but do not
 acquire synthetic training rounds or metrics.
 
-With ``FL_LOG_LEVEL=concise`` in the submitting process, POC and production use
-the same monitor to retrieve existing server ``log.json`` records at most once
-per five seconds during normal callbacks, plus a final read on a status change.
+POC and production Recipe monitoring also shows concise progress by default,
+without an environment variable. The shared monitor retrieves existing server
+``log.json`` records at most once per five seconds during normal callbacks, plus
+a final read on a status change. This does not change the service log configuration.
 A bounded recent-record cache suppresses overlapping records. This uses the existing log API, not
 a new transport or a background thread. It is best-effort progress: network calls
 can delay updates, unavailable logs do not stop monitoring, and client-local
