@@ -54,6 +54,10 @@ concise_log_dict["filters"]["ConciseFilter"] = {
         "nvflare.app_common.workflows.cross_site_model_eval",
     ],
 }
+# Presentation uses the module logger; class loggers retain diagnostic INFO.
+concise_log_dict["filters"]["ConciseFilter"]["exclude_logger_names"] = [
+    name + "." for name in concise_log_dict["filters"]["ConciseFilter"]["logger_names"]
+]
 for handler_name in ("consoleHandler", "FLFileHandler"):
     concise_log_dict["handlers"][handler_name]["filters"] = ["ConciseFilter"]
 

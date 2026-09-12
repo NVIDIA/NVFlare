@@ -67,13 +67,13 @@ def test_progress_monitor_replays_new_records_and_retries_partial_lines(monkeypa
     session = MagicMock()
     start = json.dumps(
         {
-            "fullName": "nvflare.app_common.widgets.metrics_artifact_writer.MetricsArtifactWriter",
+            "fullName": "nvflare.app_common.widgets.metrics_artifact_writer",
             "message": "Round 1/3 | training",
         }
     )
     metric = json.dumps(
         {
-            "fullName": "nvflare.app_common.widgets.metrics_artifact_writer.MetricsArtifactWriter",
+            "fullName": "nvflare.app_common.widgets.metrics_artifact_writer",
             "message": "site-1 | loss=0.25",
         }
     )
@@ -120,7 +120,7 @@ def test_monitor_bounds_replay_and_memory_across_many_refreshes(capsys):
         lines = [
             json.dumps(
                 {
-                    "fullName": "nvflare.app_common.widgets.metrics_artifact_writer.MetricsArtifactWriter",
+                    "fullName": "nvflare.app_common.widgets.metrics_artifact_writer",
                     "message": f"row {batch}-{n}",
                 }
             )

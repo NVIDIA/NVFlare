@@ -90,7 +90,7 @@ def test_controller_only_evaluation_reports_bounded_results(tmp_path, caplog, da
     assert len(saved.data["detail"]) == 100000
 
 
-@pytest.mark.parametrize("kind", ["global", "custom", "he"])
+@pytest.mark.parametrize("kind", ["base", "global", "custom", "he"])
 def test_inherited_evaluation_is_visible_locally_and_in_remote_replay(tmp_path, caplog, capsys, kind):
     import logging
 
@@ -100,7 +100,9 @@ def test_inherited_evaluation_is_visible_locally_and_in_remote_replay(tmp_path, 
     from nvflare.fuel.utils.log_utils import ColorFormatter, JsonFormatter, LoggerNameFilter, concise_log_dict
     from nvflare.recipe.session_mgr import _show_job_progress
 
-    if kind == "global":
+    if kind == "base":
+        controller = CrossSiteModelEval(participating_clients=["site-1"])
+    elif kind == "global":
         controller = GlobalModelEval(model_locator_id="locator", participating_clients=["site-1"])
     elif kind == "he":
         pytest.importorskip("tenseal")
@@ -119,15 +121,19 @@ def test_inherited_evaluation_is_visible_locally_and_in_remote_replay(tmp_path, 
     controller.fire_event = Mock()
     # Exercise inherited result reporting; HE key loading is independent of this path.
     CrossSiteModelEval.start_controller(controller, ctx)
-    assert not controller.logger.name.startswith("nvflare.app_common.workflows.cross_site_model_eval")
+    assert controller.logger.name != "nvflare.app_common.workflows.cross_site_model_eval"
     with caplog.at_level(logging.INFO):
         controller._save_validation_result("site-1", "global.pt", DXO(DataKind.METRICS, {"accuracy": 0.75}), ctx)
+        controller.logger.warning("validation warning")
 
     config = concise_log_dict["filters"]["ConciseFilter"]
     log_filter = LoggerNameFilter(**{k: v for k, v in config.items() if k != "()"})
     formatter = ColorFormatter(fmt=concise_log_dict["formatters"]["consoleFormatter"]["fmt"])
     local = "\n".join(formatter.format(r) for r in caplog.records if log_filter.filter(r))
     assert 'Evaluated "global.pt" on "site-1": accuracy=0.75' in local
+    assert "Saved validation result" not in local
+    assert "validation warning" in local
+    assert any("Saved validation result" in r.message for r in caplog.records)
     session = Mock()
     session.get_job_logs.return_value = {
         "logs": {"server": "\n".join(JsonFormatter().format(r) for r in caplog.records)}
@@ -136,5 +142,7 @@ def test_inherited_evaluation_is_visible_locally_and_in_remote_replay(tmp_path, 
     _show_job_progress(session, "job-1", state)
     remote = capsys.readouterr().out
     assert 'Evaluated "global.pt" on "site-1": accuracy=0.75' in remote
+    assert "Saved validation result" not in remote
+    assert "validation warning" in remote
     _show_job_progress(session, "job-1", state)
     assert capsys.readouterr().out == ""

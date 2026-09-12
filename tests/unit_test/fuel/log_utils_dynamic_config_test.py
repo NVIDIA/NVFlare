@@ -173,7 +173,7 @@ def test_concise_reuses_existing_formatters_and_retains_diagnostic_records():
     records = [
         logging.LogRecord("custom.trainer", logging.INFO, "", 0, "raw weights: [1, 2, 3]", (), None),
         logging.LogRecord(
-            "nvflare.app_common.widgets.metrics_artifact_writer.MetricsArtifactWriter",
+            "nvflare.app_common.widgets.metrics_artifact_writer",
             logging.INFO,
             "",
             0,
@@ -234,7 +234,7 @@ def test_metric_table_keeps_columns_aligned_through_log_formatting():
     ]
     table = format_metric_table(rows)
     record = logging.LogRecord(
-        "nvflare.app_common.widgets.metrics_artifact_writer.MetricsArtifactWriter", logging.INFO, "", 0, table, (), None
+        "nvflare.app_common.widgets.metrics_artifact_writer", logging.INFO, "", 0, table, (), None
     )
     output = ColorFormatter(fmt="%(message)s").format(record)
     assert output == table  # Wrapping must not collapse table alignment or merge rows.

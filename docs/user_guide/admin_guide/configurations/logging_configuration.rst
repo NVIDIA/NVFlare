@@ -332,8 +332,9 @@ This argument can be any of the following:
     - ``concise`` (default for simulator mode): workflow progress and metrics,
       plus warnings and errors. The existing console formatter shows messages only;
       ``log_fl.txt`` keeps its timestamped file formatter. The existing filter selects
-      the ordinary reporting component loggers; no separate progress mode or formatter
-      is installed. Other file handlers keep detailed logs. Built-in aggregation and evaluation writers
+      reporting module loggers and excludes their class-level diagnostic INFO.
+      No separate progress mode or formatter is installed. Other file handlers keep
+      detailed logs. Built-in aggregation and evaluation writers
       supply these messages; arbitrary client prints remain in diagnostic logs.
       Server setup supplies ``MetricsArtifactWriter`` when no writer is configured,
       so ordinary FedJob and JSON jobs also report round events and save metric artifacts.

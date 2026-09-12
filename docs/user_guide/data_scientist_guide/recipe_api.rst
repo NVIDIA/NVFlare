@@ -609,8 +609,10 @@ running an exported job:
 
 The existing ``concise``, ``msg_only``, ``full``, and ``verbose`` modes remain available.
 
-Concise selects the ordinary metric-writer and evaluation-controller loggers,
-plus warnings and errors, through the existing filter configuration. The console
+Concise selects the metric-writer and evaluation-controller module loggers,
+plus warnings and errors, through the existing filter configuration. Class-level
+diagnostic INFO stays in detailed logs; inherited module-level reporting remains
+visible for subclasses. The console
 uses the existing message formatter; ``log_fl.txt`` retains its timestamped file
 formatter. Summary text is wrapped to 80 characters and metric tables are bounded.
 No separate progress mode, formatter, or child-logger channel is required.
