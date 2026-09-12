@@ -128,8 +128,7 @@ class SimEnv(ExecEnv):
                 )
 
             workspace = os.path.join(self.workspace_root, job_id)
-            num_clients = len(self.clients) if self.clients is not None else self.num_clients
-            print(f"Preparing simulation: {num_clients} clients. Workspace: {workspace}", flush=True)
+            print(f"Preparing simulation: {self.num_clients} clients. Workspace: {workspace}", flush=True)
             self._ensure_default_component_policy(workspace)
             run_status = job.simulator_run(
                 workspace=workspace,
