@@ -114,8 +114,15 @@ def validate_cifar10(data_root: str, prepare_script: str = "prepare_data.py"):
     ]
     if missing:
         command = f"python {shlex.quote(prepare_script)} --data_root {shlex.quote(str(data_root))}"
+        hint = ""
+        if not Path(data_root).is_absolute():
+            hint = (
+                f" Relative --data_root paths are interpreted from the client's working directory ({Path.cwd()}),"
+                " not the job submission directory. Use an absolute --data_root path."
+            )
         raise FileNotFoundError(
             f"Missing or empty CIFAR-10 files under {batch_dir}: {', '.join(missing)}. Run `{command}` before starting clients."
+            + hint
         )
 
 

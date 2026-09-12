@@ -191,6 +191,9 @@ with downloads disabled, so concurrent processes do not race while writing it. T
 nonzero size; torchvision performs its own integrity checks when loading. This option is useful for experimentation
 but is not a federated data partition.
 
-For production, `--data_root` is a path on each client—not on the admin machine running `job.py`. Every site operator
+For simulation and POC, relative `--data_root` paths are resolved from the submission working directory before
+running or exporting the recipe. This only normalizes the path; it does not validate or download the cache.
+
+For production, `--data_root` is preserved as a path on each client—not on the admin machine running `job.py`. Every site operator
 must prepare CIFAR-10 at that same local path before the job is submitted. Running `prepare_data.py` beside the admin
 startup kit does not populate remote clients. Use the synthetic default unless client-side data has been staged.

@@ -191,3 +191,14 @@ def test_cifar_preflight_rejects_present_but_empty_files(tmp_path):
         (batch_dir / name).touch()
     with pytest.raises(FileNotFoundError, match="Missing or empty CIFAR-10 files"):
         data_module.validate_cifar10(str(tmp_path))
+
+
+def test_missing_relative_cache_explains_client_working_directory(tmp_path, monkeypatch):
+    data_module = _load_hello_pt_module("prepare_data.py")
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(FileNotFoundError) as error:
+        data_module.validate_cifar10("relcache")
+    message = str(error.value)
+    assert "client's working directory" in message
+    assert str(tmp_path) in message
+    assert "Use an absolute --data_root path" in message
