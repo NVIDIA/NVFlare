@@ -17,6 +17,7 @@
 import json
 import logging
 import os
+import traceback
 from unittest.mock import MagicMock
 
 import pytest
@@ -256,6 +257,7 @@ def test_fallback_reads_share_the_total_file_limit(tmp_path, monkeypatch):
         ("raise FileNotFoundError('training.npy')", "FileNotFoundError: training.npy"),
         ("raise ValueError('bad input\\nretry')", "ValueError: bad input"),
         ("raise ValueError('bad input\\nRuntimeError: continuation')", "ValueError: bad input"),
+        ("raise ValueError('bad input\\nTraceback (most recent call last):\\nretry')", "ValueError: bad input"),
         ("raise ValueError('bad input') from KeyError('original')", "ValueError: bad input"),
     ],
 )
@@ -292,7 +294,7 @@ def test_real_exception_formatters_preserve_type_and_application_location(tmp_pa
     assert "Traceback" not in json_record["message"]
     text = (site / "error_log.txt").read_text()
     assert len(text) > 512
-    if "retry" in statement:
+    if statement == r"raise ValueError('bad input\nretry')":
         assert "ValueError: bad input\nretry\n" in text
     output = failure_summary(tmp_path)
     assert f"  Error     {expected}\n" in output
@@ -304,3 +306,38 @@ def test_real_exception_formatters_preserve_type_and_application_location(tmp_pa
 def test_json_message_survives_unusable_text_fallback(tmp_path):
     _write_log(tmp_path, "site-1", _record("Training failed"))
     assert "Training failed" in failure_summary(tmp_path)
+
+
+@pytest.mark.parametrize("plain_text", [False, True])
+@pytest.mark.parametrize("prefix", ["Failure\n", "RuntimeError: wrapper message\n"])
+@pytest.mark.parametrize(
+    "chained",
+    [
+        "",
+        "The above exception was the direct cause of the following exception:",
+        "During handling of the above exception, another exception occurred:",
+    ],
+)
+@pytest.mark.parametrize("kind", ["syntax", "bare", "multiline"])
+def test_frameless_traceback_ignores_prefix_and_previous_chain(tmp_path, plain_text, prefix, chained, kind):
+    if kind == "syntax":
+        try:
+            compile("def broken(:", "/workspace/site-1/custom/client.py", "exec")
+        except SyntaxError as exc:
+            diagnostic = "".join(traceback.format_exception_only(exc))
+        expected = "SyntaxError: invalid syntax"
+    else:
+        exc = AssertionError() if kind == "bare" else ValueError("bad input\nretry")
+        diagnostic = "".join(traceback.format_exception_only(exc))
+        expected = "AssertionError" if kind == "bare" else "ValueError: bad input"
+    # Some log producers include a traceback header around exception-only output:
+    # SyntaxError's file/line has no "in function", so it is not a call frame.
+    assert not _failure_summary._FRAME.search(diagnostic)
+    prior = _client_trace("site-1", "KeyError: previous cause") + f"\n{chained}\n\n" if chained else ""
+    message = prefix + prior + "Traceback (most recent call last):\n" + diagnostic
+    _write_log(tmp_path, "site-1", _record(message), plain_text=plain_text)
+    output = failure_summary(tmp_path)
+    assert f"  Error     {expected}\n" in output
+    assert "previous cause" not in output
+    assert "wrapper message" not in output
+    assert "client.py:31 (train)" not in output  # Do not attribute the earlier exception's frame.

@@ -103,12 +103,22 @@ def _first_error(path):
             continue
         location = ""
         application_frame = False
-        if "Traceback (most recent call last):" in message:
-            frame_matches = list(_FRAME.finditer(message))
+        _, traceback_marker, traceback_text = message.partition("Traceback (most recent call last):")
+        if traceback_marker:
+            # Only Python's chain separators start another traceback section.
+            # A literal traceback marker inside an exception message does not.
+            for separator in (
+                "The above exception was the direct cause of the following exception:",
+                "During handling of the above exception, another exception occurred:",
+            ):
+                traceback_text = traceback_text.rsplit(f"\n\n{separator}\n\n{traceback_marker}", 1)[-1]
+            # Search only the final traceback, excluding log prefixes and earlier
+            # chained exceptions even when this section contains no call frames.
+            frame_matches = list(_FRAME.finditer(traceback_text))
             frames = [frame.groups() for frame in frame_matches]
             # The exception header follows the final frame. Later unindented lines
             # can be message continuations or notes, not additional exceptions.
-            exception = _EXCEPTION.search(message, frame_matches[-1].end() if frame_matches else 0)
+            exception = _EXCEPTION.search(traceback_text, frame_matches[-1].end() if frame_matches else 0)
             custom_frames = [frame for frame in frames if "/custom/" in frame[0].replace("\\", "/")]
             application_frame = bool(custom_frames)
             if custom_frames or frames:
