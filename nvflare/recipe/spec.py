@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import sys
+import time
 import warnings
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
@@ -902,10 +903,13 @@ class Recipe(ABC):
         with self._temporary_exec_params(server_exec_params=server_exec_params, client_exec_params=client_exec_params):
             self.process_env(env)
             print(f"Executing job '{self._job.name}' with {type(env).__name__}...", flush=True)
+            started_at = time.monotonic()
             job_id = env.deploy(self._job)
             from nvflare.recipe.run import Run
 
-            return Run(env, job_id)
+            run = Run(env, job_id)
+            run._started_at = started_at
+            return run
 
     def execute(
         self,

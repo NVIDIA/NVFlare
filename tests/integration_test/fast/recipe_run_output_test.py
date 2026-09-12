@@ -22,7 +22,7 @@ import pytest
 
 
 @pytest.mark.timeout(180)
-@pytest.mark.parametrize("log_mode", ["concise", "progress"])
+@pytest.mark.parametrize("log_mode", ["concise", "msg_only"])
 def test_numpy_example_gets_shared_reporting_without_example_changes(tmp_path, log_mode):
     repo_root = Path(__file__).resolve().parents[3]
     env = os.environ.copy()
@@ -41,7 +41,7 @@ def test_numpy_example_gets_shared_reporting_without_example_changes(tmp_path, l
     output = completed.stdout + completed.stderr
     assert completed.returncode == 0, output
     assert "Executing job 'hello-numpy' with SimEnv" in output
-    if log_mode == "progress":
+    if log_mode == "concise":
         assert "Round 1/1 | training" in output
         assert "Round 1/1 | aggregation finished" in output
         for site in ("site-1", "site-2"):
@@ -71,5 +71,6 @@ def test_numpy_example_gets_shared_reporting_without_example_changes(tmp_path, l
     summary_path = tmp_path / "hello-numpy" / "server" / "simulate_job" / "metrics" / "metrics_summary.json"
     summary = json.loads(summary_path.read_text())
     assert {m["name"] for m in summary["final_aggregated_metrics"]} == {"weight_mean"}
-    if log_mode == "concise":
-        assert str(summary_path) in output
+    assert "Run summary" in output
+    assert "Training (last recorded rounds)" in output
+    assert "weight_mean=6" in output

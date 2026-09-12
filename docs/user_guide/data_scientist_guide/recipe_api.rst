@@ -546,7 +546,7 @@ Following a Run
 
 Recipe execution identifies the job and execution environment before deployment.
 Simulation also prints its workspace location. POC and production monitoring show
-status changes without repeating normal waiting messages. The optional progress
+status changes without repeating normal waiting messages. The concise progress
 view described below also retrieves round and metric messages from existing
 server logs while monitoring callbacks continue.
 
@@ -559,8 +559,8 @@ Repeated calls return the cached result without repeating the summary.
 
 For diagnostics, inspect ``log.txt`` and ``error_log.txt`` in the workspace's site
 directories. POC service output is also recorded in ``poc_console.log``. The
-default concise console keeps application output, workflow progress, warnings,
-and errors while reducing routine task and transfer messages. Set
+concise console shows workflow progress, warnings, and errors; detailed
+application output remains in the diagnostic files. Set
 ``FL_LOG_LEVEL=full`` to see those messages on the console; existing file logging
 is unchanged. See :ref:`logging_configuration` for logging configuration.
 
@@ -575,15 +575,15 @@ Focused Progress View
 ---------------------
 
 To focus on round progress and results, use the existing logging configuration
-with the ``progress`` mode:
+with the existing ``concise`` mode:
 
 .. code-block:: bash
 
-   FL_LOG_LEVEL=progress python job.py
+   FL_LOG_LEVEL=concise python job.py
 
-For a simulation you can also set ``SimEnv(log_config="progress", ...)``.
-This is an opt-in view; the existing ``concise``, ``msg_only``, ``full``, and
-``verbose`` modes remain available.
+For a simulation you can also set ``SimEnv(log_config="concise", ...)``.
+Concise is already the simulator default. No additional log mode is needed.
+The existing ``msg_only``, ``full``, and ``verbose`` modes remain available.
 
 The console and ``log_fl.txt`` show readable progress messages and warnings/errors,
 with display lines wrapped to 80 characters. Detailed application prints, epoch
@@ -604,16 +604,37 @@ relabelled as an evaluation of the final saved model. Jobs that do not use these
 reporting components still have job-status and diagnostic output, but do not
 acquire synthetic training rounds or metrics.
 
-With ``FL_LOG_LEVEL=progress`` in the submitting process, POC and production use
+With ``FL_LOG_LEVEL=concise`` in the submitting process, POC and production use
 the same monitor to retrieve existing server ``log.json`` records at most once
 per five seconds during normal callbacks, plus a final read on a status change.
-Already displayed records are not repeated. This uses the existing log API, not
+A bounded recent-record cache suppresses overlapping records. This uses the existing log API, not
 a new transport or a background thread. It is best-effort progress: network calls
 can delay updates, unavailable logs do not stop monitoring, and client-local
 warnings require the existing client-log collection/streaming configuration to
 be visible from the server. The server must run the updated reporting components.
 For long-running jobs, the existing API retrieves log snapshots rather than
-incremental ranges; this view does not add a new log storage or cursor protocol.
+incremental ranges (up to 5 MiB per request). Display processing is limited to the
+last 64 KiB and 200 lines; only at most 200 fixed-size record hashes are retained.
+A busy job can produce more records between refreshes than this tail holds, so
+live output is a preview; use saved logs for the complete history. No new log
+storage or cursor protocol is introduced.
+
+End-of-Run Summary
+------------------
+
+``run.get_result()`` also prints a summary from existing local result artifacts:
+the last ten recorded training rounds, separately labelled model evaluation,
+existing model files, and metrics and log locations. The same reader supports
+standard simulator and downloaded POC/production layouts. It does not load model
+weights or change the meaning of reported metrics. For example, an application
+metric named ``accuracy`` is not assumed to be a percentage or a final-model score.
+Elapsed time covers deployment through result retrieval, excluding environment
+cleanup. The raw framework status is shown even for failed or aborted jobs.
+
+Artifact reads and displayed metrics are bounded. Missing, oversized, malformed,
+or custom-layout artifacts do not prevent result retrieval; inspect the saved
+workspace for details. When cleanup removes the workspace, paths in the report
+refer to the captured result and the final message states that it is unavailable.
 
 What You Can Rely On
 --------------------

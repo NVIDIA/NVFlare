@@ -32,7 +32,7 @@ from nvflare.app_common.abstract.model_locator import ModelLocator
 from nvflare.app_common.app_constant import AppConstants, ModelName
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.utils.file_utils import resolve_path_under_root
-from nvflare.app_common.widgets.validation_json_generator import to_serializable
+from nvflare.fuel.utils.log_utils import format_metric_summary
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 
@@ -479,8 +479,8 @@ class CrossSiteModelEval(Controller):
             fl_ctx, f"Saved validation result from client '{client_name}' on model '{model_name}' in {file_path}"
         )
         self.logger.getChild("progress").info(
-            f"  {json.dumps(client_name)} | {json.dumps(model_name)}\n"
-            f"    {json.dumps(dxo.data, default=to_serializable)}"
+            f"  {json.dumps(client_name[:128])} | {json.dumps(model_name[:128])}\n"
+            f"    {format_metric_summary(dxo.data)}"
         )
 
     def _save_dxo_content(self, name: str, save_dir: str, dxo: DXO, fl_ctx: FLContext) -> str:

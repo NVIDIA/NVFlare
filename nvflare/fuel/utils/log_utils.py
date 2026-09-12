@@ -16,10 +16,12 @@ import inspect
 import json
 import logging
 import logging.config
+import numbers
 import os
 import re
 import sys
 import textwrap
+from itertools import islice
 from logging import Logger
 from logging.handlers import RotatingFileHandler
 from typing import Union
@@ -36,7 +38,6 @@ class LogMode:
     CONCISE = "concise"
     MSG_ONLY = "msg_only"
     VERBOSE = "verbose"
-    PROGRESS = "progress"
 
 
 # Predefined log dicts based from DEFAULT_LOG_JSON
@@ -66,12 +67,11 @@ verbose_log_dict["formatters"]["consoleFormatter"][
 verbose_log_dict["loggers"]["root"]["level"] = "DEBUG"
 
 # A focused view using ordinary log records. Detailed file handlers are unchanged.
-progress_log_dict = copy.deepcopy(default_log_dict)
-progress_log_dict["formatters"]["progressFormatter"] = {"()": "nvflare.fuel.utils.log_utils.ProgressFormatter"}
-progress_log_dict["filters"]["ProgressFilter"] = {"()": "nvflare.fuel.utils.log_utils.ProgressLogFilter"}
+concise_log_dict["formatters"]["progressFormatter"] = {"()": "nvflare.fuel.utils.log_utils.ProgressFormatter"}
+concise_log_dict["filters"]["ProgressFilter"] = {"()": "nvflare.fuel.utils.log_utils.ProgressLogFilter"}
 for handler_name in ("consoleHandler", "FLFileHandler"):
-    progress_log_dict["handlers"][handler_name]["formatter"] = "progressFormatter"
-    progress_log_dict["handlers"][handler_name]["filters"] = ["ProgressFilter"]
+    concise_log_dict["handlers"][handler_name]["formatter"] = "progressFormatter"
+    concise_log_dict["handlers"][handler_name]["filters"] = ["ProgressFilter"]
 
 
 logmode_config_dict = {
@@ -79,7 +79,6 @@ logmode_config_dict = {
     LogMode.CONCISE: concise_log_dict,
     LogMode.MSG_ONLY: msg_only_log_dict,
     LogMode.VERBOSE: verbose_log_dict,
-    LogMode.PROGRESS: progress_log_dict,
 }
 
 
@@ -309,6 +308,31 @@ class LoggerNameFilter(logging.Filter):
 
     def matches_name(self, name, logger_names) -> bool:
         return any(name.startswith(logger_name) or name.split(".")[-1] == logger_name for logger_name in logger_names)
+
+
+def format_metric_summary(metrics):
+    """Render at most six scalar metrics; leave full payloads in their artifacts."""
+    if not isinstance(metrics, dict):
+        return "[see saved result for metrics]"
+    values = []
+    for name, value in islice(metrics.items(), 6):
+        name = json.dumps((name[:64] if isinstance(name, str) else "metric"), ensure_ascii=True)[1:-1]
+        if isinstance(value, numbers.Real) and not isinstance(value, bool):
+            try:
+                value = format(value, ".6g")
+            except (ValueError, OverflowError, TypeError):
+                value = "[see saved result]"
+        elif isinstance(value, (str, bool)) or value is None:
+            value = json.dumps(
+                (value[:80] + ("..." if len(value) > 80 else "")) if isinstance(value, str) else value,
+                ensure_ascii=True,
+            )
+        else:
+            value = "[see saved result]"
+        values.append(f"{name}={value}")
+    if len(metrics) > 6:
+        values.append("... [see saved result for remaining metrics]")
+    return ", ".join(values) or "no metrics reported"
 
 
 class ProgressLogFilter(logging.Filter):
