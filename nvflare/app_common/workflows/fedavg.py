@@ -30,6 +30,7 @@ from nvflare.app_common.utils.fedprox_utils import normalize_fedprox_mu, set_fed
 from nvflare.app_common.utils.math_utils import parse_compare_criteria
 from nvflare.app_common.utils.tensor_disk_offload_context import cleanup_tensor_disk_offload, setup_tensor_disk_offload
 from nvflare.fuel.utils import fobs
+from nvflare.fuel.utils.log_utils import center_message
 
 from .base_fedavg import (
     BaseFedAvg,
@@ -163,7 +164,7 @@ class FedAvg(BaseFedAvg):
                     "falling back to in-memory tensor download"
                 )
 
-            self.info(f"Starting FedAvg training: {self.num_rounds} rounds.")
+            self.info(center_message(f"Starting FedAvg training: {self.num_rounds} rounds."))
 
             # Set NUM_ROUNDS in FL context for persistor and other components.
             self.fl_ctx.set_prop(AppConstants.NUM_ROUNDS, self.num_rounds, private=True, sticky=False)
@@ -183,7 +184,12 @@ class FedAvg(BaseFedAvg):
             model.total_rounds = self.num_rounds
 
             for self.current_round in range(self.start_round, self.start_round + self.num_rounds):
-                self.info(f"Training round {self.current_round - self.start_round + 1}/{self.num_rounds} started.")
+                self.info(
+                    center_message(
+                        f"Training round {self.current_round - self.start_round + 1}/{self.num_rounds} started.",
+                        boarder_str="-",
+                    )
+                )
 
                 model.current_round = self.current_round
                 self.fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self.current_round, private=True, sticky=False)
@@ -260,7 +266,7 @@ class FedAvg(BaseFedAvg):
                 # Memory cleanup at end of round (if configured)
                 self._maybe_cleanup_memory()
 
-            self.info("FedAvg training finished.")
+            self.info(center_message("FedAvg training finished."))
         finally:
             cleanup_tensor_disk_offload(engine=getattr(self, "engine", None), context=disk_offload_context)
 
