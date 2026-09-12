@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import io
 import re
 import tempfile
 from unittest.mock import MagicMock, patch
@@ -467,3 +468,47 @@ def test_summary_duration_uses_same_column_as_round_progress(outcome):
 
     line = summary_header(outcome, 12.5, context="  NVIDIA FLARE · example").splitlines()[-1]
     assert line.index("12.5s") == 64
+
+
+@pytest.mark.parametrize("encoding", ["ascii", "cp1252", "utf-8"])
+@pytest.mark.parametrize("status", ["FINISHED:COMPLETED", "FAILED"])
+def test_presentation_encoding_does_not_block_deployment_or_result(tmp_path, monkeypatch, encoding, status):
+    import logging
+
+    from nvflare.fuel.utils.log_utils import ColorFormatter
+    from nvflare.recipe._run_summary import run_recipe_job
+
+    output = io.BytesIO()
+    stream = io.TextIOWrapper(output, encoding=encoding)
+    monkeypatch.setattr("sys.stdout", stream)
+    env = MagicMock()
+    env.deploy.return_value = "job-id"
+    env.get_job_result.return_value = str(tmp_path)
+    env.get_job_status.return_value = status
+    job = MagicMock()
+    job.name = "example-模型"
+    run = run_recipe_job(job, env)
+    assert run.get_result() == str(tmp_path)
+    env.deploy.assert_called_once_with(job)
+    env.stop.assert_called_once_with(clean_up=True)
+    record = logging.LogRecord("trainer", logging.INFO, "", 0, "✓ Aggregated · 模型", (), None)
+    stream.write(ColorFormatter(fmt="%(message)s").format(record))
+    stream.flush()
+    text = output.getvalue().decode(encoding)
+    assert "NVIDIA FLARE" in text
+    assert "RUN SUMMARY" in text
+    assert ("Completed" if status == "FINISHED:COMPLETED" else "Failed") in text
+    assert "Results" in text
+    if encoding != "utf-8":
+        assert "[OK]" in text or "[X]" in text
+
+
+def test_closed_presentation_stream_does_not_block_result(tmp_path, monkeypatch):
+    stream = io.StringIO()
+    stream.close()
+    monkeypatch.setattr("sys.stdout", stream)
+    env = MagicMock()
+    env.get_job_result.return_value = str(tmp_path)
+    env.get_job_status.return_value = "FINISHED:COMPLETED"
+    assert Run(env, "job").get_result() == str(tmp_path)
+    env.stop.assert_called_once()

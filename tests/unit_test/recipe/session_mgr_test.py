@@ -65,8 +65,18 @@ def test_progress_monitor_replays_new_records_and_retries_partial_lines(monkeypa
     now = [0]
     monkeypatch.setattr("nvflare.recipe.session_mgr.time.monotonic", lambda: now[0])
     session = MagicMock()
-    start = json.dumps({"fullName": "nvflare.metrics.progress", "message": "Round 1/3 | training"})
-    metric = json.dumps({"fullName": "nvflare.metrics.progress", "message": "site-1 | loss=0.25"})
+    start = json.dumps(
+        {
+            "fullName": "nvflare.app_common.widgets.metrics_artifact_writer.MetricsArtifactWriter",
+            "message": "Round 1/3 | training",
+        }
+    )
+    metric = json.dumps(
+        {
+            "fullName": "nvflare.app_common.widgets.metrics_artifact_writer.MetricsArtifactWriter",
+            "message": "site-1 | loss=0.25",
+        }
+    )
     noise = json.dumps({"fullName": "custom.trainer", "message": "raw model weights"})
     state = {"count": 0, "progress": {"seen": set()}}
     meta = {"status": "RUNNING"}
@@ -108,7 +118,13 @@ def test_monitor_bounds_replay_and_memory_across_many_refreshes(capsys):
     state = {"seen": set()}
     for batch in range(10):
         lines = [
-            json.dumps({"fullName": "nvflare.metrics.progress", "message": f"row {batch}-{n}"}) for n in range(1000)
+            json.dumps(
+                {
+                    "fullName": "nvflare.app_common.widgets.metrics_artifact_writer.MetricsArtifactWriter",
+                    "message": f"row {batch}-{n}",
+                }
+            )
+            for n in range(1000)
         ]
         session.get_job_logs.return_value = {"logs": {"server": "\n".join(lines)}}
         _show_job_progress(session, "job-id", state)

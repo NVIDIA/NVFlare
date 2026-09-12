@@ -48,7 +48,7 @@ def test_dynamic_log_config_invalid_inline_json_raises_value_error(tmp_path):
 def test_log_modes_use_concise_without_an_extra_mode():
     from nvflare.fuel.utils.log_utils import LogMode, logmode_config_dict
 
-    assert logmode_config_dict[LogMode.CONCISE]["handlers"]["consoleHandler"]["filters"] == ["ProgressFilter"]
+    assert logmode_config_dict[LogMode.CONCISE]["handlers"]["consoleHandler"]["filters"] == ["ConciseFilter"]
     assert "progress" not in logmode_config_dict
     assert logmode_config_dict[LogMode.MSG_ONLY]["formatters"]["consoleFormatter"]["fmt"] == "%(message)s"
     assert logmode_config_dict[LogMode.MSG_ONLY]["handlers"]["consoleHandler"]["filters"] == ["ConciseFilter"]
@@ -159,20 +159,28 @@ def test_validate_site_log_config_rejects_dicts_and_file_paths():
         validate_site_log_config("/my workspace/log.conf")
 
 
-def test_progress_view_retains_diagnostic_records_and_wraps_readable_output():
-    from nvflare.fuel.utils.log_utils import LoggerNameFilter, ProgressFormatter, logmode_config_dict
+def test_concise_reuses_existing_formatters_and_retains_diagnostic_records():
+    from nvflare.fuel.utils.log_utils import ColorFormatter, LoggerNameFilter, logmode_config_dict
 
     view = io.StringIO()
     handler = logging.StreamHandler(view)
-    handler.setFormatter(ProgressFormatter())
-    filter_config = logmode_config_dict["concise"]["filters"]["ProgressFilter"].copy()
+    handler.setFormatter(ColorFormatter(fmt="%(message)s"))
+    filter_config = logmode_config_dict["concise"]["filters"]["ConciseFilter"].copy()
     assert filter_config.pop("()") == "nvflare.fuel.utils.log_utils.LoggerNameFilter"
     handler.addFilter(LoggerNameFilter(**filter_config))
     detail = io.StringIO()
     diagnostic = logging.StreamHandler(detail)
     records = [
         logging.LogRecord("custom.trainer", logging.INFO, "", 0, "raw weights: [1, 2, 3]", (), None),
-        logging.LogRecord("nvflare.metrics.progress", logging.INFO, "", 0, "site-1 | loss=0.25", (), None),
+        logging.LogRecord(
+            "nvflare.app_common.widgets.metrics_artifact_writer.MetricsArtifactWriter",
+            logging.INFO,
+            "",
+            0,
+            "site-1 | loss=0.25",
+            (),
+            None,
+        ),
         logging.LogRecord(
             "nvflare.transport",
             logging.WARNING,
@@ -188,15 +196,16 @@ def test_progress_view_retains_diagnostic_records_and_wraps_readable_output():
         diagnostic.handle(record)
     assert "raw weights" not in view.getvalue()
     assert "site-1 | loss=0.25" in view.getvalue()
-    assert "WARNING (site-2/transport): connection interrupted" in view.getvalue()
+    assert "connection interrupted" in view.getvalue()
     assert "run=job-123" not in view.getvalue()
-    assert all(len(line) <= 80 for line in view.getvalue().splitlines())
     assert "raw weights" in detail.getvalue()
     assert "[identity=site-2, run=job-123]" in detail.getvalue()
     config = logmode_config_dict["concise"]
+    assert config["formatters"].keys() == logmode_config_dict["full"]["formatters"].keys()
+    assert config["filters"].keys() == logmode_config_dict["full"]["filters"].keys()
     for name in ("consoleHandler", "FLFileHandler"):
-        assert config["handlers"][name]["filters"] == ["ProgressFilter"]
-        assert config["handlers"][name]["formatter"] == "progressFormatter"
+        assert config["handlers"][name]["filters"] == ["ConciseFilter"]
+        assert config["handlers"][name]["formatter"] == logmode_config_dict["full"]["handlers"][name]["formatter"]
     for name in ("logFileHandler", "jsonFileHandler"):
         assert config["handlers"][name] == logmode_config_dict["full"]["handlers"][name]
 
@@ -217,15 +226,17 @@ def test_metric_formatting_cannot_propagate_application_object_errors():
 
 
 def test_metric_table_keeps_columns_aligned_through_log_formatting():
-    from nvflare.fuel.utils.log_utils import ProgressFormatter, format_metric_table
+    from nvflare.fuel.utils.log_utils import ColorFormatter, format_metric_table
 
     rows = [
         ("site-1", {"accuracy": 1, "accuracy_after_local_training": 20}),
         ("site-2", {"accuracy": 30, "accuracy_after_local_training": 70}),
     ]
     table = format_metric_table(rows)
-    record = logging.LogRecord("nvflare.metrics.progress", logging.INFO, "", 0, table, (), None)
-    output = ProgressFormatter().format(record)
+    record = logging.LogRecord(
+        "nvflare.app_common.widgets.metrics_artifact_writer.MetricsArtifactWriter", logging.INFO, "", 0, table, (), None
+    )
+    output = ColorFormatter(fmt="%(message)s").format(record)
     assert output == table  # Wrapping must not collapse table alignment or merge rows.
     header, first, second = output.splitlines()
     assert first.split() == ["site-1", "1", "20"]

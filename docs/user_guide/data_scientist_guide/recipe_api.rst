@@ -609,11 +609,18 @@ running an exported job:
 
 The existing ``concise``, ``msg_only``, ``full``, and ``verbose`` modes remain available.
 
-The console and ``log_fl.txt`` show readable progress messages and warnings/errors,
-with display lines wrapped to 80 characters. Detailed application prints, epoch
+Concise selects the ordinary metric-writer and evaluation-controller loggers,
+plus warnings and errors, through the existing filter configuration. The console
+uses the existing message formatter; ``log_fl.txt`` retains its timestamped file
+formatter. Summary text is wrapped to 80 characters and metric tables are bounded.
+No separate progress mode, formatter, or child-logger channel is required.
+Detailed application prints, epoch
 logs, model arrays, and framework messages remain in ``log.txt`` and ``log.json``
 at the configured log level. Normal in-process client shutdown at ``END_RUN`` is
 logged at INFO; other stop reasons still produce warnings.
+
+Console decorations fall back to ASCII on limited output streams. A closed or
+unwritable reporting stream does not prevent deployment or result retrieval.
 
 Both successful and failed summaries include the job name and environment context.
 Known local client counts are shown; production participation is not inferred.

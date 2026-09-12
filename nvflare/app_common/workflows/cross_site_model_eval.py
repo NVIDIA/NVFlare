@@ -198,9 +198,7 @@ class CrossSiteModelEval(Controller):
                     return
 
             self.log_info(fl_ctx, f"Beginning model validation with clients: {self._participating_clients}.")
-            self.logger.getChild("progress").info(
-                f"\n  Evaluating saved models on {len(self._participating_clients)} clients…"
-            )
+            self.logger.info(f"\n  Evaluating saved models on {len(self._participating_clients)} clients…")
 
             if self._submit_model_task_name:
                 shareable = Shareable()
@@ -485,7 +483,7 @@ class CrossSiteModelEval(Controller):
         client_label = json.dumps(client_name[:64], ensure_ascii=True)
         model_label = json.dumps(model_name[:64], ensure_ascii=True)
         metrics = format_metric_summary(dxo.data if dxo.data_kind == DataKind.METRICS else None)
-        self.logger.getChild("progress").info(f"Evaluated {model_label} on {client_label}: {metrics}")
+        self.logger.info(f"Evaluated {model_label} on {client_label}: {metrics}")
 
     def _save_dxo_content(self, name: str, save_dir: str, dxo: DXO, fl_ctx: FLContext) -> str:
         """Saves shareable to given directory within the app_dir.

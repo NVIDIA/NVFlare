@@ -26,7 +26,7 @@ from nvflare.fuel.utils.log_utils import _read_log_tail, wrap_log_message
 _MAX_LOG_BYTES = 1024 * 1024
 _MAX_LOG_FILES = 20
 _FRAME = re.compile(r'^  File "([^"\n]+)", line (\d+), in ([^\n]+)', re.MULTILINE)
-_EXCEPTION = re.compile(r"^[A-Za-z_][\w.]*: [^\n]*", re.MULTILINE)
+_EXCEPTION = re.compile(r"^[A-Za-z_][\w.]*(?::[^\n]*)?$", re.MULTILINE)
 _TEXT_ERROR = re.compile(
     r"^\d{4}-\d\d-\d\d [\d:,.]+ - (.*?) - (ERROR|CRITICAL) - (.*?)" r"(?=^\d{4}-\d\d-\d\d [\d:,.]+ - |\Z)",
     re.MULTILINE | re.DOTALL,
@@ -141,6 +141,7 @@ def failure_summary(result=None, *, since=None):
                 candidates.update((folder, *islice(folder.glob("*/"), _MAX_LOG_FILES)))
             files_read = 0
             for site_dir in sorted(candidates):
+                selected = None
                 for filename in ("log.json", "error_log.txt"):
                     path = site_dir / filename
                     if not path.is_file() or root.resolve() not in path.resolve().parents:
@@ -156,9 +157,13 @@ def failure_summary(result=None, *, since=None):
                         details = _first_error(path)
                     except (OSError, ValueError):
                         continue
-                    if details:
-                        groups.setdefault(details, []).append(path)
-                        break  # Prefer JSON, but fall back when its tail has no usable error.
+                    if details and (selected is None or details[2]):
+                        selected = (details, path)
+                    if details and details[2]:
+                        break  # A traceback is already available; avoid reading duplicate text.
+                if selected:
+                    details, path = selected
+                    groups.setdefault(details, []).append(path)
         # An application traceback identifies the failing code more directly
         # than the resulting server abort. Do not order machines by wall clock.
         items = sorted(groups.items(), key=lambda item: not item[0][3])

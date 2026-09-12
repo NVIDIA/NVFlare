@@ -21,7 +21,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from nvflare.fuel.utils.log_utils import BaseFormatter
+from nvflare.fuel.utils.log_utils import BaseFormatter, JsonFormatter
 from nvflare.recipe import _failure_summary
 from nvflare.recipe._failure_summary import collect_client_errors, failure_summary
 from nvflare.recipe.run import Run
@@ -115,6 +115,7 @@ def test_no_logs_and_stale_simulator_logs_have_honest_fallback(tmp_path):
     assert "No job error details" in failure_summary(tmp_path)
     _write_log(tmp_path, "site-1", _record("NameError: old job"))
     os.utime(tmp_path / "site-1" / "log.json", (1, 1))
+    os.utime(tmp_path / "site-1" / "error_log.txt", (1, 1))
     output = failure_summary(tmp_path, since=2)
     assert "old job" not in output
     assert "No job error details" in output
@@ -216,7 +217,7 @@ def test_json_without_usable_error_falls_back_to_error_log(tmp_path, json_conten
 
 
 def test_json_error_is_preferred_without_reading_duplicate_text(tmp_path, monkeypatch):
-    _write_log(tmp_path, "site-1", _record("ValueError: invalid batch size"))
+    _write_log(tmp_path, "site-1", _record(_client_trace("site-1", "ValueError: invalid batch size")))
     first_error = _failure_summary._first_error
     paths_read = []
 
@@ -246,3 +247,51 @@ def test_fallback_reads_share_the_total_file_limit(tmp_path, monkeypatch):
     assert len(paths_read) == 20
     assert len({p.parent for p in paths_read}) == 10
     assert [p.name for p in paths_read] == ["log.json", "error_log.txt"] * 10
+
+
+@pytest.mark.parametrize("bare_exception", [False, True])
+def test_real_exception_formatters_preserve_type_and_application_location(tmp_path, bare_exception):
+    site = tmp_path / "site-1"
+    site.mkdir()
+    logger = logging.Logger("custom.trainer")
+    handlers = []
+    for filename, formatter in (
+        ("log.json", JsonFormatter()),
+        ("error_log.txt", BaseFormatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")),
+    ):
+        handler = logging.FileHandler(site / filename)
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+        handlers.append(handler)
+    source = "def train():\n" + (
+        "    assert False\n" if bare_exception else "    raise FileNotFoundError('training.npy')\n"
+    )
+    # Real nested frames exceed the summary display limit before the exception.
+    for index in range(15):
+        target = "train" if index == 0 else f"layer_{index - 1}"
+        source += f"def layer_{index}():\n    {target}()\n"
+    namespace = {}
+    exec(compile(source, "/workspace/site-1/custom/client.py", "exec"), namespace)
+    try:
+        try:
+            namespace["layer_14"]()
+        except Exception:
+            logger.exception("Training failed")
+    finally:
+        for handler in handlers:
+            handler.close()
+    json_record = json.loads((site / "log.json").read_text())
+    assert json_record["message"] == "Training failed"
+    assert "Traceback" not in json_record["message"]
+    text = (site / "error_log.txt").read_text()
+    assert len(text) > 512
+    output = failure_summary(tmp_path)
+    assert ("AssertionError" if bare_exception else "FileNotFoundError: training.npy") in output
+    assert "client.py:2 (train)" in output
+    assert "Traceback (most recent call last)" not in output
+    assert "site-1/error_log.txt" in output
+
+
+def test_json_message_survives_unusable_text_fallback(tmp_path):
+    _write_log(tmp_path, "site-1", _record("Training failed"))
+    assert "Training failed" in failure_summary(tmp_path)

@@ -20,7 +20,7 @@ from typing import Optional
 from nvflare.fuel.flare_api.flare_api import _job_status_outcome
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.recipe._failure_summary import failure_summary
-from nvflare.recipe._run_summary import result_summary, run_context, summary_header
+from nvflare.recipe._run_summary import _print_output, result_summary, run_context, summary_header
 from nvflare.recipe.spec import ExecEnv
 
 
@@ -140,25 +140,25 @@ class Run:
                 "failed": "✗ Failed",
                 "not_scheduled": "✗ Not scheduled",
             }.get(outcome, self._cached_status or "Status unavailable")
-            print(summary_header(status_label, elapsed, context=self._summary_context), flush=True)
+            _print_output(summary_header(status_label, elapsed, context=self._summary_context), flush=True)
             if failure_report or outcome == "not_scheduled":
-                print(f"\n  Status    {self._cached_status}", flush=True)
+                _print_output(f"\n  Status    {self._cached_status}", flush=True)
             if failure_report:
-                print(failure_report, flush=True)
+                _print_output(failure_report, flush=True)
             if report:
-                print(report, flush=True)
+                _print_output(report, flush=True)
 
             if result:
                 if os.path.isdir(result):
-                    print(f"  Results   {result}", flush=True)
+                    _print_output(f"  Results   {result}", flush=True)
                 else:
-                    print(
+                    _print_output(
                         f"Result workspace is not available locally: {result}. "
                         "To retain an environment's workspace, use get_result(clean_up=False) when running the job.",
                         flush=True,
                     )
             else:
-                print(
+                _print_output(
                     "No result workspace was returned. See the status and preceding messages for details.", flush=True
                 )
 
