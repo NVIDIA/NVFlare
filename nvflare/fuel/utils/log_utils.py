@@ -363,7 +363,7 @@ def format_metric_table(rows, label="Client", columns=None, header=True):
         widths = [max(14, len(name)) for name in names]
 
         def row_line(name, values):
-            return f"  {cell_name(name, 12):<12}" + "  ".join(f"{v:>{w}}" for v, w in zip(values, widths))
+            return f"  {cell_name(name, 12):<12}  " + "  ".join(f"{v:>{w}}" for v, w in zip(values, widths))
 
         lines = [row_line(label, names)] if header else []
         for name, metrics in rows:

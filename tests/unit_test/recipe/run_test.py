@@ -459,3 +459,11 @@ def test_unscheduled_job_has_distinct_outcome_without_training_errors(tmp_path, 
     assert "✗ Failed" not in output
     assert "Failure details" not in output
     assert "Check server and client logs" not in output
+
+
+@pytest.mark.parametrize("outcome", ["✓ Completed", "✗ Failed", "✗ Not scheduled"])
+def test_summary_duration_uses_same_column_as_round_progress(outcome):
+    from nvflare.recipe._run_summary import summary_header
+
+    line = summary_header(outcome, 12.5, context="  NVIDIA FLARE · example").splitlines()[-1]
+    assert line.index("12.5s") == 64

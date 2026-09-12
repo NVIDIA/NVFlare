@@ -24,7 +24,7 @@ from nvflare.fuel.utils.log_utils import _read_log_tail, format_metric_table, wr
 def summary_header(outcome, elapsed, *, context=""):
     """Use the same heading and elapsed-time alignment for every run outcome."""
     heading = "\n" + " RUN SUMMARY ".center(72, "=")
-    return heading + (f"\n\n{context}" if context else "") + f"\n\n  {outcome}".ljust(65) + f"{elapsed:.1f}s"
+    return heading + (f"\n\n{context}" if context else "") + "\n\n" + f"  {outcome}".ljust(64) + f"{elapsed:.1f}s"
 
 
 def run_context(job_name, env):

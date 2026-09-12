@@ -281,3 +281,12 @@ def test_shared_log_tail_bounds_reads_and_preserves_byte_or_record_contract(size
     assert tail == expected
     assert truncated == (len(data) > 32)
     assert stream.bytes_read <= 32
+
+
+def test_metric_table_separates_full_width_labels_and_values():
+    from nvflare.fuel.utils.log_utils import format_metric_table
+
+    table = format_metric_table([("123456789012", {"12345678901234": "x" * 80})])
+    header, row = table.splitlines()
+    assert header.split() == ["Client", "12345678901234"]
+    assert row == "  123456789012  [see artifact]"

@@ -663,6 +663,10 @@ relabelled as an evaluation of the final saved model. Jobs that do not use these
 reporting components still have job-status and diagnostic output, but do not
 acquire synthetic training rounds or metrics.
 
+Full and verbose Recipe monitoring include job metadata, such as resource requirements
+and the deployment map, when job status changes. Concise monitoring keeps this
+metadata out of the console; it remains available through the session API and debug logging.
+
 POC and production Recipe monitoring also shows concise progress by default,
 without an environment variable. The shared monitor retrieves existing server
 ``log.json`` records at most once per five seconds during normal callbacks, plus
