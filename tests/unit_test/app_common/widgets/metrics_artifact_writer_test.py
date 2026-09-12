@@ -934,3 +934,16 @@ def test_progress_uses_reported_metrics_and_retains_total_after_context_change(t
     assert "2.0s" in output
     assert _read_rounds(tmp_path)[0]["round"] == 5
     assert "complete" not in " ".join(progress)  # Aggregation does not prove persistence or job success.
+
+
+@pytest.mark.parametrize("metrics", [{}, {"loss": float("nan")}, {"loss": [1, 2, 3]}])
+def test_accepted_update_without_displayable_metrics_keeps_client_visible(tmp_path, caplog, metrics):
+    writer = MetricsArtifactWriter()
+    fl_ctx = _make_fl_ctx(tmp_path)
+    with caplog.at_level("INFO"):
+        writer.handle_event(EventType.START_RUN, fl_ctx)
+        _record_contribution(writer, fl_ctx, 0, "site-1", metrics)
+        _record_round(writer, fl_ctx, 0, {"loss": 0.25})
+    output = "\n".join(r.message for r in caplog.records if r.name.endswith(".progress"))
+    assert '"site-1" · no displayable metrics' in output
+    assert "✓ Aggregated 1 client update" in output

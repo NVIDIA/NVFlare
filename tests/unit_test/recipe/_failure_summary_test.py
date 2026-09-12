@@ -22,6 +22,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from nvflare.fuel.utils.log_utils import BaseFormatter
+from nvflare.recipe import _failure_summary
 from nvflare.recipe._failure_summary import collect_client_errors, failure_summary
 from nvflare.recipe.run import Run
 
@@ -199,3 +200,49 @@ def test_client_error_download_is_bounded(tmp_path):
     assert all(call.kwargs["max_bytes"] == 1024 * 1024 for call in session.get_job_logs.call_args_list)
     assert all(path.stat().st_size <= 1024 * 1024 for path in paths)
     assert all(path.read_text() == "last line\n" for path in paths)
+
+
+@pytest.mark.parametrize("json_content", ["", "{malformed}\n", "info", "oversized"])
+def test_json_without_usable_error_falls_back_to_error_log(tmp_path, json_content):
+    _write_log(tmp_path, "site-1", _record(_client_trace("site-1")), plain_text=True)
+    if json_content in ("info", "oversized"):
+        info = json.dumps({"levelname": "INFO", "message": "training progress " * 100}) + "\n"
+        json_content = info if json_content == "info" else _record("old error") + info * 900
+    (tmp_path / "site-1" / "log.json").write_text(json_content)
+    output = failure_summary(tmp_path)
+    assert "FileNotFoundError: missing training.npy" in output
+    assert "site-1/error_log.txt" in output
+    assert "No job error details" not in output
+
+
+def test_json_error_is_preferred_without_reading_duplicate_text(tmp_path, monkeypatch):
+    _write_log(tmp_path, "site-1", _record("ValueError: invalid batch size"))
+    first_error = _failure_summary._first_error
+    paths_read = []
+
+    def read(path):
+        paths_read.append(path.name)
+        return first_error(path)
+
+    monkeypatch.setattr(_failure_summary, "_first_error", read)
+    assert "ValueError: invalid batch size" in failure_summary(tmp_path)
+    assert paths_read == ["log.json"]
+
+
+def test_fallback_reads_share_the_total_file_limit(tmp_path, monkeypatch):
+    for index in range(25):
+        site = f"site-{index:02}"
+        _write_log(tmp_path, site, _record(f"ValueError: failed {site}"), plain_text=True)
+        (tmp_path / site / "log.json").write_text("{}\n")
+    first_error = _failure_summary._first_error
+    paths_read = []
+
+    def read(path):
+        paths_read.append(path)
+        return first_error(path)
+
+    monkeypatch.setattr(_failure_summary, "_first_error", read)
+    failure_summary(tmp_path)
+    assert len(paths_read) == 20
+    assert len({p.parent for p in paths_read}) == 10
+    assert [p.name for p in paths_read] == ["log.json", "error_log.txt"] * 10

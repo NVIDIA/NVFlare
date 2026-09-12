@@ -394,6 +394,17 @@ def wrap_log_message(message, subsequent_indent="    "):
     )
 
 
+def _read_log_tail(stream, max_bytes, *, whole_lines=False):
+    """Return bounded tail bytes and a truncation flag; optionally discard the first partial record."""
+    stream.seek(0, os.SEEK_END)
+    start = max(0, stream.tell() - max_bytes)
+    stream.seek(start)
+    data = stream.read(max_bytes)
+    if start and whole_lines:
+        data = data.partition(b"\n")[2]
+    return data, start > 0
+
+
 class ProgressFormatter(logging.Formatter):
     """Format the focused console and FL log without changing diagnostic records."""
 

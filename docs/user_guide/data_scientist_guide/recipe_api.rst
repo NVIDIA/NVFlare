@@ -634,9 +634,12 @@ case-insensitive ``all`` or ``server`` selectors are skipped. Each request has a
 UTF-8 log-byte limit before transfer (protocol encoding adds overhead). Older
 servers that do not support this limit are not retried with unbounded requests.
 Excerpts are retained alongside downloaded results in ``failure-logs-*``.
-The summary reads at most 20 files and the last 1 MiB of each. Current and supported
+The summary prefers each site's ``log.json`` and tries ``error_log.txt`` when the
+JSON tail has no usable error. Both attempts count toward the shared limit of
+20 files, reading at most the last 1 MiB of each. Current and supported
 legacy terminal statuses share the same reporting rules: ``FINISHED_OK`` is
-successful, while terminal non-success statuses include failure details. Missing, rotated,
+successful; ``FINISHED:CAN_NOT_SCHEDULE`` is shown as ``Not scheduled`` without
+requesting training error logs. Other terminal non-success statuses include failure details. Missing, rotated,
 or custom-format logs may omit the original exception; consult the full site logs
 when the summary is inconclusive. Diagnostic retrieval failures do not replace
 the job result or status. ``FATAL_SYSTEM_ERROR`` can follow a client code error

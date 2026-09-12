@@ -333,6 +333,9 @@ This argument can be any of the following:
       plus warnings and errors, formatted for reading in the console and ``log_fl.txt``.
       Other file handlers keep detailed logs. Built-in aggregation and evaluation writers
       supply these messages; arbitrary client prints remain in diagnostic logs.
+      Server setup supplies ``MetricsArtifactWriter`` when no writer is configured,
+      so ordinary FedJob and JSON jobs also report round events and save metric artifacts.
+      An explicitly configured writer retains its settings and is not duplicated.
     - ``msg_only``: non-NVFlare logs and selected NVFlare application logs, formatted as messages only
     - ``full`` (default in workspaces in poc and production mode): all info level logs
     - ``verbose``: debug level logs with detailed log attributes

@@ -125,6 +125,8 @@ def test_monitor_bounds_replay_and_memory_across_many_refreshes(capsys):
     [
         ("FINISHED:COMPLETED", False),
         ("FINISHED_OK", False),
+        ("FINISHED:CAN_NOT_SCHEDULE", False),
+        ("FINISHED:ABANDONED", True),
         ("FINISHED:EXECUTION_EXCEPTION", True),
         ("FAILED", True),
         ("FINISHED_EXCEPTION", True),

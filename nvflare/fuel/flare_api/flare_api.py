@@ -111,6 +111,8 @@ def _job_status_outcome(status: str) -> Optional[str]:
     """Classify current/legacy terminal statuses consistently for Recipe reporting."""
     if not _is_terminal_job_status(status):
         return None
+    if status == RunStatus.FINISHED_CANT_SCHEDULE.value:
+        return "not_scheduled"
     return "completed" if status in (RunStatus.FINISHED_COMPLETED.value, "FINISHED_OK") else "failed"
 
 
