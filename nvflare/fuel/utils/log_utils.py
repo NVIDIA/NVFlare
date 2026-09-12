@@ -45,33 +45,32 @@ with open(os.path.join(os.path.dirname(__file__), DEFAULT_LOG_JSON), "r") as f:
     default_log_dict = json.load(f)
 
 concise_log_dict = copy.deepcopy(default_log_dict)
-concise_log_dict["formatters"]["consoleFormatter"]["fmt"] = "%(asctime)s - %(levelname)s - %(message)s"
-concise_log_dict["handlers"]["consoleHandler"]["filters"] = ["ConciseFilter"]
-# Keep transfer and executor bookkeeping in the diagnostic files. Application
-# output (including redirected client prints) and all warnings/errors stay visible.
-concise_log_dict["filters"]["ConciseFilter"]["exclude_logger_names"] = [
-    "nvflare.app_common.np.np_downloader",
-    "nvflare.app_common.executors.client_api_executor",
-    "__main__.ClientTaskWorker",
-]
+# A focused view using ordinary log records. Detailed file handlers are unchanged.
+concise_log_dict["formatters"]["progressFormatter"] = {"()": "nvflare.fuel.utils.log_utils.ProgressFormatter"}
+concise_log_dict["filters"]["ProgressFilter"] = {
+    "()": "nvflare.fuel.utils.log_utils.LoggerNameFilter",
+    "logger_names": ["progress"],
+}
+for handler_name in ("consoleHandler", "FLFileHandler"):
+    concise_log_dict["handlers"][handler_name]["formatter"] = "progressFormatter"
+    concise_log_dict["handlers"][handler_name]["filters"] = ["ProgressFilter"]
+
 
 msg_only_log_dict = copy.deepcopy(default_log_dict)
 msg_only_log_dict["formatters"]["consoleFormatter"]["fmt"] = "%(message)s"
 msg_only_log_dict["handlers"]["consoleHandler"]["filters"] = ["ConciseFilter"]
-msg_only_log_dict["filters"]["ConciseFilter"] = copy.deepcopy(concise_log_dict["filters"]["ConciseFilter"])
+# Keep application messages while excluding transfer/executor bookkeeping.
+msg_only_log_dict["filters"]["ConciseFilter"]["exclude_logger_names"] = [
+    "nvflare.app_common.np.np_downloader",
+    "nvflare.app_common.executors.client_api_executor",
+    "__main__.ClientTaskWorker",
+]
 
 verbose_log_dict = copy.deepcopy(default_log_dict)
 verbose_log_dict["formatters"]["consoleFormatter"][
     "fmt"
 ] = "%(asctime)s - %(identity)s - %(fullName)s - %(levelname)s - %(fl_ctx)s - %(message)s"
 verbose_log_dict["loggers"]["root"]["level"] = "DEBUG"
-
-# A focused view using ordinary log records. Detailed file handlers are unchanged.
-concise_log_dict["formatters"]["progressFormatter"] = {"()": "nvflare.fuel.utils.log_utils.ProgressFormatter"}
-concise_log_dict["filters"]["ProgressFilter"] = {"()": "nvflare.fuel.utils.log_utils.ProgressLogFilter"}
-for handler_name in ("consoleHandler", "FLFileHandler"):
-    concise_log_dict["handlers"][handler_name]["formatter"] = "progressFormatter"
-    concise_log_dict["handlers"][handler_name]["filters"] = ["ProgressFilter"]
 
 
 logmode_config_dict = {
@@ -310,6 +309,16 @@ class LoggerNameFilter(logging.Filter):
         return any(name.startswith(logger_name) or name.split(".")[-1] == logger_name for logger_name in logger_names)
 
 
+def _format_metric_value(value):
+    if isinstance(value, numbers.Real) and not isinstance(value, bool):
+        return format(value, ".6g")
+    if isinstance(value, str):
+        value = value[:80] + ("..." if len(value) > 80 else "")
+    elif value is not None and not isinstance(value, bool):
+        return "[see saved result]"
+    return json.dumps(value, ensure_ascii=True)
+
+
 def format_metric_summary(metrics):
     """Render at most six scalar metrics; leave full payloads in their artifacts."""
     try:
@@ -318,19 +327,7 @@ def format_metric_summary(metrics):
         values = []
         for name, value in islice(metrics.items(), 6):
             name = json.dumps((name[:64] if isinstance(name, str) else "metric"), ensure_ascii=True)[1:-1]
-            if isinstance(value, numbers.Real) and not isinstance(value, bool):
-                try:
-                    value = format(value, ".6g")
-                except (ValueError, OverflowError, TypeError):
-                    value = "[see saved result]"
-            elif isinstance(value, (str, bool)) or value is None:
-                value = json.dumps(
-                    (value[:80] + ("..." if len(value) > 80 else "")) if isinstance(value, str) else value,
-                    ensure_ascii=True,
-                )
-            else:
-                value = "[see saved result]"
-            values.append(f"{name}={value}")
+            values.append(f"{name}={_format_metric_value(value)}")
         if len(metrics) > 6:
             values.append("... [see saved result for remaining metrics]")
         return ", ".join(values) or "no metrics reported"
@@ -350,7 +347,7 @@ def format_metric_table(rows, label="Client", columns=None, header=True):
         omitted = len(rows) > 10
         rows = rows[:10]
         if columns is None:
-            columns = list(islice(dict.fromkeys(key for _, metrics in rows for key in metrics), 2))
+            columns = dict.fromkeys(key for _, metrics in rows for key in islice(metrics, 2))
         columns = list(islice(columns, 2))
         shortened = False
 
@@ -364,33 +361,37 @@ def format_metric_table(rows, label="Client", columns=None, header=True):
 
         names = [cell_name(key, 30) for key in columns]
         widths = [max(14, len(name)) for name in names]
-        lines = []
-        if header:
-            lines.append(
-                f"  {cell_name(label, 12):<12}" + "  ".join(f"{name:>{width}}" for name, width in zip(names, widths))
-            )
+
+        def row_line(name, values):
+            return f"  {cell_name(name, 12):<12}" + "  ".join(f"{v:>{w}}" for v, w in zip(values, widths))
+
+        lines = [row_line(label, names)] if header else []
         for name, metrics in rows:
             values = []
             for key, width in zip(columns, widths):
-                rendered = format_metric_summary({"": metrics[key]}) if key in metrics else "=—"
-                value = rendered[1:] if rendered.startswith("=") else "[see artifact]"
-                if len(value) > width:
+                try:
+                    value = _format_metric_value(metrics[key]) if key in metrics else "—"
+                except Exception:
                     value = "[see artifact]"
-                values.append(value)
-            lines.append(f"  {cell_name(name, 12):<12}" + "  ".join(f"{v:>{w}}" for v, w in zip(values, widths)))
-        if omitted or shortened or any(set(metrics) - set(columns) for _, metrics in rows):
+                values.append(value if len(value) <= width else "[see artifact]")
+            lines.append(row_line(name, values))
+        if omitted or shortened or any(key not in columns for _, metrics in rows for key in metrics):
             lines.append("  Full names and additional results are available in the saved artifacts.")
         return "\n".join(lines)
     except Exception:
         return "  See saved artifacts for metrics."
 
 
-class ProgressLogFilter(logging.Filter):
-    """Select workflow progress plus warnings/errors for the human-readable view."""
-
-    def filter(self, record):
-        name = getattr(record, "fullName", record.name)
-        return record.levelno > logging.INFO or name.endswith(".progress")
+def wrap_log_message(message, subsequent_indent="    "):
+    """Wrap long display lines while preserving short lines and table alignment."""
+    return "\n".join(
+        (
+            textwrap.fill(line, width=80, subsequent_indent=subsequent_indent, replace_whitespace=False)
+            if len(line) > 80
+            else line
+        )
+        for line in message.splitlines()
+    )
 
 
 class ProgressFormatter(logging.Formatter):
@@ -406,14 +407,7 @@ class ProgressFormatter(logging.Formatter):
             identity = getattr(base.record, "identity", "")
             source = f"{identity}/{name}" if identity else name
             message = f"{record.levelname} ({source}): {message}"
-        return "\n".join(
-            (
-                line
-                if len(line) <= 80
-                else textwrap.fill(line, width=80, subsequent_indent="    ", replace_whitespace=False)
-            )
-            for line in message.splitlines()
-        )
+        return wrap_log_message(message)
 
 
 class ConciseLogFilter(LoggerNameFilter):

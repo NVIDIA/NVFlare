@@ -15,11 +15,10 @@
 """Presentation of existing result artifacts; never determines job success."""
 
 import json
-import textwrap
 from itertools import islice
 from pathlib import Path
 
-from nvflare.fuel.utils.log_utils import format_metric_table
+from nvflare.fuel.utils.log_utils import format_metric_table, wrap_log_message
 
 
 def _read_json(path):
@@ -126,8 +125,4 @@ def result_summary(result):
     if log_paths:
         artifacts.append("  Logs      " + " · ".join(str(p.relative_to(root)) for p in sorted(log_paths)))
     lines.extend(["", *artifacts])
-    return "\n".join(
-        line if len(line) <= 80 else textwrap.fill(line, width=80, subsequent_indent="    ", replace_whitespace=False)
-        for block in lines
-        for line in block.split("\n")
-    )
+    return wrap_log_message("\n".join(lines))

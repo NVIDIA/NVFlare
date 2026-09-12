@@ -48,14 +48,8 @@ def test_dynamic_log_config_invalid_inline_json_raises_value_error(tmp_path):
 def test_log_modes_use_concise_without_an_extra_mode():
     from nvflare.fuel.utils.log_utils import LogMode, logmode_config_dict
 
-    assert logmode_config_dict[LogMode.CONCISE]["formatters"]["consoleFormatter"]["fmt"] == (
-        "%(asctime)s - %(levelname)s - %(message)s"
-    )
     assert logmode_config_dict[LogMode.CONCISE]["handlers"]["consoleHandler"]["filters"] == ["ProgressFilter"]
     assert "progress" not in logmode_config_dict
-    assert logmode_config_dict[LogMode.CONCISE]["filters"]["ConciseFilter"]["()"] == (
-        "nvflare.fuel.utils.log_utils.ConciseLogFilter"
-    )
     assert logmode_config_dict[LogMode.MSG_ONLY]["formatters"]["consoleFormatter"]["fmt"] == "%(message)s"
     assert logmode_config_dict[LogMode.MSG_ONLY]["handlers"]["consoleHandler"]["filters"] == ["ConciseFilter"]
     assert logmode_config_dict[LogMode.FULL]["filters"]["FLFilter"]["()"] == (
@@ -166,12 +160,14 @@ def test_validate_site_log_config_rejects_dicts_and_file_paths():
 
 
 def test_progress_view_retains_diagnostic_records_and_wraps_readable_output():
-    from nvflare.fuel.utils.log_utils import ProgressFormatter, ProgressLogFilter, logmode_config_dict
+    from nvflare.fuel.utils.log_utils import LoggerNameFilter, ProgressFormatter, logmode_config_dict
 
     view = io.StringIO()
     handler = logging.StreamHandler(view)
     handler.setFormatter(ProgressFormatter())
-    handler.addFilter(ProgressLogFilter())
+    filter_config = logmode_config_dict["concise"]["filters"]["ProgressFilter"].copy()
+    assert filter_config.pop("()") == "nvflare.fuel.utils.log_utils.LoggerNameFilter"
+    handler.addFilter(LoggerNameFilter(**filter_config))
     detail = io.StringIO()
     diagnostic = logging.StreamHandler(detail)
     records = [
