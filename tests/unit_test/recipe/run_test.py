@@ -351,3 +351,64 @@ class TestRunIntegration:
             with patch.object(prod_env, "abort_job") as mock_abort:
                 run.abort()
                 mock_abort.assert_called_once_with("prod_test_job")
+
+
+@pytest.mark.parametrize("layout", ["server/simulate_job", "workspace", "."])
+def test_summary_reads_real_artifacts_for_each_environment_layout(tmp_path, capsys, layout):
+    import json
+
+    run_dir = tmp_path / layout
+    metrics = run_dir / "metrics"
+    metrics.mkdir(parents=True)
+    (metrics / "metrics_summary.json").write_text(json.dumps({"job_name": "example"}))
+    (metrics / "round_metrics.jsonl").write_text(
+        json.dumps(
+            {"round": 0, "sites": [{"name": "site-1"}], "aggregated_metrics": [{"name": "accuracy", "value": 0.7}]}
+        )
+        + "\n"
+    )
+    evaluation = run_dir / "cross_site_val"
+    evaluation.mkdir()
+    (evaluation / "cross_val_results.json").write_text(json.dumps({"site-1": {"global.pt": {"accuracy": 0.8}}}))
+    app = run_dir / "app_server"
+    app.mkdir()
+    (app / "global.pt").write_bytes(b"not deserialized by summary")
+    env = MagicMock()
+    env.get_job_result.return_value = str(tmp_path)
+    env.get_job_status.return_value = "FINISHED:EXECUTION_EXCEPTION"
+    run = Run(env, "test")
+    assert run.get_result(clean_up=False) == str(tmp_path)
+    output = capsys.readouterr().out
+    assert "NVIDIA FLARE | example" in output
+    assert "Aggregated client metrics" in output
+    assert "accuracy=0.7" in output
+    assert "Model evaluation (saved results)" in output
+    assert "accuracy=0.8" in output
+    assert "global.pt" in output
+    assert "FINISHED:EXECUTION_EXCEPTION" in output
+    assert "70%" not in output
+    assert "Completed in" not in output
+    run.get_result()
+    assert capsys.readouterr().out == ""
+
+
+def test_summary_limits_rounds_and_tolerates_corrupt_evaluation(tmp_path):
+    import json
+
+    from nvflare.recipe._run_summary import result_summary
+
+    metrics = tmp_path / "metrics"
+    metrics.mkdir()
+    (metrics / "metrics_summary.json").write_text('{"job_name": "long-run"}')
+    records = [
+        json.dumps({"round": n, "sites": [], "aggregated_metrics": [{"name": "loss", "value": n}]}) for n in range(100)
+    ]
+    (metrics / "round_metrics.jsonl").write_text("\n".join(records))
+    evaluation = tmp_path / "cross_site_val"
+    evaluation.mkdir()
+    (evaluation / "cross_val_results.json").write_text("{broken")
+    output = result_summary(tmp_path)
+    assert output.count("loss=") == 10
+    assert "loss=99" in output
+    assert "Model evaluation (saved results)" not in output
+    assert "cross_val_results.json" in output

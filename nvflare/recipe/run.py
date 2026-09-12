@@ -14,9 +14,11 @@
 
 import os
 import threading
+import time
 from typing import Optional
 
 from nvflare.fuel.utils.log_utils import get_obj_logger
+from nvflare.recipe._run_summary import result_summary
 from nvflare.recipe.spec import ExecEnv
 
 
@@ -51,6 +53,7 @@ class Run:
         self._cached_status: Optional[str] = None
         self._cached_result: Optional[str] = None
         self.logger = get_obj_logger(self)
+        self._started_at = time.monotonic()
 
     def get_job_id(self) -> str:
         """Get the job ID.
@@ -111,6 +114,13 @@ class Run:
                 self.logger.warning(f"Failed to get job status: {e}")
                 self._cached_status = None
 
+            report = ""
+            if result and os.path.isdir(result):
+                try:
+                    report = result_summary(result)
+                except Exception as e:
+                    self.logger.debug("Could not summarize result artifacts: %s", e)
+            elapsed = time.monotonic() - self._started_at
             try:
                 self.exec_env.stop(clean_up=clean_up)
             except Exception as e:
@@ -118,6 +128,11 @@ class Run:
             finally:
                 self._stopped = True
 
+            print("\nRun summary", flush=True)
+            if report:
+                print(report, flush=True)
+            print(f"Environment: {type(self.exec_env).__name__}", flush=True)
+            print(f"Elapsed: {elapsed:.1f}s (through result retrieval)", flush=True)
             print(f"Job {self.job_id} status: {self._cached_status or 'unavailable'}", flush=True)
             if result:
                 if os.path.isdir(result):

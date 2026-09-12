@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import hashlib
 import json
 import logging
 import os
@@ -27,34 +28,40 @@ from nvflare.job_config.api import FedJob
 
 
 def _show_job_progress(session, job_id, state):
-    """Display existing structured server progress logs, once per record."""
+    """Replay a bounded tail of existing server logs with bounded deduplication."""
     try:
-        response = session.get_job_logs(job_id, target="server", log_file_name="log.json")
+        response = session.get_job_logs(job_id, target="server", log_file_name="log.json", tail_lines=200)
         logs = response.get("logs", {})
         formatter = ProgressFormatter()
-        for text in logs.values():
-            for line in text.splitlines():
-                try:
-                    record = json.loads(line)
-                except (ValueError, TypeError):
-                    continue  # An in-flight final line may be incomplete; retry on the next callback.
-                if not isinstance(record, dict):
-                    continue
-                name = record.get("fullName", "")
-                level = record.get("levelname", "INFO")
-                if not isinstance(name, str) or not isinstance(level, str):
-                    continue
-                if not name.endswith(".progress") and level not in ("WARNING", "ERROR", "CRITICAL"):
-                    continue
-                if line in state["seen"]:
-                    continue
-                message = record.get("message", "")
-                context = record.get("fl_ctx", "")
-                if isinstance(context, str) and context:
-                    message = f"{context}: {message}"
-                log_record = logging.LogRecord(name, getattr(logging, level, logging.INFO), "", 0, message, (), None)
-                print(formatter.format(log_record), flush=True)
-                state["seen"].add(line)
+        recent = set()
+        # The existing API caps the transfer at 5 MiB. Bound parsing and retained
+        # state independently: only the server's last 64 KiB / 200 lines.
+        text = logs.get("server", "").encode("utf-8")[-65536:].decode("utf-8", errors="ignore")
+        for line in text.splitlines()[-200:]:
+            digest = hashlib.sha256(line.encode()).digest()
+            try:
+                record = json.loads(line)
+            except (ValueError, TypeError):
+                continue  # An in-flight final line may be incomplete; retry on the next callback.
+            if not isinstance(record, dict):
+                continue
+            name = record.get("fullName", "")
+            level = record.get("levelname", "INFO")
+            if not isinstance(name, str) or not isinstance(level, str):
+                continue
+            if not name.endswith(".progress") and level not in ("WARNING", "ERROR", "CRITICAL"):
+                continue
+            already_shown = digest in state["seen"] or digest in recent
+            recent.add(digest)
+            if already_shown:
+                continue
+            message = record.get("message", "")
+            context = record.get("fl_ctx", "")
+            if isinstance(context, str) and context:
+                message = f"{context}: {message}"
+            log_record = logging.LogRecord(name, getattr(logging, level, logging.INFO), "", 0, message, (), None)
+            print(formatter.format(log_record), flush=True)
+        state["seen"] = recent
     except Exception as ex:
         if not state.get("warned"):
             print("Live progress could not be retrieved. Detailed logs remain on the server.", flush=True)
@@ -129,7 +136,7 @@ class SessionManager:
         """Get the result workspace of the job."""
         sess = self._get_session()
         cb_run_counter = {"count": 0}
-        if os.environ.get(FL_LOG_LEVEL) == LogMode.PROGRESS:
+        if os.environ.get(FL_LOG_LEVEL, LogMode.CONCISE) == LogMode.CONCISE:
             cb_run_counter["progress"] = {"seen": set()}
         rc = sess.monitor_job(job_id, timeout=timeout, cb=_job_monitor_callback, cb_run_counter=cb_run_counter)
         if rc == MonitorReturnCode.JOB_FINISHED:

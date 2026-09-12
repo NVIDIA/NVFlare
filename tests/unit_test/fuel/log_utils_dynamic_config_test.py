@@ -45,13 +45,14 @@ def test_dynamic_log_config_invalid_inline_json_raises_value_error(tmp_path):
         dynamic_log_config('{"version": 1,', str(tmp_path), str(tmp_path / "reload.json"))
 
 
-def test_log_modes_preserve_concise_and_add_msg_only():
+def test_log_modes_use_concise_without_an_extra_mode():
     from nvflare.fuel.utils.log_utils import LogMode, logmode_config_dict
 
     assert logmode_config_dict[LogMode.CONCISE]["formatters"]["consoleFormatter"]["fmt"] == (
         "%(asctime)s - %(levelname)s - %(message)s"
     )
-    assert logmode_config_dict[LogMode.CONCISE]["handlers"]["consoleHandler"]["filters"] == ["ConciseFilter"]
+    assert logmode_config_dict[LogMode.CONCISE]["handlers"]["consoleHandler"]["filters"] == ["ProgressFilter"]
+    assert "progress" not in logmode_config_dict
     assert logmode_config_dict[LogMode.CONCISE]["filters"]["ConciseFilter"]["()"] == (
         "nvflare.fuel.utils.log_utils.ConciseLogFilter"
     )
@@ -96,7 +97,7 @@ def test_color_formatter_omits_ansi_when_stdout_is_not_tty(monkeypatch):
     assert formatter.format(record) == "hello"
 
 
-@pytest.mark.parametrize("mode", ["concise", "msg_only"])
+@pytest.mark.parametrize("mode", ["msg_only"])
 def test_concise_console_keeps_client_output_and_errors_but_filters_bookkeeping(mode):
     from nvflare.fuel.utils.log_utils import ConciseLogFilter, logmode_config_dict
 
@@ -196,7 +197,7 @@ def test_progress_view_retains_diagnostic_records_and_wraps_readable_output():
     assert all(len(line) <= 80 for line in view.getvalue().splitlines())
     assert "raw weights" in detail.getvalue()
     assert "[identity=site-2, run=job-123]" in detail.getvalue()
-    config = logmode_config_dict["progress"]
+    config = logmode_config_dict["concise"]
     for name in ("consoleHandler", "FLFileHandler"):
         assert config["handlers"][name]["filters"] == ["ProgressFilter"]
         assert config["handlers"][name]["formatter"] == "progressFormatter"

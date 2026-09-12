@@ -38,7 +38,7 @@ def _read_final_accuracies(result_path):
 
 @pytest.mark.timeout(300)
 def test_hello_pt_reuses_the_application_in_poc(tmp_path, monkeypatch, capsys):
-    monkeypatch.setenv("FL_LOG_LEVEL", "progress")
+    monkeypatch.setenv("FL_LOG_LEVEL", "concise")
     poc_env_module = importlib.import_module("nvflare.recipe.poc_env")
     poc_workspace = tmp_path / "poc-workspace"
     poc_workspace.mkdir()

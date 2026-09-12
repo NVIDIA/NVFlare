@@ -96,3 +96,24 @@ def test_progress_unavailable_does_not_stop_job_monitoring(monkeypatch, capsys):
         now[0] = tick
         assert _job_monitor_callback(session, "job-id", {"status": "RUNNING"}, cb_run_counter=state)
     assert capsys.readouterr().out.count("Live progress could not be retrieved") == 1
+
+
+def test_monitor_bounds_replay_and_memory_across_many_refreshes(capsys):
+    from nvflare.recipe.session_mgr import _show_job_progress
+
+    session = MagicMock()
+    state = {"seen": set()}
+    for batch in range(10):
+        lines = [
+            json.dumps({"fullName": "nvflare.metrics.progress", "message": f"row {batch}-{n}"}) for n in range(1000)
+        ]
+        session.get_job_logs.return_value = {"logs": {"server": "\n".join(lines)}}
+        _show_job_progress(session, "job-id", state)
+        assert len(state["seen"]) <= 200
+        assert all(isinstance(key, bytes) and len(key) == 32 for key in state["seen"])
+        output = capsys.readouterr().out
+        assert output.count("row ") == 200
+        assert f"row {batch}-999" in output
+        _show_job_progress(session, "job-id", state)
+        assert capsys.readouterr().out == ""
+    session.get_job_logs.assert_called_with("job-id", target="server", log_file_name="log.json", tail_lines=200)

@@ -30,6 +30,7 @@ from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.utils.file_utils import resolve_path_under_root
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
+from nvflare.fuel.utils.log_utils import format_metric_summary
 from nvflare.widgets.widget import Widget
 
 METRICS_AGGREGATION_INFO = AppConstants.METRICS_AGGREGATION_INFO
@@ -117,18 +118,7 @@ class MetricsArtifactWriter(Widget):
         return f"Round {ordinal}{suffix}"
 
     def _log_progress_metrics(self, label, metrics):
-        values = []
-        for metric in metrics:
-            value = metric["value"]
-            if isinstance(value, (int, float)) and not isinstance(value, bool):
-                value = f"{value:.6g}"
-            elif isinstance(value, (dict, list)):
-                value = "[structured value; see metrics artifact]"
-            else:
-                value = json.dumps(value, ensure_ascii=True)
-            name = json.dumps(metric["name"], ensure_ascii=True)[1:-1]
-            values.append(f"{name}={value}")
-        message = ", ".join(values) if values else "no numeric metrics reported"
+        message = format_metric_summary({m["name"]: m["value"] for m in metrics})
         safe_label = json.dumps(label, ensure_ascii=True)[1:-1]
         self.logger.getChild("progress").info(f"  {safe_label} | {message}")
 
