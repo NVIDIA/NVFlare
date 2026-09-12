@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 import threading
 from typing import Optional
 
@@ -116,6 +117,22 @@ class Run:
                 self.logger.warning(f"Failed to stop execution environment: {e}")
             finally:
                 self._stopped = True
+
+            print(f"Job {self.job_id} status: {self._cached_status or 'unavailable'}", flush=True)
+            if result:
+                if os.path.isdir(result):
+                    print(f"Result workspace: {result}", flush=True)
+                    print("Diagnostics: see log.txt and error_log.txt in the workspace's site directories.", flush=True)
+                else:
+                    print(
+                        f"Result workspace is not available locally: {result}. "
+                        "To retain an environment's workspace, use get_result(clean_up=False) when running the job.",
+                        flush=True,
+                    )
+            else:
+                print(
+                    "No result workspace was returned. See the status and preceding messages for details.", flush=True
+                )
 
             return result
 

@@ -901,6 +901,7 @@ class Recipe(ABC):
         self._warn_potential_secrets_in_params()
         with self._temporary_exec_params(server_exec_params=server_exec_params, client_exec_params=client_exec_params):
             self.process_env(env)
+            print(f"Executing job '{self._job.name}' with {type(env).__name__}...", flush=True)
             job_id = env.deploy(self._job)
             from nvflare.recipe.run import Run
 

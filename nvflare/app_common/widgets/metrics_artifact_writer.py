@@ -485,6 +485,9 @@ class MetricsArtifactWriter(Widget):
         os.makedirs(os.path.dirname(self._summary_file_path), exist_ok=True)
         with open(self._summary_file_path, "w", encoding="utf-8") as f:
             f.write(data)
+        self.log_info(fl_ctx, f"Aggregated metrics summary: {self._summary_file_path}", fire_event=False)
+        if os.path.isfile(self._round_file_path):
+            self.log_info(fl_ctx, f"Round metrics: {self._round_file_path}", fire_event=False)
 
     def _fit_round_record(self, record):
         fitted = {

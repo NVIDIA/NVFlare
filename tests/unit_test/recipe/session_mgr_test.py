@@ -18,7 +18,7 @@ import pytest
 
 from nvflare.fuel.utils.secret_utils import PotentialSecretWarning
 from nvflare.job_config.api import FedJob
-from nvflare.recipe.session_mgr import SessionManager
+from nvflare.recipe.session_mgr import SessionManager, _job_monitor_callback
 
 
 def test_submit_job_scans_generated_config_before_submission():
@@ -35,3 +35,23 @@ def test_submit_job_scans_generated_config_before_submission():
 
     session.submit_job.assert_called_once()
     session.close.assert_called_once()
+
+
+def test_monitor_reports_changes_and_periodic_wait_without_metadata_dump(monkeypatch, capsys):
+    now = [0]
+    monkeypatch.setattr("nvflare.recipe.session_mgr.time.monotonic", lambda: now[0])
+    state = {"count": 0}
+    meta = {"status": "RUNNING", "resource_spec": {"gpu": 2}, "deploy_map": {"app": ["@ALL"]}}
+    for tick in (0, 1, 14, 15):
+        now[0] = tick
+        assert _job_monitor_callback(None, "job-id", meta, cb_run_counter=state)
+    meta["status"] = "FINISHED:COMPLETED"
+    now[0] = 16
+    _job_monitor_callback(None, "job-id", meta, cb_run_counter=state)
+    output = capsys.readouterr().out
+    assert output.count("Job ID:") == 1
+    assert output.count("Job status: RUNNING") == 2
+    assert "15s monitored" in output
+    assert "Job status: FINISHED:COMPLETED" in output
+    assert "resource_spec" not in output
+    assert "deploy_map" not in output

@@ -96,6 +96,39 @@ def test_color_formatter_omits_ansi_when_stdout_is_not_tty(monkeypatch):
     assert formatter.format(record) == "hello"
 
 
+@pytest.mark.parametrize("mode", ["concise", "msg_only"])
+def test_concise_console_keeps_client_output_and_errors_but_filters_bookkeeping(mode):
+    from nvflare.fuel.utils.log_utils import ConciseLogFilter, logmode_config_dict
+
+    config = logmode_config_dict[mode]
+    filter_config = {k: v for k, v in config["filters"]["ConciseFilter"].items() if k != "()"}
+    log_filter = ConciseLogFilter(**filter_config)
+    output = io.StringIO()
+    console = logging.StreamHandler(output)
+    console.addFilter(log_filter)
+    diagnostic_output = io.StringIO()
+    diagnostic_handler = logging.StreamHandler(diagnostic_output)
+    records = [
+        ("nvflare.app_common.np.np_downloader.ArrayDownloadable", logging.INFO, "transfer detail"),
+        ("nvflare.app_common.executors.client_api_executor.ClientAPIExecutor", logging.INFO, "executor detail"),
+        ("__main__.ClientTaskWorker", logging.INFO, "worker detail"),
+        ("nvflare.app_common.executors.task_script_runner.TaskScriptRunner", logging.INFO, "user training output"),
+        ("nvflare.app_common.np.np_downloader.ArrayDownloadable", logging.WARNING, "transfer problem"),
+        ("nvflare.app_common.executors.client_api_executor.ClientAPIExecutor", logging.ERROR, "executor failure"),
+    ]
+    for name, level, message in records:
+        record = logging.LogRecord(name, level, __file__, 1, message, (), None)
+        console.handle(record)
+        diagnostic_handler.handle(record)
+        assert message in diagnostic_output.getvalue()
+    assert output.getvalue().splitlines() == ["user training output", "transfer problem", "executor failure"]
+    # Only the console uses the concise filter; the actual file configuration
+    # continues to retain the records suppressed above.
+    assert not config["handlers"]["logFileHandler"].get("filters")
+    assert not config["handlers"]["jsonFileHandler"].get("filters")
+    assert logmode_config_dict["full"]["handlers"]["consoleHandler"]["filters"] == []
+
+
 def test_color_formatter_emits_ansi_when_stdout_is_tty(monkeypatch):
     from nvflare.fuel.utils.log_utils import ColorFormatter
 

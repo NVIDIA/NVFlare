@@ -14,27 +14,30 @@
 
 import os
 import tempfile
+import time
 from typing import Dict, Optional
 
 from nvflare.fuel.flare_api.api_spec import MonitorReturnCode
 from nvflare.fuel.flare_api.flare_api import Session, new_secure_session
 from nvflare.fuel.utils.job_secret_scanner import warn_on_potential_secrets_in_job_dir
+from nvflare.fuel.utils.log_utils import get_module_logger
 from nvflare.job_config.api import FedJob
 
 
 def _job_monitor_callback(session: Session, job_id: str, job_meta, *cb_args, **cb_kwargs) -> bool:
-    """Shared callback to print job meta during monitoring."""
-    # cb_run_counter is a dictionary that is passed to the callback and is used to keep track of the number of times the callback has been called
-    if cb_kwargs["cb_run_counter"]["count"] == 0:
-        print("Job ID: ", job_id)
-        print("Job Meta: ", job_meta)
-
-    if job_meta["status"] == "RUNNING":
-        print(".", end="")
-    else:
-        print("\n" + str(job_meta))
-
-    cb_kwargs["cb_run_counter"]["count"] += 1
+    """Show status changes and a periodic waiting message using existing job metadata."""
+    state = cb_kwargs["cb_run_counter"]
+    now = time.monotonic()
+    status = job_meta["status"]
+    if state["count"] == 0:
+        state["started"] = now
+        print(f"Job ID: {job_id}", flush=True)
+    if state["count"] == 0 or status != state.get("status") or now - state["last_report"] >= 15:
+        print(f"Job status: {status} ({now - state['started']:.0f}s monitored)", flush=True)
+        state["last_report"] = now
+        state["status"] = status
+        get_module_logger().debug("Job metadata: %s", job_meta)
+    state["count"] += 1
     return True
 
 
@@ -86,23 +89,17 @@ class SessionManager:
         sess = self._get_session()
         cb_run_counter = {"count": 0}
         rc = sess.monitor_job(job_id, timeout=timeout, cb=_job_monitor_callback, cb_run_counter=cb_run_counter)
-        print(f"job monitor done: {rc=}")
         if rc == MonitorReturnCode.JOB_FINISHED:
+            print("Downloading job results...", flush=True)
             result = sess.download_job_result(job_id)
             sess.close()
             return result
         elif rc == MonitorReturnCode.TIMEOUT:
-            print(
-                f"Job {job_id} did not complete within {timeout} seconds. "
-                "Job is still running. Try calling get_result() again with a longer timeout."
-            )
+            print(f"Monitoring job {job_id} timed out after {timeout} seconds. No results were downloaded.")
             sess.close()
             return None
         elif rc == MonitorReturnCode.ENDED_BY_CB:
-            print(
-                "Job monitoring was stopped early by callback. "
-                "Result may not be available yet. Check job status and try again."
-            )
+            print("Job monitoring was stopped early by callback. No results were downloaded.")
             sess.close()
             return None
         else:

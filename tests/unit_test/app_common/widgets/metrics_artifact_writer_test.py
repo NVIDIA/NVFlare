@@ -214,7 +214,7 @@ def _collect_metric_names(value):
 
 
 class TestMetricsArtifactWriterAggregationEvents:
-    def test_writes_summary_and_jsonl_from_aggregation_events(self, tmp_path):
+    def test_writes_summary_and_jsonl_from_aggregation_events(self, tmp_path, caplog):
         writer = MetricsArtifactWriter()
         run_dir = tmp_path / "run"
         fl_ctx = _make_fl_ctx(run_dir)
@@ -243,12 +243,15 @@ class TestMetricsArtifactWriterAggregationEvents:
             ],
             key_metric=key_metric,
         )
-        _finish_run(writer, fl_ctx)
+        with caplog.at_level("INFO"):
+            _finish_run(writer, fl_ctx)
 
         metrics_dir, summary_path, round_path = _artifact_paths(run_dir)
         assert metrics_dir.is_dir()
         assert summary_path.is_file()
         assert round_path.is_file()
+        assert f"Aggregated metrics summary: {summary_path}" in caplog.text
+        assert f"Round metrics: {round_path}" in caplog.text
 
         summary = _read_summary(run_dir)
         assert summary["status"] == "metrics_reported"

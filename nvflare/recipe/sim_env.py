@@ -128,6 +128,8 @@ class SimEnv(ExecEnv):
                 )
 
             workspace = os.path.join(self.workspace_root, job_id)
+            num_clients = len(self.clients) if self.clients is not None else self.num_clients
+            print(f"Preparing simulation: {num_clients} clients. Workspace: {workspace}", flush=True)
             self._ensure_default_component_policy(workspace)
             run_status = job.simulator_run(
                 workspace=workspace,
@@ -146,7 +148,7 @@ class SimEnv(ExecEnv):
             raise RuntimeError(
                 f"Simulation failed with return code {run_status}. "
                 f"Logs are in per-site subdirectories under {os.path.join(self.workspace_root, job_id)}, "
-                f"e.g. server/simulate_job/log.txt"
+                "e.g. server/log.txt and server/error_log.txt"
             )
         self._record_status(job_id, RunStatus.FINISHED_COMPLETED)
         return job_id

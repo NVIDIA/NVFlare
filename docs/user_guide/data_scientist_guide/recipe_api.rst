@@ -541,6 +541,36 @@ submitted. ``Run`` exposes:
 ``run.abort()``
    Request that the environment abort the running job.
 
+Following a Run
+---------------
+
+Recipe execution identifies the job and execution environment before deployment.
+Simulation also prints its workspace location. POC and production monitoring show
+status changes and a waiting update at approximately 15-second intervals while
+monitoring callbacks continue. These messages use the existing monitoring calls;
+they do not add polling or guarantee updates while a network request is blocked.
+
+``run.get_result()`` reports the framework job status and result workspace after
+stopping the environment. A failed job can still return a workspace containing
+diagnostics, so the presence of a result path does not indicate success. If cleanup
+removed the workspace, the message says it is no longer available. Use
+``run.get_result(clean_up=False)`` to retain environment files for inspection.
+Repeated calls return the cached result without repeating the summary.
+
+For diagnostics, inspect ``log.txt`` and ``error_log.txt`` in the workspace's site
+directories. POC service output is also recorded in ``poc_console.log``. The
+default concise console keeps application output, workflow progress, warnings,
+and errors while reducing routine task and transfer messages. Set
+``FL_LOG_LEVEL=full`` to see those messages on the console; existing file logging
+is unchanged. See :ref:`logging_configuration` for logging configuration.
+
+Training recipes that produce aggregation metrics log the locations of their
+existing summary and round files when the summary is written. See
+:ref:`recipe_metrics_artifacts` for their fields and interpretation. Those metrics
+are not necessarily an evaluation of the final saved model. Cross-site evaluation
+uses its own existing report; jobs without aggregation metrics do not produce an
+aggregation summary.
+
 What You Can Rely On
 --------------------
 
