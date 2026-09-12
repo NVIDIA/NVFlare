@@ -19,6 +19,7 @@ from typing import Optional
 
 from nvflare.apis.job_def import RunStatus
 from nvflare.fuel.utils.log_utils import get_obj_logger
+from nvflare.recipe._failure_summary import failure_summary
 from nvflare.recipe._run_summary import result_summary
 from nvflare.recipe.spec import ExecEnv
 
@@ -116,6 +117,16 @@ class Run:
                 self._cached_status = None
 
             report = ""
+            failure_report = ""
+            if self._cached_status in (
+                RunStatus.FINISHED_ABORTED.value,
+                RunStatus.FINISHED_EXECUTION_EXCEPTION.value,
+                RunStatus.FINISHED_ABNORMAL.value,
+                RunStatus.FINISHED_CANT_SCHEDULE.value,
+                RunStatus.FAILED_TO_RUN.value,
+                RunStatus.ABANDONED.value,
+            ):
+                failure_report = failure_summary(result)
             if result and os.path.isdir(result):
                 try:
                     report = result_summary(result)
@@ -138,6 +149,8 @@ class Run:
             print(f"\n  {status_label}".ljust(64) + f"{elapsed:.1f}s", flush=True)
             if report:
                 print(report, flush=True)
+            if failure_report:
+                print(failure_report, flush=True)
 
             if result:
                 if os.path.isdir(result):

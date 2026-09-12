@@ -641,8 +641,8 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
 
     @staticmethod
     def _normalize_log_file_name(log_file_name: str) -> str:
-        if log_file_name == JSON_LOG_FILE_NAME:
-            return JSON_LOG_FILE_NAME
+        if log_file_name in (JSON_LOG_FILE_NAME, WorkspaceConstants.ERROR_LOG_FILE_NAME):
+            return log_file_name
         return WorkspaceConstants.LOG_FILE_NAME
 
     def _read_server_job_log(
@@ -897,6 +897,8 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
 
     @staticmethod
     def _client_log_data_type(log_file_name: str = WorkspaceConstants.LOG_FILE_NAME) -> str:
+        if log_file_name == WorkspaceConstants.ERROR_LOG_FILE_NAME:
+            return DataTypes.ERRORLOG.value
         return f"{DataTypes.LOG.value}_{log_file_name}"
 
     def _get_available_client_log_sites(

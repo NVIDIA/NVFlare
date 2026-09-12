@@ -1295,7 +1295,8 @@ def test_list_job_components_uses_canonical_missing_job_message(monkeypatch, tmp
     assert conn.errors[0][1][MetaKey.STATUS] == MetaStatusValue.INVALID_JOB_ID
 
 
-def test_get_job_log_client_target_returns_persisted_log(tmp_path, monkeypatch):
+@pytest.mark.parametrize("file_name, data_type", [("log.txt", "LOG_log.txt"), ("error_log.txt", "ERRORLOG")])
+def test_get_job_log_client_target_returns_persisted_log(tmp_path, monkeypatch, file_name, data_type):
     monkeypatch.setattr(job_cmds_module, "ServerEngine", _FakeServerEngine)
     monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
     workspace = _FakeWorkspace(tmp_path)
@@ -1303,11 +1304,12 @@ def test_get_job_log_client_target_returns_persisted_log(tmp_path, monkeypatch):
     engine.job_def_manager.get_client_data.return_value = b"client line1\nclient line2\n"
     conn = _MockConnection(app_ctx=engine, props={JobCommandModule.JOB_ID: "job-1"})
 
-    JobCommandModule().get_job_log(conn, ["get_job_log", "job-1", "site-1"])
+    JobCommandModule().get_job_log(conn, ["get_job_log", "job-1", "site-1", file_name])
 
     payload, _meta = conn.dicts[0]
     assert payload == {"logs": {"site-1": "client line1\nclient line2\n"}}
     engine.job_def_manager.get_client_data.assert_called_once()
+    assert engine.job_def_manager.get_client_data.call_args.kwargs["data_type"] == data_type
 
 
 def test_get_job_log_client_target_reads_live_workspace_log(tmp_path, monkeypatch):
@@ -1343,18 +1345,19 @@ def test_get_job_log_returns_selected_live_json_log_only(tmp_path, monkeypatch):
     assert payload == {"logs": {"server": '{"asctime": "2026-04-30 10:00:00", "message": "json server log"}\n'}}
 
 
-def test_get_job_log_client_target_reads_selected_json_log(tmp_path, monkeypatch):
+@pytest.mark.parametrize("file_name", ["log.json", "error_log.txt"])
+def test_get_job_log_client_target_reads_selected_log(tmp_path, monkeypatch, file_name):
     monkeypatch.setattr(job_cmds_module, "ServerEngine", _FakeServerEngine)
     monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
     workspace = _FakeWorkspace(tmp_path)
     engine = _FakeServerEngine(workspace)
     engine.job_def_manager.get_client_data.return_value = None
-    client_json = Path(workspace.get_log_root("job-1")) / "site-1" / "log.json"
+    client_json = Path(workspace.get_log_root("job-1")) / "site-1" / file_name
     client_json.parent.mkdir(parents=True, exist_ok=True)
     client_json.write_text('{"asctime": "2026-04-30 10:00:00", "message": "client json"}\n', encoding="utf-8")
     conn = _MockConnection(app_ctx=engine, props={JobCommandModule.JOB_ID: "job-1"})
 
-    JobCommandModule().get_job_log(conn, ["get_job_log", "job-1", "site-1", "log.json"])
+    JobCommandModule().get_job_log(conn, ["get_job_log", "job-1", "site-1", file_name])
 
     payload, _meta = conn.dicts[0]
     assert payload["logs"] == {"site-1": '{"asctime": "2026-04-30 10:00:00", "message": "client json"}\n'}
