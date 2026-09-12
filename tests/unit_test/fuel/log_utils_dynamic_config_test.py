@@ -218,3 +218,46 @@ def test_metric_formatting_cannot_propagate_application_object_errors():
 
     assert format_metric_summary({"bad": BrokenNumber(1)}) == "[see saved result for metrics]"
     assert format_metric_summary({"value": Unprintable()}) == "value=[see saved result]"
+
+
+def test_metric_table_keeps_columns_aligned_through_log_formatting():
+    from nvflare.fuel.utils.log_utils import ProgressFormatter, format_metric_table
+
+    rows = [
+        ("site-1", {"accuracy": 1, "accuracy_after_local_training": 20}),
+        ("site-2", {"accuracy": 30, "accuracy_after_local_training": 70}),
+    ]
+    table = format_metric_table(rows)
+    record = logging.LogRecord("nvflare.metrics.progress", logging.INFO, "", 0, table, (), None)
+    output = ProgressFormatter().format(record)
+    assert output == table  # Wrapping must not collapse table alignment or merge rows.
+    header, first, second = output.splitlines()
+    assert first.split() == ["site-1", "1", "20"]
+    assert second.split() == ["site-2", "30", "70"]
+    assert first.rindex("20") == second.rindex("70")
+    assert len(header) <= 80
+
+
+def test_metric_table_bounds_display_and_handles_application_values():
+    from nvflare.fuel.utils.log_utils import format_metric_table
+
+    class BadNumber(float):
+        def __format__(self, spec):
+            raise RuntimeError("application-defined formatting failure")
+
+    rows = [("site\n" + "x" * 100, {"accuracy": BadNumber(1), "samples": list(range(10000)), "extra": 5})] * 100
+    table = format_metric_table(rows)
+    assert "[see artifact]" in table
+    assert "saved artifacts" in table
+    assert "9999" not in table
+    assert len(table.splitlines()) == 12  # Header, ten rows, one truncation notice.
+    assert all(len(line) <= 80 for line in table.splitlines())
+    assert "site\\n" in table
+
+
+def test_metric_table_missing_values_are_not_reported_as_zero():
+    from nvflare.fuel.utils.log_utils import format_metric_table
+
+    table = format_metric_table([("site-1", {"loss": 0.25}), ("site-2", {"accuracy": 1})])
+    assert table.splitlines()[1].split() == ["site-1", "0.25", "—"]
+    assert table.splitlines()[2].split() == ["site-2", "—", "1"]

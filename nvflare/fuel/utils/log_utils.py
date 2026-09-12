@@ -339,6 +339,52 @@ def format_metric_summary(metrics):
         return "[see saved result for metrics]"
 
 
+def format_metric_table(rows, label="Client", columns=None, header=True):
+    """Render a bounded two-metric table without evaluating application objects.
+
+    Missing values use a dash. Truncated names, additional rows/metrics, and
+    structured values refer to the saved artifacts instead of changing values.
+    """
+    try:
+        rows = list(islice(rows, 11))
+        omitted = len(rows) > 10
+        rows = rows[:10]
+        if columns is None:
+            columns = list(islice(dict.fromkeys(key for _, metrics in rows for key in metrics), 2))
+        columns = list(islice(columns, 2))
+        shortened = False
+
+        def cell_name(value, width):
+            nonlocal shortened
+            text = json.dumps(value[:160] if isinstance(value, str) else "?", ensure_ascii=True)[1:-1]
+            if len(text) > width:
+                shortened = True
+                return text[: width - 3] + "..."
+            return text
+
+        names = [cell_name(key, 30) for key in columns]
+        widths = [max(14, len(name)) for name in names]
+        lines = []
+        if header:
+            lines.append(
+                f"  {cell_name(label, 12):<12}" + "  ".join(f"{name:>{width}}" for name, width in zip(names, widths))
+            )
+        for name, metrics in rows:
+            values = []
+            for key, width in zip(columns, widths):
+                rendered = format_metric_summary({"": metrics[key]}) if key in metrics else "=—"
+                value = rendered[1:] if rendered.startswith("=") else "[see artifact]"
+                if len(value) > width:
+                    value = "[see artifact]"
+                values.append(value)
+            lines.append(f"  {cell_name(name, 12):<12}" + "  ".join(f"{v:>{w}}" for v, w in zip(values, widths)))
+        if omitted or shortened or any(set(metrics) - set(columns) for _, metrics in rows):
+            lines.append("  Full names and additional results are available in the saved artifacts.")
+        return "\n".join(lines)
+    except Exception:
+        return "  See saved artifacts for metrics."
+
+
 class ProgressLogFilter(logging.Filter):
     """Select workflow progress plus warnings/errors for the human-readable view."""
 
@@ -361,7 +407,11 @@ class ProgressFormatter(logging.Formatter):
             source = f"{identity}/{name}" if identity else name
             message = f"{record.levelname} ({source}): {message}"
         return "\n".join(
-            textwrap.fill(line, width=80, subsequent_indent="    ", replace_whitespace=False) if line else ""
+            (
+                line
+                if len(line) <= 80
+                else textwrap.fill(line, width=80, subsequent_indent="    ", replace_whitespace=False)
+            )
             for line in message.splitlines()
         )
 

@@ -95,7 +95,7 @@ def test_sim_env_validation():
 def test_preparation_reports_resolved_client_count(tmp_path, capsys, kwargs, expected_count):
     env = SimEnv(workspace_root=str(tmp_path), **kwargs)
     _deploy_with_mocked_simulator(env, _make_job())
-    assert f"Preparing simulation: {expected_count} clients." in capsys.readouterr().out
+    assert f"Simulation · {expected_count} clients" in capsys.readouterr().out
 
 
 def test_sim_env_status_tracks_synchronous_deployment(tmp_path):

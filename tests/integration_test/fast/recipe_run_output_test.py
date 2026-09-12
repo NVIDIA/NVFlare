@@ -14,6 +14,7 @@
 
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -22,12 +23,15 @@ import pytest
 
 
 @pytest.mark.timeout(180)
-@pytest.mark.parametrize("log_mode", ["concise", "msg_only"])
+@pytest.mark.parametrize("log_mode", [None, "concise", "msg_only"])
 def test_numpy_example_gets_shared_reporting_without_example_changes(tmp_path, log_mode):
     repo_root = Path(__file__).resolve().parents[3]
     env = os.environ.copy()
     env.pop("NVFLARE_HOME", None)
-    env["FL_LOG_LEVEL"] = log_mode
+    if log_mode is None:
+        env.pop("FL_LOG_LEVEL", None)
+    else:
+        env["FL_LOG_LEVEL"] = log_mode
     env["PYTHONPATH"] = os.pathsep.join((str(repo_root), env.get("PYTHONPATH", "")))
     env["NVFLARE_SIMULATOR_WORKSPACE_ROOT"] = str(tmp_path)
     completed = subprocess.run(
@@ -40,18 +44,18 @@ def test_numpy_example_gets_shared_reporting_without_example_changes(tmp_path, l
     )
     output = completed.stdout + completed.stderr
     assert completed.returncode == 0, output
-    assert "Executing job 'hello-numpy' with SimEnv" in output
-    if log_mode == "concise":
-        assert "Round 1/1 | training" in output
-        assert "Round 1/1 | aggregation finished" in output
+    assert "NVIDIA FLARE · hello-numpy" in output
+    if log_mode in (None, "concise"):
+        assert "ROUND 1 / 1" in output
+        assert "✓ Aggregated 2 client updates" in output
         for site in ("site-1", "site-2"):
-            assert f"{site} | weight_mean=6" in output
-        assert "Aggregated client metrics | weight_mean=6" in output
+            assert re.search(rf"{site}\s+6(?:\s|$)", output)
+        assert re.search(r"Aggregated\s+6(?:\s|$)", output)
         assert "Received weights:" not in output
         assert "END_RUN received" not in output
         server_log = tmp_path / "hello-numpy" / "server" / "log_fl.txt"
-        assert "Round 1/1 | training" in server_log.read_text()
-        assert "Aggregated client metrics | weight_mean=6" in server_log.read_text()
+        assert "ROUND 1 / 1" in server_log.read_text()
+        assert re.search(r"Aggregated\s+6(?:\s|$)", server_log.read_text())
         # The same actual client messages still reach diagnostic files.
         client_log = tmp_path / "hello-numpy" / "site-1" / "log.txt"
         assert "Received weights:" in client_log.read_text()
@@ -64,13 +68,12 @@ def test_numpy_example_gets_shared_reporting_without_example_changes(tmp_path, l
             assert f"Client {site} evaluation metrics:" in output
             assert f"Client {site} finished training for round 0" in output
         assert "Aggregated 2/2 results" in output
-    assert "Job hello-numpy status: FINISHED:COMPLETED" in output
-    assert f"Result workspace: {tmp_path / 'hello-numpy'}" in output
-    assert "metrics_summary.json" in output
-    assert "error_log.txt" in output
+    assert "✓ Completed" in output
+    assert f"Results   {tmp_path / 'hello-numpy'}" in output
+    assert "server/simulate_job/metrics/" in output
     summary_path = tmp_path / "hello-numpy" / "server" / "simulate_job" / "metrics" / "metrics_summary.json"
     summary = json.loads(summary_path.read_text())
     assert {m["name"] for m in summary["final_aggregated_metrics"]} == {"weight_mean"}
-    assert "Run summary" in output
-    assert "Training (last recorded rounds)" in output
-    assert "weight_mean=6" in output
+    assert "RUN SUMMARY" in output
+    assert "Training · aggregated client metrics" in output
+    assert re.search(r"1\s+6(?:\s|$)", output)

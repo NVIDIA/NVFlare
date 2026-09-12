@@ -79,14 +79,15 @@ def test_hello_pt_reuses_the_application_in_poc(tmp_path, monkeypatch, capsys):
     output = capsys.readouterr().out
     assert "Job Status is: FINISHED:COMPLETED" in output
     assert f"Result can be found in: {poc_result}" in output
-    assert "Round 3/3 | aggregation finished" in output
-    assert "accuracy_after_local_training=" in output
-    assert "Evaluating models on 2 clients" in output
+    assert "ROUND 3 / 3" in output
+    assert "✓ Aggregated 2 client updates" in output
+    assert "accuracy_after_local_training" in output
+    assert "Evaluating saved models on 2 clients" in output
     assert "SRV_FL_global_model.pt" in output
     assert "Job status: RUNNING" in output
     assert "Job Meta:" not in output
-    assert f"Result workspace: {poc_result}" in output
-    assert "error_log.txt" in output
+    assert f"Results   {poc_result}" in output
+    assert "Model evaluation · accuracy" in output
 
 
 @pytest.mark.timeout(180)

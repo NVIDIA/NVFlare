@@ -128,7 +128,7 @@ class SimEnv(ExecEnv):
                 )
 
             workspace = os.path.join(self.workspace_root, job_id)
-            print(f"Preparing simulation: {self.num_clients} clients. Workspace: {workspace}", flush=True)
+            print(f"Simulation · {self.num_clients} clients", flush=True)
             self._ensure_default_component_policy(workspace)
             run_status = job.simulator_run(
                 workspace=workspace,

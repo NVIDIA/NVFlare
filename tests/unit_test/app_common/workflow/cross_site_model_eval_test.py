@@ -56,7 +56,7 @@ class TestCrossSiteModelEvalPaths:
         assert os.path.isdir(os.path.join(run_dir, AppConstants.CROSS_VAL_DIR, AppConstants.CROSS_VAL_RESULTS_DIR_NAME))
 
 
-def test_evaluation_progress_bounds_payload_and_keeps_full_saved_result(tmp_path, caplog):
+def test_evaluation_keeps_full_result_without_duplicate_progress_payload(tmp_path, caplog):
     import logging
 
     from nvflare.apis.dxo import DXO, DataKind, from_file
@@ -71,11 +71,7 @@ def test_evaluation_progress_bounds_payload_and_keeps_full_saved_result(tmp_path
     with caplog.at_level(logging.INFO):
         controller._save_validation_result("site-1", "global.pt", DXO(DataKind.METRICS, payload), ctx)
     progress = [r.message for r in caplog.records if r.name.endswith(".progress")]
-    assert len(progress) == 1
-    assert len(progress[0]) < 1000
-    assert "accuracy=0.75" in progress[0]
-    assert "[see saved result]" in progress[0]
-    assert "remaining metrics" in progress[0]
+    assert progress == []  # Evaluation values are displayed once in the final artifact summary.
     saved = from_file(controller._val_results["site-1"]["global.pt"])
     assert len(saved.data["samples"]) == 100000
     assert len(saved.data["detail"]) == 100000
