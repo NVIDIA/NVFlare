@@ -27,12 +27,17 @@ from nvflare.apis.job_scheduler_spec import DispatchInfo, JobSchedulerSpec
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.utils.job_utils import get_event_job_id
 from nvflare.private.fed.utils.fed_utils import extract_participants
+from nvflare.security.logging import secure_format_exception
 from nvflare.security.study_registry import StudyRegistryService
 from nvflare.utils.job_launcher_utils import get_resource_manager_spec
 
 SCHEDULE_RESULT_OK = 0  # the job is scheduled
 SCHEDULE_RESULT_NO_RESOURCE = 1  # job is not scheduled due to lack of resources
 SCHEDULE_RESULT_BLOCK = 2  # job is to be blocked from scheduled again due to fatal error
+
+
+class _UnsafeAdmissionError(RuntimeError):
+    """Raised when a scheduler pass cannot safely continue after an admission error."""
 
 
 class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
@@ -99,7 +104,21 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
 
         engine.cancel_client_resources(resource_check_results, resource_reqs, fl_ctx)
         self.log_debug(fl_ctx, f"cancel client resources using check results: {resource_check_results}")
-        return False, None
+
+    def _cancel_dispatch_resources(self, sites_dispatch_info: Dict[str, DispatchInfo], fl_ctx: FLContext):
+        resource_reqs = {}
+        resource_check_results = {}
+        for site_name, dispatch_info in sites_dispatch_info.items():
+            if site_name != SERVER_SITE_NAME and dispatch_info.token:
+                resource_reqs[site_name] = dispatch_info.resource_requirements
+                resource_check_results[site_name] = (True, dispatch_info.token)
+
+        if resource_check_results:
+            self._cancel_resources(
+                resource_reqs=resource_reqs,
+                resource_check_results=resource_check_results,
+                fl_ctx=fl_ctx,
+            )
 
     def _try_job(self, job: Job, fl_ctx: FLContext) -> (int, Optional[Dict[str, DispatchInfo]], str):
         engine = fl_ctx.get_engine()
@@ -196,69 +215,104 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
             self.log_info(fl_ctx, f"Job {job.job_id} can't be scheduled: {block_reason}")
             return SCHEDULE_RESULT_NO_RESOURCE, None, block_reason
 
-        resource_check_results = self._check_client_resources(job=job, resource_reqs=resource_reqs, fl_ctx=fl_ctx)
-        fl_ctx.set_prop(FLContextKey.RESOURCE_CHECK_RESULT, resource_check_results, private=True, sticky=False)
-        self.fire_event(EventType.AFTER_CHECK_CLIENT_RESOURCES, fl_ctx)
+        try:
+            resource_check_results = self._check_client_resources(job=job, resource_reqs=resource_reqs, fl_ctx=fl_ctx)
+        except Exception as e:
+            # A resource check can fail after a remote site has reserved resources but before the server receives
+            # the reservation token. Without the complete results, cleanup cannot be guaranteed.
+            raise _UnsafeAdmissionError(
+                f"resource check for job {job.job_id} failed before reservation results were available"
+            ) from e
 
-        if not resource_check_results:
-            self.log_debug(fl_ctx, f"Job {job.job_id} can't be scheduled: resource check results is None or empty.")
-            return SCHEDULE_RESULT_NO_RESOURCE, None, "error checking resources"
+        keep_resources = False
+        try:
+            fl_ctx.set_prop(FLContextKey.RESOURCE_CHECK_RESULT, resource_check_results, private=True, sticky=False)
+            self.fire_event(EventType.AFTER_CHECK_CLIENT_RESOURCES, fl_ctx)
 
-        required_sites_not_enough_resource = list(required_sites)
-        num_sites_ok = 0
-        sites_dispatch_info = {}
-        no_resource_message = ""
-        resource_failure_details = []
-        for site_name, check_result in resource_check_results.items():
-            is_resource_enough, token = check_result
-            if is_resource_enough:
-                sites_dispatch_info[site_name] = DispatchInfo(
-                    app_name=sites_to_app[site_name],
-                    resource_requirements=resource_reqs[site_name],
-                    token=token,
+            if not resource_check_results:
+                if resource_reqs:
+                    raise _UnsafeAdmissionError(f"resource check for job {job.job_id} returned no results")
+                self.log_debug(fl_ctx, f"Job {job.job_id} can't be scheduled: resource check results is None or empty.")
+                return SCHEDULE_RESULT_NO_RESOURCE, None, "error checking resources"
+
+            if not isinstance(resource_check_results, dict):
+                raise _UnsafeAdmissionError(
+                    f"resource check for job {job.job_id} returned invalid results of type "
+                    f"{type(resource_check_results).__name__}"
                 )
-                num_sites_ok += 1
-                if site_name in required_sites:
-                    required_sites_not_enough_resource.remove(site_name)
-            else:
-                if site_name in required_sites:
-                    no_resource_message += site_name + ":" + (token or "") + ";"
-                if token:
-                    resource_failure_details.append(f"{site_name}: {token}")
 
-        if num_sites_ok < job.min_sites:
-            self.log_debug(fl_ctx, f"Job {job.job_id} can't be scheduled: not enough sites have enough resources.")
-            self._cancel_resources(
-                resource_reqs=resource_reqs, resource_check_results=resource_check_results, fl_ctx=fl_ctx
+            expected_sites = set(resource_reqs)
+            result_sites = set(resource_check_results)
+            if result_sites != expected_sites:
+                missing_sites = sorted(expected_sites - result_sites)
+                unexpected_sites = sorted(result_sites - expected_sites)
+                details = []
+                if missing_sites:
+                    details.append(f"missing sites: {missing_sites}")
+                if unexpected_sites:
+                    details.append(f"unexpected sites: {unexpected_sites}")
+                raise _UnsafeAdmissionError(
+                    f"resource check for job {job.job_id} returned incomplete results ({'; '.join(details)})"
+                )
+
+            required_sites_not_enough_resource = list(required_sites)
+            num_sites_ok = 0
+            sites_dispatch_info = {}
+            no_resource_message = ""
+            resource_failure_details = []
+            for site_name, check_result in resource_check_results.items():
+                is_resource_enough, token = check_result
+                if is_resource_enough:
+                    sites_dispatch_info[site_name] = DispatchInfo(
+                        app_name=sites_to_app[site_name],
+                        resource_requirements=resource_reqs[site_name],
+                        token=token,
+                    )
+                    num_sites_ok += 1
+                    if site_name in required_sites:
+                        required_sites_not_enough_resource.remove(site_name)
+                else:
+                    if site_name in required_sites:
+                        no_resource_message += site_name + ":" + (token or "") + ";"
+                    if token:
+                        resource_failure_details.append(f"{site_name}: {token}")
+
+            if num_sites_ok < job.min_sites:
+                self.log_debug(fl_ctx, f"Job {job.job_id} can't be scheduled: not enough sites have enough resources.")
+                reason = f"not enough sites have enough resources (ok sites {num_sites_ok} < min sites {job.min_sites})"
+                if resource_failure_details:
+                    reason += f". Details: {'; '.join(resource_failure_details)}"
+                return SCHEDULE_RESULT_NO_RESOURCE, None, reason
+
+            if required_sites_not_enough_resource:
+                self.log_debug(
+                    fl_ctx,
+                    f"Job {job.job_id} can't be scheduled: required sites: {required_sites_not_enough_resource}"
+                    f" don't have enough resources.",
+                )
+                return (
+                    SCHEDULE_RESULT_NO_RESOURCE,
+                    None,
+                    f"required sites: {required_sites_not_enough_resource} don't have enough resources. "
+                    f"Details: {no_resource_message}",
+                )
+
+            # add server dispatch info
+            sites_dispatch_info[SERVER_SITE_NAME] = DispatchInfo(
+                app_name=sites_to_app[SERVER_SITE_NAME], resource_requirements={}, token=None
             )
-            reason = f"not enough sites have enough resources (ok sites {num_sites_ok} < min sites {job.min_sites})"
-            if resource_failure_details:
-                reason += f". Details: {'; '.join(resource_failure_details)}"
-            return SCHEDULE_RESULT_NO_RESOURCE, None, reason
-
-        if required_sites_not_enough_resource:
-            self.log_debug(
-                fl_ctx,
-                f"Job {job.job_id} can't be scheduled: required sites: {required_sites_not_enough_resource}"
-                f" don't have enough resources.",
-            )
-            self._cancel_resources(
-                resource_reqs=resource_reqs, resource_check_results=resource_check_results, fl_ctx=fl_ctx
-            )
-
-            return (
-                SCHEDULE_RESULT_NO_RESOURCE,
-                None,
-                f"required sites: {required_sites_not_enough_resource} don't have enough resources. "
-                f"Details: {no_resource_message}",
-            )
-
-        # add server dispatch info
-        sites_dispatch_info[SERVER_SITE_NAME] = DispatchInfo(
-            app_name=sites_to_app[SERVER_SITE_NAME], resource_requirements={}, token=None
-        )
-
-        return SCHEDULE_RESULT_OK, sites_dispatch_info, ""
+            keep_resources = True
+            return SCHEDULE_RESULT_OK, sites_dispatch_info, ""
+        finally:
+            if resource_check_results and not keep_resources:
+                try:
+                    self._cancel_resources(
+                        resource_reqs=resource_reqs,
+                        resource_check_results=resource_check_results,
+                        fl_ctx=fl_ctx,
+                    )
+                except Exception as e:
+                    raise _UnsafeAdmissionError(f"failed to cancel resources for job {job.job_id}") from e
 
     def _exceed_max_jobs(self, fl_ctx: FLContext) -> bool:
         exceed_limit = False
@@ -291,7 +345,7 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
         blocked_jobs = []
         try:
             ready_job, dispatch_info = self._do_schedule_job(job_candidates, fl_ctx, failed_jobs, blocked_jobs)
-        except:
+        except Exception:
             self.log_exception(fl_ctx, "error scheduling job")
             ready_job, dispatch_info = None, None
 
@@ -306,7 +360,7 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
                 for job in blocked_jobs:
                     job_manager.refresh_meta(job, self._get_update_meta_keys(), fl_ctx)
                     job_manager.set_status(job.job_id, RunStatus.FINISHED_CANT_SCHEDULE, fl_ctx)
-        except:
+        except Exception:
             self.log_exception(fl_ctx, "error updating scheduling info in job store")
         return ready_job, dispatch_info
 
@@ -362,11 +416,38 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
                 continue
 
             with engine.new_context() as ctx:
-                rc, sites_dispatch_info, result = self._try_job(job, ctx)
-                self.log_debug(ctx, f"Try to schedule job {job.job_id}, get result: {rc}, {sites_dispatch_info}.")
-                if not result:
-                    result = "scheduled"
-                self._update_schedule_history(job, result, ctx)
+                rc = None
+                sites_dispatch_info = None
+                attempt_recorded = False
+                try:
+                    rc, sites_dispatch_info, result = self._try_job(job, ctx)
+                    self.log_debug(ctx, f"Try to schedule job {job.job_id}, get result: {rc}, {sites_dispatch_info}.")
+                    if not result:
+                        result = "scheduled"
+                    self._update_schedule_history(job, result, ctx)
+                    attempt_recorded = True
+                except Exception as e:
+                    admission_error = e
+                    cancellation_error = None
+                    if rc == SCHEDULE_RESULT_OK and sites_dispatch_info:
+                        try:
+                            self._cancel_dispatch_resources(sites_dispatch_info, ctx)
+                        except Exception as cancel_error:
+                            cancellation_error = cancel_error
+                            admission_error = _UnsafeAdmissionError(
+                                f"failed to cancel resources after admitting job {job.job_id}"
+                            )
+
+                    self.log_exception(ctx, f"unexpected error admitting job {job.job_id}")
+                    failed_jobs.append(job)
+                    if not attempt_recorded:
+                        result = f"unexpected admission error: {secure_format_exception(admission_error)}"
+                        self._update_schedule_history(job, result, ctx)
+                    if isinstance(admission_error, _UnsafeAdmissionError):
+                        if cancellation_error:
+                            raise admission_error from cancellation_error
+                        raise
+                    continue
                 if rc == SCHEDULE_RESULT_OK:
                     return job, sites_dispatch_info
                 elif rc == SCHEDULE_RESULT_NO_RESOURCE:
