@@ -45,7 +45,7 @@ class BaseFedJob(FedJob):
         model_selector: Optional[FLComponent] = None,
         convert_to_fed_event: Optional[ConvertToFedEvent] = None,
         analytics_receiver: Optional[AnalyticsReceiver] = None,
-        metrics_artifact_writer: Optional[MetricsArtifactWriter] = None,
+        metrics_artifact_writer: Optional[FLComponent] = None,
     ):
         """Unified BaseFedJob for PyTorch, TensorFlow, and Scikit-learn.
 
@@ -79,7 +79,8 @@ class BaseFedJob(FedJob):
                 If not provided, a ConvertToFedEvent object will be created.
             analytics_receiver: Receive analytics. If not provided, framework-specific
                 child classes may provide defaults (e.g., TBAnalyticsReceiver for PT/TF).
-            metrics_artifact_writer: Component for writing server-side metrics artifacts.
+            metrics_artifact_writer (FLComponent, optional): Component for writing server-side metrics artifacts.
+                Independent and no-op FLComponent replacements are supported under the "metrics_artifact_writer" ID.
                 If not provided, a MetricsArtifactWriter will be configured.
         """
         if key_metric_mode not in ("min", "max"):
