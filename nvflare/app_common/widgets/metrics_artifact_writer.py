@@ -174,7 +174,7 @@ class MetricsArtifactWriter(Widget):
             completion = f"✓ Aggregated {self._round_contribution_count} client update"
             if self._round_contribution_count != 1:
                 completion += "s"
-        self.logger.getChild("progress").info(f"\n  {completion}".ljust(64) + duration)
+        self.logger.getChild("progress").info("\n" + f"  {completion}".ljust(64) + duration)
 
         if not aggregated_metrics and not sites and not skipped:
             if custom_aggregator_metrics:

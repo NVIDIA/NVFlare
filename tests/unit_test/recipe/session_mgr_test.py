@@ -39,7 +39,9 @@ def test_submit_job_scans_generated_config_before_submission():
     session.close.assert_called_once()
 
 
-def test_monitor_reports_changes_without_repeating_normal_waits(monkeypatch, capsys):
+@pytest.mark.parametrize("log_mode", ["concise", "full", "verbose"])
+def test_monitor_reports_changes_without_repeating_normal_waits(monkeypatch, capsys, log_mode):
+    monkeypatch.setenv("FL_LOG_LEVEL", log_mode)
     now = [0]
     monkeypatch.setattr("nvflare.recipe.session_mgr.time.monotonic", lambda: now[0])
     state = {"count": 0}
@@ -55,8 +57,8 @@ def test_monitor_reports_changes_without_repeating_normal_waits(monkeypatch, cap
     assert output.count("Job status: RUNNING") == 1
     assert "15s monitored" not in output
     assert "Job status: FINISHED:COMPLETED" in output
-    assert "resource_spec" not in output
-    assert "deploy_map" not in output
+    for field in ("resource_spec", "deploy_map"):
+        assert output.count(field) == (0 if log_mode == "concise" else 2)
 
 
 def test_progress_monitor_replays_new_records_and_retries_partial_lines(monkeypatch, capsys):

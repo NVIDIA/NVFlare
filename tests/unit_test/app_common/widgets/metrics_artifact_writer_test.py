@@ -931,7 +931,8 @@ def test_progress_uses_reported_metrics_and_retains_total_after_context_change(t
     assert output.count("0.25") == 2
     assert "Aggregated" in output
     assert "✓ Aggregated 1 client update" in output
-    assert "2.0s" in output
+    duration_line = next(line for line in output.splitlines() if "✓ Aggregated 1 client update" in line)
+    assert duration_line.index("2.0s") == 64
     assert _read_rounds(tmp_path)[0]["round"] == 5
     assert "complete" not in " ".join(progress)  # Aggregation does not prove persistence or job success.
 

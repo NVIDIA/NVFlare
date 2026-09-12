@@ -85,7 +85,10 @@ def _job_monitor_callback(session: Session, job_id: str, job_meta, *cb_args, **c
     if changed:
         print(f"Job status: {status} ({now - state['started']:.0f}s monitored)", flush=True)
         state["status"] = status
-        get_module_logger().debug("Job metadata: %s", job_meta)
+        if os.environ.get(FL_LOG_LEVEL, LogMode.CONCISE) in (LogMode.FULL, LogMode.VERBOSE):
+            print(f"Job metadata: {job_meta}", flush=True)
+        else:
+            get_module_logger().debug("Job metadata: %s", job_meta)
     state["count"] += 1
     return True
 
