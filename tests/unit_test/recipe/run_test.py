@@ -43,6 +43,41 @@ class TestRunClass:
         """Test get_job_id method."""
         assert self.run.get_job_id() == self.job_id
 
+    @pytest.mark.parametrize("status", ["FINISHED:COMPLETED", "FINISHED:EXECUTION_EXCEPTION", None])
+    def test_result_presentation_uses_status_without_inferring_success(self, tmp_path, capsys, status):
+        self.mock_env.get_job_result.return_value = str(tmp_path)
+        self.mock_env.get_job_status.return_value = status
+
+        assert self.run.get_result(clean_up=False) == str(tmp_path)
+        output = capsys.readouterr().out
+        assert f"Job {self.job_id} status: {status or 'unavailable'}" in output
+        assert f"Result workspace: {tmp_path}" in output
+        assert "error_log.txt" in output
+        assert "success" not in output.lower()
+        # Reading the cached result neither repeats output nor queries the environment.
+        self.run.get_result()
+        assert capsys.readouterr().out == ""
+        self.mock_env.get_job_result.assert_called_once()
+
+    def test_cleanup_does_not_advertise_a_removed_result_as_available(self, tmp_path, capsys):
+        result_dir = tmp_path / "result"
+        result_dir.mkdir()
+        self.mock_env.get_job_result.return_value = str(result_dir)
+        self.mock_env.get_job_status.return_value = "FINISHED:COMPLETED"
+        self.mock_env.stop.side_effect = lambda **kwargs: result_dir.rmdir()
+
+        assert self.run.get_result() == str(result_dir)
+        output = capsys.readouterr().out
+        assert f"not available locally: {result_dir}" in output
+        assert "get_result(clean_up=False)" in output
+        assert "Result workspace:" not in output
+
+    def test_missing_result_presentation_does_not_claim_success(self, capsys):
+        self.mock_env.get_job_result.side_effect = RuntimeError("download failed")
+        self.mock_env.get_job_status.return_value = "FINISHED:COMPLETED"
+        assert self.run.get_result() is None
+        assert "No result workspace was returned" in capsys.readouterr().out
+
     def test_get_status_delegates_to_env(self):
         """Test that get_status delegates to exec_env when not stopped."""
         self.mock_env.get_job_status.return_value = "RUNNING"

@@ -44,10 +44,18 @@ with open(os.path.join(os.path.dirname(__file__), DEFAULT_LOG_JSON), "r") as f:
 concise_log_dict = copy.deepcopy(default_log_dict)
 concise_log_dict["formatters"]["consoleFormatter"]["fmt"] = "%(asctime)s - %(levelname)s - %(message)s"
 concise_log_dict["handlers"]["consoleHandler"]["filters"] = ["ConciseFilter"]
+# Keep transfer and executor bookkeeping in the diagnostic files. Application
+# output (including redirected client prints) and all warnings/errors stay visible.
+concise_log_dict["filters"]["ConciseFilter"]["exclude_logger_names"] = [
+    "nvflare.app_common.np.np_downloader",
+    "nvflare.app_common.executors.client_api_executor",
+    "__main__.ClientTaskWorker",
+]
 
 msg_only_log_dict = copy.deepcopy(default_log_dict)
 msg_only_log_dict["formatters"]["consoleFormatter"]["fmt"] = "%(message)s"
 msg_only_log_dict["handlers"]["consoleHandler"]["filters"] = ["ConciseFilter"]
+msg_only_log_dict["filters"]["ConciseFilter"] = copy.deepcopy(concise_log_dict["filters"]["ConciseFilter"])
 
 verbose_log_dict = copy.deepcopy(default_log_dict)
 verbose_log_dict["formatters"]["consoleFormatter"][

@@ -78,6 +78,10 @@ def test_hello_pt_reuses_the_application_in_poc(tmp_path, monkeypatch, capsys):
     output = capsys.readouterr().out
     assert "Job Status is: FINISHED:COMPLETED" in output
     assert f"Result can be found in: {poc_result}" in output
+    assert "Job status: RUNNING" in output
+    assert "Job Meta:" not in output
+    assert f"Result workspace: {poc_result}" in output
+    assert "error_log.txt" in output
 
 
 @pytest.mark.timeout(180)
