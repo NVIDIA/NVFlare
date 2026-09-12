@@ -164,7 +164,7 @@ class FedAvg(BaseFedAvg):
                     "falling back to in-memory tensor download"
                 )
 
-            self.info(center_message(f"Starting FedAvg training: {self.num_rounds} rounds."))
+            self.info(center_message("Start FedAvg."))
 
             # Set NUM_ROUNDS in FL context for persistor and other components.
             self.fl_ctx.set_prop(AppConstants.NUM_ROUNDS, self.num_rounds, private=True, sticky=False)
@@ -184,12 +184,7 @@ class FedAvg(BaseFedAvg):
             model.total_rounds = self.num_rounds
 
             for self.current_round in range(self.start_round, self.start_round + self.num_rounds):
-                self.info(
-                    center_message(
-                        f"Training round {self.current_round - self.start_round + 1}/{self.num_rounds} started.",
-                        boarder_str="-",
-                    )
-                )
+                self.info(center_message(message=f"Round {self.current_round} started.", boarder_str="-"))
 
                 model.current_round = self.current_round
                 self.fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self.current_round, private=True, sticky=False)
@@ -266,7 +261,7 @@ class FedAvg(BaseFedAvg):
                 # Memory cleanup at end of round (if configured)
                 self._maybe_cleanup_memory()
 
-            self.info(center_message("FedAvg training finished."))
+            self.info(center_message("Finished FedAvg."))
         finally:
             cleanup_tensor_disk_offload(engine=getattr(self, "engine", None), context=disk_offload_context)
 

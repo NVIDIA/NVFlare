@@ -203,3 +203,18 @@ def test_progress_view_retains_diagnostic_records_and_wraps_readable_output():
         assert config["handlers"][name]["formatter"] == "progressFormatter"
     for name in ("logFileHandler", "jsonFileHandler"):
         assert config["handlers"][name] == logmode_config_dict["full"]["handlers"][name]
+
+
+def test_metric_formatting_cannot_propagate_application_object_errors():
+    from nvflare.fuel.utils.log_utils import format_metric_summary
+
+    class BrokenNumber(float):
+        def __format__(self, spec):
+            raise RuntimeError("application formatting failed")
+
+    class Unprintable:
+        def __str__(self):
+            raise RuntimeError("must not stringify application objects")
+
+    assert format_metric_summary({"bad": BrokenNumber(1)}) == "[see saved result for metrics]"
+    assert format_metric_summary({"value": Unprintable()}) == "value=[see saved result]"

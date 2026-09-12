@@ -312,27 +312,31 @@ class LoggerNameFilter(logging.Filter):
 
 def format_metric_summary(metrics):
     """Render at most six scalar metrics; leave full payloads in their artifacts."""
-    if not isinstance(metrics, dict):
-        return "[see saved result for metrics]"
-    values = []
-    for name, value in islice(metrics.items(), 6):
-        name = json.dumps((name[:64] if isinstance(name, str) else "metric"), ensure_ascii=True)[1:-1]
-        if isinstance(value, numbers.Real) and not isinstance(value, bool):
-            try:
-                value = format(value, ".6g")
-            except (ValueError, OverflowError, TypeError):
+    try:
+        if not isinstance(metrics, dict):
+            return "[see saved result for metrics]"
+        values = []
+        for name, value in islice(metrics.items(), 6):
+            name = json.dumps((name[:64] if isinstance(name, str) else "metric"), ensure_ascii=True)[1:-1]
+            if isinstance(value, numbers.Real) and not isinstance(value, bool):
+                try:
+                    value = format(value, ".6g")
+                except (ValueError, OverflowError, TypeError):
+                    value = "[see saved result]"
+            elif isinstance(value, (str, bool)) or value is None:
+                value = json.dumps(
+                    (value[:80] + ("..." if len(value) > 80 else "")) if isinstance(value, str) else value,
+                    ensure_ascii=True,
+                )
+            else:
                 value = "[see saved result]"
-        elif isinstance(value, (str, bool)) or value is None:
-            value = json.dumps(
-                (value[:80] + ("..." if len(value) > 80 else "")) if isinstance(value, str) else value,
-                ensure_ascii=True,
-            )
-        else:
-            value = "[see saved result]"
-        values.append(f"{name}={value}")
-    if len(metrics) > 6:
-        values.append("... [see saved result for remaining metrics]")
-    return ", ".join(values) or "no metrics reported"
+            values.append(f"{name}={value}")
+        if len(metrics) > 6:
+            values.append("... [see saved result for remaining metrics]")
+        return ", ".join(values) or "no metrics reported"
+    except Exception:
+        # Application-defined objects must not make display formatting fail a workflow.
+        return "[see saved result for metrics]"
 
 
 class ProgressLogFilter(logging.Filter):
