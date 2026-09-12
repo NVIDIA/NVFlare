@@ -21,9 +21,22 @@ from pathlib import Path
 from nvflare.fuel.utils.log_utils import format_metric_table, wrap_log_message
 
 
-def summary_header(outcome, elapsed):
+def summary_header(outcome, elapsed, *, context=""):
     """Use the same heading and elapsed-time alignment for every run outcome."""
-    return "\n" + " RUN SUMMARY ".center(72, "=") + f"\n\n  {outcome}".ljust(65) + f"{elapsed:.1f}s"
+    heading = "\n" + " RUN SUMMARY ".center(72, "=")
+    return heading + (f"\n\n{context}" if context else "") + f"\n\n  {outcome}".ljust(65) + f"{elapsed:.1f}s"
+
+
+def run_context(job_name, env):
+    """Describe known Recipe context without guessing production participation."""
+    name = type(env).__name__
+    label = {"SimEnv": "Simulation", "PocEnv": "POC", "ProdEnv": "Production"}.get(name, name)
+    count = getattr(env, "num_clients", None)
+    # A supplied POC project overrides constructor client counts.
+    if type(count) is int and count > 0 and not getattr(env, "project_conf_path", None):
+        label += f" · {count} client{'s' if count != 1 else ''}"
+    title = "NVIDIA FLARE" + (f" · {_text(job_name)}" if job_name else "")
+    return wrap_log_message(f"  {title}\n  {label}")
 
 
 def _read_json(path):

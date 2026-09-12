@@ -113,6 +113,8 @@ def test_failed_poc_job_retains_download_and_client_error_logs(tmp_path, monkeyp
 
     captured = capsys.readouterr()
     summary = captured.out.split("RUN SUMMARY", 1)[1]
+    assert "NVIDIA FLARE · hello-pt" in summary
+    assert "POC · 2 clients" in summary
     assert expected_error in " ".join(summary.split())
     assert "site-1, site-2 / TaskScriptRunner" in summary
     assert ("prepare_data.py:" if missing_cifar else "client.py:") in summary

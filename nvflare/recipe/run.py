@@ -20,7 +20,7 @@ from typing import Optional
 from nvflare.fuel.flare_api.flare_api import _job_status_outcome
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.recipe._failure_summary import failure_summary
-from nvflare.recipe._run_summary import result_summary, summary_header
+from nvflare.recipe._run_summary import result_summary, run_context, summary_header
 from nvflare.recipe.spec import ExecEnv
 
 
@@ -56,6 +56,7 @@ class Run:
         self._cached_result: Optional[str] = None
         self.logger = get_obj_logger(self)
         self._started_at = time.monotonic()
+        self._summary_context = run_context(None, exec_env)
 
     def get_job_id(self) -> str:
         """Get the job ID.
@@ -137,7 +138,7 @@ class Run:
             status_label = {"completed": "✓ Completed", "failed": "✗ Failed"}.get(
                 outcome, self._cached_status or "Status unavailable"
             )
-            print(summary_header(status_label, elapsed), flush=True)
+            print(summary_header(status_label, elapsed, context=self._summary_context), flush=True)
             if failure_report:
                 print(f"\n  Status    {self._cached_status}", flush=True)
                 print(failure_report, flush=True)

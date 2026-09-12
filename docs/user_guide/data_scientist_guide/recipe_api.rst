@@ -615,6 +615,8 @@ logs, model arrays, and framework messages remain in ``log.txt`` and ``log.json`
 at the configured log level. Normal in-process client shutdown at ``END_RUN`` is
 logged at INFO; other stop reasons still produce warnings.
 
+Both successful and failed summaries include the job name and environment context.
+Known local client counts are shown; production participation is not inferred.
 Failure output retains error messages and tracebacks and adds a bounded summary
 of available errors, sites, application code locations, and diagnostic log paths.
 Repeated client exceptions are grouped. A nonzero simulator exit includes the
@@ -627,7 +629,8 @@ The current provisioning template configures ``SiteLogStreamer`` for
 ``allow_log_streaming=False``, and interrupted transfers may leave client logs
 unavailable. Reporting does not enable streaming or contact clients directly.
 On failure, Recipe lists stored ``ERRORLOG_*`` components and retrieves at most
-20 named client logs, one at a time. Each request has a server-enforced 1 MiB
+20 named client logs, one at a time. Names that collide with the protocol's
+case-insensitive ``all`` or ``server`` selectors are skipped. Each request has a server-enforced 1 MiB
 UTF-8 log-byte limit before transfer (protocol encoding adds overhead). Older
 servers that do not support this limit are not retried with unbounded requests.
 Excerpts are retained alongside downloaded results in ``failure-logs-*``.

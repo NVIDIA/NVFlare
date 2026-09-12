@@ -154,6 +154,11 @@ def test_existing_client_error_streams_are_saved_and_summarized(tmp_path):
     session.get_job_logs.return_value = {
         "logs": {
             "server": "ignored duplicate server log",
+            "all": "must not request aggregate logs",
+            "ALL": "must not request aggregate logs",
+            "aLl": "must not request aggregate logs",
+            "SERVER": "must not request a server alias as a client",
+            "@ALL": "must not request aggregate logs",
             "../outside": "must not be written",
             **{
                 site: "2026-09-12 10:40:51,611 - TaskScriptRunner - ERROR - "

@@ -925,10 +925,12 @@ class Recipe(ABC):
             print(f"\nNVIDIA FLARE · {self._job.name}", flush=True)
             started_at = time.monotonic()
             job_id = env.deploy(self._job)
+            from nvflare.recipe._run_summary import run_context
             from nvflare.recipe.run import Run
 
             run = Run(env, job_id)
             run._started_at = started_at
+            run._summary_context = run_context(self._job.name, env)
             return run
 
     def execute(

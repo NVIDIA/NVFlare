@@ -26,7 +26,7 @@ from nvflare.app_common.default_component_policy import DEFAULT_CLASS_ALLOW_LIST
 from nvflare.app_common.widgets.component_path_authorizer import CLASS_ALLOW_LIST
 from nvflare.job_config.api import FedJob
 from nvflare.recipe._failure_summary import failure_summary
-from nvflare.recipe._run_summary import summary_header
+from nvflare.recipe._run_summary import run_context, summary_header
 
 from .spec import ExecEnv
 from .utils import collect_non_local_scripts
@@ -153,7 +153,7 @@ class SimEnv(ExecEnv):
                 f"Simulation failed with return code {run_status}. "
                 f"Logs are in per-site subdirectories under {os.path.join(self.workspace_root, job_id)}, "
                 "e.g. server/log.txt and server/error_log.txt\n"
-                + summary_header("✗ Failed", time.monotonic() - started_timer)
+                + summary_header("✗ Failed", time.monotonic() - started_timer, context=run_context(job.name, self))
                 + f"\n\n  Status    {status.value}\n"
                 + failure_summary(workspace, since=started_at)
                 + f"\n  Results   {workspace}"

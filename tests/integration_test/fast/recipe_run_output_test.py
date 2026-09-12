@@ -49,6 +49,9 @@ def test_numpy_example_gets_shared_reporting_without_example_changes(tmp_path, l
     )
     output = completed.stdout + completed.stderr
     assert completed.returncode == 0, output
+    final_summary = output.split("RUN SUMMARY", 1)[1]
+    assert "NVIDIA FLARE · hello-numpy" in final_summary
+    assert "Simulation · 2 clients" in final_summary
     assert "NVIDIA FLARE · hello-numpy" in output
     if log_mode in (None, "concise"):
         assert "ROUND 1 / 1" in output
