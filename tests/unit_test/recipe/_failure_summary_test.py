@@ -249,8 +249,17 @@ def test_fallback_reads_share_the_total_file_limit(tmp_path, monkeypatch):
     assert [p.name for p in paths_read] == ["log.json", "error_log.txt"] * 10
 
 
-@pytest.mark.parametrize("bare_exception", [False, True])
-def test_real_exception_formatters_preserve_type_and_application_location(tmp_path, bare_exception):
+@pytest.mark.parametrize(
+    "statement, expected",
+    [
+        ("assert False", "AssertionError"),
+        ("raise FileNotFoundError('training.npy')", "FileNotFoundError: training.npy"),
+        ("raise ValueError('bad input\\nretry')", "ValueError: bad input"),
+        ("raise ValueError('bad input\\nRuntimeError: continuation')", "ValueError: bad input"),
+        ("raise ValueError('bad input') from KeyError('original')", "ValueError: bad input"),
+    ],
+)
+def test_real_exception_formatters_preserve_type_and_application_location(tmp_path, statement, expected):
     site = tmp_path / "site-1"
     site.mkdir()
     logger = logging.Logger("custom.trainer")
@@ -263,9 +272,7 @@ def test_real_exception_formatters_preserve_type_and_application_location(tmp_pa
         handler.setFormatter(formatter)
         logger.addHandler(handler)
         handlers.append(handler)
-    source = "def train():\n" + (
-        "    assert False\n" if bare_exception else "    raise FileNotFoundError('training.npy')\n"
-    )
+    source = f"def train():\n    {statement}\n"
     # Real nested frames exceed the summary display limit before the exception.
     for index in range(15):
         target = "train" if index == 0 else f"layer_{index - 1}"
@@ -285,8 +292,10 @@ def test_real_exception_formatters_preserve_type_and_application_location(tmp_pa
     assert "Traceback" not in json_record["message"]
     text = (site / "error_log.txt").read_text()
     assert len(text) > 512
+    if "retry" in statement:
+        assert "ValueError: bad input\nretry\n" in text
     output = failure_summary(tmp_path)
-    assert ("AssertionError" if bare_exception else "FileNotFoundError: training.npy") in output
+    assert f"  Error     {expected}\n" in output
     assert "client.py:2 (train)" in output
     assert "Traceback (most recent call last)" not in output
     assert "site-1/error_log.txt" in output

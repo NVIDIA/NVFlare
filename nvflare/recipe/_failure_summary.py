@@ -104,15 +104,18 @@ def _first_error(path):
         location = ""
         application_frame = False
         if "Traceback (most recent call last):" in message:
-            exceptions = _EXCEPTION.findall(message)
-            frames = _FRAME.findall(message)
+            frame_matches = list(_FRAME.finditer(message))
+            frames = [frame.groups() for frame in frame_matches]
+            # The exception header follows the final frame. Later unindented lines
+            # can be message continuations or notes, not additional exceptions.
+            exception = _EXCEPTION.search(message, frame_matches[-1].end() if frame_matches else 0)
             custom_frames = [frame for frame in frames if "/custom/" in frame[0].replace("\\", "/")]
             application_frame = bool(custom_frames)
             if custom_frames or frames:
                 file, line, function = (custom_frames or frames)[-1]
                 location = f"{file.replace(chr(92), '/').rsplit('/', 1)[-1]}:{line} ({function})"
-            if exceptions:
-                message = exceptions[-1]
+            if exception:
+                message = exception[0]
         context = record.get("fl_ctx", "")
         fields = dict(re.findall(r"(\w+)=([^,\]]*)", context)) if isinstance(context, str) else {}
         aborted_peer = fields.get("peer") if fields.get("peer_rc") == ReturnCode.TASK_ABORTED else None
