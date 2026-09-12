@@ -326,11 +326,15 @@ We provide a log config argument (``-l`` or ``log_config`` in simulator mode, an
 This argument can be any of the following:
 
 - log configuration json file (``/path/to/my_log_config.json``, ``my_log_config.json``)
-- predefined console :class:`LogMode<nvflare.fuel.utils.log_utils.LogMode>` (``concise``, ``msg_only``, ``full``, ``verbose``)
+- predefined console :class:`LogMode<nvflare.fuel.utils.log_utils.LogMode>` (``concise``, ``msg_only``, ``progress``, ``full``, ``verbose``)
 
     - ``concise`` (default for simulator mode): all non-NVFlare logs plus selected NVFlare application logs, with
       simplified log attributes
     - ``msg_only``: the same log selection as ``concise``, formatted as messages only
+    - ``progress``: workflow progress and metrics emitted through ``.progress`` loggers,
+      plus warnings and errors, formatted for reading in the console and ``log_fl.txt``.
+      Other file handlers keep detailed logs. Built-in aggregation and evaluation writers
+      supply these messages; arbitrary client prints remain in diagnostic logs.
     - ``full`` (default in workspaces in poc and production mode): all info level logs
     - ``verbose``: debug level logs with detailed log attributes
 
@@ -437,7 +441,7 @@ However these commands do not overwrite the log configuration file in the worksp
 - **config**: the log config argument can be any of the following (For more details, refer to :ref:`Log Config Argument <log_config_argument>` above):
 
     - path to a json log configuration file (``/path/to/my_log_config.json``)
-    - predefined log mode (``concise``, ``msg_only``, ``full``, ``verbose``)
+    - predefined log mode (``concise``, ``msg_only``, ``progress``, ``full``, ``verbose``)
     - log level name or number (``debug``, ``info``, ``warning``, ``error``, ``critical``, ``30``)
     - read the current log configuration file log_config.json from the workspace (``reload``)
 
