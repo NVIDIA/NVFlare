@@ -176,8 +176,10 @@ class ServerJsonConfigurator(FedJsonConfigurator):
             raise ConfigError("workflows not specified")
 
         # FedJob and JSON jobs use the same progress reporter as recipes.
-        # Preserve an explicitly configured writer, including its output limits.
-        if not any(isinstance(handler, MetricsArtifactWriter) for handler in self.handlers):
+        # The standard component ID also permits independent/no-op replacements.
+        if "metrics_artifact_writer" not in self.components and not any(
+            isinstance(handler, MetricsArtifactWriter) for handler in self.handlers
+        ):
             self.handlers.append(MetricsArtifactWriter())
 
         self.runner_config = ServerRunnerConfig(
