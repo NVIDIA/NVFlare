@@ -580,16 +580,27 @@ and the end summary; no environment variable or extra option is required:
 
    python job.py
 
-To change verbosity, use the simulator's existing ``-l`` / ``--log_config``
-option. For example, run an exported job with detailed console output:
+``python job.py`` uses the example script's own argument parser. The Hello PyTorch
+script does not accept ``-l`` or ``--log_config``. To request full output without
+editing that script, use the existing logging override:
+
+.. code-block:: bash
+
+   FL_LOG_LEVEL=full python job.py
+
+Alternatively, change its environment construction to
+``SimEnv(num_clients=2, log_config="full")``. Neither is needed for default concise
+output. Other example scripts may explicitly expose their own ``--log_config``;
+check their ``python job.py --help`` output.
+
+The separate ``nvflare simulator`` command accepts ``-l`` / ``--log_config`` when
+running an exported job:
 
 .. code-block:: bash
 
    nvflare simulator ./fl_job/hello-pt -n 2 -l full
 
-In a recipe, use ``SimEnv(num_clients=2, log_config="full")``. Example scripts
-that expose ``--log_config`` can also accept that option directly. The existing
-``concise``, ``msg_only``, ``full``, and ``verbose`` modes remain available.
+The existing ``concise``, ``msg_only``, ``full``, and ``verbose`` modes remain available.
 
 The console and ``log_fl.txt`` show readable progress messages and warnings/errors,
 with display lines wrapped to 80 characters. Detailed application prints, epoch
