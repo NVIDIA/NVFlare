@@ -144,8 +144,8 @@ class CCBuilder(Builder):
         if cc_config == {}:
             return
         if cc_config.get(CCConfigKey.COMPUTE_ENV) == CCConfigValue.CONFIDENTIAL_CONTAINERS:
-            # CoCoBuilder emits a guest issuer and a verifier-only server
-            # manager; do not overwrite those role-specific configurations.
+            # CoCoBuilder emits participant-specific issuer/verifier
+            # configurations; do not overwrite them here.
             return
 
         cc_issuers = participant.get_prop(PropKey.CC_ISSUERS, [])

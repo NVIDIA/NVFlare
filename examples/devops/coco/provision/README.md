@@ -100,10 +100,8 @@ After startup-kit signing, for each protected client it:
    the release name to approve signing/encryption/publication. There is no
    unattended approval switch in the wrapper.
 5. Checks the final Pod and copies only its YAML into the client's public folder.
-6. Installs final per-client InitData hash, encrypted image reference, and command
-   pins in the ordinary server's verifier configuration. These final pins cannot
-   be embedded in the client image itself: that would create a hash dependency
-   cycle. Deliver the completed server kit, not a pre-packaging intermediate.
+6. Configures the ordinary server and every protected client to verify CoCo
+   tokens using the shared pinned Trustee key and project-specific audience.
 
 The runner receives one JSON file with schema `nvflare-coco-build-request/v1`
 and absolute `workload_env`, `admin_dir`, `result_file` paths. Success writes a

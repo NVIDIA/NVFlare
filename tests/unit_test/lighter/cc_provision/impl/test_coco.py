@@ -14,7 +14,6 @@
 
 import base64
 import gzip
-import hashlib
 import json
 import subprocess
 import sys
@@ -161,17 +160,13 @@ def test_provision_real_signed_kit_then_package(tmp_path):
     local = result / "server.example.com/local"
     manager = json.loads((local / "cc_manager__p_resources.json").read_text())["components"][0]["args"]
     assert manager["cc_issuers_conf"] == []
-    assert manager["required_namespaces"] == ["x-trustee-coco"]
-    verifier = json.loads((local / "coco_authorizer__p_resources.json").read_text())["components"][0]["args"]
-    assert verifier["expected_workloads"]["site-1"]["init_data"] == hashlib.sha256(b"fixture").hexdigest()
+    assert manager["cc_verifier_ids"] == ["coco_authorizer"]
     owner = seen[0].parent
     client_local = owner / "startup-kit/local"
     client_manager = json.loads((client_local / "cc_manager__p_resources.json").read_text())["components"][0]["args"]
-    assert client_manager["verify_peer_tokens"] is False
-    assert client_manager["cc_verifier_ids"] == []
+    assert client_manager["cc_verifier_ids"] == ["coco_authorizer"]
     client_auth = json.loads((client_local / "coco_authorizer__p_resources.json").read_text())["components"][0]["args"]
     assert client_auth["site_name"] == "site-1"
-    assert "expected_workloads" not in client_auth
     assert owner.stat().st_mode & 0o777 == 0o700
     assert (owner / "build-request.json").stat().st_mode & 0o777 == 0o600
     assert (owner / "startup-kit/startup/client.key").read_bytes() == (

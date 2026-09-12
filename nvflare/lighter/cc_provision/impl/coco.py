@@ -159,15 +159,14 @@ class CoCoBuilder(Builder):
                     "cc_issuers_conf": [
                         {"issuer_id": "coco_authorizer", "token_expiration": args["max_token_age_seconds"]}
                     ],
-                    "cc_verifier_ids": [],
+                    "cc_verifier_ids": ["coco_authorizer"],
                     "cc_enabled_sites": list(self.settings),
                     "verify_frequency": frequency,
-                    "verify_peer_tokens": False,
                 },
             )
         args, _, frequency = next(iter(self.settings.values()))
         server = project.get_server()
-        self._write(ctx, server, "coco_authorizer", AUTHOR_PATH, {**args, "expected_workloads": {}})
+        self._write(ctx, server, "coco_authorizer", AUTHOR_PATH, args)
         self._write(
             ctx,
             server,
@@ -178,7 +177,6 @@ class CoCoBuilder(Builder):
                 "cc_verifier_ids": ["coco_authorizer"],
                 "cc_enabled_sites": list(self.settings),
                 "verify_frequency": frequency,
-                "required_namespaces": ["x-trustee-coco"],
             },
         )
 

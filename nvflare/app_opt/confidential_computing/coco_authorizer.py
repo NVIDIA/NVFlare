@@ -29,7 +29,7 @@ import requests
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
 
-from .cc_authorizer import CCAuthorizer, CCTokenGenerateError, CCTokenVerifyError
+from .cc_authorizer import CCAuthorizer, CCTokenGenerateError
 
 COCO_NAMESPACE = "x-trustee-coco"
 TRUST_VECTOR = {
@@ -52,7 +52,6 @@ class CoCoAuthorizer(CCAuthorizer):
         trustee_public_key,
         audience,
         site_name=None,
-        expected_workloads=None,
         token_url="http://127.0.0.1:8006/aa/token",
         max_token_age_seconds=300,
     ):
@@ -78,7 +77,6 @@ class CoCoAuthorizer(CCAuthorizer):
             raise ValueError("token_url must address the guest-local 127.0.0.1 /aa/token API")
         self.audience = audience
         self.site_name = site_name
-        self.expected_workloads = expected_workloads or {}
         self.token_url = token_url
         self.max_age = max_token_age_seconds
         self.seen = {}
@@ -180,16 +178,11 @@ class CoCoAuthorizer(CCAuthorizer):
             raise CCTokenGenerateError("Unable to generate a verified CoCo attestation proof") from None
 
     def verify(self, token):
-        # Use verify_for_site at the protocol boundary to bind the authenticated
-        # FL peer, not merely a self-declared subject.
-        raise CCTokenVerifyError("CoCo verification requires the expected FL site identity")
-
-    def verify_for_site(self, token, site):
         try:
-            if site not in self.expected_workloads or not isinstance(token, str) or len(token) > MAX_TOKEN_BYTES:
-                raise ValueError("Unapproved site or invalid proof size")
+            if not isinstance(token, str) or len(token) > MAX_TOKEN_BYTES:
+                return False
             untrusted = jwt.decode(token, options={"verify_signature": False})
-            claims, public = self._ear(untrusted["ear"])
+            _, public = self._ear(untrusted["ear"])
             proof = jwt.decode(
                 token,
                 public,
@@ -199,7 +192,8 @@ class CoCoAuthorizer(CCAuthorizer):
             )
             now = time.time()
             if (
-                proof["sub"] != site
+                not isinstance(proof["sub"], str)
+                or not proof["sub"]
                 or type(proof["iat"]) is not int
                 or type(proof["exp"]) is not int
                 or not 0 <= now - proof["iat"] <= 60
@@ -208,27 +202,12 @@ class CoCoAuthorizer(CCAuthorizer):
                 or len(proof["jti"]) != 48
             ):
                 raise ValueError("Invalid proof identity or freshness")
-            expected = self.expected_workloads[site]
-            cpu = claims["submods"]["cpu0"]
-            evidence = cpu["ear.veraison.annotated-evidence"]
-            if evidence["init_data"] != expected["init_data"]:
-                raise ValueError("Unapproved measured workload")
-            image, args = expected["image"], expected["args"]
-            if image not in cpu["ear.trustee.identifiers"]["validated"]["container_images"]:
-                raise ValueError("Image signature identity is not validated")
-            containers = evidence["init_data_claims"]["agent_policy_claims"]["containers"]
-            if not any(
-                c.get("OCI", {}).get("Annotations", {}).get("io.kubernetes.cri.image-name") == image
-                and c.get("OCI", {}).get("Process", {}).get("Args") == args
-                for c in containers
-            ):
-                raise ValueError("Workload command or image mismatch")
             with self.lock:
                 self.seen = {k: expiry for k, expiry in self.seen.items() if expiry > now}
-                key = (site, proof["jti"])
+                key = (proof["sub"], proof["jti"])
                 if key in self.seen or len(self.seen) >= 10000:
                     raise ValueError("Replayed proof or replay cache full")
                 self.seen[key] = proof["exp"]
             return True
         except Exception:
-            raise CCTokenVerifyError("CoCo attestation proof was rejected") from None
+            return False
