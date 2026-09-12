@@ -1,0 +1,30 @@
+{
+  "examples": [
+    {
+      "task_key": "cup_seg",
+      "sample_manifest": "/path/to/prepared/cup_seg/samples.jsonl",
+      "split": "train",
+      "record_index": 0
+    },
+    {
+      "task_key": "disc_seg",
+      "sample_manifest": "/path/to/prepared/disc_seg/samples.jsonl",
+      "split": "train",
+      "record_index": 0
+    },
+    {
+      "task_key": "disc_detec",
+      "sample_manifest": "/path/to/prepared/disc_detec/samples_optic_disc_detection.jsonl",
+      "split": "validation",
+      "record_index": 0,
+      "bbox_format": "xyxy_abs"
+    },
+    {
+      "task_key": "glaucoma_cls",
+      "sample_manifest": "/path/to/prepared/glaucoma_cls/samples_classification.json",
+      "split": "training",
+      "label": 1,
+      "record_index": 0
+    }
+  ]
+}

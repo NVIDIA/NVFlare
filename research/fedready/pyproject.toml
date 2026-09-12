@@ -1,0 +1,79 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "fedready"
+version = "0.1.0"
+description = "Codex-driven data readiness and training orchestration for NVIDIA FLARE."
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.11"
+authors = [
+    { name = "FedReady Contributors" }
+]
+keywords = [
+    "agents",
+    "federated-learning",
+    "machine-learning",
+    "orchestration",
+    "research",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "nvflare[PT]~=2.9.0rc",
+    "numpy>=1.24.0",
+    "pillow>=10.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "mypy>=1.10.0",
+    "pytest>=8.0.0",
+    "ruff>=0.5.0",
+]
+training = [
+    "monai>=1.4.0",
+    "numpy>=1.24.0",
+    "pillow>=10.0.0",
+    "torch>=2.0.0",
+    "matplotlib>=3.8.0",
+    "tensorboard>=2.20.0,<3",
+]
+medical-images = [
+    "nibabel>=5.2.0",
+    "SimpleITK>=2.3.0",
+]
+[tool.hatch.build.targets.wheel]
+packages = ["fedready"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"fedready/prompts/client.json" = "fedready/prompts/client.json"
+"fedready/prompts/server.json" = "fedready/prompts/server.json"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+src = ["fedready", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+mypy_path = "."
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
