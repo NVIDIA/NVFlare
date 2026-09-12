@@ -208,12 +208,20 @@ class FedReviveServer:
         in_time: bool = True,
         setup_seed: int = 10,
         run_seed: int = 10,
-        max_model_versions: int = 50000,
-        class_proportion_source: ClassProportionSource | str = ClassProportionSource.TRUE_HISTOGRAM,
-        generation_interval: int = 1,
+        max_model_versions: int = 100000,
+        class_proportion_source: ClassProportionSource | str | None = None,
+        generation_interval: int | None = None,
         class_proportion_probe_count: int = 64,
     ):
         self.method = Method(method)
+        if class_proportion_source is None:
+            class_proportion_source = (
+                ClassProportionSource.ESTIMATED
+                if self.method is Method.FEDREVIVE
+                else ClassProportionSource.TRUE_HISTOGRAM
+            )
+        if generation_interval is None:
+            generation_interval = 10 if self.method is Method.FEDREVIVE else 1
         self.class_proportion_source = ClassProportionSource(class_proportion_source)
         self.generation_interval = int(generation_interval)
         self.class_proportion_probe_count = int(class_proportion_probe_count)

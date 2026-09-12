@@ -73,14 +73,14 @@ def define_parser():
     parser.add_argument(
         "--class-proportion-source",
         choices=[source.value for source in ClassProportionSource],
-        default=ClassProportionSource.TRUE_HISTOGRAM.value,
-        help="How FedRevive obtains each client's class proportions",
+        default=None,
+        help="How FedRevive obtains class proportions; defaults to estimated for FedRevive",
     )
     parser.add_argument(
         "--generation-interval",
         type=int,
-        default=1,
-        help="Generate synthetic data every N global model versions",
+        default=None,
+        help="Generate synthetic data every N global model versions; defaults to 10 for FedRevive",
     )
     parser.add_argument(
         "--class-proportion-probe-count",
@@ -89,7 +89,7 @@ def define_parser():
         help="Number of Gaussian inputs used for each class-proportion probe",
     )
     parser.add_argument("--max-time", type=float, default=200.0, help="Simulated-time budget")
-    parser.add_argument("--max-model-versions", type=int, default=50000)
+    parser.add_argument("--max-model-versions", type=int, default=100000)
     parser.add_argument("--data-root", default="/tmp/cifar10")
     parser.add_argument("--prepared-data-root", default="/tmp/fedrevive/cifar10")
     parser.add_argument("--prepare-data", action="store_true")
@@ -143,11 +143,11 @@ def validate_args(args):
         raise ValueError("--max-time, --local-iterations, and --local-batch-size must be positive")
     if args.local_lr <= 0 or args.call_timeout <= 0 or args.num_workers < 0:
         raise ValueError("--local-lr and --call-timeout must be positive; --num-workers must be nonnegative")
-    if args.generation_interval < 1 or args.class_proportion_probe_count < 1:
+    if (args.generation_interval is not None and args.generation_interval < 1) or args.class_proportion_probe_count < 1:
         raise ValueError("--generation-interval and --class-proportion-probe-count must be positive")
     if args.method != Method.FEDREVIVE.value and (
-        args.class_proportion_source != ClassProportionSource.TRUE_HISTOGRAM.value
-        or args.generation_interval != 1
+        args.class_proportion_source not in (None, ClassProportionSource.TRUE_HISTOGRAM.value)
+        or args.generation_interval not in (None, 1)
         or args.class_proportion_probe_count != 64
     ):
         raise ValueError("class-proportion, probe-count, and generation options require --method fedrevive")
@@ -159,6 +159,16 @@ def make_recipe(args):
     active_jobs = preset.num_active_jobs if args.num_active_jobs is None else args.num_active_jobs
     buffer_size = preset.buffer_size if args.buffer_size is None else args.buffer_size
     open_slots = preset.min_open_slots if args.min_open_slots is None else args.min_open_slots
+    class_proportion_source = args.class_proportion_source
+    if class_proportion_source is None:
+        class_proportion_source = (
+            ClassProportionSource.ESTIMATED.value
+            if method is Method.FEDREVIVE
+            else ClassProportionSource.TRUE_HISTOGRAM.value
+        )
+    generation_interval = args.generation_interval
+    if generation_interval is None:
+        generation_interval = 10 if method is Method.FEDREVIVE else 1
     if active_jobs < 1:
         raise ValueError("K must be positive")
     if buffer_size < 1 or not 1 <= open_slots <= active_jobs:
@@ -181,8 +191,8 @@ def make_recipe(args):
         setup_seed=args.setup_seed,
         run_seed=args.run_seed,
         max_model_versions=args.max_model_versions,
-        class_proportion_source=args.class_proportion_source,
-        generation_interval=args.generation_interval,
+        class_proportion_source=class_proportion_source,
+        generation_interval=generation_interval,
         class_proportion_probe_count=args.class_proportion_probe_count,
     )
     client = FedReviveClient(

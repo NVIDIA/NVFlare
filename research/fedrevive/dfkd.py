@@ -38,7 +38,7 @@ class DFKDConfig:
     generator_lr: float = 3e-3
     latent_lr: float = 1e-3
     generator_steps: int = 2
-    generation_interval: int = 1
+    generation_interval: int = 10
     warmup_versions: int = 100
     freeze_versions: int = 50
     adversarial_weight: float = 0.1

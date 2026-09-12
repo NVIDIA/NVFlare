@@ -17,6 +17,13 @@ It uses the model, data partition, runtime distributions, and training settings
 reported in the paper. It is intentionally separate from the other NVIDIA
 FLARE CIFAR-10 examples.
 
+The simulated-time scheduler in `server.py` is a controlled-experiment harness:
+it replays the paper's seeded delay schedules on a small physical worker pool
+so results do not depend on host speed. It is not the recommended deployment
+pattern for FedRevive. For real asynchronous training, start from
+[`pt_async_cifar10`](../../examples/advanced/collab/pt_async_cifar10/README.md)
+and reuse the aggregation and DFKD components from `fedrevive.py` and `dfkd.py`.
+
 CIFAR-100, FEMNIST, 20NewsGroups, DD-FedRevive, and AFL-DW are outside this
 initial contribution.
 
@@ -44,12 +51,16 @@ state is only one ten-element sum and one count per observed client. Use
 probes are forwarded in chunks of at most 64 so peak device memory remains
 bounded.
 
-All settings use $K_{synth}=2$, $K_{KD}=10$, and an eight-model teacher buffer
-($c=8$). Distillation still occurs on every eligible stale arrival after
-warmup. When the generation interval is greater than one, the bounded synthetic
-pool is reused between synthesis steps.
+The paper-main setting, and therefore the FedRevive default, uses estimated
+class proportions and `--generation-interval 10`. All settings use
+$K_{synth}=2$, $K_{KD}=10$, and an eight-model teacher buffer ($c=8$).
+Distillation still occurs on every eligible stale arrival after warmup. Between
+synthesis steps, the bounded synthetic pool is reused.
 
 ## Unified scheduling and aggregation
+
+This section describes the deterministic scheduler used only for the controlled
+paper experiment; real deployments use actual client arrivals directly.
 
 The server exposes three scheduling parameters:
 
@@ -196,13 +207,22 @@ $$
 DFKD starts after model version 50 when the accepted update has nonzero
 staleness. Steps 1--3 occur when the model version is divisible by
 `--generation-interval`, while step 4 still occurs for every eligible update
-after the version-100 warmup:
+after the version-100 warmup. These version-50 and version-100 gates are part
+of the curve-producing experimental configuration but are not specified in the
+paper:
 
-1. adapts a fast copy of the persistent generator for two synthesis steps;
+1. samples target labels from the mean class-proportion proxy of the buffered
+   teachers and adapts a fast copy of the persistent generator for two
+   synthesis steps;
 2. applies a Reptile update to the persistent generator;
 3. adds the best generated batch to a bounded 16,000-image pool; and
 4. after the version-100 warmup, trains a student for ten multi-teacher KD
    iterations and returns its delta from the current global model.
+
+The mean-teacher target distribution is the setting used to produce these
+curves. It differs from the uniform synthesis-target description in Section
+2.2 of the paper; teacher-specific class proportions are still used separately
+when sampling the synthetic pool for multi-teacher KD.
 
 All synthesis and KD work is server-side. No synthetic data is sent to clients.
 
@@ -215,18 +235,24 @@ All synthesis and KD work is server-side. No synthetic data is sent to clients.
 | Samples per logical client | 350 |
 | Data heterogeneity | Dirichlet, $\alpha=0.5$ |
 | Train/validation/KD split | 37,500 / 7,500 / 5,000 |
-| Model | CIFAR ResNet-18 with feature-statistic trackers |
+| Model | CIFAR ResNet-18 topology with non-normalizing feature-statistic trackers |
 | Client optimizer | Adam |
 | Client learning rate | $3\times10^{-4}$ |
 | Client batch size | 32 |
 | Local iterations | 25 |
 | Teacher buffer | 8 models |
 | Synthesis batch / steps | 64 / 2 |
-| Generator interval | Configurable; 1 by default |
+| Generator interval | Configurable; 10 by default |
 | Generator / latent learning rate | 0.003 / 0.001 |
 | KD batch / iterations / learning rate | 32 per teacher / 10 / $10^{-4}$ |
 | DFKD weights | adversarial 0.1, feature 0.003, one-hot 1.0 |
 | Simulated-time budget | 200 |
+
+The ResNet-18 follows the curve-producing architecture: each conventional
+BatchNorm transform is replaced by a `StatTracker` that records per-channel
+running mean and variance but returns its activation unchanged. Thus, these
+statistics support the DFKD feature loss without normalizing client or server
+activations.
 
 Each logical client has persistent runtime characteristics. Local-training time
 is exponential with a mean drawn from 1.0, 1.3, or 1.6 with probabilities
@@ -285,7 +311,9 @@ requested population exceeds the available training examples.
 
 ## Run the experiments
 
-Each method uses the same entry point and defaults to its table preset:
+Each method uses the same entry point and defaults to its table preset. The
+FedRevive defaults additionally select the paper-main estimated class
+proportions and generation interval of 10:
 
 ```bash
 python job.py --method fedavg \
@@ -297,16 +325,15 @@ python job.py --method fedbuff \
   --max-time 200 --setup-seed 10 --run-seed 10
 
 python job.py --method fedrevive \
-  --class-proportion-source true-histogram --generation-interval 1 \
   --data-root /tmp/cifar10 --prepared-data-root /tmp/fedrevive/cifar10 \
   --max-time 200 --setup-seed 10 --run-seed 10
 ```
 
-To run with estimated class proportions and periodic synthesis:
+To run the true-histogram, every-version synthesis ablation:
 
 ```bash
 python job.py --method fedrevive \
-  --class-proportion-source estimated --generation-interval 10 \
+  --class-proportion-source true-histogram --generation-interval 1 \
   --data-root /tmp/cifar10 --prepared-data-root /tmp/fedrevive/cifar10 \
   --max-time 200 --setup-seed 10 --run-seed 10
 ```
@@ -323,15 +350,14 @@ python job.py --method fedbuff \
 
 python job.py --method fedrevive \
   --delay-schedule shifted \
-  --class-proportion-source true-histogram --generation-interval 1 \
   --data-root /tmp/cifar10 \
   --prepared-data-root /tmp/fedrevive/cifar10_shifted \
   --max-time 100 --setup-seed 10 --run-seed 10
 ```
 
-Use `--class-proportion-source estimated --generation-interval 10` instead to
-combine estimated class proportions and periodic generation with the shifted
-delay schedule.
+Add `--class-proportion-source true-histogram --generation-interval 1` to the
+FedRevive command to run the corresponding ablation under the shifted delay
+schedule.
 
 A CUDA-capable GPU is recommended for both client training and FedRevive's
 server-side DFKD. Device selection defaults to `auto`; use `--client-device
@@ -383,26 +409,31 @@ Figure 1 shows all three method presets over 200 simulated-time units.
 |---|---:|---:|---:|
 | FedAvg | 28 | 0.4022 | 0.4056 |
 | FedBuff | 6,343 | 0.6111 | 0.6659 |
-| FedRevive | 12,687 | 0.7612 | 0.7712 |
+| FedRevive | 12,687 | 0.7462 | 0.7566 |
 
 ### Shifted delay schedule
 
-Figure 2 shows FedBuff and FedRevive over 100 simulated-time units after only
-the delay schedule is changed. FedBuff exhibits large fluctuations and reduced
-accuracy, while FedRevive remains stable under the shifted arrival process.
+Figure 2 shows FedBuff and FedRevive over approximately 100 simulated-time
+units after only the delay schedule is changed. FedBuff exhibits large
+fluctuations and reduced accuracy, while FedRevive remains stable under the
+shifted arrival process. This FedRevive run reached the former 50,000-version
+safety limit at simulated time 97.43; the example now defaults to a
+100,000-version ceiling so the simulated-time budget remains the normal stop
+condition for future runs.
 
 ![FedBuff and FedRevive under the shifted delay schedule](figs/figure_2.png)
 
-| Method | Versions at stop | Final accuracy | Best accuracy |
-|---|---:|---:|---:|
-| FedBuff | 25,662 | 0.3019 | 0.4886 |
-| FedRevive | 51,325 | 0.7917 | 0.8325 |
+| Method | Versions at stop | Time at stop | Final accuracy | Best accuracy |
+|---|---:|---:|---:|---:|
+| FedBuff | 25,662 | 100.00 | 0.3019 | 0.4886 |
+| FedRevive | 50,000 | 97.43 | 0.8025 | 0.8253 |
 
 ### FedRevive configuration options
 
 Figure 3 compares the two FedRevive configurations shown in the run commands:
-true client histograms with synthesis at every version, and server-estimated
-class proportions using 64 Gaussian probes with synthesis every ten versions.
+the paper-main server-estimated class proportions using 64 Gaussian probes with
+synthesis every ten versions, and the true-histogram, every-version synthesis
+ablation.
 Both runs use seed 10 and the same 1,270 centralized evaluation points, model
 versions, and simulated arrival times.
 
