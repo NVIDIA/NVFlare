@@ -213,12 +213,15 @@ def test_default_recipe_uses_final_global_evaluation(monkeypatch):
     assert calls == [("final", recipe)]
 
 
-@pytest.mark.parametrize("relative_cache", [False, True])
-def test_cifar_cli_export_does_not_require_local_data(tmp_path, relative_cache):
+@pytest.mark.parametrize("path_kind", ["absolute", "relative", "home"])
+def test_cifar_cli_export_does_not_require_local_data(tmp_path, path_kind):
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
     example_dir = os.path.join(repo_root, "examples", "hello-world", "hello-pt")
     cache_path = tmp_path / "remote site's cache"
-    remote_cache = os.path.relpath(cache_path, example_dir) if relative_cache else str(cache_path)
+    remote_cache = os.path.relpath(cache_path, example_dir) if path_kind == "relative" else str(cache_path)
+    if path_kind == "home":
+        # Pass a literal tilde, as a shell would for a quoted "~/..." argument.
+        remote_cache = "~/" + os.path.relpath(cache_path, os.path.expanduser("~"))
     subprocess.run(
         [
             sys.executable,

@@ -53,7 +53,7 @@ def create_recipe(args):
     train_args = ["--dataset", args.dataset]
     if args.dataset == "cifar10":
         # Simulated clients run in site workspaces, not the submission directory.
-        train_args.extend(("--data_root", os.path.abspath(args.data_root)))
+        train_args.extend(("--data_root", os.path.abspath(os.path.expanduser(args.data_root))))
 
     recipe = FedAvgRecipe(
         name="hello-pt",

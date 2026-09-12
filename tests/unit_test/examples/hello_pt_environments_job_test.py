@@ -355,10 +355,12 @@ def test_copied_example_reports_missing_shared_application(tmp_path):
 
 
 @pytest.mark.parametrize("env_name", ["sim", "poc", "prod"])
-@pytest.mark.parametrize("relative_path", [False, True])
-def test_cifar_cli_export_does_not_require_local_cache(tmp_path, env_name, relative_path):
+@pytest.mark.parametrize("path_kind", ["absolute", "relative", "home"])
+def test_cifar_cli_export_does_not_require_local_cache(tmp_path, env_name, path_kind):
     cache = str(tmp_path / "missing")
-    argument = os.path.relpath(cache, ADVANCED_DIR) if relative_path else cache
+    argument = os.path.relpath(cache, ADVANCED_DIR) if path_kind == "relative" else cache
+    if path_kind == "home":
+        argument = "~/" + os.path.relpath(cache, Path.home())
     command = [
         sys.executable,
         "job.py",
