@@ -17,6 +17,7 @@ import threading
 import time
 from typing import Optional
 
+from nvflare.apis.job_def import RunStatus
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.recipe._run_summary import result_summary
 from nvflare.recipe.spec import ExecEnv
@@ -128,16 +129,19 @@ class Run:
             finally:
                 self._stopped = True
 
-            print("\nRun summary", flush=True)
+            print("\n" + " RUN SUMMARY ".center(72, "="), flush=True)
+            status_label = (
+                "✓ Completed"
+                if self._cached_status == RunStatus.FINISHED_COMPLETED.value
+                else (self._cached_status or "Status unavailable")
+            )
+            print(f"\n  {status_label}".ljust(64) + f"{elapsed:.1f}s", flush=True)
             if report:
                 print(report, flush=True)
-            print(f"Environment: {type(self.exec_env).__name__}", flush=True)
-            print(f"Elapsed: {elapsed:.1f}s (through result retrieval)", flush=True)
-            print(f"Job {self.job_id} status: {self._cached_status or 'unavailable'}", flush=True)
+
             if result:
                 if os.path.isdir(result):
-                    print(f"Result workspace: {result}", flush=True)
-                    print("Diagnostics: see log.txt and error_log.txt in the workspace's site directories.", flush=True)
+                    print(f"  Results   {result}", flush=True)
                 else:
                     print(
                         f"Result workspace is not available locally: {result}. "

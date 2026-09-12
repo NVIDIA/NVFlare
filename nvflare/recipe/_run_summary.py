@@ -19,7 +19,7 @@ import textwrap
 from itertools import islice
 from pathlib import Path
 
-from nvflare.fuel.utils.log_utils import format_metric_summary
+from nvflare.fuel.utils.log_utils import format_metric_table
 
 
 def _read_json(path):
@@ -43,6 +43,7 @@ def result_summary(result):
     """
     root = Path(result)
     lines = []
+    artifacts = []
     # Simulator result root, downloaded admin transfer root, or server run root.
     candidates = [root / "workspace", root]
     candidates.extend(islice(root.glob("server/*"), 20))
@@ -51,9 +52,6 @@ def result_summary(result):
         summary_path = metrics / "metrics_summary.json"
         if summary_path.is_file():
             try:
-                summary = _read_json(summary_path)
-                if isinstance(summary, dict):
-                    lines.append(f"NVIDIA FLARE | {_text(summary.get('job_name', root.name))}")
                 round_path = metrics / "round_metrics.jsonl"
                 with round_path.open("rb") as stream:
                     stream.seek(0, 2)
@@ -61,52 +59,75 @@ def result_summary(result):
                     stream.seek(start)
                     if start:
                         stream.readline(1048576)  # Ignore a partial first record.
-                    records = stream.read(1048576).splitlines()[-10:]
-                lines.extend(
-                    ["", "Training (last recorded rounds)", "  Round  Reporting clients  Aggregated client metrics"]
-                )
+                    records = stream.read(1048576).splitlines()[-11:]
+                truncated = start > 0 or len(records) > 10
+                records = records[-10:]
+                rows = []
                 for raw in records:
                     try:
                         record = json.loads(raw)
-                        metrics_dict = {m["name"]: m["value"] for m in record["aggregated_metrics"]}
+                        values = {m["name"]: m["value"] for m in record["aggregated_metrics"]}
                         round_index = record["round"]
                         label = str(round_index + 1) if type(round_index) is int else "?"
-                        count = len({s["name"] for s in record["sites"]})
-                        lines.append(f"  {label:<7}{count:<19}{format_metric_summary(metrics_dict)}")
+                        rows.append((label, values))
                     except (ValueError, TypeError, KeyError):
                         continue
-                lines.append("  Values as reported; metric names and units are application-defined.")
+                if rows:
+                    heading = "  Training · aggregated client metrics"
+                    lines.extend(["", heading + (" (last 10 rounds)" if truncated else ""), ""])
+                    lines.append(format_metric_table(rows, label="Round"))
             except (OSError, ValueError, TypeError, KeyError):
                 lines.append("Training details: see the saved metrics artifacts.")
-            lines.append(f"Metrics   {summary_path.relative_to(root)}")
+            artifacts.append(f"  Metrics   {summary_path.parent.relative_to(root)}/")
         evaluation_path = run_dir / "cross_site_val" / "cross_val_results.json"
         if evaluation_path.is_file():
             try:
                 evaluations = _read_json(evaluation_path)
                 if isinstance(evaluations, dict) and evaluations:
-                    lines.extend(["", "Model evaluation (saved results)"])
-                    for site, models in islice(evaluations.items(), 6):
-                        if not isinstance(models, dict):
-                            continue
-                        for model, values in islice(models.items(), 6):
-                            lines.append(f"  {_text(site)} | {_text(model)}")
-                            lines.append(f"    {format_metric_summary(values)}")
+                    metric_names = list(
+                        dict.fromkeys(
+                            key
+                            for models in evaluations.values()
+                            if isinstance(models, dict)
+                            for values in models.values()
+                            if isinstance(values, dict)
+                            for key in values
+                        )
+                    )
+                    for metric in metric_names[:2]:
+                        rows = [
+                            (
+                                site,
+                                {
+                                    model: values[metric]
+                                    for model, values in models.items()
+                                    if isinstance(values, dict) and metric in values
+                                },
+                            )
+                            for site, models in islice(evaluations.items(), 6)
+                            if isinstance(models, dict)
+                        ]
+                        lines.extend(["", f"  Model evaluation · {_text(metric)}", ""])
+                        lines.append(format_metric_table(rows, label="Client"))
+                    if len(evaluations) > 6 or len(metric_names) > 2:
+                        lines.append("  Additional evaluation results are available in the saved artifact.")
             except (OSError, ValueError, TypeError):
                 pass
-            lines.append(f"Evaluation   {evaluation_path.relative_to(root)}")
+            artifacts.append(f"  Evaluation {evaluation_path.relative_to(root)}")
         app_dir = run_dir / "app_server"
         if app_dir.is_dir():
-            # List existing common model artifacts; don't guess a "final" model.
-            for path in islice((p for p in app_dir.iterdir() if p.suffix in (".pt", ".pth", ".npy", ".npz")), 6):
-                if path.is_file():
-                    lines.append(f"Model     {path.relative_to(root)}")
+            if any(p.is_file() and p.suffix in (".pt", ".pth", ".npy", ".npz") for p in app_dir.iterdir()):
+                artifacts.insert(0, f"  Models    {app_dir.relative_to(root)}/")
         if summary_path.is_file() or evaluation_path.is_file():
             break
     log_paths = list(islice(root.glob("*/log.txt"), 6))
     if not log_paths:
         log_paths = list(islice(root.glob("workspace/log*.txt"), 6))
     if log_paths:
-        lines.append("Logs      " + " | ".join(str(p.relative_to(root)) for p in log_paths))
+        artifacts.append("  Logs      " + " · ".join(str(p.relative_to(root)) for p in sorted(log_paths)))
+    lines.extend(["", *artifacts])
     return "\n".join(
-        textwrap.fill(line, width=80, subsequent_indent="    ", replace_whitespace=False) for line in lines
+        line if len(line) <= 80 else textwrap.fill(line, width=80, subsequent_indent="    ", replace_whitespace=False)
+        for block in lines
+        for line in block.split("\n")
     )

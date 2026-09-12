@@ -544,8 +544,8 @@ submitted. ``Run`` exposes:
 Following a Run
 ---------------
 
-Recipe execution identifies the job and execution environment before deployment.
-Simulation also prints its workspace location. POC and production monitoring show
+Recipe execution identifies the job before deployment.
+Simulation also prints its resolved client count. POC and production monitoring show
 status changes without repeating normal waiting messages. The concise progress
 view described below also retrieves round and metric messages from existing
 server logs while monitoring callbacks continue.
@@ -597,15 +597,17 @@ logs, model arrays, and framework messages remain in ``log.txt`` and ``log.json`
 at the configured log level. Normal in-process client shutdown at ``END_RUN`` is
 logged at INFO; other stop reasons still produce warnings.
 
-The existing metrics writer reports round starts, each client's reported metrics,
-and aggregated metrics as they arrive. The aggregation-finished message measures
+The existing metrics writer separates rounds with ``=== ROUND N / M ===``
+headings. Client rows appear as their metrics arrive, with numeric values aligned
+under shared column headings. An aggregated row and elapsed time close each round.
+This preserves completed round sections in both the console and ``log_fl.txt``. The aggregation-finished message measures
 time since round start; it does not claim model persistence or overall job success.
 Metric names, units, and evaluation timing are defined by the job. Displayed
 numbers are rounded for readability; artifact values are unchanged. Structured
 metric values are identified and remain available in the artifacts.
 
-Model evaluation is presented separately by the existing evaluation workflow,
-including the site and model for each result. A reported training metric is not
+The existing evaluation workflow announces evaluation; its saved site/model
+results are presented once in the final summary. A reported training metric is not
 relabelled as an evaluation of the final saved model. Jobs that do not use these
 reporting components still have job-status and diagnostic output, but do not
 acquire synthetic training rounds or metrics.
@@ -630,13 +632,21 @@ End-of-Run Summary
 ------------------
 
 ``run.get_result()`` also prints a summary from existing local result artifacts:
-the last ten recorded training rounds, separately labelled model evaluation,
-existing model files, and metrics and log locations. The same reader supports
+a table of up to ten recorded training rounds, separate model-evaluation tables,
+and existing model, metrics, evaluation and log locations. A ``RUN SUMMARY``
+separator distinguishes the final report from live round output. The same reader supports
 standard simulator and downloaded POC/production layouts. It does not load model
 weights or change the meaning of reported metrics. For example, an application
 metric named ``accuracy`` is not assumed to be a percentage or a final-model score.
 Elapsed time covers deployment through result retrieval, excluding environment
-cleanup. The raw framework status is shown even for failed or aborted jobs.
+cleanup. ``Completed`` is displayed only for the framework's completed status;
+failed, aborted, or unavailable statuses are preserved.
+
+Tables display at most two metrics (or two models in each evaluation comparison)
+and ten rows; the evaluation preview covers up to six clients and two metrics.
+Missing values use a dash, rather than a fabricated zero. Structured values,
+shortened names, and additional results refer to the saved artifacts. Table
+alignment is retained in log files and redirected output.
 
 Artifact reads and displayed metrics are bounded. Missing, oversized, malformed,
 or custom-layout artifacts do not prevent result retrieval; inspect the saved

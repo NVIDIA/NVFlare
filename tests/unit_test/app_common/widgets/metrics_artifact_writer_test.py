@@ -908,9 +908,13 @@ def test_progress_uses_reported_metrics_and_retains_total_after_context_change(t
         now[0] = 12.0
         _record_round(writer, fl_ctx, 5, {"loss": 0.25})
     progress = [r.message for r in caplog.records if r.name.endswith(".progress")]
-    assert "\nRound 1/3 | training" in progress
-    assert "  site-1 | loss=0.25" in progress
-    assert "  Aggregated client metrics | loss=0.25" in progress
-    assert "Round 1/3 | aggregation finished | 2.0s" in progress
+    output = "\n".join(progress)
+    assert "ROUND 1 / 3" in output
+    assert "=====" in output
+    assert "site-1" in output and "loss" in output
+    assert output.count("0.25") == 2
+    assert "Aggregated" in output
+    assert "✓ Aggregated 1 client update" in output
+    assert "2.0s" in output
     assert _read_rounds(tmp_path)[0]["round"] == 5
     assert "complete" not in " ".join(progress)  # Aggregation does not prove persistence or job success.

@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import re
 import tempfile
 from unittest.mock import MagicMock, patch
 
@@ -50,9 +51,8 @@ class TestRunClass:
 
         assert self.run.get_result(clean_up=False) == str(tmp_path)
         output = capsys.readouterr().out
-        assert f"Job {self.job_id} status: {status or 'unavailable'}" in output
-        assert f"Result workspace: {tmp_path}" in output
-        assert "error_log.txt" in output
+        assert ("✓ Completed" if status == "FINISHED:COMPLETED" else status or "Status unavailable") in output
+        assert f"Results   {tmp_path}" in output
         assert "success" not in output.lower()
         # Reading the cached result neither repeats output nor queries the environment.
         self.run.get_result()
@@ -70,7 +70,7 @@ class TestRunClass:
         output = capsys.readouterr().out
         assert f"not available locally: {result_dir}" in output
         assert "get_result(clean_up=False)" in output
-        assert "Result workspace:" not in output
+        assert "  Results   " not in output
 
     def test_missing_result_presentation_does_not_claim_success(self, capsys):
         self.mock_env.get_job_result.side_effect = RuntimeError("download failed")
@@ -379,15 +379,15 @@ def test_summary_reads_real_artifacts_for_each_environment_layout(tmp_path, caps
     run = Run(env, "test")
     assert run.get_result(clean_up=False) == str(tmp_path)
     output = capsys.readouterr().out
-    assert "NVIDIA FLARE | example" in output
-    assert "Aggregated client metrics" in output
-    assert "accuracy=0.7" in output
-    assert "Model evaluation (saved results)" in output
-    assert "accuracy=0.8" in output
+    assert "RUN SUMMARY" in output
+    assert "aggregated client metrics" in output
+    assert re.search(r"1\s+0.7(?:\s|$)", output)
+    assert "Model evaluation · accuracy" in output
+    assert re.search(r"site-1\s+0.8(?:\s|$)", output)
     assert "global.pt" in output
     assert "FINISHED:EXECUTION_EXCEPTION" in output
     assert "70%" not in output
-    assert "Completed in" not in output
+    assert "✓ Completed" not in output
     run.get_result()
     assert capsys.readouterr().out == ""
 
@@ -408,7 +408,34 @@ def test_summary_limits_rounds_and_tolerates_corrupt_evaluation(tmp_path):
     evaluation.mkdir()
     (evaluation / "cross_val_results.json").write_text("{broken")
     output = result_summary(tmp_path)
-    assert output.count("loss=") == 10
-    assert "loss=99" in output
-    assert "Model evaluation (saved results)" not in output
+    assert len(re.findall(r"^  \d+\s+\d+$", output, re.MULTILINE)) == 10
+    assert re.search(r"100\s+99", output)
+    assert "Model evaluation ·" not in output
     assert "cross_val_results.json" in output
+
+
+def test_summary_keeps_multirow_metrics_on_separate_aligned_lines(tmp_path):
+    import json
+
+    from nvflare.recipe._run_summary import result_summary
+
+    metrics = tmp_path / "metrics"
+    metrics.mkdir()
+    (metrics / "metrics_summary.json").write_text("{}")
+    (metrics / "round_metrics.jsonl").write_text(
+        "\n".join(
+            json.dumps(
+                {
+                    "round": n,
+                    "aggregated_metrics": [
+                        {"name": "accuracy", "value": value},
+                        {"name": "accuracy_after_local_training", "value": after},
+                    ],
+                }
+            )
+            for n, (value, after) in enumerate(((1, 20), (30, 55), (70, 65)))
+        )
+    )
+    summary = result_summary(tmp_path)
+    rows = [line.split() for line in summary.splitlines() if re.match(r"^  [123] +", line)]
+    assert rows == [["1", "1", "20"], ["2", "30", "55"], ["3", "70", "65"]]

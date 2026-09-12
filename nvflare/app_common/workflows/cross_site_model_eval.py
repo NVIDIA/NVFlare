@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
 import os
 import shutil
 import time
@@ -32,7 +31,6 @@ from nvflare.app_common.abstract.model_locator import ModelLocator
 from nvflare.app_common.app_constant import AppConstants, ModelName
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.utils.file_utils import resolve_path_under_root
-from nvflare.fuel.utils.log_utils import format_metric_summary
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 
@@ -198,7 +196,9 @@ class CrossSiteModelEval(Controller):
                     return
 
             self.log_info(fl_ctx, f"Beginning model validation with clients: {self._participating_clients}.")
-            self.logger.getChild("progress").info(f"\nEvaluating models on {len(self._participating_clients)} clients")
+            self.logger.getChild("progress").info(
+                f"\n  Evaluating saved models on {len(self._participating_clients)} clients…"
+            )
 
             if self._submit_model_task_name:
                 shareable = Shareable()
@@ -477,10 +477,6 @@ class CrossSiteModelEval(Controller):
         client_results[model_name] = file_path
         self.log_info(
             fl_ctx, f"Saved validation result from client '{client_name}' on model '{model_name}' in {file_path}"
-        )
-        self.logger.getChild("progress").info(
-            f"  {json.dumps(client_name[:128])} | {json.dumps(model_name[:128])}\n"
-            f"    {format_metric_summary(dxo.data)}"
         )
 
     def _save_dxo_content(self, name: str, save_dir: str, dxo: DXO, fl_ctx: FLContext) -> str:
