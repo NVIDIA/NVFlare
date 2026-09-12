@@ -58,7 +58,7 @@ def test_numpy_example_gets_shared_reporting_without_example_changes(tmp_path, l
         assert "evaluation metrics:" in client_log.read_text()
         assert "END_RUN received" in client_log.read_text()
     else:
-        assert "Training round 1/1 started" in output
+        assert "Round 0 started." in output
         for site in ("site-1", "site-2"):
             assert f"Client {site}, current_round=0" in output
             assert f"Client {site} evaluation metrics:" in output
