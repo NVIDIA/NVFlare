@@ -83,6 +83,21 @@ def test_sim_env_validation():
     assert env.num_threads == 3
 
 
+@pytest.mark.parametrize(
+    "kwargs,expected_count",
+    [
+        ({"num_clients": 2}, 2),
+        ({"num_clients": 2, "clients": []}, 2),
+        ({"clients": ["site-1", "site-2", "site-3"]}, 3),
+        ({"num_clients": 2, "clients": ["site-1", "site-2"]}, 2),
+    ],
+)
+def test_preparation_reports_resolved_client_count(tmp_path, capsys, kwargs, expected_count):
+    env = SimEnv(workspace_root=str(tmp_path), **kwargs)
+    _deploy_with_mocked_simulator(env, _make_job())
+    assert f"Preparing simulation: {expected_count} clients." in capsys.readouterr().out
+
+
 def test_sim_env_status_tracks_synchronous_deployment(tmp_path):
     job = _make_job()
     env = SimEnv(num_clients=2, workspace_root=str(tmp_path))
