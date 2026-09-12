@@ -162,3 +162,43 @@ def test_validate_site_log_config_rejects_dicts_and_file_paths():
 
     with pytest.raises(ValueError, match="configure_site_log only supports log levels and built-in log modes"):
         validate_site_log_config("/my workspace/log.conf")
+
+
+def test_progress_view_retains_diagnostic_records_and_wraps_readable_output():
+    from nvflare.fuel.utils.log_utils import ProgressFormatter, ProgressLogFilter, logmode_config_dict
+
+    view = io.StringIO()
+    handler = logging.StreamHandler(view)
+    handler.setFormatter(ProgressFormatter())
+    handler.addFilter(ProgressLogFilter())
+    detail = io.StringIO()
+    diagnostic = logging.StreamHandler(detail)
+    records = [
+        logging.LogRecord("custom.trainer", logging.INFO, "", 0, "raw weights: [1, 2, 3]", (), None),
+        logging.LogRecord("nvflare.metrics.progress", logging.INFO, "", 0, "site-1 | loss=0.25", (), None),
+        logging.LogRecord(
+            "nvflare.transport",
+            logging.WARNING,
+            "",
+            0,
+            "[identity=site-2, run=job-123]: connection interrupted " + "details " * 20,
+            (),
+            None,
+        ),
+    ]
+    for record in records:
+        handler.handle(record)
+        diagnostic.handle(record)
+    assert "raw weights" not in view.getvalue()
+    assert "site-1 | loss=0.25" in view.getvalue()
+    assert "WARNING (site-2/transport): connection interrupted" in view.getvalue()
+    assert "run=job-123" not in view.getvalue()
+    assert all(len(line) <= 80 for line in view.getvalue().splitlines())
+    assert "raw weights" in detail.getvalue()
+    assert "[identity=site-2, run=job-123]" in detail.getvalue()
+    config = logmode_config_dict["progress"]
+    for name in ("consoleHandler", "FLFileHandler"):
+        assert config["handlers"][name]["filters"] == ["ProgressFilter"]
+        assert config["handlers"][name]["formatter"] == "progressFormatter"
+    for name in ("logFileHandler", "jsonFileHandler"):
+        assert config["handlers"][name] == logmode_config_dict["full"]["handlers"][name]

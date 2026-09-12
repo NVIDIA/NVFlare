@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
+import logging
 import os
 import tempfile
 import time
@@ -20,21 +22,60 @@ from typing import Dict, Optional
 from nvflare.fuel.flare_api.api_spec import MonitorReturnCode
 from nvflare.fuel.flare_api.flare_api import Session, new_secure_session
 from nvflare.fuel.utils.job_secret_scanner import warn_on_potential_secrets_in_job_dir
-from nvflare.fuel.utils.log_utils import get_module_logger
+from nvflare.fuel.utils.log_utils import FL_LOG_LEVEL, LogMode, ProgressFormatter, get_module_logger
 from nvflare.job_config.api import FedJob
 
 
+def _show_job_progress(session, job_id, state):
+    """Display existing structured server progress logs, once per record."""
+    try:
+        response = session.get_job_logs(job_id, target="server", log_file_name="log.json")
+        logs = response.get("logs", {})
+        formatter = ProgressFormatter()
+        for text in logs.values():
+            for line in text.splitlines():
+                try:
+                    record = json.loads(line)
+                except (ValueError, TypeError):
+                    continue  # An in-flight final line may be incomplete; retry on the next callback.
+                if not isinstance(record, dict):
+                    continue
+                name = record.get("fullName", "")
+                level = record.get("levelname", "INFO")
+                if not isinstance(name, str) or not isinstance(level, str):
+                    continue
+                if not name.endswith(".progress") and level not in ("WARNING", "ERROR", "CRITICAL"):
+                    continue
+                if line in state["seen"]:
+                    continue
+                message = record.get("message", "")
+                context = record.get("fl_ctx", "")
+                if isinstance(context, str) and context:
+                    message = f"{context}: {message}"
+                log_record = logging.LogRecord(name, getattr(logging, level, logging.INFO), "", 0, message, (), None)
+                print(formatter.format(log_record), flush=True)
+                state["seen"].add(line)
+    except Exception as ex:
+        if not state.get("warned"):
+            print("Live progress could not be retrieved. Detailed logs remain on the server.", flush=True)
+            state["warned"] = True
+        get_module_logger().debug("Could not retrieve progress for %s: %s", job_id, ex)
+
+
 def _job_monitor_callback(session: Session, job_id: str, job_meta, *cb_args, **cb_kwargs) -> bool:
-    """Show status changes and a periodic waiting message using existing job metadata."""
+    """Show status changes, with the existing server progress log when requested."""
     state = cb_kwargs["cb_run_counter"]
     now = time.monotonic()
     status = job_meta["status"]
     if state["count"] == 0:
         state["started"] = now
         print(f"Job ID: {job_id}", flush=True)
-    if state["count"] == 0 or status != state.get("status") or now - state["last_report"] >= 15:
+    changed = state["count"] == 0 or status != state.get("status")
+    if "progress" in state and (changed or now - state["last_progress"] >= 5):
+        _show_job_progress(session, job_id, state["progress"])
+        state["last_progress"] = now
+    if changed:
         print(f"Job status: {status} ({now - state['started']:.0f}s monitored)", flush=True)
-        state["last_report"] = now
         state["status"] = status
         get_module_logger().debug("Job metadata: %s", job_meta)
     state["count"] += 1
@@ -88,6 +129,8 @@ class SessionManager:
         """Get the result workspace of the job."""
         sess = self._get_session()
         cb_run_counter = {"count": 0}
+        if os.environ.get(FL_LOG_LEVEL) == LogMode.PROGRESS:
+            cb_run_counter["progress"] = {"seen": set()}
         rc = sess.monitor_job(job_id, timeout=timeout, cb=_job_monitor_callback, cb_run_counter=cb_run_counter)
         if rc == MonitorReturnCode.JOB_FINISHED:
             print("Downloading job results...", flush=True)

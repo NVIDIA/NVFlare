@@ -15,6 +15,7 @@
 import json
 import math
 import os
+import time
 from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
@@ -68,6 +69,9 @@ class MetricsArtifactWriter(Widget):
         self._reset()
 
     def _reset(self):
+        self._first_round = None
+        self._total_rounds = None
+        self._round_started_at = None
         self._has_metrics = False
         self._final_round = None
         self._final_aggregated_metrics = []
@@ -86,6 +90,12 @@ class MetricsArtifactWriter(Widget):
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
             self._reset()
+        elif event_type == AppEventType.ROUND_STARTED:
+            current_round = self._safe_round(fl_ctx.get_prop(AppConstants.CURRENT_ROUND, None))
+            if self._first_round is None:
+                self._first_round = current_round
+            self._round_started_at = time.monotonic()
+            self.logger.getChild("progress").info(f"\n{self._round_label(current_round, fl_ctx)} | training")
         elif event_type == AppEventType.AFTER_CONTRIBUTION_ACCEPT:
             self._handle_after_contribution_accept(fl_ctx)
         elif event_type == AppEventType.AFTER_AGGREGATION:
@@ -94,6 +104,33 @@ class MetricsArtifactWriter(Widget):
             self._handle_global_best_model_available(fl_ctx)
         elif event_type == EventType.END_RUN:
             self._write_summary_if_needed(fl_ctx)
+
+    def _round_label(self, current_round, fl_ctx):
+        if current_round is None:
+            return "Round"
+        ordinal = current_round - self._first_round + 1 if self._first_round is not None else current_round + 1
+        total = fl_ctx.get_prop(AppConstants.NUM_ROUNDS, None)
+        if isinstance(total, int) and not isinstance(total, bool) and total > 0:
+            self._total_rounds = total
+        total = self._total_rounds
+        suffix = f"/{total}" if total is not None and ordinal <= total else ""
+        return f"Round {ordinal}{suffix}"
+
+    def _log_progress_metrics(self, label, metrics):
+        values = []
+        for metric in metrics:
+            value = metric["value"]
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                value = f"{value:.6g}"
+            elif isinstance(value, (dict, list)):
+                value = "[structured value; see metrics artifact]"
+            else:
+                value = json.dumps(value, ensure_ascii=True)
+            name = json.dumps(metric["name"], ensure_ascii=True)[1:-1]
+            values.append(f"{name}={value}")
+        message = ", ".join(values) if values else "no numeric metrics reported"
+        safe_label = json.dumps(label, ensure_ascii=True)[1:-1]
+        self.logger.getChild("progress").info(f"  {safe_label} | {message}")
 
     def _handle_after_aggregation(self, fl_ctx: FLContext):
         aggr_result = fl_ctx.get_prop(AppConstants.AGGREGATION_RESULT, None)
@@ -122,6 +159,14 @@ class MetricsArtifactWriter(Widget):
             sites = fallback_sites
             self._merge_skipped(skipped, fallback_skipped)
         self._apply_site_weights(sites, site_weights)
+
+        self._log_progress_metrics("Aggregated client metrics", aggregated_metrics)
+        duration = ""
+        if self._round_started_at is not None:
+            duration = f" | {time.monotonic() - self._round_started_at:.1f}s"
+        self.logger.getChild("progress").info(
+            f"{self._round_label(current_round, fl_ctx)} | aggregation finished{duration}"
+        )
 
         if not aggregated_metrics and not sites and not skipped:
             if custom_aggregator_metrics:
@@ -189,6 +234,7 @@ class MetricsArtifactWriter(Widget):
         except Exception:
             return
         if not model.metrics:
+            self.logger.getChild("progress").info(f"  {self._get_site_name(model, fl_ctx)} | no metrics reported")
             return
 
         current_round = self._get_current_round(model, fl_ctx)
@@ -225,6 +271,7 @@ class MetricsArtifactWriter(Widget):
             site["weight"] = weight
             site["weight_key"] = FLMetaKey.NUM_STEPS_CURRENT_ROUND
         sites.append(site)
+        self._log_progress_metrics(site["name"], metrics)
 
     def _normalize_sites(self, sites, skipped):
         if not isinstance(sites, list):
@@ -486,6 +533,9 @@ class MetricsArtifactWriter(Widget):
         with open(self._summary_file_path, "w", encoding="utf-8") as f:
             f.write(data)
         self.log_info(fl_ctx, f"Aggregated metrics summary: {self._summary_file_path}", fire_event=False)
+        self.logger.getChild("progress").info(
+            f"\nMetrics summary (server run directory): {os.path.join(self.results_dir, self.summary_file_name)}"
+        )
         if os.path.isfile(self._round_file_path):
             self.log_info(fl_ctx, f"Round metrics: {self._round_file_path}", fire_event=False)
 

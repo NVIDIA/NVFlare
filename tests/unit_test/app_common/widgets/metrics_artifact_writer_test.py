@@ -890,3 +890,27 @@ class TestMetricsArtifactWriterAggregationEvents:
             _finish_run(writer, fl_ctx)
 
         assert not os.path.exists(tmp_path / "outside_metrics")
+
+
+def test_progress_uses_reported_metrics_and_retains_total_after_context_change(tmp_path, caplog, monkeypatch):
+    writer = MetricsArtifactWriter()
+    fl_ctx = _make_fl_ctx(tmp_path)
+    now = [10.0]
+    monkeypatch.setattr("nvflare.app_common.widgets.metrics_artifact_writer.time.monotonic", lambda: now[0])
+    with caplog.at_level("INFO"):
+        writer.handle_event(EventType.START_RUN, fl_ctx)
+        fl_ctx.set_prop(AppConstants.CURRENT_ROUND, 5, private=True, sticky=False)
+        fl_ctx.set_prop(AppConstants.NUM_ROUNDS, 3, private=True, sticky=False)
+        writer.handle_event(AppEventType.ROUND_STARTED, fl_ctx)
+        # Controller callbacks may replace the context between round start and results.
+        fl_ctx.set_prop(AppConstants.NUM_ROUNDS, None, private=True, sticky=False)
+        _record_contribution(writer, fl_ctx, 5, "site-1", {"loss": 0.25})
+        now[0] = 12.0
+        _record_round(writer, fl_ctx, 5, {"loss": 0.25})
+    progress = [r.message for r in caplog.records if r.name.endswith(".progress")]
+    assert "\nRound 1/3 | training" in progress
+    assert "  site-1 | loss=0.25" in progress
+    assert "  Aggregated client metrics | loss=0.25" in progress
+    assert "Round 1/3 | aggregation finished | 2.0s" in progress
+    assert _read_rounds(tmp_path)[0]["round"] == 5
+    assert "complete" not in " ".join(progress)  # Aggregation does not prove persistence or job success.

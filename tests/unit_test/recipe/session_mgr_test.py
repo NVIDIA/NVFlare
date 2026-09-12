@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 from unittest.mock import MagicMock
 
 import pytest
@@ -37,7 +38,7 @@ def test_submit_job_scans_generated_config_before_submission():
     session.close.assert_called_once()
 
 
-def test_monitor_reports_changes_and_periodic_wait_without_metadata_dump(monkeypatch, capsys):
+def test_monitor_reports_changes_without_repeating_normal_waits(monkeypatch, capsys):
     now = [0]
     monkeypatch.setattr("nvflare.recipe.session_mgr.time.monotonic", lambda: now[0])
     state = {"count": 0}
@@ -50,8 +51,48 @@ def test_monitor_reports_changes_and_periodic_wait_without_metadata_dump(monkeyp
     _job_monitor_callback(None, "job-id", meta, cb_run_counter=state)
     output = capsys.readouterr().out
     assert output.count("Job ID:") == 1
-    assert output.count("Job status: RUNNING") == 2
-    assert "15s monitored" in output
+    assert output.count("Job status: RUNNING") == 1
+    assert "15s monitored" not in output
     assert "Job status: FINISHED:COMPLETED" in output
     assert "resource_spec" not in output
     assert "deploy_map" not in output
+
+
+def test_progress_monitor_replays_new_records_and_retries_partial_lines(monkeypatch, capsys):
+    now = [0]
+    monkeypatch.setattr("nvflare.recipe.session_mgr.time.monotonic", lambda: now[0])
+    session = MagicMock()
+    start = json.dumps({"fullName": "nvflare.metrics.progress", "message": "Round 1/3 | training"})
+    metric = json.dumps({"fullName": "nvflare.metrics.progress", "message": "site-1 | loss=0.25"})
+    noise = json.dumps({"fullName": "custom.trainer", "message": "raw model weights"})
+    state = {"count": 0, "progress": {"seen": set()}}
+    meta = {"status": "RUNNING"}
+    session.get_job_logs.return_value = {"logs": {"server": start + "\n" + noise + "\n" + metric[:20]}}
+    _job_monitor_callback(session, "job-id", meta, cb_run_counter=state)
+    now[0] = 1
+    _job_monitor_callback(session, "job-id", meta, cb_run_counter=state)
+    assert session.get_job_logs.call_count == 1
+    now[0] = 5
+    session.get_job_logs.return_value = {"logs": {"server": start + "\n" + metric}}
+    _job_monitor_callback(session, "job-id", meta, cb_run_counter=state)
+    # Completion forces a final retrieval even before the five-second interval.
+    now[0] = 6
+    meta["status"] = "FINISHED:COMPLETED"
+    _job_monitor_callback(session, "job-id", meta, cb_run_counter=state)
+    output = capsys.readouterr().out
+    assert output.count("Round 1/3 | training") == 1
+    assert output.count("site-1 | loss=0.25") == 1
+    assert "raw model weights" not in output
+    assert session.get_job_logs.call_count == 3
+
+
+def test_progress_unavailable_does_not_stop_job_monitoring(monkeypatch, capsys):
+    now = [0]
+    monkeypatch.setattr("nvflare.recipe.session_mgr.time.monotonic", lambda: now[0])
+    session = MagicMock()
+    session.get_job_logs.side_effect = RuntimeError("server temporarily unreachable")
+    state = {"count": 0, "progress": {"seen": set()}}
+    for tick in (0, 5, 10):
+        now[0] = tick
+        assert _job_monitor_callback(session, "job-id", {"status": "RUNNING"}, cb_run_counter=state)
+    assert capsys.readouterr().out.count("Live progress could not be retrieved") == 1

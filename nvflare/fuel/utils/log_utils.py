@@ -19,6 +19,7 @@ import logging.config
 import os
 import re
 import sys
+import textwrap
 from logging import Logger
 from logging.handlers import RotatingFileHandler
 from typing import Union
@@ -35,6 +36,7 @@ class LogMode:
     CONCISE = "concise"
     MSG_ONLY = "msg_only"
     VERBOSE = "verbose"
+    PROGRESS = "progress"
 
 
 # Predefined log dicts based from DEFAULT_LOG_JSON
@@ -63,11 +65,21 @@ verbose_log_dict["formatters"]["consoleFormatter"][
 ] = "%(asctime)s - %(identity)s - %(fullName)s - %(levelname)s - %(fl_ctx)s - %(message)s"
 verbose_log_dict["loggers"]["root"]["level"] = "DEBUG"
 
+# A focused view using ordinary log records. Detailed file handlers are unchanged.
+progress_log_dict = copy.deepcopy(default_log_dict)
+progress_log_dict["formatters"]["progressFormatter"] = {"()": "nvflare.fuel.utils.log_utils.ProgressFormatter"}
+progress_log_dict["filters"]["ProgressFilter"] = {"()": "nvflare.fuel.utils.log_utils.ProgressLogFilter"}
+for handler_name in ("consoleHandler", "FLFileHandler"):
+    progress_log_dict["handlers"][handler_name]["formatter"] = "progressFormatter"
+    progress_log_dict["handlers"][handler_name]["filters"] = ["ProgressFilter"]
+
+
 logmode_config_dict = {
     LogMode.FULL: default_log_dict,
     LogMode.CONCISE: concise_log_dict,
     LogMode.MSG_ONLY: msg_only_log_dict,
     LogMode.VERBOSE: verbose_log_dict,
+    LogMode.PROGRESS: progress_log_dict,
 }
 
 
@@ -297,6 +309,33 @@ class LoggerNameFilter(logging.Filter):
 
     def matches_name(self, name, logger_names) -> bool:
         return any(name.startswith(logger_name) or name.split(".")[-1] == logger_name for logger_name in logger_names)
+
+
+class ProgressLogFilter(logging.Filter):
+    """Select workflow progress plus warnings/errors for the human-readable view."""
+
+    def filter(self, record):
+        name = getattr(record, "fullName", record.name)
+        return record.levelno > logging.INFO or name.endswith(".progress")
+
+
+class ProgressFormatter(logging.Formatter):
+    """Format the focused console and FL log without changing diagnostic records."""
+
+    def format(self, record):
+        # BaseFormatter carries per-record state; keep it local when this formatter
+        # is shared by the console and FL-file handlers.
+        base = BaseFormatter("%(message)s")
+        message = base.format(record)
+        if record.levelno > logging.INFO:
+            name = getattr(record, "fullName", record.name).split(".")[-1]
+            identity = getattr(base.record, "identity", "")
+            source = f"{identity}/{name}" if identity else name
+            message = f"{record.levelname} ({source}): {message}"
+        return "\n".join(
+            textwrap.fill(line, width=80, subsequent_indent="    ", replace_whitespace=False) if line else ""
+            for line in message.splitlines()
+        )
 
 
 class ConciseLogFilter(LoggerNameFilter):

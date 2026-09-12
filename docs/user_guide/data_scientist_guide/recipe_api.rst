@@ -546,9 +546,9 @@ Following a Run
 
 Recipe execution identifies the job and execution environment before deployment.
 Simulation also prints its workspace location. POC and production monitoring show
-status changes and a waiting update at approximately 15-second intervals while
-monitoring callbacks continue. These messages use the existing monitoring calls;
-they do not add polling or guarantee updates while a network request is blocked.
+status changes without repeating normal waiting messages. The optional progress
+view described below also retrieves round and metric messages from existing
+server logs while monitoring callbacks continue.
 
 ``run.get_result()`` reports the framework job status and result workspace after
 stopping the environment. A failed job can still return a workspace containing
@@ -570,6 +570,50 @@ existing summary and round files when the summary is written. See
 are not necessarily an evaluation of the final saved model. Cross-site evaluation
 uses its own existing report; jobs without aggregation metrics do not produce an
 aggregation summary.
+
+Focused Progress View
+---------------------
+
+To focus on round progress and results, use the existing logging configuration
+with the ``progress`` mode:
+
+.. code-block:: bash
+
+   FL_LOG_LEVEL=progress python job.py
+
+For a simulation you can also set ``SimEnv(log_config="progress", ...)``.
+This is an opt-in view; the existing ``concise``, ``msg_only``, ``full``, and
+``verbose`` modes remain available.
+
+The console and ``log_fl.txt`` show readable progress messages and warnings/errors,
+with display lines wrapped to 80 characters. Detailed application prints, epoch
+logs, model arrays, and framework messages remain in ``log.txt`` and ``log.json``
+at the configured log level. Normal in-process client shutdown at ``END_RUN`` is
+logged at INFO; other stop reasons still produce warnings.
+
+The existing metrics writer reports round starts, each client's reported metrics,
+and aggregated metrics as they arrive. The aggregation-finished message measures
+time since round start; it does not claim model persistence or overall job success.
+Metric names, units, and evaluation timing are defined by the job. Displayed
+numbers are rounded for readability; artifact values are unchanged. Structured
+metric values are identified and remain available in the artifacts.
+
+Model evaluation is presented separately by the existing evaluation workflow,
+including the site and model for each result. A reported training metric is not
+relabelled as an evaluation of the final saved model. Jobs that do not use these
+reporting components still have job-status and diagnostic output, but do not
+acquire synthetic training rounds or metrics.
+
+With ``FL_LOG_LEVEL=progress`` in the submitting process, POC and production use
+the same monitor to retrieve existing server ``log.json`` records at most once
+per five seconds during normal callbacks, plus a final read on a status change.
+Already displayed records are not repeated. This uses the existing log API, not
+a new transport or a background thread. It is best-effort progress: network calls
+can delay updates, unavailable logs do not stop monitoring, and client-local
+warnings require the existing client-log collection/streaming configuration to
+be visible from the server. The server must run the updated reporting components.
+For long-running jobs, the existing API retrieves log snapshots rather than
+incremental ranges; this view does not add a new log storage or cursor protocol.
 
 What You Can Rely On
 --------------------
