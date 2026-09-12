@@ -15,27 +15,15 @@
 import copy
 import json
 import time
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import jwt
 import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
 
-from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import FLContextKey
-from nvflare.apis.fl_context import FLContext
-from nvflare.apis.fl_exception import NotAuthenticated
-from nvflare.app_opt.confidential_computing.cc_authorizer import CCTokenGenerateError, CCTokenVerifyError
-from nvflare.app_opt.confidential_computing.cc_manager import CC_INFO, CC_NAMESPACE, CC_TOKEN, CCManager
-from nvflare.app_opt.confidential_computing.coco_authorizer import (
-    COCO_NAMESPACE,
-    EAT_PROFILE,
-    TRUST_VECTOR,
-    CoCoAuthorizer,
-)
-from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
-from nvflare.private.defs import ClientType
+from nvflare.app_opt.confidential_computing.cc_authorizer import CCTokenGenerateError
+from nvflare.app_opt.confidential_computing.coco_authorizer import EAT_PROFILE, TRUST_VECTOR, CoCoAuthorizer
 
 
 @pytest.fixture(params=["rsa", "ec"])
@@ -86,7 +74,7 @@ def material(request):
         "audience": "nvflare-coco:test",
     }
     client = CoCoAuthorizer(**args, site_name="site-1")
-    verifier = CoCoAuthorizer(**args, expected_workloads={"site-1": expected})
+    verifier = CoCoAuthorizer(**args)
 
     def generate():
         reply = {
@@ -105,12 +93,9 @@ def test_valid_proof_and_single_use(material):
     _, _, verifier, generate, _ = material
     token = generate()
     assert "PRIVATE KEY" not in token
-    assert verifier.verify_for_site(token, "site-1")
-    with pytest.raises(CCTokenVerifyError):
-        verifier.verify_for_site(token, "site-1")
-    assert verifier.verify_for_site(generate(), "site-1")
-    with pytest.raises(CCTokenVerifyError):
-        verifier.verify(token)
+    assert verifier.verify(token)
+    assert not verifier.verify(token)
+    assert verifier.verify(generate())
     with pytest.raises(CCTokenGenerateError):
         verifier.generate()
 
@@ -139,32 +124,26 @@ def test_bad_ear_rejected(material, failure):
         generate()
 
 
-@pytest.mark.parametrize("failure", ["initdata", "image", "command", "site", "audience", "signature", "time"])
-def test_invalid_workload_or_proof_rejected(material, failure):
-    claims, _, verifier, generate, key = material
-    cpu = claims["submods"]["cpu0"]
-    if failure == "initdata":
-        cpu["ear.veraison.annotated-evidence"]["init_data"] = "c" * 64
-    elif failure == "image":
-        cpu["ear.trustee.identifiers"]["validated"]["container_images"] = []
-    elif failure == "command":
-        cpu["ear.veraison.annotated-evidence"]["init_data_claims"]["agent_policy_claims"]["containers"][0]["OCI"][
-            "Process"
-        ]["Args"] = ["/bin/sh"]
+@pytest.mark.parametrize("failure", ["subject", "audience", "signature", "time", "ear_signature"])
+def test_invalid_proof_rejected(material, failure):
+    _, _, verifier, generate, key = material
     token = generate()
-    site = "site-2" if failure == "site" else "site-1"
     if failure == "audience":
         verifier.audience = "nvflare-coco:another-project"
-    elif failure in ("signature", "time"):
+    else:
         proof = jwt.decode(token, options={"verify_signature": False})
         if failure == "signature":
             key = ec.generate_private_key(ec.SECP256R1())
-        else:
+        elif failure == "subject":
+            proof["sub"] = ""
+        elif failure == "time":
             proof["iat"] -= 120
             proof["exp"] -= 120
+        else:
+            claims = jwt.decode(proof["ear"], options={"verify_signature": False})
+            proof["ear"] = jwt.encode(claims, ec.generate_private_key(ec.SECP256R1()), algorithm="ES256")
         token = jwt.encode(proof, key, algorithm=CoCoAuthorizer._algorithm(key))
-    with pytest.raises(CCTokenVerifyError, match="rejected"):
-        verifier.verify_for_site(token, site)
+    assert not verifier.verify(token)
 
 
 def test_guest_api_redacted_failure(material):
@@ -220,73 +199,3 @@ def test_nonlocal_or_ambiguous_endpoint_rejected(material, url):
     ).decode()
     with pytest.raises(ValueError):
         CoCoAuthorizer(public, "test", token_url=url)
-
-
-def strict_manager():
-    manager = CCManager([], ["coco"], cc_enabled_sites=["site-1"], required_namespaces=[COCO_NAMESPACE])
-    manager.cc_verifiers[COCO_NAMESPACE] = Mock()
-    return manager
-
-
-@pytest.mark.parametrize(
-    "info",
-    [
-        None,
-        {},
-        {"site-2": []},
-        {"site-1": []},
-        {"site-1": [{}]},
-        {"site-1": [{CC_NAMESPACE: []}]},
-        {"site-1": "malformed"},
-    ],
-)
-def test_registration_must_prove_authenticated_site(info):
-    manager = strict_manager()
-    ctx, peer = FLContext(), FLContext()
-    ctx.set_prop(FLContextKey.CLIENT_NAME, "site-1")
-    ctx.set_prop(FLContextKey.CLIENT_TYPE, ClientType.ADMIN)  # cannot bypass a protected client's attestation
-    peer.set_prop(CC_INFO, info)
-    ctx.set_peer_context(peer)
-    with pytest.raises(NotAuthenticated):
-        manager.handle_event(EventType.CLIENT_REGISTER_RECEIVED, ctx)
-
-
-def test_site_bound_verification_and_ordinary_client():
-    manager = strict_manager()
-    ctx, peer = FLContext(), FLContext()
-    ctx.set_prop(FLContextKey.CLIENT_NAME, "site-1")
-    peer.set_prop(CC_INFO, {"site-1": [{CC_NAMESPACE: COCO_NAMESPACE, CC_TOKEN: "proof"}]})
-    ctx.set_peer_context(peer)
-    manager._validate_client_tokens(ctx)
-    manager.cc_verifiers[COCO_NAMESPACE].verify_for_site.assert_called_once_with("proof", "site-1")
-    ctx.set_prop(FLContextKey.CLIENT_NAME, "plain-client")
-    ctx.set_peer_context(None)
-    manager._validate_client_tokens(ctx)
-
-
-def test_issuer_only_does_not_validate_ordinary_server():
-    manager = CCManager([], [], verify_peer_tokens=False)
-    with (
-        patch.object(manager, "_validate_server_tokens") as verify,
-        patch.object(manager, "_start_cross_site_validation") as start,
-        patch.object(manager, "_register_cc_handlers") as register,
-    ):
-        manager.handle_event(EventType.AFTER_CLIENT_REGISTER, FLContext())
-        manager.handle_event(EventType.SYSTEM_START, FLContext())
-    verify.assert_not_called()
-    start.assert_not_called()
-    register.assert_called_once()
-
-
-def test_polling_rejects_wrong_response_identity():
-    manager = strict_manager()
-    manager.site_name = "server"
-    ctx = Mock()
-    response = Mock(payload={"site_name": "plain-client", "cc_info": [{CC_NAMESPACE: COCO_NAMESPACE, CC_TOKEN: "x"}]})
-    response.get_header.side_effect = lambda name, *args: (
-        ReturnCode.OK if name == MessageHeaderKey.RETURN_CODE else None
-    )
-    ctx.get_engine().get_cell().send_request.return_value = response
-    with patch.object(manager, "_get_all_cc_enabled_sites", return_value=[("site-1", "site-1")]):
-        with pytest.raises(RuntimeError, match="Failed to collect"):
-            manager._collect_all_site_tokens(ctx)

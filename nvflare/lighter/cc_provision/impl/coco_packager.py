@@ -14,9 +14,6 @@
 
 """Package signed client kits using the trusted provisioning-node CoCo workflow."""
 
-import base64
-import gzip
-import hashlib
 import json
 import os
 import re
@@ -94,7 +91,6 @@ class CoCoPackager(Packager):
             source.rename(owner / "startup-kit")
             (owner / "startup-kit").chmod(0o700)
 
-        bindings = {}
         for participant, config_path, config in selected:
             owner = private / participant.name
             try:
@@ -110,14 +106,6 @@ class CoCoPackager(Packager):
                 if not pod.is_absolute() or pod.is_symlink() or not pod.is_file():
                     raise ValueError("Build result must name an absolute regular Pod YAML")
                 self.validate_pod(pod, config)
-                data = yaml.safe_load(pod.read_text())
-                annotation = data["metadata"]["annotations"]["io.katacontainers.config.hypervisor.cc_init_data"]
-                raw = gzip.decompress(base64.b64decode(annotation, validate=True))
-                bindings[participant.name] = {
-                    "init_data": hashlib.sha256(raw).hexdigest(),
-                    "image": data["spec"]["containers"][0]["image"],
-                    "args": COMMAND,
-                }
                 public = result / participant.name
                 public.mkdir(mode=0o755)
                 shutil.copyfile(pod, public / f'{config["release_name"]}-pod.yaml')
@@ -125,12 +113,6 @@ class CoCoPackager(Packager):
             except Exception:
                 ctx.error(f"CoCo packaging failed for {participant.name}; private recovery inputs retained at {owner}")
                 raise
-        # Only the trusted, non-confidential server needs all final image and
-        # InitData pins. Embedding those in clients would create a hash cycle.
-        target = result / project.get_server().name / "local/coco_authorizer__p_resources.json"
-        configuration = json.loads(target.read_text())
-        configuration["components"][0]["args"]["expected_workloads"] = bindings
-        target.write_text(json.dumps(configuration, indent=2) + "\n")
 
     def prepare(self, owner, config_path, config):
         base = config_path.parent

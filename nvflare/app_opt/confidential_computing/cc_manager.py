@@ -23,7 +23,6 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.fl_exception import NotAuthenticated
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.app_opt.confidential_computing.cc_authorizer import CCAuthorizer, CCTokenGenerateError, CCTokenVerifyError
 from nvflare.fuel.f3.cellnet.core_cell import make_reply
@@ -64,8 +63,6 @@ class CCManager(FLComponent):
         cc_enabled_sites: list[str] = [],
         get_site_request_timeout: float = 10.0,
         get_token_request_timeout: float = 10.0,
-        verify_peer_tokens: bool = True,
-        required_namespaces: list[str] = None,
     ):
         """Manage all confidential computing related tasks.
 
@@ -103,16 +100,12 @@ class CCManager(FLComponent):
             cc_enabled_sites: list of sites that are enabled for CC
             get_site_request_timeout: timeout value for get site request
             get_token_request_timeout: timeout value for get token request
-            verify_peer_tokens: False for issuer-only clients with an ordinary FL server.
-            required_namespaces: Require exactly these token namespaces and bind verification to the FL site.
         """
         FLComponent.__init__(self)
         self.site_name = None
         self.cc_issuers_conf = cc_issuers_conf
         self.cc_verifier_ids = cc_verifier_ids
         self.cc_enabled_sites = cc_enabled_sites
-        self.verify_peer_tokens = verify_peer_tokens
-        self.required_namespaces = set(required_namespaces or [])
 
         if not isinstance(verify_frequency, int):
             raise ValueError(f"verify_frequency must be int, but got {type(verify_frequency).__name__}")
@@ -151,15 +144,12 @@ class CCManager(FLComponent):
             self._generate_and_attach_tokens(fl_ctx)
         elif event_type == EventType.AFTER_CLIENT_REGISTER:
             # Client side: validate server's CC token
-            if self.verify_peer_tokens:
-                self._validate_server_tokens(fl_ctx)
+            self._validate_server_tokens(fl_ctx)
         elif event_type == EventType.CLIENT_REGISTER_RECEIVED:
             # Server side: validate client's token and prepare server's token
             # Skip CC processing for admin clients
             client_type = fl_ctx.get_prop(FLContextKey.CLIENT_TYPE)
-            if client_type == ClientType.ADMIN and not (
-                self.required_namespaces and fl_ctx.get_prop(FLContextKey.CLIENT_NAME) in self.cc_enabled_sites
-            ):
+            if client_type == ClientType.ADMIN:
                 self.logger.info(f"Skipping CC validation for admin client (type={client_type})")
                 return
 
@@ -193,8 +183,7 @@ class CCManager(FLComponent):
         elif event_type == EventType.SYSTEM_START:
             # Register CC validation channel handlers and start validation
             self._register_cc_handlers(fl_ctx)
-            if self.verify_peer_tokens:
-                self._start_cross_site_validation(fl_ctx)
+            self._start_cross_site_validation(fl_ctx)
         elif event_type == EventType.SYSTEM_END:
             # Stop cross-site validation
             self._stop_cross_site_validation()
@@ -217,8 +206,6 @@ class CCManager(FLComponent):
             if namespace in self.cc_verifiers.keys():
                 raise RuntimeError(f"Authorizer with namespace: {namespace} already exist.")
             self.cc_verifiers[namespace] = verifier
-        if not self.required_namespaces.issubset(self.cc_verifiers):
-            raise RuntimeError("Required CC token namespace has no verifier")
 
     def _generate_and_attach_tokens(self, fl_ctx: FLContext):
         """Generate and attach CC tokens for sending to peer."""
@@ -240,26 +227,6 @@ class CCManager(FLComponent):
     def _validate_client_tokens(self, fl_ctx: FLContext):
         """Validate the client's CC info during registration."""
         peer_ctx = fl_ctx.get_peer_context()
-        if self.required_namespaces:
-            # The same request identity is subsequently authenticated against
-            # the client's certificate by ClientManager.authenticate.
-            site = fl_ctx.get_prop(FLContextKey.CLIENT_NAME)
-            if not site:
-                raise NotAuthenticated("Missing FL client identity")
-            if site not in self.cc_enabled_sites:
-                return
-            try:
-                info = peer_ctx.get_prop(CC_INFO) if peer_ctx else None
-                if not isinstance(info, dict) or set(info) != {site}:
-                    raise CCTokenVerifyError("CC token identity does not match registering client")
-                if self._validate_participants_tokens(info):
-                    raise CCTokenVerifyError(CC_VERIFICATION_FAILED)
-            except Exception:
-                # Event exceptions other than NotAuthenticated do not reject
-                # registration. Convert malformed peer data as well as failed
-                # appraisals into the authentication boundary's denial type.
-                raise NotAuthenticated(CC_VERIFICATION_FAILED) from None
-            return
         if not peer_ctx:
             msg = "No peer context!"
             self.logger.error(msg)
@@ -324,23 +291,12 @@ class CCManager(FLComponent):
             if not cc_info:  # a cc-enabled site does not have any cc_info
                 invalid_participant_list.append(k + " namespace: {None} ")
                 continue
-            if self.required_namespaces and (
-                not isinstance(cc_info, list)
-                or any(not isinstance(v, dict) for v in cc_info)
-                or len(cc_info) != len(self.required_namespaces)
-                or {v.get(CC_NAMESPACE) for v in cc_info} != self.required_namespaces
-            ):
-                invalid_participant_list.append(k + " required namespaces missing or malformed")
-                continue
             for v in cc_info:
                 token = v.get(CC_TOKEN, "")
                 namespace = v.get(CC_NAMESPACE, "")
                 verifier = self.cc_verifiers.get(namespace, None)
                 try:
-                    valid = verifier and (
-                        verifier.verify_for_site(token, k) if self.required_namespaces else verifier.verify(token)
-                    )
-                    if valid:
+                    if verifier and verifier.verify(token):
                         result[k + "." + namespace] = True
                     else:
                         invalid_participant_list.append(k + " namespace: {" + namespace + "}")
@@ -542,7 +498,6 @@ class CCManager(FLComponent):
         all_sites = self._get_all_cc_enabled_sites(fl_ctx)
         # use FQCN
         other_sites = [site[0] for site in all_sites if site[1] != self.site_name]
-        expected_sites = dict(all_sites)
 
         if not other_sites:
             self.logger.info("No other sites for validation, only this site")
@@ -573,8 +528,6 @@ class CCManager(FLComponent):
                         if isinstance(payload, dict):
                             site_name = payload.get("site_name")
                             cc_info = payload.get("cc_info")
-                            if self.required_namespaces and site_name != expected_sites[target_site]:
-                                raise CCTokenVerifyError("CC response identity does not match requested site")
                             if site_name and cc_info:
                                 all_tokens[site_name] = cc_info
                                 self.logger.info(f"Received fresh token from site {site_name}")

@@ -1,8 +1,8 @@
 # CoCo clients with an ordinary NVFlare server
 
 There are two separate enforcement points. KBS releases an image key only when
-its resource policy permits it. NVFlare's server-side CCManager subsequently
-admits and periodically checks the running FL client. CCManager cannot replace
+its resource policy permits it. NVFlare's CCManager on every participant then
+periodically verifies tokens from all protected participants. CCManager cannot replace
 KBS policy, genpolicy, image signing/encryption, or approved platform references.
 
 ## Before provisioning
@@ -73,15 +73,14 @@ The signed, encrypted client kit contains these additional files:
 
 | File under `local/` | Client configuration | Ordinary server configuration |
 | --- | --- | --- |
-| `coco_authorizer__p_resources.json` | Pinned public key, project audience, site name, loopback API, EAR age limit | Same public key and audience; final per-site InitData SHA-256, encrypted image digest reference, exact startup command |
-| `cc_manager__p_resources.json` | `cc_issuers_conf` names `coco_authorizer`; no verifiers; `verify_peer_tokens: false` | No issuers; verifier `coco_authorizer`; `required_namespaces: ["x-trustee-coco"]`; protected client list |
+| `coco_authorizer__p_resources.json` | Pinned public key, project audience, site name, loopback API, EAR age limit | Same pinned public key, audience, and EAR age limit |
+| `cc_manager__p_resources.json` | `coco_authorizer` is both issuer and verifier; protected client list | No issuers; verifier `coco_authorizer`; protected client list |
 
 NVFlare loads these component fragments alongside `resources.json.default`.
 The ordinary server is not marked CC-enabled and does not request a guest token.
 It continues authenticating with the usual FL certificates. Ordinary clients
-can coexist; only the configured protected client identities require CoCo proofs.
-Deploy the **completed** server kit after image packaging fills in all final
-workload pins. Server configuration is trusted and must not be editable by CoCo IT.
+can coexist; all configured protected participants generate proofs and verify
+one another, while the ordinary server verifies every protected client.
 
 `token_expiration` is the maximum accepted EAR age (1–300 seconds), not a
 request to change AS token lifetime. `check_frequency` must be positive and
@@ -98,36 +97,33 @@ a new hardware attestation at every poll. Too-old or expired EAR fails closed.
    CPU `runtime_data_claims.tee-pubkey`, then signs a short-lived proof containing
    the EAR, FL site, project-specific audience, issue/expiry times, and random
    single-use identifier. The private key stays in process memory.
-3. The server verifies the EAR signature, then that proof using the attested TEE
-   public key. It checks the FL site against the same registration identity
-   subsequently verified by NVFlare certificate authentication, or against the
-   registered site's identity when polling. Self-declared payload names cannot
-   replace that identity. Missing, duplicate, unexpected, and malformed token
-   namespaces reject registration.
+3. Every participant verifies the EAR signature and then verifies the proof
+   using the public key authenticated by that EAR. The proof must have the
+   project-specific audience, a non-empty subject, a short lifetime, and a
+   previously unseen identifier.
 4. Both `cpu0` and `gpu0`, and no other submods, must carry this exact vector:
    `executables=3`, `hardware=2`, `configuration=3`, and `file-system`,
    `instance-identity`, `runtime-opaque`, `storage-opaque`, `sourced-data` all `0`.
    These checks match this kit's KBS resource policy; they are not universal
    success thresholds for every Trustee policy.
-5. The signed CPU claims must match the approved InitData hash, validated image
-   reference, and command from the final Pod. The server also rejects an expired
-   proof or an already-seen proof identifier. Its bounded in-memory replay cache
-   resets on restart; this is not a durable replay ledger or a server-challenge
-   protocol. Keep FL mTLS enabled and credentials inside the encrypted image.
+5. Each verifier rejects an expired proof or an already-seen proof identifier.
+   Its bounded in-memory replay cache resets on restart; this is not a durable
+   replay ledger or a server-challenge protocol. Keep FL mTLS enabled and
+   credentials inside the encrypted image.
 6. Registration failure rejects that client. Periodic validation failure invokes
    CCManager's existing shutdown behavior; do not treat attestation outages as
    harmless warnings. The cluster owner can still deny service or stop a Pod.
 
 The signed-claim contract follows [Trustee's EAR documentation](https://github.com/confidential-containers/trustee/blob/main/attestation-service/docs/attestation_token.md).
 An incompatible token format or policy fails closed rather than silently
-accepting missing GPU/workload claims. Proof of possession prevents forwarding
+accepting missing CPU/GPU appraisal claims. Proof of possession prevents forwarding
 an EAR alone from satisfying NVFlare; it does not make arbitrary trusted
 application code safe or replace the guest policy's isolation protections.
 
 ## Verification status
 
 Offline tests cover real cryptographic signatures, RSA/EC TEE proof keys,
-expiry/replay/identity failures, CPU/GPU/workload claim mismatches, strict
-registration, and actual startup-kit provisioning with a mocked image runner.
+expiry/replay failures, CPU/GPU appraisal failures, and actual startup-kit
+provisioning with a mocked image runner.
 They do not establish REST availability in the pinned guest image or constitute
 an end-to-end hardware-attested FL run. No remote runtime is changed by these tests.
