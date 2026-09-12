@@ -40,6 +40,11 @@ def test_numpy_example_gets_shared_reporting_without_example_changes(tmp_path):
     assert completed.returncode == 0, output
     assert "Executing job 'hello-numpy' with SimEnv" in output
     assert "Training round 1/1 started" in output
+    for site in ("site-1", "site-2"):
+        assert f"Client {site}, current_round=0" in output
+        assert f"Client {site} evaluation metrics:" in output
+        assert f"Client {site} finished training for round 0" in output
+    assert "Aggregated 2/2 results" in output
     assert "Job hello-numpy status: FINISHED:COMPLETED" in output
     assert f"Result workspace: {tmp_path / 'hello-numpy'}" in output
     assert "Aggregated metrics summary:" in output
