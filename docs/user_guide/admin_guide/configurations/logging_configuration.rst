@@ -330,8 +330,10 @@ This argument can be any of the following:
 - predefined console :class:`LogMode<nvflare.fuel.utils.log_utils.LogMode>` (``concise``, ``msg_only``, ``full``, ``verbose``)
 
     - ``concise`` (default for simulator mode): workflow progress and metrics,
-      plus warnings and errors, formatted for reading in the console and ``log_fl.txt``.
-      Other file handlers keep detailed logs. Built-in aggregation and evaluation writers
+      plus warnings and errors. The existing console formatter shows messages only;
+      ``log_fl.txt`` keeps its timestamped file formatter. The existing filter selects
+      the ordinary reporting component loggers; no separate progress mode or formatter
+      is installed. Other file handlers keep detailed logs. Built-in aggregation and evaluation writers
       supply these messages; arbitrary client prints remain in diagnostic logs.
       Server setup supplies ``MetricsArtifactWriter`` when no writer is configured,
       so ordinary FedJob and JSON jobs also report round events and save metric artifacts.

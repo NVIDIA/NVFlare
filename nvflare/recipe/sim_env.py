@@ -26,7 +26,7 @@ from nvflare.app_common.default_component_policy import DEFAULT_CLASS_ALLOW_LIST
 from nvflare.app_common.widgets.component_path_authorizer import CLASS_ALLOW_LIST
 from nvflare.job_config.api import FedJob
 from nvflare.recipe._failure_summary import failure_summary
-from nvflare.recipe._run_summary import run_context, summary_header
+from nvflare.recipe._run_summary import _print_output, run_context, summary_header
 
 from .spec import ExecEnv
 from .utils import collect_non_local_scripts
@@ -133,7 +133,7 @@ class SimEnv(ExecEnv):
                 )
 
             workspace = os.path.join(self.workspace_root, job_id)
-            print(f"Simulation · {self.num_clients} clients", flush=True)
+            _print_output(f"Simulation · {self.num_clients} clients", flush=True)
             self._ensure_default_component_policy(workspace)
             run_status = job.simulator_run(
                 workspace=workspace,
@@ -194,7 +194,7 @@ class SimEnv(ExecEnv):
 
     def abort_job(self, job_id: str) -> None:
         """Abort job - not supported in simulation environment."""
-        print("abort is not supported in a simulation environment, it will always run to completion.")
+        _print_output("abort is not supported in a simulation environment, it will always run to completion.")
 
     def get_job_result(self, job_id: str, timeout: float = 0.0) -> Optional[str]:
         """Get job result workspace path."""

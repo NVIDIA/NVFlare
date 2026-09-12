@@ -23,9 +23,17 @@ from typing import Dict, Optional
 from nvflare.fuel.flare_api.api_spec import MonitorReturnCode
 from nvflare.fuel.flare_api.flare_api import Session, _job_status_outcome, new_secure_session
 from nvflare.fuel.utils.job_secret_scanner import warn_on_potential_secrets_in_job_dir
-from nvflare.fuel.utils.log_utils import FL_LOG_LEVEL, LogMode, ProgressFormatter, get_module_logger
+from nvflare.fuel.utils.log_utils import (
+    FL_LOG_LEVEL,
+    ColorFormatter,
+    LoggerNameFilter,
+    LogMode,
+    concise_log_dict,
+    get_module_logger,
+)
 from nvflare.job_config.api import FedJob
 from nvflare.recipe._failure_summary import collect_client_errors
+from nvflare.recipe._run_summary import _print_output
 
 
 def _show_job_progress(session, job_id, state):
@@ -33,7 +41,9 @@ def _show_job_progress(session, job_id, state):
     try:
         response = session.get_job_logs(job_id, target="server", log_file_name="log.json", tail_lines=200)
         logs = response.get("logs", {})
-        formatter = ProgressFormatter()
+        formatter = ColorFormatter(fmt=concise_log_dict["formatters"]["consoleFormatter"]["fmt"])
+        filter_config = concise_log_dict["filters"]["ConciseFilter"]
+        log_filter = LoggerNameFilter(**{key: value for key, value in filter_config.items() if key != "()"})
         recent = set()
         # The existing API caps the transfer at 5 MiB. Bound parsing and retained
         # state independently: only the server's last 64 KiB / 200 lines.
@@ -50,7 +60,8 @@ def _show_job_progress(session, job_id, state):
             level = record.get("levelname", "INFO")
             if not isinstance(name, str) or not isinstance(level, str):
                 continue
-            if not name.endswith(".progress") and level not in ("WARNING", "ERROR", "CRITICAL"):
+            log_record = logging.LogRecord(name, getattr(logging, level, logging.INFO), "", 0, "", (), None)
+            if not log_filter.filter(log_record):
                 continue
             already_shown = digest in state["seen"] or digest in recent
             recent.add(digest)
@@ -60,12 +71,12 @@ def _show_job_progress(session, job_id, state):
             context = record.get("fl_ctx", "")
             if isinstance(context, str) and context:
                 message = f"{context}: {message}"
-            log_record = logging.LogRecord(name, getattr(logging, level, logging.INFO), "", 0, message, (), None)
-            print(formatter.format(log_record), flush=True)
+            log_record.msg = message
+            _print_output(formatter.format(log_record), flush=True)
         state["seen"] = recent
     except Exception as ex:
         if not state.get("warned"):
-            print("Live progress could not be retrieved. Detailed logs remain on the server.", flush=True)
+            _print_output("Live progress could not be retrieved. Detailed logs remain on the server.", flush=True)
             state["warned"] = True
         get_module_logger().debug("Could not retrieve progress for %s: %s", job_id, ex)
 
@@ -77,16 +88,16 @@ def _job_monitor_callback(session: Session, job_id: str, job_meta, *cb_args, **c
     status = job_meta["status"]
     if state["count"] == 0:
         state["started"] = now
-        print(f"Job ID: {job_id}", flush=True)
+        _print_output(f"Job ID: {job_id}", flush=True)
     changed = state["count"] == 0 or status != state.get("status")
     if "progress" in state and (changed or now - state["last_progress"] >= 5):
         _show_job_progress(session, job_id, state["progress"])
         state["last_progress"] = now
     if changed:
-        print(f"Job status: {status} ({now - state['started']:.0f}s monitored)", flush=True)
+        _print_output(f"Job status: {status} ({now - state['started']:.0f}s monitored)", flush=True)
         state["status"] = status
         if os.environ.get(FL_LOG_LEVEL, LogMode.CONCISE) in (LogMode.FULL, LogMode.VERBOSE):
-            print(f"Job metadata: {job_meta}", flush=True)
+            _print_output(f"Job metadata: {job_meta}", flush=True)
         else:
             get_module_logger().debug("Job metadata: %s", job_meta)
     state["count"] += 1
@@ -119,7 +130,7 @@ class SessionManager:
                 job_id = sess.submit_job(job_path)
             finally:
                 sess.close()
-            print(f"Submitted job '{job.name}' with ID: {job_id}")
+            _print_output(f"Submitted job '{job.name}' with ID: {job_id}")
             return job_id
 
     def get_job_status(self, job_id: str) -> Optional[str]:
@@ -133,7 +144,7 @@ class SessionManager:
         """Abort the running job."""
         sess = self._get_session()
         msg = sess.abort_job(job_id)
-        print(f"Job {job_id} aborted successfully with message: {msg}")
+        _print_output(f"Job {job_id} aborted successfully with message: {msg}")
         sess.close()
 
     def get_job_result(self, job_id: str, timeout: float = 0.0) -> Optional[str]:
@@ -144,7 +155,7 @@ class SessionManager:
             cb_run_counter["progress"] = {"seen": set()}
         rc = sess.monitor_job(job_id, timeout=timeout, cb=_job_monitor_callback, cb_run_counter=cb_run_counter)
         if rc == MonitorReturnCode.JOB_FINISHED:
-            print("Downloading job results...", flush=True)
+            _print_output("Downloading job results...", flush=True)
             result = sess.download_job_result(job_id)
             if result and _job_status_outcome(cb_run_counter.get("status")) == "failed":
                 try:
@@ -154,11 +165,11 @@ class SessionManager:
             sess.close()
             return result
         elif rc == MonitorReturnCode.TIMEOUT:
-            print(f"Monitoring job {job_id} timed out after {timeout} seconds. No results were downloaded.")
+            _print_output(f"Monitoring job {job_id} timed out after {timeout} seconds. No results were downloaded.")
             sess.close()
             return None
         elif rc == MonitorReturnCode.ENDED_BY_CB:
-            print("Job monitoring was stopped early by callback. No results were downloaded.")
+            _print_output("Job monitoring was stopped early by callback. No results were downloaded.")
             sess.close()
             return None
         else:

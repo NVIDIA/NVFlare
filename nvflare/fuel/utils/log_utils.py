@@ -45,15 +45,17 @@ with open(os.path.join(os.path.dirname(__file__), DEFAULT_LOG_JSON), "r") as f:
     default_log_dict = json.load(f)
 
 concise_log_dict = copy.deepcopy(default_log_dict)
-# A focused view using ordinary log records. Detailed file handlers are unchanged.
-concise_log_dict["formatters"]["progressFormatter"] = {"()": "nvflare.fuel.utils.log_utils.ProgressFormatter"}
-concise_log_dict["filters"]["ProgressFilter"] = {
+# Configure the existing concise view using ordinary component loggers.
+concise_log_dict["formatters"]["consoleFormatter"]["fmt"] = "%(message)s"
+concise_log_dict["filters"]["ConciseFilter"] = {
     "()": "nvflare.fuel.utils.log_utils.LoggerNameFilter",
-    "logger_names": ["progress"],
+    "logger_names": [
+        "nvflare.app_common.widgets.metrics_artifact_writer",
+        "nvflare.app_common.workflows.cross_site_model_eval",
+    ],
 }
 for handler_name in ("consoleHandler", "FLFileHandler"):
-    concise_log_dict["handlers"][handler_name]["formatter"] = "progressFormatter"
-    concise_log_dict["handlers"][handler_name]["filters"] = ["ProgressFilter"]
+    concise_log_dict["handlers"][handler_name]["filters"] = ["ConciseFilter"]
 
 
 msg_only_log_dict = copy.deepcopy(default_log_dict)
@@ -191,6 +193,17 @@ class BaseFormatter(logging.Formatter):
             self._style._fmt = self._style._fmt.replace(placeholder, "")
 
 
+def _console_text(message):
+    """Keep console text readable on streams that cannot encode Unicode decoration."""
+    encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
+    try:
+        message.encode(encoding)
+    except UnicodeEncodeError:
+        message = message.translate(str.maketrans({"✓": "[OK]", "✗": "[X]", "·": "-", "─": "-", "—": "-", "…": "..."}))
+        message = message.encode(encoding, errors="backslashreplace").decode(encoding)
+    return message
+
+
 class ColorFormatter(BaseFormatter):
     def __init__(
         self,
@@ -215,7 +228,7 @@ class ColorFormatter(BaseFormatter):
         self.logger_colors = logger_colors
 
     def format(self, record):
-        record_s = super().format(record)
+        record_s = _console_text(super().format(record))
         if not _stdout_supports_color():
             return record_s
 
@@ -403,22 +416,6 @@ def _read_log_tail(stream, max_bytes, *, whole_lines=False):
     if start and whole_lines:
         data = data.partition(b"\n")[2]
     return data, start > 0
-
-
-class ProgressFormatter(logging.Formatter):
-    """Format the focused console and FL log without changing diagnostic records."""
-
-    def format(self, record):
-        # BaseFormatter carries per-record state; keep it local when this formatter
-        # is shared by the console and FL-file handlers.
-        base = BaseFormatter("%(message)s")
-        message = base.format(record)
-        if record.levelno > logging.INFO:
-            name = getattr(record, "fullName", record.name).split(".")[-1]
-            identity = getattr(base.record, "identity", "")
-            source = f"{identity}/{name}" if identity else name
-            message = f"{record.levelname} ({source}): {message}"
-        return wrap_log_message(message)
 
 
 class ConciseLogFilter(LoggerNameFilter):

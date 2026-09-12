@@ -71,7 +71,11 @@ def test_controller_only_evaluation_reports_bounded_results(tmp_path, caplog, da
     payload.update({f"extra_{n}": n for n in range(100)})
     with caplog.at_level(logging.INFO):
         controller._save_validation_result("site-1", "global.pt", DXO(getattr(DataKind, data_kind), payload), ctx)
-    progress = [r.message for r in caplog.records if r.name.endswith(".progress")]
+    progress = [
+        r.message
+        for r in caplog.records
+        if r.name.endswith(".CrossSiteModelEval") and r.message.startswith("Evaluated ")
+    ]
     assert len(progress) == 1
     assert 'Evaluated "global.pt" on "site-1"' in progress[0]
     assert len(progress[0]) < 1024

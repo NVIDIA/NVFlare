@@ -900,7 +900,7 @@ def test_progress_relabels_columns_when_clients_and_aggregator_report_different_
         writer._log_progress_metrics("site-1", [{"name": "accuracy", "value": 0.75}])
         writer._log_progress_metrics("site-2", [{"name": "loss", "value": 0.25}])
         writer._log_progress_metrics("Aggregated", [{"name": "weighted_loss", "value": 0.3}])
-    progress = [r.message for r in caplog.records if r.name.endswith(".progress")]
+    progress = [r.message for r in caplog.records if r.name.endswith(".MetricsArtifactWriter")]
     assert len(progress) == 3
     for message, metric, value in zip(progress, ["accuracy", "loss", "weighted_loss"], ["0.75", "0.25", "0.3"]):
         assert metric in message
@@ -923,7 +923,7 @@ def test_progress_uses_reported_metrics_and_retains_total_after_context_change(t
         _record_contribution(writer, fl_ctx, 5, "site-1", {"loss": 0.25})
         now[0] = 12.0
         _record_round(writer, fl_ctx, 5, {"loss": 0.25})
-    progress = [r.message for r in caplog.records if r.name.endswith(".progress")]
+    progress = [r.message for r in caplog.records if r.name.endswith(".MetricsArtifactWriter")]
     output = "\n".join(progress)
     assert "ROUND 1 / 3" in output
     assert "=====" in output
@@ -945,6 +945,6 @@ def test_accepted_update_without_displayable_metrics_keeps_client_visible(tmp_pa
         writer.handle_event(EventType.START_RUN, fl_ctx)
         _record_contribution(writer, fl_ctx, 0, "site-1", metrics)
         _record_round(writer, fl_ctx, 0, {"loss": 0.25})
-    output = "\n".join(r.message for r in caplog.records if r.name.endswith(".progress"))
+    output = "\n".join(r.message for r in caplog.records if r.name.endswith(".MetricsArtifactWriter"))
     assert '"site-1" · no displayable metrics' in output
     assert "✓ Aggregated 1 client update" in output

@@ -15,10 +15,33 @@
 """Presentation of existing result artifacts; never determines job success."""
 
 import json
+import time
 from itertools import islice
 from pathlib import Path
 
-from nvflare.fuel.utils.log_utils import _read_log_tail, format_metric_table, wrap_log_message
+from nvflare.fuel.utils.log_utils import _console_text, _read_log_tail, format_metric_table, wrap_log_message
+
+
+def _print_output(message, *, flush=True):
+    """Print optional presentation without disrupting execution on limited streams."""
+    try:
+        print(_console_text(message), flush=flush)
+    except (OSError, ValueError):
+        # Closed streams, broken pipes, or encoding failures cannot change a job's outcome.
+        pass
+
+
+def run_recipe_job(job, env):
+    """Start a deployment and attach the reporting context owned by Recipe."""
+    from nvflare.recipe.run import Run
+
+    _print_output(f"\nNVIDIA FLARE · {job.name}", flush=True)
+    started_at = time.monotonic()
+    job_id = env.deploy(job)
+    run = Run(env, job_id)
+    run._started_at = started_at
+    run._summary_context = run_context(job.name, env)
+    return run
 
 
 def summary_header(outcome, elapsed, *, context=""):
