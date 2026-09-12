@@ -615,13 +615,24 @@ logs, model arrays, and framework messages remain in ``log.txt`` and ``log.json`
 at the configured log level. Normal in-process client shutdown at ``END_RUN`` is
 logged at INFO; other stop reasons still produce warnings.
 
-Failure output retains error messages and tracebacks. A simulation that fails
-during deployment raises before returning a ``Run``, so it does not reach the
-``Run.get_result()`` summary; the exception identifies the workspace containing
-diagnostic logs. Errors can cascade: for example, a client data-loading exception
-may cause a subsequent server abort. ``FATAL_SYSTEM_ERROR`` describes that abort
-signal, not a reliable classification of whether the original cause was user code
-or infrastructure. Consult the first error and the corresponding site's logs.
+Failure output retains error messages and tracebacks and adds a bounded summary
+of available errors, sites, application code locations, and diagnostic log paths.
+Repeated client exceptions are grouped. A nonzero simulator exit includes the
+summary in its raised exception; failed POC/production jobs include it in
+``Run.get_result()`` before environment cleanup.
+
+Client diagnostics in POC/production require logs already streamed to the server.
+The current provisioning template configures ``SiteLogStreamer`` for
+``error_log.txt``; deployments without it, sites with
+``allow_log_streaming=False``, and interrupted transfers may leave client logs
+unavailable. Reporting does not enable streaming or contact clients directly.
+On failure, Recipe retrieves existing error streams through the job-log API and
+retains bounded excerpts alongside downloaded results in ``failure-logs-*``.
+The summary reads at most 20 files and the last 1 MiB of each. Missing, rotated,
+or custom-format logs may omit the original exception; consult the full site logs
+when the summary is inconclusive. Diagnostic retrieval failures do not replace
+the job result or status. ``FATAL_SYSTEM_ERROR`` can follow a client code error
+and is not treated as a diagnosis of an infrastructure failure.
 
 The existing metrics writer separates rounds with ``=== ROUND N / M ===``
 headings. Client rows appear as their metrics arrive, with numeric values aligned

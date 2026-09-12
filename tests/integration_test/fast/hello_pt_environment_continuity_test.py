@@ -111,7 +111,13 @@ def test_failed_poc_job_retains_download_and_client_error_logs(tmp_path, monkeyp
         with pytest.raises(RuntimeError, match="unsuccessful status: FINISHED"):
             job_module.main(["--env", "poc", "--num_rounds", "1", *client_args])
 
-    output = capsys.readouterr().err
+    captured = capsys.readouterr()
+    summary = captured.out.split("RUN SUMMARY", 1)[1]
+    assert expected_error in " ".join(summary.split())
+    assert "site-1, site-2 / TaskScriptRunner" in summary
+    assert ("prepare_data.py:" if missing_cifar else "client.py:") in summary
+    assert "Client logs are not included" not in summary
+    output = captured.err
     result_line = next(line for line in output.splitlines() if line.startswith("Result can be found in:"))
     result_path = Path(result_line.split(":", 1)[1].strip())
     assert result_path.is_dir()
