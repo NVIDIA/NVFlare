@@ -133,7 +133,7 @@ def create_recipe(args):
     train_args = ["--dataset", args.dataset]
     if args.dataset == "cifar10":
         # Local clients run in site workspaces; production paths belong to the clients.
-        data_root = args.data_root if args.env == "prod" else os.path.abspath(args.data_root)
+        data_root = args.data_root if args.env == "prod" else os.path.abspath(os.path.expanduser(args.data_root))
         train_args.extend(("--data_root", data_root))
     for name in ("batch_size", "epochs", "learning_rate", "num_workers"):
         value = getattr(args, name)
