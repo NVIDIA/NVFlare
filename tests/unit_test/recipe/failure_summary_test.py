@@ -15,11 +15,13 @@
 """Failure summaries preserve actionable diagnostics without scanning whole logs."""
 
 import json
+import logging
 import os
 from unittest.mock import MagicMock
 
 import pytest
 
+from nvflare.fuel.utils.log_utils import BaseFormatter
 from nvflare.recipe._failure_summary import collect_client_errors, failure_summary
 from nvflare.recipe.run import Run
 
@@ -39,19 +41,29 @@ def _client_trace(site, error="FileNotFoundError: missing training.npy"):
     )
 
 
-def _write_log(root, site, text):
+def _write_log(root, site, text, plain_text=False):
     folder = root / site
     folder.mkdir(parents=True, exist_ok=True)
-    (folder / "log.json").write_text(text)
+    if plain_text:
+        formatter = BaseFormatter("%(asctime)s - %(name)s - %(levelname)s - %(fl_ctx)s - %(message)s")
+        text = "\n".join(
+            formatter.format(logging.makeLogRecord({**json.loads(line), "msg": json.loads(line)["message"]}))
+            for line in text.splitlines()
+        )
+    else:
+        (folder / "log.json").write_text(text)
     (folder / "error_log.txt").write_text(text)
 
 
 @pytest.mark.parametrize("layout", [".", "workspace"])
-def test_groups_client_errors_and_omits_only_the_linked_abort(tmp_path, layout):
+@pytest.mark.parametrize("plain_text", [False, True])
+def test_groups_client_errors_and_omits_only_the_linked_abort(tmp_path, layout, plain_text):
     root = tmp_path / layout
     for site in ("site-1", "site-2"):
-        _write_log(root, site, _record(_client_trace(site)) + _record("fire abort event"))
-    _write_log(root, "server", _record("downstream invalid DXO", context="[peer=site-1, peer_rc=TASK_ABORTED]"))
+        _write_log(root, site, _record(_client_trace(site)) + _record("fire abort event"), plain_text)
+    _write_log(
+        root, "server", _record("downstream invalid DXO", context="[peer=site-1, peer_rc=TASK_ABORTED]"), plain_text
+    )
     output = failure_summary(tmp_path)
     assert output.count("FileNotFoundError: missing training.npy") == 1
     assert "site-1, site-2" in output
@@ -62,9 +74,12 @@ def test_groups_client_errors_and_omits_only_the_linked_abort(tmp_path, layout):
     assert max(map(len, output.splitlines())) <= 80
 
 
-def test_unrelated_client_error_does_not_hide_another_peers_abort(tmp_path):
-    _write_log(tmp_path, "site-1", _record(_client_trace("site-1")))
-    _write_log(tmp_path, "server", _record("site-2 task aborted", context="[peer=site-2, peer_rc=TASK_ABORTED]"))
+@pytest.mark.parametrize("plain_text", [False, True])
+def test_unrelated_client_error_does_not_hide_another_peers_abort(tmp_path, plain_text):
+    _write_log(tmp_path, "site-1", _record(_client_trace("site-1")), plain_text)
+    _write_log(
+        tmp_path, "server", _record("site-2 task aborted", context="[peer=site-2, peer_rc=TASK_ABORTED]"), plain_text
+    )
     output = failure_summary(tmp_path)
     assert "site-2 task aborted" in output
     assert "Also reported" in output

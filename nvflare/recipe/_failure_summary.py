@@ -57,7 +57,15 @@ def collect_client_errors(session, job_id, result):
 def _records(data, plain_text):
     if plain_text:
         for match in _TEXT_ERROR.finditer(data.decode("utf-8", errors="replace")):
-            yield dict(name=match[1], levelname=match[2], message=match[3])
+            # Text formatters render FL context before the message; JSON keeps
+            # it in a separate field. Preserve that field for peer attribution.
+            context = re.match(r"^(\[\w+=[^\]\n]*\])(?: - |: )(.*)", match[3], re.DOTALL)
+            yield dict(
+                name=match[1],
+                levelname=match[2],
+                message=context[2] if context else match[3],
+                fl_ctx=context[1] if context else "",
+            )
     else:
         for raw in data.splitlines():
             try:
