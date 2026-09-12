@@ -892,6 +892,22 @@ class TestMetricsArtifactWriterAggregationEvents:
         assert not os.path.exists(tmp_path / "outside_metrics")
 
 
+def test_progress_relabels_columns_when_clients_and_aggregator_report_different_metrics(caplog):
+    import logging
+
+    writer = MetricsArtifactWriter()
+    with caplog.at_level(logging.INFO):
+        writer._log_progress_metrics("site-1", [{"name": "accuracy", "value": 0.75}])
+        writer._log_progress_metrics("site-2", [{"name": "loss", "value": 0.25}])
+        writer._log_progress_metrics("Aggregated", [{"name": "weighted_loss", "value": 0.3}])
+    progress = [r.message for r in caplog.records if r.name.endswith(".progress")]
+    assert len(progress) == 3
+    for message, metric, value in zip(progress, ["accuracy", "loss", "weighted_loss"], ["0.75", "0.25", "0.3"]):
+        assert metric in message
+        assert value in message
+        assert "—" not in message
+
+
 def test_progress_uses_reported_metrics_and_retains_total_after_context_change(tmp_path, caplog, monkeypatch):
     writer = MetricsArtifactWriter()
     fl_ctx = _make_fl_ctx(tmp_path)

@@ -580,18 +580,25 @@ and the end summary; no environment variable or extra option is required:
 
    python job.py
 
-``python job.py`` uses the example script's own argument parser. The Hello PyTorch
-script does not accept ``-l`` or ``--log_config``. To request full output without
-editing that script, use the existing logging override:
+Recipe consumes ``--log_config`` as a system argument, like ``--export`` and
+``--export-dir``, before the script's own argument parser runs. Scripts that import
+Recipe before parsing arguments need no logging option of their own:
 
 .. code-block:: bash
 
-   FL_LOG_LEVEL=full python job.py
+   python job.py --log_config full
 
-Alternatively, change its environment construction to
-``SimEnv(num_clients=2, log_config="full")``. Neither is needed for default concise
-output. Other example scripts may explicitly expose their own ``--log_config``;
-check their ``python job.py --help`` output.
+``--log_config=full`` also works. The command-line value overrides
+``SimEnv(log_config=...)`` and the existing ``FL_LOG_LEVEL`` environment setting.
+Without the option, existing constructor/environment defaults are unchanged.
+The option reuses FLARE's logging configuration, including built-in modes, levels,
+and configuration files. Do not reuse ``--log_config`` for an unrelated script
+argument. The short ``-l`` remains a simulator CLI option, not a reserved Recipe
+argument. Script-local ``--help`` lists the script's own arguments.
+
+The shared option also sets the existing process logging environment inherited by
+process-based POC services. It does not reconfigure already-running production
+services; use the existing admin log-configuration commands for those services.
 
 The separate ``nvflare simulator`` command accepts ``-l`` / ``--log_config`` when
 running an exported job:
@@ -608,17 +615,28 @@ logs, model arrays, and framework messages remain in ``log.txt`` and ``log.json`
 at the configured log level. Normal in-process client shutdown at ``END_RUN`` is
 logged at INFO; other stop reasons still produce warnings.
 
+Failure output retains error messages and tracebacks. A simulation that fails
+during deployment raises before returning a ``Run``, so it does not reach the
+``Run.get_result()`` summary; the exception identifies the workspace containing
+diagnostic logs. Errors can cascade: for example, a client data-loading exception
+may cause a subsequent server abort. ``FATAL_SYSTEM_ERROR`` describes that abort
+signal, not a reliable classification of whether the original cause was user code
+or infrastructure. Consult the first error and the corresponding site's logs.
+
 The existing metrics writer separates rounds with ``=== ROUND N / M ===``
 headings. Client rows appear as their metrics arrive, with numeric values aligned
-under shared column headings. An aggregated row and elapsed time close each round.
+under shared column headings. Headings repeat if a client or aggregator reports
+different metric names. An aggregated row and elapsed time close each round.
 This preserves completed round sections in both the console and ``log_fl.txt``. The aggregation-finished message measures
 time since round start; it does not claim model persistence or overall job success.
 Metric names, units, and evaluation timing are defined by the job. Displayed
 numbers are rounded for readability; artifact values are unchanged. Structured
 metric values are identified and remain available in the artifacts.
 
-The existing evaluation workflow announces evaluation; its saved site/model
-results are presented once in the final summary. A reported training metric is not
+The existing evaluation workflow announces evaluation and reports a bounded
+client/model metric summary as each result is saved, including in controller-only
+jobs without a Recipe or JSON result generator. Recipe runs additionally present
+the saved JSON results as a comparison table in the final summary. A reported training metric is not
 relabelled as an evaluation of the final saved model. Jobs that do not use these
 reporting components still have job-status and diagnostic output, but do not
 acquire synthetic training rounds or metrics.

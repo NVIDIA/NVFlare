@@ -56,7 +56,8 @@ class TestCrossSiteModelEvalPaths:
         assert os.path.isdir(os.path.join(run_dir, AppConstants.CROSS_VAL_DIR, AppConstants.CROSS_VAL_RESULTS_DIR_NAME))
 
 
-def test_evaluation_keeps_full_result_without_duplicate_progress_payload(tmp_path, caplog):
+@pytest.mark.parametrize("data_kind", ["METRICS", "WEIGHTS"])
+def test_controller_only_evaluation_reports_bounded_results(tmp_path, caplog, data_kind):
     import logging
 
     from nvflare.apis.dxo import DXO, DataKind, from_file
@@ -69,9 +70,17 @@ def test_evaluation_keeps_full_result_without_duplicate_progress_payload(tmp_pat
     payload = {"accuracy": 0.75, "samples": list(range(100000)), "detail": "X" * 100000}
     payload.update({f"extra_{n}": n for n in range(100)})
     with caplog.at_level(logging.INFO):
-        controller._save_validation_result("site-1", "global.pt", DXO(DataKind.METRICS, payload), ctx)
+        controller._save_validation_result("site-1", "global.pt", DXO(getattr(DataKind, data_kind), payload), ctx)
     progress = [r.message for r in caplog.records if r.name.endswith(".progress")]
-    assert progress == []  # Evaluation values are displayed once in the final artifact summary.
+    assert len(progress) == 1
+    assert 'Evaluated "global.pt" on "site-1"' in progress[0]
+    assert len(progress[0]) < 1024
+    assert "see saved result" in progress[0]
+    if data_kind == "METRICS":
+        assert "accuracy=0.75" in progress[0]
+    else:
+        assert "accuracy=" not in progress[0]
+    assert not list(tmp_path.rglob("cross_val_results.json"))
     saved = from_file(controller._val_results["site-1"]["global.pt"])
     assert len(saved.data["samples"]) == 100000
     assert len(saved.data["detail"]) == 100000

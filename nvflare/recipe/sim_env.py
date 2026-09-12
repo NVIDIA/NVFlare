@@ -99,7 +99,7 @@ class SimEnv(ExecEnv):
         self.num_clients = resolved_num_clients
         self.num_threads = v.num_threads if v.num_threads is not None else resolved_num_clients
         self.gpu_config = v.gpu_config
-        self.log_config = v.log_config
+        self.log_config = self._log_config_override if self._log_config_override is not None else v.log_config
         self.clients = v.clients or None
         workspace_override = os.environ.get(SIMULATOR_WORKSPACE_ROOT_ENV_VAR)
         if workspace_override and workspace_override != v.workspace_root:
