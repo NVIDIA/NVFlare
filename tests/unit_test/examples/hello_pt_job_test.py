@@ -240,7 +240,7 @@ def test_cifar_cli_export_does_not_require_local_data(tmp_path, relative_cache):
     )
     client_config = tmp_path / "export" / "hello-pt" / "app" / "config" / "config_fed_client.json"
     executor_args = json.loads(client_config.read_text())["executors"][0]["executor"]["args"]
-    assert executor_args["task_script_args"] == ["--dataset", "cifar10", "--data_root", remote_cache]
+    assert executor_args["task_script_args"] == ["--dataset", "cifar10", "--data_root", str(cache_path)]
     assert not cache_path.exists()
 
 
