@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>CoCo workload protection design</title>
+<style>
+@page { size: 13.333in 7.5in; margin: 0; }
+* { box-sizing: border-box; }
+:root { --ink:#10243e; --muted:#587087; --lime:#76b900; --cyan:#20b8cd; --orange:#ff9d3d; --red:#e85555; --paper:#f5f3ed; --white:#fff; }
+html,body { margin:0; background:#ddd; color:var(--ink); font-family:"DejaVu Sans",Arial,sans-serif; }
+.slide { width:13.333in; height:7.5in; overflow:hidden; position:relative; padding:.39in .48in .3in; background:var(--paper); break-after:page; page-break-after:always; }
+.slide:last-child { break-after:auto; }
+.gridbg { background-image:radial-gradient(#b8c2c8 0.7px,transparent 0.7px); background-size:16px 16px; }
+.eyebrow { font-size:8.5pt; letter-spacing:2.2px; font-weight:800; text-transform:uppercase; color:var(--lime); }
+h1 { margin:.055in 0 .07in; max-width:11.7in; font-size:29pt; line-height:1.03; letter-spacing:-.7px; }
+.sub { margin:0; color:var(--muted); font-size:11pt; line-height:1.28; max-width:11.4in; }
+.num { position:absolute; top:.36in; right:.46in; width:.43in; height:.43in; border-radius:50%; background:var(--ink); color:#fff; display:grid; place-items:center; font-weight:800; font-size:10pt; }
+.card { background:rgba(255,255,255,.94); border:1px solid #d7dee2; border-radius:15px; box-shadow:0 8px 18px rgba(16,36,62,.08); }
+.tag { display:inline-block; padding:4px 9px; border-radius:99px; font-size:7.5pt; font-weight:800; letter-spacing:.3px; }
+.tag.green{background:#e4f2cf;color:#386300}.tag.blue{background:#d9f3f6;color:#086a78}.tag.red{background:#fde1e1;color:#9d2424}.tag.orange{background:#fff0dc;color:#98530b}
+.footer { position:absolute; left:.48in; bottom:.11in; font-size:6.8pt; color:#8293a2; }
+code { font-family:"DejaVu Sans Mono",monospace; background:#e9eef4; color:#16364f; padding:1px 4px; border-radius:3px; }
+
+/* Architecture */
+.machines { display:grid; grid-template-columns:1fr 1.08fr 1fr; gap:.16in; margin-top:.2in; align-items:stretch; }
+.machine { padding:.16in .17in .14in; min-height:3.65in; position:relative; }
+.machine.provision { border-top:7px solid var(--cyan); }.machine.service { border-top:7px solid var(--lime); }.machine.coco { border-top:7px solid var(--red); }
+.machine h2 { font-size:15.2pt; line-height:1.05; margin:0 0 .045in; }
+.host { color:var(--muted); font:700 7.4pt "DejaVu Sans Mono",monospace; margin-bottom:.08in; }
+.machine ul { margin:.09in 0 0; padding-left:.17in; }.machine li { font-size:8.1pt; line-height:1.22; margin:.04in 0; }
+.components { display:flex; flex-wrap:wrap; gap:5px; margin-top:.09in; }
+.chip { font:700 6.8pt "DejaVu Sans Mono",monospace; padding:4px 7px; border-radius:7px; background:#edf1f3; color:#29435a; }
+.links { display:grid; grid-template-columns:1fr 1fr 1fr; gap:.11in; margin-top:.13in; }
+.link { min-height:.76in; padding:.09in .12in; border-radius:11px; background:#fff; border:1px solid #d7dee2; font-size:7.5pt; line-height:1.22; }
+.link b { display:block; font-size:8pt; margin-bottom:2px; }.link.one{border-left:6px solid var(--cyan)}.link.two{border-left:6px solid var(--lime)}.link.three{border-left:6px solid var(--red)}
+
+/* Measurement */
+.measure-grid { display:grid; grid-template-columns:1fr .92fr; gap:.18in; margin-top:.18in; }
+.phase { padding:.15in .16in; min-height:4.55in; }.phase h2 { font-size:14pt; margin:0 0 .09in; }
+.step { display:grid; grid-template-columns:.31in 1fr; gap:.07in; align-items:start; margin:.072in 0; }
+.bubble { width:.27in; height:.27in; border-radius:50%; display:grid; place-items:center; color:#fff; background:var(--cyan); font-size:7.8pt; font-weight:900; }
+.live .bubble { background:var(--lime); }.step b { display:block; font-size:8.4pt; margin-bottom:1px; }.step span { display:block; font-size:7.2pt; line-height:1.23; color:var(--muted); }
+.binding { display:grid; grid-template-columns:1fr .35in 1fr; align-items:center; gap:.08in; margin-top:.13in; padding:.12in; border-radius:12px; background:var(--ink); color:#fff; }
+.binding .value { text-align:center; }.binding b { display:block; color:#b8eb69; font-size:8.5pt; }.binding span { font-size:6.8pt; line-height:1.2; color:#dce5ec; }.equals { font-size:22pt; color:#b8eb69; text-align:center; font-weight:900; }
+.diagnostic { margin-top:.1in; padding:.08in .11in; border-radius:9px; background:#fff0dc; border:1px solid #efbd7e; font-size:7pt; color:#7c480d; }
+
+/* Attack table */
+.attack-table { width:100%; border-collapse:collapse; table-layout:fixed; margin-top:.16in; font-size:9.15pt; line-height:1.18; background:rgba(255,255,255,.94); box-shadow:0 8px 18px rgba(16,36,62,.08); }
+.attack-table th { background:var(--ink); color:#fff; text-align:left; font-size:9.3pt; }
+.attack-table th,.attack-table td { border:1px solid #aebaca; padding:.065in .073in; vertical-align:top; overflow-wrap:anywhere; }
+.attack-table tbody tr:nth-child(even) { background:#edf2f7; }
+.attack-table th:nth-child(1){width:24%}.attack-table th:nth-child(2){width:59%}.attack-table th:nth-child(3){width:17%}
+.attack-table td:nth-child(1){font-weight:800;color:#8b2f2f}.attack-table td:nth-child(3){font-weight:800;color:#3e6908}
+.availability-row td { background:#fff0dc !important; }.availability-row td:nth-child(3){color:#98530b}
+</style>
+</head>
+<body>
+
+<section class="slide gridbg">
+  <div class="num">01</div><div class="eyebrow">System architecture</div>
+  <h1>Three machines. One externally enforced release.</h1>
+  <p class="sub">The NVFlare provisioning node creates the protected workload. An independent trust domain owns key release. The adversarial CoCo operator owns the cluster—but never the plaintext or release authority.</p>
+  <div class="machines">
+    <div class="machine provision card">
+      <span class="tag blue">WORKLOAD AUTHORITY</span><h2>NVFlare provisioning node</h2>
+      <ul><li>Builds and tests the plaintext image</li><li>Signs the immutable OCI digest</li><li>Encrypts layers with a fresh release key</li><li>Pushes only ciphertext to the registry</li><li>Generates strict Agent policy + measured InitData</li><li>Defines release authorization and Pod YAML</li></ul>
+      <div class="components"><span class="chip">Docker</span><span class="chip">cosign</span><span class="chip">skopeo</span><span class="chip">genpolicy</span><span class="chip">openssl</span></div>
+    </div>
+    <div class="machine service card">
+      <span class="tag green">TRUST + RELEASE AUTHORITY</span><h2>Secure services</h2>
+      <ul><li><b>TLS private registry</b> stores encrypted OCI images</li><li><b>Trustee</b> fronts KBS, AS and RVPS</li><li>Verifies platform/workload handoffs</li><li>Owns SNP measurement and TCB references</li><li>Stores image keys and exact-path rules</li><li>Installs owner-defined release intent only after validation</li></ul>
+      <div class="components"><span class="chip">KBS</span><span class="chip">AS</span><span class="chip">RVPS</span><span class="chip">EAR</span><span class="chip">LocalFS</span></div>
+    </div>
+    <div class="machine coco card">
+      <span class="tag red">ADVERSARIAL OPERATOR</span><h2>CoCo cluster</h2>
+      <ul><li>Kubernetes + containerd + Calico</li><li>Digest-pinned Kata Containers runtime</li><li>NVIDIA GPU Operator + confidential GPU</li><li>AMD SEV-SNP Kata guest</li><li>Receives public chart/pins, CAs and Pod YAML</li><li>Controls availability—not key release</li></ul>
+      <div class="components"><span class="chip">Kubernetes</span><span class="chip">Kata</span><span class="chip">SEV-SNP</span><span class="chip">H200</span></div>
+    </div>
+  </div>
+  <div class="links"><div class="link one"><b>PROVISIONING → SECURE SERVICES</b>Encrypted image; secret image key; signature public key; image policy; exact release-policy fragment.</div><div class="link two"><b>COCO GUEST ↔ SECURE SERVICES</b>Fresh CPU/GPU evidence in; JWE-encrypted approved resources out—only after every binding agrees.</div><div class="link three"><b>PROVISIONING → COCO IT</b>One digest-pinned Pod YAML plus an independently authenticated SHA-256; no workload or trust-administration secret.</div></div>
+  <div class="footer">The provisioning node specifies release intent; only the independent trust administrator can install it and release a key.</div>
+</section>
+
+<section class="slide gridbg">
+  <div class="num">02</div><div class="eyebrow">Measurement and attestation</div>
+  <h1>Trusted reference meets live evidence at one equality gate.</h1>
+  <p class="sub">The authoritative SNP measurement comes from a challenge-bound AMD-signed report. The secure-services trust domain authenticates that reference, then compares every live guest against it before KBS considers workload-specific release policy.</p>
+  <div class="measure-grid">
+    <div class="phase card">
+      <h2>1 · Establish the trusted reference</h2>
+      <div class="step"><i class="bubble">1</i><div><b>Fresh challenge</b><span>Trusted reference host creates a random 64-byte nonce.</span></div></div>
+      <div class="step"><i class="bubble">2</i><div><b>Collector Pod</b><span>Kata CoCo guest runs <code>snpguest</code>; nonce becomes signed SNP <code>REPORT_DATA</code>.</span></div></div>
+      <div class="step"><i class="bubble">3</i><div><b>Cryptographic verification</b><span>Verify AMD ARK/ASK/VCEK chain, report signature, TCB, checksums and exact nonce bytes.</span></div></div>
+      <div class="step"><i class="bubble">4</i><div><b>Extract signed measurement</b><span>Stage 09 reads report bytes <code>0x90..0xbf</code>: <code>c85a…afd0</code>.</span></div></div>
+      <div class="step"><i class="bubble">5</i><div><b>Authenticated handoff</b><span>Stage 10 exports five-value JSON via the provisioning node; a separate launch contract goes to the image owner.</span></div></div>
+      <div class="step"><i class="bubble">6</i><div><b>Install in secure services</b><span>The trust administrator authenticates the sender and approves RVPS values; AS uses its own policies. No signed bundle.</span></div></div>
+      <div class="diagnostic"><b>Diagnostic only:</b> offline <code>sev-snp-measure</code> output is retained for investigation; it cannot replace the hardware-signed report measurement.</div>
+    </div>
+    <div class="phase live card">
+      <h2>2 · Appraise every live launch</h2>
+      <div class="step"><i class="bubble">1</i><div><b>Measured Kata boot</b><span>CoCo launches the digest-pinned RuntimeClass and measured InitData.</span></div></div>
+      <div class="step"><i class="bubble">2</i><div><b>Fresh evidence</b><span>Guest sends AMD SNP evidence, InitData/HOST_DATA and NVIDIA GPU evidence to Trustee.</span></div></div>
+      <div class="step"><i class="bubble">3</i><div><b>KBS attests both CPU + GPU</b><span>AS/RVPS appraises AMD SEV-SNP measurement, TCB and debug/migration state <b>and</b> NVIDIA GPU evidence, returning one signed EAR.</span></div></div>
+      <div class="binding"><div class="value"><b>APPROVED REFERENCES</b><span>CPU: SNP measurement + TCB<br>GPU: NVIDIA appraisal policy</span></div><div class="equals">=</div><div class="value"><b>LIVE EVIDENCE</b><span>CPU: AMD-signed SNP report<br>GPU: NVIDIA-signed claims</span></div></div>
+      <div class="step"><i class="bubble">4</i><div><b>Both attestation results are mandatory</b><span>KBS requires exactly <code>cpu0</code> + <code>gpu0</code> and each complete approved eight-component trust vector. Either failure denies every resource.</span></div></div>
+      <div class="step"><i class="bubble">5</i><div><b>KBS resource decision</b><span>Match InitData hash, image digest, command and the actual requested resource path.</span></div></div>
+      <div class="step"><i class="bubble">6</i><div><b>Release inside the TEE</b><span>JWE-encrypt image key and policies to the attested guest key; decrypt image only in guest memory.</span></div></div>
+    </div>
+  </div>
+  <div class="footer">Reference establishment stays on the trusted system. CoCo IT receives public runtime inputs, never reference-approval authority, private evidence or workload secrets.</div>
+</section>
+
+<section class="slide gridbg">
+  <div class="num">03</div><div class="eyebrow">Threat analysis</div>
+  <h1>What the CoCo owner can attack—and why it fails.</h1>
+  <p class="sub">Each useful modification breaks at least one independent binding. The design protects confidentiality and launch integrity; it intentionally does not guarantee availability.</p>
+  <table class="attack-table">
+    <thead><tr><th>CoCo-owner attack</th><th>Independent mitigation and enforcement point</th><th>Outcome</th></tr></thead>
+    <tbody>
+      <tr><td>Read registry/cache/host files</td><td>Image layers are encrypted before publication; KBS releases the key only to an attested guest public key.</td><td>Ciphertext only</td></tr>
+      <tr><td>Replace image, tag, manifest, or layer</td><td>Immutable digest, Cosign verification, authenticated encryption, Agent policy and KBS image binding must all agree.</td><td>No start / no key</td></tr>
+      <tr><td>Change command, UID, env, mounts, or OCI settings</td><td>Kata Agent policy constrains the exact container request; KBS independently binds command and image identity.</td><td>Request denied</td></tr>
+      <tr><td>Alter InitData, policy, endpoint, or CA</td><td>Exact InitData hash is carried in SNP HOST_DATA and authorized by the workload-specific KBS rule.</td><td>Release denied</td></tr>
+      <tr><td>Replace Kata kernel, firmware, rootfs, or runtime</td><td>Live AMD-signed SNP MEASUREMENT differs from the independently authenticated AS/RVPS reference.</td><td>CPU trust fails</td></tr>
+      <tr><td>Fake/replay evidence; enable debug/migration; downgrade TCB</td><td>Fresh session binding, AMD/EAR signatures, debug and migration checks, and four minimum reported-TCB floors.</td><td>Appraisal fails</td></tr>
+      <tr><td>Request another KBS path or release key</td><td>Actual path is evaluated on every request against an exact allow-list; resource policy is default deny.</td><td>Resource denied</td></tr>
+      <tr><td>Use exec, attach, copy, debug container, or SSH</td><td>Agent policy denies stream/exec operations; Pod has no SSH daemon, credentials, host mounts, or service-account token.</td><td>No guest shell</td></tr>
+      <tr><td>Inspect or modify guest memory</td><td>AMD SEV-SNP encrypts guest memory and protects guest integrity from the host and hypervisor.</td><td>Plaintext stays in TEE</td></tr>
+      <tr class="availability-row"><td>Kill, pause, starve, or disconnect the Pod</td><td>Outside the confidentiality/integrity guarantee; an owner-controlled channel can detect failure.</td><td>DoS remains possible</td></tr>
+    </tbody>
+  </table>
+  <div class="footer">The CoCo owner can always refuse service. It cannot convert cluster control into an authorized decryption-key release.</div>
+</section>
+
+</body>
+</html>

@@ -25,6 +25,7 @@ from nvflare.lighter.spec import Builder
 
 from ..cc_constants import CC_AUTHORIZERS_KEY, CCConfigKey, CCConfigValue, CCIssuerConfig, CCManagerArgs
 from .azure import AzureSimpleBuilder
+from .coco import CoCoBuilder, resolve_cc_config
 from .onprem_cvm import OnPremCVMBuilder
 
 CC_MGR_PATH = "nvflare.app_opt.confidential_computing.cc_manager.CCManager"
@@ -36,6 +37,7 @@ VALID_COMPUTE_ENVS = [
     CCConfigValue.AZURE_CONFIDENTIAL_CONTAINER,
     CCConfigValue.AZURE_CVM,
     CCConfigValue.MOCK,
+    CCConfigValue.CONFIDENTIAL_CONTAINERS,
 ]
 
 
@@ -44,6 +46,7 @@ BUILDER_CLASSES = {
     CCConfigValue.AZURE_CVM: AzureSimpleBuilder,
     CCConfigValue.AZURE_CONFIDENTIAL_CONTAINER: AzureSimpleBuilder,
     CCConfigValue.MOCK: OnPremCVMBuilder,
+    CCConfigValue.CONFIDENTIAL_CONTAINERS: CoCoBuilder,
 }
 
 
@@ -116,11 +119,15 @@ class CCBuilder(Builder):
             config_path = participant.get_prop(PropKey.CC_CONFIG)
             if config_path:
                 try:
+                    config_path = resolve_cc_config(project, config_path)
                     cc_config = self._load_and_validate_cc_config(config_path)
                     self._enable_participant_for_cc(participant, cc_config, ctx)
                     self._create_builder_for_env(cc_config)
                 except Exception as e:
-                    print(f"CC is not enabled for {participant.name}: {e}")
+                    raise ValueError(f"Invalid CC configuration for {participant.name}: {e}") from e
+
+        if CCConfigValue.CONFIDENTIAL_CONTAINERS in self._cc_builders and len(self._cc_builders) != 1:
+            raise ValueError("CoCo clients cannot be mixed with other CC compute environments in this version")
 
         # Initialize each builder type once
         for builder in self._cc_builders.values():
@@ -135,6 +142,10 @@ class CCBuilder(Builder):
 
         cc_config = participant.get_prop(PropKey.CC_CONFIG_DICT, {})
         if cc_config == {}:
+            return
+        if cc_config.get(CCConfigKey.COMPUTE_ENV) == CCConfigValue.CONFIDENTIAL_CONTAINERS:
+            # CoCoBuilder emits participant-specific issuer/verifier
+            # configurations; do not overwrite them here.
             return
 
         cc_issuers = participant.get_prop(PropKey.CC_ISSUERS, [])

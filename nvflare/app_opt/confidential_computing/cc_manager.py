@@ -532,7 +532,7 @@ class CCManager(FLComponent):
                                 all_tokens[site_name] = cc_info
                                 self.logger.info(f"Received fresh token from site {site_name}")
                             else:
-                                self.logger.warning(f"Invalid payload from {target_site}: {payload}")
+                                self.logger.warning(f"Invalid CC payload from {target_site}")
                                 failed_sites.append(target_site)
                         else:
                             self.logger.warning(f"Invalid response type from {target_site}: {type(payload)}")
