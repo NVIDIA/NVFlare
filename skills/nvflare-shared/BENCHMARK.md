@@ -1,13 +1,15 @@
 # Skill Benchmark: nvflare-shared
 
-> ⚠️ **Overall verdict: INCOMPLETE — Required evidence is missing**
+> ✅ **Overall verdict: PASS — Recommended for publication**
 
-One or more required evaluation tiers did not complete, so this benchmark is not publication-complete.
+## Publication Recommendation
+
+Recommended for publication based on the completed evaluation evidence in this report.
 
 ## Evaluation Metadata
 
 - Skill: `nvflare-shared`
-- Evaluation date: 2026-09-10
+- Evaluation date: 2026-09-12
 - Evaluator version: `1.5.6`
 - Agents: Claude Code (`aws/anthropic/bedrock-claude-opus-4-8`), Codex (`openai/openai/gpt-5.5`)
 - Tasks: 3 evaluation tasks (3 positive)
@@ -33,12 +35,12 @@ The three-tier evaluation checks whether the skill:
 
 | Measure | Claude Code (Baseline → Skill Uplift) | Codex (Baseline → Skill Uplift) |
 |---|---:|---:|
-| Overall | 82.1% — baseline ran, but no comparable score was available; uplift unavailable | 78.3% — baseline ran, but no comparable score was available; uplift unavailable |
-| Security | 83.3% → 83.3% (±0.0 points) | 33.3% → 66.7% (+33.4 points) |
-| Correctness | 86.7% → 100.0% (+13.3 points) | 93.3% → 100.0% (+6.7 points) |
-| Discoverability | 71.7% — baseline ran, but no comparable score was available; uplift unavailable | 63.3% — baseline ran, but no comparable score was available; uplift unavailable |
-| Effectiveness | 75.0% → 78.3% (+3.3 points) | 73.3% → 88.3% (+15.0 points) |
-| Efficiency | 77.3% — baseline ran, but no comparable score was available; uplift unavailable | 73.0% — baseline ran, but no comparable score was available; uplift unavailable |
+| Overall | 85.3% — baseline ran, but no comparable score was available; uplift unavailable | 78.3% — baseline ran, but no comparable score was available; uplift unavailable |
+| Security | 100.0% → 100.0% (±0.0 points) | 80.0% → 66.7% (-13.3 points) |
+| Correctness | 86.7% → 100.0% (+13.3 points) | 76.0% → 100.0% (+24.0 points) |
+| Discoverability | 71.7% — baseline ran, but no comparable score was available; uplift unavailable | 66.7% — baseline ran, but no comparable score was available; uplift unavailable |
+| Effectiveness | 72.5% → 81.7% (+9.2 points) | 48.0% → 80.0% (+32.0 points) |
+| Efficiency | 72.9% — baseline ran, but no comparable score was available; uplift unavailable | 78.3% — baseline ran, but no comparable score was available; uplift unavailable |
 
 **How to read this table:** baseline is the same task attempted without the target skill. Scores are rounded to one decimal; threshold-adjacent values use additional precision so their displayed band matches the verdict. Uplift is derived from those displayed scores and shown in percentage points.
 
@@ -50,15 +52,15 @@ Actual Tier 3 execution usage is reported for every observed agent/case pair and
 
 | Agent | Dataset case | With skill | Without skill | Delta | Change | Coverage |
 |---|---|---:|---:|---:|---:|---|
-| claude-code | All cases | 1,466,475 | 2,119,004 | -652,529 | -30.79% | skill 3/3; base 3/3 |
-| claude-code | shared-global-negative-web-app | 1,028,700 | 1,074,720 | -46,020 | -4.28% | skill 1/1; base 1/1 |
-| claude-code | shared-negative-direct-conversion | 171,628 | 373,946 | -202,318 | -54.10% | skill 1/1; base 1/1 |
-| claude-code | shared-recover-incomplete-installation | 266,147 | 670,338 | -404,191 | -60.30% | skill 1/1; base 1/1 |
-| codex | All cases | 1,069,570 | 920,865 | +148,705 | +16.15% | skill 3/3; base 3/3 |
-| codex | shared-global-negative-web-app | 437,267 | 402,190 | +35,077 | +8.72% | skill 1/1; base 1/1 |
-| codex | shared-negative-direct-conversion | 440,340 | 360,025 | +80,315 | +22.31% | skill 1/1; base 1/1 |
-| codex | shared-recover-incomplete-installation | 191,963 | 158,650 | +33,313 | +21.00% | skill 1/1; base 1/1 |
-| ALL AGENTS | Dataset aggregate | 2,536,045 | 3,039,869 | -503,824 | -16.57% | skill 6/6; base 6/6 |
+| claude-code | All cases | 2,187,959 | 2,658,569 | -470,610 | -17.70% | skill 3/3; base 3/3 |
+| claude-code | shared-global-negative-web-app | 1,549,145 | 1,743,462 | -194,317 | -11.15% | skill 1/1; base 1/1 |
+| claude-code | shared-negative-direct-conversion | 226,544 | 686,170 | -459,626 | -66.98% | skill 1/1; base 1/1 |
+| claude-code | shared-recover-incomplete-installation | 412,270 | 228,937 | +183,333 | +80.08% | skill 1/1; base 1/1 |
+| codex | All cases | 1,336,872 | 896,187 | N/A | N/A | skill 3/3; base 5/5 |
+| codex | shared-global-negative-web-app | 305,283 | 283,756 | +21,527 | +7.59% | skill 1/1; base 1/1 |
+| codex | shared-negative-direct-conversion | 866,071 | 436,901 | N/A | N/A | skill 1/1; base 3/3 |
+| codex | shared-recover-incomplete-installation | 165,518 | 175,530 | -10,012 | -5.70% | skill 1/1; base 1/1 |
+| ALL AGENTS | Dataset aggregate | 3,524,831 | 3,554,756 | N/A | N/A | skill 6/6; base 8/8 |
 
 Prompt tokens include cached reads, so total tokens are `prompt + completion` (cached is not added twice). The Efficiency score uses `(prompt - cached) + completion`. N/A means the relevant trajectory counters were not available; coverage is never estimated.
 
@@ -66,8 +68,8 @@ Prompt tokens include cached reads, so total tokens are `prompt + completion` (c
 
 | Tier | Purpose | Status | Evidence |
 |---|---|---|---|
-| Tier 1 | Static validation | **PASSED** | 1 validator(s); 0 finding(s) |
-| Tier 2 | Semantic deduplication | **NOT RUN** | No result was recorded |
+| Tier 1 | Static validation | **PASSED WITH OBSERVATIONS** | 11 validator(s); 2 finding(s) |
+| Tier 2 | Semantic deduplication | **PASSED** | 2 validator(s); 0 finding(s) |
 | Tier 3 | Live agent evaluation | **PASS** | 2 agent(s); 3 task(s) |
 
 ## Findings and Observations
@@ -75,8 +77,8 @@ Prompt tokens include cached reads, so total tokens are `prompt + completion` (c
 <details>
 <summary>Show detailed findings and successful checks</summary>
 
-- Schema & Repository Governance: Found skill manifest: SKILL.md
-- AGENT_EVAL: Tier 3 evaluation complete: verdict PASS; best agent claude-code
+- **MEDIUM** QUALITY/quality_efficiency: Instructions lack clear action verbs (`skills/nvflare-shared/SKILL.md`)
+- **MEDIUM** SECURITY/Unknown (SQP-2): The guidance in lines 19–28 instructs the agent to write or update files (e.g., `client.py`, `job.py`, `model.py`, `requ (`references/runtime-output-guidance.md:19`)
 
 </details>
 
