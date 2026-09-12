@@ -14,6 +14,7 @@
 """Run the Hello PyTorch FedAvg job in an NVFLARE simulation."""
 
 import argparse
+import os
 
 from model import create_model
 from prepare_data import add_dataset_arguments
@@ -51,7 +52,8 @@ def define_parser() -> argparse.ArgumentParser:
 def create_recipe(args):
     train_args = ["--dataset", args.dataset]
     if args.dataset == "cifar10":
-        train_args.extend(("--data_root", args.data_root))
+        # Simulated clients run in site workspaces, not the submission directory.
+        train_args.extend(("--data_root", os.path.abspath(os.path.expanduser(args.data_root))))
 
     recipe = FedAvgRecipe(
         name="hello-pt",

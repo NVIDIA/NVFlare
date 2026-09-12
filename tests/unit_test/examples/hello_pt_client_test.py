@@ -13,7 +13,9 @@
 # limitations under the License.
 
 import importlib.util
+import os
 from collections import Counter
+from pathlib import Path
 
 import pytest
 
@@ -191,3 +193,36 @@ def test_cifar_preflight_rejects_present_but_empty_files(tmp_path):
         (batch_dir / name).touch()
     with pytest.raises(FileNotFoundError, match="Missing or empty CIFAR-10 files"):
         data_module.validate_cifar10(str(tmp_path))
+
+
+def test_missing_relative_cache_explains_client_working_directory(tmp_path, monkeypatch):
+    data_module = _load_hello_pt_module("prepare_data.py")
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(FileNotFoundError) as error:
+        data_module.validate_cifar10("relcache")
+    message = str(error.value)
+    assert "client's working directory" in message
+    assert str(tmp_path) in message
+    assert "Use an absolute --data_root path" in message
+
+
+def test_home_cache_is_expanded_without_relative_path_hint(tmp_path, monkeypatch):
+    data_module = _load_hello_pt_module("prepare_data.py")
+    cache_path = tmp_path / "cache"
+    argument = "~/" + os.path.relpath(cache_path, Path.home())
+    site_workspace = tmp_path / "site-1"
+    site_workspace.mkdir()
+    monkeypatch.chdir(site_workspace)
+
+    with pytest.raises(FileNotFoundError) as error:
+        data_module.validate_cifar10(argument)
+    message = str(error.value)
+    assert str(Path(argument).expanduser() / "cifar-10-batches-py") in message
+    assert "client's working directory" not in message
+    assert "Use an absolute --data_root path" not in message
+
+    batch_dir = cache_path / "cifar-10-batches-py"
+    batch_dir.mkdir(parents=True)
+    for name in [f"data_batch_{i}" for i in range(1, 6)] + ["test_batch", "batches.meta"]:
+        (batch_dir / name).write_bytes(b"prepared cache placeholder")
+    data_module.validate_cifar10(argument)

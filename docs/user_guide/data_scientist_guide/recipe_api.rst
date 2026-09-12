@@ -541,6 +541,180 @@ submitted. ``Run`` exposes:
 ``run.abort()``
    Request that the environment abort the running job.
 
+Following a Run
+---------------
+
+Recipe execution identifies the job before deployment.
+Simulation also prints its resolved client count. POC and production monitoring show
+status changes without repeating normal waiting messages. The concise progress
+view described below also retrieves round and metric messages from existing
+server logs while monitoring callbacks continue.
+
+``run.get_result()`` reports the framework job status and result workspace after
+stopping the environment. A failed job can still return a workspace containing
+diagnostics, so the presence of a result path does not indicate success. If cleanup
+removed the workspace, the message says it is no longer available. Use
+``run.get_result(clean_up=False)`` to retain environment files for inspection.
+Repeated calls return the cached result without repeating the summary.
+
+For diagnostics, inspect ``log.txt`` and ``error_log.txt`` in the workspace's site
+directories. POC service output is also recorded in ``poc_console.log``. The
+concise console shows workflow progress, warnings, and errors; detailed
+application output remains in the diagnostic files. Select ``full`` logging to see those messages on the console; detailed file
+logging is unchanged. See :ref:`logging_configuration` for logging configuration.
+
+Training recipes that produce aggregation metrics log the locations of their
+existing summary and round files when the summary is written. See
+:ref:`recipe_metrics_artifacts` for their fields and interpretation. Those metrics
+are not necessarily an evaluation of the final saved model. Cross-site evaluation
+uses its own existing report; jobs without aggregation metrics do not produce an
+aggregation summary.
+
+Focused Progress View
+---------------------
+
+Concise is the simulator default. Run the recipe normally to see round progress
+and the end summary; no environment variable or extra option is required:
+
+.. code-block:: bash
+
+   python job.py
+
+Recipe consumes ``--log_config`` as a system argument, like ``--export`` and
+``--export-dir``, before the script's own argument parser runs. Scripts that import
+Recipe before parsing arguments need no logging option of their own:
+
+.. code-block:: bash
+
+   python job.py --log_config full
+
+``--log_config=full`` also works. The command-line value overrides
+``SimEnv(log_config=...)`` and the existing ``FL_LOG_LEVEL`` environment setting.
+Without the option, existing constructor/environment defaults are unchanged.
+The option reuses FLARE's logging configuration, including built-in modes, levels,
+and configuration files. Do not reuse ``--log_config`` for an unrelated script
+argument. The short ``-l`` remains a simulator CLI option, not a reserved Recipe
+argument. Script-local ``--help`` lists the script's own arguments.
+
+The shared option also sets the existing process logging environment inherited by
+process-based POC services. It does not reconfigure already-running production
+services; use the existing admin log-configuration commands for those services.
+
+The separate ``nvflare simulator`` command accepts ``-l`` / ``--log_config`` when
+running an exported job:
+
+.. code-block:: bash
+
+   nvflare simulator ./fl_job/hello-pt -n 2 -l full
+
+The existing ``concise``, ``msg_only``, ``full``, and ``verbose`` modes remain available.
+
+Concise selects the ordinary metric-writer and evaluation-controller loggers,
+plus warnings and errors, through the existing filter configuration. The console
+uses the existing message formatter; ``log_fl.txt`` retains its timestamped file
+formatter. Summary text is wrapped to 80 characters and metric tables are bounded.
+No separate progress mode, formatter, or child-logger channel is required.
+Detailed application prints, epoch
+logs, model arrays, and framework messages remain in ``log.txt`` and ``log.json``
+at the configured log level. Normal in-process client shutdown at ``END_RUN`` is
+logged at INFO; other stop reasons still produce warnings.
+
+Console decorations fall back to ASCII on limited output streams. A closed or
+unwritable reporting stream does not prevent deployment or result retrieval.
+
+Both successful and failed summaries include the job name and environment context.
+Known local client counts are shown; production participation is not inferred.
+Failure output retains error messages and tracebacks and adds a bounded summary
+of available errors, sites, application code locations, and diagnostic log paths.
+Repeated client exceptions are grouped. A nonzero simulator exit includes the
+summary in its raised exception; failed POC/production jobs include it in
+``Run.get_result()`` before environment cleanup.
+
+Client diagnostics in POC/production require logs already streamed to the server.
+The current provisioning template configures ``SiteLogStreamer`` for
+``error_log.txt``; deployments without it, sites with
+``allow_log_streaming=False``, and interrupted transfers may leave client logs
+unavailable. Reporting does not enable streaming or contact clients directly.
+On failure, Recipe lists stored ``ERRORLOG_*`` components and retrieves at most
+20 named client logs, one at a time. Names that collide with the protocol's
+case-insensitive ``all`` or ``server`` selectors are skipped. Each request has a server-enforced 1 MiB
+UTF-8 log-byte limit before transfer (protocol encoding adds overhead). Older
+servers that do not support this limit are not retried with unbounded requests.
+Excerpts are retained alongside downloaded results in ``failure-logs-*``.
+The summary prefers each site's ``log.json`` and tries ``error_log.txt`` when the
+JSON tail has no usable error. Both attempts count toward the shared limit of
+20 files, reading at most the last 1 MiB of each. Current and supported
+legacy terminal statuses share the same reporting rules: ``FINISHED_OK`` is
+successful; ``FINISHED:CAN_NOT_SCHEDULE`` is shown as ``Not scheduled`` without
+requesting training error logs. Other terminal non-success statuses include failure details. Missing, rotated,
+or custom-format logs may omit the original exception; consult the full site logs
+when the summary is inconclusive. Diagnostic retrieval failures do not replace
+the job result or status. ``FATAL_SYSTEM_ERROR`` can follow a client code error
+and is not treated as a diagnosis of an infrastructure failure.
+
+The existing metrics writer separates rounds with ``=== ROUND N / M ===``
+headings. Client rows appear as their metrics arrive, with numeric values aligned
+under shared column headings. Headings repeat if a client or aggregator reports
+different metric names. An aggregated row and elapsed time close each round.
+This preserves completed round sections in both the console and ``log_fl.txt``. The aggregation-finished message measures
+time since round start; it does not claim model persistence or overall job success.
+Metric names, units, and evaluation timing are defined by the job. Displayed
+numbers are rounded for readability; artifact values are unchanged. Structured
+metric values are identified and remain available in the artifacts.
+
+The existing evaluation workflow announces evaluation and reports a bounded
+client/model metric summary as each result is saved, including in controller-only
+jobs without a Recipe or JSON result generator. Recipe runs additionally present
+the saved JSON results as a comparison table in the final summary. A reported training metric is not
+relabelled as an evaluation of the final saved model. Jobs that do not use these
+reporting components still have job-status and diagnostic output, but do not
+acquire synthetic training rounds or metrics.
+
+Full and verbose Recipe monitoring include job metadata, such as resource requirements
+and the deployment map, when job status changes. Concise monitoring keeps this
+metadata out of the console; it remains available through the session API and debug logging.
+
+POC and production Recipe monitoring also shows concise progress by default,
+without an environment variable. The shared monitor retrieves existing server
+``log.json`` records at most once per five seconds during normal callbacks, plus
+a final read on a status change. This does not change the service log configuration.
+A bounded recent-record cache suppresses overlapping records. This uses the existing log API, not
+a new transport or a background thread. It is best-effort progress: network calls
+can delay updates, unavailable logs do not stop monitoring, and client-local
+warnings require the existing client-log collection/streaming configuration to
+be visible from the server. The server must run the updated reporting components.
+For long-running jobs, the existing API retrieves log snapshots rather than
+incremental ranges (up to 5 MiB per request). Display processing is limited to the
+last 64 KiB and 200 lines; only at most 200 fixed-size record hashes are retained.
+A busy job can produce more records between refreshes than this tail holds, so
+live output is a preview; use saved logs for the complete history. No new log
+storage or cursor protocol is introduced.
+
+End-of-Run Summary
+------------------
+
+``run.get_result()`` also prints a summary from existing local result artifacts:
+a table of up to ten recorded training rounds, separate model-evaluation tables,
+and existing model, metrics, evaluation and log locations. A ``RUN SUMMARY``
+separator distinguishes the final report from live round output. The same reader supports
+standard simulator and downloaded POC/production layouts. It does not load model
+weights or change the meaning of reported metrics. For example, an application
+metric named ``accuracy`` is not assumed to be a percentage or a final-model score.
+Elapsed time covers deployment through result retrieval, excluding environment
+cleanup. ``Completed`` is displayed only for the framework's completed status;
+failed, aborted, or unavailable statuses are preserved.
+
+Tables display at most two metrics (or two models in each evaluation comparison)
+and ten rows; the evaluation preview covers up to six clients and two metrics.
+Missing values use a dash, rather than a fabricated zero. Structured values,
+shortened names, and additional results refer to the saved artifacts. Table
+alignment is retained in log files and redirected output.
+
+Artifact reads and displayed metrics are bounded. Missing, oversized, malformed,
+or custom-layout artifacts do not prevent result retrieval; inspect the saved
+workspace for details. When cleanup removes the workspace, paths in the report
+refer to the captured result and the final message states that it is unavailable.
+
 What You Can Rely On
 --------------------
 

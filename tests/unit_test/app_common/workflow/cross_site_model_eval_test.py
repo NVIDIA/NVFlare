@@ -54,3 +54,87 @@ class TestCrossSiteModelEvalPaths:
         run_dir = os.path.realpath(str(tmp_path / "run"))
         assert os.path.isdir(os.path.join(run_dir, AppConstants.CROSS_VAL_DIR, AppConstants.CROSS_VAL_MODEL_DIR_NAME))
         assert os.path.isdir(os.path.join(run_dir, AppConstants.CROSS_VAL_DIR, AppConstants.CROSS_VAL_RESULTS_DIR_NAME))
+
+
+@pytest.mark.parametrize("data_kind", ["METRICS", "WEIGHTS"])
+def test_controller_only_evaluation_reports_bounded_results(tmp_path, caplog, data_kind):
+    import logging
+
+    from nvflare.apis.dxo import DXO, DataKind, from_file
+
+    engine, ctx = _make_engine_and_ctx(tmp_path)
+    controller = CrossSiteModelEval(participating_clients=["site-1"])
+    controller._engine = engine
+    controller.fire_event = Mock()
+    controller.start_controller(ctx)
+    payload = {"accuracy": 0.75, "samples": list(range(100000)), "detail": "X" * 100000}
+    payload.update({f"extra_{n}": n for n in range(100)})
+    with caplog.at_level(logging.INFO):
+        controller._save_validation_result("site-1", "global.pt", DXO(getattr(DataKind, data_kind), payload), ctx)
+    progress = [
+        r.message
+        for r in caplog.records
+        if r.name == "nvflare.app_common.workflows.cross_site_model_eval" and r.message.startswith("Evaluated ")
+    ]
+    assert len(progress) == 1
+    assert 'Evaluated "global.pt" on "site-1"' in progress[0]
+    assert len(progress[0]) < 1024
+    assert "see saved result" in progress[0]
+    if data_kind == "METRICS":
+        assert "accuracy=0.75" in progress[0]
+    else:
+        assert "accuracy=" not in progress[0]
+    assert not list(tmp_path.rglob("cross_val_results.json"))
+    saved = from_file(controller._val_results["site-1"]["global.pt"])
+    assert len(saved.data["samples"]) == 100000
+    assert len(saved.data["detail"]) == 100000
+
+
+@pytest.mark.parametrize("kind", ["global", "custom", "he"])
+def test_inherited_evaluation_is_visible_locally_and_in_remote_replay(tmp_path, caplog, capsys, kind):
+    import logging
+
+    from nvflare.apis.dxo import DXO, DataKind
+    from nvflare.app_common.abstract.model_locator import ModelLocator
+    from nvflare.app_common.workflows.global_model_eval import GlobalModelEval
+    from nvflare.fuel.utils.log_utils import ColorFormatter, JsonFormatter, LoggerNameFilter, concise_log_dict
+    from nvflare.recipe.session_mgr import _show_job_progress
+
+    if kind == "global":
+        controller = GlobalModelEval(model_locator_id="locator", participating_clients=["site-1"])
+    elif kind == "he":
+        pytest.importorskip("tenseal")
+        from nvflare.app_opt.he.cross_site_model_eval import HECrossSiteModelEval
+
+        controller = HECrossSiteModelEval(participating_clients=["site-1"])
+    else:
+
+        class CustomEval(CrossSiteModelEval):
+            pass
+
+        controller = CustomEval(participating_clients=["site-1"])
+    engine, ctx = _make_engine_and_ctx(tmp_path)
+    engine.get_component.return_value = Mock(spec=ModelLocator)
+    controller._engine = engine
+    controller.fire_event = Mock()
+    # Exercise inherited result reporting; HE key loading is independent of this path.
+    CrossSiteModelEval.start_controller(controller, ctx)
+    assert not controller.logger.name.startswith("nvflare.app_common.workflows.cross_site_model_eval")
+    with caplog.at_level(logging.INFO):
+        controller._save_validation_result("site-1", "global.pt", DXO(DataKind.METRICS, {"accuracy": 0.75}), ctx)
+
+    config = concise_log_dict["filters"]["ConciseFilter"]
+    log_filter = LoggerNameFilter(**{k: v for k, v in config.items() if k != "()"})
+    formatter = ColorFormatter(fmt=concise_log_dict["formatters"]["consoleFormatter"]["fmt"])
+    local = "\n".join(formatter.format(r) for r in caplog.records if log_filter.filter(r))
+    assert 'Evaluated "global.pt" on "site-1": accuracy=0.75' in local
+    session = Mock()
+    session.get_job_logs.return_value = {
+        "logs": {"server": "\n".join(JsonFormatter().format(r) for r in caplog.records)}
+    }
+    state = {"seen": set()}
+    _show_job_progress(session, "job-1", state)
+    remote = capsys.readouterr().out
+    assert 'Evaluated "global.pt" on "site-1": accuracy=0.75' in remote
+    _show_job_progress(session, "job-1", state)
+    assert capsys.readouterr().out == ""

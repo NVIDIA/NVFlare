@@ -67,7 +67,7 @@ from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 from nvflare.fuel.hci.server.binary_transfer import BinaryTransfer
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.utils.argument_utils import SafeArgumentParser
-from nvflare.fuel.utils.log_utils import get_obj_logger
+from nvflare.fuel.utils.log_utils import _read_log_tail, get_obj_logger
 from nvflare.private.admin_defs import MsgHeader
 from nvflare.private.admin_defs import ReturnCode as AdminReturnCode
 from nvflare.private.defs import RequestHeader, TrainingTopic
@@ -142,6 +142,7 @@ def _create_get_job_log_cmd_parser():
     parser.add_argument("job_id", help="Job ID")
     parser.add_argument("target", nargs="?", default=SERVER_SITE_NAME, help="server, all, or a client site name")
     parser.add_argument("log_file_name", nargs="?", default=WorkspaceConstants.LOG_FILE_NAME, help="log file name")
+    parser.add_argument("--tail-bytes", type=int, help="maximum UTF-8 log bytes per site before transfer")
     return parser
 
 
@@ -570,6 +571,8 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         try:
             parser = _create_get_job_log_cmd_parser()
             parsed_args = parser.parse_args(args[1:])
+            if parsed_args.tail_bytes is not None and parsed_args.tail_bytes <= 0:
+                raise ValueError("--tail-bytes must be a positive integer")
         except Exception as e:
             conn.append_error(
                 secure_format_exception(e),
@@ -637,12 +640,18 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             conn.append_error(error, meta=make_meta(MetaStatusValue.INTERNAL_ERROR, error))
             return
 
+        if parsed_args.tail_bytes is not None:
+            limit = min(parsed_args.tail_bytes, self.MAX_RETURNED_JOB_LOG_BYTES)
+            payload["logs"] = {
+                site: text.encode("utf-8")[-limit:].decode("utf-8", errors="ignore")
+                for site, text in payload["logs"].items()
+            }
         conn.append_dict(payload, meta=make_meta(MetaStatusValue.OK))
 
     @staticmethod
     def _normalize_log_file_name(log_file_name: str) -> str:
-        if log_file_name == JSON_LOG_FILE_NAME:
-            return JSON_LOG_FILE_NAME
+        if log_file_name in (JSON_LOG_FILE_NAME, WorkspaceConstants.ERROR_LOG_FILE_NAME):
+            return log_file_name
         return WorkspaceConstants.LOG_FILE_NAME
 
     def _read_server_job_log(
@@ -897,6 +906,8 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
 
     @staticmethod
     def _client_log_data_type(log_file_name: str = WorkspaceConstants.LOG_FILE_NAME) -> str:
+        if log_file_name == WorkspaceConstants.ERROR_LOG_FILE_NAME:
+            return DataTypes.ERRORLOG.value
         return f"{DataTypes.LOG.value}_{log_file_name}"
 
     def _get_available_client_log_sites(
@@ -995,11 +1006,8 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         return targets
 
     def _read_job_log_tail_data(self, log_file) -> bytes:
-        read_size = self.MAX_RETURNED_JOB_LOG_BYTES + 1
-        log_file.seek(0, os.SEEK_END)
-        file_size = log_file.tell()
-        log_file.seek(max(0, file_size - read_size))
-        return log_file.read(read_size)
+        data, _ = _read_log_tail(log_file, self.MAX_RETURNED_JOB_LOG_BYTES + 1)
+        return data
 
     def _decode_job_log_data(self, data) -> Optional[str]:
         if data is None:

@@ -108,14 +108,22 @@ class SyntheticImageDataset(Dataset):
 
 def validate_cifar10(data_root: str, prepare_script: str = "prepare_data.py"):
     """Reject missing or empty CIFAR-10 files without downloading or hashing them."""
-    batch_dir = Path(data_root).expanduser() / "cifar-10-batches-py"
+    expanded_root = Path(data_root).expanduser()
+    batch_dir = expanded_root / "cifar-10-batches-py"
     missing = [
         name for name in _CIFAR10_FILES if not (batch_dir / name).is_file() or (batch_dir / name).stat().st_size == 0
     ]
     if missing:
         command = f"python {shlex.quote(prepare_script)} --data_root {shlex.quote(str(data_root))}"
+        hint = ""
+        if not expanded_root.is_absolute():
+            hint = (
+                f" Relative --data_root paths are interpreted from the client's working directory ({Path.cwd()}),"
+                " not the job submission directory. Use an absolute --data_root path."
+            )
         raise FileNotFoundError(
             f"Missing or empty CIFAR-10 files under {batch_dir}: {', '.join(missing)}. Run `{command}` before starting clients."
+            + hint
         )
 
 

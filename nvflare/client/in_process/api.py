@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import copy
+import logging
 import os
 import time
 from typing import Any, Dict, Optional
@@ -327,13 +328,15 @@ class InProcessClientAPI(APISpec):
         elif topic == TOPIC_STOP:
             self.stop = True
             self.stop_reason = msg
-            self.logger.warning(f"ask to stop job: reason: {msg}")
+            level = logging.INFO if msg == "END_RUN received" else logging.WARNING
+            self.logger.log(level, f"ask to stop job: reason: {msg}")
 
     def __continue_job(self) -> bool:
         if self.abort:
             raise RuntimeError(f"request to abort the job for reason {self.abort_reason}")
         if self.stop:
-            self.logger.warning(f"request to stop the job for reason {self.stop_reason}")
+            level = logging.INFO if self.stop_reason == "END_RUN received" else logging.WARNING
+            self.logger.log(level, f"request to stop the job for reason {self.stop_reason}")
             self.fl_model = None
             return False
 

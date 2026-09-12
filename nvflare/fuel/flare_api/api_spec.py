@@ -317,6 +317,8 @@ class SessionSpec(ABC):
         tail_lines: Optional[int] = None,
         grep_pattern: Optional[str] = None,
         log_file_name: str = "log.txt",
+        *,
+        max_bytes: Optional[int] = None,
     ) -> dict:
         """Retrieve logs for the specified job.
 
@@ -326,6 +328,9 @@ class SessionSpec(ABC):
             tail_lines: deprecated compatibility option to return the last N lines
             grep_pattern: deprecated compatibility option to return matching lines
             log_file_name: internal log file selector. Defaults to ``log.txt``.
+            max_bytes: positive UTF-8 log-byte limit per site, enforced on the server before
+                transfer and capped by its 5 MiB limit. None uses the server default.
+                Servers that do not support the option must not be retried without the limit.
 
         Returns: dict with ``logs`` mapping site names to log content, and
             optional ``unavailable`` mapping site names to reasons.

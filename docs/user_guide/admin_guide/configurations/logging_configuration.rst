@@ -216,7 +216,7 @@ We leverage this in our FLFilter, which filters loggers related to fl training o
 ConciseLogFilter
 ----------------
 :class:`ConciseLogFilter<nvflare.fuel.utils.log_utils.ConciseLogFilter>` extends ``LoggerNameFilter`` for the
-``concise`` and ``msg_only`` console modes. It allows records from loggers outside the ``nvflare`` namespace so
+``msg_only`` console mode. It allows records from loggers outside the ``nvflare`` namespace so
 user training logs are visible without requiring :func:`custom_logger<nvflare.fuel.utils.log_utils.custom_logger>`.
 For ``nvflare`` loggers, it applies the inherited ``LoggerNameFilter`` rules, allowing configured logger names and,
 by default, all records above INFO.
@@ -302,8 +302,9 @@ Furthermore, any intermediate logger parents are already created and are configu
 When creating loggers for custom code, we provide a user custom logger function:
 
 :func:`custom_logger<nvflare.fuel.utils.log_utils.custom_logger>`: From a logger, return a new logger with "custom" prepended to the logger name.
-This provides an explicit namespace that passes through the default FLFilter into ``log_fl.txt``. The concise and
-message-only console modes additionally display logs from all other non-NVFlare namespaces.
+This provides an explicit namespace that passes through the default FLFilter into ``log_fl.txt``. The message-only console mode
+additionally displays logs from all other non-NVFlare namespaces. Concise mode
+selects workflow progress plus warnings and errors.
 
 When creating loggers for FLARE code, we provide several developer functions to help adhere to the package logger hierarchy:
 
@@ -328,9 +329,18 @@ This argument can be any of the following:
 - log configuration json file (``/path/to/my_log_config.json``, ``my_log_config.json``)
 - predefined console :class:`LogMode<nvflare.fuel.utils.log_utils.LogMode>` (``concise``, ``msg_only``, ``full``, ``verbose``)
 
-    - ``concise`` (default for simulator mode): all non-NVFlare logs plus selected NVFlare application logs, with
-      simplified log attributes
-    - ``msg_only``: the same log selection as ``concise``, formatted as messages only
+    - ``concise`` (default for simulator mode): workflow progress and metrics,
+      plus warnings and errors. The existing console formatter shows messages only;
+      ``log_fl.txt`` keeps its timestamped file formatter. The existing filter selects
+      the ordinary reporting component loggers; no separate progress mode or formatter
+      is installed. Other file handlers keep detailed logs. Built-in aggregation and evaluation writers
+      supply these messages; arbitrary client prints remain in diagnostic logs.
+      Server setup supplies ``MetricsArtifactWriter`` when no writer is configured,
+      so ordinary FedJob and JSON jobs also report round events and save metric artifacts.
+      An explicitly configured writer retains its settings and is not duplicated.
+      A component registered as ``metrics_artifact_writer`` also replaces the default,
+      even when it does not inherit from ``MetricsArtifactWriter``.
+    - ``msg_only``: non-NVFlare logs and selected NVFlare application logs, formatted as messages only
     - ``full`` (default in workspaces in poc and production mode): all info level logs
     - ``verbose``: debug level logs with detailed log attributes
 

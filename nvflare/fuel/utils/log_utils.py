@@ -16,9 +16,12 @@ import inspect
 import json
 import logging
 import logging.config
+import numbers
 import os
 import re
 import sys
+import textwrap
+from itertools import islice
 from logging import Logger
 from logging.handlers import RotatingFileHandler
 from typing import Union
@@ -42,18 +45,35 @@ with open(os.path.join(os.path.dirname(__file__), DEFAULT_LOG_JSON), "r") as f:
     default_log_dict = json.load(f)
 
 concise_log_dict = copy.deepcopy(default_log_dict)
-concise_log_dict["formatters"]["consoleFormatter"]["fmt"] = "%(asctime)s - %(levelname)s - %(message)s"
-concise_log_dict["handlers"]["consoleHandler"]["filters"] = ["ConciseFilter"]
+# Configure the existing concise view using ordinary component loggers.
+concise_log_dict["formatters"]["consoleFormatter"]["fmt"] = "%(message)s"
+concise_log_dict["filters"]["ConciseFilter"] = {
+    "()": "nvflare.fuel.utils.log_utils.LoggerNameFilter",
+    "logger_names": [
+        "nvflare.app_common.widgets.metrics_artifact_writer",
+        "nvflare.app_common.workflows.cross_site_model_eval",
+    ],
+}
+for handler_name in ("consoleHandler", "FLFileHandler"):
+    concise_log_dict["handlers"][handler_name]["filters"] = ["ConciseFilter"]
+
 
 msg_only_log_dict = copy.deepcopy(default_log_dict)
 msg_only_log_dict["formatters"]["consoleFormatter"]["fmt"] = "%(message)s"
 msg_only_log_dict["handlers"]["consoleHandler"]["filters"] = ["ConciseFilter"]
+# Keep application messages while excluding transfer/executor bookkeeping.
+msg_only_log_dict["filters"]["ConciseFilter"]["exclude_logger_names"] = [
+    "nvflare.app_common.np.np_downloader",
+    "nvflare.app_common.executors.client_api_executor",
+    "__main__.ClientTaskWorker",
+]
 
 verbose_log_dict = copy.deepcopy(default_log_dict)
 verbose_log_dict["formatters"]["consoleFormatter"][
     "fmt"
 ] = "%(asctime)s - %(identity)s - %(fullName)s - %(levelname)s - %(fl_ctx)s - %(message)s"
 verbose_log_dict["loggers"]["root"]["level"] = "DEBUG"
+
 
 logmode_config_dict = {
     LogMode.FULL: default_log_dict,
@@ -173,6 +193,17 @@ class BaseFormatter(logging.Formatter):
             self._style._fmt = self._style._fmt.replace(placeholder, "")
 
 
+def _console_text(message):
+    """Keep console text readable on streams that cannot encode Unicode decoration."""
+    encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
+    try:
+        message.encode(encoding)
+    except UnicodeEncodeError:
+        message = message.translate(str.maketrans({"✓": "[OK]", "✗": "[X]", "·": "-", "─": "-", "—": "-", "…": "..."}))
+        message = message.encode(encoding, errors="backslashreplace").decode(encoding)
+    return message
+
+
 class ColorFormatter(BaseFormatter):
     def __init__(
         self,
@@ -197,7 +228,7 @@ class ColorFormatter(BaseFormatter):
         self.logger_colors = logger_colors
 
     def format(self, record):
-        record_s = super().format(record)
+        record_s = _console_text(super().format(record))
         if not _stdout_supports_color():
             return record_s
 
@@ -289,6 +320,102 @@ class LoggerNameFilter(logging.Filter):
 
     def matches_name(self, name, logger_names) -> bool:
         return any(name.startswith(logger_name) or name.split(".")[-1] == logger_name for logger_name in logger_names)
+
+
+def _format_metric_value(value):
+    if isinstance(value, numbers.Real) and not isinstance(value, bool):
+        return format(value, ".6g")
+    if isinstance(value, str):
+        value = value[:80] + ("..." if len(value) > 80 else "")
+    elif value is not None and not isinstance(value, bool):
+        return "[see saved result]"
+    return json.dumps(value, ensure_ascii=True)
+
+
+def format_metric_summary(metrics):
+    """Render at most six scalar metrics; leave full payloads in their artifacts."""
+    try:
+        if not isinstance(metrics, dict):
+            return "[see saved result for metrics]"
+        values = []
+        for name, value in islice(metrics.items(), 6):
+            name = json.dumps((name[:64] if isinstance(name, str) else "metric"), ensure_ascii=True)[1:-1]
+            values.append(f"{name}={_format_metric_value(value)}")
+        if len(metrics) > 6:
+            values.append("... [see saved result for remaining metrics]")
+        return ", ".join(values) or "no metrics reported"
+    except Exception:
+        # Application-defined objects must not make display formatting fail a workflow.
+        return "[see saved result for metrics]"
+
+
+def format_metric_table(rows, label="Client", columns=None, header=True):
+    """Render a bounded two-metric table without evaluating application objects.
+
+    Missing values use a dash. Truncated names, additional rows/metrics, and
+    structured values refer to the saved artifacts instead of changing values.
+    """
+    try:
+        rows = list(islice(rows, 11))
+        omitted = len(rows) > 10
+        rows = rows[:10]
+        if columns is None:
+            columns = dict.fromkeys(key for _, metrics in rows for key in islice(metrics, 2))
+        columns = list(islice(columns, 2))
+        shortened = False
+
+        def cell_name(value, width):
+            nonlocal shortened
+            text = json.dumps(value[:160] if isinstance(value, str) else "?", ensure_ascii=True)[1:-1]
+            if len(text) > width:
+                shortened = True
+                return text[: width - 3] + "..."
+            return text
+
+        names = [cell_name(key, 30) for key in columns]
+        widths = [max(14, len(name)) for name in names]
+
+        def row_line(name, values):
+            return f"  {cell_name(name, 12):<12}  " + "  ".join(f"{v:>{w}}" for v, w in zip(values, widths))
+
+        lines = [row_line(label, names)] if header else []
+        for name, metrics in rows:
+            values = []
+            for key, width in zip(columns, widths):
+                try:
+                    value = _format_metric_value(metrics[key]) if key in metrics else "—"
+                except Exception:
+                    value = "[see artifact]"
+                values.append(value if len(value) <= width else "[see artifact]")
+            lines.append(row_line(name, values))
+        if omitted or shortened or any(key not in columns for _, metrics in rows for key in metrics):
+            lines.append("  Full names and additional results are available in the saved artifacts.")
+        return "\n".join(lines)
+    except Exception:
+        return "  See saved artifacts for metrics."
+
+
+def wrap_log_message(message, subsequent_indent="    "):
+    """Wrap long display lines while preserving short lines and table alignment."""
+    return "\n".join(
+        (
+            textwrap.fill(line, width=80, subsequent_indent=subsequent_indent, replace_whitespace=False)
+            if len(line) > 80
+            else line
+        )
+        for line in message.splitlines()
+    )
+
+
+def _read_log_tail(stream, max_bytes, *, whole_lines=False):
+    """Return bounded tail bytes and a truncation flag; optionally discard the first partial record."""
+    stream.seek(0, os.SEEK_END)
+    start = max(0, stream.tell() - max_bytes)
+    stream.seek(start)
+    data = stream.read(max_bytes)
+    if start and whole_lines:
+        data = data.partition(b"\n")[2]
+    return data, start > 0
 
 
 class ConciseLogFilter(LoggerNameFilter):

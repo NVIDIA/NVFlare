@@ -19,6 +19,7 @@ from nvflare.apis.fl_constant import SiteType, SystemConfigs, SystemVarName
 from nvflare.apis.impl.controller import Controller
 from nvflare.apis.impl.wf_comm_server import WFCommServer
 from nvflare.apis.workspace import Workspace
+from nvflare.app_common.widgets.metrics_artifact_writer import MetricsArtifactWriter
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.json_scanner import Node
@@ -173,6 +174,13 @@ class ServerJsonConfigurator(FedJsonConfigurator):
 
         if not self.workflows:
             raise ConfigError("workflows not specified")
+
+        # FedJob and JSON jobs use the same progress reporter as recipes.
+        # The standard component ID also permits independent/no-op replacements.
+        if "metrics_artifact_writer" not in self.components and not any(
+            isinstance(handler, MetricsArtifactWriter) for handler in self.handlers
+        ):
+            self.handlers.append(MetricsArtifactWriter())
 
         self.runner_config = ServerRunnerConfig(
             heartbeat_timeout=self.heartbeat_timeout,

@@ -19,7 +19,6 @@ import tensorflow as tf
 from nvflare.apis.fl_component import FLComponent
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
-from nvflare.app_common.widgets.metrics_artifact_writer import MetricsArtifactWriter
 from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
 from nvflare.job_config.base_fed_job import BaseFedJob as UnifiedBaseFedJob
@@ -58,6 +57,8 @@ class BaseFedJob(UnifiedBaseFedJob):
         analytics_receiver (AnalyticsReceiver | None, optional): Component for receiving analytics data.
             If not provided, no analytics tracking will be enabled. For experiment tracking (e.g., TensorBoard),
             explicitly pass a TBAnalyticsReceiver instance.
+        metrics_artifact_writer (FLComponent | None, optional): Server metrics writer or independent replacement.
+            Registered as "metrics_artifact_writer"; None uses the default MetricsArtifactWriter.
         model_persistor (optional, ModelPersistor): how to persist the model.
         key_metric_mode (str, optional): One of "min" or "max". Use "min" when lower key_metric values
             are better, such as for loss, and "max" when higher values are better. Defaults to "max".
@@ -76,7 +77,7 @@ class BaseFedJob(UnifiedBaseFedJob):
         model_selector: Optional[FLComponent] = None,
         convert_to_fed_event: Optional[ConvertToFedEvent] = None,
         analytics_receiver: Optional[AnalyticsReceiver] = None,
-        metrics_artifact_writer: Optional[MetricsArtifactWriter] = None,
+        metrics_artifact_writer: Optional[FLComponent] = None,
         model_persistor: Optional[ModelPersistor] = None,
         key_metric_mode: Literal["min", "max"] = "max",
     ):

@@ -38,6 +38,7 @@ def _read_final_accuracies(result_path):
 
 @pytest.mark.timeout(300)
 def test_hello_pt_reuses_the_application_in_poc(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("FL_LOG_LEVEL", "concise")
     poc_env_module = importlib.import_module("nvflare.recipe.poc_env")
     poc_workspace = tmp_path / "poc-workspace"
     poc_workspace.mkdir()
@@ -78,6 +79,15 @@ def test_hello_pt_reuses_the_application_in_poc(tmp_path, monkeypatch, capsys):
     output = capsys.readouterr().out
     assert "Job Status is: FINISHED:COMPLETED" in output
     assert f"Result can be found in: {poc_result}" in output
+    assert "ROUND 3 / 3" in output
+    assert "✓ Aggregated 2 client updates" in output
+    assert "accuracy_after_local_training" in output
+    assert "Evaluating saved models on 2 clients" in output
+    assert "SRV_FL_global_model.pt" in output
+    assert "Job status: RUNNING" in output
+    assert "Job Meta:" not in output
+    assert f"Results   {poc_result}" in output
+    assert "Model evaluation · accuracy" in output
 
 
 @pytest.mark.timeout(180)
@@ -101,7 +111,15 @@ def test_failed_poc_job_retains_download_and_client_error_logs(tmp_path, monkeyp
         with pytest.raises(RuntimeError, match="unsuccessful status: FINISHED"):
             job_module.main(["--env", "poc", "--num_rounds", "1", *client_args])
 
-    output = capsys.readouterr().err
+    captured = capsys.readouterr()
+    summary = captured.out.split("RUN SUMMARY", 1)[1]
+    assert "NVIDIA FLARE · hello-pt" in summary
+    assert "POC · 2 clients" in summary
+    assert expected_error in " ".join(summary.split())
+    assert "site-1, site-2 / TaskScriptRunner" in summary
+    assert ("prepare_data.py:" if missing_cifar else "client.py:") in summary
+    assert "Client logs are not included" not in summary
+    output = captured.err
     result_line = next(line for line in output.splitlines() if line.startswith("Result can be found in:"))
     result_path = Path(result_line.split(":", 1)[1].strip())
     assert result_path.is_dir()

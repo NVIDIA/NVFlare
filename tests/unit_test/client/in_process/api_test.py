@@ -15,6 +15,8 @@
 import unittest
 from copy import deepcopy
 
+import pytest
+
 from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.client.config import ConfigKey
@@ -388,3 +390,17 @@ class TestInProcessClientAPI(unittest.TestCase):
             client_api.send(FLModel(params={"w": np.zeros((10,))}))
 
     # Add more test methods for other functionalities in the class
+
+
+@pytest.mark.parametrize("reason,level", [("END_RUN received", "INFO"), ("unexpected stop", "WARNING")])
+def test_normal_end_run_is_informational_and_other_stops_remain_warnings(caplog, reason, level):
+    client_api = InProcessClientAPI({})
+    try:
+        with caplog.at_level("INFO"):
+            client_api._InProcessClientAPI__ask_to_abort(TOPIC_STOP, reason, None)
+            assert client_api._InProcessClientAPI__continue_job() is False
+        stop_logs = [r for r in caplog.records if "stop job" in r.message or "stop the job" in r.message]
+        assert len(stop_logs) == 2
+        assert all(r.levelname == level for r in stop_logs)
+    finally:
+        client_api.close()

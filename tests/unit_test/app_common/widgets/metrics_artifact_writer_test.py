@@ -214,7 +214,7 @@ def _collect_metric_names(value):
 
 
 class TestMetricsArtifactWriterAggregationEvents:
-    def test_writes_summary_and_jsonl_from_aggregation_events(self, tmp_path):
+    def test_writes_summary_and_jsonl_from_aggregation_events(self, tmp_path, caplog):
         writer = MetricsArtifactWriter()
         run_dir = tmp_path / "run"
         fl_ctx = _make_fl_ctx(run_dir)
@@ -243,12 +243,15 @@ class TestMetricsArtifactWriterAggregationEvents:
             ],
             key_metric=key_metric,
         )
-        _finish_run(writer, fl_ctx)
+        with caplog.at_level("INFO"):
+            _finish_run(writer, fl_ctx)
 
         metrics_dir, summary_path, round_path = _artifact_paths(run_dir)
         assert metrics_dir.is_dir()
         assert summary_path.is_file()
         assert round_path.is_file()
+        assert f"Aggregated metrics summary: {summary_path}" in caplog.text
+        assert f"Round metrics: {round_path}" in caplog.text
 
         summary = _read_summary(run_dir)
         assert summary["status"] == "metrics_reported"
@@ -887,3 +890,64 @@ class TestMetricsArtifactWriterAggregationEvents:
             _finish_run(writer, fl_ctx)
 
         assert not os.path.exists(tmp_path / "outside_metrics")
+
+
+@pytest.mark.parametrize("writer_class", [MetricsArtifactWriter, type("CustomWriter", (MetricsArtifactWriter,), {})])
+def test_progress_relabels_columns_when_clients_and_aggregator_report_different_metrics(caplog, writer_class):
+    import logging
+
+    writer = writer_class()
+    with caplog.at_level(logging.INFO):
+        writer._log_progress_metrics("site-1", [{"name": "accuracy", "value": 0.75}])
+        writer._log_progress_metrics("site-2", [{"name": "loss", "value": 0.25}])
+        writer._log_progress_metrics("Aggregated", [{"name": "weighted_loss", "value": 0.3}])
+    progress = [r.message for r in caplog.records if r.name == "nvflare.app_common.widgets.metrics_artifact_writer"]
+    assert len(progress) == 3
+    for message, metric, value in zip(progress, ["accuracy", "loss", "weighted_loss"], ["0.75", "0.25", "0.3"]):
+        assert metric in message
+        assert value in message
+        assert "—" not in message
+
+
+def test_progress_uses_reported_metrics_and_retains_total_after_context_change(tmp_path, caplog, monkeypatch):
+    writer = MetricsArtifactWriter()
+    fl_ctx = _make_fl_ctx(tmp_path)
+    now = [10.0]
+    monkeypatch.setattr("nvflare.app_common.widgets.metrics_artifact_writer.time.monotonic", lambda: now[0])
+    with caplog.at_level("INFO"):
+        writer.handle_event(EventType.START_RUN, fl_ctx)
+        fl_ctx.set_prop(AppConstants.CURRENT_ROUND, 5, private=True, sticky=False)
+        fl_ctx.set_prop(AppConstants.NUM_ROUNDS, 3, private=True, sticky=False)
+        writer.handle_event(AppEventType.ROUND_STARTED, fl_ctx)
+        # Controller callbacks may replace the context between round start and results.
+        fl_ctx.set_prop(AppConstants.NUM_ROUNDS, None, private=True, sticky=False)
+        _record_contribution(writer, fl_ctx, 5, "site-1", {"loss": 0.25})
+        now[0] = 12.0
+        _record_round(writer, fl_ctx, 5, {"loss": 0.25})
+    progress = [r.message for r in caplog.records if r.name == "nvflare.app_common.widgets.metrics_artifact_writer"]
+    output = "\n".join(progress)
+    assert "ROUND 1 / 3" in output
+    assert "=====" in output
+    assert "site-1" in output and "loss" in output
+    assert output.count("0.25") == 2
+    assert "Aggregated" in output
+    assert "✓ Aggregated 1 client update" in output
+    duration_line = next(line for line in output.splitlines() if "✓ Aggregated 1 client update" in line)
+    assert duration_line.index("2.0s") == 64
+    assert _read_rounds(tmp_path)[0]["round"] == 5
+    assert "complete" not in " ".join(progress)  # Aggregation does not prove persistence or job success.
+
+
+@pytest.mark.parametrize("metrics", [{}, {"loss": float("nan")}, {"loss": [1, 2, 3]}])
+def test_accepted_update_without_displayable_metrics_keeps_client_visible(tmp_path, caplog, metrics):
+    writer = MetricsArtifactWriter()
+    fl_ctx = _make_fl_ctx(tmp_path)
+    with caplog.at_level("INFO"):
+        writer.handle_event(EventType.START_RUN, fl_ctx)
+        _record_contribution(writer, fl_ctx, 0, "site-1", metrics)
+        _record_round(writer, fl_ctx, 0, {"loss": 0.25})
+    output = "\n".join(
+        r.message for r in caplog.records if r.name == "nvflare.app_common.widgets.metrics_artifact_writer"
+    )
+    assert '"site-1" · no displayable metrics' in output
+    assert "✓ Aggregated 1 client update" in output

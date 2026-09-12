@@ -34,6 +34,13 @@ _TIMEOUT_LOGS_TOTAL_CHARS = 60_000
 _TIMEOUT_CLEANUP_GRACE = 5.0
 
 
+@pytest.fixture(autouse=True)
+def _use_diagnostic_logging(monkeypatch):
+    # These tests assert executor/transport/persistence diagnostics, not the
+    # concise customer progress view. Don't inherit the invoking shell's mode.
+    monkeypatch.setenv("FL_LOG_LEVEL", "full")
+
+
 def _is_simulator_log(file_name: str) -> bool:
     return file_name == "log.json" or file_name.startswith(("log.txt", "log_fl.txt", "error_log.txt"))
 

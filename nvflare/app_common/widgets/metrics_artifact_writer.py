@@ -15,6 +15,7 @@
 import json
 import math
 import os
+import time
 from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
@@ -29,9 +30,14 @@ from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.utils.file_utils import resolve_path_under_root
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
+from nvflare.fuel.utils.log_utils import format_metric_table, get_module_logger
 from nvflare.widgets.widget import Widget
 
 METRICS_AGGREGATION_INFO = AppConstants.METRICS_AGGREGATION_INFO
+
+
+# Inherited reporting uses the defining module; subclass diagnostics keep their own logger.
+_logger = get_module_logger(__name__)
 
 
 class MetricsArtifactWriter(Widget):
@@ -68,6 +74,11 @@ class MetricsArtifactWriter(Widget):
         self._reset()
 
     def _reset(self):
+        self._first_round = None
+        self._total_rounds = None
+        self._round_started_at = None
+        self._progress_columns = None
+        self._round_contribution_count = 0
         self._has_metrics = False
         self._final_round = None
         self._final_aggregated_metrics = []
@@ -86,6 +97,15 @@ class MetricsArtifactWriter(Widget):
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
             self._reset()
+        elif event_type == AppEventType.ROUND_STARTED:
+            current_round = self._safe_round(fl_ctx.get_prop(AppConstants.CURRENT_ROUND, None))
+            if self._first_round is None:
+                self._first_round = current_round
+            self._round_started_at = time.monotonic()
+            self._progress_columns = None
+            self._round_contribution_count = 0
+            heading = self._round_label(current_round, fl_ctx).upper().replace("/", " / ")
+            _logger.info("\n" + f" {heading} ".center(72, "=") + "\n\n  Training\n")
         elif event_type == AppEventType.AFTER_CONTRIBUTION_ACCEPT:
             self._handle_after_contribution_accept(fl_ctx)
         elif event_type == AppEventType.AFTER_AGGREGATION:
@@ -94,6 +114,29 @@ class MetricsArtifactWriter(Widget):
             self._handle_global_best_model_available(fl_ctx)
         elif event_type == EventType.END_RUN:
             self._write_summary_if_needed(fl_ctx)
+
+    def _round_label(self, current_round, fl_ctx):
+        if current_round is None:
+            return "Round"
+        ordinal = current_round - self._first_round + 1 if self._first_round is not None else current_round + 1
+        total = fl_ctx.get_prop(AppConstants.NUM_ROUNDS, None)
+        if isinstance(total, int) and not isinstance(total, bool) and total > 0:
+            self._total_rounds = total
+        total = self._total_rounds
+        suffix = f"/{total}" if total is not None and ordinal <= total else ""
+        return f"Round {ordinal}{suffix}"
+
+    def _log_progress_metrics(self, label, metrics):
+        values = {m["name"]: m["value"] for m in metrics}
+        if not values:
+            _logger.info(f"  {json.dumps(label[:128])} · no displayable metrics")
+            return
+        columns = list(values)[:2]
+        # Clients and aggregators may report different metrics. Repeat the
+        # headings when necessary instead of displaying an all-missing row.
+        first = columns != self._progress_columns
+        self._progress_columns = columns
+        _logger.info(format_metric_table([(label, values)], columns=self._progress_columns, header=first))
 
     def _handle_after_aggregation(self, fl_ctx: FLContext):
         aggr_result = fl_ctx.get_prop(AppConstants.AGGREGATION_RESULT, None)
@@ -122,6 +165,18 @@ class MetricsArtifactWriter(Widget):
             sites = fallback_sites
             self._merge_skipped(skipped, fallback_skipped)
         self._apply_site_weights(sites, site_weights)
+
+        _logger.info("  " + "─" * 66)
+        self._log_progress_metrics("Aggregated", aggregated_metrics)
+        duration = ""
+        if self._round_started_at is not None:
+            duration = f"{time.monotonic() - self._round_started_at:.1f}s"
+        completion = "✓ Aggregation finished"
+        if self._round_contribution_count:
+            completion = f"✓ Aggregated {self._round_contribution_count} client update"
+            if self._round_contribution_count != 1:
+                completion += "s"
+        _logger.info("\n" + f"  {completion}".ljust(64) + duration)
 
         if not aggregated_metrics and not sites and not skipped:
             if custom_aggregator_metrics:
@@ -188,7 +243,9 @@ class MetricsArtifactWriter(Widget):
             model = FLModelUtils.from_shareable(result)
         except Exception:
             return
+        self._round_contribution_count += 1
         if not model.metrics:
+            self._log_progress_metrics(self._get_site_name(model, fl_ctx), [])
             return
 
         current_round = self._get_current_round(model, fl_ctx)
@@ -198,6 +255,7 @@ class MetricsArtifactWriter(Widget):
         if skipped:
             self._extend_round_skipped(current_round, skipped)
         if not metrics:
+            self._log_progress_metrics(site_name, [])
             return
         sites = self._round_sites.setdefault(current_round, [])
         if len(sites) >= self.max_sites_per_round:
@@ -225,6 +283,7 @@ class MetricsArtifactWriter(Widget):
             site["weight"] = weight
             site["weight_key"] = FLMetaKey.NUM_STEPS_CURRENT_ROUND
         sites.append(site)
+        self._log_progress_metrics(site["name"], metrics)
 
     def _normalize_sites(self, sites, skipped):
         if not isinstance(sites, list):
@@ -485,6 +544,9 @@ class MetricsArtifactWriter(Widget):
         os.makedirs(os.path.dirname(self._summary_file_path), exist_ok=True)
         with open(self._summary_file_path, "w", encoding="utf-8") as f:
             f.write(data)
+        self.log_info(fl_ctx, f"Aggregated metrics summary: {self._summary_file_path}", fire_event=False)
+        if os.path.isfile(self._round_file_path):
+            self.log_info(fl_ctx, f"Round metrics: {self._round_file_path}", fire_event=False)
 
     def _fit_round_record(self, record):
         fitted = {
