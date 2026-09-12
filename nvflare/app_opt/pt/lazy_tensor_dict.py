@@ -79,6 +79,10 @@ class _LazyRef:
         with safe_open(self.file_path, framework="pt") as f:
             return f.get_tensor(self.key)
 
+    def release(self):
+        """Explicitly release the shared temporary directory after consuming the result."""
+        self._temp_ref.cleanup()
+
     def __repr__(self):
         return f"_LazyRef({self.file_path!r}, key={self.key!r})"
 
