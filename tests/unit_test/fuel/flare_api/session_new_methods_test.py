@@ -850,3 +850,12 @@ def test_get_job_logs_sends_byte_limit_and_never_falls_back_unbounded():
         "--tail-bytes",
         "1024",
     ]
+
+
+def test_job_log_interface_matches_implementation_signature():
+    from inspect import signature
+
+    from nvflare.fuel.flare_api.api_spec import SessionSpec
+    from nvflare.fuel.flare_api.flare_api import Session
+
+    assert signature(SessionSpec.get_job_logs) == signature(Session.get_job_logs)

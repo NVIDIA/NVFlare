@@ -152,6 +152,8 @@ def test_sim_env_deploy_raises_on_failed_simulation(tmp_path, return_code, expec
                 env.deploy(job)
 
     summary = str(error.value).split("RUN SUMMARY", 1)[1]
+    assert f"NVIDIA FLARE · {job.name}" in summary
+    assert "Simulation · 2 clients" in summary
     assert "  ✗ Failed" in summary
     assert f"  Status    {expected_status.value}" in summary
     assert f"  Results   {failed_workspace}" in summary

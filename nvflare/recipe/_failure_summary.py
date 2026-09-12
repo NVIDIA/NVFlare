@@ -44,7 +44,9 @@ def collect_client_errors(session, job_id, result):
     sites = dict.fromkeys(c.removeprefix("ERRORLOG_") for c in components if c.startswith("ERRORLOG_"))
     folder = None
     for site in islice(sites, _MAX_LOG_FILES):
-        if site == "server" or not re.fullmatch(r"[\w.-]+", site) or site in (".", ".."):
+        # The existing protocol treats these case-insensitively as selectors,
+        # even when a stored component belongs to a client with that name.
+        if site.lower() in ("all", "server") or not re.fullmatch(r"[\w.-]+", site) or site in (".", ".."):
             continue
         content = (
             session.get_job_logs(job_id, target=site, log_file_name="error_log.txt", max_bytes=_MAX_LOG_BYTES)
