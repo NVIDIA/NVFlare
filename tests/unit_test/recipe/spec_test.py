@@ -629,6 +629,61 @@ def test_recipe_spec_import_strips_export_flags_from_sys_argv(monkeypatch):
     assert spec_module._peek_recipe_args() == (True, "/tmp/out")
 
 
+@pytest.mark.parametrize("flags", [["--log_config", "full"], ["--log_config=full"]])
+def test_shared_logging_argument_overrides_script_default(monkeypatch, flags):
+    import sys
+
+    import nvflare.recipe.spec as spec_module
+    from nvflare.recipe.sim_env import SimEnv
+
+    monkeypatch.setenv("FL_LOG_LEVEL", "verbose")
+    monkeypatch.setattr(spec_module, "_RECIPE_LOG_CONFIG", None)
+    monkeypatch.setattr(sys, "argv", ["job.py", *flags, "--rounds", "3"])
+    importlib.reload(spec_module)
+    # Existing scripts may still define the option. Their parser's default must
+    # not undo the shared command-line override when constructing SimEnv.
+    parser = argparse.ArgumentParser(allow_abbrev=False)
+    parser.add_argument("--log_config", default="concise")
+    parser.add_argument("--rounds", type=int)
+    args = parser.parse_args()
+    assert args.rounds == 3
+    assert SimEnv(num_clients=2, log_config=args.log_config).log_config == "full"
+    assert os.environ["FL_LOG_LEVEL"] == "full"
+    assert spec_module._peek_recipe_args() == (False, spec_module.DEFAULT_EXPORT_DIR)
+
+
+@pytest.mark.parametrize("flags", [["--log_config"], ["--log_config", "--rounds"], ["--log_config="]])
+def test_shared_logging_argument_requires_value(monkeypatch, flags):
+    import sys
+
+    import nvflare.recipe.spec as spec_module
+
+    monkeypatch.setattr(spec_module, "_RECIPE_LOG_CONFIG", None)
+    monkeypatch.setenv("FL_LOG_LEVEL", "concise")
+    original_argv = ["job.py", *flags]
+    monkeypatch.setattr(sys, "argv", original_argv.copy())
+    with pytest.raises(SystemExit) as ex:
+        importlib.reload(spec_module)
+    assert ex.value.code == 2
+    assert sys.argv == original_argv
+    assert os.environ["FL_LOG_LEVEL"] == "concise"
+
+
+def test_system_arguments_stop_at_double_dash(monkeypatch):
+    import sys
+
+    import nvflare.recipe.spec as spec_module
+
+    monkeypatch.setattr(spec_module, "_RECIPE_LOG_CONFIG", None)
+    monkeypatch.setenv("FL_LOG_LEVEL", "concise")
+    original_argv = ["job.py", "--", "--log_config", "full", "--export"]
+    monkeypatch.setattr(sys, "argv", original_argv.copy())
+    importlib.reload(spec_module)
+    assert sys.argv == original_argv
+    assert os.environ["FL_LOG_LEVEL"] == "concise"
+    assert spec_module._peek_recipe_args() == (False, spec_module.DEFAULT_EXPORT_DIR)
+
+
 def test_recipe_spec_import_bare_export_uses_default_dir(monkeypatch):
     import sys
 

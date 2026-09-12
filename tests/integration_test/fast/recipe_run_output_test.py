@@ -31,11 +31,16 @@ def test_numpy_example_gets_shared_reporting_without_example_changes(tmp_path, l
     if log_mode is None:
         env.pop("FL_LOG_LEVEL", None)
     else:
-        env["FL_LOG_LEVEL"] = log_mode
+        # The shared Recipe option must override an inherited setting, even
+        # though this older example still declares its own --log_config option.
+        env["FL_LOG_LEVEL"] = "verbose"
     env["PYTHONPATH"] = os.pathsep.join((str(repo_root), env.get("PYTHONPATH", "")))
     env["NVFLARE_SIMULATOR_WORKSPACE_ROOT"] = str(tmp_path)
+    command = [sys.executable, "job.py", "--num_rounds", "1"]
+    if log_mode is not None:
+        command.extend(["--log_config", log_mode])
     completed = subprocess.run(
-        [sys.executable, "job.py", "--num_rounds", "1"],
+        command,
         cwd=repo_root / "examples" / "hello-world" / "hello-numpy",
         env=env,
         capture_output=True,

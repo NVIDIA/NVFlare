@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import argparse
+import os
 import sys
 import time
 import warnings
@@ -27,10 +29,11 @@ from typing import Dict, List, Optional, Union
 DEFAULT_EXPORT_DIR = "./fl_job"
 
 _CONSUMED = False
+_RECIPE_LOG_CONFIG = None
 
 
 def _consume_recipe_args() -> tuple:
-    """Strip --export / --export-dir from sys.argv and return (export, export_dir).
+    """Consume shared export/logging arguments and return (export, export_dir).
 
     Called once at module import time so that the caller's argparse never sees
     these flags regardless of the order in which parse_args() and execute() appear
@@ -42,7 +45,7 @@ def _consume_recipe_args() -> tuple:
     The decision is frozen after the first call so repeated direct calls return the
     recorded import-time result rather than re-scanning a since-mutated sys.argv.
     """
-    global _CONSUMED
+    global _CONSUMED, _RECIPE_LOG_CONFIG
     if _CONSUMED:
         return _RECIPE_EXPORT, _RECIPE_EXPORT_DIR
 
@@ -50,10 +53,22 @@ def _consume_recipe_args() -> tuple:
     export = False
     export_dir = DEFAULT_EXPORT_DIR
     export_dir_seen = False
+    log_config = None
+    logging_parser = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
+    logging_parser.add_argument("--log_config", metavar="CONFIG")
     remaining = []
     i = 0
     while i < len(argv):
-        if argv[i] == "--export":
+        if argv[i] == "--":
+            remaining.extend(argv[i:])
+            break
+        elif argv[i] == "--log_config" or argv[i].startswith("--log_config="):
+            count = 2 if argv[i] == "--log_config" else 1
+            log_config = logging_parser.parse_args(argv[i : i + count]).log_config
+            if not log_config.strip():
+                logging_parser.error("--log_config requires a non-empty configuration")
+            i += count
+        elif argv[i] == "--export":
             export = True
             i += 1
         elif argv[i] == "--export-dir":
@@ -91,11 +106,15 @@ def _consume_recipe_args() -> tuple:
         )
 
     sys.argv[1:] = remaining
+    _RECIPE_LOG_CONFIG = log_config
+    if log_config is not None:
+        # Reuse the existing process/subprocess logging configuration path.
+        os.environ["FL_LOG_LEVEL"] = log_config
     _CONSUMED = True
     return export, export_dir
 
 
-# Intentional import-time sys.argv mutation: strip --export / --export-dir before
+# Intentional import-time sys.argv mutation: strip shared recipe arguments before
 # any ArgumentParser.parse_args() call in job.py runs. Doing this lazily (e.g. inside
 # execute()) would be too late if the caller calls parse_args() first, which is the
 # common pattern. The mutation is safe because job.py is always the process entry point.
@@ -134,6 +153,7 @@ class ExecEnv(ABC):
         if not isinstance(extra, dict):
             raise ValueError(f"extra must be dict but got {type(extra)}")
         self.extra = extra
+        self._log_config_override = _RECIPE_LOG_CONFIG
 
     def get_extra_prop(self, prop_name: str, default=None):
         """Get the specified extra property.

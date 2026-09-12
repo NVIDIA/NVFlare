@@ -127,9 +127,11 @@ class MetricsArtifactWriter(Widget):
         if not values:
             self.logger.getChild("progress").info(f"  {json.dumps(label[:128])} · no metrics reported")
             return
-        first = self._progress_columns is None
-        if first:
-            self._progress_columns = list(values)[:2]
+        columns = list(values)[:2]
+        # Clients and aggregators may report different metrics. Repeat the
+        # headings when necessary instead of displaying an all-missing row.
+        first = columns != self._progress_columns
+        self._progress_columns = columns
         self.logger.getChild("progress").info(
             format_metric_table([(label, values)], columns=self._progress_columns, header=first)
         )

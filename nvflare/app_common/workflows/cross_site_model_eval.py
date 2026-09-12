@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import os
 import shutil
 import time
@@ -19,7 +20,7 @@ from typing import Union
 
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, Task
-from nvflare.apis.dxo import DXO, from_file, from_shareable, get_leaf_dxos
+from nvflare.apis.dxo import DXO, DataKind, from_file, from_shareable, get_leaf_dxos
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import Controller
@@ -31,6 +32,7 @@ from nvflare.app_common.abstract.model_locator import ModelLocator
 from nvflare.app_common.app_constant import AppConstants, ModelName
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.utils.file_utils import resolve_path_under_root
+from nvflare.fuel.utils.log_utils import format_metric_summary
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 
@@ -478,6 +480,12 @@ class CrossSiteModelEval(Controller):
         self.log_info(
             fl_ctx, f"Saved validation result from client '{client_name}' on model '{model_name}' in {file_path}"
         )
+        # Controller-only jobs need visible results too: neither Recipe's final
+        # summary nor the optional ValidationJsonGenerator is guaranteed to run.
+        client_label = json.dumps(client_name[:64], ensure_ascii=True)
+        model_label = json.dumps(model_name[:64], ensure_ascii=True)
+        metrics = format_metric_summary(dxo.data if dxo.data_kind == DataKind.METRICS else None)
+        self.logger.getChild("progress").info(f"Evaluated {model_label} on {client_label}: {metrics}")
 
     def _save_dxo_content(self, name: str, save_dir: str, dxo: DXO, fl_ctx: FLContext) -> str:
         """Saves shareable to given directory within the app_dir.
