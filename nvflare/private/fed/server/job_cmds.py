@@ -142,6 +142,7 @@ def _create_get_job_log_cmd_parser():
     parser.add_argument("job_id", help="Job ID")
     parser.add_argument("target", nargs="?", default=SERVER_SITE_NAME, help="server, all, or a client site name")
     parser.add_argument("log_file_name", nargs="?", default=WorkspaceConstants.LOG_FILE_NAME, help="log file name")
+    parser.add_argument("--tail-bytes", type=int, help="maximum UTF-8 log bytes per site before transfer")
     return parser
 
 
@@ -570,6 +571,8 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         try:
             parser = _create_get_job_log_cmd_parser()
             parsed_args = parser.parse_args(args[1:])
+            if parsed_args.tail_bytes is not None and parsed_args.tail_bytes <= 0:
+                raise ValueError("--tail-bytes must be a positive integer")
         except Exception as e:
             conn.append_error(
                 secure_format_exception(e),
@@ -637,6 +640,12 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             conn.append_error(error, meta=make_meta(MetaStatusValue.INTERNAL_ERROR, error))
             return
 
+        if parsed_args.tail_bytes is not None:
+            limit = min(parsed_args.tail_bytes, self.MAX_RETURNED_JOB_LOG_BYTES)
+            payload["logs"] = {
+                site: text.encode("utf-8")[-limit:].decode("utf-8", errors="ignore")
+                for site, text in payload["logs"].items()
+            }
         conn.append_dict(payload, meta=make_meta(MetaStatusValue.OK))
 
     @staticmethod

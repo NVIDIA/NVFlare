@@ -25,7 +25,7 @@ from nvflare.apis.fl_constant import (
     WorkspaceConstants,
 )
 from nvflare.apis.fl_exception import FLCommunicationError
-from nvflare.apis.job_def import DEFAULT_STUDY, JobMetaKey
+from nvflare.apis.job_def import DEFAULT_STUDY, JobMetaKey, RunStatus
 from nvflare.apis.utils.format_check import name_check
 from nvflare.apis.utils.job_submit_token import validate_submit_token
 from nvflare.apis.workspace import Workspace
@@ -105,6 +105,13 @@ def _should_retry_connection_failure(command: str, result: dict) -> bool:
 
 def _is_terminal_job_status(status: str) -> bool:
     return isinstance(status, str) and (status.startswith("FINISHED") or status in _LEGACY_TERMINAL_JOB_STATUSES)
+
+
+def _job_status_outcome(status: str) -> Optional[str]:
+    """Classify current/legacy terminal statuses consistently for Recipe reporting."""
+    if not _is_terminal_job_status(status):
+        return None
+    return "completed" if status in (RunStatus.FINISHED_COMPLETED.value, "FINISHED_OK") else "failed"
 
 
 def _validate_job_polling_options(timeout: float, poll_interval: float) -> None:
@@ -1449,6 +1456,8 @@ class Session(SessionSpec):
         tail_lines: Optional[int] = None,
         grep_pattern: Optional[str] = None,
         log_file_name: str = WorkspaceConstants.LOG_FILE_NAME,
+        *,
+        max_bytes: Optional[int] = None,
     ) -> dict:
         """Retrieve job logs from the server-side log store.
 
@@ -1458,6 +1467,9 @@ class Session(SessionSpec):
             tail_lines (int, optional): deprecated compatibility filter that returns only the last N lines
             grep_pattern (str, optional): deprecated compatibility filter that returns matching lines
             log_file_name (str): internal log file selector. Defaults to log.txt.
+            max_bytes (int, optional): positive UTF-8 log-byte limit per site, applied on the server
+                before transfer (also capped by the server's 5 MiB limit). Older servers may not
+                support this option; the request is never retried without the limit.
 
         Returns: dict with "logs" mapping site name to log text, and optional
             "unavailable" mapping site names to reasons.
@@ -1466,10 +1478,14 @@ class Session(SessionSpec):
         self._validate_job_id(job_id)
         if not isinstance(target, str) or not target:
             raise ValueError("target must be a non-empty str")
+        if max_bytes is not None and (type(max_bytes) is not int or max_bytes <= 0):
+            raise ValueError("max_bytes must be a positive integer")
 
         parts = [AdminCommandNames.GET_JOB_LOG, job_id, target]
         if log_file_name != WorkspaceConstants.LOG_FILE_NAME:
             parts.append(log_file_name)
+        if max_bytes is not None:
+            parts.extend(["--tail-bytes", str(max_bytes)])
         command = join_args(parts)
         try:
             reply = self._do_command(command, enforce_meta=False)

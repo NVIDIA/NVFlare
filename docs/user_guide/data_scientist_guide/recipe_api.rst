@@ -626,9 +626,14 @@ The current provisioning template configures ``SiteLogStreamer`` for
 ``error_log.txt``; deployments without it, sites with
 ``allow_log_streaming=False``, and interrupted transfers may leave client logs
 unavailable. Reporting does not enable streaming or contact clients directly.
-On failure, Recipe retrieves existing error streams through the job-log API and
-retains bounded excerpts alongside downloaded results in ``failure-logs-*``.
-The summary reads at most 20 files and the last 1 MiB of each. Missing, rotated,
+On failure, Recipe lists stored ``ERRORLOG_*`` components and retrieves at most
+20 named client logs, one at a time. Each request has a server-enforced 1 MiB
+UTF-8 log-byte limit before transfer (protocol encoding adds overhead). Older
+servers that do not support this limit are not retried with unbounded requests.
+Excerpts are retained alongside downloaded results in ``failure-logs-*``.
+The summary reads at most 20 files and the last 1 MiB of each. Current and supported
+legacy terminal statuses share the same reporting rules: ``FINISHED_OK`` is
+successful, while terminal non-success statuses include failure details. Missing, rotated,
 or custom-format logs may omit the original exception; consult the full site logs
 when the summary is inconclusive. Diagnostic retrieval failures do not replace
 the job result or status. ``FATAL_SYSTEM_ERROR`` can follow a client code error

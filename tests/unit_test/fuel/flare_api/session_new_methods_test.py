@@ -820,3 +820,33 @@ class TestWaitForJob:
         ):
             with pytest.raises(JobTimeout):
                 session.wait_for_job("job1", timeout=5.0)
+
+
+@pytest.mark.parametrize("limit", [0, -1, True, 1.5, "1024"])
+def test_get_job_logs_rejects_invalid_byte_limit_before_command(limit):
+    session = _make_session()
+    with patch.object(session, "_do_command") as command:
+        with pytest.raises(ValueError, match="max_bytes"):
+            session.get_job_logs("job1", max_bytes=limit)
+    command.assert_not_called()
+
+
+def test_get_job_logs_sends_byte_limit_and_never_falls_back_unbounded():
+    from nvflare.fuel.flare_api.api_spec import InternalError
+
+    session = _make_session()
+    with patch.object(
+        session, "_do_command", side_effect=InternalError("unrecognized arguments: --tail-bytes")
+    ) as command:
+        assert session.get_job_logs("job1", target="site-1", log_file_name="error_log.txt", max_bytes=1024) == {
+            "logs": {}
+        }
+    command.assert_called_once()
+    assert split_to_args(command.call_args.args[0]) == [
+        "get_job_log",
+        "job1",
+        "site-1",
+        "error_log.txt",
+        "--tail-bytes",
+        "1024",
+    ]
