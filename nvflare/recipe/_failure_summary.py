@@ -158,12 +158,12 @@ def failure_summary(result=None, *, since=None):
         items = [item for item in items if item[0][4] not in application_sites]
         for index, ((component, message, location, _, _), paths) in enumerate(items[:3]):
             sites = ["server" if p.parent in (root, root / "workspace") else p.parent.name for p in paths]
-            lines.extend(["", f"  {'Error' if index == 0 else 'Also reported'}  {_display(message)}"])
-            lines.append(f"  Where  {_display(', '.join(sites), 160)} / {_display(component, 80)}")
+            lines.extend(["", f"  {'Error' if index == 0 else 'Also reported':<8}  {_display(message)}"])
+            lines.append(f"  Where     {_display(', '.join(sites), 160)} / {_display(component, 80)}")
             if location:
-                lines.append(f"  Code   {_display(location, 160)}")
+                lines.append(f"  Code      {_display(location, 160)}")
             logs = [p.with_name("error_log.txt") if p.with_name("error_log.txt").is_file() else p for p in paths]
-            lines.append("  Logs   " + " · ".join(_display(p.relative_to(root), 160) for p in logs[:3]))
+            lines.append("  Logs      " + " · ".join(_display(p.relative_to(root), 160) for p in logs[:3]))
         if not items:
             lines.append("  No job error details are available locally.")
             lines.append("  Check server and client logs for the failed job.")
@@ -171,9 +171,7 @@ def failure_summary(result=None, *, since=None):
             lines.extend(["", "  Full tracebacks and additional messages are in the logs."])
             if not client_logs_available:
                 lines.append("  Client logs are not included here; check them if the cause is unclear.")
-        if root:
-            lines.append(f"  Workspace  {_display(root, 256)}")
     except Exception:
         # Formatting and artifact failures must never replace the job failure.
         lines.append("  Could not read error details. Check the job's server and client logs.")
-    return wrap_log_message("\n".join(lines), subsequent_indent="         ")
+    return wrap_log_message("\n".join(lines))

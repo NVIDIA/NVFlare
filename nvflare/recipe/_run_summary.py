@@ -21,6 +21,11 @@ from pathlib import Path
 from nvflare.fuel.utils.log_utils import format_metric_table, wrap_log_message
 
 
+def summary_header(outcome, elapsed):
+    """Use the same heading and elapsed-time alignment for every run outcome."""
+    return "\n" + " RUN SUMMARY ".center(72, "=") + f"\n\n  {outcome}".ljust(65) + f"{elapsed:.1f}s"
+
+
 def _read_json(path):
     # Reporting must not load an arbitrarily large application artifact.
     with path.open("rb") as stream:
