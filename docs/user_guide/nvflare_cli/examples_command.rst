@@ -119,10 +119,13 @@ For example, ``EXAMPLE_DESTINATION_EXISTS`` suggests another destination,
 resets. Interrupted retrieval exits 130. The command uses unauthenticated
 public requests and does not read credentials from ``.netrc``.
 
-``examples get`` has a five-minute total deadline, in addition to the HTTP
-connect and idle-read timeouts. Even a response that keeps sending small amounts
+``examples get`` has a five-minute deadline for downloading, validating, and
+staging the example, in addition to the HTTP connect and idle-read timeouts.
+Even a response that keeps sending small amounts
 of data is interrupted at the deadline with ``EXAMPLE_TIMEOUT``. Staging files
-are cleaned up and the cache lock is released.
+are cleaned up and the cache lock is released. The deadline is checked once more
+before final publication. Once publication starts, it is allowed to finish so a
+successfully created destination is reported as success.
 
 .. code-block:: bash
 

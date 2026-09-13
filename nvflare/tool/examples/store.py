@@ -148,7 +148,10 @@ class ExampleStore:
     def _load(self, path, identity, version_info):
         try:
             manifest = path / "manifest.json"
-            if path.is_symlink() or manifest.is_symlink() or manifest.stat().st_size > MAX_METADATA_BYTES:
+            if path.is_symlink():
+                return None
+            manifest_stat = manifest.lstat()
+            if not stat.S_ISREG(manifest_stat.st_mode) or manifest_stat.st_size > MAX_METADATA_BYTES:
                 return None
             metadata = json.loads(manifest.read_bytes())
             if metadata["identity"] != identity:
@@ -218,7 +221,7 @@ class ExampleStore:
             _publish(staging, cache)
         return metadata
 
-    def get(self, version_info, *, name, ref=None, destination=None, refresh=False):
+    def get(self, version_info, *, name, ref=None, destination=None, refresh=False, before_publish=None):
         if not NAME.fullmatch(name):
             raise ExampleError("EXAMPLE_UNKNOWN", "Invalid example short name.", "Use nvflare examples get hello-pt.")
         ref = selected_ref(version_info, ref)
@@ -278,6 +281,8 @@ class ExampleStore:
                     (staged / item["path"]).chmod(0o755 if item["mode"] == "100755" else 0o644)
                 (staged / PROVENANCE_FILE).write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
                 try:
+                    if before_publish is not None:
+                        before_publish()
                     _publish(staged, destination)
                 except FileExistsError:
                     self._conflict(destination)

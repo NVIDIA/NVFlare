@@ -71,10 +71,19 @@ def _download_deadline():
     if not hasattr(signal, "setitimer"):
         raise OSError("Timed example retrieval is unavailable on this platform.")
     started = time.monotonic()
+
+    def before_publish():
+        # Discard pending alarms as well as stopping future ones. Once this
+        # deadline check passes, publication and its result must finish together.
+        signal.signal(signal.SIGALRM, signal.SIG_IGN)
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        if time.monotonic() - started >= DOWNLOAD_TIMEOUT:
+            raise _DownloadTimeout
+
     previous_handler = signal.signal(signal.SIGALRM, _timeout)
     previous_timer = signal.setitimer(signal.ITIMER_REAL, DOWNLOAD_TIMEOUT)
     try:
-        yield
+        yield before_publish
     finally:
         signal.setitimer(signal.ITIMER_REAL, 0)
         signal.signal(signal.SIGALRM, previous_handler)
@@ -117,13 +126,14 @@ def handle_examples_cmd(args):
         if key == "cache clear":
             output_ok(store.clear())
             return
-        with _download_deadline():
+        with _download_deadline() as before_publish:
             result = store.get(
                 _version.get_versions(),
                 name=args.name,
                 ref=args.ref,
                 destination=args.dest,
                 refresh=args.refresh,
+                before_publish=before_publish,
             )
         if is_json_mode():
             output_ok(result)

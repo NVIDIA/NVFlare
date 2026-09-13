@@ -87,7 +87,17 @@ def test_refresh_downloads_and_new_revision_has_a_separate_cache(cache, remote, 
 
 @pytest.mark.parametrize(
     "corruption",
-    ["bytes", "same_size_and_mtime", "missing", "extra", "extra_directory", "symlink", "manifest", "oversize"],
+    [
+        "bytes",
+        "same_size_and_mtime",
+        "missing",
+        "extra",
+        "extra_directory",
+        "symlink",
+        "manifest",
+        "manifest_directory",
+        "oversize",
+    ],
 )
 def test_corrupt_cache_is_repaired(cache, remote, tmp_path, corruption):
     get_example(cache, tmp_path)
@@ -112,6 +122,10 @@ def test_corrupt_cache_is_repaired(cache, remote, tmp_path, corruption):
         target.symlink_to(tmp_path / "delivered/job.py")
     elif corruption == "manifest":
         (entry / "manifest.json").write_text("{}")
+    elif corruption == "manifest_directory":
+        manifest = entry / "manifest.json"
+        manifest.unlink()
+        manifest.mkdir()
     elif corruption == "oversize":
         target.write_bytes(b"x" * (source.MAX_FILE_BYTES + 1))
     result = cache.get(VERSION, name="hello-pt", destination=tmp_path / "repaired")

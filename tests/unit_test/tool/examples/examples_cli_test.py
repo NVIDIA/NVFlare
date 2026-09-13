@@ -16,6 +16,7 @@ import json
 import signal
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -191,3 +192,66 @@ def test_cli_deadline_interrupts_trickling_response(monkeypatch, capsys, cache, 
     assert cache._entries() == []
     # Cancellation releases the cache lock as well as staging files.
     assert cache.clear()["entries_removed"] == 0
+
+
+@pytest.mark.parametrize("phase", ["before_rename", "after_rename"])
+def test_cli_publication_commits_despite_late_alarm(monkeypatch, capsys, cache, remote, tmp_path, phase):
+    from nvflare import cli
+
+    destination = tmp_path / "out"
+    publish = store._publish
+    previous_handler = signal.getsignal(signal.SIGALRM)
+
+    def publish_with_alarm(staged, target):
+        if target != destination:
+            # Cache preparation must remain subject to the retrieval deadline.
+            assert signal.getitimer(signal.ITIMER_REAL)[0] > 0
+        if target == destination and phase == "before_rename":
+            signal.raise_signal(signal.SIGALRM)
+        publish(staged, target)
+        if target == destination and phase == "after_rename":
+            signal.raise_signal(signal.SIGALRM)
+
+    monkeypatch.setattr(store, "_publish", publish_with_alarm)
+    monkeypatch.setattr(store, "ExampleStore", lambda: cache)
+    monkeypatch.setattr("nvflare._version.get_versions", lambda: VERSION)
+    monkeypatch.setattr(
+        "sys.argv", ["nvflare", "examples", "get", "hello-pt", "--dest", str(destination), "--format", "json"]
+    )
+    cli.run("nvflare")
+    result = json.loads(capsys.readouterr().out)
+    assert result["status"] == "ok"
+    assert result["data"]["commit"] == COMMIT
+    assert (destination / "job.py").read_bytes() == remote.files[f"{EXAMPLE_PATH}/job.py"]
+    assert not list(tmp_path.glob(".nvflare-example-*"))
+    assert signal.getsignal(signal.SIGALRM) == previous_handler
+    assert signal.getitimer(signal.ITIMER_REAL) == (0, 0)
+
+
+def test_cli_expired_deadline_prevents_publication(monkeypatch, capsys, cache, tmp_path):
+    from nvflare import cli
+
+    clock = [0.0]
+    write_text = Path.write_text
+
+    def expire_after_staging(path, *args, **kwargs):
+        result = write_text(path, *args, **kwargs)
+        if path.name == ".nvflare-example.json":
+            clock[0] = examples_cli.DOWNLOAD_TIMEOUT + 1
+        return result
+
+    monkeypatch.setattr(Path, "write_text", expire_after_staging)
+    monkeypatch.setattr(examples_cli, "time", SimpleNamespace(monotonic=lambda: clock[0]))
+    monkeypatch.setattr(store, "ExampleStore", lambda: cache)
+    monkeypatch.setattr("nvflare._version.get_versions", lambda: VERSION)
+    monkeypatch.setattr(
+        "sys.argv", ["nvflare", "examples", "get", "hello-pt", "--dest", str(tmp_path / "out"), "--format", "json"]
+    )
+    with pytest.raises(SystemExit) as error:
+        cli.run("nvflare")
+    assert error.value.code == 1
+    assert json.loads(capsys.readouterr().out)["error_code"] == "EXAMPLE_TIMEOUT"
+    assert not (tmp_path / "out").exists()
+    assert not list(tmp_path.glob(".nvflare-example-*"))
+    assert signal.getitimer(signal.ITIMER_REAL) == (0, 0)
+    assert cache.clear()["entries_removed"] == 1
