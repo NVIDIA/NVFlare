@@ -39,7 +39,6 @@ from nvflare.tool.examples.source import (
     blob_sha,
     check_compatibility,
     selected_ref,
-    source_selection,
     validate_catalog,
     validate_inventory,
 )
@@ -53,9 +52,7 @@ def default_cache_dir():
     override = os.environ.get("NVFLARE_EXAMPLES_CACHE_DIR")
     if override:
         return Path(override).expanduser()
-    if os.name == "nt":
-        root = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
-    elif sys.platform == "darwin":
+    if sys.platform == "darwin":
         root = Path.home() / "Library" / "Caches"
     else:
         root = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
@@ -71,9 +68,6 @@ def _remove(path):
 
 def _publish(source, destination):
     """Rename a complete directory without replacing even an empty destination."""
-    if os.name == "nt":
-        os.rename(source, destination)  # Windows rename fails if the destination exists.
-        return
     libc = ctypes.CDLL(None, use_errno=True)
     if sys.platform == "darwin":
         rename = libc.renamex_np
@@ -170,17 +164,8 @@ class ExampleStore:
         except (OSError, ValueError, KeyError, TypeError):
             return None
 
-    def _download(self, cache, identity, name, directory, version_info):
+    def _download(self, cache, identity, name, version_info):
         entries = self.source.catalog(identity["commit"])
-        if directory:
-            matches = [key for key, entry in entries.items() if entry["path"] == directory]
-            if not matches:
-                raise ExampleError(
-                    "EXAMPLE_UNKNOWN",
-                    "The source directory is not in this revision's example catalog.",
-                    "Choose a supported example: " + ", ".join(sorted(entries)),
-                )
-            name = matches[0]
         if name not in entries:
             raise ExampleError(
                 "EXAMPLE_UNKNOWN",
@@ -205,23 +190,15 @@ class ExampleStore:
             _publish(staging, cache)
         return metadata
 
-    def get(self, version_info, *, name=None, ref=None, source_url=None, destination=None, refresh=False):
-        if bool(name) == bool(source_url):
-            raise ExampleError(
-                "INVALID_ARGS", "Supply an example name or --source, exclusively.", "Run nvflare examples get --help."
-            )
-        if name and not NAME.fullmatch(name):
+    def get(self, version_info, *, name, ref=None, destination=None, refresh=False):
+        if not NAME.fullmatch(name):
             raise ExampleError("EXAMPLE_UNKNOWN", "Invalid example short name.", "Use nvflare examples get hello-pt.")
-        directory = None
-        if source_url:
-            ref, directory = source_selection(source_url, ref)
-        else:
-            ref = selected_ref(version_info, ref)
+        ref = selected_ref(version_info, ref)
         # Known destinations can fail before a network request.
         if destination is not None:
             self._check_destination(Path(destination).expanduser().absolute())
         commit = self.source.resolve(ref)
-        identity = {"repository": REPOSITORY, "commit": commit, "selector": name or directory}
+        identity = {"repository": REPOSITORY, "commit": commit, "selector": name}
         key = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
         with self.locked():
             cache = self.root / key
@@ -232,7 +209,7 @@ class ExampleStore:
                 if existed:
                     _remove(cache)
                 try:
-                    metadata = self._download(cache, identity, name, directory, version_info)
+                    metadata = self._download(cache, identity, name, version_info)
                 except ExampleError as error:
                     if existed and not refresh:
                         raise ExampleError(

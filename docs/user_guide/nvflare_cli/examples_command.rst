@@ -36,8 +36,7 @@ different directory with ``--dest``:
 The destination's parent must already exist. An existing destination is never
 merged or overwritten, including an empty directory or a symbolic link.
 Interrupted downloads are cleaned up before they can become the requested
-destination. Atomic delivery is supported on Linux, macOS, and Windows;
-running the downloaded application follows NVFlare's supported-platform policy.
+destination. Atomic delivery supports Linux and macOS.
 
 Version and source selection
 ----------------------------
@@ -48,21 +47,19 @@ commit recorded by Versioneer. References are resolved to an immutable commit
 before reading the catalog or downloading files. Missing tags and catalogs
 produce errors rather than falling forward to another release or ``main``.
 
-For development, explicitly select a reference or catalogued source directory:
+For development, explicitly select a tag, branch, or commit:
 
 .. code-block:: bash
 
    nvflare examples get hello-pt --ref main
-   nvflare examples get --source https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/hello-pt
 
 The installed package must satisfy the selected catalog entry's version
 constraint, including with an override. A development build without source
 provenance, or an editable checkout with uncommitted changes, requires an
 explicit reference. Local modifications are not uploaded or copied.
 
-``--source`` initially supports public ``NVIDIA/NVFlare`` tree URLs and
-directories in that revision's catalog. Supply ``--ref`` as well for branch
-names containing slashes, matching the reference written in the URL.
+Examples come from the public ``NVIDIA/NVFlare`` catalog at the selected
+revision. Branch names containing slashes can be passed directly to ``--ref``.
 Other repositories, private authentication, and Git LFS payloads are not
 supported by this command.
 
@@ -74,7 +71,7 @@ Cache behavior
 --------------
 
 Validated downloads are cached by repository, resolved commit, and requested
-example name or source directory. A repeat request for the same key reports
+example name. A repeat request for the same key reports
 ``cache hit`` and copies locally. Reference resolution still contacts GitHub;
 cache hits do not download the catalog or example content again. Edits to a
 delivered directory do not affect the cached source.
@@ -87,9 +84,9 @@ delivered directory do not affect the cached source.
 
 The cache lives under ``$XDG_CACHE_HOME/nvflare/examples`` (default
 ``~/.cache/nvflare/examples``) on Linux, ``~/Library/Caches/nvflare/examples``
-on macOS, and ``%LOCALAPPDATA%/nvflare/examples`` on Windows. At most eight
-entries are retained, keeping the most recently used. A process lock serializes
-cache writes, delivery, and clearing; a busy cache fails after 60 seconds.
+on macOS. At most eight entries are retained, keeping the most recently used.
+A process lock serializes cache writes, delivery, and clearing; a busy cache
+fails after 60 seconds.
 Corrupt entries are removed and downloaded again. Cache clearing affects only
 cached downloads, preserving all delivered workspaces.
 
@@ -99,7 +96,8 @@ for example in an isolated build or validation environment.
 Downloads are bounded to 256 tree entries, 8 MiB per file, and 64 MiB total
 file content; metadata responses are capped at 2 MiB. Paths, object types, and
 Git blob hashes are checked. Symbolic links, submodules, path traversal,
-case-colliding paths, and incomplete GitHub tree responses are rejected.
+Unicode-equivalent or case-colliding paths, and incomplete GitHub tree responses
+are rejected.
 
 Errors and automation
 ---------------------

@@ -17,8 +17,9 @@
 import hashlib
 import json
 import re
+import unicodedata
 from pathlib import PurePosixPath
-from urllib.parse import quote, unquote, urlsplit
+from urllib.parse import quote
 
 import requests
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
@@ -68,6 +69,11 @@ def blob_sha(data):
     return hashlib.sha1(b"blob " + str(len(data)).encode() + b"\0" + data, usedforsecurity=False).hexdigest()
 
 
+def _path_key(value):
+    """Compare portable paths without changing the original Git path spelling."""
+    return unicodedata.normalize("NFC", value).casefold()
+
+
 def selected_ref(version_info, explicit_ref=None):
     if explicit_ref:
         if len(explicit_ref) > 256 or re.search(r"[\x00-\x20\x7f]", explicit_ref):
@@ -91,44 +97,8 @@ def selected_ref(version_info, explicit_ref=None):
     raise ExampleError(
         "EXAMPLE_VERSION_UNKNOWN",
         "This development build has no usable source revision.",
-        "Use --ref <tag-or-commit> or --source <GitHub-tree-URL>; no default revision was guessed.",
+        "Use --ref <tag-or-commit>; no default revision was guessed.",
     )
-
-
-def source_selection(source, ref=None):
-    """A slash-containing URL ref must be supplied explicitly to avoid ambiguity."""
-    try:
-        parsed = urlsplit(source)
-    except ValueError:
-        raise ExampleError(
-            "EXAMPLE_SOURCE_REJECTED",
-            "Invalid GitHub tree URL.",
-            "Use https://github.com/NVIDIA/NVFlare/tree/<ref>/<catalogued-directory>.",
-        ) from None
-    prefix = f"/{REPOSITORY}/tree/"
-    path = unquote(parsed.path)
-    if (
-        parsed.scheme != "https"
-        or parsed.netloc.lower() != "github.com"
-        or parsed.query
-        or parsed.fragment
-        or not path.lower().startswith(prefix.lower())
-    ):
-        raise ExampleError(
-            "EXAMPLE_SOURCE_REJECTED",
-            "Only public NVIDIA/NVFlare GitHub tree URLs are supported.",
-            "Use https://github.com/NVIDIA/NVFlare/tree/<ref>/<catalogued-directory>.",
-        )
-    remainder = path[len(prefix) :]
-    if ref:
-        if not remainder.startswith(ref + "/"):
-            reject("--ref must match the reference at the start of the --source URL.")
-        directory = remainder[len(ref) + 1 :]
-    else:
-        ref, separator, directory = remainder.partition("/")
-        if not separator:
-            reject("The source URL must include an example directory.")
-    return selected_ref({}, ref), safe_path(directory.rstrip("/"))
 
 
 def validate_catalog(catalog):
@@ -143,9 +113,9 @@ def validate_catalog(catalog):
             reject("Invalid catalog example name or entry.")
         path = safe_path(entry.get("path"))
         destination = entry.get("destination")
-        if not path.startswith("examples/") or path.casefold() in paths:
+        if not path.startswith("examples/") or _path_key(path) in paths:
             reject("Catalog paths must be distinct directories under examples/.")
-        paths.add(path.casefold())
+        paths.add(_path_key(path))
         if not isinstance(destination, str) or not NAME.fullmatch(destination):
             reject("Invalid default destination.")
         if not isinstance(entry.get("extra"), str) or not re.fullmatch(r"[A-Za-z0-9_-]+", entry["extra"]):
@@ -322,15 +292,15 @@ def validate_inventory(items):
         if not isinstance(item, dict):
             reject("Invalid example tree entry.")
         path = safe_path(item.get("path"))
-        if path.casefold() in seen or path.split("/")[0].casefold() == PROVENANCE_FILE:
-            reject("Duplicate, case-colliding, or reserved example path.")
-        seen.add(path.casefold())
+        if _path_key(path) in seen or _path_key(path.split("/")[0]) == PROVENANCE_FILE:
+            reject("Duplicate, Unicode-equivalent, case-colliding, or reserved example path.")
+        seen.add(_path_key(path))
         parts = path.split("/")
         for index in range(1, len(parts) + 1):
             prefix = "/".join(parts[:index])
-            previous = spellings.setdefault(prefix.casefold(), prefix)
+            previous = spellings.setdefault(_path_key(prefix), prefix)
             if previous != prefix:
-                reject("Case-colliding file or directory names are not portable.")
+                reject("Unicode-equivalent or case-colliding file or directory names are not portable.")
         if not SHA.fullmatch(str(item.get("sha", ""))):
             reject("Invalid Git object ID.")
         kind = (item.get("type"), item.get("mode"))
@@ -345,7 +315,7 @@ def validate_inventory(items):
         files.append({key: item[key] for key in ("path", "sha", "size", "type", "mode")})
     if total > MAX_TOTAL_BYTES:
         raise ExampleError("EXAMPLE_LIMIT_EXCEEDED", "Example exceeds the total size limit.", FALLBACK)
-    names = {item["path"].casefold() for item in files}
+    names = {_path_key(item["path"]) for item in files}
     for name in names:
         if any(str(parent) in names for parent in PurePosixPath(name).parents):
             reject("An example file is also used as a directory.")

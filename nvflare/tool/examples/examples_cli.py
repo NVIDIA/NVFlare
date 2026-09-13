@@ -35,8 +35,7 @@ def def_examples_parser(sub_cmd):
     parser = sub_cmd.add_parser("examples", help="download release-matched runnable examples")
     children = parser.add_subparsers(dest="examples_sub_cmd")
     get = children.add_parser("get", help="download one example into a new directory")
-    get.add_argument("name", nargs="?", help="catalog short name, e.g. hello-pt")
-    get.add_argument("--source", help="explicit public NVIDIA/NVFlare GitHub tree URL")
+    get.add_argument("name", help="catalog short name, e.g. hello-pt")
     get.add_argument("--ref", help="explicit tag, branch, or commit; default: installed version's source")
     get.add_argument("--dest", help="new destination directory; default: catalog destination in current directory")
     get.add_argument("--refresh", action="store_true", help="download again even if a validated cache entry exists")
@@ -57,9 +56,13 @@ def _interrupt(signum, frame):
 def handle_examples_cmd(args):
     sub = getattr(args, "examples_sub_cmd", None)
     action = getattr(args, "examples_cache_cmd", None)
-    key = "cache clear" if sub == "cache" and action == "clear" else sub
+    key = f"cache {action}" if sub == "cache" and action is not None else sub
+    if key not in _parsers:
+        output_error_message(
+            "INVALID_ARGS", f"Unknown examples subcommand: {key}.", "Run nvflare examples --help.", exit_code=4
+        )
     handle_schema_flag(
-        _parsers.get(key, _parsers[None]),
+        _parsers[key],
         "nvflare examples" + (f" {key}" if key else ""),
         _EXAMPLES,
         sys.argv[1:],
@@ -87,7 +90,6 @@ def handle_examples_cmd(args):
             _version.get_versions(),
             name=args.name,
             ref=args.ref,
-            source_url=args.source,
             destination=args.dest,
             refresh=args.refresh,
         )

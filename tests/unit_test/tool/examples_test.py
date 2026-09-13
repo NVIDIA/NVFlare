@@ -421,28 +421,10 @@ def test_incompatible_or_unknown_package_cannot_bypass_check_with_ref(cache, tmp
 
 
 @pytest.mark.parametrize("ref", ["main", COMMIT, "feature/foo"])
-def test_explicit_source_is_pinned_and_catalog_checked(cache, tmp_path, ref):
-    url = f"https://github.com/NVIDIA/NVFlare/tree/{ref}/{EXAMPLE_PATH}"
-    result = cache.get(VERSION, source_url=url, ref=ref if "/" in ref else None, destination=tmp_path / "source")
+def test_explicit_ref_is_pinned_and_catalog_checked(cache, tmp_path, ref):
+    result = cache.get(VERSION, name="hello-pt", ref=ref, destination=tmp_path / "source")
     assert result["example"] == "hello-pt"
     assert result["commit"] == COMMIT
-
-
-@pytest.mark.parametrize(
-    "url",
-    [
-        "http://github.com/NVIDIA/NVFlare/tree/main/examples/a",
-        "https://github.com.evil.test/NVIDIA/NVFlare/tree/main/examples/a",
-        "https://github.com/user/other/tree/main/examples/a",
-        "https://user:password@github.com/NVIDIA/NVFlare/tree/main/examples/a",
-        "https://github.com/NVIDIA/NVFlare/tree/main/examples/a?token=secret",
-        "https://github.com/NVIDIA/NVFlare/tree/main/../outside",
-    ],
-)
-def test_invalid_source_rejected_before_network(cache, remote, tmp_path, url):
-    with pytest.raises(source.ExampleError):
-        cache.get(VERSION, source_url=url, destination=tmp_path / "bad")
-    assert remote.calls == []
 
 
 @pytest.mark.parametrize(
@@ -487,6 +469,29 @@ def test_inventory_bounds_and_portable_collisions(remote, mutation, monkeypatch)
         items.append({**items[-1], "path": "job.py/child"})
     with pytest.raises(source.ExampleError):
         source.validate_inventory(items)
+
+
+@pytest.mark.parametrize(
+    "paths",
+    [
+        ("caf\u00e9.txt", "cafe\u0301.txt"),
+        ("caf\u00e9/one.txt", "cafe\u0301/two.txt"),
+        ("caf\u00e9", "cafe\u0301/nested.txt"),
+    ],
+    ids=["filenames", "directory-prefixes", "file-directory"],
+)
+def test_unicode_equivalent_paths_are_rejected_before_download(cache, remote, tmp_path, paths):
+    for index, path in enumerate(paths):
+        remote.files[f"{EXAMPLE_PATH}/{path}"] = f"distinct file {index}".encode()
+    remote.build_tree("")
+
+    with pytest.raises(source.ExampleError) as error:
+        get_example(cache, tmp_path)
+
+    assert error.value.code == "EXAMPLE_CONTENT_REJECTED"
+    assert not any(route.startswith(f"raw/{COMMIT}/{EXAMPLE_PATH}/") for route in remote.calls)
+    assert not (tmp_path / "delivered").exists()
+    assert cache._entries() == []
 
 
 @pytest.mark.parametrize(
@@ -537,6 +542,27 @@ def test_cli_schema_has_no_network_or_mutation(monkeypatch, capsys, command):
     assert schema["mutating"] is True
 
 
+@pytest.mark.parametrize("command", [["bogus"], ["cache", "bogus"]])
+@pytest.mark.parametrize("output_format", ["txt", "json"])
+def test_cli_unknown_schema_command_is_rejected(monkeypatch, capsys, command, output_format):
+    from nvflare import cli
+
+    monkeypatch.setattr("sys.argv", ["nvflare", "examples", *command, "--schema", "--format", output_format])
+    monkeypatch.setattr(store, "ExampleStore", lambda: pytest.fail("invalid schema must not create a cache"))
+    with pytest.raises(SystemExit) as error:
+        cli.main()
+    assert error.value.code == 4
+    captured = capsys.readouterr()
+    if output_format == "json":
+        result = json.loads(captured.out)
+        assert result["status"] == "error"
+        assert result["error_code"] == "INVALID_ARGS"
+        assert "command" not in result
+    else:
+        assert captured.out == ""
+        assert "INVALID_ARGS" in captured.err
+
+
 def test_cli_download_json_and_cache_clear(monkeypatch, capsys, cache, tmp_path):
     from nvflare import cli
 
@@ -578,7 +604,7 @@ def test_cli_failure_is_structured_and_restores_signal_handler(monkeypatch, caps
     "command",
     [[], ["cache"], ["get"], ["get", "hello-pt", "--source", "https://github.com/NVIDIA/NVFlare/tree/main/examples/a"]],
 )
-def test_cli_missing_or_conflicting_arguments_fail(monkeypatch, capsys, cache, command):
+def test_cli_missing_or_unsupported_arguments_fail(monkeypatch, capsys, cache, command):
     from nvflare import cli
 
     monkeypatch.setattr(store, "ExampleStore", lambda: cache)
