@@ -89,6 +89,13 @@ tmp_job_template_folder = "./nvflare/tool/job/templates"
 copy_package(src_dir="job_templates", dst_dir=tmp_job_template_folder)
 job_templates = package_files(root="nvflare/tool/job", starting="templates")
 deploy_templates = package_files(root="nvflare/tool/deploy", starting="templates")
+example_source_folder = "./examples/hello-world/hello-pt"
+tmp_example_folder = "./nvflare/tool/examples/data"
+generated_example_data = os.path.isdir(example_source_folder)
+if generated_example_data:
+    remove_dir(target_path=tmp_example_folder)
+    shutil.copytree(example_source_folder, os.path.join(tmp_example_folder, "hello-pt"))
+example_files = package_files(root="nvflare/tool/examples", starting="data")
 
 cmdclass = versioneer.get_cmdclass()
 
@@ -110,9 +117,12 @@ setup(
         "nvflare.dashboard.application": extra_files,
         "nvflare.tool.job": job_templates,
         "nvflare.tool.deploy": deploy_templates,
+        "nvflare.tool.examples": example_files,
         "nvflare.tool.recipe": ["recipe_catalog.json"],
     },
     include_package_data=True,
 )
 
 remove_dir(target_path=tmp_job_template_folder)
+if generated_example_data:
+    remove_dir(target_path=tmp_example_folder)

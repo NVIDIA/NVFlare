@@ -12,90 +12,128 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Retrieve editable example source without Git or a full repository checkout."""
+"""Copy release-matched example source bundled with NVFlare."""
 
-import shlex
-import signal
+import json
+import shutil
 import sys
-import time
-from contextlib import contextmanager
+from importlib import resources
+from pathlib import Path
 
 from nvflare.tool.cli_output import is_json_mode, output_error_message, output_ok, print_human
 from nvflare.tool.cli_schema import handle_schema_flag
-from nvflare.tool.examples.source import ExampleError
 
+PROVENANCE_FILE = ".nvflare-example.json"
+EXAMPLES = {
+    "hello-pt": {
+        "source_path": "examples/hello-world/hello-pt",
+        "destination": "hello-pt",
+        "required_extra": "PT",
+        "next_command": ["python", "job.py"],
+    }
+}
 _parsers = {}
-DOWNLOAD_TIMEOUT = 300
-_EXAMPLES = [
-    "nvflare examples get hello-pt",
-    "nvflare examples get hello-pt --dest ./my-hello-pt --refresh",
-    "nvflare examples get hello-pt --ref main --format json",
-    "nvflare examples cache clear",
-]
+_EXAMPLE_COMMANDS = ["nvflare examples get hello-pt", "nvflare examples get hello-pt --dest ./my-hello-pt"]
+
+
+class ExampleError(Exception):
+    def __init__(self, code, message, hint):
+        super().__init__(message)
+        self.code = code
+        self.hint = hint
 
 
 def def_examples_parser(sub_cmd):
-    parser = sub_cmd.add_parser("examples", help="download release-matched runnable examples")
+    parser = sub_cmd.add_parser("examples", help="copy a runnable example bundled with NVFlare")
     children = parser.add_subparsers(dest="examples_sub_cmd")
-    get = children.add_parser("get", help="download one example into a new directory")
-    get.add_argument("name", help="catalog short name, e.g. hello-pt")
-    get.add_argument("--ref", help="explicit tag, branch, or commit; default: installed version's source")
-    get.add_argument("--dest", help="new destination directory; default: catalog destination in current directory")
-    get.add_argument("--refresh", action="store_true", help="download again even if a validated cache entry exists")
-    cache = children.add_parser("cache", help="manage the local example download cache")
-    cache_children = cache.add_subparsers(dest="examples_cache_cmd")
-    clear = cache_children.add_parser("clear", help="remove all cached example downloads; keep delivered workspaces")
+    get = children.add_parser("get", help="copy one example into a new directory")
+    get.add_argument("name", help="bundled example short name, e.g. hello-pt")
+    get.add_argument("--dest", help="new destination directory; default: example name in the current directory")
     _parsers.clear()
-    _parsers.update({None: parser, "get": get, "cache": cache, "cache clear": clear})
+    _parsers.update({None: parser, "get": get})
     for value in _parsers.values():
         value.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     return {"examples": parser}
 
 
-def _interrupt(signum, frame):
-    raise KeyboardInterrupt
+def _example_source(name):
+    bundled = resources.files("nvflare.tool.examples").joinpath("data", name)
+    if bundled.is_dir():
+        return bundled
+    # Editable source checkouts use the canonical example directly. Builds copy
+    # this directory into package data so installed distributions work offline.
+    checkout = Path(__file__).resolve().parents[3] / EXAMPLES[name]["source_path"]
+    if checkout.is_dir():
+        return checkout
+    raise OSError(f"The installed NVFlare package does not contain the bundled {name} example")
 
 
-class _DownloadTimeout(BaseException):
-    """Escape network/cache recovery so a deadline never triggers another download."""
+def _copy_resource(source, destination):
+    for item in source.iterdir():
+        target = destination / item.name
+        if item.is_dir():
+            target.mkdir()
+            _copy_resource(item, target)
+        elif item.is_file():
+            with item.open("rb") as source_file, target.open("xb") as target_file:
+                shutil.copyfileobj(source_file, target_file)
 
 
-def _timeout(signum, frame):
-    raise _DownloadTimeout
+def get_example(version_info, *, name, destination=None):
+    if name not in EXAMPLES:
+        raise ExampleError(
+            "EXAMPLE_UNKNOWN",
+            f"Unknown bundled example: {name}.",
+            "Choose a bundled example: " + ", ".join(sorted(EXAMPLES)),
+        )
+    entry = EXAMPLES[name]
+    destination = Path(destination or entry["destination"]).expanduser().absolute()
+    if destination.exists() or destination.is_symlink():
+        raise ExampleError(
+            "EXAMPLE_DESTINATION_EXISTS",
+            f"Destination already exists: {destination}",
+            "Use --dest <new-directory>, or move the existing directory before retrying.",
+        )
+    if not destination.parent.is_dir():
+        raise ExampleError(
+            "EXAMPLE_DESTINATION_INVALID",
+            f"Destination parent does not exist: {destination.parent}",
+            "Create the parent directory or choose --dest under an existing directory.",
+        )
 
-
-@contextmanager
-def _download_deadline():
-    # The CLI runs on the main thread on Linux/macOS. A signal also interrupts
-    # blocked header/body reads that may never yield an iter_content chunk.
-    if not hasattr(signal, "setitimer"):
-        raise OSError("Timed example retrieval is unavailable on this platform.")
-    started = time.monotonic()
-
-    def before_publish():
-        # Discard pending alarms as well as stopping future ones. Once this
-        # deadline check passes, publication and its result must finish together.
-        signal.signal(signal.SIGALRM, signal.SIG_IGN)
-        signal.setitimer(signal.ITIMER_REAL, 0)
-        if time.monotonic() - started >= DOWNLOAD_TIMEOUT:
-            raise _DownloadTimeout
-
-    previous_handler = signal.signal(signal.SIGALRM, _timeout)
-    previous_timer = signal.setitimer(signal.ITIMER_REAL, DOWNLOAD_TIMEOUT)
+    source = _example_source(name)
     try:
-        yield before_publish
-    finally:
-        signal.setitimer(signal.ITIMER_REAL, 0)
-        signal.signal(signal.SIGALRM, previous_handler)
-        if previous_timer[0]:
-            remaining = max(0.001, previous_timer[0] - (time.monotonic() - started))
-            signal.setitimer(signal.ITIMER_REAL, remaining, previous_timer[1])
+        destination.mkdir()
+    except FileExistsError:
+        raise ExampleError(
+            "EXAMPLE_DESTINATION_EXISTS",
+            f"Destination already exists: {destination}",
+            "Use --dest <new-directory>, or move the existing directory before retrying.",
+        ) from None
+    provenance = {
+        "schema_version": 1,
+        "example": name,
+        "source": "bundled",
+        "source_path": entry["source_path"],
+        "nvflare_version": version_info["version"],
+    }
+    try:
+        _copy_resource(source, destination)
+        (destination / PROVENANCE_FILE).write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
+    except BaseException:
+        shutil.rmtree(destination, ignore_errors=True)
+        raise
+    return {
+        **provenance,
+        "directory": str(destination),
+        "required_extra": entry["required_extra"],
+        "next_command": entry["next_command"],
+        "readme": str(destination / "README.md"),
+    }
 
 
 def handle_examples_cmd(args):
-    sub = getattr(args, "examples_sub_cmd", None)
-    action = getattr(args, "examples_cache_cmd", None)
-    key = f"cache {action}" if sub == "cache" and action is not None else sub
+    key = getattr(args, "examples_sub_cmd", None)
     if key not in _parsers:
         output_error_message(
             "INVALID_ARGS", f"Unknown examples subcommand: {key}.", "Run nvflare examples --help.", exit_code=4
@@ -103,75 +141,44 @@ def handle_examples_cmd(args):
     handle_schema_flag(
         _parsers[key],
         "nvflare examples" + (f" {key}" if key else ""),
-        _EXAMPLES,
+        _EXAMPLE_COMMANDS,
         sys.argv[1:],
         streaming=False,
         output_modes=["json"],
         mutating=True,
-        idempotent=key == "cache clear",
+        idempotent=False,
         retry_token={"supported": False},
     )
-    if key not in {"get", "cache clear"}:
+    if key != "get":
         output_error_message(
-            "INVALID_ARGS", "An examples subcommand is required.", "Run nvflare examples --help.", exit_code=4
+            "INVALID_ARGS", "The examples get subcommand is required.", "Run nvflare examples --help.", exit_code=4
         )
 
     from nvflare import _version
-    from nvflare.tool.examples.store import ExampleStore
 
-    store = None
-    previous = signal.signal(signal.SIGTERM, _interrupt)
     try:
-        store = ExampleStore()
-        if key == "cache clear":
-            output_ok(store.clear())
-            return
-        with _download_deadline() as before_publish:
-            result = store.get(
-                _version.get_versions(),
-                name=args.name,
-                ref=args.ref,
-                destination=args.dest,
-                refresh=args.refresh,
-                before_publish=before_publish,
-            )
+        result = get_example(_version.get_versions(), name=args.name, destination=args.dest)
         if is_json_mode():
             output_ok(result)
         else:
-            print_human(f"{result['example']}: {result['cache_status']}")
-            print_human(f"Source: {result['source_url']}")
-            print_human(f"Commit: {result['commit']}")
-            print_human(f"Created: {result['directory']}\n")
+            print_human(f"Created bundled example: {result['directory']}\n")
             print_human("Next:")
-            print_human(f"  cd {shlex.quote(result['directory'])}")
-            print_human("  " + shlex.join(result["next_command"]))
-            print_human("\nSee README.md for dependencies, customization, and further examples.")
-    except _DownloadTimeout:
-        output_error_message(
-            "EXAMPLE_TIMEOUT",
-            f"Example retrieval exceeded its {DOWNLOAD_TIMEOUT:g}-second deadline.",
-            "Check network availability and retry the command.",
-            exit_code=1,
-        )
+            print_human(f"  cd {result['directory']}")
+            print_human("  " + " ".join(result["next_command"]))
+            print_human("\nSee README.md for dependencies and customization.")
     except ExampleError as error:
         output_error_message(error.code, str(error), error.hint, exit_code=4 if error.code == "INVALID_ARGS" else 1)
     except KeyboardInterrupt:
         output_error_message(
             "EXAMPLE_INTERRUPTED",
-            "Example retrieval interrupted.",
-            "Retry the command; an incomplete download was not delivered as the destination.",
+            "Example copy interrupted.",
+            "Retry the command; an incomplete destination was removed.",
             exit_code=130,
         )
     except (OSError, RuntimeError) as error:
-        # pathlib may raise RuntimeError for an unavailable home or a symlink loop.
         output_error_message(
             "EXAMPLE_IO_ERROR",
-            f"Cannot write or read the example files: {error}",
-            "Check cache and destination paths, permissions, and free disk space. "
-            "If home resolution fails, set NVFLARE_EXAMPLES_CACHE_DIR and --dest to absolute paths.",
+            f"Cannot copy the bundled example: {error}",
+            "Check the destination path, permissions, free disk space, and NVFlare installation.",
             exit_code=1,
         )
-    finally:
-        signal.signal(signal.SIGTERM, previous)
-        if store is not None:
-            store.source.close()
