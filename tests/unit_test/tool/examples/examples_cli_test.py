@@ -37,7 +37,9 @@ def reset_output_mode():
     set_output_format("txt")
 
 
-def _mock_download(monkeypatch, *, requirements="nvflare[PT]~=2.9.0rc\ntorch\n", readme="README.md"):
+def _mock_download(
+    monkeypatch, *, requirements="nvflare[PT]~=2.9.0rc\ntorch\n", nested_requirements=None, readme="README.md"
+):
     def download(revision, source_path, destination):
         assert revision == REVISION
         assert source_path == SOURCE_PATH
@@ -45,6 +47,8 @@ def _mock_download(monkeypatch, *, requirements="nvflare[PT]~=2.9.0rc\ntorch\n",
         (destination / "job.py").write_text("print('example')\n")
         (destination / "nested").mkdir()
         (destination / "nested/client.py").write_text("# client\n")
+        if nested_requirements is not None:
+            (destination / "nested/requirements.txt").write_text(nested_requirements)
         if requirements is not None:
             (destination / "requirements.txt").write_text(requirements)
         return "https://api.github.com/tree"
@@ -63,6 +67,17 @@ def test_get_records_downloaded_source_and_requirements(monkeypatch, tmp_path):
     assert (destination / "requirements.txt").read_text() == "nvflare[PT]~=2.9.0rc\ntorch\n"
     assert result["readme"] == str(destination / "README.md")
     assert result["source_url"] == f"https://github.com/NVIDIA/NVFlare/tree/{REVISION}/{SOURCE_PATH}"
+    assert result["warnings"] == [
+        {
+            "code": "EXAMPLE_NVFLARE_REQUIREMENT",
+            "message": "Downloaded requirements files name an NVFlare distribution.",
+            "paths": ["requirements.txt"],
+            "hint": (
+                "Keep the installed NVFlare distribution. Install required extras on that same distribution, "
+                "then install the remaining example dependencies without reinstalling NVFlare."
+            ),
+        }
+    ]
     provenance = json.loads((destination / examples_cli.PROVENANCE_FILE).read_text())
     assert provenance["revision"] == REVISION
     assert provenance["example"] == "hello-pt"
@@ -72,9 +87,20 @@ def test_get_records_downloaded_source_and_requirements(monkeypatch, tmp_path):
 def test_missing_requirements_remains_missing(monkeypatch, tmp_path):
     _mock_download(monkeypatch, requirements=None)
 
-    examples_cli.get_example(VERSION, CATALOG, name="hello-pt", destination=tmp_path / "hello-pt")
+    result = examples_cli.get_example(VERSION, CATALOG, name="hello-pt", destination=tmp_path / "hello-pt")
 
     assert not (tmp_path / "hello-pt/requirements.txt").exists()
+    assert result["warnings"] == []
+
+
+def test_nested_nvflare_requirement_is_reported_without_modification(monkeypatch, tmp_path):
+    requirement = "nvflare-nightly[HE]>=2.10.0rc\ntenseal\n"
+    _mock_download(monkeypatch, requirements="torch\n", nested_requirements=requirement)
+
+    result = examples_cli.get_example(VERSION, CATALOG, name="hello-pt", destination=tmp_path / "hello-pt")
+
+    assert (tmp_path / "hello-pt/nested/requirements.txt").read_text() == requirement
+    assert result["warnings"][0]["paths"] == ["nested/requirements.txt"]
 
 
 def test_rst_readme_is_reported(monkeypatch, tmp_path):
@@ -340,7 +366,9 @@ def test_human_output_points_to_readme(monkeypatch, capsys, tmp_path):
     output = capsys.readouterr().out
     assert f"Downloaded example: {destination}" in output
     assert f"  cd {shlex.quote(str(destination))}" in output
-    assert "requirements.txt" not in output
+    assert "pip install -r requirements.txt" not in output
+    assert "Warning: Downloaded requirements files name an NVFlare distribution." in output
+    assert "Keep the installed NVFlare distribution." in output
     assert "Follow README.md for dependency, preparation, and run instructions." in output
     assert "python job.py" not in output
 
@@ -363,6 +391,8 @@ def test_get_json_is_machine_readable(monkeypatch, capsys, tmp_path):
     assert result["data"]["directory"] == str(destination)
     assert "setup_commands" not in result["data"]
     assert result["data"]["readme"] == str(destination / "README.md")
+    assert result["data"]["warnings"][0]["code"] == "EXAMPLE_NVFLARE_REQUIREMENT"
+    assert result["data"]["warnings"][0]["paths"] == ["requirements.txt"]
 
 
 def test_unknown_example_uses_structured_cli_error(monkeypatch, capsys):

@@ -96,6 +96,12 @@ appropriate for that revision. A small ``.nvflare-example.json`` file records
 the example name, installed NVFlare version, Git revision, and canonical source
 path.
 
+If any root or nested ``requirements.txt`` names ``nvflare`` or
+``nvflare-nightly``, the command reports each affected path in human and JSON
+output. Keep the NVFlare distribution already installed, add required extras
+to that same distribution as shown above, and install the remaining example
+dependencies without reinstalling NVFlare.
+
 Automation
 ==========
 

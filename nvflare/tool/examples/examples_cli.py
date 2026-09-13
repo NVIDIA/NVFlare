@@ -32,6 +32,9 @@ REPOSITORY = "NVIDIA/NVFlare"
 MAX_EXAMPLE_FILES = 5000
 MAX_EXAMPLE_BYTES = 128 * 1024 * 1024
 _REVISION = re.compile(r"[0-9a-f]{40}")
+_NVFLARE_REQUIREMENT = re.compile(
+    r"^\s*nvflare(?:[-_.]nightly)?(?:\s*\[[^\]]+\])?(?=\s*(?:[<>=!~;@#]|$))", re.IGNORECASE
+)
 _parsers = {}
 _EXAMPLE_COMMANDS = [
     "nvflare examples list",
@@ -193,6 +196,29 @@ def _download_example(revision, source_path, destination):
     return tree_url
 
 
+def _dependency_warnings(destination):
+    paths = []
+    for requirements in destination.rglob("requirements.txt"):
+        if not requirements.is_file():
+            continue
+        contents = requirements.read_text(encoding="utf-8", errors="replace")
+        if any(_NVFLARE_REQUIREMENT.match(line) for line in contents.splitlines()):
+            paths.append(requirements.relative_to(destination).as_posix())
+    if not paths:
+        return []
+    return [
+        {
+            "code": "EXAMPLE_NVFLARE_REQUIREMENT",
+            "message": "Downloaded requirements files name an NVFlare distribution.",
+            "paths": sorted(paths),
+            "hint": (
+                "Keep the installed NVFlare distribution. Install required extras on that same distribution, "
+                "then install the remaining example dependencies without reinstalling NVFlare."
+            ),
+        }
+    ]
+
+
 def get_example(version_info, catalog, *, name, destination=None):
     if name not in catalog:
         raise ExampleError(
@@ -217,6 +243,7 @@ def get_example(version_info, catalog, *, name, destination=None):
     except FileExistsError:
         _destination_exists(destination)
     tree_url = _download_example(revision, entry["source_path"], destination)
+    warnings = _dependency_warnings(destination)
 
     readme = next(
         (candidate for candidate in (destination / "README.md", destination / "README.rst") if candidate.is_file()),
@@ -243,6 +270,7 @@ def get_example(version_info, catalog, *, name, destination=None):
         "tree_url": tree_url,
         "directory": str(destination),
         "readme": str(readme),
+        "warnings": warnings,
     }
 
 
@@ -293,6 +321,11 @@ def handle_examples_cmd(args):
         else:
             print_human(f"Downloaded example: {result['directory']}")
             print_human(f"Source: {result['source_url']}\n")
+            for warning in result["warnings"]:
+                print_human(f"Warning: {warning['message']}")
+                for path in warning["paths"]:
+                    print_human(f"  {path}")
+                print_human(f"{warning['hint']}\n")
             print_human("Next:")
             print_human(f"  cd {shlex.quote(result['directory'])}")
             print_human(f"\nFollow {Path(result['readme']).name} for dependency, preparation, and run instructions.")
