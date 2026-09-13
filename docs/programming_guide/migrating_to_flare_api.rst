@@ -355,6 +355,12 @@ With the FLARE API, ``download_job_result()``:
 
 Clone Job
 ^^^^^^^^^
+.. deprecated:: 2.10.0
+   The clone command interfaces and the FLARE API ``clone_job()`` method are
+   deprecated. Re-export or reuse the original local job folder and run
+   ``nvflare job submit -j JOB_FOLDER`` so the artifact is signed with the
+   current submitter certificate.
+
 The usage for the ``clone_job()`` command is the same for FLAdminAPI and the FLARE API with just the job_id as a string as the required argument.
 The behavior of the command remains the same, with the output being simplified just to the job_id of the newly cloned job. With FLAdminAPI:
 

@@ -327,7 +327,19 @@ Let's first set the path to the POC environment:
    run.get_status()
    run.get_result()
 
-The result is stored under the directory ``/tmp/nvflare/poc``.
+``PocEnv`` creates a unique Recipe-owned workspace beside the configured path,
+such as ``/tmp/nvflare/poc.recipe-<unique-id>``. The reusable ``nvflare poc``
+CLI workspace at ``/tmp/nvflare/poc`` is not replaced by Recipe provisioning.
+The active path is available as ``env.poc_workspace``. Pass ``clean_up=False``
+to ``run.get_result()`` when you want to retain that workspace and its logs
+after the run. Each ``PocEnv`` instance owns one provisioning lifecycle; create
+a new instance for another deployment after provisioning has begun. Recipe POC
+deployments still compete for their configured server ports, although custom
+projects with distinct ports can run concurrently. Docker Recipe deployments
+use unique per-workspace container and network names. Also run ``nvflare poc
+stop`` before starting ``PocEnv`` when the configured CLI deployment is active.
+See :ref:`recipe_execution_environments` for lifecycle, conflict-checking, and
+failure-cleanup details.
 
 To use a named study, point ``PocEnv`` to a custom project file that defines ``studies:``:
 

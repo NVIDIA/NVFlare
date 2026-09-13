@@ -51,6 +51,7 @@ def test_user_login_sends_study_header(monkeypatch):
     api.user_name = "admin@nvidia.com"
     api.study = "cancer-research"
     api.login_result = None
+    api.cell = object()
     captured = {}
 
     class _FakeIdentityAsserter:
@@ -88,6 +89,7 @@ def test_user_login_defaults_study_header(monkeypatch):
     api.user_name = "admin@nvidia.com"
     api.study = DEFAULT_STUDY
     api.login_result = None
+    api.cell = object()
     captured = {}
 
     class _FakeIdentityAsserter:
@@ -121,6 +123,7 @@ def test_user_login_parses_structured_reject_code(monkeypatch):
     api.user_name = "admin@nvidia.com"
     api.study = "cancer-research"
     api.login_result = None
+    api.cell = object()
 
     class _FakeIdentityAsserter:
         cert_data = "cert-data"

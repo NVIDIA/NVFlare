@@ -100,12 +100,12 @@ recipe = FedAvgRecipe(
 ### Deep Learning Frameworks
 
 #### [Hello PyTorch](./hello-pt/)
-Train an image classifier on CIFAR-10 using PyTorch and FedAvg.
+Train an image classifier on deterministic, independently generated synthetic data using PyTorch and FedAvg.
 
 **What you'll learn:**
 - Using the PyTorch FedAvg Recipe
 - Client API for PyTorch models
-- TensorBoard integration
+- Final global-model evaluation with a measurable learning signal
 
 **Run it:**
 ```bash

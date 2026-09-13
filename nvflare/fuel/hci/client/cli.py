@@ -23,6 +23,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
+from nvflare.apis.fl_constant import JOB_CLONE_DEPRECATION_MESSAGE, AdminCommandNames
 from nvflare.apis.job_def import DEFAULT_STUDY
 
 try:
@@ -124,6 +125,7 @@ class AdminClient(cmd.Cmd, EventHandler):
             event_handlers=event_handlers,
             study=study,
         )
+        self.user_name = self.api.user_name
 
         if not os.path.isdir(cli_history_dir):
             os.mkdir(cli_history_dir)
@@ -347,7 +349,7 @@ class AdminClient(cmd.Cmd, EventHandler):
             self.write_string("Ambiguous command {} - qualify with scope".format(cmd_name))
             return
         elif info == CommandInfo.CONFIRM_AUTH:
-            if self.user_name:
+            if self.api.user_name:
                 info = CommandInfo.CONFIRM_USER_NAME
             else:
                 info = CommandInfo.CONFIRM_YN
@@ -359,9 +361,12 @@ class AdminClient(cmd.Cmd, EventHandler):
                 return
         elif info == CommandInfo.CONFIRM_USER_NAME:
             answer = self._user_input("Confirm with User Name: ")
-            if answer != self.user_name:
+            if answer != self.api.user_name:
                 self.write_string("user name mismatch")
                 return
+
+        if cmd_name.rsplit(".", 1)[-1] == AdminCommandNames.CLONE_JOB:
+            self.write_string(f"WARNING: {JOB_CLONE_DEPRECATION_MESSAGE}")
 
         # execute the command!
         start = time.time()

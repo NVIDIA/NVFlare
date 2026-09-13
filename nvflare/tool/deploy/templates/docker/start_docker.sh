@@ -4,6 +4,8 @@
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 HOST_WORKSPACE="$(cd "$DIR/.." && pwd)"
 DOCKER_IMAGE=${NVFL_P_IMAGE:-@@NVFLARE_DOCKER_IMAGE@@}
+LOGICAL_CONTAINER_NAME=@@NVFLARE_CONTAINER_NAME@@
+CONTAINER_NAME=${NVFLARE_POC_CONTAINER_NAME:-$LOGICAL_CONTAINER_NAME}
 DOCKER_SOCK="${NVFL_DOCKER_SOCK:-/var/run/docker.sock}"
 DOCKER_ENDPOINT="${DOCKER_HOST:-}"
 
@@ -82,11 +84,19 @@ fi
 echo "Starting NVFlare @@NVFLARE_ROLE_LABEL@@ @@NVFLARE_SITE_NAME@@ with image $DOCKER_IMAGE"
 echo "Host workspace: $HOST_WORKSPACE"
 
-NETWORK_NAME=@@NVFLARE_NETWORK_NAME@@
-if ! docker "${DOCKER_CLI_ARGS[@]}" network ls --filter name="$NETWORK_NAME" --format "{{.Name}}" \
-    | grep -wq "$NETWORK_NAME"; then
-    docker "${DOCKER_CLI_ARGS[@]}" network create "$NETWORK_NAME"
-    echo "Created Docker network: $NETWORK_NAME"
+NETWORK_NAME=${NVFLARE_POC_NETWORK_NAME:-@@NVFLARE_NETWORK_NAME@@}
+if ! docker "${DOCKER_CLI_ARGS[@]}" network inspect "$NETWORK_NAME" > /dev/null 2>&1; then
+    if docker "${DOCKER_CLI_ARGS[@]}" network create "$NETWORK_NAME" > /dev/null 2>&1; then
+        echo "Created Docker network: $NETWORK_NAME"
+    elif ! docker "${DOCKER_CLI_ARGS[@]}" network inspect "$NETWORK_NAME" > /dev/null 2>&1; then
+        echo "ERROR: could not create Docker network: $NETWORK_NAME"
+        exit 1
+    fi
+fi
+
+NETWORK_ALIAS_ARGS=()
+if [ "$CONTAINER_NAME" != "$LOGICAL_CONTAINER_NAME" ]; then
+    NETWORK_ALIAS_ARGS=(--network-alias "$LOGICAL_CONTAINER_NAME")
 fi
 
 rm -f "$HOST_WORKSPACE/daemon_pid.fl"
@@ -131,12 +141,14 @@ else
     GROUP_ADD_ARGS+=(--group-add "$SOCK_GID")
 fi
 
-docker "${DOCKER_CLI_ARGS[@]}" run --name @@NVFLARE_CONTAINER_NAME@@ \
+docker "${DOCKER_CLI_ARGS[@]}" run --name "$CONTAINER_NAME" \
     --user "$(id -u):$(id -g)" \
     "${GROUP_ADD_ARGS[@]}" \
     --network "$NETWORK_NAME" \
+    "${NETWORK_ALIAS_ARGS[@]}" \
 @@NVFLARE_NETWORK_ALIAS@@    -v "$HOST_WORKSPACE":@@NVFLARE_WORKSPACE_MOUNT_PATH@@ \
     --mount "type=bind,src=$DOCKER_SOCK,dst=/var/run/docker.sock" \
     -e NVFL_DOCKER_WORKSPACE="$HOST_WORKSPACE" \
+    -e NVFL_DOCKER_NETWORK="$NETWORK_NAME" \
 @@NVFLARE_PUBLISH_PORTS@@    --rm "$DOCKER_IMAGE" \
     @@NVFLARE_PARENT_COMMAND@@

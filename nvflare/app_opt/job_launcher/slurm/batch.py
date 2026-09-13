@@ -176,7 +176,7 @@ def _apptainer_parts(plan: LaunchPlan, config: SlurmConfig, worker_words: list[s
 
 
 def _multinode_srun_words(plan: LaunchPlan) -> list[str]:
-    return [
+    words = [
         '"${NVFL_SRUN}"',
         shlex.quote(f"--nodes={plan.resources.nodes}"),
         shlex.quote(f"--ntasks={plan.resources.nodes}"),
@@ -188,6 +188,9 @@ def _multinode_srun_words(plan: LaunchPlan) -> list[str]:
         shlex.quote("--wait=0"),
         shlex.quote("--label"),
     ]
+    if plan.resources.gpus_per_node:
+        words.append(shlex.quote(f"--gres=gpu:{plan.resources.gpus_per_node}"))
+    return words
 
 
 def _multinode_parts(plan: LaunchPlan, job_dir: str, config: SlurmConfig) -> tuple[list[str], list[str]]:

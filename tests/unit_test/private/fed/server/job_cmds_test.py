@@ -163,6 +163,7 @@ class _FakeJobDefManager:
     def __init__(self):
         self.created_meta = None
         self.cloned_meta = None
+        self.content = None
 
     def create(self, meta, uploaded_content, fl_ctx):
         self.created_meta = dict(meta)
@@ -175,6 +176,9 @@ class _FakeJobDefManager:
         result = dict(meta)
         result[JobMetaKey.JOB_ID.value] = "cloned-job-id"
         return result
+
+    def get_content(self, meta, fl_ctx):
+        return self.content
 
 
 class _FakeSubmitTokenJobDefManager:
@@ -1106,6 +1110,13 @@ def test_clone_job_preserves_source_study(monkeypatch):
 
     assert conn.errors == []
     assert engine.job_def_manager.cloned_meta[JobMetaKey.STUDY.value] == "cancer-research"
+
+
+def test_clone_job_command_help_is_deprecated():
+    clone_spec = next(spec for spec in JobCommandModule().get_spec().cmd_specs if spec.name == "clone_job")
+
+    assert "[DEPRECATED]" in clone_spec.description
+    assert "nvflare job submit -j JOB_FOLDER" in clone_spec.description
 
 
 def test_clone_job_preserves_byoc_flag(monkeypatch):
