@@ -102,7 +102,7 @@ def evaluate(model, data_loader, criterion):
             correct += (predictions == labels).sum().item()
 
     if total == 0:
-        return 0.0, 0.0
+        raise ValueError("Evaluation data loader is empty. Check the dataset preparation.")
 
     return total_loss / total, correct / total
 
@@ -150,7 +150,7 @@ def train_one_round(
             total_batches += 1
 
     if total_batches == 0:
-        return 0.0
+        raise ValueError("Training data loader is empty. Check the dataset preparation.")
 
     return total_loss / total_batches
 
@@ -267,7 +267,7 @@ def main(args):
             local_epochs=args.local_epochs,
         )
 
-        print(f"{site_name}: " f"Average local loss = " f"{average_loss:.4f}")
+        print(f"{site_name}: " f"Average local loss = {average_loss:.4f}")
 
         # ---------------------------------------------------------------
         # Evaluate locally trained model.
@@ -294,7 +294,7 @@ def main(args):
 
         diff_norm = torch.sqrt(sum(torch.sum(value**2) for value in model_diff.values()))
 
-        print(f"{site_name}: " f"Update norm = " f"{diff_norm.item():.6f}")
+        print(f"{site_name}: " f"Update norm = {diff_norm.item():.6f}")
 
         # ---------------------------------------------------------------
         # Send DIFF update to NVFLARE.
@@ -311,7 +311,10 @@ def main(args):
                 "train_loss": average_loss,
                 "diff_norm": diff_norm.item(),
             },
-            meta={"client_name": site_name, "NUM_STEPS_CURRENT_ROUND": (args.local_epochs * len(train_loader))},
+            meta={
+                "client_name": site_name,
+                "NUM_STEPS_CURRENT_ROUND": (args.local_epochs * len(train_loader)),
+            },
         )
 
         flare.send(output_model)
