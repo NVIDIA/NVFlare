@@ -27,8 +27,7 @@ The default destination is ``hello-pt`` in the current directory. Use
 
 The destination's parent must already exist. The command never merges with or
 overwrites an existing file, directory, or symbolic link. It creates the
-destination exclusively and removes it if copying fails or is interrupted.
-If the operating system or process stops abruptly, remove any incomplete
+destination exclusively. If copying does not complete, remove the incomplete
 destination before retrying.
 
 The copied directory contains the same maintained files as

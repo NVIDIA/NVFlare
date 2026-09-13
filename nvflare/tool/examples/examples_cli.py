@@ -133,12 +133,8 @@ def get_example(version_info, *, name, destination=None):
         "nvflare_version": version_info["version"],
     }
     _create_destination(destination)
-    try:
-        _copy_resource(source, destination, entry["files"])
-        (destination / PROVENANCE_FILE).write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
-    except BaseException:
-        shutil.rmtree(destination, ignore_errors=True)
-        raise
+    _copy_resource(source, destination, entry["files"])
+    (destination / PROVENANCE_FILE).write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
     return {
         **provenance,
         "directory": str(destination),
@@ -188,13 +184,13 @@ def handle_examples_cmd(args):
         output_error_message(
             "EXAMPLE_INTERRUPTED",
             "Example copy interrupted.",
-            "Retry the command; an incomplete destination was removed.",
+            "Remove any incomplete destination, then retry the command.",
             exit_code=130,
         )
     except (OSError, RuntimeError) as error:
         output_error_message(
             "EXAMPLE_IO_ERROR",
             f"Cannot copy the bundled example: {error}",
-            "Check the destination path, permissions, free disk space, and NVFlare installation.",
+            "Remove any incomplete destination, then check the path, permissions, free space, and installation.",
             exit_code=1,
         )

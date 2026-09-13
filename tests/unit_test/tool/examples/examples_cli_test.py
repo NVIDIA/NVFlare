@@ -176,7 +176,7 @@ def test_destination_created_after_check_is_not_replaced(monkeypatch, tmp_path):
 
 
 @pytest.mark.parametrize("failure", [OSError("disk full"), KeyboardInterrupt()])
-def test_failed_copy_removes_destination(monkeypatch, tmp_path, failure):
+def test_failed_copy_leaves_removable_destination(monkeypatch, tmp_path, failure):
     destination = tmp_path / "copied"
 
     def fail(source, target, filenames):
@@ -187,7 +187,7 @@ def test_failed_copy_removes_destination(monkeypatch, tmp_path, failure):
     monkeypatch.setattr(examples_cli, "_copy_resource", fail)
     with pytest.raises(type(failure)):
         examples_cli.get_example(VERSION, name="hello-pt", destination=destination)
-    assert not destination.exists()
+    assert (destination / "partial").read_text() == "partial"
 
 
 def test_missing_parent_and_unknown_example_are_structured(tmp_path):
