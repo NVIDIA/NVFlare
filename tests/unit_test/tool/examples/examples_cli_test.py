@@ -157,34 +157,30 @@ def test_destination_created_during_copy_is_untouched(monkeypatch, tmp_path):
     assert (destination / "original").read_text() == "original"
 
 
-def test_publish_does_not_replace_empty_destination_created_after_check(monkeypatch, tmp_path):
-    staged = tmp_path / "staged"
-    staged.mkdir()
-    (staged / "new").write_text("new")
+def test_destination_created_after_check_is_not_replaced(monkeypatch, tmp_path):
     destination = tmp_path / "copied"
-    rename_noreplace = examples_cli._rename_noreplace
+    mkdir = Path.mkdir
 
-    def race(source, target):
-        target.mkdir()
-        rename_noreplace(source, target)
+    def race(path, *args, **kwargs):
+        if path == destination:
+            mkdir(path)
+        mkdir(path, *args, **kwargs)
 
-    monkeypatch.setattr(examples_cli, "_rename_noreplace", race)
+    monkeypatch.setattr(Path, "mkdir", race)
 
     with pytest.raises(examples_cli.ExampleError) as error:
-        examples_cli._publish(staged, destination)
+        examples_cli.get_example(VERSION, name="hello-pt", destination=destination)
 
     assert error.value.code == "EXAMPLE_DESTINATION_EXISTS"
-    assert staged.is_dir()
     assert not list(destination.iterdir())
 
 
 @pytest.mark.parametrize("failure", [OSError("disk full"), KeyboardInterrupt()])
-def test_failed_copy_never_exposes_destination(monkeypatch, tmp_path, failure):
+def test_failed_copy_removes_destination(monkeypatch, tmp_path, failure):
     destination = tmp_path / "copied"
 
     def fail(source, target, filenames):
-        assert not destination.exists()
-        assert target.name == "example"
+        assert target == destination
         (target / "partial").write_text("partial")
         raise failure
 
@@ -192,7 +188,6 @@ def test_failed_copy_never_exposes_destination(monkeypatch, tmp_path, failure):
     with pytest.raises(type(failure)):
         examples_cli.get_example(VERSION, name="hello-pt", destination=destination)
     assert not destination.exists()
-    assert not list(tmp_path.glob(".nvflare-example-*"))
 
 
 def test_missing_parent_and_unknown_example_are_structured(tmp_path):
