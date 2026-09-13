@@ -292,3 +292,12 @@ jobs:
           uv pip install --system build twine
       - name: Run wheel build
         run: python3 -m build --wheel
+      - name: Verify bundled example from the wheel
+        run: |
+          python3 -m venv --system-site-packages "$RUNNER_TEMP/example-wheel-env"
+          "$RUNNER_TEMP/example-wheel-env/bin/pip" install --no-deps --force-reinstall dist/*.whl
+          mkdir "$RUNNER_TEMP/example-wheel-run"
+          cd "$RUNNER_TEMP/example-wheel-run"
+          "$RUNNER_TEMP/example-wheel-env/bin/nvflare" examples get hello-pt
+          diff -r --exclude=.nvflare-example.json \
+            "$GITHUB_WORKSPACE/examples/hello-world/hello-pt" "$RUNNER_TEMP/example-wheel-run/hello-pt"

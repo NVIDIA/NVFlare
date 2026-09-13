@@ -26,8 +26,9 @@ The default destination is ``hello-pt`` in the current directory. Use
    nvflare examples get hello-pt --dest ./my-hello-pt
 
 The destination's parent must already exist. The command never merges with or
-overwrites an existing file, directory, or symbolic link. If copying is
-interrupted or fails, the incomplete destination is removed.
+overwrites an existing file, directory, or symbolic link. The copy is prepared
+in a temporary sibling directory, so the requested destination appears only
+after all example files and provenance are ready.
 
 The copied directory contains the same maintained files as
 ``examples/hello-world/hello-pt`` in the corresponding NVFlare release. A small

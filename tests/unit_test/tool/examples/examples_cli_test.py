@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import json
+import shlex
 from pathlib import Path
 
 import pytest
@@ -92,6 +93,16 @@ def test_default_destination_and_human_next_step(monkeypatch, capsys, tmp_path):
     assert (tmp_path / "hello-pt/job.py").is_file()
 
 
+def test_human_next_step_quotes_destination(monkeypatch, capsys, tmp_path):
+    from nvflare import cli
+
+    destination = tmp_path / "copy with ' quote"
+    monkeypatch.setattr("nvflare._version.get_versions", lambda: VERSION)
+    monkeypatch.setattr("sys.argv", ["nvflare", "examples", "get", "hello-pt", "--dest", str(destination)])
+    cli.run("nvflare")
+    assert f"  cd {shlex.quote(str(destination))}" in capsys.readouterr().out
+
+
 @pytest.mark.parametrize("kind", ["file", "directory", "nonempty", "dangling-symlink"])
 def test_existing_destination_is_untouched(tmp_path, kind):
     destination = tmp_path / "copied"
@@ -129,17 +140,21 @@ def test_destination_created_during_copy_is_untouched(monkeypatch, tmp_path):
     assert (destination / "original").read_text() == "original"
 
 
-def test_failed_copy_removes_incomplete_destination(monkeypatch, tmp_path):
+@pytest.mark.parametrize("failure", [OSError("disk full"), KeyboardInterrupt()])
+def test_failed_copy_never_exposes_destination(monkeypatch, tmp_path, failure):
     destination = tmp_path / "copied"
 
     def fail(source, target):
+        assert not destination.exists()
+        assert target.name == "example"
         (target / "partial").write_text("partial")
-        raise OSError("disk full")
+        raise failure
 
     monkeypatch.setattr(examples_cli, "_copy_resource", fail)
-    with pytest.raises(OSError, match="disk full"):
+    with pytest.raises(type(failure)):
         examples_cli.get_example(VERSION, name="hello-pt", destination=destination)
     assert not destination.exists()
+    assert not list(tmp_path.glob(".nvflare-example-*"))
 
 
 def test_missing_parent_and_unknown_example_are_structured(tmp_path):

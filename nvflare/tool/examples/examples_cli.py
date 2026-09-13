@@ -15,8 +15,10 @@
 """Copy release-matched example source bundled with NVFlare."""
 
 import json
+import shlex
 import shutil
 import sys
+import tempfile
 from importlib import resources
 from pathlib import Path
 
@@ -79,6 +81,27 @@ def _copy_resource(source, destination):
                 shutil.copyfileobj(source_file, target_file)
 
 
+def _destination_exists(destination):
+    raise ExampleError(
+        "EXAMPLE_DESTINATION_EXISTS",
+        f"Destination already exists: {destination}",
+        "Use --dest <new-directory>, or move the existing directory before retrying.",
+    )
+
+
+def _publish(staged, destination):
+    if destination.exists() or destination.is_symlink():
+        _destination_exists(destination)
+    try:
+        staged.rename(destination)
+    except FileExistsError:
+        _destination_exists(destination)
+    except OSError:
+        if destination.exists() or destination.is_symlink():
+            _destination_exists(destination)
+        raise
+
+
 def get_example(version_info, *, name, destination=None):
     if name not in EXAMPLES:
         raise ExampleError(
@@ -89,11 +112,7 @@ def get_example(version_info, *, name, destination=None):
     entry = EXAMPLES[name]
     destination = Path(destination or entry["destination"]).expanduser().absolute()
     if destination.exists() or destination.is_symlink():
-        raise ExampleError(
-            "EXAMPLE_DESTINATION_EXISTS",
-            f"Destination already exists: {destination}",
-            "Use --dest <new-directory>, or move the existing directory before retrying.",
-        )
+        _destination_exists(destination)
     if not destination.parent.is_dir():
         raise ExampleError(
             "EXAMPLE_DESTINATION_INVALID",
@@ -102,14 +121,6 @@ def get_example(version_info, *, name, destination=None):
         )
 
     source = _example_source(name)
-    try:
-        destination.mkdir()
-    except FileExistsError:
-        raise ExampleError(
-            "EXAMPLE_DESTINATION_EXISTS",
-            f"Destination already exists: {destination}",
-            "Use --dest <new-directory>, or move the existing directory before retrying.",
-        ) from None
     provenance = {
         "schema_version": 1,
         "example": name,
@@ -117,12 +128,12 @@ def get_example(version_info, *, name, destination=None):
         "source_path": entry["source_path"],
         "nvflare_version": version_info["version"],
     }
-    try:
-        _copy_resource(source, destination)
-        (destination / PROVENANCE_FILE).write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
-    except BaseException:
-        shutil.rmtree(destination, ignore_errors=True)
-        raise
+    with tempfile.TemporaryDirectory(prefix=".nvflare-example-", dir=destination.parent) as temporary:
+        staged = Path(temporary) / "example"
+        staged.mkdir()
+        _copy_resource(source, staged)
+        (staged / PROVENANCE_FILE).write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
+        _publish(staged, destination)
     return {
         **provenance,
         "directory": str(destination),
@@ -163,8 +174,8 @@ def handle_examples_cmd(args):
         else:
             print_human(f"Created bundled example: {result['directory']}\n")
             print_human("Next:")
-            print_human(f"  cd {result['directory']}")
-            print_human("  " + " ".join(result["next_command"]))
+            print_human(f"  cd {shlex.quote(result['directory'])}")
+            print_human("  " + shlex.join(result["next_command"]))
             print_human("\nSee README.md for dependencies and customization.")
     except ExampleError as error:
         output_error_message(error.code, str(error), error.hint, exit_code=4 if error.code == "INVALID_ARGS" else 1)

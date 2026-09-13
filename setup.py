@@ -92,10 +92,22 @@ deploy_templates = package_files(root="nvflare/tool/deploy", starting="templates
 example_source_folder = "./examples/hello-world/hello-pt"
 tmp_example_folder = "./nvflare/tool/examples/data"
 generated_example_data = os.path.isdir(example_source_folder)
+hello_pt_files = (
+    "README.md",
+    "client.py",
+    "hello-pt.ipynb",
+    "job.py",
+    "model.py",
+    "prepare_data.py",
+    "requirements.txt",
+)
 if generated_example_data:
     remove_dir(target_path=tmp_example_folder)
-    shutil.copytree(example_source_folder, os.path.join(tmp_example_folder, "hello-pt"))
-example_files = package_files(root="nvflare/tool/examples", starting="data")
+    for filename in hello_pt_files:
+        target = os.path.join(tmp_example_folder, "hello-pt", filename)
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        shutil.copy2(os.path.join(example_source_folder, filename), target)
+example_files = [os.path.join("data", "hello-pt", filename) for filename in hello_pt_files]
 
 cmdclass = versioneer.get_cmdclass()
 
