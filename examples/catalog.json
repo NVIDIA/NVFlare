@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "examples": {
+    "hello-pt": {
+      "path": "examples/hello-world/hello-pt",
+      "destination": "hello-pt",
+      "nvflare": ">=2.10.0.dev0,<2.11.0.dev0",
+      "extra": "PT",
+      "next_command": ["python", "job.py"]
+    }
+  }
+}

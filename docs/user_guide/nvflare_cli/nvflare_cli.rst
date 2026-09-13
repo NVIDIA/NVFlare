@@ -39,6 +39,7 @@ Command groups
 - ``config``: manage local CLI settings, including startup-kit registration
   and active-kit selection
 - ``recipe``: list built-in recipe families for exported jobs
+- ``examples``: download release-matched runnable examples
 - ``preflight-check``: validate a provisioned startup kit before deployment
   (``preflight_check`` and ``preflight`` remain compatibility aliases)
 - ``dashboard``: start the Dashboard service
@@ -62,5 +63,6 @@ workflows unless you are maintaining an older setup.
    cert_command
    package_command
    recipe_command
+   examples_command
    preflight_check
    dashboard_command

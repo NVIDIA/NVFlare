@@ -31,6 +31,7 @@ from nvflare.private.fed.app.utils import version_check
 from nvflare.tool.agent.agent_cli import def_agent_cli_parser, handle_agent_cmd
 from nvflare.tool.cert.cert_cli import def_cert_cli_parser, handle_cert_cmd
 from nvflare.tool.deploy.deploy_cli import def_deploy_cli_parser, handle_deploy_cmd
+from nvflare.tool.examples.examples_cli import def_examples_parser, handle_examples_cmd
 from nvflare.tool.job.job_cli import def_job_cli_parser, handle_job_cli_cmd
 from nvflare.tool.kit.kit_cli import def_kit_cli_parser, default_startup_kit_id, handle_kit_cmd
 from nvflare.tool.kit.kit_config import StartupKitConfigError, add_startup_kit_entry, set_active_startup_kit
@@ -67,6 +68,7 @@ CMD_DEPLOY = "deploy"
 CMD_SYSTEM = "system"
 CMD_STUDY = "study"
 CMD_AGENT = "agent"
+CMD_EXAMPLES = "examples"
 
 _JSONL_COMMANDS = {
     (CMD_JOB, "monitor"),
@@ -470,6 +472,7 @@ def parse_args(prog_name: str):
     sub_cmd_parsers.update(def_deploy_cli_parser(sub_cmd))
     sub_cmd_parsers.update(def_study_cli_parser(sub_cmd))
     sub_cmd_parsers.update(def_agent_cli_parser(sub_cmd))
+    sub_cmd_parsers.update(def_examples_parser(sub_cmd))
     system_parser = sub_cmd.add_parser(CMD_SYSTEM, help="FL system operations (status, shutdown, version, ...)")
     sub_cmd_parsers.update({CMD_SYSTEM: system_parser})
     def_system_cli_parser(system_parser)
@@ -505,6 +508,8 @@ def parse_args(prog_name: str):
         ns.deploy_sub_cmd = sub_sub
         ns.deploy_k8_sub_cmd = positionals[2] if len(positionals) > 2 else None
         ns.agent_sub_cmd = sub_sub
+        ns.examples_sub_cmd = sub_sub
+        ns.examples_cache_cmd = positionals[2] if len(positionals) > 2 else None
         ns.agent_inspect_capability = positionals[2] if len(positionals) > 2 else None
         ns.format = global_args.format
         ns.connect_timeout = global_args.connect_timeout
@@ -551,6 +556,7 @@ handlers = {
     CMD_STUDY: handle_study_cmd,
     CMD_SYSTEM: handle_system_cmd,
     CMD_AGENT: handle_agent_cmd,
+    CMD_EXAMPLES: handle_examples_cmd,
 }
 
 
