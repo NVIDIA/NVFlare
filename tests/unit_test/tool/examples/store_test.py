@@ -12,181 +12,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import copy
+import ctypes
+import errno
 import hashlib
 import json
-import signal
+import os
+import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from urllib.parse import unquote, urlsplit
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 import requests
 from filelock import FileLock
 
 from nvflare.tool.examples import source, store
-
-COMMIT = "a" * 40
-VERSION = {"version": "2.10.0", "full-revisionid": COMMIT, "dirty": False, "error": None}
-CATALOG = {
-    "schema_version": 1,
-    "examples": {
-        "hello-pt": {
-            "path": "examples/hello-world/hello-pt",
-            "destination": "hello-pt",
-            "nvflare": ">=2.10.0.dev0,<2.11.0.dev0",
-            "extra": "PT",
-            "next_command": ["python", "job.py"],
-        }
-    },
-}
-EXAMPLE_PATH = CATALOG["examples"]["hello-pt"]["path"]
-
-
-class Response:
-    def __init__(self, data, status=200):
-        self.data = data
-        self.status_code = status
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *args):
-        pass
-
-    def iter_content(self, chunk_size):
-        if isinstance(self.data, BaseException):
-            raise self.data
-        for offset in range(0, len(self.data), chunk_size):
-            yield self.data[offset : offset + chunk_size]
-
-
-class Remote:
-    """HTTP fixture with real blob IDs and GitHub's separate shallow/recursive tree responses."""
-
-    def __init__(self, files=None, refs=None):
-        self.files = files or {
-            "examples/catalog.json": json.dumps(CATALOG).encode(),
-            f"{EXAMPLE_PATH}/job.py": b"print('run only when the user asks')\n",
-            f"{EXAMPLE_PATH}/README.md": b"# Hello PyTorch\n",
-            f"{EXAMPLE_PATH}/data/small.csv": b"x,y\n1,2\n",
-            "unrelated/secret.txt": b"must never be downloaded",
-        }
-        self.refs = refs or {"refs/tags/2.10.0": COMMIT, "main": COMMIT, COMMIT: COMMIT, "feature/foo": COMMIT}
-        self.trees = {}
-        self.calls = []
-        self.overrides = {}
-        self.source = source.GitHubSource()
-        self.source.session.get = self.get
-        self.build_tree("")
-
-    def build_tree(self, directory):
-        prefix = directory + "/" if directory else ""
-        names = sorted({path[len(prefix) :].split("/")[0] for path in self.files if path.startswith(prefix)})
-        items = []
-        for name in names:
-            path = prefix + name
-            if path in self.files:
-                data = self.files[path]
-                items.append(
-                    {"path": name, "type": "blob", "mode": "100644", "sha": source.blob_sha(data), "size": len(data)}
-                )
-            else:
-                revision = self.build_tree(path)
-                items.append({"path": name, "type": "tree", "mode": "040000", "sha": revision})
-        revision = COMMIT if not directory else hashlib.sha256(directory.encode()).hexdigest()[:40]
-        self.trees[revision] = items
-        return revision
-
-    def recursive(self, revision):
-        items = []
-        for item in self.trees[revision]:
-            items.append(dict(item))
-            if item["type"] == "tree":
-                for child in self.recursive(item["sha"]):
-                    items.append({**child, "path": item["path"] + "/" + child["path"]})
-        return items
-
-    def get(self, url, **kwargs):
-        assert kwargs["allow_redirects"] is False
-        assert kwargs["stream"] is True
-        assert kwargs["timeout"] == (10, 30)
-        parts = urlsplit(url)
-        path = unquote(parts.path)
-        route = path.removeprefix("/repos/" + source.REPOSITORY + "/")
-        if parts.hostname == "raw.githubusercontent.com":
-            route = "raw/" + path.removeprefix("/" + source.REPOSITORY + "/")
-        self.calls.append(route)
-        if route in self.overrides:
-            value = self.overrides[route]
-            return value() if callable(value) else value
-        if route.startswith("commits/"):
-            commit = self.refs.get(route[len("commits/") :])
-            return Response(commit.encode()) if commit else Response(b"not found", 404)
-        if route.startswith("raw/"):
-            path = route[len("raw/") + 41 :]
-            data = self.files.get(path)
-            return Response(data) if data is not None else Response(b"missing", 404)
-        if route.startswith("git/trees/"):
-            revision = route[len("git/trees/") :]
-            tree = self.recursive(revision) if parts.query else self.trees[revision]
-            return Response(json.dumps({"tree": tree, "truncated": False}).encode())
-        raise AssertionError(f"Unexpected URL: {url}")
-
-
-@pytest.fixture
-def remote():
-    result = Remote()
-    yield result
-    result.source.close()
-
-
-@pytest.fixture(autouse=True)
-def reset_output_mode():
-    from nvflare.tool.cli_output import set_output_format
-
-    set_output_format("txt")
-    yield
-    set_output_format("txt")
-
-
-@pytest.fixture
-def cache(tmp_path, remote):
-    return store.ExampleStore(tmp_path / "cache", remote.source)
-
-
-def get_example(cache, tmp_path, **kwargs):
-    return cache.get(VERSION, name="hello-pt", destination=tmp_path / "delivered", **kwargs)
-
-
-@pytest.mark.parametrize(
-    "version,revision,expected",
-    [
-        ("2.10.0", COMMIT, "refs/tags/2.10.0"),
-        ("2.10.1", COMMIT, "refs/tags/2.10.1"),
-        ("2.10.0rc3", COMMIT, "refs/tags/2.10.0rc3"),
-        ("2.10.0.dev0+21.gabcdef", COMMIT, COMMIT),
-        ("2.10.0.dev260912", COMMIT, COMMIT),
-        ("2.10.0+custom", COMMIT, COMMIT),
-    ],
-)
-def test_version_selects_exact_source(version, revision, expected):
-    assert source.selected_ref({**VERSION, "version": version, "full-revisionid": revision}) == expected
-
-
-@pytest.mark.parametrize("revision", [None, "", "abcdef", "not-a-commit"])
-def test_development_without_provenance_requires_explicit_ref(revision):
-    info = {**VERSION, "version": "2.10.0.dev0", "full-revisionid": revision}
-    with pytest.raises(source.ExampleError, match="no usable source revision"):
-        source.selected_ref(info)
-    assert source.selected_ref(info, "main") == "main"
-
-
-def test_dirty_checkout_requires_explicit_remote_selection():
-    with pytest.raises(source.ExampleError, match="uncommitted"):
-        source.selected_ref({**VERSION, "dirty": True})
-    assert source.selected_ref({**VERSION, "dirty": True}, COMMIT) == COMMIT
+from tests.unit_test.tool.examples.helpers import COMMIT, EXAMPLE_PATH, VERSION, Remote, Response, get_example
 
 
 def test_release_does_not_fall_forward(cache, remote, tmp_path):
@@ -242,7 +85,8 @@ def test_refresh_downloads_and_new_revision_has_a_separate_cache(cache, remote, 
 
 
 @pytest.mark.parametrize(
-    "corruption", ["bytes", "missing", "extra", "extra_directory", "symlink", "manifest", "oversize"]
+    "corruption",
+    ["bytes", "same_size_and_mtime", "missing", "extra", "extra_directory", "symlink", "manifest", "oversize"],
 )
 def test_corrupt_cache_is_repaired(cache, remote, tmp_path, corruption):
     get_example(cache, tmp_path)
@@ -250,6 +94,12 @@ def test_corrupt_cache_is_repaired(cache, remote, tmp_path, corruption):
     target = entry / "payload/job.py"
     if corruption == "bytes":
         target.write_text("corrupt")
+    elif corruption == "same_size_and_mtime":
+        original = target.stat()
+        target.write_bytes(b"x" * original.st_size)
+        os.utime(target, ns=(original.st_atime_ns, original.st_mtime_ns))
+        assert target.stat().st_size == original.st_size
+        assert target.stat().st_mtime_ns == original.st_mtime_ns
     elif corruption == "missing":
         target.unlink()
     elif corruption == "extra":
@@ -427,14 +277,6 @@ def test_explicit_ref_is_pinned_and_catalog_checked(cache, tmp_path, ref):
     assert result["commit"] == COMMIT
 
 
-@pytest.mark.parametrize(
-    "path", ["../escape", "/absolute", "a/../../escape", "a\\b", "C:/data", "a\n.py", "a/.git/config", "CON", "a."]
-)
-def test_unsafe_paths_are_rejected(path):
-    with pytest.raises(source.ExampleError):
-        source.safe_path(path)
-
-
 @pytest.mark.parametrize("kind,mode", [("blob", "120000"), ("commit", "160000"), ("blob", "100664")])
 def test_unsupported_git_objects_are_rejected_before_download(cache, remote, tmp_path, kind, mode):
     tree = remote.trees[hashlib.sha256(EXAMPLE_PATH.encode()).hexdigest()[:40]]
@@ -450,35 +292,15 @@ def test_truncated_tree_is_rejected(cache, remote, tmp_path):
         get_example(cache, tmp_path)
 
 
-@pytest.mark.parametrize("mutation", ["case", "parent_case", "reserved", "files", "bytes", "total", "ancestor"])
-def test_inventory_bounds_and_portable_collisions(remote, mutation, monkeypatch):
-    items = remote.recursive(hashlib.sha256(EXAMPLE_PATH.encode()).hexdigest()[:40])
-    if mutation == "case":
-        items.append({**items[0], "path": items[0]["path"].swapcase()})
-    elif mutation == "parent_case":
-        items.append({**items[-1], "path": "DATA/other.csv"})
-    elif mutation == "reserved":
-        items[0]["path"] = source.PROVENANCE_FILE
-    elif mutation == "files":
-        monkeypatch.setattr(source, "MAX_FILES", 1)
-    elif mutation == "bytes":
-        items[0]["size"] = source.MAX_FILE_BYTES + 1
-    elif mutation == "total":
-        monkeypatch.setattr(source, "MAX_TOTAL_BYTES", 1)
-    elif mutation == "ancestor":
-        items.append({**items[-1], "path": "job.py/child"})
-    with pytest.raises(source.ExampleError):
-        source.validate_inventory(items)
-
-
 @pytest.mark.parametrize(
     "paths",
     [
         ("caf\u00e9.txt", "cafe\u0301.txt"),
         ("caf\u00e9/one.txt", "cafe\u0301/two.txt"),
         ("caf\u00e9", "cafe\u0301/nested.txt"),
+        ("\u0390.txt", "\u03aa\u0301.txt"),
     ],
-    ids=["filenames", "directory-prefixes", "file-directory"],
+    ids=["filenames", "directory-prefixes", "file-directory", "fold-induced-decomposition"],
 )
 def test_unicode_equivalent_paths_are_rejected_before_download(cache, remote, tmp_path, paths):
     for index, path in enumerate(paths):
@@ -494,122 +316,68 @@ def test_unicode_equivalent_paths_are_rejected_before_download(cache, remote, tm
     assert cache._entries() == []
 
 
-@pytest.mark.parametrize(
-    "field,value",
-    [
-        ("destination", "../outside"),
-        ("path", "../outside"),
-        ("nvflare", "invalid"),
-        ("extra", "PT;do-something"),
-        ("next_command", ["sh", "install.sh"]),
-    ],
-)
-def test_invalid_catalog_contract(field, value):
-    catalog = copy.deepcopy(CATALOG)
-    catalog["examples"]["hello-pt"][field] = value
-    with pytest.raises(source.ExampleError):
-        source.validate_catalog(catalog)
+@pytest.mark.parametrize("variable", ["XDG_CACHE_HOME", "NVFLARE_EXAMPLES_CACHE_DIR"])
+def test_cache_override_does_not_require_home(monkeypatch, tmp_path, variable):
+    def missing_home():
+        raise RuntimeError("Could not determine home directory.")
+
+    monkeypatch.setattr(store.sys, "platform", "linux")
+    monkeypatch.delenv("NVFLARE_EXAMPLES_CACHE_DIR", raising=False)
+    monkeypatch.setenv(variable, str(tmp_path))
+    monkeypatch.setattr(Path, "home", missing_home)
+    expected = tmp_path / "nvflare/examples" if variable == "XDG_CACHE_HOME" else tmp_path
+    assert store.default_cache_dir() == expected
 
 
-def test_checked_in_catalog_matches_runnable_example():
-    root = Path(__file__).resolve().parents[3]
-    catalog = json.loads((root / source.CATALOG_PATH).read_text())
-    entries = source.validate_catalog(catalog)
-    for entry in entries.values():
-        assert (root / entry["path"] / "job.py").is_file()
-        assert (root / entry["path"] / "README.md").is_file()
+def test_missing_macos_rename_symbol_is_an_os_error(monkeypatch, tmp_path):
+    monkeypatch.setattr(store.sys, "platform", "darwin")
+    monkeypatch.setattr(store.ctypes, "CDLL", lambda *args, **kwargs: SimpleNamespace())
+    with pytest.raises(OSError) as error:
+        store._publish(tmp_path / "staging", tmp_path / "destination")
+    assert error.value.errno == errno.ENOTSUP
 
 
-def test_requests_does_not_load_netrc_credentials(monkeypatch):
-    client = source.GitHubSource()
-    monkeypatch.setattr(requests.sessions, "get_netrc_auth", lambda url: pytest.fail("implicit netrc authentication"))
-    prepared = client.session.prepare_request(requests.Request("GET", "https://api.github.com/repos/NVIDIA/NVFlare"))
-    assert "Authorization" not in prepared.headers
-    client.close()
+@pytest.mark.parametrize("architecture,number", [("x86_64", 316), ("aarch64", 276)])
+@pytest.mark.parametrize("failure", [None, errno.EEXIST, errno.ENOSYS])
+def test_linux_without_libc_wrapper_uses_noreplace_syscall(monkeypatch, tmp_path, architecture, number, failure):
+    syscall = Mock(return_value=-1 if failure else 0)
+    monkeypatch.setattr(store.sys, "platform", "linux")
+    monkeypatch.setattr("platform.machine", lambda: architecture)
+    monkeypatch.setattr(store.ctypes, "CDLL", lambda *args, **kwargs: SimpleNamespace(syscall=syscall))
+    previous_errno = ctypes.get_errno()
+    try:
+        ctypes.set_errno(failure or 0)
+        if failure:
+            with pytest.raises(OSError) as error:
+                store._publish(tmp_path / "staging", tmp_path / "destination")
+            assert error.value.errno == failure
+        else:
+            store._publish(tmp_path / "staging", tmp_path / "destination")
+        syscall.assert_called_once_with(
+            number, -100, os.fsencode(tmp_path / "staging"), -100, os.fsencode(tmp_path / "destination"), 1
+        )
+    finally:
+        ctypes.set_errno(previous_errno)
 
 
-@pytest.mark.parametrize("command", [[], ["get"], ["cache"], ["cache", "clear"]])
-def test_cli_schema_has_no_network_or_mutation(monkeypatch, capsys, command):
-    from nvflare import cli
-
-    monkeypatch.setattr("sys.argv", ["nvflare", "examples", *command, "--schema"])
-    monkeypatch.setattr(store, "ExampleStore", lambda: pytest.fail("schema must not create a cache"))
-    with pytest.raises(SystemExit) as error:
-        cli.main()
-    assert error.value.code == 0
-    schema = json.loads(capsys.readouterr().out)
-    assert schema["command"] == " ".join(["nvflare", "examples", *command])
-    assert schema["mutating"] is True
-
-
-@pytest.mark.parametrize("command", [["bogus"], ["cache", "bogus"]])
-@pytest.mark.parametrize("output_format", ["txt", "json"])
-def test_cli_unknown_schema_command_is_rejected(monkeypatch, capsys, command, output_format):
-    from nvflare import cli
-
-    monkeypatch.setattr("sys.argv", ["nvflare", "examples", *command, "--schema", "--format", output_format])
-    monkeypatch.setattr(store, "ExampleStore", lambda: pytest.fail("invalid schema must not create a cache"))
-    with pytest.raises(SystemExit) as error:
-        cli.main()
-    assert error.value.code == 4
-    captured = capsys.readouterr()
-    if output_format == "json":
-        result = json.loads(captured.out)
-        assert result["status"] == "error"
-        assert result["error_code"] == "INVALID_ARGS"
-        assert "command" not in result
-    else:
-        assert captured.out == ""
-        assert "INVALID_ARGS" in captured.err
-
-
-def test_cli_download_json_and_cache_clear(monkeypatch, capsys, cache, tmp_path):
-    from nvflare import cli
-
-    monkeypatch.setattr(store, "ExampleStore", lambda: cache)
-    monkeypatch.setattr("nvflare._version.get_versions", lambda: VERSION)
-    monkeypatch.setattr(
-        "sys.argv", ["nvflare", "examples", "get", "hello-pt", "--dest", str(tmp_path / "out"), "--format", "json"]
-    )
-    cli.run("nvflare")
-    result = json.loads(capsys.readouterr().out)
-    assert result["status"] == "ok"
-    assert result["data"]["commit"] == COMMIT
-    monkeypatch.setattr("sys.argv", ["nvflare", "examples", "cache", "clear", "--format", "json"])
-    cli.run("nvflare")
-    result = json.loads(capsys.readouterr().out)
-    assert result["data"]["entries_removed"] == 1
-    assert (tmp_path / "out/job.py").is_file()
-
-
-@pytest.mark.parametrize(
-    "failure,code,exit_code",
-    [(KeyboardInterrupt(), "EXAMPLE_INTERRUPTED", 130), (OSError("disk full"), "EXAMPLE_IO_ERROR", 1)],
-)
-def test_cli_failure_is_structured_and_restores_signal_handler(monkeypatch, capsys, cache, failure, code, exit_code):
-    from nvflare import cli
-
-    before = signal.getsignal(signal.SIGTERM)
-    monkeypatch.setattr(store, "ExampleStore", lambda: cache)
-    monkeypatch.setattr(cache, "get", lambda *args, **kwargs: (_ for _ in ()).throw(failure))
-    monkeypatch.setattr("sys.argv", ["nvflare", "examples", "get", "hello-pt", "--format", "json"])
-    with pytest.raises(SystemExit) as error:
-        cli.run("nvflare")
-    assert error.value.code == exit_code
-    assert json.loads(capsys.readouterr().out)["error_code"] == code
-    assert signal.getsignal(signal.SIGTERM) == before
-
-
-@pytest.mark.parametrize(
-    "command",
-    [[], ["cache"], ["get"], ["get", "hello-pt", "--source", "https://github.com/NVIDIA/NVFlare/tree/main/examples/a"]],
-)
-def test_cli_missing_or_unsupported_arguments_fail(monkeypatch, capsys, cache, command):
-    from nvflare import cli
-
-    monkeypatch.setattr(store, "ExampleStore", lambda: cache)
-    monkeypatch.setattr("sys.argv", ["nvflare", "examples", *command, "--format", "json"])
-    with pytest.raises(SystemExit) as error:
-        cli.run("nvflare")
-    assert error.value.code == 4
-    assert json.loads(capsys.readouterr().out)["error_code"] == "INVALID_ARGS"
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="requires the Linux kernel")
+def test_native_linux_fallback_delivers_and_refuses_existing_destination(monkeypatch, tmp_path):
+    libc = ctypes.CDLL(None, use_errno=True)
+    monkeypatch.setattr(store.ctypes, "CDLL", lambda *args, **kwargs: SimpleNamespace(syscall=libc.syscall))
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    (staging / "content").write_text("complete")
+    destination = tmp_path / "destination"
+    store._publish(staging, destination)
+    assert (destination / "content").read_text() == "complete"
+    assert not staging.exists()
+    staging.mkdir()
+    (staging / "replacement").write_text("new")
+    with pytest.raises(FileExistsError):
+        store._publish(staging, destination)
+    assert (destination / "content").read_text() == "complete"
+    assert (staging / "replacement").is_file()
+    (destination / "content").unlink()
+    with pytest.raises(FileExistsError):
+        store._publish(staging, destination)
+    assert list(destination.iterdir()) == []

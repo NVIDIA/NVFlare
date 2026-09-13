@@ -36,7 +36,11 @@ different directory with ``--dest``:
 The destination's parent must already exist. An existing destination is never
 merged or overwritten, including an empty directory or a symbolic link.
 Interrupted downloads are cleaned up before they can become the requested
-destination. Atomic delivery supports Linux and macOS.
+destination. Atomic delivery uses Linux ``renameat2(RENAME_NOREPLACE)`` or macOS
+``renamex_np(RENAME_EXCL)`` and requires filesystem support for that operation.
+On 64-bit x86 and ARM Linux, a direct system call is used when the C library
+lacks the ``renameat2`` wrapper. Unsupported systems fail without replacing
+the destination.
 
 Version and source selection
 ----------------------------
@@ -73,8 +77,10 @@ Cache behavior
 Validated downloads are cached by repository, resolved commit, and requested
 example name. A repeat request for the same key reports
 ``cache hit`` and copies locally. Reference resolution still contacts GitHub;
-cache hits do not download the catalog or example content again. Edits to a
-delivered directory do not affect the cached source.
+cache hits do not download the catalog or example content again. Cached file
+contents are checked against their Git blob hashes before each delivery;
+matching file sizes and timestamps alone do not establish integrity. Edits to
+a delivered directory do not affect the cached source.
 
 .. code-block:: bash
 

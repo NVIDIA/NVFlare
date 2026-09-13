@@ -71,7 +71,8 @@ def blob_sha(data):
 
 def _path_key(value):
     """Compare portable paths without changing the original Git path spelling."""
-    return unicodedata.normalize("NFC", value).casefold()
+    # Case folding can decompose characters, so normalize its result as well.
+    return unicodedata.normalize("NFC", unicodedata.normalize("NFC", value).casefold())
 
 
 def selected_ref(version_info, explicit_ref=None):

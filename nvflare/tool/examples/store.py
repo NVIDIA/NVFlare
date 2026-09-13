@@ -19,6 +19,7 @@ import errno
 import hashlib
 import json
 import os
+import platform
 import re
 import shutil
 import sys
@@ -55,7 +56,8 @@ def default_cache_dir():
     if sys.platform == "darwin":
         root = Path.home() / "Library" / "Caches"
     else:
-        root = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
+        xdg_cache = os.environ.get("XDG_CACHE_HOME")
+        root = Path(xdg_cache) if xdg_cache else Path.home() / ".cache"
     return root / "nvflare" / "examples"
 
 
@@ -70,15 +72,28 @@ def _publish(source, destination):
     """Rename a complete directory without replacing even an empty destination."""
     libc = ctypes.CDLL(None, use_errno=True)
     if sys.platform == "darwin":
+        if not hasattr(libc, "renamex_np"):
+            raise OSError(errno.ENOTSUP, "The C library does not support atomic no-replace directory delivery")
         rename = libc.renamex_np
         rename.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
         result = rename(os.fsencode(source), os.fsencode(destination), 4)  # RENAME_EXCL
     elif sys.platform.startswith("linux"):
-        if not hasattr(libc, "renameat2"):
-            raise OSError(errno.ENOTSUP, "The C library does not support atomic no-replace directory delivery")
-        rename = libc.renameat2
-        rename.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
-        result = rename(-100, os.fsencode(source), -100, os.fsencode(destination), 1)  # AT_FDCWD, RENAME_NOREPLACE
+        args = (-100, os.fsencode(source), -100, os.fsencode(destination), 1)  # AT_FDCWD, RENAME_NOREPLACE
+        argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+        if hasattr(libc, "renameat2"):
+            rename = libc.renameat2
+            rename.argtypes = argtypes
+            result = rename(*args)
+        else:
+            # Older glibc and musl may omit the wrapper even when the kernel supports it.
+            # Linux UAPI: arch/x86/entry/syscalls/syscall_64.tbl and include/uapi/asm-generic/unistd.h.
+            number = {"x86_64": 316, "aarch64": 276}.get(platform.machine())
+            if number is None or ctypes.sizeof(ctypes.c_void_p) != 8 or not hasattr(libc, "syscall"):
+                raise OSError(errno.ENOTSUP, "Atomic no-replace directory delivery is unavailable on this Linux ABI")
+            syscall = libc.syscall
+            syscall.restype = ctypes.c_long
+            syscall.argtypes = [ctypes.c_long, *argtypes]
+            result = syscall(number, *args)
     else:
         raise OSError(errno.ENOTSUP, "Atomic example delivery is unsupported on this platform")
     if result:
@@ -154,6 +169,7 @@ class ExampleStore:
                 return None
             for item in files:
                 target = payload / item["path"]
+                # Size/mtime alone cannot detect same-size edits with restored timestamps.
                 if target.stat().st_size != item["size"] or blob_sha(target.read_bytes()) != item["sha"]:
                     return None
             return metadata

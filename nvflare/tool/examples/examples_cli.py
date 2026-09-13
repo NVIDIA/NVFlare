@@ -80,9 +80,10 @@ def handle_examples_cmd(args):
     from nvflare import _version
     from nvflare.tool.examples.store import ExampleStore
 
-    store = ExampleStore()
+    store = None
     previous = signal.signal(signal.SIGTERM, _interrupt)
     try:
+        store = ExampleStore()
         if key == "cache clear":
             output_ok(store.clear())
             return
@@ -113,13 +114,16 @@ def handle_examples_cmd(args):
             "Retry the command; an incomplete download was not delivered as the destination.",
             exit_code=130,
         )
-    except OSError as error:
+    except (OSError, RuntimeError) as error:
+        # pathlib may raise RuntimeError for an unavailable home or a symlink loop.
         output_error_message(
             "EXAMPLE_IO_ERROR",
             f"Cannot write or read the example files: {error}",
-            "Check free disk space and permissions for the cache and destination, then retry.",
+            "Check cache and destination paths, permissions, and free disk space. "
+            "If home resolution fails, set NVFLARE_EXAMPLES_CACHE_DIR and --dest to absolute paths.",
             exit_code=1,
         )
     finally:
         signal.signal(signal.SIGTERM, previous)
-        store.source.close()
+        if store is not None:
+            store.source.close()
