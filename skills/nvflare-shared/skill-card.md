@@ -1,5 +1,5 @@
 ## Description: <br>
-Internal NVFLARE conversion references and templates used only when another NVFLARE skill directs the agent to a shared workflow, policy, or asset. <br>
+Internal NVFLARE conversion references and templates. Use only when another NVFLARE skill directs you to a shared workflow, policy, or asset. <br>
 
 This skill is ready for commercial/non-commercial use. <br>
 
@@ -9,7 +9,7 @@ NVIDIA <br>
 ### License/Terms of Use: <br>
 Apache 2.0 <br>
 ## Use Case: <br>
-Developers and engineers building federated learning workflows use this shared reference library for NVFLARE conversion policies, templates, and guidance. <br>
+Developers and engineers building federated learning conversion workflows with NVFLARE agent skills use this shared reference skill to load canonical conversion policies, templates, and validation guidance. <br>
 
 ### Deployment Geography for Use: <br>
 Global <br>
@@ -40,8 +40,8 @@ Mitigation: Review and scan skill before deployment. <br>
 
 
 ## Skill Output: <br>
-**Output Type(s):** [Configuration instructions, Code templates] <br>
-**Output Format:** [Markdown with inline code blocks] <br>
+**Output Type(s):** [Analysis, Configuration instructions] <br>
+**Output Format:** [Markdown] <br>
 **Output Parameters:** [1D] <br>
 **Other Properties Related to Output:** [None] <br>
 
@@ -52,23 +52,23 @@ Mitigation: Review and scan skill before deployment. <br>
 
 
 ## Evaluation Tasks: <br>
-Evaluated against 3 evaluation tasks (3 positive) with 3 attempts per task across 2 agents in isolated sandbox pods. <br>
+Evaluated against 3 internal evaluation tasks (3 positive) across 2 agents, with 3 attempts per task in isolated k8s-sandbox pods. <br>
 
 ## Evaluation Metrics Used: <br>
 Reported benchmark dimensions: <br>
-- Security: Whether the skill is safe to use, checking for unsafe operations, secret leakage, and unauthorized access. <br>
+- Security: Whether the skill is safe to use: checks for unsafe operations, secret leakage, and unauthorized access. <br>
 - Correctness: Whether the answer is correct against the reference answer. <br>
-- Discoverability: Whether the right skill was loaded when needed and decoys were avoided. <br>
-- Effectiveness: Whether the skill helped complete the user's goal (50% goal accuracy + 50% behavior check). <br>
-- Efficiency: Whether the skill avoided wasted tool calls and token usage (50% tool productivity + 50% token efficiency). <br>
+- Discoverability: Whether the right skill was loaded when needed: skill selection, decoy avoidance, and workflow execution. <br>
+- Effectiveness: Whether the skill helped complete the user's goal (50% goal completion + 50% expected workflow adherence). <br>
+- Efficiency: Whether the skill avoided wasted tool calls and token usage (50% tool-call productivity + 50% token efficiency). <br>
 
 Underlying evaluation signals used in this run: <br>
-- `security`: Unsafe operations, secret leakage, and unauthorized access. <br>
-- `accuracy`: Final-answer correctness against the reference answer. <br>
+- `security`: Checks for unsafe operations, secret leakage, and unauthorized access. <br>
 - `skill_execution`: Whether the expected skill was selected, decoys were avoided, and the workflow executed. <br>
+- `skill_efficiency`: Tool-call productivity (legacy wire id; routing is scored under Discoverability). <br>
+- `accuracy`: Final-answer correctness against the reference answer. <br>
 - `goal_accuracy`: Whether the user's goal was achieved. <br>
 - `behavior_check`: Whether the expected workflow behavior was followed. <br>
-- `skill_efficiency`: Tool-call productivity. <br>
 - `token_efficiency`: Actual uncached prompt plus completion token usage. <br>
 
 
@@ -76,12 +76,12 @@ Underlying evaluation signals used in this run: <br>
 ## Evaluation Results: <br>
 | Measure | Claude Code (Baseline → Skill Uplift) | Codex (Baseline → Skill Uplift) |
 |---|---:|---:|
-| Overall | 82.1% | 78.3% |
-| Security | 83.3% → 83.3% (±0.0 points) | 33.3% → 66.7% (+33.4 points) |
-| Correctness | 86.7% → 100.0% (+13.3 points) | 93.3% → 100.0% (+6.7 points) |
-| Discoverability | 71.7% | 63.3% |
-| Effectiveness | 75.0% → 78.3% (+3.3 points) | 73.3% → 88.3% (+15.0 points) |
-| Efficiency | 77.3% | 73.0% |
+| Overall | 85.3% | 78.3% |
+| Security | 100.0% → 100.0% (±0.0 points) | 80.0% → 66.7% (-13.3 points) |
+| Correctness | 86.7% → 100.0% (+13.3 points) | 76.0% → 100.0% (+24.0 points) |
+| Discoverability | 71.7% | 66.7% |
+| Effectiveness | 72.5% → 81.7% (+9.2 points) | 48.0% → 80.0% (+32.0 points) |
+| Efficiency | 72.9% | 78.3% |
 
 ## Skill Version(s): <br>
 0.1.0 (source: frontmatter) <br>

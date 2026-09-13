@@ -9,7 +9,7 @@ NVIDIA <br>
 ### License/Terms of Use: <br>
 Apache 2.0 <br>
 ## Use Case: <br>
-Developers and engineers use this skill to optimize federated learning jobs built with NVIDIA FLARE through an automated campaign of isolated, reproducible candidate experiments across simulation, POC, and production environments. <br>
+Developers and engineers use this skill to optimize NVFLARE federated learning jobs through isolated, reproducible candidate campaigns that preserve metric semantics, comparison budgets, and evidence across simulation, POC, and production environments. <br>
 
 ### Deployment Geography for Use: <br>
 Global <br>
@@ -25,18 +25,19 @@ Risk: Review before execution as proposals could introduce incorrect or misleadi
 Mitigation: Review and scan skill before deployment. <br>
 
 ## Reference(s): <br>
-- [Job Import Contract](references/job-import-contract.md) <br>
+- [Bounded Campaign Example](references/bounded-campaign-example.md) <br>
 - [Continuous Campaigns](references/continuous-campaigns.md) <br>
 - [Experiment Comparability](references/experiment-comparability.md) <br>
-- [Bounded Campaign Example](references/bounded-campaign-example.md) <br>
-- [NVFlare Documentation](https://nvflare.readthedocs.io/en/main) <br>
+- [Job Import Contract](references/job-import-contract.md) <br>
+- [NVIDIA FLARE Documentation](https://nvflare.readthedocs.io/en/main) <br>
+- [NVIDIA FLARE Paper](https://arxiv.org/abs/2210.13291) <br>
 
 
 ## Skill Output: <br>
-**Output Type(s):** [Analysis, Configuration instructions, Shell commands] <br>
-**Output Format:** [JSON envelopes, YAML configuration, TSV ledgers, and Markdown reports] <br>
+**Output Type(s):** [Shell commands, Configuration instructions, Analysis] <br>
+**Output Format:** [JSON envelopes, YAML configuration, TSV ledger, and Markdown reports] <br>
 **Output Parameters:** [1D] <br>
-**Other Properties Related to Output:** [None] <br>
+**Other Properties Related to Output:** [Campaign state persisted to autofl.yaml and campaign_state.json; final output handed off to nvflare-autofl-report] <br>
 
 ## Evaluation Agents Used: <br>
 - Claude Code (`aws/anthropic/bedrock-claude-opus-4-8`) <br>
@@ -45,36 +46,36 @@ Mitigation: Review and scan skill before deployment. <br>
 
 
 ## Evaluation Tasks: <br>
-7 evaluation tasks (7 positive), each attempt ran in an isolated sandbox pod with 3 attempts per task. <br>
+7 evaluation tasks (7 positive), 3 attempts per task, each in an isolated sandbox pod. <br>
 
 ## Evaluation Metrics Used: <br>
 Reported benchmark dimensions: <br>
-- Security: Checks whether it is safe to use; scored by the security signal (100%). <br>
-- Correctness: Checks whether the answer is correct; scored by the accuracy signal (100%). <br>
-- Discoverability: Checks whether the right skill was loaded when needed; scored by the skill_execution signal (100%). <br>
-- Effectiveness: Checks whether the skill helped complete the task; scored by goal_accuracy (50%) and behavior_check (50%). <br>
-- Efficiency: Checks whether wasted tool calls and token usage were avoided; scored by skill_efficiency (50%) and token_efficiency (50%). <br>
+- Security: Whether the skill avoids unsafe operations, secret leakage, and unauthorized access. <br>
+- Correctness: Final-answer correctness against the reference answer. <br>
+- Discoverability: Whether the expected skill was selected and the workflow executed. <br>
+- Effectiveness: Whether the user's goal was achieved and the expected workflow behavior was followed (equal-weight mean of goal_accuracy and behavior_check). <br>
+- Efficiency: Tool-call productivity and token efficiency (50% each). <br>
 
 Underlying evaluation signals used in this run: <br>
-- `security`: Checks for unsafe operations, secret leakage, and unauthorized access. <br>
-- `accuracy`: Measures final-answer correctness against the reference answer. <br>
-- `skill_execution`: Checks whether the expected skill was selected, decoys were avoided, and the workflow executed. <br>
-- `goal_accuracy`: Measures whether the user's goal was achieved. <br>
-- `behavior_check`: Checks whether the expected workflow behavior was followed. <br>
-- `skill_efficiency`: Measures tool-call productivity. <br>
-- `token_efficiency`: Measures actual uncached prompt plus completion token usage. <br>
+- `security`: Unsafe operations, secret leakage, and unauthorized access. <br>
+- `accuracy`: Final-answer correctness against the reference answer. <br>
+- `skill_execution`: Whether the expected skill was selected, decoys were avoided, and the workflow executed. <br>
+- `goal_accuracy`: Whether the user's goal was achieved. <br>
+- `behavior_check`: Whether the expected workflow behavior was followed. <br>
+- `skill_efficiency`: Tool-call productivity. <br>
+- `token_efficiency`: Actual uncached prompt plus completion token usage. <br>
 
 
 
 ## Evaluation Results: <br>
 | Measure | Claude Code (Baseline → Skill Uplift) | Codex (Baseline → Skill Uplift) |
 |---|---:|---:|
-| Overall | Not available | 74.2% — baseline ran, but no comparable score was available; uplift unavailable |
-| Security | Not available | 81.8% → 100.0% (+18.2 points) |
-| Correctness | Not available | 67.3% → 72.5% (+5.2 points) |
+| Overall | Not available | 76.3% — baseline ran, but no comparable score was available; uplift unavailable |
+| Security | Not available | 100.0% → 100.0% (±0.0 points) |
+| Correctness | Not available | 46.2% → 77.5% (+31.3 points) |
 | Discoverability | Not available | 63.8% — baseline ran, but no comparable score was available; uplift unavailable |
-| Effectiveness | Not available | 32.6% → 44.0% (+11.4 points) |
-| Efficiency | Not available | 90.7% — baseline ran, but no comparable score was available; uplift unavailable |
+| Effectiveness | Not available | 30.7% → 50.0% (+19.3 points) |
+| Efficiency | Not available | 90.0% — baseline ran, but no comparable score was available; uplift unavailable |
 
 ## Skill Version(s): <br>
 0.1.0 (source: frontmatter) <br>

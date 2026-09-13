@@ -1,13 +1,15 @@
 # Skill Benchmark: nvflare-autofl
 
-> ⚠️ **Overall verdict: INCOMPLETE — Required evidence is missing**
+> ✅ **Overall verdict: PASS — Recommended for publication**
 
-One or more required evaluation tiers did not complete, so this benchmark is not publication-complete.
+## Publication Recommendation
+
+Recommended for publication based on the completed evaluation evidence in this report.
 
 ## Evaluation Metadata
 
 - Skill: `nvflare-autofl`
-- Evaluation date: 2026-09-10
+- Evaluation date: 2026-09-12
 - Evaluator version: `1.5.6`
 - Agents: Claude Code (`aws/anthropic/bedrock-claude-opus-4-8`), Codex (`openai/openai/gpt-5.5`)
 - Tasks: 7 evaluation tasks (7 positive)
@@ -33,12 +35,12 @@ The three-tier evaluation checks whether the skill:
 
 | Measure | Claude Code (Baseline → Skill Uplift) | Codex (Baseline → Skill Uplift) |
 |---|---:|---:|
-| Overall | Not available | 74.2% — baseline ran, but no comparable score was available; uplift unavailable |
-| Security | Not available | 81.8% → 100.0% (+18.2 points) |
-| Correctness | Not available | 67.3% → 72.5% (+5.2 points) |
+| Overall | Not available | 76.3% — baseline ran, but no comparable score was available; uplift unavailable |
+| Security | Not available | 100.0% → 100.0% (±0.0 points) |
+| Correctness | Not available | 46.2% → 77.5% (+31.3 points) |
 | Discoverability | Not available | 63.8% — baseline ran, but no comparable score was available; uplift unavailable |
-| Effectiveness | Not available | 32.6% → 44.0% (+11.4 points) |
-| Efficiency | Not available | 90.7% — baseline ran, but no comparable score was available; uplift unavailable |
+| Effectiveness | Not available | 30.7% → 50.0% (+19.3 points) |
+| Efficiency | Not available | 90.0% — baseline ran, but no comparable score was available; uplift unavailable |
 
 **How to read this table:** baseline is the same task attempted without the target skill. Scores are rounded to one decimal; threshold-adjacent values use additional precision so their displayed band matches the verdict. Uplift is derived from those displayed scores and shown in percentage points.
 
@@ -50,23 +52,23 @@ Actual Tier 3 execution usage is reported for every observed agent/case pair and
 
 | Agent | Dataset case | With skill | Without skill | Delta | Change | Coverage |
 |---|---|---:|---:|---:|---:|---|
-| claude-code | All cases | 2,787,776 | 12,920,494 | N/A | N/A | skill 7/7; base 12/21 |
-| claude-code | autofl-diversify-after-family-repeat | 199,145 | 237,320 | -38,175 | -16.09% | skill 1/1; base 1/1 |
-| claude-code | autofl-global-negative-web-app | 1,332,620 | 1,103,231 | +229,389 | +20.79% | skill 1/1; base 1/1 |
-| claude-code | autofl-literature-batch-before-tuning | 365,684 | 367,017 | N/A | N/A | skill 1/1; base 2/2 |
-| claude-code | autofl-natural-phrasing-low-accuracy | 176,241 | 670,093 | N/A | N/A | skill 1/1; base 3/3 |
-| claude-code | autofl-negative-diagnose-job | 287,173 | 186,391 | +100,782 | +54.07% | skill 1/1; base 1/1 |
-| claude-code | autofl-negative-pytorch-conversion | 216,377 | 152,619 | +63,758 | +41.78% | skill 1/1; base 1/1 |
-| claude-code | autofl-optimize-existing-job | 210,536 | 10,203,823 | N/A | N/A | skill 1/1; base 3/3 |
-| codex | All cases | 954,809 | 2,244,651 | N/A | N/A | skill 8/8; base 11/11 |
-| codex | autofl-diversify-after-family-repeat | 89,523 | 71,042 | +18,481 | +26.01% | skill 1/1; base 1/1 |
-| codex | autofl-global-negative-web-app | 250,708 | 258,849 | -8,141 | -3.15% | skill 1/1; base 1/1 |
-| codex | autofl-literature-batch-before-tuning | 85,720 | 43,608 | +42,112 | +96.57% | skill 1/1; base 1/1 |
-| codex | autofl-natural-phrasing-low-accuracy | 115,796 | 314,398 | N/A | N/A | skill 1/1; base 3/3 |
-| codex | autofl-negative-diagnose-job | 248,899 | 115,188 | N/A | N/A | skill 2/2; base 1/1 |
-| codex | autofl-negative-pytorch-conversion | 100,970 | 69,411 | +31,559 | +45.47% | skill 1/1; base 1/1 |
-| codex | autofl-optimize-existing-job | 63,193 | 1,372,155 | N/A | N/A | skill 1/1; base 3/3 |
-| ALL AGENTS | Dataset aggregate | 3,742,585 | 15,165,145 | N/A | N/A | skill 15/15; base 23/32 |
+| claude-code | All cases | 2,450,847 | 7,933,373 | N/A | N/A | skill 7/7; base 12/21 |
+| claude-code | autofl-diversify-after-family-repeat | 339,356 | 228,515 | +110,841 | +48.50% | skill 1/1; base 1/1 |
+| claude-code | autofl-global-negative-web-app | 1,093,673 | 1,201,596 | -107,923 | -8.98% | skill 1/1; base 1/1 |
+| claude-code | autofl-literature-batch-before-tuning | 316,181 | 468,304 | N/A | N/A | skill 1/1; base 3/3 |
+| claude-code | autofl-natural-phrasing-low-accuracy | 208,443 | 575,259 | N/A | N/A | skill 1/1; base 3/3 |
+| claude-code | autofl-negative-diagnose-job | 123,230 | 283,949 | -160,719 | -56.60% | skill 1/1; base 1/1 |
+| claude-code | autofl-negative-pytorch-conversion | 121,450 | 212,766 | -91,316 | -42.92% | skill 1/1; base 1/1 |
+| claude-code | autofl-optimize-existing-job | 248,514 | 4,962,984 | N/A | N/A | skill 1/1; base 2/2 |
+| codex | All cases | 996,161 | 1,643,074 | N/A | N/A | skill 8/8; base 13/13 |
+| codex | autofl-diversify-after-family-repeat | 153,489 | 82,457 | +71,032 | +86.14% | skill 1/1; base 1/1 |
+| codex | autofl-global-negative-web-app | 314,206 | 347,084 | -32,878 | -9.47% | skill 1/1; base 1/1 |
+| codex | autofl-literature-batch-before-tuning | 105,477 | 59,693 | +45,784 | +76.70% | skill 1/1; base 1/1 |
+| codex | autofl-natural-phrasing-low-accuracy | 80,962 | 327,004 | N/A | N/A | skill 1/1; base 3/3 |
+| codex | autofl-negative-diagnose-job | 208,327 | 329,168 | N/A | N/A | skill 2/2; base 3/3 |
+| codex | autofl-negative-pytorch-conversion | 70,115 | 83,605 | -13,490 | -16.14% | skill 1/1; base 1/1 |
+| codex | autofl-optimize-existing-job | 63,585 | 414,063 | N/A | N/A | skill 1/1; base 3/3 |
+| ALL AGENTS | Dataset aggregate | 3,447,008 | 9,576,447 | N/A | N/A | skill 15/15; base 25/34 |
 
 Prompt tokens include cached reads, so total tokens are `prompt + completion` (cached is not added twice). The Efficiency score uses `(prompt - cached) + completion`. N/A means the relevant trajectory counters were not available; coverage is never estimated.
 
@@ -74,8 +76,8 @@ Prompt tokens include cached reads, so total tokens are `prompt + completion` (c
 
 | Tier | Purpose | Status | Evidence |
 |---|---|---|---|
-| Tier 1 | Static validation | **PASSED** | 1 validator(s); 0 finding(s) |
-| Tier 2 | Semantic deduplication | **NOT RUN** | No result was recorded |
+| Tier 1 | Static validation | **PASSED WITH OBSERVATIONS** | 11 validator(s); 18 finding(s) |
+| Tier 2 | Semantic deduplication | **PASSED** | 2 validator(s); 0 finding(s) |
 | Tier 3 | Live agent evaluation | **PASS** | 2 agent(s); 7 task(s) |
 
 ## Findings and Observations
@@ -83,8 +85,18 @@ Prompt tokens include cached reads, so total tokens are `prompt + completion` (c
 <details>
 <summary>Show detailed findings and successful checks</summary>
 
-- Schema & Repository Governance: Found skill manifest: SKILL.md
-- AGENT_EVAL: Tier 3 evaluation complete: verdict PASS; best agent codex
+- **MEDIUM** SCRIPT_LINT/deep_nesting: campaign_guard.py has deeply nested code (depth 7, max 6) (`skills/nvflare-autofl/scripts/campaign_guard.py`)
+- **MEDIUM** SCRIPT_LINT/deep_nesting: run_job_campaign.py has deeply nested code (depth 9, max 6) (`skills/nvflare-autofl/scripts/run_job_campaign.py`)
+- **MEDIUM** SECURITY/Unknown (LP3): MCP Least Privilege: The skill declares no explicit tool scope ('permissions' or 'allowed-tools') in its metadata, yet the skill content clea (`SKILL.md:1`)
+- **MEDIUM** SECURITY/subprocess module call (AST4): Dangerous Code Execution:         process = subprocess.Popen(
+            argv,
+            cwd=str(cwd),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=False,
+            bufsize=0, (`scripts/run_job_campaign.py:781`)
+- **MEDIUM** SECURITY/Unbounded Resource Access (EA4): Excessive Agency: timeout=0 (`scripts/run_job_campaign.py:810`)
+- 13 additional finding(s) are available in the full evaluation artifacts.
 
 </details>
 
