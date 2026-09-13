@@ -22,17 +22,17 @@ from setuptools import find_packages, setup
 ROOT_DIR = os.path.abspath(os.path.dirname(__file__)) if "__file__" in globals() else os.getcwd()
 
 
-def load_local_module(name, relative_path):
-    module_path = os.path.join(ROOT_DIR, relative_path)
-    spec = importlib.util.spec_from_file_location(name, module_path)
+def load_local_versioneer():
+    versioneer_path = os.path.join(ROOT_DIR, "versioneer.py")
+    spec = importlib.util.spec_from_file_location("nvflare_local_versioneer", versioneer_path)
     if spec is None or spec.loader is None:
-        raise RuntimeError(f"Failed to load module from {module_path}")
+        raise RuntimeError(f"Failed to load versioneer from {versioneer_path}")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
-versioneer = load_local_module("nvflare_local_versioneer", "versioneer.py")
+versioneer = load_local_versioneer()
 
 # read the contents of your README file
 
@@ -89,21 +89,6 @@ tmp_job_template_folder = "./nvflare/tool/job/templates"
 copy_package(src_dir="job_templates", dst_dir=tmp_job_template_folder)
 job_templates = package_files(root="nvflare/tool/job", starting="templates")
 deploy_templates = package_files(root="nvflare/tool/deploy", starting="templates")
-tmp_example_folder = "./nvflare/tool/examples/data"
-example_definitions = load_local_module("nvflare_example_definitions", "nvflare/tool/examples/catalog.py")
-example_catalog = example_definitions.load_catalog(os.path.join(ROOT_DIR, "nvflare/tool/examples/catalog.json"))
-generated_example_data = os.path.isdir(os.path.join(ROOT_DIR, "examples"))
-if generated_example_data:
-    remove_dir(target_path=tmp_example_folder)
-    for example_name, entry in example_catalog.items():
-        source = os.path.join(ROOT_DIR, entry["source_path"])
-        if not os.path.isdir(source):
-            raise RuntimeError(f"Example catalog source does not exist: {entry['source_path']}")
-        for filename in example_definitions.source_files(ROOT_DIR, entry["source_path"]):
-            target = os.path.join(tmp_example_folder, example_name, filename)
-            os.makedirs(os.path.dirname(target), exist_ok=True)
-            shutil.copy2(os.path.join(source, filename), target)
-example_files = package_files(root="nvflare/tool/examples", starting="data")
 
 cmdclass = versioneer.get_cmdclass()
 
@@ -125,12 +110,10 @@ setup(
         "nvflare.dashboard.application": extra_files,
         "nvflare.tool.job": job_templates,
         "nvflare.tool.deploy": deploy_templates,
-        "nvflare.tool.examples": ["catalog.json", *example_files],
+        "nvflare.tool.examples": ["catalog.json"],
         "nvflare.tool.recipe": ["recipe_catalog.json"],
     },
     include_package_data=True,
 )
 
 remove_dir(target_path=tmp_job_template_folder)
-if generated_example_data:
-    remove_dir(target_path=tmp_example_folder)

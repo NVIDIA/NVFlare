@@ -13,26 +13,29 @@
 # limitations under the License.
 
 import json
-import subprocess
-from pathlib import Path
+import re
+from pathlib import Path, PurePosixPath
+
+_SHORT_NAME = re.compile(r"[a-z0-9][a-z0-9-]{0,63}")
 
 
 def load_catalog(path=None):
     path = Path(path or Path(__file__).with_name("catalog.json"))
-    return json.loads(path.read_text(encoding="utf-8"))
+    catalog = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(catalog, dict) or not catalog:
+        raise ValueError("the example catalog must be a non-empty object")
 
-
-def source_files(repository_root, source_path):
-    repository_root = Path(repository_root)
-    source = repository_root / source_path
-    if not (repository_root / ".git").exists():
-        return tuple(path.relative_to(source).as_posix() for path in sorted(source.rglob("*")) if path.is_file())
-
-    result = subprocess.run(
-        ["git", "ls-files", "-z", "--", source_path],
-        cwd=repository_root,
-        check=True,
-        capture_output=True,
-    )
-    paths = result.stdout.decode("utf-8").split("\0")
-    return tuple(Path(path).relative_to(source_path).as_posix() for path in paths if path)
+    source_paths = set()
+    for name, entry in catalog.items():
+        if not isinstance(name, str) or not _SHORT_NAME.fullmatch(name) or not isinstance(entry, dict):
+            raise ValueError("each example must map a short name to one source_path")
+        if set(entry) != {"source_path"}:
+            raise ValueError("each example must map a short name to one source_path")
+        source_path = entry["source_path"]
+        parts = PurePosixPath(source_path).parts if isinstance(source_path, str) else ()
+        if not parts or parts[0] != "examples" or any(part in {"", ".", ".."} for part in parts):
+            raise ValueError(f"invalid source path for {name}")
+        if source_path in source_paths:
+            raise ValueError(f"duplicate example source path: {source_path}")
+        source_paths.add(source_path)
+    return catalog

@@ -14,19 +14,18 @@
 
 import json
 import shlex
-import shutil
 from pathlib import Path
 
 import pytest
+import requests
 
 from nvflare.tool.cli_output import set_output_format
 from nvflare.tool.examples import examples_cli
 
-VERSION = {"version": "2.10.0", "full-revisionid": "a" * 40, "dirty": False, "error": None}
-REPO_ROOT = Path(__file__).resolve().parents[4]
-SOURCE = REPO_ROOT / "examples/hello-world/hello-pt"
+REVISION = "a" * 40
+VERSION = {"version": "2.10.0", "full-revisionid": REVISION, "dirty": False, "error": None}
 CATALOG = examples_cli.EXAMPLE_CATALOG
-FILES = examples_cli.source_files(REPO_ROOT, CATALOG["hello-pt"]["source_path"])
+SOURCE_PATH = "examples/hello-world/hello-pt"
 
 
 @pytest.fixture(autouse=True)
@@ -36,216 +35,312 @@ def reset_output_mode():
     set_output_format("txt")
 
 
-def _files(root):
-    return {filename: (root / filename).read_bytes() for filename in FILES}
+def _mock_download(monkeypatch, *, requirements="torch\n", readme="README.md"):
+    def download(revision, source_path, destination):
+        assert revision == REVISION
+        assert source_path == SOURCE_PATH
+        (destination / readme).write_text("# Example\n")
+        (destination / "job.py").write_text("print('example')\n")
+        (destination / "nested").mkdir()
+        (destination / "nested/client.py").write_text("# client\n")
+        if requirements is not None:
+            (destination / "requirements.txt").write_text(requirements)
+        return "https://api.github.com/tree"
+
+    monkeypatch.setattr(examples_cli, "_download_example", download)
 
 
-def _all_file_names(root):
-    return {path.relative_to(root).as_posix() for path in root.rglob("*") if path.is_file()}
+def test_get_records_downloaded_source_and_requirements(monkeypatch, tmp_path):
+    _mock_download(monkeypatch)
+    destination = tmp_path / "hello-pt"
+
+    result = examples_cli.get_example(VERSION, name="hello-pt", destination=destination)
+
+    assert (destination / "job.py").read_text() == "print('example')\n"
+    assert (destination / "nested/client.py").read_text() == "# client\n"
+    assert (destination / "requirements.txt").read_text() == "torch\n"
+    assert result["setup_commands"] == [["pip", "install", "-r", "requirements.txt"]]
+    assert result["readme"] == str(destination / "README.md")
+    assert result["source_url"] == f"https://github.com/NVIDIA/NVFlare/tree/{REVISION}/{SOURCE_PATH}"
+    provenance = json.loads((destination / examples_cli.PROVENANCE_FILE).read_text())
+    assert provenance["revision"] == REVISION
+    assert provenance["example"] == "hello-pt"
+    assert provenance["source_path"] == SOURCE_PATH
 
 
-@pytest.mark.parametrize("name", CATALOG)
-def test_source_checkout_uses_canonical_example(name):
-    source, files = examples_cli._example_source(name)
-    assert Path(source) == REPO_ROOT / CATALOG[name]["source_path"]
-    assert files == examples_cli.source_files(REPO_ROOT, CATALOG[name]["source_path"])
+def test_missing_requirements_becomes_empty_file(monkeypatch, tmp_path):
+    _mock_download(monkeypatch, requirements=None)
+
+    examples_cli.get_example(VERSION, name="hello-pt", destination=tmp_path / "hello-pt")
+
+    assert (tmp_path / "hello-pt/requirements.txt").read_text() == ""
 
 
-@pytest.mark.parametrize("name", CATALOG)
-def test_example_requirements_do_not_reinstall_nvflare(name):
-    requirements = REPO_ROOT / CATALOG[name]["source_path"] / "requirements.txt"
-    entries = [
-        line.strip() for line in requirements.read_text().splitlines() if line.strip() and not line.startswith("#")
-    ]
-    assert all(not entry.casefold().startswith("nvflare") for entry in entries)
+def test_rst_readme_is_reported(monkeypatch, tmp_path):
+    _mock_download(monkeypatch, readme="README.rst")
+
+    result = examples_cli.get_example(VERSION, name="hello-pt", destination=tmp_path / "hello-pt")
+
+    assert result["readme"].endswith("README.rst")
 
 
-@pytest.mark.parametrize("name", CATALOG)
-def test_catalog_example_copies_exact_tracked_source(name, tmp_path):
-    source = REPO_ROOT / CATALOG[name]["source_path"]
-    destination = tmp_path / name
-    files = examples_cli.source_files(REPO_ROOT, CATALOG[name]["source_path"])
+def test_download_fetches_only_files_below_catalog_path(monkeypatch, tmp_path):
+    tree = {
+        "truncated": False,
+        "tree": [
+            {"path": f"{SOURCE_PATH}/README.md", "type": "blob", "size": 10, "mode": "100644"},
+            {"path": f"{SOURCE_PATH}/nested/run.sh", "type": "blob", "size": 4, "mode": "100755"},
+            {"path": "examples/other/secret.txt", "type": "blob", "size": 6, "mode": "100644"},
+        ],
+    }
+    payloads = {"README.md": b"# Example\n", "run.sh": b"run\n"}
 
-    result = examples_cli.get_example(VERSION, name=name, destination=destination)
+    class Response:
+        def __init__(self, *, metadata=None, data=None):
+            self.metadata = metadata
+            self.data = data
 
-    expected = {filename: (source / filename).read_bytes() for filename in files}
-    delivered = {filename: (destination / filename).read_bytes() for filename in files}
-    assert delivered == expected
-    assert _all_file_names(destination) == set(files) | {examples_cli.PROVENANCE_FILE}
-    expected_setup = [["pip", "install", "-r", "requirements.txt"]]
-    expected_setup.extend(list(command) for command in CATALOG[name].get("prepare_commands", []))
-    assert result["setup_commands"] == expected_setup
-    assert result["next_command"] == CATALOG[name].get("next_command", ["python", "job.py"])
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return self.metadata
+
+        def iter_content(self, chunk_size):
+            assert chunk_size == 1024 * 1024
+            yield self.data
+
+    class Session:
+        def __init__(self):
+            self.requested = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def get(self, url, **kwargs):
+            self.requested.append(url)
+            if "api.github.com" in url:
+                return Response(metadata=tree)
+            return Response(data=payloads[Path(url).name])
+
+    session = Session()
+    monkeypatch.setattr(requests, "Session", lambda: session)
+    destination = tmp_path / "example"
+    destination.mkdir()
+
+    tree_url = examples_cli._download_example(REVISION, SOURCE_PATH, destination)
+
+    assert tree_url.endswith(f"/{REVISION}?recursive=1")
+    assert (destination / "README.md").read_bytes() == payloads["README.md"]
+    assert (destination / "nested/run.sh").read_bytes() == payloads["run.sh"]
+    assert (destination / "nested/run.sh").stat().st_mode & 0o111
+    assert len(session.requested) == 3
+    assert all("secret.txt" not in url for url in session.requested)
 
 
-@pytest.mark.parametrize("command", [[], ["get"]])
-def test_cli_schema_does_not_copy(monkeypatch, capsys, command):
+@pytest.mark.parametrize("tree", [{"truncated": True, "tree": []}, {"truncated": False, "tree": []}])
+def test_invalid_or_missing_tree_is_rejected(monkeypatch, tmp_path, tree):
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return tree
+
+    class Session:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def get(self, *args, **kwargs):
+            return Response()
+
+    monkeypatch.setattr(requests, "Session", Session)
+
+    with pytest.raises(examples_cli.ExampleError) as error:
+        examples_cli._download_example(REVISION, SOURCE_PATH, tmp_path)
+
+    expected = "EXAMPLE_CONTENT_INVALID" if tree["truncated"] else "EXAMPLE_SOURCE_NOT_FOUND"
+    assert error.value.code == expected
+
+
+def test_network_failure_is_structured(monkeypatch, tmp_path):
+    class Session:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def get(self, *args, **kwargs):
+            raise requests.ConnectionError("offline")
+
+    monkeypatch.setattr(requests, "Session", Session)
+
+    with pytest.raises(examples_cli.ExampleError) as error:
+        examples_cli._download_example(REVISION, SOURCE_PATH, tmp_path)
+
+    assert error.value.code == "EXAMPLE_NETWORK_ERROR"
+
+
+@pytest.mark.parametrize("kind", ["file", "directory", "dangling-symlink"])
+def test_existing_destination_is_rejected_before_download(monkeypatch, tmp_path, kind):
+    destination = tmp_path / "hello-pt"
+    if kind == "file":
+        destination.write_text("original")
+    elif kind == "directory":
+        destination.mkdir()
+    else:
+        destination.symlink_to(tmp_path / "absent")
+    monkeypatch.setattr(examples_cli, "_download_example", lambda *args: pytest.fail("downloaded"))
+
+    with pytest.raises(examples_cli.ExampleError) as error:
+        examples_cli.get_example(VERSION, name="hello-pt", destination=destination)
+
+    assert error.value.code == "EXAMPLE_DESTINATION_EXISTS"
+
+
+def test_unknown_example_and_unknown_revision_are_structured(tmp_path):
+    with pytest.raises(examples_cli.ExampleError) as error:
+        examples_cli.get_example(VERSION, name="unknown", destination=tmp_path / "unknown")
+    assert error.value.code == "EXAMPLE_UNKNOWN"
+
+    with pytest.raises(examples_cli.ExampleError) as error:
+        examples_cli.get_example(
+            {**VERSION, "full-revisionid": None}, name="hello-pt", destination=tmp_path / "hello-pt"
+        )
+    assert error.value.code == "EXAMPLE_VERSION_UNKNOWN"
+
+
+@pytest.mark.parametrize("command", [[], ["list"], ["get"]])
+def test_cli_schema_does_not_download(monkeypatch, capsys, command):
     from nvflare import cli
 
-    monkeypatch.setattr(examples_cli, "get_example", lambda *args, **kwargs: pytest.fail("schema copied files"))
+    monkeypatch.setattr(examples_cli, "get_example", lambda *args, **kwargs: pytest.fail("downloaded"))
     monkeypatch.setattr("sys.argv", ["nvflare", "examples", *command, "--schema"])
     with pytest.raises(SystemExit) as error:
         cli.main()
     assert error.value.code == 0
     schema = json.loads(capsys.readouterr().out)
-    assert schema["command"] == " ".join(["nvflare", "examples", *command])
-    assert schema["mutating"] is True
+    assert schema["streaming"] is False
+    assert schema["output_modes"] == ["json"]
+    assert schema["retry_token"] == {"supported": False}
+    if command == ["list"]:
+        assert schema["command"] == "nvflare examples list"
+        assert schema["mutating"] is False
+        assert schema["idempotent"] is True
     if command == ["get"]:
+        assert schema["command"] == "nvflare examples get"
+        assert schema["mutating"] is True
+        assert schema["idempotent"] is False
         name_arg = next(argument for argument in schema["args"] if argument["name"] == "name")
         assert name_arg["choices"] == sorted(CATALOG)
 
 
-def test_cli_copies_exact_canonical_example_and_records_version(monkeypatch, capsys, tmp_path):
+def test_list_prints_short_names_and_source_paths(monkeypatch, capsys):
     from nvflare import cli
 
-    destination = tmp_path / "copied"
-    original = _files(SOURCE)
-    monkeypatch.setattr("nvflare._version.get_versions", lambda: VERSION)
-    monkeypatch.setattr(
-        "sys.argv", ["nvflare", "examples", "get", "hello-pt", "--dest", str(destination), "--format", "json"]
-    )
+    monkeypatch.setattr("sys.argv", ["nvflare", "examples", "list"])
     cli.run("nvflare")
 
-    output = json.loads(capsys.readouterr().out)
-    assert output["status"] == "ok"
-    assert output["data"]["source"] == "bundled"
-    assert output["data"]["nvflare_version"] == VERSION["version"]
-    assert output["data"]["setup_commands"] == [["pip", "install", "-r", "requirements.txt"]]
-    assert output["data"]["next_command"] == ["python", "job.py"]
-    delivered = _files(destination)
-    provenance = json.loads((destination / examples_cli.PROVENANCE_FILE).read_bytes())
-    assert delivered == original
-    assert _all_file_names(destination) == set(FILES) | {examples_cli.PROVENANCE_FILE}
-    assert provenance == {
-        "schema_version": 1,
-        "example": "hello-pt",
-        "source": "bundled",
-        "source_path": "examples/hello-world/hello-pt",
-        "nvflare_version": VERSION["version"],
-    }
-    assert _files(SOURCE) == original
-
-
-def test_checkout_copy_uses_tracked_files(monkeypatch, tmp_path):
-    source = tmp_path / "source"
-    source.mkdir()
-    for filename in FILES:
-        shutil.copy2(SOURCE / filename, source / filename)
-    (source / "__pycache__").mkdir()
-    (source / "__pycache__/client.cpython-313.pyc").write_bytes(b"generated")
-    (source / "credentials.txt").write_text("local")
-    destination = tmp_path / "copied"
-    monkeypatch.setattr(examples_cli, "_example_source", lambda name: (source, FILES))
-
-    examples_cli.get_example(VERSION, name="hello-pt", destination=destination)
-
-    assert _files(destination) == _files(SOURCE)
-    assert _all_file_names(destination) == set(FILES) | {examples_cli.PROVENANCE_FILE}
-
-
-def test_default_destination_and_human_next_step(monkeypatch, capsys, tmp_path):
-    from nvflare import cli
-
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr("nvflare._version.get_versions", lambda: VERSION)
-    monkeypatch.setattr("sys.argv", ["nvflare", "examples", "get", "hello-pt"])
-    cli.run("nvflare")
     output = capsys.readouterr().out
-    assert f"Created bundled example: {tmp_path / 'hello-pt'}" in output
-    assert "pip install -r requirements.txt" in output
-    assert "python job.py" in output
-    assert (tmp_path / "hello-pt/job.py").is_file()
+    assert "SHORT NAME" in output
+    assert "hello-pt" in output
+    assert "examples/hello-world/hello-pt" in output
+    assert "collab-pt" in output
+    assert "examples/advanced/collab/pt_cifar10" in output
 
 
-def test_human_next_step_quotes_destination(monkeypatch, capsys, tmp_path):
+def test_list_json_is_machine_readable(monkeypatch, capsys):
     from nvflare import cli
 
+    monkeypatch.setattr("sys.argv", ["nvflare", "examples", "list", "--format", "json"])
+    cli.run("nvflare")
+
+    result = json.loads(capsys.readouterr().out)
+    assert result["status"] == "ok"
+    assert {entry["name"]: entry["source_path"] for entry in result["data"]["examples"]} == {
+        name: entry["source_path"] for name, entry in CATALOG.items()
+    }
+
+
+def test_unknown_subcommand_with_schema_is_rejected(monkeypatch, capsys):
+    from nvflare import cli
+
+    monkeypatch.setattr("sys.argv", ["nvflare", "--format", "json", "examples", "bogus", "--schema"])
+    with pytest.raises(SystemExit) as error:
+        cli.run("nvflare")
+
+    assert error.value.code == 4
+    assert json.loads(capsys.readouterr().out)["error_code"] == "INVALID_ARGS"
+
+
+def test_human_output_points_to_requirements_and_readme(monkeypatch, capsys, tmp_path):
+    from nvflare import cli
+
+    _mock_download(monkeypatch)
     destination = tmp_path / "copy with ' quote"
     monkeypatch.setattr("nvflare._version.get_versions", lambda: VERSION)
     monkeypatch.setattr("sys.argv", ["nvflare", "examples", "get", "hello-pt", "--dest", str(destination)])
+
     cli.run("nvflare")
-    assert f"  cd {shlex.quote(str(destination))}" in capsys.readouterr().out
+
+    output = capsys.readouterr().out
+    assert f"Downloaded example: {destination}" in output
+    assert f"  cd {shlex.quote(str(destination))}" in output
+    assert "  pip install -r requirements.txt" in output
+    assert "Follow README.md for preparation and run instructions." in output
+    assert "python job.py" not in output
 
 
-def test_human_next_steps_include_catalog_setup(monkeypatch, capsys, tmp_path):
+def test_get_json_is_machine_readable(monkeypatch, capsys, tmp_path):
     from nvflare import cli
 
-    destination = tmp_path / "jax"
+    _mock_download(monkeypatch)
+    destination = tmp_path / "hello-pt"
     monkeypatch.setattr("nvflare._version.get_versions", lambda: VERSION)
-    monkeypatch.setattr("sys.argv", ["nvflare", "examples", "get", "hello-jax", "--dest", str(destination)])
+    monkeypatch.setattr(
+        "sys.argv", ["nvflare", "--format", "json", "examples", "get", "hello-pt", "--dest", str(destination)]
+    )
+
     cli.run("nvflare")
-    output = capsys.readouterr().out
-    assert "  pip install -r requirements.txt" in output
-    assert "  python prepare_model.py" in output
-    assert "  python prepare_data.py" in output
-    assert "  python job.py" in output
 
-
-@pytest.mark.parametrize("kind", ["file", "directory", "nonempty", "dangling-symlink"])
-def test_existing_destination_is_untouched(tmp_path, kind):
-    destination = tmp_path / "copied"
-    if kind == "file":
-        destination.write_text("original")
-    elif kind == "dangling-symlink":
-        destination.symlink_to(tmp_path / "absent")
-    else:
-        destination.mkdir()
-        if kind == "nonempty":
-            (destination / "original").write_text("original")
-    with pytest.raises(examples_cli.ExampleError) as error:
-        examples_cli.get_example(VERSION, name="hello-pt", destination=destination)
-    assert error.value.code == "EXAMPLE_DESTINATION_EXISTS"
-    if kind == "file":
-        assert destination.read_text() == "original"
-    elif kind == "nonempty":
-        assert (destination / "original").read_text() == "original"
-    else:
-        assert destination.exists() or destination.is_symlink()
-
-
-def test_destination_created_during_copy_is_untouched(monkeypatch, tmp_path):
-    destination = tmp_path / "copied"
-
-    def race(name):
-        destination.mkdir()
-        (destination / "original").write_text("original")
-        return SOURCE, FILES
-
-    monkeypatch.setattr(examples_cli, "_example_source", race)
-    with pytest.raises(examples_cli.ExampleError) as error:
-        examples_cli.get_example(VERSION, name="hello-pt", destination=destination)
-    assert error.value.code == "EXAMPLE_DESTINATION_EXISTS"
-    assert (destination / "original").read_text() == "original"
-
-
-@pytest.mark.parametrize("failure", [OSError("disk full"), KeyboardInterrupt()])
-def test_failed_copy_leaves_removable_destination(monkeypatch, tmp_path, failure):
-    destination = tmp_path / "copied"
-
-    def fail(source, target, **kwargs):
-        assert target == destination
-        target.mkdir()
-        (target / "partial").write_text("partial")
-        raise failure
-
-    monkeypatch.setattr(shutil, "copytree", fail)
-    with pytest.raises(type(failure)):
-        examples_cli.get_example(VERSION, name="hello-pt", destination=destination)
-    assert (destination / "partial").read_text() == "partial"
-
-
-def test_missing_parent_and_unknown_example_are_structured(tmp_path):
-    with pytest.raises(examples_cli.ExampleError) as error:
-        examples_cli.get_example(VERSION, name="hello-pt", destination=tmp_path / "missing/out")
-    assert error.value.code == "EXAMPLE_DESTINATION_INVALID"
-    with pytest.raises(examples_cli.ExampleError) as error:
-        examples_cli.get_example(VERSION, name="unknown", destination=tmp_path / "out")
-    assert error.value.code == "EXAMPLE_UNKNOWN"
+    result = json.loads(capsys.readouterr().out)
+    assert result["status"] == "ok"
+    assert result["data"]["example"] == "hello-pt"
+    assert result["data"]["directory"] == str(destination)
+    assert result["data"]["setup_commands"] == [["pip", "install", "-r", "requirements.txt"]]
+    assert result["data"]["readme"] == str(destination / "README.md")
 
 
 @pytest.mark.parametrize(
     "failure,code,exit_code",
-    [(KeyboardInterrupt(), "EXAMPLE_INTERRUPTED", 130), (OSError("disk full"), "EXAMPLE_IO_ERROR", 1)],
+    [
+        (KeyboardInterrupt(), "EXAMPLE_INTERRUPTED", 130),
+        (OSError("disk full"), "EXAMPLE_IO_ERROR", 1),
+        (
+            examples_cli.ExampleError("EXAMPLE_NETWORK_ERROR", "offline", "retry"),
+            "EXAMPLE_NETWORK_ERROR",
+            1,
+        ),
+    ],
 )
 def test_cli_failure_is_structured(monkeypatch, capsys, failure, code, exit_code):
     from nvflare import cli
@@ -256,14 +351,3 @@ def test_cli_failure_is_structured(monkeypatch, capsys, failure, code, exit_code
         cli.run("nvflare")
     assert error.value.code == exit_code
     assert json.loads(capsys.readouterr().out)["error_code"] == code
-
-
-@pytest.mark.parametrize("command", [[], ["get"], ["cache", "clear"], ["get", "hello-pt", "--ref", "main"]])
-def test_missing_or_removed_commands_fail(monkeypatch, capsys, command):
-    from nvflare import cli
-
-    monkeypatch.setattr("sys.argv", ["nvflare", "examples", *command, "--format", "json"])
-    with pytest.raises(SystemExit) as error:
-        cli.run("nvflare")
-    assert error.value.code == 4
-    assert json.loads(capsys.readouterr().out)["error_code"] == "INVALID_ARGS"

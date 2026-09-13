@@ -1,33 +1,239 @@
 {
-  "hello-pt": {
-    "source_path": "examples/hello-world/hello-pt"
+  "hello-collab": {
+    "source_path": "examples/hello-world/hello-collab"
+  },
+  "hello-cyclic": {
+    "source_path": "examples/hello-world/hello-cyclic"
+  },
+  "hello-dp": {
+    "source_path": "examples/hello-world/hello-dp"
+  },
+  "hello-flower": {
+    "source_path": "examples/hello-world/hello-flower"
+  },
+  "hello-huggingface": {
+    "source_path": "examples/hello-world/hello-huggingface"
+  },
+  "hello-jax": {
+    "source_path": "examples/hello-world/hello-jax"
+  },
+  "hello-lightning": {
+    "source_path": "examples/hello-world/hello-lightning"
+  },
+  "hello-lightning-eval": {
+    "source_path": "examples/hello-world/hello-lightning-eval"
+  },
+  "hello-log-streaming": {
+    "source_path": "examples/hello-world/hello-log-streaming"
+  },
+  "hello-lr": {
+    "source_path": "examples/hello-world/hello-lr"
   },
   "hello-numpy": {
     "source_path": "examples/hello-world/hello-numpy"
   },
+  "hello-numpy-cross-val": {
+    "source_path": "examples/hello-world/hello-numpy-cross-val"
+  },
+  "hello-pt": {
+    "source_path": "examples/hello-world/hello-pt"
+  },
+  "hello-tabular-stats": {
+    "source_path": "examples/hello-world/hello-tabular-stats"
+  },
   "hello-tf": {
-    "source_path": "examples/hello-world/hello-tf",
-    "next_command": ["env", "TF_FORCE_GPU_ALLOW_GROWTH=true", "python", "job.py"]
+    "source_path": "examples/hello-world/hello-tf"
   },
-  "hello-jax": {
-    "source_path": "examples/hello-world/hello-jax",
-    "prepare_commands": [["python", "prepare_model.py"], ["python", "prepare_data.py"]]
+  "skill-fedstats-image": {
+    "source_path": "examples/hello-world/agent-skills/fedstats-image"
   },
-  "hello-lightning": {
-    "source_path": "examples/hello-world/hello-lightning",
-    "next_command": ["python", "job.py", "--synthetic_data"]
+  "skill-fedstats-tabular": {
+    "source_path": "examples/hello-world/agent-skills/fedstats-tabular"
   },
-  "hello-huggingface": {
-    "source_path": "examples/hello-world/hello-huggingface",
-    "prepare_commands": [["python", "prepare_data.py"]]
+  "skill-huggingface-conversion": {
+    "source_path": "examples/hello-world/agent-skills/huggingface-conversion"
   },
-  "hello-flower": {
-    "source_path": "examples/hello-world/hello-flower",
-    "next_command": ["python", "job.py", "--job_name", "flwr-pt", "--content_dir", "./flwr-pt"]
+  "skill-lightning-conversion": {
+    "source_path": "examples/hello-world/agent-skills/lightning-conversion"
+  },
+  "skill-pytorch-conversion": {
+    "source_path": "examples/hello-world/agent-skills/pytorch-conversion"
+  },
+  "amplify": {
+    "source_path": "examples/advanced/amplify"
+  },
+  "bionemo": {
+    "source_path": "examples/advanced/bionemo"
+  },
+  "cc-provision": {
+    "source_path": "examples/advanced/cc_provision"
+  },
+  "cifar10-pt-real-world": {
+    "source_path": "examples/advanced/cifar10/pt/cifar10-real-world"
+  },
+  "cifar10-pt-sim": {
+    "source_path": "examples/advanced/cifar10/pt/cifar10-sim"
+  },
+  "cifar10-tf": {
+    "source_path": "examples/advanced/cifar10/tf"
+  },
+  "client-api-attach": {
+    "source_path": "examples/advanced/client-api-attach"
+  },
+  "codon-fm": {
+    "source_path": "examples/advanced/codon-fm"
+  },
+  "collab-pt-async": {
+    "source_path": "examples/advanced/collab/pt_async_cifar10"
   },
   "collab-pt": {
-    "source_path": "examples/advanced/collab/pt_cifar10",
-    "prepare_commands": [["python", "prepare_data.py", "--num_sites", "2", "--alpha", "0.5"]],
-    "next_command": ["python", "-m", "fedavg.job"]
+    "source_path": "examples/advanced/collab/pt_cifar10"
+  },
+  "collab-llm-sft": {
+    "source_path": "examples/advanced/collab/pt_llm_sft"
+  },
+  "custom-auth": {
+    "source_path": "examples/advanced/custom_authentication"
+  },
+  "distributed-optimization": {
+    "source_path": "examples/advanced/distributed_optimization"
+  },
+  "distributed-provision": {
+    "source_path": "examples/advanced/distributed_provision"
+  },
+  "advanced-docker": {
+    "source_path": "examples/advanced/docker"
+  },
+  "edge": {
+    "source_path": "examples/advanced/edge"
+  },
+  "tracking-mlflow": {
+    "source_path": "examples/advanced/experiment-tracking/mlflow"
+  },
+  "tracking-tensorboard": {
+    "source_path": "examples/advanced/experiment-tracking/tensorboard"
+  },
+  "tracking-wandb": {
+    "source_path": "examples/advanced/experiment-tracking/wandb"
+  },
+  "feature-election": {
+    "source_path": "examples/advanced/feature_election"
+  },
+  "federated-policies": {
+    "source_path": "examples/advanced/federated-policies"
+  },
+  "stats-df": {
+    "source_path": "examples/advanced/federated-statistics/df_stats"
+  },
+  "stats-hierarchical": {
+    "source_path": "examples/advanced/federated-statistics/hierarchical_stats"
+  },
+  "stats-image": {
+    "source_path": "examples/advanced/federated-statistics/image_stats"
+  },
+  "finance": {
+    "source_path": "examples/advanced/finance"
+  },
+  "finance-end-to-end": {
+    "source_path": "examples/advanced/finance-end-to-end"
+  },
+  "gnn": {
+    "source_path": "examples/advanced/gnn"
+  },
+  "pt-environments": {
+    "source_path": "examples/advanced/hello-pt-environments"
+  },
+  "job-authorization": {
+    "source_path": "examples/advanced/job-level-authorization"
+  },
+  "job-api-pt": {
+    "source_path": "examples/advanced/job_api/pt"
+  },
+  "job-api-sklearn": {
+    "source_path": "examples/advanced/job_api/sklearn"
+  },
+  "job-api-tf": {
+    "source_path": "examples/advanced/job_api/tf"
+  },
+  "kaplan-meier-he": {
+    "source_path": "examples/advanced/kaplan-meier-he"
+  },
+  "keycloak-auth": {
+    "source_path": "examples/advanced/keycloak-site-authentication"
+  },
+  "llm-hf": {
+    "source_path": "examples/advanced/llm_hf"
+  },
+  "medgemma": {
+    "source_path": "examples/advanced/medgemma"
+  },
+  "monai-mednist": {
+    "source_path": "examples/advanced/monai/mednist"
+  },
+  "monai-spleen": {
+    "source_path": "examples/advanced/monai/spleen_ct_segmentation"
+  },
+  "monitoring": {
+    "source_path": "examples/advanced/monitoring"
+  },
+  "multi-gpu-lightning": {
+    "source_path": "examples/advanced/multi-gpu/lightning"
+  },
+  "multi-gpu-pt": {
+    "source_path": "examples/advanced/multi-gpu/pt"
+  },
+  "nlp-ner": {
+    "source_path": "examples/advanced/nlp-ner"
+  },
+  "psi": {
+    "source_path": "examples/advanced/psi"
+  },
+  "qwen3-vl": {
+    "source_path": "examples/advanced/qwen3-vl"
+  },
+  "recipe-k8s": {
+    "source_path": "examples/advanced/recipe-k8s"
+  },
+  "sklearn-kmeans": {
+    "source_path": "examples/advanced/sklearn-kmeans"
+  },
+  "sklearn-linear": {
+    "source_path": "examples/advanced/sklearn-linear"
+  },
+  "sklearn-svm": {
+    "source_path": "examples/advanced/sklearn-svm"
+  },
+  "streaming": {
+    "source_path": "examples/advanced/streaming"
+  },
+  "swarm-learning": {
+    "source_path": "examples/advanced/swarm_learning"
+  },
+  "tensor-stream": {
+    "source_path": "examples/advanced/tensor-stream"
+  },
+  "splitnn-cifar10": {
+    "source_path": "examples/advanced/vertical_federated_learning/cifar10-splitnn"
+  },
+  "xgboost": {
+    "source_path": "examples/advanced/xgboost"
+  },
+  "docker-runtime": {
+    "source_path": "examples/docker"
+  },
+  "devops-aws-eks": {
+    "source_path": "examples/devops/aws/eks"
+  },
+  "devops-azure-aks": {
+    "source_path": "examples/devops/azure/aks"
+  },
+  "devops-gcp-gke": {
+    "source_path": "examples/devops/gcp/gke"
+  },
+  "devops-multicloud": {
+    "source_path": "examples/devops/multicloud"
+  },
+  "devops-openshift": {
+    "source_path": "examples/devops/openshift"
   }
 }

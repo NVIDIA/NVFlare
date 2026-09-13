@@ -292,32 +292,38 @@ jobs:
           uv pip install --system build twine
       - name: Run wheel build
         run: python3 -m build --wheel
-      - name: Verify bundled example from wheel and editable installs
+      - name: Verify GitHub example catalog from wheel
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          catalog_rows="$RUNNER_TEMP/example-catalog.tsv"
-          python3 - "$GITHUB_WORKSPACE/nvflare/tool/examples/catalog.json" > "$catalog_rows" <<'PY'
-          import json
-          import sys
-
-          catalog = json.load(open(sys.argv[1], encoding="utf-8"))
-          for name, entry in catalog.items():
-              print(f"{name}\t{entry['source_path']}")
-          PY
           python3 -m venv --system-site-packages "$RUNNER_TEMP/example-wheel-env"
           "$RUNNER_TEMP/example-wheel-env/bin/pip" install --no-deps --force-reinstall dist/*.whl
-          mkdir "$RUNNER_TEMP/example-wheel-run"
-          cd "$RUNNER_TEMP/example-wheel-run"
-          while IFS=$'\t' read -r example source; do
-            "$RUNNER_TEMP/example-wheel-env/bin/nvflare" examples get "$example"
-            diff -r --exclude=.nvflare-example.json \
-              "$GITHUB_WORKSPACE/$source" "$RUNNER_TEMP/example-wheel-run/$example"
-          done < "$catalog_rows"
-          "$RUNNER_TEMP/example-wheel-env/bin/pip" install --no-build-isolation --no-deps --force-reinstall \
-            --editable "$GITHUB_WORKSPACE"
-          mkdir "$RUNNER_TEMP/example-editable-run"
-          cd "$RUNNER_TEMP/example-editable-run"
-          while IFS=$'\t' read -r example source; do
-            "$RUNNER_TEMP/example-wheel-env/bin/nvflare" examples get "$example"
-            diff -r --exclude=.nvflare-example.json \
-              "$GITHUB_WORKSPACE/$source" "$RUNNER_TEMP/example-editable-run/$example"
-          done < "$catalog_rows"
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/example-wheel-env/bin/nvflare" examples list --format json \
+            > "$RUNNER_TEMP/example-list.json"
+          gh api "repos/NVIDIA/NVFlare/git/trees/$GITHUB_SHA?recursive=1" \
+            > "$RUNNER_TEMP/example-tree.json"
+          mkdir "$RUNNER_TEMP/example-downloads"
+          "$RUNNER_TEMP/example-wheel-env/bin/nvflare" examples get hello-pt \
+            --dest "$RUNNER_TEMP/example-downloads/hello-pt"
+          "$RUNNER_TEMP/example-wheel-env/bin/python" - \
+            "$RUNNER_TEMP/example-list.json" "$RUNNER_TEMP/example-tree.json" \
+            "$RUNNER_TEMP/example-downloads/hello-pt" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          list_path, tree_path, downloaded = map(Path, sys.argv[1:])
+          listed = json.loads(Path(list_path).read_text())["data"]["examples"]
+          tree = json.loads(tree_path.read_text())
+          assert tree["truncated"] is False
+          blobs = {entry["path"] for entry in tree["tree"] if entry.get("type") == "blob"}
+          for item in listed:
+              prefix = item["source_path"] + "/"
+              files = {path[len(prefix):] for path in blobs if path.startswith(prefix)}
+              assert files, item
+              assert "README.md" in files or "README.rst" in files, item
+          assert (downloaded / "README.md").is_file()
+          assert (downloaded / "requirements.txt").is_file()
+          print(f"Verified {len(listed)} catalog entries and a GitHub download from the installed wheel")
+          PY

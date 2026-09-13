@@ -12,42 +12,61 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 from pathlib import Path
-from subprocess import CompletedProcess
 
-from nvflare.tool.examples.catalog import load_catalog, source_files
+import pytest
+
+from nvflare.tool.examples.catalog import load_catalog
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 
 
-def test_catalog_entries_are_data_only_and_sources_exist():
+def test_catalog_entries_are_source_path_only_and_exist():
     catalog = load_catalog()
 
-    assert catalog["collab-pt"]["source_path"] == "examples/advanced/collab/pt_cifar10"
+    assert catalog["collab-pt"] == {"source_path": "examples/advanced/collab/pt_cifar10"}
     for entry in catalog.values():
-        assert "source_path" in entry
-        assert set(entry) <= {"source_path", "prepare_commands", "next_command"}
-        assert (REPO_ROOT / entry["source_path"]).is_dir()
+        assert set(entry) == {"source_path"}
+        assert not entry["source_path"].startswith("examples/tutorials/")
+        source = REPO_ROOT / entry["source_path"]
+        assert source.is_dir()
+        assert (source / "README.md").is_file() or (source / "README.rst").is_file()
 
 
-def test_source_files_uses_git_manifest_for_checkout(monkeypatch, tmp_path):
-    (tmp_path / ".git").touch()
-    source = tmp_path / "examples/long-name"
-    source.mkdir(parents=True)
-    (source / "tracked.py").write_text("tracked")
-    (source / "credentials.txt").write_text("untracked")
+def test_catalog_covers_each_example_collection():
+    source_paths = [Path(entry["source_path"]) for entry in load_catalog().values()]
+    collections = [REPO_ROOT / "examples/hello-world", REPO_ROOT / "examples/advanced"]
+    collections.extend(
+        [
+            REPO_ROOT / "examples/devops/aws",
+            REPO_ROOT / "examples/devops/azure",
+            REPO_ROOT / "examples/devops/gcp",
+        ]
+    )
+    for collection in collections:
+        for example in (path for path in collection.iterdir() if path.is_dir()):
+            relative = example.relative_to(REPO_ROOT)
+            assert any(path == relative or relative in path.parents for path in source_paths), relative
 
-    def run(*args, **kwargs):
-        return CompletedProcess(args[0], 0, stdout=b"examples/long-name/tracked.py\0")
-
-    monkeypatch.setattr("nvflare.tool.examples.catalog.subprocess.run", run)
-
-    assert source_files(tmp_path, "examples/long-name") == ("tracked.py",)
+    for relative in ["examples/docker", "examples/devops/multicloud", "examples/devops/openshift"]:
+        assert Path(relative) in source_paths
 
 
-def test_source_files_walks_release_source_archive(tmp_path):
-    source = tmp_path / "examples/long-name/nested"
-    source.mkdir(parents=True)
-    (source / "example.py").write_text("example")
+@pytest.mark.parametrize(
+    "catalog",
+    [
+        {},
+        {"bad name": {"source_path": "examples/demo"}},
+        {"demo": {"source_path": "outside/demo"}},
+        {"demo": {"source_path": "examples/../demo"}},
+        {"demo": {"source_path": "examples/demo", "next_command": ["python", "job.py"]}},
+        {"one": {"source_path": "examples/demo"}, "two": {"source_path": "examples/demo"}},
+    ],
+)
+def test_invalid_catalog_is_rejected(tmp_path, catalog):
+    path = tmp_path / "catalog.json"
+    path.write_text(json.dumps(catalog))
 
-    assert source_files(tmp_path, "examples/long-name") == ("nested/example.py",)
+    with pytest.raises(ValueError):
+        load_catalog(path)

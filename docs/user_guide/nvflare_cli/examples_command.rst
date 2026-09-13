@@ -1,24 +1,47 @@
-##########################
-Bundled Examples Command
-##########################
+################
+Examples Command
+################
 
-The ``nvflare examples`` command copies runnable example source bundled with
-the installed NVFlare distribution. Editable installations copy from the same
-source checkout. Retrieval works offline and the copied source matches the
-NVFlare version in use.
+The ``nvflare examples`` command downloads example source from the public
+NVIDIA/NVFlare GitHub repository. It selects the source revision recorded in
+the installed NVFlare distribution, so the example matches the version in use.
 
-Bundled example catalog
-=======================
+Example catalog
+===============
 
-The catalog maps a short CLI name to an example directory anywhere in the
-NVFlare source tree. Run ``nvflare examples get --help`` to see the current
-names. The help and JSON schema are generated from the bundled catalog, so a
-new catalog entry becomes available without a Python code change.
+The installed catalog maps a short CLI name to an example directory anywhere
+under ``examples/`` in the NVFlare source tree. Run
+``nvflare examples list`` to see the current names and source paths:
+
+.. code-block:: bash
+
+   nvflare examples list
+   nvflare examples list --format json
+
+The list, command help, and JSON schema are generated from the catalog, so
+adding a short name and source path to ``catalog.json`` makes an example
+available without a Python code change.
 
 Get an example
 ==============
 
-Install NVFlare with its PyTorch dependencies, copy the example, and run it:
+Download an example, install its dependencies, then follow its README for any
+data download, data preparation, model preparation, or other example-specific
+steps:
+
+.. code-block:: bash
+
+   python -m pip install "nvflare[PT]"
+   nvflare examples get <example-name>
+   cd <example-name>
+   pip install -r requirements.txt
+
+The README may then direct you to run commands such as ``download_data.py``,
+``prepare_data.py``, or ``prepare_model.py`` before the example's job command.
+Those commands vary by example and are intentionally not duplicated in the
+catalog.
+
+For Hello PyTorch, the complete sequence is:
 
 .. code-block:: bash
 
@@ -28,8 +51,8 @@ Install NVFlare with its PyTorch dependencies, copy the example, and run it:
    pip install -r requirements.txt
    python job.py
 
-Use another catalog name in the same command. The completion output prints its
-dependency, preparation, and run commands:
+Use another catalog name in the same command. The completion output identifies
+the requirements file and README:
 
 .. code-block:: bash
 
@@ -48,9 +71,11 @@ overwrites an existing file, directory, or symbolic link. It creates the
 destination exclusively. If copying does not complete, remove the incomplete
 destination before retrying.
 
-The copied directory contains the same maintained files as the source directory
-selected by the catalog. A small ``.nvflare-example.json`` file records the
-example name, installed NVFlare version, and canonical source path.
+The downloaded directory contains the maintained files from the source
+directory selected by the catalog. If that directory has no root
+``requirements.txt``, the command creates an empty one so the dependency step
+is consistent. A small ``.nvflare-example.json`` file records the example name,
+installed NVFlare version, Git revision, and canonical source path.
 
 Automation
 ==========
@@ -66,6 +91,7 @@ Schema discovery does not copy the example:
 .. code-block:: bash
 
    nvflare examples --schema
+   nvflare examples list --schema
    nvflare examples get --schema
 
 Failures return a nonzero exit status, an error code, and a recovery hint.

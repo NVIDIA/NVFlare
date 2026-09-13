@@ -12,23 +12,33 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Copy release-matched example source bundled with NVFlare."""
+"""Download examples selected by the installed NVFlare catalog."""
 
 import json
+import re
 import shlex
-import shutil
 import sys
-from importlib import resources
 from pathlib import Path
+from urllib.parse import quote
 
-from nvflare.tool.cli_output import is_json_mode, output_error_message, output_ok, print_human
+import requests
+
+from nvflare.tool.cli_output import get_connect_timeout, is_json_mode, output_error_message, output_ok, print_human
 from nvflare.tool.cli_schema import handle_schema_flag
-from nvflare.tool.examples.catalog import load_catalog, source_files
+from nvflare.tool.examples.catalog import load_catalog
 
 EXAMPLE_CATALOG = load_catalog()
 PROVENANCE_FILE = ".nvflare-example.json"
+REPOSITORY = "NVIDIA/NVFlare"
+MAX_EXAMPLE_FILES = 5000
+MAX_EXAMPLE_BYTES = 128 * 1024 * 1024
+_REVISION = re.compile(r"[0-9a-f]{40}")
 _parsers = {}
-_EXAMPLE_COMMANDS = ["nvflare examples get hello-pt", "nvflare examples get hello-numpy --dest ./numpy-demo"]
+_EXAMPLE_COMMANDS = [
+    "nvflare examples list",
+    "nvflare examples get hello-pt",
+    "nvflare examples get hello-numpy --dest ./numpy-demo",
+]
 
 
 class ExampleError(Exception):
@@ -39,30 +49,17 @@ class ExampleError(Exception):
 
 
 def def_examples_parser(sub_cmd):
-    parser = sub_cmd.add_parser("examples", help="copy a runnable example bundled with NVFlare")
+    parser = sub_cmd.add_parser("examples", help="download an NVFlare example from GitHub")
     children = parser.add_subparsers(dest="examples_sub_cmd")
-    get = children.add_parser("get", help="copy one example into a new directory")
-    get.add_argument("name", choices=sorted(EXAMPLE_CATALOG), help="bundled example short name")
+    list_parser = children.add_parser("list", help="list available example short names")
+    get = children.add_parser("get", help="download one example into a new directory")
+    get.add_argument("name", choices=sorted(EXAMPLE_CATALOG), help="example catalog short name")
     get.add_argument("--dest", help="new destination directory; default: example name in the current directory")
     _parsers.clear()
-    _parsers.update({None: parser, "get": get})
+    _parsers.update({None: parser, "list": list_parser, "get": get})
     for value in _parsers.values():
         value.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     return {"examples": parser}
-
-
-def _example_source(name):
-    bundled = resources.files("nvflare.tool.examples").joinpath("data", name)
-    if bundled.is_dir():
-        return bundled, None
-
-    # Editable installs load this module from the checkout, where setup.py does
-    # not retain its temporary package-data copy.
-    checkout_root = Path(__file__).resolve().parents[3]
-    checkout = checkout_root / EXAMPLE_CATALOG[name]["source_path"]
-    if (checkout_root / "setup.py").is_file() and checkout.is_dir():
-        return checkout, source_files(checkout_root, EXAMPLE_CATALOG[name]["source_path"])
-    raise OSError(f"The installed NVFlare package does not contain the bundled {name} example")
 
 
 def _destination_exists(destination):
@@ -73,32 +70,121 @@ def _destination_exists(destination):
     )
 
 
-def _copy_example(source, destination, files=None):
-    if files is None:
-        shutil.copytree(source, destination, dirs_exist_ok=False)
-        return
+def _source_revision(version_info):
+    revision = version_info.get("full-revisionid")
+    if isinstance(revision, str) and _REVISION.fullmatch(revision):
+        return revision
+    raise ExampleError(
+        "EXAMPLE_VERSION_UNKNOWN",
+        "This NVFlare installation does not identify its source revision.",
+        "Install an official NVFlare wheel or an editable checkout with Git metadata.",
+    )
 
-    source_root = Path(source)
-    allowed = set(files)
-    for filename in files:
-        allowed.update(parent.as_posix() for parent in Path(filename).parents if parent != Path("."))
 
-    def ignore_unlisted(directory, names):
-        relative = Path(directory).relative_to(source_root)
-        return {name for name in names if (relative / name).as_posix() not in allowed}
-
-    shutil.copytree(source, destination, dirs_exist_ok=False, ignore=ignore_unlisted)
+def _download_example(revision, source_path, destination):
+    tree_url = f"https://api.github.com/repos/{REPOSITORY}/git/trees/{revision}?recursive=1"
+    timeout = (get_connect_timeout(), 30)
+    try:
+        with requests.Session() as session:
+            with session.get(tree_url, timeout=timeout) as response:
+                response.raise_for_status()
+                try:
+                    metadata = response.json()
+                except ValueError:
+                    raise ExampleError(
+                        "EXAMPLE_CONTENT_INVALID",
+                        "GitHub returned invalid source metadata.",
+                        "Retry later or use the example directly from the NVIDIA/NVFlare repository.",
+                    ) from None
+            if (
+                not isinstance(metadata, dict)
+                or metadata.get("truncated")
+                or not isinstance(metadata.get("tree"), list)
+            ):
+                raise ExampleError(
+                    "EXAMPLE_CONTENT_INVALID",
+                    "GitHub returned an incomplete source tree.",
+                    "Retry later or use the example directly from the NVIDIA/NVFlare repository.",
+                )
+            prefix = source_path + "/"
+            files = [
+                entry
+                for entry in metadata["tree"]
+                if entry.get("type") == "blob"
+                and isinstance(entry.get("path"), str)
+                and entry["path"].startswith(prefix)
+            ]
+            if not files:
+                raise ExampleError(
+                    "EXAMPLE_SOURCE_NOT_FOUND",
+                    f"The release does not contain the catalog path: {source_path}",
+                    "Use an example listed by this NVFlare installation.",
+                )
+            if any(not isinstance(entry.get("size"), int) or entry["size"] < 0 for entry in files):
+                raise ExampleError(
+                    "EXAMPLE_CONTENT_INVALID",
+                    "GitHub returned invalid file metadata.",
+                    "Retry later or use the example directly from the NVIDIA/NVFlare repository.",
+                )
+            total_size = sum(entry["size"] for entry in files)
+            if len(files) > MAX_EXAMPLE_FILES or total_size > MAX_EXAMPLE_BYTES:
+                raise ExampleError(
+                    "EXAMPLE_DOWNLOAD_TOO_LARGE",
+                    "The selected example exceeds the supported download size.",
+                    "Use the example directly from the NVIDIA/NVFlare GitHub repository.",
+                )
+            for entry in files:
+                relative = entry["path"][len(prefix) :]
+                relative_parts = relative.split("/")
+                if any(part in {"", ".", ".."} for part in relative_parts):
+                    raise ExampleError(
+                        "EXAMPLE_CONTENT_INVALID",
+                        f"GitHub returned an invalid path for {source_path}.",
+                        "Retry later or use the example directly from the NVIDIA/NVFlare repository.",
+                    )
+                target = destination.joinpath(*relative_parts)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                raw_url = f"https://raw.githubusercontent.com/{REPOSITORY}/{revision}/{quote(entry['path'], safe='/')}"
+                with session.get(raw_url, stream=True, timeout=timeout) as response:
+                    response.raise_for_status()
+                    actual_size = 0
+                    with target.open("wb") as target_file:
+                        for chunk in response.iter_content(1024 * 1024):
+                            actual_size += len(chunk)
+                            if actual_size > entry["size"]:
+                                raise ExampleError(
+                                    "EXAMPLE_CONTENT_INVALID",
+                                    f"GitHub returned too much data for {entry['path']}.",
+                                    "Retry later or use the example directly from the NVIDIA/NVFlare repository.",
+                                )
+                            target_file.write(chunk)
+                    if actual_size != entry["size"]:
+                        raise ExampleError(
+                            "EXAMPLE_CONTENT_INVALID",
+                            f"GitHub returned incomplete data for {entry['path']}.",
+                            "Retry later or use the example directly from the NVIDIA/NVFlare repository.",
+                        )
+                if entry.get("mode") == "100755":
+                    target.chmod(0o755)
+    except requests.RequestException as error:
+        raise ExampleError(
+            "EXAMPLE_NETWORK_ERROR",
+            f"Could not download the NVFlare example: {error}",
+            "Check GitHub access, your network connection, and proxy settings, then retry.",
+        ) from None
+    return tree_url
 
 
 def get_example(version_info, *, name, destination=None):
     if name not in EXAMPLE_CATALOG:
         raise ExampleError(
             "EXAMPLE_UNKNOWN",
-            f"Unknown bundled example: {name}.",
-            "Choose a bundled example: " + ", ".join(sorted(EXAMPLE_CATALOG)),
+            f"Unknown example: {name}.",
+            "Choose an example: " + ", ".join(sorted(EXAMPLE_CATALOG)),
         )
-    entry = EXAMPLE_CATALOG[name]
     destination = Path(destination or name).expanduser().absolute()
+    if destination.exists() or destination.is_symlink():
+        _destination_exists(destination)
     if not destination.parent.is_dir():
         raise ExampleError(
             "EXAMPLE_DESTINATION_INVALID",
@@ -106,25 +192,43 @@ def get_example(version_info, *, name, destination=None):
             "Create the parent directory or choose --dest under an existing directory.",
         )
 
-    source, files = _example_source(name)
-    provenance = {
-        "schema_version": 1,
-        "example": name,
-        "source": "bundled",
-        "source_path": entry["source_path"],
-        "nvflare_version": version_info["version"],
-    }
+    revision = _source_revision(version_info)
+    entry = EXAMPLE_CATALOG[name]
     try:
-        _copy_example(source, destination, files)
+        destination.mkdir()
     except FileExistsError:
         _destination_exists(destination)
+    tree_url = _download_example(revision, entry["source_path"], destination)
+
+    requirements = destination / "requirements.txt"
+    if not requirements.exists():
+        requirements.write_text("", encoding="utf-8")
+    readme = next(
+        (candidate for candidate in (destination / "README.md", destination / "README.rst") if candidate.is_file()),
+        None,
+    )
+    if readme is None:
+        raise ExampleError(
+            "EXAMPLE_CONTENT_INVALID",
+            "The downloaded example does not contain a README.",
+            "Use the example directly from the NVIDIA/NVFlare GitHub repository.",
+        )
+    provenance = {
+        "schema_version": 1,
+        "repository": REPOSITORY,
+        "revision": revision,
+        "example": name,
+        "source_path": entry["source_path"],
+        "source_url": f"https://github.com/{REPOSITORY}/tree/{revision}/{entry['source_path']}",
+        "nvflare_version": version_info["version"],
+    }
     (destination / PROVENANCE_FILE).write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
     return {
         **provenance,
+        "tree_url": tree_url,
         "directory": str(destination),
-        "setup_commands": [["pip", "install", "-r", "requirements.txt"], *entry.get("prepare_commands", [])],
-        "next_command": entry.get("next_command", ["python", "job.py"]),
-        "readme": str(destination / "README.md"),
+        "setup_commands": [["pip", "install", "-r", "requirements.txt"]],
+        "readme": str(readme),
     }
 
 
@@ -141,14 +245,27 @@ def handle_examples_cmd(args):
         sys.argv[1:],
         streaming=False,
         output_modes=["json"],
-        mutating=True,
-        idempotent=False,
+        mutating=key == "get",
+        idempotent=key == "list",
         retry_token={"supported": False},
     )
-    if key != "get":
+    if key not in {"list", "get"}:
         output_error_message(
-            "INVALID_ARGS", "The examples get subcommand is required.", "Run nvflare examples --help.", exit_code=4
+            "INVALID_ARGS", "An examples subcommand is required.", "Run nvflare examples --help.", exit_code=4
         )
+
+    if key == "list":
+        examples = [
+            {"name": name, "source_path": entry["source_path"]} for name, entry in sorted(EXAMPLE_CATALOG.items())
+        ]
+        if is_json_mode():
+            output_ok({"examples": examples})
+        else:
+            name_width = max(len("SHORT NAME"), *(len(example["name"]) for example in examples))
+            print_human(f"{'SHORT NAME':<{name_width}}  SOURCE PATH")
+            for example in examples:
+                print_human(f"{example['name']:<{name_width}}  {example['source_path']}")
+        return
 
     from nvflare import _version
 
@@ -157,26 +274,25 @@ def handle_examples_cmd(args):
         if is_json_mode():
             output_ok(result)
         else:
-            print_human(f"Created bundled example: {result['directory']}\n")
+            print_human(f"Downloaded example: {result['directory']}")
+            print_human(f"Source: {result['source_url']}\n")
             print_human("Next:")
             print_human(f"  cd {shlex.quote(result['directory'])}")
-            for command in result["setup_commands"]:
-                print_human("  " + shlex.join(command))
-            print_human("  " + shlex.join(result["next_command"]))
-            print_human("\nSee README.md for dependencies and customization.")
+            print_human("  pip install -r requirements.txt")
+            print_human(f"\nFollow {Path(result['readme']).name} for preparation and run instructions.")
     except ExampleError as error:
         output_error_message(error.code, str(error), error.hint, exit_code=4 if error.code == "INVALID_ARGS" else 1)
     except KeyboardInterrupt:
         output_error_message(
             "EXAMPLE_INTERRUPTED",
-            "Example copy interrupted.",
+            "Example download interrupted.",
             "Remove any incomplete destination, then retry the command.",
             exit_code=130,
         )
     except (OSError, RuntimeError) as error:
         output_error_message(
             "EXAMPLE_IO_ERROR",
-            f"Cannot copy the bundled example: {error}",
+            f"Cannot download the example: {error}",
             "Remove any incomplete destination, then check the path, permissions, free space, and installation.",
             exit_code=1,
         )

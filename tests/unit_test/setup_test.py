@@ -34,10 +34,6 @@ def get_cmdclass():
 def _run_setup_version(tmp_path: Path, base_version: str = None) -> subprocess.CompletedProcess:
     shutil.copy2(ROOT_DIR / "setup.py", tmp_path / "setup.py")
     (tmp_path / "versioneer.py").write_text(FAILING_VERSIONEER)
-    definitions = tmp_path / "nvflare/tool/examples"
-    definitions.mkdir(parents=True)
-    shutil.copy2(ROOT_DIR / "nvflare/tool/examples/catalog.py", definitions / "catalog.py")
-    shutil.copy2(ROOT_DIR / "nvflare/tool/examples/catalog.json", definitions / "catalog.json")
 
     env = os.environ.copy()
     if base_version is None:
