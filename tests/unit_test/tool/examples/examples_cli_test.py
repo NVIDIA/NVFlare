@@ -43,9 +43,8 @@ def _all_file_names(root):
     return {path.relative_to(root).as_posix() for path in root.rglob("*") if path.is_file()}
 
 
-@pytest.fixture(autouse=True)
-def use_canonical_example_source(monkeypatch):
-    monkeypatch.setattr(examples_cli, "_example_source", lambda name: SOURCE)
+def test_source_checkout_uses_canonical_example():
+    assert Path(examples_cli._example_source("hello-pt")) == SOURCE
 
 
 @pytest.mark.parametrize("command", [[], ["get"]])

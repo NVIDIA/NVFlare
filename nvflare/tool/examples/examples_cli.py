@@ -61,9 +61,16 @@ def def_examples_parser(sub_cmd):
 
 def _example_source(name):
     bundled = resources.files("nvflare.tool.examples").joinpath("data", name)
-    if not bundled.is_dir():
-        raise OSError(f"The installed NVFlare package does not contain the bundled {name} example")
-    return bundled
+    if bundled.is_dir():
+        return bundled
+
+    # Editable installs load this module from the checkout, where setup.py does
+    # not retain its temporary package-data copy.
+    checkout_root = Path(__file__).resolve().parents[3]
+    checkout = checkout_root / EXAMPLES[name]["source_path"]
+    if (checkout_root / "setup.py").is_file() and checkout.is_dir():
+        return checkout
+    raise OSError(f"The installed NVFlare package does not contain the bundled {name} example")
 
 
 def _destination_exists(destination):
