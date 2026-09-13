@@ -96,10 +96,11 @@ def test_refresh_downloads_and_new_revision_has_a_separate_cache(cache, remote, 
         "symlink",
         "manifest",
         "manifest_directory",
+        "manifest_fifo",
         "oversize",
     ],
 )
-def test_corrupt_cache_is_repaired(cache, remote, tmp_path, corruption):
+def test_corrupt_cache_is_repaired(cache, remote, tmp_path, monkeypatch, corruption):
     get_example(cache, tmp_path)
     entry = cache._entries()[0]
     target = entry / "payload/job.py"
@@ -126,6 +127,18 @@ def test_corrupt_cache_is_repaired(cache, remote, tmp_path, corruption):
         manifest = entry / "manifest.json"
         manifest.unlink()
         manifest.mkdir()
+    elif corruption == "manifest_fifo":
+        manifest = entry / "manifest.json"
+        manifest.unlink()
+        os.mkfifo(manifest)
+        read_bytes = Path.read_bytes
+
+        def reject_fifo_read(path):
+            if path == manifest:
+                pytest.fail("A FIFO manifest must be rejected before reading")
+            return read_bytes(path)
+
+        monkeypatch.setattr(Path, "read_bytes", reject_fifo_read)
     elif corruption == "oversize":
         target.write_bytes(b"x" * (source.MAX_FILE_BYTES + 1))
     result = cache.get(VERSION, name="hello-pt", destination=tmp_path / "repaired")
@@ -217,6 +230,24 @@ def test_existing_destination_is_untouched_without_network(cache, remote, tmp_pa
     assert error.value.code == "EXAMPLE_DESTINATION_EXISTS"
     assert remote.calls == []
     assert destination.exists() or destination.is_symlink()
+
+
+@pytest.mark.parametrize("kind", ["direct", "symlink", "relative"])
+def test_destination_inside_cache_is_rejected_before_network(cache, remote, tmp_path, monkeypatch, kind):
+    cache.root.mkdir()
+    destination = cache.root / "out"
+    if kind == "symlink":
+        alias = tmp_path / "cache-alias"
+        alias.symlink_to(cache.root, target_is_directory=True)
+        destination = alias / "out"
+    elif kind == "relative":
+        monkeypatch.chdir(tmp_path)
+        destination = Path("cache/out")
+    with pytest.raises(source.ExampleError) as error:
+        cache.get(VERSION, name="hello-pt", destination=destination)
+    assert error.value.code == "INVALID_ARGS"
+    assert remote.calls == []
+    assert list(cache.root.iterdir()) == []
 
 
 def test_atomic_publish_refuses_destination_created_after_validation(cache, tmp_path, monkeypatch):
@@ -390,6 +421,17 @@ def test_cache_override_does_not_require_home(monkeypatch, tmp_path, variable):
 def test_missing_macos_rename_symbol_is_an_os_error(monkeypatch, tmp_path):
     monkeypatch.setattr(store.sys, "platform", "darwin")
     monkeypatch.setattr(store.ctypes, "CDLL", lambda *args, **kwargs: SimpleNamespace())
+    with pytest.raises(OSError) as error:
+        store._publish(tmp_path / "staging", tmp_path / "destination")
+    assert error.value.errno == errno.ENOTSUP
+
+
+@pytest.mark.parametrize("system", ["win32", "freebsd"])
+def test_unsupported_platform_is_rejected_before_loading_libc(monkeypatch, tmp_path, system):
+    monkeypatch.setattr(store.sys, "platform", system)
+    monkeypatch.setattr(
+        store.ctypes, "CDLL", lambda *args, **kwargs: pytest.fail("unsupported libc must not be loaded")
+    )
     with pytest.raises(OSError) as error:
         store._publish(tmp_path / "staging", tmp_path / "destination")
     assert error.value.errno == errno.ENOTSUP

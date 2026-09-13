@@ -76,6 +76,8 @@ def _remove(path):
 
 def _publish(source, destination):
     """Rename a complete directory without replacing even an empty destination."""
+    if sys.platform != "darwin" and not sys.platform.startswith("linux"):
+        raise OSError(errno.ENOTSUP, "Atomic example delivery is unsupported on this platform")
     libc = ctypes.CDLL(None, use_errno=True)
     if sys.platform == "darwin":
         if not hasattr(libc, "renamex_np"):
@@ -83,7 +85,7 @@ def _publish(source, destination):
         rename = libc.renamex_np
         rename.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
         result = rename(os.fsencode(source), os.fsencode(destination), 4)  # RENAME_EXCL
-    elif sys.platform.startswith("linux"):
+    else:
         args = (-100, os.fsencode(source), -100, os.fsencode(destination), 1)  # AT_FDCWD, RENAME_NOREPLACE
         argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
         if hasattr(libc, "renameat2"):
@@ -100,8 +102,6 @@ def _publish(source, destination):
             syscall.restype = ctypes.c_long
             syscall.argtypes = [ctypes.c_long, *argtypes]
             result = syscall(number, *args)
-    else:
-        raise OSError(errno.ENOTSUP, "Atomic example delivery is unsupported on this platform")
     if result:
         code = ctypes.get_errno()
         raise OSError(code, os.strerror(code), str(destination))
@@ -256,13 +256,6 @@ class ExampleStore:
             entry = metadata["entry"]
             destination = Path(destination or entry["destination"]).expanduser().absolute()
             self._check_destination(destination)
-            # Do not deliver into the cache itself, where retention/clear would remove user work.
-            if destination.resolve().is_relative_to(self.root.resolve()):
-                raise ExampleError(
-                    "INVALID_ARGS",
-                    "The destination must be outside the example cache.",
-                    "Choose --dest outside the cache.",
-                )
             provenance = {
                 "schema_version": 1,
                 "repository": REPOSITORY,
@@ -303,13 +296,19 @@ class ExampleStore:
             "Use --dest <new-directory>, or move the existing directory before retrying.",
         )
 
-    @classmethod
-    def _check_destination(cls, destination):
+    def _check_destination(self, destination):
         if destination.exists() or destination.is_symlink():
-            cls._conflict(destination)
+            self._conflict(destination)
         if not destination.parent.is_dir():
             raise ExampleError(
                 "EXAMPLE_DESTINATION_INVALID",
                 f"Destination parent does not exist: {destination.parent}",
                 "Create the parent directory or choose --dest under an existing directory.",
+            )
+        # Do not deliver into the cache itself, where retention/clear would remove user work.
+        if destination.resolve().is_relative_to(self.root.resolve()):
+            raise ExampleError(
+                "INVALID_ARGS",
+                "The destination must be outside the example cache.",
+                "Choose --dest outside the cache.",
             )
