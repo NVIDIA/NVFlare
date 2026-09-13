@@ -32,7 +32,6 @@ REPOSITORY = "NVIDIA/NVFlare"
 MAX_EXAMPLE_FILES = 5000
 MAX_EXAMPLE_BYTES = 128 * 1024 * 1024
 _REVISION = re.compile(r"[0-9a-f]{40}")
-_NVFLARE_PIN = re.compile(r"^\s*nvflare(?P<extras>\[[^\]]+\])?\s*[<>=!~@].*$", re.IGNORECASE)
 _parsers = {}
 _EXAMPLE_COMMANDS = [
     "nvflare examples list",
@@ -194,27 +193,6 @@ def _download_example(revision, source_path, destination):
     return tree_url
 
 
-def _unpin_nvflare_requirement(destination):
-    requirements = destination / "requirements.txt"
-    if not requirements.is_file():
-        return False
-    original = requirements.read_text(encoding="utf-8")
-    result = []
-    changed = False
-    for line in original.splitlines(keepends=True):
-        content = line.rstrip("\r\n")
-        match = _NVFLARE_PIN.fullmatch(content)
-        if match:
-            ending = line[len(content) :]
-            result.append(f"nvflare{match.group('extras') or ''}{ending}")
-            changed = True
-        else:
-            result.append(line)
-    if changed:
-        requirements.write_text("".join(result), encoding="utf-8")
-    return changed
-
-
 def get_example(version_info, catalog, *, name, destination=None):
     if name not in catalog:
         raise ExampleError(
@@ -239,7 +217,6 @@ def get_example(version_info, catalog, *, name, destination=None):
     except FileExistsError:
         _destination_exists(destination)
     tree_url = _download_example(revision, entry["source_path"], destination)
-    nvflare_requirement_unpinned = _unpin_nvflare_requirement(destination)
 
     readme = next(
         (candidate for candidate in (destination / "README.md", destination / "README.rst") if candidate.is_file()),
@@ -259,7 +236,6 @@ def get_example(version_info, catalog, *, name, destination=None):
         "source_path": entry["source_path"],
         "source_url": f"https://github.com/{REPOSITORY}/tree/{revision}/{entry['source_path']}",
         "nvflare_version": version_info["version"],
-        "nvflare_requirement_unpinned": nvflare_requirement_unpinned,
     }
     (destination / PROVENANCE_FILE).write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
     return {

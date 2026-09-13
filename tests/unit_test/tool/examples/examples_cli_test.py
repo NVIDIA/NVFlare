@@ -60,35 +60,21 @@ def test_get_records_downloaded_source_and_requirements(monkeypatch, tmp_path):
 
     assert (destination / "job.py").read_text() == "print('example')\n"
     assert (destination / "nested/client.py").read_text() == "# client\n"
-    assert (destination / "requirements.txt").read_text() == "nvflare[PT]\ntorch\n"
+    assert (destination / "requirements.txt").read_text() == "nvflare[PT]~=2.9.0rc\ntorch\n"
     assert result["readme"] == str(destination / "README.md")
     assert result["source_url"] == f"https://github.com/NVIDIA/NVFlare/tree/{REVISION}/{SOURCE_PATH}"
     provenance = json.loads((destination / examples_cli.PROVENANCE_FILE).read_text())
     assert provenance["revision"] == REVISION
     assert provenance["example"] == "hello-pt"
     assert provenance["source_path"] == SOURCE_PATH
-    assert provenance["nvflare_requirement_unpinned"] is True
 
 
 def test_missing_requirements_remains_missing(monkeypatch, tmp_path):
     _mock_download(monkeypatch, requirements=None)
 
-    result = examples_cli.get_example(VERSION, CATALOG, name="hello-pt", destination=tmp_path / "hello-pt")
+    examples_cli.get_example(VERSION, CATALOG, name="hello-pt", destination=tmp_path / "hello-pt")
 
     assert not (tmp_path / "hello-pt/requirements.txt").exists()
-    assert result["nvflare_requirement_unpinned"] is False
-
-
-def test_nvflare_requirement_is_unpinned_without_losing_extras(tmp_path):
-    destination = tmp_path / "example"
-    destination.mkdir()
-    requirements = destination / "requirements.txt"
-    requirements.write_text("nvflare[HE]~=2.7.2rc\ntenseal==0.3.16\n")
-
-    changed = examples_cli._unpin_nvflare_requirement(destination)
-
-    assert changed is True
-    assert requirements.read_text() == "nvflare[HE]\ntenseal==0.3.16\n"
 
 
 def test_rst_readme_is_reported(monkeypatch, tmp_path):

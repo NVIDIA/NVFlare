@@ -25,13 +25,28 @@ available without a Python code change.
 Get an example
 ==============
 
-Download an example, then follow its README for dependency installation, data
-download, data preparation, model preparation, and other example-specific
+Install the optional dependency group required by the example on the same
+NVFlare distribution already in use. For example, use one of these forms for
+PyTorch support:
+
+.. code-block:: bash
+
+   # Stable installation
+   python -m pip install "nvflare[PT]"
+
+   # Nightly installation
+   python -m pip install "nvflare-nightly[PT]"
+
+   # Editable source installation, run from the NVFlare checkout
+   python -m pip install -e ".[PT]"
+
+Replace ``PT`` with another available group such as ``HE``, ``SKLEARN``, or
+``TRACKING`` when the example requires it. Download the example, then follow
+its README for remaining dependencies, data download, preparation, and run
 steps:
 
 .. code-block:: bash
 
-   python -m pip install "nvflare[PT]"
    nvflare examples get <example-name>
    cd <example-name>
 
@@ -72,13 +87,14 @@ destination before retrying.
 
 The downloaded directory contains the maintained files from the source
 directory selected by the catalog. The command does not create a root
-``requirements.txt`` when the source has none. If a root requirements file pins
-``nvflare`` to an older version, the downloaded copy removes the version
-constraint while preserving extras such as ``nvflare[HE]``. Follow the README
-to find the requirements file appropriate for that example. A small
-``.nvflare-example.json`` file records the example name, installed NVFlare
-version, Git revision, canonical source path, and whether a root NVFlare
-requirement was unpinned.
+``requirements.txt`` when the source has none, and it does not rewrite root or
+nested requirements files. Follow the README to find the requirements file
+appropriate for that example. Before installing it, check whether it names an
+NVFlare distribution or version different from the one already installed; if
+so, retain the current NVFlare installation and install only the remaining
+example dependencies. A small ``.nvflare-example.json`` file records the
+example name, installed NVFlare version, Git revision, and canonical source
+path.
 
 Automation
 ==========
