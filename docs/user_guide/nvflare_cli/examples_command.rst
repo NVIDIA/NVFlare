@@ -21,7 +21,7 @@ The catalog covers the primary framework examples from ``examples/hello-world``:
      - Preparation and run
    * - ``hello-pt``
      - PyTorch
-     - ``python job.py``
+     - Install ``requirements.txt``; run ``python job.py``
    * - ``hello-numpy``
      - NumPy
      - Install ``requirements.txt``; run ``python job.py``
@@ -51,6 +51,7 @@ Install NVFlare with its PyTorch dependencies, copy the example, and run it:
    python -m pip install "nvflare[PT]"
    nvflare examples get hello-pt
    cd hello-pt
+   pip install -r requirements.txt
    python job.py
 
 Use another catalog name in the same command. The completion output prints its

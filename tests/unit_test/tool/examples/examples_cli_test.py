@@ -93,7 +93,7 @@ def test_cli_copies_exact_canonical_example_and_records_version(monkeypatch, cap
     assert output["status"] == "ok"
     assert output["data"]["source"] == "bundled"
     assert output["data"]["nvflare_version"] == VERSION["version"]
-    assert output["data"]["setup_commands"] == []
+    assert output["data"]["setup_commands"] == [["pip", "install", "-r", "requirements.txt"]]
     assert output["data"]["next_command"] == ["python", "job.py"]
     delivered = _files(destination)
     provenance = json.loads((destination / examples_cli.PROVENANCE_FILE).read_bytes())
@@ -135,6 +135,7 @@ def test_default_destination_and_human_next_step(monkeypatch, capsys, tmp_path):
     cli.run("nvflare")
     output = capsys.readouterr().out
     assert f"Created bundled example: {tmp_path / 'hello-pt'}" in output
+    assert "pip install -r requirements.txt" in output
     assert "python job.py" in output
     assert (tmp_path / "hello-pt/job.py").is_file()
 

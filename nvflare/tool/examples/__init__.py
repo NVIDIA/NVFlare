@@ -16,7 +16,7 @@ EXAMPLE_CATALOG = {
     "hello-pt": {
         "source_path": "examples/hello-world/hello-pt",
         "required_extra": "PT",
-        "setup_commands": (),
+        "setup_commands": (("pip", "install", "-r", "requirements.txt"),),
         "next_command": ("python", "job.py"),
         "files": (
             "README.md",
