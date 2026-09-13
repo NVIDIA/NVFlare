@@ -32,9 +32,7 @@ REPOSITORY = "NVIDIA/NVFlare"
 MAX_EXAMPLE_FILES = 5000
 MAX_EXAMPLE_BYTES = 128 * 1024 * 1024
 _REVISION = re.compile(r"[0-9a-f]{40}")
-_NVFLARE_REQUIREMENT = re.compile(
-    r"^\s*nvflare(?:[-_.]nightly)?(?:\s*\[[^\]]+\])?(?=\s*(?:[<>=!~;@#]|$))", re.IGNORECASE
-)
+_NVFLARE_REQUIREMENT = re.compile(r"^\s*nvflare(?:[-_.]+nightly)?(?![-_.a-z0-9])", re.IGNORECASE)
 _parsers = {}
 _EXAMPLE_COMMANDS = [
     "nvflare examples list",

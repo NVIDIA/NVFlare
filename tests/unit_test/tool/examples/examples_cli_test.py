@@ -94,13 +94,21 @@ def test_missing_requirements_remains_missing(monkeypatch, tmp_path):
 
 
 def test_nested_nvflare_requirement_is_reported_without_modification(monkeypatch, tmp_path):
-    requirement = "nvflare-nightly[HE]>=2.10.0rc\ntenseal\n"
-    _mock_download(monkeypatch, requirements="torch\n", nested_requirements=requirement)
+    requirement = "nvflare_nightly[HE] \\\n    >=2.10.0rc\nnvflare-helper==1.0\n"
+    _mock_download(monkeypatch, requirements="nvflare[PT] (>=2.10)\ntorch\n", nested_requirements=requirement)
 
     result = examples_cli.get_example(VERSION, CATALOG, name="hello-pt", destination=tmp_path / "hello-pt")
 
     assert (tmp_path / "hello-pt/nested/requirements.txt").read_text() == requirement
-    assert result["warnings"][0]["paths"] == ["nested/requirements.txt"]
+    assert result["warnings"][0]["paths"] == ["nested/requirements.txt", "requirements.txt"]
+
+
+def test_similarly_named_distribution_does_not_trigger_warning(monkeypatch, tmp_path):
+    _mock_download(monkeypatch, requirements="nvflare-helper==1.0\n")
+
+    result = examples_cli.get_example(VERSION, CATALOG, name="hello-pt", destination=tmp_path / "hello-pt")
+
+    assert result["warnings"] == []
 
 
 def test_rst_readme_is_reported(monkeypatch, tmp_path):
