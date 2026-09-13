@@ -17,6 +17,7 @@ import errno
 import hashlib
 import json
 import os
+import platform
 import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -360,7 +361,12 @@ def test_linux_without_libc_wrapper_uses_noreplace_syscall(monkeypatch, tmp_path
         ctypes.set_errno(previous_errno)
 
 
-@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="requires the Linux kernel")
+@pytest.mark.skipif(
+    not sys.platform.startswith("linux")
+    or platform.machine() not in {"x86_64", "aarch64"}
+    or ctypes.sizeof(ctypes.c_void_p) != 8,
+    reason="requires 64-bit x86_64 or aarch64 Linux",
+)
 def test_native_linux_fallback_delivers_and_refuses_existing_destination(monkeypatch, tmp_path):
     libc = ctypes.CDLL(None, use_errno=True)
     monkeypatch.setattr(store.ctypes, "CDLL", lambda *args, **kwargs: SimpleNamespace(syscall=libc.syscall))
