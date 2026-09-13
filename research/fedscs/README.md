@@ -1,252 +1,124 @@
 # FedSCS: Robust Federated Learning via Stable Cosine Similarity
 
-**Paper Title:**
-FedSCS: Robust Federated Learning via Stable Cosine Similarity
+🏆 Award: This work received the Distinguished Conference Paper Award at the IEEE ICCST 2025.
 
-**Authors:**
-Rakib Ul Haque and Panagiotis (Panos P.) Markopoulos
+FedSCS is a robust federated aggregation method that assigns adaptive weights to client updates using **peer-update similarity** and **temporal stability**. It is intended for federated learning settings with heterogeneous or potentially unreliable client updates.
 
-**Affiliation:**
-The University of Texas at San Antonio
+## Motivation
 
-🏆 This paper received the **Distinguished Conference Paper Award** at **IEEE ICCST 2025**.
+Standard FedAvg primarily weights clients according to local dataset size. When client data are non-IID or an update is substantially different from the updates of other clients, this can give an inconsistent update undesirable influence on the global model.
 
-## Overview
+FedSCS addresses this by comparing each client update with the aggregate direction of its peers and tracking the client's similarity across communication rounds. Updates that are consistently aligned with their peers receive higher aggregation weights.
 
-FedSCS (Federated Learning with Stable Cosine Similarity) is a robust federated learning aggregation method that evaluates client model updates based on their cosine similarity with the aggregated updates of peer clients.
+FedSCS does **not** require access to clients' raw training data and should not be interpreted as providing guaranteed malicious-client detection.
 
-The method maintains a historical stability score for each client and uses the resulting scores to determine aggregation weights across communication rounds.
+## FedSCS
 
-This directory contains an NVIDIA FLARE implementation of FedSCS using PyTorch and CIFAR-10.
+For client (i) at round (t), FedSCS:
 
-## Directory Structure
+1. Computes the peer-consensus update from the other participating clients.
+2. Computes the non-negative cosine similarity between the client update and peer consensus.
+3. Maintains a rolling similarity score across rounds.
+4. Penalizes rapidly changing similarity through a stability term.
+5. Normalizes the resulting scores into aggregation weights.
+6. Aggregates client updates using these weights.
+
+The method requires (O(Nd)) operations for (N) participating clients and update dimension (d), without constructing a pairwise client-similarity matrix.
+
+## NVIDIA FLARE Integration
+
+This example implements FedSCS as a **custom NVIDIA FLARE model aggregator** and uses the standard `FedAvgRecipe` for the federated workflow.
+
+```text
+FedAvgRecipe
+     │
+     ├── Client 1 ──┐
+     ├── Client 2 ──┤
+     ├── Client 3 ──┤
+     ├── Client 4 ──┤── DIFF updates
+     └── Client 5 ──┘
+                    │
+             FedSCSAggregator
+                    │
+          Peer similarity + stability
+                    │
+             Adaptive weights
+                    │
+               Global model
+```
+
+Model updates are transferred using NVIDIA FLARE's `DIFF` transfer type.
+
+## Example Dataset
+
+The example uses CIFAR-10 with five simulated clients. The dataset is prepared locally and is not included in the repository.
+
+The example can be configured to study heterogeneous client updates, including a client with corrupted/noisy training data, while the standard CIFAR-10 test set is used for evaluation.
+
+## Project Structure
 
 ```text
 research/fedscs/
-├── client.py
-├── job.py
-├── prepare_data.sh
-├── requirements.txt
-├── train.py
 ├── README.md
+├── requirements.txt
+├── job.py
+├── client.py
+├── prepare_data.sh
 └── src/
-    ├── fedscs.py
     ├── fedscs_aggregator.py
-    ├── fedscs_controller.py
     └── model.py
 ```
 
-The CIFAR-10 dataset is **not included in this repository**. It is downloaded and prepared locally using `prepare_data.sh`.
-
 ## Requirements
 
-The example requires:
-
 * Python 3.9+
+* NVIDIA FLARE 2.9.0rc2
 * PyTorch
 * torchvision
-* NVIDIA FLARE
-* CUDA-enabled GPU (optional)
+* NumPy
 
-Install the Python dependencies with:
+Install the dependencies with:
 
 ```bash
 pip install -r research/fedscs/requirements.txt
 ```
 
-If you are running the example from the NVFlare repository root:
+## Prepare CIFAR-10
 
-```bash
-cd /path/to/NVFlare
-```
-
-## 1. Prepare the CIFAR-10 Dataset
-
-Before running the training example, download and extract the CIFAR-10 dataset:
+From the NVFlare repository root:
 
 ```bash
 ./research/fedscs/prepare_data.sh
 ```
 
-The script downloads the official CIFAR-10 Python dataset and extracts it to:
+The preparation script downloads CIFAR-10 and validates the required dataset files before reporting successful preparation.
 
-```text
-research/fedscs/data/cifar-10-batches-py/
-```
-
-The script can be run again safely. If the dataset directory already exists, it will not download the dataset again.
-
-You can verify that the dataset was prepared successfully with:
+## Run the Example
 
 ```bash
-ls research/fedscs/data/cifar-10-batches-py
+cd research/fedscs
+python job.py
 ```
 
-The directory should contain the CIFAR-10 batch files, including:
+The example runs a simulated federated learning experiment using the standard NVIDIA FLARE Recipe workflow and the custom `FedSCSAggregator`.
+
+## Limitations
+
+FedSCS relies on the assumption that peer consensus provides a useful reference for evaluating client updates. With only two participating clients, peer-consensus discrimination is degenerate because each client has only one peer. The example therefore uses at least three clients.
+
+The CIFAR-10 experiment is a controlled demonstration and does not represent all forms of non-IID data, adversarial behavior, or client heterogeneity.
+
+## Citation
+
+If you use FedSCS in academic work, please cite:
 
 ```text
-batches.meta
-data_batch_1
-data_batch_2
-data_batch_3
-data_batch_4
-data_batch_5
-test_batch
+Rakib Ul Haque and Panagiotis (Panos P.) Markopoulos,
+"Robust Federated Learning via Stable Cosine Similarity,"
+IEEE ICCST, 2025.
 ```
 
-## 2. Run Standalone Training
+## License
 
-A standalone PyTorch training run can be used to verify that the CIFAR-10 data, model, and training environment are configured correctly.
-
-From the NVFlare repository root, run:
-
-```bash
-python research/fedscs/train.py
-```
-
-The script:
-
-1. Loads the CIFAR-10 training and test datasets.
-2. Creates the PyTorch data loaders.
-3. Initializes the CIFAR-10 CNN model.
-4. Performs one local training epoch.
-5. Evaluates the trained model on the CIFAR-10 test set.
-
-The expected output includes the training loss and test accuracy, for example:
-
-```text
-Site: site-1
-Device: cuda
-Epoch 1/1 - loss: ...
-Test accuracy: ...%
-```
-
-## 3. Run FedSCS with NVIDIA FLARE
-
-After verifying standalone training, run the complete NVIDIA FLARE simulation:
-
-```bash
-python research/fedscs/job.py
-```
-
-The example uses the NVIDIA FLARE simulator with:
-
-* **2 simulated clients**
-* **2 federated communication rounds**
-* **CIFAR-10**
-* **PyTorch**
-* **FedSCS aggregation**
-
-The simulation creates two independent NVFlare client processes. Each client creates its own training and test `DataLoader` and performs local training before sending its model parameters to the server.
-
-The server uses the `FedSCSAggregator` to calculate client stability scores and aggregation weights before producing the next global model.
-
-## 4. Expected Workflow
-
-The complete workflow is:
-
-```bash
-cd /path/to/NVFlare
-
-pip install -r research/fedscs/requirements.txt
-
-./research/fedscs/prepare_data.sh
-
-python research/fedscs/train.py
-
-python research/fedscs/job.py
-```
-
-The standalone training step is optional but recommended as a sanity check before launching the federated simulation.
-
-## 5. Output
-
-The NVFlare simulation stores its workspace and results under:
-
-```text
-/tmp/nvflare/fedscs/
-```
-
-The example job is configured with the workspace:
-
-```text
-/tmp/nvflare/fedscs
-```
-
-and the job name:
-
-```text
-fedscs_cifar10
-```
-
-## 6. Implementation
-
-The main FedSCS aggregation logic is implemented in:
-
-```text
-research/fedscs/src/fedscs_aggregator.py
-```
-
-The implementation:
-
-1. Receives client model parameters.
-2. Computes each client's model update relative to the current global model.
-3. Computes the cosine similarity between each client update and the sum of peer-client updates.
-4. Clips negative similarity scores to zero.
-5. Updates the historical stability score.
-6. Converts stability scores into normalized aggregation weights.
-7. Produces the aggregated global model.
-
-The NVFlare controller integration is implemented in:
-
-```text
-research/fedscs/src/fedscs_controller.py
-```
-
-The PyTorch model is defined in:
-
-```text
-research/fedscs/src/model.py
-```
-
-The NVFlare client logic is implemented in:
-
-```text
-research/fedscs/client.py
-```
-
-and the simulation job is configured in:
-
-```text
-research/fedscs/job.py
-```
-
-## 7. Dataset Configuration
-
-The current example uses the standard CIFAR-10 dataset for the simulated clients.
-
-The data-loading implementation is located in:
-
-```text
-research/fedscs/train.py
-```
-
-The `site_id` is passed to the data-loading function so that client-specific data partitioning can be added in future extensions.
-
-## 8. Citation
-
-If you use FedSCS in your research, please cite the corresponding paper:
-
-```bibtex
-@inproceedings{haque2025fedscs,
-  title={FedSCS: Robust Federated Learning via Stable Cosine Similarity},
-  author={Haque, Rakib Ul and Markopoulos, Panagiotis},
-  booktitle={IEEE International Conference on Communications, Control, and Technology (ICCST)},
-  year={2025}
-}
-```
-
-## Acknowledgment
-
-This implementation is provided as a research example for NVIDIA FLARE and is intended to facilitate experimentation with robust federated learning aggregation.
+This research example follows the licensing terms of the NVIDIA FLARE repository.
 

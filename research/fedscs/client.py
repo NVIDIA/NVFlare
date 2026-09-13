@@ -1,168 +1,355 @@
-import logging
-import tarfile
-from pathlib import Path
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""CIFAR-10 client for the FedSCS NVIDIA FLARE example."""
+
+import argparse
+import copy
+import os
 
 import torch
+import torch.nn as nn
+import torch.optim as optim
+from src.model import SimpleCNN
+from torch.utils.data import DataLoader, TensorDataset
+
 import nvflare.client as flare
+from nvflare.app_common.abstract.fl_model import ParamsType
 
-from src.model import CIFAR10CNN
-import train
-from train import get_dataloaders, train_one_round, evaluate
+DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-logger = logging.getLogger(__name__)
-
-
-def prepare_cifar10_data():
-    data_dir = Path(train.__file__).resolve().parent / "data"
-    archive = data_dir / "cifar-10-python.tar.gz"
-    dataset_dir = data_dir / "cifar-10-batches-py"
-
-    required_files = [
-        "data_batch_1",
-        "data_batch_2",
-        "data_batch_3",
-        "data_batch_4",
-        "data_batch_5",
-        "test_batch",
-        "batches.meta",
-    ]
-
-    if all((dataset_dir / filename).is_file() for filename in required_files):
-        logger.info("CIFAR-10 dataset already prepared")
-        return
-
-    if not archive.is_file():
-        raise FileNotFoundError(
-            f"CIFAR-10 archive not found: {archive}. "
-            "Run prepare_data.sh first."
-        )
-
-    logger.info("Extracting CIFAR-10 dataset to %s", data_dir)
-
-    with tarfile.open(archive, "r:gz") as tar:
-        tar.extractall(data_dir)
-
-    missing_files = [
-        filename
-        for filename in required_files
-        if not (dataset_dir / filename).is_file()
-    ]
-
-    if missing_files:
-        raise RuntimeError(
-            f"CIFAR-10 extraction incomplete. "
-            f"Missing files: {missing_files}"
-        )
-
-    logger.info("CIFAR-10 dataset prepared")
+if torch.cuda.is_available():
+    torch.backends.cudnn.benchmark = True
 
 
-def load_model_parameters(model, params):
-    state_dict = model.state_dict()
+def load_client_dataset(data_dir, site_name):
+    """Load the prepared dataset for one client."""
+    client_id = site_name.split("-")[-1]
 
-    for key in state_dict:
-        if key not in params:
-            raise KeyError(f"Missing model parameter: {key}")
-
-        value = params[key]
-
-        if not torch.is_tensor(value):
-            value = torch.as_tensor(value)
-
-        state_dict[key] = value.to(
-            device=state_dict[key].device,
-            dtype=state_dict[key].dtype,
-        )
-
-    model.load_state_dict(state_dict)
-
-
-def get_model_parameters(model):
-    return {
-        key: value.detach().cpu()
-        for key, value in model.state_dict().items()
-    }
-
-
-def main():
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(levelname)s - %(message)s",
+    client_file = os.path.join(
+        data_dir,
+        "clients",
+        f"client_{client_id}.pt",
     )
 
-    device = torch.device(
-        "cuda" if torch.cuda.is_available() else "cpu"
+    if not os.path.isfile(client_file):
+        raise FileNotFoundError(f"Client dataset not found: {client_file}")
+
+    data = torch.load(
+        client_file,
+        weights_only=True,
     )
 
-    logger.info("Starting FedSCS NVFlare client")
-    logger.info("Device: %s", device)
+    return TensorDataset(
+        data["images"],
+        data["labels"],
+    )
+
+
+def load_test_dataset(data_dir):
+    """Load the common clean CIFAR-10 test dataset."""
+    test_file = os.path.join(
+        data_dir,
+        "test.pt",
+    )
+
+    if not os.path.isfile(test_file):
+        raise FileNotFoundError(f"Test dataset not found: {test_file}")
+
+    data = torch.load(
+        test_file,
+        weights_only=True,
+    )
+
+    return TensorDataset(
+        data["images"],
+        data["labels"],
+    )
+
+
+def evaluate(model, data_loader, criterion):
+    """Evaluate a model and return loss and accuracy."""
+    model.eval()
+
+    total_loss = 0.0
+    correct = 0
+    total = 0
+
+    with torch.no_grad():
+        for images, labels in data_loader:
+            images = images.to(DEVICE)
+            labels = labels.to(DEVICE)
+
+            outputs = model(images)
+            loss = criterion(outputs, labels)
+
+            total_loss += loss.item() * labels.size(0)
+
+            predictions = outputs.argmax(dim=1)
+
+            total += labels.size(0)
+            correct += (predictions == labels).sum().item()
+
+    if total == 0:
+        return 0.0, 0.0
+
+    return total_loss / total, correct / total
+
+
+def compute_model_diff(local_model, global_model):
+    """Compute local model minus received global model."""
+    local_state = local_model.state_dict()
+    global_state = global_model.state_dict()
+
+    model_diff = {}
+
+    for name in local_state:
+        model_diff[name] = local_state[name].detach().cpu() - global_state[name].detach().cpu()
+
+    return model_diff
+
+
+def train_one_round(
+    model,
+    train_loader,
+    optimizer,
+    criterion,
+    local_epochs,
+):
+    """Train the local model for one FL round."""
+    model.train()
+
+    total_loss = 0.0
+    total_batches = 0
+
+    for _ in range(local_epochs):
+        for images, labels in train_loader:
+            images = images.to(DEVICE)
+            labels = labels.to(DEVICE)
+
+            optimizer.zero_grad()
+
+            outputs = model(images)
+            loss = criterion(outputs, labels)
+
+            loss.backward()
+            optimizer.step()
+
+            total_loss += loss.item()
+            total_batches += 1
+
+    if total_batches == 0:
+        return 0.0
+
+    return total_loss / total_batches
+
+
+def main(args):
+    """Run the NVFLARE client."""
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+
+    data_dir = os.path.join(
+        script_dir,
+        "data",
+    )
 
     flare.init()
 
-    try:
-        site_name = flare.get_site_name()
-        logger.info("Site: %s", site_name)
+    site_name = flare.get_site_name()
 
-        prepare_cifar10_data()
+    print("=" * 60)
+    print(f"Starting FedSCS client: {site_name}")
+    print(f"Device: {DEVICE}")
+    print("=" * 60)
 
-        train_loader, test_loader = get_dataloaders(
-            site_name,
-            batch_size=128,
+    train_dataset = load_client_dataset(
+        data_dir,
+        site_name,
+    )
+
+    test_dataset = load_test_dataset(
+        data_dir,
+    )
+
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=args.batch_size,
+        shuffle=True,
+        num_workers=args.num_workers,
+        pin_memory=torch.cuda.is_available(),
+    )
+
+    test_loader = DataLoader(
+        test_dataset,
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=args.num_workers,
+        pin_memory=torch.cuda.is_available(),
+    )
+
+    print(f"{site_name}: " f"{len(train_dataset)} training samples")
+
+    print(f"{site_name}: " f"{len(test_dataset)} test samples")
+
+    model = SimpleCNN().to(DEVICE)
+
+    criterion = nn.CrossEntropyLoss()
+
+    optimizer = optim.SGD(
+        model.parameters(),
+        lr=args.lr,
+        momentum=0.9,
+    )
+
+    while flare.is_running():
+        # ---------------------------------------------------------------
+        # Receive the current global model.
+        # ---------------------------------------------------------------
+
+        input_model = flare.receive()
+
+        current_round = input_model.current_round
+
+        print("")
+        print("=" * 60)
+        print(f"{site_name}: FL Round {current_round}")
+        print("=" * 60)
+
+        # ---------------------------------------------------------------
+        # Load global model.
+        # ---------------------------------------------------------------
+
+        model.load_state_dict(
+            input_model.params,
+            strict=True,
         )
 
-        while flare.is_running():
-            input_model = flare.receive()
+        # Keep an immutable copy of the received global model.
+        global_model = copy.deepcopy(model)
 
-            if input_model is None:
-                logger.info("No more model received. Exiting.")
-                break
+        global_model.eval()
 
-            logger.info(
-                "Received global model for round %s",
-                input_model.current_round,
-            )
+        for parameter in global_model.parameters():
+            parameter.requires_grad = False
 
-            model = CIFAR10CNN().to(device)
+        # ---------------------------------------------------------------
+        # Evaluate received global model on the clean test set.
+        # ---------------------------------------------------------------
 
-            if input_model.params is not None:
-                load_model_parameters(
-                    model,
-                    input_model.params,
-                )
+        global_loss, global_accuracy = evaluate(
+            global_model,
+            test_loader,
+            criterion,
+        )
 
-            train_one_round(
-                model=model,
-                train_loader=train_loader,
-                device=device,
-                epochs=1,
-                learning_rate=0.001,
-            )
+        print(f"{site_name}: " f"Global test loss = {global_loss:.4f}, " f"accuracy = {100.0 * global_accuracy:.2f}%")
 
-            accuracy = evaluate(
-                model=model,
-                test_loader=test_loader,
-                device=device,
-            )
+        # ---------------------------------------------------------------
+        # Local training.
+        # ---------------------------------------------------------------
 
-            output_model = flare.FLModel(
-                params=get_model_parameters(model),
-                metrics={"accuracy": accuracy},
-                start_round=input_model.start_round,
-                current_round=input_model.current_round,
-            )
+        average_loss = train_one_round(
+            model=model,
+            train_loader=train_loader,
+            optimizer=optimizer,
+            criterion=criterion,
+            local_epochs=args.local_epochs,
+        )
 
-            logger.info(
-                "Sending local model for round %s",
-                input_model.current_round,
-            )
+        print(f"{site_name}: " f"Average local loss = " f"{average_loss:.4f}")
 
-            flare.send(output_model)
+        # ---------------------------------------------------------------
+        # Evaluate locally trained model.
+        # ---------------------------------------------------------------
 
-    finally:
-        flare.shutdown()
+        local_loss, local_accuracy = evaluate(
+            model,
+            test_loader,
+            criterion,
+        )
 
-    logger.info("FedSCS client finished")
+        print(f"{site_name}: " f"Local test loss = {local_loss:.4f}, " f"accuracy = {100.0 * local_accuracy:.2f}%")
+
+        # ---------------------------------------------------------------
+        # Compute DIFF:
+        #
+        # Delta w_i = w_i(local) - w(global)
+        # ---------------------------------------------------------------
+
+        model_diff = compute_model_diff(
+            model,
+            global_model,
+        )
+
+        diff_norm = torch.sqrt(sum(torch.sum(value**2) for value in model_diff.values()))
+
+        print(f"{site_name}: " f"Update norm = " f"{diff_norm.item():.6f}")
+
+        # ---------------------------------------------------------------
+        # Send DIFF update to NVFLARE.
+        # ---------------------------------------------------------------
+
+        output_model = flare.FLModel(
+            params=model_diff,
+            params_type=ParamsType.DIFF,
+            metrics={
+                "accuracy": local_accuracy,
+                "loss": local_loss,
+                "global_accuracy": global_accuracy,
+                "global_loss": global_loss,
+                "train_loss": average_loss,
+                "diff_norm": diff_norm.item(),
+            },
+            meta={"client_name": site_name, "NUM_STEPS_CURRENT_ROUND": (args.local_epochs * len(train_loader))},
+        )
+
+        flare.send(output_model)
+
+        print(f"{site_name}: " f"Finished round {current_round}")
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+        "--local_epochs",
+        type=int,
+        default=4,
+        help="Number of local training epochs.",
+    )
+
+    parser.add_argument(
+        "--lr",
+        type=float,
+        default=0.01,
+        help="Local SGD learning rate.",
+    )
+
+    parser.add_argument(
+        "--batch_size",
+        type=int,
+        default=64,
+        help="Training batch size.",
+    )
+
+    parser.add_argument(
+        "--num_workers",
+        type=int,
+        default=2,
+        help="Number of DataLoader workers.",
+    )
+
+    args = parser.parse_args()
+
+    main(args)

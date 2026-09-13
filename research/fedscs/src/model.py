@@ -1,39 +1,45 @@
-"""
-CIFAR-10 model used by the FedSCS NVFlare research example.
-"""
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
-import torch
+"""CNN model used by the FedSCS CIFAR-10 example."""
+
 import torch.nn as nn
 
 
-class CIFAR10CNN(nn.Module):
-    """Small CNN for CIFAR-10."""
+class SimpleCNN(nn.Module):
+    """Small CNN for CIFAR-10 classification."""
 
-    def __init__(self, num_classes: int = 10):
+    def __init__(self):
         super().__init__()
 
-        self.conv1 = nn.Conv2d(3, 6, kernel_size=5)
-        self.conv2 = nn.Conv2d(6, 16, kernel_size=5)
+        self.features = nn.Sequential(
+            nn.Conv2d(3, 32, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2),
+            nn.Conv2d(32, 64, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2),
+        )
 
-        self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.classifier = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(64 * 8 * 8, 128),
+            nn.ReLU(),
+            nn.Linear(128, 10),
+        )
 
-        self.fc1 = nn.Linear(16 * 5 * 5, 120)
-        self.fc2 = nn.Linear(120, 84)
-        self.fc3 = nn.Linear(84, num_classes)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.pool(torch.relu(self.conv1(x)))
-        x = self.pool(torch.relu(self.conv2(x)))
-
-        x = torch.flatten(x, 1)
-
-        x = torch.relu(self.fc1(x))
-        x = torch.relu(self.fc2(x))
-        x = self.fc3(x)
-
-        return x
-
-
-def create_model(num_classes: int = 10) -> CIFAR10CNN:
-    """Create a new CIFAR-10 model."""
-    return CIFAR10CNN(num_classes=num_classes)
+    def forward(self, x):
+        """Perform a forward pass."""
+        x = self.features(x)
+        return self.classifier(x)
