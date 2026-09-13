@@ -25,6 +25,7 @@ from nvflare.tool.examples import examples_cli
 VERSION = {"version": "2.10.0", "full-revisionid": "a" * 40, "dirty": False, "error": None}
 REPO_ROOT = Path(__file__).resolve().parents[4]
 SOURCE = REPO_ROOT / "examples/hello-world/hello-pt"
+FILES = examples_cli.HELLO_PT_FILES
 
 
 @pytest.fixture(autouse=True)
@@ -35,7 +36,16 @@ def reset_output_mode():
 
 
 def _files(root):
-    return {path.relative_to(root).as_posix(): path.read_bytes() for path in root.rglob("*") if path.is_file()}
+    return {filename: (root / filename).read_bytes() for filename in FILES}
+
+
+def _all_file_names(root):
+    return {path.relative_to(root).as_posix() for path in root.rglob("*") if path.is_file()}
+
+
+@pytest.fixture(autouse=True)
+def use_canonical_example_source(monkeypatch):
+    monkeypatch.setattr(examples_cli, "_example_source", lambda name: SOURCE)
 
 
 @pytest.mark.parametrize("command", [[], ["get"]])
@@ -69,8 +79,9 @@ def test_cli_copies_exact_canonical_example_and_records_version(monkeypatch, cap
     assert output["data"]["nvflare_version"] == VERSION["version"]
     assert output["data"]["next_command"] == ["python", "job.py"]
     delivered = _files(destination)
-    provenance = json.loads(delivered.pop(examples_cli.PROVENANCE_FILE))
+    provenance = json.loads((destination / examples_cli.PROVENANCE_FILE).read_bytes())
     assert delivered == original
+    assert _all_file_names(destination) == set(FILES) | {examples_cli.PROVENANCE_FILE}
     assert provenance == {
         "schema_version": 1,
         "example": "hello-pt",
@@ -83,7 +94,9 @@ def test_cli_copies_exact_canonical_example_and_records_version(monkeypatch, cap
 
 def test_copy_uses_example_allowlist(monkeypatch, tmp_path):
     source = tmp_path / "source"
-    shutil.copytree(SOURCE, source)
+    source.mkdir()
+    for filename in FILES:
+        shutil.copy2(SOURCE / filename, source / filename)
     (source / "__pycache__").mkdir()
     (source / "__pycache__/client.cpython-313.pyc").write_bytes(b"generated")
     (source / "credentials.txt").write_text("local")
@@ -92,9 +105,8 @@ def test_copy_uses_example_allowlist(monkeypatch, tmp_path):
 
     examples_cli.get_example(VERSION, name="hello-pt", destination=destination)
 
-    delivered = _files(destination)
-    delivered.pop(examples_cli.PROVENANCE_FILE)
-    assert delivered == _files(SOURCE)
+    assert _files(destination) == _files(SOURCE)
+    assert _all_file_names(destination) == set(FILES) | {examples_cli.PROVENANCE_FILE}
 
 
 def test_default_destination_and_human_next_step(monkeypatch, capsys, tmp_path):
@@ -157,34 +169,17 @@ def test_destination_created_during_copy_is_untouched(monkeypatch, tmp_path):
     assert (destination / "original").read_text() == "original"
 
 
-def test_destination_created_after_check_is_not_replaced(monkeypatch, tmp_path):
-    destination = tmp_path / "copied"
-    mkdir = Path.mkdir
-
-    def race(path, *args, **kwargs):
-        if path == destination:
-            mkdir(path)
-        mkdir(path, *args, **kwargs)
-
-    monkeypatch.setattr(Path, "mkdir", race)
-
-    with pytest.raises(examples_cli.ExampleError) as error:
-        examples_cli.get_example(VERSION, name="hello-pt", destination=destination)
-
-    assert error.value.code == "EXAMPLE_DESTINATION_EXISTS"
-    assert not list(destination.iterdir())
-
-
 @pytest.mark.parametrize("failure", [OSError("disk full"), KeyboardInterrupt()])
 def test_failed_copy_leaves_removable_destination(monkeypatch, tmp_path, failure):
     destination = tmp_path / "copied"
 
-    def fail(source, target, filenames):
+    def fail(source, target, **kwargs):
         assert target == destination
+        target.mkdir()
         (target / "partial").write_text("partial")
         raise failure
 
-    monkeypatch.setattr(examples_cli, "_copy_resource", fail)
+    monkeypatch.setattr(shutil, "copytree", fail)
     with pytest.raises(type(failure)):
         examples_cli.get_example(VERSION, name="hello-pt", destination=destination)
     assert (destination / "partial").read_text() == "partial"

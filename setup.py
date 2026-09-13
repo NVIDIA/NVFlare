@@ -22,17 +22,17 @@ from setuptools import find_packages, setup
 ROOT_DIR = os.path.abspath(os.path.dirname(__file__)) if "__file__" in globals() else os.getcwd()
 
 
-def load_local_versioneer():
-    versioneer_path = os.path.join(ROOT_DIR, "versioneer.py")
-    spec = importlib.util.spec_from_file_location("nvflare_local_versioneer", versioneer_path)
+def load_local_module(name, relative_path):
+    module_path = os.path.join(ROOT_DIR, relative_path)
+    spec = importlib.util.spec_from_file_location(name, module_path)
     if spec is None or spec.loader is None:
-        raise RuntimeError(f"Failed to load versioneer from {versioneer_path}")
+        raise RuntimeError(f"Failed to load module from {module_path}")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
-versioneer = load_local_versioneer()
+versioneer = load_local_module("nvflare_local_versioneer", "versioneer.py")
 
 # read the contents of your README file
 
@@ -92,15 +92,8 @@ deploy_templates = package_files(root="nvflare/tool/deploy", starting="templates
 example_source_folder = "./examples/hello-world/hello-pt"
 tmp_example_folder = "./nvflare/tool/examples/data"
 generated_example_data = os.path.isdir(example_source_folder)
-hello_pt_files = (
-    "README.md",
-    "client.py",
-    "hello-pt.ipynb",
-    "job.py",
-    "model.py",
-    "prepare_data.py",
-    "requirements.txt",
-)
+example_definitions = load_local_module("nvflare_example_definitions", "nvflare/tool/examples/__init__.py")
+hello_pt_files = example_definitions.HELLO_PT_FILES
 if generated_example_data:
     remove_dir(target_path=tmp_example_folder)
     for filename in hello_pt_files:

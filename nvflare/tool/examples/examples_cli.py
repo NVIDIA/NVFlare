@@ -23,6 +23,7 @@ from pathlib import Path
 
 from nvflare.tool.cli_output import is_json_mode, output_error_message, output_ok, print_human
 from nvflare.tool.cli_schema import handle_schema_flag
+from nvflare.tool.examples import HELLO_PT_FILES
 
 PROVENANCE_FILE = ".nvflare-example.json"
 EXAMPLES = {
@@ -31,15 +32,7 @@ EXAMPLES = {
         "destination": "hello-pt",
         "required_extra": "PT",
         "next_command": ["python", "job.py"],
-        "files": (
-            "README.md",
-            "client.py",
-            "hello-pt.ipynb",
-            "job.py",
-            "model.py",
-            "prepare_data.py",
-            "requirements.txt",
-        ),
+        "files": HELLO_PT_FILES,
     }
 }
 _parsers = {}
@@ -68,23 +61,9 @@ def def_examples_parser(sub_cmd):
 
 def _example_source(name):
     bundled = resources.files("nvflare.tool.examples").joinpath("data", name)
-    if bundled.is_dir():
-        return bundled
-    # Editable source checkouts use the canonical example directly. Builds copy
-    # this directory into package data so installed distributions work offline.
-    checkout = Path(__file__).resolve().parents[3] / EXAMPLES[name]["source_path"]
-    if checkout.is_dir():
-        return checkout
-    raise OSError(f"The installed NVFlare package does not contain the bundled {name} example")
-
-
-def _copy_resource(source, destination, filenames):
-    for filename in filenames:
-        item = source.joinpath(filename)
-        target = destination / filename
-        target.parent.mkdir(parents=True, exist_ok=True)
-        with item.open("rb") as source_file, target.open("xb") as target_file:
-            shutil.copyfileobj(source_file, target_file)
+    if not bundled.is_dir():
+        raise OSError(f"The installed NVFlare package does not contain the bundled {name} example")
+    return bundled
 
 
 def _destination_exists(destination):
@@ -93,17 +72,6 @@ def _destination_exists(destination):
         f"Destination already exists: {destination}",
         "Use --dest <new-directory>, or move the existing directory before retrying.",
     )
-
-
-def _create_destination(destination):
-    try:
-        destination.mkdir()
-    except FileExistsError:
-        _destination_exists(destination)
-    except OSError:
-        if destination.exists() or destination.is_symlink():
-            _destination_exists(destination)
-        raise
 
 
 def get_example(version_info, *, name, destination=None):
@@ -115,8 +83,6 @@ def get_example(version_info, *, name, destination=None):
         )
     entry = EXAMPLES[name]
     destination = Path(destination or entry["destination"]).expanduser().absolute()
-    if destination.exists() or destination.is_symlink():
-        _destination_exists(destination)
     if not destination.parent.is_dir():
         raise ExampleError(
             "EXAMPLE_DESTINATION_INVALID",
@@ -132,8 +98,11 @@ def get_example(version_info, *, name, destination=None):
         "source_path": entry["source_path"],
         "nvflare_version": version_info["version"],
     }
-    _create_destination(destination)
-    _copy_resource(source, destination, entry["files"])
+    allowed = set(entry["files"])
+    try:
+        shutil.copytree(source, destination, dirs_exist_ok=False, ignore=lambda _, names: set(names) - allowed)
+    except FileExistsError:
+        _destination_exists(destination)
     (destination / PROVENANCE_FILE).write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
     return {
         **provenance,
