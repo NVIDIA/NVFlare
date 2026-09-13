@@ -5,6 +5,9 @@ Examples Command
 The ``nvflare examples`` command downloads example source from the public
 NVIDIA/NVFlare GitHub repository. It selects the source revision recorded in
 the installed NVFlare distribution, so the example matches the version in use.
+A nightly package built from ``main`` retrieves examples from that exact build
+commit. A release package such as NVFlare 2.9.0 retrieves examples from the
+commit recorded in the 2.9.0 package.
 
 Example catalog
 ===============
@@ -89,11 +92,8 @@ The downloaded directory contains the maintained files from the source
 directory selected by the catalog. The command does not create a root
 ``requirements.txt`` when the source has none, and it does not rewrite root or
 nested requirements files. Follow the README to find the requirements file
-appropriate for that example. Before installing it, check whether it names an
-NVFlare distribution or version different from the one already installed; if
-so, retain the current NVFlare installation and install only the remaining
-example dependencies. A small ``.nvflare-example.json`` file records the
-example name, installed NVFlare version, Git revision, and canonical source
+appropriate for that revision. A small ``.nvflare-example.json`` file records
+the example name, installed NVFlare version, Git revision, and canonical source
 path.
 
 Automation
