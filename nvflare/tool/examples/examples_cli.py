@@ -14,7 +14,10 @@
 
 """Copy release-matched example source bundled with NVFlare."""
 
+import ctypes
+import errno
 import json
+import os
 import shlex
 import shutil
 import sys
@@ -26,12 +29,24 @@ from nvflare.tool.cli_output import is_json_mode, output_error_message, output_o
 from nvflare.tool.cli_schema import handle_schema_flag
 
 PROVENANCE_FILE = ".nvflare-example.json"
+_AT_FDCWD = -100
+_RENAME_NOREPLACE = 1
+_RENAME_EXCL = 4
 EXAMPLES = {
     "hello-pt": {
         "source_path": "examples/hello-world/hello-pt",
         "destination": "hello-pt",
         "required_extra": "PT",
         "next_command": ["python", "job.py"],
+        "files": (
+            "README.md",
+            "client.py",
+            "hello-pt.ipynb",
+            "job.py",
+            "model.py",
+            "prepare_data.py",
+            "requirements.txt",
+        ),
     }
 }
 _parsers = {}
@@ -70,15 +85,13 @@ def _example_source(name):
     raise OSError(f"The installed NVFlare package does not contain the bundled {name} example")
 
 
-def _copy_resource(source, destination):
-    for item in source.iterdir():
-        target = destination / item.name
-        if item.is_dir():
-            target.mkdir()
-            _copy_resource(item, target)
-        elif item.is_file():
-            with item.open("rb") as source_file, target.open("xb") as target_file:
-                shutil.copyfileobj(source_file, target_file)
+def _copy_resource(source, destination, filenames):
+    for filename in filenames:
+        item = source.joinpath(filename)
+        target = destination / filename
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with item.open("rb") as source_file, target.open("xb") as target_file:
+            shutil.copyfileobj(source_file, target_file)
 
 
 def _destination_exists(destination):
@@ -89,11 +102,32 @@ def _destination_exists(destination):
     )
 
 
+def _rename_noreplace(staged, destination):
+    if sys.platform not in ("linux", "darwin"):
+        raise OSError(errno.ENOTSUP, "atomic no-replace directory rename is unavailable")
+    libc = ctypes.CDLL(None, use_errno=True)
+    if sys.platform == "linux":
+        rename = getattr(libc, "renameat2", None)
+        args = (_AT_FDCWD, os.fsencode(staged), _AT_FDCWD, os.fsencode(destination), _RENAME_NOREPLACE)
+        argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+    else:
+        rename = getattr(libc, "renamex_np", None)
+        args = (os.fsencode(staged), os.fsencode(destination), _RENAME_EXCL)
+        argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
+    if rename is None:
+        raise OSError(errno.ENOTSUP, "atomic no-replace directory rename is unavailable")
+    rename.argtypes = argtypes
+    rename.restype = ctypes.c_int
+    if rename(*args) != 0:
+        error = ctypes.get_errno()
+        raise OSError(error, os.strerror(error), destination)
+
+
 def _publish(staged, destination):
     if destination.exists() or destination.is_symlink():
         _destination_exists(destination)
     try:
-        staged.rename(destination)
+        _rename_noreplace(staged, destination)
     except FileExistsError:
         _destination_exists(destination)
     except OSError:
@@ -131,7 +165,7 @@ def get_example(version_info, *, name, destination=None):
     with tempfile.TemporaryDirectory(prefix=".nvflare-example-", dir=destination.parent) as temporary:
         staged = Path(temporary) / "example"
         staged.mkdir()
-        _copy_resource(source, staged)
+        _copy_resource(source, staged, entry["files"])
         (staged / PROVENANCE_FILE).write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
         _publish(staged, destination)
     return {

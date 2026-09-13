@@ -14,6 +14,7 @@
 
 import json
 import shlex
+import shutil
 from pathlib import Path
 
 import pytest
@@ -80,6 +81,22 @@ def test_cli_copies_exact_canonical_example_and_records_version(monkeypatch, cap
     assert _files(SOURCE) == original
 
 
+def test_copy_uses_example_allowlist(monkeypatch, tmp_path):
+    source = tmp_path / "source"
+    shutil.copytree(SOURCE, source)
+    (source / "__pycache__").mkdir()
+    (source / "__pycache__/client.cpython-313.pyc").write_bytes(b"generated")
+    (source / "credentials.txt").write_text("local")
+    destination = tmp_path / "copied"
+    monkeypatch.setattr(examples_cli, "_example_source", lambda name: source)
+
+    examples_cli.get_example(VERSION, name="hello-pt", destination=destination)
+
+    delivered = _files(destination)
+    delivered.pop(examples_cli.PROVENANCE_FILE)
+    assert delivered == _files(SOURCE)
+
+
 def test_default_destination_and_human_next_step(monkeypatch, capsys, tmp_path):
     from nvflare import cli
 
@@ -140,11 +157,32 @@ def test_destination_created_during_copy_is_untouched(monkeypatch, tmp_path):
     assert (destination / "original").read_text() == "original"
 
 
+def test_publish_does_not_replace_empty_destination_created_after_check(monkeypatch, tmp_path):
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    (staged / "new").write_text("new")
+    destination = tmp_path / "copied"
+    rename_noreplace = examples_cli._rename_noreplace
+
+    def race(source, target):
+        target.mkdir()
+        rename_noreplace(source, target)
+
+    monkeypatch.setattr(examples_cli, "_rename_noreplace", race)
+
+    with pytest.raises(examples_cli.ExampleError) as error:
+        examples_cli._publish(staged, destination)
+
+    assert error.value.code == "EXAMPLE_DESTINATION_EXISTS"
+    assert staged.is_dir()
+    assert not list(destination.iterdir())
+
+
 @pytest.mark.parametrize("failure", [OSError("disk full"), KeyboardInterrupt()])
 def test_failed_copy_never_exposes_destination(monkeypatch, tmp_path, failure):
     destination = tmp_path / "copied"
 
-    def fail(source, target):
+    def fail(source, target, filenames):
         assert not destination.exists()
         assert target.name == "example"
         (target / "partial").write_text("partial")
