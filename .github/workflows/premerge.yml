@@ -324,6 +324,5 @@ jobs:
               assert files, item
               assert "README.md" in files or "README.rst" in files, item
           assert (downloaded / "README.md").is_file()
-          assert (downloaded / "requirements.txt").is_file()
           print(f"Verified {len(listed)} catalog entries and a GitHub download from the installed wheel")
           PY

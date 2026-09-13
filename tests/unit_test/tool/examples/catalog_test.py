@@ -23,8 +23,9 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 
 
 def test_catalog_entries_are_source_path_only_and_exist():
-    catalog = load_catalog()
+    catalog, errors = load_catalog()
 
+    assert errors == []
     assert catalog["collab-pt"] == {"source_path": "examples/advanced/collab/pt_cifar10"}
     for entry in catalog.values():
         assert set(entry) == {"source_path"}
@@ -35,7 +36,8 @@ def test_catalog_entries_are_source_path_only_and_exist():
 
 
 def test_catalog_covers_each_example_collection():
-    source_paths = [Path(entry["source_path"]) for entry in load_catalog().values()]
+    catalog, _ = load_catalog()
+    source_paths = [Path(entry["source_path"]) for entry in catalog.values()]
     collections = [REPO_ROOT / "examples/hello-world", REPO_ROOT / "examples/advanced"]
     collections.extend(
         [
@@ -54,19 +56,31 @@ def test_catalog_covers_each_example_collection():
 
 
 @pytest.mark.parametrize(
-    "catalog",
+    "invalid_entry",
     [
-        {},
         {"bad name": {"source_path": "examples/demo"}},
         {"demo": {"source_path": "outside/demo"}},
         {"demo": {"source_path": "examples/../demo"}},
+        {"demo": {"source_path": "examples/demo/"}},
         {"demo": {"source_path": "examples/demo", "next_command": ["python", "job.py"]}},
-        {"one": {"source_path": "examples/demo"}, "two": {"source_path": "examples/demo"}},
+        {"duplicate": {"source_path": "examples/good"}},
     ],
 )
-def test_invalid_catalog_is_rejected(tmp_path, catalog):
+def test_invalid_entry_does_not_hide_valid_entries(tmp_path, invalid_entry):
     path = tmp_path / "catalog.json"
-    path.write_text(json.dumps(catalog))
+    definitions = {"good": {"source_path": "examples/good"}, **invalid_entry}
+    path.write_text(json.dumps(definitions))
+
+    catalog, errors = load_catalog(path)
+
+    assert catalog == {"good": {"source_path": "examples/good"}}
+    assert len(errors) == 1
+
+
+@pytest.mark.parametrize("contents", ["{}", "[]", "not JSON"])
+def test_invalid_catalog_document_is_rejected(tmp_path, contents):
+    path = tmp_path / "catalog.json"
+    path.write_text(contents)
 
     with pytest.raises(ValueError):
         load_catalog(path)

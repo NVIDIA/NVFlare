@@ -25,8 +25,8 @@ available without a Python code change.
 Get an example
 ==============
 
-Download an example, install its dependencies, then follow its README for any
-data download, data preparation, model preparation, or other example-specific
+Download an example, then follow its README for dependency installation, data
+download, data preparation, model preparation, and other example-specific
 steps:
 
 .. code-block:: bash
@@ -34,12 +34,11 @@ steps:
    python -m pip install "nvflare[PT]"
    nvflare examples get <example-name>
    cd <example-name>
-   pip install -r requirements.txt
 
-The README may then direct you to run commands such as ``download_data.py``,
-``prepare_data.py``, or ``prepare_model.py`` before the example's job command.
-Those commands vary by example and are intentionally not duplicated in the
-catalog.
+The README may direct you to a root or nested requirements file, then commands
+such as ``download_data.py``, ``prepare_data.py``, or ``prepare_model.py``
+before the example's job command. Those steps vary by example and are
+intentionally not duplicated in the catalog.
 
 For Hello PyTorch, the complete sequence is:
 
@@ -52,7 +51,7 @@ For Hello PyTorch, the complete sequence is:
    python job.py
 
 Use another catalog name in the same command. The completion output identifies
-the requirements file and README:
+the README:
 
 .. code-block:: bash
 
@@ -72,15 +71,14 @@ destination exclusively. If copying does not complete, remove the incomplete
 destination before retrying.
 
 The downloaded directory contains the maintained files from the source
-directory selected by the catalog. If that directory has no root
-``requirements.txt``, the command creates an empty one so the dependency step
-is consistent. If its root requirements file names the ``nvflare`` distribution,
-the command removes that entry while preserving the example-specific
-dependencies. This prevents the dependency step from replacing the installed
-release, nightly, or editable NVFlare package. A small
+directory selected by the catalog. The command does not create a root
+``requirements.txt`` when the source has none. If a root requirements file pins
+``nvflare`` to an older version, the downloaded copy removes the version
+constraint while preserving extras such as ``nvflare[HE]``. Follow the README
+to find the requirements file appropriate for that example. A small
 ``.nvflare-example.json`` file records the example name, installed NVFlare
-version, Git revision, canonical source path, and whether such an entry was
-removed.
+version, Git revision, canonical source path, and whether a root NVFlare
+requirement was unpinned.
 
 Automation
 ==========

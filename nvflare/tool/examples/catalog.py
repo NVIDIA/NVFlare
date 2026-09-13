@@ -21,21 +21,35 @@ _SHORT_NAME = re.compile(r"[a-z0-9][a-z0-9-]{0,63}")
 
 def load_catalog(path=None):
     path = Path(path or Path(__file__).with_name("catalog.json"))
-    catalog = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(catalog, dict) or not catalog:
+    definitions = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(definitions, dict) or not definitions:
         raise ValueError("the example catalog must be a non-empty object")
 
+    catalog = {}
+    errors = []
     source_paths = set()
-    for name, entry in catalog.items():
+    for name, entry in definitions.items():
+        error = None
         if not isinstance(name, str) or not _SHORT_NAME.fullmatch(name) or not isinstance(entry, dict):
-            raise ValueError("each example must map a short name to one source_path")
-        if set(entry) != {"source_path"}:
-            raise ValueError("each example must map a short name to one source_path")
-        source_path = entry["source_path"]
-        parts = PurePosixPath(source_path).parts if isinstance(source_path, str) else ()
-        if not parts or parts[0] != "examples" or any(part in {"", ".", ".."} for part in parts):
-            raise ValueError(f"invalid source path for {name}")
-        if source_path in source_paths:
-            raise ValueError(f"duplicate example source path: {source_path}")
+            error = "must map a lowercase short name to one source_path"
+        elif set(entry) != {"source_path"}:
+            error = "must contain only source_path"
+        else:
+            source_path = entry["source_path"]
+            normalized_path = PurePosixPath(source_path).as_posix() if isinstance(source_path, str) else None
+            parts = PurePosixPath(source_path).parts if isinstance(source_path, str) else ()
+            if (
+                not parts
+                or parts[0] != "examples"
+                or any(part in {"", ".", ".."} for part in parts)
+                or normalized_path != source_path
+            ):
+                error = "source_path must be a normalized path below examples/"
+            elif source_path in source_paths:
+                error = f"duplicates source_path {source_path}"
+        if error:
+            errors.append({"name": name, "error": error})
+            continue
         source_paths.add(source_path)
-    return catalog
+        catalog[name] = entry
+    return catalog, errors
