@@ -130,6 +130,49 @@ def test_corrupt_cache_failed_repair_is_distinct(cache, remote, tmp_path):
     assert cache._entries() == []
 
 
+@pytest.mark.parametrize("relative_path", ["manifest.json", "payload/job.py", "payload/data"])
+def test_cache_permission_error_preserves_entry(cache, remote, tmp_path, monkeypatch, relative_path):
+    get_example(cache, tmp_path)
+    entry = cache._entries()[0]
+    protected = entry / relative_path
+    original_read = Path.read_bytes
+    original_scandir = os.scandir
+
+    def read(path):
+        if path == protected:
+            raise PermissionError("cache permission denied")
+        return original_read(path)
+
+    def scandir(path):
+        if isinstance(path, (str, bytes, os.PathLike)) and Path(path) == protected:
+            raise PermissionError("cache permission denied")
+        return original_scandir(path)
+
+    remote.calls.clear()
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "read_bytes", read)
+        patch.setattr(os, "scandir", scandir)
+        with pytest.raises(PermissionError):
+            cache.get(VERSION, name="hello-pt", destination=tmp_path / "second")
+    assert remote.calls == ["commits/refs/tags/2.10.0"]
+    assert (entry / "payload/job.py").read_bytes() == remote.files[f"{EXAMPLE_PATH}/job.py"]
+    assert not (tmp_path / "second").exists()
+
+
+@pytest.mark.parametrize(
+    "version,code", [("2.11.0", "EXAMPLE_VERSION_INCOMPATIBLE"), ("unknown", "EXAMPLE_VERSION_UNKNOWN")]
+)
+def test_cache_repair_preserves_version_error(cache, remote, tmp_path, version, code):
+    get_example(cache, tmp_path)
+    (cache._entries()[0] / "manifest.json").write_text("{}")
+    remote.calls.clear()
+    with pytest.raises(source.ExampleError) as error:
+        cache.get({**VERSION, "version": version}, name="hello-pt", ref=COMMIT, destination=tmp_path / "second")
+    assert error.value.code == code
+    assert not any(route.startswith(f"raw/{COMMIT}/{EXAMPLE_PATH}/") for route in remote.calls)
+    assert not (tmp_path / "second").exists()
+
+
 def test_clear_and_retention_preserve_delivered_files(cache, remote, tmp_path, monkeypatch):
     monkeypatch.setattr(store, "MAX_CACHE_ENTRIES", 2)
     for index, letter in enumerate("abc"):

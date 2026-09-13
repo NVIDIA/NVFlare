@@ -93,14 +93,18 @@ The cache lives under ``$XDG_CACHE_HOME/nvflare/examples`` (default
 on macOS. At most eight entries are retained, keeping the most recently used.
 A process lock serializes cache writes, delivery, and clearing; a busy cache
 fails after 60 seconds.
-Corrupt entries are removed and downloaded again. Cache clearing affects only
+Corrupt entries are removed and downloaded again. Cache permission and other
+I/O errors are reported without treating the entry as corrupt. Version
+compatibility errors retain their version-specific recovery hints during repair.
+Cache clearing affects only
 cached downloads, preserving all delivered workspaces.
 
 Set ``NVFLARE_EXAMPLES_CACHE_DIR`` to choose a different cache directory,
 for example in an isolated build or validation environment.
 
 Downloads are bounded to 256 tree entries, 8 MiB per file, and 64 MiB total
-file content; metadata responses are capped at 2 MiB. Paths, object types, and
+file content; metadata responses are capped at 2 MiB. Each file response is also
+limited by its declared Git object size. Paths, object types, and
 Git blob hashes are checked. Symbolic links, submodules, path traversal,
 Unicode-equivalent or case-colliding paths, and incomplete GitHub tree responses
 are rejected.
@@ -114,6 +118,11 @@ For example, ``EXAMPLE_DESTINATION_EXISTS`` suggests another destination,
 ``EXAMPLE_ACCESS_LIMITED`` suggests retrying after GitHub's public API limit
 resets. Interrupted retrieval exits 130. The command uses unauthenticated
 public requests and does not read credentials from ``.netrc``.
+
+``examples get`` has a five-minute total deadline, in addition to the HTTP
+connect and idle-read timeouts. Even a response that keeps sending small amounts
+of data is interrupted at the deadline with ``EXAMPLE_TIMEOUT``. Staging files
+are cleaned up and the cache lock is released.
 
 .. code-block:: bash
 

@@ -17,12 +17,15 @@
 import shlex
 import signal
 import sys
+import time
+from contextlib import contextmanager
 
 from nvflare.tool.cli_output import is_json_mode, output_error_message, output_ok, print_human
 from nvflare.tool.cli_schema import handle_schema_flag
 from nvflare.tool.examples.source import ExampleError
 
 _parsers = {}
+DOWNLOAD_TIMEOUT = 300
 _EXAMPLES = [
     "nvflare examples get hello-pt",
     "nvflare examples get hello-pt --dest ./my-hello-pt --refresh",
@@ -51,6 +54,33 @@ def def_examples_parser(sub_cmd):
 
 def _interrupt(signum, frame):
     raise KeyboardInterrupt
+
+
+class _DownloadTimeout(BaseException):
+    """Escape network/cache recovery so a deadline never triggers another download."""
+
+
+def _timeout(signum, frame):
+    raise _DownloadTimeout
+
+
+@contextmanager
+def _download_deadline():
+    # The CLI runs on the main thread on Linux/macOS. A signal also interrupts
+    # blocked header/body reads that may never yield an iter_content chunk.
+    if not hasattr(signal, "setitimer"):
+        raise OSError("Timed example retrieval is unavailable on this platform.")
+    started = time.monotonic()
+    previous_handler = signal.signal(signal.SIGALRM, _timeout)
+    previous_timer = signal.setitimer(signal.ITIMER_REAL, DOWNLOAD_TIMEOUT)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous_handler)
+        if previous_timer[0]:
+            remaining = max(0.001, previous_timer[0] - (time.monotonic() - started))
+            signal.setitimer(signal.ITIMER_REAL, remaining, previous_timer[1])
 
 
 def handle_examples_cmd(args):
@@ -87,13 +117,14 @@ def handle_examples_cmd(args):
         if key == "cache clear":
             output_ok(store.clear())
             return
-        result = store.get(
-            _version.get_versions(),
-            name=args.name,
-            ref=args.ref,
-            destination=args.dest,
-            refresh=args.refresh,
-        )
+        with _download_deadline():
+            result = store.get(
+                _version.get_versions(),
+                name=args.name,
+                ref=args.ref,
+                destination=args.dest,
+                refresh=args.refresh,
+            )
         if is_json_mode():
             output_ok(result)
         else:
@@ -105,6 +136,13 @@ def handle_examples_cmd(args):
             print_human(f"  cd {shlex.quote(result['directory'])}")
             print_human("  " + shlex.join(result["next_command"]))
             print_human("\nSee README.md for dependencies, customization, and further examples.")
+    except _DownloadTimeout:
+        output_error_message(
+            "EXAMPLE_TIMEOUT",
+            f"Example retrieval exceeded its {DOWNLOAD_TIMEOUT:g}-second deadline.",
+            "Check network availability and retry the command.",
+            exit_code=1,
+        )
     except ExampleError as error:
         output_error_message(error.code, str(error), error.hint, exit_code=4 if error.code == "INVALID_ARGS" else 1)
     except KeyboardInterrupt:

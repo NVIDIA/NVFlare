@@ -22,6 +22,7 @@ import os
 import platform
 import re
 import shutil
+import stat
 import sys
 import tempfile
 from contextlib import contextmanager
@@ -47,6 +48,11 @@ from nvflare.tool.examples.source import (
 MAX_CACHE_ENTRIES = 8
 LOCK_TIMEOUT = 60
 _CACHE_KEY = re.compile(r"[0-9a-f]{64}")
+_VERSION_ERRORS = {"EXAMPLE_VERSION_INCOMPATIBLE", "EXAMPLE_VERSION_UNKNOWN"}
+
+
+def _raise_walk_error(error):
+    raise error
 
 
 def default_cache_dir():
@@ -158,13 +164,19 @@ class ExampleStore:
             expected.update(
                 str(parent) for item in files for parent in Path(item["path"]).parents if str(parent) != "."
             )
-            for index, item in enumerate(payload.rglob("*")):
-                if index >= MAX_FILES or item.relative_to(payload).as_posix() not in expected:
+            count = 0
+            for directory, directories, filenames in os.walk(payload, onerror=_raise_walk_error):
+                count += len(directories) + len(filenames)
+                if count > MAX_FILES:
                     return None
-                if item.is_symlink() or not (item.is_file() or item.is_dir()):
-                    return None
-                if item.is_file():
-                    actual.add(item.relative_to(payload).as_posix())
+                for name in directories + filenames:
+                    item = Path(directory) / name
+                    relative = item.relative_to(payload).as_posix()
+                    mode = item.lstat().st_mode
+                    if relative not in expected or not (stat.S_ISREG(mode) or stat.S_ISDIR(mode)):
+                        return None
+                    if stat.S_ISREG(mode):
+                        actual.add(relative)
             if actual != {item["path"] for item in files}:
                 return None
             for item in files:
@@ -174,10 +186,10 @@ class ExampleStore:
                     return None
             return metadata
         except ExampleError as error:
-            if error.code == "EXAMPLE_VERSION_INCOMPATIBLE":
+            if error.code in _VERSION_ERRORS:
                 raise
             return None
-        except (OSError, ValueError, KeyError, TypeError):
+        except (FileNotFoundError, NotADirectoryError, ValueError, KeyError, TypeError):
             return None
 
     def _download(self, cache, identity, name, version_info):
@@ -227,7 +239,7 @@ class ExampleStore:
                 try:
                     metadata = self._download(cache, identity, name, version_info)
                 except ExampleError as error:
-                    if existed and not refresh:
+                    if existed and not refresh and error.code not in _VERSION_ERRORS:
                         raise ExampleError(
                             "EXAMPLE_CACHE_CORRUPT",
                             f"A corrupt cache entry was removed; repair failed: {error}",

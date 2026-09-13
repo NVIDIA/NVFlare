@@ -185,7 +185,7 @@ class GitHubSource:
                         "Check GitHub availability and retry. " + FALLBACK,
                     )
                 data = bytearray()
-                for chunk in response.iter_content(65536):
+                for chunk in response.iter_content(min(65536, limit + 1)):
                     if len(data) + len(chunk) > limit:
                         raise ExampleError(
                             "EXAMPLE_LIMIT_EXCEEDED",
@@ -250,8 +250,11 @@ class GitHubSource:
     def file(self, commit, path, item, limit=MAX_FILE_BYTES):
         if item.get("type") != "blob" or item.get("mode") not in {"100644", "100755"}:
             reject("Only ordinary files are supported; symlinks and submodules are rejected.")
-        data = self.read(f"{commit}/{quote(path, safe='/')}", raw=True, limit=limit)
-        if len(data) != item.get("size") or blob_sha(data) != item.get("sha"):
+        size = item.get("size")
+        if type(size) is not int or not 0 <= size <= limit:
+            reject(f"Invalid declared file size: {path}.")
+        data = self.read(f"{commit}/{quote(path, safe='/')}", raw=True, limit=size)
+        if len(data) != size or blob_sha(data) != item.get("sha"):
             reject(f"Downloaded file does not match its Git object: {path}.")
         if data.startswith(b"version https://git-lfs.github.com/spec/v1\n"):
             reject("Git LFS pointers are not supported in downloadable examples.")

@@ -21,7 +21,7 @@ import pytest
 import requests
 
 from nvflare.tool.examples import source
-from tests.unit_test.tool.examples.helpers import CATALOG, COMMIT, EXAMPLE_PATH, VERSION
+from tests.unit_test.tool.examples.helpers import CATALOG, COMMIT, EXAMPLE_PATH, VERSION, Response
 
 
 @pytest.mark.parametrize(
@@ -114,3 +114,22 @@ def test_requests_does_not_load_netrc_credentials(monkeypatch):
     prepared = client.session.prepare_request(requests.Request("GET", "https://api.github.com/repos/NVIDIA/NVFlare"))
     assert "Authorization" not in prepared.headers
     client.close()
+
+
+def test_file_download_stops_at_declared_size(remote):
+    consumed = []
+
+    class OversizedResponse(Response):
+        def iter_content(self, chunk_size):
+            for chunk in super().iter_content(chunk_size):
+                consumed.append(len(chunk))
+                yield chunk
+
+    path = f"{EXAMPLE_PATH}/README.md"
+    original = remote.files[path]
+    item = {"type": "blob", "mode": "100644", "sha": source.blob_sha(original), "size": len(original)}
+    remote.overrides[f"raw/{COMMIT}/{path}"] = OversizedResponse(b"x" * 1024 * 1024)
+    with pytest.raises(source.ExampleError) as error:
+        remote.source.file(COMMIT, path, item)
+    assert error.value.code == "EXAMPLE_LIMIT_EXCEEDED"
+    assert sum(consumed) <= len(original) + 1

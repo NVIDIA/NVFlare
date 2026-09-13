@@ -14,12 +14,13 @@
 
 import json
 import signal
+import time
 from pathlib import Path
 
 import pytest
 
-from nvflare.tool.examples import store
-from tests.unit_test.tool.examples.helpers import COMMIT, VERSION
+from nvflare.tool.examples import examples_cli, store
+from tests.unit_test.tool.examples.helpers import COMMIT, EXAMPLE_PATH, VERSION, Response
 
 
 @pytest.mark.parametrize("command", [[], ["get"], ["cache"], ["cache", "clear"]])
@@ -153,3 +154,40 @@ def test_cli_destination_resolution_failure_is_structured(monkeypatch, capsys, c
     assert json.loads(capsys.readouterr().out)["error_code"] == "EXAMPLE_IO_ERROR"
     assert not destination.exists()
     assert not list(tmp_path.glob(".nvflare-example-*"))
+
+
+@pytest.mark.parametrize("phase", ["headers", "body"])
+def test_cli_deadline_interrupts_trickling_response(monkeypatch, capsys, cache, remote, tmp_path, phase):
+    from nvflare import cli
+
+    payload = remote.files[f"{EXAMPLE_PATH}/job.py"]
+
+    class Trickle(Response):
+        def iter_content(self, chunk_size):
+            for byte in self.data:
+                time.sleep(0.01)
+                yield bytes([byte])
+
+    def headers():
+        time.sleep(0.4)
+        return Response(payload)
+
+    previous_handler = signal.getsignal(signal.SIGALRM)
+    monkeypatch.setattr(examples_cli, "DOWNLOAD_TIMEOUT", 0.1, raising=False)
+    monkeypatch.setattr(store, "ExampleStore", lambda: cache)
+    monkeypatch.setattr("nvflare._version.get_versions", lambda: VERSION)
+    remote.overrides[f"raw/{COMMIT}/{EXAMPLE_PATH}/job.py"] = headers if phase == "headers" else Trickle(payload)
+    monkeypatch.setattr(
+        "sys.argv", ["nvflare", "examples", "get", "hello-pt", "--dest", str(tmp_path / "out"), "--format", "json"]
+    )
+    with pytest.raises(SystemExit) as error:
+        cli.run("nvflare")
+    assert error.value.code == 1
+    assert json.loads(capsys.readouterr().out)["error_code"] == "EXAMPLE_TIMEOUT"
+    assert signal.getsignal(signal.SIGALRM) == previous_handler
+    assert signal.getitimer(signal.ITIMER_REAL) == (0, 0)
+    assert not (tmp_path / "out").exists()
+    assert not list(cache.root.glob(".download-*"))
+    assert cache._entries() == []
+    # Cancellation releases the cache lock as well as staging files.
+    assert cache.clear()["entries_removed"] == 0
