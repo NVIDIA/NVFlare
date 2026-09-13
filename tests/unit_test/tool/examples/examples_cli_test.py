@@ -35,7 +35,7 @@ def reset_output_mode():
     set_output_format("txt")
 
 
-def _mock_download(monkeypatch, *, requirements="torch\n", readme="README.md"):
+def _mock_download(monkeypatch, *, requirements="nvflare[PT]~=2.9.0rc\ntorch\n", readme="README.md"):
     def download(revision, source_path, destination):
         assert revision == REVISION
         assert source_path == SOURCE_PATH
@@ -66,6 +66,7 @@ def test_get_records_downloaded_source_and_requirements(monkeypatch, tmp_path):
     assert provenance["revision"] == REVISION
     assert provenance["example"] == "hello-pt"
     assert provenance["source_path"] == SOURCE_PATH
+    assert provenance["nvflare_requirement_removed"] is True
 
 
 def test_missing_requirements_becomes_empty_file(monkeypatch, tmp_path):
@@ -74,6 +75,23 @@ def test_missing_requirements_becomes_empty_file(monkeypatch, tmp_path):
     examples_cli.get_example(VERSION, name="hello-pt", destination=tmp_path / "hello-pt")
 
     assert (tmp_path / "hello-pt/requirements.txt").read_text() == ""
+
+
+def test_only_nvflare_distribution_requirements_are_removed(tmp_path):
+    destination = tmp_path / "example"
+    destination.mkdir()
+    requirements = destination / "requirements.txt"
+    requirements.write_text(
+        "NVFlare~=2.7.2rc\n"
+        "nvflare[HE]>=2.7.2rc  # installed before retrieval\n"
+        "nvflare-helper==1.0\n"
+        "https://example.com/nvflare.whl\n"
+    )
+
+    changed = examples_cli._prepare_requirements(destination)
+
+    assert changed is True
+    assert requirements.read_text() == "nvflare-helper==1.0\nhttps://example.com/nvflare.whl\n"
 
 
 def test_rst_readme_is_reported(monkeypatch, tmp_path):

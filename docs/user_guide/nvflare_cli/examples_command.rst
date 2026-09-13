@@ -74,8 +74,13 @@ destination before retrying.
 The downloaded directory contains the maintained files from the source
 directory selected by the catalog. If that directory has no root
 ``requirements.txt``, the command creates an empty one so the dependency step
-is consistent. A small ``.nvflare-example.json`` file records the example name,
-installed NVFlare version, Git revision, and canonical source path.
+is consistent. If its root requirements file names the ``nvflare`` distribution,
+the command removes that entry while preserving the example-specific
+dependencies. This prevents the dependency step from replacing the installed
+release, nightly, or editable NVFlare package. A small
+``.nvflare-example.json`` file records the example name, installed NVFlare
+version, Git revision, canonical source path, and whether such an entry was
+removed.
 
 Automation
 ==========
