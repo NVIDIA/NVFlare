@@ -1,0 +1,33 @@
+{
+  "hello-pt": {
+    "source_path": "examples/hello-world/hello-pt"
+  },
+  "hello-numpy": {
+    "source_path": "examples/hello-world/hello-numpy"
+  },
+  "hello-tf": {
+    "source_path": "examples/hello-world/hello-tf",
+    "next_command": ["env", "TF_FORCE_GPU_ALLOW_GROWTH=true", "python", "job.py"]
+  },
+  "hello-jax": {
+    "source_path": "examples/hello-world/hello-jax",
+    "prepare_commands": [["python", "prepare_model.py"], ["python", "prepare_data.py"]]
+  },
+  "hello-lightning": {
+    "source_path": "examples/hello-world/hello-lightning",
+    "next_command": ["python", "job.py", "--synthetic_data"]
+  },
+  "hello-huggingface": {
+    "source_path": "examples/hello-world/hello-huggingface",
+    "prepare_commands": [["python", "prepare_data.py"]]
+  },
+  "hello-flower": {
+    "source_path": "examples/hello-world/hello-flower",
+    "next_command": ["python", "job.py", "--job_name", "flwr-pt", "--content_dir", "./flwr-pt"]
+  },
+  "collab-pt": {
+    "source_path": "examples/advanced/collab/pt_cifar10",
+    "prepare_commands": [["python", "prepare_data.py", "--num_sites", "2", "--alpha", "0.5"]],
+    "next_command": ["python", "-m", "fedavg.job"]
+  }
+}

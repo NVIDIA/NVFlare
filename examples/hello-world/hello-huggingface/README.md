@@ -11,6 +11,7 @@ For the complete installation instructions, see
 Install NVFlare and the example dependencies:
 
 ```
+python -m pip install "nvflare[PT]"
 python -m pip install -r requirements.txt
 ```
 

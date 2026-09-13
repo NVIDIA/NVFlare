@@ -23,8 +23,9 @@ from pathlib import Path
 
 from nvflare.tool.cli_output import is_json_mode, output_error_message, output_ok, print_human
 from nvflare.tool.cli_schema import handle_schema_flag
-from nvflare.tool.examples import EXAMPLE_CATALOG
+from nvflare.tool.examples.catalog import load_catalog, source_files
 
+EXAMPLE_CATALOG = load_catalog()
 PROVENANCE_FILE = ".nvflare-example.json"
 _parsers = {}
 _EXAMPLE_COMMANDS = ["nvflare examples get hello-pt", "nvflare examples get hello-numpy --dest ./numpy-demo"]
@@ -41,7 +42,7 @@ def def_examples_parser(sub_cmd):
     parser = sub_cmd.add_parser("examples", help="copy a runnable example bundled with NVFlare")
     children = parser.add_subparsers(dest="examples_sub_cmd")
     get = children.add_parser("get", help="copy one example into a new directory")
-    get.add_argument("name", help="bundled example short name, e.g. hello-pt")
+    get.add_argument("name", choices=sorted(EXAMPLE_CATALOG), help="bundled example short name")
     get.add_argument("--dest", help="new destination directory; default: example name in the current directory")
     _parsers.clear()
     _parsers.update({None: parser, "get": get})
@@ -53,14 +54,14 @@ def def_examples_parser(sub_cmd):
 def _example_source(name):
     bundled = resources.files("nvflare.tool.examples").joinpath("data", name)
     if bundled.is_dir():
-        return bundled
+        return bundled, None
 
     # Editable installs load this module from the checkout, where setup.py does
     # not retain its temporary package-data copy.
     checkout_root = Path(__file__).resolve().parents[3]
     checkout = checkout_root / EXAMPLE_CATALOG[name]["source_path"]
     if (checkout_root / "setup.py").is_file() and checkout.is_dir():
-        return checkout
+        return checkout, source_files(checkout_root, EXAMPLE_CATALOG[name]["source_path"])
     raise OSError(f"The installed NVFlare package does not contain the bundled {name} example")
 
 
@@ -72,7 +73,11 @@ def _destination_exists(destination):
     )
 
 
-def _copy_example(source, destination, files):
+def _copy_example(source, destination, files=None):
+    if files is None:
+        shutil.copytree(source, destination, dirs_exist_ok=False)
+        return
+
     source_root = Path(source)
     allowed = set(files)
     for filename in files:
@@ -101,7 +106,7 @@ def get_example(version_info, *, name, destination=None):
             "Create the parent directory or choose --dest under an existing directory.",
         )
 
-    source = _example_source(name)
+    source, files = _example_source(name)
     provenance = {
         "schema_version": 1,
         "example": name,
@@ -110,16 +115,15 @@ def get_example(version_info, *, name, destination=None):
         "nvflare_version": version_info["version"],
     }
     try:
-        _copy_example(source, destination, entry["files"])
+        _copy_example(source, destination, files)
     except FileExistsError:
         _destination_exists(destination)
     (destination / PROVENANCE_FILE).write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
     return {
         **provenance,
         "directory": str(destination),
-        "required_extra": entry["required_extra"],
-        "setup_commands": [list(command) for command in entry["setup_commands"]],
-        "next_command": list(entry["next_command"]),
+        "setup_commands": [["pip", "install", "-r", "requirements.txt"], *entry.get("prepare_commands", [])],
+        "next_command": entry.get("next_command", ["python", "job.py"]),
         "readme": str(destination / "README.md"),
     }
 

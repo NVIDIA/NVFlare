@@ -294,21 +294,30 @@ jobs:
         run: python3 -m build --wheel
       - name: Verify bundled example from wheel and editable installs
         run: |
+          catalog_rows="$RUNNER_TEMP/example-catalog.tsv"
+          python3 - "$GITHUB_WORKSPACE/nvflare/tool/examples/catalog.json" > "$catalog_rows" <<'PY'
+          import json
+          import sys
+
+          catalog = json.load(open(sys.argv[1], encoding="utf-8"))
+          for name, entry in catalog.items():
+              print(f"{name}\t{entry['source_path']}")
+          PY
           python3 -m venv --system-site-packages "$RUNNER_TEMP/example-wheel-env"
           "$RUNNER_TEMP/example-wheel-env/bin/pip" install --no-deps --force-reinstall dist/*.whl
           mkdir "$RUNNER_TEMP/example-wheel-run"
           cd "$RUNNER_TEMP/example-wheel-run"
-          for example in hello-pt hello-numpy hello-tf hello-jax hello-lightning hello-huggingface hello-flower; do
+          while IFS=$'\t' read -r example source; do
             "$RUNNER_TEMP/example-wheel-env/bin/nvflare" examples get "$example"
             diff -r --exclude=.nvflare-example.json \
-              "$GITHUB_WORKSPACE/examples/hello-world/$example" "$RUNNER_TEMP/example-wheel-run/$example"
-          done
+              "$GITHUB_WORKSPACE/$source" "$RUNNER_TEMP/example-wheel-run/$example"
+          done < "$catalog_rows"
           "$RUNNER_TEMP/example-wheel-env/bin/pip" install --no-build-isolation --no-deps --force-reinstall \
             --editable "$GITHUB_WORKSPACE"
           mkdir "$RUNNER_TEMP/example-editable-run"
           cd "$RUNNER_TEMP/example-editable-run"
-          for example in hello-pt hello-numpy hello-tf hello-jax hello-lightning hello-huggingface hello-flower; do
+          while IFS=$'\t' read -r example source; do
             "$RUNNER_TEMP/example-wheel-env/bin/nvflare" examples get "$example"
             diff -r --exclude=.nvflare-example.json \
-              "$GITHUB_WORKSPACE/examples/hello-world/$example" "$RUNNER_TEMP/example-editable-run/$example"
-          done
+              "$GITHUB_WORKSPACE/$source" "$RUNNER_TEMP/example-editable-run/$example"
+          done < "$catalog_rows"

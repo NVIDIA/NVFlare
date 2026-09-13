@@ -89,23 +89,21 @@ tmp_job_template_folder = "./nvflare/tool/job/templates"
 copy_package(src_dir="job_templates", dst_dir=tmp_job_template_folder)
 job_templates = package_files(root="nvflare/tool/job", starting="templates")
 deploy_templates = package_files(root="nvflare/tool/deploy", starting="templates")
-example_source_folder = "./examples/hello-world"
 tmp_example_folder = "./nvflare/tool/examples/data"
-generated_example_data = os.path.isdir(example_source_folder)
-example_definitions = load_local_module("nvflare_example_definitions", "nvflare/tool/examples/__init__.py")
-example_catalog = example_definitions.EXAMPLE_CATALOG
+example_definitions = load_local_module("nvflare_example_definitions", "nvflare/tool/examples/catalog.py")
+example_catalog = example_definitions.load_catalog(os.path.join(ROOT_DIR, "nvflare/tool/examples/catalog.json"))
+generated_example_data = os.path.isdir(os.path.join(ROOT_DIR, "examples"))
 if generated_example_data:
     remove_dir(target_path=tmp_example_folder)
     for example_name, entry in example_catalog.items():
-        for filename in entry["files"]:
+        source = os.path.join(ROOT_DIR, entry["source_path"])
+        if not os.path.isdir(source):
+            raise RuntimeError(f"Example catalog source does not exist: {entry['source_path']}")
+        for filename in example_definitions.source_files(ROOT_DIR, entry["source_path"]):
             target = os.path.join(tmp_example_folder, example_name, filename)
             os.makedirs(os.path.dirname(target), exist_ok=True)
-            shutil.copy2(os.path.join(example_source_folder, example_name, filename), target)
-example_files = [
-    os.path.join("data", example_name, filename)
-    for example_name, entry in example_catalog.items()
-    for filename in entry["files"]
-]
+            shutil.copy2(os.path.join(source, filename), target)
+example_files = package_files(root="nvflare/tool/examples", starting="data")
 
 cmdclass = versioneer.get_cmdclass()
 
@@ -127,7 +125,7 @@ setup(
         "nvflare.dashboard.application": extra_files,
         "nvflare.tool.job": job_templates,
         "nvflare.tool.deploy": deploy_templates,
-        "nvflare.tool.examples": example_files,
+        "nvflare.tool.examples": ["catalog.json", *example_files],
         "nvflare.tool.recipe": ["recipe_catalog.json"],
     },
     include_package_data=True,

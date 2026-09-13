@@ -1,4 +1,3 @@
-nvflare[PT]>=2.10.0rc0,<2.11
 flwr>=1.26
 torch
 torchvision

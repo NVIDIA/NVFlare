@@ -6,6 +6,10 @@ This example demonstrates how to use NVIDIA FLARE with Flower to train an image 
 
 For the complete installation instructions, see [Installation](https://nvflare.readthedocs.io/en/main/installation.html)
 
+```bash
+pip install "nvflare[PT]"
+```
+
 Get the example code from github:
 
 ```
@@ -28,7 +32,6 @@ Install the dependency
 
 > [!IMPORTANT]
 > This `main` branch example uses Flower 1.26+ and the newer Flower SuperLink configuration flow.
-> Its requirements select the matching NVFlare 2.10 release line.
 > If you are using released NVFlare 2.7.x, switch to the 2.7 branch or tag of this example and use `flwr>=1.16,<1.26`.
 > NVFlare 2.7.x still uses Flower's legacy `--federation-config` CLI option, which Flower 1.26+ ignores.
 

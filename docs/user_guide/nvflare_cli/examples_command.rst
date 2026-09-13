@@ -10,36 +10,10 @@ NVFlare version in use.
 Bundled example catalog
 =======================
 
-The catalog covers the primary framework examples from ``examples/hello-world``:
-
-.. list-table::
-   :header-rows: 1
-   :widths: 22 28 50
-
-   * - Short name
-     - Framework
-     - Preparation and run
-   * - ``hello-pt``
-     - PyTorch
-     - Install ``requirements.txt``; run ``python job.py``
-   * - ``hello-numpy``
-     - NumPy
-     - Install ``requirements.txt``; run ``python job.py``
-   * - ``hello-tf``
-     - TensorFlow
-     - Install ``requirements.txt``; run with ``TF_FORCE_GPU_ALLOW_GROWTH=true``
-   * - ``hello-jax``
-     - JAX, Flax, and Optax
-     - Install requirements, then run ``prepare_model.py``, ``prepare_data.py``, and ``job.py``
-   * - ``hello-lightning``
-     - PyTorch Lightning
-     - Install requirements; run ``python job.py --synthetic_data``
-   * - ``hello-huggingface``
-     - Hugging Face and TRL
-     - Install requirements, then run ``prepare_data.py`` and ``job.py``
-   * - ``hello-flower``
-     - Flower with PyTorch
-     - Install requirements; run the ``flwr-pt`` configuration shown by the command
+The catalog maps a short CLI name to an example directory anywhere in the
+NVFlare source tree. Run ``nvflare examples get --help`` to see the current
+names. The help and JSON schema are generated from the bundled catalog, so a
+new catalog entry becomes available without a Python code change.
 
 Get an example
 ==============
@@ -74,10 +48,9 @@ overwrites an existing file, directory, or symbolic link. It creates the
 destination exclusively. If copying does not complete, remove the incomplete
 destination before retrying.
 
-The copied directory contains the same maintained files as the corresponding
-``examples/hello-world/<name>`` directory in the NVFlare release. A small
-``.nvflare-example.json`` file records the example name, installed NVFlare
-version, and canonical source path.
+The copied directory contains the same maintained files as the source directory
+selected by the catalog. A small ``.nvflare-example.json`` file records the
+example name, installed NVFlare version, and canonical source path.
 
 Automation
 ==========

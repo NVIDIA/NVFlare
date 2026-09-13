@@ -9,6 +9,7 @@ for the complete installation instructions, see [Installation](https://nvflare.r
 Install the example dependencies:
 
 ```
+python -m pip install "nvflare[PT]"
 python -m pip install -r requirements.txt
 ```
 

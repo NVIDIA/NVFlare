@@ -12,7 +12,7 @@ For the complete installation instructions, see `Installation <https://nvflare.r
 
 .. code-block:: bash
 
-   pip install nvflare
+   pip install "nvflare[PT]"
 
 
 Get the example code from GitHub:
@@ -38,8 +38,7 @@ Install the dependencies:
 .. warning::
 
    This ``main`` branch example uses Flower 1.26+ and the newer Flower SuperLink
-   configuration flow. Its requirements select the matching NVFlare 2.10
-   release line.
+   configuration flow.
 
    If you are using released NVFlare 2.7.x, switch to the 2.7 branch or tag of
    this example and use ``flwr>=1.16,<1.26``. NVFlare 2.7.x still uses Flower's

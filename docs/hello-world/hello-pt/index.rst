@@ -28,10 +28,11 @@ the example directory:
    git clone https://github.com/NVIDIA/NVFlare.git
    cd NVFlare/examples/hello-world/hello-pt
 
-Install the dependencies from that directory:
+Install NVFlare and the example dependencies from that directory:
 
 .. code-block:: bash
 
+   python -m pip install "nvflare[PT]"
    python -m pip install -r requirements.txt
 
 For alternative installation methods, see :ref:`installation`.

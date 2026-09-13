@@ -26,7 +26,7 @@ VERSION = {"version": "2.10.0", "full-revisionid": "a" * 40, "dirty": False, "er
 REPO_ROOT = Path(__file__).resolve().parents[4]
 SOURCE = REPO_ROOT / "examples/hello-world/hello-pt"
 CATALOG = examples_cli.EXAMPLE_CATALOG
-FILES = CATALOG["hello-pt"]["files"]
+FILES = examples_cli.source_files(REPO_ROOT, CATALOG["hello-pt"]["source_path"])
 
 
 @pytest.fixture(autouse=True)
@@ -46,22 +46,36 @@ def _all_file_names(root):
 
 @pytest.mark.parametrize("name", CATALOG)
 def test_source_checkout_uses_canonical_example(name):
-    assert Path(examples_cli._example_source(name)) == REPO_ROOT / CATALOG[name]["source_path"]
+    source, files = examples_cli._example_source(name)
+    assert Path(source) == REPO_ROOT / CATALOG[name]["source_path"]
+    assert files == examples_cli.source_files(REPO_ROOT, CATALOG[name]["source_path"])
 
 
 @pytest.mark.parametrize("name", CATALOG)
-def test_catalog_example_copies_exact_allowlist(name, tmp_path):
+def test_example_requirements_do_not_reinstall_nvflare(name):
+    requirements = REPO_ROOT / CATALOG[name]["source_path"] / "requirements.txt"
+    entries = [
+        line.strip() for line in requirements.read_text().splitlines() if line.strip() and not line.startswith("#")
+    ]
+    assert all(not entry.casefold().startswith("nvflare") for entry in entries)
+
+
+@pytest.mark.parametrize("name", CATALOG)
+def test_catalog_example_copies_exact_tracked_source(name, tmp_path):
     source = REPO_ROOT / CATALOG[name]["source_path"]
     destination = tmp_path / name
+    files = examples_cli.source_files(REPO_ROOT, CATALOG[name]["source_path"])
 
     result = examples_cli.get_example(VERSION, name=name, destination=destination)
 
-    expected = {filename: (source / filename).read_bytes() for filename in CATALOG[name]["files"]}
-    delivered = {filename: (destination / filename).read_bytes() for filename in CATALOG[name]["files"]}
+    expected = {filename: (source / filename).read_bytes() for filename in files}
+    delivered = {filename: (destination / filename).read_bytes() for filename in files}
     assert delivered == expected
-    assert _all_file_names(destination) == set(CATALOG[name]["files"]) | {examples_cli.PROVENANCE_FILE}
-    assert result["setup_commands"] == [list(command) for command in CATALOG[name]["setup_commands"]]
-    assert result["next_command"] == list(CATALOG[name]["next_command"])
+    assert _all_file_names(destination) == set(files) | {examples_cli.PROVENANCE_FILE}
+    expected_setup = [["pip", "install", "-r", "requirements.txt"]]
+    expected_setup.extend(list(command) for command in CATALOG[name].get("prepare_commands", []))
+    assert result["setup_commands"] == expected_setup
+    assert result["next_command"] == CATALOG[name].get("next_command", ["python", "job.py"])
 
 
 @pytest.mark.parametrize("command", [[], ["get"]])
@@ -76,6 +90,9 @@ def test_cli_schema_does_not_copy(monkeypatch, capsys, command):
     schema = json.loads(capsys.readouterr().out)
     assert schema["command"] == " ".join(["nvflare", "examples", *command])
     assert schema["mutating"] is True
+    if command == ["get"]:
+        name_arg = next(argument for argument in schema["args"] if argument["name"] == "name")
+        assert name_arg["choices"] == sorted(CATALOG)
 
 
 def test_cli_copies_exact_canonical_example_and_records_version(monkeypatch, capsys, tmp_path):
@@ -109,7 +126,7 @@ def test_cli_copies_exact_canonical_example_and_records_version(monkeypatch, cap
     assert _files(SOURCE) == original
 
 
-def test_copy_uses_example_allowlist(monkeypatch, tmp_path):
+def test_checkout_copy_uses_tracked_files(monkeypatch, tmp_path):
     source = tmp_path / "source"
     source.mkdir()
     for filename in FILES:
@@ -118,7 +135,7 @@ def test_copy_uses_example_allowlist(monkeypatch, tmp_path):
     (source / "__pycache__/client.cpython-313.pyc").write_bytes(b"generated")
     (source / "credentials.txt").write_text("local")
     destination = tmp_path / "copied"
-    monkeypatch.setattr(examples_cli, "_example_source", lambda name: source)
+    monkeypatch.setattr(examples_cli, "_example_source", lambda name: (source, FILES))
 
     examples_cli.get_example(VERSION, name="hello-pt", destination=destination)
 
@@ -158,7 +175,7 @@ def test_human_next_steps_include_catalog_setup(monkeypatch, capsys, tmp_path):
     monkeypatch.setattr("sys.argv", ["nvflare", "examples", "get", "hello-jax", "--dest", str(destination)])
     cli.run("nvflare")
     output = capsys.readouterr().out
-    assert "  python -m pip install -r requirements.txt" in output
+    assert "  pip install -r requirements.txt" in output
     assert "  python prepare_model.py" in output
     assert "  python prepare_data.py" in output
     assert "  python job.py" in output
@@ -192,7 +209,7 @@ def test_destination_created_during_copy_is_untouched(monkeypatch, tmp_path):
     def race(name):
         destination.mkdir()
         (destination / "original").write_text("original")
-        return SOURCE
+        return SOURCE, FILES
 
     monkeypatch.setattr(examples_cli, "_example_source", race)
     with pytest.raises(examples_cli.ExampleError) as error:

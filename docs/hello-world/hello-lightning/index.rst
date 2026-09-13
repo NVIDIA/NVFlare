@@ -18,6 +18,7 @@ dependencies with:
 
 .. code-block:: bash
 
+   python -m pip install "nvflare[PT]"
    python -m pip install -r requirements.txt
 
 get the example code from github:
