@@ -250,6 +250,55 @@ def test_destination_inside_cache_is_rejected_before_network(cache, remote, tmp_
     assert list(cache.root.iterdir()) == []
 
 
+@pytest.mark.parametrize("nested", [False, True])
+def test_destination_inside_alternate_case_cache_is_rejected_before_network(cache, remote, nested):
+    cache.root.mkdir()
+    alias = cache.root.with_name(cache.root.name.upper())
+    if not alias.exists() or not alias.samefile(cache.root):
+        pytest.skip("Requires a case-insensitive filesystem")
+    parent = alias
+    if nested:
+        parent = alias / "nested"
+        parent.mkdir()
+    destination = parent / "out"
+    with pytest.raises(source.ExampleError) as error:
+        cache.get(VERSION, name="hello-pt", destination=destination)
+    assert error.value.code == "INVALID_ARGS"
+    assert remote.calls == []
+    assert not destination.exists()
+    assert not (cache.root / ".lock").exists()
+
+
+@pytest.mark.parametrize("alternate_case", [False, True])
+def test_destination_containing_absent_cache_is_rejected_before_network(cache, remote, tmp_path, alternate_case):
+    cache.root = tmp_path / "delivered/cache"
+    parent = tmp_path
+    if alternate_case:
+        parent = tmp_path.with_name(tmp_path.name.upper())
+        if not parent.exists() or not parent.samefile(tmp_path):
+            pytest.skip("Requires a case-insensitive filesystem")
+    destination = parent / "delivered"
+    assert not destination.exists()
+    with pytest.raises(source.ExampleError) as error:
+        cache.get(VERSION, name="hello-pt", destination=destination)
+    assert error.value.code in {"INVALID_ARGS", "EXAMPLE_DESTINATION_EXISTS"}
+    assert remote.calls == []
+    if not alternate_case:
+        assert not destination.exists()
+
+
+def test_distinct_case_sensitive_directory_is_outside_cache(cache, remote):
+    cache.root.mkdir()
+    parent = cache.root.with_name(cache.root.name.upper())
+    if parent.exists():
+        pytest.skip("Requires a case-sensitive filesystem")
+    parent.mkdir()
+    destination = parent / "delivered"
+    cache.get(VERSION, name="hello-pt", destination=destination)
+    cache.clear()
+    assert (destination / "job.py").read_bytes() == remote.files[f"{EXAMPLE_PATH}/job.py"]
+
+
 def test_atomic_publish_refuses_destination_created_after_validation(cache, tmp_path, monkeypatch):
     original = store._publish
 

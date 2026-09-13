@@ -227,11 +227,16 @@ class ExampleStore:
         ref = selected_ref(version_info, ref)
         # Known destinations can fail before a network request.
         if destination is not None:
-            self._check_destination(Path(destination).expanduser().absolute())
-        commit = self.source.resolve(ref)
-        identity = {"repository": REPOSITORY, "commit": commit, "selector": name}
-        key = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
+            destination = Path(destination).expanduser().absolute()
+            self._check_destination(destination)
         with self.locked():
+            # Cache creation can create the destination itself under another spelling.
+            # Recheck before contacting GitHub, now that filesystem identity is available.
+            if destination is not None:
+                self._check_destination(destination)
+            commit = self.source.resolve(ref)
+            identity = {"repository": REPOSITORY, "commit": commit, "selector": name}
+            key = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
             cache = self.root / key
             existed = cache.exists() or cache.is_symlink()
             metadata = self._load(cache, identity, version_info) if existed and not refresh else None
@@ -305,10 +310,22 @@ class ExampleStore:
                 f"Destination parent does not exist: {destination.parent}",
                 "Create the parent directory or choose --dest under an existing directory.",
             )
-        # Do not deliver into the cache itself, where retention/clear would remove user work.
-        if destination.resolve().is_relative_to(self.root.resolve()):
+        resolved_destination = destination.resolve()
+        resolved_cache = self.root.resolve()
+        # Reject an absent destination that would be created by cache initialization.
+        overlap = resolved_cache.is_relative_to(resolved_destination)
+        try:
+            cache_stat = resolved_cache.stat()
+        except FileNotFoundError:
+            cache_stat = None
+        if cache_stat is not None:
+            # Case/Unicode aliases on macOS need filesystem identity, not lexical comparison.
+            overlap = overlap or any(
+                os.path.samestat(parent.stat(), cache_stat) for parent in resolved_destination.parents
+            )
+        if overlap:
             raise ExampleError(
                 "INVALID_ARGS",
-                "The destination must be outside the example cache.",
-                "Choose --dest outside the cache.",
+                "The destination and example cache must not contain one another.",
+                "Choose --dest outside the cache and its ancestors.",
             )

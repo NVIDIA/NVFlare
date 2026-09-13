@@ -35,8 +35,9 @@ different directory with ``--dest``:
 
 The destination's parent must already exist. An existing destination is never
 merged or overwritten, including an empty directory or a symbolic link.
-Explicit ``--dest`` paths are validated before contacting GitHub; destinations
-inside the download cache are rejected, including through symbolic links.
+Explicit ``--dest`` paths are validated before contacting GitHub; the destination
+and download cache must not contain one another. Containment checks recognize
+symbolic links and alternate-case spellings on case-insensitive filesystems.
 Interrupted downloads are cleaned up before they can become the requested
 destination. Atomic delivery uses Linux ``renameat2(RENAME_NOREPLACE)`` or macOS
 ``renamex_np(RENAME_EXCL)`` and requires filesystem support for that operation.
