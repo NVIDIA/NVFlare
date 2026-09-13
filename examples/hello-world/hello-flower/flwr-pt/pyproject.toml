@@ -16,7 +16,7 @@ description = ""
 license = "Apache-2.0"
 dependencies = [
     "flwr>=1.26",
-    "nvflare~=2.9.0rc",
+    "nvflare>=2.10.0rc0,<2.11",
     "torch",
     "torchvision",
     "tensorboard"

@@ -89,18 +89,23 @@ tmp_job_template_folder = "./nvflare/tool/job/templates"
 copy_package(src_dir="job_templates", dst_dir=tmp_job_template_folder)
 job_templates = package_files(root="nvflare/tool/job", starting="templates")
 deploy_templates = package_files(root="nvflare/tool/deploy", starting="templates")
-example_source_folder = "./examples/hello-world/hello-pt"
+example_source_folder = "./examples/hello-world"
 tmp_example_folder = "./nvflare/tool/examples/data"
 generated_example_data = os.path.isdir(example_source_folder)
 example_definitions = load_local_module("nvflare_example_definitions", "nvflare/tool/examples/__init__.py")
-hello_pt_files = example_definitions.HELLO_PT_FILES
+example_catalog = example_definitions.EXAMPLE_CATALOG
 if generated_example_data:
     remove_dir(target_path=tmp_example_folder)
-    for filename in hello_pt_files:
-        target = os.path.join(tmp_example_folder, "hello-pt", filename)
-        os.makedirs(os.path.dirname(target), exist_ok=True)
-        shutil.copy2(os.path.join(example_source_folder, filename), target)
-example_files = [os.path.join("data", "hello-pt", filename) for filename in hello_pt_files]
+    for example_name, entry in example_catalog.items():
+        for filename in entry["files"]:
+            target = os.path.join(tmp_example_folder, example_name, filename)
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            shutil.copy2(os.path.join(example_source_folder, example_name, filename), target)
+example_files = [
+    os.path.join("data", example_name, filename)
+    for example_name, entry in example_catalog.items()
+    for filename in entry["files"]
+]
 
 cmdclass = versioneer.get_cmdclass()
 

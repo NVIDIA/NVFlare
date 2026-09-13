@@ -1,4 +1,4 @@
-nvflare~=2.8.0rc
+nvflare>=2.10.0rc0,<2.11
 jax[cpu]
 flax
 optax

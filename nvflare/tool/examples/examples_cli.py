@@ -23,20 +23,11 @@ from pathlib import Path
 
 from nvflare.tool.cli_output import is_json_mode, output_error_message, output_ok, print_human
 from nvflare.tool.cli_schema import handle_schema_flag
-from nvflare.tool.examples import HELLO_PT_FILES
+from nvflare.tool.examples import EXAMPLE_CATALOG
 
 PROVENANCE_FILE = ".nvflare-example.json"
-EXAMPLES = {
-    "hello-pt": {
-        "source_path": "examples/hello-world/hello-pt",
-        "destination": "hello-pt",
-        "required_extra": "PT",
-        "next_command": ["python", "job.py"],
-        "files": HELLO_PT_FILES,
-    }
-}
 _parsers = {}
-_EXAMPLE_COMMANDS = ["nvflare examples get hello-pt", "nvflare examples get hello-pt --dest ./my-hello-pt"]
+_EXAMPLE_COMMANDS = ["nvflare examples get hello-pt", "nvflare examples get hello-numpy --dest ./numpy-demo"]
 
 
 class ExampleError(Exception):
@@ -67,7 +58,7 @@ def _example_source(name):
     # Editable installs load this module from the checkout, where setup.py does
     # not retain its temporary package-data copy.
     checkout_root = Path(__file__).resolve().parents[3]
-    checkout = checkout_root / EXAMPLES[name]["source_path"]
+    checkout = checkout_root / EXAMPLE_CATALOG[name]["source_path"]
     if (checkout_root / "setup.py").is_file() and checkout.is_dir():
         return checkout
     raise OSError(f"The installed NVFlare package does not contain the bundled {name} example")
@@ -81,15 +72,28 @@ def _destination_exists(destination):
     )
 
 
+def _copy_example(source, destination, files):
+    source_root = Path(source)
+    allowed = set(files)
+    for filename in files:
+        allowed.update(parent.as_posix() for parent in Path(filename).parents if parent != Path("."))
+
+    def ignore_unlisted(directory, names):
+        relative = Path(directory).relative_to(source_root)
+        return {name for name in names if (relative / name).as_posix() not in allowed}
+
+    shutil.copytree(source, destination, dirs_exist_ok=False, ignore=ignore_unlisted)
+
+
 def get_example(version_info, *, name, destination=None):
-    if name not in EXAMPLES:
+    if name not in EXAMPLE_CATALOG:
         raise ExampleError(
             "EXAMPLE_UNKNOWN",
             f"Unknown bundled example: {name}.",
-            "Choose a bundled example: " + ", ".join(sorted(EXAMPLES)),
+            "Choose a bundled example: " + ", ".join(sorted(EXAMPLE_CATALOG)),
         )
-    entry = EXAMPLES[name]
-    destination = Path(destination or entry["destination"]).expanduser().absolute()
+    entry = EXAMPLE_CATALOG[name]
+    destination = Path(destination or name).expanduser().absolute()
     if not destination.parent.is_dir():
         raise ExampleError(
             "EXAMPLE_DESTINATION_INVALID",
@@ -105,9 +109,8 @@ def get_example(version_info, *, name, destination=None):
         "source_path": entry["source_path"],
         "nvflare_version": version_info["version"],
     }
-    allowed = set(entry["files"])
     try:
-        shutil.copytree(source, destination, dirs_exist_ok=False, ignore=lambda _, names: set(names) - allowed)
+        _copy_example(source, destination, entry["files"])
     except FileExistsError:
         _destination_exists(destination)
     (destination / PROVENANCE_FILE).write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
@@ -115,7 +118,8 @@ def get_example(version_info, *, name, destination=None):
         **provenance,
         "directory": str(destination),
         "required_extra": entry["required_extra"],
-        "next_command": entry["next_command"],
+        "setup_commands": [list(command) for command in entry["setup_commands"]],
+        "next_command": list(entry["next_command"]),
         "readme": str(destination / "README.md"),
     }
 
@@ -152,6 +156,8 @@ def handle_examples_cmd(args):
             print_human(f"Created bundled example: {result['directory']}\n")
             print_human("Next:")
             print_human(f"  cd {shlex.quote(result['directory'])}")
+            for command in result["setup_commands"]:
+                print_human("  " + shlex.join(command))
             print_human("  " + shlex.join(result["next_command"]))
             print_human("\nSee README.md for dependencies and customization.")
     except ExampleError as error:

@@ -298,13 +298,17 @@ jobs:
           "$RUNNER_TEMP/example-wheel-env/bin/pip" install --no-deps --force-reinstall dist/*.whl
           mkdir "$RUNNER_TEMP/example-wheel-run"
           cd "$RUNNER_TEMP/example-wheel-run"
-          "$RUNNER_TEMP/example-wheel-env/bin/nvflare" examples get hello-pt
-          diff -r --exclude=.nvflare-example.json \
-            "$GITHUB_WORKSPACE/examples/hello-world/hello-pt" "$RUNNER_TEMP/example-wheel-run/hello-pt"
+          for example in hello-pt hello-numpy hello-tf hello-jax hello-lightning hello-huggingface hello-flower; do
+            "$RUNNER_TEMP/example-wheel-env/bin/nvflare" examples get "$example"
+            diff -r --exclude=.nvflare-example.json \
+              "$GITHUB_WORKSPACE/examples/hello-world/$example" "$RUNNER_TEMP/example-wheel-run/$example"
+          done
           "$RUNNER_TEMP/example-wheel-env/bin/pip" install --no-build-isolation --no-deps --force-reinstall \
             --editable "$GITHUB_WORKSPACE"
           mkdir "$RUNNER_TEMP/example-editable-run"
           cd "$RUNNER_TEMP/example-editable-run"
-          "$RUNNER_TEMP/example-wheel-env/bin/nvflare" examples get hello-pt
-          diff -r --exclude=.nvflare-example.json \
-            "$GITHUB_WORKSPACE/examples/hello-world/hello-pt" "$RUNNER_TEMP/example-editable-run/hello-pt"
+          for example in hello-pt hello-numpy hello-tf hello-jax hello-lightning hello-huggingface hello-flower; do
+            "$RUNNER_TEMP/example-wheel-env/bin/nvflare" examples get "$example"
+            diff -r --exclude=.nvflare-example.json \
+              "$GITHUB_WORKSPACE/examples/hello-world/$example" "$RUNNER_TEMP/example-editable-run/$example"
+          done

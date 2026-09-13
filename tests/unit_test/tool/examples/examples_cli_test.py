@@ -25,7 +25,8 @@ from nvflare.tool.examples import examples_cli
 VERSION = {"version": "2.10.0", "full-revisionid": "a" * 40, "dirty": False, "error": None}
 REPO_ROOT = Path(__file__).resolve().parents[4]
 SOURCE = REPO_ROOT / "examples/hello-world/hello-pt"
-FILES = examples_cli.HELLO_PT_FILES
+CATALOG = examples_cli.EXAMPLE_CATALOG
+FILES = CATALOG["hello-pt"]["files"]
 
 
 @pytest.fixture(autouse=True)
@@ -43,8 +44,24 @@ def _all_file_names(root):
     return {path.relative_to(root).as_posix() for path in root.rglob("*") if path.is_file()}
 
 
-def test_source_checkout_uses_canonical_example():
-    assert Path(examples_cli._example_source("hello-pt")) == SOURCE
+@pytest.mark.parametrize("name", CATALOG)
+def test_source_checkout_uses_canonical_example(name):
+    assert Path(examples_cli._example_source(name)) == REPO_ROOT / CATALOG[name]["source_path"]
+
+
+@pytest.mark.parametrize("name", CATALOG)
+def test_catalog_example_copies_exact_allowlist(name, tmp_path):
+    source = REPO_ROOT / CATALOG[name]["source_path"]
+    destination = tmp_path / name
+
+    result = examples_cli.get_example(VERSION, name=name, destination=destination)
+
+    expected = {filename: (source / filename).read_bytes() for filename in CATALOG[name]["files"]}
+    delivered = {filename: (destination / filename).read_bytes() for filename in CATALOG[name]["files"]}
+    assert delivered == expected
+    assert _all_file_names(destination) == set(CATALOG[name]["files"]) | {examples_cli.PROVENANCE_FILE}
+    assert result["setup_commands"] == [list(command) for command in CATALOG[name]["setup_commands"]]
+    assert result["next_command"] == list(CATALOG[name]["next_command"])
 
 
 @pytest.mark.parametrize("command", [[], ["get"]])
@@ -76,6 +93,7 @@ def test_cli_copies_exact_canonical_example_and_records_version(monkeypatch, cap
     assert output["status"] == "ok"
     assert output["data"]["source"] == "bundled"
     assert output["data"]["nvflare_version"] == VERSION["version"]
+    assert output["data"]["setup_commands"] == []
     assert output["data"]["next_command"] == ["python", "job.py"]
     delivered = _files(destination)
     provenance = json.loads((destination / examples_cli.PROVENANCE_FILE).read_bytes())
@@ -129,6 +147,20 @@ def test_human_next_step_quotes_destination(monkeypatch, capsys, tmp_path):
     monkeypatch.setattr("sys.argv", ["nvflare", "examples", "get", "hello-pt", "--dest", str(destination)])
     cli.run("nvflare")
     assert f"  cd {shlex.quote(str(destination))}" in capsys.readouterr().out
+
+
+def test_human_next_steps_include_catalog_setup(monkeypatch, capsys, tmp_path):
+    from nvflare import cli
+
+    destination = tmp_path / "jax"
+    monkeypatch.setattr("nvflare._version.get_versions", lambda: VERSION)
+    monkeypatch.setattr("sys.argv", ["nvflare", "examples", "get", "hello-jax", "--dest", str(destination)])
+    cli.run("nvflare")
+    output = capsys.readouterr().out
+    assert "  python -m pip install -r requirements.txt" in output
+    assert "  python prepare_model.py" in output
+    assert "  python prepare_data.py" in output
+    assert "  python job.py" in output
 
 
 @pytest.mark.parametrize("kind", ["file", "directory", "nonempty", "dangling-symlink"])
