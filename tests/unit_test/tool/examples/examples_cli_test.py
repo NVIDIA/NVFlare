@@ -48,6 +48,7 @@ def _mock_download(
     def download(revision, source_path, destination):
         assert revision == REVISION
         assert source_path == SOURCE_PATH
+        destination.mkdir()
         if readme is not None:
             (destination / readme).write_text("# Example\n")
         (destination / "job.py").write_text("print('example')\n")
@@ -204,7 +205,6 @@ def test_download_fetches_path_scoped_tree(monkeypatch, tmp_path):
     session = Session()
     monkeypatch.setattr(requests, "Session", lambda: session)
     destination = tmp_path / "example"
-    destination.mkdir()
 
     tree_url = examples_cli._download_example(REVISION, SOURCE_PATH, destination)
 
@@ -230,11 +230,13 @@ def test_network_failure_is_structured(monkeypatch, tmp_path):
 
     monkeypatch.setattr(requests, "Session", Session)
 
+    destination = tmp_path / "example"
     with pytest.raises(examples_cli.ExampleError) as error:
-        examples_cli._download_example(REVISION, SOURCE_PATH, tmp_path)
+        examples_cli._download_example(REVISION, SOURCE_PATH, destination)
 
     assert error.value.code == "EXAMPLE_NETWORK_ERROR"
-    assert "Remove the incomplete destination" in error.value.hint
+    assert "Remove the incomplete destination" not in error.value.hint
+    assert not destination.exists()
 
 
 def test_missing_path_is_not_reported_as_network_failure(monkeypatch, tmp_path):
@@ -259,11 +261,50 @@ def test_missing_path_is_not_reported_as_network_failure(monkeypatch, tmp_path):
 
     monkeypatch.setattr(requests, "Session", Session)
 
+    destination = tmp_path / "example"
     with pytest.raises(examples_cli.ExampleError) as error:
-        examples_cli._download_example(REVISION, SOURCE_PATH, tmp_path)
+        examples_cli._download_example(REVISION, SOURCE_PATH, destination)
 
     assert error.value.code == "EXAMPLE_SOURCE_NOT_FOUND"
-    assert "Remove the incomplete destination" in error.value.hint
+    assert "source revision or catalog path" in str(error.value)
+    assert "editable install" in error.value.hint
+    assert not destination.exists()
+
+
+def test_missing_tree_key_is_structured_without_creating_destination(monkeypatch, tmp_path):
+    class Response:
+        status_code = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {}
+
+    class Session:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def get(self, *args, **kwargs):
+            return Response()
+
+    monkeypatch.setattr(requests, "Session", Session)
+    destination = tmp_path / "example"
+
+    with pytest.raises(examples_cli.ExampleError) as error:
+        examples_cli._download_example(REVISION, SOURCE_PATH, destination)
+
+    assert error.value.code == "EXAMPLE_CONTENT_INVALID"
+    assert not destination.exists()
 
 
 @pytest.mark.parametrize("kind", ["file", "directory", "dangling-symlink"])

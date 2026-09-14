@@ -86,7 +86,7 @@ Use ``--dest`` to choose another new directory:
 
 The destination's parent must already exist. The command never merges with or
 overwrites an existing file, directory, or symbolic link. It creates the
-destination exclusively. If copying does not complete, remove the incomplete
+destination exclusively. If downloading does not complete, remove the incomplete
 destination before retrying.
 
 The downloaded directory contains the maintained files from the source

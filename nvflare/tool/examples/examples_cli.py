@@ -102,25 +102,35 @@ def _download_example(revision, source_path, destination):
     encoded_source_path = quote(source_path, safe="/")
     tree_url = f"https://api.github.com/repos/{REPOSITORY}/git/trees/{revision}:{encoded_source_path}?recursive=1"
     timeout = (get_connect_timeout(), 30)
+    destination_created = False
     try:
         with requests.Session() as session:
             with session.get(tree_url, timeout=timeout) as response:
                 if getattr(response, "status_code", None) == 404:
                     raise ExampleError(
                         "EXAMPLE_SOURCE_NOT_FOUND",
-                        f"The release does not contain the catalog path: {source_path}",
-                        "Remove the incomplete destination, then choose an example listed by this NVFlare installation.",
+                        f"GitHub does not contain this installation's source revision or catalog path: "
+                        f"{revision}:{source_path}",
+                        "For an editable install, push the commit or check out a revision available on GitHub; "
+                        "otherwise reinstall NVFlare.",
                     )
                 response.raise_for_status()
                 try:
-                    metadata = response.json()
-                except ValueError:
+                    entries = response.json()["tree"]
+                    if not isinstance(entries, list):
+                        raise TypeError
+                except (ValueError, KeyError, TypeError):
                     raise ExampleError(
                         "EXAMPLE_CONTENT_INVALID",
                         "GitHub returned invalid source metadata.",
-                        "Remove the incomplete destination, then retry or use the example directly from GitHub.",
+                        "Retry or use the example directly from GitHub.",
                     ) from None
-            for entry in (item for item in metadata["tree"] if item["type"] == "blob"):
+            try:
+                destination.mkdir()
+            except FileExistsError:
+                _destination_exists(destination)
+            destination_created = True
+            for entry in (item for item in entries if item["type"] == "blob"):
                 relative = entry["path"]
                 relative_parts = relative.split("/")
                 if any(part in {"", ".", ".."} for part in relative_parts):
@@ -143,10 +153,11 @@ def _download_example(revision, source_path, destination):
                 if entry.get("mode") == "100755":
                     target.chmod(0o755)
     except requests.RequestException as error:
+        cleanup = "Remove the incomplete destination, " if destination_created else ""
         raise ExampleError(
             "EXAMPLE_NETWORK_ERROR",
             f"Could not download the NVFlare example: {error}",
-            "Remove the incomplete destination, check GitHub access and your network settings, then retry.",
+            f"{cleanup}check GitHub access and your network settings, then retry.",
         ) from None
     return tree_url
 
@@ -198,10 +209,6 @@ def get_example(version_info, catalog, *, name, destination=None):
 
     revision = _source_revision(version_info)
     entry = catalog[name]
-    try:
-        destination.mkdir()
-    except FileExistsError:
-        _destination_exists(destination)
     tree_url = _download_example(revision, entry["source_path"], destination)
     warnings = _dependency_warnings(destination)
 

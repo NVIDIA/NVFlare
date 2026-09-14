@@ -23,6 +23,11 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 
 
 def test_catalog_entries_are_source_path_only_and_exist():
+    catalog_path = REPO_ROOT / "nvflare/tool/examples/catalog.json"
+    pairs = json.loads(catalog_path.read_text(), object_pairs_hook=lambda value: value)
+    names = [name for name, _ in pairs]
+    assert len(names) == len(set(names))
+
     catalog, errors = load_catalog()
 
     assert errors == []
@@ -84,17 +89,3 @@ def test_invalid_catalog_document_is_rejected(tmp_path, contents):
 
     with pytest.raises(ValueError):
         load_catalog(path)
-
-
-def test_duplicate_short_name_does_not_hide_other_entries(tmp_path):
-    path = tmp_path / "catalog.json"
-    path.write_text(
-        '{"good":{"source_path":"examples/good"},'
-        '"duplicate":{"source_path":"examples/one"},'
-        '"duplicate":{"source_path":"examples/two"}}'
-    )
-
-    catalog, errors = load_catalog(path)
-
-    assert catalog == {"good": {"source_path": "examples/good"}}
-    assert errors == [{"name": "duplicate", "error": "duplicates short name"}]
