@@ -55,6 +55,17 @@ def _load_assess_module():
 
 
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required to import the evaluator")
+def test_evaluate_parser_rejects_explicit_empty_adapter_dir(monkeypatch, capsys):
+    evaluate_sentiment = _load_evaluate_module()
+    monkeypatch.setattr(sys, "argv", ["evaluate_sentiment.py", "--adapter_dir="])
+
+    with pytest.raises(SystemExit, match="2"):
+        evaluate_sentiment.define_parser()
+
+    assert "--adapter_dir must not be empty" in capsys.readouterr().err
+
+
+@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required to import the evaluator")
 def test_evaluate_sentiment_summarizes_scores_and_validation_bias():
     evaluate_sentiment = _load_evaluate_module()
     rows = [

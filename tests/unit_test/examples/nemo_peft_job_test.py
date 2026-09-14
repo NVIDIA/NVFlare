@@ -509,6 +509,20 @@ def test_notebook_uses_profile_specific_evaluation_adapter_and_disjoint_split():
     assert "--remove_train_overlap" in source
 
 
+def test_lightning_runner_rejects_missing_server_checkpoints():
+    with open(os.path.join(_example_dir(), "run_h100_lightning35.sh")) as f:
+        runner = f.read()
+    evaluation_lookups = [
+        line
+        for line in runner.splitlines()
+        if "find /host_out/runs/" in line and "FL_global_model.pt" in line and "evaluate_sentiment.py" in line
+    ]
+
+    assert len(evaluation_lookups) == 4
+    assert all("; test -n " in line for line in evaluation_lookups)
+    assert all(" && python evaluate_sentiment.py" in line for line in evaluation_lookups)
+
+
 def test_nemo_peft_dataset_prompt_matches_notebook_inference():
     example_dir = _example_dir()
     spec = importlib.util.spec_from_file_location(

@@ -32,6 +32,12 @@ DEFAULT_PROMPT_TEMPLATE = "{sentence} sentiment:"
 DEFAULT_CHOICE_MAP = "neutral=neutral,positive=positive,negative=negative"
 
 
+def _non_empty_adapter_path(value: str) -> str:
+    if not value:
+        raise argparse.ArgumentTypeError("--adapter_dir must not be empty")
+    return value
+
+
 def define_parser():
     parser = argparse.ArgumentParser(description="Evaluate sentiment labels by exact label log-probability scoring.")
     model_profiles.add_model_profile_argument(parser)
@@ -39,7 +45,7 @@ def define_parser():
     parser.add_argument("--tokenizer_name_or_path", default=None)
     parser.add_argument("--model_revision", default=None)
     parser.add_argument("--tokenizer_revision", default=None)
-    parser.add_argument("--adapter_dir", default=None)
+    parser.add_argument("--adapter_dir", type=_non_empty_adapter_path, default=None)
     parser.add_argument(
         "--validation_file",
         default="./data/FinancialPhraseBank-v1.0/financial_phrase_bank_val.jsonl",
