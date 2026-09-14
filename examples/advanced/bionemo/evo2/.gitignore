@@ -1,0 +1,7 @@
+.evo2_cache/
+.evo2_workspace/
+data/
+head_initialization/
+initialization/
+models/
+results/
