@@ -13,6 +13,9 @@
 # limitations under the License.
 import io
 import json
+from pathlib import Path
+from subprocess import CompletedProcess
+from types import SimpleNamespace
 from uuid import uuid4
 from zipfile import ZipFile
 
@@ -155,6 +158,20 @@ class TestClientPropsRejection:
     def test_blob_ignores_legacy_props(
         self, app, client, auth_header, creator_header, tmp_path, monkeypatch, malformed_props
     ):
+        def package_kit(command, *, cwd):
+            assert command == ["zip", "-rq", "-P", "1234", "tmp.zip", "."]
+            kit_dir = Path(cwd)
+            archive = io.BytesIO()
+            with ZipFile(archive, "w") as kit:
+                for path in sorted(kit_dir.rglob("*")):
+                    kit.write(path, path.relative_to(kit_dir))
+            (kit_dir / "tmp.zip").write_bytes(archive.getvalue())
+            return CompletedProcess(command, 0)
+
+        # Exercise real provisioning and inspect its files without requiring a system zip
+        # executable. This unencrypted test archive does not test production PIN encryption.
+        # Replace only blob's subprocess reference, not subprocess.run globally.
+        monkeypatch.setattr("nvflare.dashboard.application.blob.subprocess", SimpleNamespace(run=package_kit))
         secret = b"legacy-client-props-must-not-disclose-this-file"
         target = tmp_path / "private-file"
         target.write_bytes(secret)
@@ -197,12 +214,12 @@ class TestClientPropsRejection:
                 assert not any(name.endswith("customRootCA.pem") for name in kit.namelist())
                 for name in kit.namelist():
                     if not name.endswith("/"):
-                        assert secret not in kit.read(name, pwd=b"1234")
-                resources = json.loads(kit.read("local/resources.json.default", pwd=b"1234"))
+                        assert secret not in kit.read(name)
+                resources = json.loads(kit.read("local/resources.json.default"))
                 resource_manager = next(c for c in resources["components"] if c["id"] == "resource_manager")
                 for key, value in capacity.items():
                     assert resource_manager["args"][key] == value
-                config = json.loads(kit.read("startup/fed_client.json", pwd=b"1234"))
+                config = json.loads(kit.read("startup/fed_client.json"))
                 assert config["client"]["connection_security"] == "mtls"
                 # Operator-managed use_aio=True must select the asynchronous transport.
                 assert config["servers"][0]["service"]["scheme"] == "agrpc"
