@@ -20,6 +20,7 @@ import shlex
 import sys
 from contextlib import contextmanager
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -329,6 +330,8 @@ def test_two_site_one_round_mock_main_writes_a_reloadable_final_checkpoint_summa
         "create_recipe",
         lambda run_args, plan, _validation_file: MockRecipe(run_args, plan),
     )
+    # Keep this instant mock run independent of the filesystem's mtime resolution.
+    monkeypatch.setattr(job_module, "time", SimpleNamespace(time=lambda: 0.0))
     job_module.main(
         [
             "--data-dir",
