@@ -228,8 +228,9 @@ admin identity; its blast radius is job cells only.
 Site-scope rejection stops a job credential from acting as a site. Job binding
 stops one job's credential from acting as another job's cell:
 
-- Every TLS driver exposes the authenticated peer certificate as the
-  `PEER_CERT` connection property next to `PEER_CN`. Drivers parse nothing.
+- Every TLS driver hands the raw peer certificate to `Connection.record_peer`
+  (the F3 base class), which derives `PEER_CN` and stores the DER as
+  `PEER_CERT` once for all transports. Drivers parse nothing.
 - Cellnet knows one generic rule, in its own vocabulary: a certificate may carry
   cell-scope URIs, and a peer presenting one may only claim an FQCN equal to or
   under one of those cells (`cell_scopes` / `fqcn_in_scopes` in

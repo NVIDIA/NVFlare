@@ -26,8 +26,7 @@ from nvflare.fuel.f3.drivers.aio_context import AioContext
 from nvflare.fuel.f3.drivers.base_driver import BaseDriver
 from nvflare.fuel.f3.drivers.driver import ConnectorInfo
 from nvflare.fuel.f3.drivers.driver_params import DriverCap, DriverParams
-from nvflare.fuel.f3.drivers.net_utils import add_peer_cert, get_tcp_urls
-from nvflare.fuel.hci.security import get_certificate_common_name
+from nvflare.fuel.f3.drivers.net_utils import get_tcp_urls
 from nvflare.security.logging import secure_format_exception
 
 log = logging.getLogger(__name__)
@@ -69,15 +68,10 @@ class WsConnection(Connection):
         if peer_sock:
             conn_props[DriverParams.PEER_ADDR.value] = f"{peer_sock[0]}:{peer_sock[1]}"
 
-        peer_cert = self.websocket.get_extra_info("peercert")
-        if peer_cert:
-            cn = get_certificate_common_name(peer_cert)
-            add_peer_cert(conn_props, self.websocket.get_extra_info("ssl_object"))
-        else:
-            cn = "N/A" if self.ssl_context else None
-
-        if cn:
-            conn_props[DriverParams.PEER_CN.value] = cn
+        ssl_object = self.websocket.get_extra_info("ssl_object")
+        self.record_peer(
+            conn_props, ssl_object.getpeercert(binary_form=True) if ssl_object else None, bool(self.ssl_context)
+        )
 
         return conn_props
 

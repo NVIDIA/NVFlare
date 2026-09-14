@@ -38,8 +38,8 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessageType, ReturnCo
 from nvflare.fuel.f3.cellnet.identity import ADMIN_LISTENER_KEY, CellIdentityResolver, cell_scopes, fqcn_in_scopes
 from nvflare.fuel.f3.cellnet.utils import make_reply
 from nvflare.fuel.f3.comm_error import CommError
+from nvflare.fuel.f3.connection import Connection
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
-from nvflare.fuel.f3.drivers.net_utils import add_grpc_peer_cert, add_peer_cert
 from nvflare.fuel.f3.endpoint import Endpoint
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.sfm.conn_manager import ConnManager
@@ -581,22 +581,20 @@ def test_mtls_certificate_cache_enforces_certificate_scope():
         assert origin not in manager.cert_cache
 
 
-def test_peer_cert_exposure():
+def test_connection_records_peer_cert_and_cn():
     pem = _scoped_cert_pem("site-1", _JOB_SCOPES)
     der = _der(pem)
 
-    props = {}
-    add_peer_cert(props, SimpleNamespace(getpeercert=lambda binary_form=False: der))
-    assert props[DriverParams.PEER_CERT.value] == der
-    props = {}
-    add_peer_cert(props, None)
-    assert props == {}
+    for peer_cert in (der, pem):  # sockets hand over DER, gRPC hands over PEM
+        props = {}
+        Connection.record_peer(props, peer_cert)
+        assert props == {DriverParams.PEER_CERT.value: der, DriverParams.PEER_CN.value: "site-1"}
 
     props = {}
-    add_grpc_peer_cert(props, {"x509_pem_cert": [pem]})
-    assert props[DriverParams.PEER_CERT.value] == der
+    Connection.record_peer(props, None, secure=True)
+    assert props == {DriverParams.PEER_CN.value: "N/A"}  # TLS without client authentication
     props = {}
-    add_grpc_peer_cert(props, {"x509_common_name": [b"site-1"]})
+    Connection.record_peer(props, None, secure=False)
     assert props == {}
 
 
