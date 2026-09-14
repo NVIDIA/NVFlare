@@ -81,11 +81,15 @@ profile; signed CPU and GPU appraisals supply the evidence. Invalid configuratio
 aborts provisioning. Mixing other CC compute environments into this project is
 not supported yet. See [the checks and limitations](CCMANAGER.md).
 
-The ordinary server's `CoCoAuthorizer.verify(token)` needs no CoCo runtime or
-Trustee connection: it verifies locally using the pinned AS public key. The
-current API has no `expected_workloads` constructor argument or
-`verify_for_site()` method. See the [direct client/server API](CCMANAGER.md#direct-clientserver-api)
-and [authorization boundaries](CCMANAGER.md#what-verification-does-not-authorize)
+The ordinary server's `CoCoAuthorizer.verify_for_site(token, authenticated_site)`
+needs no CoCo runtime or Trustee connection: it verifies locally using the pinned
+AS public key and binds the proof to the authenticated peer. Obtain
+`authenticated_site` from authenticated FL/mTLS identity, not the submitted
+token or its envelope. The compatible `verify(token)` method checks proof
+validity only, without expected-peer binding. The current API has no
+`expected_workloads` constructor argument. See the
+[direct client/server API](CCMANAGER.md#direct-clientserver-api) and
+[authorization boundaries](CCMANAGER.md#what-verification-does-not-authorize)
 before integrating it outside the generated kits.
 
 Activate the updated NVFlare environment on the provisioning node, then run:
