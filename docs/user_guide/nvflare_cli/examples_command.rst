@@ -129,6 +129,3 @@ Failures return a nonzero exit status, an error code, and a recovery hint.
 ``EXAMPLE_DESTINATION_EXISTS`` identifies an existing destination,
 ``EXAMPLE_DESTINATION_INVALID`` identifies a missing parent, and
 ``EXAMPLE_IO_ERROR`` reports filesystem or installation errors.
-For repeated automation, set ``GH_TOKEN`` to authenticate the GitHub API tree
-request and avoid the lower anonymous request limit. The token is not sent to
-the raw file host.

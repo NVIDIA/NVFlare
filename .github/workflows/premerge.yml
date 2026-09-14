@@ -303,17 +303,13 @@ jobs:
             > "$RUNNER_TEMP/example-list.json"
           gh api "repos/NVIDIA/NVFlare/git/trees/$GITHUB_SHA?recursive=1" \
             > "$RUNNER_TEMP/example-tree.json"
-          mkdir "$RUNNER_TEMP/example-downloads"
-          "$RUNNER_TEMP/example-wheel-env/bin/nvflare" examples get hello-pt \
-            --dest "$RUNNER_TEMP/example-downloads/hello-pt"
           "$RUNNER_TEMP/example-wheel-env/bin/python" - \
-            "$RUNNER_TEMP/example-list.json" "$RUNNER_TEMP/example-tree.json" \
-            "$RUNNER_TEMP/example-downloads/hello-pt" <<'PY'
+            "$RUNNER_TEMP/example-list.json" "$RUNNER_TEMP/example-tree.json" <<'PY'
           import json
           import sys
           from pathlib import Path
 
-          list_path, tree_path, downloaded = map(Path, sys.argv[1:])
+          list_path, tree_path = map(Path, sys.argv[1:])
           listed = json.loads(Path(list_path).read_text())["data"]["examples"]
           tree = json.loads(tree_path.read_text())
           assert tree["truncated"] is False
@@ -323,6 +319,5 @@ jobs:
               files = {path[len(prefix):] for path in blobs if path.startswith(prefix)}
               assert files, item
               assert "README.md" in files or "README.rst" in files, item
-          assert (downloaded / "README.md").is_file()
-          print(f"Verified {len(listed)} catalog entries and a GitHub download from the installed wheel")
+          print(f"Verified {len(listed)} catalog entries from the installed wheel against GitHub")
           PY

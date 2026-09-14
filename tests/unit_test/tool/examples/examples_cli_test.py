@@ -191,7 +191,6 @@ def test_download_fetches_path_scoped_tree(monkeypatch, tmp_path):
     class Session:
         def __init__(self):
             self.requested = []
-            self.tree_headers = None
 
         def __enter__(self):
             return self
@@ -202,14 +201,11 @@ def test_download_fetches_path_scoped_tree(monkeypatch, tmp_path):
         def get(self, url, **kwargs):
             self.requested.append(url)
             if "api.github.com" in url:
-                self.tree_headers = kwargs["headers"]
                 return Response(metadata=tree)
-            assert "headers" not in kwargs
             return Response(data=payloads[Path(url).name])
 
     session = Session()
     monkeypatch.setattr(requests, "Session", lambda: session)
-    monkeypatch.setenv("GH_TOKEN", "test-token")
     destination = tmp_path / "example"
 
     tree_url = examples_cli._download_example(REVISION, SOURCE_PATH, destination)
@@ -219,7 +215,6 @@ def test_download_fetches_path_scoped_tree(monkeypatch, tmp_path):
     assert (destination / "nested/run.sh").read_bytes() == payloads["run.sh"]
     assert (destination / "nested/run.sh").stat().st_mode & 0o111
     assert len(session.requested) == 3
-    assert session.tree_headers == {"Authorization": "Bearer test-token"}
     assert session.requested[1].endswith(f"/{REVISION}/{SOURCE_PATH}/README.md")
     assert session.requested[2].endswith(f"/{REVISION}/{SOURCE_PATH}/nested/run.sh")
 
