@@ -102,8 +102,12 @@ def test_failed_round_preserves_checkpoint(tmp_path, monkeypatch, fault, good_fi
         assert (actual["a"].item(), actual["b"].item()) == expected
 
 
-def test_finalization_waits_for_failed_callback(monkeypatch):
+@pytest.mark.parametrize("abort", [False, True])
+def test_finalization_waits_for_failed_callback(monkeypatch, abort):
     controller = prepare_controller(monkeypatch, FLModel(params={"a": 0.0, "b": 0.0}))
+    if abort:
+        controller.abort_signal.trigger(True)
+        monkeypatch.setattr(controller, "get_num_standing_tasks", lambda: 1)
     entered, release, finalizing = Event(), Event(), Event()
     update, save = Mock(), Mock()
     monkeypatch.setattr(controller, "update_model", update)
@@ -148,12 +152,18 @@ def test_finalization_waits_for_failed_callback(monkeypatch):
         monkeypatch.setattr(controller, "broadcast", broadcast)
         with ThreadPoolExecutor(max_workers=1, thread_name_prefix="finalizer") as finalizers:
             future = finalizers.submit(controller.run)
+            future.add_done_callback(lambda _: finalizing.set())
             try:
                 assert finalizing.wait(5), "finalization never started"
+                returned_before_release = future.done()
             finally:
                 release.set()
-            with pytest.raises(RuntimeError, match="refusing to update or save"):
-                future.result(timeout=5)
+            if abort:
+                assert future.result(timeout=5) is None
+                assert not returned_before_release, "abort returned while a callback was still running"
+            else:
+                with pytest.raises(RuntimeError, match="refusing to update or save"):
+                    future.result(timeout=5)
         update.assert_not_called()
         save.assert_not_called()
         assert callbacks[0](FLModel(params={"a": 999.0})) is False

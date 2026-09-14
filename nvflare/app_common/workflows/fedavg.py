@@ -237,6 +237,8 @@ class FedAvg(BaseFedAvg):
                 # Wait for all results to be processed
                 while self.get_num_standing_tasks():
                     if self.abort_signal.triggered:
+                        with round_state["lock"]:
+                            round_state["closed"] = True
                         self.info("Abort signal triggered. Finishing FedAvg.")
                         return
                     time.sleep(self._task_check_period)
