@@ -11,6 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from uuid import uuid4
+
 import pytest
 
 from nvflare.dashboard.application.constants import FLARE_DASHBOARD_NAMESPACE
@@ -69,3 +71,76 @@ class TestClients:
 
         assert response.status_code == 200
         assert response.json["client"]["organization"] == NEW_ORG
+
+
+class TestClientPropsRejection:
+    @pytest.fixture(scope="class")
+    @classmethod
+    def creator_header(cls, client, auth_header):
+        email = f"client-creator-{uuid4().hex}@test.com"
+        response = client.post(
+            FLARE_DASHBOARD_NAMESPACE + "/api/v1/users",
+            json={"email": email, "password": "test-password", "organization": "test.com", "role": "member"},
+        )
+        assert response.status_code == 201
+        user_id = response.json["user"]["id"]
+        response = client.post(
+            FLARE_DASHBOARD_NAMESPACE + "/api/v1/login", json={"email": email, "password": "test-password"}
+        )
+        assert response.status_code == 200
+        yield {"Authorization": "Bearer " + response.json["access_token"]}
+        response = client.delete(FLARE_DASHBOARD_NAMESPACE + f"/api/v1/users/{user_id}", headers=auth_header)
+        assert response.status_code == 200
+
+    @pytest.mark.parametrize("as_admin", [False, True])
+    @pytest.mark.parametrize("props", [{"custom_ca_cert": "/server/private-file"}, {}, None, "invalid", []])
+    def test_create_rejects_props(self, client, auth_header, creator_header, as_admin, props):
+        url = FLARE_DASHBOARD_NAMESPACE + "/api/v1/clients"
+        before = client.get(url, headers=auth_header).json["client_list"]
+        response = client.post(
+            url,
+            json={**CLIENT1, "name": f"props-{uuid4().hex}", "props": props},
+            headers=auth_header if as_admin else creator_header,
+        )
+        try:
+            assert response.status_code == 400
+            assert response.json["status"] == "error"
+            assert "props" in response.json["message"]
+            assert client.get(url, headers=auth_header).json["client_list"] == before
+        finally:
+            if response.status_code == 201:
+                client.delete(url + f"/{response.json['client']['id']}", headers=auth_header)
+
+    @pytest.mark.parametrize("as_admin", [False, True])
+    @pytest.mark.parametrize("approval_state", [0, 100, 200])
+    @pytest.mark.parametrize("props", [{"custom_ca_cert": "/server/private-file"}, {}, None, "invalid", []])
+    def test_patch_rejects_props(self, client, auth_header, creator_header, as_admin, approval_state, props):
+        response = client.post(
+            FLARE_DASHBOARD_NAMESPACE + "/api/v1/clients",
+            json={**CLIENT1, "name": f"props-{uuid4().hex}"},
+            headers=creator_header,
+        )
+        assert response.status_code == 201
+        url = FLARE_DASHBOARD_NAMESPACE + f"/api/v1/clients/{response.json['client']['id']}"
+        try:
+            response = client.patch(url, json={"approval_state": approval_state}, headers=auth_header)
+            assert response.status_code == 200
+            before = client.get(url, headers=auth_header).json["client"]
+            response = client.patch(
+                url,
+                json={"props": props, "name": "changed-name", "approval_state": -1},
+                headers=auth_header if as_admin else creator_header,
+            )
+            assert response.status_code == 400
+            assert response.json["status"] == "error"
+            assert "props" in response.json["message"]
+            assert client.get(url, headers=auth_header).json["client"] == before
+
+            # Ordinary client fields remain editable when props is absent.
+            capacity = {"num_of_gpus": 2, "mem_per_gpu_in_GiB": 16}
+            response = client.patch(url, json={"capacity": capacity}, headers=creator_header)
+            assert response.status_code == 200
+            assert response.json["client"]["capacity"] == capacity
+        finally:
+            response = client.delete(url, headers=auth_header)
+            assert response.status_code == 200
