@@ -15,6 +15,7 @@
 """Download examples selected by the installed NVFlare catalog."""
 
 import json
+import os
 import re
 import shlex
 import sys
@@ -105,7 +106,10 @@ def _download_example(revision, source_path, destination):
     destination_created = False
     try:
         with requests.Session() as session:
-            with session.get(tree_url, timeout=timeout) as response:
+            headers = {}
+            if token := os.environ.get("GH_TOKEN"):
+                headers["Authorization"] = f"Bearer {token}"
+            with session.get(tree_url, headers=headers, timeout=timeout) as response:
                 if response.status_code == 404:
                     raise ExampleError(
                         "EXAMPLE_SOURCE_NOT_FOUND",
