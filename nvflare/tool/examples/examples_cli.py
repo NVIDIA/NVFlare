@@ -116,8 +116,9 @@ def _download_example(revision, source_path, destination):
                     )
                 response.raise_for_status()
                 try:
-                    entries = response.json()["tree"]
-                    if not isinstance(entries, list):
+                    metadata = response.json()
+                    entries = metadata["tree"]
+                    if metadata.get("truncated") or not isinstance(entries, list) or not entries:
                         raise TypeError
                 except (ValueError, KeyError, TypeError):
                     raise ExampleError(
@@ -125,20 +126,41 @@ def _download_example(revision, source_path, destination):
                         "GitHub returned invalid source metadata.",
                         "Retry or use the example directly from GitHub.",
                     ) from None
+            files = []
+            for entry in entries:
+                if (
+                    not isinstance(entry, dict)
+                    or not isinstance(entry.get("type"), str)
+                    or not isinstance(entry.get("path"), str)
+                ):
+                    raise ExampleError(
+                        "EXAMPLE_CONTENT_INVALID",
+                        "GitHub returned invalid source metadata.",
+                        "Retry or use the example directly from GitHub.",
+                    )
+                if entry["type"] != "blob":
+                    continue
+                relative_parts = entry["path"].split("/")
+                if any(part in {"", ".", ".."} for part in relative_parts):
+                    raise ExampleError(
+                        "EXAMPLE_CONTENT_INVALID",
+                        f"GitHub returned an invalid path for {source_path}.",
+                        "Retry or use the example directly from GitHub.",
+                    )
+                files.append((entry, relative_parts))
+            if not files:
+                raise ExampleError(
+                    "EXAMPLE_CONTENT_INVALID",
+                    "GitHub returned no files for the example.",
+                    "Retry or use the example directly from GitHub.",
+                )
             try:
                 destination.mkdir()
             except FileExistsError:
                 _destination_exists(destination)
             destination_created = True
-            for entry in (item for item in entries if item["type"] == "blob"):
+            for entry, relative_parts in files:
                 relative = entry["path"]
-                relative_parts = relative.split("/")
-                if any(part in {"", ".", ".."} for part in relative_parts):
-                    raise ExampleError(
-                        "EXAMPLE_CONTENT_INVALID",
-                        f"GitHub returned an invalid path for {source_path}.",
-                        "Remove the incomplete destination, then retry or use the example directly from GitHub.",
-                    )
                 target = destination.joinpath(*relative_parts)
                 target.parent.mkdir(parents=True, exist_ok=True)
                 repository_path = f"{source_path}/{relative}"

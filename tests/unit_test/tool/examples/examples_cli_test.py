@@ -307,6 +307,53 @@ def test_missing_tree_key_is_structured_without_creating_destination(monkeypatch
     assert not destination.exists()
 
 
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        {"truncated": True, "tree": [{"path": "README.md", "type": "blob"}]},
+        {"truncated": False, "tree": []},
+        {"truncated": False, "tree": [None]},
+        {"truncated": False, "tree": [{}]},
+        {"truncated": False, "tree": [{"path": "README.md"}]},
+        {"truncated": False, "tree": [{"path": 1, "type": "blob"}]},
+    ],
+)
+def test_unusable_tree_metadata_is_rejected_before_creating_destination(monkeypatch, tmp_path, metadata):
+    class Response:
+        status_code = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return metadata
+
+    class Session:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def get(self, *args, **kwargs):
+            return Response()
+
+    monkeypatch.setattr(requests, "Session", Session)
+    destination = tmp_path / "example"
+
+    with pytest.raises(examples_cli.ExampleError) as error:
+        examples_cli._download_example(REVISION, SOURCE_PATH, destination)
+
+    assert error.value.code == "EXAMPLE_CONTENT_INVALID"
+    assert not destination.exists()
+
+
 @pytest.mark.parametrize("kind", ["file", "directory", "dangling-symlink"])
 def test_existing_destination_is_rejected_before_download(monkeypatch, tmp_path, kind):
     destination = tmp_path / "hello-pt"
