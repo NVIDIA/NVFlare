@@ -177,6 +177,8 @@ def main(argv: list[str] | None = None) -> None:
     )
 
     diff, metrics, attempt_dir = train_one_round(args, incoming_state, site_name=site_name, current_round=current_round)
+    if metrics.get("frozen_parameters_unchanged") == 1.0:
+        print(f"site={site_name}, round={current_round}, frozen_backbone=verified")
     flare.send(
         flare.FLModel(
             params_type=flare.ParamsType.DIFF,
@@ -194,8 +196,6 @@ def main(argv: list[str] | None = None) -> None:
         f"site={site_name}, round={current_round}, sent_trainable_mib={metrics['sent_mebibytes']:.2f}, "
         f"attempt_dir={attempt_dir}"
     )
-    if metrics.get("frozen_parameters_unchanged") == 1.0:
-        print(f"site={site_name}, round={current_round}, frozen_backbone=verified")
 
 
 if __name__ == "__main__":

@@ -362,6 +362,35 @@ def test_two_site_one_round_mock_main_writes_a_reloadable_final_checkpoint_summa
 
 
 @pytest.mark.skipif(not HAS_NVFLARE_RUNTIME_DEPS, reason="NVFlare runtime dependencies are required")
+def test_run_summary_rejects_a_final_checkpoint_identical_to_initialization(tmp_path):
+    import torch
+
+    job_module = _load_job_module()
+    args = _args(job_module, tmp_path)
+    manifest, plan, validation_file, training_inputs = job_module.validate_inputs(args)
+    result_dir = tmp_path / "unchanged-result"
+    global_checkpoint = _write_final_global_checkpoint(
+        job_module,
+        result_dir,
+        initial_checkpoint=args.initial_checkpoint,
+    )
+    final_payload = torch.load(global_checkpoint, map_location="cpu", weights_only=True)
+    initial_payload = torch.load(args.initial_checkpoint, map_location="cpu", weights_only=True)
+    final_payload["model"] = initial_payload["model"]
+    torch.save(final_payload, global_checkpoint)
+
+    with pytest.raises(RuntimeError, match="identical to the common initialization"):
+        job_module.collect_run_summary(
+            args,
+            plan,
+            result_dir,
+            0.0,
+            manifest,
+            training_inputs,
+        )
+
+
+@pytest.mark.skipif(not HAS_NVFLARE_RUNTIME_DEPS, reason="NVFlare runtime dependencies are required")
 def test_manifest_and_single_gpu_federation_validation_fail_loudly(tmp_path):
     job_module = _load_job_module()
     args = _args(job_module, tmp_path)

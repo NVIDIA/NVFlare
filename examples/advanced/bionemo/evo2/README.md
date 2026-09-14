@@ -148,8 +148,9 @@ exchange dtype.
 
 ## 4. Run a final-commit GPU smoke test
 
-Before a longer run, exercise the real BioNeMo path with two clients, one round, and one local optimizer step. Use a
-new workspace path for every attempt.
+Before a longer run, exercise the real BioNeMo path with two clients, one round, and four local optimizer steps.
+One warmup step can be too small to change a BF16 model tensor, so the smoke budget must be large enough to produce
+a visible update. Use a new workspace path for every attempt.
 
 ```bash
 python3 job.py \
@@ -159,7 +160,7 @@ python3 job.py \
   --workspace /tmp/nvflare/evo2_splice_smoke \
   --num-clients 2 \
   --num-rounds 1 \
-  --local-steps 1 \
+  --local-steps 4 \
   --micro-batch-size 4 \
   --global-batch-size 32 \
   --gpu '[0]'

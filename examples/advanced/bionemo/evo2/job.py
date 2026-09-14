@@ -460,6 +460,11 @@ def collect_run_summary(
         raise RuntimeError(f"Global checkpoint {global_checkpoint} does not preserve initialization metadata.")
 
     changed_tensors = sum(not initial_state[name].equal(final_state[name]) for name in initial_state)
+    if changed_tensors == 0:
+        raise RuntimeError(
+            f"Global checkpoint {global_checkpoint} is identical to the common initialization; "
+            "increase the local training budget and inspect the client metrics before treating this run as valid."
+        )
     manifest_path = Path(args.manifest).resolve() if args.manifest else Path(args.data_dir).resolve() / "manifest.json"
     summary = {
         "backend": args.backend,
