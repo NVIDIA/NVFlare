@@ -17,7 +17,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from nvflare.apis.fl_constant import ConnPropKey, RunProcessKey
+from nvflare.apis.fl_constant import ConnPropKey, RunProcessKey, SecureTrainConst
 from nvflare.apis.job_def import JobMetaKey, RunStatus
 from nvflare.apis.job_launcher_spec import JobReturnCode
 from nvflare.apis.shareable import Shareable
@@ -26,6 +26,7 @@ from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
 from nvflare.fuel.f3.cellnet.identity import ADMIN_LISTENER_KEY
+from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, ClientRegMsgKey, JobFailureMsgKey, new_cell_message
 from nvflare.private.fed.authenticator import MISSING_CLIENT_FQCN
 from nvflare.private.fed.server.fed_server import BaseServer, FederatedServer
@@ -440,6 +441,39 @@ class TestFederatedServer:
 
         assert cell_cls.call_args.kwargs["auth_identity"] == "server-cn"
         assert cell_cls.call_args.kwargs["auth_identity_map"] == auth_identity_map
+
+    def test_create_job_cell_pins_both_tls_roles_to_job_credential(self):
+        server = object.__new__(FederatedServer)
+        server.engine = MagicMock()
+
+        with (
+            patch("nvflare.private.fed.server.fed_server.Cell") as cell_cls,
+            patch("nvflare.private.fed.server.fed_server.NetAgent") as net_agent_cls,
+            patch("nvflare.private.fed.server.fed_server.ServerCommandAgent") as command_agent_cls,
+            patch("nvflare.private.fed.server.fed_server.mpm.add_cleanup_cb"),
+        ):
+            cell_cls.return_value = MagicMock()
+            net_agent_cls.return_value = MagicMock()
+            command_agent_cls.return_value = MagicMock()
+
+            server.create_job_cell(
+                "job-1",
+                "tcp://root",
+                "tcp://parent",
+                True,
+                {
+                    SecureTrainConst.SSL_ROOT_CERT: "/ws/startup/rootCA.pem",
+                    SecureTrainConst.SSL_CERT: "/ws/job-1/job_cert/job.crt",
+                    SecureTrainConst.PRIVATE_KEY: "/ws/job-1/job_cert/job.key",
+                },
+            )
+
+        credentials = cell_cls.call_args.kwargs["credentials"]
+        assert credentials[DriverParams.CA_CERT.value] == "/ws/startup/rootCA.pem"
+        for role in (DriverParams.SERVER_CERT, DriverParams.CLIENT_CERT):
+            assert credentials[role.value] == "/ws/job-1/job_cert/job.crt"
+        for role in (DriverParams.SERVER_KEY, DriverParams.CLIENT_KEY):
+            assert credentials[role.value] == "/ws/job-1/job_cert/job.key"
 
     def test_set_cell_preserves_server_command_agent_aux_callback(self):
         server, engine, cell, aux_callback = self._create_job_cell_with_command_agent(HotState(ssid="ssid"))
