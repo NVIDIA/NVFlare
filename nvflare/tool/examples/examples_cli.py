@@ -106,7 +106,7 @@ def _download_example(revision, source_path, destination):
     try:
         with requests.Session() as session:
             with session.get(tree_url, timeout=timeout) as response:
-                if getattr(response, "status_code", None) == 404:
+                if response.status_code == 404:
                     raise ExampleError(
                         "EXAMPLE_SOURCE_NOT_FOUND",
                         f"GitHub does not contain this installation's source revision or catalog path: "
@@ -118,9 +118,10 @@ def _download_example(revision, source_path, destination):
                 try:
                     metadata = response.json()
                     entries = metadata["tree"]
-                    if metadata.get("truncated") or not isinstance(entries, list) or not entries:
-                        raise TypeError
                 except (ValueError, KeyError, TypeError):
+                    metadata = {}
+                    entries = None
+                if metadata.get("truncated") or not isinstance(entries, list) or not entries:
                     raise ExampleError(
                         "EXAMPLE_CONTENT_INVALID",
                         "GitHub returned invalid source metadata.",
@@ -325,7 +326,7 @@ def handle_examples_cmd(args):
                     f"\nFollow {Path(result['readme']).name} for dependency, preparation, and run instructions."
                 )
     except ExampleError as error:
-        output_error_message(error.code, str(error), error.hint, exit_code=4 if error.code == "INVALID_ARGS" else 1)
+        output_error_message(error.code, str(error), error.hint, exit_code=1)
     except KeyboardInterrupt:
         output_error_message(
             "EXAMPLE_INTERRUPTED",

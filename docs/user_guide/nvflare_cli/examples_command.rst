@@ -116,7 +116,7 @@ Use ``--format json`` for structured output:
 
    nvflare examples get hello-pt --dest ./automation-copy --format json
 
-Schema discovery does not copy the example:
+Schema discovery does not download the example:
 
 .. code-block:: bash
 

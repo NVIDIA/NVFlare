@@ -166,6 +166,8 @@ def test_download_fetches_path_scoped_tree(monkeypatch, tmp_path):
     payloads = {"README.md": b"# Example\n", "run.sh": b"run\n"}
 
     class Response:
+        status_code = 200
+
         def __init__(self, *, metadata=None, data=None):
             self.metadata = metadata
             self.data = data
