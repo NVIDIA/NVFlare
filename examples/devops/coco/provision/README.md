@@ -161,8 +161,41 @@ private recovery inputs remain. Earlier clients may already have published
 encrypted images and completed handoffs. There is no cross-client registry
 rollback. Review the retained records, choose new unique release names, then
 rerun provision. Do not reuse keys/releases or delete existing registry objects
-to force a retry. Retained `state/coco-private/prod_NN` directories cannot be
-overwritten; use a fresh workspace if intentionally resetting stage numbers.
+to force a retry.
+
+If documented cleanup of generated `prod_NN` directories causes a later
+`nvflare provision --force` run to reuse a stage number, the packager preserves
+the previous private stage under a uniquely created, mode-0700 directory:
+
+```text
+state/coco-private/prod_NN.superseded-<unique-id>/prod_NN/
+```
+
+It then creates a fresh `state/coco-private/prod_NN/` for the new kits and build
+inputs. This also applies when the previous build failed partway through.
+Earlier archives are never overwritten or deleted, even across repeated retries.
+Keep all these trees private. Retaining a directory does not rewrite absolute
+paths in its historical receipts or automatically resume an external build.
+Do not delete `state/coco-private` to work around a reused stage number, and do
+not run concurrent provisioning commands against the same workspace.
+
+Each image-runner invocation has a timeout of 3600 seconds, including time spent
+waiting for interactive approval. For a longer reviewed build, configure the
+packager in `project.yaml`, for example:
+
+```yaml
+packager:
+  path: nvflare.lighter.cc_provision.impl.coco_packager.CoCoPackager
+  args:
+    build_image_cmd: ../admin/build_coco_image.sh
+    build_timeout: 7200
+```
+
+`build_timeout` must be a positive integer in seconds. On timeout, packaging
+fails without publishing a Pod handoff for that client and retains its private
+recovery inputs. The direct runner process is stopped; this is not a rollback
+of published images or a guarantee that its descendants or external services
+have stopped. Inspect and stop any remaining build activity before retrying.
 
 Offline tests create/sign real startup kits with a mocked image runner. They
 do not certify actual Docker builds, GPU operation, or hardware attestation.

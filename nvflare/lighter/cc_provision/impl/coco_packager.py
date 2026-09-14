@@ -20,6 +20,7 @@ import re
 import shlex
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 import yaml
@@ -47,10 +48,13 @@ def copy_private_tree(source, destination):
 
 
 class CoCoPackager(Packager):
-    def __init__(self, build_image_cmd="build_coco_image.sh"):
+    def __init__(self, build_image_cmd="build_coco_image.sh", build_timeout=3600):
         if not isinstance(build_image_cmd, str) or not build_image_cmd:
             raise ValueError("build_image_cmd must name a trusted executable")
+        if type(build_timeout) is not int or build_timeout <= 0:
+            raise ValueError("build_timeout must be a positive integer number of seconds")
         self.build_image_cmd = build_image_cmd
+        self.build_timeout = build_timeout
 
     def package(self, project, ctx):
         result = Path(ctx.get_result_location()).resolve()
@@ -77,6 +81,16 @@ class CoCoPackager(Packager):
         private_root.mkdir(mode=0o700, exist_ok=True)
         private_root.chmod(0o700)
         private = private_root / result.name
+        if private.is_symlink() or (private.exists() and not private.is_dir()):
+            raise ValueError(f"Expected a regular private stage directory: {private}")
+        if private.exists():
+            # Stage numbers can be reused after prod cleanup, including retries
+            # after a failed build. Reserve a unique private archive directory
+            # atomically; never overwrite or delete an earlier recovery tree.
+            archive = Path(tempfile.mkdtemp(prefix=f"{result.name}.superseded-", dir=private_root))
+            retained = archive / result.name
+            private.rename(retained)
+            ctx.info(f"Previous CoCo private stage retained at {retained}. Do not distribute state/.")
         private.mkdir(mode=0o700)
         # The aggregate launcher assumes every client is a plaintext kit.
         aggregate = result / ProvFileName.START_ALL_SH
@@ -95,7 +109,9 @@ class CoCoPackager(Packager):
             owner = private / participant.name
             try:
                 request, runner = self.prepare(owner, config_path, config)
-                subprocess.run([str(runner), str(request)], cwd=config_path.parent, check=True)
+                subprocess.run(
+                    [str(runner), str(request)], cwd=config_path.parent, check=True, timeout=self.build_timeout
+                )
                 receipt = json.loads((owner / "result.json").read_text())
                 if (
                     receipt.get("schema") != "nvflare-coco-build-result/v1"

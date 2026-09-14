@@ -15,6 +15,7 @@
 import base64
 import gzip
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -139,6 +140,7 @@ def test_provision_real_signed_kit_then_package(tmp_path):
     def runner(command, **kwargs):
         assert kwargs["check"] is True
         assert kwargs["cwd"] == tmp_path
+        assert kwargs["timeout"] == 3600
         request = Path(command[1])
         kit = request.parent / "build-context/.nvflare-kit"
         assert (kit / "signature.json").is_file()
@@ -224,6 +226,46 @@ def test_build_failure_preserves_private_kit_without_public_handoff(tmp_path):
     assert (root / "state/coco-private/prod_00/site-1/startup-kit/startup/client.key").is_file()
 
 
+@pytest.mark.parametrize("timeout", [None, True, False, 0, -1, 1.5, "60"])
+def test_invalid_build_timeout_rejected(timeout):
+    with pytest.raises(ValueError, match="build_timeout"):
+        CoCoPackager(build_timeout=timeout)
+
+
+def test_build_timeout_preserves_private_kit_without_public_handoff(tmp_path):
+    project, _ = setup_project(tmp_path)
+    (tmp_path / "build.sh").write_text(f"#!{sys.executable}\nimport time\ntime.sleep(60)\n")
+    with pytest.raises(subprocess.TimeoutExpired) as error:
+        Provisioner(str(tmp_path / "workspace"), builders(), CoCoPackager("build.sh", build_timeout=1)).provision(
+            project
+        )
+    # subprocess may report the remaining deadline after process startup.
+    assert 0 < error.value.timeout <= 1
+    root = tmp_path / "workspace/test_project"
+    assert not (root / "prod_00/site-1").exists()
+    assert (root / "state/coco-private/prod_00/site-1/startup-kit/startup/client.key").is_file()
+
+
+@pytest.mark.parametrize("kind", ["file", "symlink", "dangling_symlink"])
+def test_reused_private_stage_must_be_a_regular_directory(tmp_path, kind):
+    project, _ = setup_project(tmp_path)
+    private = tmp_path / "workspace/test_project/state/coco-private/prod_00"
+    private.parent.mkdir(parents=True)
+    if kind == "file":
+        private.write_text("retain this file")
+    else:
+        target = tmp_path / "previous-stage"
+        if kind == "symlink":
+            target.mkdir()
+        private.symlink_to(target, target_is_directory=True)
+    with pytest.raises(ValueError, match="regular private stage directory"):
+        Provisioner(str(tmp_path / "workspace"), builders(), CoCoPackager("build.sh")).provision(project)
+    if kind == "file":
+        assert private.read_text() == "retain this file"
+    else:
+        assert private.is_symlink()
+
+
 def test_context_symlink_rejected(tmp_path):
     project, _ = setup_project(tmp_path)
     (tmp_path / "site-1/leak").symlink_to(tmp_path / "admin/platform.env")
@@ -245,7 +287,8 @@ def test_coco_on_server_rejected(tmp_path):
     assert ctx.get(CtxKey.BUILD_ERROR)
 
 
-def test_cli_resolves_project_relative_cc_config_from_other_directory(tmp_path):
+@pytest.mark.parametrize("first_build_fails", [False, True])
+def test_cli_reprovision_retains_private_stages_from_other_directory(tmp_path, first_build_fails):
     project, _ = setup_project(tmp_path)
     definition = {
         "api_version": 3,
@@ -294,21 +337,45 @@ def test_cli_resolves_project_relative_cc_config_from_other_directory(tmp_path):
         f"pod.write_text({json.dumps(json.dumps(pod))})\n"
         "out.write_text(json.dumps({'schema': 'nvflare-coco-build-result/v1', 'release_name': 'site-1-v1', 'pod_yaml': str(pod)}))\n"
     )
-    result = subprocess.run(
-        [
-            str(Path(sys.executable).parent / "nvflare"),
-            "provision",
-            "-p",
-            str(tmp_path / "project.yaml"),
-            "-w",
-            str(tmp_path / "workspace"),
-            "--force",
-        ],
-        cwd=tmp_path.parent,
-        text=True,
-        capture_output=True,
-        timeout=30,
-    )
-    assert result.returncode == 0, result.stdout + result.stderr
-    public = tmp_path / "workspace/test_project/prod_00/site-1"
-    assert sorted(p.name for p in public.iterdir()) == ["site-1-v1-pod.yaml"]
+    command = [
+        str(Path(sys.executable).parent / "nvflare"),
+        "provision",
+        "-p",
+        str(tmp_path / "project.yaml"),
+        "-w",
+        str(tmp_path / "workspace"),
+        "--force",
+    ]
+    good_runner = (tmp_path / "build.sh").read_text()
+    if first_build_fails:
+        (tmp_path / "build.sh").write_text("#!/bin/sh\nexit 99\n")
+    root = tmp_path / "workspace/test_project"
+    private = root / "state/coco-private/prod_00"
+    retained = []
+    for attempt in range(3):
+        if attempt:
+            # Only remove the generated prod directory in this test's private
+            # temporary workspace, matching the documented stage-reuse path.
+            shutil.rmtree(root / "prod_00")
+            (tmp_path / "build.sh").write_text(good_runner)
+        result = subprocess.run(command, cwd=tmp_path.parent, text=True, capture_output=True, timeout=30)
+        public = root / "prod_00/site-1"
+        if attempt == 0 and first_build_fails:
+            assert result.returncode != 0
+            assert not public.exists()
+        else:
+            assert result.returncode == 0, result.stdout + result.stderr
+            assert sorted(p.name for p in public.iterdir()) == ["site-1-v1-pod.yaml"]
+        assert (private / "site-1/startup-kit/startup/client.key").is_file()
+        assert not (private / "retained-marker.txt").exists()
+        archives = sorted(private.parent.glob("prod_00.superseded-*"))
+        assert len(archives) == attempt
+        for archive in archives:
+            assert archive.stat().st_mode & 0o777 == 0o700
+            previous = archive / "prod_00"
+            index = int((previous / "retained-marker.txt").read_text())
+            assert {p.relative_to(previous): p.read_bytes() for p in previous.rglob("*") if p.is_file()} == retained[
+                index
+            ]
+        (private / "retained-marker.txt").write_text(str(attempt))
+        retained.append({p.relative_to(private): p.read_bytes() for p in private.rglob("*") if p.is_file()})
