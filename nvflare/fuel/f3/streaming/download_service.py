@@ -764,6 +764,7 @@ class _Transaction:
         # when this is True AND no operations are in flight: "no ops" alone does not
         # mean quiet -- settlement callbacks can still be emitting.
         self._settlement_complete = False
+        self._finished_settlement_started = False  # guarded by DownloadService._tx_lock
         # receivers that have issued at least one pull on ANY ref (monotonic; the
         # transaction-level PAYLOAD_ACQUIRED fact the acquire budget and the facade read),
         # and each receiver's last activity anywhere on the transaction (what the idle
@@ -1435,18 +1436,20 @@ class DownloadService:
         try:
             future = callback_thread_pool.submit(cls._settle_finished_transaction, tx)
         except RuntimeError:
-            # The shared executor can race its process-wide shutdown between the
-            # stopped check and ThreadPoolExecutor.submit(). Complete cleanup rather
-            # than strand this transaction's source and termination marker.
+            # Worker creation can fail after enqueueing. Both the queued work and
+            # inline fallback use the same settlement claim below.
             future = None
         if future is None:
-            # CheckedExecutor deliberately ignores submissions after shutdown. This
-            # edge is already in process teardown, where preserving cleanup is more
-            # important than keeping the request callback asynchronous.
+            # Also preserve cleanup when CheckedExecutor ignores a stopped-pool submission.
             cls._settle_finished_transaction(tx)
 
     @classmethod
     def _settle_finished_transaction(cls, tx: _Transaction) -> None:
+        with cls._tx_lock:
+            if tx._finished_settlement_started:
+                return
+            tx._finished_settlement_started = True
+        # Never hold the table lock while draining operations or invoking callbacks.
         tx.transaction_done(
             TransactionDoneStatus.FINISHED,
             on_outcome=functools.partial(cls._record_outcome, tx=tx),
