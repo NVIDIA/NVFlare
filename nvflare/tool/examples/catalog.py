@@ -19,42 +19,35 @@ from pathlib import Path, PurePosixPath
 _SHORT_NAME = re.compile(r"[a-z0-9][a-z0-9-]{0,63}")
 
 
-class _JsonObject(list):
-    pass
-
-
-def _duplicate_key(pairs):
-    keys = set()
-    for key, value in pairs:
-        if key in keys:
-            return key
-        keys.add(key)
-    return None
+class _CatalogObject(dict):
+    def __init__(self, pairs):
+        super().__init__()
+        self.duplicate_keys = []
+        for key, value in pairs:
+            if key in self:
+                self.duplicate_keys.append(key)
+            else:
+                self[key] = value
 
 
 def load_catalog(path=None):
     path = Path(path or Path(__file__).with_name("catalog.json"))
-    definitions = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=_JsonObject)
-    if not isinstance(definitions, _JsonObject) or not definitions:
+    definitions = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=_CatalogObject)
+    if not isinstance(definitions, _CatalogObject) or not definitions:
         raise ValueError("the example catalog must be a non-empty object")
-    duplicate_name = _duplicate_key(definitions)
-    if duplicate_name is not None:
-        raise ValueError(f"duplicate catalog short name: {duplicate_name}")
+    if definitions.duplicate_keys:
+        raise ValueError(f"duplicate catalog short name: {definitions.duplicate_keys[0]}")
 
     catalog = {}
     errors = []
     source_paths = set()
-    for name, entry_pairs in definitions:
+    for name, entry in definitions.items():
         error = None
-        entry = None
-        if not isinstance(name, str) or not _SHORT_NAME.fullmatch(name) or not isinstance(entry_pairs, _JsonObject):
+        if not isinstance(name, str) or not _SHORT_NAME.fullmatch(name) or not isinstance(entry, _CatalogObject):
             error = "must map a lowercase short name to one source_path"
-        else:
-            duplicate_key = _duplicate_key(entry_pairs)
-            if duplicate_key is not None:
-                error = f"contains duplicate key {duplicate_key}"
-            entry = dict(entry_pairs)
-        if not error and set(entry) != {"source_path"}:
+        elif entry.duplicate_keys:
+            error = f"contains duplicate key {entry.duplicate_keys[0]}"
+        elif set(entry) != {"source_path"}:
             error = "must contain only source_path"
         if not error:
             source_path = entry["source_path"]
