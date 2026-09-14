@@ -30,13 +30,12 @@ def define_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--backend", choices=("bionemo", "mock"), default="bionemo")
     parser.add_argument("--base-checkpoint", default="./models/evo2_1b_bf16_mbridge")
-    parser.add_argument("--data-file", default="./data/train/pooled.jsonl")
+    parser.add_argument("--data-file", default="./data/validation.jsonl")
     parser.add_argument("--output", default="./models/evo2_lora_init.pt")
     parser.add_argument("--work-dir", default="/tmp/nvflare/evo2_initialize")
     parser.add_argument("--classifier-file", default=None)
     parser.add_argument("--seq-length", type=int, default=600)
     parser.add_argument("--seed", type=int, default=1234)
-    parser.add_argument("--peft-mode", choices=("lora", "head-only"), default="lora")
     parser.add_argument("--lora-dim", type=int, default=16)
     parser.add_argument("--lora-alpha", type=int, default=32)
     parser.add_argument("--lora-dropout", type=float, default=0.1)
@@ -47,16 +46,15 @@ def define_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def create_mock_state(peft_mode: str, seed: int) -> OrderedDict[str, torch.Tensor]:
+def create_mock_state(seed: int) -> OrderedDict[str, torch.Tensor]:
     """Create a tiny deterministic state for CPU workflow validation."""
 
     generator = torch.Generator().manual_seed(seed)
     state = OrderedDict()
-    if peft_mode == "lora":
-        state["decoder.layers.0.self_attention.linear_qkv.adapter.linear_in.weight"] = torch.randn(
-            4, 8, generator=generator
-        )
-        state["decoder.layers.0.self_attention.linear_qkv.adapter.linear_out.weight"] = torch.zeros(8, 4)
+    state["decoder.layers.0.self_attention.linear_qkv.adapter.linear_in.weight"] = torch.randn(
+        4, 8, generator=generator
+    )
+    state["decoder.layers.0.self_attention.linear_qkv.adapter.linear_out.weight"] = torch.zeros(8, 4)
     state["decoder.classification_head.weight"] = torch.randn(3, 8, generator=generator)
     state["decoder.classification_head.bias"] = torch.zeros(3)
     return state
@@ -67,7 +65,7 @@ def prepare_initial_model(args: argparse.Namespace) -> OrderedDict[str, torch.Te
 
     training_inputs = {"data_file": None, "base_checkpoint": None, "classifier_file": None}
     if args.backend == "mock":
-        state = create_mock_state(args.peft_mode, args.seed)
+        state = create_mock_state(args.seed)
     else:
         missing = [path for path in (args.data_file,) if not os.path.isfile(path)]
         if not os.path.isdir(args.base_checkpoint):
@@ -87,7 +85,6 @@ def prepare_initial_model(args: argparse.Namespace) -> OrderedDict[str, torch.Te
             result_dir=str(Path(args.work_dir).resolve()),
             seq_length=args.seq_length,
             seed=args.seed,
-            peft_mode=args.peft_mode,
             lora_dim=args.lora_dim,
             lora_alpha=args.lora_alpha,
             lora_dropout=args.lora_dropout,
@@ -98,15 +95,13 @@ def prepare_initial_model(args: argparse.Namespace) -> OrderedDict[str, torch.Te
         "backend": args.backend,
         "base_checkpoint": str(Path(args.base_checkpoint).resolve()),
         "exchange_dtype": adapter_checkpoint.EXCHANGE_DTYPE_NAME,
-        "peft_mode": args.peft_mode,
+        "peft_mode": "lora",
         "seed": args.seed,
         "seq_length": args.seq_length,
-        "lora_dim": args.lora_dim if args.peft_mode == "lora" else None,
-        "lora_alpha": args.lora_alpha if args.peft_mode == "lora" else None,
-        "lora_dropout": args.lora_dropout if args.peft_mode == "lora" else None,
-        "lora_target_modules": (
-            list(evo2_runtime.parse_lora_targets(args.lora_target_modules)) if args.peft_mode == "lora" else []
-        ),
+        "lora_dim": args.lora_dim,
+        "lora_alpha": args.lora_alpha,
+        "lora_dropout": args.lora_dropout,
+        "lora_target_modules": list(evo2_runtime.parse_lora_targets(args.lora_target_modules)),
         "training_inputs": training_inputs,
     }
     adapter_checkpoint.save_nvflare_checkpoint(state, args.output, metadata=metadata)

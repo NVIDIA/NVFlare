@@ -606,10 +606,18 @@ def write_prepared_data(
     train_dir = output_dir / "train"
     train_dir.mkdir(parents=True, exist_ok=True)
 
-    pooled_path = train_dir / "pooled.jsonl"
+    # Remove generated files that belonged to an older preparation layout or
+    # to sites omitted by this run. Keeping them would make the directory look
+    # as though it still contained pooled or additional-site training data.
+    expected_site_files = {f"{site_name}.jsonl" for site_name in prepared["sites"]}
+    stale_train_files = [train_dir / "pooled.jsonl"]
+    stale_train_files.extend(path for path in train_dir.glob("site-*.jsonl") if path.name not in expected_site_files)
+    for stale_path in stale_train_files:
+        if stale_path.is_file() or stale_path.is_symlink():
+            stale_path.unlink()
+
     validation_path = output_dir / "validation.jsonl"
     test_path = output_dir / "test.jsonl"
-    _write_jsonl(pooled_path, prepared["train"])
     _write_jsonl(validation_path, prepared["validation"])
     _write_jsonl(test_path, prepared["test"])
 
@@ -657,13 +665,11 @@ def write_prepared_data(
         },
         "audit": prepared["audit"],
         "files": {
-            "pooled_train": pooled_path.relative_to(output_dir).as_posix(),
             "validation": validation_path.relative_to(output_dir).as_posix(),
             "test": test_path.relative_to(output_dir).as_posix(),
             "sites": site_files,
         },
         "file_identities": {
-            "pooled_train": _jsonl_file_identity(pooled_path),
             "validation": _jsonl_file_identity(validation_path),
             "test": _jsonl_file_identity(test_path),
             "sites": site_identities,

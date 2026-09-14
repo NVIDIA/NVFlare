@@ -16,7 +16,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import signal
 import sys
@@ -24,7 +23,6 @@ import tempfile
 import time
 from collections import OrderedDict
 from collections.abc import Mapping
-from pathlib import Path
 
 import evo2_adapter_checkpoint as adapter_checkpoint
 import torch
@@ -41,11 +39,6 @@ def define_parser() -> argparse.ArgumentParser:
     parser.add_argument("--base-checkpoint", required=True)
     parser.add_argument("--classifier-file", default=None)
     parser.add_argument("--work-dir", required=True)
-    parser.add_argument(
-        "--training-state-dir",
-        default=None,
-        help="Optional site-private directory for native optimizer, scheduler, RNG, and sampler state",
-    )
     parser.add_argument("--local-steps", type=int, default=20)
     parser.add_argument("--sample-count", type=int, required=True)
     parser.add_argument("--seq-length", type=int, default=600)
@@ -56,19 +49,12 @@ def define_parser() -> argparse.ArgumentParser:
     parser.add_argument("--warmup-iters", type=int, default=2)
     parser.add_argument("--eval-iters", type=int, default=10)
     parser.add_argument("--seed", type=int, default=1234)
-    parser.add_argument("--peft-mode", choices=("lora", "head-only"), default="lora")
     parser.add_argument("--lora-dim", type=int, default=16)
     parser.add_argument("--lora-alpha", type=int, default=32)
     parser.add_argument("--lora-dropout", type=float, default=0.1)
     parser.add_argument(
         "--lora-target-modules",
         default=",".join(("linear_qkv", "linear_proj", "linear_fc1", "linear_fc2", "dense_projection", "dense")),
-    )
-    parser.add_argument(
-        "--server-tensor-device",
-        choices=("cpu",),
-        default="cpu",
-        help="Device for returned trainable tensors; the server-side state is CPU-only",
     )
     parser.add_argument("--mock-delta", type=float, default=0.01)
     return parser
@@ -81,10 +67,6 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise ValueError("--sample-count must be positive.")
     if args.eval_iters <= 0:
         raise ValueError("--eval-iters must be positive.")
-    if args.training_state_dir is not None and not args.training_state_dir.strip():
-        raise ValueError("--training-state-dir must be a non-empty path when specified.")
-    if args.training_state_dir is not None and args.backend != "bionemo":
-        raise ValueError("--training-state-dir is supported only by the BioNeMo backend.")
     if args.backend == "bionemo":
         missing = [path for path in (args.train_file, args.validation_file) if not os.path.isfile(path)]
         if not os.path.isdir(args.base_checkpoint):
@@ -106,16 +88,6 @@ def _mock_round(
     return updated, {"validation_accuracy": max(0.0, min(1.0, 0.5 + delta)), "validation_ce_loss": 1.0}
 
 
-def _resolve_device(device_name: str) -> torch.device:
-    if device_name == "auto":
-        return torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    return torch.device(device_name)
-
-
-def _move_state(state: Mapping[str, torch.Tensor], device: torch.device) -> OrderedDict[str, torch.Tensor]:
-    return OrderedDict((name, value.detach().to(device)) for name, value in state.items())
-
-
 def train_one_round(
     args: argparse.Namespace,
     incoming_state: Mapping[str, torch.Tensor],
@@ -132,16 +104,13 @@ def train_one_round(
     if torch.cuda.is_available():
         torch.cuda.reset_peak_memory_stats()
     started = time.monotonic()
-    training_state_dir = getattr(args, "training_state_dir", None)
-    persistent_training_state = training_state_dir is not None
-    training_state_manifest = None
     if args.backend == "mock":
-        updated_state, metrics = _mock_round(incoming_state, args.mock_delta)
-        diff = adapter_checkpoint.compute_trainable_diff(updated_state, incoming_state)
+        mock_state, metrics = _mock_round(incoming_state, args.mock_delta)
+        diff = adapter_checkpoint.compute_trainable_diff(mock_state, incoming_state)
     else:
         import evo2_runtime
 
-        updated_state, diff, metrics = evo2_runtime.train_round(
+        _updated_state, diff, metrics = evo2_runtime.train_round(
             incoming_state,
             classifier_path=args.classifier_file,
             base_checkpoint=args.base_checkpoint,
@@ -158,25 +127,11 @@ def train_one_round(
             eval_iters=args.eval_iters,
             seed=args.seed,
             round_index=current_round,
-            peft_mode=args.peft_mode,
             lora_dim=args.lora_dim,
             lora_alpha=args.lora_alpha,
             lora_dropout=args.lora_dropout,
             lora_target_modules=evo2_runtime.parse_lora_targets(args.lora_target_modules),
-            training_state_dir=training_state_dir,
-            site_name=site_name,
         )
-        if persistent_training_state:
-            training_state_manifest = (
-                Path(training_state_dir).expanduser().resolve()
-                / f"round_{current_round:03d}"
-                / evo2_runtime.TRAINING_STATE_MANIFEST_FILENAME
-            )
-            if not training_state_manifest.is_file():
-                raise RuntimeError(
-                    f"BioNeMo training completed without publishing client training state at "
-                    f"{training_state_manifest}."
-                )
 
     adapter_checkpoint.validate_trainable_state(diff, incoming_state, context="Locally trained DIFF")
     metrics = dict(metrics)
@@ -192,23 +147,6 @@ def train_one_round(
             ),
         }
     )
-    local_checkpoint = os.path.join(attempt_dir, "local_trainable_model.pt")
-    adapter_checkpoint.save_nvflare_checkpoint(
-        updated_state,
-        local_checkpoint,
-        metadata={"site_name": site_name, "round": current_round, "metrics": metrics},
-    )
-    persisted_metrics = {
-        **metrics,
-        "site_name": site_name,
-        "round": current_round,
-        "local_checkpoint": str(Path(local_checkpoint).resolve()),
-    }
-    if training_state_manifest is not None:
-        persisted_metrics["training_state_manifest"] = str(training_state_manifest)
-    with open(os.path.join(attempt_dir, "round_metrics.json"), "w", encoding="utf-8") as file:
-        json.dump(persisted_metrics, file, indent=2, sort_keys=True)
-        file.write("\n")
     return diff, metrics, attempt_dir
 
 
@@ -216,7 +154,6 @@ def main(argv: list[str] | None = None) -> None:
     args = define_parser().parse_args(argv)
     _validate_args(args)
     signal.signal(signal.SIGTERM, lambda _signum, _frame: sys.exit(0))
-    server_device = _resolve_device(args.server_tensor_device)
 
     flare.init()
     input_model = flare.receive()
@@ -240,7 +177,6 @@ def main(argv: list[str] | None = None) -> None:
     )
 
     diff, metrics, attempt_dir = train_one_round(args, incoming_state, site_name=site_name, current_round=current_round)
-    diff = _move_state(diff, server_device)
     flare.send(
         flare.FLModel(
             params_type=flare.ParamsType.DIFF,
@@ -258,6 +194,8 @@ def main(argv: list[str] | None = None) -> None:
         f"site={site_name}, round={current_round}, sent_trainable_mib={metrics['sent_mebibytes']:.2f}, "
         f"attempt_dir={attempt_dir}"
     )
+    if metrics.get("frozen_parameters_unchanged") == 1.0:
+        print(f"site={site_name}, round={current_round}, frozen_backbone=verified")
 
 
 if __name__ == "__main__":

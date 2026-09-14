@@ -72,135 +72,6 @@ def test_classification_metrics_use_macro_f1_and_explicit_confusion_order():
         evaluate.calculate_classification_metrics([], [])
 
 
-def test_reference_comparison_reports_metric_deltas(tmp_path):
-    evaluate = _load_evaluate_module()
-    reference = tmp_path / "initialization.json"
-    signature = {"test_file_sha256": "same-data-and-settings"}
-    reference.write_text(
-        json.dumps({"accuracy": 0.4, "macro_f1": 0.3, "evaluation_signature": signature}), encoding="utf-8"
-    )
-
-    comparison = evaluate.compare_with_reference(
-        {"accuracy": 0.5, "macro_f1": 0.35, "evaluation_signature": signature},
-        reference,
-        improvement_metric="macro_f1",
-    )
-
-    assert comparison["reference_report"] == str(reference.resolve())
-    assert comparison["metric_deltas"] == pytest.approx({"accuracy": 0.1, "macro_f1": 0.05})
-    assert comparison["required_metric"] == "macro_f1"
-    assert comparison["improved"] is True
-
-    with pytest.raises(ValueError, match="different held-out dataset"):
-        evaluate.compare_with_reference(
-            {"accuracy": 0.5, "macro_f1": 0.35, "evaluation_signature": {"test_file_sha256": "other"}},
-            reference,
-            improvement_metric="macro_f1",
-        )
-
-
-def test_require_improvement_requires_a_reference_report():
-    evaluate = _load_evaluate_module()
-    args = evaluate.define_parser().parse_args(["--checkpoint", "unused.pt", "--require-improvement"])
-
-    with pytest.raises(ValueError, match="requires --reference-report"):
-        evaluate.evaluate(args)
-
-
-def test_performance_gate_is_opt_in_and_checks_all_configured_metrics():
-    evaluate = _load_evaluate_module()
-    metrics = evaluate.calculate_classification_metrics(
-        labels=[0, 0, 1, 1, 2, 2],
-        predictions=[0, 0, 1, 1, 2, 2],
-    )
-
-    disabled = evaluate.assess_performance_gate(metrics)
-    passing = evaluate.assess_performance_gate(
-        metrics,
-        min_accuracy=0.9563,
-        min_macro_f1=0.956,
-        min_class_recall=0.94,
-        min_class_f1=0.94,
-    )
-
-    assert disabled["enabled"] is False
-    assert disabled["passed"] is True
-    assert passing["enabled"] is True
-    assert passing["passed"] is True
-    assert passing["criteria"]["minimum_accuracy"] == 0.9563
-    assert passing["observed"]["per_class"] == {
-        "0": {"recall": 1.0, "f1": 1.0},
-        "1": {"recall": 1.0, "f1": 1.0},
-        "2": {"recall": 1.0, "f1": 1.0},
-    }
-
-
-def test_performance_gate_records_aggregate_class_and_improvement_failures():
-    evaluate = _load_evaluate_module()
-    metrics = evaluate.calculate_classification_metrics(
-        labels=[0, 0, 1, 1, 2, 2],
-        predictions=[0, 1, 1, 1, 0, 2],
-    )
-    metrics["comparison"] = {
-        "metric_deltas": {"accuracy": 0.01, "macro_f1": -0.02},
-        "required_metric": "macro_f1",
-        "improved": False,
-    }
-
-    result = evaluate.assess_performance_gate(
-        metrics,
-        min_accuracy=0.70,
-        min_macro_f1=0.70,
-        min_class_recall=0.60,
-        min_class_f1=0.60,
-        require_improvement=True,
-        improvement_metric="macro_f1",
-    )
-
-    assert result["passed"] is False
-    assert result["failures"] == [
-        {"metric": "accuracy", "minimum": 0.70, "observed": pytest.approx(4 / 6)},
-        {"metric": "macro_f1", "minimum": 0.70, "observed": pytest.approx((0.5 + 0.8 + 2 / 3) / 3)},
-        {"metric": "recall", "minimum": 0.60, "observed": 0.5, "class_id": 0},
-        {"metric": "f1", "minimum": 0.60, "observed": 0.5, "class_id": 0},
-        {"metric": "recall", "minimum": 0.60, "observed": 0.5, "class_id": 2},
-        {
-            "metric": "improvement:macro_f1",
-            "minimum": 0.0,
-            "exclusive_minimum": True,
-            "observed": -0.02,
-        },
-    ]
-
-
-def test_performance_threshold_cli_values_are_probabilities():
-    evaluate = _load_evaluate_module()
-
-    args = evaluate.define_parser().parse_args(
-        [
-            "--checkpoint",
-            "unused.pt",
-            "--min-accuracy",
-            "0.9563",
-            "--min-macro-f1",
-            "0.956",
-            "--min-class-recall",
-            "0.94",
-            "--min-class-f1",
-            "0.94",
-        ]
-    )
-    assert (args.min_accuracy, args.min_macro_f1, args.min_class_recall, args.min_class_f1) == (
-        0.9563,
-        0.956,
-        0.94,
-        0.94,
-    )
-
-    with pytest.raises(SystemExit):
-        evaluate.define_parser().parse_args(["--checkpoint", "unused.pt", "--min-accuracy", "1.01"])
-
-
 def test_exact_bionemo_coverage_requires_complete_microbatches():
     evaluate = _load_evaluate_module()
 
@@ -307,44 +178,6 @@ def test_recording_forward_step_keeps_row_index_out_of_model_inputs(monkeypatch)
     assert row_indices_seen == [7, 3]
 
 
-def test_checkpoint_directory_identity_is_content_and_layout_sensitive(tmp_path):
-    evaluate = _load_evaluate_module()
-    checkpoint = tmp_path / "checkpoint"
-    (checkpoint / "iter_0000001").mkdir(parents=True)
-    first = checkpoint / "latest_checkpointed_iteration.txt"
-    second = checkpoint / "iter_0000001" / "weights.distcp"
-    first.write_text("1\n", encoding="utf-8")
-    second.write_bytes(b"weights")
-
-    original = evaluate._sha256_directory(checkpoint)
-    second.write_bytes(b"changed")
-    assert evaluate._sha256_directory(checkpoint) != original
-
-    second.write_bytes(b"weights")
-    second.rename(checkpoint / "iter_0000001" / "renamed.distcp")
-    assert evaluate._sha256_directory(checkpoint) != original
-
-
-def test_checkpoint_directory_identity_frames_file_content_lengths(tmp_path):
-    evaluate = _load_evaluate_module()
-    left = tmp_path / "left"
-    right = tmp_path / "right"
-    left.mkdir()
-    right.mkdir()
-
-    def encoded_path(name):
-        value = name.encode()
-        return len(value).to_bytes(8, byteorder="big") + value
-
-    (left / "a").write_bytes(b"")
-    (left / "b").write_bytes(b"PAYLOAD" + encoded_path("c"))
-    (right / "a").write_bytes(encoded_path("b") + b"PAYLOAD")
-    (right / "c").write_bytes(b"")
-
-    assert sum(path.stat().st_size for path in left.iterdir()) == sum(path.stat().st_size for path in right.iterdir())
-    assert evaluate._sha256_directory(left) != evaluate._sha256_directory(right)
-
-
 def test_mock_evaluation_reloads_nvflare_checkpoint_and_writes_report(tmp_path, monkeypatch):
     import torch
 
@@ -421,8 +254,6 @@ def test_mock_evaluation_reloads_nvflare_checkpoint_and_writes_report(tmp_path, 
             str(test_file),
             "--manifest",
             str(manifest),
-            "--split-role",
-            "test",
             "--output",
             str(output),
         ]
@@ -454,14 +285,11 @@ def test_mock_evaluation_reloads_nvflare_checkpoint_and_writes_report(tmp_path, 
     assert metrics["accuracy"] == pytest.approx(0.5)
     assert metrics["macro_f1"] == pytest.approx(2 / 9)
     assert metrics["confusion_matrix"] == [[0, 1, 0], [0, 2, 0], [0, 1, 0]]
-    assert metrics["performance_gate"] == saved["performance_gate"]
-    assert metrics["performance_gate"]["enabled"] is False
-    assert metrics["performance_gate"]["passed"] is True
     assert saved["accuracy"] == pytest.approx(metrics["accuracy"])
     assert Path(metrics["confusion_matrix_plot"]).read_text(encoding="utf-8") == "[[0, 1, 0], [0, 2, 0], [0, 1, 0]]"
 
 
-def test_manifest_binding_rejects_unpaired_arguments_wrong_path_and_modified_content(tmp_path):
+def test_manifest_binding_rejects_wrong_path_and_modified_content(tmp_path):
     evaluate = _load_evaluate_module()
     test_file = tmp_path / "test.jsonl"
     test_file.write_text(json.dumps({"sequence": "ACGT", "label": 0}) + "\n", encoding="utf-8")
@@ -480,10 +308,6 @@ def test_manifest_binding_rejects_unpaired_arguments_wrong_path_and_modified_con
         encoding="utf-8",
     )
 
-    unpaired = evaluate.define_parser().parse_args(["--checkpoint", "unused.pt", "--manifest", str(manifest)])
-    with pytest.raises(ValueError, match="must be provided together"):
-        evaluate._validate_manifest_binding(unpaired)
-
     other_file = tmp_path / "other.jsonl"
     other_file.write_text(test_file.read_text(encoding="utf-8"), encoding="utf-8")
     wrong_path = evaluate.define_parser().parse_args(
@@ -494,8 +318,6 @@ def test_manifest_binding_rejects_unpaired_arguments_wrong_path_and_modified_con
             str(other_file),
             "--manifest",
             str(manifest),
-            "--split-role",
-            "test",
         ]
     )
     with pytest.raises(ValueError, match="does not match manifest.files.test"):
@@ -510,76 +332,47 @@ def test_manifest_binding_rejects_unpaired_arguments_wrong_path_and_modified_con
             str(test_file),
             "--manifest",
             str(manifest),
-            "--split-role",
-            "test",
         ]
     )
     with pytest.raises(ValueError, match="blank row"):
         evaluate._validate_manifest_binding(changed_content)
 
 
-def test_manifest_binding_is_required_unless_unbound_evaluation_is_explicit():
+def test_manifest_binding_accepts_test_and_rejects_invalid_manifest_metadata(tmp_path):
     evaluate = _load_evaluate_module()
-
-    default_args = evaluate.define_parser().parse_args(["--checkpoint", "unused.pt"])
-    with pytest.raises(ValueError, match="requires --manifest and --split-role"):
-        evaluate._validate_manifest_binding(default_args)
-
-    unbound_args = evaluate.define_parser().parse_args(["--checkpoint", "unused.pt", "--allow-unbound-evaluation"])
-    assert evaluate._validate_manifest_binding(unbound_args) is None
-
-    conflicting_args = evaluate.define_parser().parse_args(
-        [
-            "--checkpoint",
-            "unused.pt",
-            "--manifest",
-            "manifest.json",
-            "--split-role",
-            "test",
-            "--allow-unbound-evaluation",
-        ]
-    )
-    with pytest.raises(ValueError, match="cannot be combined"):
-        evaluate._validate_manifest_binding(conflicting_args)
-
-
-def test_manifest_binding_accepts_validation_and_rejects_invalid_manifest_metadata(tmp_path):
-    evaluate = _load_evaluate_module()
-    validation_file = tmp_path / "validation.jsonl"
-    validation_file.write_text(json.dumps({"sequence": "ACGT", "label": 0}) + "\n", encoding="utf-8")
-    identity = evaluate.provenance.jsonl_identity(validation_file)
+    test_file = tmp_path / "test.jsonl"
+    test_file.write_text(json.dumps({"sequence": "ACGT", "label": 0}) + "\n", encoding="utf-8")
+    identity = evaluate.provenance.jsonl_identity(test_file)
     identity_payload = {field: identity[field] for field in ("sha256", "bytes", "rows")}
     manifest_path = tmp_path / "manifest.json"
     manifest = {
         "format_version": 2,
         "audit": {"status": "passed"},
-        "counts": {"validation": 1},
-        "files": {"validation": "validation.jsonl"},
-        "file_identities": {"validation": identity_payload},
+        "counts": {"test": 1},
+        "files": {"test": "test.jsonl"},
+        "file_identities": {"test": identity_payload},
     }
     args = evaluate.define_parser().parse_args(
         [
             "--checkpoint",
             "unused.pt",
             "--test-file",
-            str(validation_file),
+            str(test_file),
             "--manifest",
             str(manifest_path),
-            "--split-role",
-            "validation",
         ]
     )
 
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     binding = evaluate._validate_manifest_binding(args)
-    assert binding["split_role"] == "validation"
+    assert binding["split_role"] == "test"
     assert binding["file_identity"] == identity_payload
 
     invalid_cases = [
         ({**manifest, "format_version": 1}, "Unsupported dataset manifest format_version"),
         ({**manifest, "audit": {"status": "failed"}}, "does not contain a passed leakage audit"),
         (
-            {**manifest, "file_identities": {"validation": {"sha256": identity_payload["sha256"]}}},
+            {**manifest, "file_identities": {"test": {"sha256": identity_payload["sha256"]}}},
             "content identity is malformed",
         ),
     ]

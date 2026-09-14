@@ -38,7 +38,6 @@ class ExactSchemaFedAvgAggregator(ModelAggregator):
         self,
         schema_checkpoint: str,
         aggregation_weights: Mapping[str, float],
-        continuation_signature: Mapping,
     ):
         super().__init__()
         self.schema_checkpoint = str(Path(schema_checkpoint).resolve())
@@ -61,18 +60,6 @@ class ExactSchemaFedAvgAggregator(ModelAggregator):
         self.reference_state = adapter_checkpoint.load_nvflare_checkpoint(self.schema_checkpoint)
         checkpoint_metadata = adapter_checkpoint.load_nvflare_checkpoint_metadata(self.schema_checkpoint)
         self.initialization_metadata = provenance.resolve_initialization_metadata(checkpoint_metadata)
-        self.continuation_signature = provenance.validate_continuation_signature(
-            continuation_signature,
-            context="Configured continuation signature",
-        )
-        source_signature = checkpoint_metadata.get("continuation_signature")
-        if source_signature is not None:
-            source_signature = provenance.validate_continuation_signature(
-                source_signature,
-                context="Schema checkpoint continuation signature",
-            )
-            if source_signature != self.continuation_signature:
-                raise ValueError("Schema checkpoint continuation signature does not match the configured federation.")
         if self.initialization_metadata.get("exchange_dtype") != adapter_checkpoint.EXCHANGE_DTYPE_NAME:
             raise ValueError(
                 "Evo2 schema checkpoint initialization metadata must declare "
@@ -123,24 +110,17 @@ class ExactSchemaFedAvgAggregator(ModelAggregator):
                 f"Cannot aggregate Evo2 round with incomplete contributors; missing={missing}, unexpected={unexpected}."
             )
 
-        if len(self.param_contributions) == 1:
-            client_name = next(iter(self.param_contributions))
-            params = adapter_checkpoint.copy_trainable_state(
-                self.param_contributions[client_name],
-                context=f"Aggregated Evo2 DIFF from sole contributor {client_name}",
+        # Client tasks may finish in any order. Accumulate their canonical FP32
+        # updates in client-name order so an otherwise identical round has stable
+        # floating-point behavior independent of arrival timing.
+        for client_name in sorted(self.param_contributions):
+            self.params_helper.add(
+                data=self.param_contributions[client_name],
+                weight=self.aggregation_weights[client_name],
+                contributor_name=client_name,
+                contribution_round=None,
             )
-        else:
-            # Client tasks may finish in any order. Accumulate their canonical FP32
-            # updates in client-name order so an otherwise identical round has stable
-            # floating-point behavior independent of arrival timing.
-            for client_name in sorted(self.param_contributions):
-                self.params_helper.add(
-                    data=self.param_contributions[client_name],
-                    weight=self.aggregation_weights[client_name],
-                    contributor_name=client_name,
-                    contribution_round=None,
-                )
-            params = self.params_helper.get_result()
+        params = self.params_helper.get_result()
         adapter_checkpoint.validate_trainable_state(params, self.reference_state, context="Aggregated Evo2 DIFF")
         if self.all_metrics:
             for client_name in sorted(self.metric_contributions):
@@ -160,7 +140,6 @@ class ExactSchemaFedAvgAggregator(ModelAggregator):
             meta={
                 "exchange_dtype": adapter_checkpoint.EXCHANGE_DTYPE_NAME,
                 "initialization": self.initialization_metadata,
-                "continuation_signature": self.continuation_signature,
             },
         )
 

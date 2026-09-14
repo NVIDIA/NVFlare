@@ -20,7 +20,7 @@ from collections import OrderedDict
 from collections.abc import Mapping
 from enum import Enum
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import Any
 
 import torch
 from torch import nn
@@ -30,13 +30,6 @@ CLASSIFICATION_HEAD_MARKER = ".classification_head."
 DEFAULT_TRAIN_CONF = {"train": {"model": "Evo2LoRAClassifier"}}
 EXCHANGE_DTYPE = torch.float32
 EXCHANGE_DTYPE_NAME = "float32"
-
-
-class _IncompatibleKeys(NamedTuple):
-    """Return value compatible with ``torch.nn.Module.load_state_dict``."""
-
-    missing_keys: list[str]
-    unexpected_keys: list[str]
 
 
 class ValidatedTrainableStateSchema:
@@ -155,34 +148,20 @@ def _validate_exchange_mapping(state: Mapping[str, torch.Tensor], label: str) ->
 
 
 def extract_trainable_state(
-    source: nn.Module | list[nn.Module] | tuple[nn.Module, ...] | Mapping[str, torch.Tensor],
+    source: nn.Module | list[nn.Module] | tuple[nn.Module, ...],
 ) -> OrderedDict[str, torch.Tensor]:
     """Extract the federated Evo2 parameters as detached CPU float32 clones.
 
-    For modules, only supported parameters with ``requires_grad=True`` are
-    included. Mapping inputs have no gradient metadata, so supported names are
-    selected directly. A one-element model-chunk list or tuple is accepted for
-    compatibility with Megatron Bridge; pipeline-parallel chunks are outside the
-    scope of this single-GPU example.
+    Only supported parameters with ``requires_grad=True`` are included. A
+    one-element model-chunk list or tuple is accepted for compatibility with
+    Megatron Bridge; pipeline-parallel chunks are outside this single-GPU example.
     """
 
     selected = OrderedDict()
-    if isinstance(source, Mapping):
-        for name, value in source.items():
-            if not isinstance(name, str):
-                raise TypeError(f"State mapping contains a non-string key of type {type(name).__name__}.")
-            if not is_trainable_parameter(name):
-                continue
-            if not isinstance(value, torch.Tensor):
-                raise TypeError(
-                    f"Trainable state value for {name!r} must be a torch.Tensor, got {type(value).__name__}."
-                )
-            selected[name] = _model_boundary_clone(value, name)
-    else:
-        model = _single_module(source)
-        for name, parameter in model.named_parameters():
-            if parameter.requires_grad and is_trainable_parameter(name):
-                selected[name] = _model_boundary_clone(parameter, name)
+    model = _single_module(source)
+    for name, parameter in model.named_parameters():
+        if parameter.requires_grad and is_trainable_parameter(name):
+            selected[name] = _model_boundary_clone(parameter, name)
 
     if not selected:
         raise ValueError(
@@ -345,44 +324,3 @@ def load_nvflare_checkpoint(
             raise TypeError("schema must be a ValidatedTrainableStateSchema, " f"got {type(schema).__name__}.")
         tensors = schema.validate(checkpoint["model"], context="NVFlare checkpoint model state")
     return OrderedDict((name, _cpu_clone(tensor)) for name, tensor in tensors.items())
-
-
-class TrainableStateModule(nn.Module):
-    """Small CPU module exposing exact Evo2 exchange keys to ``PTFileModelPersistor``.
-
-    PyTorch does not permit dots in registered parameter or buffer names. The
-    tensors are therefore registered under private slot names while ``state_dict``
-    and ``load_state_dict`` preserve the original MCore parameter namespace.
-    """
-
-    def __init__(self, initial_state: Mapping[str, torch.Tensor]):
-        super().__init__()
-        tensors = _validate_exchange_mapping(initial_state, "Initial trainable state")
-        self._external_to_slot = OrderedDict()
-        for index, (name, tensor) in enumerate(tensors.items()):
-            slot = f"_exchange_tensor_{index}"
-            self.register_buffer(slot, _cpu_clone(tensor), persistent=True)
-            self._external_to_slot[name] = slot
-
-    def state_dict(self, destination=None, prefix: str = "", keep_vars: bool = False):
-        if destination is None:
-            destination = OrderedDict()
-        for external_name, slot in self._external_to_slot.items():
-            tensor = getattr(self, slot)
-            if not keep_vars:
-                tensor = tensor.detach()
-            destination[f"{prefix}{external_name}"] = tensor.cpu().clone()
-        return destination
-
-    def load_state_dict(
-        self, state_dict: Mapping[str, torch.Tensor], strict: bool = True, assign: bool = False
-    ) -> _IncompatibleKeys:
-        # This model is deliberately strict even if a generic caller supplies
-        # strict=False: silently dropping an adapter tensor would corrupt FedAvg.
-        reference = self.state_dict()
-        validate_trainable_state(state_dict, reference)
-        with torch.no_grad():
-            for external_name, slot in self._external_to_slot.items():
-                target = getattr(self, slot)
-                target.copy_(state_dict[external_name].detach().to(device=target.device))
-        return _IncompatibleKeys(missing_keys=[], unexpected_keys=[])

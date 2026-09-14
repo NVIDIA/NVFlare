@@ -101,24 +101,6 @@ def test_extract_trainable_state_uses_requires_grad_and_returns_independent_cpu_
         adapter_checkpoint.extract_trainable_state([model, model])
 
 
-def test_extract_mapping_filters_base_weights_and_preserves_wrapper_prefixes():
-    import torch
-
-    adapter_checkpoint = _load_adapter_checkpoint()
-    source = OrderedDict(
-        [
-            ("module.decoder.adapter.weight", torch.ones(2, 2)),
-            ("module.classification_head.bias", torch.zeros(2)),
-            ("module.decoder.weight", torch.full((2, 2), 3.0)),
-        ]
-    )
-
-    state = adapter_checkpoint.extract_trainable_state(source)
-
-    assert list(state) == ["module.decoder.adapter.weight", "module.classification_head.bias"]
-    assert state["module.decoder.adapter.weight"].data_ptr() != source["module.decoder.adapter.weight"].data_ptr()
-
-
 def test_bfloat16_model_boundary_extracts_float32_and_loads_with_explicit_rounding():
     import torch
 
@@ -371,29 +353,6 @@ def test_diff_round_trip_preserves_float32_ulp_and_returns_cpu_clones():
     assert not torch.equal(
         current["decoder.layers.0.adapter.linear_in.weight"], diff["decoder.layers.0.adapter.linear_in.weight"]
     )
-
-
-def test_trainable_state_module_preserves_exact_external_keys_and_loads_strictly():
-    import torch
-
-    adapter_checkpoint = _load_adapter_checkpoint()
-    initial = OrderedDict(
-        [
-            ("decoder.layers.0.adapter.linear_in.weight", torch.zeros(2, 3)),
-            ("classification_head.bias", torch.ones(2)),
-        ]
-    )
-    module = adapter_checkpoint.TrainableStateModule(initial)
-
-    assert list(module.state_dict()) == list(initial)
-    updated = OrderedDict((name, tensor + 4) for name, tensor in initial.items())
-    result = module.load_state_dict(updated)
-    assert result.missing_keys == []
-    assert result.unexpected_keys == []
-    assert all(torch.equal(module.state_dict()[name], tensor) for name, tensor in updated.items())
-
-    with pytest.raises(KeyError, match="missing"):
-        module.load_state_dict({"classification_head.bias": updated["classification_head.bias"]}, strict=False)
 
 
 def test_nvflare_checkpoint_round_trip_and_payload_size(tmp_path):

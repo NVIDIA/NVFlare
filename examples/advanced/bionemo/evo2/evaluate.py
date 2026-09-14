@@ -34,13 +34,6 @@ import torch
 _ROW_INDEX_KEY = "_nvflare_row_index"
 
 
-def _probability(value: str) -> float:
-    parsed = float(value)
-    if not math.isfinite(parsed) or not 0.0 <= parsed <= 1.0:
-        raise argparse.ArgumentTypeError(f"expected a finite value between 0 and 1, received {value!r}")
-    return parsed
-
-
 class _RowIndexedDataset(torch.utils.data.Dataset):
     """Add the source JSONL row index without changing the model inputs."""
 
@@ -89,55 +82,9 @@ def define_parser() -> argparse.ArgumentParser:
     parser.add_argument("--checkpoint", required=True, help="NVFlare global_model.pt or initialization checkpoint")
     parser.add_argument("--base-checkpoint", default="./models/evo2_1b_bf16_mbridge")
     parser.add_argument("--test-file", default="./data/test.jsonl")
-    parser.add_argument(
-        "--manifest",
-        default=None,
-        help="Prepared-data manifest used to verify the selected held-out split",
-    )
-    parser.add_argument(
-        "--split-role",
-        choices=("validation", "test"),
-        default=None,
-        help="Manifest split that --test-file must match; requires --manifest",
-    )
-    parser.add_argument(
-        "--allow-unbound-evaluation",
-        action="store_true",
-        help="Explicitly allow evaluating a JSONL file without binding it to a prepared-data manifest",
-    )
+    parser.add_argument("--manifest", default="./data/manifest.json")
     parser.add_argument("--output", default="./evaluation.json")
     parser.add_argument("--confusion-matrix", default=None)
-    parser.add_argument("--reference-report", default=None, help="Initialization evaluation JSON to compare against")
-    parser.add_argument("--improvement-metric", choices=("accuracy", "macro_f1"), default="macro_f1")
-    parser.add_argument(
-        "--require-improvement",
-        action="store_true",
-        help="Fail after writing outputs unless the selected metric improves over --reference-report",
-    )
-    parser.add_argument(
-        "--min-accuracy",
-        type=_probability,
-        default=None,
-        help="Fail after writing outputs when test accuracy is below this threshold",
-    )
-    parser.add_argument(
-        "--min-macro-f1",
-        type=_probability,
-        default=None,
-        help="Fail after writing outputs when test macro-F1 is below this threshold",
-    )
-    parser.add_argument(
-        "--min-class-recall",
-        type=_probability,
-        default=None,
-        help="Fail after writing outputs when recall for any observed class is below this threshold",
-    )
-    parser.add_argument(
-        "--min-class-f1",
-        type=_probability,
-        default=None,
-        help="Fail after writing outputs when F1 for any observed class is below this threshold",
-    )
     parser.add_argument("--work-dir", default="/tmp/nvflare/evo2_evaluate")
     parser.add_argument("--classifier-file", default=None)
     parser.add_argument("--seq-length", type=int, default=600)
@@ -154,7 +101,6 @@ def define_parser() -> argparse.ArgumentParser:
         help="Evaluation global batch size; must be divisible by --micro-batch-size",
     )
     parser.add_argument("--seed", type=int, default=1234)
-    parser.add_argument("--peft-mode", choices=("lora", "head-only"), default="lora")
     parser.add_argument("--lora-dim", type=int, default=16)
     parser.add_argument("--lora-alpha", type=int, default=32)
     parser.add_argument("--lora-dropout", type=float, default=0.1)
@@ -178,22 +124,7 @@ def _read_labels(path: str | os.PathLike[str]) -> list[int]:
     return labels
 
 
-def _validate_manifest_binding(args: argparse.Namespace) -> dict | None:
-    has_manifest = bool(args.manifest)
-    has_split_role = bool(args.split_role)
-    allow_unbound = bool(getattr(args, "allow_unbound_evaluation", False))
-    if allow_unbound and (has_manifest or has_split_role):
-        raise ValueError("--allow-unbound-evaluation cannot be combined with --manifest or --split-role.")
-    if has_manifest != has_split_role:
-        raise ValueError("--manifest and --split-role must be provided together.")
-    if not has_manifest:
-        if not allow_unbound:
-            raise ValueError(
-                "Evaluation requires --manifest and --split-role. Use --allow-unbound-evaluation only for an "
-                "intentional evaluation outside the prepared-data manifest."
-            )
-        return None
-
+def _validate_manifest_binding(args: argparse.Namespace) -> dict:
     manifest_path = Path(args.manifest).resolve()
     if not manifest_path.is_file():
         raise FileNotFoundError(f"Dataset manifest not found: {manifest_path}")
@@ -206,20 +137,20 @@ def _validate_manifest_binding(args: argparse.Namespace) -> dict | None:
         raise ValueError(f"Dataset manifest {manifest_path} does not contain a passed leakage audit.")
 
     try:
-        relative_path = manifest["files"][args.split_role]
-        expected_rows = manifest["counts"][args.split_role]
-        expected_identity = manifest["file_identities"][args.split_role]
+        relative_path = manifest["files"]["test"]
+        expected_rows = manifest["counts"]["test"]
+        expected_identity = manifest["file_identities"]["test"]
     except (KeyError, TypeError) as exc:
-        raise ValueError(f"Dataset manifest {manifest_path} is missing the {args.split_role} split identity.") from exc
+        raise ValueError(f"Dataset manifest {manifest_path} is missing the test split identity.") from exc
     if not isinstance(relative_path, str) or not relative_path:
-        raise ValueError(f"Dataset manifest {args.split_role} path must be a non-empty string.")
+        raise ValueError("Dataset manifest test path must be a non-empty string.")
     if type(expected_rows) is not int or expected_rows <= 0:
-        raise ValueError(f"Dataset manifest {args.split_role} row count must be a positive integer.")
+        raise ValueError("Dataset manifest test row count must be a positive integer.")
     if not isinstance(expected_identity, dict) or set(expected_identity) != {"sha256", "bytes", "rows"}:
-        raise ValueError(f"Dataset manifest {args.split_role} content identity is malformed.")
+        raise ValueError("Dataset manifest test content identity is malformed.")
     if expected_identity["rows"] != expected_rows:
         raise ValueError(
-            f"Dataset manifest {args.split_role} row count and content identity disagree: "
+            "Dataset manifest test row count and content identity disagree: "
             f"{expected_rows} != {expected_identity['rows']!r}."
         )
 
@@ -227,30 +158,29 @@ def _validate_manifest_binding(args: argparse.Namespace) -> dict | None:
     test_path = Path(args.test_file).resolve()
     if test_path != expected_path:
         raise ValueError(
-            f"--test-file does not match manifest.files.{args.split_role}: expected {expected_path}, observed {test_path}."
+            f"--test-file does not match manifest.files.test: expected {expected_path}, observed {test_path}."
         )
     observed_identity = provenance.jsonl_identity(
         test_path,
         expected_rows=expected_rows,
-        label=f"Manifest {args.split_role} split",
+        label="Manifest test split",
     )
     observed_payload = {field: observed_identity[field] for field in ("sha256", "bytes", "rows")}
     if observed_payload != expected_identity:
         raise ValueError(
-            f"Manifest {args.split_role} split no longer matches its audited content identity: "
+            "Manifest test split no longer matches its audited content identity: "
             f"expected {expected_identity}, observed {observed_payload}. Run prepare_data.py again."
         )
     return {
         "path": str(manifest_path),
         "sha256": provenance.sha256_file(manifest_path),
         "format_version": 2,
-        "split_role": args.split_role,
+        "split_role": "test",
         "file_identity": observed_payload,
     }
 
 
 _sha256_file = provenance.sha256_file
-_sha256_directory = provenance.sha256_directory
 
 
 def calculate_classification_metrics(labels: list[int], predictions: list[int]) -> dict:
@@ -275,110 +205,6 @@ def calculate_classification_metrics(labels: list[int], predictions: list[int]) 
         "classification_report": classification_report(
             labels, predictions, labels=class_ids, output_dict=True, zero_division=0
         ),
-    }
-
-
-def compare_with_reference(metrics: dict, reference_path: str | os.PathLike[str], improvement_metric: str) -> dict:
-    """Compare accuracy and macro-F1 with an earlier evaluation report."""
-
-    path = Path(reference_path).resolve()
-    with path.open(encoding="utf-8") as file:
-        reference = json.load(file)
-    required_metrics = ("accuracy", "macro_f1", "evaluation_signature")
-    missing = [name for name in required_metrics if name not in reference]
-    if missing:
-        raise ValueError(f"Reference report {path} is missing metrics: {missing}")
-    if reference["evaluation_signature"] != metrics["evaluation_signature"]:
-        raise ValueError(f"Reference report {path} used a different held-out dataset or evaluation configuration.")
-    deltas = {name: float(metrics[name]) - float(reference[name]) for name in ("accuracy", "macro_f1")}
-    return {
-        "reference_report": str(path),
-        "metric_deltas": deltas,
-        "required_metric": improvement_metric,
-        "improved": deltas[improvement_metric] > 0.0,
-    }
-
-
-def assess_performance_gate(
-    metrics: dict,
-    *,
-    min_accuracy: float | None = None,
-    min_macro_f1: float | None = None,
-    min_class_recall: float | None = None,
-    min_class_f1: float | None = None,
-    require_improvement: bool = False,
-    improvement_metric: str = "macro_f1",
-) -> dict:
-    """Return a machine-readable assessment of the configured performance criteria."""
-
-    thresholds = {
-        "accuracy": min_accuracy,
-        "macro_f1": min_macro_f1,
-        "per_class_recall": min_class_recall,
-        "per_class_f1": min_class_f1,
-    }
-    for name, threshold in thresholds.items():
-        if threshold is not None and (not math.isfinite(threshold) or not 0.0 <= threshold <= 1.0):
-            raise ValueError(f"Performance threshold {name} must be a finite value between 0 and 1: {threshold!r}")
-
-    class_metrics = {}
-    for class_id in metrics["class_ids"]:
-        report = metrics["classification_report"].get(str(class_id))
-        if not isinstance(report, dict) or "recall" not in report or "f1-score" not in report:
-            raise ValueError(f"Classification report is missing recall or F1 for class {class_id}.")
-        class_metrics[str(class_id)] = {
-            "recall": float(report["recall"]),
-            "f1": float(report["f1-score"]),
-        }
-
-    failures = []
-
-    def check(metric: str, observed: float, minimum: float | None, class_id: int | None = None) -> None:
-        if minimum is not None and observed < minimum:
-            failure = {"metric": metric, "minimum": minimum, "observed": observed}
-            if class_id is not None:
-                failure["class_id"] = class_id
-            failures.append(failure)
-
-    check("accuracy", float(metrics["accuracy"]), min_accuracy)
-    check("macro_f1", float(metrics["macro_f1"]), min_macro_f1)
-    for class_id in metrics["class_ids"]:
-        report = class_metrics[str(class_id)]
-        check("recall", report["recall"], min_class_recall, class_id)
-        check("f1", report["f1"], min_class_f1, class_id)
-
-    comparison = metrics.get("comparison")
-    if require_improvement:
-        if not isinstance(comparison, dict):
-            raise ValueError("Improvement acceptance requires metrics produced with --reference-report.")
-        if not comparison.get("improved", False):
-            failures.append(
-                {
-                    "metric": f"improvement:{improvement_metric}",
-                    "minimum": 0.0,
-                    "exclusive_minimum": True,
-                    "observed": float(comparison["metric_deltas"][improvement_metric]),
-                }
-            )
-
-    return {
-        "enabled": any(threshold is not None for threshold in thresholds.values()) or require_improvement,
-        "passed": not failures,
-        "criteria": {
-            "minimum_accuracy": min_accuracy,
-            "minimum_macro_f1": min_macro_f1,
-            "minimum_per_class_recall": min_class_recall,
-            "minimum_per_class_f1": min_class_f1,
-            "require_improvement": require_improvement,
-            "improvement_metric": improvement_metric if require_improvement else None,
-        },
-        "observed": {
-            "accuracy": float(metrics["accuracy"]),
-            "macro_f1": float(metrics["macro_f1"]),
-            "per_class": class_metrics,
-            "improvement": comparison.get("metric_deltas", {}).get(improvement_metric) if comparison else None,
-        },
-        "failures": failures,
     }
 
 
@@ -493,7 +319,6 @@ def _run_bionemo_evaluation(
         eval_interval=1,
         eval_iters=eval_iters,
         seed=args.seed,
-        peft_mode=args.peft_mode,
         lora_dim=args.lora_dim,
         lora_alpha=args.lora_alpha,
         lora_dropout=args.lora_dropout,
@@ -506,7 +331,6 @@ def _run_bionemo_evaluation(
     callback = evo2_runtime.make_exchange_callback(
         state,
         extract_after_training=False,
-        peft_mode=args.peft_mode,
         load_on_data_init=True,
     )
     with _row_indexed_dataset_provider(config.dataset):
@@ -557,8 +381,6 @@ def _write_confusion_matrix(path: Path, metrics: dict) -> None:
 
 
 def evaluate(args: argparse.Namespace) -> dict:
-    if args.require_improvement and not args.reference_report:
-        raise ValueError("--require-improvement requires --reference-report.")
     manifest_binding = _validate_manifest_binding(args)
     checkpoint_path = Path(args.checkpoint).resolve()
     checkpoint_state = adapter_checkpoint.load_nvflare_checkpoint(checkpoint_path)
@@ -579,7 +401,6 @@ def evaluate(args: argparse.Namespace) -> dict:
     initialization_metadata = provenance.validate_initialization_metadata(
         checkpoint_metadata,
         backend=args.backend,
-        peft_mode=args.peft_mode,
         seed=args.seed,
         seq_length=args.seq_length,
         lora_dim=args.lora_dim,
@@ -606,8 +427,8 @@ def evaluate(args: argparse.Namespace) -> dict:
     evaluation_signature = {
         "backend": args.backend,
         "test_file_sha256": _sha256_file(args.test_file),
-        "dataset_manifest_sha256": manifest_binding["sha256"] if manifest_binding else None,
-        "split_role": manifest_binding["split_role"] if manifest_binding else None,
+        "dataset_manifest_sha256": manifest_binding["sha256"],
+        "split_role": "test",
         "base_checkpoint_sha256": base_checkpoint_identity["sha256"] if base_checkpoint_identity else None,
         "classifier_file_sha256": classifier_file_identity["sha256"] if classifier_file_identity else None,
         "seq_length": args.seq_length,
@@ -615,11 +436,11 @@ def evaluate(args: argparse.Namespace) -> dict:
         "global_batch_size": args.global_batch_size,
         "seed": args.seed,
         "row_identity": evaluation_coverage["identity"],
-        "peft_mode": args.peft_mode,
-        "lora_dim": args.lora_dim if args.peft_mode == "lora" else None,
-        "lora_alpha": args.lora_alpha if args.peft_mode == "lora" else None,
-        "lora_dropout": args.lora_dropout if args.peft_mode == "lora" else None,
-        "lora_target_modules": list(lora_target_modules) if args.peft_mode == "lora" else [],
+        "peft_mode": "lora",
+        "lora_dim": args.lora_dim,
+        "lora_alpha": args.lora_alpha,
+        "lora_dropout": args.lora_dropout,
+        "lora_target_modules": list(lora_target_modules),
     }
     metrics.update(
         {
@@ -640,17 +461,6 @@ def evaluate(args: argparse.Namespace) -> dict:
             ),
         }
     )
-    if args.reference_report:
-        metrics["comparison"] = compare_with_reference(metrics, args.reference_report, args.improvement_metric)
-    metrics["performance_gate"] = assess_performance_gate(
-        metrics,
-        min_accuracy=args.min_accuracy,
-        min_macro_f1=args.min_macro_f1,
-        min_class_recall=args.min_class_recall,
-        min_class_f1=args.min_class_f1,
-        require_improvement=args.require_improvement,
-        improvement_metric=args.improvement_metric,
-    )
     output_path = Path(args.output).resolve()
     matrix_path = (
         Path(args.confusion_matrix).resolve()
@@ -667,12 +477,6 @@ def evaluate(args: argparse.Namespace) -> dict:
         f"accuracy={metrics['accuracy']:.4f}, macro_f1={metrics['macro_f1']:.4f}, "
         f"examples={metrics['num_examples']}, report={output_path}"
     )
-    if not metrics["performance_gate"]["passed"]:
-        failures = metrics["performance_gate"]["failures"]
-        raise RuntimeError(
-            f"Reloaded checkpoint failed {len(failures)} configured performance criterion/criteria: {failures}; "
-            f"evaluation artifacts were written to {output_path}."
-        )
     return metrics
 
 

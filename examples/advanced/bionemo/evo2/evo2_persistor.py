@@ -16,7 +16,6 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 
 import evo2_adapter_checkpoint as adapter_checkpoint
 import torch
@@ -32,7 +31,7 @@ class CPUTrainablePTFileModelPersistor(PTFileModelPersistor):
 
     Evo2 clients return CPU tensors to release their GPU processes promptly, so
     this example loads its source checkpoint directly onto CPU. Normalizing the
-    returned learnable also strictly validates the LoRA/head-only federation boundary.
+    returned learnable also strictly validates the LoRA-and-head federation boundary.
     """
 
     @staticmethod
@@ -84,18 +83,6 @@ class CPUTrainablePTFileModelPersistor(PTFileModelPersistor):
             context="Evo2 global trainable checkpoint",
         )
         super().save_model_file(save_path)
-
-    def save_model(self, ml, fl_ctx):
-        """Persist the latest global model and a round-named copy."""
-
-        super().save_model(ml, fl_ctx)
-        metadata = ml.get(ModelLearnableKey.META) or {}
-        round_index = metadata.get("current_round")
-        if type(round_index) is not int or round_index < 0:
-            return
-        latest_path = Path(self._ckpt_save_path)
-        round_path = latest_path.with_name(f"{latest_path.stem}_round_{round_index:03d}{latest_path.suffix}")
-        self.save_model_file(str(round_path))
 
     def get_model(self, model_file: str, fl_ctx):
         return self._normalize_learnable(

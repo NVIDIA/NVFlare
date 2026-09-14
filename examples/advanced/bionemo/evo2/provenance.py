@@ -18,63 +18,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import re
-from collections.abc import Mapping
 from pathlib import Path
-
-CONTINUATION_SIGNATURE_FORMAT_VERSION = 1
-_CONTINUATION_SIGNATURE_KEYS = {"format_version", "payload", "sha256"}
-
-
-def _canonical_json_bytes(value) -> bytes:
-    try:
-        return json.dumps(
-            value,
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=True,
-            allow_nan=False,
-        ).encode("utf-8")
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"Value is not canonical JSON data: {exc}") from exc
-
-
-def make_continuation_signature(payload: Mapping) -> dict:
-    """Return a canonical, self-verifying continuation signature."""
-
-    if not isinstance(payload, Mapping) or not payload:
-        raise ValueError("Continuation signature payload must be a non-empty mapping.")
-    canonical_payload = json.loads(_canonical_json_bytes(payload))
-    return {
-        "format_version": CONTINUATION_SIGNATURE_FORMAT_VERSION,
-        "payload": canonical_payload,
-        "sha256": hashlib.sha256(_canonical_json_bytes(canonical_payload)).hexdigest(),
-    }
-
-
-def validate_continuation_signature(signature: Mapping, *, context: str = "Continuation signature") -> dict:
-    """Validate and normalize a continuation signature without trusting its digest."""
-
-    if not isinstance(signature, Mapping) or set(signature) != _CONTINUATION_SIGNATURE_KEYS:
-        received = set(signature) if isinstance(signature, Mapping) else type(signature).__name__
-        raise ValueError(f"{context} has invalid keys: {received}.")
-    if type(signature["format_version"]) is not int or (
-        signature["format_version"] != CONTINUATION_SIGNATURE_FORMAT_VERSION
-    ):
-        raise ValueError(
-            f"{context} has unsupported format_version={signature['format_version']!r}; "
-            f"expected {CONTINUATION_SIGNATURE_FORMAT_VERSION}."
-        )
-    payload = signature["payload"]
-    if not isinstance(payload, Mapping) or not payload:
-        raise ValueError(f"{context} payload must be a non-empty mapping.")
-    digest = signature["sha256"]
-    if not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None:
-        raise ValueError(f"{context} has an invalid SHA-256 digest.")
-    normalized = make_continuation_signature(payload)
-    if normalized["sha256"] != digest:
-        raise ValueError(f"{context} SHA-256 digest does not match its payload.")
-    return normalized
 
 
 def sha256_file(path: str | os.PathLike[str]) -> str:
@@ -186,7 +130,7 @@ def _identity_payload(identity: dict, *, directory: bool, label: str) -> dict:
 
 
 def resolve_initialization_metadata(checkpoint_metadata: dict) -> dict:
-    """Return original initialization metadata from an initial or once-continued checkpoint."""
+    """Return original initialization metadata from an initial or federated checkpoint."""
 
     if not isinstance(checkpoint_metadata, dict):
         raise ValueError("Trainable checkpoint metadata must be a dictionary.")
@@ -204,7 +148,6 @@ def validate_initialization_metadata(
     checkpoint_metadata: dict,
     *,
     backend: str,
-    peft_mode: str,
     seed: int,
     seq_length: int,
     lora_dim: int,
@@ -223,13 +166,13 @@ def validate_initialization_metadata(
     expected_settings = {
         "backend": backend,
         "exchange_dtype": exchange_dtype,
-        "peft_mode": peft_mode,
+        "peft_mode": "lora",
         "seed": seed,
         "seq_length": seq_length,
-        "lora_dim": lora_dim if peft_mode == "lora" else None,
-        "lora_alpha": lora_alpha if peft_mode == "lora" else None,
-        "lora_dropout": lora_dropout if peft_mode == "lora" else None,
-        "lora_target_modules": list(lora_target_modules) if peft_mode == "lora" else [],
+        "lora_dim": lora_dim,
+        "lora_alpha": lora_alpha,
+        "lora_dropout": lora_dropout,
+        "lora_target_modules": list(lora_target_modules),
     }
     mismatches = {
         field: {"expected": expected, "observed": initialization.get(field)}

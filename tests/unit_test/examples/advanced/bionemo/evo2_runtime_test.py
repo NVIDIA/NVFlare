@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import importlib.util
-import json
 import sys
 import types
 from collections import OrderedDict
@@ -77,20 +76,6 @@ def _install_fake_megatron(monkeypatch):
         monkeypatch.setitem(sys.modules, name, module)
 
 
-def _install_fake_mcore_results_queue(monkeypatch, results_queue):
-    dist_checkpointing = types.ModuleType("megatron.core.dist_checkpointing")
-    dist_checkpointing.__path__ = []
-    strategies = types.ModuleType("megatron.core.dist_checkpointing.strategies")
-    strategies.__path__ = []
-    filesystem_async = types.ModuleType("megatron.core.dist_checkpointing.strategies.filesystem_async")
-    filesystem_async._results_queue = results_queue
-    strategies.filesystem_async = filesystem_async
-    monkeypatch.setitem(sys.modules, "megatron.core.dist_checkpointing", dist_checkpointing)
-    monkeypatch.setitem(sys.modules, "megatron.core.dist_checkpointing.strategies", strategies)
-    monkeypatch.setitem(sys.modules, "megatron.core.dist_checkpointing.strategies.filesystem_async", filesystem_async)
-    return filesystem_async
-
-
 def _tiny_model(torch):
     class TinyEvo2(torch.nn.Module):
         def __init__(self):
@@ -125,37 +110,6 @@ def test_round_train_sample_offset_continues_the_cyclic_sampler_across_fresh_pro
         runtime.round_train_sample_offset(-1, 20, 32)
     with pytest.raises(ValueError, match="positive"):
         runtime.round_train_sample_offset(1, 0, 32)
-
-
-def test_shutdown_mcore_checkpoint_results_manager_stops_process_and_clears_global(monkeypatch):
-    runtime = _load_runtime_module()
-    process = SimpleNamespace(alive=True, exitcode=None)
-    process.is_alive = lambda: process.alive
-
-    def shutdown():
-        process.alive = False
-        process.exitcode = 0
-
-    manager = SimpleNamespace(_process=process, shutdown=shutdown)
-    results_queue = SimpleNamespace(_manager=manager)
-    filesystem_async = _install_fake_mcore_results_queue(monkeypatch, results_queue)
-
-    runtime._shutdown_mcore_checkpoint_results_manager()
-
-    assert process.alive is False
-    assert filesystem_async._results_queue is None
-
-
-def test_shutdown_mcore_checkpoint_results_manager_rejects_unverifiable_cleanup(monkeypatch):
-    runtime = _load_runtime_module()
-    process = SimpleNamespace(is_alive=lambda: True)
-    results_queue = SimpleNamespace(_manager=SimpleNamespace(_process=process, shutdown=lambda: None))
-    filesystem_async = _install_fake_mcore_results_queue(monkeypatch, results_queue)
-
-    with pytest.raises(RuntimeError, match="still alive after shutdown"):
-        runtime._shutdown_mcore_checkpoint_results_manager()
-
-    assert filesystem_async._results_queue is results_queue
 
 
 @pytest.mark.parametrize(
@@ -205,7 +159,6 @@ def test_classifier_config_forces_single_gpu_and_disables_stale_checkpoint_state
         eval_interval=20,
         eval_iters=10,
         seed=1234,
-        peft_mode="lora",
         lora_dim=16,
         lora_alpha=32,
         lora_dropout=0.1,
@@ -246,7 +199,6 @@ def test_classifier_config_forces_single_gpu_and_disables_stale_checkpoint_state
             eval_interval=1,
             eval_iters=1,
             seed=1,
-            peft_mode="lora",
             lora_dim=4,
             lora_alpha=8,
             lora_dropout=0.0,
@@ -254,18 +206,19 @@ def test_classifier_config_forces_single_gpu_and_disables_stale_checkpoint_state
         )
 
 
-def test_trainable_boundary_requires_lora_tensors_in_lora_mode():
+def test_trainable_boundary_requires_lora_and_classification_head_tensors():
     import torch
 
     runtime = _load_runtime_module()
     model = _tiny_model(torch)
     model.adapter.requires_grad_(False)
 
-    with pytest.raises(ValueError, match="LoRA mode produced no trainable adapter"):
-        runtime.validate_model_trainable_boundary(model, "lora")
+    with pytest.raises(ValueError, match="no trainable LoRA adapter"):
+        runtime.validate_model_trainable_boundary(model)
 
-    boundary = runtime.validate_model_trainable_boundary(model, "head-only")
-    assert boundary["lora_tensors"] == 0
+    model.adapter.requires_grad_(True)
+    boundary = runtime.validate_model_trainable_boundary(model)
+    assert boundary["lora_tensors"] == 2
     assert boundary["classification_head_tensors"] == 2
 
 
@@ -286,7 +239,7 @@ def test_training_callback_loads_global_state_then_reloads_optimizer_master_para
 
     optimizer = Optimizer()
     context = SimpleNamespace(model=[model], optimizer=optimizer)
-    callback = runtime.make_exchange_callback(incoming, extract_after_training=True, peft_mode="lora")
+    callback = runtime.make_exchange_callback(incoming, extract_after_training=True)
 
     callback.on_data_init_start(context)
     assert all(torch.equal(callback.initial_state[name], reference[name]) for name in reference)
@@ -325,7 +278,7 @@ def test_training_callback_captures_rounded_bfloat16_baseline_as_float32(monkeyp
     incoming = OrderedDict((name, torch.full_like(value, 1.003)) for name, value in extracted.items())
     optimizer = SimpleNamespace(reload_model_params=lambda: None)
     context = SimpleNamespace(model=model, optimizer=optimizer)
-    callback = runtime.make_exchange_callback(incoming, extract_after_training=True, peft_mode="lora")
+    callback = runtime.make_exchange_callback(incoming, extract_after_training=True)
 
     callback.on_data_init_start(context)
     callback.on_train_start(context)
@@ -347,7 +300,7 @@ def test_training_callback_exports_a_nonzero_bfloat16_step_relative_to_the_round
     extracted = runtime.adapter_checkpoint.extract_trainable_state(model)
     incoming = OrderedDict((name, torch.full_like(value, 1.003)) for name, value in extracted.items())
     context = SimpleNamespace(model=model, optimizer=SimpleNamespace(reload_model_params=lambda: None))
-    callback = runtime.make_exchange_callback(incoming, extract_after_training=True, peft_mode="lora")
+    callback = runtime.make_exchange_callback(incoming, extract_after_training=True)
 
     callback.on_data_init_start(context)
     callback.on_train_start(context)
@@ -378,7 +331,6 @@ def test_training_callback_sets_the_round_sample_offset_before_data_loading(monk
     callback = runtime.make_exchange_callback(
         incoming,
         extract_after_training=True,
-        peft_mode="lora",
         train_sample_offset=1280,
     )
 
@@ -386,310 +338,6 @@ def test_training_callback_sets_the_round_sample_offset_before_data_loading(monk
 
     assert train_state.consumed_train_samples == 1280
     assert callback.metrics["train_sample_offset"] == 1280.0
-
-
-def test_training_callback_validates_persistent_train_scheduler_and_sampler_counters(monkeypatch):
-    import torch
-
-    runtime = _load_runtime_module()
-    _install_fake_megatron(monkeypatch)
-    model = _tiny_model(torch)
-    incoming = runtime.adapter_checkpoint.extract_trainable_state(model)
-    expected = runtime._expected_counters(round_index=1, local_steps=5, global_batch_size=8)
-    train_state = SimpleNamespace(step=5, consumed_train_samples=40, skipped_train_samples=0)
-    context = SimpleNamespace(
-        model=model,
-        optimizer=SimpleNamespace(reload_model_params=lambda: None),
-        scheduler=SimpleNamespace(num_steps=40),
-        state=SimpleNamespace(train_state=train_state),
-    )
-    callback = runtime.make_exchange_callback(
-        incoming,
-        extract_after_training=True,
-        peft_mode="lora",
-        expected_counters=expected,
-    )
-
-    callback.on_data_init_start(context)
-    callback.on_train_start(context)
-    train_state.step = 10
-    train_state.consumed_train_samples = 80
-    context.scheduler.num_steps = 80
-    callback.on_train_end(context)
-
-    assert callback.metrics["training_state_start_step"] == 5.0
-    assert callback.metrics["training_state_start_consumed_train_samples"] == 40.0
-    assert callback.metrics["training_state_end_step"] == 10.0
-    assert callback.metrics["training_state_end_scheduler_steps"] == 80.0
-
-    invalid_context = SimpleNamespace(
-        model=_tiny_model(torch),
-        scheduler=SimpleNamespace(num_steps=0),
-        state=SimpleNamespace(train_state=SimpleNamespace(step=5, consumed_train_samples=40, skipped_train_samples=0)),
-    )
-    invalid_callback = runtime.make_exchange_callback(
-        incoming,
-        extract_after_training=True,
-        peft_mode="lora",
-        expected_counters=expected,
-    )
-    with pytest.raises(RuntimeError, match="counters are invalid at start"):
-        invalid_callback.on_data_init_start(invalid_context)
-
-
-def test_persistent_train_round_uses_cumulative_targets_and_atomic_manifest_chain(monkeypatch, tmp_path):
-    import torch
-
-    runtime = _load_runtime_module()
-    classifier_path = tmp_path / "classifier.py"
-    classifier_path.write_text("# pinned classifier\n", encoding="utf-8")
-    base_checkpoint = tmp_path / "base"
-    base_checkpoint.mkdir()
-    base_payload_path = base_checkpoint / "weights.bin"
-    base_payload_path.write_bytes(b"pinned backbone")
-    train_path = tmp_path / "train.jsonl"
-    train_path.write_text('{"sequence": "AC", "label": 0}\n', encoding="utf-8")
-    validation_path = tmp_path / "validation.jsonl"
-    validation_path.write_text('{"sequence": "GT", "label": 1}\n', encoding="utf-8")
-    incoming = OrderedDict(
-        (
-            ("decoder.adapter.lora_a.weight", torch.zeros(2, 2)),
-            ("decoder.classification_head.weight", torch.zeros(3, 2)),
-        )
-    )
-    build_calls = []
-    pretrain_calls = []
-    upstream = SimpleNamespace(classifier_forward_step=object(), __file__=str(classifier_path))
-
-    def fake_builder(*_args, **kwargs):
-        build_calls.append(kwargs)
-        return SimpleNamespace(
-            train=SimpleNamespace(train_iters=kwargs["train_iters"]),
-            checkpoint=SimpleNamespace(ckpt_format="torch_dist"),
-        )
-
-    def fake_callback(received, **kwargs):
-        assert kwargs["train_sample_offset"] is None
-        assert kwargs["expected_counters"] is not None
-        baseline = OrderedDict((name, value.clone()) for name, value in received.items())
-        updated = OrderedDict((name, value + 1.0) for name, value in received.items())
-        return SimpleNamespace(initial_state=baseline, updated_state=updated, metrics={})
-
-    def fake_pretrain(config, _forward_step, callbacks):
-        target_step = config.train.train_iters
-        save_dir = Path(config.checkpoint.save)
-        iteration_dir = save_dir / f"iter_{target_step:07d}"
-        iteration_dir.mkdir(parents=True)
-        train_state = {
-            "step": torch.tensor(target_step),
-            "consumed_train_samples": torch.tensor(target_step * 8),
-            "skipped_train_samples": torch.tensor(0),
-        }
-        torch.save(train_state, save_dir / runtime.NATIVE_LATEST_TRAIN_STATE_FILENAME)
-        torch.save(train_state, iteration_dir / runtime.NATIVE_TRAIN_STATE_FILENAME)
-        (iteration_dir / "__0_0.distcp").write_bytes(f"optimizer-state-{target_step}".encode())
-        pretrain_calls.append(
-            {
-                "target_step": target_step,
-                "load": config.checkpoint.load,
-                "save": config.checkpoint.save,
-                "load_optim": config.checkpoint.load_optim,
-                "load_rng": config.checkpoint.load_rng,
-                "save_optim": config.checkpoint.save_optim,
-                "save_rng": config.checkpoint.save_rng,
-                "save_interval": config.checkpoint.save_interval,
-                "async_save": config.checkpoint.async_save,
-                "exit_on_missing_checkpoint": config.checkpoint.exit_on_missing_checkpoint,
-                "callbacks": callbacks,
-            }
-        )
-
-    upstream.pretrain = fake_pretrain
-    monkeypatch.setattr(runtime, "load_classifier_module", lambda _path: upstream)
-    monkeypatch.setattr(runtime, "build_classifier_config", fake_builder)
-    monkeypatch.setattr(runtime, "make_exchange_callback", fake_callback)
-    cleanup_calls = []
-    monkeypatch.setattr(
-        runtime, "_shutdown_mcore_checkpoint_results_manager", lambda: cleanup_calls.append(len(pretrain_calls))
-    )
-    state_root = tmp_path / "state" / "site-1"
-
-    def run_round(round_index, state):
-        return runtime.train_round(
-            state,
-            classifier_path=str(classifier_path),
-            base_checkpoint=str(base_checkpoint),
-            train_file=str(train_path),
-            validation_file=str(validation_path),
-            result_dir=str(tmp_path / f"result-{round_index}"),
-            local_steps=5,
-            seq_length=600,
-            micro_batch_size=4,
-            global_batch_size=8,
-            learning_rate=5e-4,
-            min_learning_rate=5e-5,
-            warmup_iters=3,
-            eval_iters=1,
-            seed=77,
-            round_index=round_index,
-            peft_mode="lora",
-            lora_dim=16,
-            lora_alpha=32,
-            lora_dropout=0.1,
-            lora_target_modules=("linear_qkv",),
-            training_state_dir=str(state_root),
-            site_name="site-1",
-        )
-
-    round_zero_state, _diff, round_zero_metrics = run_round(0, incoming)
-    round_one_state, _diff, round_one_metrics = run_round(1, round_zero_state)
-
-    assert [call["train_iters"] for call in build_calls] == [5, 10]
-    assert cleanup_calls == [1, 2]
-    assert [call["seed"] for call in build_calls] == [77, 77]
-    assert [call["warmup_iters"] for call in build_calls] == [3, 3]
-    assert pretrain_calls[0]["load"] is None
-    assert pretrain_calls[0]["load_optim"] is False
-    assert pretrain_calls[0]["load_rng"] is False
-    assert pretrain_calls[0]["save_optim"] is True
-    assert pretrain_calls[0]["save_rng"] is True
-    assert pretrain_calls[0]["save_interval"] is None
-    assert pretrain_calls[0]["async_save"] is False
-    assert pretrain_calls[0]["exit_on_missing_checkpoint"] is False
-    assert pretrain_calls[1]["load"] == str(state_root.resolve() / "round_000")
-    assert pretrain_calls[1]["load_optim"] is True
-    assert pretrain_calls[1]["load_rng"] is True
-    assert pretrain_calls[1]["exit_on_missing_checkpoint"] is True
-    assert not Path(pretrain_calls[0]["save"]).exists()
-    assert (state_root / "round_000").is_dir()
-    assert (state_root / "round_001").is_dir()
-    assert round_zero_metrics["persistent_training_state_resumed"] == 0.0
-    assert round_one_metrics["persistent_training_state_resumed"] == 1.0
-    assert all(torch.equal(round_one_state[name], incoming[name] + 2.0) for name in incoming)
-
-    first_manifest_path = state_root / "round_000" / runtime.TRAINING_STATE_MANIFEST_FILENAME
-    second_manifest_path = state_root / "round_001" / runtime.TRAINING_STATE_MANIFEST_FILENAME
-    first_manifest = json.loads(first_manifest_path.read_text(encoding="utf-8"))
-    second_manifest_bytes = second_manifest_path.read_bytes()
-    second_manifest = json.loads(second_manifest_bytes)
-    assert first_manifest["previous_manifest_sha256"] is None
-    assert second_manifest["previous_manifest_sha256"] == runtime._file_sha256(first_manifest_path)
-    assert second_manifest["counters"]["end_step"] == 10
-    assert second_manifest["counters"]["end_scheduler_steps"] == 80
-    configuration = second_manifest["configuration"]
-    assert configuration["base_checkpoint"] == runtime.provenance.directory_identity(base_checkpoint)
-    assert configuration["classifier_file"] == runtime.provenance.file_identity(classifier_path)
-    assert configuration["train_file"] == runtime.provenance.jsonl_identity(train_path)
-    assert configuration["validation_file"] == runtime.provenance.jsonl_identity(validation_path)
-
-    with pytest.raises(RuntimeError, match="already exists"):
-        run_round(1, round_one_state)
-
-    for path, mutated_contents in (
-        (train_path, b'{"sequence": "TT", "label": 0}\n'),
-        (validation_path, b'{"sequence": "CC", "label": 1}\n'),
-        (classifier_path, b"# changed classifier\n"),
-        (base_payload_path, b"changed backbone"),
-    ):
-        original_contents = path.read_bytes()
-        path.write_bytes(mutated_contents)
-        with pytest.raises(RuntimeError, match="manifest.*incompatible"):
-            run_round(2, round_one_state)
-        path.write_bytes(original_contents)
-
-    second_manifest["configuration"]["learning_rate"] = 0.25
-    second_manifest_path.write_text(json.dumps(second_manifest), encoding="utf-8")
-    with pytest.raises(RuntimeError, match="manifest.*incompatible"):
-        run_round(2, round_one_state)
-    second_manifest_path.write_bytes(second_manifest_bytes)
-
-    payload_path = state_root / "round_001" / "iter_0000010" / "__0_0.distcp"
-    payload_path.write_bytes(b"tampered")
-    with pytest.raises(RuntimeError, match="payload was modified"):
-        run_round(2, round_one_state)
-
-    missing_root = tmp_path / "missing-state"
-    state_root = missing_root
-    with pytest.raises(RuntimeError, match="manifest is missing"):
-        run_round(1, round_one_state)
-
-
-def test_persistent_train_round_does_not_promote_a_failed_native_checkpoint(monkeypatch, tmp_path, capsys):
-    import torch
-
-    runtime = _load_runtime_module()
-    classifier_path = tmp_path / "classifier.py"
-    classifier_path.write_text("# pinned classifier\n", encoding="utf-8")
-    base_checkpoint = tmp_path / "base"
-    base_checkpoint.mkdir()
-    (base_checkpoint / "weights.bin").write_bytes(b"pinned backbone")
-    train_path = tmp_path / "train.jsonl"
-    train_path.write_text('{"sequence": "AC", "label": 0}\n', encoding="utf-8")
-    validation_path = tmp_path / "validation.jsonl"
-    validation_path.write_text('{"sequence": "GT", "label": 1}\n', encoding="utf-8")
-    incoming = OrderedDict(
-        (
-            ("decoder.adapter.lora_a.weight", torch.zeros(2, 2)),
-            ("decoder.classification_head.weight", torch.zeros(3, 2)),
-        )
-    )
-    training_error = RuntimeError("training failed")
-
-    def fail_pretrain(*_args, **_kwargs):
-        raise training_error
-
-    upstream = SimpleNamespace(classifier_forward_step=object(), __file__=str(classifier_path), pretrain=fail_pretrain)
-    monkeypatch.setattr(runtime, "load_classifier_module", lambda _path: upstream)
-    monkeypatch.setattr(
-        runtime,
-        "build_classifier_config",
-        lambda *_args, **kwargs: SimpleNamespace(
-            train=SimpleNamespace(train_iters=kwargs["train_iters"]),
-            checkpoint=SimpleNamespace(ckpt_format="torch_dist"),
-        ),
-    )
-    monkeypatch.setattr(runtime, "make_exchange_callback", lambda *_args, **_kwargs: SimpleNamespace())
-    cleanup_calls = []
-
-    def fail_cleanup():
-        cleanup_calls.append(True)
-        raise RuntimeError("cleanup failed")
-
-    monkeypatch.setattr(runtime, "_shutdown_mcore_checkpoint_results_manager", fail_cleanup)
-    state_root = tmp_path / "state" / "site-1"
-
-    with pytest.raises(RuntimeError, match="training failed") as exc_info:
-        runtime.train_round(
-            incoming,
-            classifier_path=str(classifier_path),
-            base_checkpoint=str(base_checkpoint),
-            train_file=str(train_path),
-            validation_file=str(validation_path),
-            result_dir=str(tmp_path / "result"),
-            local_steps=5,
-            seq_length=600,
-            micro_batch_size=4,
-            global_batch_size=8,
-            learning_rate=5e-4,
-            min_learning_rate=5e-5,
-            warmup_iters=3,
-            eval_iters=1,
-            seed=77,
-            round_index=0,
-            peft_mode="lora",
-            lora_dim=16,
-            lora_alpha=32,
-            lora_dropout=0.1,
-            lora_target_modules=("linear_qkv",),
-            training_state_dir=str(state_root),
-            site_name="site-1",
-        )
-
-    assert exc_info.value is training_error
-    assert cleanup_calls == [True]
-    assert "checkpoint worker cleanup also failed: cleanup failed" in capsys.readouterr().err
-    assert not (state_root / "round_000").exists()
-    assert len(list(state_root.glob(".round_000_*"))) == 1
 
 
 def test_train_round_wires_the_federated_round_into_the_sampler_cursor(monkeypatch, tmp_path):
@@ -737,7 +385,6 @@ def test_train_round_wires_the_federated_round_into_the_sampler_cursor(monkeypat
         eval_iters=1,
         seed=1236,
         round_index=3,
-        peft_mode="lora",
         lora_dim=16,
         lora_alpha=32,
         lora_dropout=0.1,
@@ -789,7 +436,6 @@ def test_train_round_preserves_fp32_server_residual_when_bfloat16_model_makes_no
         eval_iters=1,
         seed=1234,
         round_index=0,
-        peft_mode="lora",
         lora_dim=16,
         lora_alpha=32,
         lora_dropout=0.1,
@@ -836,7 +482,6 @@ def test_train_round_returns_exact_model_delta_without_redundant_fp32_subtractio
         eval_iters=1,
         seed=1234,
         round_index=0,
-        peft_mode="lora",
         lora_dim=16,
         lora_alpha=32,
         lora_dropout=0.1,
@@ -859,7 +504,7 @@ def test_training_callback_rejects_a_changed_frozen_backbone(monkeypatch):
     incoming = runtime.adapter_checkpoint.extract_trainable_state(model)
     optimizer = SimpleNamespace(reload_model_params=lambda: None)
     context = SimpleNamespace(model=model, optimizer=optimizer)
-    callback = runtime.make_exchange_callback(incoming, extract_after_training=True, peft_mode="lora")
+    callback = runtime.make_exchange_callback(incoming, extract_after_training=True)
 
     callback.on_data_init_start(context)
     callback.on_train_start(context)
@@ -890,7 +535,6 @@ def test_evaluation_callback_loads_before_data_iteration_without_optimizer_reloa
     callback = runtime.make_exchange_callback(
         incoming,
         extract_after_training=False,
-        peft_mode="lora",
         load_on_data_init=True,
     )
 

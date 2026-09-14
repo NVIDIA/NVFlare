@@ -232,6 +232,10 @@ def test_prepare_and_write_records_creates_expected_jsonl_and_manifest(tmp_path)
         showcase_size=30,
         seed=17,
     )
+    train_dir = tmp_path / "train"
+    train_dir.mkdir()
+    (train_dir / "pooled.jsonl").write_text("legacy pooled data\n", encoding="utf-8")
+    (train_dir / "site-4.jsonl").write_text("stale site data\n", encoding="utf-8")
     manifest = prepare_data.write_prepared_data(
         tmp_path,
         prepared,
@@ -243,7 +247,6 @@ def test_prepare_and_write_records_creates_expected_jsonl_and_manifest(tmp_path)
         seed=17,
     )
 
-    pooled_records = [json.loads(line) for line in (tmp_path / "train" / "pooled.jsonl").read_text().splitlines()]
     validation_records = [json.loads(line) for line in (tmp_path / "validation.jsonl").read_text().splitlines()]
     saved_test_records = [json.loads(line) for line in (tmp_path / "test.jsonl").read_text().splitlines()]
     site_records = {
@@ -251,18 +254,16 @@ def test_prepare_and_write_records_creates_expected_jsonl_and_manifest(tmp_path)
         for site_name in ("site-1", "site-2", "site-3")
     }
 
-    assert len(pooled_records) == 30
+    assert sum(len(records) for records in site_records.values()) == 30
     assert len(validation_records) == 6
     assert len(saved_test_records) == 9
     assert saved_test_records == test_records
     assert all(
         tuple(record) == prepare_data.OUTPUT_FIELDS
-        for records in (pooled_records, validation_records, saved_test_records, *site_records.values())
+        for records in (validation_records, saved_test_records, *site_records.values())
         for record in records
     )
-    assert sorted(_record_names(record for records in site_records.values() for record in records)) == sorted(
-        _record_names(pooled_records)
-    )
+    assert len(set(_record_names(record for records in site_records.values() for record in records))) == 30
     assert manifest == json.loads((tmp_path / "manifest.json").read_text())
     assert manifest["format_version"] == 2
     assert manifest["source"]["revision"] == prepare_data.DATASET_REVISION
@@ -292,9 +293,10 @@ def test_prepare_and_write_records_creates_expected_jsonl_and_manifest(tmp_path)
         pair_audit == {"exact_duplicate_sequences": 0, "genomic_interval_overlaps": 0}
         for pair_audit in manifest["audit"]["site_pairs"].values()
     )
-    assert manifest["files"]["pooled_train"] == "train/pooled.jsonl"
-    assert manifest["file_identities"]["pooled_train"]["rows"] == 30
-    assert len(manifest["file_identities"]["pooled_train"]["sha256"]) == 64
+    assert not (tmp_path / "train" / "pooled.jsonl").exists()
+    assert not (tmp_path / "train" / "site-4.jsonl").exists()
+    assert "pooled_train" not in manifest["files"]
+    assert "pooled_train" not in manifest["file_identities"]
     assert set(manifest["file_identities"]["sites"]) == {"site-1", "site-2", "site-3"}
 
 

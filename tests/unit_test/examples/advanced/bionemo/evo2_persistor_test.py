@@ -125,35 +125,3 @@ def test_get_model_validates_retrieved_exchange_tensors(monkeypatch):
 
     with pytest.raises(ValueError, match="only float32 tensors"):
         persistor.get_model("FL_global_model.pt", None)
-
-
-def test_save_model_keeps_a_separate_checkpoint_for_each_round(tmp_path):
-    module = _load_persistor_module()
-    initial_state = {"classification_head.bias": torch.zeros(3, dtype=torch.float32)}
-    updated_state = {"classification_head.bias": torch.arange(3, dtype=torch.float32)}
-    persistor = module.CPUTrainablePTFileModelPersistor(allow_numpy_conversion=False)
-    persistor.persistence_manager = module.PTModelPersistenceFormatManager(
-        {"model": initial_state, "meta_props": {"exchange_dtype": "float32"}},
-        allow_numpy_conversion=False,
-    )
-    persistor._ckpt_save_path = str(tmp_path / "FL_global_model.pt")
-    learnable = make_model_learnable(
-        weights=updated_state,
-        meta_props={"current_round": 2, "exchange_dtype": "float32"},
-    )
-
-    persistor.save_model(learnable, None)
-
-    latest = tmp_path / "FL_global_model.pt"
-    round_checkpoint = tmp_path / "FL_global_model_round_002.pt"
-    assert latest.is_file()
-    assert round_checkpoint.is_file()
-    assert torch.equal(
-        module.adapter_checkpoint.load_nvflare_checkpoint(latest)["classification_head.bias"],
-        updated_state["classification_head.bias"],
-    )
-    assert torch.equal(
-        module.adapter_checkpoint.load_nvflare_checkpoint(round_checkpoint)["classification_head.bias"],
-        updated_state["classification_head.bias"],
-    )
-    assert module.adapter_checkpoint.load_nvflare_checkpoint_metadata(round_checkpoint)["current_round"] == 2
