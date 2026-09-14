@@ -20,6 +20,18 @@ import warnings
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def reset_shared_recipe_args_after_test():
+    """Keep import-reload tests from leaking command-line state to other test modules."""
+    yield
+    import nvflare.recipe._args as args_module
+
+    args_module._CONSUMED = True
+    args_module._RECIPE_EXPORT = False
+    args_module._RECIPE_EXPORT_DIR = args_module.DEFAULT_EXPORT_DIR
+    args_module._RECIPE_LOG_CONFIG = None
+
+
 def test_recipe_args_import_strips_export_flags_from_sys_argv(monkeypatch):
     import sys
 

@@ -350,7 +350,7 @@ class InProcessClientAPI(APISpec):
     def shutdown(self):
         self.stop = True
         self.stop_reason = _API_SHUTDOWN_STOP_REASON
-        self.event_manager.fire_event(TOPIC_STOP)
+        self.event_manager.fire_event(TOPIC_STOP, _API_SHUTDOWN_STOP_REASON)
 
     def close(self):
         """Detaches this API instance from the singleton DataBus, in both directions.

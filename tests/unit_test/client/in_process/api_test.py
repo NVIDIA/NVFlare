@@ -406,3 +406,18 @@ def test_normal_end_run_is_informational_and_other_stops_remain_warnings(caplog,
         assert all(r.levelname == level for r in stop_logs)
     finally:
         client_api.close()
+
+
+def test_api_shutdown_preserves_its_expected_reason(caplog):
+    DataBus().subscribers.clear()
+    client_api = InProcessClientAPI({})
+    try:
+        with caplog.at_level("INFO"):
+            client_api.shutdown()
+            assert client_api._InProcessClientAPI__continue_job() is False
+        assert client_api.stop_reason == "API shutdown called."
+        stop_logs = [r for r in caplog.records if "stop job" in r.message or "stop the job" in r.message]
+        assert len(stop_logs) == 2
+        assert all(r.levelname == "INFO" for r in stop_logs)
+    finally:
+        client_api.close()
