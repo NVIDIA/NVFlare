@@ -2,8 +2,9 @@
 
 This procedure runs only on the trusted platform system. It does not configure
 the adversarial cluster or secure services. The platform owner must approve the
-AMD firmware baseline. The four verified reported TCB values become minimum
-floors; evidence collection is not an independent firmware vulnerability audit.
+AMD firmware baseline independently of the collector's report. The four reviewed
+minimums are inputs, not values learned from the machine being evaluated.
+Evidence collection is not an independent firmware vulnerability audit.
 
 ## Scope and approved inputs
 
@@ -85,6 +86,19 @@ and the approval template. No separate confidential VM is needed.
 
 ## 3. Rehearse and independently repeat the launch
 
+First edit the template created by stage 06:
+
+```bash
+${EDITOR:-vi} "$PROFILE/platform-approval.env"
+```
+
+Set `SNP_MIN_REPORTED_TCB_BOOTLOADER`, `SNP_MIN_REPORTED_TCB_TEE`,
+`SNP_MIN_REPORTED_TCB_SNP`, and `SNP_MIN_REPORTED_TCB_MICROCODE` to the
+platform security owner's independently reviewed decimal values (0–255).
+Use the approved firmware/advisory baseline for this CPU platform; do not copy
+these minimums from the collector report. There are no safe universal defaults.
+Leave the evidence paths for stage 07 to populate. Blank minimums fail closed.
+
 ```bash
 bash trusted_system/07-run-snp-rehearsal.sh \
   "$CONFIG" "$PROFILE/platform-approval.env"
@@ -101,11 +115,21 @@ or is not SNP. The brief post-report hold allows this capture before exit.
 
 The trusted host verifies the AMD certificate chain, report signature, VCEK
 TCB correspondence, and signed challenge binding. It retains the evidence
-and automatically records the four TCB floors. Stage 08 is an additional
+and checks each reported TCB component is at least its approved minimum without
+changing that minimum. Stage 08 is an additional
 repeat check: it uses a different fresh challenge and requires another
 verified report with the same measurement and TCB, plus identical captured
 launch inputs and resource fields. Run it before accepting/exporting this
-profile. It is a separate check, not automatically invoked by stage 09.
+profile. It is a separate check, not automatically invoked by stage 09; stage 09
+requires its successful evidence and verifies its signature, fresh nonce,
+report bindings and matching launch again.
+
+Finalization compares the approved hashes with QEMU's actual executable,
+`-bios`, `-kernel`, and `-initrd` inputs. Image-backed rootfs capture supports
+Kata's file-backed `-drive` with `id=image` or `id=image-...`; unsupported or
+ambiguous rootfs encodings fail closed. Configured but unused image/initrd
+paths are not evidence of what booted. The source YAML must also still match
+its stage-05 approval hash.
 
 Both scripts remove their own temporary Pod namespace and registry container.
 Evidence, collector images and temporary-registry data/certificates remain

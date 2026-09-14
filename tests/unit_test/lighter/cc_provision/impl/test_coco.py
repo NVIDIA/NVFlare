@@ -27,7 +27,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
 from nvflare.lighter.cc_provision.impl.cc import CCBuilder
-from nvflare.lighter.cc_provision.impl.coco import validate_coco_config
+from nvflare.lighter.cc_provision.impl.coco import resolve_cc_config, validate_coco_config
 from nvflare.lighter.cc_provision.impl.coco_packager import COMMAND, CoCoPackager
 from nvflare.lighter.constants import CtxKey, PropKey
 from nvflare.lighter.impl.cert import CertBuilder
@@ -91,6 +91,17 @@ def setup_project(tmp_path):
 
 def builders():
     return [WorkspaceBuilder(), StaticFileBuilder(), CertBuilder(), CCBuilder(), SignatureBuilder()]
+
+
+def test_relative_cc_config_requires_explicit_source(tmp_path, monkeypatch):
+    config = {"api_version": 3, "name": "paths", "participants": []}
+    project = prepare_project(config.copy())
+    with pytest.raises(ValueError, match="project_file"):
+        resolve_cc_config(project, "cc_site.yml")
+    source = tmp_path / "source/project.yaml"
+    project = prepare_project(config, project_file=source)
+    monkeypatch.chdir(tmp_path)
+    assert resolve_cc_config(project, "cc_site.yml") == str(source.parent / "cc_site.yml")
 
 
 def write_fake_result(request):

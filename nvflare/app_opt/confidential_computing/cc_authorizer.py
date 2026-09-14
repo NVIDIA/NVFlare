@@ -50,6 +50,14 @@ class CCAuthorizer(ABC):
         """
         pass
 
+    def verify_for_site(self, token: str, site_name: str) -> bool:
+        """Verify for a transport-authenticated site.
+
+        Legacy attesters without a signed site claim retain their existing
+        verification semantics. Site-aware attesters must override this method.
+        """
+        return self.verify(token)
+
 
 class CCTokenGenerateError(Exception):
     """Raised when a CC token generation failed"""

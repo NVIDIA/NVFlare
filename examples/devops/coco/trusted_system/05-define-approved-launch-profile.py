@@ -80,7 +80,7 @@ data = {
     "artifacts": artifacts,
     "actual_launch_capture_required": True,
     "fresh_report_signature_and_nonce_verification_required": True,
-    "baseline_assumption": "User trusts sec_sys firmware baseline; signed reported TCB establishes minimums",
+    "baseline_assumption": "Platform owner supplies independently reviewed TCB minimums before collection",
 }
 with output_path.open("x") as stream:
     json.dump(data, stream, indent=2)

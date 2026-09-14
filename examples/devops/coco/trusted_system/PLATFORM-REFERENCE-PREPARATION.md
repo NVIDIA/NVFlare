@@ -66,11 +66,14 @@ No `kubectl exec`, `kubectl cp`, SSH, listener, separately managed VM, or
 operator-selected report value is used. Kubernetes logs are only the transport:
 the fresh challenge and AMD signature authenticate the evidence.
 
-## Internal helper: automatically record the reported-TCB floors
+## Internal helper: verify reported TCB against independent floors
 
-Under this deployment's assumption that the trusted rehearsal system always
-meets the AMD security baseline, its verified `REPORTED_TCB` values become the
-minimum release-policy floors. Stage 07 invokes this automatically. The direct
+Before stage 07, the platform security owner fills the four
+`SNP_MIN_REPORTED_TCB_*` assignments in `platform-approval.env` from an
+independently reviewed firmware/advisory baseline (decimal integers 0–255).
+Use `${EDITOR:-vi} "$PROFILE/platform-approval.env"` after stage 06.
+The verified `REPORTED_TCB` must meet or exceed every minimum; it never defines
+or overwrites the baseline. Stage 07 invokes this check automatically. The direct
 command below is retained for offline evidence imported through another
 authenticated mechanism:
 
@@ -89,13 +92,13 @@ kata-3.29.0-nvidia-gpu-snp-genoa-v1/platform-approval.env \
 The script fails before modifying the approval file unless `snpguest` verifies
 the AMD certificate chain, the complete signed report, and its reported-TCB
 field. It parses the signed binary `REPORTED_TCB` field according to the AMD
-SEV-SNP ABI, atomically records all four decimal values in
-`platform-approval.env`, sets `TCB_EVIDENCE_FILE`, and retains the report,
+SEV-SNP ABI, validates all four components against the unchanged approval
+values, atomically sets only `TCB_EVIDENCE_FILE`, and retains the report,
 display output, certificates, and checksums under `reported-tcb-evidence/`.
 
-This automates approval only because of the stated trusted-system baseline
-assumption. Never run it against evidence supplied by the adversarial target
-CoCo owner.
+Missing, malformed, or unmet minimums fail closed. Never lower them to make
+a collector report pass. Retain failed evidence for diagnosis and choose a
+new profile for retry. Never use adversarial CoCo-owner claims as the baseline.
 
 ## Remaining evidence and approval
 
@@ -139,8 +142,9 @@ kata-3.29.0-nvidia-gpu-snp-genoa-v1/platform-approval.env
 
 Stage 09 rejects missing evidence, blank approval fields, malformed values,
 ambiguous vCPU identity, any failed AMD signature or challenge check, any
-evidence-hash mismatch, and any difference between the approval record and the
-signed report. It creates:
+evidence-hash mismatch, missing or inconsistent repeat evidence, actual launch
+artifact mismatches, and any signed TCB component below its approved floor.
+Higher reported TCB values are allowed without changing the floors. It creates:
 
 ```text
 $PLATFORM_WORK_ROOT/$PLATFORM_PROFILE/platform-reference.final.env

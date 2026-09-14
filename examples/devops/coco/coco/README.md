@@ -76,6 +76,12 @@ authenticated channel. The script compares it, validates the restrictive Pod
 and embedded Kata policy, performs a server-side dry run, asks for explicit
 confirmation, applies the unchanged file, and waits for readiness.
 
+The owner may approve either an explicit read-only root filesystem or a
+guest-local writable root filesystem (required for NVFlare logs/runtime state).
+Stage 50 accepts both boolean settings; it never edits that choice. The exact
+Pod digest and KBS-bound guest policy, not this untrusted host's preflight,
+enforce the owner's choice. Host volumes and interactive access remain denied.
+
 Kubernetes status proves only that the cluster observed the Pod as ready. The
 workload owner should use application-level mTLS for proof of the expected
 confidential workload's successful execution.

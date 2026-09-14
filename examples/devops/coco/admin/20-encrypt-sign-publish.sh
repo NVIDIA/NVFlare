@@ -66,7 +66,22 @@ sudo docker run --rm \
         coco_keyprovider --socket 127.0.0.1:50000 &
         provider_pid=$!
         trap "kill ${provider_pid} >/dev/null 2>&1 || true" EXIT
-        sleep 2
+        # Wait for this container-local IPv4 socket (127.0.0.1:50000,
+        # C350 hex) to LISTEN (0A), without assuming nc/curl is installed.
+        ready=0
+        attempt=0
+        while [ "${attempt}" -lt 30 ]; do
+            kill -0 "${provider_pid}" 2>/dev/null || exit 1
+            while read -r slot local_address remote_address state rest; do
+                case "${local_address}:${state}" in
+                    0100007F:C350:0A) ready=1 ;;
+                esac
+            done < /proc/net/tcp
+            [ "${ready}" -eq 0 ] || break
+            attempt=$((attempt + 1))
+            sleep 1
+        done
+        [ "${ready}" -eq 1 ] || { echo "keyprovider readiness timed out" >&2; exit 1; }
         skopeo copy --insecure-policy \
           --encryption-key "provider:attestation-agent:keypath=/key::keyid=${KBS_KEY_URI}::algorithm=A256GCM" \
           dir:/work/plain-oci dir:/work/encrypted-oci

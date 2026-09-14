@@ -364,7 +364,8 @@ class TestPOCCommands:
         monkeypatch.setattr(poc_commands, "prepare_builders", lambda _config: [])
         monkeypatch.setattr(poc_commands, "prepare_packager", lambda _config: object())
 
-        def fake_prepare_project(config):
+        def fake_prepare_project(config, project_file=None):
+            assert project_file == str(tmp_path / "project.yml")
             config["participants"] = [{"__comm_config_args__": {}}]
             return object()
 
@@ -383,6 +384,37 @@ class TestPOCCommands:
         assert result["participants"][0]["name"] == "server"
         assert result["participants"][0]["type"] == "server"
         assert result["poc_runtime"]["runtime"] == "docker"
+
+    def test_local_provision_resolves_cc_config_from_source_not_cwd(self, monkeypatch, tmp_path):
+        from unittest.mock import Mock
+
+        source = tmp_path / "source"
+        source.mkdir()
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        config = {
+            "api_version": 3,
+            "name": "cc_path_test",
+            "participants": [
+                {"name": "server", "type": "server", "org": "example"},
+                {"name": "owner@example.com", "type": "admin", "org": "example", "role": "project_admin"},
+                {"name": "site-1", "type": "client", "org": "example", "cc_config": "cc_site-1.yml"},
+            ],
+        }
+        project_file = source / "project.yaml"
+        project_file.write_text(yaml.safe_dump(config))
+        monkeypatch.chdir(workspace)
+        monkeypatch.setattr(poc_commands, "prepare_builders", lambda _config: [])
+        monkeypatch.setattr(poc_commands, "prepare_packager", lambda _config: None)
+        provisioner = Mock()
+        monkeypatch.setattr(poc_commands, "Provisioner", Mock(return_value=provisioner))
+        result, _ = local_provision([], 1, str(workspace), "", project_conf_path=str(project_file))
+        project = provisioner.provision.call_args.args[0]
+        assert project.get_prop("_project_file") == str(project_file)
+        expected = str(source / "cc_site-1.yml")
+        assert result["participants"][2]["cc_config"] == expected
+        saved = yaml.safe_load((workspace / "project.yml").read_text())
+        assert saved["participants"][2]["cc_config"] == expected
 
     def test_patch_poc_docker_client_target_uses_server_alias(self, tmp_path):
         startup_dir = tmp_path / "startup"

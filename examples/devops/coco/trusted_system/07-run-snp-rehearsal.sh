@@ -215,6 +215,9 @@ if spec.get('runtimeClassName') != pod['spec']['runtimeClassName']:
 if len(spec.get('containers', [])) != 1 or spec.get('initContainers'):
     raise SystemExit('This rehearsal currently supports one workload container and no init containers')
 pod['spec']['containers'][0]['resources'] = spec['containers'][0].get('resources', {})
+resources = pod['spec']['containers'][0]['resources']
+for name, value in resources.get('limits', {}).items():
+    resources.setdefault('requests', {}).setdefault(name, value)
 for name in ('hostNetwork', 'hostPID', 'hostIPC'):
     if spec.get(name, False):
         raise SystemExit(f'Unsupported workload launch setting: {name}')

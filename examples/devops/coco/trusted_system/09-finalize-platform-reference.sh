@@ -125,17 +125,28 @@ if [[ -n "${REHEARSAL_WORKLOAD_YAML:-}" ]]; then
         field="${binding%%|*}"
         [[ $(sed -n "s/^${field}: //p" "${PROFILE_DIR}/${REHEARSAL_EVIDENCE_FILE}") == "${binding#*|}" ]] || die "Changed ${field}"
     done
-    python3 - "${PROFILE_DIR}/approved-launch-profile.json" "${REHEARSAL_RUN}/actual-launch.json" <<'PY'
+    python3 - "${PROFILE_DIR}/approved-launch-profile.json" "${REHEARSAL_RUN}/actual-launch.json" "${REHEARSAL_WORKLOAD_YAML}" <<'PY'
 import hashlib, json, sys
 from pathlib import Path
-profile, actual = (json.loads(Path(p).read_text()) for p in sys.argv[1:])
+profile, actual = (json.loads(Path(p).read_text()) for p in sys.argv[1:3])
+if hashlib.sha256(Path(sys.argv[3]).read_bytes()).hexdigest() != profile['workload_yaml_sha256']:
+    raise SystemExit('Workload source differs from the approved profile')
 if actual['pod_resources'] != [profile['pod_resources']]:
     raise SystemExit('Actual Pod resources differ from the approved workload profile')
 if actual['artifacts']['kata_config']['sha256'] != profile['kata_config_sha256']:
     raise SystemExit('Actual Kata configuration differs from the approved profile')
-for key, artifact in profile['artifacts'].items():
-    target = 'qemu_executable' if key == 'path' else 'configured_' + key
-    if actual['artifacts'][target]['sha256'] != artifact['sha256']:
+launched = actual['artifacts']
+if not ('initrd' in launched or 'image' in launched):
+    raise SystemExit('Missing actual initrd or rootfs image')
+for key in ('path', 'firmware', 'kernel', 'initrd', 'image'):
+    target = 'qemu_executable' if key == 'path' else key
+    artifact = profile['artifacts'].get(key)
+    observed = launched.get(target)
+    # Kata may configure both boot modes, but only one is actually used.
+    # An unused rootfs must never stand in for a captured boot artifact.
+    if key in ('initrd', 'image') and observed is None:
+        continue
+    if not artifact or not observed or observed['sha256'] != artifact['sha256']:
         raise SystemExit(f'Launch artifact differs from approved profile: {key}')
 PY
     APPROVED_WORKLOAD_PROFILE_SHA256="$(sha256sum "${PROFILE_DIR}/approved-launch-profile.json" | awk '{print $1}')"
@@ -204,11 +215,42 @@ for binding in \
     (( ${#values[@]} == 1 )) || die "rehearsal evidence must contain exactly one ${field}"
     [[ "${values[0]}" == "${expected}" ]] || die "rehearsal evidence ${field} is inconsistent"
 done
-[[ "${REPORT_BOOTLOADER}" == "${SNP_MIN_REPORTED_TCB_BOOTLOADER}" \
-    && "${REPORT_TEE}" == "${SNP_MIN_REPORTED_TCB_TEE}" \
-    && "${REPORT_SNP}" == "${SNP_MIN_REPORTED_TCB_SNP}" \
-    && "${REPORT_MICROCODE}" == "${SNP_MIN_REPORTED_TCB_MICROCODE}" ]] \
-    || die 'approved minimum TCB values differ from the verified signed report'
+(( REPORT_BOOTLOADER >= SNP_MIN_REPORTED_TCB_BOOTLOADER \
+    && REPORT_TEE >= SNP_MIN_REPORTED_TCB_TEE \
+    && REPORT_SNP >= SNP_MIN_REPORTED_TCB_SNP \
+    && REPORT_MICROCODE >= SNP_MIN_REPORTED_TCB_MICROCODE )) \
+    || die 'verified signed report is below an independently approved TCB minimum'
+
+# Stage 08 is mandatory for a workload profile. Recheck its signed evidence,
+# not merely a PASS marker that could belong to a previous run.
+if [[ -n "${REHEARSAL_WORKLOAD_YAML:-}" ]]; then
+    REPEAT_RUN="${PROFILE_DIR}/repeat-rehearsal"
+    "${SNP_GUEST}" verify attestation "${REPORT_CERTS}" "${REPEAT_RUN}/attestation-report.bin"
+    "${SNP_GUEST}" verify attestation "${REPORT_CERTS}" "${REPEAT_RUN}/attestation-report.bin" --tcb
+    python3 - "${REHEARSAL_RUN}" "${REPEAT_RUN}" <<'PY'
+import hashlib, json, sys
+from pathlib import Path
+first, repeat = map(Path, sys.argv[1:])
+initial = (first / 'evidence-input/attestation-report.bin').read_bytes()
+report = (repeat / 'attestation-report.bin').read_bytes()
+nonce = (repeat / 'request-data.bin').read_bytes()
+summary = json.loads((repeat / 'result.json').read_text())
+before = json.loads((first / 'actual-launch.json').read_text())
+after = json.loads((repeat / 'actual-launch.json').read_text())
+if (len(report) < 0x188 or len(nonce) != 64 or report[0x50:0x90] != nonce
+        or nonce == (first / 'request-data.bin').read_bytes()
+        or report[0x90:0xc0] != initial[0x90:0xc0]
+        or report[0x180:0x188] != initial[0x180:0x188]
+        or before['launch_inputs'] != after['launch_inputs']
+        or before['pod_resources'] != after['pod_resources']):
+    raise SystemExit('Repeat rehearsal does not match the fresh approved launch')
+for key, data in [('first_report_sha256', initial), ('repeat_report_sha256', report), ('nonce_sha256', nonce)]:
+    if summary.get(key) != hashlib.sha256(data).hexdigest():
+        raise SystemExit('Repeat rehearsal summary is stale or inconsistent')
+if summary.get('result') != 'PASS: fresh signed reports and captured launch profile match':
+    raise SystemExit('Stage 08 did not pass')
+PY
+fi
 
 CMDLINE_FILE="${PROFILE_DIR}/${SNP_KERNEL_CMDLINE_REL}"
 printf '%s' "${SNP_KERNEL_CMDLINE}" > "${CMDLINE_FILE}"

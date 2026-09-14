@@ -14,6 +14,8 @@
 
 """Test the provision wrapper with mock stages; no Docker/registry access."""
 
+import base64
+import gzip
 import json
 import os
 import pty
@@ -31,6 +33,24 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ProvisionScriptTests(unittest.TestCase):
+    def test_keyprovider_bounded_readiness_poll(self):
+        script = (ROOT / "admin/20-encrypt-sign-publish.sh").read_text()
+        poll = "ready=0" + script.split("ready=0", 1)[1].split("skopeo copy", 1)[0]
+        for case in ("ready", "delayed", "timeout", "dead"):
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as temp:
+                table = Path(temp) / "tcp"
+                listening = "0: 0100007F:C350 00000000:0000 0A rest\n"
+                table.write_text(listening if case == "ready" else "0: 0100007F:C350 00000000:0000 01 rest\n")
+                sleep = ":" if case != "delayed" else f"printf %s {shlex.quote(listening)} > {shlex.quote(str(table))}"
+                setup = f"sleep() {{ {sleep}; }}\nprovider_pid=" + ("99999999" if case == "dead" else "$$") + "\n"
+                result = subprocess.run(
+                    ["sh", "-ec", setup + poll.replace("/proc/net/tcp", shlex.quote(str(table)))],
+                    text=True,
+                    capture_output=True,
+                    timeout=5,
+                )
+                self.assertEqual(result.returncode == 0, case in ("ready", "delayed"), result.stderr)
+
     def test_pod_generator_binds_explicit_read_only_choice(self):
         script = (ROOT / "admin/30-generate-pod-and-policies.sh").read_text()
         block = next(b for b in re.findall(r"<<'PY'\n(.*?)\nPY\n", script, re.S) if '"kind": "Pod"' in b)
@@ -65,6 +85,59 @@ class ProvisionScriptTests(unittest.TestCase):
                         data["containers"][0]["securityContext"]["readOnlyRootFilesystem"], value == "true"
                     )
                     self.assertNotIn("volumes", data)
+                    final_fields = next(
+                        b for b in re.findall(r"<<'PY'\n(.*?)\nPY\n", script, re.S) if "Kata 3.29 strict genpolicy" in b
+                    ).split("\nannotation =", 1)[0]
+                    subprocess.run(
+                        [
+                            sys.executable,
+                            "-",
+                            temp,
+                            "image",
+                            '["/start"]',
+                            "kata-qemu-nvidia-gpu-snp",
+                            "65532",
+                            "65532",
+                            value,
+                        ],
+                        input=final_fields,
+                        text=True,
+                        capture_output=True,
+                        check=True,
+                    )
+                    manifest = yaml.safe_load(pod.read_text())
+                    # Exercise the real launcher preflight against generated
+                    # read-only and writable NVFlare Pods. This is a syntax
+                    # fixture, not a substitute for guest policy evaluation.
+                    policy = (
+                        "\n".join(
+                            f"default {name} := false"
+                            for name in (
+                                "ExecProcessRequest",
+                                "ReadStreamRequest",
+                                "WriteStreamRequest",
+                                "SetPolicyRequest",
+                            )
+                        )
+                        + '\nAllowRequestsFailingPolicy := false\np_mount.source != ""\np_mount.source == ""\n'
+                        'i_storage.driver in {"blk", "scsi"}\nexpect_root_path == i_storage.mount_point\n'
+                    )
+                    manifest.setdefault("metadata", {}).setdefault("annotations", {})[
+                        "io.katacontainers.config.hypervisor.cc_init_data"
+                    ] = base64.b64encode(gzip.compress(policy.encode())).decode()
+                    launcher = (ROOT / "coco/50-launch-handoff.sh").read_text()
+                    validation = re.findall(r"<<'PY'\n(.*?)\nPY\n", launcher, re.S)[0]
+                    pod_json = Path(temp) / "pod.json"
+                    for setting, accepted in ((value == "true", True), ("false", False), (None, False)):
+                        manifest["spec"]["containers"][0]["securityContext"]["readOnlyRootFilesystem"] = setting
+                        pod_json.write_text(json.dumps(manifest))
+                        checked = subprocess.run(
+                            [sys.executable, "-", str(pod_json), "kata-qemu-nvidia-gpu-snp", "secure.unit.local:5000"],
+                            input=validation,
+                            text=True,
+                            capture_output=True,
+                        )
+                        self.assertEqual(checked.returncode == 0, accepted, checked.stderr)
 
     def run_wrapper(self, approval="demo", fail_stage=None):
         with tempfile.TemporaryDirectory() as temp:

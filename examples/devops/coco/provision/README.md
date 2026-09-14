@@ -5,6 +5,12 @@ node**. This follows the CC CVM example's `cc_config`, builder, and packager
 structure. Only clients are protected; servers and FL console admins receive
 ordinary startup kits. CoCo IT is not an FL project admin.
 
+Relative `cc_config` paths resolve beside the source project YAML, not the
+process working directory. POC preparation preserves absolute CC-config paths
+when saving its project in the workspace. Python API callers must pass
+`prepare_project(project_dict, project_file="/path/to/project.yaml")` when
+using relative CC-config paths, or provide absolute paths themselves.
+
 ## Prerequisites
 
 1. Use an NVFlare installation from the checkout containing `CoCoPackager`.

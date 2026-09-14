@@ -3,7 +3,7 @@
 GPU availability and driver-reported CC mode do not prove successful GPU
 cryptographic appraisal. Run this diagnostic only on the trusted system.
 
-Run on the trusted trusted_system host after the rehearsal has succeeded:
+Run on the trusted-system host after the rehearsal has succeeded:
 
 ```bash
 cd /home/operator/coco_deployment

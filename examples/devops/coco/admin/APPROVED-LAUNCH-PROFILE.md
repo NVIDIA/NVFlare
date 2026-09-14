@@ -55,7 +55,7 @@ directory on provisioning_node. Then, as the trusted coordinator:
 ```bash
 cd /home/operator/coco-admin
 INCOMING=/path/to/authenticated/approved-workload-launch-profile.json
-# Set from the trusted trusted_system channel, NOT from CoCo IT.
+# Set from the authenticated trusted-system channel, NOT from CoCo IT.
 EXPECTED_SHA256=APPROVED_LAUNCH_PROFILE_SHA256
 python3 lib/workload-launch-profile.py "$INCOMING" "$EXPECTED_SHA256" \
   kata-qemu-nvidia-gpu-snp 3.29.0

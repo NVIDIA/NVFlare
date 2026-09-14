@@ -98,6 +98,7 @@ service/policies/workload-resource-policy.rego.template
 service/public/README.md
 service/tests/test_platform_reference_values.py
 service/tests/test_workload_handoff.py
+tests/test_platform_finalization.py
 tests/test_provision_scripts.py
 tests/test_public_package.py
 trusted_system/01-install-rehearsal-host-tools.sh

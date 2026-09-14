@@ -18,8 +18,9 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from nvflare.apis.fl_constant import ReservedKey
+from nvflare.apis.fl_constant import FLContextKey, ReservedKey
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.fl_exception import NotAuthenticated
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.app_opt.confidential_computing.cc_authorizer import CCTokenGenerateError, CCTokenVerifyError
 from nvflare.app_opt.confidential_computing.cc_manager import (
@@ -66,6 +67,7 @@ def _create_peer_cc_context(site_name: str, token: str) -> tuple[list[dict[str, 
     peer_ctx.set_prop(ReservedKey.IDENTITY_NAME, site_name)
     fl_ctx = Mock(spec=FLContext)
     fl_ctx.get_peer_context.return_value = peer_ctx
+    fl_ctx.get_prop.side_effect = lambda key, default=None: site_name if key == FLContextKey.CLIENT_NAME else default
     return cc_info, fl_ctx
 
 
@@ -134,6 +136,7 @@ def cc_test_env(basic_config) -> Generator[tuple[CCManager, FLContext, Mock], No
     tdx_authorizer = Mock(spec=TDXAuthorizer)
     tdx_authorizer.get_namespace.return_value = TDX_NAMESPACE
     tdx_authorizer.verify = _verify_token
+    tdx_authorizer.verify_for_site.side_effect = lambda token, site_name: _verify_token(token)
     tdx_authorizer.generate.return_value = VALID_TOKEN
     engine.get_component.return_value = tdx_authorizer
 
@@ -319,11 +322,56 @@ class TestCCManager:
 
         # Mock _shutdown_system
         with patch.object(cc_manager, "_shutdown_system") as mock_shutdown:
-            cc_manager._validate_client_tokens(mock_fl_ctx)
-            # Should call shutdown for invalid token
-            mock_shutdown.assert_called_once()
-            args = mock_shutdown.call_args[0]
-            assert "CC info validation failed" in args[0]
+            with pytest.raises(NotAuthenticated, match="CC info validation failed"):
+                cc_manager._validate_client_tokens(mock_fl_ctx)
+            mock_shutdown.assert_not_called()
+
+    @pytest.mark.parametrize("payload", [None, {}, {"server": []}, {"client1": []}, {"client1": [], "server": []}])
+    def test_registration_requires_exact_protected_client(self, cc_test_env, payload):
+        manager, _, _ = cc_test_env
+        _, context = _create_peer_cc_context("client1", VALID_TOKEN)
+        context.get_peer_context().set_prop(CC_INFO, payload)
+        with pytest.raises(NotAuthenticated):
+            manager._validate_client_tokens(context)
+
+    def test_ordinary_client_needs_no_attestation(self, cc_test_env):
+        manager, _, verifier = cc_test_env
+        _, context = _create_peer_cc_context("plain-client", VALID_TOKEN)
+        context.get_peer_context.return_value = None
+        with patch.object(manager, "_shutdown_system") as shutdown:
+            manager._validate_client_tokens(context)
+        shutdown.assert_not_called()
+        verifier.verify_for_site.assert_not_called()
+
+    def test_verifier_gets_expected_participant(self, cc_test_env):
+        manager, _, verifier = cc_test_env
+        _, context = _create_peer_cc_context("client1", VALID_TOKEN)
+        manager._validate_client_tokens(context)
+        verifier.verify_for_site.assert_called_once_with(VALID_TOKEN, "client1")
+
+    @pytest.mark.parametrize("tokens", [[None], [{}], [{CC_NAMESPACE: "unknown"}], [{CC_NAMESPACE: []}]])
+    def test_invalid_token_envelopes_fail_closed(self, cc_test_env, tokens):
+        manager, _, _ = cc_test_env
+        assert manager._validate_participants_tokens({"client1": tokens})
+
+    @pytest.mark.parametrize("returned_name", ["client1", "server", "client2"])
+    def test_periodic_response_cannot_rename_requested_site(self, cc_test_env, returned_name):
+        manager, context, _ = cc_test_env
+        manager.site_name = "server"
+        response = Mock()
+        response.get_header.return_value = "ok"
+        response.payload = {
+            "site_name": returned_name,
+            "cc_info": [{CC_TOKEN: VALID_TOKEN, CC_NAMESPACE: TDX_NAMESPACE}],
+        }
+        context.get_engine().get_cell = Mock()
+        context.get_engine().get_cell.return_value.send_request.return_value = response
+        with patch.object(manager, "_get_all_cc_enabled_sites", return_value=[("client1-fqcn", "client1")]):
+            if returned_name == "client1":
+                assert "client1" in manager._collect_all_site_tokens(context)
+            else:
+                with pytest.raises(RuntimeError, match="Failed to collect tokens"):
+                    manager._collect_all_site_tokens(context)
 
     def test_generate_and_attach_tokens(self, logger, cc_test_env):
         """Test generating and attaching tokens to FL context."""

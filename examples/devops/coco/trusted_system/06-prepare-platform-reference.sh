@@ -124,4 +124,4 @@ PLATFORM_REFERENCE_SIGNING_PASSPHRASE_FILE='${PASS_FILE}'
 EOF
 
 printf 'Prepared trusted platform inputs:\n  %s\n  %s\n' "${DERIVED_ENV}" "${APPROVAL_ENV}"
-printf 'Next: run stage 07 to collect a challenge-bound SNP report and record its TCB floors.\n'
+printf 'Next: set independently approved TCB minimums in platform-approval.env, then run stage 07.\n'

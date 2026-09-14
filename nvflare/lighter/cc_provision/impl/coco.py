@@ -35,7 +35,9 @@ def resolve_cc_config(project, value):
     path = Path(value)
     if not path.is_absolute():
         project_file = project.get_prop("_project_file")
-        path = (Path(project_file).parent if project_file else Path.cwd()) / path
+        if not project_file:
+            raise ValueError("Relative cc_config requires prepare_project(..., project_file=...) or an absolute path")
+        path = Path(project_file).parent / path
     return str(path.resolve())
 
 

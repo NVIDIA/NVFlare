@@ -72,12 +72,16 @@ security = c.get("securityContext", {})
 required = {
     "privileged": False,
     "allowPrivilegeEscalation": False,
-    "readOnlyRootFilesystem": True,
     "runAsNonRoot": True,
 }
 for key, value in required.items():
     if security.get(key) is not value:
         raise SystemExit(f"securityContext.{key} must be {value}")
+# NVFlare needs guest-local writable storage for logs and runtime state.
+# The authenticated handoff digest and KBS-bound agent policy authorize the
+# exact boolean; the adversarial host cannot use this check to relax policy.
+if type(security.get("readOnlyRootFilesystem")) is not bool:
+    raise SystemExit("readOnlyRootFilesystem must be an explicit boolean")
 if security.get("capabilities", {}).get("drop") != ["ALL"]:
     raise SystemExit("all Linux capabilities must be dropped")
 if security.get("seccompProfile", {}).get("type") != "RuntimeDefault":

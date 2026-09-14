@@ -23,6 +23,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.fl_exception import NotAuthenticated
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.app_opt.confidential_computing.cc_authorizer import CCAuthorizer, CCTokenGenerateError, CCTokenVerifyError
 from nvflare.fuel.f3.cellnet.core_cell import make_reply
@@ -226,20 +227,24 @@ class CCManager(FLComponent):
 
     def _validate_client_tokens(self, fl_ctx: FLContext):
         """Validate the client's CC info during registration."""
+        # This is the same asserted name subsequently authenticated against the
+        # registration certificate/nonce by ClientManager, not a CC_INFO key.
+        # Secure FL authentication must remain enabled.
+        client_name = fl_ctx.get_prop(FLContextKey.CLIENT_NAME)
+        if not isinstance(client_name, str) or not client_name:
+            raise NotAuthenticated("Missing registration client identity")
+        if client_name not in self.cc_enabled_sites:
+            return
         peer_ctx = fl_ctx.get_peer_context()
         if not peer_ctx:
-            msg = "No peer context!"
-            self.logger.error(msg)
-            self._shutdown_system(msg, fl_ctx)
-            return
+            raise NotAuthenticated("No peer context for protected client")
         peer_cc_info = peer_ctx.get_prop(CC_INFO)
-        if not peer_cc_info:
-            msg = "No peer CC info!"
-            self.logger.error(msg)
-            self._shutdown_system(msg, fl_ctx)
-            return
-
-        self._validate_cc_infos(peer_cc_info, fl_ctx)
+        if not isinstance(peer_cc_info, dict) or set(peer_cc_info) != {client_name}:
+            raise NotAuthenticated("CC info must name exactly the registering client")
+        err = self._validate_participants_tokens(peer_cc_info)
+        if err:
+            # Reject this registration; do not shut down healthy participants.
+            raise NotAuthenticated(f"CC info validation failed: {err}")
 
     def _validate_cc_infos(self, participants_cc_info: dict[str, list[dict[str, str]]], fl_ctx: FLContext):
         """Shared validator for CC info (server or client).
@@ -288,15 +293,24 @@ class CCManager(FLComponent):
             if k not in self.cc_enabled_sites:
                 result[k] = True
                 continue
-            if not cc_info:  # a cc-enabled site does not have any cc_info
+            if not isinstance(cc_info, list) or not cc_info:
                 invalid_participant_list.append(k + " namespace: {None} ")
+                continue
+            namespaces = [v.get(CC_NAMESPACE) for v in cc_info if isinstance(v, dict)]
+            if (
+                len(namespaces) != len(cc_info)
+                or any(not isinstance(n, str) for n in namespaces)
+                or len(set(namespaces)) != len(namespaces)
+                or set(namespaces) != set(self.cc_verifiers)
+            ):
+                invalid_participant_list.append(k + " namespace: {missing, duplicate or unexpected}")
                 continue
             for v in cc_info:
                 token = v.get(CC_TOKEN, "")
                 namespace = v.get(CC_NAMESPACE, "")
                 verifier = self.cc_verifiers.get(namespace, None)
                 try:
-                    if verifier and verifier.verify(token):
+                    if verifier and verifier.verify_for_site(token, k):
                         result[k + "." + namespace] = True
                     else:
                         invalid_participant_list.append(k + " namespace: {" + namespace + "}")
@@ -497,7 +511,7 @@ class CCManager(FLComponent):
         # Step 2: Get list of all sites (exclude self)
         all_sites = self._get_all_cc_enabled_sites(fl_ctx)
         # use FQCN
-        other_sites = [site[0] for site in all_sites if site[1] != self.site_name]
+        other_sites = [(fqcn, name) for fqcn, name in all_sites if name != self.site_name]
 
         if not other_sites:
             self.logger.info("No other sites for validation, only this site")
@@ -510,7 +524,7 @@ class CCManager(FLComponent):
         # Send requests to all other sites
         request_message = new_cell_message({}, {"requester": self.site_name})
 
-        for target_site in other_sites:
+        for target_site, expected_name in other_sites:
             try:
                 response = cell.send_request(
                     target=target_site,
@@ -528,7 +542,7 @@ class CCManager(FLComponent):
                         if isinstance(payload, dict):
                             site_name = payload.get("site_name")
                             cc_info = payload.get("cc_info")
-                            if site_name and cc_info:
+                            if site_name == expected_name and cc_info:
                                 all_tokens[site_name] = cc_info
                                 self.logger.info(f"Received fresh token from site {site_name}")
                             else:

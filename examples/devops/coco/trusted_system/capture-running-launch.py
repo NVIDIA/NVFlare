@@ -30,6 +30,33 @@ def digest(path):
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
+def rootfs_image(argv):
+    """Resolve Kata's rootfs drive, never a configured-but-unused image path.
+
+    This profile supports Kata's file-backed -drive id=image[-...]. Other
+    rootfs encodings fail closed when no actual initrd is present.
+    """
+    images = []
+    for index, arg in enumerate(argv):
+        if arg != "-drive":
+            continue
+        options = argv[index + 1].split(",")
+        fields = {}
+        for option in options:
+            key, separator, value = option.partition("=")
+            if not separator or key in fields:
+                raise ValueError("Unsupported or ambiguous QEMU drive encoding")
+            fields[key] = value
+        drive_id = fields.get("id", "")
+        if drive_id == "image" or drive_id.startswith("image-"):
+            if not fields.get("file"):
+                raise ValueError("Rootfs drive has no explicit file")
+            images.append(fields["file"])
+    if len(images) > 1:
+        raise ValueError("Ambiguous QEMU rootfs drives")
+    return images[0] if images else None
+
+
 def capture(namespace, pod, config):
     kube = ["kubectl", "--kubeconfig", "/etc/kubernetes/admin.conf"]
     obj = json.loads(subprocess.check_output(kube + ["-n", namespace, "get", "pod", pod, "-o", "json"]))
@@ -67,6 +94,11 @@ def capture(namespace, pod, config):
         actual = option(flag)
         if actual:
             files[key] = actual
+    image = rootfs_image(argv)
+    if image:
+        files["image"] = image
+    if "initrd" not in files and "image" not in files:
+        raise ValueError("No actual initrd or supported Kata rootfs drive was captured")
     for key in ["firmware", "kernel", "initrd", "image"]:
         if qemu.get(key):
             files["configured_" + key] = qemu[key]

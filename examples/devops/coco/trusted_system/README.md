@@ -4,7 +4,7 @@ Start with [../CONFIGURATION.md](../CONFIGURATION.md). No private bootstrap
 configuration, source workload or approved measurements are included.
 
 This kit prepares exactly five approved platform-reference values for secure services
-from fresh, verified SNP evidence on the trusted trusted_system machine. It no longer
+from fresh, verified SNP evidence on the trusted-system machine. It no longer
 contains signed platform-reference or public CoCo installation bundle builders.
 
 Stage 10 can also export a separate small approved workload launch contract
@@ -25,14 +25,16 @@ verification limits. Use `sec-sys-launch-profile.env.example` with
 2. Runtime acquisition and installation: `03-fetch-kata-artifacts.sh`, then
    `04-install-rehearsal-runtime.sh`.
 3. Approved profile and preparation: `05-define-approved-launch-profile.py`,
-   then `06-prepare-platform-reference.sh`.
+   then `06-prepare-platform-reference.sh`. Fill the four independently reviewed
+   TCB minimums in `platform-approval.env` before collecting evidence.
 4. Verified collection and repeat: `07-run-snp-rehearsal.sh`, then
    `08-repeat-profile-rehearsal.py`.
 5. Finalization and export: `09-finalize-platform-reference.sh`, then
    `10-export-platform-reference-values.sh`.
 
 The numeric prefixes now match execution order. Stage 08 is
-a separate repeat check, not automatically invoked by the finalizer.
+a separate repeat check, not automatically invoked by the finalizer. Stage 09
+requires and revalidates its evidence for an approved workload profile.
 The ten entry-point scripts above must remain together with their supporting
 files.
 
@@ -56,7 +58,8 @@ numbered JSON-export stage and does not modify the approved values.
 - `rehearsal-collector/Dockerfile` and
   `rehearsal-collector/collect-snp-evidence.sh`: collector image and guest code.
 - `capture-running-launch.py`: captures the actual Pod-associated QEMU launch.
-- `record-reported-tcb.sh`: verifies the report and records four TCB floors.
+- `record-reported-tcb.sh`: verifies and retains reported TCB evidence, checks
+  it against independently approved minimums, and never rewrites those minimums.
 - `export-workload-launch-profile.py`: stage-10 helper for the separate admin
   contract, derived from stage-09 hash-bound launch evidence.
 
@@ -67,7 +70,7 @@ directly for diagnostic output, without a standalone recalculation script.
 ## Handoff and retained evidence
 
 Transfer only `platform-reference-values.json` through an authenticated
-channel. secure services receives no private keys, signatures, artifact archives, reports
+channel. Secure services receive no private keys, signatures, artifact archives, reports
 or policies in this handoff. Follow
 [the five-value handoff procedure](../service/PLATFORM-REFERENCE-VALUES-HANDOFF.md).
 

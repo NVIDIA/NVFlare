@@ -178,6 +178,16 @@ class CoCoAuthorizer(CCAuthorizer):
             raise CCTokenGenerateError("Unable to generate a verified CoCo attestation proof") from None
 
     def verify(self, token):
+        """Verify proof validity only; use verify_for_site at an FL peer boundary."""
+        return self._verify(token)
+
+    def verify_for_site(self, token, site_name):
+        """Bind the signed subject to the independently authenticated FL peer."""
+        if not isinstance(site_name, str) or not site_name:
+            return False
+        return self._verify(token, expected_site=site_name)
+
+    def _verify(self, token, expected_site=None):
         try:
             if not isinstance(token, str) or len(token) > MAX_TOKEN_BYTES:
                 return False
@@ -194,6 +204,7 @@ class CoCoAuthorizer(CCAuthorizer):
             if (
                 not isinstance(proof["sub"], str)
                 or not proof["sub"]
+                or (expected_site is not None and proof["sub"] != expected_site)
                 or type(proof["iat"]) is not int
                 or type(proof["exp"]) is not int
                 or not 0 <= now - proof["iat"] <= 60

@@ -13,7 +13,7 @@ network connection to Trustee. Token generation has different prerequisites:
 | Operation | Where it runs | What it accesses |
 | --- | --- | --- |
 | `generate()` | Protected client inside the CoCo guest | Guest-local AA token API; AA contacts Trustee/KBS when a new attestation token is needed |
-| `verify(token)` | Ordinary server or another participant | Local pinned AS public key, token claims, and in-memory replay cache; no Trustee/RVPS query |
+| `verify_for_site(token, authenticated_site)` | Ordinary server or another participant | Local pinned AS public key, signed subject matching the authenticated peer, token claims, and in-memory replay cache; no Trustee/RVPS query |
 
 ## Before provisioning
 
@@ -116,10 +116,12 @@ a new hardware attestation at every poll. Too-old or expired EAR fails closed.
 
 ## Direct client/server API
 
-The current constructor does **not** accept `expected_workloads`, and there is
-no `verify_for_site()` method. Use `generate()` on the client and `verify(token)`
-on the verifier. `verify()` returns `True` or `False`; reject the request on
-`False`. Do not ignore its return value.
+The constructor does **not** accept `expected_workloads`. Use `generate()` on
+the client and `verify_for_site(token, authenticated_site)` at a participant
+authorization boundary. Obtain the expected site from authenticated FL/mTLS
+identity, never from the submitted token or its envelope. Both verification
+methods return `True` or `False`; reject on `False`. The compatible
+`verify(token)` API checks proof validity only, without expected-peer binding.
 
 For a standalone integration, load the public key authenticated by the
 secure-services owner. Use the same project audience on both sides; provisioned
@@ -154,8 +156,8 @@ verifier = CoCoAuthorizer(
     audience="nvflare-coco:example-project",
 )
 
-def accept_attestation(received_proof: str) -> bool:
-    return verifier.verify(received_proof)
+def accept_attestation(received_proof: str, authenticated_site: str) -> bool:
+    return verifier.verify_for_site(received_proof, authenticated_site)
 ```
 
 Omitting `site_name` creates a verifier-only instance; calling `generate()` on
@@ -179,7 +181,7 @@ raw EAR alone does not satisfy `verify()`.
    single-use identifier. The private key stays in process memory.
 3. Every participant verifies the EAR signature and then verifies the proof
    using the public key authenticated by that EAR. The proof must have the
-   project-specific audience, a non-empty subject, a short lifetime, and a
+   project-specific audience, the expected authenticated site as subject, a short lifetime, and a
    previously unseen identifier.
 4. Both `cpu0` and `gpu0`, and no other submods, must carry this exact vector:
    `executables=3`, `hardware=2`, `configuration=3`, and `file-system`,
@@ -202,12 +204,20 @@ application code safe or replace the guest policy's isolation protections.
 
 ### What verification does not authorize
 
-The current authorizer does not compare the token against expected image,
-command, or InitData values, nor compare its subject with an independently
-authenticated FL peer identity. A valid signature and non-empty subject are
-not that identity-binding check. Keep FL authentication enabled, and implement
-any required peer/workload binding at a separately reviewed authorization
-boundary; do not assume `verify()` provides it.
+CCManager binds a protected client's registration envelope to `CLIENT_NAME`,
+the same asserted name that ClientManager must authenticate against its
+certificate and registration nonce before accepting registration. It requires
+all configured attestation namespaces and calls `verify_for_site()` with that
+name. A different envelope name, missing token, or different signed subject
+rejects registration without shutting down healthy clients. Ordinary clients
+outside `cc_enabled_sites` do not require CC tokens. Periodic responses must
+name the site requested through the FL transport. Keep FL authentication enabled.
+
+The authorizer still does not compare expected image, command, or InitData
+values. The added peer binding is not workload authorization. Compatibility
+`verify(token)` alone also does not bind a peer. Legacy non-CoCo authorizers
+inherit their existing token-verification semantics unless they implement
+site-aware verification themselves.
 
 KBS workload/resource-path policies and protected guest policies remain separate
 controls. Successful proof verification does not itself release an image key
@@ -249,7 +259,7 @@ checks; the error's underlying cause was not established. This is not evidence
 of reliable first-attempt generation or built-in retry handling. Handle transient
 failures with bounded retries where appropriate and fail closed on exhaustion.
 
-This live result establishes the current cross-node `generate()`/`verify()`
+This historical live result establishes the revision above's cross-node `generate()`/`verify()`
 path, including AS-signature and CPU/GPU-appraisal validation. It used a
 plaintext diagnostic client image, not the protected production application.
 It does not constitute a full NVFlare registration/periodic-CCManager run,
@@ -258,3 +268,7 @@ identity checks. Rehearse the actual protected application and its complete
 authorization path before deployment. Deployment-specific certificates,
 measurements, node identities and private operational artifacts are not
 included in this public example.
+
+The later peer-binding and mixed-client registration fixes are covered by
+offline regression tests, not that historical live test. Re-run a complete
+protected-client/ordinary-server registration rehearsal before deployment.

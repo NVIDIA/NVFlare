@@ -22,7 +22,11 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
 
+from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.fl_context import FLContext
+from nvflare.apis.fl_exception import NotAuthenticated
 from nvflare.app_opt.confidential_computing.cc_authorizer import CCTokenGenerateError
+from nvflare.app_opt.confidential_computing.cc_manager import CC_INFO, CC_NAMESPACE, CC_TOKEN, CCManager
 from nvflare.app_opt.confidential_computing.coco_authorizer import EAT_PROFILE, TRUST_VECTOR, CoCoAuthorizer
 
 
@@ -98,6 +102,33 @@ def test_valid_proof_and_single_use(material):
     assert verifier.verify(generate())
     with pytest.raises(CCTokenGenerateError):
         verifier.generate()
+
+
+def test_peer_bound_proof(material):
+    _, _, verifier, generate, _ = material
+    token = generate()
+    assert not verifier.verify_for_site(token, "site-2")
+    assert not verifier.verify_for_site(token, "")
+    assert verifier.verify_for_site(token, "site-1")
+    assert not verifier.verify_for_site(token, "site-1")
+
+
+def test_registration_rejects_other_clients_real_signed_proof(material):
+    _, _, verifier, generate, _ = material
+    token = generate()
+    manager = CCManager([], ["coco"], cc_enabled_sites=["site-1", "site-2"])
+    manager.cc_verifiers = {verifier.get_namespace(): verifier}
+    peer = FLContext()
+    context = FLContext()
+    context.set_peer_context(peer)
+    for site in ("site-2", "site-1"):
+        context.set_prop(FLContextKey.CLIENT_NAME, site)
+        peer.set_prop(CC_INFO, {site: [{CC_NAMESPACE: verifier.get_namespace(), CC_TOKEN: token}]})
+        if site == "site-2":
+            with pytest.raises(NotAuthenticated):
+                manager._validate_client_tokens(context)
+        else:
+            manager._validate_client_tokens(context)
 
 
 @pytest.mark.parametrize(

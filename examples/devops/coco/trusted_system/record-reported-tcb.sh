@@ -26,6 +26,17 @@ source "${BASE_CONFIG}"
 PROFILE_DIR="${PLATFORM_WORK_ROOT:?PLATFORM_WORK_ROOT is required}/${PLATFORM_PROFILE}"
 [[ "$(dirname -- "${APPROVAL_ENV}")" == "${PROFILE_DIR}" ]] \
     || die 'APPROVAL-ENV must be inside the selected platform profile'
+# The platform owner supplies the baseline independently of this report.
+# shellcheck source=/dev/null
+source "${APPROVAL_ENV}"
+floors=()
+for field in BOOTLOADER TEE SNP MICROCODE; do
+    variable="SNP_MIN_REPORTED_TCB_${field}"
+    value="${!variable-}"
+    [[ "${value}" =~ ^(0|[1-9][0-9]{0,2})$ ]] && ((10#${value} <= 255)) \
+        || die "set independently approved decimal uint8 ${variable} before stage 07"
+    floors+=("${value}")
+done
 
 # Nothing is recorded unless both the AMD certificate chain and complete report verify.
 snpguest verify certs "${CERTS_DIR}"
@@ -62,7 +73,7 @@ print(tcb[0], tcb[1], tcb[6], tcb[7])
 PY
 )
 
-python3 - "${APPROVAL_ENV}" "${bootloader}" "${tee}" "${snp}" "${microcode}" <<'PY'
+python3 - "${APPROVAL_ENV}" "${bootloader}" "${tee}" "${snp}" "${microcode}" "${floors[@]}" <<'PY'
 import os
 import re
 import sys
@@ -70,12 +81,12 @@ import tempfile
 from pathlib import Path
 
 path = Path(sys.argv[1])
+reported = list(map(int, sys.argv[2:6]))
+approved = list(map(int, sys.argv[6:10]))
+if any(value < floor for value, floor in zip(reported, approved)):
+    raise SystemExit('Verified reported TCB is below an independently approved minimum')
 updates = {
     "TCB_EVIDENCE_FILE": "reported-tcb-evidence/attestation-report.txt",
-    "SNP_MIN_REPORTED_TCB_BOOTLOADER": sys.argv[2],
-    "SNP_MIN_REPORTED_TCB_TEE": sys.argv[3],
-    "SNP_MIN_REPORTED_TCB_SNP": sys.argv[4],
-    "SNP_MIN_REPORTED_TCB_MICROCODE": sys.argv[5],
 }
 text = path.read_text()
 for key, value in updates.items():
@@ -100,7 +111,7 @@ except BaseException:
     raise
 PY
 
-printf 'Verified and recorded reported-TCB floors in %s:\n' "${APPROVAL_ENV}"
+printf 'Verified reported TCB against unchanged approved floors in %s:\n' "${APPROVAL_ENV}"
 printf '  bootloader=%s tee=%s snp=%s microcode=%s\n' \
     "${bootloader}" "${tee}" "${snp}" "${microcode}"
 printf 'Evidence retained at %s\n' "${EVIDENCE_DIR}"
