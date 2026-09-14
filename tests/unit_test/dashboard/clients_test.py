@@ -178,15 +178,18 @@ class TestClientPropsRejection:
         with app.app_context():
             project = Project.query.first()
             original = {key: getattr(project, key) for key in ("short_name", "server1", "root_key", "root_cert")}
-            project.short_name = "legacy-test"
-            project.server1 = "server.test.com"
-            Store.build_project(project)
-            legacy_client = db.session.get(Client, client_id)
-            legacy_client.props = legacy_props
-            legacy_client.approval_state = 200
-            db.session.commit()
 
         try:
+            with app.app_context():
+                project = Project.query.first()
+                project.short_name = "legacy-test"
+                project.server1 = "server.test.com"
+                Store.build_project(project)
+                legacy_client = db.session.get(Client, client_id)
+                legacy_client.props = legacy_props
+                legacy_client.approval_state = 200
+                db.session.commit()
+
             response = client.post(url + "/blob", json={"pin": "1234"}, headers=creator_header)
             assert response.status_code == 200
             assert response.headers["Content-Type"] == "zip"
@@ -201,16 +204,20 @@ class TestClientPropsRejection:
                     assert resource_manager["args"][key] == value
                 config = json.loads(kit.read("startup/fed_client.json", pwd=b"1234"))
                 assert config["client"]["connection_security"] == "mtls"
+                # Operator-managed use_aio=True must select the asynchronous transport.
                 assert config["servers"][0]["service"]["scheme"] == "agrpc"
 
             with app.app_context():
                 # Safety comes from ignoring stored props, without depending on a migration.
                 assert db.session.get(Client, client_id).props == legacy_props
         finally:
-            response = client.delete(url, headers=auth_header)
-            assert response.status_code == 200
-            with app.app_context():
-                project = Project.query.first()
-                for key, value in original.items():
-                    setattr(project, key, value)
-                db.session.commit()
+            try:
+                with app.app_context():
+                    db.session.rollback()
+                    project = Project.query.first()
+                    for key, value in original.items():
+                        setattr(project, key, value)
+                    db.session.commit()
+            finally:
+                response = client.delete(url, headers=auth_header)
+                assert response.status_code == 200
