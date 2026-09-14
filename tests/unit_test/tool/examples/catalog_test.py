@@ -86,16 +86,22 @@ def test_invalid_catalog_document_is_rejected(tmp_path, contents):
         load_catalog(path)
 
 
-@pytest.mark.parametrize(
-    "contents",
-    [
-        '{"duplicate":{"source_path":"examples/one"},"duplicate":{"source_path":"examples/two"}}',
-        '{"duplicate":{"source_path":"examples/one","source_path":"examples/two"}}',
-    ],
-)
-def test_duplicate_catalog_key_is_rejected(tmp_path, contents):
+def test_duplicate_short_name_is_rejected(tmp_path):
     path = tmp_path / "catalog.json"
-    path.write_text(contents)
+    path.write_text('{"duplicate":{"source_path":"examples/one"},"duplicate":{"source_path":"examples/two"}}')
 
-    with pytest.raises(ValueError, match="duplicate catalog key"):
+    with pytest.raises(ValueError, match="duplicate catalog short name"):
         load_catalog(path)
+
+
+def test_duplicate_entry_key_does_not_hide_valid_entries(tmp_path):
+    path = tmp_path / "catalog.json"
+    path.write_text(
+        '{"good":{"source_path":"examples/good"},'
+        '"duplicate":{"source_path":"examples/one","source_path":"examples/two"}}'
+    )
+
+    catalog, errors = load_catalog(path)
+
+    assert catalog == {"good": {"source_path": "examples/good"}}
+    assert errors == [{"name": "duplicate", "error": "contains duplicate key source_path"}]
