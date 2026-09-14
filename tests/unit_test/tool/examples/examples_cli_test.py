@@ -417,6 +417,14 @@ def test_list_prints_short_names_and_source_paths(monkeypatch, capsys):
     cli.run("nvflare")
 
     output = capsys.readouterr().out
+    assert "HELLO WORLD" in output
+    assert "ADVANCED" in output
+    assert (
+        output.index("ADVANCED")
+        < output.index("AGENT SKILLS")
+        < output.index("DEPLOYMENT")
+        < output.index("HELLO WORLD")
+    )
     assert "SHORT NAME" in output
     assert "hello-pt" in output
     assert "examples/hello-world/hello-pt" in output
@@ -432,8 +440,12 @@ def test_list_json_is_machine_readable(monkeypatch, capsys):
 
     result = json.loads(capsys.readouterr().out)
     assert result["status"] == "ok"
-    assert {entry["name"]: entry["source_path"] for entry in result["data"]["examples"]} == {
-        name: entry["source_path"] for name, entry in CATALOG.items()
+    listed = result["data"]["examples"]
+    assert [(entry["category"], entry["name"]) for entry in listed] == sorted(
+        (entry["category"], entry["name"]) for entry in listed
+    )
+    assert {entry["name"]: (entry["category"], entry["source_path"]) for entry in listed} == {
+        name: (entry["category"], entry["source_path"]) for name, entry in CATALOG.items()
     }
     assert result["data"]["catalog_errors"] == []
 
@@ -444,13 +456,16 @@ def test_list_keeps_valid_catalog_entries(monkeypatch, capsys):
     monkeypatch.setattr(
         examples_cli,
         "load_catalog",
-        lambda: ({"hello-pt": {"source_path": SOURCE_PATH}}, [{"name": "broken", "error": "bad path"}]),
+        lambda: (
+            {"hello-pt": {"category": "hello-world", "source_path": SOURCE_PATH}},
+            [{"name": "broken", "error": "bad path"}],
+        ),
     )
     monkeypatch.setattr("sys.argv", ["nvflare", "examples", "list", "--format", "json"])
     cli.run("nvflare")
 
     result = json.loads(capsys.readouterr().out)
-    assert result["data"]["examples"] == [{"name": "hello-pt", "source_path": SOURCE_PATH}]
+    assert result["data"]["examples"] == [{"name": "hello-pt", "category": "hello-world", "source_path": SOURCE_PATH}]
     assert result["data"]["catalog_errors"] == [{"name": "broken", "error": "bad path"}]
 
 

@@ -16,7 +16,7 @@ import json
 import re
 from pathlib import Path, PurePosixPath
 
-_SHORT_NAME = re.compile(r"[a-z0-9][a-z0-9-]{0,63}")
+_NAME = re.compile(r"[a-z0-9][a-z0-9-]{0,63}")
 
 
 class _CatalogObject(dict):
@@ -43,12 +43,14 @@ def load_catalog(path=None):
     source_paths = set()
     for name, entry in definitions.items():
         error = None
-        if not isinstance(name, str) or not _SHORT_NAME.fullmatch(name) or not isinstance(entry, _CatalogObject):
-            error = "must map a lowercase short name to one source_path"
+        if not isinstance(name, str) or not _NAME.fullmatch(name) or not isinstance(entry, _CatalogObject):
+            error = "must map a lowercase short name to a catalog entry"
         elif entry.duplicate_keys:
             error = f"contains duplicate key {entry.duplicate_keys[0]}"
-        elif set(entry) != {"source_path"}:
-            error = "must contain only source_path"
+        elif set(entry) != {"category", "source_path"}:
+            error = "must contain category and source_path"
+        elif not isinstance(entry["category"], str) or not _NAME.fullmatch(entry["category"]):
+            error = "category must be a lowercase name"
         if not error:
             source_path = entry["source_path"]
             normalized_path = PurePosixPath(source_path).as_posix() if isinstance(source_path, str) else None

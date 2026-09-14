@@ -22,13 +22,16 @@ from nvflare.tool.examples.catalog import load_catalog
 REPO_ROOT = Path(__file__).resolve().parents[4]
 
 
-def test_catalog_entries_are_source_path_only_and_exist():
+def test_catalog_entries_have_category_and_source_path_and_exist():
     catalog, errors = load_catalog()
 
     assert errors == []
-    assert catalog["collab-pt"] == {"source_path": "examples/advanced/collab/pt_cifar10"}
+    assert catalog["collab-pt"] == {
+        "category": "advanced",
+        "source_path": "examples/advanced/collab/pt_cifar10",
+    }
     for entry in catalog.values():
-        assert set(entry) == {"source_path"}
+        assert set(entry) == {"category", "source_path"}
         assert not entry["source_path"].startswith("examples/tutorials/")
         source = REPO_ROOT / entry["source_path"]
         assert source.is_dir()
@@ -58,22 +61,30 @@ def test_catalog_covers_each_example_collection():
 @pytest.mark.parametrize(
     "invalid_entry",
     [
-        {"bad name": {"source_path": "examples/demo"}},
-        {"demo": {"source_path": "outside/demo"}},
-        {"demo": {"source_path": "examples/../demo"}},
-        {"demo": {"source_path": "examples/demo/"}},
-        {"demo": {"source_path": "examples/demo", "next_command": ["python", "job.py"]}},
-        {"duplicate": {"source_path": "examples/good"}},
+        {"bad name": {"category": "test", "source_path": "examples/demo"}},
+        {"demo": {"category": "test", "source_path": "outside/demo"}},
+        {"demo": {"category": "test", "source_path": "examples/../demo"}},
+        {"demo": {"category": "test", "source_path": "examples/demo/"}},
+        {"demo": {"source_path": "examples/demo"}},
+        {"demo": {"category": "Bad Category", "source_path": "examples/demo"}},
+        {
+            "demo": {
+                "category": "test",
+                "source_path": "examples/demo",
+                "next_command": ["python", "job.py"],
+            }
+        },
+        {"duplicate": {"category": "test", "source_path": "examples/good"}},
     ],
 )
 def test_invalid_entry_does_not_hide_valid_entries(tmp_path, invalid_entry):
     path = tmp_path / "catalog.json"
-    definitions = {"good": {"source_path": "examples/good"}, **invalid_entry}
+    definitions = {"good": {"category": "test", "source_path": "examples/good"}, **invalid_entry}
     path.write_text(json.dumps(definitions))
 
     catalog, errors = load_catalog(path)
 
-    assert catalog == {"good": {"source_path": "examples/good"}}
+    assert catalog == {"good": {"category": "test", "source_path": "examples/good"}}
     assert len(errors) == 1
 
 
@@ -97,11 +108,11 @@ def test_duplicate_short_name_is_rejected(tmp_path):
 def test_duplicate_entry_key_does_not_hide_valid_entries(tmp_path):
     path = tmp_path / "catalog.json"
     path.write_text(
-        '{"good":{"source_path":"examples/good"},'
-        '"duplicate":{"source_path":"examples/one","source_path":"examples/two"}}'
+        '{"good":{"category":"test","source_path":"examples/good"},'
+        '"duplicate":{"category":"test","source_path":"examples/one","source_path":"examples/two"}}'
     )
 
     catalog, errors = load_catalog(path)
 
-    assert catalog == {"good": {"source_path": "examples/good"}}
+    assert catalog == {"good": {"category": "test", "source_path": "examples/good"}}
     assert errors == [{"name": "duplicate", "error": "contains duplicate key source_path"}]

@@ -292,14 +292,23 @@ def handle_examples_cmd(args):
     try:
         catalog, catalog_errors = _load_example_catalog()
         if key == "list":
-            examples = [{"name": name, "source_path": entry["source_path"]} for name, entry in sorted(catalog.items())]
+            examples = [
+                {"name": name, "category": entry["category"], "source_path": entry["source_path"]}
+                for name, entry in sorted(catalog.items(), key=lambda item: (item[1]["category"], item[0]))
+            ]
             if is_json_mode():
                 output_ok({"examples": examples, "catalog_errors": catalog_errors})
             else:
                 name_width = max(len("SHORT NAME"), *(len(example["name"]) for example in examples))
-                print_human(f"{'SHORT NAME':<{name_width}}  SOURCE PATH")
+                category = None
                 for example in examples:
-                    print_human(f"{example['name']:<{name_width}}  {example['source_path']}")
+                    if example["category"] != category:
+                        if category is not None:
+                            print_human("")
+                        category = example["category"]
+                        print_human(category.replace("-", " ").upper())
+                        print_human(f"  {'SHORT NAME':<{name_width}}  SOURCE PATH")
+                    print_human(f"  {example['name']:<{name_width}}  {example['source_path']}")
                 if catalog_errors:
                     print_human("\nSkipped invalid catalog entries:")
                     for error in catalog_errors:

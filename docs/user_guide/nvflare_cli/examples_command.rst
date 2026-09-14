@@ -12,9 +12,10 @@ commit recorded in the 2.9.0 package.
 Example catalog
 ===============
 
-The installed catalog maps a short CLI name to an example directory anywhere
-under ``examples/`` in the NVFlare source tree. Run
-``nvflare examples list`` to see the current names and source paths:
+The installed catalog assigns a category and maps a short CLI name to an
+example directory anywhere under ``examples/`` in the NVFlare source tree.
+Run ``nvflare examples list`` to browse names and source paths grouped by
+category:
 
 .. code-block:: bash
 
@@ -22,9 +23,9 @@ under ``examples/`` in the NVFlare source tree. Run
    nvflare examples list --format json
 
 The list and ``get`` lookup use the catalog. Command help and JSON schema use a
-generic ``NAME`` argument instead of enumerating the catalog. Adding a short
-name and source path to ``catalog.json`` makes an example available without a
-Python code change.
+generic ``NAME`` argument instead of enumerating the catalog. Adding a
+category, short name, and source path to ``catalog.json`` makes an example
+available without a Python code change.
 
 Get an example
 ==============
