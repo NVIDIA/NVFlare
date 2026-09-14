@@ -938,6 +938,66 @@ def test_progress_uses_reported_metrics_and_retains_total_after_context_change(t
     assert "complete" not in " ".join(progress)  # Aggregation does not prove persistence or job success.
 
 
+def test_scaffold_aggregation_resets_contribution_count_without_round_started(tmp_path, caplog):
+    from nvflare.app_common.app_constant import AlgorithmConstants
+    from nvflare.app_common.workflows.scaffold import scaffold_aggregate_fn
+
+    writer = MetricsArtifactWriter()
+    fl_ctx = _make_fl_ctx(tmp_path)
+    writer.handle_event(EventType.START_RUN, fl_ctx)
+
+    with caplog.at_level("INFO"):
+        for round_num in range(2):
+            results = []
+            for site_num in range(2):
+                site_name = f"site-{site_num + 1}"
+                result = FLModel(
+                    params={"w": float(site_num)},
+                    metrics={"loss": 0.5},
+                    current_round=round_num,
+                    meta={
+                        "client_name": site_name,
+                        FLMetaKey.SITE_NAME: site_name,
+                        FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1,
+                        AlgorithmConstants.SCAFFOLD_CTRL_DIFF: {"w": 0.0},
+                    },
+                )
+                results.append(result)
+                _record_contribution(writer, fl_ctx, round_num, site_name, {"loss": 0.5})
+            aggr_result = scaffold_aggregate_fn(results)
+            fl_ctx.set_prop(AppConstants.AGGREGATION_RESULT, aggr_result, private=True, sticky=False)
+            writer.handle_event(AppEventType.AFTER_AGGREGATION, fl_ctx)
+
+    progress = "\n".join(
+        record.message
+        for record in caplog.records
+        if record.name == "nvflare.app_common.widgets.metrics_artifact_writer"
+    )
+    assert progress.count("✓ Aggregated 2 client updates") == 2
+    assert "Aggregated 4 client updates" not in progress
+
+
+def test_live_progress_limits_client_rows_per_round_but_keeps_artifacts(tmp_path, caplog):
+    writer = MetricsArtifactWriter()
+    fl_ctx = _make_fl_ctx(tmp_path)
+    writer.handle_event(EventType.START_RUN, fl_ctx)
+
+    with caplog.at_level("INFO"):
+        for site_num in range(25):
+            _record_contribution(writer, fl_ctx, 0, f"site-{site_num:02d}", {"loss": 0.5})
+        _record_round(writer, fl_ctx, 0, {"loss": 0.5})
+
+    progress = "\n".join(
+        record.message
+        for record in caplog.records
+        if record.name == "nvflare.app_common.widgets.metrics_artifact_writer"
+    )
+    assert sum(f"site-{site_num:02d}" in progress for site_num in range(25)) == 10
+    assert progress.count("Additional client results are available in the saved metrics artifacts.") == 1
+    assert "Aggregated" in progress
+    assert len(_read_rounds(tmp_path)[0]["sites"]) == 25
+
+
 @pytest.mark.parametrize("metrics", [{}, {"loss": float("nan")}, {"loss": [1, 2, 3]}])
 def test_accepted_update_without_displayable_metrics_keeps_client_visible(tmp_path, caplog, metrics):
     writer = MetricsArtifactWriter()

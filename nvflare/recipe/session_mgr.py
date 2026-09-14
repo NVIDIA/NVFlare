@@ -27,7 +27,7 @@ from nvflare.fuel.utils.job_secret_scanner import warn_on_potential_secrets_in_j
 from nvflare.fuel.utils.log_utils import (
     FL_LOG_LEVEL,
     ColorFormatter,
-    LoggerNameFilter,
+    ConciseLogFilter,
     LogMode,
     concise_log_dict,
     get_module_logger,
@@ -44,7 +44,8 @@ def _show_job_progress(session, job_id, state):
         logs = response.get("logs", {})
         formatter = ColorFormatter(fmt=concise_log_dict["formatters"]["consoleFormatter"]["fmt"])
         filter_config = concise_log_dict["filters"]["ConciseFilter"]
-        log_filter = LoggerNameFilter(**{key: value for key, value in filter_config.items() if key != "()"})
+        filter_args = {key: value for key, value in filter_config.items() if key != "()"}
+        log_filter = ConciseLogFilter(**filter_args)
         recent = set()
         # The existing API caps the transfer at 5 MiB. Bound parsing and retained
         # state independently: only the server's last 64 KiB / 200 lines.
@@ -62,6 +63,7 @@ def _show_job_progress(session, job_id, state):
             if not isinstance(name, str) or not isinstance(level, str):
                 continue
             log_record = logging.LogRecord(name, getattr(logging, level, logging.INFO), "", 0, "", (), None)
+            log_record.nvflare_progress = name in filter_args.get("progress_logger_names", [])
             if not log_filter.filter(log_record):
                 continue
             already_shown = digest in state["seen"] or digest in recent

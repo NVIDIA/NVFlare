@@ -160,14 +160,14 @@ def test_validate_site_log_config_rejects_dicts_and_file_paths():
 
 
 def test_concise_reuses_existing_formatters_and_retains_diagnostic_records():
-    from nvflare.fuel.utils.log_utils import ColorFormatter, LoggerNameFilter, logmode_config_dict
+    from nvflare.fuel.utils.log_utils import ColorFormatter, ConciseLogFilter, logmode_config_dict
 
     view = io.StringIO()
     handler = logging.StreamHandler(view)
     handler.setFormatter(ColorFormatter(fmt="%(message)s"))
     filter_config = logmode_config_dict["concise"]["filters"]["ConciseFilter"].copy()
-    assert filter_config.pop("()") == "nvflare.fuel.utils.log_utils.LoggerNameFilter"
-    handler.addFilter(LoggerNameFilter(**filter_config))
+    assert filter_config.pop("()") == "nvflare.fuel.utils.log_utils.ConciseLogFilter"
+    handler.addFilter(ConciseLogFilter(**filter_config))
     detail = io.StringIO()
     diagnostic = logging.StreamHandler(detail)
     records = [
@@ -182,6 +182,15 @@ def test_concise_reuses_existing_formatters_and_retains_diagnostic_records():
             None,
         ),
         logging.LogRecord(
+            "nvflare.app_common.workflows.statistics_controller.StatisticsController",
+            logging.INFO,
+            "",
+            0,
+            "fed_stats control flow started.",
+            (),
+            None,
+        ),
+        logging.LogRecord(
             "nvflare.transport",
             logging.WARNING,
             "",
@@ -191,11 +200,13 @@ def test_concise_reuses_existing_formatters_and_retains_diagnostic_records():
             None,
         ),
     ]
+    records[1].nvflare_progress = True
     for record in records:
         handler.handle(record)
         diagnostic.handle(record)
     assert "raw weights" not in view.getvalue()
     assert "site-1 | loss=0.25" in view.getvalue()
+    assert "fed_stats control flow started." in view.getvalue()
     assert "connection interrupted" in view.getvalue()
     assert "run=job-123" not in view.getvalue()
     assert "raw weights" in detail.getvalue()

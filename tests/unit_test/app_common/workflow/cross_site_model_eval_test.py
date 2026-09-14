@@ -97,7 +97,7 @@ def test_inherited_evaluation_is_visible_locally_and_in_remote_replay(tmp_path, 
     from nvflare.apis.dxo import DXO, DataKind
     from nvflare.app_common.abstract.model_locator import ModelLocator
     from nvflare.app_common.workflows.global_model_eval import GlobalModelEval
-    from nvflare.fuel.utils.log_utils import ColorFormatter, JsonFormatter, LoggerNameFilter, concise_log_dict
+    from nvflare.fuel.utils.log_utils import ColorFormatter, ConciseLogFilter, JsonFormatter, concise_log_dict
     from nvflare.recipe.session_mgr import _show_job_progress
 
     if kind == "base":
@@ -127,7 +127,7 @@ def test_inherited_evaluation_is_visible_locally_and_in_remote_replay(tmp_path, 
         controller.logger.warning("validation warning")
 
     config = concise_log_dict["filters"]["ConciseFilter"]
-    log_filter = LoggerNameFilter(**{k: v for k, v in config.items() if k != "()"})
+    log_filter = ConciseLogFilter(**{k: v for k, v in config.items() if k != "()"})
     formatter = ColorFormatter(fmt=concise_log_dict["formatters"]["consoleFormatter"]["fmt"])
     local = "\n".join(formatter.format(r) for r in caplog.records if log_filter.filter(r))
     assert 'Evaluated "global.pt" on "site-1": accuracy=0.75' in local
