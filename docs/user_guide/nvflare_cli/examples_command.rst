@@ -21,9 +21,10 @@ under ``examples/`` in the NVFlare source tree. Run
    nvflare examples list
    nvflare examples list --format json
 
-The list, command help, and JSON schema are generated from the catalog, so
-adding a short name and source path to ``catalog.json`` makes an example
-available without a Python code change.
+The list and ``get`` lookup use the catalog. Command help and JSON schema use a
+generic ``NAME`` argument instead of enumerating the catalog. Adding a short
+name and source path to ``catalog.json`` makes an example available without a
+Python code change.
 
 Get an example
 ==============
@@ -97,10 +98,14 @@ the example name, installed NVFlare version, Git revision, and canonical source
 path.
 
 If any root or nested ``requirements.txt`` names ``nvflare`` or
-``nvflare-nightly``, the command reports each affected path in human and JSON
-output. Keep the NVFlare distribution already installed, add required extras
-to that same distribution as shown above, and install the remaining example
-dependencies without reinstalling NVFlare.
+``nvflare-nightly``, or a ``pyproject.toml`` declares either distribution, the
+command reports each affected path in human and JSON output. Keep the NVFlare
+distribution already installed, add required extras to that same distribution
+as shown above, and install the remaining example dependencies without
+reinstalling NVFlare.
+
+If the selected directory has no root README, retrieval still succeeds and
+reports a warning to inspect the downloaded files for instructions.
 
 Automation
 ==========

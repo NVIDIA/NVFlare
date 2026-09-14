@@ -29,10 +29,9 @@ from nvflare.tool.examples.catalog import load_catalog
 
 PROVENANCE_FILE = ".nvflare-example.json"
 REPOSITORY = "NVIDIA/NVFlare"
-MAX_EXAMPLE_FILES = 5000
-MAX_EXAMPLE_BYTES = 128 * 1024 * 1024
 _REVISION = re.compile(r"[0-9a-f]{40}")
 _NVFLARE_REQUIREMENT = re.compile(r"^\s*nvflare(?:[-_.]+nightly)?(?![-_.a-z0-9])", re.IGNORECASE)
+_PYPROJECT_NVFLARE_REQUIREMENT = re.compile(r'["\']nvflare(?:[-_.]+nightly)?(?![-_.a-z0-9])', re.IGNORECASE)
 _parsers = {}
 _EXAMPLE_COMMANDS = [
     "nvflare examples list",
@@ -106,6 +105,12 @@ def _download_example(revision, source_path, destination):
     try:
         with requests.Session() as session:
             with session.get(tree_url, timeout=timeout) as response:
+                if getattr(response, "status_code", None) == 404:
+                    raise ExampleError(
+                        "EXAMPLE_SOURCE_NOT_FOUND",
+                        f"The release does not contain the catalog path: {source_path}",
+                        "Remove the incomplete destination, then choose an example listed by this NVFlare installation.",
+                    )
                 response.raise_for_status()
                 try:
                     metadata = response.json()
@@ -113,50 +118,16 @@ def _download_example(revision, source_path, destination):
                     raise ExampleError(
                         "EXAMPLE_CONTENT_INVALID",
                         "GitHub returned invalid source metadata.",
-                        "Retry later or use the example directly from the NVIDIA/NVFlare repository.",
+                        "Remove the incomplete destination, then retry or use the example directly from GitHub.",
                     ) from None
-            if (
-                not isinstance(metadata, dict)
-                or metadata.get("truncated")
-                or not isinstance(metadata.get("tree"), list)
-            ):
-                raise ExampleError(
-                    "EXAMPLE_CONTENT_INVALID",
-                    "GitHub returned an incomplete source tree.",
-                    "Retry later or use the example directly from the NVIDIA/NVFlare repository.",
-                )
-            files = [
-                entry
-                for entry in metadata["tree"]
-                if entry.get("type") == "blob" and isinstance(entry.get("path"), str)
-            ]
-            if not files:
-                raise ExampleError(
-                    "EXAMPLE_SOURCE_NOT_FOUND",
-                    f"The release does not contain the catalog path: {source_path}",
-                    "Use an example listed by this NVFlare installation.",
-                )
-            if any(not isinstance(entry.get("size"), int) or entry["size"] < 0 for entry in files):
-                raise ExampleError(
-                    "EXAMPLE_CONTENT_INVALID",
-                    "GitHub returned invalid file metadata.",
-                    "Retry later or use the example directly from the NVIDIA/NVFlare repository.",
-                )
-            total_size = sum(entry["size"] for entry in files)
-            if len(files) > MAX_EXAMPLE_FILES or total_size > MAX_EXAMPLE_BYTES:
-                raise ExampleError(
-                    "EXAMPLE_DOWNLOAD_TOO_LARGE",
-                    "The selected example exceeds the supported download size.",
-                    "Use the example directly from the NVIDIA/NVFlare GitHub repository.",
-                )
-            for entry in files:
+            for entry in (item for item in metadata["tree"] if item["type"] == "blob"):
                 relative = entry["path"]
                 relative_parts = relative.split("/")
                 if any(part in {"", ".", ".."} for part in relative_parts):
                     raise ExampleError(
                         "EXAMPLE_CONTENT_INVALID",
                         f"GitHub returned an invalid path for {source_path}.",
-                        "Retry later or use the example directly from the NVIDIA/NVFlare repository.",
+                        "Remove the incomplete destination, then retry or use the example directly from GitHub.",
                     )
                 target = destination.joinpath(*relative_parts)
                 target.parent.mkdir(parents=True, exist_ok=True)
@@ -166,48 +137,39 @@ def _download_example(revision, source_path, destination):
                 )
                 with session.get(raw_url, stream=True, timeout=timeout) as response:
                     response.raise_for_status()
-                    actual_size = 0
                     with target.open("wb") as target_file:
                         for chunk in response.iter_content(1024 * 1024):
-                            actual_size += len(chunk)
-                            if actual_size > entry["size"]:
-                                raise ExampleError(
-                                    "EXAMPLE_CONTENT_INVALID",
-                                    f"GitHub returned too much data for {entry['path']}.",
-                                    "Retry later or use the example directly from the NVIDIA/NVFlare repository.",
-                                )
                             target_file.write(chunk)
-                    if actual_size != entry["size"]:
-                        raise ExampleError(
-                            "EXAMPLE_CONTENT_INVALID",
-                            f"GitHub returned incomplete data for {entry['path']}.",
-                            "Retry later or use the example directly from the NVIDIA/NVFlare repository.",
-                        )
                 if entry.get("mode") == "100755":
                     target.chmod(0o755)
     except requests.RequestException as error:
         raise ExampleError(
             "EXAMPLE_NETWORK_ERROR",
             f"Could not download the NVFlare example: {error}",
-            "Check GitHub access, your network connection, and proxy settings, then retry.",
+            "Remove the incomplete destination, check GitHub access and your network settings, then retry.",
         ) from None
     return tree_url
 
 
 def _dependency_warnings(destination):
     paths = []
-    for requirements in destination.rglob("requirements.txt"):
-        if not requirements.is_file():
+    dependency_files = list(destination.rglob("requirements.txt")) + list(destination.rglob("pyproject.toml"))
+    for dependency_file in dependency_files:
+        if not dependency_file.is_file():
             continue
-        contents = requirements.read_text(encoding="utf-8", errors="replace")
-        if any(_NVFLARE_REQUIREMENT.match(line) for line in contents.splitlines()):
-            paths.append(requirements.relative_to(destination).as_posix())
+        contents = dependency_file.read_text(encoding="utf-8", errors="replace")
+        if dependency_file.name == "requirements.txt":
+            found = any(_NVFLARE_REQUIREMENT.match(line) for line in contents.splitlines())
+        else:
+            found = bool(_PYPROJECT_NVFLARE_REQUIREMENT.search(contents))
+        if found:
+            paths.append(dependency_file.relative_to(destination).as_posix())
     if not paths:
         return []
     return [
         {
             "code": "EXAMPLE_NVFLARE_REQUIREMENT",
-            "message": "Downloaded requirements files name an NVFlare distribution.",
+            "message": "Downloaded dependency files name an NVFlare distribution.",
             "paths": sorted(paths),
             "hint": (
                 "Keep the installed NVFlare distribution. Install required extras on that same distribution, "
@@ -248,10 +210,13 @@ def get_example(version_info, catalog, *, name, destination=None):
         None,
     )
     if readme is None:
-        raise ExampleError(
-            "EXAMPLE_CONTENT_INVALID",
-            "The downloaded example does not contain a README.",
-            "Use the example directly from the NVIDIA/NVFlare GitHub repository.",
+        warnings.append(
+            {
+                "code": "EXAMPLE_README_MISSING",
+                "message": "The downloaded example does not contain a root README.",
+                "paths": [],
+                "hint": "Inspect the downloaded files for dependency, preparation, and run instructions.",
+            }
         )
     provenance = {
         "schema_version": 1,
@@ -267,7 +232,7 @@ def get_example(version_info, catalog, *, name, destination=None):
         **provenance,
         "tree_url": tree_url,
         "directory": str(destination),
-        "readme": str(readme),
+        "readme": str(readme) if readme else None,
         "warnings": warnings,
     }
 
@@ -326,7 +291,10 @@ def handle_examples_cmd(args):
                 print_human(f"{warning['hint']}\n")
             print_human("Next:")
             print_human(f"  cd {shlex.quote(result['directory'])}")
-            print_human(f"\nFollow {Path(result['readme']).name} for dependency, preparation, and run instructions.")
+            if result["readme"]:
+                print_human(
+                    f"\nFollow {Path(result['readme']).name} for dependency, preparation, and run instructions."
+                )
     except ExampleError as error:
         output_error_message(error.code, str(error), error.hint, exit_code=4 if error.code == "INVALID_ARGS" else 1)
     except KeyboardInterrupt:

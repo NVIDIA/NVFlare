@@ -1,5 +1,4 @@
 torch
-torchvision
 transformers
 accelerate
 datasets
