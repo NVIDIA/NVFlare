@@ -13,6 +13,9 @@ commands, transfer boundaries and execution order. Read
 
 For NVFlare clients, see [project.yaml-based provisioning](provision/README.md).
 The provisioning-node packager protects clients; the server keeps its ordinary kit.
+The [CoCoAuthorizer guide](provision/CCMANAGER.md) covers client-side proof
+generation, local verification on an ordinary server, trusted AS public-key
+distribution, and the [live cross-node test's scope](provision/CCMANAGER.md#verification-status).
 
 - [Secure services](service/README.md): TLS registry, Trustee/KBS, AS, RVPS and resource authorization.
 - [NVFlare provisioning node](admin/README.md): build, encrypt, sign, publish and generate workload handoffs.
@@ -31,7 +34,6 @@ not establish absolute protection against every hardware/software flaw.
 python3 -m venv "$HOME/.venvs/coco-validation"
 "$HOME/.venvs/coco-validation/bin/python" -m pip install PyYAML==6.0.3
 "$HOME/.venvs/coco-validation/bin/python" validate-package.py
-sha256sum --check --strict PACKAGE-SHA256SUMS
 ```
 
 Requires Python 3.11+, PyYAML and Bash. Dependency installation needs network

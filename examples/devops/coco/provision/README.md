@@ -75,6 +75,13 @@ profile; signed CPU and GPU appraisals supply the evidence. Invalid configuratio
 aborts provisioning. Mixing other CC compute environments into this project is
 not supported yet. See [the checks and limitations](CCMANAGER.md).
 
+The ordinary server's `CoCoAuthorizer.verify(token)` needs no CoCo runtime or
+Trustee connection: it verifies locally using the pinned AS public key. The
+current API has no `expected_workloads` constructor argument or
+`verify_for_site()` method. See the [direct client/server API](CCMANAGER.md#direct-clientserver-api)
+and [authorization boundaries](CCMANAGER.md#what-verification-does-not-authorize)
+before integrating it outside the generated kits.
+
 Activate the updated NVFlare environment on the provisioning node, then run:
 
 ```bash
@@ -159,3 +166,6 @@ overwritten; use a fresh workspace if intentionally resetting stage numbers.
 
 Offline tests create/sign real startup kits with a mocked image runner. They
 do not certify actual Docker builds, GPU operation, or hardware attestation.
+The [separate live cross-node test](CCMANAGER.md#verification-status) verified
+that a client inside CoCo could generate a proof accepted by an ordinary-host
+verifier. It did not test full NVFlare registration or protected image-key release.

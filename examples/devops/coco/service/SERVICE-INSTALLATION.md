@@ -62,13 +62,13 @@ their initial `/v2/` ping; it does not replace password authentication.
 
 ## 2. Deliver the service kit
 
-On the **trusted coordinator**, start with the reviewed local package. Verify
-its hash inventory against an independently authenticated package source;
-a checksum file alone does not establish who supplied it.
+On the **trusted coordinator**, start with the reviewed local package from an
+independently authenticated source and run its offline validator before transfer.
+Validation does not establish who supplied the code.
 
 ```bash
 cd /path/to/coco_deployment
-sha256sum --check --strict PACKAGE-SHA256SUMS
+python3 validate-package.py
 SERVICE_SSH=service_operator@secure-services.example.com
 ssh "$SERVICE_SSH" 'test ! -e /home/service_operator/coco-service-admin && install -d -m 0700 /home/service_operator/coco-service-admin'
 scp -r service/. "$SERVICE_SSH:/home/service_operator/coco-service-admin/"

@@ -14,29 +14,28 @@ cluster. Template validation does not establish the trustworthiness of an input.
 ## Publish only a clean package
 
 `PACKAGE-FILES.txt` is an explicit public-file allowlist. `validate-package.py`
-rejects additional files, missing dependencies, stale checksums and known
-lab-specific identifiers. `PACKAGE-SHA256SUMS` inventories the final public
-package, not the private operational workspace. Authenticate its source
-independently; hashes do not prove origin.
+rejects additional or missing files, missing dependencies and known lab-specific
+identifiers. It also checks script syntax and runs offline tests. There is no
+package checksum manifest; the validator does not establish byte-for-byte
+integrity or source authenticity. Authenticate the package source independently.
 
 The `.gitignore` excludes commonly generated configuration, credentials,
 certificates, release/evidence directories and archives. It is defense in depth,
 not a secret scanner or authorization to publish ignored material. Review the
 actual files before sharing. Never regenerate the allowlist from a used role
-working directory. After an intentional source change, review the allowlist
-and regenerate checksums only for those explicitly listed public files.
+working directory. After an intentional source change, review any public-file
+additions or removals in the allowlist and rerun the validator.
 
 To export a validated clean package, use the allowlist rather than archiving
 an entire working directory. From this folder, choose an output **outside** it:
 
 ```bash
 tar --create --gzip --file=/path/to/coco-public.tar.gz \
-  --verbatim-files-from --no-recursion --files-from=PACKAGE-FILES.txt \
-  PACKAGE-SHA256SUMS
+  --verbatim-files-from --no-recursion --files-from=PACKAGE-FILES.txt
 ```
 
-Replace the output path with your chosen location. The public inventory and
-checksums travel with the archive; no generated files are implicitly included.
+Replace the output path with your chosen location. The public-file allowlist
+travels with the archive; no generated files are implicitly included.
 
 ## Offline regression checks
 

@@ -16,7 +16,6 @@
 """Offline publication checks; never executes deployment stages or uses the network."""
 
 import ast
-import hashlib
 import os
 import re
 import subprocess
@@ -46,7 +45,7 @@ def main():
         path = Path(name)
         if path.is_absolute() or ".." in path.parts or str(path) != name:
             raise SystemExit("Unsafe public allowlist entry")
-    expected = set(names) | {"PACKAGE-SHA256SUMS"}
+    expected = set(names)
     found = set()
     for path in ROOT.rglob("*"):
         if path.is_symlink():
@@ -57,17 +56,6 @@ def main():
         raise SystemExit(
             f"Public inventory mismatch: missing={sorted(expected - found)}, extra={sorted(found - expected)}"
         )
-
-    checksums = []
-    for line in (ROOT / "PACKAGE-SHA256SUMS").read_text().splitlines():
-        digest, name = line.split("  ", 1)
-        if not re.fullmatch(r"[0-9a-f]{64}", digest) or name not in names:
-            raise SystemExit("Invalid checksum manifest")
-        if hashlib.sha256((ROOT / name).read_bytes()).hexdigest() != digest:
-            raise SystemExit(f"Checksum mismatch: {name}")
-        checksums.append(name)
-    if checksums != names:
-        raise SystemExit("Checksums must cover the exact sorted public allowlist")
 
     private = re.compile(
         r"\b[a-z]+[0-9]*-[0-9]{4}\.[a-z0-9]+\.[a-z0-9]+\.nvidia\.com|/localhome/[a-zA-Z0-9_-]+/|"

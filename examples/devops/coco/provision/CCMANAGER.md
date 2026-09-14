@@ -5,6 +5,16 @@ its resource policy permits it. NVFlare's CCManager on every participant then
 periodically verifies tokens from all protected participants. CCManager cannot replace
 KBS policy, genpolicy, image signing/encryption, or approved platform references.
 
+The server can verify a CoCo client's proof on an ordinary host or in an ordinary
+container. Verification requires the trusted AS public key and project audience,
+not a CoCo Pod, Kata runtime, confidential GPU, guest Attestation Agent, or a
+network connection to Trustee. Token generation has different prerequisites:
+
+| Operation | Where it runs | What it accesses |
+| --- | --- | --- |
+| `generate()` | Protected client inside the CoCo guest | Guest-local AA token API; AA contacts Trustee/KBS when a new attestation token is needed |
+| `verify(token)` | Ordinary server or another participant | Local pinned AS public key, token claims, and in-memory replay cache; no Trustee/RVPS query |
+
 ## Before provisioning
 
 ### Secure-services owner: export the AS signing public key
@@ -61,6 +71,22 @@ measured launch inputs: repeat the trusted measurement workflow and approve the
 new platform references before using it. These provisioning changes deliberately
 do not alter a cluster runtime or reuse an old measurement after such changes.
 
+In the tested pinned Kata 3.29.0 guest, the default REST feature exposed resource
+routes but not `/aa/token`. The rehearsal enabled the token route with this
+per-Pod annotation, while retaining the existing runtime kernel parameters:
+
+```yaml
+io.katacontainers.config.hypervisor.kernel_params: agent.guest_components_rest_api=all
+```
+
+Pass only the additional option here. Kata 3.29.0 merges annotation parameters
+by key; repeating the full base command line can collapse repeated `pci=`
+options and prevent VM startup. Configure `aa.toml` in InitData with the intended
+KBS URL and authenticated TLS certificate as well. Do not expose the loopback API
+outside the guest. This annotation is a tested prerequisite, not an approved
+measurement or a substitute for the trusted launch-profile workflow. Enabling
+it changed the measured launch; approval of the original profile was insufficient.
+
 ## Provisioning and generated configuration
 
 Use [cc_site-1.yml](cc_site-1.yml) and run:
@@ -87,6 +113,60 @@ request to change AS token lifetime. `check_frequency` must be positive and
 smaller than that limit (defaults: 300/120 seconds). The outer proof lasts at
 most 60 seconds. AA may return a cached EAR; a new NVFlare proof does not imply
 a new hardware attestation at every poll. Too-old or expired EAR fails closed.
+
+## Direct client/server API
+
+The current constructor does **not** accept `expected_workloads`, and there is
+no `verify_for_site()` method. Use `generate()` on the client and `verify(token)`
+on the verifier. `verify()` returns `True` or `False`; reject the request on
+`False`. Do not ignore its return value.
+
+For a standalone integration, load the public key authenticated by the
+secure-services owner. Use the same project audience on both sides; provisioned
+kits use `nvflare-coco:` followed by the project name. For example, inside the
+CoCo client:
+
+```python
+from pathlib import Path
+
+from nvflare.app_opt.confidential_computing.coco_authorizer import CoCoAuthorizer
+
+client = CoCoAuthorizer(
+    trustee_public_key=Path("trustee-as-public.pem").read_text(),
+    audience="nvflare-coco:example-project",
+    site_name="site-1",
+)
+proof = client.generate()
+# Send only proof to the server over an authenticated, encrypted connection.
+# Never send the raw AA response or its tee_keypair field.
+```
+
+On the ordinary server, instantiate the verifier once and reuse it across
+requests so its replay cache remains effective:
+
+```python
+from pathlib import Path
+
+from nvflare.app_opt.confidential_computing.coco_authorizer import CoCoAuthorizer
+
+verifier = CoCoAuthorizer(
+    trustee_public_key=Path("trustee-as-public.pem").read_text(),
+    audience="nvflare-coco:example-project",
+)
+
+def accept_attestation(received_proof: str) -> bool:
+    return verifier.verify(received_proof)
+```
+
+Omitting `site_name` creates a verifier-only instance; calling `generate()` on
+it fails. The constructor's default loopback `token_url` is not contacted by
+`verify()`. Generated NVFlare kits configure these components through resource
+fragments; the snippets illustrate the API, not additional components to add
+alongside the generated ones.
+
+The supplied token must be the signed proof returned by `generate()`, which
+contains the Trustee EAR and is signed by the guest-held TEE key. Passing the
+raw EAR alone does not satisfy `verify()`.
 
 ## Verification protocol
 
@@ -120,10 +200,61 @@ accepting missing CPU/GPU appraisal claims. Proof of possession prevents forward
 an EAR alone from satisfying NVFlare; it does not make arbitrary trusted
 application code safe or replace the guest policy's isolation protections.
 
+### What verification does not authorize
+
+The current authorizer does not compare the token against expected image,
+command, or InitData values, nor compare its subject with an independently
+authenticated FL peer identity. A valid signature and non-empty subject are
+not that identity-binding check. Keep FL authentication enabled, and implement
+any required peer/workload binding at a separately reviewed authorization
+boundary; do not assume `verify()` provides it.
+
+KBS workload/resource-path policies and protected guest policies remain separate
+controls. Successful proof verification does not itself release an image key
+or prove that a particular application is authorized for the FL project.
+
+Because verification is local, it does not immediately discover an RVPS update,
+reference removal, or policy change. Previously issued tokens can remain
+acceptable until their expiration or the verifier's freshness limit. A fresh
+proof may contain a cached EAR. Do not treat an RVPS update as immediate
+revocation of every existing token. Replay state is local to one verifier
+instance; replicas and process restarts require separate consideration.
+
 ## Verification status
 
 Offline tests cover real cryptographic signatures, RSA/EC TEE proof keys,
 expiry/replay failures, CPU/GPU appraisal failures, and actual startup-kit
-provisioning with a mocked image runner.
-They do not establish REST availability in the pinned guest image or constitute
-an end-to-end hardware-attested FL run. No remote runtime is changed by these tests.
+provisioning with a mocked image runner. These tests alone do not establish
+guest REST availability or change a remote runtime.
+
+A separate live cross-node test on September 14, 2026 used the authorizer from
+revision `45b5e50a80a1a141249672b2f1cba5876fa53abf` on both sides. Client A ran
+inside a pinned Kata 3.29.0 SNP/GPU Pod; the verifier ran directly as a Python
+process on an ordinary host outside CoCo. The client sent its generated proof
+directly over TLS to that host. Only public AS/TLS trust material was distributed;
+the guest private key remained in guest memory, and tokens were not logged or
+saved. The updated authorizer's 40 targeted unit tests also passed.
+
+| Live check | Result |
+| --- | --- |
+| Client `generate()` using the guest AA API | Passed on the second attempt |
+| Ordinary-host `verify(proof)` | `True` |
+| Replay against the same verifier instance | `False` |
+| Altered proof signature against a fresh verifier | `False` |
+| Wrong audience against a fresh verifier | `False` |
+
+The first generation attempt returned `CCTokenGenerateError`. The test harness
+waited one second and retried without modifying the authorizer or relaxing its
+checks; the error's underlying cause was not established. This is not evidence
+of reliable first-attempt generation or built-in retry handling. Handle transient
+failures with bounded retries where appropriate and fail closed on exhaustion.
+
+This live result establishes the current cross-node `generate()`/`verify()`
+path, including AS-signature and CPU/GPU-appraisal validation. It used a
+plaintext diagnostic client image, not the protected production application.
+It does not constitute a full NVFlare registration/periodic-CCManager run,
+workload decryption-key release test, or validation of the removed workload
+identity checks. Rehearse the actual protected application and its complete
+authorization path before deployment. Deployment-specific certificates,
+measurements, node identities and private operational artifacts are not
+included in this public example.

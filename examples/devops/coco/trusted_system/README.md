@@ -79,7 +79,10 @@ release-policy checks.
 To check a complete local package after transfer, run from the package root:
 
 ```bash
-sha256sum --check --strict PACKAGE-SHA256SUMS
+python3 validate-package.py
 ```
 
-This is an integrity check, not a substitute for script tests or attestation.
+Use Python 3.11+ with PyYAML as described in the root README. This checks the
+public inventory, script syntax and offline tests, not byte-for-byte integrity,
+source authenticity or hardware attestation. Authenticate the source and
+transfer channel independently.
