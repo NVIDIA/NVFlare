@@ -17,7 +17,7 @@ import threading
 import time
 from typing import Optional
 
-from nvflare.fuel.flare_api.flare_api import _job_status_outcome
+from nvflare.fuel.flare_api.job_status import job_status_outcome
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.recipe._failure_summary import failure_summary
 from nvflare.recipe._run_summary import _print_output, result_summary, run_context, summary_header
@@ -119,7 +119,7 @@ class Run:
 
             report = ""
             failure_report = ""
-            outcome = _job_status_outcome(self._cached_status)
+            outcome = job_status_outcome(self._cached_status)
             if outcome == "failed":
                 failure_report = failure_summary(result)
             if result and os.path.isdir(result):

@@ -30,7 +30,7 @@ from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.utils.file_utils import resolve_path_under_root
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
-from nvflare.fuel.utils.log_utils import format_metric_table, get_module_logger
+from nvflare.fuel.utils.log_utils import format_metric_table, get_module_logger, log_progress
 from nvflare.widgets.widget import Widget
 
 METRICS_AGGREGATION_INFO = AppConstants.METRICS_AGGREGATION_INFO
@@ -105,7 +105,7 @@ class MetricsArtifactWriter(Widget):
             self._progress_columns = None
             self._round_contribution_count = 0
             heading = self._round_label(current_round, fl_ctx).upper().replace("/", " / ")
-            _logger.info("\n" + f" {heading} ".center(72, "=") + "\n\n  Training\n")
+            log_progress(_logger, "\n" + f" {heading} ".center(72, "=") + "\n\n  Training\n")
         elif event_type == AppEventType.AFTER_CONTRIBUTION_ACCEPT:
             self._handle_after_contribution_accept(fl_ctx)
         elif event_type == AppEventType.AFTER_AGGREGATION:
@@ -129,14 +129,14 @@ class MetricsArtifactWriter(Widget):
     def _log_progress_metrics(self, label, metrics):
         values = {m["name"]: m["value"] for m in metrics}
         if not values:
-            _logger.info(f"  {json.dumps(label[:128])} · no displayable metrics")
+            log_progress(_logger, f"  {json.dumps(label[:128])} · no displayable metrics")
             return
         columns = list(values)[:2]
         # Clients and aggregators may report different metrics. Repeat the
         # headings when necessary instead of displaying an all-missing row.
         first = columns != self._progress_columns
         self._progress_columns = columns
-        _logger.info(format_metric_table([(label, values)], columns=self._progress_columns, header=first))
+        log_progress(_logger, format_metric_table([(label, values)], columns=self._progress_columns, header=first))
 
     def _handle_after_aggregation(self, fl_ctx: FLContext):
         aggr_result = fl_ctx.get_prop(AppConstants.AGGREGATION_RESULT, None)
@@ -166,7 +166,7 @@ class MetricsArtifactWriter(Widget):
             self._merge_skipped(skipped, fallback_skipped)
         self._apply_site_weights(sites, site_weights)
 
-        _logger.info("  " + "─" * 66)
+        log_progress(_logger, "  " + "─" * 66)
         self._log_progress_metrics("Aggregated", aggregated_metrics)
         duration = ""
         if self._round_started_at is not None:
@@ -176,7 +176,7 @@ class MetricsArtifactWriter(Widget):
             completion = f"✓ Aggregated {self._round_contribution_count} client update"
             if self._round_contribution_count != 1:
                 completion += "s"
-        _logger.info("\n" + f"  {completion}".ljust(64) + duration)
+        log_progress(_logger, "\n" + f"  {completion}".ljust(64) + duration)
 
         if not aggregated_metrics and not sites and not skipped:
             if custom_aggregator_metrics:

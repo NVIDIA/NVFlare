@@ -422,6 +422,22 @@ def test_summary_limits_rounds_and_tolerates_corrupt_evaluation(tmp_path):
     assert "cross_val_results.json" in output
 
 
+@pytest.mark.parametrize(
+    "relative_path",
+    ["app_server/global.pt", "app_server/tf_model.weights.h5", "models/server.npy"],
+)
+def test_summary_finds_standard_model_locations_without_loading_weights(tmp_path, relative_path):
+    from nvflare.recipe._run_summary import result_summary
+
+    model_path = tmp_path / relative_path
+    model_path.parent.mkdir(parents=True)
+    model_path.write_bytes(b"not a model")
+
+    output = result_summary(tmp_path)
+
+    assert f"Models    {model_path.parent.relative_to(tmp_path)}/" in output
+
+
 def test_summary_keeps_multirow_metrics_on_separate_aligned_lines(tmp_path):
     import json
 

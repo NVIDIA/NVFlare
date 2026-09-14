@@ -392,7 +392,9 @@ class TestInProcessClientAPI(unittest.TestCase):
     # Add more test methods for other functionalities in the class
 
 
-@pytest.mark.parametrize("reason,level", [("END_RUN received", "INFO"), ("unexpected stop", "WARNING")])
+@pytest.mark.parametrize(
+    "reason,level", [("END_RUN received", "INFO"), ("API shutdown called.", "INFO"), ("unexpected stop", "WARNING")]
+)
 def test_normal_end_run_is_informational_and_other_stops_remain_warnings(caplog, reason, level):
     client_api = InProcessClientAPI({})
     try:

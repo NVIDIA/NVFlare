@@ -19,13 +19,13 @@ import time
 from itertools import islice
 from pathlib import Path
 
-from nvflare.fuel.utils.log_utils import _console_text, _read_log_tail, format_metric_table, wrap_log_message
+from nvflare.fuel.utils.log_utils import console_text, format_metric_table, read_log_tail, wrap_log_message
 
 
 def _print_output(message, *, flush=True):
     """Print optional presentation without disrupting execution on limited streams."""
     try:
-        print(_console_text(message), flush=flush)
+        print(console_text(message), flush=flush)
     except (OSError, ValueError):
         # Closed streams, broken pipes, or encoding failures cannot change a job's outcome.
         pass
@@ -75,6 +75,16 @@ def _text(value):
     return json.dumps(str(value)[:160], ensure_ascii=True)[1:-1]
 
 
+def _model_artifacts(run_dir, root):
+    """Return standard model directories without deserializing their contents."""
+    extensions = (".pt", ".pth", ".npy", ".npz", ".h5", ".keras")
+    locations = []
+    for model_dir in (run_dir / "app_server", run_dir / "models"):
+        if model_dir.is_dir() and any(p.is_file() and p.name.endswith(extensions) for p in model_dir.iterdir()):
+            locations.append(f"{model_dir.relative_to(root)}/")
+    return locations
+
+
 def result_summary(result):
     """Return a bounded report for standard simulator/downloaded result layouts.
 
@@ -94,7 +104,7 @@ def result_summary(result):
             try:
                 round_path = metrics / "round_metrics.jsonl"
                 with round_path.open("rb") as stream:
-                    data, truncated = _read_log_tail(stream, 1048576, whole_lines=True)
+                    data, truncated = read_log_tail(stream, 1048576, whole_lines=True)
                 records = data.splitlines()[-11:]
                 truncated = truncated or len(records) > 10
                 records = records[-10:]
@@ -150,10 +160,9 @@ def result_summary(result):
             except (OSError, ValueError, TypeError):
                 pass
             artifacts.append(f"  Evaluation {evaluation_path.relative_to(root)}")
-        app_dir = run_dir / "app_server"
-        if app_dir.is_dir():
-            if any(p.is_file() and p.suffix in (".pt", ".pth", ".npy", ".npz") for p in app_dir.iterdir()):
-                artifacts.insert(0, f"  Models    {app_dir.relative_to(root)}/")
+        model_locations = _model_artifacts(run_dir, root)
+        if model_locations:
+            artifacts.insert(0, "  Models    " + " · ".join(model_locations))
         if summary_path.is_file() or evaluation_path.is_file():
             break
     log_paths = list(islice(root.glob("*/log.txt"), 6))

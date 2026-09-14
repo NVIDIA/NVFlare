@@ -21,7 +21,7 @@ from itertools import islice
 from pathlib import Path
 
 from nvflare.apis.fl_constant import ReturnCode
-from nvflare.fuel.utils.log_utils import _read_log_tail, wrap_log_message
+from nvflare.fuel.utils.log_utils import read_log_tail, wrap_log_message
 
 _MAX_LOG_BYTES = 1024 * 1024
 _MAX_LOG_FILES = 20
@@ -94,7 +94,7 @@ def _display(value, limit=512):
 def _first_error(path):
     """Read the first ERROR in a bounded recent snapshot of one site's log."""
     with path.open("rb") as stream:
-        data, _ = _read_log_tail(stream, _MAX_LOG_BYTES, whole_lines=True)
+        data, _ = read_log_tail(stream, _MAX_LOG_BYTES, whole_lines=True)
     for record in _records(data, path.name == "error_log.txt"):
         if not isinstance(record, dict) or record.get("levelname") not in ("ERROR", "CRITICAL"):
             continue

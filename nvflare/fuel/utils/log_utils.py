@@ -197,7 +197,7 @@ class BaseFormatter(logging.Formatter):
             self._style._fmt = self._style._fmt.replace(placeholder, "")
 
 
-def _console_text(message):
+def console_text(message):
     """Keep console text readable on streams that cannot encode Unicode decoration."""
     encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
     try:
@@ -232,7 +232,7 @@ class ColorFormatter(BaseFormatter):
         self.logger_colors = logger_colors
 
     def format(self, record):
-        record_s = _console_text(super().format(record))
+        record_s = console_text(super().format(record))
         if not _stdout_supports_color():
             return record_s
 
@@ -411,7 +411,7 @@ def wrap_log_message(message, subsequent_indent="    "):
     )
 
 
-def _read_log_tail(stream, max_bytes, *, whole_lines=False):
+def read_log_tail(stream, max_bytes, *, whole_lines=False):
     """Return bounded tail bytes and a truncation flag; optionally discard the first partial record."""
     stream.seek(0, os.SEEK_END)
     start = max(0, stream.tell() - max_bytes)
@@ -420,6 +420,11 @@ def _read_log_tail(stream, max_bytes, *, whole_lines=False):
     if start and whole_lines:
         data = data.partition(b"\n")[2]
     return data, start > 0
+
+
+def log_progress(logger: logging.Logger, message: str) -> None:
+    """Emit user-facing workflow progress through its configured module logger."""
+    logger.info(message)
 
 
 class ConciseLogFilter(LoggerNameFilter):

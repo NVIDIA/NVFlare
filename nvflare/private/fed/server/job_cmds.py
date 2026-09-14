@@ -67,7 +67,7 @@ from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 from nvflare.fuel.hci.server.binary_transfer import BinaryTransfer
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.utils.argument_utils import SafeArgumentParser
-from nvflare.fuel.utils.log_utils import _read_log_tail, get_obj_logger
+from nvflare.fuel.utils.log_utils import get_obj_logger, read_log_tail
 from nvflare.private.admin_defs import MsgHeader
 from nvflare.private.admin_defs import ReturnCode as AdminReturnCode
 from nvflare.private.defs import RequestHeader, TrainingTopic
@@ -1006,7 +1006,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         return targets
 
     def _read_job_log_tail_data(self, log_file) -> bytes:
-        data, _ = _read_log_tail(log_file, self.MAX_RETURNED_JOB_LOG_BYTES + 1)
+        data, _ = read_log_tail(log_file, self.MAX_RETURNED_JOB_LOG_BYTES + 1)
         return data
 
     def _decode_job_log_data(self, data) -> Optional[str]:

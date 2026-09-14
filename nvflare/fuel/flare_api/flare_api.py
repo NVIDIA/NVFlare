@@ -25,11 +25,12 @@ from nvflare.apis.fl_constant import (
     WorkspaceConstants,
 )
 from nvflare.apis.fl_exception import FLCommunicationError
-from nvflare.apis.job_def import DEFAULT_STUDY, JobMetaKey, RunStatus
+from nvflare.apis.job_def import DEFAULT_STUDY, JobMetaKey
 from nvflare.apis.utils.format_check import name_check
 from nvflare.apis.utils.job_submit_token import validate_submit_token
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
+from nvflare.fuel.flare_api.job_status import is_terminal_job_status
 from nvflare.fuel.hci.client.api import AdminAPI, APIStatus, ResultKey
 from nvflare.fuel.hci.client.api_spec import AdminConfigKey, UidSource
 from nvflare.fuel.hci.client.config import secure_load_admin_config
@@ -78,13 +79,6 @@ _VALID_TARGET_TYPES = [TargetType.ALL, TargetType.SERVER, TargetType.CLIENT]
 _DEFAULT_STATE_CHANGE_TIMEOUT = 30.0
 _STATE_CHANGE_POLL_INTERVAL = 0.5
 _STATE_CHANGE_CONNECT_TIMEOUT = 1.0
-_LEGACY_TERMINAL_JOB_STATUSES = {
-    "FINISHED_OK",
-    "FINISHED_EXCEPTION",
-    "ABORTED",
-    "ABANDONED",
-    "FAILED",
-}
 _CONNECTION_RETRY_COMMANDS = {AdminCommandNames.ABORT_JOB, AdminCommandNames.SHUTDOWN}
 _CONNECTION_RETRY_ATTEMPTS = 3
 _CONNECTION_RETRY_BACKOFF = 0.5
@@ -101,19 +95,6 @@ def _should_retry_connection_failure(command: str, result: dict) -> bool:
         and isinstance(result, dict)
         and result.get(ResultKey.STATUS) == APIStatus.ERROR_SERVER_CONNECTION
     )
-
-
-def _is_terminal_job_status(status: str) -> bool:
-    return isinstance(status, str) and (status.startswith("FINISHED") or status in _LEGACY_TERMINAL_JOB_STATUSES)
-
-
-def _job_status_outcome(status: str) -> Optional[str]:
-    """Classify current/legacy terminal statuses consistently for Recipe reporting."""
-    if not _is_terminal_job_status(status):
-        return None
-    if status == RunStatus.FINISHED_CANT_SCHEDULE.value:
-        return "not_scheduled"
-    return "completed" if status in (RunStatus.FINISHED_COMPLETED.value, "FINISHED_OK") else "failed"
 
 
 def _validate_job_polling_options(timeout: float, poll_interval: float) -> None:
@@ -1693,7 +1674,7 @@ class Session(SessionSpec):
             if not job_status:
                 raise InternalError(f"missing status in job {job_id}")
 
-            if _is_terminal_job_status(job_status):
+            if is_terminal_job_status(job_status):
                 return MonitorReturnCode.JOB_FINISHED, job_meta
 
             time.sleep(poll_interval)

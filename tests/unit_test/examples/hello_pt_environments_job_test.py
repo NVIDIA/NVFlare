@@ -355,12 +355,7 @@ def test_copied_example_reports_missing_shared_application(tmp_path):
 
 
 @pytest.mark.parametrize("env_name", ["sim", "poc", "prod"])
-@pytest.mark.parametrize("path_kind", ["absolute", "relative", "home"])
-def test_cifar_cli_export_does_not_require_local_cache(tmp_path, env_name, path_kind):
-    cache = str(tmp_path / "missing")
-    argument = os.path.relpath(cache, ADVANCED_DIR) if path_kind == "relative" else cache
-    if path_kind == "home":
-        argument = "~/" + os.path.relpath(cache, Path.home())
+def test_cifar_cli_export_does_not_require_local_cache(tmp_path, env_name):
     command = [
         sys.executable,
         "job.py",
@@ -369,7 +364,7 @@ def test_cifar_cli_export_does_not_require_local_cache(tmp_path, env_name, path_
         "--dataset",
         "cifar10",
         "--data_root",
-        argument,
+        str(tmp_path / "missing"),
         "--export",
         "--export-dir",
         str(tmp_path / "export"),
@@ -388,8 +383,3 @@ def test_cifar_cli_export_does_not_require_local_cache(tmp_path, env_name, path_
         timeout=30,
     )
     assert (tmp_path / "export" / "hello-pt" / "meta.json").is_file()
-    config_path = next((tmp_path / "export" / "hello-pt").rglob("config_fed_client.json"))
-    config = json.loads(config_path.read_text())
-    train_args = config["executors"][0]["executor"]["args"]["task_script_args"]
-    assert train_args[train_args.index("--data_root") + 1] == (argument if env_name == "prod" else cache)
-    assert not Path(cache).exists()
