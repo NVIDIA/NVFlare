@@ -27,7 +27,6 @@ from pathlib import Path
 import adapter_checkpoint
 import evo2_runtime
 import provenance
-import torch
 from evo2_aggregator import ExactSchemaFedAvgAggregator
 from evo2_persistor import CPUTrainablePTFileModelPersistor
 
@@ -399,7 +398,7 @@ def _portable_jsonl_identity(identity: dict, label: str) -> dict:
 def build_continuation_signature(
     args: argparse.Namespace, manifest: dict, plan: list[dict], training_inputs: dict
 ) -> dict:
-    """Bind a stateless continuation to the exact federation and sampler budget."""
+    """Bind a stateless continuation to the exact federation and training protocol."""
 
     for name in ("source", "settings", "audit"):
         if not isinstance(manifest.get(name), dict):
@@ -421,6 +420,7 @@ def build_continuation_signature(
         )
     payload = {
         "backend": args.backend,
+        "backend_settings": {"mock_delta": args.mock_delta} if args.backend == "mock" else {},
         "mode": args.mode,
         "clients": clients,
         "dataset_manifest": {
@@ -435,6 +435,11 @@ def build_continuation_signature(
             "local_steps": args.local_steps,
             "micro_batch_size": args.micro_batch_size,
             "global_batch_size": args.global_batch_size,
+        },
+        "optimizer_schedule": {
+            "learning_rate": args.learning_rate,
+            "min_learning_rate": args.min_learning_rate,
+            "warmup_iters": args.warmup_iters,
         },
     }
     return provenance.make_continuation_signature(payload)
@@ -511,7 +516,7 @@ def validate_inputs(args: argparse.Namespace) -> tuple[dict, list[dict], Path, d
             raise ValueError(f"--start-round requires a valid continuation signature: {exc}") from exc
         if source_signature != continuation_signature:
             raise ValueError(
-                "Continuation checkpoint signature does not match this federation or sampler budget: "
+                "Continuation checkpoint signature does not match this federation or training protocol: "
                 f"expected sha256={continuation_signature['sha256']}, observed sha256={source_signature['sha256']}."
             )
     return manifest, plan, validation_file, training_inputs, continuation_signature
@@ -613,25 +618,9 @@ def _load_global_checkpoint_metadata(path: Path) -> dict:
     """Load and validate the metadata stored by the PyTorch model persistor."""
 
     try:
-        checkpoint = torch.load(path, map_location="cpu", weights_only=True)
-    except TypeError as exc:
-        if "weights_only" not in str(exc):
-            raise RuntimeError(f"Could not load global checkpoint metadata from {path}: {exc}") from exc
-        try:
-            checkpoint = torch.load(path, map_location="cpu")
-        except Exception as fallback_exc:
-            raise RuntimeError(
-                f"Could not load global checkpoint metadata from {path}: {fallback_exc}"
-            ) from fallback_exc
+        return adapter_checkpoint.load_nvflare_checkpoint_metadata(path)
     except Exception as exc:
         raise RuntimeError(f"Could not load global checkpoint metadata from {path}: {exc}") from exc
-
-    if not isinstance(checkpoint, dict):
-        raise RuntimeError(f"Global checkpoint {path} must contain a dictionary, received {type(checkpoint).__name__}.")
-    metadata = checkpoint.get("meta_props")
-    if not isinstance(metadata, dict):
-        raise RuntimeError(f"Global checkpoint {path} does not contain dictionary metadata at meta_props.")
-    return metadata
 
 
 def collect_run_summary(

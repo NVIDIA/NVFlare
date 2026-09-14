@@ -407,10 +407,7 @@ def test_nvflare_checkpoint_round_trip_and_payload_size(tmp_path):
     checkpoint_path = tmp_path / "nested" / "initial_adapter.pt"
 
     adapter_checkpoint.save_nvflare_checkpoint(state, checkpoint_path, metadata={"rank": 16, "targets": {"qkv"}})
-    try:
-        raw = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
-    except TypeError:
-        raw = torch.load(checkpoint_path, map_location="cpu")
+    raw = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
     loaded = adapter_checkpoint.load_nvflare_checkpoint(checkpoint_path)
 
     assert list(raw) == ["model", "train_conf", "meta_props"]
@@ -422,3 +419,23 @@ def test_nvflare_checkpoint_round_trip_and_payload_size(tmp_path):
     assert all(tensor.dtype == torch.float32 for tensor in loaded.values())
     expected_bytes = 6 * torch.tensor([], dtype=torch.float32).element_size()
     assert adapter_checkpoint.state_dict_size_mb(state) == expected_bytes / (1024 * 1024)
+
+
+def test_checkpoint_load_never_retries_with_unrestricted_pickle(tmp_path, monkeypatch):
+    adapter_checkpoint = _load_adapter_checkpoint()
+    checkpoint_path = tmp_path / "checkpoint.pt"
+    checkpoint_path.touch()
+    load_kwargs = []
+
+    def reject_weights_only(*_args, **kwargs):
+        load_kwargs.append(kwargs)
+        if kwargs.get("weights_only") is not True:
+            raise AssertionError("Checkpoint load retried without weights_only=True")
+        raise TypeError("load() got an unexpected keyword argument 'weights_only'")
+
+    monkeypatch.setattr(adapter_checkpoint.torch, "load", reject_weights_only)
+
+    with pytest.raises(RuntimeError, match="Safe checkpoint loading requires a PyTorch version"):
+        adapter_checkpoint.load_nvflare_checkpoint(checkpoint_path)
+
+    assert load_kwargs == [{"map_location": "cpu", "weights_only": True}]

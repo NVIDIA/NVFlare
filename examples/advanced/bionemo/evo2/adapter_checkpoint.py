@@ -310,8 +310,10 @@ def _load_nvflare_checkpoint_data(path: str | os.PathLike[str]) -> Mapping[str, 
         raise FileNotFoundError(f"NVFlare checkpoint does not exist: {checkpoint_path}")
     try:
         checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
-    except TypeError:
-        checkpoint = torch.load(checkpoint_path, map_location="cpu")
+    except TypeError as exc:
+        raise RuntimeError(
+            "Safe checkpoint loading requires a PyTorch version with torch.load(..., weights_only=True) support."
+        ) from exc
 
     if not isinstance(checkpoint, Mapping):
         raise TypeError(f"NVFlare checkpoint must contain a mapping, got {type(checkpoint).__name__}.")

@@ -12,13 +12,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-FROM nvcr.io/nvidia/pytorch:26.02-py3
+FROM nvcr.io/nvidia/pytorch:26.02-py3@sha256:bbc2b67e2533edd63ff1496bb1ed00a00338cdc1478af6c1a0bf9f4b369977e7
 
 ARG BIONEMO_RECIPES_SHA=101d88b7e0b0ee40e5af303575eb9661620a3706
 ARG MEGATRON_BRIDGE_SHA=fcbb6031103d0ca845c1a54d4fee55ecfcca17b6
 ARG CAUSAL_CONV1D_SHA=c51519fb10d92ffa257c1982e1831d3243454b2f
 
-COPY --from=ghcr.io/astral-sh/uv:0.12.4 /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.12.4@sha256:d0a6eca6c669dc7e9c51218707b8438a3d30402733d739dcc00adb3e213e8f5c \
+    /uv /uvx /bin/
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bubblewrap \

@@ -192,7 +192,10 @@ publishes the requested output path:
 python3 prepare_base_checkpoint.py --output ./models/evo2_1b_bf16_mbridge
 ```
 
-Every simulated site must use this same converted checkpoint and tokenizer configuration.
+Every simulated site must use this same converted checkpoint and tokenizer configuration. Successful preparation
+writes `nvflare_conversion_provenance.json`, which records the pinned conversion settings, tokenizer identity, and
+a content inventory. Remove and regenerate an existing converted directory that predates this marker; the command
+rejects unmarked, partial, modified, or incompatible output instead of reusing it.
 
 ## 3. Create the common trainable initialization
 
@@ -216,10 +219,9 @@ shapes, dtypes, and finite values are validated before training and aggregation,
 the initialization to `exchange_dtype=float32`.
 
 Regenerate trainable initialization checkpoints created by an earlier version of this example. Checkpoints that
-contain BF16 exchange tensors or omit the `exchange_dtype=float32` initialization metadata are rejected. The
-converted frozen-backbone checkpoint does not need to be regenerated. Float32 doubles the adapter/head raw tensor
-value and checkpoint bytes relative to the earlier BF16 exchange while leaving the frozen backbone and GPU model
-dtype unchanged.
+contain BF16 exchange tensors or omit the `exchange_dtype=float32` initialization metadata are rejected. Float32
+doubles the adapter/head raw tensor value and checkpoint bytes relative to the earlier BF16 exchange while leaving
+the frozen backbone and GPU model dtype unchanged.
 
 Evaluate this initialization with the command in step 5, using
 `--checkpoint ./models/evo2_lora_init.pt --output ./results/initialization/evaluation.json` and omitting the three
@@ -364,9 +366,9 @@ For a persisted run, add this flag to the command above:
 `--start-round N` serves a different purpose: it continues a stateless FedAvg job from a saved global checkpoint
 whose metadata identifies round `N - 1` and carries the same continuation signature. That signature binds the mode,
 site names, sample weights, audited training identities, dataset source and partition settings, validation identity,
-and the seed, local-step, microbatch, and global-batch sampler budget. Changing any of those values rejects
-continuation before launch. A valid continuation preserves the original common initialization metadata while
-numbering new global checkpoints from `N`. Do not combine `--start-round` with
+the seed, local-step, microbatch, and global-batch sampler budget, and the learning-rate schedule. Changing any of
+those values rejects continuation before launch. A valid continuation preserves the original common initialization
+metadata while numbering new global checkpoints from `N`. Do not combine `--start-round` with
 `--persist-client-training-state`; a new process cannot reconstruct the missing site-private state chain from a
 global trainable checkpoint.
 

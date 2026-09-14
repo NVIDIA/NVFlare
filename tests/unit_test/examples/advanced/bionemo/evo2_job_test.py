@@ -385,6 +385,12 @@ def test_matched_local_baseline_recipe_uses_one_site_for_one_uninterrupted_888_s
         "micro_batch_size": 32,
         "global_batch_size": 96,
     }
+    assert continuation_signature["payload"]["optimizer_schedule"] == {
+        "learning_rate": args.learning_rate,
+        "min_learning_rate": args.min_learning_rate,
+        "warmup_iters": args.warmup_iters,
+    }
+    assert continuation_signature["payload"]["backend_settings"] == {"mock_delta": args.mock_delta}
 
     train_args = shlex.split(recipe.per_site_config[site_name]["train_args"])
     assert train_args[train_args.index("--local-steps") + 1] == "888"
@@ -595,6 +601,12 @@ def test_three_matched_local_mock_jobs_run_sequentially_with_fresh_site_bound_ou
             "micro_batch_size": 32,
             "global_batch_size": 96,
         }
+        assert summary["continuation_signature"]["payload"]["optimizer_schedule"] == {
+            "learning_rate": 0.0005,
+            "min_learning_rate": 0.00005,
+            "warmup_iters": 30,
+        }
+        assert summary["continuation_signature"]["payload"]["backend_settings"] == {"mock_delta": 0.01}
         assert "persist_client_training_state" not in summary["configuration"]
         assert [(metric["site_name"], metric["round"]) for metric in summary["round_metrics"]] == [(site_name, 0)]
         train_args = constructed_jobs[site_index]["train_args"]
@@ -659,6 +671,12 @@ def test_recipe_carries_sample_weights_and_shell_safe_site_arguments(tmp_path):
         "micro_batch_size": args.micro_batch_size,
         "global_batch_size": args.global_batch_size,
     }
+    assert signature_payload["optimizer_schedule"] == {
+        "learning_rate": args.learning_rate,
+        "min_learning_rate": args.min_learning_rate,
+        "warmup_iters": args.warmup_iters,
+    }
+    assert signature_payload["backend_settings"] == {"mock_delta": args.mock_delta}
 
     exported_job = export_root / recipe.name
     server_config = json.loads(
@@ -817,8 +835,11 @@ def test_direct_round_three_checkpoint_continues_at_logical_round_four(tmp_path)
 
 
 @pytest.mark.skipif(not HAS_NVFLARE_RUNTIME_DEPS, reason="NVFlare runtime dependencies are required")
-@pytest.mark.parametrize("mutation", ("sampler_budget", "partition", "site_plan"))
-def test_start_round_rejects_a_different_federation_or_sampler_budget(tmp_path, mutation):
+@pytest.mark.parametrize(
+    "mutation",
+    ("sampler_budget", "learning_rate", "min_learning_rate", "warmup_iters", "mock_delta", "partition", "site_plan"),
+)
+def test_start_round_rejects_a_different_federation_or_training_protocol(tmp_path, mutation):
     import torch
 
     job_module = _load_job_module()
@@ -843,6 +864,12 @@ def test_start_round_rejects_a_different_federation_or_sampler_budget(tmp_path, 
 
     if mutation == "sampler_budget":
         args.local_steps += 1
+    elif mutation in ("learning_rate", "min_learning_rate"):
+        setattr(args, mutation, getattr(args, mutation) / 2)
+    elif mutation == "warmup_iters":
+        args.warmup_iters += 1
+    elif mutation == "mock_delta":
+        args.mock_delta *= 2
     else:
         manifest_path = Path(args.manifest)
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -858,7 +885,7 @@ def test_start_round_rejects_a_different_federation_or_sampler_budget(tmp_path, 
                 section["site-1"], section["site-2"] = section["site-2"], section["site-1"]
         manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
-    with pytest.raises(ValueError, match="signature does not match this federation or sampler budget"):
+    with pytest.raises(ValueError, match="signature does not match this federation or training protocol"):
         job_module.validate_inputs(args)
 
 
