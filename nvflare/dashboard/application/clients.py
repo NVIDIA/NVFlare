@@ -27,6 +27,8 @@ from .store import Store, check_role
 def create_one_client():
     creator = get_jwt_identity()
     req = request.json
+    if "props" in req:
+        return jsonify({"status": "error", "message": "Client props cannot be supplied through the Dashboard API"}), 400
     result = Store.create_client(req, creator)
     if result is not None:
         return jsonify(result), 201
@@ -66,6 +68,11 @@ def update_client(id):
 
     if request.method == "PATCH":
         req = request.json
+        if "props" in req:
+            return (
+                jsonify({"status": "error", "message": "Client props cannot be supplied through the Dashboard API"}),
+                400,
+            )
         if p:
             result = Store.patch_client_by_project_admin(id, req)
         elif c:
