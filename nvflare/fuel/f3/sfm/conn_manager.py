@@ -19,6 +19,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, List, Optional
 
 import msgpack
+from cryptography import x509
 
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.identity import CellIdentityResolver, get_param, is_admin_listener, is_mtls_connection
@@ -51,6 +52,11 @@ log = logging.getLogger(__name__)
 
 handle_lock = threading.Lock()
 handle_count = 0
+
+
+def _peer_cert(conn_props: dict):
+    der = get_param(conn_props, DriverParams.PEER_CERT)
+    return x509.load_der_x509_certificate(der) if der else None
 
 
 def get_handle():
@@ -435,7 +441,12 @@ class ConnManager(ConnMonitor):
                         f"Admin endpoint '{endpoint_name}' can only connect through an admin listener",
                     )
                 try:
-                    self.identity_resolver.require_match(endpoint_name, peer_cn, f"connection {sfm_conn.get_name()}")
+                    self.identity_resolver.require_match(
+                        endpoint_name,
+                        peer_cn,
+                        f"connection {sfm_conn.get_name()}",
+                        peer_cert=_peer_cert(conn_props),
+                    )
                 except ValueError as ex:
                     sfm_conn.conn.close()
                     raise CommError(CommError.BAD_DATA, str(ex))

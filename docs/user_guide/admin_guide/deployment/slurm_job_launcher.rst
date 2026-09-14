@@ -516,6 +516,14 @@ insecure opt-out, and the shared-file transport is clear file I/O (see
 isolated site network or filesystem. None of this changes the configured
 security of the external NVFlare federation channel.
 
+Job processes run on :ref:`per-job certificates <per_job_certificates>`. With
+``sandbox: apptainer`` or ``sandbox: pyxis`` the job sees a copy of the startup
+kit without any private key, staged under the job's transient artifact
+directory and bound at ``<workspace>/startup``; the job's own certificate and
+key live in its run directory. With ``sandbox: none`` the job is a plain
+process on the shared filesystem and no such isolation is possible. In secure
+mode the launcher refuses to start a job that has no job credential.
+
 Working accounting is mandatory. The parent refuses to start if ``sacct`` is
 unavailable. A later scheduler or accounting outage leaves affected jobs
 non-terminal and retries; it never assumes that a missing observation means a

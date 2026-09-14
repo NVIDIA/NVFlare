@@ -44,7 +44,8 @@ Run the quickstart
    python job.py
 
 The default run uses two simulated clients, three federated rounds, one local
-epoch per round, and no data download or tracking service. Each client receives
+epoch per round, and no data download or tracking service. The SGD learning rate
+is 0.1 for synthetic data and 0.01 for the optional CIFAR-10 path. Each client receives
 reproducible samples generated independently from the same simple IID
 distribution. Labels are encoded by class-specific image regions, giving the
 small convolutional network a genuine and testable learning signal instead of
@@ -82,9 +83,9 @@ aggregation, use each site's ``SRV_FL_global_model.pt`` entry in
 training-round accuracy before local training and the final aggregation occurs
 after the last such report.
 
-The automated acceptance test requires at least 60% final accuracy on both
-sites and at least a 40 percentage-point improvement over the initial global
-model. These thresholds are calibrated to the fixed model and data seeds with
+The automated acceptance test requires initial global-model accuracy at or below
+20%, at least 60% final accuracy on both sites, and at least a 40 percentage-point
+improvement over the initial global model. These thresholds are calibrated to the fixed model and data seeds with
 the three-round default. They verify this specific run's learning signal, not
 arbitrary initializations or hyperparameters, and are not benchmark claims.
 
@@ -115,10 +116,17 @@ partition. For a non-default cache, pass the same ``--data_root`` value to
 commands.
 
 The beginner entry point intentionally exposes only client count, round count,
-dataset choice, and the client-local data root. Environment selection,
-experiment tracking, full cross-site evaluation, external-process execution,
-and memory tuning belong in a separate continuation workflow rather than the
-first federated-learning run.
+dataset choice, and the client-local data root.
 
 For the API concepts behind the example, continue with
 :ref:`Client API <client_api>` and :ref:`Available Recipes <available_recipes>`.
+
+Continue to POC and Production
+------------------------------
+
+After completing the simulation, continue with the
+:github_nvflare_link:`advanced environment-continuity example
+<examples/advanced/hello-pt-environments/README.md>` to run the same learning
+application in a local POC or an already-running production deployment. It also
+covers experiment tracking, full cross-site evaluation, external-process
+execution, and memory tuning.

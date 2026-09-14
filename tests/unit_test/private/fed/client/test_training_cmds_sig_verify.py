@@ -23,6 +23,10 @@ import types
 from unittest.mock import MagicMock, patch
 from zipfile import ZipFile
 
+import pytest
+
+from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.fl_context import FLContext
 from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import RequestHeader
@@ -37,10 +41,11 @@ from nvflare.private.fed.client.training_cmds import DeployProcessor
 class _StubEngine(ClientEngineInternalSpec):
     """Minimal concrete implementation of ClientEngineInternalSpec for tests."""
 
-    def __init__(self, workspace_dir="/fake/workspace", client_name="site-1", deploy_result=""):
+    def __init__(self, workspace_dir="/fake/workspace", client_name="site-1", deploy_result="", secure_mode=False):
         self._client_name = client_name
         self._workspace_dir = workspace_dir
         self._deploy_result = deploy_result
+        self._secure_mode = secure_mode
         self._deploy_calls = []
 
         # args mock
@@ -96,7 +101,9 @@ class _StubEngine(ClientEngineInternalSpec):
 
     # Optional methods that may be needed by parent classes
     def new_context(self):
-        return MagicMock()
+        fl_ctx = FLContext()
+        fl_ctx.set_prop(FLContextKey.SECURE_MODE, self._secure_mode, private=True, sticky=True)
+        return fl_ctx
 
     def fire_event(self, event_type, fl_ctx):
         pass
@@ -119,7 +126,7 @@ def _make_app_zip(signed=True) -> bytes:
     return zip_bytes.getvalue()
 
 
-def _make_request(job_id="job-1", app_name="test-app", job_meta=None, body=None):
+def _make_request(job_id="job-1", app_name="test-app", job_meta=None, body=None, job_cert=None):
     """Build a minimal deploy Message.
 
     job_meta defaults to a sentinel dict with one key so it passes the "if not job_meta" check.
@@ -137,6 +144,7 @@ def _make_request(job_id="job-1", app_name="test-app", job_meta=None, body=None)
             RequestHeader.JOB_ID: job_id,
             RequestHeader.APP_NAME: app_name,
             RequestHeader.JOB_META: job_meta,
+            RequestHeader.JOB_CERT: job_cert,
         }
         return mapping.get(key, default)
 
@@ -194,6 +202,50 @@ class TestSignedValid:
         mock_vfs.assert_called_once()
         assert len(engine._deploy_calls) == 1
         assert engine._deploy_calls[0][4] == req.body
+
+
+# ---------------------------------------------------------------------------
+# Job credential — secure mode never deploys a job onto site certificates
+# ---------------------------------------------------------------------------
+
+
+class TestJobCredential:
+    @pytest.mark.parametrize("job_cert", [None, {"cert": "only-cert"}, "garbage"])
+    def test_secure_deploy_without_valid_job_credential_is_rejected(self, tmp_path, job_cert):
+        req = _make_request(job_cert=job_cert)
+        engine = _StubEngine(workspace_dir=str(tmp_path), secure_mode=True)
+        _write_root_ca(tmp_path)
+
+        reply = _run_process(req, engine, str(tmp_path))
+
+        assert "no valid job credential" in reply.body
+        assert engine._deploy_calls == []
+
+    def test_secure_deploy_writes_job_credential_after_deploy(self, tmp_path):
+        req = _make_request(job_cert={"cert": "CERT-PEM", "key": "KEY-PEM"})
+        engine = _StubEngine(workspace_dir=str(tmp_path), secure_mode=True)
+        _write_root_ca(tmp_path)
+
+        with (
+            patch("nvflare.private.fed.client.training_cmds.verify_folder_signature", return_value=True),
+            patch("nvflare.private.fed.client.training_cmds.write_job_cert") as write_mock,
+        ):
+            reply = _run_process(req, engine, str(tmp_path))
+
+        assert "deployed" in reply.body
+        assert len(engine._deploy_calls) == 1
+        write_mock.assert_called_once()
+        assert write_mock.call_args.args[1:] == (b"CERT-PEM", b"KEY-PEM")
+
+    def test_non_secure_deploy_needs_no_job_credential(self, tmp_path):
+        req = _make_request()
+        engine = _StubEngine(workspace_dir=str(tmp_path))
+        _write_root_ca(tmp_path)
+
+        with patch("nvflare.private.fed.client.training_cmds.verify_folder_signature", return_value=True):
+            reply = _run_process(req, engine, str(tmp_path))
+
+        assert "deployed" in reply.body
 
 
 # ---------------------------------------------------------------------------
