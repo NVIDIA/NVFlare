@@ -24,7 +24,7 @@ import sys
 import time
 from pathlib import Path
 
-import adapter_checkpoint
+import evo2_adapter_checkpoint as adapter_checkpoint
 import evo2_runtime
 import provenance
 from evo2_aggregator import ExactSchemaFedAvgAggregator
@@ -571,11 +571,11 @@ def create_recipe(
         cuda_empty_cache=True,
     )
     set_per_site_config(recipe, per_site_config)
-    recipe.add_client_file("adapter_checkpoint.py", clients=clients)
+    recipe.add_client_file("evo2_adapter_checkpoint.py", clients=clients)
     recipe.add_client_file("evo2_runtime.py", clients=clients)
     recipe.add_client_file("provenance.py", clients=clients)
     recipe.add_client_file("sequential_launcher.py", clients=clients)
-    recipe.add_server_file("adapter_checkpoint.py")
+    recipe.add_server_file("evo2_adapter_checkpoint.py")
     recipe.add_server_file("evo2_aggregator.py")
     recipe.add_server_file("evo2_persistor.py")
     recipe.add_server_file("provenance.py")

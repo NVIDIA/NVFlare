@@ -32,7 +32,7 @@ def _example_dir() -> Path:
 
 def _load_runtime_module():
     example_dir = _example_dir()
-    previous_modules = {name: sys.modules.pop(name, None) for name in ("adapter_checkpoint", "evo2_runtime")}
+    previous_modules = {name: sys.modules.pop(name, None) for name in ("evo2_adapter_checkpoint", "evo2_runtime")}
     sys.path.insert(0, str(example_dir))
     try:
         spec = importlib.util.spec_from_file_location("evo2_runtime_under_test", example_dir / "evo2_runtime.py")
@@ -42,7 +42,7 @@ def _load_runtime_module():
         return module
     finally:
         sys.path.remove(str(example_dir))
-        for name in ("adapter_checkpoint", "evo2_runtime"):
+        for name in ("evo2_adapter_checkpoint", "evo2_runtime"):
             sys.modules.pop(name, None)
         for name, previous in previous_modules.items():
             if previous is not None:

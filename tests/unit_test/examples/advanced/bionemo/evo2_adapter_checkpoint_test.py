@@ -23,7 +23,9 @@ pytestmark = pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required for E
 
 
 def _load_adapter_checkpoint():
-    module_path = Path(__file__).parents[5] / "examples" / "advanced" / "bionemo" / "evo2" / "adapter_checkpoint.py"
+    module_path = (
+        Path(__file__).parents[5] / "examples" / "advanced" / "bionemo" / "evo2" / "evo2_adapter_checkpoint.py"
+    )
     spec = importlib.util.spec_from_file_location("evo2_adapter_checkpoint", module_path)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None

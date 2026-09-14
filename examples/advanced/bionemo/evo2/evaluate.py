@@ -26,7 +26,7 @@ from contextlib import contextmanager
 from functools import partial
 from pathlib import Path
 
-import adapter_checkpoint
+import evo2_adapter_checkpoint as adapter_checkpoint
 import evo2_runtime
 import provenance
 import torch

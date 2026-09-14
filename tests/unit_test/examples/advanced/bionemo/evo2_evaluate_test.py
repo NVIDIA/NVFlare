@@ -34,7 +34,7 @@ def _example_dir() -> Path:
 
 def _load_evaluate_module():
     example_dir = _example_dir()
-    module_names = ("adapter_checkpoint", "evo2_runtime")
+    module_names = ("evo2_adapter_checkpoint", "evo2_runtime")
     previous_modules = {name: sys.modules.pop(name, None) for name in module_names}
     sys.path.insert(0, str(example_dir))
     try:

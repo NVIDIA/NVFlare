@@ -18,7 +18,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-import adapter_checkpoint
+import evo2_adapter_checkpoint as adapter_checkpoint
 import torch
 
 from nvflare.apis.fl_constant import FLContextKey, WorkspaceConstants

@@ -26,7 +26,7 @@ from collections import OrderedDict
 from collections.abc import Mapping
 from pathlib import Path
 
-import adapter_checkpoint
+import evo2_adapter_checkpoint as adapter_checkpoint
 import torch
 
 import nvflare.client as flare

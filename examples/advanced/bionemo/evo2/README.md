@@ -272,7 +272,7 @@ from pathlib import Path
 
 import torch
 
-from adapter_checkpoint import load_nvflare_checkpoint
+from evo2_adapter_checkpoint import load_nvflare_checkpoint
 
 initial = load_nvflare_checkpoint("models/evo2_lora_init.pt")
 summary = json.loads(Path("/tmp/nvflare/evo2_splice_two_by_two/run_summary.json").read_text())
@@ -723,7 +723,7 @@ The Evo2 checkpoint and BioNeMo software have their own terms. Review the notice
 | `client.py` | Run one external BioNeMo training task and return trainable-tensor differences |
 | `evo2_runtime.py` | Adapt the pinned BioNeMo classifier and Megatron Bridge callbacks |
 | `sequential_launcher.py` | Hold the shared trainer lock across each external process lifetime |
-| `adapter_checkpoint.py` | Validate, serialize, load, and diff trainable tensors |
+| `evo2_adapter_checkpoint.py` | Validate, serialize, load, and diff trainable tensors |
 | `provenance.py` | Hash inputs and create self-verifying stateless-continuation signatures |
 | `evaluate.py` | Reload a saved model and evaluate the official test split |
 | `summarize_baselines.py` | Validate and summarize the fixed federated and three-site local comparison |

@@ -692,12 +692,13 @@ def test_recipe_carries_sample_weights_and_shell_safe_site_arguments(tmp_path):
     assert persistor["path"] == "evo2_persistor.CPUTrainablePTFileModelPersistor"
     assert "load_device" not in persistor["args"]
     assert (exported_job / "app_server" / "custom" / "evo2_aggregator.py").is_file()
-    assert (exported_job / "app_server" / "custom" / "adapter_checkpoint.py").is_file()
+    assert (exported_job / "app_server" / "custom" / "evo2_adapter_checkpoint.py").is_file()
     assert (exported_job / "app_server" / "custom" / "evo2_persistor.py").is_file()
     assert (exported_job / "app_server" / "custom" / "provenance.py").is_file()
 
     for entry in plan:
         client_app = exported_job / f"app_{entry['client_name']}"
+        assert (client_app / "custom" / "evo2_adapter_checkpoint.py").is_file()
         assert (client_app / "custom" / "sequential_launcher.py").is_file()
         assert (client_app / "custom" / "provenance.py").is_file()
         client_config = json.loads((client_app / "config" / "config_fed_client.json").read_text(encoding="utf-8"))

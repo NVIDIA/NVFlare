@@ -20,7 +20,7 @@ from collections.abc import Mapping
 from numbers import Real
 from pathlib import Path
 
-import adapter_checkpoint
+import evo2_adapter_checkpoint as adapter_checkpoint
 import provenance
 
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
