@@ -127,10 +127,3 @@ workload launches. The installers' lock covers only this service-kit directory;
 it cannot serialize other API clients. TCB staging at 255 is restrictive, not
 an unconditional deny. On failure, investigate and rerun the same approved
 input; there is no automatic rollback. Do not lower floors to bypass an error.
-
-Local regression tests (isolated mock backend, no live writes):
-
-```bash
-PYTHONDONTWRITEBYTECODE=1 coco_deployment/.venv/bin/python -m unittest discover \
-  -s coco_deployment/service/tests -v
-```

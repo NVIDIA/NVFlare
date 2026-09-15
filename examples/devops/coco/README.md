@@ -31,15 +31,14 @@ not establish absolute protection against every hardware/software flaw.
 ## Local validation
 
 ```bash
-python3 -m venv "$HOME/.venvs/coco-validation"
-"$HOME/.venvs/coco-validation/bin/python" -m pip install PyYAML==6.0.3
-"$HOME/.venvs/coco-validation/bin/python" validate-package.py
+python3 validate-package.py
 ```
 
-Requires Python 3.11+, PyYAML and Bash. Dependency installation needs network
-access; validation itself is offline and non-deploying. Keep the validation
-environment outside this public package. Validation is not a substitute for
-hardware-backed positive and negative tests.
+Run from this directory in the Git checkout with Python 3.11+, Git and Bash.
+Validation is offline and checks tracked sources, syntax, document links and
+shared dependencies; it does not run regression tests. For a full assembled
+package, use `--assembled` (no Git required). Static validation is not a substitute
+for hardware-backed positive and negative tests.
 Software versions and public upstream digest pins are retained for
 reproducibility, not a claim that these versions remain vulnerability-free.
 Host-specific teardown scripts and the obsolete signed-bundle installer are
@@ -66,8 +65,10 @@ python3 role_kits.py /path/to/new-coco-role-kits
 python3 /path/to/new-coco-role-kits/validate-package.py --assembled
 ```
 
-Choose a new directory outside this source package. The assembler copies only
-allowlisted public files and materializes shared dependencies into each role.
+Choose a new directory outside this source package. Assembly requires a clean
+Git checkout: commit reviewed changes first. The assembler copies only tracked
+files, excludes ignored/untracked files, and materializes shared dependencies.
+It does not assemble from an unpacked source archive or an existing role kit.
 Transfer the resulting `admin/`, `service/`, `coco/`, or `trusted_system/`
 directory only to its intended operator. Its scripts run without sibling roles,
 the shared source tree or an NVFlare checkout. Supply private configuration,

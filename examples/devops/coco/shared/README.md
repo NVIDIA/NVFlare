@@ -14,8 +14,8 @@ their own bootstrap directory; configuration, state and trust roles remain
 separate. No shared helper installs secure services or approves references.
 
 Run role entry points, not shared scripts directly. Source wrappers resolve
-this directory. `python3 role_kits.py /path/to/new-output` replaces wrappers
+this directory. From a clean Git checkout, `python3 role_kits.py /path/to/new-output` replaces wrappers
 with copies from these sources and adds the template to each generated kit.
 `validate-package.py --assembled` checks every generated dependency against
 its authoritative source. Do not edit generated copies: change shared source,
-test, and assemble a new output directory.
+validate, commit, and assemble a new output directory.

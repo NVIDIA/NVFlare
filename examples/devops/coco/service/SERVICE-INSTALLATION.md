@@ -62,13 +62,16 @@ their initial `/v2/` ping; it does not replace password authentication.
 
 ## 2. Deliver the service kit
 
-On the **trusted coordinator**, start with the reviewed local package from an
-independently authenticated source and run its offline validator before transfer.
-Validation does not establish who supplied the code.
+On the **trusted coordinator**, start with a clean Git checkout from an
+independently authenticated source, validate it and assemble role kits before
+transfer. Validation does not establish who supplied the code.
 
 ```bash
-cd /path/to/coco_deployment
+cd /path/to/NVFlare/examples/devops/coco
 python3 validate-package.py
+python3 role_kits.py /path/to/new-coco-role-kits
+cd /path/to/new-coco-role-kits
+python3 validate-package.py --assembled
 SERVICE_SSH=service_operator@secure-services.example.com
 ssh "$SERVICE_SSH" 'test ! -e /home/service_operator/coco-service-admin && install -d -m 0700 /home/service_operator/coco-service-admin'
 scp -r service/. "$SERVICE_SSH:/home/service_operator/coco-service-admin/"

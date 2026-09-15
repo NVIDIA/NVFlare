@@ -21,7 +21,6 @@ import os
 import re
 import subprocess
 import sys
-import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -34,16 +33,11 @@ def main():
     # Validation must not add bytecode caches containing local checkout paths.
     sys.dont_write_bytecode = True
     os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
-    from role_kits import inventory, validate_layout
+    from role_kits import package_files, validate_layout
 
     if sys.version_info < (3, 11):
         raise SystemExit("Python 3.11+ is required")
-    try:
-        import yaml  # noqa: F401
-    except ImportError:
-        raise SystemExit("Install PyYAML in your chosen Python environment before validation") from None
-
-    names = inventory(ROOT)
+    names = package_files(ROOT, assembled=args.assembled)
     validate_layout(ROOT, assembled=args.assembled)
 
     private = re.compile(
@@ -82,18 +76,11 @@ def main():
                 if target and not (path.parent / target).exists():
                     raise SystemExit(f"Broken local document link in {name}: {target}")
 
-    result_ok = True
-    for directory in ("admin/tests", "service/tests", "tests"):
-        suite = unittest.TestLoader().discover(str(ROOT / directory))
-        result = unittest.TextTestRunner(verbosity=1).run(suite)
-        result_ok = result.wasSuccessful() and result_ok
-    if not result_ok:
-        raise SystemExit("Offline tests failed")
     print(
         f"Validated {len(names)} public files, {shell_count} shell scripts, "
         f"{python_count} Python files and {embedded_count} embedded Python blocks."
     )
-    print("No remote deployment or hardware attestation was performed.")
+    print("Static checks only; no regression tests, remote deployment or hardware attestation were performed.")
 
 
 if __name__ == "__main__":

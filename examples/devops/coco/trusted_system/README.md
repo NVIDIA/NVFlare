@@ -88,10 +88,11 @@ release-policy checks.
 To check a complete local package after transfer, run from the package root:
 
 ```bash
-python3 validate-package.py
+python3 validate-package.py --assembled
 ```
 
-Use Python 3.11+ with PyYAML as described in the root README. This checks the
-public inventory, script syntax and offline tests, not byte-for-byte integrity,
-source authenticity or hardware attestation. Authenticate the source and
-transfer channel independently.
+Use Python 3.11+ and Bash as described in the root README. This checks files
+present, script syntax, links and shared dependencies, not regression behavior,
+package completeness, byte-for-byte integrity, source authenticity or hardware
+attestation. In a source Git checkout, omit `--assembled`. Authenticate the source
+and transfer channel independently.

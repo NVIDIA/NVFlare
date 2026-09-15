@@ -13,13 +13,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Assemble public role kits from an explicit inventory and shared sources.
+"""Assemble public role kits from a clean Git checkout and shared sources.
 
 Never executes installation scripts, reads private configuration, or downloads.
 """
 
 import argparse
 import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -30,23 +32,36 @@ for role in ("coco", "trusted_system"):
         GENERATED[f"{role}/bootstrap/{name}"] = f"shared/bootstrap/{name}"
 
 
-def inventory(root):
-    names = (root / "PACKAGE-FILES.txt").read_text().splitlines()
-    if names != sorted(set(names)):
-        raise ValueError("Public allowlist must be sorted and unique")
+def package_files(root, assembled=False):
+    if assembled:
+        paths = list(root.rglob("*"))
+        if any(path.is_symlink() or not (path.is_file() or path.is_dir()) for path in paths):
+            raise ValueError("Assembled package must contain only regular files and directories")
+        return sorted(path.relative_to(root).as_posix() for path in paths if path.is_file())
+
+    # Git's index defines the reviewed source set, not a recursive working-tree copy.
+    # No fallback to scanning is safe when Git metadata is unavailable.
+    entries = subprocess.check_output(["git", "ls-files", "--stage", "-z", "--", "."], cwd=root, text=True)
+    names = []
+    for entry in entries.split("\0"):
+        if not entry:
+            continue
+        metadata, name = entry.split("\t", 1)
+        mode, _, stage = metadata.split()
+        if mode not in ("100644", "100755") or stage != "0":
+            raise ValueError(f"Source must contain regular, non-conflicted tracked files: {name}")
+        names.append(name)
+    if not names:
+        raise ValueError("No tracked package sources found; use the NVFlare Git checkout")
     for name in names:
         path = Path(name)
         if path.is_absolute() or ".." in path.parts or str(path) != name:
-            raise ValueError("Unsafe public allowlist entry")
-    found = set()
-    for path in root.rglob("*"):
-        if path.is_symlink():
-            raise ValueError(f"Symlink is not publishable: {path.relative_to(root)}")
-        if path.is_file():
-            found.add(path.relative_to(root).as_posix())
-    if found != set(names):
-        raise ValueError(f"Public inventory mismatch: missing={set(names) - found}, extra={found - set(names)}")
-    return names
+            raise ValueError("Unsafe tracked source path")
+        if any((root / part).is_symlink() for part in (path, *path.parents)):
+            raise ValueError(f"Symlink is not publishable: {name}")
+        if not (root / path).is_file():
+            raise ValueError(f"Tracked source file is missing: {name}")
+    return sorted(names)
 
 
 def validate_layout(root, assembled=False):
@@ -70,8 +85,14 @@ def assemble(root, output):
         raise ValueError("Output must be a new directory; existing output is never overwritten")
     if output.resolve().is_relative_to(root):
         raise ValueError("Output must be outside the public source package")
-    names = inventory(root)
-    validate_layout(root, assembled=(root / "coco/bootstrap/templates/kubeadm.yaml.in").exists())
+    changes = subprocess.check_output(
+        ["git", "status", "--porcelain", "--untracked-files=no", "--", "."], cwd=root, text=True
+    )
+    if changes:
+        raise ValueError("Commit reviewed package changes before assembly; tracked sources must be clean")
+    names = package_files(root)
+    validate_layout(root)
+    subprocess.run([sys.executable, str(root / "validate-package.py")], check=True)
     output.mkdir(mode=0o755)
     for name in names:
         target = output / name
@@ -83,7 +104,6 @@ def assemble(root, output):
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(root / source, destination)
         destination.chmod(0o755 if target.endswith(".sh") else 0o644)
-    (output / "PACKAGE-FILES.txt").write_text("\n".join(sorted(set(names) | set(GENERATED))) + "\n")
     validate_layout(output, assembled=True)
     return output
 
