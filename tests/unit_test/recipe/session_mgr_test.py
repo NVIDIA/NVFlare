@@ -138,6 +138,7 @@ def test_progress_unavailable_response_uses_bounded_text_fallback(capsys):
         "target": "server",
         "log_file_name": "log.txt",
         "tail_lines": 50,
+        "max_bytes": 64 * 1024,
     }
 
 

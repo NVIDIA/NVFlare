@@ -46,7 +46,9 @@ def _show_job_progress(session, job_id, state):
         structured = True
         unavailable = response.get("unavailable", {})
         if not text and isinstance(unavailable, dict) and "server" in unavailable:
-            fallback = session.get_job_logs(job_id, target="server", log_file_name="log.txt", tail_lines=50)
+            fallback = session.get_job_logs(
+                job_id, target="server", log_file_name="log.txt", tail_lines=50, max_bytes=64 * 1024
+            )
             fallback_logs = fallback.get("logs", {})
             text = fallback_logs.get("server", "") if isinstance(fallback_logs, dict) else ""
             structured = False
