@@ -9,14 +9,14 @@ NVIDIA <br>
 ### License/Terms of Use: <br>
 Apache 2.0 <br>
 ## Use Case: <br>
-Developers and engineers generating reproducible final reports, literature-outcome summaries, and progress visualizations from completed or interrupted NVFLARE Auto-FL federated learning campaigns. <br>
+Developers and engineers use this skill to produce final reports, literature-outcome syntheses, JSON summaries, and refreshed progress plots for completed or interrupted NVFLARE Auto-FL federated learning campaigns. <br>
 
 ### Deployment Geography for Use: <br>
 Global <br>
 
 ## Requirements / Dependencies: <br>
-**Requires API Key or External Credential:** [No] <br>
-**Credential Type(s):** [None] <br>
+**Requires API Key or External Credential:** [Not Specified] <br>
+**Credential Type(s):** [None identified] <br>
 
 Do not include secrets in prompts/logs/output; use least-privilege credentials; rotate keys as appropriate. <br>
 
@@ -26,11 +26,13 @@ Mitigation: Review and scan skill before deployment. <br>
 
 ## Reference(s): <br>
 - [Auto-FL Final Report Contract](references/report-contract.md) <br>
+- [NVIDIA FLARE Documentation](https://nvflare.readthedocs.io/en/main) <br>
+- [NVIDIA FLARE GitHub](https://github.com/NVIDIA/NVFlare) <br>
 
 
 ## Skill Output: <br>
-**Output Type(s):** [Files, Analysis] <br>
-**Output Format:** [Markdown report, JSON summary, and optional PNG plot] <br>
+**Output Type(s):** [Analysis, Files] <br>
+**Output Format:** [Markdown report, JSON summary, and optional PNG progress plot] <br>
 **Output Parameters:** [1D] <br>
 **Other Properties Related to Output:** [None] <br>
 
@@ -41,35 +43,36 @@ Mitigation: Review and scan skill before deployment. <br>
 
 
 ## Evaluation Tasks: <br>
-Evaluated against 4 positive tasks in isolated k8s-sandbox pods with 1 attempt per task. <br>
+4 evaluation tasks across stopped, active-negative, global-negative, and optimize-negative Auto-FL campaign scenarios, each with 3 attempts per task in isolated sandbox pods. <br>
 
 ## Evaluation Metrics Used: <br>
 Reported benchmark dimensions: <br>
 - Security: Whether the skill avoids unsafe operations, secret leakage, and unauthorized access. <br>
 - Correctness: Whether the final answer is correct against the reference answer. <br>
-- Discoverability: Whether the expected skill was found and executed when needed. <br>
-- Effectiveness: Whether the skill helps complete the user's goal and follows expected workflow behavior. <br>
-- Efficiency: Whether the skill avoids wasted tool or skill usage through quality routing and productive tool use. <br>
+- Discoverability: Whether the expected skill was selected, decoys were avoided, and the workflow executed. <br>
+- Effectiveness: Whether the skill helped complete the user's goal (50% goal completion + 50% expected workflow adherence). <br>
+- Efficiency: Whether the skill avoided wasted tool calls and token usage (50% tool-call productivity + 50% token efficiency). <br>
 
 Underlying evaluation signals used in this run: <br>
-- `security`: Unsafe operations, secret leakage, and unauthorized access. <br>
+- `security`: Checks for unsafe operations, secret leakage, and unauthorized access. <br>
 - `accuracy`: Final-answer correctness against the reference answer. <br>
-- `skill_execution`: Whether the expected skill was found and executed. <br>
+- `skill_execution`: Whether the expected skill was selected and the workflow executed. <br>
 - `goal_accuracy`: Whether the user's goal was achieved. <br>
 - `behavior_check`: Whether the expected workflow behavior was followed. <br>
-- `skill_efficiency`: Routing quality, workspace-aware skill reads, and productive tool use. <br>
+- `skill_efficiency`: Tool-call productivity (routing scored under Discoverability). <br>
+- `token_efficiency`: Actual uncached prompt plus completion token usage. <br>
 
 
 
 ## Evaluation Results: <br>
 | Measure | Claude Code (Baseline → Skill Uplift) | Codex (Baseline → Skill Uplift) |
 |---|---:|---:|
-| Overall | 58% → 88% (+30 points) | 46% → 65% (+19 points) |
-| Security | 100% → 100% (±0 points) | 50% → 75% (+25 points) |
-| Correctness | 50% → 100% (+50 points) | 35% → 55% (+20 points) |
-| Discoverability | 48% → 86% (+38 points) | 41% → 72% (+31 points) |
-| Effectiveness | 48% → 71% (+23 points) | 62% → 50% (-12 points) |
-| Efficiency | 44% → 82% (+38 points) | 43% → 75% (+32 points) |
+| Overall | 88.2% — uplift unavailable | 62.3% — uplift unavailable |
+| Security | 88.9% → 100.0% (+11.1 points) | 70.0% → 85.7% (+15.7 points) |
+| Correctness | 22.2% → 100.0% (+77.8 points) | 20.0% → 45.7% (+25.7 points) |
+| Discoverability | 83.3% — uplift unavailable | 56.4% — uplift unavailable |
+| Effectiveness | 31.1% → 66.3% (+35.2 points) | 34.0% → 28.6% (-5.4 points) |
+| Efficiency | 91.2% — uplift unavailable | 94.9% — uplift unavailable |
 
 ## Skill Version(s): <br>
 0.1.0 (source: frontmatter) <br>
