@@ -640,7 +640,7 @@ class CCManager(FLComponent):
 
             if not cc_info:
                 self.logger.error("Failed to generate any tokens for validation request")
-                return make_reply(F3ReturnCode.ERROR, "Failed to generate tokens", None)
+                return make_reply(F3ReturnCode.PROCESS_EXCEPTION, "Failed to generate tokens", None)
 
             # Return fresh tokens
             payload = {"site_name": self.site_name, "cc_info": cc_info}
@@ -650,7 +650,7 @@ class CCManager(FLComponent):
 
         except Exception as e:
             self.logger.exception(f"Error handling token refresh request: {e}")
-            return make_reply(F3ReturnCode.ERROR, f"Failed to generate token: {str(e)}", None)
+            return make_reply(F3ReturnCode.PROCESS_EXCEPTION, f"Failed to generate token: {str(e)}", None)
 
     def _handle_get_sites_request(self, request):
         """Server side: Handle request for current list of participating sites."""
@@ -669,7 +669,7 @@ class CCManager(FLComponent):
 
         except Exception as e:
             self.logger.exception(f"Error handling get_sites request: {e}")
-            return make_reply(F3ReturnCode.ERROR, f"Failed to get sites: {str(e)}", None)
+            return make_reply(F3ReturnCode.PROCESS_EXCEPTION, f"Failed to get sites: {str(e)}", None)
 
     def _shutdown_system(self, reason: str, fl_ctx: FLContext):
         """Shuts down the entire NVFlare system due to CC validation failure."""

@@ -32,6 +32,9 @@ from nvflare.app_opt.confidential_computing.cc_manager import (
     CCManager,
 )
 from nvflare.app_opt.confidential_computing.tdx_authorizer import TDX_NAMESPACE, TDXAuthorizer
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
+from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
+from nvflare.fuel.f3.cellnet.utils import new_cell_message
 
 VALID_TOKEN = "valid_token"
 INVALID_TOKEN = "invalid_token"
@@ -147,6 +150,81 @@ def cc_test_env(basic_config) -> Generator[tuple[CCManager, FLContext, Mock], No
 
 class TestCCManager:
     """Test suite for CCManager class."""
+
+    @pytest.mark.parametrize("failure", ["empty", "issuer_error", "unexpected_error"])
+    def test_token_refresh_failure_returns_error_reply(self, cc_test_env, failure):
+        manager, _, issuer = cc_test_env
+        if failure == "empty":
+            issuer.generate.return_value = ""
+        elif failure == "issuer_error":
+            issuer.generate.side_effect = CCTokenGenerateError("issuer unavailable")
+        else:
+            issuer.generate.side_effect = RuntimeError("unexpected issuer failure")
+
+        reply = manager._handle_token_refresh_request(new_cell_message({}, {"requester": "client1"}))
+
+        assert reply.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.PROCESS_EXCEPTION
+        expected_error = (
+            "Failed to generate token: unexpected issuer failure"
+            if failure == "unexpected_error"
+            else "Failed to generate tokens"
+        )
+        assert reply.get_header(MessageHeaderKey.ERROR) == expected_error
+        assert reply.payload is None
+
+    def test_token_refresh_success_reply(self, cc_test_env):
+        manager, _, _ = cc_test_env
+        manager.site_name = "client1"
+
+        reply = manager._handle_token_refresh_request(new_cell_message({}, {"requester": "server"}))
+
+        assert reply.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.OK
+        assert reply.get_header(MessageHeaderKey.ERROR) is None
+        assert reply.payload == {
+            "site_name": "client1",
+            "cc_info": [{CC_TOKEN: VALID_TOKEN, CC_NAMESPACE: TDX_NAMESPACE, CC_TOKEN_VALIDATED: False}],
+        }
+
+    def test_get_sites_failure_returns_error_reply(self, cc_test_env):
+        manager, _, _ = cc_test_env
+        with patch.object(manager, "_get_all_sites", side_effect=RuntimeError("site lookup failed")):
+            reply = manager._handle_get_sites_request(new_cell_message({}, {"requester": "client1"}))
+
+        assert reply.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.PROCESS_EXCEPTION
+        assert reply.get_header(MessageHeaderKey.ERROR) == "Failed to get sites: site lookup failed"
+        assert reply.payload is None
+
+    def test_get_sites_success_reply(self, cc_test_env):
+        manager, _, _ = cc_test_env
+        sites = [("client1-fqcn", "client1")]
+        with patch.object(manager, "_get_all_sites", return_value=sites):
+            reply = manager._handle_get_sites_request(new_cell_message({}, {"requester": "client1"}))
+
+        assert reply.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.OK
+        assert reply.get_header(MessageHeaderKey.ERROR) is None
+        assert reply.payload == {"sites": sites}
+
+    def test_periodic_validation_error_reply_remains_fail_closed(self, cc_test_env):
+        manager, context, issuer = cc_test_env
+        issuer.generate.return_value = ""
+        reply = manager._handle_token_refresh_request(new_cell_message({}, {"requester": "server"}))
+        issuer.generate.return_value = VALID_TOKEN
+        manager.site_name = "server"
+        cell = Mock()
+        cell.send_request.return_value = reply
+        context.get_engine().get_cell = Mock(return_value=cell)
+
+        with (
+            patch.object(manager, "_get_all_cc_enabled_sites", return_value=[("client1-fqcn", "client1")]),
+            patch.object(manager, "_shutdown_system") as shutdown,
+            patch.object(manager, "_validate_participants_tokens") as validate,
+        ):
+            assert manager._perform_cross_site_validation(context) is False
+
+        validate.assert_not_called()
+        shutdown.assert_called_once_with(
+            "Exception in cross-site validation: Failed to collect tokens from sites: ['client1-fqcn']", context
+        )
 
     def test_setup_cc_authorizers(self, basic_config):
         """Test setting up CC authorizers."""
