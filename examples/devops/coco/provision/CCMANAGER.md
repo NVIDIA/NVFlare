@@ -106,8 +106,14 @@ one another, while the ordinary server verifies every protected client.
 
 `token_expiration` is the maximum accepted EAR age (1–300 seconds), not a
 request to change AS token lifetime. `check_frequency` must be positive and
-smaller than that limit (defaults: 300/120 seconds). The outer proof lasts at
-most 60 seconds. AA may return a cached EAR; a new NVFlare proof does not imply
+smaller than that limit (defaults: 300/120 seconds). The outer proof lifetime is
+configured separately by the authorizer constructor argument `proof_lifetime_seconds`
+(positive integer, default 300). Generation sets `exp = iat + proof_lifetime_seconds`;
+verification limits both proof age and declared lifetime to its locally configured
+value. Configure matching values on the issuer and verifiers; a stricter verifier
+rejects longer-lived proofs. Existing generated kits use the 300-second default.
+This option does not extend EAR validity or add clock-skew tolerance or retries.
+AA may return a cached EAR; a new NVFlare proof does not imply
 a new hardware attestation at every poll. Too-old or expired EAR fails closed.
 
 ## Direct client/server API
@@ -133,6 +139,7 @@ client = CoCoAuthorizer(
     trustee_public_key=Path("trustee-as-public.pem").read_text(),
     audience="nvflare-coco:example-project",
     site_name="site-1",
+    proof_lifetime_seconds=300,
 )
 proof = client.generate()
 # Send only proof to the server over an authenticated, encrypted connection.
@@ -150,6 +157,7 @@ from nvflare.app_opt.confidential_computing.coco_authorizer import CoCoAuthorize
 verifier = CoCoAuthorizer(
     trustee_public_key=Path("trustee-as-public.pem").read_text(),
     audience="nvflare-coco:example-project",
+    proof_lifetime_seconds=300,
 )
 
 def accept_attestation(received_proof: str, authenticated_site: str) -> bool:

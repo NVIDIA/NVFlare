@@ -54,7 +54,14 @@ class CoCoAuthorizer(CCAuthorizer):
         site_name=None,
         token_url="http://127.0.0.1:8006/aa/token",
         max_token_age_seconds=300,
+        proof_lifetime_seconds=300,
     ):
+        """Configure EAR freshness and the generated/accepted outer proof lifetime separately.
+
+        proof_lifetime_seconds must be a positive integer. Verifiers reject proofs
+        older than this limit or with a declared lifetime exceeding it. EAR expiry
+        and max_token_age_seconds are enforced independently.
+        """
         self.trustee_key = serialization.load_pem_public_key(trustee_public_key.encode())
         if not isinstance(self.trustee_key, ec.EllipticCurvePublicKey) or not isinstance(
             self.trustee_key.curve, ec.SECP256R1
@@ -64,6 +71,8 @@ class CoCoAuthorizer(CCAuthorizer):
             raise ValueError("A project-specific audience is required")
         if type(max_token_age_seconds) is not int or not 1 <= max_token_age_seconds <= 300:
             raise ValueError("max_token_age_seconds must be 1..300")
+        if type(proof_lifetime_seconds) is not int or proof_lifetime_seconds <= 0:
+            raise ValueError("proof_lifetime_seconds must be a positive integer")
         url = urlsplit(token_url)
         if (
             url.scheme != "http"
@@ -79,6 +88,7 @@ class CoCoAuthorizer(CCAuthorizer):
         self.site_name = site_name
         self.token_url = token_url
         self.max_age = max_token_age_seconds
+        self.proof_lifetime_seconds = proof_lifetime_seconds
         self.seen = {}
         self.lock = threading.Lock()
 
@@ -168,7 +178,7 @@ class CoCoAuthorizer(CCAuthorizer):
                     "sub": self.site_name,
                     "aud": self.audience,
                     "iat": now,
-                    "exp": now + 60,
+                    "exp": now + self.proof_lifetime_seconds,
                     "jti": secrets.token_hex(24),
                 },
                 private,
@@ -207,8 +217,8 @@ class CoCoAuthorizer(CCAuthorizer):
                 or (expected_site is not None and proof["sub"] != expected_site)
                 or type(proof["iat"]) is not int
                 or type(proof["exp"]) is not int
-                or not 0 <= now - proof["iat"] <= 60
-                or not 0 < proof["exp"] - proof["iat"] <= 60
+                or not 0 <= now - proof["iat"] <= self.proof_lifetime_seconds
+                or not 0 < proof["exp"] - proof["iat"] <= self.proof_lifetime_seconds
                 or not isinstance(proof["jti"], str)
                 or len(proof["jti"]) != 48
             ):

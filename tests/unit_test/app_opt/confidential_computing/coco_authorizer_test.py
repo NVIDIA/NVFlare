@@ -80,15 +80,16 @@ def material(request):
     client = CoCoAuthorizer(**args, site_name="site-1")
     verifier = CoCoAuthorizer(**args)
 
-    def generate():
+    def generate(**overrides):
+        configured_client = CoCoAuthorizer(**args, site_name="site-1", **overrides) if overrides else client
         reply = {
             "token": jwt.encode(claims, signer, algorithm="ES256"),
             "tee_keypair": key.private_bytes(
                 serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()
             ).decode(),
         }
-        with patch.object(client, "_get_guest_token", return_value=reply):
-            return client.generate()
+        with patch.object(configured_client, "_get_guest_token", return_value=reply):
+            return configured_client.generate()
 
     return claims, client, verifier, generate, key
 
@@ -102,6 +103,62 @@ def test_valid_proof_and_single_use(material):
     assert verifier.verify(generate())
     with pytest.raises(CCTokenGenerateError):
         verifier.generate()
+
+
+@pytest.mark.parametrize("lifetime", [None, 60, 600])
+def test_configurable_proof_lifetime(material, lifetime):
+    _, client, _, generate, _ = material
+    options = {} if lifetime is None else {"proof_lifetime_seconds": lifetime}
+    token = generate(**options)
+    proof = jwt.decode(token, options={"verify_signature": False})
+    expected = 300 if lifetime is None else lifetime
+    assert proof["exp"] - proof["iat"] == expected
+    public = client.trustee_key.public_bytes(
+        serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo
+    ).decode()
+    verifier = CoCoAuthorizer(public, client.audience, **options)
+    assert verifier.proof_lifetime_seconds == expected
+    assert verifier.verify_for_site(token, "site-1")
+    assert not verifier.verify_for_site(token, "site-1")
+
+
+@pytest.mark.parametrize("lifetime", [0, -1, True, False, 1.5, "300", None])
+def test_invalid_proof_lifetime_rejected(lifetime):
+    public = (
+        ec.generate_private_key(ec.SECP256R1())
+        .public_key()
+        .public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo)
+        .decode()
+    )
+    with pytest.raises(ValueError, match="proof_lifetime_seconds must be a positive integer"):
+        CoCoAuthorizer(public, "test", proof_lifetime_seconds=lifetime)
+
+
+@pytest.mark.parametrize("failure", ["too_long", "expired", "future"])
+def test_configured_verifier_preserves_time_checks(material, failure):
+    _, client, _, generate, key = material
+    public = client.trustee_key.public_bytes(
+        serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo
+    ).decode()
+    verifier = CoCoAuthorizer(public, client.audience, proof_lifetime_seconds=60)
+    proof = jwt.decode(generate(proof_lifetime_seconds=60), options={"verify_signature": False})
+    if failure == "too_long":
+        proof["exp"] = proof["iat"] + 61
+    elif failure == "expired":
+        proof["iat"] -= 61
+        proof["exp"] -= 61
+    else:
+        proof["iat"] += 30
+        proof["exp"] += 30
+    token = jwt.encode(proof, key, algorithm=CoCoAuthorizer._algorithm(key))
+    assert not verifier.verify(token)
+
+
+def test_longer_proof_does_not_extend_ear_freshness(material):
+    claims, _, _, generate, _ = material
+    claims["iat"] -= 301
+    with pytest.raises(CCTokenGenerateError):
+        generate(proof_lifetime_seconds=600)
 
 
 def test_peer_bound_proof(material):
@@ -168,8 +225,8 @@ def test_invalid_proof_rejected(material, failure):
         elif failure == "subject":
             proof["sub"] = ""
         elif failure == "time":
-            proof["iat"] -= 120
-            proof["exp"] -= 120
+            proof["iat"] -= verifier.proof_lifetime_seconds + 1
+            proof["exp"] -= verifier.proof_lifetime_seconds + 1
         else:
             claims = jwt.decode(proof["ear"], options={"verify_signature": False})
             proof["ear"] = jwt.encode(claims, ec.generate_private_key(ec.SECP256R1()), algorithm="ES256")
