@@ -117,43 +117,14 @@ class RoleKitTests(unittest.TestCase):
 
     def test_slides_have_one_source_and_three_slides(self):
         names = kits.inventory(ROOT)
-        self.assertNotIn("docs/coco-security-design-3-slides.html", names)
+        self.assertEqual(
+            [name for name in names if name.startswith("docs/")], ["docs/coco-security-design-3-slides.md"]
+        )
         self.assertFalse(any(name.endswith((".pptx", ".pdf", "CURRENT-STATE.md")) for name in names))
         markdown = (ROOT / "docs/coco-security-design-3-slides.md").read_text()
-        self.assertIn("marp: true", markdown)
+        self.assertTrue(markdown.startswith("# Architecture:"))
         self.assertEqual(len([line for line in markdown.splitlines() if line.startswith("# ")]), 3)
-        self.assertEqual(markdown.count("\n---\n"), 3)  # Frontmatter end plus two slide breaks.
-
-    def test_exporter_command_contract_and_no_overwrite(self):
-        binaries = Path(self.temp.name) / "bin"
-        binaries.mkdir()
-        marp = binaries / "marp"
-        marp.write_text(
-            '#!/bin/sh\nif [ "$1" = --version ]; then echo "@marp-team/marp-cli v4.5.1 (fixture)"; exit; fi\n'
-            'while [ "$#" -gt 0 ]; do\n'
-            '  if [ "$1" = --output ]; then shift; printf fixture > "$1"; exit; fi\n'
-            "  shift\ndone\nexit 1\n"
-        )
-        node = binaries / "node"
-        node.write_text("#!/bin/sh\necho v24.0.0\n")
-        for executable in (marp, node):
-            executable.chmod(0o755)
-        output = Path(self.temp.name) / "exports"
-        env = {**os.environ, "MARP_BIN": str(marp), "BROWSER_BIN": "", "PATH": f"{binaries}:{os.environ['PATH']}"}
-        command = ["bash", str(ROOT / "docs/export-slides.sh")]
-        result = subprocess.run(command + [str(output)], env=env, text=True, capture_output=True)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        for suffix in ("html", "pdf", "pptx"):
-            self.assertEqual((output / f"coco-security-design-3-slides.{suffix}").read_text(), "fixture")
-        for destination in (output, ROOT / "not-an-export"):
-            result = subprocess.run(command + [str(destination)], env=env, text=True, capture_output=True)
-            self.assertNotEqual(result.returncode, 0)
-        marp.write_text('#!/bin/sh\necho "@marp-team/marp-cli v0.0.0 (fixture)"\n')
-        result = subprocess.run(
-            command + [str(output.parent / "wrong-version")], env=env, text=True, capture_output=True
-        )
-        self.assertNotEqual(result.returncode, 0)
-        self.assertFalse((output.parent / "wrong-version").exists())
+        self.assertEqual(markdown.count("\n---\n"), 2)
 
 
 if __name__ == "__main__":

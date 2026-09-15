@@ -53,9 +53,7 @@ coco/lib/validate-config.sh
 coco/platform.env.example
 coco/public/README.md
 coco/public/kata-platform.env
-docs/README.md
 docs/coco-security-design-3-slides.md
-docs/export-slides.sh
 provision/CCMANAGER.md
 provision/README.md
 provision/cc_site-1.yml

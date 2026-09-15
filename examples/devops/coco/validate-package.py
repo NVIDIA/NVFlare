@@ -54,8 +54,10 @@ def main():
     shell_count = python_count = embedded_count = 0
     for name in names:
         path = ROOT / name
-        if path.suffix in (".pptx", ".pdf") or name == "docs/coco-security-design-3-slides.html":
-            raise SystemExit(f"Publish slide exports separately, not in the source/role package: {name}")
+        if name.startswith("docs/") and name != "docs/coco-security-design-3-slides.md":
+            raise SystemExit(f"Keep only the Markdown design slides in docs/: {name}")
+        if path.suffix in (".pptx", ".pdf"):
+            raise SystemExit(f"Generated slide exports are not part of this package: {name}")
         if path.name == "CURRENT-STATE.md":
             raise SystemExit("Keep package capabilities in the main README, not role state documents")
         content = path.read_text()

@@ -52,10 +52,10 @@ source wrappers without their shared tree or edit generated implementation copie
 Regeneration refuses to overwrite existing output. Runtime configuration remains
 private and is supplied separately after transfer.
 
-Slide exports are separate documentation/release artifacts, not role-kit files.
-Use [the reproducible export procedure](docs/README.md); maintain only the
-Markdown slide source in Git. The validator rejects generated slide exports and
-duplicated role `CURRENT-STATE.md` summaries even if added to the inventory.
+The [design slides](docs/coco-security-design-3-slides.md) are provided only as
+Markdown. No slide exporter or generated HTML/PDF/PPTX is included. The validator
+rejects other files in `docs/` and duplicated role `CURRENT-STATE.md` summaries
+even if added to the inventory.
 
 ## Offline regression checks
 

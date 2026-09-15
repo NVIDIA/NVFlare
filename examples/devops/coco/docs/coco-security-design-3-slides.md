@@ -1,23 +1,3 @@
----
-marp: true
-theme: default
-size: 16:9
-paginate: true
-style: |
-  section { font-size: 18px; padding: 32px 42px; }
-  h1 { font-size: 30px; color: #10243e; }
-  h2 { font-size: 22px; color: #386300; margin-top: 12px; }
-  li { margin-top: 3px; }
-  table { font-size: 14px; line-height: 1.3; }
-  th, td { padding: 6px 10px; }
-  section.architecture { display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: auto auto 1fr; gap: 16px 24px; }
-  section.architecture h1 { grid-column: 1 / -1; }
-  section.architecture h2 { grid-row: 2; margin: 0; }
-  section.architecture ul { grid-row: 3; margin: 0; padding-left: 22px; }
----
-
-<!-- _class: architecture -->
-
 # Architecture: three machines, one trust decision
 
 ## NVFlare provisioning node

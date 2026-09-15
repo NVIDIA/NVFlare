@@ -76,5 +76,4 @@ The full assembled package retains cross-role documentation links for reference.
 
 ## Design slides
 
-[Authoritative Markdown](docs/coco-security-design-3-slides.md) ·
-[Generate HTML/PDF/PPTX exports](docs/README.md)
+[Design slides (Markdown)](docs/coco-security-design-3-slides.md)

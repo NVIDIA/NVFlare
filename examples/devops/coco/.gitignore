@@ -45,7 +45,7 @@ platform-tools/
 operations/
 recovery/
 coco-app
-# Slide exports belong in external documentation/release artifacts.
+# Design slides are maintained only as Markdown.
 docs/*.html
 docs/*.pdf
 docs/*.pptx
