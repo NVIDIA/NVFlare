@@ -17,6 +17,7 @@ import time
 from threading import Lock
 from typing import Any, Dict, Optional, Set, Union
 
+from nvflare.apis.controller_spec import TaskCompletionStatus
 from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
@@ -236,6 +237,9 @@ class FedAvg(BaseFedAvg):
 
                 # Wait for all results to be processed
                 while self.get_num_standing_tasks():
+                    if round_state["failed"]:
+                        self.cancel_all_tasks(TaskCompletionStatus.ERROR)
+                        break
                     if self.abort_signal.triggered:
                         with round_state["lock"]:
                             round_state["closed"] = True

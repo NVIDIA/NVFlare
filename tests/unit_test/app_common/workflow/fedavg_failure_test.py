@@ -19,7 +19,7 @@ from unittest.mock import Mock
 import pytest
 
 from nvflare.apis.client import Client
-from nvflare.apis.controller_spec import ClientTask
+from nvflare.apis.controller_spec import ClientTask, TaskCompletionStatus
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.signal import Signal
@@ -48,9 +48,11 @@ def prepare_controller(monkeypatch, model, rounds=1):
     return controller
 
 
-@pytest.mark.parametrize("fault", ["missing", "metrics", None])
+@pytest.mark.parametrize(
+    "fault,outstanding", [("missing", False), ("missing", True), ("metrics", False), (None, False)]
+)
 @pytest.mark.parametrize("good_first", [True, False])
-def test_failed_round_preserves_checkpoint(tmp_path, monkeypatch, fault, good_first):
+def test_failed_round_preserves_checkpoint(tmp_path, monkeypatch, fault, outstanding, good_first):
     torch = pytest.importorskip("torch")
     from safetensors.torch import save_file
 
@@ -89,12 +91,19 @@ def test_failed_round_preserves_checkpoint(tmp_path, monkeypatch, fault, good_fi
         accepted.append(deliver(controller, task, {k: lazy.make_lazy_ref(k) for k in lazy.keys()}, "bad"))
 
     monkeypatch.setattr(controller, "broadcast", broadcast)
+    cancel = Mock()
+    if outstanding:
+        monkeypatch.setattr(controller, "get_num_standing_tasks", lambda: 1)
+        monkeypatch.setattr(controller, "cancel_all_tasks", cancel)
+        monkeypatch.setattr(fedavg_module.time, "sleep", Mock(side_effect=AssertionError("waiting after failure")))
     if fault:
         with pytest.raises(RuntimeError, match="refusing to update or save"):
             controller.run()
         assert accepted == ([True, False] if good_first else [False])
         update.assert_not_called()
         assert saved_path.read_bytes() == before
+        if outstanding:
+            cancel.assert_called_once_with(TaskCompletionStatus.ERROR)
     else:
         controller.run()
         actual = torch.load(saved_path, weights_only=True)["model"]
