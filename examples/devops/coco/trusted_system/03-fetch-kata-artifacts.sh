@@ -91,6 +91,11 @@ PY
 find "${KATA_ROOT}" -type f -print0 | sort -z | xargs -0 sha256sum \
     > "${PROFILE_DIR}/kata-artifacts.sha256"
 
+# Preserve the upstream payload and derive only the reviewed token-API change.
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+python3 "$SCRIPT_DIR/lib/kata-runtime-profile.py" derive "$KATA_CONFIG" \
+    "$PROFILE_DIR/approved-kata-config.toml" "$PROFILE_DIR/kata-runtime-profile.json"
+
 printf '\nCollected immutable inputs in %s\n' "${PROFILE_DIR}"
 printf 'Next: install runtime (04), define profile (05), prepare (06), rehearse (07),\n'
 printf 'repeat (08), finalize (09), then export with stage 10. See SEC-SYS-LAUNCH-PROFILE.md for workload-profile capture and repeat verification.\n'

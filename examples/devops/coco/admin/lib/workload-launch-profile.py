@@ -43,6 +43,7 @@ def load_profile(path, expected_sha256, runtime, kata_version):
     profile = json.loads(raw, object_pairs_hook=unique_object)
     keys = {
         "schema",
+        "guest_token_api",
         "profile_id",
         "runtime_class",
         "kata_version",
@@ -53,7 +54,10 @@ def load_profile(path, expected_sha256, runtime, kata_version):
         "pod_constraints",
     }
     require(isinstance(profile, dict) and set(profile) == keys, "unexpected launch-profile schema fields")
-    require(profile["schema"] == "coco-approved-workload-launch/v1", "unsupported launch-profile schema")
+    require(
+        profile["schema"] == "coco-approved-workload-launch/v2", "rehearse and export a token-API-enabled v2 profile"
+    )
+    require(profile["guest_token_api"] == "guest-local-aa-token/v1", "approved profile lacks the guest-local token API")
     require(
         isinstance(profile["profile_id"], str)
         and bool(re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9._-]*", profile["profile_id"])),

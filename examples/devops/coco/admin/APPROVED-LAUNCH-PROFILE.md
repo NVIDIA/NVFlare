@@ -4,6 +4,11 @@ The Pod generator requires an authenticated launch contract from the trusted
 platform owner. It no longer relies only on manually matching the workload's
 resource fields to the measurement rehearsal.
 
+Only `coco-approved-workload-launch/v2` with
+`guest_token_api: guest-local-aa-token/v1` is accepted. Follow the
+[runtime-profile migration](../RUNTIME-PROFILE.md); a v1 profile must be replaced
+by a newly rehearsed and authenticated contract, not edited to add this field.
+
 ## Two separate handoffs
 
 | Recipient | File | Purpose |
@@ -39,9 +44,9 @@ sha256sum "$PROFILE/handoff-with-admin/admin/approved-workload-launch-profile.js
 
 Outputs must not already exist. The existing two-argument stage-10 command
 still emits only secure services' five-value JSON. No extra numbered stage is needed.
-For older finalizations without the new evidence bindings, preserve the old
-final environment and rerun stage 09 against the retained verified evidence;
-do not insert approval hashes by hand to bypass finalization.
+For older profiles without the token API, preserve their evidence and create a
+new profile through stages 03–10. Do not insert approval hashes or capability
+fields by hand to bypass finalization.
 
 ## 2. Authenticate and install on provisioning_node
 
@@ -63,8 +68,8 @@ install -m 0644 "$INCOMING" public/approved-workload-launch-profile.json
 ```
 
 Set `WORKLOAD_LAUNCH_PROFILE_SHA256` in this kit's trusted `platform.env` to
-that authenticated value. The checked-in kit contains the tested profile and
-the above pin. Protect the platform configuration, validator and contract
+that authenticated value. The checked-in kit contains no deployment-specific
+approved profile or pin. Protect the platform configuration, validator and contract
 from untrusted modification. A workload `.env` cannot override these readonly
 settings after they are loaded. The pin is a trusted configuration check,
 not a security boundary against an administrator who can edit both code and pin.

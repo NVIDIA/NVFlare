@@ -72,20 +72,16 @@ new platform references before using it. These provisioning changes deliberately
 do not alter a cluster runtime or reuse an old measurement after such changes.
 
 In the tested pinned Kata 3.29.0 guest, the default REST feature exposed resource
-routes but not `/aa/token`. The rehearsal enabled the token route with this
-per-Pod annotation, while retaining the existing runtime kernel parameters:
-
-```yaml
-io.katacontainers.config.hypervisor.kernel_params: agent.guest_components_rest_api=all
-```
-
-Pass only the additional option here. Kata 3.29.0 merges annotation parameters
-by key; repeating the full base command line can collapse repeated `pci=`
-options and prevent VM startup. Configure `aa.toml` in InitData with the intended
-KBS URL and authenticated TLS certificate as well. Do not expose the loopback API
-outside the guest. This annotation is a tested prerequisite, not an approved
-measurement or a substitute for the trusted launch-profile workflow. Enabling
-it changed the measured launch; approval of the original profile was insufficient.
+routes but not `/aa/token`. The historical diagnostic used a per-Pod kernel
+override; that is not supported by the packaged workload's approved profile.
+The packaged workflow now derives and installs a runtime-level configuration
+with `agent.guest_components_rest_api=all`, preserving all other parameters,
+including repeated `pci=` options. Follow the [runtime-profile procedure](../RUNTIME-PROFILE.md)
+to collect and approve a new measurement and v2 admin contract before provisioning.
+Do not add a kernel-parameter annotation to the generated Pod or reuse the old
+measurement. Configure `aa.toml` in InitData with the intended KBS URL and
+authenticated TLS certificate as well. Do not expose the loopback API outside
+the guest or print its private-key-bearing response.
 
 ## Provisioning and generated configuration
 

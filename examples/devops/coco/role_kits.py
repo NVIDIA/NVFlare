@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -28,6 +28,7 @@ ROOT = Path(__file__).resolve().parent
 ROLES = ("admin", "service", "coco", "trusted_system")
 GENERATED = {f"{role}/lib/validate-config.sh": "shared/validate-config.sh" for role in ROLES}
 for role in ("coco", "trusted_system"):
+    GENERATED[f"{role}/lib/kata-runtime-profile.py"] = "shared/kata-runtime-profile.py"
     for name in ("lib/common.sh", "templates/kubeadm.yaml.in", "10-install-kubernetes.sh"):
         GENERATED[f"{role}/bootstrap/{name}"] = f"shared/bootstrap/{name}"
 
@@ -74,7 +75,8 @@ def validate_layout(root, assembled=False):
                 raise ValueError(f"Keep only the shared template in source: {target}")
         else:
             text = (root / target).read_text()
-            if "/shared/" not in text or len(text.splitlines()) > 8:
+            code_lines = [line for line in text.splitlines() if line.strip() and not line.lstrip().startswith("#")]
+            if "/shared/" not in text or len(code_lines) > 8:
                 raise ValueError(f"Source role entry point must be a thin shared-code wrapper: {target}")
 
 

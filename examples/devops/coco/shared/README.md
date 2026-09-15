@@ -3,6 +3,7 @@
 Maintain these implementations here, not in role copies:
 
 - `validate-config.sh`: hostname, endpoint and private-directory checks for all four roles.
+- `kata-runtime-profile.py`: reviewed token-API configuration derivation and verification for trusted-system and CoCo kits.
 - `bootstrap/lib/common.sh`: cluster-only configuration, download and bootstrap helpers.
 - `bootstrap/10-install-kubernetes.sh`: Kubernetes/containerd/CNI installation for CoCo and the trusted platform.
 - `bootstrap/templates/kubeadm.yaml.in`: their common kubeadm template.

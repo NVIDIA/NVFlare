@@ -33,24 +33,31 @@ done
 
 KATA_CONFIG_REL="$(cat "${PROFILE_DIR}/kata-config-relative-path.txt")"
 PINNED_KATA_CONFIG="${PROFILE_DIR}/${KATA_CONFIG_REL}"
+APPROVED_KATA_CONFIG="${PROFILE_DIR}/approved-kata-config.toml"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+RUNTIME_PROFILE_HELPER="$SCRIPT_DIR/lib/kata-runtime-profile.py"
 INSTALLED_KATA_CONFIG='/opt/kata/share/defaults/kata-containers/configuration-qemu-nvidia-gpu-snp.toml'
 KATA_RUNTIME='/opt/kata/bin/kata-runtime'
 [[ -s "${PINNED_KATA_CONFIG}" && -s "${INSTALLED_KATA_CONFIG}" && -x "${KATA_RUNTIME}" ]] \
     || die 'pinned or installed Kata SNP runtime input is missing'
-mapfile -d '' -t AUTO_LAUNCH_INPUTS < <(python3 - "${PINNED_KATA_CONFIG}" "${KATA_RUNTIME}" \
-    "${INSTALLED_KATA_CONFIG}" <<'PY'
+sha256sum --check --strict "$PROFILE_DIR/kata-artifacts.sha256" >/dev/null
+python3 "$RUNTIME_PROFILE_HELPER" verify "$PINNED_KATA_CONFIG" "$APPROVED_KATA_CONFIG" \
+    "$PROFILE_DIR/kata-runtime-profile.json" --installed "$INSTALLED_KATA_CONFIG"
+mapfile -d '' -t AUTO_LAUNCH_INPUTS < <(python3 - "${APPROVED_KATA_CONFIG}" "${KATA_RUNTIME}" \
+    "${INSTALLED_KATA_CONFIG}" "$RUNTIME_PROFILE_HELPER" <<'PY'
 import json
+import runpy
 import subprocess
 import sys
 import tomllib
 
 with open(sys.argv[1], "rb") as stream:
-    pinned_config = tomllib.load(stream)
+    approved_config = tomllib.load(stream)
 with open(sys.argv[3], "rb") as stream:
     installed_config = tomllib.load(stream)
-if installed_config != pinned_config:
-    raise SystemExit("installed Kata SNP settings differ from the pinned artifact")
-qemu = pinned_config["hypervisor"]["qemu"]
+if installed_config != approved_config:
+    raise SystemExit("installed Kata SNP settings differ from the approved derivation")
+qemu = approved_config["hypervisor"]["qemu"]
 vcpus = qemu.get("default_vcpus")
 if not isinstance(vcpus, int) or vcpus < 1:
     raise SystemExit("pinned default_vcpus is not a positive integer")
@@ -63,6 +70,7 @@ if not isinstance(cmdline, str) or not cmdline:
     raise SystemExit("Kata did not report its effective kernel parameters")
 configured = qemu.get("kernel_params", "").split()
 effective = cmdline.split()
+runpy.run_path(sys.argv[4])["require_token_api"](cmdline)
 if any(item not in effective for item in configured):
     raise SystemExit("effective Kata kernel parameters omit a pinned configured parameter")
 
@@ -119,6 +127,9 @@ REPORT_CERTS="${TCB_EVIDENCE_DIR}/certs"
 REHEARSAL_RUN="${PROFILE_DIR}/rehearsal-collector-build"
 if [[ -n "${REHEARSAL_WORKLOAD_YAML:-}" ]]; then
     [[ -s "${REHEARSAL_RUN}/actual-launch.json" && -s "${PROFILE_DIR}/approved-launch-profile.json" ]] || die 'Missing approved profile or actual launch capture'
+    python3 "$RUNTIME_PROFILE_HELPER" verify "$PINNED_KATA_CONFIG" "$APPROVED_KATA_CONFIG" \
+        "$PROFILE_DIR/kata-runtime-profile.json" --installed "$INSTALLED_KATA_CONFIG" \
+        --launch "$REHEARSAL_RUN/actual-launch.json"
     for binding in \
         "Actual launch SHA-256|$(sha256sum "${REHEARSAL_RUN}/actual-launch.json" | awk '{print $1}')" \
         "Workload source SHA-256|$(sha256sum "${REHEARSAL_WORKLOAD_YAML}" | awk '{print $1}')"; do

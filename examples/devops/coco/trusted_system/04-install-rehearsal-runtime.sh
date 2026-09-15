@@ -23,6 +23,19 @@ hctl upgrade --install kata-deploy "$CHART" --namespace kata-system --create-nam
 kctl -n kata-system rollout status daemonset/kata-deploy --timeout=15m
 [[ $(kctl -n kata-system get daemonset kata-deploy -o jsonpath='{.spec.template.spec.containers[?(@.name=="kube-kata")].image}') == "$KATA_DEPLOY_AMD64" ]]
 sudo test -x /opt/kata/bin/containerd-shim-kata-v2
+UPSTREAM_CONFIG="$PROFILE_DIR/$(cat "$PROFILE_DIR/kata-config-relative-path.txt")"
+INSTALLED_CONFIG=/opt/kata/share/defaults/kata-containers/configuration-qemu-nvidia-gpu-snp.toml
+sha256sum --check --strict "$PROFILE_DIR/kata-artifacts.sha256" >/dev/null
+python3 "$SCRIPT_DIR/lib/kata-runtime-profile.py" verify "$UPSTREAM_CONFIG" \
+  "$PROFILE_DIR/approved-kata-config.toml" "$PROFILE_DIR/kata-runtime-profile.json"
+# Refuse unrelated local changes before touching the installed configuration.
+if ! sudo cmp -s "$UPSTREAM_CONFIG" "$INSTALLED_CONFIG"; then
+  sudo cmp -s "$PROFILE_DIR/approved-kata-config.toml" "$INSTALLED_CONFIG" \
+    || { echo 'Installed Kata settings differ from both upstream and approved profile'; exit 1; }
+fi
+sudo python3 "$SCRIPT_DIR/lib/kata-runtime-profile.py" enable "$INSTALLED_CONFIG"
+sudo python3 "$SCRIPT_DIR/lib/kata-runtime-profile.py" verify "$UPSTREAM_CONFIG" \
+  "$PROFILE_DIR/approved-kata-config.toml" "$PROFILE_DIR/kata-runtime-profile.json" --installed "$INSTALLED_CONFIG"
 sudo grep -Fq '/opt/kata/containerd/config.d/' /etc/containerd/config.toml
 sudo systemctl restart containerd kubelet
 for attempt in {1..60}; do

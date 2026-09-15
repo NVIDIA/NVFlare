@@ -4,6 +4,9 @@ For standalone transfer, use the [assembled role kit](../README.md#assemble-self
 not this source directory alone. The assembled kit includes its shared dependencies.
 
 First complete [public-package configuration](../CONFIGURATION.md).
+The updated installation/re-pinning enables the [NVFlare token-API runtime profile](../RUNTIME-PROFILE.md).
+Run stage 60 before launching a regenerated workload; secure services must approve
+the new trusted measurement. Editing host configuration does not update existing guests.
 Bootstrap stages derived from NVFlare commit
 `54452740e68bd776343c4d0b8883459e0ffa9cd7` are vendored in `bootstrap/`, with
 local hardening and pinned-runtime adaptation. No NVFlare clone is required.

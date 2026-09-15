@@ -86,6 +86,8 @@ runtime_config="$(
 )"
 [[ -n "$runtime_config" ]] ||
   die "Could not resolve the Kata configuration for ${RUNTIME_CLASS}"
+as_root python3 "$SCRIPT_DIR/../lib/kata-runtime-profile.py" enable "$runtime_config"
+as_root python3 "$SCRIPT_DIR/../lib/kata-runtime-profile.py" check "$runtime_config" --runtime /opt/kata/bin/kata-runtime
 as_root grep -Eq '^emptydir_mode = "block-encrypted"$' "$runtime_config" ||
   die "${RUNTIME_CLASS} does not enable released CoCo block-encrypted emptyDir volumes"
 log "Released CoCo LUKS2/dm-crypt emptyDir support is enabled"

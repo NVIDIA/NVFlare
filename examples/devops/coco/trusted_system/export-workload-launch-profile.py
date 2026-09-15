@@ -18,6 +18,7 @@
 import hashlib
 import json
 import re
+import runpy
 import sys
 from pathlib import Path
 
@@ -36,6 +37,11 @@ def checked_json(path, expected):
 
 p = checked_json(root / "approved-launch-profile.json", profile_hash)
 a = checked_json(root / "rehearsal-collector-build/actual-launch.json", actual_hash)
+runtime_profile = runpy.run_path(str(Path(__file__).resolve().parent / "lib/kata-runtime-profile.py"))
+if p.get("guest_token_api") != runtime_profile["CAPABILITY"]:
+    raise SystemExit("Rehearse a new profile with the guest-local token API enabled")
+runtime_profile["require_token_api"](p["kata_config"]["hypervisor"]["qemu"].get("kernel_params"))
+runtime_profile["require_token_api"](a["launch_inputs"].get("kernel_command_line"))
 if (
     p["runtime_class"] != runtime
     or runtime != "kata-qemu-nvidia-gpu-snp"
@@ -60,7 +66,8 @@ if a["launch_inputs"]["smp"].split(",")[0] != str(vcpus) or a["launch_inputs"]["
 print(
     json.dumps(
         {
-            "schema": "coco-approved-workload-launch/v1",
+            "schema": "coco-approved-workload-launch/v2",
+            "guest_token_api": runtime_profile["CAPABILITY"],
             "profile_id": profile_id,
             "runtime_class": runtime,
             "kata_version": version,

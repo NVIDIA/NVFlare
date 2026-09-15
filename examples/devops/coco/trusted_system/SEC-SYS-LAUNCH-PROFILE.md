@@ -76,8 +76,9 @@ python3 trusted_system/05-define-approved-launch-profile.py \
 bash trusted_system/06-prepare-platform-reference.sh "$CONFIG"
 ```
 
-Stage 03 checks the chart archive digest and immutable Kata image. Stage 04
-installs that chart and image, restarts containerd/kubelet, and installs GPU
+Stage 03 checks the chart archive digest and immutable Kata image, preserves the
+original artifacts, and derives the [NVFlare token-API configuration](../RUNTIME-PROFILE.md).
+Stage 04 installs that chart, image and approved configuration, restarts containerd/kubelet, and installs GPU
 Operator 26.3.1 with confidential-computing management and VFIO passthrough.
 It requires SNP enabled, CC-ready GPU status, the SNP RuntimeClass and the
 nydus snapshotter. Stage 05 rejects unsupported profiles instead of silently

@@ -14,6 +14,9 @@ kctl get pods -A -o wide
 kctl get node -o jsonpath='{range .items[*]}{.metadata.name}{" pgpu="}{.status.allocatable.nvidia\.com/pgpu}{"\n"}{end}'
 helmctl list -A
 containerd --version
+sudo python3 "$SCRIPT_DIR/lib/kata-runtime-profile.py" check \
+    /opt/kata/share/defaults/kata-containers/configuration-qemu-nvidia-gpu-snp.toml \
+    --runtime /opt/kata/bin/kata-runtime
 kubectl version --client
 printf 'Registry trust files:\n'
 sudo find "/etc/containerd/certs.d/${REGISTRY_HOST}" -maxdepth 1 -type f \

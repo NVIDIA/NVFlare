@@ -36,6 +36,9 @@ LIVE_IMAGE="$(kctl -n kata-system get daemonset kata-deploy \
 kctl get runtimeclass "${RUNTIME_CLASS}" >/dev/null
 sudo test -x /opt/kata/bin/containerd-shim-kata-v2 \
     || die 'Kata shim was not installed on the host'
+RUNTIME_CONFIG=/opt/kata/share/defaults/kata-containers/configuration-qemu-nvidia-gpu-snp.toml
+sudo python3 "$SCRIPT_DIR/lib/kata-runtime-profile.py" enable "$RUNTIME_CONFIG"
+sudo python3 "$SCRIPT_DIR/lib/kata-runtime-profile.py" check "$RUNTIME_CONFIG" --runtime /opt/kata/bin/kata-runtime
 
 printf 'Kata chart archive and amd64 deployment image are digest pinned.\n'
 printf 'Chart SHA-256: %s\nImage: %s\n' "${KATA_CHART_TGZ_SHA256}" "${KATA_DEPLOY_AMD64}"

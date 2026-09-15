@@ -19,6 +19,7 @@ import hashlib
 import json
 import os
 import platform
+import runpy
 import subprocess
 import sys
 import tomllib
@@ -44,6 +45,8 @@ if str(resources.get("limits", {}).get("nvidia.com/pgpu", 0)) != "1":
 with config_path.open("rb") as stream:
     config = tomllib.load(stream)
 qemu = config["hypervisor"]["qemu"]
+runtime_profile = runpy.run_path(str(Path(__file__).resolve().parent / "lib/kata-runtime-profile.py"))
+runtime_profile["require_token_api"](qemu.get("kernel_params"))
 for name in ["default_vcpus", "default_memory"]:
     if type(qemu.get(name)) is not int or qemu[name] <= 0:
         raise SystemExit(f"Explicit positive runtime {name} is required")
@@ -77,6 +80,7 @@ data = {
     "kata_config_path": str(config_path),
     "kata_config_sha256": digest(config_path),
     "kata_config": config,
+    "guest_token_api": runtime_profile["CAPABILITY"],
     "artifacts": artifacts,
     "actual_launch_capture_required": True,
     "fresh_report_signature_and_nonce_verification_required": True,

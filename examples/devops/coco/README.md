@@ -46,6 +46,10 @@ not included. No separate NVFlare clone is required by the cluster installer.
 
 ## Package capabilities, not live state
 
+For protected NVFlare clients, use the [token-API runtime profile](RUNTIME-PROFILE.md).
+It requires a new trusted rehearsal and v2 admin contract; old measurements and
+contracts are not silently reused.
+
 These files do not imply a running Pod, issued certificate, installed policy,
 or approved measurement on any machine. Obtain fresh deployment inputs and
 record execution results privately. Public version/digest pins live in the

@@ -18,8 +18,7 @@ for command in openssl python3 realpath sha256sum; do need "${command}"; done
 
 [[ "${PLATFORM_PROFILE-}" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*$ ]] || die 'invalid PLATFORM_PROFILE'
 PROFILE_DIR="${PLATFORM_WORK_ROOT:?PLATFORM_WORK_ROOT is required}/${PLATFORM_PROFILE}"
-KATA_CONFIG_REL="$(cat "${PROFILE_DIR}/kata-config-relative-path.txt")"
-KATA_CONFIG="${PROFILE_DIR}/${KATA_CONFIG_REL}"
+KATA_CONFIG="${PROFILE_DIR}/approved-kata-config.toml"
 [[ -s "${KATA_CONFIG}" ]] || die 'run stage 03 first'
 
 TOOLS_ROOT="${PLATFORM_TOOLS_ROOT:-$(dirname -- "${PLATFORM_WORK_ROOT}")/platform-tools}"
