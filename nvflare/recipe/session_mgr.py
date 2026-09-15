@@ -40,12 +40,13 @@ from nvflare.recipe._run_summary import _print_output
 def _show_job_progress(session, job_id, state):
     """Replay a bounded tail of existing server logs with bounded deduplication."""
     try:
-        response = session.get_job_logs(job_id, target="server", log_file_name="log.json", tail_lines=200)
+        response = session.get_job_logs(
+            job_id, target="server", log_file_name="log.json", tail_lines=200, max_bytes=64 * 1024
+        )
         logs = response.get("logs", {})
         text = logs.get("server", "")
         structured = True
-        unavailable = response.get("unavailable", {})
-        if not text and isinstance(unavailable, dict) and "server" in unavailable:
+        if not text:
             fallback = session.get_job_logs(
                 job_id, target="server", log_file_name="log.txt", tail_lines=50, max_bytes=64 * 1024
             )

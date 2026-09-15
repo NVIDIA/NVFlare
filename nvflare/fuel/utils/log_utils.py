@@ -448,7 +448,7 @@ class ConciseLogFilter(LoggerNameFilter):
     def filter(self, record):
         name = getattr(record, "fullName", record.name)
         if getattr(record, "nvflare_progress", False):
-            return True
+            return bool(self.progress_logger_names)
         if self.matches_name(name, self.progress_logger_names):
             return self.allow_all_error_logs and record.levelno > logging.INFO
         is_nvflare_logger = name == "nvflare" or name.startswith("nvflare.")

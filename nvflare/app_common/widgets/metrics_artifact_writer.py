@@ -132,7 +132,14 @@ class MetricsArtifactWriter(Widget):
         return f"Round {ordinal}{suffix}"
 
     def _log_progress_metrics(self, label, metrics):
-        values = {m["name"]: m["value"] for m in metrics}
+        try:
+            values = {
+                metric["name"]: metric["value"]
+                for metric in metrics
+                if isinstance(metric, dict) and "name" in metric and "value" in metric
+            }
+        except Exception:
+            values = {}
         if not values:
             log_progress(_logger, f"  {json.dumps(label[:128])} · no displayable metrics")
             return
@@ -179,6 +186,15 @@ class MetricsArtifactWriter(Widget):
             self._merge_skipped(skipped, fallback_skipped)
         self._apply_site_weights(sites, site_weights)
 
+        if not aggregated_metrics and not sites and not skipped:
+            if custom_aggregator_metrics:
+                self._custom_aggregator_no_metric_rounds.append(current_round)
+            self._round_contribution_count = 0
+            self._progress_client_rows = 0
+            self._progress_rows_omitted = False
+            self._progress_columns = None
+            return
+
         log_progress(_logger, "  " + "─" * 66)
         self._log_progress_metrics("Aggregated", aggregated_metrics)
         duration = ""
@@ -194,11 +210,6 @@ class MetricsArtifactWriter(Widget):
         self._progress_client_rows = 0
         self._progress_rows_omitted = False
         self._progress_columns = None
-
-        if not aggregated_metrics and not sites and not skipped:
-            if custom_aggregator_metrics:
-                self._custom_aggregator_no_metric_rounds.append(current_round)
-            return
 
         aggregation = self._sanitize_json_object(info.get("aggregation"))
         key_metric = self._normalize_key_metric(info.get("key_metric"))

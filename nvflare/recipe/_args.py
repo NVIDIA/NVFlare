@@ -14,7 +14,6 @@
 
 """Import-time handling of shared Recipe command-line arguments."""
 
-import argparse
 import os
 import sys
 import warnings
@@ -38,8 +37,9 @@ def _consume_recipe_args() -> tuple:
     in job.py.
 
     Transactional: sys.argv is only mutated if the parse is clean. A malformed
-    (dangling) --export-dir aborts the pass without mutating sys.argv and without
-    enabling export, so a malformed import can neither raise nor silently export.
+    (dangling or empty) system argument aborts the pass without mutating sys.argv
+    and without enabling export, so malformed input cannot raise during import or
+    silently change execution.
     The decision is frozen after the first call so repeated direct calls return the
     recorded import-time result rather than re-scanning a since-mutated sys.argv.
     """
@@ -52,20 +52,24 @@ def _consume_recipe_args() -> tuple:
     export_dir = DEFAULT_EXPORT_DIR
     export_dir_seen = False
     log_config = None
-    logging_parser = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
-    logging_parser.add_argument("--log_config", metavar="CONFIG")
     remaining = []
     i = 0
     while i < len(argv):
         if argv[i] == "--":
             remaining.extend(argv[i:])
             break
-        elif argv[i] == "--log_config" or argv[i].startswith("--log_config="):
-            count = 2 if argv[i] == "--log_config" else 1
-            log_config = logging_parser.parse_args(argv[i : i + count]).log_config
+        elif argv[i] == "--log_config":
+            if i + 1 >= len(argv) or argv[i + 1].startswith("--") or not argv[i + 1].strip():
+                _CONSUMED = True
+                return False, DEFAULT_EXPORT_DIR
+            log_config = argv[i + 1]
+            i += 2
+        elif argv[i].startswith("--log_config="):
+            log_config = argv[i].split("=", 1)[1]
             if not log_config.strip():
-                logging_parser.error("--log_config requires a non-empty configuration")
-            i += count
+                _CONSUMED = True
+                return False, DEFAULT_EXPORT_DIR
+            i += 1
         elif argv[i] == "--export":
             export = True
             i += 1

@@ -337,12 +337,8 @@ This argument can be any of the following:
       color. Detailed records remain in
       ``log.txt`` and ``log.json``. ``log_fl.txt`` contains the same focused progress
       records with its timestamped file formatter. Built-in aggregation and evaluation writers
-      supply these messages; arbitrary client prints remain in diagnostic logs.
-      Server setup supplies ``MetricsArtifactWriter`` when no writer is configured,
-      so ordinary FedJob and JSON jobs also report round events and save metric artifacts.
-      An explicitly configured writer retains its settings and is not duplicated.
-      A component registered as ``metrics_artifact_writer`` also replaces the default,
-      even when it does not inherit from ``MetricsArtifactWriter``.
+      supply these messages; arbitrary client prints remain in diagnostic logs. Jobs assembled
+      directly with ``FedJob`` or JSON must configure their own reporting components.
     - ``msg_only``: the same log selection as ``concise``, formatted as messages only
     - ``full`` (default in workspaces in poc and production mode): all info level logs
     - ``verbose``: debug level logs with detailed log attributes

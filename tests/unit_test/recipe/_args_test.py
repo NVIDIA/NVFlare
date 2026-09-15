@@ -70,7 +70,7 @@ def test_shared_logging_argument_overrides_script_default(monkeypatch, flags):
 
 
 @pytest.mark.parametrize("flags", [["--log_config"], ["--log_config", "--rounds"], ["--log_config="]])
-def test_shared_logging_argument_requires_value(monkeypatch, flags):
+def test_malformed_shared_logging_argument_does_not_raise_during_import(monkeypatch, flags):
     import sys
 
     import nvflare.recipe._args as args_module
@@ -79,9 +79,10 @@ def test_shared_logging_argument_requires_value(monkeypatch, flags):
     monkeypatch.setenv("FL_LOG_LEVEL", "concise")
     original_argv = ["job.py", *flags]
     monkeypatch.setattr(sys, "argv", original_argv.copy())
-    with pytest.raises(SystemExit) as ex:
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UserWarning)
         importlib.reload(args_module)
-    assert ex.value.code == 2
+    assert args_module._peek_recipe_args() == (False, args_module.DEFAULT_EXPORT_DIR)
     assert sys.argv == original_argv
     assert os.environ["FL_LOG_LEVEL"] == "concise"
 

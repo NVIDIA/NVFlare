@@ -144,12 +144,19 @@ def test_progress_unavailable_does_not_stop_job_monitoring(monkeypatch, capsys):
     assert capsys.readouterr().out.count("Live progress could not be retrieved") == 1
 
 
-def test_progress_unavailable_response_uses_bounded_text_fallback(capsys):
+@pytest.mark.parametrize(
+    "structured_response",
+    [
+        {"logs": {}, "unavailable": {"server": "server log not available for this job"}},
+        {"logs": {}},
+    ],
+)
+def test_progress_empty_structured_response_uses_bounded_text_fallback(capsys, structured_response):
     from nvflare.recipe.session_mgr import _show_job_progress
 
     session = MagicMock()
     session.get_job_logs.side_effect = [
-        {"logs": {}, "unavailable": {"server": "server log not available for this job"}},
+        structured_response,
         {"logs": {"server": "2026-09-15 - INFO - round started\n2026-09-15 - ERROR - training failed"}},
     ]
 
@@ -159,6 +166,12 @@ def test_progress_unavailable_response_uses_bounded_text_fallback(capsys):
     assert "Structured live progress is unavailable; showing the bounded server log tail." in output
     assert "2026-09-15 - INFO - round started" in output
     assert "2026-09-15 - ERROR - training failed" in output
+    assert session.get_job_logs.call_args_list[0].kwargs == {
+        "target": "server",
+        "log_file_name": "log.json",
+        "tail_lines": 200,
+        "max_bytes": 64 * 1024,
+    }
     assert session.get_job_logs.call_args_list[1].kwargs == {
         "target": "server",
         "log_file_name": "log.txt",
@@ -227,7 +240,9 @@ def test_monitor_bounds_replay_and_memory_across_many_refreshes(capsys):
         assert f"row {batch}-999" in output
         _show_job_progress(session, "job-id", state)
         assert capsys.readouterr().out == ""
-    session.get_job_logs.assert_called_with("job-id", target="server", log_file_name="log.json", tail_lines=200)
+    session.get_job_logs.assert_called_with(
+        "job-id", target="server", log_file_name="log.json", tail_lines=200, max_bytes=64 * 1024
+    )
 
 
 @pytest.mark.parametrize(

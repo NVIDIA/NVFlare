@@ -1011,3 +1011,37 @@ def test_accepted_update_without_displayable_metrics_keeps_client_visible(tmp_pa
     )
     assert '"site-1" · no displayable metrics' in output
     assert "✓ Aggregated 1 client update" in output
+
+
+def test_aggregation_without_metrics_or_site_context_emits_no_progress(tmp_path, caplog):
+    writer = MetricsArtifactWriter()
+    fl_ctx = _make_fl_ctx(tmp_path)
+    writer.handle_event(EventType.START_RUN, fl_ctx)
+
+    with caplog.at_level("INFO"):
+        _record_round(writer, fl_ctx, 0, {})
+
+    progress = [
+        record.message
+        for record in caplog.records
+        if record.name == "nvflare.app_common.widgets.metrics_artifact_writer"
+    ]
+    assert progress == []
+
+
+def test_progress_display_ignores_malformed_metric_entries(caplog):
+    writer = MetricsArtifactWriter()
+
+    with caplog.at_level("INFO"):
+        writer._log_progress_metrics(
+            "site-1",
+            [None, "invalid", {}, {"name": "loss"}, {"name": "accuracy", "value": 0.8}],
+        )
+
+    output = "\n".join(
+        record.message
+        for record in caplog.records
+        if record.name == "nvflare.app_common.widgets.metrics_artifact_writer"
+    )
+    assert "accuracy" in output
+    assert "0.8" in output

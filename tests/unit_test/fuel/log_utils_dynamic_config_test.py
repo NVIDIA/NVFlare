@@ -321,6 +321,18 @@ def test_concise_keeps_original_application_selection_and_format():
     rendered = ColorFormatter(fmt=config["formatters"]["consoleFormatter"]["fmt"]).format(record)
     assert " - INFO - Received weights: [1, 2, 3]" in rendered
 
+    progress_record = logging.LogRecord(
+        "nvflare.app_common.widgets.metrics_artifact_writer",
+        logging.INFO,
+        "",
+        0,
+        "ROUND 1 / 2",
+        (),
+        None,
+    )
+    progress_record.nvflare_progress = True
+    assert not log_filter.filter(progress_record)
+
 
 def test_metric_formatting_cannot_propagate_application_object_errors():
     from nvflare.fuel.utils.log_utils import format_metric_summary
