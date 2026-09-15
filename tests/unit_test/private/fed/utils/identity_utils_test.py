@@ -16,6 +16,7 @@ import pytest
 from cryptography import x509
 from cryptography.x509.oid import ExtendedKeyUsageOID
 
+from nvflare.fuel.sec.cert_uri import JOB_URI_KIND, cert_uri, job_ca_marker_uri
 from nvflare.lighter.impl.cert import serialize_cert
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys, sign_content
 from nvflare.private.fed.utils.identity_utils import IdentityVerifier, InvalidAsserterCert, get_parent_site_name
@@ -38,7 +39,7 @@ class TestIdentityUtils:
         assert get_parent_site_name(fqsn) == result
 
 
-def _make_root_and_client_certs(extra_extensions=None):
+def _make_root_and_client_certs(extra_extensions=None, uri_names=None):
     root_key, root_pub_key = generate_keys()
     root_cert = generate_cert(
         subject=Identity("root", "nvidia"),
@@ -54,6 +55,7 @@ def _make_root_and_client_certs(extra_extensions=None):
         signing_pri_key=root_key,
         subject_pub_key=client_pub_key,
         extra_extensions=extra_extensions,
+        uri_names=uri_names,
     )
     return root_cert, root_key, client_cert, client_key
 
@@ -129,6 +131,126 @@ def test_identity_verifier_accepts_expected_extended_key_usage(tmp_path):
         )
         is True
     )
+
+
+def test_identity_verifier_rejects_job_scoped_cert_chain(tmp_path):
+    # a leaked job cert (leaf + job CA chaining to root, CN=site) must not be
+    # usable to register as the site — the rogue-CP scenario
+    root_key, root_pub_key = generate_keys()
+    root_cert = generate_cert(
+        subject=Identity("root", "nvidia"),
+        issuer=Identity("root", "nvidia"),
+        signing_pri_key=root_key,
+        subject_pub_key=root_pub_key,
+        ca=True,
+    )
+    job_ca_key, job_ca_pub_key = generate_keys()
+    job_ca_cert = generate_cert(
+        subject=Identity("job_ca.test", "nvidia"),
+        issuer=Identity("root", "nvidia"),
+        signing_pri_key=root_key,
+        subject_pub_key=job_ca_pub_key,
+        ca=True,
+        ca_path_length=0,
+    )
+    leaf_key, leaf_pub_key = generate_keys()
+    leaf_cert = generate_cert(
+        subject=Identity("client", "nvidia"),
+        issuer=Identity("job_ca.test", "nvidia"),
+        signing_pri_key=job_ca_key,
+        subject_pub_key=leaf_pub_key,
+        uri_names=[cert_uri(JOB_URI_KIND, "job-123")],
+    )
+    root_cert_path = tmp_path / "root.crt"
+    root_cert_path.write_bytes(serialize_cert(root_cert))
+    verifier = IdentityVerifier(str(root_cert_path))
+    signature = sign_content("client" + "nonce", leaf_key, return_str=False)
+
+    with pytest.raises(InvalidAsserterCert, match="job-scoped"):
+        verifier.verify_common_name(
+            "client",
+            "nonce",
+            leaf_cert,
+            signature,
+            intermediate_certs=[job_ca_cert],
+            expected_eku=ExtendedKeyUsageOID.CLIENT_AUTH,
+        )
+
+
+def test_identity_verifier_rejects_leaf_minted_by_job_ca_without_extension(tmp_path):
+    # stolen job-CA-key attack: mint a clean site cert with NO job-id extension;
+    # rejection must key on the root-signed marker in the presented chain
+    root_key, root_pub_key = generate_keys()
+    root_cert = generate_cert(
+        subject=Identity("root", "nvidia"),
+        issuer=Identity("root", "nvidia"),
+        signing_pri_key=root_key,
+        subject_pub_key=root_pub_key,
+        ca=True,
+    )
+    job_ca_key, job_ca_pub_key = generate_keys()
+    job_ca_cert = generate_cert(
+        subject=Identity("job_ca.test", "nvidia"),
+        issuer=Identity("root", "nvidia"),
+        signing_pri_key=root_key,
+        subject_pub_key=job_ca_pub_key,
+        ca=True,
+        ca_path_length=0,
+        uri_names=[job_ca_marker_uri()],
+    )
+    leaf_key, leaf_pub_key = generate_keys()
+    leaf_cert = generate_cert(
+        subject=Identity("client", "nvidia"),
+        issuer=Identity("job_ca.test", "nvidia"),
+        signing_pri_key=job_ca_key,
+        subject_pub_key=leaf_pub_key,
+    )
+    root_cert_path = tmp_path / "root.crt"
+    root_cert_path.write_bytes(serialize_cert(root_cert))
+    verifier = IdentityVerifier(str(root_cert_path))
+    signature = sign_content("client" + "nonce", leaf_key, return_str=False)
+
+    with pytest.raises(InvalidAsserterCert, match="issued by the job CA"):
+        verifier.verify_common_name(
+            "client",
+            "nonce",
+            leaf_cert,
+            signature,
+            intermediate_certs=[job_ca_cert],
+            expected_eku=ExtendedKeyUsageOID.CLIENT_AUTH,
+        )
+
+
+def test_identity_verifier_rejects_malformed_job_uri(tmp_path):
+    # a malformed NVFlare URI fails closed instead of being ignored
+    root_cert, _root_key, client_cert, client_key = _make_root_and_client_certs(
+        uri_names=["https://nvidia.com/nvflare/v1/job/"]
+    )
+    root_cert_path = tmp_path / "root.crt"
+    root_cert_path.write_bytes(serialize_cert(root_cert))
+    verifier = IdentityVerifier(str(root_cert_path))
+    signature = sign_content("client" + "nonce", client_key, return_str=False)
+
+    with pytest.raises(InvalidAsserterCert, match="malformed"):
+        verifier.verify_common_name(
+            "client", "nonce", client_cert, signature, expected_eku=ExtendedKeyUsageOID.CLIENT_AUTH
+        )
+
+
+def test_identity_verifier_rejects_job_extension_even_when_root_issued(tmp_path):
+    # the rejection is keyed on the job URI, not the issuer
+    root_cert, _root_key, client_cert, client_key = _make_root_and_client_certs(
+        uri_names=[cert_uri(JOB_URI_KIND, "job-123")]
+    )
+    root_cert_path = tmp_path / "root.crt"
+    root_cert_path.write_bytes(serialize_cert(root_cert))
+    verifier = IdentityVerifier(str(root_cert_path))
+    signature = sign_content("client" + "nonce", client_key, return_str=False)
+
+    with pytest.raises(InvalidAsserterCert, match="job-scoped"):
+        verifier.verify_common_name(
+            "client", "nonce", client_cert, signature, expected_eku=ExtendedKeyUsageOID.CLIENT_AUTH
+        )
 
 
 def test_identity_verifier_wraps_invalid_cert_chain(tmp_path):

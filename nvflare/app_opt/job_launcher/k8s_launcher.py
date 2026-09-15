@@ -28,7 +28,14 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
-from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobProcessArgs, JobReturnCode, add_launcher
+from nvflare.apis.job_launcher_spec import (
+    JobHandleSpec,
+    JobLauncherSpec,
+    JobProcessArgs,
+    JobProcessEnv,
+    JobReturnCode,
+    add_launcher,
+)
 from nvflare.app_opt.job_launcher.study_data import (
     load_study_data_file,
     resolve_study_dataset_mounts,
@@ -45,6 +52,7 @@ from nvflare.app_opt.job_launcher.workspace_cell_transfer import (
     WorkspaceTransferManager,
 )
 from nvflare.fuel.common.exit_codes import ProcessExitCode
+from nvflare.private.fed.utils.job_cert_utils import job_startup_files, read_job_cert, require_job_cert
 from nvflare.utils.job_launcher_utils import (
     get_client_job_args,
     get_credential_env,
@@ -125,9 +133,10 @@ _PENDING_FAILURE_EVENT_REASONS = {
     "NetworkNotReady",
 }
 # Files actually read from startup/ by the job pod at runtime. Others in
-# startup/ are dropped to shrink the Secret. local/ is bundled whole with each
-# job workspace so job resource files and local custom code keep working.
-_STARTUP_KEEP_SUFFIXES = (".crt", ".key", ".pem", ".json")
+# startup/ are dropped to shrink the Secret (job_startup_files() already withholds
+# private keys). local/ is bundled whole with each job workspace so job resource
+# files and local custom code keep working.
+_STARTUP_KEEP_SUFFIXES = (".crt", ".pem", ".json")
 
 
 def _keep_startup_file(fname: str) -> bool:
@@ -963,13 +972,11 @@ class K8sJobLauncher(JobLauncherSpec):
         """
         data = {}
         if os.path.isdir(startup_dir):
-            for fname in os.listdir(startup_dir):
+            for fname in job_startup_files(startup_dir):
                 if not _keep_startup_file(fname):
                     continue
-                fpath = os.path.join(startup_dir, fname)
-                if os.path.isfile(fpath):
-                    with open(fpath, "rb") as f:
-                        data[fname] = base64.b64encode(f.read()).decode()
+                with open(os.path.join(startup_dir, fname), "rb") as f:
+                    data[fname] = base64.b64encode(f.read()).decode()
 
         return self._create_or_replace_secret(f"nvflare-startup-{site_name_to_rfc1123(site_name)}", {"data": data})
 
@@ -1115,6 +1122,8 @@ class K8sJobLauncher(JobLauncherSpec):
             )
 
         startup_dir = workspace_obj.get_startup_kit_dir()
+        run_dir = workspace_obj.get_run_dir(raw_job_id)
+        job_cert = read_job_cert(run_dir) if require_job_cert(fl_ctx, run_dir) else None
         engine = fl_ctx.get_engine()
         owner_cell = getattr(engine, "cell", None) if engine else None
         if owner_cell is None:
@@ -1131,6 +1140,10 @@ class K8sJobLauncher(JobLauncherSpec):
             # would be readable in the pod object by anyone with pods/get.
             credential_env = get_credential_env(job_args)
             credential_env[ENV_WORKSPACE_TRANSFER_TOKEN] = workspace_transfer_token
+            if job_cert is not None:
+                # the pod's bootstrap cell needs the credential before the run dir is downloaded
+                credential_env[JobProcessEnv.JOB_CERT] = job_cert[0].decode("ascii")
+                credential_env[JobProcessEnv.JOB_KEY] = job_cert[1].decode("ascii")
             credential_secret_name = self._ensure_job_credential_secret(pod_name, credential_env)
 
             env[ENV_WORKSPACE_OWNER_FQCN] = workspace_transfer.owner_fqcn

@@ -40,6 +40,7 @@ The default run uses:
 | Training examples per client | 200 |
 | Evaluation examples per client | 100 |
 | Batch size | 32 |
+| SGD learning rate | 0.1 for synthetic data; 0.01 for CIFAR-10 |
 | Data-loader workers | 0 |
 | Experiment tracking | Off |
 | Post-training evaluation | Final global model on both clients |
@@ -57,8 +58,8 @@ persisted model after the last aggregation, use the `SRV_FL_global_model.pt` res
 `cross_val_results.json`. A `best` model can also appear because training-round metrics score the global model received
 at the start of a round; the final aggregate is produced after the last such score. The final model can therefore
 outperform both the last reported training-round accuracy and the model selected earlier as `best` in this short run.
-The automated acceptance test requires
-at least 60% accuracy on both sites and at least a 40 percentage-point improvement over the initial global model.
+The automated acceptance test requires initial global-model accuracy at or below 20%,
+at least 60% final accuracy on both sites, and at least a 40 percentage-point improvement over the initial global model.
 These thresholds are calibrated to the fixed model and data seeds with the three-round default. They verify that this
 specific federated run changed the model meaningfully; they are not guarantees for other initializations or
 hyperparameters and are not benchmark claims.
@@ -211,8 +212,10 @@ python prepare_data.py --data_root /data/cifar
 python job.py --dataset cifar10 --data_root /data/cifar
 ```
 
-If required cache files are missing, `job.py` stops before starting the simulator
-and prints the preparation command for the selected path. Exporting a job does
+Each client checks for missing or empty cache files when loading data and reports
+the preparation command in its error log. This happens after the simulator starts;
+`job.py` does not validate the cache. Use an absolute client-local `--data_root` path
+to avoid depending on a client process's working directory. Exporting a job does
 not require a local cache; prepare the data on its execution clients instead.
 
 All simulated clients then read the same logical CIFAR-10 training and test
@@ -223,9 +226,7 @@ evaluation samples from the same IID distribution.
 
 The beginner entry point intentionally exposes only the number of clients,
 number of rounds, dataset choice, and its client-local data root. Environment
-selection, experiment tracking, full cross-site evaluation, external-process
-execution, and memory tuning belong in the environment-continuity follow-up
-rather than the first federated-learning run.
+selection and advanced Recipe controls are covered in [Continue to POC and Production](#continue-to-poc-and-production).
 
 ## Export a deployable job
 
@@ -239,3 +240,10 @@ The exported job is written under `/tmp/nvflare/jobs/job_config/hello-pt`.
 
 For an interactive CIFAR-10 and TensorBoard-oriented variant, see [`hello-pt.ipynb`](hello-pt.ipynb). The canonical
 deterministic quickstart and its tested defaults are defined by `job.py`.
+
+## Continue to POC and Production
+
+After completing the simulation, continue with the
+[advanced environment-continuity example](../../advanced/hello-pt-environments/README.md)
+to run the same learning application in a local POC or an already-running production deployment. That example also
+covers experiment tracking, full cross-site evaluation, external-process execution, and memory tuning.

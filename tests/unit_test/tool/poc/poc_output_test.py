@@ -1061,7 +1061,8 @@ class TestPocOutput:
         assert "After ready, submit jobs with: nvflare job submit -j <job_folder>" in captured.out
         assert captured.err == ""
 
-    def test_start_poc_readiness_timeout_exits_connection_failed(self, capsys, tmp_path):
+    @pytest.mark.parametrize("failure", ["readiness", "args"])
+    def test_start_poc_readiness_timeout_exits_connection_failed(self, capsys, tmp_path, failure):
         from nvflare.tool.api_utils import SystemStartTimeout
         from nvflare.tool.poc.poc_commands import start_poc
         from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
@@ -1073,7 +1074,10 @@ class TestPocOutput:
         args.study = None
         args.no_wait = False
 
-        project_config = {"participants": [{"name": "server", "type": "server"}, {"name": "site-1", "type": "client"}]}
+        project_config = {
+            "name": "example",
+            "participants": [{"name": "server", "type": "server"}, {"name": "site-1", "type": "client"}],
+        }
         service_config = {
             SC.FLARE_SERVER: "server",
             SC.FLARE_PROJ_ADMIN: "admin@nvidia.com",
@@ -1090,17 +1094,29 @@ class TestPocOutput:
             patch("nvflare.tool.poc.poc_commands._is_local_port_available", return_value=(True, None)),
             patch(
                 "nvflare.tool.poc.poc_commands._wait_for_poc_system_ready",
-                side_effect=SystemStartTimeout("cannot connect to server with 1 clients within 30 sec"),
+                side_effect={
+                    "readiness": SystemStartTimeout("Could not confirm readiness within 30 seconds."),
+                    "args": ValueError("conn_timeout must be a finite positive number of seconds"),
+                }[failure],
             ),
         ):
             with pytest.raises(SystemExit) as exc_info:
                 start_poc(args)
 
-        assert exc_info.value.code == 2
         data = json.loads(capsys.readouterr().out)
-        assert data["error_code"] == "CONNECTION_FAILED"
-        assert data["exit_code"] == 2
-        assert "--no-wait" in data["hint"]
+        if failure == "args":
+            assert exc_info.value.code == 4
+            assert data["error_code"] == "INVALID_ARGS"
+            assert "conn_timeout" in data["message"]
+        else:
+            assert exc_info.value.code == 2
+            assert data["error_code"] == "CONNECTION_FAILED"
+            assert data["exit_code"] == 2
+            assert "nvflare system status" in data["hint"]
+            assert "server/client logs" not in data["hint"]
+            assert "--timeout <seconds>" in data["hint"]
+            assert "--no-wait" in data["hint"]
+            assert "closing the admin session" not in data["message"]
 
     def test_start_poc_service_failure_exits_service_failed(self, capsys, tmp_path):
         from nvflare.tool.poc.poc_commands import PocServiceStartError, start_poc
@@ -1142,7 +1158,8 @@ class TestPocOutput:
         assert "nvflare poc start" in data["hint"]
         assert "admin@nvidia.com" in data["message"]
 
-    def test_wait_for_poc_system_ready_wraps_unexpected_wait_errors(self, tmp_path):
+    @pytest.mark.parametrize("error_type", [RuntimeError, ValueError])
+    def test_wait_for_poc_system_ready_wraps_only_unexpected_wait_errors(self, tmp_path, error_type):
         from nvflare.tool.api_utils import SystemStartTimeout
         from nvflare.tool.poc.poc_commands import _wait_for_poc_system_ready
         from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
@@ -1154,8 +1171,9 @@ class TestPocOutput:
             SC.FLARE_CLIENTS: ["site-1"],
         }
 
-        with patch("nvflare.tool.poc.poc_commands.wait_for_system_start", side_effect=RuntimeError("boom")):
-            with pytest.raises(SystemStartTimeout, match="boom"):
+        with patch("nvflare.tool.poc.poc_commands.wait_for_system_start", side_effect=error_type("boom")):
+            expected_error = ValueError if error_type is ValueError else SystemStartTimeout
+            with pytest.raises(expected_error, match="boom"):
                 _wait_for_poc_system_ready(
                     str(tmp_path),
                     project_config,
@@ -1164,6 +1182,29 @@ class TestPocOutput:
                     excluded=[],
                     timeout_in_sec=1,
                 )
+
+    def test_wait_for_poc_system_ready_uses_default_admin_connection_timeout(self, tmp_path):
+        from nvflare.tool.poc.poc_commands import _wait_for_poc_system_ready
+        from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
+
+        project_config = {"name": "test_project"}
+        service_config = {
+            SC.FLARE_SERVER: "server",
+            SC.FLARE_PROJ_ADMIN: "admin@nvidia.com",
+            SC.FLARE_CLIENTS: ["site-1"],
+        }
+
+        with patch("nvflare.tool.poc.poc_commands.wait_for_system_start") as wait_for_start:
+            assert _wait_for_poc_system_ready(
+                str(tmp_path),
+                project_config,
+                service_config,
+                services_list=[],
+                excluded=[],
+                timeout_in_sec=30,
+            )
+
+        assert "conn_timeout" not in wait_for_start.call_args.kwargs
 
     # ------------------------------------------------------------------ poc prepare parsers
 
