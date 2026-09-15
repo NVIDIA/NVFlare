@@ -19,10 +19,13 @@ import json
 import runpy
 import subprocess
 import sys
-import tomllib
 from pathlib import Path
 
 import pytest
+
+# NVFlare supports Python 3.10, but these deployment helpers require Python 3.11+.
+# Skip before loading the helpers; do not add a third-party TOML backport for tests.
+tomllib = pytest.importorskip("tomllib", reason="CoCo deployment helpers require Python 3.11+")
 
 ROOT = Path(__file__).resolve().parents[5] / "examples/devops/coco"
 HELPER = ROOT / "shared/kata-runtime-profile.py"
