@@ -2,7 +2,10 @@
 
 The bootstrap implementation originates from NVFlare commit
 `54452740e68bd776343c4d0b8883459e0ffa9cd7`, `examples/devops/CoCo/`.
-Only the Kubernetes installer is run. No NVFlare checkout, workload deployment,
+The implementation is maintained in [shared/](../../shared/README.md), with thin
+role entry points here. Assemble a role kit before standalone transfer; packaging
+materializes the helper, Kubernetes installer and template. Only the Kubernetes
+installer is run. No NVFlare checkout, workload deployment,
 Trustee, or persistent registry installation is performed here.
 
 The installer has local corrections: check the exact `/usr/local/bin/containerd`
@@ -20,7 +23,7 @@ bash ../02-install-kubernetes.sh
 ```
 
 Kata and GPU Operator installation are performed separately using the trusted
-profile's pinned artifacts. Preserve the source commit when changing this copy.
+profile's pinned artifacts. Make bootstrap changes in the shared source.
 
 The shared configuration loader is reduced to cluster-only inputs and rejects
 checksum bypass. The host-specific live configuration is not packaged.

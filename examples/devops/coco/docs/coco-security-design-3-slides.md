@@ -1,6 +1,22 @@
 ---
-aspectratio: 169
+marp: true
+theme: default
+size: 16:9
+paginate: true
+style: |
+  section { font-size: 18px; padding: 32px 42px; }
+  h1 { font-size: 30px; color: #10243e; }
+  h2 { font-size: 22px; color: #386300; margin-top: 12px; }
+  li { margin-top: 3px; }
+  table { font-size: 14px; line-height: 1.3; }
+  th, td { padding: 6px 10px; }
+  section.architecture { display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: auto auto 1fr; gap: 16px 24px; }
+  section.architecture h1 { grid-column: 1 / -1; }
+  section.architecture h2 { grid-row: 2; margin: 0; }
+  section.architecture ul { grid-row: 3; margin: 0; padding-left: 22px; }
 ---
+
+<!-- _class: architecture -->
 
 # Architecture: three machines, one trust decision
 
@@ -29,6 +45,8 @@ aspectratio: 169
 - The host sees ciphertext and metadata; image decryption happens only inside the SEV-SNP Kata guest.
 - CoCo retains availability control, but receives no image key, plaintext image, publisher credential, or KBS administration authority.
 
+---
+
 # Trusted reference meets live evidence at one equality gate
 
 ## Establish the trusted reference
@@ -48,6 +66,8 @@ The offline `sev-snp-measure` result is retained as a diagnostic model; it never
 2. KBS obtains a signed EAR from AS/RVPS after appraisal of both AMD SEV-SNP CPU evidence and NVIDIA GPU evidence. CPU appraisal requires the live signed `MEASUREMENT`, TCB floors, and disabled debug/migration; GPU appraisal requires accepted NVIDIA evidence.
 3. KBS requires exactly the `cpu0` and `gpu0` submodules and the exact approved eight-component trust vector for each. Failure of either attestation denies every resource.
 4. KBS then matches the InitData hash, immutable image digest, command, and actual resource path. Only after all platform and workload gates pass does it JWE-encrypt the approved resources to the attested guest key.
+
+---
 
 # Attacks controlled by the CoCo owner
 

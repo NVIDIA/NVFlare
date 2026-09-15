@@ -1,5 +1,8 @@
 # Trusted-system kit: five-value JSON handoff
 
+For standalone transfer, use the [assembled role kit](../README.md#assemble-self-contained-role-kits),
+not this source directory alone. The assembled kit includes its shared dependencies.
+
 Start with [../CONFIGURATION.md](../CONFIGURATION.md). No private bootstrap
 configuration, source workload or approved measurements are included.
 
@@ -52,8 +55,11 @@ numbered JSON-export stage and does not modify the approved values.
 
 ## Internal dependencies: keep, but do not run separately
 
-- `bootstrap/lib/common.sh`, `bootstrap/config.env` and
-  `bootstrap/templates/kubeadm.yaml.in`: Kubernetes bootstrap inputs.
+- `bootstrap/lib/common.sh` and `bootstrap/10-install-kubernetes.sh`: entry
+  points into shared source, materialized when assembling a standalone kit.
+- `bootstrap/config.env`: private Kubernetes configuration; the common kubeadm
+  template is in `../shared/bootstrap/templates/` in source and is materialized
+  as `bootstrap/templates/kubeadm.yaml.in` in assembled kits.
 - `bootstrap/config.env.example`: fallback/bootstrap configuration template.
 - `rehearsal-collector/Dockerfile` and
   `rehearsal-collector/collect-snp-evidence.sh`: collector image and guest code.

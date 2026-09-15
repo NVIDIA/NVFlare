@@ -66,9 +66,11 @@ class PublicPackageTests(unittest.TestCase):
         )
 
     def test_all_roles_use_same_validator(self):
-        expected = (ROOT / "admin/lib/validate-config.sh").read_bytes()
-        for role in ("service", "coco", "trusted_system"):
-            self.assertEqual((ROOT / role / "lib/validate-config.sh").read_bytes(), expected)
+        for role in ("admin", "service", "coco", "trusted_system"):
+            result = self.bash(
+                'source "$1"; validate_service_host secure.unit.local', str(ROOT / role / "lib/validate-config.sh")
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_missing_private_configuration_fails_before_install(self):
         for role, helper in (("admin", "platform.sh"), ("service", "common.sh"), ("coco", "common.sh")):

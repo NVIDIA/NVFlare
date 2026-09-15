@@ -45,6 +45,36 @@ reproducibility, not a claim that these versions remain vulnerability-free.
 Host-specific teardown scripts and the obsolete signed-bundle installer are
 not included. No separate NVFlare clone is required by the cluster installer.
 
+## Package capabilities, not live state
+
+These files do not imply a running Pod, issued certificate, installed policy,
+or approved measurement on any machine. Obtain fresh deployment inputs and
+record execution results privately. Public version/digest pins live in the
+role configuration templates. Workload and platform approvals come from the
+trusted workflow, not a historical deployment. Hardware-backed validation is
+required after configuration; offline package checks alone do not establish it.
+
+## Assemble self-contained role kits
+
+Shared configuration checks, Kubernetes bootstrap helpers, the Kubernetes
+installer and its kubeadm template are maintained only in [shared/](shared/README.md).
+In the source checkout, role entry points call these shared implementations.
+Do not transfer an unassembled role directory by itself.
+
+```bash
+python3 role_kits.py /path/to/new-coco-role-kits
+python3 /path/to/new-coco-role-kits/validate-package.py --assembled
+```
+
+Choose a new directory outside this source package. The assembler copies only
+allowlisted public files and materializes shared dependencies into each role.
+Transfer the resulting `admin/`, `service/`, `coco/`, or `trusted_system/`
+directory only to its intended operator. Its scripts run without sibling roles,
+the shared source tree or an NVFlare checkout. Supply private configuration,
+certificates and handoff material separately according to [CONFIGURATION.md](CONFIGURATION.md).
+The full assembled package retains cross-role documentation links for reference.
+
 ## Design slides
 
-[PDF](docs/coco-security-design-3-slides.pdf) · [PowerPoint](docs/coco-security-design-3-slides.pptx) · [HTML](docs/coco-security-design-3-slides.html) · [Markdown](docs/coco-security-design-3-slides.md)
+[Authoritative Markdown](docs/coco-security-design-3-slides.md) ·
+[Generate HTML/PDF/PPTX exports](docs/README.md)

@@ -275,6 +275,7 @@ class ReferenceTests(unittest.TestCase):
     def fixture(self):
         kit = self.root / "kit"
         shutil.copytree(SERVICE, kit, ignore=shutil.ignore_patterns("tests", "__pycache__"))
+        shutil.copyfile(SERVICE.parent / "shared/validate-config.sh", kit / "lib/validate-config.sh")
         backend = self.root / "backend"
         for part in (
             "kbs/config/docker-compose",

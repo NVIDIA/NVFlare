@@ -37,6 +37,26 @@ tar --create --gzip --file=/path/to/coco-public.tar.gz \
 Replace the output path with your chosen location. The public-file allowlist
 travels with the archive; no generated files are implicitly included.
 
+That archive is the complete **source** package, including `shared/`. To
+distribute independently runnable role directories, assemble a fresh copy:
+
+```bash
+python3 role_kits.py /path/to/new-coco-role-kits
+python3 /path/to/new-coco-role-kits/validate-package.py --assembled
+```
+
+The output inventory includes the materialized templates and implementation
+copies, and assembled validation compares them with the shared sources. Archive
+only the intended role directory from this output for its operator. Never copy
+source wrappers without their shared tree or edit generated implementation copies.
+Regeneration refuses to overwrite existing output. Runtime configuration remains
+private and is supplied separately after transfer.
+
+Slide exports are separate documentation/release artifacts, not role-kit files.
+Use [the reproducible export procedure](docs/README.md); maintain only the
+Markdown slide source in Git. The validator rejects generated slide exports and
+duplicated role `CURRENT-STATE.md` summaries even if added to the inventory.
+
 ## Offline regression checks
 
 Use a project virtual environment with Python 3.11+ and PyYAML. From a clean

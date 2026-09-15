@@ -1,5 +1,8 @@
 # Service administrator kit
 
+For standalone transfer, use the [assembled role kit](../README.md#assemble-self-contained-role-kits),
+not this source directory alone. The assembled kit includes its shared dependencies.
+
 First configure `platform.env` from `platform.env.example` as described in
 [../CONFIGURATION.md](../CONFIGURATION.md). No certificates or credentials
 are included.

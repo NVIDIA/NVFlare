@@ -1,5 +1,8 @@
 # Workload-owner kit for `admin`
 
+For standalone transfer, use the [assembled role kit](../README.md#assemble-self-contained-role-kits),
+not this source directory alone. The assembled kit includes its shared dependencies.
+
 To package NVFlare clients and their signed startup kits, use
 [project.yaml-based provisioning](../provision/README.md). The manual stages
 below remain available for other workloads.

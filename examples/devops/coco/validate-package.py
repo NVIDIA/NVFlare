@@ -15,22 +15,27 @@
 
 """Offline publication checks; never executes deployment stages or uses the network."""
 
+import argparse
 import ast
 import os
 import re
 import subprocess
 import sys
 import unittest
-import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--assembled", action="store_true", help="validate generated role kits, not source wrappers")
+    args = parser.parse_args()
     # Validation must not add bytecode caches containing local checkout paths.
     sys.dont_write_bytecode = True
     os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
+    from role_kits import inventory, validate_layout
+
     if sys.version_info < (3, 11):
         raise SystemExit("Python 3.11+ is required")
     try:
@@ -38,24 +43,8 @@ def main():
     except ImportError:
         raise SystemExit("Install PyYAML in your chosen Python environment before validation") from None
 
-    names = (ROOT / "PACKAGE-FILES.txt").read_text().splitlines()
-    if len(names) != len(set(names)) or names != sorted(names):
-        raise SystemExit("Public allowlist must be sorted and unique")
-    for name in names:
-        path = Path(name)
-        if path.is_absolute() or ".." in path.parts or str(path) != name:
-            raise SystemExit("Unsafe public allowlist entry")
-    expected = set(names)
-    found = set()
-    for path in ROOT.rglob("*"):
-        if path.is_symlink():
-            raise SystemExit(f"Symlink is not publishable: {path.relative_to(ROOT)}")
-        if path.is_file():
-            found.add(path.relative_to(ROOT).as_posix())
-    if expected != found:
-        raise SystemExit(
-            f"Public inventory mismatch: missing={sorted(expected - found)}, extra={sorted(found - expected)}"
-        )
+    names = inventory(ROOT)
+    validate_layout(ROOT, assembled=args.assembled)
 
     private = re.compile(
         r"\b[a-z]+[0-9]*-[0-9]{4}\.[a-z0-9]+\.[a-z0-9]+\.nvidia\.com|/localhome/[a-zA-Z0-9_-]+/|"
@@ -65,15 +54,11 @@ def main():
     shell_count = python_count = embedded_count = 0
     for name in names:
         path = ROOT / name
-        if path.suffix == ".pptx":
-            with zipfile.ZipFile(path) as archive:
-                content = "\n".join(archive.read(n).decode(errors="ignore") for n in archive.namelist())
-        elif path.suffix == ".pdf":
-            # PDF content was generated from the public slide sources. Compressed
-            # streams still require a separate rendered/content review before publishing.
-            content = path.read_bytes().decode(errors="ignore")
-        else:
-            content = path.read_text()
+        if path.suffix in (".pptx", ".pdf") or name == "docs/coco-security-design-3-slides.html":
+            raise SystemExit(f"Publish slide exports separately, not in the source/role package: {name}")
+        if path.name == "CURRENT-STATE.md":
+            raise SystemExit("Keep package capabilities in the main README, not role state documents")
+        content = path.read_text()
         if private.search(content):
             raise SystemExit(f"Potential private deployment identifier or key in {name}")
         if path.suffix == ".py":

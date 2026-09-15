@@ -1,5 +1,8 @@
 # CoCo cluster administrator kit
 
+For standalone transfer, use the [assembled role kit](../README.md#assemble-self-contained-role-kits),
+not this source directory alone. The assembled kit includes its shared dependencies.
+
 First complete [public-package configuration](../CONFIGURATION.md).
 Bootstrap stages derived from NVFlare commit
 `54452740e68bd776343c4d0b8883459e0ffa9cd7` are vendored in `bootstrap/`, with

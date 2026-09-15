@@ -17,17 +17,25 @@ From `NVFlare/examples/devops/coco`:
 
 ```bash
 python3 validate-package.py
+python3 role_kits.py /path/to/new-coco-role-kits
+python3 /path/to/new-coco-role-kits/validate-package.py --assembled
 ```
 
 Use Python 3.11+ with PyYAML for tests and a Bash-capable Linux system. The
 root [README](README.md#local-validation) provides virtual-environment setup
 commands if those dependencies are not available. The validator never deploys
 software or contacts a node. Validation checks package structure and tests,
-not source authenticity; authenticate the code source independently. Copy each role
-directory from a clean package to its corresponding operator using a trusted
+not source authenticity; authenticate the code source independently. The assembler
+requires a new output directory outside this source package. Copy each role
+directory from that assembled output to its corresponding operator using a trusted
 channel with verified SSH host keys. Never copy a used working directory or
 the entire private operational workspace. Public documents can be shared;
 generated files must follow the destination table below.
+
+Source role directories contain shared-code wrappers and must not be transferred
+alone. Assembled role directories include their generated shared dependencies;
+the destination does not need sibling roles or `shared/`. Keep the full package
+as a coordinator reference for cross-role documentation links.
 
 ## 2. Configure admin, secure services, and CoCo
 

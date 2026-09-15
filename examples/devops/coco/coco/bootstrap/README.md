@@ -2,7 +2,11 @@
 
 Stages 00, 10 and 20 and their helpers originate from NVFlare commit
 `54452740e68bd776343c4d0b8883459e0ffa9cd7`, `examples/devops/CoCo/`.
-They are included here so no separate repository checkout is needed.
+The shared implementation is maintained in [shared/](../../shared/README.md).
+This source directory contains role entry points. Assemble role kits using the
+main README before transferring this role alone; packaging materializes its
+helpers, Kubernetes installer and template. No separate repository checkout is
+needed on the destination.
 
 The Kubernetes implementation includes the trusted-system bootstrap fixes:
 explicit containerd binary location, corrected Helm version comparison,

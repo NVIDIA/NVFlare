@@ -45,3 +45,10 @@ platform-tools/
 operations/
 recovery/
 coco-app
+# Slide exports belong in external documentation/release artifacts.
+docs/*.html
+docs/*.pdf
+docs/*.pptx
+# Shared implementations remain reviewable despite repository-wide lib ignores.
+!shared/
+!shared/**

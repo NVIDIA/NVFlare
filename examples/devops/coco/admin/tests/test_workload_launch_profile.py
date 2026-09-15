@@ -241,6 +241,8 @@ class LaunchProfileTests(unittest.TestCase):
             "lib/workload-launch-profile.py",
         ):
             shutil.copyfile(ADMIN / name, kit / name)
+        # This fixture is an isolated deployed role, not a source-tree wrapper.
+        shutil.copyfile(ADMIN.parent / "shared/validate-config.sh", kit / "lib/validate-config.sh")
         platform = (ADMIN / "platform.env.example").read_text()
         host = subprocess.check_output(["hostname", "-f"], text=True).strip()
         platform = platform.replace('EXPECTED_HOSTNAME=""', f'EXPECTED_HOSTNAME="{host}"')
