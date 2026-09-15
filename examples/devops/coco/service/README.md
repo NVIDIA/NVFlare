@@ -76,6 +76,13 @@ do not reinstall AS policies. Workload authorization uses
 `12-install-trusted-service-handoff.sh`, followed by
 `13-verify-workload-release.sh` after the authorized workload is launched.
 
+Stage 12 still requires an interactive terminal. Its release-approval prompt
+expires after 120 seconds; timeout or closed input cancels installation.
+After installation succeeds, it prints the success message and receipt location
+before optional staging-key removal. That prompt also expires after 120 seconds;
+timeout or closed input retains the key and does not undo the installation.
+No unattended approval mode is provided.
+
 Follow the full guide for exact inputs and commands. The distributed TCB fields
 are intentionally blank; stage 03 must not precede tool installation and
 authenticated platform-input configuration on a fresh VM.

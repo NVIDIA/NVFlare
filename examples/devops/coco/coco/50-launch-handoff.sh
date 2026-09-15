@@ -120,10 +120,19 @@ print("Image:", image)
 print("Command:", json.dumps(c["command"]))
 PY
 
+need_cmd curl
+need_file "/etc/containerd/certs.d/${REGISTRY_HOST}/hosts.toml"
+need_file "/etc/containerd/certs.d/${REGISTRY_HOST}/ca.crt"
+curl --fail --silent --show-error --connect-timeout 5 --max-time 15 \
+    --cacert "/etc/containerd/certs.d/${REGISTRY_HOST}/ca.crt" \
+    --output /dev/null "https://${REGISTRY_HOST}/v2/" ||
+    die 'Registry TLS/access check failed; complete stage 40 before launch'
+
 kctl apply --dry-run=server -f "${POD_FILE}" >/dev/null
 printf 'Authenticated Pod SHA-256: %s\n' "${ACTUAL_SHA256}"
 printf 'Do not edit this manifest. Do not use exec, attach, cp, or port-forward.\n'
-read -r -p "Type APPLY to launch the exact handoff: " CONFIRM
+read -r -t 120 -p "Type APPLY within 120 seconds to launch the exact handoff: " CONFIRM ||
+    die 'Approval timed out or input closed; launch cancelled'
 [[ "${CONFIRM}" == 'APPLY' ]] || die 'launch cancelled'
 kctl apply -f "${POD_FILE}"
 POD_NAME="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["metadata"]["name"])' "${POD_JSON}")"

@@ -342,7 +342,8 @@ diff --unified "${ACTIVE_POLICY}" "${CANDIDATE_POLICY}" || DIFF_STATUS=$?
 [[ "${DIFF_STATUS}" -le 1 ]] || die "failed to display policy diff"
 
 [[ -t 0 ]] || die "interactive terminal required for final approval"
-read -r -p "Type the release name to approve this exact merge: " CONFIRM_RELEASE
+read -r -t 120 -p "Type the release name within 120 seconds to approve this exact merge: " CONFIRM_RELEASE ||
+    die 'Approval timed out or input closed; installation cancelled'
 [[ "${CONFIRM_RELEASE}" == "${RELEASE_NAME}" ]] || die "release approval did not match"
 
 # Some OS images permit passwordless commands while `sudo -v` still asks for
@@ -445,7 +446,7 @@ chmod 0600 "${BACKUP_DIR}/installation-receipt.txt"
 
 printf '\nRelease %s is installed and persisted resource hashes match.\n' "${RELEASE_NAME}"
 printf 'Protected backup and receipt: %s\n' "${BACKUP_DIR}"
-read -r -p 'Type REMOVE to shred the received staging image_key now, or press Enter to retain it: ' REMOVE_KEY
+read -r -t 120 -p 'Type REMOVE within 120 seconds to shred the staging image_key, or Enter to retain it: ' REMOVE_KEY || REMOVE_KEY=''
 if [[ "${REMOVE_KEY}" == "REMOVE" ]]; then
     shred --remove -- "${HANDOFF_DIR}/image_key"
     printf 'Removed the received staging key. KBS storage remains authoritative.\n'

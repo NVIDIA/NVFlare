@@ -82,6 +82,11 @@ authenticated channel. The script compares it, validates the restrictive Pod
 and embedded Kata policy, performs a server-side dry run, asks for explicit
 confirmation, applies the unchanged file, and waits for readiness.
 
+Complete stage 40 first: stage 50 requires its containerd trust files and probes
+the registry HTTPS endpoint with the installed CA before the server-side dry run.
+This host-side check does not prove guest DNS or containerd pull configuration.
+The `APPLY` prompt expires after 120 seconds; timeout or closed input cancels launch.
+
 The owner may approve either an explicit read-only root filesystem or a
 guest-local writable root filesystem (required for NVFlare logs/runtime state).
 Stage 50 accepts both boolean settings; it never edits that choice. The exact

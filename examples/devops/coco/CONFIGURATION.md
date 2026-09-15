@@ -57,6 +57,10 @@ files are trusted shell code: do not source configuration supplied by CoCo IT
 on a trusted machine. Do not change the pinned software inputs without a new
 review and measurement rehearsal.
 
+`SERVICE_FQDN` must resolve from the Kata guest through its configured DNS path,
+including cluster DNS where applicable. Host `/etc/hosts` entries alone are
+insufficient. Configure DNS before the rehearsal or workload launch.
+
 | Role | Configuration requiring deployment-specific review |
 |---|---|
 | Admin | `REGISTRY_HOST`, `KBS_URL`, `WORK_ROOT`, target Kubernetes service IP/port; later pin `WORKLOAD_LAUNCH_PROFILE_SHA256` to the authenticated contract |
