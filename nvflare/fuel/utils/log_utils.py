@@ -54,18 +54,11 @@ progress_log_dict["formatters"]["consoleFormatter"]["()"] = "nvflare.fuel.utils.
 progress_log_dict["formatters"]["consoleFormatter"]["fmt"] = "%(message)s"
 progress_log_dict["filters"]["ConciseFilter"] = {
     "()": "nvflare.fuel.utils.log_utils.ConciseLogFilter",
-    "logger_names": [name for name in default_log_dict["filters"]["ConciseFilter"]["logger_names"] if name != "custom"],
+    "logger_names": [],
     "allow_non_nvflare": False,
     "progress_logger_names": [
         "nvflare.app_common.widgets.metrics_artifact_writer",
         "nvflare.app_common.workflows.cross_site_model_eval",
-    ],
-    "diagnostic_logger_names": [
-        "nvflare.app_common.executors.client_api_executor",
-        "nvflare.app_common.executors.task_script_runner",
-        "nvflare.app_common.np.np_downloader",
-        "nvflare.app_common.workflows.global_model_eval",
-        "nvflare.app_opt.he.cross_site_model_eval",
     ],
 }
 for handler_name in ("consoleHandler", "FLFileHandler"):
@@ -446,21 +439,16 @@ def log_progress(logger: logging.Logger, message: str) -> None:
 class ConciseLogFilter(LoggerNameFilter):
     """Show all non-NVFlare logs while suppressing non-application NVFlare INFO logs."""
 
-    def __init__(
-        self, *args, progress_logger_names=None, diagnostic_logger_names=None, allow_non_nvflare=True, **kwargs
-    ):
+    def __init__(self, *args, progress_logger_names=None, allow_non_nvflare=True, **kwargs):
         super().__init__(*args, **kwargs)
         self.progress_logger_names = progress_logger_names or []
-        self.diagnostic_logger_names = diagnostic_logger_names or []
         self.allow_non_nvflare = allow_non_nvflare
 
     def filter(self, record):
         name = getattr(record, "fullName", record.name)
+        if getattr(record, "nvflare_progress", False):
+            return True
         if self.matches_name(name, self.progress_logger_names):
-            return (self.allow_all_error_logs and record.levelno > logging.INFO) or getattr(
-                record, "nvflare_progress", False
-            )
-        if self.matches_name(name, self.diagnostic_logger_names):
             return self.allow_all_error_logs and record.levelno > logging.INFO
         is_nvflare_logger = name == "nvflare" or name.startswith("nvflare.")
 

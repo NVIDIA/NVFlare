@@ -151,17 +151,29 @@ def test_progress_console_keeps_reporting_and_errors_but_filters_bookkeeping():
         ("nvflare.app_common.executors.client_api_executor.ClientAPIExecutor", logging.INFO, "executor detail"),
         ("__main__.ClientTaskWorker", logging.INFO, "worker detail"),
         ("nvflare.app_common.widgets.metrics_artifact_writer", logging.INFO, "round progress"),
+        ("nvflare.app_common.workflows.cyclic", logging.INFO, "cycle progress"),
+        (
+            "nvflare.app_common.workflows.lr.fedavg.FedAvgLR",
+            logging.INFO,
+            "Newton-Raphson updates: [1, 2, 3]",
+        ),
+        ("nvflare.app_opt.pt.fedopt.FedOpt", logging.INFO, "model contents: [4, 5, 6]"),
         ("nvflare.app_common.np.np_downloader.ArrayDownloadable", logging.WARNING, "transfer problem"),
         ("nvflare.app_common.executors.client_api_executor.ClientAPIExecutor", logging.ERROR, "executor failure"),
     ]
     for index, (name, level, message) in enumerate(records):
         record = logging.LogRecord(name, level, __file__, 1, message, (), None)
-        if index == 3:
+        if index in (3, 4):
             record.nvflare_progress = True
         console.handle(record)
         diagnostic_handler.handle(record)
         assert message in diagnostic_output.getvalue()
-    assert output.getvalue().splitlines() == ["round progress", "transfer problem", "executor failure"]
+    assert output.getvalue().splitlines() == [
+        "round progress",
+        "cycle progress",
+        "transfer problem",
+        "executor failure",
+    ]
     # Only the console uses the concise filter; the actual file configuration
     # continues to retain the records suppressed above.
     assert not config["handlers"]["logFileHandler"].get("filters")
@@ -237,6 +249,15 @@ def test_progress_reuses_existing_formatters_and_retains_diagnostic_records():
             None,
         ),
         logging.LogRecord(
+            "nvflare.app_common.workflows.lr.fedavg.FedAvgLR",
+            logging.INFO,
+            "",
+            0,
+            "Newton-Raphson updates: [1, 2, 3]",
+            (),
+            None,
+        ),
+        logging.LogRecord(
             "nvflare.transport",
             logging.WARNING,
             "",
@@ -252,7 +273,8 @@ def test_progress_reuses_existing_formatters_and_retains_diagnostic_records():
         diagnostic.handle(record)
     assert "raw weights" not in view.getvalue()
     assert "site-1 | loss=0.25" in view.getvalue()
-    assert "fed_stats control flow started." in view.getvalue()
+    assert "fed_stats control flow started." not in view.getvalue()
+    assert "Newton-Raphson updates" not in view.getvalue()
     assert "WARNING: connection interrupted" in view.getvalue()
     assert "run=job-123" not in view.getvalue()
     assert "raw weights" in detail.getvalue()

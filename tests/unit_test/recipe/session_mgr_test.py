@@ -85,9 +85,17 @@ def test_progress_monitor_replays_new_records_and_retries_partial_lines(monkeypa
         }
     )
     noise = json.dumps({"fullName": "custom.trainer", "message": "raw model weights"})
+    app_noise = json.dumps(
+        {
+            "fullName": "nvflare.app_common.workflows.lr.fedavg.FedAvgLR",
+            "message": "Newton-Raphson updates: [1, 2, 3]",
+        }
+    )
     state = {"count": 0, "progress": {"seen": set()}}
     meta = {"status": "RUNNING"}
-    session.get_job_logs.return_value = {"logs": {"server": start + "\n" + noise + "\n" + metric[:20]}}
+    session.get_job_logs.return_value = {
+        "logs": {"server": start + "\n" + noise + "\n" + app_noise + "\n" + metric[:20]}
+    }
     _job_monitor_callback(session, "job-id", meta, cb_run_counter=state)
     now[0] = 1
     _job_monitor_callback(session, "job-id", meta, cb_run_counter=state)
@@ -104,6 +112,7 @@ def test_progress_monitor_replays_new_records_and_retries_partial_lines(monkeypa
     assert output.count("site-1 | loss=0.25") == 1
     assert output.count("WARNING: connection interrupted") == 1
     assert "raw model weights" not in output
+    assert "Newton-Raphson updates" not in output
     assert session.get_job_logs.call_count == 3
 
 
