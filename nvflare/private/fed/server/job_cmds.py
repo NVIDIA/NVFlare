@@ -1055,11 +1055,12 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         try:
             job_id = conn.get_prop(self.JOB_ID)
             with engine.new_context() as fl_ctx:
-                job_manager = engine.job_def_manager
-                job = job_manager.get_job(job_id, fl_ctx)
-                job_status = job.meta.get(JobMetaKey.STATUS)
+                job_status = job_runner.abort_before_start(job_id, fl_ctx)
+                if job_status is job_runner.STARTING:
+                    message = f"Job {job_id} is starting; retry abort."
+                    conn.append_error(message, meta=make_meta(MetaStatusValue.ERROR, message))
+                    return
                 if job_status in [RunStatus.SUBMITTED.value, RunStatus.DISPATCHED.value]:
-                    job_manager.set_status(job.job_id, RunStatus.FINISHED_ABORTED, fl_ctx)
                     message = f"Aborted the job {job_id} before running it."
                     conn.append_string(message)
                     conn.append_success("", meta=make_meta(MetaStatusValue.OK, message))

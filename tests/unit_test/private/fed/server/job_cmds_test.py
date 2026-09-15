@@ -1969,9 +1969,10 @@ def test_abort_job_marks_submitted_job_finished_aborted(monkeypatch):
     engine.job_def_manager.get_job.return_value = job
     conn = _MockConnection(app_ctx=engine, props={JobCommandModule.JOB_ID: "job-123"})
 
+    engine.job_runner.abort_before_start.return_value = RunStatus.SUBMITTED.value
     JobCommandModule().abort_job(conn, ["abort_job", "job-123"])
 
-    engine.job_def_manager.set_status.assert_called_once()
+    engine.job_runner.abort_before_start.assert_called_once()
     engine.job_runner.stop_run.assert_not_called()
     assert any("Aborted the job job-123 before running it." in msg for msg, _meta in conn.strings)
 
@@ -1988,6 +1989,7 @@ def test_abort_job_handles_missing_status_without_attribute_error(monkeypatch):
     engine.job_runner = MagicMock()
     conn = _MockConnection(app_ctx=engine, props={JobCommandModule.JOB_ID: "job-123"})
 
+    engine.job_runner.abort_before_start.return_value = None
     JobCommandModule().abort_job(conn, ["abort_job", "job-123"])
 
     engine.job_runner.stop_run.assert_called_once()
