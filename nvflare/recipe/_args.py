@@ -27,6 +27,7 @@ DEFAULT_EXPORT_DIR = "./fl_job"
 
 _CONSUMED = False
 _RECIPE_LOG_CONFIG = None
+_RECIPE_ARG_ERROR = None
 
 
 def _consume_recipe_args() -> tuple:
@@ -43,7 +44,7 @@ def _consume_recipe_args() -> tuple:
     The decision is frozen after the first call so repeated direct calls return the
     recorded import-time result rather than re-scanning a since-mutated sys.argv.
     """
-    global _CONSUMED, _RECIPE_LOG_CONFIG
+    global _CONSUMED, _RECIPE_ARG_ERROR, _RECIPE_LOG_CONFIG
     if _CONSUMED:
         return _RECIPE_EXPORT, _RECIPE_EXPORT_DIR
 
@@ -60,6 +61,7 @@ def _consume_recipe_args() -> tuple:
             break
         elif argv[i] == "--log_config":
             if i + 1 >= len(argv) or argv[i + 1].startswith("--") or not argv[i + 1].strip():
+                _RECIPE_ARG_ERROR = "--log_config requires a non-empty configuration"
                 _CONSUMED = True
                 return False, DEFAULT_EXPORT_DIR
             log_config = argv[i + 1]
@@ -67,6 +69,7 @@ def _consume_recipe_args() -> tuple:
         elif argv[i].startswith("--log_config="):
             log_config = argv[i].split("=", 1)[1]
             if not log_config.strip():
+                _RECIPE_ARG_ERROR = "--log_config requires a non-empty configuration"
                 _CONSUMED = True
                 return False, DEFAULT_EXPORT_DIR
             i += 1

@@ -30,6 +30,7 @@ def reset_shared_recipe_args_after_test():
     args_module._RECIPE_EXPORT = False
     args_module._RECIPE_EXPORT_DIR = args_module.DEFAULT_EXPORT_DIR
     args_module._RECIPE_LOG_CONFIG = None
+    args_module._RECIPE_ARG_ERROR = None
 
 
 def test_recipe_args_import_strips_export_flags_from_sys_argv(monkeypatch):
@@ -85,6 +86,10 @@ def test_malformed_shared_logging_argument_does_not_raise_during_import(monkeypa
     assert args_module._peek_recipe_args() == (False, args_module.DEFAULT_EXPORT_DIR)
     assert sys.argv == original_argv
     assert os.environ["FL_LOG_LEVEL"] == "concise"
+    from nvflare.recipe.sim_env import SimEnv
+
+    with pytest.raises(ValueError, match="--log_config requires a non-empty configuration"):
+        SimEnv(num_clients=1)
 
 
 def test_system_arguments_stop_at_double_dash(monkeypatch):

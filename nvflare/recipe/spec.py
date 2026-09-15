@@ -42,6 +42,8 @@ class ExecEnv(ABC):
         Args:
             extra: a dict of extra properties
         """
+        if _args._RECIPE_ARG_ERROR:
+            raise ValueError(_args._RECIPE_ARG_ERROR)
         if extra is None:
             extra = {}
         if not isinstance(extra, dict):

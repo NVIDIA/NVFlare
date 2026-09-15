@@ -186,30 +186,30 @@ class MetricsArtifactWriter(Widget):
             self._merge_skipped(skipped, fallback_skipped)
         self._apply_site_weights(sites, site_weights)
 
-        if not aggregated_metrics and not sites and not skipped:
+        has_aggregation_details = bool(aggregated_metrics or sites or skipped)
+        if not has_aggregation_details:
             if custom_aggregator_metrics:
                 self._custom_aggregator_no_metric_rounds.append(current_round)
-            self._round_contribution_count = 0
-            self._progress_client_rows = 0
-            self._progress_rows_omitted = False
-            self._progress_columns = None
-            return
-
-        log_progress(_logger, "  " + "─" * 66)
-        self._log_progress_metrics("Aggregated", aggregated_metrics)
-        duration = ""
-        if self._round_started_at is not None:
-            duration = f"{time.monotonic() - self._round_started_at:.1f}s"
-        completion = "✓ Aggregation finished"
-        if self._round_contribution_count:
-            completion = f"✓ Aggregated {self._round_contribution_count} client update"
-            if self._round_contribution_count != 1:
-                completion += "s"
-        log_progress(_logger, "\n" + f"  {completion}".ljust(64) + duration)
+        else:
+            log_progress(_logger, "  " + "─" * 66)
+            self._log_progress_metrics("Aggregated", aggregated_metrics)
+        if has_aggregation_details or self._round_contribution_count:
+            duration = ""
+            if self._round_started_at is not None:
+                duration = f"{time.monotonic() - self._round_started_at:.1f}s"
+            completion = "✓ Aggregation finished"
+            if self._round_contribution_count:
+                completion = f"✓ Aggregated {self._round_contribution_count} client update"
+                if self._round_contribution_count != 1:
+                    completion += "s"
+            log_progress(_logger, "\n" + f"  {completion}".ljust(64) + duration)
         self._round_contribution_count = 0
         self._progress_client_rows = 0
         self._progress_rows_omitted = False
         self._progress_columns = None
+
+        if not has_aggregation_details:
+            return
 
         aggregation = self._sanitize_json_object(info.get("aggregation"))
         key_metric = self._normalize_key_metric(info.get("key_metric"))
