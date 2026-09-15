@@ -36,6 +36,7 @@ class LogMode:
     RELOAD = "reload"
     FULL = "full"
     CONCISE = "concise"
+    PROGRESS = "progress"
     MSG_ONLY = "msg_only"
     VERBOSE = "verbose"
 
@@ -45,9 +46,13 @@ with open(os.path.join(os.path.dirname(__file__), DEFAULT_LOG_JSON), "r") as f:
     default_log_dict = json.load(f)
 
 concise_log_dict = copy.deepcopy(default_log_dict)
-# Configure the existing concise view using ordinary component loggers.
-concise_log_dict["formatters"]["consoleFormatter"]["fmt"] = "%(message)s"
-concise_log_dict["filters"]["ConciseFilter"] = {
+concise_log_dict["formatters"]["consoleFormatter"]["fmt"] = "%(asctime)s - %(levelname)s - %(message)s"
+concise_log_dict["handlers"]["consoleHandler"]["filters"] = ["ConciseFilter"]
+
+progress_log_dict = copy.deepcopy(default_log_dict)
+progress_log_dict["formatters"]["consoleFormatter"]["()"] = "nvflare.fuel.utils.log_utils.ProgressFormatter"
+progress_log_dict["formatters"]["consoleFormatter"]["fmt"] = "%(message)s"
+progress_log_dict["filters"]["ConciseFilter"] = {
     "()": "nvflare.fuel.utils.log_utils.ConciseLogFilter",
     "logger_names": [name for name in default_log_dict["filters"]["ConciseFilter"]["logger_names"] if name != "custom"],
     "allow_non_nvflare": False,
@@ -64,18 +69,12 @@ concise_log_dict["filters"]["ConciseFilter"] = {
     ],
 }
 for handler_name in ("consoleHandler", "FLFileHandler"):
-    concise_log_dict["handlers"][handler_name]["filters"] = ["ConciseFilter"]
+    progress_log_dict["handlers"][handler_name]["filters"] = ["ConciseFilter"]
 
 
 msg_only_log_dict = copy.deepcopy(default_log_dict)
 msg_only_log_dict["formatters"]["consoleFormatter"]["fmt"] = "%(message)s"
 msg_only_log_dict["handlers"]["consoleHandler"]["filters"] = ["ConciseFilter"]
-# Keep application messages while excluding transfer/executor bookkeeping.
-msg_only_log_dict["filters"]["ConciseFilter"]["exclude_logger_names"] = [
-    "nvflare.app_common.np.np_downloader",
-    "nvflare.app_common.executors.client_api_executor",
-    "__main__.ClientTaskWorker",
-]
 
 verbose_log_dict = copy.deepcopy(default_log_dict)
 verbose_log_dict["formatters"]["consoleFormatter"][
@@ -87,6 +86,7 @@ verbose_log_dict["loggers"]["root"]["level"] = "DEBUG"
 logmode_config_dict = {
     LogMode.FULL: default_log_dict,
     LogMode.CONCISE: concise_log_dict,
+    LogMode.PROGRESS: progress_log_dict,
     LogMode.MSG_ONLY: msg_only_log_dict,
     LogMode.VERBOSE: verbose_log_dict,
 }
@@ -255,6 +255,17 @@ class ColorFormatter(BaseFormatter):
                     logger_specificity = name.count(".")
 
         return ANSIColor.colorize(record_s, log_color)
+
+
+class ProgressFormatter(ColorFormatter):
+    """Keep INFO progress concise while labeling warnings and errors in plain text."""
+
+    def format(self, record):
+        if record.levelno > logging.INFO:
+            record = copy.copy(record)
+            record.msg = f"{record.levelname}: {record.getMessage()}"
+            record.args = ()
+        return super().format(record)
 
 
 class JsonFormatter(BaseFormatter):

@@ -23,7 +23,7 @@ import pytest
 
 
 @pytest.mark.timeout(180)
-@pytest.mark.parametrize("log_mode", [None, "concise", "msg_only"])
+@pytest.mark.parametrize("log_mode", [None, "concise", "progress"])
 def test_numpy_example_gets_shared_reporting_without_example_changes(tmp_path, log_mode):
     repo_root = Path(__file__).resolve().parents[3]
     env = os.environ.copy()
@@ -53,7 +53,7 @@ def test_numpy_example_gets_shared_reporting_without_example_changes(tmp_path, l
     assert "NVIDIA FLARE · hello-numpy" in final_summary
     assert "Simulation · 2 clients" in final_summary
     assert "NVIDIA FLARE · hello-numpy" in output
-    if log_mode in (None, "concise"):
+    if log_mode == "progress":
         assert output.count("ROUND 1 / 1") == 1
         assert "✓ Aggregated 2 client updates" in output
         for site in ("site-1", "site-2"):
@@ -70,6 +70,7 @@ def test_numpy_example_gets_shared_reporting_without_example_changes(tmp_path, l
         assert "evaluation metrics:" in client_log.read_text()
         assert "END_RUN received" in client_log.read_text()
     else:
+        assert re.search(r"\d{4}-\d{2}-\d{2} .* - INFO - ", output)
         assert "Round 0 started." in output
         for site in ("site-1", "site-2"):
             assert f"Client {site}, current_round=0" in output
@@ -124,7 +125,7 @@ def test_plain_fedjob_export_gets_progress_without_configured_writer(tmp_path):
             "-t",
             "2",
             "-l",
-            "concise",
+            "progress",
         ],
         env=env,
         capture_output=True,

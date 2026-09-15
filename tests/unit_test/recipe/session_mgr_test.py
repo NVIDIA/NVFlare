@@ -39,7 +39,7 @@ def test_submit_job_scans_generated_config_before_submission():
     session.close.assert_called_once()
 
 
-@pytest.mark.parametrize("log_mode", ["concise", "full", "verbose"])
+@pytest.mark.parametrize("log_mode", ["concise", "progress", "full", "verbose"])
 def test_monitor_reports_changes_without_repeating_normal_waits(monkeypatch, capsys, log_mode):
     monkeypatch.setenv("FL_LOG_LEVEL", log_mode)
     now = [0]
@@ -58,7 +58,7 @@ def test_monitor_reports_changes_without_repeating_normal_waits(monkeypatch, cap
     assert "15s monitored" not in output
     assert "Job status: FINISHED:COMPLETED" in output
     for field in ("resource_spec", "deploy_map"):
-        assert output.count(field) == (0 if log_mode == "concise" else 2)
+        assert output.count(field) == (0 if log_mode in ("concise", "progress") else 2)
 
 
 def test_progress_monitor_replays_new_records_and_retries_partial_lines(monkeypatch, capsys):
@@ -77,6 +77,13 @@ def test_progress_monitor_replays_new_records_and_retries_partial_lines(monkeypa
             "message": "site-1 | loss=0.25",
         }
     )
+    warning = json.dumps(
+        {
+            "fullName": "nvflare.app_common.executors.client_api_executor.ClientAPIExecutor",
+            "levelname": "WARNING",
+            "message": "connection interrupted",
+        }
+    )
     noise = json.dumps({"fullName": "custom.trainer", "message": "raw model weights"})
     state = {"count": 0, "progress": {"seen": set()}}
     meta = {"status": "RUNNING"}
@@ -86,7 +93,7 @@ def test_progress_monitor_replays_new_records_and_retries_partial_lines(monkeypa
     _job_monitor_callback(session, "job-id", meta, cb_run_counter=state)
     assert session.get_job_logs.call_count == 1
     now[0] = 5
-    session.get_job_logs.return_value = {"logs": {"server": start + "\n" + metric}}
+    session.get_job_logs.return_value = {"logs": {"server": start + "\n" + metric + "\n" + warning}}
     _job_monitor_callback(session, "job-id", meta, cb_run_counter=state)
     # Completion forces a final retrieval even before the five-second interval.
     now[0] = 6
@@ -95,6 +102,7 @@ def test_progress_monitor_replays_new_records_and_retries_partial_lines(monkeypa
     output = capsys.readouterr().out
     assert output.count("Round 1/3 | training") == 1
     assert output.count("site-1 | loss=0.25") == 1
+    assert output.count("WARNING: connection interrupted") == 1
     assert "raw model weights" not in output
     assert session.get_job_logs.call_count == 3
 
@@ -109,6 +117,64 @@ def test_progress_unavailable_does_not_stop_job_monitoring(monkeypatch, capsys):
         now[0] = tick
         assert _job_monitor_callback(session, "job-id", {"status": "RUNNING"}, cb_run_counter=state)
     assert capsys.readouterr().out.count("Live progress could not be retrieved") == 1
+
+
+def test_progress_unavailable_response_uses_bounded_text_fallback(capsys):
+    from nvflare.recipe.session_mgr import _show_job_progress
+
+    session = MagicMock()
+    session.get_job_logs.side_effect = [
+        {"logs": {}, "unavailable": {"server": "server log not available for this job"}},
+        {"logs": {"server": "2026-09-15 - INFO - round started\n2026-09-15 - ERROR - training failed"}},
+    ]
+
+    _show_job_progress(session, "job-id", {"seen": set()})
+
+    output = capsys.readouterr().out
+    assert "Structured live progress is unavailable; showing the bounded server log tail." in output
+    assert "2026-09-15 - INFO - round started" in output
+    assert "2026-09-15 - ERROR - training failed" in output
+    assert session.get_job_logs.call_args_list[1].kwargs == {
+        "target": "server",
+        "log_file_name": "log.txt",
+        "tail_lines": 50,
+    }
+
+
+def test_progress_unavailable_response_allows_startup_then_warns_once(capsys):
+    from nvflare.recipe.session_mgr import _show_job_progress
+
+    session = MagicMock()
+    session.get_job_logs.return_value = {
+        "logs": {},
+        "unavailable": {"server": "server log not available for this job"},
+    }
+    state = {"seen": set()}
+
+    _show_job_progress(session, "job-id", state)
+    assert capsys.readouterr().out == ""
+    _show_job_progress(session, "job-id", state)
+    _show_job_progress(session, "job-id", state)
+
+    output = capsys.readouterr().out
+    assert output.count("Live progress logs are unavailable") == 1
+    assert "nvflare job logs" in output
+
+
+@pytest.mark.parametrize("log_mode,expected", [("concise", False), ("progress", True)])
+def test_remote_progress_replay_is_opt_in(monkeypatch, capsys, log_mode, expected):
+    monkeypatch.setenv("FL_LOG_LEVEL", log_mode)
+    session = MagicMock()
+    session.monitor_job.return_value = MonitorReturnCode.ENDED_BY_CB
+    manager = SessionManager({})
+    manager._get_session = MagicMock(return_value=session)
+
+    assert manager.get_job_result("job-id") is None
+
+    state = session.monitor_job.call_args.kwargs["cb_run_counter"]
+    assert ("progress" in state) is expected
+    session.close.assert_called_once()
+    capsys.readouterr()
 
 
 def test_monitor_bounds_replay_and_memory_across_many_refreshes(capsys):

@@ -548,24 +548,37 @@ Recipe execution prints the job name before deployment. Simulation also prints
 the resolved client count; POC and production print status changes while the job
 runs.
 
-The simulator uses ``concise`` logging by default. In this mode, standard
-round-based training jobs show round headings, client and aggregated metrics,
-evaluation progress, warnings, and errors. Detailed diagnostic records remain in
-``log.txt`` and ``log.json``. To show full diagnostics on the console, run:
+The simulator continues to use ``concise`` logging by default, preserving the
+existing timestamped application-log view. Select ``progress`` for the focused
+round headings, client and aggregated metrics, evaluation progress, warnings,
+and errors introduced by this reporting feature:
+
+.. code-block:: bash
+
+   python job.py --log_config progress
+
+Detailed diagnostic records remain in ``log.txt`` and ``log.json``. To show full
+diagnostics on the console, run:
 
 .. code-block:: bash
 
    python job.py --log_config full
 
 Recipe consumes ``--log_config`` as a system argument before the script's own
-argument parser. The existing ``concise``, ``msg_only``, ``full``, and ``verbose``
-modes are supported. The separate ``nvflare simulator`` command continues to use
+argument parser. The ``concise``, ``progress``, ``msg_only``, ``full``, and
+``verbose`` modes are supported. The separate ``nvflare simulator`` command continues to use
 ``-l`` or ``--log_config``. See :ref:`logging_configuration` for the mode and file
 details.
 
-POC and production use the same concise presentation when the updated server is
-available. Live remote progress is a recent preview; use the saved logs for the
-complete record.
+POC and production use the same focused presentation when ``progress`` is
+selected and the updated server is available. Live remote progress is a recent
+preview from a bounded server ``log.json`` tail, with a bounded ``log.txt``
+fallback. It does not grant access to client machines or reconfigure running
+services. After completion, use the logs in the downloaded result. An authorized
+operator can also run ``nvflare job logs <job_id>`` for server logs and for client
+logs that were already streamed to the server. Other retained service or client
+logs require authorized access to the corresponding site. See
+:ref:`job_cli` for log retrieval and client-log streaming details.
 
 End-of-Run Summary
 ------------------

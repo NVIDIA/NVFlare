@@ -302,8 +302,8 @@ Furthermore, any intermediate logger parents are already created and are configu
 When creating loggers for custom code, we provide a user custom logger function:
 
 :func:`custom_logger<nvflare.fuel.utils.log_utils.custom_logger>`: From a logger, return a new logger with "custom" prepended to the logger name.
-This provides an explicit namespace that passes through the default FLFilter into ``log_fl.txt``. The message-only console mode
-additionally displays logs from all other non-NVFlare namespaces. Concise mode
+This provides an explicit namespace that passes through the default FLFilter into ``log_fl.txt``. The concise and
+message-only console modes additionally display logs from all other non-NVFlare namespaces. Progress mode
 selects workflow progress plus warnings and errors.
 
 When creating loggers for FLARE code, we provide several developer functions to help adhere to the package logger hierarchy:
@@ -327,21 +327,23 @@ We provide a log config argument (``-l`` or ``log_config`` in simulator mode, an
 This argument can be any of the following:
 
 - log configuration json file (``/path/to/my_log_config.json``, ``my_log_config.json``)
-- predefined console :class:`LogMode<nvflare.fuel.utils.log_utils.LogMode>` (``concise``, ``msg_only``, ``full``, ``verbose``)
+- predefined console :class:`LogMode<nvflare.fuel.utils.log_utils.LogMode>` (``concise``, ``progress``, ``msg_only``, ``full``, ``verbose``)
 
-    - ``concise`` (default for simulator mode): workflow progress and metrics,
-      plus warnings and errors. The existing console formatter shows messages only;
-      ``log_fl.txt`` keeps its timestamped file formatter. The existing filter selects
-      reporting module loggers and excludes their class-level diagnostic INFO.
-      No separate progress mode or formatter is installed. Other file handlers keep
-      detailed logs. Built-in aggregation and evaluation writers
+    - ``concise`` (default for simulator mode): all non-NVFlare logs plus selected NVFlare application logs, with
+      simplified log attributes. This preserves the existing NVFlare 2.9 behavior.
+    - ``progress``: round progress, client and aggregated metrics, evaluation progress,
+      warnings, and errors. INFO progress is formatted as messages only; WARNING,
+      ERROR, and CRITICAL records keep a textual severity label as well as terminal
+      color. Detailed records remain in
+      ``log.txt`` and ``log.json``. ``log_fl.txt`` contains the same focused progress
+      records with its timestamped file formatter. Built-in aggregation and evaluation writers
       supply these messages; arbitrary client prints remain in diagnostic logs.
       Server setup supplies ``MetricsArtifactWriter`` when no writer is configured,
       so ordinary FedJob and JSON jobs also report round events and save metric artifacts.
       An explicitly configured writer retains its settings and is not duplicated.
       A component registered as ``metrics_artifact_writer`` also replaces the default,
       even when it does not inherit from ``MetricsArtifactWriter``.
-    - ``msg_only``: non-NVFlare logs and selected NVFlare application logs, formatted as messages only
+    - ``msg_only``: the same log selection as ``concise``, formatted as messages only
     - ``full`` (default in workspaces in poc and production mode): all info level logs
     - ``verbose``: debug level logs with detailed log attributes
 
@@ -354,7 +356,7 @@ FL_LOG_LEVEL Environment Variable
 =================================
 
 The ``FL_LOG_LEVEL`` environment variable can be used to set the log configuration without passing a command-line argument or API parameter.
-It accepts the same values as the :ref:`Log Config Argument <log_config_argument>` above (``concise``, ``msg_only``,
+It accepts the same values as the :ref:`Log Config Argument <log_config_argument>` above (``concise``, ``progress``, ``msg_only``,
 ``full``, ``verbose``, a filepath, or a log level).
 
 This environment variable is applied across all modes: simulator, POC, and production.
@@ -448,7 +450,7 @@ However these commands do not overwrite the log configuration file in the worksp
 - **config**: the log config argument can be any of the following (For more details, refer to :ref:`Log Config Argument <log_config_argument>` above):
 
     - path to a json log configuration file (``/path/to/my_log_config.json``)
-    - predefined log mode (``concise``, ``msg_only``, ``full``, ``verbose``)
+    - predefined log mode (``concise``, ``progress``, ``msg_only``, ``full``, ``verbose``)
     - log level name or number (``debug``, ``info``, ``warning``, ``error``, ``critical``, ``30``)
     - read the current log configuration file log_config.json from the workspace (``reload``)
 

@@ -26,11 +26,11 @@ from nvflare.fuel.flare_api.job_status import job_status_outcome
 from nvflare.fuel.utils.job_secret_scanner import warn_on_potential_secrets_in_job_dir
 from nvflare.fuel.utils.log_utils import (
     FL_LOG_LEVEL,
-    ColorFormatter,
     ConciseLogFilter,
     LogMode,
-    concise_log_dict,
+    ProgressFormatter,
     get_module_logger,
+    progress_log_dict,
 )
 from nvflare.job_config.api import FedJob
 from nvflare.recipe._failure_summary import collect_client_errors
@@ -42,16 +42,47 @@ def _show_job_progress(session, job_id, state):
     try:
         response = session.get_job_logs(job_id, target="server", log_file_name="log.json", tail_lines=200)
         logs = response.get("logs", {})
-        formatter = ColorFormatter(fmt=concise_log_dict["formatters"]["consoleFormatter"]["fmt"])
-        filter_config = concise_log_dict["filters"]["ConciseFilter"]
+        text = logs.get("server", "")
+        structured = True
+        unavailable = response.get("unavailable", {})
+        if not text and isinstance(unavailable, dict) and "server" in unavailable:
+            fallback = session.get_job_logs(job_id, target="server", log_file_name="log.txt", tail_lines=50)
+            fallback_logs = fallback.get("logs", {})
+            text = fallback_logs.get("server", "") if isinstance(fallback_logs, dict) else ""
+            structured = False
+            if text and not state.get("fallback_notified"):
+                _print_output(
+                    "Structured live progress is unavailable; showing the bounded server log tail.", flush=True
+                )
+                state["fallback_notified"] = True
+            elif not text:
+                state["unavailable_count"] = state.get("unavailable_count", 0) + 1
+                if state["unavailable_count"] >= 2 and not state.get("unavailable_warned"):
+                    _print_output(
+                        "Live progress logs are unavailable. Continue monitoring; use `nvflare job logs` or "
+                        "inspect the downloaded result logs when access permits.",
+                        flush=True,
+                    )
+                    state["unavailable_warned"] = True
+                return
+        if not isinstance(text, str):
+            raise TypeError("server log response must be text")
+        state["unavailable_count"] = 0
+        formatter = ProgressFormatter(fmt=progress_log_dict["formatters"]["consoleFormatter"]["fmt"])
+        filter_config = progress_log_dict["filters"]["ConciseFilter"]
         filter_args = {key: value for key, value in filter_config.items() if key != "()"}
         log_filter = ConciseLogFilter(**filter_args)
         recent = set()
         # The existing API caps the transfer at 5 MiB. Bound parsing and retained
         # state independently: only the server's last 64 KiB / 200 lines.
-        text = logs.get("server", "").encode("utf-8")[-65536:].decode("utf-8", errors="ignore")
-        for line in text.splitlines()[-200:]:
+        text = text.encode("utf-8")[-65536:].decode("utf-8", errors="ignore")
+        for line in text.splitlines()[-(200 if structured else 50) :]:
             digest = hashlib.sha256(line.encode()).digest()
+            if not structured:
+                recent.add(digest)
+                if digest not in state["seen"]:
+                    _print_output(line, flush=True)
+                continue
             try:
                 record = json.loads(line)
             except (ValueError, TypeError):
@@ -154,7 +185,7 @@ class SessionManager:
         """Get the result workspace of the job."""
         sess = self._get_session()
         cb_run_counter = {"count": 0}
-        if os.environ.get(FL_LOG_LEVEL, LogMode.CONCISE) == LogMode.CONCISE:
+        if os.environ.get(FL_LOG_LEVEL, LogMode.CONCISE) == LogMode.PROGRESS:
             cb_run_counter["progress"] = {"seen": set()}
         rc = sess.monitor_job(job_id, timeout=timeout, cb=_job_monitor_callback, cb_run_counter=cb_run_counter)
         if rc == MonitorReturnCode.JOB_FINISHED:

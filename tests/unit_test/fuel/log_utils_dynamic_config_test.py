@@ -45,17 +45,44 @@ def test_dynamic_log_config_invalid_inline_json_raises_value_error(tmp_path):
         dynamic_log_config('{"version": 1,', str(tmp_path), str(tmp_path / "reload.json"))
 
 
-def test_log_modes_use_concise_without_an_extra_mode():
+def test_log_modes_preserve_concise_and_add_progress():
     from nvflare.fuel.utils.log_utils import LogMode, logmode_config_dict
 
+    assert logmode_config_dict[LogMode.CONCISE]["formatters"]["consoleFormatter"]["fmt"] == (
+        "%(asctime)s - %(levelname)s - %(message)s"
+    )
     assert logmode_config_dict[LogMode.CONCISE]["handlers"]["consoleHandler"]["filters"] == ["ConciseFilter"]
-    assert "progress" not in logmode_config_dict
+    assert logmode_config_dict[LogMode.CONCISE]["handlers"]["FLFileHandler"]["filters"] == ["FLFilter"]
+    assert logmode_config_dict[LogMode.CONCISE]["filters"] == logmode_config_dict[LogMode.FULL]["filters"]
+    for handler_name in ("FLFileHandler", "logFileHandler", "jsonFileHandler", "errorFileHandler"):
+        assert (
+            logmode_config_dict[LogMode.CONCISE]["handlers"][handler_name]
+            == logmode_config_dict[LogMode.FULL]["handlers"][handler_name]
+        )
+    assert logmode_config_dict[LogMode.PROGRESS]["formatters"]["consoleFormatter"]["fmt"] == "%(message)s"
+    assert logmode_config_dict[LogMode.PROGRESS]["formatters"]["consoleFormatter"]["()"] == (
+        "nvflare.fuel.utils.log_utils.ProgressFormatter"
+    )
+    for handler_name in ("consoleHandler", "FLFileHandler"):
+        assert logmode_config_dict[LogMode.PROGRESS]["handlers"][handler_name]["filters"] == ["ConciseFilter"]
     assert logmode_config_dict[LogMode.MSG_ONLY]["formatters"]["consoleFormatter"]["fmt"] == "%(message)s"
     assert logmode_config_dict[LogMode.MSG_ONLY]["handlers"]["consoleHandler"]["filters"] == ["ConciseFilter"]
+    assert logmode_config_dict[LogMode.MSG_ONLY]["filters"] == logmode_config_dict[LogMode.FULL]["filters"]
     assert logmode_config_dict[LogMode.FULL]["filters"]["FLFilter"]["()"] == (
         "nvflare.fuel.utils.log_utils.LoggerNameFilter"
     )
     assert logmode_config_dict[LogMode.FULL]["handlers"]["FLFileHandler"]["filters"] == ["FLFilter"]
+
+
+def test_dynamic_log_config_accepts_progress_mode(tmp_path):
+    from nvflare.fuel.utils.log_utils import LogMode, dynamic_log_config, logmode_config_dict
+
+    with patch("nvflare.fuel.utils.log_utils.apply_log_config") as mock_apply:
+        dynamic_log_config(LogMode.PROGRESS, str(tmp_path), str(tmp_path / "reload.json"))
+
+    applied = mock_apply.call_args.args[0]
+    assert applied == logmode_config_dict[LogMode.PROGRESS]
+    assert applied is not logmode_config_dict[LogMode.PROGRESS]
 
 
 @pytest.mark.parametrize(
@@ -91,11 +118,27 @@ def test_color_formatter_omits_ansi_when_stdout_is_not_tty(monkeypatch):
     assert formatter.format(record) == "hello"
 
 
-@pytest.mark.parametrize("mode", ["msg_only"])
-def test_concise_console_keeps_client_output_and_errors_but_filters_bookkeeping(mode):
+def test_progress_formatter_labels_warnings_and_errors_without_changing_info(monkeypatch):
+    from nvflare.fuel.utils.log_utils import ProgressFormatter
+
+    monkeypatch.setattr(sys, "stdout", io.StringIO())
+    formatter = ProgressFormatter("%(message)s")
+
+    assert formatter.format(logging.LogRecord("nvflare.test", logging.INFO, __file__, 1, "working", (), None)) == (
+        "working"
+    )
+    assert formatter.format(logging.LogRecord("nvflare.test", logging.WARNING, __file__, 1, "retrying", (), None)) == (
+        "WARNING: retrying"
+    )
+    assert formatter.format(logging.LogRecord("nvflare.test", logging.ERROR, __file__, 1, "failed", (), None)) == (
+        "ERROR: failed"
+    )
+
+
+def test_progress_console_keeps_reporting_and_errors_but_filters_bookkeeping():
     from nvflare.fuel.utils.log_utils import ConciseLogFilter, logmode_config_dict
 
-    config = logmode_config_dict[mode]
+    config = logmode_config_dict["progress"]
     filter_config = {k: v for k, v in config["filters"]["ConciseFilter"].items() if k != "()"}
     log_filter = ConciseLogFilter(**filter_config)
     output = io.StringIO()
@@ -107,16 +150,18 @@ def test_concise_console_keeps_client_output_and_errors_but_filters_bookkeeping(
         ("nvflare.app_common.np.np_downloader.ArrayDownloadable", logging.INFO, "transfer detail"),
         ("nvflare.app_common.executors.client_api_executor.ClientAPIExecutor", logging.INFO, "executor detail"),
         ("__main__.ClientTaskWorker", logging.INFO, "worker detail"),
-        ("nvflare.app_common.executors.task_script_runner.TaskScriptRunner", logging.INFO, "user training output"),
+        ("nvflare.app_common.widgets.metrics_artifact_writer", logging.INFO, "round progress"),
         ("nvflare.app_common.np.np_downloader.ArrayDownloadable", logging.WARNING, "transfer problem"),
         ("nvflare.app_common.executors.client_api_executor.ClientAPIExecutor", logging.ERROR, "executor failure"),
     ]
-    for name, level, message in records:
+    for index, (name, level, message) in enumerate(records):
         record = logging.LogRecord(name, level, __file__, 1, message, (), None)
+        if index == 3:
+            record.nvflare_progress = True
         console.handle(record)
         diagnostic_handler.handle(record)
         assert message in diagnostic_output.getvalue()
-    assert output.getvalue().splitlines() == ["user training output", "transfer problem", "executor failure"]
+    assert output.getvalue().splitlines() == ["round progress", "transfer problem", "executor failure"]
     # Only the console uses the concise filter; the actual file configuration
     # continues to retain the records suppressed above.
     assert not config["handlers"]["logFileHandler"].get("filters")
@@ -146,6 +191,7 @@ def test_validate_site_log_config_accepts_levels_and_modes():
 
     assert validate_site_log_config("INFO") == "INFO"
     assert validate_site_log_config("20") == "20"
+    assert validate_site_log_config(LogMode.PROGRESS) == LogMode.PROGRESS
     assert validate_site_log_config(LogMode.MSG_ONLY) == LogMode.MSG_ONLY
 
 
@@ -159,13 +205,13 @@ def test_validate_site_log_config_rejects_dicts_and_file_paths():
         validate_site_log_config("/my workspace/log.conf")
 
 
-def test_concise_reuses_existing_formatters_and_retains_diagnostic_records():
-    from nvflare.fuel.utils.log_utils import ColorFormatter, ConciseLogFilter, logmode_config_dict
+def test_progress_reuses_existing_formatters_and_retains_diagnostic_records():
+    from nvflare.fuel.utils.log_utils import ConciseLogFilter, LogMode, ProgressFormatter, logmode_config_dict
 
     view = io.StringIO()
     handler = logging.StreamHandler(view)
-    handler.setFormatter(ColorFormatter(fmt="%(message)s"))
-    filter_config = logmode_config_dict["concise"]["filters"]["ConciseFilter"].copy()
+    handler.setFormatter(ProgressFormatter(fmt="%(message)s"))
+    filter_config = logmode_config_dict[LogMode.PROGRESS]["filters"]["ConciseFilter"].copy()
     assert filter_config.pop("()") == "nvflare.fuel.utils.log_utils.ConciseLogFilter"
     handler.addFilter(ConciseLogFilter(**filter_config))
     detail = io.StringIO()
@@ -207,11 +253,11 @@ def test_concise_reuses_existing_formatters_and_retains_diagnostic_records():
     assert "raw weights" not in view.getvalue()
     assert "site-1 | loss=0.25" in view.getvalue()
     assert "fed_stats control flow started." in view.getvalue()
-    assert "connection interrupted" in view.getvalue()
+    assert "WARNING: connection interrupted" in view.getvalue()
     assert "run=job-123" not in view.getvalue()
     assert "raw weights" in detail.getvalue()
     assert "[identity=site-2, run=job-123]" in detail.getvalue()
-    config = logmode_config_dict["concise"]
+    config = logmode_config_dict[LogMode.PROGRESS]
     assert config["formatters"].keys() == logmode_config_dict["full"]["formatters"].keys()
     assert config["filters"].keys() == logmode_config_dict["full"]["filters"].keys()
     for name in ("consoleHandler", "FLFileHandler"):
@@ -219,6 +265,27 @@ def test_concise_reuses_existing_formatters_and_retains_diagnostic_records():
         assert config["handlers"][name]["formatter"] == logmode_config_dict["full"]["handlers"][name]["formatter"]
     for name in ("logFileHandler", "jsonFileHandler"):
         assert config["handlers"][name] == logmode_config_dict["full"]["handlers"][name]
+
+
+def test_concise_keeps_original_application_selection_and_format():
+    from nvflare.fuel.utils.log_utils import ColorFormatter, ConciseLogFilter, LogMode, logmode_config_dict
+
+    config = logmode_config_dict[LogMode.CONCISE]
+    filter_config = {key: value for key, value in config["filters"]["ConciseFilter"].items() if key != "()"}
+    log_filter = ConciseLogFilter(**filter_config)
+    record = logging.LogRecord(
+        "nvflare.app_common.executors.task_script_runner.TaskScriptRunner",
+        logging.INFO,
+        "",
+        0,
+        "Received weights: [1, 2, 3]",
+        (),
+        None,
+    )
+
+    assert log_filter.filter(record)
+    rendered = ColorFormatter(fmt=config["formatters"]["consoleFormatter"]["fmt"]).format(record)
+    assert " - INFO - Received weights: [1, 2, 3]" in rendered
 
 
 def test_metric_formatting_cannot_propagate_application_object_errors():
