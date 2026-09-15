@@ -135,6 +135,18 @@ def test_progress_formatter_labels_warnings_and_errors_without_changing_info(mon
     )
 
 
+def test_json_formatter_preserves_explicit_progress_marker():
+    from nvflare.fuel.utils.log_utils import JsonFormatter
+
+    formatter = JsonFormatter()
+    regular = logging.LogRecord("nvflare.test", logging.INFO, __file__, 1, "diagnostic", (), None)
+    progress = logging.LogRecord("nvflare.test", logging.INFO, __file__, 1, "working", (), None)
+    progress.nvflare_progress = True
+
+    assert json.loads(formatter.format(regular))["nvflare_progress"] is False
+    assert json.loads(formatter.format(progress))["nvflare_progress"] is True
+
+
 def test_progress_console_keeps_reporting_and_errors_but_filters_bookkeeping():
     from nvflare.fuel.utils.log_utils import ConciseLogFilter, logmode_config_dict
 

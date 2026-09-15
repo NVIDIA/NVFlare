@@ -96,7 +96,10 @@ def _show_job_progress(session, job_id, state):
             if not isinstance(name, str) or not isinstance(level, str):
                 continue
             log_record = logging.LogRecord(name, getattr(logging, level, logging.INFO), "", 0, "", (), None)
-            log_record.nvflare_progress = name in filter_args.get("progress_logger_names", [])
+            marker = record.get("nvflare_progress")
+            log_record.nvflare_progress = (
+                marker is True if "nvflare_progress" in record else name in filter_args.get("progress_logger_names", [])
+            )
             if not log_filter.filter(log_record):
                 continue
             already_shown = digest in state["seen"] or digest in recent

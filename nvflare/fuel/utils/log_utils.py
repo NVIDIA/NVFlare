@@ -293,6 +293,7 @@ class JsonFormatter(BaseFormatter):
         message_dict = {}
         for fmt_key, fmt_val in self.fmt_dict.items():
             message_dict[fmt_key] = record.__dict__.get(fmt_val, "")
+        message_dict["nvflare_progress"] = bool(getattr(record, "nvflare_progress", False))
         return message_dict
 
     def format(self, record) -> str:
