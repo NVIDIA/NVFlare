@@ -81,6 +81,7 @@ NVIDIA FLARE
 
    user_guide/admin_guide/deployment/overview
    programming_guide/provisioning_system
+   Multi-Study Support <user_guide/admin_guide/multi_study_guide>
    Distributed Provisioning <user_guide/nvflare_cli/distributed_provisioning>
    user_guide/admin_guide/deployment/dashboard_ui
    user_guide/admin_guide/deployment/cloud_deployment
