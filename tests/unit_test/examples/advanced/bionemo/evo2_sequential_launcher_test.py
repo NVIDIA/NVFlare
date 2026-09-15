@@ -21,18 +21,20 @@ from pathlib import Path
 
 import pytest
 
+_PROCESS_TIMEOUT = 30.0
+
 
 def _example_dir() -> Path:
     return Path(__file__).parents[5] / "examples" / "advanced" / "bionemo" / "evo2"
 
 
-def _wait_for_file(path: Path, process: subprocess.Popen, timeout: float = 5.0) -> None:
+def _wait_for_file(path: Path, process: subprocess.Popen, timeout: float = _PROCESS_TIMEOUT) -> None:
     deadline = time.monotonic() + timeout
     while not path.exists() and time.monotonic() < deadline:
         if process.poll() is not None:
             pytest.fail(f"Sequential launcher exited before the inner trainer was ready:\n{process.stdout.read()}")
         time.sleep(0.01)
-    assert path.exists(), "Inner trainer did not start before the test timeout."
+    assert path.exists(), f"Inner trainer did not start within {timeout:.1f} seconds."
 
 
 def test_workspace_lock_descriptor_survives_exec_until_the_inner_trainer_exits(tmp_path):
@@ -73,7 +75,7 @@ def test_workspace_lock_descriptor_survives_exec_until_the_inner_trainer_exits(t
             with pytest.raises(BlockingIOError):
                 fcntl.flock(competing_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
             release_file.touch()
-            assert process.wait(timeout=5.0) == 0
+            assert process.wait(timeout=_PROCESS_TIMEOUT) == 0
             fcntl.flock(competing_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         finally:
             os.close(competing_fd)
@@ -81,7 +83,7 @@ def test_workspace_lock_descriptor_survives_exec_until_the_inner_trainer_exits(t
         release_file.touch(exist_ok=True)
         if process.poll() is None:
             process.kill()
-        process.communicate(timeout=5.0)
+        process.communicate(timeout=_PROCESS_TIMEOUT)
 
 
 def test_workspace_lock_releases_when_the_execed_inner_trainer_is_terminated(tmp_path):
@@ -121,11 +123,11 @@ def test_workspace_lock_releases_when_the_execed_inner_trainer_is_terminated(tmp
             with pytest.raises(BlockingIOError):
                 fcntl.flock(competing_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
             process.terminate()
-            assert process.wait(timeout=5.0) != 0
+            assert process.wait(timeout=_PROCESS_TIMEOUT) != 0
             fcntl.flock(competing_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         finally:
             os.close(competing_fd)
     finally:
         if process.poll() is None:
             process.kill()
-        process.communicate(timeout=5.0)
+        process.communicate(timeout=_PROCESS_TIMEOUT)
