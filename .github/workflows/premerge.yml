@@ -306,10 +306,15 @@ jobs:
           "$RUNNER_TEMP/example-wheel-env/bin/python" - \
             "$RUNNER_TEMP/example-list.json" "$RUNNER_TEMP/example-tree.json" <<'PY'
           import json
+          import re
           import sys
           from pathlib import Path
 
+          from nvflare._version import get_versions
+
           list_path, tree_path = map(Path, sys.argv[1:])
+          revision = get_versions().get("full-revisionid")
+          assert isinstance(revision, str) and re.fullmatch(r"[0-9a-f]{40}", revision), revision
           listed = json.loads(Path(list_path).read_text())["data"]["examples"]
           tree = json.loads(tree_path.read_text())
           assert tree["truncated"] is False
