@@ -29,7 +29,7 @@ Install the host tools and the Ubuntu OVMF firmware packages:
 sudo apt-get update
 sudo apt-get install -y qemu-system-x86 qemu-utils cloud-image-utils \
   libguestfs-tools cryptsetup-bin e2fsprogs util-linux openssh-client curl \
-  git cargo docker.io ovmf
+  git cargo docker.io ovmf gpgv ubuntu-cloudimage-keyring
 ```
 
 Registry publication and retrieval use ORAS; an offline `.oci.tar` build and
@@ -49,20 +49,42 @@ test -r /usr/share/ovmf/OVMF.amdsev.fd
 test -r /usr/share/ovmf/OVMF.inteltdx.ms.fd
 ```
 
-Create `inputs/` and download the Ubuntu 26.04 server cloud image and its official
-checksum file:
+Authenticate the Ubuntu 26.04 cloud-image checksum before using the base image.
+The signing keys come from `ubuntu-cloudimage-keyring`, installed through the
+build host's authenticated Ubuntu package repositories. This trusted keyring is
+independent of the image download and its accompanying checksum files; do not
+replace it with a key supplied by the image mirror. See Ubuntu's
+[cloud-image verification guidance](https://documentation.ubuntu.com/public-images/public-images-how-to/verify-image-checksum/).
+
+Run the following block as one command. It stops on a missing or invalid
+signature, a missing or duplicate image checksum, or an image digest mismatch:
 
 ```sh
-mkdir -p inputs
-curl -fL https://cloud-images.ubuntu.com/releases/26.04/release/ubuntu-26.04-server-cloudimg-amd64.img \
-  -o inputs/ubuntu-26.04-server-cloudimg-amd64.img
-curl -fL https://cloud-images.ubuntu.com/releases/26.04/release/SHA256SUMS \
-  -o inputs/SHA256SUMS
 (
+  set -eu
+  mkdir -p inputs
   cd inputs
-  grep ' ubuntu-26.04-server-cloudimg-amd64.img$' SHA256SUMS | sha256sum -c -
+  cvm_image_name=ubuntu-26.04-server-cloudimg-amd64.img
+  cvm_image_url=https://cloud-images.ubuntu.com/releases/26.04/release
+  curl -fL "$cvm_image_url/SHA256SUMS" -o SHA256SUMS
+  curl -fL "$cvm_image_url/SHA256SUMS.gpg" -o SHA256SUMS.gpg
+  gpgv --keyring /usr/share/keyrings/ubuntu-cloudimage-keyring.gpg \
+    SHA256SUMS.gpg SHA256SUMS
+  awk -v image="$cvm_image_name" '
+    $2 == image || $2 == "*" image { print; found++ }
+    END { if (found != 1) exit 1 }
+  ' SHA256SUMS > "$cvm_image_name.sha256"
+  curl -fL "$cvm_image_url/$cvm_image_name" -o "$cvm_image_name"
+  sha256sum --check --strict "$cvm_image_name.sha256"
 )
 ```
+
+Proceed with construction only after this block succeeds. Retain the signed
+checksum, signature and verified image with the reviewed build inputs. If the
+signing key changes, update the keyring through the trusted package repository or
+an independently authenticated administrator process before retrying. The
+builder's recorded input digest provides traceability; it does not authenticate
+the publisher or replace this verification step.
 
 Build the pinned `kbs-client` from the official Trustee repository. The reviewed
 source revision is
