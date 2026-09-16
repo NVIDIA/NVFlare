@@ -18,11 +18,7 @@ from typing import Optional
 
 from nvflare.apis.job_def import RunStatus
 
-_LEGACY_TERMINAL_JOB_STATUSES = {
-    "ABORTED",
-    "ABANDONED",
-    "FAILED",
-}
+_LEGACY_TERMINAL_JOB_STATUSES = {"ABORTED", "ABANDONED", "FAILED"}
 
 
 def is_terminal_job_status(status: str) -> bool:

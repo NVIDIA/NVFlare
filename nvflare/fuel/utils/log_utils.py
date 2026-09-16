@@ -348,23 +348,6 @@ def _format_metric_value(value):
     return json.dumps(value, ensure_ascii=True)
 
 
-def format_metric_summary(metrics):
-    """Render at most six scalar metrics; leave full payloads in their artifacts."""
-    try:
-        if not isinstance(metrics, dict):
-            return "[see saved result for metrics]"
-        values = []
-        for name, value in islice(metrics.items(), 6):
-            name = json.dumps((name[:64] if isinstance(name, str) else "metric"), ensure_ascii=True)[1:-1]
-            values.append(f"{name}={_format_metric_value(value)}")
-        if len(metrics) > 6:
-            values.append("... [see saved result for remaining metrics]")
-        return ", ".join(values) or "no metrics reported"
-    except Exception:
-        # Application-defined objects must not make display formatting fail a workflow.
-        return "[see saved result for metrics]"
-
-
 def format_metric_table(rows, label="Client", columns=None, header=True, label_width=None, include_notice=True):
     """Render a bounded two-metric table without evaluating application objects.
 

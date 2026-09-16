@@ -78,11 +78,7 @@ class MetricsArtifactWriter(Widget):
         self._first_round = None
         self._total_rounds = None
         self._round_started_at = None
-        self._progress_columns = None
-        self._round_contribution_count = 0
-        self._progress_client_rows = 0
-        self._progress_rows_omitted = False
-        self._progress_metrics_omitted = False
+        self._reset_progress()
         self._has_metrics = False
         self._final_round = None
         self._final_aggregated_metrics = []
@@ -98,6 +94,12 @@ class MetricsArtifactWriter(Widget):
         self._round_site_metric_counts = {}
         self._custom_aggregator_no_metric_rounds = []
 
+    def _reset_progress(self):
+        self._progress_columns = None
+        self._round_contribution_count = 0
+        self._progress_client_rows = 0
+        self._progress_metrics_omitted = False
+
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
             self._reset()
@@ -106,11 +108,7 @@ class MetricsArtifactWriter(Widget):
             if self._first_round is None:
                 self._first_round = current_round
             self._round_started_at = time.monotonic()
-            self._progress_columns = None
-            self._round_contribution_count = 0
-            self._progress_client_rows = 0
-            self._progress_rows_omitted = False
-            self._progress_metrics_omitted = False
+            self._reset_progress()
             heading = self._round_label(current_round, fl_ctx).upper().replace("/", " / ")
             log_progress(_logger, "\n" + f" {heading} ".center(72, "=") + "\n\n  Training\n")
         elif event_type == AppEventType.AFTER_CONTRIBUTION_ACCEPT:
@@ -166,10 +164,9 @@ class MetricsArtifactWriter(Widget):
     def _log_contribution_progress(self, label, metrics):
         if self._progress_client_rows < MAX_PROGRESS_CLIENT_ROWS:
             self._log_progress_metrics(label, metrics)
-            self._progress_client_rows += 1
-        elif not self._progress_rows_omitted:
+        elif self._progress_client_rows == MAX_PROGRESS_CLIENT_ROWS:
             log_progress(_logger, "  Additional client results are available in the saved metrics artifacts.")
-            self._progress_rows_omitted = True
+        self._progress_client_rows += 1
 
     def _handle_after_aggregation(self, fl_ctx: FLContext):
         aggr_result = fl_ctx.get_prop(AppConstants.AGGREGATION_RESULT, None)
@@ -218,11 +215,7 @@ class MetricsArtifactWriter(Widget):
                 if self._round_contribution_count != 1:
                     completion += "s"
             log_progress(_logger, "\n" + f"  {completion}".ljust(64) + duration)
-        self._round_contribution_count = 0
-        self._progress_client_rows = 0
-        self._progress_rows_omitted = False
-        self._progress_metrics_omitted = False
-        self._progress_columns = None
+        self._reset_progress()
 
         if not has_aggregation_details:
             return
@@ -588,9 +581,6 @@ class MetricsArtifactWriter(Widget):
         os.makedirs(os.path.dirname(self._summary_file_path), exist_ok=True)
         with open(self._summary_file_path, "w", encoding="utf-8") as f:
             f.write(data)
-        self.log_info(fl_ctx, f"Aggregated metrics summary: {self._summary_file_path}", fire_event=False)
-        if os.path.isfile(self._round_file_path):
-            self.log_info(fl_ctx, f"Round metrics: {self._round_file_path}", fire_event=False)
 
     def _fit_round_record(self, record):
         fitted = {

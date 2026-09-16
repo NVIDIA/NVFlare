@@ -234,7 +234,7 @@ def test_monitor_bounds_replay_and_memory_across_many_refreshes(capsys):
         session.get_job_logs.return_value = {"logs": {"server": "\n".join(lines)}}
         _show_job_progress(session, "job-id", state)
         assert len(state["seen"]) <= 200
-        assert all(isinstance(key, bytes) and len(key) == 32 for key in state["seen"])
+        assert all(isinstance(line, str) for line in state["seen"])
         output = capsys.readouterr().out
         assert output.count("row ") == 200
         assert f"row {batch}-999" in output

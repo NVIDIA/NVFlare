@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import hashlib
 import json
 import logging
 import os
@@ -80,10 +79,9 @@ def _show_job_progress(session, job_id, state):
         # state independently: only the server's last 64 KiB / 200 lines.
         text = text.encode("utf-8")[-65536:].decode("utf-8", errors="ignore")
         for line in text.splitlines()[-(200 if structured else 50) :]:
-            digest = hashlib.sha256(line.encode()).digest()
             if not structured:
-                recent.add(digest)
-                if digest not in state["seen"]:
+                recent.add(line)
+                if line not in state["seen"]:
                     _print_output(line, flush=True)
                 continue
             try:
@@ -103,8 +101,8 @@ def _show_job_progress(session, job_id, state):
             )
             if not log_filter.filter(log_record):
                 continue
-            already_shown = digest in state["seen"] or digest in recent
-            recent.add(digest)
+            already_shown = line in state["seen"] or line in recent
+            recent.add(line)
             if already_shown:
                 continue
             message = record.get("message", "")
