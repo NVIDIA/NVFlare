@@ -19,8 +19,6 @@ from typing import Optional
 from nvflare.apis.job_def import RunStatus
 
 _LEGACY_TERMINAL_JOB_STATUSES = {
-    "FINISHED_OK",
-    "FINISHED_EXCEPTION",
     "ABORTED",
     "ABANDONED",
     "FAILED",
