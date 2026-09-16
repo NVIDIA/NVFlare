@@ -180,6 +180,28 @@ def test_progress_empty_structured_response_uses_bounded_text_fallback(capsys, s
     }
 
 
+def test_progress_text_fallback_drops_partial_first_line_before_dedup(capsys):
+    from nvflare.recipe.session_mgr import _show_job_progress
+
+    session = MagicMock()
+    long_line = "x" * (70 * 1024)
+    session.get_job_logs.side_effect = [
+        {"logs": {}},
+        {"logs": {"server": f"{long_line}\nround 1"}},
+        {"logs": {}},
+        {"logs": {"server": f"{long_line}\nround 1\nround 2"}},
+    ]
+    state = {"seen": set()}
+
+    _show_job_progress(session, "job-id", state)
+    _show_job_progress(session, "job-id", state)
+
+    output = capsys.readouterr().out
+    assert "x" * 100 not in output
+    assert output.count("round 1") == 1
+    assert output.count("round 2") == 1
+
+
 def test_progress_unavailable_response_allows_startup_then_warns_once(capsys):
     from nvflare.recipe.session_mgr import _show_job_progress
 

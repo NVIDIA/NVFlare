@@ -76,8 +76,11 @@ def _show_job_progress(session, job_id, state):
         log_filter = ConciseLogFilter(**filter_args)
         recent = set()
         # The existing API caps the transfer at 5 MiB. Bound parsing and retained
-        # state independently: only the server's last 64 KiB / 200 lines.
-        text = text.encode("utf-8")[-65536:].decode("utf-8", errors="ignore")
+        # state independently: only complete records from the last 64 KiB / 200 lines.
+        data = text.encode("utf-8")
+        if len(data) > 65536:
+            data = data[-65536:].partition(b"\n")[2]
+        text = data.decode("utf-8", errors="ignore")
         for line in text.splitlines()[-(200 if structured else 50) :]:
             if not structured:
                 recent.add(line)
