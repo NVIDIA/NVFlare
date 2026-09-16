@@ -119,6 +119,10 @@ Removing IdP entitlements or registry membership does not revoke existing
 certificate-derived access; it lasts until certificate expiry. There is no
 local denylist. Do not reuse a study name for a different study.
 
+Certificate-authorized administrators can make role-permitted registry changes,
+including membership grants that persist until explicitly removed, independently
+of certificate expiry or IdP entitlement removal.
+
 Using Studies
 =============
 

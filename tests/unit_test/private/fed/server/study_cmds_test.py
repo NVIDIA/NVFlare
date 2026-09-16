@@ -930,6 +930,24 @@ def test_certificate_membership_does_not_grant_study_management_role(role):
             assert spec.authz_func(conn, [spec.name, "study1"]) == PreAuthzReturnCode.ERROR
 
 
+@pytest.mark.parametrize("role, entitled", [("org_admin", False), ("org_admin", True), ("project_admin", False)])
+def test_register_study_with_null_site_orgs(role, entitled):
+    conn = _FakeConnection(role=role, org="org_b", engine=_make_engine({"site-b": "org_b"}))
+    conn._props[ConnProps.CERT_STUDIES] = ("study1",) if entitled else ()
+    config = {"format_version": "1.0", "studies": {"study1": {"site_orgs": None, "admins": []}}}
+    site_args = ["--sites", "site-b"] if role == "org_admin" else ["--site-org", "org_b:site-b"]
+    with _mutation_ctx_with_write_tracker(config) as write:
+        StudyCommandModule().cmd_register_study(conn, ["register_study", "study1", *site_args])
+        if role == "org_admin" and not entitled:
+            assert conn.last_reply["error_code"] == "STUDY_ALREADY_EXISTS"
+            write.assert_not_called()
+        else:
+            assert "error_code" not in conn.last_reply
+            saved = write.call_args.args[1]["studies"]["study1"]
+            assert saved["site_orgs"] == {"org_b": ["site-b"]}
+            assert saved["admins"] == ["admin@example.com"]
+
+
 def test_certificate_membership_does_not_allow_foreign_org_sites():
     conn = _FakeConnection(role="org_admin", org="org_b", engine=_make_engine({"site-existing": "org_a"}))
     conn._props[ConnProps.CERT_STUDIES] = ("study1",)

@@ -307,7 +307,7 @@ class StudyCommandModule(CommandModule, CommandUtil):
         caller_org = self._caller_org(conn)
         if not caller_org:
             return False
-        site_orgs = (study_def or {}).get("site_orgs", {})
+        site_orgs = (study_def or {}).get("site_orgs") or {}
         return caller_org in site_orgs
 
     def _study_list_item(self, conn: Connection, study_name: str) -> dict:

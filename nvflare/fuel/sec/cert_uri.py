@@ -28,7 +28,7 @@ from urllib.parse import quote, unquote
 from cryptography import x509
 
 from nvflare.apis.job_def import DEFAULT_STUDY
-from nvflare.apis.utils.format_check import type_pattern_mapping
+from nvflare.apis.utils.format_check import name_check
 
 NVFLARE_CERT_URI_ROOT = "https://nvidia.com/nvflare/"
 _V1_PREFIX = NVFLARE_CERT_URI_ROOT + "v1/"
@@ -60,7 +60,7 @@ def parse_admin_study_uri(uri: str) -> str:
     project, separator, study = uri[len(ADMIN_STUDY_URI_PREFIX) :].partition("/study/")
     if not separator or not re.fullmatch(r"(?:[A-Za-z0-9._~-]|%[0-9A-Fa-f]{2})+", project):
         raise ValueError("malformed study URI: invalid project URI segment")
-    if study == DEFAULT_STUDY or not re.fullmatch(type_pattern_mapping["study"], study):
+    if study == DEFAULT_STUDY or name_check(study, "study")[0]:
         raise ValueError("malformed study URI: invalid study name")
     return study
 
