@@ -239,7 +239,7 @@ Impact:
 - JSON ``dictConfig`` payloads are no longer accepted for site-wide log changes.
 - File-path based logging configs are no longer accepted for site-wide log changes.
 - Supported values remain the standard log levels plus built-in modes such as
-  ``concise``, ``msg_only``, ``full``, ``verbose``, and ``reload``.
+  ``concise``, ``progress``, ``msg_only``, ``full``, ``verbose``, and ``reload``.
 
 If you previously used advanced JSON/file-based configs with
 ``configure_site_log``, switch to the supported level/mode values before
