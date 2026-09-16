@@ -194,7 +194,7 @@ def failure_summary(result=None, *, since=None):
             lines.append("  Logs      " + " · ".join(_display(p.relative_to(root), 160) for p in logs[:3]))
         if not items:
             lines.append("  No job error details are available locally.")
-            lines.append("  Check server and client logs for the failed job.")
+            lines.append("  Check the job's server and client logs.")
         else:
             lines.extend(["", "  Full tracebacks and additional messages are in the logs."])
             if not client_logs_available:

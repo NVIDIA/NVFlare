@@ -113,7 +113,10 @@ def test_malformed_and_oversized_logs_do_not_hide_recent_errors(tmp_path):
 
 
 def test_no_logs_and_stale_simulator_logs_have_honest_fallback(tmp_path):
-    assert "No job error details" in failure_summary(tmp_path)
+    no_logs = failure_summary(tmp_path)
+    assert "No job error details" in no_logs
+    assert "Check the job's server and client logs" in no_logs
+    assert "failed job" not in no_logs
     _write_log(tmp_path, "site-1", _record("NameError: old job"))
     os.utime(tmp_path / "site-1" / "log.json", (1, 1))
     os.utime(tmp_path / "site-1" / "error_log.txt", (1, 1))
