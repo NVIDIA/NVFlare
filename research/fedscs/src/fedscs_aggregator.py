@@ -14,7 +14,7 @@
 
 """FedSCS model aggregator for NVIDIA FLARE."""
 
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 
 import numpy as np
 
@@ -25,12 +25,25 @@ from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
 class FedSCSAggregator(ModelAggregator):
     """Aggregate client DIFF updates using Stable Cosine Similarity."""
 
-    def __init__(self, eps: float = 1e-12):
+    def __init__(
+        self,
+        expected_schema: Dict[str, Tuple[int, ...]],
+        max_update_norm: float = 10.0,
+        eps: float = 1e-12,
+    ):
         super().__init__()
+
+        if not expected_schema:
+            raise ValueError("expected_schema must not be empty.")
+
+        if max_update_norm <= 0:
+            raise ValueError("max_update_norm must be positive.")
 
         if eps <= 0:
             raise ValueError("eps must be positive.")
 
+        self.expected_schema = {name: tuple(shape) for name, shape in expected_schema.items()}
+        self.max_update_norm = float(max_update_norm)
         self.eps = eps
 
         self.client_updates: Dict[str, Dict[str, np.ndarray]] = {}
@@ -48,7 +61,7 @@ class FedSCSAggregator(ModelAggregator):
 
     @staticmethod
     def _flatten_update(update: Dict[str, np.ndarray]) -> np.ndarray:
-        """Flatten parameters into a deterministic vector."""
+        """Flatten parameters into a deterministic float64 vector."""
         if not update:
             return np.empty(0, dtype=np.float64)
 
@@ -57,7 +70,7 @@ class FedSCSAggregator(ModelAggregator):
                 flattened = np.concatenate(
                     [np.asarray(update[name], dtype=np.float64).reshape(-1) for name in sorted(update)]
                 )
-        except FloatingPointError as e:
+        except (FloatingPointError, TypeError, ValueError) as e:
             raise ValueError(
                 "Non-finite or overflowing value encountered while " "flattening the client update."
             ) from e
@@ -72,7 +85,7 @@ class FedSCSAggregator(ModelAggregator):
         update: Dict[str, np.ndarray],
         client_name: str,
     ) -> None:
-        """Validate a client update."""
+        """Validate parameter values received from a client."""
         if not update:
             raise ValueError(f"Client '{client_name}' provided an empty update.")
 
@@ -84,32 +97,99 @@ class FedSCSAggregator(ModelAggregator):
                     f"Unable to convert client '{client_name}' parameter " f"'{name}' to a NumPy array."
                 ) from e
 
-            if not np.isfinite(array).all():
+            if not np.issubdtype(array.dtype, np.number):
+                raise ValueError(f"Client '{client_name}' parameter '{name}' " "must have a numeric dtype.")
+
+            try:
+                finite = np.isfinite(array).all()
+            except TypeError as e:
+                raise ValueError(
+                    f"Unable to validate client '{client_name}' parameter " f"'{name}' for finite values."
+                ) from e
+
+            if not finite:
                 raise ValueError(f"Client '{client_name}' parameter '{name}' " "contains non-finite values.")
 
     def _validate_schema(
         self,
         update: Dict[str, np.ndarray],
-        reference: Dict[str, np.ndarray],
         client_name: str,
     ) -> None:
-        """Ensure all client updates have the same parameter schema."""
-        if set(update) != set(reference):
-            missing = sorted(set(reference) - set(update))
-            extra = sorted(set(update) - set(reference))
+        """Validate a client update against the authoritative model schema."""
+        expected_keys = set(self.expected_schema)
+        received_keys = set(update)
+
+        if received_keys != expected_keys:
+            missing = sorted(expected_keys - received_keys)
+            extra = sorted(received_keys - expected_keys)
 
             raise ValueError(
                 f"Parameter schema mismatch for client '{client_name}'. " f"Missing: {missing}; Extra: {extra}."
             )
 
-        for name in reference:
-            shape = np.asarray(update[name]).shape
-            reference_shape = np.asarray(reference[name]).shape
+        for name, expected_shape in self.expected_schema.items():
+            actual_shape = np.asarray(update[name]).shape
 
-            if shape != reference_shape:
+            if actual_shape != expected_shape:
                 raise ValueError(
-                    f"Parameter '{name}' for client '{client_name}' " f"has shape {shape}; expected {reference_shape}."
+                    f"Parameter '{name}' for client '{client_name}' "
+                    f"has shape {actual_shape}; expected {expected_shape}."
                 )
+
+    def _bound_update_norm(
+        self,
+        update: Dict[str, np.ndarray],
+        client_name: str,
+    ) -> Dict[str, np.ndarray]:
+        """
+        Bound the L2 norm of a received DIFF update.
+
+        This is an implementation-level safety bound. It does not alter
+        the FedSCS cosine similarity because positive scalar rescaling
+        preserves cosine similarity.
+        """
+        vector = self._flatten_update(update)
+
+        try:
+            with np.errstate(over="raise", invalid="raise"):
+                update_norm = np.linalg.norm(vector)
+        except FloatingPointError as e:
+            raise ValueError(f"Overflow while computing update norm for client " f"'{client_name}'.") from e
+
+        if not np.isfinite(update_norm):
+            raise ValueError(f"Client '{client_name}' update norm is non-finite.")
+
+        if update_norm <= self.max_update_norm:
+            return {name: np.asarray(value).copy() for name, value in update.items()}
+
+        scale = self.max_update_norm / update_norm
+
+        if not np.isfinite(scale) or scale <= 0:
+            raise ValueError(f"Invalid update scaling factor for client '{client_name}'.")
+
+        bounded_update = {}
+
+        for name, value in update.items():
+            array = np.asarray(value)
+
+            try:
+                with np.errstate(
+                    over="raise",
+                    invalid="raise",
+                    under="ignore",
+                ):
+                    bounded_value = array * scale
+            except FloatingPointError as e:
+                raise ValueError(f"Overflow while bounding parameter '{name}' " f"for client '{client_name}'.") from e
+
+            if not np.all(np.isfinite(bounded_value)):
+                raise ValueError(
+                    f"Bounded parameter '{name}' for client " f"'{client_name}' contains non-finite values."
+                )
+
+            bounded_update[name] = bounded_value
+
+        return bounded_update
 
     def _compute_cosine_similarity(
         self,
@@ -120,17 +200,25 @@ class FedSCSAggregator(ModelAggregator):
         update_vector = self._flatten_update(update)
         peer_vector = self._flatten_update(peer_sum)
 
-        update_norm = np.linalg.norm(update_vector)
-        peer_norm = np.linalg.norm(peer_vector)
+        try:
+            with np.errstate(over="raise", invalid="raise"):
+                update_norm = np.linalg.norm(update_vector)
+                peer_norm = np.linalg.norm(peer_vector)
+        except FloatingPointError as e:
+            raise ValueError("Overflow or invalid arithmetic while computing " "cosine-similarity norms.") from e
 
         if not np.isfinite(update_norm) or not np.isfinite(peer_norm):
-            raise ValueError("Non-finite norm encountered while computing cosine similarity.")
+            raise ValueError("Non-finite norm encountered while computing " "cosine similarity.")
 
         if update_norm <= self.eps or peer_norm <= self.eps:
             return 0.0
 
         try:
-            with np.errstate(over="raise", invalid="raise", divide="raise"):
+            with np.errstate(
+                over="raise",
+                invalid="raise",
+                divide="raise",
+            ):
                 dot_product = np.dot(update_vector, peer_vector)
                 denominator = update_norm * peer_norm
                 cosine = dot_product / denominator
@@ -159,31 +247,21 @@ class FedSCSAggregator(ModelAggregator):
         self.round_number += 1
         t = self.round_number
 
-        reference = self.client_updates[client_names[0]]
+        # The expected schema comes from the server-side model architecture,
+        # not from any client submission.
+        total_update = {name: np.zeros(shape, dtype=np.float64) for name, shape in self.expected_schema.items()}
 
         # Compute sum_j Delta w_j^(t).
-        total_update = {
-            name: np.zeros_like(
-                np.asarray(value),
-                dtype=np.float64,
-            )
-            for name, value in reference.items()
-        }
-
         for client_name in client_names:
             update = self.client_updates[client_name]
 
-            self._validate_schema(
-                update,
-                reference,
-                client_name,
-            )
+            self._validate_schema(update, client_name)
 
-            for name, value in update.items():
+            for name in self.expected_schema:
                 try:
                     with np.errstate(over="raise", invalid="raise"):
                         total_update[name] += np.asarray(
-                            value,
+                            update[name],
                             dtype=np.float64,
                         )
                 except FloatingPointError as e:
@@ -201,11 +279,14 @@ class FedSCSAggregator(ModelAggregator):
             # g_i^(t) = sum_{j != i} Delta w_j^(t)
             peer_sum = {}
 
-            for name, value in update.items():
+            for name in self.expected_schema:
                 try:
-                    with np.errstate(over="raise", invalid="raise"):
+                    with np.errstate(
+                        over="raise",
+                        invalid="raise",
+                    ):
                         peer_sum[name] = total_update[name] - np.asarray(
-                            value,
+                            update[name],
                             dtype=np.float64,
                         )
                 except FloatingPointError as e:
@@ -233,18 +314,25 @@ class FedSCSAggregator(ModelAggregator):
             # s_i^(t) =
             # ((t-1)/t) s_i^(t-1) + (1/t) rho_i^(t)
             try:
-                with np.errstate(over="raise", invalid="raise"):
+                with np.errstate(
+                    over="raise",
+                    invalid="raise",
+                ):
                     score = ((t - 1.0) / t) * previous + (1.0 / t) * rho
             except FloatingPointError as e:
                 raise ValueError(f"Overflow while computing FedSCS score for " f"client '{client_name}'.") from e
 
             if not np.isfinite(score):
-                raise ValueError(f"FedSCS score for client '{client_name}' is non-finite.")
+                raise ValueError(f"FedSCS score for client '{client_name}' " "is non-finite.")
 
             # nu_i^(t) =
             # |(s_i^(t)-s_i^(t-1))/(s_i^(t-1)+epsilon)|
             try:
-                with np.errstate(over="raise", invalid="raise", divide="raise"):
+                with np.errstate(
+                    over="raise",
+                    invalid="raise",
+                    divide="raise",
+                ):
                     volatility = abs((score - previous) / (previous + self.eps))
             except FloatingPointError as e:
                 raise ValueError(
@@ -256,7 +344,11 @@ class FedSCSAggregator(ModelAggregator):
 
             # c_i^(t) = s_i^(t)/(1 + nu_i^(t))
             try:
-                with np.errstate(over="raise", invalid="raise", divide="raise"):
+                with np.errstate(
+                    over="raise",
+                    invalid="raise",
+                    divide="raise",
+                ):
                     scs = score / (1.0 + volatility)
             except FloatingPointError as e:
                 raise ValueError(
@@ -338,21 +430,26 @@ class FedSCSAggregator(ModelAggregator):
             client_name,
         )
 
+        # Validate against the authoritative server-side schema.
+        # The first client is never trusted to define the schema.
+        self._validate_schema(
+            model.params,
+            client_name,
+        )
+
         if self._params_type is None:
             self._params_type = model.params_type
         elif model.params_type != self._params_type:
             raise ValueError("All client updates must use ParamsType.DIFF.")
 
-        if self.client_updates:
-            reference = next(iter(self.client_updates.values()))
+        # Apply a defense-in-depth magnitude bound before storing the
+        # update. Positive scalar rescaling preserves cosine similarity.
+        bounded_update = self._bound_update_norm(
+            model.params,
+            client_name,
+        )
 
-            self._validate_schema(
-                model.params,
-                reference,
-                client_name,
-            )
-
-        self.client_updates[client_name] = {name: np.asarray(value).copy() for name, value in model.params.items()}
+        self.client_updates[client_name] = bounded_update
 
         return True
 
@@ -364,15 +461,9 @@ class FedSCSAggregator(ModelAggregator):
         self._compute_scs()
 
         client_names = list(self.client_updates)
-        reference = self.client_updates[client_names[0]]
 
-        aggregated_delta = {
-            name: np.zeros_like(
-                np.asarray(value),
-                dtype=np.float64,
-            )
-            for name, value in reference.items()
-        }
+        # Construct the output strictly from the authoritative schema.
+        aggregated_delta = {name: np.zeros(shape, dtype=np.float64) for name, shape in self.expected_schema.items()}
 
         for client_name in client_names:
             weight = self.current_weights[client_name]
@@ -381,11 +472,19 @@ class FedSCSAggregator(ModelAggregator):
             if not np.isfinite(weight):
                 raise RuntimeError(f"Non-finite aggregation weight for client " f"'{client_name}'.")
 
-            for name, value in update.items():
+            self._validate_schema(
+                update,
+                client_name,
+            )
+
+            for name in self.expected_schema:
                 try:
-                    with np.errstate(over="raise", invalid="raise"):
+                    with np.errstate(
+                        over="raise",
+                        invalid="raise",
+                    ):
                         aggregated_delta[name] += weight * np.asarray(
-                            value,
+                            update[name],
                             dtype=np.float64,
                         )
                 except FloatingPointError as e:

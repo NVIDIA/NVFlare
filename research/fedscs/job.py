@@ -16,25 +16,41 @@
 
 import os
 
-from src.fedscs_aggregator import FedSCSAggregator
-from src.model import SimpleCNN
-
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.client.config import TransferType
 from nvflare.recipe import SimEnv
+
+from src.fedscs_aggregator import FedSCSAggregator
+from src.model import SimpleCNN
 
 
 def main():
     """Create and execute the FedSCS job."""
     job_dir = os.path.dirname(os.path.abspath(__file__))
 
+    # Create the server-side model used by FedAvgRecipe.
+    model = SimpleCNN()
+
+    # Derive the authoritative parameter schema from the server-side model.
+    # The aggregator stores only parameter names and shapes, not model values.
+    expected_schema = {name: tuple(value.shape) for name, value in model.state_dict().items()}
+
+    # Defense-in-depth bound for received client DIFF updates.
+    # This is separate from the published FedSCS scoring formulation.
+    max_update_norm = 10.0
+
+    aggregator = FedSCSAggregator(
+        expected_schema=expected_schema,
+        max_update_norm=max_update_norm,
+    )
+
     recipe = FedAvgRecipe(
         name="fedscs",
         min_clients=5,
         num_rounds=10,
-        model=SimpleCNN(),
+        model=model,
         train_script=os.path.join(job_dir, "client.py"),
-        aggregator=FedSCSAggregator(),
+        aggregator=aggregator,
         params_transfer_type=TransferType.DIFF,
     )
 

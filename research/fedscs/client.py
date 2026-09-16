@@ -18,14 +18,14 @@ import argparse
 import copy
 import os
 
+import nvflare.client as flare
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from nvflare.app_common.abstract.fl_model import ParamsType
 from src.model import SimpleCNN
 from torch.utils.data import DataLoader, TensorDataset
 
-import nvflare.client as flare
-from nvflare.app_common.abstract.fl_model import ParamsType
 
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -51,6 +51,15 @@ def load_client_dataset(data_dir, site_name):
         weights_only=True,
     )
 
+    if "images" not in data or "labels" not in data:
+        raise ValueError(f"Client dataset is missing 'images' or 'labels': {client_file}")
+
+    if len(data["images"]) == 0 or len(data["labels"]) == 0:
+        raise ValueError(f"Client dataset is empty: {client_file}")
+
+    if len(data["images"]) != len(data["labels"]):
+        raise ValueError(f"Client dataset has mismatched image/label counts: {client_file}")
+
     return TensorDataset(
         data["images"],
         data["labels"],
@@ -71,6 +80,15 @@ def load_test_dataset(data_dir):
         test_file,
         weights_only=True,
     )
+
+    if "images" not in data or "labels" not in data:
+        raise ValueError(f"Test dataset is missing 'images' or 'labels': {test_file}")
+
+    if len(data["images"]) == 0 or len(data["labels"]) == 0:
+        raise ValueError(f"Test dataset is empty: {test_file}")
+
+    if len(data["images"]) != len(data["labels"]):
+        raise ValueError(f"Test dataset has mismatched image/label counts: {test_file}")
 
     return TensorDataset(
         data["images"],
@@ -102,7 +120,7 @@ def evaluate(model, data_loader, criterion):
             correct += (predictions == labels).sum().item()
 
     if total == 0:
-        raise ValueError("Evaluation data loader is empty. Check the dataset preparation.")
+        raise ValueError("Evaluation data loader is empty. " "Check the dataset preparation.")
 
     return total_loss / total, correct / total
 
@@ -112,12 +130,53 @@ def compute_model_diff(local_model, global_model):
     local_state = local_model.state_dict()
     global_state = global_model.state_dict()
 
+    if set(local_state) != set(global_state):
+        missing = sorted(set(global_state) - set(local_state))
+        extra = sorted(set(local_state) - set(global_state))
+
+        raise ValueError(
+            "Local and global models have different parameter schemas. " f"Missing: {missing}; Extra: {extra}."
+        )
+
     model_diff = {}
 
     for name in local_state:
-        model_diff[name] = local_state[name].detach().cpu() - global_state[name].detach().cpu()
+        local_value = local_state[name].detach().cpu()
+        global_value = global_state[name].detach().cpu()
+
+        if local_value.shape != global_value.shape:
+            raise ValueError(
+                f"Parameter '{name}' has local shape "
+                f"{tuple(local_value.shape)} but global shape "
+                f"{tuple(global_value.shape)}."
+            )
+
+        model_diff[name] = local_value - global_value
 
     return model_diff
+
+
+def compute_update_norm(model_diff):
+    """Compute the L2 norm of a model DIFF update."""
+    squared_norm = torch.tensor(0.0, dtype=torch.float64)
+
+    for name, value in model_diff.items():
+        tensor = value.detach().to(dtype=torch.float64)
+
+        if not torch.isfinite(tensor).all():
+            raise ValueError(f"Model DIFF parameter '{name}' contains non-finite values.")
+
+        squared_norm += torch.sum(tensor * tensor)
+
+    if not torch.isfinite(squared_norm):
+        raise ValueError("Model DIFF squared norm is non-finite.")
+
+    update_norm = torch.sqrt(squared_norm)
+
+    if not torch.isfinite(update_norm):
+        raise ValueError("Model DIFF norm is non-finite.")
+
+    return update_norm
 
 
 def train_one_round(
@@ -150,7 +209,7 @@ def train_one_round(
             total_batches += 1
 
     if total_batches == 0:
-        raise ValueError("Training data loader is empty. Check the dataset preparation.")
+        raise ValueError("Training data loader is empty. " "Check the dataset preparation.")
 
     return total_loss / total_batches
 
@@ -218,6 +277,12 @@ def main(args):
         # ---------------------------------------------------------------
 
         input_model = flare.receive()
+
+        if input_model is None:
+            raise RuntimeError(f"{site_name}: Received no model from the server.")
+
+        if input_model.params is None:
+            raise RuntimeError(f"{site_name}: Received model has no parameters.")
 
         current_round = input_model.current_round
 
@@ -292,7 +357,7 @@ def main(args):
             global_model,
         )
 
-        diff_norm = torch.sqrt(sum(torch.sum(value**2) for value in model_diff.values()))
+        diff_norm = compute_update_norm(model_diff)
 
         print(f"{site_name}: " f"Update norm = {diff_norm.item():.6f}")
 
