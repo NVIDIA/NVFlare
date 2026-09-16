@@ -36,7 +36,10 @@ _PYPROJECT_NVFLARE_REQUIREMENT = re.compile(r'["\']nvflare(?:[-_.]+nightly)?(?![
 _PYPROJECT_SECTION = re.compile(r"^\s*\[([^]]+)]\s*(?:#.*)?$")
 _PYPROJECT_DEPENDENCIES = re.compile(r"^\s*dependencies\s*=\s*\[")
 _PYPROJECT_ARRAY_END = re.compile(r"]\s*(?:#.*)?$")
-_POETRY_NVFLARE_REQUIREMENT = re.compile(r"^\s*nvflare(?:[-_.]+nightly)?\s*=", re.IGNORECASE)
+_POETRY_NVFLARE_REQUIREMENT = re.compile(
+    r"""^\s*(?:nvflare(?:[-_.]+nightly)?|"nvflare(?:[-_.]+nightly)?"|'nvflare(?:[-_.]+nightly)?')\s*=""",
+    re.IGNORECASE,
+)
 _parsers = {}
 _EXAMPLE_COMMANDS = [
     "nvflare examples list",

@@ -152,8 +152,9 @@ def test_pyproject_optional_dependency_is_reported(monkeypatch, tmp_path):
     assert result["warnings"][0]["paths"] == ["pyproject.toml"]
 
 
-def test_pyproject_poetry_dependency_is_reported(monkeypatch, tmp_path):
-    pyproject = '[tool.poetry.dependencies]\npython = "^3.10"\nnvflare = {version = "^2.10", extras = ["PT"]}\n'
+@pytest.mark.parametrize("dependency", ["nvflare", '"nvflare"', "'nvflare-nightly'"])
+def test_pyproject_poetry_dependency_is_reported(monkeypatch, tmp_path, dependency):
+    pyproject = f'[tool.poetry.dependencies]\npython = "^3.10"\n{dependency} = "^2.10"\n'
     _mock_download(monkeypatch, requirements="torch\n", pyproject=pyproject)
 
     result = examples_cli.get_example(VERSION, CATALOG, name="hello-pt", destination=tmp_path / "hello-pt")
