@@ -831,25 +831,23 @@ def test_get_job_logs_rejects_invalid_byte_limit_before_command(limit):
     command.assert_not_called()
 
 
-def test_get_job_logs_sends_byte_limit_and_never_falls_back_unbounded():
+@pytest.mark.parametrize("log_file_name", ["log.txt", "error_log.txt"])
+def test_get_job_logs_sends_byte_limit_and_never_falls_back_unbounded(log_file_name):
     from nvflare.fuel.flare_api.api_spec import InternalError
 
     session = _make_session()
     with patch.object(
         session, "_do_command", side_effect=InternalError("unrecognized arguments: --tail-bytes")
     ) as command:
-        assert session.get_job_logs("job1", target="site-1", log_file_name="error_log.txt", max_bytes=1024) == {
+        assert session.get_job_logs("job1", target="site-1", log_file_name=log_file_name, max_bytes=1024) == {
             "logs": {}
         }
     command.assert_called_once()
-    assert split_to_args(command.call_args.args[0]) == [
-        "get_job_log",
-        "job1",
-        "site-1",
-        "error_log.txt",
-        "--tail-bytes",
-        "1024",
-    ]
+    expected = ["get_job_log", "job1", "site-1"]
+    if log_file_name != "log.txt":
+        expected.append(log_file_name)
+    expected.extend(["--tail-bytes", "1024"])
+    assert split_to_args(command.call_args.args[0]) == expected
 
 
 def test_job_log_interface_matches_implementation_signature():

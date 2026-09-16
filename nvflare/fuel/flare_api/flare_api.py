@@ -1473,7 +1473,10 @@ class Session(SessionSpec):
         try:
             reply = self._do_command(command, enforce_meta=False)
         except InternalError as e:
-            if log_file_name != WorkspaceConstants.LOG_FILE_NAME and "unrecognized arguments" in str(e):
+            error = str(e)
+            unsupported_selector = log_file_name != WorkspaceConstants.LOG_FILE_NAME
+            unsupported_byte_limit = max_bytes is not None and "--tail-bytes" in error
+            if (unsupported_selector or unsupported_byte_limit) and "unrecognized arguments" in error:
                 return {"logs": {}}
             raise
         payload = self._get_dict_data(reply)
