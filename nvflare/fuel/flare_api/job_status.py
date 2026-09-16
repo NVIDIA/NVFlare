@@ -37,4 +37,6 @@ def job_status_outcome(status: str) -> Optional[str]:
         return None
     if status == RunStatus.FINISHED_CANT_SCHEDULE.value:
         return "not_scheduled"
+    if status in (RunStatus.FINISHED_ABORTED.value, "ABORTED"):
+        return "aborted"
     return "completed" if status in (RunStatus.FINISHED_COMPLETED.value, "FINISHED_OK") else "failed"

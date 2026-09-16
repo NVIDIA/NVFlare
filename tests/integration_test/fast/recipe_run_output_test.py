@@ -64,6 +64,7 @@ def test_numpy_example_gets_shared_reporting_without_example_changes(tmp_path, l
         server_log = tmp_path / "hello-numpy" / "server" / "log_fl.txt"
         assert "ROUND 1 / 1" in server_log.read_text()
         assert re.search(r"Aggregated\s+6(?:\s|$)", server_log.read_text())
+        assert "Aggregated 2/2 results" in server_log.read_text()
         # The same actual client messages still reach diagnostic files.
         client_log = tmp_path / "hello-numpy" / "site-1" / "log.txt"
         assert "Received weights:" in client_log.read_text()

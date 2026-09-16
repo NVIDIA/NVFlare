@@ -1416,6 +1416,24 @@ def test_get_job_log_truncates_large_output(tmp_path, monkeypatch):
     assert payload["logs"]["server"].endswith("aa\n" + "b" * 12 + "\n")
 
 
+def test_get_job_log_tail_bytes_keeps_notice_and_complete_records(tmp_path, monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "ServerEngine", _FakeServerEngine)
+    workspace = _FakeWorkspace(tmp_path)
+    engine = _FakeServerEngine(workspace)
+    conn = _MockConnection(app_ctx=engine, props={JobCommandModule.JOB_ID: "job-1"})
+    log_file = Path(workspace.get_log_root("job-1")) / "log.json"
+    log_file.write_text('{"message":"' + "x" * 80 + '"}\n{"message":"second"}\n', encoding="utf-8")
+
+    JobCommandModule().get_job_log(conn, ["get_job_log", "job-1", "server", "log.json", "--tail-bytes", "65"])
+
+    payload, _meta = conn.dicts[0]
+    text = payload["logs"]["server"]
+    assert text.startswith("... output truncated ...\n")
+    assert text.endswith('{"message":"second"}\n')
+    assert "x" * 20 not in text
+    assert all(line.startswith(("... output truncated", "{")) for line in text.splitlines())
+
+
 def test_decode_job_log_data_honors_zero_byte_cap(monkeypatch):
     monkeypatch.setattr(JobCommandModule, "MAX_RETURNED_JOB_LOG_BYTES", 0)
 

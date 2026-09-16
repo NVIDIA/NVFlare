@@ -998,6 +998,28 @@ def test_live_progress_limits_client_rows_per_round_but_keeps_artifacts(tmp_path
     assert len(_read_rounds(tmp_path)[0]["sites"]) == 25
 
 
+def test_live_progress_reports_additional_metrics_once_per_round(tmp_path, caplog):
+    writer = MetricsArtifactWriter()
+    fl_ctx = _make_fl_ctx(tmp_path)
+    writer.handle_event(EventType.START_RUN, fl_ctx)
+    metrics = {"accuracy": 0.8, "loss": 0.2, "samples": 10}
+
+    with caplog.at_level("INFO"):
+        _record_contribution(writer, fl_ctx, 0, "hospital-north", metrics)
+        _record_contribution(writer, fl_ctx, 0, "hospital-south", metrics)
+        _record_round(writer, fl_ctx, 0, metrics)
+
+    output = "\n".join(
+        record.message
+        for record in caplog.records
+        if record.name == "nvflare.app_common.widgets.metrics_artifact_writer"
+    )
+    assert "hospital-north" in output
+    assert "hospital-south" in output
+    assert output.count("Additional metric results are available in the saved metrics artifacts.") == 1
+    assert "Full names and additional results" not in output
+
+
 @pytest.mark.parametrize("metrics", [{}, {"loss": float("nan")}, {"loss": [1, 2, 3]}])
 def test_accepted_update_without_displayable_metrics_keeps_client_visible(tmp_path, caplog, metrics):
     writer = MetricsArtifactWriter()

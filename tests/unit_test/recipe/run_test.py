@@ -438,6 +438,24 @@ def test_summary_finds_standard_model_locations_without_loading_weights(tmp_path
     assert f"Models    {model_path.parent.relative_to(tmp_path)}/" in output
 
 
+def test_summary_lists_models_once_across_candidate_layouts(tmp_path):
+    from nvflare.recipe._run_summary import result_summary
+
+    for relative_path in ("workspace/app_server/workspace.pt", "app_server/root.pt"):
+        model_path = tmp_path / relative_path
+        model_path.parent.mkdir(parents=True, exist_ok=True)
+        model_path.write_bytes(b"not a model")
+    metrics = tmp_path / "server" / "run-1" / "metrics"
+    metrics.mkdir(parents=True)
+    (metrics / "metrics_summary.json").write_text("{}")
+
+    output = result_summary(tmp_path)
+
+    assert output.count("Models    ") == 1
+    assert "workspace/app_server/" in output
+    assert "app_server/" in output
+
+
 def test_summary_keeps_multirow_metrics_on_separate_aligned_lines(tmp_path):
     import json
 
@@ -478,7 +496,21 @@ def test_unscheduled_job_has_distinct_outcome_without_training_errors(tmp_path, 
     assert "Check server and client logs" not in output
 
 
-@pytest.mark.parametrize("outcome", ["✓ Completed", "✗ Failed", "✗ Not scheduled"])
+def test_aborted_job_has_distinct_outcome_without_failure_details(tmp_path, capsys):
+    env = MagicMock()
+    env.get_job_result.return_value = str(tmp_path)
+    env.get_job_status.return_value = "FINISHED:ABORTED"
+
+    Run(env, "aborted-job").get_result()
+
+    output = capsys.readouterr().out
+    assert "■ Aborted" in output
+    assert "Status    FINISHED:ABORTED" in output
+    assert "✗ Failed" not in output
+    assert "Failure details" not in output
+
+
+@pytest.mark.parametrize("outcome", ["✓ Completed", "✗ Failed", "✗ Not scheduled", "■ Aborted"])
 def test_summary_duration_uses_same_column_as_round_progress(outcome):
     from nvflare.recipe._run_summary import summary_header
 

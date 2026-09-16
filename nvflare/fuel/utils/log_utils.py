@@ -61,8 +61,7 @@ progress_log_dict["filters"]["ConciseFilter"] = {
         "nvflare.app_common.workflows.cross_site_model_eval",
     ],
 }
-for handler_name in ("consoleHandler", "FLFileHandler"):
-    progress_log_dict["handlers"][handler_name]["filters"] = ["ConciseFilter"]
+progress_log_dict["handlers"]["consoleHandler"]["filters"] = ["ConciseFilter"]
 
 
 msg_only_log_dict = copy.deepcopy(default_log_dict)
@@ -258,6 +257,9 @@ class ProgressFormatter(ColorFormatter):
             record = copy.copy(record)
             record.msg = f"{record.levelname}: {record.getMessage()}"
             record.args = ()
+            record.exc_info = None
+            record.exc_text = None
+            record.stack_info = None
         return super().format(record)
 
 
@@ -363,7 +365,7 @@ def format_metric_summary(metrics):
         return "[see saved result for metrics]"
 
 
-def format_metric_table(rows, label="Client", columns=None, header=True):
+def format_metric_table(rows, label="Client", columns=None, header=True, label_width=None, include_notice=True):
     """Render a bounded two-metric table without evaluating application objects.
 
     Missing values use a dash. Truncated names, additional rows/metrics, and
@@ -378,19 +380,34 @@ def format_metric_table(rows, label="Client", columns=None, header=True):
         columns = list(islice(columns, 2))
         shortened = False
 
+        def name_text(value):
+            return json.dumps(value[:160] if isinstance(value, str) else "?", ensure_ascii=True)[1:-1]
+
+        row_names = [name_text(label), *(name_text(name) for name, _ in rows)]
+        if label_width is None:
+            label_width = min(24, max(map(len, row_names), default=6))
+        else:
+            label_width = max(1, min(24, label_width))
+
         def cell_name(value, width):
             nonlocal shortened
-            text = json.dumps(value[:160] if isinstance(value, str) else "?", ensure_ascii=True)[1:-1]
+            text = name_text(value)
             if len(text) > width:
                 shortened = True
                 return text[: width - 3] + "..."
             return text
 
-        names = [cell_name(key, 30) for key in columns]
-        widths = [max(14, len(name)) for name in names]
+        column_count = len(columns)
+        column_cap = (
+            min(30, max(8, (76 - label_width - 2 * (column_count - 1)) // column_count)) if column_count else 30
+        )
+        names = [cell_name(key, column_cap) for key in columns]
+        widths = [max(min(14, column_cap), len(name)) for name in names]
 
         def row_line(name, values):
-            return f"  {cell_name(name, 12):<12}  " + "  ".join(f"{v:>{w}}" for v, w in zip(values, widths))
+            return f"  {cell_name(name, label_width):<{label_width}}  " + "  ".join(
+                f"{v:>{w}}" for v, w in zip(values, widths)
+            )
 
         lines = [row_line(label, names)] if header else []
         for name, metrics in rows:
@@ -402,7 +419,9 @@ def format_metric_table(rows, label="Client", columns=None, header=True):
                     value = "[see artifact]"
                 values.append(value if len(value) <= width else "[see artifact]")
             lines.append(row_line(name, values))
-        if omitted or shortened or any(key not in columns for _, metrics in rows for key in metrics):
+        if include_notice and (
+            omitted or shortened or any(key not in columns for _, metrics in rows for key in metrics)
+        ):
             lines.append("  Full names and additional results are available in the saved artifacts.")
         return "\n".join(lines)
     except Exception:
@@ -457,6 +476,13 @@ class ConciseLogFilter(LoggerNameFilter):
             return True
 
         return super().filter(record)
+
+
+class ExcludeProgressFilter(logging.Filter):
+    """Keep opt-in progress records out of the existing full and verbose console views."""
+
+    def filter(self, record):
+        return not getattr(record, "nvflare_progress", False)
 
 
 def get_module_logger(module=None, name=None) -> logging.Logger:

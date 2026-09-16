@@ -97,6 +97,7 @@ def result_summary(result):
     # Simulator result root, downloaded admin transfer root, or server run root.
     candidates = [root / "workspace", root]
     candidates.extend(islice(root.glob("server/*"), 20))
+    model_locations = []
     for run_dir in candidates:
         metrics = run_dir / "metrics"
         summary_path = metrics / "metrics_summary.json"
@@ -160,11 +161,13 @@ def result_summary(result):
             except (OSError, ValueError, TypeError):
                 pass
             artifacts.append(f"  Evaluation {evaluation_path.relative_to(root)}")
-        model_locations = _model_artifacts(run_dir, root)
-        if model_locations:
-            artifacts.insert(0, "  Models    " + " · ".join(model_locations))
+        for location in _model_artifacts(run_dir, root):
+            if location not in model_locations:
+                model_locations.append(location)
         if summary_path.is_file() or evaluation_path.is_file():
             break
+    if model_locations:
+        artifacts.insert(0, "  Models    " + " · ".join(model_locations))
     log_paths = list(islice(root.glob("*/log.txt"), 6))
     if not log_paths:
         log_paths = list(islice(root.glob("workspace/log*.txt"), 6))

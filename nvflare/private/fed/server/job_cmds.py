@@ -642,10 +642,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
 
         if parsed_args.tail_bytes is not None:
             limit = min(parsed_args.tail_bytes, self.MAX_RETURNED_JOB_LOG_BYTES)
-            payload["logs"] = {
-                site: text.encode("utf-8")[-limit:].decode("utf-8", errors="ignore")
-                for site, text in payload["logs"].items()
-            }
+            payload["logs"] = {site: self._tail_log_text(text, limit) for site, text in payload["logs"].items()}
         conn.append_dict(payload, meta=make_meta(MetaStatusValue.OK))
 
     @staticmethod
@@ -1024,6 +1021,22 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         if truncated:
             text = f"... output truncated to last {self.MAX_RETURNED_JOB_LOG_BYTES} bytes ...\n{text}"
         return text
+
+    @staticmethod
+    def _tail_log_text(text: str, limit: int) -> str:
+        raw_data = text.encode("utf-8")
+        if len(raw_data) <= limit:
+            return text
+        notice = b"... output truncated ...\n"
+        if limit <= len(notice):
+            return notice[:limit].decode("utf-8", errors="ignore")
+        tail_limit = limit - len(notice)
+        start = len(raw_data) - tail_limit
+        tail = raw_data[start:]
+        if tail and raw_data[start - 1 : start] != b"\n":
+            tail = tail.partition(b"\n")[2]
+        decoded = tail.decode("utf-8", errors="ignore")
+        return notice.decode("utf-8") + decoded
 
     def _collect_job_log_lines(self, log_file: str):
         with open(log_file, "rb") as f:

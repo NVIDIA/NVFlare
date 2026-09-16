@@ -82,6 +82,7 @@ class MetricsArtifactWriter(Widget):
         self._round_contribution_count = 0
         self._progress_client_rows = 0
         self._progress_rows_omitted = False
+        self._progress_metrics_omitted = False
         self._has_metrics = False
         self._final_round = None
         self._final_aggregated_metrics = []
@@ -109,6 +110,7 @@ class MetricsArtifactWriter(Widget):
             self._round_contribution_count = 0
             self._progress_client_rows = 0
             self._progress_rows_omitted = False
+            self._progress_metrics_omitted = False
             heading = self._round_label(current_round, fl_ctx).upper().replace("/", " / ")
             log_progress(_logger, "\n" + f" {heading} ".center(72, "=") + "\n\n  Training\n")
         elif event_type == AppEventType.AFTER_CONTRIBUTION_ACCEPT:
@@ -144,11 +146,22 @@ class MetricsArtifactWriter(Widget):
             log_progress(_logger, f"  {json.dumps(label[:128])} · no displayable metrics")
             return
         columns = list(values)[:2]
+        if len(values) > len(columns):
+            self._progress_metrics_omitted = True
         # Clients and aggregators may report different metrics. Repeat the
         # headings when necessary instead of displaying an all-missing row.
         first = columns != self._progress_columns
         self._progress_columns = columns
-        log_progress(_logger, format_metric_table([(label, values)], columns=self._progress_columns, header=first))
+        log_progress(
+            _logger,
+            format_metric_table(
+                [(label, values)],
+                columns=self._progress_columns,
+                header=first,
+                label_width=24,
+                include_notice=False,
+            ),
+        )
 
     def _log_contribution_progress(self, label, metrics):
         if self._progress_client_rows < MAX_PROGRESS_CLIENT_ROWS:
@@ -193,6 +206,8 @@ class MetricsArtifactWriter(Widget):
         else:
             log_progress(_logger, "  " + "─" * 66)
             self._log_progress_metrics("Aggregated", aggregated_metrics)
+            if self._progress_metrics_omitted:
+                log_progress(_logger, "  Additional metric results are available in the saved metrics artifacts.")
         if has_aggregation_details or self._round_contribution_count:
             duration = ""
             if self._round_started_at is not None:
@@ -206,6 +221,7 @@ class MetricsArtifactWriter(Widget):
         self._round_contribution_count = 0
         self._progress_client_rows = 0
         self._progress_rows_omitted = False
+        self._progress_metrics_omitted = False
         self._progress_columns = None
 
         if not has_aggregation_details:

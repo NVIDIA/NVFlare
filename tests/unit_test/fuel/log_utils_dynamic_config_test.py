@@ -63,8 +63,8 @@ def test_log_modes_preserve_concise_and_add_progress():
     assert logmode_config_dict[LogMode.PROGRESS]["formatters"]["consoleFormatter"]["()"] == (
         "nvflare.fuel.utils.log_utils.ProgressFormatter"
     )
-    for handler_name in ("consoleHandler", "FLFileHandler"):
-        assert logmode_config_dict[LogMode.PROGRESS]["handlers"][handler_name]["filters"] == ["ConciseFilter"]
+    assert logmode_config_dict[LogMode.PROGRESS]["handlers"]["consoleHandler"]["filters"] == ["ConciseFilter"]
+    assert logmode_config_dict[LogMode.PROGRESS]["handlers"]["FLFileHandler"]["filters"] == ["FLFilter"]
     assert logmode_config_dict[LogMode.MSG_ONLY]["formatters"]["consoleFormatter"]["fmt"] == "%(message)s"
     assert logmode_config_dict[LogMode.MSG_ONLY]["handlers"]["consoleHandler"]["filters"] == ["ConciseFilter"]
     assert logmode_config_dict[LogMode.MSG_ONLY]["filters"] == logmode_config_dict[LogMode.FULL]["filters"]
@@ -135,6 +135,20 @@ def test_progress_formatter_labels_warnings_and_errors_without_changing_info(mon
     )
 
 
+def test_progress_formatter_keeps_traceback_in_diagnostic_record_but_not_console(monkeypatch):
+    from nvflare.fuel.utils.log_utils import ProgressFormatter
+
+    monkeypatch.setattr(sys, "stdout", io.StringIO())
+    formatter = ProgressFormatter("%(message)s")
+    try:
+        raise RuntimeError("private traceback detail")
+    except RuntimeError:
+        record = logging.LogRecord("nvflare.test", logging.ERROR, __file__, 1, "failed", (), sys.exc_info())
+
+    assert formatter.format(record) == "ERROR: failed"
+    assert record.exc_info is not None
+
+
 def test_json_formatter_preserves_explicit_progress_marker():
     from nvflare.fuel.utils.log_utils import JsonFormatter
 
@@ -190,7 +204,7 @@ def test_progress_console_keeps_reporting_and_errors_but_filters_bookkeeping():
     # continues to retain the records suppressed above.
     assert not config["handlers"]["logFileHandler"].get("filters")
     assert not config["handlers"]["jsonFileHandler"].get("filters")
-    assert logmode_config_dict["full"]["handlers"]["consoleHandler"]["filters"] == []
+    assert logmode_config_dict["full"]["handlers"]["consoleHandler"]["filters"] == ["ExcludeProgressFilter"]
 
 
 def test_color_formatter_emits_ansi_when_stdout_is_tty(monkeypatch):
@@ -294,11 +308,46 @@ def test_progress_reuses_existing_formatters_and_retains_diagnostic_records():
     config = logmode_config_dict[LogMode.PROGRESS]
     assert config["formatters"].keys() == logmode_config_dict["full"]["formatters"].keys()
     assert config["filters"].keys() == logmode_config_dict["full"]["filters"].keys()
+    assert config["handlers"]["consoleHandler"]["filters"] == ["ConciseFilter"]
+    assert config["handlers"]["FLFileHandler"]["filters"] == ["FLFilter"]
     for name in ("consoleHandler", "FLFileHandler"):
-        assert config["handlers"][name]["filters"] == ["ConciseFilter"]
         assert config["handlers"][name]["formatter"] == logmode_config_dict["full"]["handlers"][name]["formatter"]
     for name in ("logFileHandler", "jsonFileHandler"):
         assert config["handlers"][name] == logmode_config_dict["full"]["handlers"][name]
+
+
+def test_progress_keeps_existing_fl_file_info_for_machine_readers():
+    from nvflare.fuel.utils.log_utils import LoggerNameFilter, LogMode, logmode_config_dict
+
+    config = logmode_config_dict[LogMode.PROGRESS]
+    filter_config = config["filters"]["FLFilter"].copy()
+    filter_config.pop("()")
+    log_filter = LoggerNameFilter(**filter_config)
+    record = logging.LogRecord(
+        "nvflare.app_common.workflows.fedavg.FedAvg",
+        logging.INFO,
+        __file__,
+        1,
+        "Aggregated 1/8 results",
+        (),
+        None,
+    )
+
+    assert log_filter.filter(record)
+
+
+@pytest.mark.parametrize("mode", ["full", "verbose"])
+def test_existing_detailed_console_modes_suppress_new_progress_records(mode):
+    from nvflare.fuel.utils.log_utils import ExcludeProgressFilter, logmode_config_dict
+
+    assert logmode_config_dict[mode]["handlers"]["consoleHandler"]["filters"] == ["ExcludeProgressFilter"]
+    log_filter = ExcludeProgressFilter()
+    diagnostic = logging.LogRecord("nvflare.test", logging.INFO, __file__, 1, "existing diagnostic", (), None)
+    progress = logging.LogRecord("nvflare.test", logging.INFO, __file__, 1, "new progress", (), None)
+    progress.nvflare_progress = True
+
+    assert log_filter.filter(diagnostic)
+    assert not log_filter.filter(progress)
 
 
 def test_concise_keeps_original_application_selection_and_format():
@@ -425,3 +474,13 @@ def test_metric_table_separates_full_width_labels_and_values():
     header, row = table.splitlines()
     assert header.split() == ["Client", "12345678901234"]
     assert row == "  123456789012  [see artifact]"
+
+
+def test_metric_table_preserves_distinct_site_labels():
+    from nvflare.fuel.utils.log_utils import format_metric_table
+
+    table = format_metric_table([("hospital-north", {"loss": 0.25}), ("hospital-south", {"loss": 0.5})], label_width=24)
+
+    assert "hospital-north" in table
+    assert "hospital-south" in table
+    assert "hospital-..." not in table

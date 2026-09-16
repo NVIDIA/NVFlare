@@ -335,8 +335,9 @@ This argument can be any of the following:
       warnings, and errors. INFO progress is formatted as messages only; WARNING,
       ERROR, and CRITICAL records keep a textual severity label as well as terminal
       color. Detailed records remain in
-      ``log.txt`` and ``log.json``. ``log_fl.txt`` contains the same focused progress
-      records with its timestamped file formatter. Built-in aggregation and evaluation writers
+      ``log.txt`` and ``log.json``. ``log_fl.txt`` retains its existing application-log
+      selection and timestamped file formatter, including both progress records and the
+      application INFO records used by monitoring tools. Built-in aggregation and evaluation writers
       supply these messages; arbitrary client prints remain in diagnostic logs. Jobs assembled
       directly with ``FedJob`` or JSON must configure their own reporting components.
     - ``msg_only``: the same log selection as ``concise``, formatted as messages only
