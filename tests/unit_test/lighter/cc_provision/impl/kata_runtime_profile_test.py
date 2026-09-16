@@ -104,13 +104,105 @@ def test_provenance_installed_and_launch_checks(tmp_path):
         API["verify"](upstream, approved, record)
 
 
-def test_symlink_rejected(tmp_path):
+def test_reference_symlink_rejected(tmp_path):
     source = tmp_path / "source"
     source.write_text(CONFIG)
     alias = tmp_path / "alias"
     alias.symlink_to(source)
     with pytest.raises(ValueError, match="regular"):
+        API["read_config"](alias)
+
+
+@pytest.fixture
+def deployed_profile(tmp_path):
+    upstream, approved, record = [tmp_path / n for n in ("upstream.toml", "approved.toml", "record.json")]
+    upstream.write_text(CONFIG)
+    subprocess.run([sys.executable, str(HELPER), "derive", str(upstream), str(approved), str(record)], check=True)
+    config_dir = tmp_path / "kata-containers"
+    target = config_dir / "runtimes/qemu-nvidia-gpu-snp/configuration.toml"
+    target.parent.mkdir(parents=True)
+    target.write_text("# Managed by kata-deploy\n# Do not remove this header\n\n" + CONFIG)
+    target.chmod(0o640)
+    installed = config_dir / "configuration-qemu-nvidia-gpu-snp.toml"
+    installed.symlink_to(target.relative_to(config_dir))
+    return upstream, approved, record, installed, target
+
+
+def test_install_stock_header_and_runtime_symlink(deployed_profile, tmp_path):
+    upstream, approved, record, installed, target = deployed_profile
+    original = target.read_text()
+    reference_bytes = [p.read_bytes() for p in (upstream, approved, record)]
+    stat = target.stat()
+    command = [
+        sys.executable,
+        str(HELPER),
+        "install",
+        str(upstream),
+        str(approved),
+        str(record),
+        "--installed",
+        str(installed),
+    ]
+    subprocess.run(command, check=True)
+    assert installed.is_symlink() and installed.resolve() == target
+    assert target.read_text() == API["derive"](original)
+    assert target.stat().st_mode == stat.st_mode
+    assert (target.stat().st_uid, target.stat().st_gid) == (stat.st_uid, stat.st_gid)
+    assert reference_bytes == [p.read_bytes() for p in (upstream, approved, record)]
+    assert target.read_bytes() != approved.read_bytes()
+    assert API["settings"](target.read_text()) == API["settings"](approved.read_text())
+    inode = target.stat().st_ino
+    subprocess.run(command, check=True)
+    assert target.stat().st_ino == inode  # Idempotent: do not even replace the file.
+    for role in ("trusted_system", "coco"):
+        helper = ROOT / role / "lib/kata-runtime-profile.py"
+        subprocess.run([sys.executable, str(helper), "enable", str(installed)], check=True)
+        subprocess.run([sys.executable, str(helper), "check", str(installed)], check=True)
+    captured = {
+        "launch_inputs": {"kernel_command_line": API["REQUIRED"]},
+        "artifacts": {"kata_config": {"sha256": hashlib.sha256(target.read_bytes()).hexdigest()}},
+    }
+    launch = tmp_path / "launch.json"
+    launch.write_text(json.dumps(captured))
+    API["verify"](upstream, approved, record, installed, launch)
+    with pytest.raises(ValueError, match="requires the installed"):
+        API["verify"](upstream, approved, record, launch=launch)
+    # Comments are not settings, but captured evidence must bind the exact installed bytes.
+    target.write_text(target.read_text() + "# changed after capture\n")
+    with pytest.raises(ValueError, match="Captured Kata configuration"):
+        API["verify"](upstream, approved, record, installed, launch)
+    captured["artifacts"]["kata_config"]["sha256"] = hashlib.sha256(approved.read_bytes()).hexdigest()
+    launch.write_text(json.dumps(captured))
+    with pytest.raises(ValueError, match="Captured Kata configuration"):
+        API["verify"](upstream, approved, record, installed, launch)
+
+
+@pytest.mark.parametrize("value", ["2", "true", "1.0"])
+def test_install_and_verify_reject_changed_settings(deployed_profile, value):
+    upstream, approved, record, installed, target = deployed_profile
+    for text in (CONFIG, API["derive"](CONFIG)):
+        changed = text.replace("default_vcpus = 1", "default_vcpus = " + value)
+        target.write_text(changed)
+        with pytest.raises(ValueError, match="differ from both"):
+            API["install"](upstream, approved, record, installed)
+        assert target.read_text() == changed
+        with pytest.raises(ValueError, match="Installed Kata configuration"):
+            API["verify"](upstream, approved, record, installed)
+
+
+@pytest.mark.parametrize("kind", ["outside", "broken", "directory"])
+def test_unsafe_runtime_links_rejected(tmp_path, kind):
+    config_dir = tmp_path / "configs"
+    config_dir.mkdir()
+    outside = tmp_path / "outside.toml"
+    outside.write_text(CONFIG)
+    target = {"outside": outside, "broken": config_dir / "missing", "directory": config_dir}[kind]
+    alias = config_dir / "configuration.toml"
+    alias.symlink_to(target)
+    with pytest.raises((ValueError, FileNotFoundError)):
         API["enable"](alias)
+    assert outside.read_text() == CONFIG
+    assert alias.is_symlink()
 
 
 def test_source_and_isolated_role_helpers(tmp_path):

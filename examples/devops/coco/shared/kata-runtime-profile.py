@@ -45,6 +45,20 @@ def read_config(path):
     return path.read_bytes().decode("utf-8")
 
 
+def runtime_config_path(path):
+    """Follow Kata's runtime link without allowing a write outside its config tree."""
+    root = path.absolute().parent.resolve(strict=True)
+    target = path.resolve(strict=True)
+    if not target.is_relative_to(root) or not target.is_file():
+        raise ValueError("Installed Kata configuration must be a regular file within its configuration directory")
+    return target
+
+
+def settings(text):
+    # Ignore comments/layout, not value types (Python equality considers True == 1).
+    return json.dumps(tomllib.loads(text), sort_keys=True, allow_nan=False)
+
+
 def derive(text):
     original = tomllib.loads(text)
     params = original["hypervisor"]["qemu"]["kernel_params"]
@@ -87,16 +101,32 @@ def verify(upstream, approved, record, installed=None, launch=None):
     }
     if json.loads(record.read_text()) != expected:
         raise ValueError("Runtime configuration provenance changed")
-    if installed and read_config(installed) != effective:
-        raise ValueError("Installed Kata configuration differs from the approved derivation")
+    installed_text = None
+    if installed:
+        installed_text = read_config(runtime_config_path(installed))
+        if settings(installed_text) != settings(effective):
+            raise ValueError("Installed Kata configuration differs from the approved derivation")
     if launch:
+        if installed_text is None:
+            raise ValueError("Launch verification requires the installed configuration")
         captured = json.loads(launch.read_text())
         require_token_api(captured["launch_inputs"]["kernel_command_line"])
-        if captured["artifacts"]["kata_config"]["sha256"] != expected["approved_sha256"]:
-            raise ValueError("Captured Kata configuration differs from the approved derivation")
+        if captured["artifacts"]["kata_config"]["sha256"] != hashlib.sha256(installed_text.encode()).hexdigest():
+            raise ValueError("Captured Kata configuration differs from the verified installed file")
+
+
+def install(upstream, approved, record, installed):
+    verify(upstream, approved, record)
+    target = runtime_config_path(installed)
+    current = settings(read_config(target))
+    if current not in (settings(read_config(upstream)), settings(read_config(approved))):
+        raise ValueError("Installed Kata settings differ from both upstream and approved profile")
+    enable(target)
+    verify(upstream, approved, record, installed)
 
 
 def enable(path):
+    path = runtime_config_path(path)
     original = read_config(path)
     updated = derive(original)
     if updated == original:
@@ -120,13 +150,14 @@ def enable(path):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="operation", required=True)
-    for name in ("derive", "verify"):
+    for name in ("derive", "verify", "install"):
         p = sub.add_parser(name)
         p.add_argument("upstream", type=Path)
         p.add_argument("approved", type=Path)
         p.add_argument("record", type=Path)
+        if name in ("verify", "install"):
+            p.add_argument("--installed", type=Path, required=name == "install")
         if name == "verify":
-            p.add_argument("--installed", type=Path)
             p.add_argument("--launch", type=Path)
     for name in ("enable", "check"):
         p = sub.add_parser(name)
@@ -156,10 +187,14 @@ def main():
         verify(args.upstream, args.approved, args.record)
     elif args.operation == "verify":
         verify(args.upstream, args.approved, args.record, args.installed, args.launch)
+    elif args.operation == "install":
+        install(args.upstream, args.approved, args.record, args.installed)
     elif args.operation == "enable":
         enable(args.config)
     else:
-        require_token_api(tomllib.loads(read_config(args.config))["hypervisor"]["qemu"]["kernel_params"])
+        require_token_api(
+            tomllib.loads(read_config(runtime_config_path(args.config)))["hypervisor"]["qemu"]["kernel_params"]
+        )
         if args.runtime:
             env = json.loads(
                 subprocess.check_output(

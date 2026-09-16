@@ -80,6 +80,10 @@ Stage 03 checks the chart archive digest and immutable Kata image, preserves the
 original artifacts, and derives the [NVFlare token-API configuration](../RUNTIME-PROFILE.md).
 Stage 04 installs that chart, image and approved configuration, restarts containerd/kubelet, and installs GPU
 Operator 26.3.1 with confidential-computing management and VFIO passthrough.
+The configuration helper preserves Kata-deploy's management header and installed
+in-tree symlink while rejecting unrelated TOML setting changes. Stage 05 and the
+launch capture hash the exact installed file (including that header); stage 09
+checks those hashes separately from the unchanged upstream/approved-file hashes.
 It requires SNP enabled, CC-ready GPU status, the SNP RuntimeClass and the
 nydus snapshotter. Stage 05 rejects unsupported profiles instead of silently
 approving them. Stage 06 prepares the isolated measurement-tool environment

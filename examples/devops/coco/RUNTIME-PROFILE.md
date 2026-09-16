@@ -21,11 +21,24 @@ repeated `pci=` options. Missing parameters are appended; an existing single
 `resource` or `attestation` value is changed to `all`. Duplicate or unknown values
 and unsupported TOML layouts fail closed. Rerunning host enablement is idempotent.
 
-Stage 04 installs the derived configuration after Kata rollout, before profile
-capture. Stage 05 requires the option; stage 06 uses the approved configuration.
+Stage 04 installs the reviewed setting after Kata rollout, before profile
+capture. Kata-deploy 3.29.0 adds a management-comment header and exposes its
+configuration through a symlink into `runtimes/`. The helper accepts that layout:
+it resolves the installed link only within its configuration directory, compares
+all parsed TOML settings (including value types) against upstream or the approved
+derivation before writing, and changes only the reviewed option. It preserves
+the header, symlink, file ownership and permissions. Broken links, non-file targets,
+links outside that directory, and unrelated setting changes fail closed.
+
+Stage 05 requires the option; stage 06 uses the approved configuration.
 Stage 09 verifies original artifact hashes, re-derives the expected configuration,
-checks provenance, compares the installed file, and checks the actual QEMU launch
-for exactly one required option and the approved configuration hash. It retains
+checks provenance, compares all installed TOML settings with the approved settings,
+and checks the actual QEMU launch for exactly one required option. Hash checks
+remain byte-exact: the upstream/approved files retain their original provenance
+hashes; the launch capture must match the installed file's SHA-256, including its
+management header, and the stage 05 profile's installed-file hash. The installed
+hash therefore need not equal the header-free approved-file hash. Even a comment
+change after capture requires fresh capture/profile evidence. Stage 09 retains
 all existing report-signature, nonce, artifact, TCB and repeat-rehearsal checks.
 
 Do not edit only the installed TOML, weaken stage 09, or add a per-Pod kernel
@@ -59,6 +72,7 @@ delivered handoffs are not modified or revoked automatically.
 Use an updated assembled CoCo kit. The normal stage 30 bootstrap and stage 35
 re-pinning apply the same reviewed option after Kata deployment. Stage 60 checks
 both the configuration file and the effective parameters reported by `kata-env`.
+These paths use the same in-tree symlink handling and preserve Kata's header.
 The normal host configuration is:
 
 ```text
