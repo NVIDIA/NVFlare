@@ -584,13 +584,14 @@ Change logging configuration for a running job:
 
    nvflare job log-config <job_id> DEBUG
    nvflare job log-config <job_id> concise
+   nvflare job log-config <job_id> progress
    nvflare job log-config <job_id> msg_only
    nvflare job log-config <job_id> DEBUG --study cancer_research
 
 ``job log-config`` accepts:
 
 - positional ``level``: ``DEBUG``, ``INFO``, ``WARNING``, ``ERROR``, ``CRITICAL``
-- log modes: ``concise``, ``msg_only``, ``full``, ``verbose``, ``reload``
+- log modes: ``concise``, ``progress``, ``msg_only``, ``full``, ``verbose``, ``reload``
 - ``--site``: target site name or ``all``. Default: ``all``; specifying
   ``--site all`` explicitly is equivalent to omitting it.
 - ``--study``: study containing the job. If omitted, ``default`` is used.

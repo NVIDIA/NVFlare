@@ -82,17 +82,17 @@ class TestGetJobLogCmdParser:
     def test_parse_args_defaults_to_server(self):
         parser = _create_get_job_log_cmd_parser()
         parsed_args = parser.parse_args(["job-123"])
-        assert parsed_args == Namespace(job_id="job-123", target="server", log_file_name="log.txt")
+        assert parsed_args == Namespace(job_id="job-123", target="server", log_file_name="log.txt", tail_bytes=None)
 
     def test_parse_args_accepts_target(self):
         parser = _create_get_job_log_cmd_parser()
         parsed_args = parser.parse_args(["job-123", "site-1"])
-        assert parsed_args == Namespace(job_id="job-123", target="site-1", log_file_name="log.txt")
+        assert parsed_args == Namespace(job_id="job-123", target="site-1", log_file_name="log.txt", tail_bytes=None)
 
     def test_parse_args_accepts_internal_log_file_name(self):
         parser = _create_get_job_log_cmd_parser()
         parsed_args = parser.parse_args(["job-123", "site-1", "log.json"])
-        assert parsed_args == Namespace(job_id="job-123", target="site-1", log_file_name="log.json")
+        assert parsed_args == Namespace(job_id="job-123", target="site-1", log_file_name="log.json", tail_bytes=None)
 
 
 class _MockConnection:
@@ -1295,7 +1295,8 @@ def test_list_job_components_uses_canonical_missing_job_message(monkeypatch, tmp
     assert conn.errors[0][1][MetaKey.STATUS] == MetaStatusValue.INVALID_JOB_ID
 
 
-def test_get_job_log_client_target_returns_persisted_log(tmp_path, monkeypatch):
+@pytest.mark.parametrize("file_name, data_type", [("log.txt", "LOG_log.txt"), ("error_log.txt", "ERRORLOG")])
+def test_get_job_log_client_target_returns_persisted_log(tmp_path, monkeypatch, file_name, data_type):
     monkeypatch.setattr(job_cmds_module, "ServerEngine", _FakeServerEngine)
     monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
     workspace = _FakeWorkspace(tmp_path)
@@ -1303,11 +1304,12 @@ def test_get_job_log_client_target_returns_persisted_log(tmp_path, monkeypatch):
     engine.job_def_manager.get_client_data.return_value = b"client line1\nclient line2\n"
     conn = _MockConnection(app_ctx=engine, props={JobCommandModule.JOB_ID: "job-1"})
 
-    JobCommandModule().get_job_log(conn, ["get_job_log", "job-1", "site-1"])
+    JobCommandModule().get_job_log(conn, ["get_job_log", "job-1", "site-1", file_name])
 
     payload, _meta = conn.dicts[0]
     assert payload == {"logs": {"site-1": "client line1\nclient line2\n"}}
     engine.job_def_manager.get_client_data.assert_called_once()
+    assert engine.job_def_manager.get_client_data.call_args.kwargs["data_type"] == data_type
 
 
 def test_get_job_log_client_target_reads_live_workspace_log(tmp_path, monkeypatch):
@@ -1343,18 +1345,19 @@ def test_get_job_log_returns_selected_live_json_log_only(tmp_path, monkeypatch):
     assert payload == {"logs": {"server": '{"asctime": "2026-04-30 10:00:00", "message": "json server log"}\n'}}
 
 
-def test_get_job_log_client_target_reads_selected_json_log(tmp_path, monkeypatch):
+@pytest.mark.parametrize("file_name", ["log.json", "error_log.txt"])
+def test_get_job_log_client_target_reads_selected_log(tmp_path, monkeypatch, file_name):
     monkeypatch.setattr(job_cmds_module, "ServerEngine", _FakeServerEngine)
     monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
     workspace = _FakeWorkspace(tmp_path)
     engine = _FakeServerEngine(workspace)
     engine.job_def_manager.get_client_data.return_value = None
-    client_json = Path(workspace.get_log_root("job-1")) / "site-1" / "log.json"
+    client_json = Path(workspace.get_log_root("job-1")) / "site-1" / file_name
     client_json.parent.mkdir(parents=True, exist_ok=True)
     client_json.write_text('{"asctime": "2026-04-30 10:00:00", "message": "client json"}\n', encoding="utf-8")
     conn = _MockConnection(app_ctx=engine, props={JobCommandModule.JOB_ID: "job-1"})
 
-    JobCommandModule().get_job_log(conn, ["get_job_log", "job-1", "site-1", "log.json"])
+    JobCommandModule().get_job_log(conn, ["get_job_log", "job-1", "site-1", file_name])
 
     payload, _meta = conn.dicts[0]
     assert payload["logs"] == {"site-1": '{"asctime": "2026-04-30 10:00:00", "message": "client json"}\n'}
@@ -1411,6 +1414,24 @@ def test_get_job_log_truncates_large_output(tmp_path, monkeypatch):
     payload, _meta = conn.dicts[0]
     assert "truncated to last 16 bytes" in payload["logs"]["server"]
     assert payload["logs"]["server"].endswith("aa\n" + "b" * 12 + "\n")
+
+
+def test_get_job_log_tail_bytes_keeps_notice_and_complete_records(tmp_path, monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "ServerEngine", _FakeServerEngine)
+    workspace = _FakeWorkspace(tmp_path)
+    engine = _FakeServerEngine(workspace)
+    conn = _MockConnection(app_ctx=engine, props={JobCommandModule.JOB_ID: "job-1"})
+    log_file = Path(workspace.get_log_root("job-1")) / "log.json"
+    log_file.write_text('{"message":"' + "x" * 80 + '"}\n{"message":"second"}\n', encoding="utf-8")
+
+    JobCommandModule().get_job_log(conn, ["get_job_log", "job-1", "server", "log.json", "--tail-bytes", "65"])
+
+    payload, _meta = conn.dicts[0]
+    text = payload["logs"]["server"]
+    assert text.startswith("... output truncated ...\n")
+    assert text.endswith('{"message":"second"}\n')
+    assert "x" * 20 not in text
+    assert all(line.startswith(("... output truncated", "{")) for line in text.splitlines())
 
 
 def test_decode_job_log_data_honors_zero_byte_cap(monkeypatch):
@@ -2379,3 +2400,38 @@ def test_submit_token_locks_are_weakly_released():
     del lock
     gc.collect()
     assert key not in JobCommandModule._submit_token_locks
+
+
+@pytest.mark.parametrize("source", ["live", "workspace", "component"])
+def test_requested_byte_limit_applies_before_log_response(tmp_path, monkeypatch, source):
+    monkeypatch.setattr(job_cmds_module, "ServerEngine", _FakeServerEngine)
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    workspace = _FakeWorkspace(tmp_path)
+    engine = _FakeServerEngine(workspace)
+    text = "α" * 10000 + "\nValueError: training failed\n"
+    if source == "live":
+        log = Path(workspace.get_log_root("job-1")) / "site-1" / "error_log.txt"
+        log.parent.mkdir(parents=True)
+        log.write_text(text)
+    elif source == "workspace":
+        engine.job_def_manager.get_storage_component.return_value = _zip_bytes({"site-1/error_log.txt": text})
+    else:
+        engine.job_def_manager.get_client_data.return_value = text.encode()
+    conn = _MockConnection(app_ctx=engine, props={JobCommandModule.JOB_ID: "job-1"})
+    JobCommandModule().get_job_log(conn, ["get_job_log", "job-1", "site-1", "error_log.txt", "--tail-bytes", "65"])
+    assert not conn.errors
+    payload, _ = conn.dicts[0]
+    returned = payload["logs"]["site-1"]
+    assert len(returned.encode("utf-8")) <= 65
+    assert returned.endswith("ValueError: training failed\n")
+    assert "�" not in returned
+
+
+@pytest.mark.parametrize("limit", ["0", "-1", "not-an-integer"])
+def test_invalid_log_byte_limit_rejected_before_reading(tmp_path, limit):
+    engine = _FakeServerEngine(_FakeWorkspace(tmp_path))
+    conn = _MockConnection(app_ctx=engine, props={JobCommandModule.JOB_ID: "job-1"})
+    JobCommandModule().get_job_log(conn, ["get_job_log", "job-1", "site-1", "--tail-bytes", limit])
+    assert conn.errors
+    assert not conn.dicts
+    engine.job_def_manager.get_client_data.assert_not_called()

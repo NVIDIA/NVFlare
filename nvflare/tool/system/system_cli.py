@@ -133,7 +133,7 @@ def def_system_cli_parser(system_parser):
         "level",
         nargs="?",
         default=None,
-        help="DEBUG, INFO, WARNING, ERROR, CRITICAL, concise, msg_only, full, verbose, reload",
+        help="DEBUG, INFO, WARNING, ERROR, CRITICAL, concise, progress, msg_only, full, verbose, reload",
     )
     p.add_argument("--site", default="all", help="server, a client name, or all")
     add_startup_kit_selection_args(p)
@@ -607,7 +607,7 @@ def cmd_system_log(args):
             exit_code=4,
             error_code="LOG_CONFIG_INVALID",
             message="Log config is not a recognised log mode.",
-            hint="Supply one of: DEBUG, INFO, WARNING, ERROR, CRITICAL, concise, msg_only, full, verbose, reload.",
+            hint="Supply one of: DEBUG, INFO, WARNING, ERROR, CRITICAL, concise, progress, msg_only, full, verbose, reload.",
         )
         raise SystemExit(4)
 
