@@ -1,0 +1,5 @@
+key_service:
+  url: https://key-service.example.org:9443
+  ca: ./credentials/key-service-ca.pem
+  cert: ./credentials/builder-client.pem
+  key: ./credentials/builder-client.key

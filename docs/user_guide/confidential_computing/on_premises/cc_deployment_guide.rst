@@ -4,6 +4,11 @@
 FLARE Confidential Federated AI Deployment Guide
 ################################################
 
+.. note::
+
+   For CVM Builder provisioning with reusable bundles and application vaults,
+   follow :ref:`cvm_builder`.
+
 Overview
 ========
 

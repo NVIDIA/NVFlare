@@ -4,6 +4,7 @@ On-Premises IP Protection
 
 The following documents provide detailed information about FLARE's Confidential Federated AI architecture for IP protection:
 
+- :ref:`cvm_builder` - Provision application vaults using reusable, approved CVM Builder bundles
 - :ref:`cc_architecture` - System architecture and component design
 - :ref:`cc_deployment_guide` - Deployment guide for on-premises CVM setup with AMD SEV-SNP and NVIDIA GPU
 - :ref:`base_image_build` - Build instructions for Ubuntu base image, firmware, and required binaries
@@ -13,6 +14,7 @@ The following documents provide detailed information about FLARE's Confidential 
 .. toctree::
    :maxdepth: 2
 
+   cvm_builder
    cc_architecture
    cc_deployment_guide
    base_image_build

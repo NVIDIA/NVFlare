@@ -1,5 +1,8 @@
 # How to use CC provision
 
+For provisioning application vaults from approved CVM images, see the
+[CVM Builder example](cvm_builder/README.md), including a TDX server and an AMD GPU client.
+
 This guide explains how to use **CC (Confidential Computing) Provision** in NVFlare.
 It covers how to set up site configurations, enable the CC builder, and use Docker images for CC workloads.
 
