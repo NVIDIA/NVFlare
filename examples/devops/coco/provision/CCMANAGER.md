@@ -129,9 +129,103 @@ outer-proof checks remain enforced. No leeway is added to the outer proof decode
 
 Generated kits use this default when running the updated authorizer; rebuild the
 client image and update ordinary-server code to deploy the change. This is not
-clock synchronization and adds no retries. Clock lag above the allowance, shorter
+clock synchronization; the leeway itself adds no retries. Clock lag above the allowance, shorter
 outer-proof lifetimes than the lag, and transient attestation failures can still
-prevent registration. The retry/shutdown behavior is a separate concern.
+prevent registration. Retry behavior is described below; the shutdown policy is unchanged.
+
+## Bounded token-generation retries
+
+CCManager calls `CoCoAuthorizer.generate_with_retry(timeout, cancel_event)` before
+client registration and when obtaining tokens for periodic cross-validation or a
+peer refresh request. It retries only connection errors, HTTP timeouts, and
+guest API HTTP 429/502/503/504 responses. Every successful response still goes
+through the existing signature, freshness, CPU/GPU appraisal and TEE-key checks.
+Malformed responses, invalid proofs, failed appraisals, and other HTTP statuses
+(including 401/403/500) fail immediately. An upstream KDS failure hidden behind
+an undifferentiated 401 or 500 is **not** automatically retried: that response
+cannot safely be distinguished from a permanent attestation/policy failure.
+
+Defaults (constructor arguments):
+
+| Component | Argument | Default |
+| --- | --- | --- |
+| CCManager | `registration_token_timeout` | 300 seconds |
+| CCManager | `refresh_token_timeout` | 30 seconds |
+| CCManager | `get_token_request_timeout` | 45 seconds |
+| CoCoAuthorizer | `retry_max_attempts` | 10 attempts, including the first |
+| CoCoAuthorizer | `retry_initial_delay` | 1 second |
+| CoCoAuthorizer | `retry_max_delay` | 15 seconds |
+| CoCoAuthorizer | `retry_backoff_multiplier` | 2 |
+| CoCoAuthorizer | `retry_jitter_ratio` | 0.5 |
+
+The first attempt is immediate. With the defaults, subsequent attempts use exponential backoff
+with jitter: 0.5–1 seconds, 1–2, 2–4, 4–8, then 7.5–15 seconds. Generation stops
+when either the attempt limit or the monotonic time budget is exhausted.
+Queueing behind another generation request consumes the same budget. The
+manager shares the generation budget across its issuers; legacy authorizers
+retain their existing single-attempt implementation and are not given CoCo's
+bounded worker or retry classification.
+
+Set the authorizer retry options under `cc_issuers[].args` and the CCManager
+timeouts under `cc_attestation` in the client's `cc_config` YAML referenced by
+`project.yaml` (see `cc_site-1.yml`). For example, these optional fields retain
+the defaults; adjust the values as needed:
+
+```yaml
+cc_issuers:
+  - id: coco_authorizer
+    path: nvflare.app_opt.confidential_computing.coco_authorizer.CoCoAuthorizer
+    token_expiration: 300
+    args:
+      trustee_public_key_file: ./trustee-as-public.pem
+      token_url: http://127.0.0.1:8006/aa/token
+      retry_max_attempts: 10
+      retry_initial_delay: 1.0
+      retry_max_delay: 15.0
+      retry_backoff_multiplier: 2.0
+      retry_jitter_ratio: 0.5
+cc_attestation:
+  check_frequency: 120
+  registration_token_timeout: 300
+  refresh_token_timeout: 30
+  get_token_request_timeout: 45
+```
+
+Run `nvflare provision -p project.yaml` again. Provisioning writes the authorizer
+settings into each protected client's resources and the manager timeouts into
+both client and ordinary-server resources. All CoCo clients in the project must
+share the manager timeouts; their authorizer backoff settings may differ.
+The same names are constructor arguments when configuring components directly.
+
+Delays must satisfy `0 < retry_initial_delay <= retry_max_delay`; the multiplier
+must be at least 1, and the jitter ratio must be between 0 and 1. Each delay is
+sampled uniformly from `delay * (1 - retry_jitter_ratio)` through `delay`, then
+the delay grows by the multiplier up to the maximum. Ratio 0 disables jitter;
+ratio 1 enables full jitter. Numeric settings must be finite, and attempts must
+be an integer from 1 through 100. Invalid settings fail before kit publication.
+
+Each peer's `get_token_request_timeout` must exceed the remote
+peer's `refresh_token_timeout`, with room for network transit (the constructor
+also checks this against its own refresh budget). Rebuild client images and
+deploy updated ordinary-server code. Omitting the optional settings retains
+the defaults.
+Existing resource configurations that explicitly set the old 10-second peer
+timeout must increase it (for example, to 45 seconds for a 30-second refresh budget).
+
+Shutdown cancels outstanding retry waits. A bounded caller wait and one guarded
+worker per CoCo authorizer prevent stalled HTTP from blocking registration
+indefinitely or accumulating retry workers. Python cannot forcibly terminate
+an in-flight HTTP call: if it outlives the budget, its result is discarded and
+the worker retains the guard until it exits. Subsequent requests cannot start
+another worker in the meantime. HTTP connect/read timeouts are capped by the
+remaining budget; they are not treated as an absolute wall-clock guarantee.
+
+Exhaustion returns no usable token and follows the existing registration or
+periodic-validation failure path (including federation shutdown where already
+configured). This change does not cache VCEKs, quarantine individual sites,
+extend token validity, or reuse proofs. Direct `generate()` remains a single
+attempt; standalone callers can explicitly use `generate_with_retry()` with
+a timeout in seconds and a `threading.Event` for cancellation.
 
 ## Direct client/server API
 
@@ -279,8 +373,9 @@ saved. The updated authorizer's 40 targeted unit tests also passed.
 The first generation attempt returned `CCTokenGenerateError`. The test harness
 waited one second and retried without modifying the authorizer or relaxing its
 checks; the error's underlying cause was not established. This is not evidence
-of reliable first-attempt generation or built-in retry handling. Handle transient
-failures with bounded retries where appropriate and fail closed on exhaustion.
+of reliable first-attempt generation or a live validation of the bounded retry
+path added later. The current retry behavior is documented above and covered by
+unit tests and the separate live retry check below; fail closed on exhaustion.
 
 This historical live result establishes the revision above's cross-node `generate()`/`verify()`
 path, including AS-signature and CPU/GPU-appraisal validation. It used a
@@ -295,3 +390,30 @@ included in this public example.
 The later peer-binding and mixed-client registration fixes are covered by
 offline regression tests, not that historical live test. Re-run a complete
 protected-client/ordinary-server registration rehearsal before deployment.
+
+### Live bounded-retry check (2026-09-16)
+
+The updated, unmodified authorizer ran inside an SNP/NVIDIA diagnostic CoCo Pod.
+Direct generation used the actual guest AA API and returned a verified proof.
+A guest-local HTTP relay then injected two 503 responses before forwarding the
+third request to that same real API: the retry path recovered in 2.577 seconds,
+and signature, CPU/GPU appraisal, peer-binding, and replay checks passed.
+Additional real-HTTP cases rejected a 401 after one request, exhausted a
+three-attempt limit after three 503 responses, and enforced a 0.2-second budget
+in 0.202 seconds. The Pod completed successfully with zero restarts.
+
+These were controlled transport failures, not a naturally occurring KDS outage.
+No authorizer methods were mocked and no attestation policy was weakened.
+The test used a plaintext diagnostic image and an in-guest verifier; it did not
+exercise full NVFlare registration, CCManager event/F3 integration, or workload
+decryption-key release. No raw token or guest private key was persisted.
+
+A second run correlated the diagnostic with secure-services logs and TCP-header
+observations inside AS's network namespace. It confirmed live HTTPS exchanges
+with both AMD KDS and NVIDIA NRAS, plus successful SNP/NVIDIA verification and
+KBS attestation responses. No cache was cleared and no service restarted.
+An intermediate VCEK-fetch failure produced a KBS HTTP 401; the guest attestation
+stack retried internally and subsequently obtained HTTP 200. The Python
+authorizer only saw the relay's two injected 503 responses and final 200: this
+does **not** establish that it retries generic 401 responses. Vendor HTTP bodies
+were not decrypted or retained, and connection counts are not request counts.

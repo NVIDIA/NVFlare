@@ -15,6 +15,7 @@
 """Client-only CoCo configuration; attestation is performed by Kata/Trustee."""
 
 import json
+import math
 import re
 from pathlib import Path
 
@@ -27,6 +28,18 @@ from nvflare.lighter.spec import Builder
 
 AUTHOR_PATH = "nvflare.app_opt.confidential_computing.coco_authorizer.CoCoAuthorizer"
 MANAGER_PATH = "nvflare.app_opt.confidential_computing.cc_manager.CCManager"
+RETRY_ARGUMENTS = {
+    "retry_max_attempts",
+    "retry_initial_delay",
+    "retry_max_delay",
+    "retry_backoff_multiplier",
+    "retry_jitter_ratio",
+}
+MANAGER_TIMEOUT_DEFAULTS = {
+    "registration_token_timeout": 300.0,
+    "refresh_token_timeout": 30.0,
+    "get_token_request_timeout": 45.0,
+}
 
 
 def resolve_cc_config(project, value):
@@ -89,17 +102,27 @@ def validate_coco_config(config):
     ):
         raise ValueError("CoCo requires the coco_authorizer CoCoAuthorizer component")
     args = issuer["args"]
-    if not isinstance(args, dict) or set(args) - {"trustee_public_key_file", "token_url"}:
+    if not isinstance(args, dict) or set(args) - ({"trustee_public_key_file", "token_url"} | RETRY_ARGUMENTS):
         raise ValueError("Unsupported CoCo authorizer arguments")
     if not isinstance(args.get("trustee_public_key_file"), str) or not args["trustee_public_key_file"]:
         raise ValueError("trustee_public_key_file is required")
     age = issuer["token_expiration"]
     attestation = config.get("cc_attestation", {"check_frequency": 120})
-    if not isinstance(attestation, dict) or set(attestation) != {"check_frequency"}:
-        raise ValueError("cc_attestation requires exactly check_frequency")
+    if (
+        not isinstance(attestation, dict)
+        or "check_frequency" not in attestation
+        or set(attestation) - ({"check_frequency"} | MANAGER_TIMEOUT_DEFAULTS.keys())
+    ):
+        raise ValueError("cc_attestation requires check_frequency and supports only token timeout options")
     frequency = attestation["check_frequency"]
     if type(age) is not int or not 1 <= age <= 300 or type(frequency) is not int or not 0 < frequency < age:
         raise ValueError("Require 0 < check_frequency < token_expiration <= 300")
+    timeouts = {name: attestation.get(name, default) for name, default in MANAGER_TIMEOUT_DEFAULTS.items()}
+    for name, value in timeouts.items():
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
+            raise ValueError(f"{name} must be finite and positive")
+    if timeouts["get_token_request_timeout"] <= timeouts["refresh_token_timeout"]:
+        raise ValueError("get_token_request_timeout must exceed refresh_token_timeout")
 
 
 class CoCoBuilder(Builder):
@@ -129,14 +152,20 @@ class CoCoBuilder(Builder):
                 "trustee_public_key": pem,
                 "audience": "nvflare-coco:" + project.name,
                 "max_token_age_seconds": issuer["token_expiration"],
+                **{name: value for name, value in issuer["args"].items() if name in RETRY_ARGUMENTS},
             }
             # Validate endpoint and arguments before any signed kit is released.
             from nvflare.app_opt.confidential_computing.coco_authorizer import CoCoAuthorizer
 
             url = issuer["args"].get("token_url", "http://127.0.0.1:8006/aa/token")
             CoCoAuthorizer(**args, token_url=url)
-            self.settings[participant.name] = (args, url, config.get("cc_attestation", {}).get("check_frequency", 120))
-        verifier_settings = [(s[0], s[2]) for s in self.settings.values()]
+            attestation = config.get("cc_attestation", {})
+            timeouts = {name: attestation.get(name, default) for name, default in MANAGER_TIMEOUT_DEFAULTS.items()}
+            self.settings[participant.name] = (args, url, attestation.get("check_frequency", 120), timeouts)
+        verifier_settings = [
+            ({name: value for name, value in s[0].items() if name not in RETRY_ARGUMENTS}, s[2], s[3])
+            for s in self.settings.values()
+        ]
         if any(s != verifier_settings[0] for s in verifier_settings[1:]):
             raise ValueError("CoCo clients must share the pinned AS key and attestation timing")
 
@@ -148,7 +177,7 @@ class CoCoBuilder(Builder):
             resources = Path(ctx.get_local_dir(client)) / ProvFileName.RESOURCES_JSON_DEFAULT
             if not resources.is_file():
                 raise RuntimeError("CoCoBuilder requires StaticFileBuilder before CCBuilder")
-            args, url, frequency = self.settings[client.name]
+            args, url, frequency, timeouts = self.settings[client.name]
             self._write(
                 ctx, client, "coco_authorizer", AUTHOR_PATH, {**args, "site_name": client.name, "token_url": url}
             )
@@ -164,9 +193,11 @@ class CoCoBuilder(Builder):
                     "cc_verifier_ids": ["coco_authorizer"],
                     "cc_enabled_sites": list(self.settings),
                     "verify_frequency": frequency,
+                    **timeouts,
                 },
             )
-        args, _, frequency = next(iter(self.settings.values()))
+        args, _, frequency, timeouts = next(iter(self.settings.values()))
+        args = {name: value for name, value in args.items() if name not in RETRY_ARGUMENTS}
         server = project.get_server()
         self._write(ctx, server, "coco_authorizer", AUTHOR_PATH, args)
         self._write(
@@ -179,6 +210,7 @@ class CoCoBuilder(Builder):
                 "cc_verifier_ids": ["coco_authorizer"],
                 "cc_enabled_sites": list(self.settings),
                 "verify_frequency": frequency,
+                **timeouts,
             },
         )
 

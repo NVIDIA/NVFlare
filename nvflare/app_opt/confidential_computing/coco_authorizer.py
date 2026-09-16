@@ -19,6 +19,9 @@ must never be forwarded as a CC token, persisted, or included in exceptions.
 """
 
 import json
+import logging
+import math
+import random
 import secrets
 import threading
 import time
@@ -46,6 +49,10 @@ EAT_PROFILE = "tag:github.com,2024:confidential-containers/Trustee"
 MAX_TOKEN_BYTES = 2 * 1024 * 1024
 
 
+class _TemporaryTokenError(CCTokenGenerateError):
+    """A guest API transport failure that may safely be retried."""
+
+
 class CoCoAuthorizer(CCAuthorizer):
     def __init__(
         self,
@@ -56,6 +63,11 @@ class CoCoAuthorizer(CCAuthorizer):
         max_token_age_seconds=300,
         proof_lifetime_seconds=300,
         ear_leeway_seconds=180,
+        retry_max_attempts=10,
+        retry_initial_delay=1.0,
+        retry_max_delay=15.0,
+        retry_backoff_multiplier=2.0,
+        retry_jitter_ratio=0.5,
     ):
         """Configure EAR freshness and the generated/accepted outer proof lifetime separately.
 
@@ -65,6 +77,11 @@ class CoCoAuthorizer(CCAuthorizer):
         ear_leeway_seconds (0..180) applies PyJWT clock-skew tolerance to EAR
         iat, exp and nbf checks. The maximum EAR age and outer proof checks
         remain independent of this allowance.
+        retry_max_attempts (1..100) includes the first attempt and is used only
+        by generate_with_retry(), never by single-attempt generate().
+        Retry delays are in seconds. Each wait is sampled between
+        delay * (1 - retry_jitter_ratio) and delay; delay grows by
+        retry_backoff_multiplier up to retry_max_delay.
         """
         self.trustee_key = serialization.load_pem_public_key(trustee_public_key.encode())
         if not isinstance(self.trustee_key, ec.EllipticCurvePublicKey) or not isinstance(
@@ -79,6 +96,22 @@ class CoCoAuthorizer(CCAuthorizer):
             raise ValueError("proof_lifetime_seconds must be a positive integer")
         if type(ear_leeway_seconds) is not int or not 0 <= ear_leeway_seconds <= 180:
             raise ValueError("ear_leeway_seconds must be 0..180")
+        if type(retry_max_attempts) is not int or not 1 <= retry_max_attempts <= 100:
+            raise ValueError("retry_max_attempts must be 1..100")
+        for name, value in (
+            ("retry_initial_delay", retry_initial_delay),
+            ("retry_max_delay", retry_max_delay),
+            ("retry_backoff_multiplier", retry_backoff_multiplier),
+            ("retry_jitter_ratio", retry_jitter_ratio),
+        ):
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+                raise ValueError(f"{name} must be a finite number")
+        if retry_initial_delay <= 0 or retry_max_delay < retry_initial_delay:
+            raise ValueError("Require 0 < retry_initial_delay <= retry_max_delay")
+        if retry_backoff_multiplier < 1:
+            raise ValueError("retry_backoff_multiplier must be >= 1")
+        if not 0 <= retry_jitter_ratio <= 1:
+            raise ValueError("retry_jitter_ratio must be 0..1")
         url = urlsplit(token_url)
         if (
             url.scheme != "http"
@@ -98,6 +131,13 @@ class CoCoAuthorizer(CCAuthorizer):
         self.ear_leeway_seconds = ear_leeway_seconds
         self.seen = {}
         self.lock = threading.Lock()
+        self.retry_max_attempts = retry_max_attempts
+        self.retry_initial_delay = retry_initial_delay
+        self.retry_max_delay = retry_max_delay
+        self.retry_backoff_multiplier = retry_backoff_multiplier
+        self.retry_jitter_ratio = retry_jitter_ratio
+        self._generation_lock = threading.Lock()
+        self._generation_context = threading.local()
 
     def get_namespace(self):
         return COCO_NAMESPACE
@@ -157,15 +197,26 @@ class CoCoAuthorizer(CCAuthorizer):
         return claims, key
 
     def _get_guest_token(self):
+        remaining = getattr(self._generation_context, "deadline", float("inf")) - time.monotonic()
+        if remaining <= 0:
+            raise CCTokenGenerateError("Token generation deadline exhausted")
         with requests.Session() as session:
             session.trust_env = False  # never send the private key via a proxy
             with session.get(
-                self.token_url, params={"token_type": "kbs"}, timeout=(3, 10), allow_redirects=False, stream=True
+                self.token_url,
+                params={"token_type": "kbs"},
+                timeout=(min(3, remaining), min(10, remaining)),
+                allow_redirects=False,
+                stream=True,
             ) as response:
+                if response.status_code in (429, 502, 503, 504):
+                    raise _TemporaryTokenError("Guest token API temporarily unavailable")
                 if response.status_code != 200:
                     raise ValueError("Guest token API failed")
                 chunks, size = [], 0
                 for chunk in response.iter_content(65536):
+                    if time.monotonic() >= getattr(self._generation_context, "deadline", float("inf")):
+                        raise CCTokenGenerateError("Token generation deadline exhausted")
                     size += len(chunk)
                     if size > MAX_TOKEN_BYTES:
                         raise ValueError("Guest token API response too large")
@@ -197,8 +248,92 @@ class CoCoAuthorizer(CCAuthorizer):
                 private,
                 algorithm=self._algorithm(private),
             )
+        except (_TemporaryTokenError, requests.exceptions.Timeout, requests.exceptions.ConnectionError):
+            raise _TemporaryTokenError("Guest token API temporarily unavailable") from None
         except Exception:
             raise CCTokenGenerateError("Unable to generate a verified CoCo attestation proof") from None
+
+    def generate_with_retry(self, timeout, cancel_event):
+        """Retry transport failures without extending token validity.
+
+        A single guarded worker bounds the caller's wait even if HTTP stalls.
+        Python cannot forcibly terminate an in-flight request: its worker keeps
+        the lock until it exits, preventing abandoned workers from accumulating.
+        Direct generate() remains a single-attempt API.
+        """
+        if (
+            isinstance(timeout, bool)
+            or not isinstance(timeout, (int, float))
+            or not math.isfinite(timeout)
+            or timeout <= 0
+        ):
+            raise ValueError("Token generation timeout must be finite and positive")
+        deadline = time.monotonic() + timeout
+        stopped, done = threading.Event(), threading.Event()
+        outcome = {}
+
+        def check_budget():
+            if cancel_event.is_set() or stopped.is_set():
+                raise CCTokenGenerateError("Token generation cancelled")
+            if time.monotonic() >= deadline:
+                raise CCTokenGenerateError("Token generation deadline exhausted")
+
+        def wait(delay):
+            until = min(deadline, time.monotonic() + delay)
+            while time.monotonic() < until:
+                check_budget()
+                stopped.wait(min(0.05, max(0, until - time.monotonic())))
+            check_budget()
+
+        def run():
+            self._generation_context.deadline = deadline
+            try:
+                delay = self.retry_initial_delay
+                for attempt in range(1, self.retry_max_attempts + 1):
+                    check_budget()
+                    try:
+                        token = self.generate()
+                        check_budget()
+                        outcome["token"] = token
+                        return
+                    except _TemporaryTokenError:
+                        check_budget()
+                        if attempt == self.retry_max_attempts:
+                            raise CCTokenGenerateError("Token generation retry attempts exhausted") from None
+                        logging.getLogger(__name__).warning(
+                            "Temporary guest token API failure; retrying after attempt %d", attempt
+                        )
+                        wait(random.uniform(delay * (1 - self.retry_jitter_ratio), delay))
+                        delay = min(self.retry_max_delay, delay * self.retry_backoff_multiplier)
+            except CCTokenGenerateError as error:
+                outcome["error"] = CCTokenGenerateError(str(error))
+            except Exception:
+                outcome["error"] = CCTokenGenerateError("Unable to generate a verified CoCo attestation proof")
+            finally:
+                self._generation_lock.release()
+                done.set()
+
+        # Waiting for another request also consumes this request's budget.
+        while True:
+            check_budget()
+            if self._generation_lock.acquire(blocking=False):
+                break
+            wait(0.05)
+        worker = threading.Thread(target=run, daemon=True, name="CoCo-TokenGeneration")
+        try:
+            worker.start()
+        except Exception:
+            self._generation_lock.release()
+            raise CCTokenGenerateError("Unable to start token generation") from None
+        try:
+            while not done.wait(min(0.05, max(0, deadline - time.monotonic()))):
+                check_budget()
+            check_budget()
+            if "error" in outcome:
+                raise outcome["error"]
+            return outcome["token"]
+        finally:
+            stopped.set()
 
     def verify(self, token):
         """Verify proof validity only; use verify_for_site at an FL peer boundary."""

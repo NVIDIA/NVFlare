@@ -12,8 +12,18 @@ cc_issuers:
     args:
       trustee_public_key_file: ./trustee-as-public.pem
       token_url: http://127.0.0.1:8006/aa/token
+      # Optional bounded-retry settings; delays are in seconds.
+      retry_max_attempts: 10
+      retry_initial_delay: 1.0
+      retry_max_delay: 15.0
+      retry_backoff_multiplier: 2.0
+      retry_jitter_ratio: 0.5
 cc_attestation:
   check_frequency: 120
+  # Use the same manager timeouts for all CoCo clients in this project.
+  registration_token_timeout: 300
+  refresh_token_timeout: 30
+  get_token_request_timeout: 45
 
 # Paths are relative to this file; dockerfile is relative to context.
 image_build:

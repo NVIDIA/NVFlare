@@ -58,6 +58,16 @@ class CCAuthorizer(ABC):
         """
         return self.verify(token)
 
+    def generate_with_retry(self, timeout: float, cancel_event) -> str:
+        """Generate within a caller budget when supported by the authorizer.
+
+        Legacy authorizers retain single-attempt behavior. Implementations that
+        opt into retries must preserve verification and honor cancellation.
+        """
+        if cancel_event.is_set():
+            raise CCTokenGenerateError("Token generation cancelled")
+        return self.generate()
+
 
 class CCTokenGenerateError(Exception):
     """Raised when a CC token generation failed"""

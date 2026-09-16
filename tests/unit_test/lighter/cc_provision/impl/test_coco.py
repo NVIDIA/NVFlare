@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import base64
+import copy
 import gzip
 import json
 import shutil
@@ -27,7 +28,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
 from nvflare.lighter.cc_provision.impl.cc import CCBuilder
-from nvflare.lighter.cc_provision.impl.coco import resolve_cc_config, validate_coco_config
+from nvflare.lighter.cc_provision.impl.coco import CoCoBuilder, resolve_cc_config, validate_coco_config
 from nvflare.lighter.cc_provision.impl.coco_packager import COMMAND, CoCoPackager
 from nvflare.lighter.constants import CtxKey, PropKey
 from nvflare.lighter.impl.cert import CertBuilder
@@ -144,8 +145,23 @@ def write_fake_result(request):
     )
 
 
-def test_provision_real_signed_kit_then_package(tmp_path):
-    project, _ = setup_project(tmp_path)
+@pytest.mark.parametrize("custom_retry", [False, True])
+def test_provision_real_signed_kit_then_package(tmp_path, custom_retry):
+    project, config = setup_project(tmp_path)
+    retry_options = {}
+    timeouts = {"registration_token_timeout": 300, "refresh_token_timeout": 30, "get_token_request_timeout": 45}
+    if custom_retry:
+        retry_options = {
+            "retry_max_attempts": 6,
+            "retry_initial_delay": 2,
+            "retry_max_delay": 12,
+            "retry_backoff_multiplier": 3,
+            "retry_jitter_ratio": 0.25,
+        }
+        timeouts = {"registration_token_timeout": 180, "refresh_token_timeout": 40, "get_token_request_timeout": 55}
+        config["cc_issuers"][0]["args"].update(retry_options)
+        config["cc_attestation"].update(timeouts)
+        (tmp_path / "cc_site-1.yml").write_text(yaml.safe_dump(config))
     seen = []
 
     def runner(command, **kwargs):
@@ -180,6 +196,10 @@ def test_provision_real_signed_kit_then_package(tmp_path):
     assert client_manager["cc_verifier_ids"] == ["coco_authorizer"]
     client_auth = json.loads((client_local / "coco_authorizer__p_resources.json").read_text())["components"][0]["args"]
     assert client_auth["site_name"] == "site-1"
+    for name, value in retry_options.items():
+        assert client_auth[name] == value
+    for name, value in timeouts.items():
+        assert client_manager[name] == manager[name] == value
     assert owner.stat().st_mode & 0o777 == 0o700
     assert (owner / "build-request.json").stat().st_mode & 0o777 == 0o600
     assert (owner / "startup-kit/startup/client.key").read_bytes() == (
@@ -204,6 +224,55 @@ def test_invalid_config_is_fail_closed(tmp_path, field, value):
     ctx = Provisioner(str(tmp_path / "workspace"), builders(), CoCoPackager("build.sh")).provision(project)
     assert ctx.get(CtxKey.BUILD_ERROR)
     assert not list((tmp_path / "workspace/test_project").glob("prod_*"))
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("registration_token_timeout", 0),
+        ("refresh_token_timeout", True),
+        ("get_token_request_timeout", 30),
+        ("get_token_request_timeout", float("inf")),
+        ("unknown_retry_option", 1),
+    ],
+)
+def test_invalid_provisioning_retry_timeout(tmp_path, field, value):
+    _, config = setup_project(tmp_path)
+    config["cc_attestation"][field] = value
+    with pytest.raises(ValueError):
+        validate_coco_config(config)
+
+
+def test_invalid_backoff_fails_before_packaging(tmp_path):
+    project, config = setup_project(tmp_path)
+    config["cc_issuers"][0]["args"]["retry_jitter_ratio"] = 2
+    (tmp_path / "cc_site-1.yml").write_text(yaml.safe_dump(config))
+    with patch("nvflare.lighter.cc_provision.impl.coco_packager.subprocess.run") as runner:
+        ctx = Provisioner(str(tmp_path / "workspace"), builders(), CoCoPackager("build.sh")).provision(project)
+    assert ctx.get(CtxKey.BUILD_ERROR)
+    runner.assert_not_called()
+    assert not list((tmp_path / "workspace/test_project").glob("prod_*"))
+
+
+@pytest.mark.parametrize("different_timeout", [False, True])
+def test_clients_may_vary_backoff_but_must_share_manager_timeouts(tmp_path, different_timeout):
+    project, config = setup_project(tmp_path)
+    first, second = project.get_clients()
+    first.set_prop(PropKey.CC_CONFIG_DICT, config)
+    other = copy.deepcopy(config)
+    other["release_name"] = "site-2-v1"
+    other["cc_issuers"][0]["args"]["retry_initial_delay"] = 2
+    other["cc_attestation"]["get_token_request_timeout"] = 60 if different_timeout else 45
+    second.set_prop(PropKey.CC_CONFIG_DICT, other)
+    second.set_prop(PropKey.CC_CONFIG, "cc_site-2.yml")
+    (tmp_path / "cc_site-2.yml").write_text(yaml.safe_dump(other))
+    builder = CoCoBuilder()
+    if different_timeout:
+        with pytest.raises(ValueError, match="attestation timing"):
+            builder.initialize(project, None)
+    else:
+        builder.initialize(project, None)
+        assert builder.settings[second.name][0]["retry_initial_delay"] == 2
 
 
 def test_missing_gpu_and_unknown_fields_rejected(tmp_path):

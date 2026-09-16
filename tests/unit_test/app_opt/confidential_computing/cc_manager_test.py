@@ -22,7 +22,7 @@ from nvflare.apis.fl_constant import FLContextKey, ReservedKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import NotAuthenticated
 from nvflare.apis.server_engine_spec import ServerEngineSpec
-from nvflare.app_opt.confidential_computing.cc_authorizer import CCTokenGenerateError, CCTokenVerifyError
+from nvflare.app_opt.confidential_computing.cc_authorizer import CCAuthorizer, CCTokenGenerateError, CCTokenVerifyError
 from nvflare.app_opt.confidential_computing.cc_manager import (
     CC_INFO,
     CC_NAMESPACE,
@@ -38,6 +38,49 @@ from nvflare.fuel.f3.cellnet.utils import new_cell_message
 
 VALID_TOKEN = "valid_token"
 INVALID_TOKEN = "invalid_token"
+
+
+@pytest.mark.parametrize("name", ["registration_token_timeout", "refresh_token_timeout", "get_token_request_timeout"])
+@pytest.mark.parametrize("value", [0, -1, True, "30", float("nan"), float("inf")])
+def test_invalid_generation_budget(name, value):
+    with pytest.raises(ValueError, match=name):
+        CCManager([], [], **{name: value})
+
+
+def test_peer_timeout_must_exceed_refresh_budget():
+    with pytest.raises(ValueError, match="must exceed"):
+        CCManager([], [], get_token_request_timeout=30, refresh_token_timeout=30)
+
+
+def test_manager_selects_registration_and_refresh_budgets(cc_test_env):
+    manager, context, issuer = cc_test_env
+    manager._generate_and_attach_tokens(context)
+    timeout, stop = issuer.generate_with_retry.call_args.args
+    assert 299 < timeout <= 300
+    assert stop is manager.cross_validation_stop_event
+    manager._generate_fresh_tokens_for_validation()
+    timeout, stop = issuer.generate_with_retry.call_args.args
+    assert 29 < timeout <= 30
+    assert manager.get_token_request_timeout == 45
+
+
+def test_stop_cancels_generation_before_validation_thread_starts(cc_test_env):
+    manager, _, issuer = cc_test_env
+    manager._stop_cross_site_validation()
+    assert manager.cross_validation_stop_event.is_set()
+    assert manager._generate_fresh_tokens_for_validation() == []
+    issuer.generate.assert_not_called()
+
+
+def test_generation_budget_is_shared_across_issuers(cc_test_env):
+    manager, _, first = cc_test_env
+    second = Mock(spec=CCAuthorizer)
+    second.generate_with_retry.return_value = VALID_TOKEN
+    manager.cc_issuers[second] = 300
+    with patch("nvflare.app_opt.confidential_computing.cc_manager.time.monotonic", side_effect=[0, 1, 9]):
+        assert len(manager._generate_fresh_tokens_for_validation(timeout=10)) == 2
+    assert first.generate_with_retry.call_args.args[0] == 9
+    assert second.generate_with_retry.call_args.args[0] == 1
 
 
 def _verify_token(token: str) -> bool:
@@ -141,6 +184,9 @@ def cc_test_env(basic_config) -> Generator[tuple[CCManager, FLContext, Mock], No
     tdx_authorizer.verify = _verify_token
     tdx_authorizer.verify_for_site.side_effect = lambda token, site_name: _verify_token(token)
     tdx_authorizer.generate.return_value = VALID_TOKEN
+    tdx_authorizer.generate_with_retry.side_effect = lambda timeout, cancel_event: CCAuthorizer.generate_with_retry(
+        tdx_authorizer, timeout, cancel_event
+    )
     engine.get_component.return_value = tdx_authorizer
 
     cc_manager._setup_cc_authorizers(fl_ctx)

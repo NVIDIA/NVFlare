@@ -14,13 +14,15 @@
 
 import copy
 import json
+import threading
 import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import jwt
 import pytest
+import requests
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
 
@@ -366,6 +368,266 @@ def test_guest_api_disables_proxies_and_redirects(material):
         response.status_code = 302
         with pytest.raises(ValueError):
             client._get_guest_token()
+
+
+def guest_reply(material):
+    _, _, _, generate, key = material
+    return {
+        "token": jwt.decode(generate(), options={"verify_signature": False})["ear"],
+        "tee_keypair": key.private_bytes(
+            serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()
+        ).decode(),
+    }
+
+
+@pytest.mark.parametrize("failure", [requests.exceptions.ConnectionError, requests.exceptions.Timeout])
+def test_retry_transport_failure_then_verify_fresh_proofs(material, failure, caplog):
+    reply = guest_reply(material)
+    _, client, verifier, _, _ = material
+    with patch.object(client, "_get_guest_token", side_effect=[failure("PRIVATE SECRET"), reply, reply]) as get:
+        with patch("nvflare.app_opt.confidential_computing.coco_authorizer.random.uniform", return_value=0):
+            first = client.generate_with_retry(2, threading.Event())
+            second = client.generate_with_retry(2, threading.Event())
+    assert get.call_count == 3
+    assert first != second
+    assert verifier.verify_for_site(first, "site-1")
+    assert verifier.verify_for_site(second, "site-1")
+    assert not verifier.verify(first)
+    assert "PRIVATE SECRET" not in caplog.text
+
+
+@pytest.mark.parametrize("status", [429, 502, 503, 504, 400, 401, 403, 404, 500, 302])
+def test_retry_http_status_allowlist(material, status):
+    reply = guest_reply(material)
+    _, client, verifier, _, _ = material
+    with patch("nvflare.app_opt.confidential_computing.coco_authorizer.requests.Session") as factory:
+        sessions = []
+        for code in (status, 200):
+            session = MagicMock()
+            response = session.__enter__.return_value.get.return_value.__enter__.return_value
+            response.status_code = code
+            response.iter_content.return_value = [json.dumps(reply).encode()]
+            sessions.append(session)
+        factory.side_effect = sessions
+        with patch("nvflare.app_opt.confidential_computing.coco_authorizer.random.uniform", return_value=0):
+            if status in (429, 502, 503, 504):
+                assert verifier.verify(client.generate_with_retry(2, threading.Event()))
+                assert factory.call_count == 2
+            else:
+                with pytest.raises(CCTokenGenerateError):
+                    client.generate_with_retry(2, threading.Event())
+                assert factory.call_count == 1
+
+
+@pytest.mark.parametrize("failure", ["signature", "appraisal", "key", "malformed"])
+def test_retry_does_not_retry_invalid_attestation(material, failure):
+    reply = guest_reply(material)
+    _, client, _, _, _ = material
+    if failure in ("signature", "appraisal"):
+        claims = jwt.decode(reply["token"], options={"verify_signature": False})
+        if failure == "appraisal":
+            claims["submods"]["gpu0"]["ear.trustworthiness-vector"]["hardware"] = 0
+            # Exercise appraisal rejection with a trusted signer for this test.
+            signer = ec.generate_private_key(ec.SECP256R1())
+            client.trustee_key = signer.public_key()
+        else:
+            signer = ec.generate_private_key(ec.SECP256R1())
+        reply["token"] = jwt.encode(claims, signer, algorithm="ES256")
+    elif failure == "key":
+        reply["tee_keypair"] = "PRIVATE SECRET"
+    else:
+        reply = {}
+    with patch.object(client, "_get_guest_token", return_value=reply) as get:
+        with pytest.raises(CCTokenGenerateError) as error:
+            client.generate_with_retry(2, threading.Event())
+    assert get.call_count == 1
+    assert "SECRET" not in str(error.value)
+
+
+def test_retry_attempt_limit(material):
+    _, client, _, _, _ = material
+    with patch.object(client, "_get_guest_token", side_effect=requests.exceptions.Timeout("SECRET")) as get:
+        with patch("nvflare.app_opt.confidential_computing.coco_authorizer.random.uniform", return_value=0) as jitter:
+            with pytest.raises(CCTokenGenerateError, match="retry attempts exhausted"):
+                client.generate_with_retry(2, threading.Event())
+    assert get.call_count == 10
+    assert [call.args for call in jitter.call_args_list] == [(0.5, 1), (1, 2), (2, 4), (4, 8)] + [(7.5, 15)] * 5
+
+
+@pytest.mark.parametrize("ratio", [0, 0.25, 1])
+def test_custom_retry_backoff(material, ratio):
+    _, client, _, _, _ = material
+    public = client.trustee_key.public_bytes(
+        serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo
+    ).decode()
+    client = CoCoAuthorizer(
+        public,
+        "test",
+        site_name="site-1",
+        retry_max_attempts=5,
+        retry_initial_delay=2,
+        retry_max_delay=10,
+        retry_backoff_multiplier=3,
+        retry_jitter_ratio=ratio,
+    )
+    with patch.object(client, "_get_guest_token", side_effect=requests.exceptions.Timeout()) as get:
+        with patch("nvflare.app_opt.confidential_computing.coco_authorizer.random.uniform", return_value=0) as jitter:
+            with pytest.raises(CCTokenGenerateError, match="retry attempts exhausted"):
+                client.generate_with_retry(2, threading.Event())
+    assert get.call_count == 5
+    assert [call.args for call in jitter.call_args_list] == [(delay * (1 - ratio), delay) for delay in (2, 6, 10, 10)]
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["retry_initial_delay", "retry_max_delay", "retry_backoff_multiplier", "retry_jitter_ratio"],
+)
+@pytest.mark.parametrize("value", [True, "1", None, float("nan"), float("inf")])
+def test_invalid_retry_backoff_type(material, name, value):
+    _, _, _, generate, _ = material
+    with pytest.raises(ValueError, match=name):
+        generate(**{name: value})
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"retry_initial_delay": 0},
+        {"retry_initial_delay": -1},
+        {"retry_max_delay": 0},
+        {"retry_initial_delay": 20, "retry_max_delay": 15},
+        {"retry_backoff_multiplier": 0.5},
+        {"retry_jitter_ratio": -0.1},
+        {"retry_jitter_ratio": 1.1},
+    ],
+)
+def test_invalid_retry_backoff_range(material, options):
+    _, _, _, generate, _ = material
+    with pytest.raises(ValueError, match="retry_"):
+        generate(**options)
+
+
+def test_retry_cancellation_during_backoff(material):
+    _, client, _, _, _ = material
+    cancel = threading.Event()
+
+    def cancel_during_backoff(*args):
+        cancel.set()
+        return 1
+
+    with patch.object(client, "_get_guest_token", side_effect=requests.exceptions.Timeout()) as get:
+        with patch(
+            "nvflare.app_opt.confidential_computing.coco_authorizer.random.uniform", side_effect=cancel_during_backoff
+        ):
+            with pytest.raises(CCTokenGenerateError, match="cancelled"):
+                client.generate_with_retry(2, cancel)
+    assert get.call_count == 1
+
+
+def test_retry_deadline_bounds_stalled_request_and_prevents_overlapping_workers(material):
+    reply = guest_reply(material)
+    _, client, verifier, _, _ = material
+    started, release, finished = threading.Event(), threading.Event(), threading.Event()
+
+    def stalled_request():
+        started.set()
+        try:
+            assert release.wait(5)
+            return reply
+        finally:
+            finished.set()
+
+    with patch.object(client, "_get_guest_token", side_effect=stalled_request) as get:
+        try:
+            start = time.monotonic()
+            with pytest.raises(CCTokenGenerateError, match="deadline exhausted"):
+                client.generate_with_retry(0.1, threading.Event())
+            assert time.monotonic() - start < 1
+            assert started.is_set()
+            with pytest.raises(CCTokenGenerateError, match="deadline exhausted"):
+                client.generate_with_retry(0.1, threading.Event())
+            assert get.call_count == 1
+        finally:
+            release.set()
+            assert finished.wait(2)
+            assert client._generation_lock.acquire(timeout=2)
+            client._generation_lock.release()
+    # The late result is discarded, and a later request can recover normally.
+    with patch.object(client, "_get_guest_token", return_value=reply) as get:
+        assert verifier.verify(client.generate_with_retry(2, threading.Event()))
+        get.assert_called_once()
+
+
+def test_retry_precancelled_request_does_not_call_guest_api(material):
+    _, client, _, _, _ = material
+    cancel = threading.Event()
+    cancel.set()
+    with patch.object(client, "_get_guest_token") as get:
+        with pytest.raises(CCTokenGenerateError, match="cancelled"):
+            client.generate_with_retry(2, cancel)
+        get.assert_not_called()
+
+
+def test_retry_discards_success_after_cancellation(material):
+    reply = guest_reply(material)
+    _, client, _, _, _ = material
+    cancel = threading.Event()
+
+    def cancelled_response():
+        cancel.set()
+        return reply
+
+    with patch.object(client, "_get_guest_token", side_effect=cancelled_response) as get:
+        with pytest.raises(CCTokenGenerateError, match="cancelled"):
+            client.generate_with_retry(2, cancel)
+        assert client._generation_lock.acquire(timeout=2)
+        client._generation_lock.release()
+        get.assert_called_once()
+
+
+def test_guest_api_timeouts_capped_by_remaining_budget(material):
+    _, client, _, _, _ = material
+    client._generation_context.deadline = time.monotonic() + 1
+    with patch("nvflare.app_opt.confidential_computing.coco_authorizer.requests.Session") as factory:
+        session = factory.return_value.__enter__.return_value
+        response = session.get.return_value.__enter__.return_value
+        response.status_code = 200
+        response.iter_content.return_value = [b'{"token": "fixture"}']
+        assert client._get_guest_token() == {"token": "fixture"}
+        connect, read = session.get.call_args.kwargs["timeout"]
+        assert 0 < connect <= 1
+        assert 0 < read <= 1
+
+
+@pytest.mark.parametrize("timeout", [0, -1, float("inf"), float("nan"), True, "30", None])
+def test_retry_invalid_deadline(material, timeout):
+    _, client, _, _, _ = material
+    with pytest.raises(ValueError, match="finite and positive"):
+        client.generate_with_retry(timeout, threading.Event())
+
+
+@pytest.mark.parametrize("attempts", [0, -1, 101, True, 1.5, "5"])
+def test_retry_invalid_attempt_limit(material, attempts):
+    _, _, _, generate, _ = material
+    with pytest.raises(ValueError, match="retry_max_attempts"):
+        generate(retry_max_attempts=attempts)
+
+
+def test_manager_registration_and_refresh_retry_real_authorizer(material):
+    reply = guest_reply(material)
+    _, client, verifier, _, _ = material
+    manager = CCManager([], [])
+    manager.cc_issuers = {client: 300}
+    manager.site_name = "site-1"
+    context = FLContext()
+    with patch.object(context, "get_identity_name", return_value="site-1"):
+        with patch.object(client, "_get_guest_token", side_effect=[requests.exceptions.Timeout(), reply] * 2):
+            with patch("nvflare.app_opt.confidential_computing.coco_authorizer.random.uniform", return_value=0):
+                manager._generate_and_attach_tokens(context)
+                registration = context.get_prop(CC_INFO)["site-1"][0][CC_TOKEN]
+                refreshed = manager._generate_fresh_tokens_for_validation()[0][CC_TOKEN]
+    assert verifier.verify_for_site(registration, "site-1")
+    assert verifier.verify_for_site(refreshed, "site-1")
 
 
 @pytest.mark.parametrize(

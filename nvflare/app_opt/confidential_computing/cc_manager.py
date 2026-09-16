@@ -12,10 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import math
 import os
 import random
 import sys
 import threading
+import time
 from typing import Tuple
 
 from nvflare.apis.app_validation import AppValidationKey
@@ -63,7 +65,9 @@ class CCManager(FLComponent):
         verify_frequency: int = 600,
         cc_enabled_sites: list[str] = [],
         get_site_request_timeout: float = 10.0,
-        get_token_request_timeout: float = 10.0,
+        get_token_request_timeout: float = 45.0,
+        registration_token_timeout: float = 300.0,
+        refresh_token_timeout: float = 30.0,
     ):
         """Manage all confidential computing related tasks.
 
@@ -101,6 +105,8 @@ class CCManager(FLComponent):
             cc_enabled_sites: list of sites that are enabled for CC
             get_site_request_timeout: timeout value for get site request
             get_token_request_timeout: timeout value for get token request
+            registration_token_timeout: total generation budget for registration (retry-capable issuers)
+            refresh_token_timeout: total generation budget for periodic refresh (retry-capable issuers)
         """
         FLComponent.__init__(self)
         self.site_name = None
@@ -116,7 +122,18 @@ class CCManager(FLComponent):
         self.cc_verifiers = {}
 
         self.get_site_request_timeout = get_site_request_timeout
+        for name, value in (
+            ("registration_token_timeout", registration_token_timeout),
+            ("refresh_token_timeout", refresh_token_timeout),
+            ("get_token_request_timeout", get_token_request_timeout),
+        ):
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
+                raise ValueError(f"{name} must be finite and positive")
+        if get_token_request_timeout <= refresh_token_timeout:
+            raise ValueError("get_token_request_timeout must exceed refresh_token_timeout")
         self.get_token_request_timeout = get_token_request_timeout
+        self.registration_token_timeout = registration_token_timeout
+        self.refresh_token_timeout = refresh_token_timeout
 
         # Store engine reference for cell handlers
         self.engine = None
@@ -210,7 +227,7 @@ class CCManager(FLComponent):
 
     def _generate_and_attach_tokens(self, fl_ctx: FLContext):
         """Generate and attach CC tokens for sending to peer."""
-        cc_infos = self._generate_fresh_tokens_for_validation()
+        cc_infos = self._generate_fresh_tokens_for_validation(timeout=self.registration_token_timeout)
         fl_ctx.set_prop(key=CC_INFO, value={fl_ctx.get_identity_name(): cc_infos}, sticky=False, private=False)
         self.logger.info("Prepared CC tokens for peer")
 
@@ -450,9 +467,9 @@ class CCManager(FLComponent):
 
     def _stop_cross_site_validation(self):
         """Stop cross-site validation thread."""
+        self.cross_validation_stop_event.set()
         if self.cross_validation_thread is not None:
             self.logger.info("Stopping cross-site validation")
-            self.cross_validation_stop_event.set()
             self.cross_validation_thread.join(timeout=5.0)
             self.cross_validation_thread = None
             self.logger.info("Cross-site validation stopped")
@@ -590,7 +607,7 @@ class CCManager(FLComponent):
         else:
             self.logger.info(f"Registered client CC handlers on channel '{CC_CHANNEL}'")
 
-    def _generate_fresh_tokens_for_validation(self) -> list[dict[str, str]]:
+    def _generate_fresh_tokens_for_validation(self, timeout=None) -> list[dict[str, str]]:
         """Generate completely fresh tokens for validation request.
 
         This creates NEW tokens on-the-fly for each validation request.
@@ -600,11 +617,15 @@ class CCManager(FLComponent):
             Each token is a dict consists of CC_TOKEN, CC_NAMESPACE and CC_TOKEN_VALIDATED.
         """
         fresh_tokens = []
+        deadline = time.monotonic() + (self.refresh_token_timeout if timeout is None else timeout)
 
         for issuer, expiration in self.cc_issuers.items():
             try:
                 # Generate a brand new token for this specific request
-                new_token = issuer.generate()
+                remaining = deadline - time.monotonic()
+                if remaining <= 0 or self.cross_validation_stop_event.is_set():
+                    raise CCTokenGenerateError("Token generation deadline exhausted or cancelled")
+                new_token = issuer.generate_with_retry(remaining, self.cross_validation_stop_event)
                 namespace = issuer.get_namespace()
 
                 if not new_token:
