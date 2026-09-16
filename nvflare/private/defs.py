@@ -79,6 +79,7 @@ class RequestHeader(object):
     JOB_STATUS = "job_status"
     TOPIC = "topic"
     JOB_META = "job_meta"
+    JOB_CERT = "job_cert"
     APP_NAME = "app_name"
     CONTROL_COMMAND = "control_command"
     CALL_NAME = "call_name"

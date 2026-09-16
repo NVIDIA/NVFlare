@@ -471,7 +471,7 @@ Edit the project.yml configuration file to meet your project requirements:
           "member". Admin certificate provider entries omit ``org`` and ``role``;
           those values come from the issued certificate.
     - "builders" contains all of the builders and the args to be passed into each. See the details in docstrings of the :ref:`bundled_builders`.
-    - "studies" (optional, requires ``api_version: 4``): defines named studies with per-study site enrollment and admin role mappings. See :ref:`multi_study_guide` for the full schema and examples.
+    - "studies" (optional, requires ``api_version: 4``): defines named studies with per-study site enrollment and admin membership. See :ref:`multi_study_guide` for the full schema and examples.
 
 Admin certificate provider configuration
 ========================================
@@ -523,9 +523,8 @@ more than that much validity remaining. This reserves deployment time but does
 not guarantee when the scheduler starts a job; increase both the issuer
 certificate lifetime and renewal window when deployments may be delayed longer.
 
-SSO users can log in to the default study. A ``project_admin`` can explicitly
-add their certificate CN to another study. Declarative certificate-based study
-authorization will be added separately.
+For optional certificate-derived study membership, see :ref:`certificate_study_entitlements`
+and the :ref:`step_ca_study_entitlements` example below.
 
 The certificate provider must map authenticated IdP claims to one allowed
 ``(organization, role)`` pair. For example, an IdP role such as
@@ -545,6 +544,56 @@ providers that own a temporary directory should set the result's ``temp_dir``
 so FLARE can clean it up. FLARE derives ``expires_at`` from the certificate.
 FLARE performs the same certificate validation for custom providers as it does
 for ``step_ca``.
+
+.. _step_ca_study_entitlements:
+
+step-ca study entitlement mapping
+----------------------------------------
+
+The example template below adds study URI SANs for a dedicated provisioner with
+one fixed organization and role. The issuer must chain to FLARE's trusted root CA.
+Configure the provisioner to request ``openid`` and ``email`` scopes and your IdP
+to supply these claims in the signed, validated **ID token**, not only an access token:
+
+.. code-block:: json
+
+    {
+      "email": "alice@example.com",
+      "email_verified": true,
+      "groups": ["nvflare-demo-example-lead"],
+      "nvflare_studies": ["cancer-research"]
+    }
+
+``email_verified`` must be ``true``; the required ``groups`` entry permits the
+fixed organization ``example`` and role ``lead``. The resulting certificate has
+``commonName=alice@example.com``, ``organizationName=example``,
+``unstructuredName=lead``, and this study SAN:
+
+.. code-block:: text
+
+    https://nvidia.com/nvflare/v1/project/demo/study/cancer-research
+
+Alice gains membership in the existing ``cancer-research`` study; her role stays
+``lead``. An absent or empty ``nvflare_studies`` array adds no membership.
+See :ref:`certificate_study_entitlements` for authorization rules and limits.
+There is no issuer-side study allowlist; deployments can add one if needed.
+
+Keep group assignments and study entitlements administrator-controlled, not
+self-service profile fields. The template rejects CLI template data
+(``.Insecure.User``) and never derives identity or entitlements from CSR fields.
+
+For a new deployment, customize the fixed values in
+:download:`step_ca_admin.tpl <../resources/step_ca_admin.tpl>` and configure
+the saved file as the OIDC provisioner's ``options.x509.templateFile`` in
+``ca.json``, or use ``step ca provisioner update --x509-template`` for managed
+provisioners. ``projectURIPath`` is the percent-encoded project label described
+in :ref:`certificate_study_entitlements`.
+
+For an existing deployment, merge only the study-to-SAN logic, preserving your
+identity/role mapping rather than replacing it with this example's fixed role.
+
+.. literalinclude:: ../resources/step_ca_admin.tpl
+   :language: text
 
 .. _project_yml:
 
