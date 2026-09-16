@@ -52,16 +52,17 @@ class TestRunClass:
 
         assert self.run.get_result(clean_up=False) == str(tmp_path)
         output = capsys.readouterr().out
-        assert " RUN SUMMARY ".center(72, "=") in output
-        if status == "FINISHED:EXECUTION_EXCEPTION":
-            assert "  ✗ Failed" in output
-            assert "  Status    FINISHED:EXECUTION_EXCEPTION" in output
-            assert "  Workspace" not in output
-        assert (
-            "✓ Completed" if status in ("FINISHED:COMPLETED", "FINISHED_OK") else status or "Status unavailable"
-        ) in output
-        assert f"Results   {tmp_path}" in output
-        assert "success" not in output.lower()
+        if status is None:
+            assert output == ""
+        else:
+            assert " RUN SUMMARY ".center(72, "=") in output
+            if status == "FINISHED:EXECUTION_EXCEPTION":
+                assert "  ✗ Failed" in output
+                assert "  Status    FINISHED:EXECUTION_EXCEPTION" in output
+                assert "  Workspace" not in output
+            assert ("✓ Completed" if status in ("FINISHED:COMPLETED", "FINISHED_OK") else status) in output
+            assert f"Results   {tmp_path}" in output
+            assert "success" not in output.lower()
         # Reading the cached result neither repeats output nor queries the environment.
         self.run.get_result()
         assert capsys.readouterr().out == ""
@@ -85,6 +86,16 @@ class TestRunClass:
         self.mock_env.get_job_status.return_value = "FINISHED:COMPLETED"
         assert self.run.get_result() is None
         assert "No result workspace was returned" in capsys.readouterr().out
+
+    def test_running_job_after_timeout_does_not_print_terminal_summary(self, capsys):
+        self.mock_env.get_job_result.return_value = None
+        self.mock_env.get_job_status.return_value = "RUNNING"
+
+        assert self.run.get_result(timeout=5) is None
+
+        output = capsys.readouterr().out
+        assert "RUN SUMMARY" not in output
+        assert "No result workspace was returned" not in output
 
     def test_get_status_delegates_to_env(self):
         """Test that get_status delegates to exec_env when not stopped."""

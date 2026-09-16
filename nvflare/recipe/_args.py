@@ -77,13 +77,14 @@ def _consume_recipe_args() -> tuple:
             export = True
             i += 1
         elif argv[i] == "--export-dir":
-            if i + 1 >= len(argv):
+            if i + 1 >= len(argv) or argv[i + 1].startswith("--") or not argv[i + 1].strip():
                 # Dangling --export-dir with no value: abort the entire pass. Do not
                 # mutate sys.argv and do not enable export. Leaving argv intact lets the
                 # caller's own parser surface the leftover flags; enabling export here
                 # could export to the default dir against the user's intent (e.g. under
                 # parse_known_args()). Freeze the decision so a later direct call returns
                 # it instead of re-scanning a since-mutated sys.argv.
+                _RECIPE_ARG_ERROR = "--export-dir requires a non-empty directory"
                 _CONSUMED = True
                 return False, DEFAULT_EXPORT_DIR
             export_dir = argv[i + 1]
@@ -91,6 +92,10 @@ def _consume_recipe_args() -> tuple:
             i += 2
         elif argv[i].startswith("--export-dir="):
             export_dir = argv[i].split("=", 1)[1]
+            if not export_dir.strip():
+                _RECIPE_ARG_ERROR = "--export-dir requires a non-empty directory"
+                _CONSUMED = True
+                return False, DEFAULT_EXPORT_DIR
             export_dir_seen = True
             i += 1
         else:

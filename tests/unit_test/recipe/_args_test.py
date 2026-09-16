@@ -239,10 +239,12 @@ def test_recipe_export_flags_allow_strict_local_argument_parsing(monkeypatch, lo
         assert exc_info.value.code == 2
 
 
-def test_consume_recipe_args_dangling_export_dir_does_not_raise(monkeypatch):
+@pytest.mark.parametrize("export_dir", [["--export-dir"], ["--export-dir="], ["--export-dir", "--rounds"]])
+def test_consume_recipe_args_malformed_export_dir_is_reported_at_execution(monkeypatch, export_dir):
     import sys
 
-    monkeypatch.setattr(sys, "argv", ["python", "job.py", "--export", "--export-dir"])
+    monkeypatch.setenv("FL_LOG_LEVEL", "concise")
+    monkeypatch.setattr(sys, "argv", ["job.py", "--log_config", "progress", "--export", *export_dir])
 
     import nvflare.recipe._args as args_module
 
@@ -251,9 +253,15 @@ def test_consume_recipe_args_dangling_export_dir_does_not_raise(monkeypatch):
         importlib.reload(args_module)  # malformed input must not raise or warn on import
 
     # Transactional: the whole pass is abandoned -- export stays disabled and sys.argv
-    # is left untouched so the caller's own parser can surface the leftover flags.
+    # and logging is unchanged, while execution setup surfaces a clear error.
     assert args_module._peek_recipe_args() == (False, args_module.DEFAULT_EXPORT_DIR)
-    assert sys.argv == ["python", "job.py", "--export", "--export-dir"]
+    assert sys.argv == ["job.py", "--log_config", "progress", "--export", *export_dir]
+    assert os.environ["FL_LOG_LEVEL"] == "concise"
+
+    from nvflare.recipe.sim_env import SimEnv
+
+    with pytest.raises(ValueError, match="--export-dir requires a non-empty directory"):
+        SimEnv(num_clients=1)
 
 
 def test_consume_recipe_args_freezes_import_time_decision(monkeypatch):

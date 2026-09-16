@@ -135,12 +135,15 @@ class Run:
             finally:
                 self._stopped = True
 
+            if outcome is None:
+                return result
+
             status_label = {
                 "completed": "✓ Completed",
                 "failed": "✗ Failed",
                 "not_scheduled": "✗ Not scheduled",
                 "aborted": "■ Aborted",
-            }.get(outcome, self._cached_status or "Status unavailable")
+            }[outcome]
             _print_output(summary_header(status_label, elapsed, context=self._summary_context), flush=True)
             if failure_report or outcome in ("not_scheduled", "aborted"):
                 _print_output(f"\n  Status    {self._cached_status}", flush=True)
