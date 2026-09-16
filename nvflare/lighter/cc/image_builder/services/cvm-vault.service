@@ -1,0 +1,21 @@
+[Unit]
+Description=Authenticate and mount the application vault
+After=network-online.target cvm-firewall.service cvm-reference.service cvm-time-sync.service local-fs.target
+Wants=network-online.target
+Requires=cvm-firewall.service cvm-time-sync.service
+OnFailure=cvm-fail.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/usr/lib/cvm
+ExecStart=/usr/bin/python3 -m builder.runtime bootstrap
+TimeoutStartSec=45min
+LimitMEMLOCK=infinity
+LimitCORE=0
+UMask=0077
+StandardOutput=journal+console
+StandardError=journal+console
+
+[Install]
+WantedBy=multi-user.target

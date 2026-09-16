@@ -1,0 +1,16 @@
+[Unit]
+Description=Install measured bootstrap network restrictions
+Before=network-pre.target
+Wants=network-pre.target
+DefaultDependencies=no
+After=systemd-remount-fs.service
+OnFailure=cvm-fail.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/usr/lib/cvm
+ExecStart=/usr/bin/python3 -m builder.runtime firewall
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,17 @@
+[Unit]
+Description=Synchronize the guest clock before attestation
+After=network-online.target chrony.service cvm-firewall.service
+Requires=chrony.service cvm-firewall.service
+Before=cvm-vault.service
+OnFailure=cvm-fail.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/usr/lib/cvm
+ExecStart=/usr/bin/python3 -m builder.runtime time-sync
+TimeoutStartSec=135
+LimitCORE=0
+
+[Install]
+WantedBy=multi-user.target

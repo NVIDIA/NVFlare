@@ -1,0 +1,13 @@
+[Unit]
+Description=Mount optional read-only external application data
+Requires=cvm-vault.service cvm-integrity.service
+After=cvm-vault.service cvm-integrity.service
+BindsTo=cvm-integrity.service
+PartOf=cvm-workload.target
+OnFailure=cvm-fail.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/usr/lib/cvm
+ExecStart=/usr/bin/python3 -m builder.runtime mount-user-data

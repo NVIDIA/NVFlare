@@ -14,7 +14,7 @@
 
 """Translate completed NVFlare kits into CVM Builder application vaults.
 
-The builder is an external, privileged process. Its inputs, outputs and recovery
+The included builder runs as a separate, privileged process. Its inputs, outputs and recovery
 records are retained separately from participant deliveries.
 """
 
@@ -471,7 +471,7 @@ class VaultAdapter:
             "tee_device": tee_device,
         }
         app["services"] = []
-        # The external builder retrieves and validates registry images itself.
+        # The builder retrieves and validates registry images itself.
         # Local metadata also permits early platform and network checks.
         profile = self._apply_profile(app, image) if isinstance(image, Path) else None
         return app, profile, image

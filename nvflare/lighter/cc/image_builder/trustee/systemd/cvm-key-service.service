@@ -1,0 +1,23 @@
+[Unit]
+Description=Create-only CVM key service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cvm-trustee
+Group=cvm-trustee
+WorkingDirectory=/opt/cvm-builder
+ExecStart=/usr/bin/python3 -m builder.key_service /etc/cvm-trustee/key-service.json
+LimitMEMLOCK=infinity
+LimitCORE=0
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/var/lib/cvm-trustee-resources /var/lib/cvm-trustee-revocations
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

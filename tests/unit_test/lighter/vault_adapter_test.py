@@ -252,6 +252,39 @@ def test_opt_in_finalized_signed_isolated_workspace(configuration, tmp_path, mon
     assert len(observed) == 1
 
 
+@pytest.mark.parametrize("registry", [False, True])
+@pytest.mark.parametrize("participant", ["server.example.com", "site-1"])
+def test_inputs_match_included_builder(configuration, tmp_path, monkeypatch, registry, participant):
+    from nvflare.lighter.cc.image_builder.builder import config as builder_config
+
+    builder = Path(adapter_module.__file__).parent / "image_builder"
+    settings = configuration["cvm_vault"]
+    settings["cvm_builder_dir"] = str(builder)
+    settings["participants"] = [participant]
+    del settings["platforms"]
+    if registry:
+        settings["cvm_image"] = REGISTRY_IMAGE
+    observed = []
+
+    def validate_build(builder_dir, config_file, output, log, project_config):
+        assert builder_dir == builder.resolve()
+        app = builder_config.application(config_file)
+        project = builder_config.project(config_file, project_config)
+        assert "platforms" not in app
+        assert app["image_id"] == docker_image_id(tmp_path / "image.tar")
+        assert app["cvm_image"] == (REGISTRY_IMAGE if registry else str(tmp_path / "profile"))
+        assert project["key_service"]["key"] == str(tmp_path / "builder.key")
+        assert app["container"]["command"][-2:] == ["--verify", "--foreground"]
+        observed.append(app)
+        fake_build(builder_dir, config_file, output, log, project_config)
+
+    monkeypatch.setattr(adapter_module, "invoke_vault_builder", validate_build)
+    ctx = run_provision(configuration, tmp_path)
+    assert ctx[CtxKey.PROVISION_SUCCESS]
+    assert len(observed) == 1
+    assert ctx[CtxKey.CVM_VAULT_RESULTS][0]["participant"] == participant
+
+
 def test_ordinary_provisioning_does_not_use_adapter(configuration, tmp_path, monkeypatch):
     del configuration["cvm_vault"]
     factory = Mock(side_effect=AssertionError("adapter used"))

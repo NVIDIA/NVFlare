@@ -1,0 +1,7 @@
+# Project-wide builder settings. Configure once for all application vault builds.
+# Credential paths are relative to this file; keep private keys out of deliveries.
+key_service:
+  url: https://key-service.example.org:9443
+  ca: ./inputs/key-service-ca.pem
+  cert: ./inputs/builder-client.pem
+  key: ./inputs/builder-client.key

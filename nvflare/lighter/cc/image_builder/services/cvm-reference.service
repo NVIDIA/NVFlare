@@ -1,0 +1,16 @@
+[Unit]
+Description=Emit public boot measurements for bundle acceptance
+Before=cvm-vault.service
+After=local-fs.target systemd-modules-load.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/usr/lib/cvm
+ExecStart=/usr/bin/python3 -m builder.runtime reference
+StandardOutput=tty
+TTYPath=/dev/ttyS0
+StandardError=journal+console
+TimeoutStartSec=30
+
+[Install]
+WantedBy=multi-user.target

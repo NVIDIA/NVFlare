@@ -10,21 +10,31 @@ each selected participant and provisioning run. Stage 2 copies the existing
 CVM into each delivery; it does not rebuild it or register new boot measurements.
 Projects without ``cvm_vault`` retain their usual provisioning behavior.
 
-The builder remains a separate installation. Point ``cvm_builder_dir`` at the
-directory containing ``vault_build.sh``. NVFlare invokes that shell interface;
-it does not import the builder's Python package. Do not combine ``cvm_vault`` with
-a ``packager`` or edge provisioning.
+CVM Builder is included in this repository at
+``nvflare/lighter/cc/image_builder``. Point ``cvm_builder_dir`` at that directory
+in your NVFlare source checkout. NVFlare invokes its ``vault_build.sh`` interface
+as a separate process. Do not combine ``cvm_vault`` with a ``packager`` or edge
+provisioning.
 
 Prepare the worker
 ------------------
 
 Run provisioning and vault construction on a trusted Linux worker configured for
 CVM Builder (the tested builder environment is Ubuntu 26.04). Follow the
-builder's ``BUILD_GUIDE.md`` and ``TRUSTEE_GUIDE.md`` for disk tools, disabled swap,
+builder's ``nvflare/lighter/cc/image_builder/BUILD_GUIDE.md`` and
+``TRUSTEE_GUIDE.md`` for disk tools, disabled swap,
 core-dump policy, locked memory, approved bundles, and key-service configuration.
 Provisioning does not change those host settings or launch a CVM.
 
 Install NVFlare and the builder's requirements in their respective environments.
+For a source checkout at ``/opt/NVFlare``, prepare the builder environment with:
+
+.. code-block:: bash
+
+   cd /opt/NVFlare/nvflare/lighter/cc/image_builder
+   python3 -m venv .venv
+   .venv/bin/python -m pip install -r requirements.txt
+
 ``vault_build.sh`` selects ``CVM_BUILDER_PYTHON``, its own ``.venv/bin/python``, or
 ``python3``, in that order. If provisioning is unprivileged, the adapter uses
 ``sudo -n`` for construction and, when necessary, public output metadata collection
@@ -40,9 +50,8 @@ and all referenced platform bundle files, including ``cvm_manifest.json``,
 and configure its registry authentication for the account running provisioning.
 The builder retrieves registry images through ORAS under the build worker's
 identity and validates approval for every bundle in the resulting profile set.
-Use a builder release containing shared project configuration and generated
-deployment IDs (commit ``79ab5bc0`` or later); the metadata schema version alone does not
-identify this input API.
+The included builder supports shared project configuration and generates the
+deployment ID for each vault build.
 Trustee reference values, reusable policies, and enabled CVM build IDs must already
 be installed. The mTLS ``key_service`` endpoint accepts vault key uploads; it is
 distinct from the guest-facing attestation/KBS endpoint in the generic CVM.
@@ -88,7 +97,7 @@ Paths below illustrate a configured worker; the files must exist.
 .. code-block:: yaml
 
    cvm_vault:
-     cvm_builder_dir: /opt/cvm-builder
+     cvm_builder_dir: /opt/NVFlare/nvflare/lighter/cc/image_builder
      cvm_image: /srv/cvm/images/cpu-2026.09
      docker_archive: /srv/nvflare/images/application.tar
      participants: [site-1]

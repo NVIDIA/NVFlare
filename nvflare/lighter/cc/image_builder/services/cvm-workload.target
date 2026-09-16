@@ -1,0 +1,9 @@
+[Unit]
+Description=Authenticated application workload
+Requires=cvm-vault.service cvm-integrity.service
+After=cvm-vault.service cvm-integrity.service
+BindsTo=cvm-integrity.service
+Wants=cvm_app.service mount_user_data.service periodic_attestation.timer
+OnFailure=cvm-fail.service
+StopWhenUnneeded=no
+# Started only by successful bootstrap, never enabled under multi-user.target.

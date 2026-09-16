@@ -1,0 +1,17 @@
+[Unit]
+Description=Reappraise the CVM and recheck vault authorization
+Requires=cvm-vault.service cvm-integrity.service
+After=cvm-vault.service cvm-integrity.service
+BindsTo=cvm-integrity.service
+PartOf=cvm-workload.target
+OnFailure=cvm-fail.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/usr/lib/cvm
+ExecStart=/usr/bin/python3 -m builder.runtime periodic
+LimitMEMLOCK=infinity
+LimitCORE=0
+TimeoutStartSec=250
+StandardOutput=journal+console
+StandardError=journal+console

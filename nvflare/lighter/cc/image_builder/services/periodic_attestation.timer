@@ -1,0 +1,12 @@
+[Unit]
+Description=Periodically recheck attestation and key authorization
+Requires=cvm-vault.service cvm-integrity.service
+After=cvm-vault.service cvm-integrity.service
+BindsTo=cvm-integrity.service
+PartOf=cvm-workload.target
+
+[Timer]
+OnActiveSec=5min
+OnUnitActiveSec=5min
+AccuracySec=1s
+Unit=periodic_attestation.service

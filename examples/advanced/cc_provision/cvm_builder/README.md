@@ -4,7 +4,14 @@ This example configures a TDX server and an AMD SEV-SNP client with an NVIDIA
 confidential-computing GPU. Configure a trusted Linux worker with CVM Builder,
 approved generic images, and the shared key service before provisioning.
 
-1. Edit `project.yml`: set the reachable server name, `cvm_builder_dir`,
+CVM Builder is included at
+[`nvflare/lighter/cc/image_builder`](../../../../nvflare/lighter/cc/image_builder).
+Follow its [build guide](../../../../nvflare/lighter/cc/image_builder/BUILD_GUIDE.md)
+and [Trustee guide](../../../../nvflare/lighter/cc/image_builder/TRUSTEE_GUIDE.md)
+to prepare the worker. The example's `cvm_builder_dir` points to that source tree;
+update it if you copy `project.yml` elsewhere.
+
+1. Edit `project.yml`: set the reachable server name,
    `cvm_image` folders, Docker archive, and bootstrap egress ports.
 2. Edit `cvm_project.yml` with the project's key-service endpoint and existing
    builder credentials. Relative credential paths resolve against this file.
