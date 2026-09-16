@@ -59,6 +59,26 @@
     "source_path": "examples/hello-world/hello-tf",
     "category": "hello-world"
   },
+  "skill-fedstats-image": {
+    "source_path": "examples/hello-world/agent-skills/fedstats-image",
+    "category": "agent-skills"
+  },
+  "skill-fedstats-tabular": {
+    "source_path": "examples/hello-world/agent-skills/fedstats-tabular",
+    "category": "agent-skills"
+  },
+  "skill-huggingface-conversion": {
+    "source_path": "examples/hello-world/agent-skills/huggingface-conversion",
+    "category": "agent-skills"
+  },
+  "skill-lightning-conversion": {
+    "source_path": "examples/hello-world/agent-skills/lightning-conversion",
+    "category": "agent-skills"
+  },
+  "skill-pytorch-conversion": {
+    "source_path": "examples/hello-world/agent-skills/pytorch-conversion",
+    "category": "agent-skills"
+  },
   "amplify": {
     "source_path": "examples/advanced/amplify",
     "category": "advanced"

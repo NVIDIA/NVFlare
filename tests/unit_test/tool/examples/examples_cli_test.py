@@ -493,12 +493,19 @@ def test_list_prints_short_names_and_source_paths(monkeypatch, capsys):
     output = capsys.readouterr().out
     assert "HELLO WORLD" in output
     assert "ADVANCED" in output
-    assert output.index("ADVANCED") < output.index("DEPLOYMENT") < output.index("HELLO WORLD")
+    assert (
+        output.index("ADVANCED")
+        < output.index("AGENT SKILLS")
+        < output.index("DEPLOYMENT")
+        < output.index("HELLO WORLD")
+    )
     assert "SHORT NAME" in output
     assert "hello-pt" in output
     assert "examples/hello-world/hello-pt" in output
     assert "cifar10-pt" in output
     assert "examples/advanced/cifar10/pt" in output
+    assert "skill-pytorch-conversion" in output
+    assert "examples/hello-world/agent-skills/pytorch-conversion" in output
 
 
 def test_list_json_is_machine_readable(monkeypatch, capsys):

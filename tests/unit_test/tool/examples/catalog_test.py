@@ -46,6 +46,7 @@ def test_catalog_excludes_examples_that_require_files_outside_the_downloaded_sub
     source_paths = {entry["source_path"] for entry in catalog.values()}
 
     assert "examples/advanced/cifar10/pt" in source_paths
+    assert "examples/hello-world/agent-skills/pytorch-conversion" in source_paths
     assert source_paths.isdisjoint(
         {
             "examples/advanced/cifar10/pt/cifar10-real-world",
@@ -56,13 +57,27 @@ def test_catalog_excludes_examples_that_require_files_outside_the_downloaded_sub
             "examples/docker",
             "examples/devops/multicloud",
             "examples/devops/openshift",
-            "examples/hello-world/agent-skills/fedstats-image",
-            "examples/hello-world/agent-skills/fedstats-tabular",
-            "examples/hello-world/agent-skills/huggingface-conversion",
-            "examples/hello-world/agent-skills/lightning-conversion",
-            "examples/hello-world/agent-skills/pytorch-conversion",
         }
     )
+
+
+@pytest.mark.parametrize(
+    "example_name",
+    [
+        "fedstats-image",
+        "fedstats-tabular",
+        "huggingface-conversion",
+        "lightning-conversion",
+        "pytorch-conversion",
+    ],
+)
+def test_agent_skill_examples_install_skills_from_repository(example_name):
+    readme = (REPO_ROOT / "examples" / "hello-world" / "agent-skills" / example_name / "README.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "https://github.com/NVIDIA/NVFlare/tree/main/skills" in readme
+    assert "../../../../skills" not in readme
 
 
 @pytest.mark.parametrize(

@@ -13,9 +13,9 @@ Example catalog
 ===============
 
 The installed catalog assigns a category and maps a short CLI name to an
-independently downloadable example directory under ``examples/`` in the
-NVFlare source tree. Examples that require files elsewhere in a full source
-checkout are not listed until they have a self-contained download boundary.
+example directory under ``examples/`` in the NVFlare source tree. Examples
+whose code requires files elsewhere in a full source checkout are not listed
+until their catalog path includes those shared sources.
 Run ``nvflare examples list`` to browse names and source paths grouped by
 category:
 
@@ -61,6 +61,15 @@ The README may direct you to a root or nested requirements file, then commands
 such as ``download_data.py``, ``prepare_data.py``, or ``prepare_model.py``
 before the example's job command. Those steps vary by example and are
 intentionally not duplicated in the catalog.
+
+Agent Skills examples download the example inputs and prompt without copying
+the repository's shared top-level ``skills/`` directory. Install the skills
+directly from the public repository before opening the example in Codex or
+Claude Code:
+
+.. code-block:: bash
+
+   npx skills add https://github.com/NVIDIA/NVFlare/tree/main/skills --skill '*' -a codex -a claude-code -y
 
 For Hello PyTorch, first install the ``PT`` extra on the NVFlare distribution
 already in use with the matching command above. Then run:

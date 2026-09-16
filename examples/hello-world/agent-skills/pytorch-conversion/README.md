@@ -9,12 +9,12 @@ it to a two-site NVFLARE FedAvg job.
 
 For complete setup instructions, see [Installation](https://nvflare.readthedocs.io/en/main/installation.html).
 Install NVFLARE 2.9.0 or later, the example dependencies, and the complete
-Agent Skills package from an NVFLARE checkout:
+Agent Skills package directly from the NVFLARE repository:
 
 ```bash
 python -m pip install 'nvflare~=2.9.0'
 python -m pip install -r source/requirements.txt
-npx skills add ../../../../skills --skill '*' -a codex -a claude-code -y
+npx skills add https://github.com/NVIDIA/NVFlare/tree/main/skills --skill '*' -a codex -a claude-code -y
 ```
 
 ## Code Structure
