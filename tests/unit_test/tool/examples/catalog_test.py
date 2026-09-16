@@ -66,6 +66,18 @@ def test_catalog_excludes_examples_that_require_files_outside_the_downloaded_sub
     )
 
 
+def test_experiment_tracking_quickstart_uses_downloaded_layout():
+    readme = (REPO_ROOT / "examples" / "advanced" / "experiment-tracking" / "README.md").read_text(encoding="utf-8")
+
+    assert "not installed by `nvflare examples get`" in readme
+    assert "./prepare_data.sh" in readme
+    assert "cd tensorboard" in readme
+    assert "cd wandb" in readme
+    assert "cd mlflow/<example-name>" in readme
+    assert "cd examples/advanced/experiment-tracking/<framework>" not in readme
+    assert "<framework>/jobs/<job_name>/code" not in readme
+
+
 @pytest.mark.parametrize(
     "example_name",
     [
