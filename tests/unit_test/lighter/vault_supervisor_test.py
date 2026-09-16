@@ -56,15 +56,15 @@ def supervisor(tmp_path):
         + """import os, signal, sys, time
 from pathlib import Path
 events = Path(os.environ["EVENTS"])
-with events.open("a") as stream:
-    stream.write(f"start {os.getpid()}\\n")
-if os.environ.get("FAIL_FAST"):
-    sys.exit(1)
 def stop(*args):
     with events.open("a") as stream:
         stream.write(f"stop {os.getpid()}\\n")
     sys.exit(0)
-signal.signal(signal.SIGTERM, stop)
+signal.signal(signal.SIGTERM, signal.SIG_IGN if os.environ.get("IGNORE_TERM") else stop)
+with events.open("a") as stream:
+    stream.write(f"start {os.getpid()}\\n")
+if os.environ.get("FAIL_FAST"):
+    sys.exit(1)
 while True:
     time.sleep(0.05)
 """
@@ -74,7 +74,7 @@ while True:
     events = tmp_path / "events"
     runtime = tmp_path / "runtime"
 
-    def launch(fail_fast=False, stale_pid=False):
+    def launch(fail_fast=False, stale_pid=False, ignore_term=False):
         env = dict(
             os.environ,
             PATH=str(tools) + os.pathsep + os.environ["PATH"],
@@ -83,6 +83,8 @@ while True:
         )
         if fail_fast:
             env["FAIL_FAST"] = "1"
+        if ignore_term:
+            env["IGNORE_TERM"] = "1"
         log = (tmp_path / f"log-{len(processes)}").open("w")
         argv = ["bash", str(source / "startup/sub_start.sh"), "--foreground"]
         if stale_pid:
@@ -110,8 +112,7 @@ while True:
     yield launch, runtime, source, events
     for process in processes:
         try:
-            if process.poll() is None:
-                os.killpg(process.pid, signal.SIGKILL)
+            os.killpg(process.pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
         process.wait(timeout=5)
@@ -137,6 +138,21 @@ def test_foreground_signal_shutdown_and_restart(supervisor, action):
     assert not (runtime / "daemon_pid.fl").exists()
     assert not (source / "pid.fl").exists()
     assert not (source / "transfer").exists()
+
+
+@pytest.mark.parametrize("stop_signal", [signal.SIGTERM, signal.SIGINT])
+def test_foreground_stop_leaves_time_for_cleanup_when_child_ignores_term(supervisor, stop_signal):
+    launch, runtime, source, events = supervisor
+    process = launch(ignore_term=True)
+    wait_for(lambda: events.exists() and "start" in events.read_text())
+    child_pid = int(events.read_text().split()[1])
+    process.send_signal(stop_signal)
+    # Leave margin for cleanup before a runtime's 10-second stop deadline.
+    assert process.wait(timeout=8) == 0
+    with pytest.raises(ProcessLookupError):
+        os.kill(child_pid, 0)
+    for marker in ("pid.fl", "daemon_pid.fl", "shutdown.fl", "restart.fl"):
+        assert not (runtime / marker).exists()
 
 
 def test_foreground_crash_loop_exits_nonzero(supervisor):

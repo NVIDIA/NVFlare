@@ -706,7 +706,9 @@ sub_start_sh: |
     pid=`cat "$WORKSPACE/pid.fl"`
     if [[ "$doForeground" == "true" ]]; then
       kill -TERM "$pid" 2>/dev/null || true
-      for ((attempt=0; attempt<10; attempt++)); do
+      # Leave time to kill/reap the child and remove persistent markers before
+      # a container runtime's 10-second stop timeout expires.
+      for ((attempt=0; attempt<5; attempt++)); do
         kill -0 "$pid" 2>/dev/null || break
         sleep 1
       done
