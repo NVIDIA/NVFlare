@@ -1070,6 +1070,25 @@ def test_metric_free_aggregation_reports_completion_after_accepted_update(tmp_pa
     assert "no displayable metrics" not in output
 
 
+def test_metric_free_aggregation_reports_omitted_client_metrics(tmp_path, caplog):
+    writer = MetricsArtifactWriter()
+    fl_ctx = _make_fl_ctx(tmp_path)
+    writer.handle_event(EventType.START_RUN, fl_ctx)
+
+    with caplog.at_level("INFO"):
+        _record_contribution(writer, fl_ctx, 0, "site-1", {"accuracy": 0.8, "loss": 0.2, "samples": 10})
+        caplog.clear()
+        _record_round(writer, fl_ctx, 0, {}, use_contribution_sites=False)
+
+    output = "\n".join(
+        record.message
+        for record in caplog.records
+        if record.name == "nvflare.app_common.widgets.metrics_artifact_writer"
+    )
+    assert output.count("Additional metric results are available in the saved metrics artifacts.") == 1
+    assert "✓ Aggregated 1 client update" in output
+
+
 def test_progress_display_ignores_malformed_metric_entries(caplog):
     writer = MetricsArtifactWriter()
 

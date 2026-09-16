@@ -206,8 +206,8 @@ class MetricsArtifactWriter(Widget):
         else:
             log_progress(_logger, "  " + "─" * 66)
             self._log_progress_metrics("Aggregated", aggregated_metrics)
-            if self._progress_metrics_omitted:
-                log_progress(_logger, "  Additional metric results are available in the saved metrics artifacts.")
+        if self._progress_metrics_omitted:
+            log_progress(_logger, "  Additional metric results are available in the saved metrics artifacts.")
         if has_aggregation_details or self._round_contribution_count:
             duration = ""
             if self._round_started_at is not None:
