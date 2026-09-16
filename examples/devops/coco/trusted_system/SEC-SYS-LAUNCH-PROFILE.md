@@ -48,6 +48,23 @@ The installers compare `EXPECTED_HOSTNAME` against this host; the runtime stage
 discovers the single NVIDIA GPU PCI address instead of assuming a fixed slot.
 Place the reviewed source YAML at the configured `REHEARSAL_WORKLOAD_YAML`.
 
+Use a stable absolute path and retain that file unchanged until stage 10 completes.
+It is a required input to the approved-workload workflow, not a disposable
+stage-05 template:
+
+| Stage | Source-YAML dependency |
+| --- | --- |
+| 05 | Reads the application settings and records the source SHA-256 in the approved profile. |
+| 07 | Requires the source and approved profile before starting; copies the workload launch shape into the collector and records the source hash with actual-launch evidence. |
+| 08 | Repeats the retained stage-07 collector manifest; keep that manifest and its evidence as well. |
+| 09 | Reads the original source again and checks its hash and approved security context against stage 05 and stage-07 evidence. |
+| 10 | Exports stage-09-approved values; the optional admin contract also requires the hash-bound profile and actual-launch JSON. It does not directly reopen the source YAML. |
+
+Do not unset `REHEARSAL_WORKLOAD_YAML`, replace the source with the collector Pod,
+or edit it to make a failed comparison pass. A source/profile change needs a new
+reviewed profile and fresh rehearsals. Keep the source and evidence afterward
+for audit and repeatability even though stage 10 consumes derived evidence.
+
 From the package root:
 
 ```bash
@@ -126,6 +143,19 @@ sandbox's QEMU process, artifact hashes, CPU model, topology, memory, machine
 type and full kernel command line. It fails if the actual launch is missing
 or is not SNP. The brief post-report hold allows this capture before exit.
 
+Before contacting Kubernetes, downloading tools or creating rehearsal artifacts,
+stage 07 collects local prerequisite and overwrite conflicts into one report.
+After the trusted configurations can be loaded, this includes missing commands,
+source YAML, approved profile/support files, all four invalid or blank TCB floors,
+and existing `rehearsal-collector-build`, `reported-tcb-evidence`, and
+`rehearsal-evidence.txt` paths (including dangling symlinks). Fix all listed
+prerequisites together. Unreadable/invalid base configurations must be corrected
+first because dependent profile paths cannot safely be inferred.
+
+This is an early local check, not a successful hardware/cluster validation or
+a dry-run mode. Cluster/runtime checks and evidence verification still run
+afterward and can fail. The script retains its later overwrite checks as well.
+
 The trusted host verifies the AMD certificate chain, report signature, VCEK
 TCB correspondence, and signed challenge binding. It retains the evidence
 and checks each reported TCB component is at least its approved minimum without
@@ -146,8 +176,11 @@ its stage-05 approval hash.
 
 Both scripts remove their own temporary Pod namespace and registry container.
 Evidence, collector images and temporary-registry data/certificates remain
-under the private profile. On failure, retain these for diagnosis; choose a
-new profile or explicitly move the failed run directory aside before retrying.
+under the private profile. On failure, retain these for diagnosis and select a
+new `PLATFORM_PROFILE`, following the profile preparation steps again before
+retrying stage 07. Do not delete evidence, clear only one conflict at a time,
+or mix old TCB/rehearsal artifacts with a new collector run. Preflight does not
+remove or overwrite existing artifacts and does not start cleanup on a rejected run.
 Do not bypass evidence verification to obtain an output.
 
 ## 4. Finalize and export only the five values

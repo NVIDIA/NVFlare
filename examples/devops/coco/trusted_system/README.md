@@ -41,6 +41,14 @@ requires and revalidates its evidence for an approved workload profile.
 The ten entry-point scripts above must remain together with their supporting
 files.
 
+Keep the source Pod at the stable absolute `REHEARSAL_WORKLOAD_YAML` path through
+finalization/export. Stage 07 requires it and the approved stage-05 profile;
+stage 09 rechecks its approval hash; stage 10 consumes the resulting bound evidence
+(not the source YAML directly). Stage 07 reports local prerequisite and existing
+artifact conflicts together before launching anything. Preserve old evidence and
+use a fresh profile rather than deleting individual conflicting files. See the
+[dependency and retry details](SEC-SYS-LAUNCH-PROFILE.md#1-prepare-trusted_system-and-the-configuration).
+
 ## Optional GPU availability check
 
 After a successful rehearsal, run the following from the package root:

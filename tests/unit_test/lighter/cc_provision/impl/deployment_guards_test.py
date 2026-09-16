@@ -15,6 +15,7 @@
 """Offline checks of deployment snippets; no Docker, network, sudo or cluster access."""
 
 import ast
+import shlex
 import subprocess
 from pathlib import Path
 
@@ -116,3 +117,151 @@ def test_bounded_approval_and_safe_key_retention(role, answer, close_input):
             assert "KEY_CHOICE=" + (expected if approved else ("wrong" if answer == "wrong\n" else "")) + "\n" in output
         else:
             assert ("CONTINUE" in output) == approved
+
+
+@pytest.fixture
+def rehearsal_preflight(tmp_path):
+    profile = tmp_path / "profile"
+    profile.mkdir()
+    base, approval, source = tmp_path / "base.env", profile / "platform-approval.env", tmp_path / "source.yaml"
+    source.write_text("kind: Pod\n")
+    approved = profile / "approved-launch-profile.json"
+    approved.write_text("{}\n")
+    base.write_text(
+        f"PLATFORM_WORK_ROOT={shlex.quote(str(tmp_path))}\n"
+        "PLATFORM_PROFILE=profile\nRUNTIME_CLASS=kata-qemu-nvidia-gpu-snp\n"
+        f"REHEARSAL_WORKLOAD_YAML={shlex.quote(str(source))}\n"
+    )
+    approval.write_text(
+        "\n".join(f"SNP_MIN_REPORTED_TCB_{name}=0" for name in ("BOOTLOADER", "TEE", "SNP", "MICROCODE"))
+    )
+    return base, approval, source, approved, profile
+
+
+def run_rehearsal_preflight(inputs, missing_commands=()):
+    base, approval, _, _, _ = inputs
+    script = section("trusted_system/07-run-snp-rehearsal.sh", "die()", "KUBECONFIG_PATH=")
+    # Exercise the actual local preflight with deterministic command discovery;
+    # no Docker, kubectl, network access or sudo is permitted in these tests.
+    setup = (
+        "set -Eeuo pipefail\n"
+        'BASE_CONFIG="$1"; APPROVAL_ENV="$2"; SCRIPT_DIR="$3"\n'
+        f"missing_commands=({' '.join(map(shlex.quote, missing_commands))})\n"
+        'command() { if [[ "$1" == -v ]]; then '
+        'for missing in "${missing_commands[@]}"; do [[ "$2" != "$missing" ]] || return 1; done; '
+        'return 0; else builtin command "$@"; fi; }\n'
+        "sudo() { echo UNEXPECTED_SUDO; return 99; }\n"
+        "kubectl() { echo UNEXPECTED_KUBECTL; return 99; }\n"
+        "docker() { echo UNEXPECTED_DOCKER; return 99; }\n"
+        "curl() { echo UNEXPECTED_CURL; return 99; }\n"
+    )
+    return subprocess.run(
+        [
+            "bash",
+            "-c",
+            setup + script + "echo PREFLIGHT_OK",
+            "preflight",
+            str(base),
+            str(approval),
+            str(ROOT / "trusted_system"),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=5,
+    )
+
+
+def test_rehearsal_preflight_collects_all_known_conflicts(rehearsal_preflight):
+    _, approval, source, approved, profile = rehearsal_preflight
+    approval.write_text(
+        "\n".join(f"SNP_MIN_REPORTED_TCB_{name}=''" for name in ("BOOTLOADER", "TEE", "SNP", "MICROCODE"))
+    )
+    source.unlink()
+    approved.unlink()
+    for name in ("rehearsal-collector-build", "reported-tcb-evidence"):
+        path = profile / name
+        path.mkdir()
+        (path / "retained").write_bytes(b"retain original evidence")
+    evidence = profile / "rehearsal-evidence.txt"
+    evidence.write_bytes(b"retain original summary")
+    before = {str(p): p.read_bytes() for p in profile.rglob("*") if p.is_file()}
+    result = run_rehearsal_preflight(rehearsal_preflight, ("curl", "crictl"))
+    assert result.returncode == 1
+    assert "11 problem(s)" in result.stderr
+    for expected in (
+        "curl",
+        "crictl",
+        "source Pod YAML",
+        "approved-launch-profile.json",
+        "rehearsal-collector-build",
+        "reported-tcb-evidence",
+        "rehearsal-evidence.txt",
+        "BOOTLOADER",
+        "TEE",
+        "SNP",
+        "MICROCODE",
+    ):
+        assert expected in result.stderr
+    assert "PREFLIGHT_OK" not in result.stdout and "UNEXPECTED" not in result.stdout
+    assert before == {str(p): p.read_bytes() for p in profile.rglob("*") if p.is_file()}
+
+
+def test_rehearsal_preflight_accepts_complete_inputs_without_writes(rehearsal_preflight):
+    *_, profile = rehearsal_preflight
+    before = sorted(profile.iterdir())
+    result = run_rehearsal_preflight(rehearsal_preflight)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "PREFLIGHT_OK\n"
+    assert sorted(profile.iterdir()) == before
+
+
+@pytest.mark.parametrize("value", ["", "256", "-1", "01", "not-a-floor"])
+def test_rehearsal_preflight_rejects_invalid_tcb_floor(rehearsal_preflight, value):
+    _, approval, *_ = rehearsal_preflight
+    approval.write_text(
+        approval.read_text().replace("SNP_MIN_REPORTED_TCB_MICROCODE=0", f"SNP_MIN_REPORTED_TCB_MICROCODE='{value}'")
+    )
+    result = run_rehearsal_preflight(rehearsal_preflight)
+    assert result.returncode == 1
+    assert "1 problem(s)" in result.stderr
+    assert "SNP_MIN_REPORTED_TCB_MICROCODE" in result.stderr
+
+
+@pytest.mark.parametrize("name", ["rehearsal-collector-build", "reported-tcb-evidence", "rehearsal-evidence.txt"])
+def test_rehearsal_preflight_rejects_dangling_output_symlinks(rehearsal_preflight, name):
+    *_, profile = rehearsal_preflight
+    link = profile / name
+    link.symlink_to("absent-target")
+    result = run_rehearsal_preflight(rehearsal_preflight)
+    assert result.returncode == 1
+    assert f"refusing to overwrite: {link}" in result.stderr
+    assert link.is_symlink() and not link.exists()
+
+
+def test_rehearsal_preflight_requires_source_path(rehearsal_preflight):
+    base, *_ = rehearsal_preflight
+    base.write_text(base.read_text() + "\nunset REHEARSAL_WORKLOAD_YAML\n")
+    result = run_rehearsal_preflight(rehearsal_preflight)
+    assert result.returncode == 1
+    assert "REHEARSAL_WORKLOAD_YAML is required" in result.stderr
+
+
+def test_rehearsal_preflight_reports_both_missing_configs(rehearsal_preflight):
+    base, approval, *_ = rehearsal_preflight
+    base.unlink()
+    approval.unlink()
+    result = run_rehearsal_preflight(rehearsal_preflight, ("docker",))
+    assert result.returncode == 1
+    assert "3 problem(s)" in result.stderr
+    assert str(base) in result.stderr and str(approval) in result.stderr
+
+
+def test_rehearsal_preflight_runs_before_cluster_and_cleanup():
+    text = (ROOT / "trusted_system/07-run-snp-rehearsal.sh").read_text()
+    assert (
+        text.rindex("\nfinish_preflight\n")
+        < text.index('"${KCTL[@]}" get runtimeclass')
+        < text.index("trap cleanup EXIT")
+    )
+    assert '[[ ! -e "${COLLECTOR_DIR}" && ! -L "${COLLECTOR_DIR}" ]]' in text
+    assert '[[ ! -e "${REHEARSAL_EVIDENCE}" && ! -L "${REHEARSAL_EVIDENCE}" ]]' in text
