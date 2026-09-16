@@ -77,7 +77,11 @@ override; that is not supported by the packaged workload's approved profile.
 The packaged workflow now derives and installs a runtime-level configuration
 with `agent.guest_components_rest_api=all`, preserving all other parameters,
 including repeated `pci=` options. Follow the [runtime-profile procedure](../RUNTIME-PROFILE.md)
-to collect and approve a new measurement and v2 admin contract before provisioning.
+to collect and approve a new measurement and v3 admin contract before provisioning.
+The contract must explicitly approve UID/GID 65532 and
+`readOnlyRootFilesystem: false` for the current NVFlare packager, along with the
+[remaining application security settings](../admin/APPROVED-LAUNCH-PROFILE.md#approved-application-security-context-v3).
+A read-only example profile cannot silently authorize a writable NVFlare Pod.
 Do not add a kernel-parameter annotation to the generated Pod or reuse the old
 measurement. Configure `aa.toml` in InitData with the intended KBS URL and
 authenticated TLS certificate as well. Do not expose the loopback API outside

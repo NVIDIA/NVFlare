@@ -37,6 +37,8 @@ def checked_json(path, expected):
 
 p = checked_json(root / "approved-launch-profile.json", profile_hash)
 a = checked_json(root / "rehearsal-collector-build/actual-launch.json", actual_hash)
+security = runpy.run_path(str(Path(__file__).resolve().parent / "lib/workload-security-context.py"))
+context = security["validate_context"](p.get("workload_security_context"))
 runtime_profile = runpy.run_path(str(Path(__file__).resolve().parent / "lib/kata-runtime-profile.py"))
 if p.get("guest_token_api") != runtime_profile["CAPABILITY"]:
     raise SystemExit("Rehearse a new profile with the guest-local token API enabled")
@@ -66,7 +68,8 @@ if a["launch_inputs"]["smp"].split(",")[0] != str(vcpus) or a["launch_inputs"]["
 print(
     json.dumps(
         {
-            "schema": "coco-approved-workload-launch/v2",
+            "schema": security["SCHEMA"],
+            "workload_security_context": context,
             "guest_token_api": runtime_profile["CAPABILITY"],
             "profile_id": profile_id,
             "runtime_class": runtime,

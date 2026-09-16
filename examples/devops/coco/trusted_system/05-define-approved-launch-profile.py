@@ -25,11 +25,11 @@ import sys
 import tomllib
 from pathlib import Path
 
-import yaml
-
 workload_path, config_path, output_path = map(Path, sys.argv[1:])
 os.umask(0o077)
-workload = yaml.safe_load(workload_path.read_text())
+security = runpy.run_path(str(Path(__file__).resolve().parent / "lib/workload-security-context.py"))
+workload = security["read_pod"](workload_path)
+workload_security_context = security["pod_context"](workload)
 spec = workload["spec"]
 if spec.get("runtimeClassName") != "kata-qemu-nvidia-gpu-snp":
     raise SystemExit("Expected the NVIDIA GPU SNP RuntimeClass")
@@ -74,6 +74,7 @@ data = {
     "workload_source": str(workload_path),
     "workload_yaml_sha256": digest(workload_path),
     "pod_resources": resources,
+    "workload_security_context": workload_security_context,
     "cpu_request_omitted": "cpu" not in resources.get("requests", {}),
     "memory_request_omitted": "memory" not in resources.get("requests", {}),
     "runtime_default_vcpus": qemu["default_vcpus"],

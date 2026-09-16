@@ -22,7 +22,7 @@ need_file "${OUTPUT_DIR}/approved-workload-launch-profile.json"
 python3 "${WORKLOAD_PROFILE_VALIDATOR}" \
     "${OUTPUT_DIR}/approved-workload-launch-profile.json" \
     "${WORKLOAD_LAUNCH_PROFILE_SHA256:-}" "$RUNTIME_CLASS" "$KATA_VERSION" \
-    --pod "${OUTPUT_DIR}/pod.yaml"
+    --pod "${OUTPUT_DIR}/pod.yaml" --require-policy
 [[ ! -e "${HANDOFF_DIR}" ]] || die "handoffs already exist; this release is immutable"
 
 SERVICE_HANDOFF="${HANDOFF_DIR}/trusted-service"

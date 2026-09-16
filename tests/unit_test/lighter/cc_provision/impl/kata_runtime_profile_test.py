@@ -32,6 +32,16 @@ HELPER = ROOT / "shared/kata-runtime-profile.py"
 API = runpy.run_path(str(HELPER))
 ADMIN = runpy.run_path(str(ROOT / "admin/lib/workload-launch-profile.py"))
 CONFIG = '[hypervisor.qemu]\n# Preserve this comment\nkernel_params = "pci=one pci=two quiet" # tail\ndefault_vcpus = 1\n[agent.kata]\ndebug = false\n'
+SECURITY_CONTEXT = {
+    "privileged": False,
+    "allowPrivilegeEscalation": False,
+    "runAsNonRoot": True,
+    "runAsUser": 65532,
+    "runAsGroup": 65532,
+    "readOnlyRootFilesystem": False,
+    "capabilities": {"drop": ["ALL"]},
+    "seccompProfile": {"type": "RuntimeDefault"},
+}
 
 
 def test_only_reviewed_setting_changes():
@@ -220,7 +230,8 @@ def test_source_and_isolated_role_helpers(tmp_path):
 def test_admin_rejects_old_or_missing_capability(tmp_path):
     path = tmp_path / "contract.json"
     contract = {
-        "schema": "coco-approved-workload-launch/v2",
+        "schema": "coco-approved-workload-launch/v3",
+        "workload_security_context": SECURITY_CONTEXT,
         "profile_id": "reviewed",
         "runtime_class": "kata-qemu-nvidia-gpu-snp",
         "kata_version": "3.29.0",
@@ -249,6 +260,10 @@ def test_admin_rejects_old_or_missing_capability(tmp_path):
     with pytest.raises(ValueError):
         load({**contract, "schema": "coco-approved-workload-launch/v1"})
     with pytest.raises(ValueError):
+        load({**contract, "schema": "coco-approved-workload-launch/v2"})
+    with pytest.raises(ValueError):
+        load({k: v for k, v in contract.items() if k != "workload_security_context"})
+    with pytest.raises(ValueError):
         load({k: v for k, v in contract.items() if k != "guest_token_api"})
     with pytest.raises(ValueError):
         load({**contract, "guest_token_api": "resource-only"})
@@ -261,6 +276,7 @@ def test_exported_contract_and_measured_option(tmp_path):
     approved = API["derive"](CONFIG)
     profile = {
         "guest_token_api": API["CAPABILITY"],
+        "workload_security_context": SECURITY_CONTEXT,
         "kata_config": tomllib.loads(approved),
         "kata_config_sha256": hashlib.sha256(approved.encode()).hexdigest(),
         "runtime_class": runtime,
@@ -304,6 +320,12 @@ def test_exported_contract_and_measured_option(tmp_path):
     contract = tmp_path / "contract.json"
     contract.write_text(result.stdout)
     assert ADMIN["load_profile"](contract, hashlib.sha256(contract.read_bytes()).hexdigest(), runtime, "3.29.0")
+    assert json.loads(result.stdout)["workload_security_context"] == SECURITY_CONTEXT
+    del profile["workload_security_context"]
+    assert export().returncode != 0
+    profile["workload_security_context"] = {**SECURITY_CONTEXT, "privileged": True}
+    assert export().returncode != 0
+    profile["workload_security_context"] = SECURITY_CONTEXT
     actual["launch_inputs"]["kernel_command_line"] = "quiet"
     assert export().returncode != 0
     actual["launch_inputs"]["kernel_command_line"] = API["REQUIRED"]

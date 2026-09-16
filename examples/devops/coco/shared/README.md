@@ -20,3 +20,11 @@ with copies from these sources and adds the template to each generated kit.
 `validate-package.py --assembled` checks every generated dependency against
 its authoritative source. Do not edit generated copies: change shared source,
 validate, commit, and assemble a new output directory.
+
+## Application security-context contract
+
+`workload-security-context.py` is the shared source for strict application-context
+approval and structural checks of the generated guest OCI policy. Assembly places
+it in the trusted-system and admin role libraries; do not maintain separate copies.
+See the [v3 contract](../admin/APPROVED-LAUNCH-PROFILE.md#approved-application-security-context-v3)
+for migration, the collector exception and the pinned runtime's seccomp limitation.

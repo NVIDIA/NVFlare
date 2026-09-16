@@ -17,10 +17,14 @@ spec:
         limits:
           nvidia.com/pgpu: 1
       securityContext:
+        privileged: false
         runAsNonRoot: true
         runAsUser: 65532
         runAsGroup: 65532
         readOnlyRootFilesystem: true
+        # For NVFlare approve false explicitly (writable runtime logs/job state).
         allowPrivilegeEscalation: false
         capabilities:
           drop: ["ALL"]
+        seccompProfile:
+          type: RuntimeDefault

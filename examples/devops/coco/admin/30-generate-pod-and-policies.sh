@@ -54,7 +54,7 @@ check_launch_profile() {
     python3 "${WORKLOAD_PROFILE_VALIDATOR}" \
         "${POLICY_WORK_DIR}/approved-workload-launch-profile.json" \
         "$WORKLOAD_LAUNCH_PROFILE_SHA256" "$RUNTIME_CLASS" "$KATA_VERSION" \
-        --pod "${POLICY_WORK_DIR}/pod.yaml"
+        --pod "${POLICY_WORK_DIR}/pod.yaml" "$@"
 }
 
 IMAGE_REF="$(tr -d '\r\n' < "${OUTPUT_DIR}/encrypted-image-reference.txt")"
@@ -263,6 +263,7 @@ pod = {
             "tty": False,
             "securityContext": {
                 "privileged": False,
+                "runAsNonRoot": True,
                 "allowPrivilegeEscalation": False,
                 "readOnlyRootFilesystem": read_only == "true",
                 "runAsUser": int(uid),
@@ -279,6 +280,18 @@ PY
 
 export DOCKER_CONFIG="${REGISTRY_SECRET_DIR}"
 check_launch_profile
+# Validate the complete approved context first. Pinned genpolicy does not parse
+# runAsNonRoot; it enforces the explicit nonzero OCI UID instead. Restore the
+# Kubernetes-only field after generation and validate the final policy as well.
+python3 - "${POLICY_WORK_DIR}/pod.yaml" <<'PY'
+from pathlib import Path
+import sys
+import yaml
+path = Path(sys.argv[1])
+pod = yaml.safe_load(path.read_text())
+del pod["spec"]["containers"][0]["securityContext"]["runAsNonRoot"]
+path.write_text(yaml.safe_dump(pod, sort_keys=False))
+PY
 "${GENPOLICY}" \
     --rego-rules-path "${RELEASE_RULES}" \
     --json-settings-path "${RELEASE_SETTINGS}" \
@@ -361,7 +374,7 @@ for expected_fix in (
 print("Pod and generated agent-policy invariants verified")
 PY
 
-check_launch_profile
+check_launch_profile --require-policy
 EXPECTED_INITDATA_HEX="$(tr -d '\r\n' < "${POLICY_WORK_DIR}/expected-initdata-sha256.hex")"
 [[ "${EXPECTED_INITDATA_HEX}" =~ ^[0-9a-f]{64}$ ]] \
     || die "invalid lowercase-hex SNP init-data digest"

@@ -16,10 +16,15 @@
 """Validate an authority-pinned launch contract before generation and handoff."""
 
 import argparse
+import base64
+import gzip
 import hashlib
 import json
 import re
+import runpy
 from pathlib import Path
+
+SECURITY = runpy.run_path(str(Path(__file__).resolve().parent / "workload-security-context.py"))
 
 
 def unique_object(pairs):
@@ -52,11 +57,13 @@ def load_profile(path, expected_sha256, runtime, kata_version):
         "launch_inputs_sha256",
         "vm_defaults",
         "pod_constraints",
+        "workload_security_context",
     }
     require(isinstance(profile, dict) and set(profile) == keys, "unexpected launch-profile schema fields")
     require(
-        profile["schema"] == "coco-approved-workload-launch/v2", "rehearse and export a token-API-enabled v2 profile"
+        profile["schema"] == SECURITY["SCHEMA"], "review, rehearse and export a security-context-enabled v3 profile"
     )
+    SECURITY["validate_context"](profile["workload_security_context"])
     require(profile["guest_token_api"] == "guest-local-aa-token/v1", "approved profile lacks the guest-local token API")
     require(
         isinstance(profile["profile_id"], str)
@@ -95,7 +102,7 @@ def load_profile(path, expected_sha256, runtime, kata_version):
     return profile
 
 
-def validate_pod(profile, pod):
+def validate_pod(profile, pod, require_policy=False):
     require(isinstance(pod, dict) and pod.get("apiVersion") == "v1" and pod.get("kind") == "Pod", "expected a v1 Pod")
     spec = pod["spec"]
     allowed_spec = {
@@ -155,7 +162,16 @@ def validate_pod(profile, pod):
         and (not requests or (set(requests) == {"nvidia.com/pgpu"} and one(requests["nvidia.com/pgpu"]))),
         "CPU/memory requests must remain omitted; GPU request must equal its limit",
     )
-    require(c.get("securityContext", {}).get("privileged", False) is False, "workload container must not be privileged")
+    SECURITY["validate_pod_context"](pod, profile["workload_security_context"])
+    init_data = annotations.get("io.katacontainers.config.hypervisor.cc_init_data")
+    require(not require_policy or init_data is not None, "final Pod requires embedded guest policy")
+    if init_data is not None:
+        # Generation runs on Python 3.11+. Import lazily so offline profile
+        # validation does not require a TOML backport on Python 3.10.
+        import tomllib
+
+        data = tomllib.loads(gzip.decompress(base64.b64decode(init_data, validate=True)).decode())
+        SECURITY["validate_policy"](data["data"]["policy.rego"], c["image"], profile["workload_security_context"])
 
 
 def read_pod(path):
@@ -181,11 +197,15 @@ def main():
     parser.add_argument("runtime")
     parser.add_argument("kata_version")
     parser.add_argument("--pod")
+    parser.add_argument(
+        "--require-policy", action="store_true", help="require and validate final embedded guest policy"
+    )
     parser.add_argument("--snapshot", help="exclusively create an immutable release copy")
     args = parser.parse_args()
+    require(not args.require_policy or args.pod, "--require-policy requires --pod")
     profile = load_profile(args.profile, args.sha256, args.runtime, args.kata_version)
     if args.pod:
-        validate_pod(profile, read_pod(args.pod))
+        validate_pod(profile, read_pod(args.pod), require_policy=args.require_policy)
     if args.snapshot:
         raw = Path(args.profile).read_bytes()
         require(hashlib.sha256(raw).hexdigest() == args.sha256, "profile changed before snapshot")

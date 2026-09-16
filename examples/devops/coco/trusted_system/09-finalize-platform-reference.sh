@@ -136,12 +136,14 @@ if [[ -n "${REHEARSAL_WORKLOAD_YAML:-}" ]]; then
         field="${binding%%|*}"
         [[ $(sed -n "s/^${field}: //p" "${PROFILE_DIR}/${REHEARSAL_EVIDENCE_FILE}") == "${binding#*|}" ]] || die "Changed ${field}"
     done
-    python3 - "${PROFILE_DIR}/approved-launch-profile.json" "${REHEARSAL_RUN}/actual-launch.json" "${REHEARSAL_WORKLOAD_YAML}" <<'PY'
-import hashlib, json, sys
+    python3 - "${PROFILE_DIR}/approved-launch-profile.json" "${REHEARSAL_RUN}/actual-launch.json" "${REHEARSAL_WORKLOAD_YAML}" "${SCRIPT_DIR}/lib/workload-security-context.py" <<'PY'
+import hashlib, json, runpy, sys
 from pathlib import Path
 profile, actual = (json.loads(Path(p).read_text()) for p in sys.argv[1:3])
 if hashlib.sha256(Path(sys.argv[3]).read_bytes()).hexdigest() != profile['workload_yaml_sha256']:
     raise SystemExit('Workload source differs from the approved profile')
+security = runpy.run_path(sys.argv[4])
+security['validate_pod_context'](security['read_pod'](Path(sys.argv[3])), profile.get('workload_security_context'))
 if actual['pod_resources'] != [profile['pod_resources']]:
     raise SystemExit('Actual Pod resources differ from the approved workload profile')
 if actual['artifacts']['kata_config']['sha256'] != profile['kata_config_sha256']:

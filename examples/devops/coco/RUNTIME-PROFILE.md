@@ -48,10 +48,12 @@ to make the changed profile pass. Other known rehearsal failures must still be
 resolved without bypassing those checks.
 
 After finalization, stage 10 emits the same five-value JSON for secure services.
-The separate admin contract now uses `coco-approved-workload-launch/v2` and carries
+The separate admin contract now uses `coco-approved-workload-launch/v3` and carries
 `guest_token_api: guest-local-aa-token/v1`, verified against the hash-bound profile
 and captured command line. This is a coordination requirement, not a new signed
-attestation claim or authorization policy.
+attestation claim or authorization policy. It additionally carries the approved
+application `workload_security_context`; see the
+[v3 security-context migration and guest-enforcement limits](admin/APPROVED-LAUNCH-PROFILE.md#approved-application-security-context-v3).
 
 ## Secure services and provisioning node
 
@@ -63,7 +65,7 @@ CPU/GPU appraisal and workload-specific resource-release rules remain required.
 
 The provisioning node authenticates and installs the new admin contract and its
 SHA-256 pin, then regenerates the workload release and handoffs. Stage 30 rejects
-v1 contracts or contracts missing the required capability. The generator still
+v1/v2 contracts or contracts missing the required capability/security context. The generator still
 does not allow arbitrary kernel-parameter annotations. Existing releases and
 delivered handoffs are not modified or revoked automatically.
 

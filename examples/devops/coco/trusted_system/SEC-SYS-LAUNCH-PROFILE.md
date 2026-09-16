@@ -23,6 +23,14 @@ the selected VM resource/device conditions and captures the actual QEMU
 launch. CPU report verification is performed; GPU allocation/CC readiness is
 checked, but this is not a cryptographic GPU/NRAS attestation test.
 
+Stage 05 also validates the source application's explicit security context;
+stage 09 rechecks it against the hash-bound source, and stage 10 exports it in
+the v3 admin contract. This is an application approval, not the collector's
+observed context. Follow the
+[security-context contract and migration](../admin/APPROVED-LAUNCH-PROFILE.md#approved-application-security-context-v3).
+For NVFlare approve UID/GID 65532 and a writable rootfs explicitly; the static
+example is read-only. Keep the privileged collector exception isolated.
+
 Two matching reports establish reproducibility for this tested profile on
 trusted_system, not all workloads or another machine. The five values alone do not
 authenticate workload init-data, its agent policy, or GPU evidence. Those

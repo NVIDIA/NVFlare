@@ -47,8 +47,13 @@ not included. No separate NVFlare clone is required by the cluster installer.
 ## Package capabilities, not live state
 
 For protected NVFlare clients, use the [token-API runtime profile](RUNTIME-PROFILE.md).
-It requires a new trusted rehearsal and v2 admin contract; old measurements and
+It requires a new trusted rehearsal and v3 admin contract; old measurements and
 contracts are not silently reused.
+The [approved security context](admin/APPROVED-LAUNCH-PROFILE.md#approved-application-security-context-v3)
+pins application IDs, privileges, capabilities and rootfs mode. NVFlare's writable
+rootfs requires explicit approval; the collector's diagnostic privileges are not
+application permissions. The pinned runtime does not establish guest seccomp
+filtering merely by requesting `RuntimeDefault` in Kubernetes YAML.
 
 These files do not imply a running Pod, issued certificate, installed policy,
 or approved measurement on any machine. Obtain fresh deployment inputs and

@@ -4,10 +4,12 @@ The Pod generator requires an authenticated launch contract from the trusted
 platform owner. It no longer relies only on manually matching the workload's
 resource fields to the measurement rehearsal.
 
-Only `coco-approved-workload-launch/v2` with
-`guest_token_api: guest-local-aa-token/v1` is accepted. Follow the
-[runtime-profile migration](../RUNTIME-PROFILE.md); a v1 profile must be replaced
-by a newly rehearsed and authenticated contract, not edited to add this field.
+Only `coco-approved-workload-launch/v3` with
+`guest_token_api: guest-local-aa-token/v1` and an explicit
+`workload_security_context` is accepted. Follow the
+[runtime-profile migration](../RUNTIME-PROFILE.md) and security-context migration
+below; v1/v2 profiles must be replaced by newly reviewed, rehearsed and authenticated
+contracts, not edited to add fields or change their schema identifier.
 
 ## Two separate handoffs
 
@@ -119,3 +121,88 @@ The contract itself is not a new attestation claim and is not sent as an AS poli
 The generator does not yet support arbitrary resource profiles. If the workload
 needs different VM sizing, GPU count or container layout, review/rehearse the
 new profile and extend the validator explicitly instead of weakening it.
+
+## Approved application security context (v3)
+
+The trusted platform owner approves these exact application settings in the source
+Pod before stage 05. The shared `workload-security-context.py` validator is used
+by trusted-system approval/finalization/export and admin Pod/policy validation.
+Role-kit assembly materializes this shared implementation in both kits.
+
+| Field | Requirement |
+| --- | --- |
+| `privileged` | Explicit `false` |
+| `allowPrivilegeEscalation` | Explicit `false` |
+| `runAsNonRoot` | Explicit `true` |
+| `runAsUser`, `runAsGroup` | Approved integer IDs, greater than zero and less than 4294967295 |
+| `capabilities` | Drop exactly `ALL`; `add` absent or empty |
+| `seccompProfile` | Exactly `{type: RuntimeDefault}`; see guest limitation below |
+| `readOnlyRootFilesystem` | Explicit approved boolean, not a universal `true` requirement |
+
+Missing/unknown fields, wrong types (including booleans used as numeric IDs),
+Pod-level security-context overrides, and safe-but-unapproved ID/rootfs changes
+are rejected. Empty `capabilities.add` is canonicalized to absence.
+
+For the static example approve `readOnlyRootFilesystem: true`. For provisioned
+NVFlare clients approve `false` with UID/GID 65532: the current packager needs
+writable guest-local logs and job state. Set this in the reviewed source YAML
+before stage 05; do not silently widen an existing read-only approval to support
+NVFlare. Stage 30 compares the generated context to the authenticated contract,
+before running genpolicy and after constructing the final Pod. Stage 40 repeats
+that check before packaging the handoff.
+
+The rehearsal collector deliberately uses its own privileged diagnostic context.
+Stages 05/09 approve and revalidate the **application source**, not the collector's
+context. The exported constraint is a trusted approval, not a claim that the
+collector ran with these application settings. The five-value RVPS JSON stays
+unchanged in format; the context is not a new SNP launch-measurement field.
+
+### Guest enforcement and its limits
+
+The generator checks the embedded policy's application OCI UID/GID, empty Linux
+capability sets, `NoNewPrivileges: true`, and exact `Root.Readonly` value. It also
+checks that the corresponding pinned Kata rule guards are present. These are
+structural consistency checks of known generated output, not a general Rego
+verifier. Use only the authenticated pinned toolchain and reviewed rules.
+
+Kata 3.29 genpolicy does not parse `runAsNonRoot`. Stage 30 validates the complete
+context first, removes only that Kubernetes-only field for genpolicy, restores
+it afterward, and checks the nonzero UID in the resulting guest policy.
+The pinned [Kata 3.29 rules](https://github.com/kata-containers/kata-containers/blob/3.29.0/src/tools/genpolicy/rules.rego)
+require null guest OCI `Seccomp`. Therefore `RuntimeDefault` is a YAML approval
+requirement, **not proof of guest seccomp filtering**. Do not promise equivalent
+guest protection for every Kubernetes security-context field. Guest seccomp
+enforcement needs a separately reviewed runtime/policy change and hardware tests.
+
+An adversarial cluster owner can bypass local launcher checks. The security
+boundary remains guest agent-policy enforcement plus Trustee's check of the
+approved init-data digest: changing the embedded policy changes that digest and
+must fail workload key authorization. The security-context contract alone does
+not protect against a modified runtime or prove guest enforcement.
+
+### Migration and verification
+
+1. Preserve old profiles/releases. Select a new profile directory, review all
+   explicit source-YAML security fields, and run stages 05–10 with both rehearsals
+   (03/04 first if the runtime changes). Stage 09 revalidates the source context
+   against the approved profile; stage 10 requires the hash-bound context.
+2. Authenticate and install the new v3 admin contract and its hash as above.
+   Review the newly collected platform references on secure services as usual;
+   changing only application security settings does not itself imply a different
+   CPU launch measurement.
+3. Create a new workload release using stages 30/40. Secure services must approve
+   its resulting init-data digest/resource policy before delivery to CoCo IT.
+   Previously installed workload authorizations are not automatically revoked.
+4. Offline negative tests must reject root/changed IDs, privilege escalation,
+   added capabilities, altered seccomp, missing fields, old contracts and flipped
+   rootfs mode. Both explicitly approved read-only and writable releases must pass.
+5. On an authorized test cluster, launch the approved encrypted workload, then
+   test separate tampered copies: root UID, added capabilities, privilege
+   escalation and flipped rootfs mode, **without regenerating init-data**. Confirm
+   guest policy denial, not merely a launcher/admission rejection. Separately
+   regenerate a changed policy but leave service authorization unchanged; confirm
+   KBS key denial for its changed init-data digest. Do not approve the negative
+   test digest or weaken production policy to make the test pass.
+
+The offline checks do not establish these hardware outcomes. Record positive
+and negative guest/KBS evidence before claiming an end-to-end security test.
