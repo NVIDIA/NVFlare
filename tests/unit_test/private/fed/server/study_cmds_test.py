@@ -18,6 +18,8 @@ from contextlib import contextmanager
 from copy import deepcopy
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from nvflare.apis.client import Client, ClientPropKey
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
@@ -723,6 +725,30 @@ class TestListStudiesVisibility:
             }
         ]
 
+    def test_lead_sees_registry_and_certificate_studies(self):
+        registry = _make_registry(
+            {
+                "registry-study": {
+                    "site_orgs": {"org_a": ["site-a"]},
+                    "admins": ["lead@example.com"],
+                },
+                "certificate-study": {"site_orgs": {"org_b": ["site-b"]}},
+                "hidden-study": {"site_orgs": {"org_c": ["site-c"]}},
+            }
+        )
+        conn = _FakeConnection(role="lead", org="org_a", user="lead@example.com")
+        conn._props[ConnProps.CERT_STUDIES] = ("certificate-study", "not-in-registry")
+        with (
+            patch("nvflare.private.fed.server.study_cmds.StudyRegistryService.get_registry", return_value=registry),
+            patch(
+                "nvflare.private.fed.server.study_cmds.AuthorizationService.authorize",
+                side_effect=self._authorize_submit_for_roles("lead"),
+            ),
+        ):
+            self._module().cmd_list_studies(conn, ["list_studies"])
+
+        assert conn.last_reply["studies"] == ["certificate-study", "registry-study"]
+
     def test_member_visible_study_cannot_submit(self):
         registry = _make_registry(
             {
@@ -846,6 +872,71 @@ class TestUserMembership:
         with _mutation_ctx(_REGISTRY_WITH_STUDY):
             self._module().cmd_remove_study_user(conn, ["remove_study_user", "study1", "admin@example.com"])
         assert conn.last_reply["error_code"] == "STUDY_NOT_FOUND"
+
+
+# ---------------------------------------------------------------------------
+# Certificate-derived membership across study commands
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("entitled", [False, True])
+@pytest.mark.parametrize(
+    "command, arguments",
+    [
+        ("show_study", []),
+        ("register_study", ["--sites", "site-new"]),
+        ("add_study_site", ["--sites", "site-new"]),
+        ("remove_study_site", ["--sites", "site-new"]),
+        ("add_study_user", ["new@example.com"]),
+        ("remove_study_user", ["admin@example.com"]),
+    ],
+)
+def test_certificate_membership_for_study_commands(command, arguments, entitled):
+    conn = _FakeConnection(
+        role="org_admin", org="org_b", user="cert-only@example.com", engine=_make_engine({"site-new": "org_b"})
+    )
+    conn._props[ConnProps.CERT_STUDIES] = ("study1",) if entitled else ()
+    module = StudyCommandModule()
+    args = [command, "study1", *arguments]
+    assert module.authorize_study_admin(conn, args) == PreAuthzReturnCode.OK
+    with (
+        _mutation_ctx_with_write_tracker(_REGISTRY_WITH_STUDY) as write,
+        patch(
+            "nvflare.private.fed.server.study_cmds.StudyRegistryService.get_registry",
+            return_value=_make_registry(_REGISTRY_WITH_STUDY["studies"]),
+        ),
+    ):
+        getattr(module, f"cmd_{command}")(conn, args)
+        if entitled:
+            assert "error_code" not in conn.last_reply
+            if command != "show_study":
+                write.assert_called_once()
+                # A certificate does not let an org_admin change another org's sites.
+                assert write.call_args.args[1]["studies"]["study1"]["site_orgs"]["org_a"] == ["site-existing"]
+        else:
+            assert conn.last_reply["error_code"] == (
+                "STUDY_ALREADY_EXISTS" if command == "register_study" else "STUDY_NOT_FOUND"
+            )
+            write.assert_not_called()
+
+
+@pytest.mark.parametrize("role", ["lead", "member"])
+def test_certificate_membership_does_not_grant_study_management_role(role):
+    conn = _FakeConnection(role=role, org="org_b")
+    conn._props[ConnProps.CERT_STUDIES] = ("study1",)
+    module = StudyCommandModule()
+    for spec in module.get_spec().cmd_specs:
+        if spec.name != "list_studies":
+            assert spec.authz_func(conn, [spec.name, "study1"]) == PreAuthzReturnCode.ERROR
+
+
+def test_certificate_membership_does_not_allow_foreign_org_sites():
+    conn = _FakeConnection(role="org_admin", org="org_b", engine=_make_engine({"site-existing": "org_a"}))
+    conn._props[ConnProps.CERT_STUDIES] = ("study1",)
+    with _mutation_ctx_with_write_tracker(_REGISTRY_WITH_STUDY) as write:
+        StudyCommandModule().cmd_add_study_site(conn, ["add_study_site", "study1", "--sites", "site-existing"])
+        assert conn.last_reply["error_code"] == "INVALID_SITE"
+        write.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
