@@ -120,7 +120,7 @@ class Run:
             report = ""
             failure_report = ""
             outcome = job_status_outcome(self._cached_status)
-            if outcome == "failed":
+            if outcome in ("failed", "aborted"):
                 failure_report = failure_summary(result)
             if result and os.path.isdir(result):
                 try:

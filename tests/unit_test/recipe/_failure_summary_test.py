@@ -146,7 +146,7 @@ def test_failed_run_summarizes_before_cleanup_and_only_once(tmp_path, capsys, st
     assert "RUN SUMMARY" in output
     assert "OSError: checkpoint write failed" in output
     assert "✓ Completed" not in output
-    assert "✗ Failed" in output
+    assert ("■ Aborted" if status == "ABORTED" else "✗ Failed") in output
     assert run.get_status() == status
     run.get_result()
     assert capsys.readouterr().out == ""

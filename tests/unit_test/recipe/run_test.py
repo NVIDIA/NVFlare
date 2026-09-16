@@ -496,7 +496,7 @@ def test_unscheduled_job_has_distinct_outcome_without_training_errors(tmp_path, 
     assert "Check server and client logs" not in output
 
 
-def test_aborted_job_has_distinct_outcome_without_failure_details(tmp_path, capsys):
+def test_aborted_job_has_distinct_outcome_with_failure_context(tmp_path, capsys):
     env = MagicMock()
     env.get_job_result.return_value = str(tmp_path)
     env.get_job_status.return_value = "FINISHED:ABORTED"
@@ -507,7 +507,8 @@ def test_aborted_job_has_distinct_outcome_without_failure_details(tmp_path, caps
     assert "■ Aborted" in output
     assert "Status    FINISHED:ABORTED" in output
     assert "✗ Failed" not in output
-    assert "Failure details" not in output
+    assert "Failure details" in output
+    assert "No job error details are available locally." in output
 
 
 @pytest.mark.parametrize("outcome", ["✓ Completed", "✗ Failed", "✗ Not scheduled", "■ Aborted"])

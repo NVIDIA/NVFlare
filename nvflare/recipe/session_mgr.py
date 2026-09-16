@@ -197,7 +197,7 @@ class SessionManager:
         if rc == MonitorReturnCode.JOB_FINISHED:
             _print_output("Downloading job results...", flush=True)
             result = sess.download_job_result(job_id)
-            if result and job_status_outcome(cb_run_counter.get("status")) == "failed":
+            if result and job_status_outcome(cb_run_counter.get("status")) in ("failed", "aborted"):
                 try:
                     collect_client_errors(sess, job_id, result)
                 except Exception as ex:
