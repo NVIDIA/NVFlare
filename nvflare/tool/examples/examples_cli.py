@@ -32,6 +32,9 @@ REPOSITORY = "NVIDIA/NVFlare"
 _REVISION = re.compile(r"[0-9a-f]{40}")
 _NVFLARE_REQUIREMENT = re.compile(r"^\s*nvflare(?:[-_.]+nightly)?(?![-_.a-z0-9])", re.IGNORECASE)
 _PYPROJECT_NVFLARE_REQUIREMENT = re.compile(r'["\']nvflare(?:[-_.]+nightly)?(?![-_.a-z0-9])', re.IGNORECASE)
+_PYPROJECT_SECTION = re.compile(r"^\s*\[([^]]+)]\s*(?:#.*)?$")
+_PYPROJECT_DEPENDENCIES = re.compile(r"^\s*dependencies\s*=\s*\[")
+_PYPROJECT_ARRAY_END = re.compile(r"]\s*(?:#.*)?$")
 _parsers = {}
 _EXAMPLE_COMMANDS = [
     "nvflare examples list",
@@ -139,8 +142,22 @@ def _download_example(revision, source_path, destination):
                         "GitHub returned invalid source metadata.",
                         "Retry or use the example directly from GitHub.",
                     )
-                if entry["type"] != "blob":
+                entry_type = entry["type"]
+                entry_mode = entry.get("mode")
+                if entry_type == "tree":
                     continue
+                if entry_type == "commit" or entry_mode in {"120000", "160000"}:
+                    raise ExampleError(
+                        "EXAMPLE_CONTENT_INVALID",
+                        f"The example contains an unsupported symlink or submodule: {entry['path']}.",
+                        "Use the example directly from a Git checkout.",
+                    )
+                if entry_type != "blob":
+                    raise ExampleError(
+                        "EXAMPLE_CONTENT_INVALID",
+                        "GitHub returned invalid source metadata.",
+                        "Retry or use the example directly from GitHub.",
+                    )
                 relative_parts = entry["path"].split("/")
                 if any(part in {"", ".", ".."} for part in relative_parts):
                     raise ExampleError(
@@ -185,6 +202,30 @@ def _download_example(revision, source_path, destination):
     return tree_url
 
 
+def _pyproject_has_nvflare_requirement(contents):
+    section = None
+    in_dependencies = False
+    for line in contents.splitlines():
+        section_match = _PYPROJECT_SECTION.match(line)
+        if section_match:
+            section = section_match.group(1).strip()
+            in_dependencies = False
+            continue
+
+        if section == "project":
+            if not in_dependencies:
+                if not _PYPROJECT_DEPENDENCIES.match(line):
+                    continue
+                in_dependencies = True
+            if _PYPROJECT_NVFLARE_REQUIREMENT.search(line):
+                return True
+            if _PYPROJECT_ARRAY_END.search(line):
+                in_dependencies = False
+        elif section == "project.optional-dependencies" and _PYPROJECT_NVFLARE_REQUIREMENT.search(line):
+            return True
+    return False
+
+
 def _dependency_warnings(destination):
     paths = []
     dependency_files = list(destination.rglob("requirements.txt")) + list(destination.rglob("pyproject.toml"))
@@ -195,7 +236,7 @@ def _dependency_warnings(destination):
         if dependency_file.name == "requirements.txt":
             found = any(_NVFLARE_REQUIREMENT.match(line) for line in contents.splitlines())
         else:
-            found = bool(_PYPROJECT_NVFLARE_REQUIREMENT.search(contents))
+            found = _pyproject_has_nvflare_requirement(contents)
         if found:
             paths.append(dependency_file.relative_to(destination).as_posix())
     if not paths:

@@ -121,12 +121,34 @@ def test_similarly_named_distribution_does_not_trigger_warning(monkeypatch, tmp_
 
 
 def test_pyproject_nvflare_requirement_is_reported(monkeypatch, tmp_path):
-    pyproject = 'dependencies = ["torch", "nvflare[PT]>=2.10"]\n'
+    pyproject = '[project]\ndependencies = ["torch", "nvflare[PT]>=2.10"]\n'
     _mock_download(monkeypatch, requirements="torch\n", pyproject=pyproject)
 
     result = examples_cli.get_example(VERSION, CATALOG, name="hello-pt", destination=tmp_path / "hello-pt")
 
     assert (tmp_path / "hello-pt/pyproject.toml").read_text() == pyproject
+    assert result["warnings"][0]["paths"] == ["pyproject.toml"]
+
+
+def test_pyproject_non_dependency_mentions_do_not_trigger_warning(monkeypatch, tmp_path):
+    pyproject = """[project]
+description = "nvflare demo without an NVFlare dependency"
+keywords = ["nvflare", "federated-learning"]
+dependencies = ["torch"]
+"""
+    _mock_download(monkeypatch, requirements="torch\n", pyproject=pyproject)
+
+    result = examples_cli.get_example(VERSION, CATALOG, name="hello-pt", destination=tmp_path / "hello-pt")
+
+    assert result["warnings"] == []
+
+
+def test_pyproject_optional_dependency_is_reported(monkeypatch, tmp_path):
+    pyproject = '[project.optional-dependencies]\nhe = ["nvflare-nightly[HE]>=2.10"]\n'
+    _mock_download(monkeypatch, requirements="torch\n", pyproject=pyproject)
+
+    result = examples_cli.get_example(VERSION, CATALOG, name="hello-pt", destination=tmp_path / "hello-pt")
+
     assert result["warnings"][0]["paths"] == ["pyproject.toml"]
 
 
@@ -219,8 +241,26 @@ def test_download_fetches_path_scoped_tree(monkeypatch, tmp_path):
     assert session.requested[2].endswith(f"/{REVISION}/{SOURCE_PATH}/nested/run.sh")
 
 
-def test_network_failure_is_structured(monkeypatch, tmp_path):
+@pytest.mark.parametrize("fail_after_tree", [False, True])
+def test_network_failure_is_structured(monkeypatch, tmp_path, fail_after_tree):
+    class Response:
+        status_code = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"truncated": False, "tree": [{"path": "README.md", "type": "blob", "mode": "100644"}]}
+
     class Session:
+        calls = 0
+
         def __enter__(self):
             return self
 
@@ -228,6 +268,9 @@ def test_network_failure_is_structured(monkeypatch, tmp_path):
             pass
 
         def get(self, *args, **kwargs):
+            self.calls += 1
+            if fail_after_tree and self.calls == 1:
+                return Response()
             raise requests.ConnectionError("offline")
 
     monkeypatch.setattr(requests, "Session", Session)
@@ -237,8 +280,8 @@ def test_network_failure_is_structured(monkeypatch, tmp_path):
         examples_cli._download_example(REVISION, SOURCE_PATH, destination)
 
     assert error.value.code == "EXAMPLE_NETWORK_ERROR"
-    assert "Remove the incomplete destination" not in error.value.hint
-    assert not destination.exists()
+    assert ("Remove the incomplete destination" in error.value.hint) is fail_after_tree
+    assert destination.exists() is fail_after_tree
 
 
 def test_missing_path_is_not_reported_as_network_failure(monkeypatch, tmp_path):
@@ -318,6 +361,20 @@ def test_missing_tree_key_is_structured_without_creating_destination(monkeypatch
         {"truncated": False, "tree": [{}]},
         {"truncated": False, "tree": [{"path": "README.md"}]},
         {"truncated": False, "tree": [{"path": 1, "type": "blob"}]},
+        {
+            "truncated": False,
+            "tree": [
+                {"path": "README.md", "type": "blob", "mode": "100644"},
+                {"path": "linked-config.yaml", "type": "blob", "mode": "120000"},
+            ],
+        },
+        {
+            "truncated": False,
+            "tree": [
+                {"path": "README.md", "type": "blob", "mode": "100644"},
+                {"path": "vendor/project", "type": "commit", "mode": "160000"},
+            ],
+        },
     ],
 )
 def test_unusable_tree_metadata_is_rejected_before_creating_destination(monkeypatch, tmp_path, metadata):
