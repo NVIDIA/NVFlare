@@ -103,6 +103,7 @@ def test_agent_skill_examples_install_skills_from_repository(example_name):
     "invalid_entry",
     [
         {"bad name": {"category": "test", "source_path": "examples/demo"}},
+        {"demo": {"category": "test", "source_path": "examples"}},
         {"demo": {"category": "test", "source_path": "outside/demo"}},
         {"demo": {"category": "test", "source_path": "examples/../demo"}},
         {"demo": {"category": "test", "source_path": "examples/demo/"}},

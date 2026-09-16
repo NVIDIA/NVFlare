@@ -56,7 +56,7 @@ def load_catalog(path=None):
             normalized_path = PurePosixPath(source_path).as_posix() if isinstance(source_path, str) else None
             parts = PurePosixPath(source_path).parts if isinstance(source_path, str) else ()
             if (
-                not parts
+                len(parts) < 2
                 or parts[0] != "examples"
                 or any(part in {"", ".", ".."} for part in parts)
                 or normalized_path != source_path
