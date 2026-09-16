@@ -26,9 +26,9 @@ def test_catalog_entries_have_category_and_source_path_and_exist():
     catalog, errors = load_catalog()
 
     assert errors == []
-    assert catalog["collab-pt"] == {
+    assert catalog["cifar10-pt"] == {
         "category": "advanced",
-        "source_path": "examples/advanced/collab/pt_cifar10",
+        "source_path": "examples/advanced/cifar10/pt",
     }
     for entry in catalog.values():
         assert set(entry) == {"category", "source_path"}
@@ -36,26 +36,33 @@ def test_catalog_entries_have_category_and_source_path_and_exist():
         source = REPO_ROOT / entry["source_path"]
         assert source.is_dir()
         assert (source / "README.md").is_file() or (source / "README.rst").is_file()
+        assert any(
+            path.is_file() and path.name not in {"README.md", "README.rst"} for path in source.rglob("*")
+        ), f"{entry['source_path']} contains no example files"
 
 
-def test_catalog_covers_each_example_collection():
+def test_catalog_excludes_examples_that_require_files_outside_the_downloaded_subtree():
     catalog, _ = load_catalog()
-    source_paths = [Path(entry["source_path"]) for entry in catalog.values()]
-    collections = [REPO_ROOT / "examples/hello-world", REPO_ROOT / "examples/advanced"]
-    collections.extend(
-        [
-            REPO_ROOT / "examples/devops/aws",
-            REPO_ROOT / "examples/devops/azure",
-            REPO_ROOT / "examples/devops/gcp",
-        ]
-    )
-    for collection in collections:
-        for example in (path for path in collection.iterdir() if path.is_dir()):
-            relative = example.relative_to(REPO_ROOT)
-            assert any(path == relative or relative in path.parents for path in source_paths), relative
+    source_paths = {entry["source_path"] for entry in catalog.values()}
 
-    for relative in ["examples/docker", "examples/devops/multicloud", "examples/devops/openshift"]:
-        assert Path(relative) in source_paths
+    assert "examples/advanced/cifar10/pt" in source_paths
+    assert source_paths.isdisjoint(
+        {
+            "examples/advanced/cifar10/pt/cifar10-real-world",
+            "examples/advanced/cifar10/pt/cifar10-sim",
+            "examples/advanced/collab/pt_async_cifar10",
+            "examples/advanced/collab/pt_cifar10",
+            "examples/advanced/hello-pt-environments",
+            "examples/docker",
+            "examples/devops/multicloud",
+            "examples/devops/openshift",
+            "examples/hello-world/agent-skills/fedstats-image",
+            "examples/hello-world/agent-skills/fedstats-tabular",
+            "examples/hello-world/agent-skills/huggingface-conversion",
+            "examples/hello-world/agent-skills/lightning-conversion",
+            "examples/hello-world/agent-skills/pytorch-conversion",
+        }
+    )
 
 
 @pytest.mark.parametrize(

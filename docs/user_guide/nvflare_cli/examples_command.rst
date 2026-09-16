@@ -13,7 +13,9 @@ Example catalog
 ===============
 
 The installed catalog assigns a category and maps a short CLI name to an
-example directory anywhere under ``examples/`` in the NVFlare source tree.
+independently downloadable example directory under ``examples/`` in the
+NVFlare source tree. Examples that require files elsewhere in a full source
+checkout are not listed until they have a self-contained download boundary.
 Run ``nvflare examples list`` to browse names and source paths grouped by
 category:
 
@@ -60,11 +62,11 @@ such as ``download_data.py``, ``prepare_data.py``, or ``prepare_model.py``
 before the example's job command. Those steps vary by example and are
 intentionally not duplicated in the catalog.
 
-For Hello PyTorch, the complete sequence is:
+For Hello PyTorch, first install the ``PT`` extra on the NVFlare distribution
+already in use with the matching command above. Then run:
 
 .. code-block:: bash
 
-   python -m pip install "nvflare[PT]"
    nvflare examples get hello-pt
    cd hello-pt
    pip install -r requirements.txt

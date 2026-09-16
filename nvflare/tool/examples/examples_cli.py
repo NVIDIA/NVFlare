@@ -18,6 +18,7 @@ import json
 import re
 import shlex
 import sys
+import unicodedata
 from pathlib import Path
 from urllib.parse import quote
 
@@ -35,6 +36,7 @@ _PYPROJECT_NVFLARE_REQUIREMENT = re.compile(r'["\']nvflare(?:[-_.]+nightly)?(?![
 _PYPROJECT_SECTION = re.compile(r"^\s*\[([^]]+)]\s*(?:#.*)?$")
 _PYPROJECT_DEPENDENCIES = re.compile(r"^\s*dependencies\s*=\s*\[")
 _PYPROJECT_ARRAY_END = re.compile(r"]\s*(?:#.*)?$")
+_POETRY_NVFLARE_REQUIREMENT = re.compile(r"^\s*nvflare(?:[-_.]+nightly)?\s*=", re.IGNORECASE)
 _parsers = {}
 _EXAMPLE_COMMANDS = [
     "nvflare examples list",
@@ -131,6 +133,7 @@ def _download_example(revision, source_path, destination):
                         "Retry or use the example directly from GitHub.",
                     ) from None
             files = []
+            path_keys = set()
             for entry in entries:
                 if (
                     not isinstance(entry, dict)
@@ -165,6 +168,17 @@ def _download_example(revision, source_path, destination):
                         f"GitHub returned an invalid path for {source_path}.",
                         "Retry or use the example directly from GitHub.",
                     )
+                path_key = tuple(
+                    unicodedata.normalize("NFC", unicodedata.normalize("NFC", part).casefold())
+                    for part in relative_parts
+                )
+                if path_key in path_keys:
+                    raise ExampleError(
+                        "EXAMPLE_CONTENT_INVALID",
+                        f"The example contains colliding paths: {entry['path']}.",
+                        "Use the example directly from a Git checkout.",
+                    )
+                path_keys.add(path_key)
                 files.append((entry, relative_parts))
             if not files:
                 raise ExampleError(
@@ -222,6 +236,8 @@ def _pyproject_has_nvflare_requirement(contents):
             if _PYPROJECT_ARRAY_END.search(line):
                 in_dependencies = False
         elif section == "project.optional-dependencies" and _PYPROJECT_NVFLARE_REQUIREMENT.search(line):
+            return True
+        elif section == "tool.poetry.dependencies" and _POETRY_NVFLARE_REQUIREMENT.match(line):
             return True
     return False
 

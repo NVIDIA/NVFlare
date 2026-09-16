@@ -152,6 +152,15 @@ def test_pyproject_optional_dependency_is_reported(monkeypatch, tmp_path):
     assert result["warnings"][0]["paths"] == ["pyproject.toml"]
 
 
+def test_pyproject_poetry_dependency_is_reported(monkeypatch, tmp_path):
+    pyproject = '[tool.poetry.dependencies]\npython = "^3.10"\nnvflare = {version = "^2.10", extras = ["PT"]}\n'
+    _mock_download(monkeypatch, requirements="torch\n", pyproject=pyproject)
+
+    result = examples_cli.get_example(VERSION, CATALOG, name="hello-pt", destination=tmp_path / "hello-pt")
+
+    assert result["warnings"][0]["paths"] == ["pyproject.toml"]
+
+
 def test_rst_readme_is_reported(monkeypatch, tmp_path):
     _mock_download(monkeypatch, readme="README.rst")
 
@@ -375,6 +384,13 @@ def test_missing_tree_key_is_structured_without_creating_destination(monkeypatch
                 {"path": "vendor/project", "type": "commit", "mode": "160000"},
             ],
         },
+        {
+            "truncated": False,
+            "tree": [
+                {"path": "README.md", "type": "blob", "mode": "100644"},
+                {"path": "readme.md", "type": "blob", "mode": "100644"},
+            ],
+        },
     ],
 )
 def test_unusable_tree_metadata_is_rejected_before_creating_destination(monkeypatch, tmp_path, metadata):
@@ -476,17 +492,12 @@ def test_list_prints_short_names_and_source_paths(monkeypatch, capsys):
     output = capsys.readouterr().out
     assert "HELLO WORLD" in output
     assert "ADVANCED" in output
-    assert (
-        output.index("ADVANCED")
-        < output.index("AGENT SKILLS")
-        < output.index("DEPLOYMENT")
-        < output.index("HELLO WORLD")
-    )
+    assert output.index("ADVANCED") < output.index("DEPLOYMENT") < output.index("HELLO WORLD")
     assert "SHORT NAME" in output
     assert "hello-pt" in output
     assert "examples/hello-world/hello-pt" in output
-    assert "collab-pt" in output
-    assert "examples/advanced/collab/pt_cifar10" in output
+    assert "cifar10-pt" in output
+    assert "examples/advanced/cifar10/pt" in output
 
 
 def test_list_json_is_machine_readable(monkeypatch, capsys):

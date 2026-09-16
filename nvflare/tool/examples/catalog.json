@@ -59,26 +59,6 @@
     "source_path": "examples/hello-world/hello-tf",
     "category": "hello-world"
   },
-  "skill-fedstats-image": {
-    "source_path": "examples/hello-world/agent-skills/fedstats-image",
-    "category": "agent-skills"
-  },
-  "skill-fedstats-tabular": {
-    "source_path": "examples/hello-world/agent-skills/fedstats-tabular",
-    "category": "agent-skills"
-  },
-  "skill-huggingface-conversion": {
-    "source_path": "examples/hello-world/agent-skills/huggingface-conversion",
-    "category": "agent-skills"
-  },
-  "skill-lightning-conversion": {
-    "source_path": "examples/hello-world/agent-skills/lightning-conversion",
-    "category": "agent-skills"
-  },
-  "skill-pytorch-conversion": {
-    "source_path": "examples/hello-world/agent-skills/pytorch-conversion",
-    "category": "agent-skills"
-  },
   "amplify": {
     "source_path": "examples/advanced/amplify",
     "category": "advanced"
@@ -91,12 +71,8 @@
     "source_path": "examples/advanced/cc_provision",
     "category": "advanced"
   },
-  "cifar10-pt-real-world": {
-    "source_path": "examples/advanced/cifar10/pt/cifar10-real-world",
-    "category": "advanced"
-  },
-  "cifar10-pt-sim": {
-    "source_path": "examples/advanced/cifar10/pt/cifar10-sim",
+  "cifar10-pt": {
+    "source_path": "examples/advanced/cifar10/pt",
     "category": "advanced"
   },
   "cifar10-tf": {
@@ -109,14 +85,6 @@
   },
   "codon-fm": {
     "source_path": "examples/advanced/codon-fm",
-    "category": "advanced"
-  },
-  "collab-pt-async": {
-    "source_path": "examples/advanced/collab/pt_async_cifar10",
-    "category": "advanced"
-  },
-  "collab-pt": {
-    "source_path": "examples/advanced/collab/pt_cifar10",
     "category": "advanced"
   },
   "collab-llm-sft": {
@@ -175,20 +143,8 @@
     "source_path": "examples/advanced/federated-statistics/image_stats",
     "category": "advanced"
   },
-  "finance": {
-    "source_path": "examples/advanced/finance",
-    "category": "advanced"
-  },
-  "finance-end-to-end": {
-    "source_path": "examples/advanced/finance-end-to-end",
-    "category": "advanced"
-  },
   "gnn": {
     "source_path": "examples/advanced/gnn",
-    "category": "advanced"
-  },
-  "pt-environments": {
-    "source_path": "examples/advanced/hello-pt-environments",
     "category": "advanced"
   },
   "job-authorization": {
@@ -243,10 +199,6 @@
     "source_path": "examples/advanced/multi-gpu/pt",
     "category": "advanced"
   },
-  "nlp-ner": {
-    "source_path": "examples/advanced/nlp-ner",
-    "category": "advanced"
-  },
   "psi": {
     "source_path": "examples/advanced/psi",
     "category": "advanced"
@@ -291,10 +243,6 @@
     "source_path": "examples/advanced/xgboost",
     "category": "advanced"
   },
-  "docker-runtime": {
-    "source_path": "examples/docker",
-    "category": "deployment"
-  },
   "devops-aws-eks": {
     "source_path": "examples/devops/aws/eks",
     "category": "deployment"
@@ -305,14 +253,6 @@
   },
   "devops-gcp-gke": {
     "source_path": "examples/devops/gcp/gke",
-    "category": "deployment"
-  },
-  "devops-multicloud": {
-    "source_path": "examples/devops/multicloud",
-    "category": "deployment"
-  },
-  "devops-openshift": {
-    "source_path": "examples/devops/openshift",
     "category": "deployment"
   }
 }

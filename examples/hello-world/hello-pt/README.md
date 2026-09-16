@@ -7,18 +7,32 @@ tracking service.
 
 ## Install
 
-Create and activate a virtual environment, then get the source and enter the
-example directory:
+Create and activate a virtual environment. If you downloaded this directory
+with `nvflare examples get hello-pt`, add the `PT` extra to the same
+NVFlare distribution already in use by running the matching command:
+
+```bash
+# Stable installation
+python -m pip install "nvflare[PT]"
+
+# Nightly installation
+python -m pip install "nvflare-nightly[PT]"
+```
+
+Do not run both commands. If you are working from a source checkout instead,
+install that checkout in editable mode so the example and NVFlare revision
+stay aligned:
 
 ```bash
 git clone https://github.com/NVIDIA/NVFlare.git
-cd NVFlare/examples/hello-world/hello-pt
+cd NVFlare
+python -m pip install -e ".[PT]"
+cd examples/hello-world/hello-pt
 ```
 
-Install NVFlare and the example dependencies from that directory:
+Install the example dependencies from the example directory:
 
 ```bash
-python -m pip install "nvflare[PT]"
 python -m pip install -r requirements.txt
 ```
 
