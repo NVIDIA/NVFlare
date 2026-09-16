@@ -131,16 +131,8 @@
     "source_path": "examples/advanced/edge",
     "category": "advanced"
   },
-  "tracking-mlflow": {
-    "source_path": "examples/advanced/experiment-tracking/mlflow",
-    "category": "advanced"
-  },
-  "tracking-tensorboard": {
-    "source_path": "examples/advanced/experiment-tracking/tensorboard",
-    "category": "advanced"
-  },
-  "tracking-wandb": {
-    "source_path": "examples/advanced/experiment-tracking/wandb",
+  "experiment-tracking": {
+    "source_path": "examples/advanced/experiment-tracking",
     "category": "advanced"
   },
   "feature-election": {

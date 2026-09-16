@@ -46,6 +46,8 @@ def test_catalog_excludes_examples_that_require_files_outside_the_downloaded_sub
     source_paths = {entry["source_path"] for entry in catalog.values()}
 
     assert "examples/advanced/cifar10/pt" in source_paths
+    assert "examples/advanced/experiment-tracking" in source_paths
+    assert (REPO_ROOT / "examples/advanced/experiment-tracking/prepare_data.sh").is_file()
     assert "examples/hello-world/agent-skills/pytorch-conversion" in source_paths
     assert source_paths.isdisjoint(
         {
@@ -53,6 +55,9 @@ def test_catalog_excludes_examples_that_require_files_outside_the_downloaded_sub
             "examples/advanced/cifar10/pt/cifar10-sim",
             "examples/advanced/collab/pt_async_cifar10",
             "examples/advanced/collab/pt_cifar10",
+            "examples/advanced/experiment-tracking/mlflow",
+            "examples/advanced/experiment-tracking/tensorboard",
+            "examples/advanced/experiment-tracking/wandb",
             "examples/advanced/hello-pt-environments",
             "examples/docker",
             "examples/devops/multicloud",
@@ -76,8 +81,10 @@ def test_agent_skill_examples_install_skills_from_repository(example_name):
         encoding="utf-8"
     )
 
-    assert "https://github.com/NVIDIA/NVFlare/tree/main/skills" in readme
-    assert "../../../../skills" not in readme
+    assert "https://github.com/NVIDIA/NVFlare/tree/${NVFLARE_REVISION}/skills" in readme
+    assert 'json.load(open(".nvflare-example.json"))["revision"]' in readme
+    assert "NVFLARE_SKILLS_SOURCE=../../../../skills" in readme
+    assert "pip install 'nvflare" not in readme
 
 
 @pytest.mark.parametrize(

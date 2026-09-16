@@ -44,13 +44,14 @@ def _mock_download(
     nested_requirements=None,
     pyproject=None,
     readme="README.md",
+    readme_contents="# Example\n",
 ):
     def download(revision, source_path, destination):
         assert revision == REVISION
         assert source_path == SOURCE_PATH
         destination.mkdir()
         if readme is not None:
-            (destination / readme).write_text("# Example\n")
+            (destination / readme).write_text(readme_contents)
         (destination / "job.py").write_text("print('example')\n")
         (destination / "nested").mkdir()
         (destination / "nested/client.py").write_text("# client\n")
@@ -79,7 +80,7 @@ def test_get_records_downloaded_source_and_requirements(monkeypatch, tmp_path):
     assert result["warnings"] == [
         {
             "code": "EXAMPLE_NVFLARE_REQUIREMENT",
-            "message": "Downloaded dependency files name an NVFlare distribution.",
+            "message": "Downloaded instructions or dependency files name an NVFlare distribution.",
             "paths": ["requirements.txt"],
             "hint": (
                 "Keep the installed NVFlare distribution. Install required extras on that same distribution, "
@@ -114,6 +115,28 @@ def test_nested_nvflare_requirement_is_reported_without_modification(monkeypatch
 
 def test_similarly_named_distribution_does_not_trigger_warning(monkeypatch, tmp_path):
     _mock_download(monkeypatch, requirements="nvflare-helper==1.0\n")
+
+    result = examples_cli.get_example(VERSION, CATALOG, name="hello-pt", destination=tmp_path / "hello-pt")
+
+    assert result["warnings"] == []
+
+
+def test_readme_nvflare_install_is_reported_without_modification(monkeypatch, tmp_path):
+    readme = "# Example\n\n```bash\npython -m pip install 'nvflare==2.7.1'\n```\n"
+    _mock_download(monkeypatch, requirements="torch\n", readme_contents=readme)
+
+    result = examples_cli.get_example(VERSION, CATALOG, name="hello-pt", destination=tmp_path / "hello-pt")
+
+    assert (tmp_path / "hello-pt/README.md").read_text() == readme
+    assert result["warnings"][0]["paths"] == ["README.md"]
+
+
+def test_readme_nvflare_mention_without_install_does_not_trigger_warning(monkeypatch, tmp_path):
+    _mock_download(
+        monkeypatch,
+        requirements="torch\n",
+        readme_contents="# Example\n\nThis example uses NVFlare. Do not replace the installed distribution.\n",
+    )
 
     result = examples_cli.get_example(VERSION, CATALOG, name="hello-pt", destination=tmp_path / "hello-pt")
 
@@ -504,6 +527,9 @@ def test_list_prints_short_names_and_source_paths(monkeypatch, capsys):
     assert "examples/hello-world/hello-pt" in output
     assert "cifar10-pt" in output
     assert "examples/advanced/cifar10/pt" in output
+    assert "experiment-tracking" in output
+    assert "examples/advanced/experiment-tracking" in output
+    assert "tracking-tensorboard" not in output
     assert "skill-pytorch-conversion" in output
     assert "examples/hello-world/agent-skills/pytorch-conversion" in output
 
@@ -587,7 +613,7 @@ def test_human_output_points_to_readme(monkeypatch, capsys, tmp_path):
     assert f"Downloaded example: {destination}" in output
     assert f"  cd {shlex.quote(str(destination))}" in output
     assert "pip install -r requirements.txt" not in output
-    assert "Warning: Downloaded dependency files name an NVFlare distribution." in output
+    assert "Warning: Downloaded instructions or dependency files name an NVFlare distribution." in output
     assert "Keep the installed NVFlare distribution." in output
     assert "Follow README.md for dependency, preparation, and run instructions." in output
     assert "python job.py" not in output

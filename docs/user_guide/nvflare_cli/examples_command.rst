@@ -64,12 +64,14 @@ intentionally not duplicated in the catalog.
 
 Agent Skills examples download the example inputs and prompt without copying
 the repository's shared top-level ``skills/`` directory. Install the skills
-directly from the public repository before opening the example in Codex or
-Claude Code:
+directly from the same Git revision recorded in ``.nvflare-example.json``
+before opening the example in Codex or Claude Code:
 
 .. code-block:: bash
 
-   npx skills add https://github.com/NVIDIA/NVFlare/tree/main/skills --skill '*' -a codex -a claude-code -y
+   NVFLARE_REVISION=$(python -c 'import json; print(json.load(open(".nvflare-example.json"))["revision"])')
+   npx skills add "https://github.com/NVIDIA/NVFlare/tree/${NVFLARE_REVISION}/skills" \
+     --skill '*' -a codex -a claude-code -y
 
 For Hello PyTorch, first install the ``PT`` extra on the NVFlare distribution
 already in use with the matching command above. Then run:
@@ -110,7 +112,8 @@ the example name, installed NVFlare version, Git revision, and canonical source
 path.
 
 If any root or nested ``requirements.txt`` names ``nvflare`` or
-``nvflare-nightly``, or a ``pyproject.toml`` declares either distribution, the
+``nvflare-nightly``, a ``pyproject.toml`` declares either distribution, or a
+README contains a direct pip install command for either distribution, the
 command reports each affected path in human and JSON output. Keep the NVFlare
 distribution already installed, add required extras to that same distribution
 as shown above, and install the remaining example dependencies without

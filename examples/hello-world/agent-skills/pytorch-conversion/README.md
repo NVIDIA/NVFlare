@@ -5,16 +5,21 @@ Codex or Claude Code. The starting project is a standalone, CPU-first PyTorch
 classifier inspired by AMES mutagenicity prediction. A coding agent converts
 it to a two-site NVFLARE FedAvg job.
 
-## NVIDIA FLARE Installation
+## Setup
 
-For complete setup instructions, see [Installation](https://nvflare.readthedocs.io/en/main/installation.html).
-Install NVFLARE 2.9.0 or later, the example dependencies, and the complete
-Agent Skills package directly from the NVFLARE repository:
+Install NVFLARE using the [Installation guide](https://nvflare.readthedocs.io/en/main/installation.html), keeping
+the stable, nightly, or editable distribution already selected. Then install the example dependencies and the complete
+Agent Skills package from the same source revision as this example:
 
 ```bash
-python -m pip install 'nvflare~=2.9.0'
 python -m pip install -r source/requirements.txt
-npx skills add https://github.com/NVIDIA/NVFlare/tree/main/skills --skill '*' -a codex -a claude-code -y
+if [ -f .nvflare-example.json ]; then
+  NVFLARE_REVISION=$(python -c 'import json; print(json.load(open(".nvflare-example.json"))["revision"])')
+  NVFLARE_SKILLS_SOURCE="https://github.com/NVIDIA/NVFlare/tree/${NVFLARE_REVISION}/skills"
+else
+  NVFLARE_SKILLS_SOURCE=../../../../skills
+fi
+npx skills add "$NVFLARE_SKILLS_SOURCE" --skill '*' -a codex -a claude-code -y
 ```
 
 ## Code Structure

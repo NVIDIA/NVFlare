@@ -40,6 +40,10 @@ _POETRY_NVFLARE_REQUIREMENT = re.compile(
     r"""^\s*(?:nvflare(?:[-_.]+nightly)?|"nvflare(?:[-_.]+nightly)?"|'nvflare(?:[-_.]+nightly)?')\s*=""",
     re.IGNORECASE,
 )
+_README_NVFLARE_INSTALL = re.compile(
+    r"\b(?:python(?:3(?:\.\d+)?)?\s+-m\s+)?pip(?:3)?\s+install\b[^\n#]*" r"\bnvflare(?:[-_.]+nightly)?(?![-_.a-z0-9])",
+    re.IGNORECASE,
+)
 _parsers = {}
 _EXAMPLE_COMMANDS = [
     "nvflare examples list",
@@ -247,15 +251,22 @@ def _pyproject_has_nvflare_requirement(contents):
 
 def _dependency_warnings(destination):
     paths = []
-    dependency_files = list(destination.rglob("requirements.txt")) + list(destination.rglob("pyproject.toml"))
-    for dependency_file in dependency_files:
-        if not dependency_file.is_file():
+    for dependency_file in destination.rglob("*"):
+        file_name = dependency_file.name.casefold()
+        if not dependency_file.is_file() or file_name not in {
+            "requirements.txt",
+            "pyproject.toml",
+            "readme.md",
+            "readme.rst",
+        }:
             continue
         contents = dependency_file.read_text(encoding="utf-8", errors="replace")
-        if dependency_file.name == "requirements.txt":
+        if file_name == "requirements.txt":
             found = any(_NVFLARE_REQUIREMENT.match(line) for line in contents.splitlines())
-        else:
+        elif file_name == "pyproject.toml":
             found = _pyproject_has_nvflare_requirement(contents)
+        else:
+            found = bool(_README_NVFLARE_INSTALL.search(contents))
         if found:
             paths.append(dependency_file.relative_to(destination).as_posix())
     if not paths:
@@ -263,7 +274,7 @@ def _dependency_warnings(destination):
     return [
         {
             "code": "EXAMPLE_NVFLARE_REQUIREMENT",
-            "message": "Downloaded dependency files name an NVFlare distribution.",
+            "message": "Downloaded instructions or dependency files name an NVFlare distribution.",
             "paths": sorted(paths),
             "hint": (
                 "Keep the installed NVFlare distribution. Install required extras on that same distribution, "
