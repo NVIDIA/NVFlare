@@ -15,6 +15,8 @@
 import copy
 import json
 import time
+from contextlib import contextmanager
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 import jwt
@@ -103,6 +105,101 @@ def test_valid_proof_and_single_use(material):
     assert verifier.verify(generate())
     with pytest.raises(CCTokenGenerateError):
         verifier.generate()
+
+
+@contextmanager
+def clock_at(now):
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime.fromtimestamp(now, tz=tz)
+
+    # Exercise both PyJWT's time validation and the authorizer's own age checks.
+    with (
+        patch("jwt.api_jwt.datetime", Clock),
+        patch("nvflare.app_opt.confidential_computing.coco_authorizer.time.time", return_value=now),
+    ):
+        yield
+
+
+@pytest.mark.parametrize("lag", [0, 90, 180])
+def test_cold_guest_generates_proof_verified_by_synchronized_server(material, lag):
+    claims, _, verifier, generate, _ = material
+    server_now = int(datetime.now(timezone.utc).timestamp())
+    claims.update(iat=server_now, exp=server_now + 300)
+    with clock_at(server_now - lag):
+        token = generate()
+    with clock_at(server_now):
+        assert verifier.verify_for_site(token, "site-1")
+        assert not verifier.verify_for_site(token, "site-1")
+
+
+@pytest.mark.parametrize("leeway", [0, 30, 180])
+def test_ear_iat_leeway_boundary(material, leeway):
+    claims, _, verifier, generate, _ = material
+    now = int(time.time())
+    claims.update(iat=now + leeway, exp=now + leeway + 300)
+    verifier.ear_leeway_seconds = leeway
+    with clock_at(now):
+        token = generate(ear_leeway_seconds=leeway)
+        assert verifier.verify(token)
+        # The verifier independently enforces its own allowance.
+        if leeway:
+            verifier.ear_leeway_seconds = leeway - 1
+            assert not verifier.verify(generate(ear_leeway_seconds=leeway))
+        claims["iat"] += 1
+        with pytest.raises(CCTokenGenerateError):
+            generate(ear_leeway_seconds=leeway)
+
+
+@pytest.mark.parametrize("leeway", [-1, 181, True, False, 1.5, "180", None])
+def test_invalid_ear_leeway_rejected(material, leeway):
+    _, _, _, generate, _ = material
+    with pytest.raises(ValueError, match="ear_leeway_seconds must be 0..180"):
+        generate(ear_leeway_seconds=leeway)
+
+
+@pytest.mark.parametrize("failure", ["expired", "not_yet_valid", "old", "string_iat", "bool_iat", "float_iat"])
+def test_ear_leeway_rejects_outside_window_and_invalid_claims(material, failure):
+    claims, _, _, generate, _ = material
+    now = int(time.time())
+    claims.update(iat=now, exp=now + 300)
+    if failure == "expired":
+        claims.update(iat=now - 200, exp=now - 180)
+    elif failure == "not_yet_valid":
+        claims["nbf"] = now + 181
+    elif failure == "old":
+        claims["iat"] = now - 301
+    else:
+        claims["iat"] = {"string_iat": str(now), "bool_iat": True, "float_iat": float(now)}[failure]
+    with clock_at(now), pytest.raises(CCTokenGenerateError):
+        generate()
+
+
+@pytest.mark.parametrize(
+    "claim,offset,accepted", [("exp", -179, True), ("exp", -180, False), ("nbf", 180, True), ("nbf", 181, False)]
+)
+def test_ear_decode_leeway_covers_exp_and_nbf(material, claim, offset, accepted):
+    claims, _, verifier, generate, _ = material
+    now = int(time.time())
+    claims.update(iat=now - 200 if claim == "exp" else now, exp=now + 300)
+    claims[claim] = now + offset
+    with clock_at(now):
+        if accepted:
+            assert verifier.verify(generate())
+        else:
+            with pytest.raises(CCTokenGenerateError):
+                generate()
+
+
+@pytest.mark.parametrize("claim,offset", [("exp", 0), ("nbf", 1)])
+def test_zero_ear_leeway_restores_strict_exp_and_nbf(material, claim, offset):
+    claims, _, _, generate, _ = material
+    now = int(time.time())
+    claims.update(iat=now - 10, exp=now + 300)
+    claims[claim] = now + offset
+    with clock_at(now), pytest.raises(CCTokenGenerateError):
+        generate(ear_leeway_seconds=0)
 
 
 @pytest.mark.parametrize("lifetime", [None, 60, 600])

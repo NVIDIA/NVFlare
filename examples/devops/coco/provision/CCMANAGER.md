@@ -114,7 +114,24 @@ value. Configure matching values on the issuer and verifiers; a stricter verifie
 rejects longer-lived proofs. Existing generated kits use the 300-second default.
 This option does not extend EAR validity or add clock-skew tolerance or retries.
 AA may return a cached EAR; a new NVFlare proof does not imply
-a new hardware attestation at every poll. Too-old or expired EAR fails closed.
+a new hardware attestation at every poll. EAR older than the maximum age or
+expired beyond the clock-skew allowance fails closed.
+
+The separate `ear_leeway_seconds` constructor argument defaults to 180 seconds
+and accepts integers from 0 to 180. It is passed as PyJWT's `leeway` to the EAR
+decode during both generation and verification, matching the tested cold-boot
+clock-skew patch. It allows `iat` and `nbf` (if present) up to that many seconds
+ahead of the local clock, and accepts expiration less than that many seconds in
+the past. Set it to 0 for strict time checks. The maximum EAR age is not increased:
+an EAR older than `max_token_age_seconds` still fails even within expiration leeway.
+Signature, required integer timestamps, `exp > iat`, CPU/GPU appraisals, and
+outer-proof checks remain enforced. No leeway is added to the outer proof decode.
+
+Generated kits use this default when running the updated authorizer; rebuild the
+client image and update ordinary-server code to deploy the change. This is not
+clock synchronization and adds no retries. Clock lag above the allowance, shorter
+outer-proof lifetimes than the lag, and transient attestation failures can still
+prevent registration. The retry/shutdown behavior is a separate concern.
 
 ## Direct client/server API
 
@@ -140,6 +157,7 @@ client = CoCoAuthorizer(
     audience="nvflare-coco:example-project",
     site_name="site-1",
     proof_lifetime_seconds=300,
+    ear_leeway_seconds=180,
 )
 proof = client.generate()
 # Send only proof to the server over an authenticated, encrypted connection.
@@ -158,6 +176,7 @@ verifier = CoCoAuthorizer(
     trustee_public_key=Path("trustee-as-public.pem").read_text(),
     audience="nvflare-coco:example-project",
     proof_lifetime_seconds=300,
+    ear_leeway_seconds=180,
 )
 
 def accept_attestation(received_proof: str, authenticated_site: str) -> bool:

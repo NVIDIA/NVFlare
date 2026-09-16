@@ -55,12 +55,16 @@ class CoCoAuthorizer(CCAuthorizer):
         token_url="http://127.0.0.1:8006/aa/token",
         max_token_age_seconds=300,
         proof_lifetime_seconds=300,
+        ear_leeway_seconds=180,
     ):
         """Configure EAR freshness and the generated/accepted outer proof lifetime separately.
 
         proof_lifetime_seconds must be a positive integer. Verifiers reject proofs
         older than this limit or with a declared lifetime exceeding it. EAR expiry
         and max_token_age_seconds are enforced independently.
+        ear_leeway_seconds (0..180) applies PyJWT clock-skew tolerance to EAR
+        iat, exp and nbf checks. The maximum EAR age and outer proof checks
+        remain independent of this allowance.
         """
         self.trustee_key = serialization.load_pem_public_key(trustee_public_key.encode())
         if not isinstance(self.trustee_key, ec.EllipticCurvePublicKey) or not isinstance(
@@ -73,6 +77,8 @@ class CoCoAuthorizer(CCAuthorizer):
             raise ValueError("max_token_age_seconds must be 1..300")
         if type(proof_lifetime_seconds) is not int or proof_lifetime_seconds <= 0:
             raise ValueError("proof_lifetime_seconds must be a positive integer")
+        if type(ear_leeway_seconds) is not int or not 0 <= ear_leeway_seconds <= 180:
+            raise ValueError("ear_leeway_seconds must be 0..180")
         url = urlsplit(token_url)
         if (
             url.scheme != "http"
@@ -89,6 +95,7 @@ class CoCoAuthorizer(CCAuthorizer):
         self.token_url = token_url
         self.max_age = max_token_age_seconds
         self.proof_lifetime_seconds = proof_lifetime_seconds
+        self.ear_leeway_seconds = ear_leeway_seconds
         self.seen = {}
         self.lock = threading.Lock()
 
@@ -110,14 +117,20 @@ class CoCoAuthorizer(CCAuthorizer):
             raise ValueError("Invalid EAR size")
         # Never trust jku/x5u/x5c from the JWT header, nor the service TLS cert
         # as a substitute for the independently authenticated AS signing key.
+        # Match the tested EAR clock-skew allowance for iat, exp and nbf.
+        # This leeway is not applied to the outer proof's decode.
         claims = jwt.decode(
-            token, self.trustee_key, algorithms=["ES256"], options={"require": ["iat", "exp"], "verify_aud": False}
+            token,
+            self.trustee_key,
+            algorithms=["ES256"],
+            options={"require": ["iat", "exp"], "verify_aud": False},
+            leeway=self.ear_leeway_seconds,
         )
         now = time.time()
         if (
             type(claims["iat"]) is not int
             or type(claims["exp"]) is not int
-            or not 0 <= now - claims["iat"] <= self.max_age
+            or not -self.ear_leeway_seconds <= now - claims["iat"] <= self.max_age
             or claims["exp"] <= claims["iat"]
             or claims.get("eat_profile") != EAT_PROFILE
         ):
