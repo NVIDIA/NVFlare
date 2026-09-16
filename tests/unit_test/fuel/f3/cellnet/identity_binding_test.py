@@ -101,6 +101,7 @@ def _cert_pem(common_name: str):
 
 
 _JOB_SCOPES = ["site-1.job-123", "site-1.ws_transfer_job-123"]
+_STUDY_URI = "https://nvidia.com/nvflare/v1/project/demo/study/study-a"
 
 
 def _scoped_cert_pem(common_name: str, scopes=None, uris=None):
@@ -494,14 +495,16 @@ def test_cell_scopes_of_unrestricted_and_scoped_certs():
         "https://nvidia.com/nvflare/cell",
     ],
 )
-def test_cell_scopes_reject_malformed_nvflare_uri(uri):
+@pytest.mark.parametrize("study_uris", [[], [_STUDY_URI]])
+def test_cell_scopes_reject_malformed_nvflare_uri(uri, study_uris):
     with pytest.raises(ValueError):
-        cell_scopes(_cert(_scoped_cert_pem("site-1", uris=[uri])))
+        cell_scopes(_cert(_scoped_cert_pem("site-1", uris=study_uris + [uri])))
 
 
-def test_identity_resolver_enforces_certificate_scope():
+@pytest.mark.parametrize("study_uris", [[], [_STUDY_URI]])
+def test_identity_resolver_enforces_certificate_scope(study_uris):
     resolver = CellIdentityResolver(local_fqcn="server", prefix_identity_map={"site-1": "site-1"})
-    scoped = _cert(_scoped_cert_pem("site-1", _JOB_SCOPES))
+    scoped = _cert(_scoped_cert_pem("site-1", _JOB_SCOPES, uris=study_uris))
 
     for fqcn in ("site-1.job-123", "site-1.job-123.sub-1", "site-1.ws_transfer_job-123"):
         resolver.require_match(fqcn, "site-1", "connection", peer_cert=scoped)

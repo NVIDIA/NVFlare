@@ -14,6 +14,7 @@
 
 import json
 import os
+import time
 import warnings
 from typing import Optional
 
@@ -24,6 +25,8 @@ from nvflare.apis.job_def import RunStatus
 from nvflare.app_common.default_component_policy import DEFAULT_CLASS_ALLOW_LIST
 from nvflare.app_common.widgets.component_path_authorizer import CLASS_ALLOW_LIST
 from nvflare.job_config.api import FedJob
+from nvflare.recipe._failure_summary import failure_summary
+from nvflare.recipe._run_summary import _print_output, run_context, summary_header
 
 from .spec import ExecEnv
 from .utils import collect_non_local_scripts
@@ -99,8 +102,8 @@ class SimEnv(ExecEnv):
         self.num_clients = resolved_num_clients
         self.num_threads = v.num_threads if v.num_threads is not None else resolved_num_clients
         self.gpu_config = v.gpu_config
-        self.log_config = v.log_config
-        self.clients = v.clients
+        self.log_config = self._log_config_override if self._log_config_override is not None else v.log_config
+        self.clients = v.clients or None
         workspace_override = os.environ.get(SIMULATOR_WORKSPACE_ROOT_ENV_VAR)
         if workspace_override and workspace_override != v.workspace_root:
             warnings.warn(
@@ -118,6 +121,8 @@ class SimEnv(ExecEnv):
         self._job_statuses.pop(job_id, None)
         self.last_run_failed = False
 
+        started_at = time.time()
+        started_timer = time.monotonic()
         try:
             # Validate scripts exist locally for simulation
             non_local_scripts = collect_non_local_scripts(job)
@@ -128,6 +133,7 @@ class SimEnv(ExecEnv):
                 )
 
             workspace = os.path.join(self.workspace_root, job_id)
+            _print_output(f"Simulation · {self.num_clients} clients", flush=True)
             self._ensure_default_component_policy(workspace)
             run_status = job.simulator_run(
                 workspace=workspace,
@@ -146,7 +152,11 @@ class SimEnv(ExecEnv):
             raise RuntimeError(
                 f"Simulation failed with return code {run_status}. "
                 f"Logs are in per-site subdirectories under {os.path.join(self.workspace_root, job_id)}, "
-                f"e.g. server/simulate_job/log.txt"
+                "e.g. server/log.txt and server/error_log.txt\n"
+                + summary_header("✗ Failed", time.monotonic() - started_timer, context=run_context(job.name, self))
+                + f"\n\n  Status    {status.value}\n"
+                + failure_summary(workspace, since=started_at)
+                + f"\n  Results   {workspace}"
             )
         self._record_status(job_id, RunStatus.FINISHED_COMPLETED)
         return job_id
@@ -184,7 +194,7 @@ class SimEnv(ExecEnv):
 
     def abort_job(self, job_id: str) -> None:
         """Abort job - not supported in simulation environment."""
-        print("abort is not supported in a simulation environment, it will always run to completion.")
+        _print_output("abort is not supported in a simulation environment, it will always run to completion.")
 
     def get_job_result(self, job_id: str, timeout: float = 0.0) -> Optional[str]:
         """Get job result workspace path."""

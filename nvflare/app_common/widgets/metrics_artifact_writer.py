@@ -15,6 +15,7 @@
 import json
 import math
 import os
+import time
 from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
@@ -29,9 +30,15 @@ from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.utils.file_utils import resolve_path_under_root
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
+from nvflare.fuel.utils.log_utils import format_metric_table, get_module_logger, log_progress
 from nvflare.widgets.widget import Widget
 
 METRICS_AGGREGATION_INFO = AppConstants.METRICS_AGGREGATION_INFO
+MAX_PROGRESS_CLIENT_ROWS = 10
+
+
+# Inherited reporting uses the defining module; subclass diagnostics keep their own logger.
+_logger = get_module_logger(__name__)
 
 
 class MetricsArtifactWriter(Widget):
@@ -68,6 +75,10 @@ class MetricsArtifactWriter(Widget):
         self._reset()
 
     def _reset(self):
+        self._first_round = None
+        self._total_rounds = None
+        self._round_started_at = None
+        self._reset_progress()
         self._has_metrics = False
         self._final_round = None
         self._final_aggregated_metrics = []
@@ -83,9 +94,23 @@ class MetricsArtifactWriter(Widget):
         self._round_site_metric_counts = {}
         self._custom_aggregator_no_metric_rounds = []
 
+    def _reset_progress(self):
+        self._progress_columns = None
+        self._round_contribution_count = 0
+        self._progress_client_rows = 0
+        self._progress_metrics_omitted = False
+
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
             self._reset()
+        elif event_type == AppEventType.ROUND_STARTED:
+            current_round = self._safe_round(fl_ctx.get_prop(AppConstants.CURRENT_ROUND, None))
+            if self._first_round is None:
+                self._first_round = current_round
+            self._round_started_at = time.monotonic()
+            self._reset_progress()
+            heading = self._round_label(current_round, fl_ctx).upper().replace("/", " / ")
+            log_progress(_logger, "\n" + f" {heading} ".center(72, "=") + "\n\n  Training\n")
         elif event_type == AppEventType.AFTER_CONTRIBUTION_ACCEPT:
             self._handle_after_contribution_accept(fl_ctx)
         elif event_type == AppEventType.AFTER_AGGREGATION:
@@ -94,6 +119,54 @@ class MetricsArtifactWriter(Widget):
             self._handle_global_best_model_available(fl_ctx)
         elif event_type == EventType.END_RUN:
             self._write_summary_if_needed(fl_ctx)
+
+    def _round_label(self, current_round, fl_ctx):
+        if current_round is None:
+            return "Round"
+        ordinal = current_round - self._first_round + 1 if self._first_round is not None else current_round + 1
+        total = fl_ctx.get_prop(AppConstants.NUM_ROUNDS, None)
+        if isinstance(total, int) and not isinstance(total, bool) and total > 0:
+            self._total_rounds = total
+        total = self._total_rounds
+        suffix = f"/{total}" if total is not None and ordinal <= total else ""
+        return f"Round {ordinal}{suffix}"
+
+    def _log_progress_metrics(self, label, metrics):
+        try:
+            values = {
+                metric["name"]: metric["value"]
+                for metric in metrics
+                if isinstance(metric, dict) and "name" in metric and "value" in metric
+            }
+        except Exception:
+            values = {}
+        if not values:
+            log_progress(_logger, f"  {json.dumps(label[:128])} · no displayable metrics")
+            return
+        columns = list(values)[:2]
+        if len(values) > len(columns):
+            self._progress_metrics_omitted = True
+        # Clients and aggregators may report different metrics. Repeat the
+        # headings when necessary instead of displaying an all-missing row.
+        first = columns != self._progress_columns
+        self._progress_columns = columns
+        log_progress(
+            _logger,
+            format_metric_table(
+                [(label, values)],
+                columns=self._progress_columns,
+                header=first,
+                label_width=24,
+                include_notice=False,
+            ),
+        )
+
+    def _log_contribution_progress(self, label, metrics):
+        if self._progress_client_rows < MAX_PROGRESS_CLIENT_ROWS:
+            self._log_progress_metrics(label, metrics)
+        elif self._progress_client_rows == MAX_PROGRESS_CLIENT_ROWS:
+            log_progress(_logger, "  Additional client results are available in the saved metrics artifacts.")
+        self._progress_client_rows += 1
 
     def _handle_after_aggregation(self, fl_ctx: FLContext):
         aggr_result = fl_ctx.get_prop(AppConstants.AGGREGATION_RESULT, None)
@@ -123,9 +196,28 @@ class MetricsArtifactWriter(Widget):
             self._merge_skipped(skipped, fallback_skipped)
         self._apply_site_weights(sites, site_weights)
 
-        if not aggregated_metrics and not sites and not skipped:
+        has_aggregation_details = bool(aggregated_metrics or sites or skipped)
+        if not has_aggregation_details:
             if custom_aggregator_metrics:
                 self._custom_aggregator_no_metric_rounds.append(current_round)
+        else:
+            log_progress(_logger, "  " + "─" * 66)
+            self._log_progress_metrics("Aggregated", aggregated_metrics)
+        if self._progress_metrics_omitted:
+            log_progress(_logger, "  Additional metric results are available in the saved metrics artifacts.")
+        if has_aggregation_details or self._round_contribution_count:
+            duration = ""
+            if self._round_started_at is not None:
+                duration = f"{time.monotonic() - self._round_started_at:.1f}s"
+            completion = "✓ Aggregation finished"
+            if self._round_contribution_count:
+                completion = f"✓ Aggregated {self._round_contribution_count} client update"
+                if self._round_contribution_count != 1:
+                    completion += "s"
+            log_progress(_logger, "\n" + f"  {completion}".ljust(64) + duration)
+        self._reset_progress()
+
+        if not has_aggregation_details:
             return
 
         aggregation = self._sanitize_json_object(info.get("aggregation"))
@@ -188,7 +280,9 @@ class MetricsArtifactWriter(Widget):
             model = FLModelUtils.from_shareable(result)
         except Exception:
             return
+        self._round_contribution_count += 1
         if not model.metrics:
+            self._log_contribution_progress(self._get_site_name(model, fl_ctx), [])
             return
 
         current_round = self._get_current_round(model, fl_ctx)
@@ -198,6 +292,7 @@ class MetricsArtifactWriter(Widget):
         if skipped:
             self._extend_round_skipped(current_round, skipped)
         if not metrics:
+            self._log_contribution_progress(site_name, [])
             return
         sites = self._round_sites.setdefault(current_round, [])
         if len(sites) >= self.max_sites_per_round:
@@ -225,6 +320,7 @@ class MetricsArtifactWriter(Widget):
             site["weight"] = weight
             site["weight_key"] = FLMetaKey.NUM_STEPS_CURRENT_ROUND
         sites.append(site)
+        self._log_contribution_progress(site["name"], metrics)
 
     def _normalize_sites(self, sites, skipped):
         if not isinstance(sites, list):

@@ -290,12 +290,15 @@ class StudyCommandModule(CommandModule, CommandUtil):
                 bad.append(site)
         return bad
 
-    def _is_visible_to_caller(self, conn: Connection, study_def: dict) -> bool:
-        # Visibility policy:
+    def _is_visible_to_caller(self, conn: Connection, study_name: str, study_def: dict) -> bool:
+        # Certificate membership grants visibility, not a different command role.
+        # Otherwise, preserve role-based visibility:
         # - project_admin can see every study.
         # - org_admin can see studies that include at least one site from the caller's org.
         # - lead/member and other non-admin roles can see only studies where the
         #   caller is explicitly listed in the study admins mapping.
+        if study_name in conn.get_prop(ConnProps.CERT_STUDIES, ()):
+            return True
         caller_role = self._caller_role(conn)
         if caller_role == "project_admin":
             return True
@@ -304,11 +307,8 @@ class StudyCommandModule(CommandModule, CommandUtil):
         caller_org = self._caller_org(conn)
         if not caller_org:
             return False
-        site_orgs = (study_def or {}).get("site_orgs", {})
+        site_orgs = (study_def or {}).get("site_orgs") or {}
         return caller_org in site_orgs
-
-    def _is_list_visible_to_caller(self, conn: Connection, study_def: dict) -> bool:
-        return self._is_visible_to_caller(conn, study_def)
 
     def _study_list_item(self, conn: Connection, study_name: str) -> dict:
         role = self._caller_role(conn)
@@ -462,12 +462,10 @@ class StudyCommandModule(CommandModule, CommandUtil):
             studies = working.setdefault("studies", {})
             study_def = studies.get(parsed.study)
             caller = self._caller_name(conn)
-            caller_role = self._caller_role(conn)
-            caller_org = self._caller_org(conn)
             if study_def is None:
                 study_def = {"site_orgs": {}, "admins": []}
                 studies[parsed.study] = study_def
-            elif caller_role == "org_admin" and caller_org not in self._normalize_site_orgs(study_def):
+            elif not self._is_visible_to_caller(conn, parsed.study, study_def):
                 return {
                     "error_code": "STUDY_ALREADY_EXISTS",
                     "message": f"Study '{parsed.study}' already exists.",
@@ -518,7 +516,7 @@ class StudyCommandModule(CommandModule, CommandUtil):
 
         def _mutate(_engine, working):
             study_def = working.get("studies", {}).get(parsed.study)
-            if not study_def or not self._is_visible_to_caller(conn, study_def):
+            if not study_def or not self._is_visible_to_caller(conn, parsed.study, study_def):
                 return {
                     "error_code": "STUDY_NOT_FOUND",
                     "message": f"Study '{parsed.study}' not found.",
@@ -569,7 +567,7 @@ class StudyCommandModule(CommandModule, CommandUtil):
 
         def _mutate(_engine, working):
             study_def = working.get("studies", {}).get(parsed.study)
-            if not study_def or not self._is_visible_to_caller(conn, study_def):
+            if not study_def or not self._is_visible_to_caller(conn, parsed.study, study_def):
                 return {
                     "error_code": "STUDY_NOT_FOUND",
                     "message": f"Study '{parsed.study}' not found.",
@@ -649,7 +647,7 @@ class StudyCommandModule(CommandModule, CommandUtil):
         study_details = []
         if registry:
             for study_name, study_def in registry.get_studies().items():
-                if self._is_list_visible_to_caller(conn, study_def):
+                if self._is_visible_to_caller(conn, study_name, study_def):
                     studies.append(study_name)
                     study_details.append(self._study_list_item(conn, study_name))
         self._reply(
@@ -671,7 +669,7 @@ class StudyCommandModule(CommandModule, CommandUtil):
             return
         registry = StudyRegistryService.get_registry()
         study_def = registry.get_study(parsed.study) if registry else None
-        if not study_def or not self._is_visible_to_caller(conn, study_def):
+        if not study_def or not self._is_visible_to_caller(conn, parsed.study, study_def):
             self._study_not_found(conn, parsed.study)
             return
         self._reply(conn, self._study_payload(parsed.study, study_def))
@@ -687,7 +685,7 @@ class StudyCommandModule(CommandModule, CommandUtil):
 
         def _mutate(_engine, working):
             study_def = working.get("studies", {}).get(parsed.study)
-            if not study_def or not self._is_visible_to_caller(conn, study_def):
+            if not study_def or not self._is_visible_to_caller(conn, parsed.study, study_def):
                 return {
                     "error_code": "STUDY_NOT_FOUND",
                     "message": f"Study '{parsed.study}' not found.",
@@ -718,7 +716,7 @@ class StudyCommandModule(CommandModule, CommandUtil):
 
         def _mutate(_engine, working):
             study_def = working.get("studies", {}).get(parsed.study)
-            if not study_def or not self._is_visible_to_caller(conn, study_def):
+            if not study_def or not self._is_visible_to_caller(conn, parsed.study, study_def):
                 return {
                     "error_code": "STUDY_NOT_FOUND",
                     "message": f"Study '{parsed.study}' not found.",

@@ -23,7 +23,7 @@ from cryptography.x509.oid import NameOID
 
 from nvflare.apis.fl_constant import SecureTrainConst
 from nvflare.fuel.f3.cellnet.cell_cipher import SimpleCellCipher
-from nvflare.fuel.sec.cert_uri import CELL_URI_KIND, cert_uri_values, job_ca_marker_uri
+from nvflare.fuel.sec.cert_uri import ADMIN_STUDY_URI_PREFIX, CELL_URI_KIND, cert_uri_values, job_ca_marker_uri
 from nvflare.lighter.constants import ProvFileName
 from nvflare.lighter.utils import (
     Identity,
@@ -87,6 +87,26 @@ def _write_job_ca(startup_dir, ca_lifetime=datetime.timedelta(days=360), expired
     with open(os.path.join(startup_dir, ProvFileName.JOB_CA_KEY), "wb") as f:
         f.write(serialize_pri_key(ca_key))
     return root_cert, ca_cert
+
+
+@pytest.mark.parametrize("suffix", ["", "demo/study/", "demo/study/study-a\n"])
+@pytest.mark.parametrize("cert_type", ["site", "job", "ca"])
+def test_malformed_study_uri_rejected_on_non_admin_certificates(cert_type, suffix):
+    key, public_key = generate_keys()
+    identity = Identity("site-1")
+    uris = job_cert_uris("site-1", "job-123") if cert_type == "job" else []
+    if cert_type == "ca":
+        uris.append(job_ca_marker_uri())
+    # The malformed claim follows valid identity URIs so they cannot mask it.
+    cert = generate_cert(
+        identity, identity, key, public_key, ca=cert_type == "ca", uri_names=uris + [ADMIN_STUDY_URI_PREFIX + suffix]
+    )
+    with pytest.raises(ValueError, match="malformed study URI"):
+        cert_uri_values(cert, CELL_URI_KIND)
+    with pytest.raises(ValueError, match="malformed study URI"):
+        get_cert_job_id(cert)
+    with pytest.raises(ValueError, match="malformed study URI"):
+        has_job_ca_marker(cert)
 
 
 def test_issuer_requires_job_ca(tmp_path):

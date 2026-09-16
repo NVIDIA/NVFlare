@@ -14,10 +14,16 @@
 
 import pytest
 
-from nvflare.apis.utils.format_check import name_check
+from nvflare.apis.utils.format_check import name_check, type_pattern_mapping
 
 
 class TestNameCheck:
+    @pytest.mark.parametrize("entity_type", type_pattern_mapping)
+    def test_rejects_trailing_newline(self, entity_type):
+        name = "user@example.com" if entity_type in ("admin", "email") else "valid"
+        assert name_check(name, entity_type)[0] is False
+        assert name_check(name + "\n", entity_type)[0] is True
+
     @pytest.mark.parametrize("name, err_value", [["bad***", True], ["bad?!", True], ["bad{}", True], ["good", False]])
     def test_org(self, name, err_value):
 

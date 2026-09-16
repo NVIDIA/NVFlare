@@ -24,7 +24,7 @@ from nvflare.fuel.hci.proto import InternalCommands, ReplyKeyword
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.security import IdentityKey, get_identity_info
 from nvflare.fuel.hci.server.constants import ConnProps
-from nvflare.fuel.sec.admin_cert import validate_admin_leaf_cert
+from nvflare.fuel.sec.admin_cert import get_admin_study_entitlements, validate_admin_leaf_cert
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.lighter.utils import cert_to_dict, load_crt_chain_bytes
 from nvflare.security.logging import secure_format_exception
@@ -119,6 +119,7 @@ class LoginModule(CommandModule, CommandFilter):
 
         try:
             validate_admin_leaf_cert(cert)
+            cert_studies = get_admin_study_entitlements(cert)
         except Exception as ex:
             self.logger.error(f"admin certificate validation failed: {secure_format_exception(ex)}")
             _reject()
@@ -143,7 +144,7 @@ class LoginModule(CommandModule, CommandFilter):
                 self.logger.warning(f"rejecting login for user '{user_name}': unknown study '{study}'")
                 _reject(f"unknown study '{study}'", code="AUTH_UNKNOWN_STUDY")
                 return
-            if not registry.has_user(user_name, study):
+            if not registry.has_user(user_name, study) and study not in cert_studies:
                 self.logger.warning(f"rejecting login for user '{user_name}': no mapping for study '{study}'")
                 _reject(
                     f"user '{user_name}' is not mapped to study '{study}'",
@@ -166,6 +167,7 @@ class LoginModule(CommandModule, CommandFilter):
             origin_fqcn=origin,
             active_study=study,
             cert_exp=_cert_expiry(cert),
+            cert_studies=cert_studies,
         )
         token = session.make_token(id_asserter)
         self.logger.info(f"Created user session for {user_name}")
@@ -220,6 +222,7 @@ class LoginModule(CommandModule, CommandFilter):
         conn.set_prop(ConnProps.USER_ORG, sess.user_org)
         conn.set_prop(ConnProps.USER_ROLE, sess.user_role)
         conn.set_prop(ConnProps.ACTIVE_STUDY, sess.active_study)
+        conn.set_prop(ConnProps.CERT_STUDIES, sess.cert_studies)
         conn.set_prop(ConnProps.TOKEN, token)
         return True
 

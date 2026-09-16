@@ -541,6 +541,72 @@ submitted. ``Run`` exposes:
 ``run.abort()``
    Request that the environment abort the running job.
 
+Following a Run
+---------------
+
+Recipe execution prints the job name before deployment. Simulation also prints
+the resolved client count; POC and production print status changes while the job
+runs.
+
+The simulator continues to use ``concise`` logging by default, preserving the
+existing timestamped application-log view. Select ``progress`` for the focused
+round headings, client and aggregated metrics, evaluation progress, warnings,
+and errors introduced by this reporting feature:
+
+.. code-block:: bash
+
+   python job.py --log_config progress
+
+Detailed diagnostic records remain in ``log.txt`` and ``log.json``. To show full
+diagnostics on the console, run:
+
+.. code-block:: bash
+
+   python job.py --log_config full
+
+Recipe consumes ``--log_config`` as a system argument before the script's own
+argument parser. The ``concise``, ``progress``, ``msg_only``, ``full``, and
+``verbose`` modes are supported. The separate ``nvflare simulator`` command continues to use
+``-l`` or ``--log_config``. See :ref:`logging_configuration` for the mode and file
+details.
+
+POC and production use the same focused presentation when ``progress`` is
+selected and the updated server is available. Live remote progress is a recent
+preview from a bounded server ``log.json`` tail, with a bounded ``log.txt``
+fallback. It does not grant access to client machines or reconfigure running
+services. After completion, use the logs in the downloaded result. An authorized
+operator can also run ``nvflare job logs <job_id>`` for server logs and for client
+logs that were already streamed to the server. Other retained service or client
+logs require authorized access to the corresponding site. See
+:ref:`job_cli` for log retrieval and client-log streaming details.
+
+End-of-Run Summary
+------------------
+
+``run.get_result()`` waits for the result, records the final status, stops the
+environment, and returns the result workspace path when one is available. It also
+prints a ``RUN SUMMARY`` containing:
+
+* the completed, failed, or not-scheduled status and elapsed time;
+* up to ten recorded rounds of aggregated training metrics;
+* cross-site model-evaluation results when present; and
+* locations of model, metric, evaluation, and log artifacts.
+
+The summary reads existing artifacts and does not load model weights or change
+metric values. Missing, malformed, oversized, or custom-layout artifacts do not
+prevent result retrieval. Metric tables are bounded; inspect the referenced
+artifacts for complete values.
+
+A failed job can still return a workspace. Failure output summarizes available
+errors, affected sites, application code locations, and log paths. Full tracebacks
+remain in the site logs. POC and production can include client details only when
+those logs were already streamed to the server; the summary does not enable log
+streaming or contact clients.
+
+Use ``run.get_result(clean_up=False)`` to retain environment files for inspection.
+If cleanup removes a workspace, the output states that it is no longer available.
+Repeated calls return the cached result without printing the summary again.
+
 What You Can Rely On
 --------------------
 
