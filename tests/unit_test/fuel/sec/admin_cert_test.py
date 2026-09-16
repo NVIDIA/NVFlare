@@ -175,10 +175,13 @@ def test_get_admin_study_entitlements_rejects_invalid_nvflare_uri(uri):
             cert_uri_values(cert, kind)
 
 
-def test_get_admin_study_entitlements_rejects_duplicates_and_too_many_studies():
+@pytest.mark.parametrize("project", [_PROJECT, "other-project"])
+def test_get_admin_study_entitlements_rejects_duplicate_studies(project):
     with pytest.raises(AdminCertValidationError, match="duplicate"):
-        get_admin_study_entitlements(_make_cert_with_uris(_study_uri("study-a"), _study_uri("study-a")))
+        get_admin_study_entitlements(_make_cert_with_uris(_study_uri("study-a"), _study_uri("study-a", project)))
 
+
+def test_get_admin_study_entitlements_rejects_too_many_studies():
     uris = [_study_uri(f"study-{i}") for i in range(MAX_ADMIN_STUDIES + 1)]
     with pytest.raises(AdminCertValidationError, match="too many"):
         get_admin_study_entitlements(_make_cert_with_uris(*uris))
