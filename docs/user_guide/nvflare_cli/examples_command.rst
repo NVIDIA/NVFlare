@@ -101,7 +101,7 @@ Use ``--dest`` to choose another new directory:
 The destination's parent must already exist. The command never merges with or
 overwrites an existing file, directory, or symbolic link. It creates the
 destination exclusively. If downloading does not complete, remove the incomplete
-destination before retrying.
+destination before retrying. The error identifies its absolute path.
 
 The downloaded directory contains the maintained files from the source
 directory selected by the catalog. The command does not create a root

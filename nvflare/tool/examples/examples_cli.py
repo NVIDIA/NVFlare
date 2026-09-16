@@ -214,11 +214,11 @@ def _download_example(revision, source_path, destination):
                 if entry.get("mode") == "100755":
                     target.chmod(0o755)
     except requests.RequestException as error:
-        cleanup = "Remove the incomplete destination, " if destination_created else ""
+        cleanup = f"Remove the incomplete destination directory at {destination}. " if destination_created else ""
         raise ExampleError(
             "EXAMPLE_NETWORK_ERROR",
             f"Could not download the NVFlare example: {error}",
-            f"{cleanup}check GitHub access and your network settings, then retry.",
+            f"{cleanup}Check GitHub access and your network settings, then retry.",
         ) from None
     return tree_url
 

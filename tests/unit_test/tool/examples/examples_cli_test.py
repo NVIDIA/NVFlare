@@ -314,6 +314,7 @@ def test_network_failure_is_structured(monkeypatch, tmp_path, fail_after_tree):
 
     assert error.value.code == "EXAMPLE_NETWORK_ERROR"
     assert ("Remove the incomplete destination" in error.value.hint) is fail_after_tree
+    assert (str(destination) in error.value.hint) is fail_after_tree
     assert destination.exists() is fail_after_tree
 
 
