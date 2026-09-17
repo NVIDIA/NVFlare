@@ -190,6 +190,7 @@ def _download_example(revision, source_path, destination, destination_path=None)
     encoded_source_path = quote(source_path, safe="/")
     tree_url = f"https://api.github.com/repos/{REPOSITORY}/git/trees/{revision}:{encoded_source_path}?recursive=1"
     timeout = (get_connect_timeout(), 30)
+    # Leave a created destination in place on failure; recovery messages identify it for explicit user cleanup.
     destination_created = False
     try:
         with requests.Session() as session:
