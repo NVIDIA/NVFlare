@@ -30,8 +30,13 @@ def test_catalog_entries_have_category_and_source_path_and_exist():
         "category": "advanced",
         "source_path": "examples/advanced/cifar10/pt",
     }
+    assert catalog["collab-pt"] == {
+        "category": "advanced",
+        "source_path": "examples/advanced/collab/pt_cifar10",
+        "destination_path": "collab/pt_cifar10",
+    }
     for entry in catalog.values():
-        assert set(entry) == {"category", "source_path"}
+        assert {"category", "source_path"} <= set(entry) <= {"category", "source_path", "destination_path"}
         assert not entry["source_path"].startswith("examples/tutorials/")
         source = REPO_ROOT / entry["source_path"]
         assert source.is_dir()
@@ -46,6 +51,7 @@ def test_catalog_excludes_examples_that_require_files_outside_the_downloaded_sub
     source_paths = {entry["source_path"] for entry in catalog.values()}
 
     assert "examples/advanced/cifar10/pt" in source_paths
+    assert "examples/advanced/collab/pt_cifar10" in source_paths
     assert "examples/advanced/experiment-tracking" in source_paths
     assert (REPO_ROOT / "examples/advanced/experiment-tracking/prepare_data.sh").is_file()
     assert "examples/hello-world/agent-skills/pytorch-conversion" in source_paths
@@ -54,7 +60,6 @@ def test_catalog_excludes_examples_that_require_files_outside_the_downloaded_sub
             "examples/advanced/cifar10/pt/cifar10-real-world",
             "examples/advanced/cifar10/pt/cifar10-sim",
             "examples/advanced/collab/pt_async_cifar10",
-            "examples/advanced/collab/pt_cifar10",
             "examples/advanced/experiment-tracking/mlflow",
             "examples/advanced/experiment-tracking/tensorboard",
             "examples/advanced/experiment-tracking/wandb",
@@ -64,6 +69,15 @@ def test_catalog_excludes_examples_that_require_files_outside_the_downloaded_sub
             "examples/devops/openshift",
         }
     )
+
+
+def test_collab_pt_quickstart_uses_downloaded_package_layout():
+    readme = (REPO_ROOT / "examples" / "advanced" / "collab" / "pt_cifar10" / "README.md").read_text(encoding="utf-8")
+
+    assert "nvflare examples get collab-pt" in readme
+    assert "python -m pip install -r collab/pt_cifar10/requirements.txt" in readme
+    assert "python collab/pt_cifar10/prepare_data.py" in readme
+    assert "python -m collab.pt_cifar10.fedavg.job" in readme
 
 
 def test_experiment_tracking_quickstart_uses_downloaded_layout():
@@ -143,6 +157,9 @@ def test_agent_skill_examples_install_skills_from_repository(example_name):
         {"demo": {"category": "test", "source_path": "outside/demo"}},
         {"demo": {"category": "test", "source_path": "examples/../demo"}},
         {"demo": {"category": "test", "source_path": "examples/demo/"}},
+        {"demo": {"category": "test", "source_path": "examples/demo", "destination_path": "/demo"}},
+        {"demo": {"category": "test", "source_path": "examples/demo", "destination_path": "../demo"}},
+        {"demo": {"category": "test", "source_path": "examples/demo", "destination_path": "demo/"}},
         {"demo": {"source_path": "examples/demo"}},
         {"demo": {"category": "Bad Category", "source_path": "examples/demo"}},
         {

@@ -47,8 +47,12 @@ def load_catalog(path=None):
             error = "must map a lowercase short name to a catalog entry"
         elif entry.duplicate_keys:
             error = f"contains duplicate key {entry.duplicate_keys[0]}"
-        elif set(entry) != {"category", "source_path"}:
-            error = "must contain category and source_path"
+        elif not {"category", "source_path"} <= set(entry) or set(entry) - {
+            "category",
+            "source_path",
+            "destination_path",
+        }:
+            error = "must contain category and source_path, with optional destination_path"
         elif not isinstance(entry["category"], str) or not _NAME.fullmatch(entry["category"]):
             error = "category must be a lowercase name"
         if not error:
@@ -65,6 +69,18 @@ def load_catalog(path=None):
                 error = "source_path must be a normalized path below examples/"
             elif source_path in source_paths:
                 error = f"duplicates source_path {source_path}"
+        if not error and "destination_path" in entry:
+            destination_path = entry["destination_path"]
+            path_value = PurePosixPath(destination_path) if isinstance(destination_path, str) else None
+            normalized_path = path_value.as_posix() if path_value else None
+            parts = path_value.parts if path_value else ()
+            if (
+                not parts
+                or path_value.is_absolute()
+                or any(part in {"", ".", ".."} for part in parts)
+                or normalized_path != destination_path
+            ):
+                error = "destination_path must be a normalized relative path"
         if error:
             errors.append({"name": name, "error": error})
             continue

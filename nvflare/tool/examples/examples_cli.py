@@ -181,7 +181,7 @@ def _validate_tree_entries(entries, source_path):
     return files
 
 
-def _download_example(revision, source_path, destination):
+def _download_example(revision, source_path, destination, destination_path=None):
     encoded_source_path = quote(source_path, safe="/")
     tree_url = f"https://api.github.com/repos/{REPOSITORY}/git/trees/{revision}:{encoded_source_path}?recursive=1"
     timeout = (get_connect_timeout(), 30)
@@ -212,9 +212,10 @@ def _download_example(revision, source_path, destination):
             except FileExistsError:
                 _destination_exists(destination)
             destination_created = True
+            content_directory = destination / destination_path if destination_path else destination
             for entry, relative_parts in files:
                 relative = entry["path"]
-                target = destination.joinpath(*relative_parts)
+                target = content_directory.joinpath(*relative_parts)
                 target.parent.mkdir(parents=True, exist_ok=True)
                 repository_path = f"{source_path}/{relative}"
                 raw_url = (
@@ -255,7 +256,8 @@ def get_example(version_info, catalog, *, name, destination=None):
 
     revision = _source_revision(version_info)
     entry = catalog[name]
-    _download_example(revision, entry["source_path"], destination)
+    destination_path = entry.get("destination_path")
+    _download_example(revision, entry["source_path"], destination, destination_path)
     warnings = [
         {
             "code": "EXAMPLE_DEPENDENCY_GUIDANCE",
@@ -268,8 +270,13 @@ def get_example(version_info, catalog, *, name, destination=None):
         }
     ]
 
+    content_directory = destination / destination_path if destination_path else destination
     readme = next(
-        (candidate for candidate in (destination / "README.md", destination / "README.rst") if candidate.is_file()),
+        (
+            candidate
+            for candidate in (content_directory / "README.md", content_directory / "README.rst")
+            if candidate.is_file()
+        ),
         None,
     )
     if readme is None:
@@ -289,6 +296,8 @@ def get_example(version_info, catalog, *, name, destination=None):
         "source_url": f"https://github.com/{REPOSITORY}/tree/{revision}/{entry['source_path']}",
         "nvflare_version": version_info.get("version"),
     }
+    if destination_path:
+        provenance["destination_path"] = destination_path
     (destination / PROVENANCE_FILE).write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
     return {
         **provenance,
@@ -376,9 +385,8 @@ def handle_examples_cmd(args):
             print_human("Next:")
             print_human(f"  cd {shlex.quote(result['directory'])}")
             if result["readme"]:
-                print_human(
-                    f"\nFollow {Path(result['readme']).name} for dependency, preparation, and run instructions."
-                )
+                readme_path = Path(result["readme"]).relative_to(result["directory"])
+                print_human(f"\nFollow {readme_path} for dependency, preparation, and run instructions.")
     except ExampleError as error:
         output_error_message(error.code, str(error), error.hint, exit_code=1)
     except KeyboardInterrupt:

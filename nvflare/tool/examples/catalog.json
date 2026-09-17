@@ -111,6 +111,11 @@
     "source_path": "examples/advanced/collab/pt_llm_sft",
     "category": "advanced"
   },
+  "collab-pt": {
+    "source_path": "examples/advanced/collab/pt_cifar10",
+    "destination_path": "collab/pt_cifar10",
+    "category": "advanced"
+  },
   "custom-auth": {
     "source_path": "examples/advanced/custom_authentication",
     "category": "advanced"

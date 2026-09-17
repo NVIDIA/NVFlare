@@ -87,24 +87,28 @@ def _mock_session(monkeypatch, *responses):
 def _mock_download(
     monkeypatch,
     *,
+    source_path=SOURCE_PATH,
     requirements="nvflare[PT]~=2.9.0rc\ntorch\n",
     nested_requirements=None,
     readme="README.md",
     readme_contents="# Example\n",
 ):
-    def download(revision, source_path, destination):
+    def download(revision, requested_source_path, destination, destination_path=None):
         assert revision == REVISION
-        assert source_path == SOURCE_PATH
+        assert requested_source_path == source_path
         destination.mkdir()
+        content_directory = destination / destination_path if destination_path else destination
+        if destination_path:
+            content_directory.mkdir(parents=True)
         if readme is not None:
-            (destination / readme).write_text(readme_contents)
-        (destination / "job.py").write_text("print('example')\n")
-        (destination / "nested").mkdir()
-        (destination / "nested/client.py").write_text("# client\n")
+            (content_directory / readme).write_text(readme_contents)
+        (content_directory / "job.py").write_text("print('example')\n")
+        (content_directory / "nested").mkdir()
+        (content_directory / "nested/client.py").write_text("# client\n")
         if nested_requirements is not None:
-            (destination / "nested/requirements.txt").write_text(nested_requirements)
+            (content_directory / "nested/requirements.txt").write_text(nested_requirements)
         if requirements is not None:
-            (destination / "requirements.txt").write_text(requirements)
+            (content_directory / "requirements.txt").write_text(requirements)
 
     monkeypatch.setattr(examples_cli, "_download_example", download)
 
@@ -215,6 +219,37 @@ def test_download_fetches_path_scoped_tree(monkeypatch, tmp_path):
     assert len(session.requested) == 3
     assert session.requested[1].endswith(f"/{REVISION}/{SOURCE_PATH}/README.md")
     assert session.requested[2].endswith(f"/{REVISION}/{SOURCE_PATH}/nested/run.sh")
+
+
+def test_download_preserves_catalog_destination_path(monkeypatch, tmp_path):
+    tree = {
+        "truncated": False,
+        "tree": [
+            {"path": "README.md", "type": "blob", "mode": "100644"},
+            {"path": "fedavg/job.py", "type": "blob", "mode": "100644"},
+        ],
+    }
+    _mock_session(monkeypatch, _Response(metadata=tree), _Response(data=b"# Collab\n"), _Response(data=b"# job\n"))
+    destination = tmp_path / "collab-pt"
+
+    examples_cli._download_example(REVISION, "examples/advanced/collab/pt_cifar10", destination, "collab/pt_cifar10")
+
+    assert (destination / "collab/pt_cifar10/README.md").read_text() == "# Collab\n"
+    assert (destination / "collab/pt_cifar10/fedavg/job.py").read_text() == "# job\n"
+    assert not (destination / "README.md").exists()
+
+
+def test_get_reports_nested_readme_for_package_layout(monkeypatch, tmp_path):
+    source_path = "examples/advanced/collab/pt_cifar10"
+    _mock_download(monkeypatch, source_path=source_path)
+    destination = tmp_path / "collab-pt"
+
+    result = examples_cli.get_example(VERSION, CATALOG, name="collab-pt", destination=destination)
+
+    assert result["destination_path"] == "collab/pt_cifar10"
+    assert result["readme"] == str(destination / "collab/pt_cifar10/README.md")
+    provenance = json.loads((destination / examples_cli.PROVENANCE_FILE).read_text())
+    assert provenance["destination_path"] == "collab/pt_cifar10"
 
 
 @pytest.mark.parametrize("fail_after_tree", [False, True])
@@ -542,6 +577,22 @@ def test_human_output_points_to_readme(monkeypatch, capsys, tmp_path):
     assert "same stable, nightly, or editable distribution" in output
     assert "Follow README.md for dependency, preparation, and run instructions." in output
     assert "python job.py" not in output
+
+
+def test_human_output_points_to_nested_readme(monkeypatch, capsys, tmp_path):
+    from nvflare import cli
+
+    _mock_download(monkeypatch, source_path="examples/advanced/collab/pt_cifar10")
+    destination = tmp_path / "collab-pt"
+    monkeypatch.setattr("nvflare._version.get_versions", lambda: VERSION)
+    monkeypatch.setattr("sys.argv", ["nvflare", "examples", "get", "collab-pt", "--dest", str(destination)])
+
+    cli.run("nvflare")
+
+    assert (
+        "Follow collab/pt_cifar10/README.md for dependency, preparation, and run instructions."
+        in capsys.readouterr().out
+    )
 
 
 def test_get_json_is_machine_readable(monkeypatch, capsys, tmp_path):
