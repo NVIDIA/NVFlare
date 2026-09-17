@@ -2,6 +2,18 @@
 
 Cluster lifecycle + NVFlare storage bootstrap.
 
+## Working Directory
+
+Download this example and enter the preserved provider directory:
+
+```bash
+nvflare examples get devops-aws-eks
+cd devops-aws-eks/aws/eks
+```
+
+From an NVFlare source checkout, use `cd examples/devops/aws/eks` instead.
+The scripts keep generated kubeconfig files under the downloaded example root.
+
 ## Prereqs
 
 `aws` (authenticated), `eksctl`, `kubectl`. SSO: `aws configure sso && aws sso login --profile <p>`.

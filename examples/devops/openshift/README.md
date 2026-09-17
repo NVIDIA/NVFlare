@@ -2,9 +2,18 @@
 
 This directory contains the OpenShift-specific NVFlare deployment guide and helper scripts.
 
+Download the complete layout without cloning NVFlare:
+
+```bash
+nvflare examples get devops-openshift
+cd devops-openshift
+```
+
+The downloaded directory preserves `examples/devops/openshift`, so the
+commands below work from its root as written.
+
 - [index.md](index.md) is the detailed OpenShift deployment guide.
-- Repository `docker/Dockerfile.parent` builds the parent image used by server/client and admin pods.
-- Repository `docker/Dockerfile.job` builds the workload image used by job pods.
+- `scripts/build_images.sh` builds the revision-matched parent and workload images used by the example.
 - `scripts/create_openshift_cluster.sh` configures Red Hat OpenShift Local (CRC) and optionally starts it.
 - `scripts/start_openshift_cluster.sh` starts CRC, logs in with `oc`, and prepares the target project.
 - `scripts/cleanup_openshift_cluster.sh` deletes scripted deployment resources and stops CRC.
@@ -14,7 +23,7 @@ This directory contains the OpenShift-specific NVFlare deployment guide and help
   can import the Kubernetes Python client. This is the manual PVC-copy staging
   path; `nvflare deploy k8s stage` can be used instead to stage `local/` as a
   ConfigMap and `startup/` as a Secret before running Helm.
-- `scripts/k8s_submit_job.sh` submits `hello-numpy` from an in-cluster admin pod and waits for successful completion.
+- `scripts/k8s_submit_job.sh` exports the included NumPy job, submits it from an in-cluster admin pod, and waits for successful completion.
 - `scripts/k8s_watch.sh` shows an in-place live Rich pod table for the created pods.
 - `scripts/k8s_watch.py` implements the Rich table used by the shell wrapper.
 - `scripts/k8s_e2e.sh` runs provision, deploy, and submit in order. Set
@@ -85,17 +94,22 @@ PULL_SECRET_FILE="$HOME/Downloads/pull-secret.txt" \
 bash examples/devops/openshift/scripts/start_openshift_cluster.sh
 ```
 
-Run scripts from the repository root. Build the maintained images from `docker/Dockerfile.parent` and `docker/Dockerfile.job`, push them to a registry the cluster can pull from, then set `IMAGE` to the parent image and `JOB_IMAGE` to the workload image. Podman is supported for these build and push steps and is typically available by default on RHEL OpenShift hosts; Docker can be used instead by setting `CONTAINER_TOOL=docker`, and some RHEL installations provide `docker` as a Podman alias. A Docker daemon is not required. `ADMIN_IMAGE` defaults to `IMAGE`, so the parent image can also be used for the temporary admin pod. The parent image needs NVFlare with the `K8S` extra/Kubernetes Python client. A custom `COPY_IMAGE` needs `sh`, `sleep`, and `tar`; `JOB_IMAGE` only needs `tar` when the job workload itself needs it.
+Run scripts from the source or downloaded example root. The image-build helper
+uses the current source checkout when present. From a downloaded example, it
+reads `.nvflare-example.json` and prepares a temporary build context from the
+exact revision that supplied the example. Podman is the default; set
+`CONTAINER_TOOL=docker` to use Docker. `ADMIN_IMAGE` defaults to `IMAGE`, so the
+parent image can also be used for the temporary admin pod. The parent image
+needs NVFlare with the `K8S` extra/Kubernetes Python client. A custom
+`COPY_IMAGE` needs `sh`, `sleep`, and `tar`; `JOB_IMAGE` only needs `tar` when
+the job workload itself needs it.
 
 ```bash
 export PARENT_IMAGE=registry.example.com/nvflare-parent:dev
 export WORKLOAD_IMAGE=registry.example.com/nvflare-job:dev
 export CONTAINER_TOOL="${CONTAINER_TOOL:-podman}"
 
-"$CONTAINER_TOOL" build -t "$PARENT_IMAGE" -f docker/Dockerfile.parent .
-"$CONTAINER_TOOL" build -t "$WORKLOAD_IMAGE" -f docker/Dockerfile.job .
-"$CONTAINER_TOOL" push "$PARENT_IMAGE"
-"$CONTAINER_TOOL" push "$WORKLOAD_IMAGE"
+bash examples/devops/openshift/scripts/build_images.sh
 ```
 
 After the images are pushed, keep `PARENT_IMAGE` and `WORKLOAD_IMAGE` in the same shell and map them to the variables consumed by `k8s_e2e.sh`:

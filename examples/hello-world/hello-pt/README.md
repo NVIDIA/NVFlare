@@ -7,15 +7,30 @@ tracking service.
 
 ## Install
 
-Create and activate a virtual environment, then get the source and enter the
-example directory:
+Create and activate a virtual environment. If you downloaded this directory
+with `nvflare examples get hello-pt`, add the `PT` extra to the same
+NVFlare distribution already in use by running the matching command:
+
+```bash
+# Stable installation
+python -m pip install "nvflare[PT]"
+
+# Nightly installation
+python -m pip install "nvflare-nightly[PT]"
+```
+
+Do not run both commands. If you are working from a source checkout instead,
+install that checkout in editable mode so the example and NVFlare revision
+stay aligned:
 
 ```bash
 git clone https://github.com/NVIDIA/NVFlare.git
-cd NVFlare/examples/hello-world/hello-pt
+cd NVFlare
+python -m pip install -e ".[PT]"
+cd examples/hello-world/hello-pt
 ```
 
-Install the example dependencies from that directory:
+Install the remaining example dependencies from the example directory:
 
 ```bash
 python -m pip install -r requirements.txt
@@ -243,7 +258,24 @@ deterministic quickstart and its tested defaults are defined by `job.py`.
 
 ## Continue to POC and Production
 
-After completing the simulation, continue with the
-[advanced environment-continuity example](../../advanced/hello-pt-environments/README.md)
-to run the same learning application in a local POC or an already-running production deployment. That example also
-covers experiment tracking, full cross-site evaluation, external-process execution, and memory tuning.
+The advanced environment-continuity example reuses files from this example, so
+it must run from a full NVFlare checkout. If you are already using a source
+checkout, continue in `examples/advanced/hello-pt-environments`.
+
+If you downloaded this standalone directory with `nvflare examples get`, use
+its recorded revision to retrieve the matching source layout:
+
+```bash
+NVFLARE_REVISION=$(nvflare examples revision)
+printf 'Guide: https://github.com/NVIDIA/NVFlare/tree/%s/examples/advanced/hello-pt-environments\n' \
+  "$NVFLARE_REVISION"
+git clone https://github.com/NVIDIA/NVFlare.git ../nvflare-source
+git -C ../nvflare-source checkout "$NVFLARE_REVISION"
+cd ../nvflare-source/examples/advanced/hello-pt-environments
+```
+
+Keep using the same revision-matched NVFlare installation and `PT` extra from
+the beginner example. Then follow that directory's README to run the same
+learning application in a local POC or an already-running production
+deployment. It also covers experiment tracking, full cross-site evaluation,
+external-process execution, and memory tuning.

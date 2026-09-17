@@ -110,6 +110,7 @@ setup(
         "nvflare.dashboard.application": extra_files,
         "nvflare.tool.job": job_templates,
         "nvflare.tool.deploy": deploy_templates,
+        "nvflare.tool.examples": ["catalog.json"],
         "nvflare.tool.recipe": ["recipe_catalog.json"],
     },
     include_package_data=True,

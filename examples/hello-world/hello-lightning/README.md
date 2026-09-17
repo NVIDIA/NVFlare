@@ -4,25 +4,42 @@ federated averaging (FedAvg), FedProx, or SCAFFOLD. The same patched client scri
 configurations.
 
 ## NVIDIA FLARE Installation
-for the complete installation instructions, see [Installation](https://nvflare.readthedocs.io/en/main/installation.html)
+For the complete installation instructions, see
+[Installation](https://nvflare.readthedocs.io/en/main/installation.html).
 
-Install the example dependencies:
+For an installed stable or nightly package, add the PyTorch extra to that same
+distribution. Choose the matching installation command:
 
+```bash
+# Stable installation
+python -m pip install "nvflare[PT]"
+
+# Nightly installation
+python -m pip install "nvflare-nightly[PT]"
 ```
+
+Then download the matching example without a repository checkout:
+
+```bash
+nvflare examples get hello-lightning
+cd hello-lightning
+```
+
+For source development, clone NVFlare, install that checkout, and enter the
+maintained example directory:
+
+```bash
+git clone https://github.com/NVIDIA/NVFlare.git
+cd NVFlare
+git switch <release branch>
+python -m pip install -e ".[PT]"
+cd examples/hello-world/hello-lightning
+```
+
+Install the remaining example dependencies from that directory:
+
+```bash
 python -m pip install -r requirements.txt
-```
-
-Get the example code from github: 
-```
-    git clone https://github.com/NVIDIA/NVFlare.git
-```
-
-then navigate to the hello-lightning directory:
-
-```
-    cd NVFlare
-    git switch <release branch>
-    cd examples/hello-world/hello-lightning
 ```
 
 ## Code Structure

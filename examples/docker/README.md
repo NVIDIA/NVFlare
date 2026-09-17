@@ -6,8 +6,17 @@ SP/CP containers are started manually; SJ/CJ containers are launched automatical
 ## Prerequisites
 
 - Docker with a working daemon
-- NVFlare installed (development install from repo root: `pip install -e .[dev,PT]`)
+- NVFlare installed with the required extras
 - Run all commands from the `examples/docker` directory unless noted otherwise
+
+Download the example without cloning NVFlare:
+
+```bash
+nvflare examples get docker-runtime
+cd docker-runtime/examples/docker
+```
+
+From a source checkout, use `cd examples/docker` instead.
 
 ## Step 0: Build Docker images
 
@@ -15,13 +24,14 @@ SP/CP containers are started manually; SJ/CJ containers are launched automatical
 bash build_docker.sh
 ```
 
-The recommended way to run this example is from a Git checkout. The build
-script derives the NVFlare base version from the nearest version tag, so no
-version environment variable is required.
+The build script uses the current checkout when one is present. For an example
+download, it reads the exact revision from `.nvflare-example.json` and prepares
+a temporary shallow checkout automatically. The checkout is deleted when the
+build finishes, so the resulting images contain the same NVFlare source that
+supplied the example.
 
-GitHub-generated source archives and other Git-less source copies do not contain
-the metadata needed to determine a version. If you intentionally use one, provide
-`NVFL_BASE_VERSION` as an advanced override:
+If version metadata is unavailable, provide `NVFL_BASE_VERSION` as an advanced
+override:
 
 ```bash
 NVFL_BASE_VERSION=2.9.0 bash build_docker.sh

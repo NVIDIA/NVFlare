@@ -11,14 +11,16 @@ Running ``nvflare -h`` shows the current command surface:
 
 .. code-block:: none
 
-   usage: nvflare [-h] [--version] [--format {txt,json}]
+   usage: nvflare [-h] [--version] [--format {txt,json,jsonl}]
                   [--connect-timeout CONNECT_TIMEOUT] ...
 
 Global options
 ==============
 
-- ``--version`` / ``-V``: print the NVFlare version
-- ``--format {txt,json}``: select human-readable output or a JSON envelope
+- ``--version`` / ``-V``: print the installed NVFlare package version
+- ``--format {txt,json,jsonl}``: select human-readable output or a JSON
+  envelope. JSON Lines output is supported only by the streaming
+  ``nvflare job monitor`` command; other commands reject ``jsonl``.
 - ``--connect-timeout``: control server connection timeout for remote commands
 
 Human-readable argument errors print command help first, then the specific
@@ -39,6 +41,7 @@ Command groups
 - ``config``: manage local CLI settings, including startup-kit registration
   and active-kit selection
 - ``recipe``: list built-in recipe families for exported jobs
+- ``examples``: download release-matched runnable examples from GitHub
 - ``preflight-check``: validate a provisioned startup kit before deployment
   (``preflight_check`` and ``preflight`` remain compatibility aliases)
 - ``dashboard``: start the Dashboard service
@@ -62,5 +65,6 @@ workflows unless you are maintaining an older setup.
    cert_command
    package_command
    recipe_command
+   examples_command
    preflight_check
    dashboard_command

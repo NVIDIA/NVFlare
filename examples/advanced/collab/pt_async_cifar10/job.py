@@ -36,12 +36,8 @@ DEFAULT_SPLIT_PREFIX = "/tmp/cifar10_splits/cifar10_fedavg"
 
 
 def prepare_splits(num_clients: int, alpha: float, seed: int) -> str:
-    """Use the splitter shared by the CIFAR-10 simulator examples."""
-    import sys
-
-    cifar10_src = EXAMPLE_DIR.parents[1] / "cifar10" / "pt" / "src"
-    sys.path.insert(0, str(cifar10_src))
-    from data.cifar10_data_split import split_and_save
+    """Prepare the standalone example's CIFAR-10 client shards."""
+    from cifar10_data import split_and_save
 
     return split_and_save(
         split_dir_prefix=DEFAULT_SPLIT_PREFIX,

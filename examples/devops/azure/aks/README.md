@@ -2,8 +2,17 @@
 
 Cluster lifecycle for the Azure multicloud NVFlare path.
 
-For the end-to-end Azure deployment flow, config shape, and required
-NVFlare values, start with [../README.md](../README.md).
+## Working Directory
+
+Download this example and enter the preserved provider directory:
+
+```bash
+nvflare examples get devops-azure-aks
+cd devops-azure-aks/azure/aks
+```
+
+From an NVFlare source checkout, use `cd examples/devops/azure/aks` instead.
+The scripts keep generated kubeconfig files under the downloaded example root.
 
 ## Prereqs
 
@@ -50,4 +59,3 @@ kubectl delete -f inflate.yaml
 - AKS Automatic is Azure's closest equivalent to EKS Auto Mode.
 - First workload can take a few minutes while node auto-provisioning
   allocates VMs. Subscription D-series quota can block provisioning.
-- NVFlare deploy and teardown commands live in [../README.md](../README.md).

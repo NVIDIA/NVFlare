@@ -20,15 +20,27 @@ troubleshooting note. This page provides the guided first-run path.
 Get and install the example
 ---------------------------
 
-Create and activate a Python virtual environment, then get the source and enter
-the example directory:
+Create and activate a Python virtual environment. For a released NVFlare
+package, install its PyTorch extra and download the example that matches the
+installed package revision:
+
+.. code-block:: bash
+
+   python -m pip install "nvflare[PT]"
+   nvflare examples get hello-pt
+   cd hello-pt
+
+To work from source instead, clone NVFlare and install that checkout in
+editable mode so its package and example stay aligned:
 
 .. code-block:: bash
 
    git clone https://github.com/NVIDIA/NVFlare.git
-   cd NVFlare/examples/hello-world/hello-pt
+   cd NVFlare
+   python -m pip install -e ".[PT]"
+   cd examples/hello-world/hello-pt
 
-Install the dependencies from that directory:
+Install the remaining example dependencies from that directory:
 
 .. code-block:: bash
 
