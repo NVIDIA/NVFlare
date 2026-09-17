@@ -40,6 +40,41 @@ existing federation-shutdown policy. Coordinate startup and review the configure
 validation interval; changing federation membership requires trusted
 reprovisioning rather than accepting a shorter server-provided list.
 
+### Per-participant attestation namespaces
+
+Provisioning now writes `required_site_verifier_ids` into each generated
+CCManager configuration. It maps every protected site's logical identity to
+the verifier component IDs corresponding to that site's configured issuers.
+At startup, CCManager resolves those IDs to namespaces using the local trusted
+verifier components. The received namespace set must match that site's set
+exactly, and every proof must verify; missing, duplicate, extra or unknown
+namespaces fail closed. Server identity is `server`, not its certificate DNS name.
+
+For example, a non-CoCo CPU-only SNP server and an SNP+GPU client share both
+verifiers but have different requirements:
+
+```json
+"cc_verifier_ids": ["snp_authorizer", "gpu_authorizer"],
+"cc_enabled_sites": ["server", "site-1"],
+"required_site_verifier_ids": {
+  "server": ["snp_authorizer"],
+  "site-1": ["snp_authorizer", "gpu_authorizer"]
+}
+```
+
+The ordinary server in this client-only CoCo example is not a protected site;
+both its kit and the clients' kits map each protected client to
+`["coco_authorizer"]`. CPU/GPU appraisal inside that combined proof is still
+enforced by CoCoAuthorizer. No extra GPU token namespace is required.
+
+Re-run provisioning and distribute the regenerated kits to fix heterogeneous
+deployments. Existing hand-written/previously generated configurations without
+the mapping retain the strict all-verifier requirement; they do **not** silently
+accept arbitrary subsets. Direct configurations can add the mapping explicitly.
+It must cover exactly `cc_enabled_sites`, with a non-empty, duplicate-free list
+of known verifier IDs for each site. Only trusted provisioning may change it;
+peer tokens and discovery responses cannot reduce the requirements.
+
 ## Before provisioning
 
 ### Secure-services owner: export the AS signing public key
@@ -179,7 +214,7 @@ Defaults (constructor arguments):
 | Component | Argument | Default |
 | --- | --- | --- |
 | CCManager | `registration_token_timeout` | 300 seconds |
-| CCManager | `refresh_token_timeout` | 30 seconds |
+| CCManager | `refresh_token_timeout` | Derived: `min(30, get_token_request_timeout / 2)`; 22.5 seconds with the default 45-second request timeout |
 | CCManager | `get_token_request_timeout` | 45 seconds |
 | CoCoAuthorizer | `retry_max_attempts` | 10 attempts, including the first |
 | CoCoAuthorizer | `retry_initial_delay` | 1 second |
@@ -197,8 +232,8 @@ bounded worker or retry classification.
 
 Set the authorizer retry options under `cc_issuers[].args` and the CCManager
 timeouts under `cc_attestation` in the client's `cc_config` YAML referenced by
-`project.yaml` (see `cc_site-1.yml`). For example, these optional fields retain
-the defaults; adjust the values as needed:
+`project.yaml` (see `cc_site-1.yml`). For example, these optional fields explicitly
+select a 30-second refresh budget; omit it to use the derived default:
 
 ```yaml
 cc_issuers:
@@ -238,8 +273,13 @@ peer's `refresh_token_timeout`, with room for network transit (the constructor
 also checks this against its own refresh budget). Rebuild client images and
 deploy updated ordinary-server code. Omitting the optional settings retains
 the defaults.
-Existing resource configurations that explicitly set the old 10-second peer
-timeout must increase it (for example, to 45 seconds for a 30-second refresh budget).
+Existing resource configurations that set the old 10-second peer timeout but
+omit `refresh_token_timeout` now receive a 5-second refresh budget and can start
+without changing that request timeout. An explicitly configured refresh budget
+is preserved, not clamped: a 30-second budget with a 10-second request timeout
+still fails validation. Use matching timeouts across peers; a local derived
+budget does not change a remote participant's configuration. Provisioning and
+CCManager share the same default-resolution and finite-positive validation.
 
 Shutdown cancels outstanding retry waits. A bounded caller wait and one guarded
 worker per CoCo authorizer prevent stalled HTTP from blocking registration
@@ -347,6 +387,49 @@ An incompatible token format or policy fails closed rather than silently
 accepting missing CPU/GPU appraisal claims. Proof of possession prevents forwarding
 an EAR alone from satisfying NVFlare; it does not make arbitrary trusted
 application code safe or replace the guest policy's isolation protections.
+
+### Optional local EAR constraints
+
+The default trust boundary delegates platform and workload approval to the pinned
+AS signer and secure services' AS/RVPS/KBS policies. The FL proof's project-specific
+`audience` is always checked; it is distinct from the inner EAR audience. A deployment
+that needs additional FL-side restrictions can configure a verifier directly:
+
+```python
+verifier = CoCoAuthorizer(
+    trustee_public_key=as_public_key_pem,
+    audience="nvflare-coco:my_project",
+    ear_audience="my-reviewed-as-audience",  # only if AS actually emits this aud
+    workload_constraints={
+        "site-1": {
+            "init_data": approved_init_data_sha256,  # 64 lowercase hex characters
+            "measurement": approved_snp_measurement,  # 96 lowercase hex characters
+        },
+    },
+)
+```
+
+Both options default to `None` for the existing Trustee flow. With constraints
+configured, every verified subject must have an entry; all configured claims
+must match signed CPU evidence. An entry can pin either or both fields. Obtain
+values from the trusted platform and workload owner, never from the CoCo host.
+An absent/mismatched configured EAR audience or workload claim fails closed.
+The generated client YAML schema does not infer these optional verifier pins:
+configure them on the ordinary server's verifier after approving the release.
+Do not bake a workload's own final InitData digest into that same image, which
+would create a circular image/policy dependency.
+
+Replay IDs are intentionally local to each verifier process. A still-valid proof
+may be accepted by a different verifier or after restart. They do not prove a
+fresh response to a verifier-issued nonce. Deployments requiring that stronger
+property need a separate challenge/response protocol; no such guarantee is made
+here. Keep secure FL authentication, site binding and protected client keys.
+
+Generated CoCo managers set `require_site_binding: true`. A custom authorizer
+must declare `supports_site_binding = True` and implement `verify_for_site`;
+otherwise startup fails. Legacy non-CoCo managers default to `false`. The base
+`generate_with_retry` adapter cannot interrupt a legacy blocking `generate()`;
+CoCo's implementation enforces its bounded request/retry budget explicitly.
 
 ### What verification does not authorize
 

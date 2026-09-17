@@ -18,6 +18,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
+from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, ReservedKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import NotAuthenticated
@@ -52,6 +53,129 @@ def test_peer_timeout_must_exceed_refresh_budget():
         CCManager([], [], get_token_request_timeout=30, refresh_token_timeout=30)
 
 
+@pytest.mark.parametrize("request_timeout,refresh", [(10, 5), (45, 22.5), (120, 30), (0.5, 0.25)])
+def test_omitted_refresh_budget_adapts_to_peer_timeout(request_timeout, refresh):
+    manager = CCManager([], [], get_token_request_timeout=request_timeout)
+    assert manager.get_token_request_timeout == request_timeout
+    assert manager.refresh_token_timeout == refresh
+
+
+def test_explicit_refresh_budget_is_preserved():
+    manager = CCManager([], [], get_token_request_timeout=45, refresh_token_timeout=30)
+    assert manager.refresh_token_timeout == 30
+
+
+@pytest.mark.parametrize("declared", [False, True])
+def test_site_binding_requires_capability_and_implementation(declared):
+    class Legacy(CCAuthorizer):
+        supports_site_binding = declared
+
+        def get_namespace(self):
+            return "legacy"
+
+        def generate(self):
+            return "token"
+
+        def verify(self, token):
+            return True
+
+    manager = CCManager([], ["legacy"], require_site_binding=True)
+    context = Mock(spec=FLContext)
+    context.get_engine.return_value.get_component.return_value = Legacy()
+    with pytest.raises(RuntimeError, match="site binding"):
+        manager._setup_cc_authorizers(context)
+
+
+def heterogeneous_manager():
+    manager = CCManager(
+        [],
+        ["snp", "gpu"],
+        cc_enabled_sites=["server", "client1"],
+        required_site_verifier_ids={"server": ["snp"], "client1": ["snp", "gpu"]},
+    )
+    verifiers = {}
+    for name in ("snp", "gpu"):
+        verifier = Mock(spec=CCAuthorizer)
+        verifier.get_namespace.return_value = "namespace-" + name
+        verifier.verify_for_site.return_value = True
+        verifiers[name] = verifier
+    context = Mock(spec=FLContext)
+    context.get_engine.return_value.get_component.side_effect = verifiers.get
+    manager._setup_cc_authorizers(context)
+    return manager, verifiers
+
+
+def site_tokens(*names):
+    return [{CC_NAMESPACE: "namespace-" + name, CC_TOKEN: VALID_TOKEN} for name in names]
+
+
+def test_cpu_only_server_and_cpu_gpu_client_pass_with_site_requirements():
+    manager, verifiers = heterogeneous_manager()
+    _, errors = manager._verify_participants_tokens(
+        {"server": site_tokens("snp"), "client1": site_tokens("snp", "gpu")}
+    )
+    assert errors == []
+    assert verifiers["snp"].verify_for_site.call_count == 2
+    verifiers["gpu"].verify_for_site.assert_called_once_with(VALID_TOKEN, "client1")
+
+
+@pytest.mark.parametrize(
+    "site,names",
+    [
+        ("client1", ("snp",)),
+        ("client1", ("gpu",)),
+        ("client1", ("snp", "snp")),
+        ("client1", ("snp", "gpu", "unknown")),
+        ("server", ("snp", "gpu")),
+        ("server", ()),
+    ],
+)
+def test_per_site_requirements_reject_missing_duplicate_or_extra_tokens(site, names):
+    manager, verifiers = heterogeneous_manager()
+    _, errors = manager._verify_participants_tokens({site: site_tokens(*names)})
+    assert errors
+    for verifier in verifiers.values():
+        verifier.verify_for_site.assert_not_called()
+
+
+def test_per_site_namespace_match_still_requires_valid_proofs():
+    manager, verifiers = heterogeneous_manager()
+    verifiers["gpu"].verify_for_site.return_value = False
+    _, errors = manager._verify_participants_tokens({"client1": site_tokens("snp", "gpu")})
+    assert errors
+
+
+@pytest.mark.parametrize(
+    "requirements",
+    [
+        [],
+        {},
+        {"server": []},
+        {"server": ["unknown"]},
+        {"server": ["snp", "snp"]},
+        {"server": [None]},
+        {"server": "snp"},
+        {"server": ["snp"], "extra": ["snp"]},
+    ],
+)
+def test_invalid_site_requirements_fail_at_construction(requirements):
+    with pytest.raises(ValueError, match="required_site_verifier_ids"):
+        CCManager([], ["snp"], cc_enabled_sites=["server"], required_site_verifier_ids=requirements)
+
+
+def test_site_requirements_fail_closed_before_namespace_resolution():
+    manager = CCManager([], ["snp"], cc_enabled_sites=["server"], required_site_verifier_ids={"server": ["snp"]})
+    _, errors = manager._verify_participants_tokens({"server": site_tokens("snp")})
+    assert errors
+
+
+def test_old_kits_without_site_metadata_keep_strict_requirement():
+    manager, _ = heterogeneous_manager()
+    manager.required_site_verifier_ids = None
+    _, errors = manager._verify_participants_tokens({"server": site_tokens("snp")})
+    assert errors  # Reprovision rather than silently weaken the GPU requirement.
+
+
 def test_manager_selects_registration_and_refresh_budgets(cc_test_env):
     manager, context, issuer = cc_test_env
     manager._generate_and_attach_tokens(context)
@@ -60,7 +184,7 @@ def test_manager_selects_registration_and_refresh_budgets(cc_test_env):
     assert stop is manager.cross_validation_stop_event
     manager._generate_fresh_tokens_for_validation()
     timeout, stop = issuer.generate_with_retry.call_args.args
-    assert 29 < timeout <= 30
+    assert 21.5 < timeout <= 22.5
     assert manager.get_token_request_timeout == 45
 
 
@@ -264,7 +388,7 @@ class TestCCManager:
         with (
             patch.object(manager, "_get_all_cc_enabled_sites", return_value=[("client1-fqcn", "client1")]),
             patch.object(manager, "_shutdown_system") as shutdown,
-            patch.object(manager, "_validate_participants_tokens") as validate,
+            patch.object(manager, "_verify_participants_tokens") as validate,
         ):
             assert manager._perform_cross_site_validation(context) is False
 
@@ -363,7 +487,7 @@ class TestCCManager:
         cc_manager, fl_ctx, tdx_authorizer = cc_test_env
 
         # Validate tokens
-        err = cc_manager._validate_participants_tokens(participants_tokens)
+        err = cc_manager._verify_participants_tokens(participants_tokens).error
 
         if expected_error:
             assert expected_error in err
@@ -433,7 +557,7 @@ class TestCCManager:
 
         # Mock _shutdown_system
         with patch.object(cc_manager, "_shutdown_system") as mock_shutdown:
-            cc_manager._validate_client_tokens(mock_fl_ctx)
+            cc_manager.handle_event(EventType.CLIENT_REGISTER_RECEIVED, mock_fl_ctx)
             # Should not call shutdown for valid token
             mock_shutdown.assert_not_called()
 
@@ -448,7 +572,7 @@ class TestCCManager:
         # Mock _shutdown_system
         with patch.object(cc_manager, "_shutdown_system") as mock_shutdown:
             with pytest.raises(NotAuthenticated, match="CC info validation failed"):
-                cc_manager._validate_client_tokens(mock_fl_ctx)
+                cc_manager.handle_event(EventType.CLIENT_REGISTER_RECEIVED, mock_fl_ctx)
             mock_shutdown.assert_not_called()
 
     @pytest.mark.parametrize("payload", [None, {}, {"server": []}, {"client1": []}, {"client1": [], "server": []}])
@@ -457,27 +581,27 @@ class TestCCManager:
         _, context = _create_peer_cc_context("client1", VALID_TOKEN)
         context.get_peer_context().set_prop(CC_INFO, payload)
         with pytest.raises(NotAuthenticated):
-            manager._validate_client_tokens(context)
+            manager.handle_event(EventType.CLIENT_REGISTER_RECEIVED, context)
 
     def test_ordinary_client_needs_no_attestation(self, cc_test_env):
         manager, _, verifier = cc_test_env
         _, context = _create_peer_cc_context("plain-client", VALID_TOKEN)
         context.get_peer_context.return_value = None
         with patch.object(manager, "_shutdown_system") as shutdown:
-            manager._validate_client_tokens(context)
+            manager.handle_event(EventType.CLIENT_REGISTER_RECEIVED, context)
         shutdown.assert_not_called()
         verifier.verify_for_site.assert_not_called()
 
     def test_verifier_gets_expected_participant(self, cc_test_env):
         manager, _, verifier = cc_test_env
         _, context = _create_peer_cc_context("client1", VALID_TOKEN)
-        manager._validate_client_tokens(context)
+        manager.handle_event(EventType.CLIENT_REGISTER_RECEIVED, context)
         verifier.verify_for_site.assert_called_once_with(VALID_TOKEN, "client1")
 
     @pytest.mark.parametrize("tokens", [[None], [{}], [{CC_NAMESPACE: "unknown"}], [{CC_NAMESPACE: []}]])
     def test_invalid_token_envelopes_fail_closed(self, cc_test_env, tokens):
         manager, _, _ = cc_test_env
-        assert manager._validate_participants_tokens({"client1": tokens})
+        assert manager._verify_participants_tokens({"client1": tokens}).error
 
     @pytest.mark.parametrize("returned_name", ["client1", "server", "client2"])
     def test_periodic_response_cannot_rename_requested_site(self, cc_test_env, returned_name):
@@ -507,7 +631,7 @@ class TestCCManager:
         context = FLContext()
         context.set_prop(CC_INFO, payload)
         with patch.object(manager, "_shutdown_system") as shutdown:
-            manager._validate_server_tokens(context)
+            manager.handle_event(EventType.AFTER_CLIENT_REGISTER, context)
         shutdown.assert_called_once()
         verifier.verify_for_site.assert_not_called()
 
@@ -517,7 +641,7 @@ class TestCCManager:
         context = FLContext()
         context.set_prop(CC_INFO, {"server": [{CC_TOKEN: token, CC_NAMESPACE: TDX_NAMESPACE}]})
         with patch.object(manager, "_shutdown_system") as shutdown:
-            manager._validate_server_tokens(context)
+            manager.handle_event(EventType.AFTER_CLIENT_REGISTER, context)
         assert shutdown.called is not valid
         verifier.verify_for_site.assert_called_once_with(token, "server")
 
@@ -528,7 +652,7 @@ class TestCCManager:
         context = FLContext()
         context.set_prop(CC_INFO, payload)
         with patch.object(manager, "_shutdown_system") as shutdown:
-            manager._validate_server_tokens(context)
+            manager.handle_event(EventType.AFTER_CLIENT_REGISTER, context)
         shutdown.assert_not_called()
         verifier.verify_for_site.assert_not_called()
 

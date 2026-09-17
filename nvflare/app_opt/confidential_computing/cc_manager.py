@@ -12,13 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import math
 import os
 import random
 import sys
 import threading
 import time
-from typing import Tuple
+from typing import NamedTuple, Tuple
 
 from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.event_type import EventType
@@ -28,6 +27,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import NotAuthenticated
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.app_opt.confidential_computing.cc_authorizer import CCAuthorizer, CCTokenGenerateError, CCTokenVerifyError
+from nvflare.app_opt.confidential_computing.cc_timeouts import resolve_token_timeouts
 from nvflare.fuel.f3.cellnet.core_cell import make_reply
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
@@ -51,6 +51,16 @@ TOKEN_EXPIRATION = "token_expiration"
 
 CC_VERIFICATION_FAILED = "not meeting CC requirements"
 
+
+class VerificationResult(NamedTuple):
+    verified: dict[str, bool]
+    errors: list[str]
+
+    @property
+    def error(self) -> str:
+        return "Participant " + ",".join(self.errors) + CC_VERIFICATION_FAILED if self.errors else ""
+
+
 # Dedicated CC validation channel and topics
 CC_CHANNEL = "cc_validation"
 CC_TOPIC_REQUEST_TOKEN = "request_fresh_token"
@@ -67,7 +77,9 @@ class CCManager(FLComponent):
         get_site_request_timeout: float = 10.0,
         get_token_request_timeout: float = 45.0,
         registration_token_timeout: float = 300.0,
-        refresh_token_timeout: float = 30.0,
+        refresh_token_timeout: float | None = None,
+        required_site_verifier_ids: dict[str, list[str]] | None = None,
+        require_site_binding: bool = False,
     ):
         """Manage all confidential computing related tasks.
 
@@ -106,13 +118,37 @@ class CCManager(FLComponent):
             get_site_request_timeout: timeout value for get site request
             get_token_request_timeout: timeout value for get token request
             registration_token_timeout: total generation budget for registration (retry-capable issuers)
-            refresh_token_timeout: total generation budget for periodic refresh (retry-capable issuers)
+            refresh_token_timeout: periodic generation budget; None uses min(30, get_token_request_timeout / 2)
+            required_site_verifier_ids: locally provisioned site-to-required-verifier IDs. When omitted,
+                retain the strict all-verifier requirement; reprovision heterogeneous deployments to supply it.
+            require_site_binding: refuse verifiers that do not explicitly support authenticated site binding.
         """
         FLComponent.__init__(self)
         self.site_name = None
         self.cc_issuers_conf = cc_issuers_conf
         self.cc_verifier_ids = cc_verifier_ids
         self.cc_enabled_sites = cc_enabled_sites
+        self.required_site_verifier_ids = required_site_verifier_ids
+        self.required_site_namespaces = None
+        if type(require_site_binding) is not bool:
+            raise ValueError("require_site_binding must be a boolean")
+        self.require_site_binding = require_site_binding
+        if required_site_verifier_ids is not None:
+            if not isinstance(required_site_verifier_ids, dict) or set(required_site_verifier_ids) != set(
+                cc_enabled_sites
+            ):
+                raise ValueError("required_site_verifier_ids must cover exactly cc_enabled_sites")
+            for site, ids in required_site_verifier_ids.items():
+                if (
+                    not isinstance(site, str)
+                    or not site
+                    or not isinstance(ids, list)
+                    or not ids
+                    or any(not isinstance(v, str) or not v for v in ids)
+                    or len(set(ids)) != len(ids)
+                    or not set(ids).issubset(cc_verifier_ids)
+                ):
+                    raise ValueError(f"Invalid required_site_verifier_ids for {site}")
 
         if not isinstance(verify_frequency, int):
             raise ValueError(f"verify_frequency must be int, but got {type(verify_frequency).__name__}")
@@ -122,18 +158,10 @@ class CCManager(FLComponent):
         self.cc_verifiers = {}
 
         self.get_site_request_timeout = get_site_request_timeout
-        for name, value in (
-            ("registration_token_timeout", registration_token_timeout),
-            ("refresh_token_timeout", refresh_token_timeout),
-            ("get_token_request_timeout", get_token_request_timeout),
-        ):
-            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
-                raise ValueError(f"{name} must be finite and positive")
-        if get_token_request_timeout <= refresh_token_timeout:
-            raise ValueError("get_token_request_timeout must exceed refresh_token_timeout")
-        self.get_token_request_timeout = get_token_request_timeout
-        self.registration_token_timeout = registration_token_timeout
-        self.refresh_token_timeout = refresh_token_timeout
+        timeouts = resolve_token_timeouts(registration_token_timeout, refresh_token_timeout, get_token_request_timeout)
+        self.get_token_request_timeout = timeouts["get_token_request_timeout"]
+        self.registration_token_timeout = timeouts["registration_token_timeout"]
+        self.refresh_token_timeout = timeouts["refresh_token_timeout"]
 
         # Store engine reference for cell handlers
         self.engine = None
@@ -162,7 +190,9 @@ class CCManager(FLComponent):
             self._generate_and_attach_tokens(fl_ctx)
         elif event_type == EventType.AFTER_CLIENT_REGISTER:
             # Client side: validate server's CC token
-            self._validate_server_tokens(fl_ctx)
+            verdict = self._registration_verdict(FQCN.ROOT_SERVER, fl_ctx.get_prop(CC_INFO))
+            if verdict.error:
+                self._shutdown_system(f"CC info validation failed: {verdict.error}", fl_ctx)
         elif event_type == EventType.CLIENT_REGISTER_RECEIVED:
             # Server side: validate client's token and prepare server's token
             # Skip CC processing for admin clients
@@ -173,7 +203,12 @@ class CCManager(FLComponent):
 
             self.logger.info(f"Processing CC validation for client (type={client_type})")
 
-            self._validate_client_tokens(fl_ctx)
+            peer = fl_ctx.get_peer_context()
+            verdict = self._registration_verdict(
+                fl_ctx.get_prop(FLContextKey.CLIENT_NAME), peer.get_prop(CC_INFO) if peer else None
+            )
+            if verdict.error:
+                raise NotAuthenticated(f"CC info validation failed: {verdict.error}")
             self._generate_and_attach_tokens(fl_ctx)
         elif event_type == EventType.BEFORE_CHECK_CLIENT_RESOURCES:
             # Server side: job scheduler check client resources
@@ -216,14 +251,29 @@ class CCManager(FLComponent):
                 raise RuntimeError(f"cc_issuer_id {issuer_id} must be a CCAuthorizer, but got {type(issuer).__name__}")
             self.cc_issuers[issuer] = expiration
 
+        verifier_namespaces = {}
         for v_id in self.cc_verifier_ids:
             verifier = engine.get_component(v_id)
             if not isinstance(verifier, CCAuthorizer):
                 raise RuntimeError(f"cc_verifier_id {v_id} must be a CCAuthorizer, but got {type(verifier).__name__}")
+            if self.require_site_binding and (
+                verifier.supports_site_binding is not True
+                or type(verifier).verify_for_site is CCAuthorizer.verify_for_site
+            ):
+                raise RuntimeError(f"Verifier {v_id} does not support required site binding")
             namespace = verifier.get_namespace()
+            if not isinstance(namespace, str) or not namespace:
+                raise RuntimeError(f"Invalid namespace for verifier {v_id}")
             if namespace in self.cc_verifiers.keys():
                 raise RuntimeError(f"Authorizer with namespace: {namespace} already exist.")
             self.cc_verifiers[namespace] = verifier
+            verifier_namespaces[v_id] = namespace
+
+        if self.required_site_verifier_ids is not None:
+            self.required_site_namespaces = {
+                site: {verifier_namespaces[v_id] for v_id in ids}
+                for site, ids in self.required_site_verifier_ids.items()
+            }
 
     def _generate_and_attach_tokens(self, fl_ctx: FLContext):
         """Generate and attach CC tokens for sending to peer."""
@@ -231,116 +281,58 @@ class CCManager(FLComponent):
         fl_ctx.set_prop(key=CC_INFO, value={fl_ctx.get_identity_name(): cc_infos}, sticky=False, private=False)
         self.logger.info("Prepared CC tokens for peer")
 
-    def _validate_server_tokens(self, fl_ctx: FLContext):
-        """Validate the server's CC info during registration."""
-        # FL authenticates the root server before AFTER_CLIENT_REGISTER. Its
-        # logical CC identity is "server", not a peer-supplied envelope key or
-        # the deployment's certificate DNS name (see CCBuilder).
-        server_name = FQCN.ROOT_SERVER
-        if server_name not in self.cc_enabled_sites:
-            return  # An explicitly ordinary server does not need attestation.
-        server_cc_info = fl_ctx.get_prop(CC_INFO)
-        if not isinstance(server_cc_info, dict) or set(server_cc_info) != {server_name}:
-            msg = "CC info must name exactly the authenticated root server"
-            self.logger.error(msg)
-            self._shutdown_system(msg, fl_ctx)
-            return
+    def _registration_verdict(self, site, envelope):
+        """Check the authenticated registration envelope; no failure policy here."""
+        if not isinstance(site, str) or not site:
+            return VerificationResult({}, ["missing registration identity"])
+        if site not in self.cc_enabled_sites:
+            return VerificationResult({}, [])
+        if not isinstance(envelope, dict) or set(envelope) != {site}:
+            return VerificationResult({}, ["CC info must name exactly the authenticated participant"])
+        return self._verify_participants_tokens(envelope)
 
-        self._validate_cc_infos(server_cc_info, fl_ctx)
-
-    def _validate_client_tokens(self, fl_ctx: FLContext):
-        """Validate the client's CC info during registration."""
-        # This is the same asserted name subsequently authenticated against the
-        # registration certificate/nonce by ClientManager, not a CC_INFO key.
-        # Secure FL authentication must remain enabled.
-        client_name = fl_ctx.get_prop(FLContextKey.CLIENT_NAME)
-        if not isinstance(client_name, str) or not client_name:
-            raise NotAuthenticated("Missing registration client identity")
-        if client_name not in self.cc_enabled_sites:
-            return
-        peer_ctx = fl_ctx.get_peer_context()
-        if not peer_ctx:
-            raise NotAuthenticated("No peer context for protected client")
-        peer_cc_info = peer_ctx.get_prop(CC_INFO)
-        if not isinstance(peer_cc_info, dict) or set(peer_cc_info) != {client_name}:
-            raise NotAuthenticated("CC info must name exactly the registering client")
-        err = self._validate_participants_tokens(peer_cc_info)
-        if err:
-            # Reject this registration; do not shut down healthy participants.
-            raise NotAuthenticated(f"CC info validation failed: {err}")
-
-    def _validate_cc_infos(self, participants_cc_info: dict[str, list[dict[str, str]]], fl_ctx: FLContext):
-        """Shared validator for CC info (server or client).
-
-        Args:
-            participants_cc_info:
-                A dict of (participant_name, participant_cc_infos)
-                participant_cc_infos is a list of CC tokens.
-        """
-        err = self._validate_participants_tokens(participants_cc_info)
-        if err:
-            msg = f"CC info validation failed: {err}"
-            self.logger.error(msg)
-            self._shutdown_system(msg, fl_ctx)
-            return
-
-        self.logger.info(f"Validated CC info for: {participants_cc_info.keys()=}")
-
-    def _validate_participants_tokens(self, participants_tokens: dict[str, list[dict[str, str]]]) -> str:
-        self.logger.info(f"Validating participant tokens {participants_tokens.keys()=}")
-        _, invalid_participant_list = self._verify_participants_tokens(participants_tokens)
-        if invalid_participant_list:
-            invalid_participant_string = ",".join(invalid_participant_list)
-            return f"Participant {invalid_participant_string}" + CC_VERIFICATION_FAILED
+    def _check_namespaces(self, site, cc_info):
+        if not isinstance(cc_info, list) or not cc_info:
+            return False
+        namespaces = [v.get(CC_NAMESPACE) for v in cc_info if isinstance(v, dict)]
+        if self.required_site_verifier_ids is not None:
+            expected = (self.required_site_namespaces or {}).get(site)
         else:
-            return ""
+            expected = set(self.cc_verifiers)
+        return (
+            bool(expected)
+            and len(namespaces) == len(cc_info)
+            and all(isinstance(n, str) for n in namespaces)
+            and len(set(namespaces)) == len(namespaces)
+            and set(namespaces) == expected
+        )
 
-    def _verify_participants_tokens(
-        self, participants_tokens: dict[str, list[dict[str, str]]]
-    ) -> Tuple[dict[str, bool], list[str]]:
-        """Verifies tokens for all participants.
+    def _verify_participants_tokens(self, participants_tokens: dict[str, list[dict[str, str]]]) -> VerificationResult:
+        """Return a verdict, without deciding whether to reject or shut down.
 
-        Args:
-            participants_tokens: dict of participant name to list of tokens
-
-        Returns:
-            tuple of (result, invalid_participant_list)
-            result: dict of participant name to bool
-            invalid_participant_list: list of invalid participants
+        Authorizers may consume replay IDs; this method has no logging,
+        lifecycle or federation-failure side effects.
         """
-        result = {}
-        invalid_participant_list = []
-        if not participants_tokens:
-            return result, invalid_participant_list
-        for k, cc_info in participants_tokens.items():
-            if k not in self.cc_enabled_sites:
-                result[k] = True
+        result, errors = {}, []
+        for site, cc_info in participants_tokens.items():
+            if site not in self.cc_enabled_sites:
+                result[site] = True
                 continue
-            if not isinstance(cc_info, list) or not cc_info:
-                invalid_participant_list.append(k + " namespace: {None} ")
+            if not self._check_namespaces(site, cc_info):
+                errors.append(site + " namespace: {missing, duplicate or unexpected}")
                 continue
-            namespaces = [v.get(CC_NAMESPACE) for v in cc_info if isinstance(v, dict)]
-            if (
-                len(namespaces) != len(cc_info)
-                or any(not isinstance(n, str) for n in namespaces)
-                or len(set(namespaces)) != len(namespaces)
-                or set(namespaces) != set(self.cc_verifiers)
-            ):
-                invalid_participant_list.append(k + " namespace: {missing, duplicate or unexpected}")
-                continue
-            for v in cc_info:
-                token = v.get(CC_TOKEN, "")
-                namespace = v.get(CC_NAMESPACE, "")
-                verifier = self.cc_verifiers.get(namespace, None)
+            for info in cc_info:
+                namespace = info[CC_NAMESPACE]
+                verifier = self.cc_verifiers.get(namespace)
                 try:
-                    if verifier and verifier.verify_for_site(token, k):
-                        result[k + "." + namespace] = True
-                    else:
-                        invalid_participant_list.append(k + " namespace: {" + namespace + "}")
+                    valid = verifier is not None and verifier.verify_for_site(info.get(CC_TOKEN, ""), site)
                 except CCTokenVerifyError:
-                    invalid_participant_list.append(k + " namespace: {" + namespace + "}")
-        self.logger.info(f"CC - results from _verify_participants_tokens: {result}, {invalid_participant_list=}")
-        return result, invalid_participant_list
+                    valid = False
+                if valid:
+                    result[site + "." + namespace] = True
+                else:
+                    errors.append(site + " namespace: {" + namespace + "}")
+        return VerificationResult(result, errors)
 
     def _perform_cross_site_validation(self, fl_ctx: FLContext) -> bool:
         """Perform cross-site validation and shutdown system on failure.
@@ -364,7 +356,7 @@ class CCManager(FLComponent):
                 raise RuntimeError(f"Missing required CC participants: {sorted(missing)}")
 
             # Validate all tokens
-            err = self._validate_participants_tokens(all_tokens)
+            err = self._verify_participants_tokens(all_tokens).error
             if err:
                 self.logger.error(f"Cross-site validation failed: {err}")
                 self._shutdown_system(f"Cross-site validation failed: {err}", fl_ctx)
@@ -681,7 +673,8 @@ class CCManager(FLComponent):
         This is called when another site initiates cross-site validation.
 
         IMPORTANT: Multiple validation events can happen simultaneously, so we generate
-        a FRESH token for EACH request (nonce-based tokens are single-use).
+        a FRESH token for EACH request. CoCo proof IDs prevent reuse only within
+        one verifier process and lifetime; this is not verifier-challenge freshness.
         """
         try:
             # Extract requester from payload

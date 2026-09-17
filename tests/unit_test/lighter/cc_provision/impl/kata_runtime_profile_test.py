@@ -29,8 +29,10 @@ tomllib = pytest.importorskip("tomllib", reason="CoCo deployment helpers require
 
 ROOT = Path(__file__).resolve().parents[5] / "examples/devops/coco"
 HELPER = ROOT / "shared/kata-runtime-profile.py"
-API = runpy.run_path(str(HELPER))
-ADMIN = runpy.run_path(str(ROOT / "admin/lib/workload-launch-profile.py"))
+from nvflare.lighter.cc_provision import kata_runtime_profile, workload_launch_profile
+
+API = vars(kata_runtime_profile)
+ADMIN = vars(workload_launch_profile)
 CONFIG = '[hypervisor.qemu]\n# Preserve this comment\nkernel_params = "pci=one pci=two quiet" # tail\ndefault_vcpus = 1\n[agent.kata]\ndebug = false\n'
 SECURITY_CONTEXT = {
     "privileged": False,
@@ -221,7 +223,7 @@ def test_source_and_isolated_role_helpers(tmp_path):
         assert source["derive"](CONFIG) == API["derive"](CONFIG)
     isolated = tmp_path / "kit/lib/kata-runtime-profile.py"
     isolated.parent.mkdir(parents=True)
-    isolated.write_bytes(HELPER.read_bytes())
+    isolated.write_bytes(Path(kata_runtime_profile.__file__).read_bytes())
     config = tmp_path / "runtime.toml"
     config.write_text(API["derive"](CONFIG))
     subprocess.run([sys.executable, str(isolated), "check", str(config)], check=True)

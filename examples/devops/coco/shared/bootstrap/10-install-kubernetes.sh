@@ -6,6 +6,7 @@ TEMPLATE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/templates" && pwd)"
 source "$SCRIPT_DIR/lib/common.sh"
 load_config
 [[ ${CNI_PLUGINS_SHA256:-} =~ ^[0-9a-fA-F]{64}$ ]] || die "Set CNI_PLUGINS_SHA256 to the reviewed release digest in $CONFIG_FILE before installing"
+[[ ${KUBERNETES_APT_KEY_FINGERPRINT:-} =~ ^[0-9A-Fa-f]{40}$ ]] || die "Set KUBERNETES_APT_KEY_FINGERPRINT to the approved primary fingerprint in $CONFIG_FILE before installing"
 require_root_or_sudo
 
 tmp_dir="$(mktemp -d)"
@@ -115,8 +116,7 @@ as_root systemctl is-active --quiet containerd ||
 log "Installing Kubernetes ${KUBERNETES_VERSION}"
 as_root install -d -m 0755 /etc/apt/keyrings
 ensure_download "https://pkgs.k8s.io/core:/stable:/${KUBERNETES_MINOR}/deb/Release.key" "$download_dir/kubernetes-${KUBERNETES_MINOR}-Release.key"
-gpg --dearmor <"$download_dir/kubernetes-${KUBERNETES_MINOR}-Release.key" >"$tmp_dir/kubernetes.gpg"
-as_root install -m 0644 "$tmp_dir/kubernetes.gpg" /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+install_verified_apt_key "$download_dir/kubernetes-${KUBERNETES_MINOR}-Release.key" "$KUBERNETES_APT_KEY_FINGERPRINT" /etc/apt/keyrings/kubernetes-apt-keyring.gpg
 echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/${KUBERNETES_MINOR}/deb/ /" | as_root tee /etc/apt/sources.list.d/kubernetes.list >/dev/null
 as_root apt-get update
 kubernetes_apt_options=(-y)

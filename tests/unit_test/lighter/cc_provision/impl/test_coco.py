@@ -106,9 +106,18 @@ def test_relative_cc_config_requires_explicit_source(tmp_path, monkeypatch):
 
 
 def write_fake_result(request):
+    pytest.importorskip("tomllib", reason="full CoCo Pod packaging requires a Python 3.11+ deployment host")
+    from tests.unit_test.lighter.cc_provision.impl.workload_security_context_test import context, policy, policy_data
+
     owner = request.parent
     params = json.loads(request.read_text())
     pod_path = owner / "protected-pod.yaml"
+    data = policy_data()
+    data["containers"][0]["OCI"]["Annotations"]["io.kubernetes.cri.image-name"] = (
+        "secure.unit.local:5000/workloads/site-1@sha256:" + "a" * 64
+    )
+    data["containers"][0]["OCI"]["Process"]["Args"] = COMMAND
+    initdata = '[data]\n"policy.rego" = ' + "'''\n" + policy(data) + "\n'''\n"
     pod_path.write_text(
         yaml.safe_dump(
             {
@@ -117,16 +126,23 @@ def write_fake_result(request):
                 "metadata": {
                     "annotations": {
                         "io.katacontainers.config.hypervisor.cc_init_data": base64.b64encode(
-                            gzip.compress(b"fixture")
+                            gzip.compress(initdata.encode())
                         ).decode()
                     }
                 },
                 "spec": {
                     "runtimeClassName": "kata-qemu-nvidia-gpu-snp",
+                    "automountServiceAccountToken": False,
+                    "enableServiceLinks": False,
+                    "restartPolicy": "Never",
                     "containers": [
                         {
                             "image": "secure.unit.local:5000/workloads/site-1@sha256:" + "a" * 64,
                             "command": COMMAND,
+                            "imagePullPolicy": "Always",
+                            "securityContext": context(),
+                            "stdin": False,
+                            "tty": False,
                             "resources": {"limits": {"nvidia.com/pgpu": "1"}},
                         }
                     ],
@@ -145,12 +161,16 @@ def write_fake_result(request):
     )
 
 
-@pytest.mark.parametrize("custom_retry", [False, True])
+@pytest.mark.parametrize("custom_retry", [False, True, "legacy_timeout"])
 def test_provision_real_signed_kit_then_package(tmp_path, custom_retry):
     project, config = setup_project(tmp_path)
     retry_options = {}
-    timeouts = {"registration_token_timeout": 300, "refresh_token_timeout": 30, "get_token_request_timeout": 45}
-    if custom_retry:
+    timeouts = {"registration_token_timeout": 300, "refresh_token_timeout": 22.5, "get_token_request_timeout": 45}
+    if custom_retry == "legacy_timeout":
+        config["cc_attestation"]["get_token_request_timeout"] = 10
+        timeouts.update(get_token_request_timeout=10, refresh_token_timeout=5)
+        (tmp_path / "cc_site-1.yml").write_text(yaml.safe_dump(config))
+    elif custom_retry:
         retry_options = {
             "retry_max_attempts": 6,
             "retry_initial_delay": 2,
@@ -194,6 +214,11 @@ def test_provision_real_signed_kit_then_package(tmp_path, custom_retry):
     client_local = owner / "startup-kit/local"
     client_manager = json.loads((client_local / "cc_manager__p_resources.json").read_text())["components"][0]["args"]
     assert client_manager["cc_verifier_ids"] == ["coco_authorizer"]
+    assert (
+        client_manager["required_site_verifier_ids"]
+        == manager["required_site_verifier_ids"]
+        == {"site-1": ["coco_authorizer"]}
+    )
     client_auth = json.loads((client_local / "coco_authorizer__p_resources.json").read_text())["components"][0]["args"]
     assert client_auth["site_name"] == "site-1"
     for name, value in retry_options.items():
@@ -231,7 +256,7 @@ def test_invalid_config_is_fail_closed(tmp_path, field, value):
     [
         ("registration_token_timeout", 0),
         ("refresh_token_timeout", True),
-        ("get_token_request_timeout", 30),
+        ("get_token_request_timeout", 0),
         ("get_token_request_timeout", float("inf")),
         ("unknown_retry_option", 1),
     ],
@@ -240,6 +265,13 @@ def test_invalid_provisioning_retry_timeout(tmp_path, field, value):
     _, config = setup_project(tmp_path)
     config["cc_attestation"][field] = value
     with pytest.raises(ValueError):
+        validate_coco_config(config)
+
+
+def test_explicit_conflicting_provisioning_timeout_is_rejected(tmp_path):
+    _, config = setup_project(tmp_path)
+    config["cc_attestation"].update(get_token_request_timeout=10, refresh_token_timeout=30)
+    with pytest.raises(ValueError, match="must exceed"):
         validate_coco_config(config)
 
 
@@ -309,7 +341,7 @@ def test_build_failure_preserves_private_kit_without_public_handoff(tmp_path):
 @pytest.mark.parametrize("timeout", [None, True, False, 0, -1, 1.5, "60"])
 def test_invalid_build_timeout_rejected(timeout):
     with pytest.raises(ValueError, match="build_timeout"):
-        CoCoPackager(build_timeout=timeout)
+        CoCoPackager(build_image_cmd="reviewed-builder", build_timeout=timeout)
 
 
 def test_build_timeout_preserves_private_kit_without_public_handoff(tmp_path):
@@ -391,25 +423,10 @@ def test_cli_reprovision_retains_private_stages_from_other_directory(tmp_path, f
     }
     (tmp_path / "project.yaml").write_text(yaml.safe_dump(definition))
     # Trusted fixture runner: publish no image and generate only a fake receipt.
-    pod = {
-        "apiVersion": "v1",
-        "kind": "Pod",
-        "metadata": {
-            "annotations": {
-                "io.katacontainers.config.hypervisor.cc_init_data": base64.b64encode(gzip.compress(b"fixture")).decode()
-            }
-        },
-        "spec": {
-            "runtimeClassName": "kata-qemu-nvidia-gpu-snp",
-            "containers": [
-                {
-                    "command": COMMAND,
-                    "image": "secure.unit.local:5000/workloads/site-1@sha256:" + "a" * 64,
-                    "resources": {"limits": {"nvidia.com/pgpu": "1"}},
-                }
-            ],
-        },
-    }
+    fixture_request = tmp_path / "fixture-request.json"
+    fixture_request.write_text(json.dumps({"result_file": str(tmp_path / "fixture-result.json")}))
+    write_fake_result(fixture_request)
+    pod = yaml.safe_load((tmp_path / "protected-pod.yaml").read_text())
     (tmp_path / "build.sh").write_text(
         f"#!{sys.executable}\nimport json, sys\nfrom pathlib import Path\n"
         "request = json.loads(Path(sys.argv[1]).read_text())\n"

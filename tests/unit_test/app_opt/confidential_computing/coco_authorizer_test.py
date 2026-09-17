@@ -26,6 +26,7 @@ import requests
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
 
+from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import NotAuthenticated
@@ -107,6 +108,60 @@ def test_valid_proof_and_single_use(material):
     assert verifier.verify(generate())
     with pytest.raises(CCTokenGenerateError):
         verifier.generate()
+
+
+@pytest.mark.parametrize("audience", [None, "other", "expected"])
+def test_optional_ear_audience_is_verified(material, audience):
+    claims, _, verifier, generate, _ = material
+    if audience is not None:
+        claims["aud"] = audience
+    verifier.ear_audience = "expected"
+    assert verifier.verify(generate()) is (audience == "expected")
+
+
+@pytest.mark.parametrize("change", ["none", "init_data", "measurement", "missing", "site"])
+def test_optional_workload_constraints_are_verified(material, change):
+    claims, _, verifier, generate, _ = material
+    evidence = claims["submods"]["cpu0"]["ear.veraison.annotated-evidence"]
+    evidence["snp"] = {"measurement": "b" * 96}
+    verifier.workload_constraints = {"site-1": {"init_data": "a" * 64, "measurement": "b" * 96}}
+    if change == "init_data":
+        evidence["init_data"] = "c" * 64
+    elif change == "measurement":
+        evidence["snp"]["measurement"] = "c" * 96
+    elif change == "missing":
+        del evidence["snp"]
+    elif change == "site":
+        verifier.workload_constraints = {"site-2": {"init_data": "a" * 64}}
+    assert verifier.verify_for_site(generate(), "site-1") is (change == "none")
+
+
+@pytest.mark.parametrize(
+    "pins",
+    [
+        {},
+        [],
+        {"": {"init_data": "a" * 64}},
+        {"site-1": {}},
+        {"site-1": {"other": "a" * 64}},
+        {"site-1": {"init_data": "not-hex"}},
+    ],
+)
+def test_malformed_workload_constraints_fail_at_construction(material, pins):
+    _, _, _, generate, _ = material
+    with pytest.raises(ValueError):
+        generate(workload_constraints=pins)
+
+
+def test_replay_cache_is_process_local_not_a_challenge_protocol(material):
+    _, _, verifier, generate, _ = material
+    token = generate()
+    assert verifier.verify(token)
+    assert not verifier.verify(token)
+    # An explicit restart loses replay history. FL mTLS, protected client keys,
+    # subject binding and expiry remain required; do not claim nonce freshness.
+    verifier.seen.clear()
+    assert verifier.verify(token)
 
 
 @contextmanager
@@ -282,9 +337,9 @@ def test_registration_rejects_other_clients_real_signed_proof(material):
         peer.set_prop(CC_INFO, {site: [{CC_NAMESPACE: verifier.get_namespace(), CC_TOKEN: token}]})
         if site == "site-2":
             with pytest.raises(NotAuthenticated):
-                manager._validate_client_tokens(context)
+                manager.handle_event(EventType.CLIENT_REGISTER_RECEIVED, context)
         else:
-            manager._validate_client_tokens(context)
+            manager.handle_event(EventType.CLIENT_REGISTER_RECEIVED, context)
 
 
 @pytest.mark.parametrize(

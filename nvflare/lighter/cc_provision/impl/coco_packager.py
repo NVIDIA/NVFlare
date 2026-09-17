@@ -23,9 +23,9 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-import yaml
-
-from nvflare.lighter.cc_provision.impl.coco import resolve_cc_config, validate_coco_config
+from nvflare.lighter.cc_provision.impl.coco import validate_coco_config
+from nvflare.lighter.cc_provision.utils import resolve_cc_config
+from nvflare.lighter.cc_provision.workload_security import read_pod, validate_workload_pod
 from nvflare.lighter.constants import PropKey, ProvFileName
 from nvflare.lighter.spec import Packager
 from nvflare.lighter.utils import load_yaml
@@ -48,7 +48,7 @@ def copy_private_tree(source, destination):
 
 
 class CoCoPackager(Packager):
-    def __init__(self, build_image_cmd="build_coco_image.sh", build_timeout=3600):
+    def __init__(self, build_image_cmd, build_timeout=3600):
         if not isinstance(build_image_cmd, str) or not build_image_cmd:
             raise ValueError("build_image_cmd must name a trusted executable")
         if type(build_timeout) is not int or build_timeout <= 0:
@@ -204,7 +204,21 @@ class CoCoPackager(Packager):
 
     @staticmethod
     def validate_pod(path, config):
-        pod = yaml.safe_load(path.read_text())
+        pod = read_pod(path)
+        validate_workload_pod(
+            pod,
+            {
+                "privileged": False,
+                "allowPrivilegeEscalation": False,
+                "runAsNonRoot": True,
+                "runAsUser": 65532,
+                "runAsGroup": 65532,
+                "readOnlyRootFilesystem": False,
+                "capabilities": {"drop": ["ALL"]},
+                "seccompProfile": {"type": "RuntimeDefault"},
+            },
+            COMMAND,
+        )
         if not isinstance(pod, dict) or pod.get("kind") != "Pod" or pod.get("apiVersion") != "v1":
             raise ValueError("Build did not produce a v1 Pod")
         spec = pod.get("spec", {})

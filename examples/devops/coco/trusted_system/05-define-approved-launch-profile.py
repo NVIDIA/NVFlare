@@ -37,10 +37,7 @@ if len(spec["containers"]) != 1 or spec.get("initContainers"):
     raise SystemExit("Only a single-container workload profile is supported")
 if any(spec.get(key, False) for key in ["hostNetwork", "hostPID", "hostIPC"]):
     raise SystemExit("Host namespaces are not approved")
-resources = spec["containers"][0].get("resources", {})
-for name, value in resources.get("limits", {}).items():
-    resources.setdefault("requests", {}).setdefault(name, value)
-resources = {kind: {name: str(value) for name, value in quantities.items()} for kind, quantities in resources.items()}
+resources = security["normalize_resources"](spec["containers"][0].get("resources", {}))
 if str(resources.get("limits", {}).get("nvidia.com/pgpu", 0)) != "1":
     raise SystemExit("This trusted host profile requires exactly one passthrough GPU")
 with config_path.open("rb") as stream:

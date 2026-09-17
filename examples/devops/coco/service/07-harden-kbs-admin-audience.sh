@@ -8,7 +8,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib/common.sh"
 
 require_sudo
-for command in curl date docker grep mktemp python3 sha256sum; do
+for command in curl docker openssl python3; do
     need_cmd "${command}"
 done
 KBS_CONFIG="${TRUSTEE_ROOT}/kbs/config/docker-compose/kbs-config.toml"
@@ -45,23 +45,7 @@ if [[ "${CHANGE_STATE}" == "changed" ]]; then
 fi
 wait_https "${KBS_URL}/healthz" "${TRUSTEE_PUBLIC_CERT}" 120
 
-# Reinstall the exact same active bytes to exercise admin JWT validation while
-# proving the workload authorization policy did not change.
-POLICY_HASH_BEFORE="$(sha256sum "${ACTIVE_POLICY}" | awk '{print $1}')"
-STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-kbs_admin set-resource-policy --policy-file "${ACTIVE_POLICY}" >/dev/null
-POLICY_HASH_AFTER="$(sha256sum "${ACTIVE_POLICY}" | awk '{print $1}')"
-[[ "${POLICY_HASH_BEFORE}" == "${POLICY_HASH_AFTER}" ]] \
-    || die 'active resource policy changed during audience verification'
-
-LOG_FILE="$(mktemp)"
-trap 'rm -f -- "${LOG_FILE}"' EXIT
-sudo docker compose -p "${TRUSTEE_PROJECT}" -f "${TRUSTEE_COMPOSE}" \
-    logs --no-color --since "${STARTED_AT}" kbs > "${LOG_FILE}" 2>&1
-grep -Fq 'Endorsement of a token has been verified successfully.' "${LOG_FILE}" \
-    || die 'admin JWT verification success was not observed'
-if grep -Fq 'audience is not set' "${LOG_FILE}"; then
-    die 'KBS still skips admin JWT audience verification'
-fi
-
-printf 'KBS admin JWT audience is pinned to KBS; resource policy hash is unchanged.\n'
+# The read-only endpoint must accept the control and reject equally valid
+# signatures with a wrong/missing audience. No resource policy is rewritten.
+as_root python3 "${SCRIPT_DIR}/lib/kbs-admin-audience.py" "${KBS_URL}" \
+    "${TRUSTEE_PUBLIC_CERT}" "${TRUSTEE_ROOT}/kbs/config/docker-compose/private.key"

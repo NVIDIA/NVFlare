@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/common-base.sh"
 
 set -Eeuo pipefail
 umask 077
@@ -22,18 +23,8 @@ KBS_POLICY_DIR="${TRUSTEE_ROOT}/kbs/data/kbs-policy"
 AS_STORAGE_DIR="${TRUSTEE_ROOT}/kbs/data/attestation-service"
 REFERENCE_DIR="${TRUSTEE_ROOT}/kbs/data/reference-values"
 
-die() {
-    printf 'ERROR: %s\n' "$*" >&2
-    exit 1
-}
 
-need_cmd() {
-    command -v "$1" >/dev/null 2>&1 || die "required command is missing: $1"
-}
 
-need_file() {
-    [[ -s "$1" ]] || die "required file is missing or empty: $1"
-}
 
 is_uint8() {
     local value="${1-}"
@@ -63,10 +54,6 @@ verify_integer_reference() {
         || die "RVPS reference ${reference_id} is ${actual}, expected ${expected}"
 }
 
-require_sudo() {
-    need_cmd sudo
-    sudo -n true || die "passwordless non-interactive sudo is required"
-}
 
 wait_https() {
     local url="$1" cert="$2" attempts="${3:-90}"

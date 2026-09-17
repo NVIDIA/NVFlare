@@ -14,9 +14,6 @@ sudo apt-get update
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
     ca-certificates curl docker.io golang-go jq openssl python3-yaml skopeo zstd
 
-sudo install -m 0644 "${PUBLIC_DIR}/registry-ca.crt" \
-    /usr/local/share/ca-certificates/coco-registry-ca.crt
-sudo update-ca-certificates
 sudo install -d -m 0755 "/etc/docker/certs.d/${REGISTRY_HOST}:${REGISTRY_PORT}"
 sudo install -m 0644 "${PUBLIC_DIR}/registry-ca.crt" \
     "/etc/docker/certs.d/${REGISTRY_HOST}:${REGISTRY_PORT}/ca.crt"

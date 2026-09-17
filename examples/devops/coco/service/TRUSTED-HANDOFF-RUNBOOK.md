@@ -38,10 +38,20 @@ complete command/argument vector, lowercase-hex init-data, and resource paths.
 
 ```bash
 cd "$HOME/coco-service-admin"
-./12-install-trusted-service-handoff.sh "$HOME/incoming/RELEASE"
+EXPECTED_MANIFEST_SHA256='<pin received from the workload owner over an authenticated independent channel>'
+./12-install-trusted-service-handoff.sh "$HOME/incoming/RELEASE" "$EXPECTED_MANIFEST_SHA256"
 ```
 
-The installer requires exactly the six expected files and validates their
+The installer requires the independently authenticated SHA-256 of `SHA256SUMS`.
+A checksum carried only inside the handoff does not authenticate its sender.
+Stage 40 on the provisioning node prints the pin for that separate exchange.
+Use matching reviewed role-kit revisions on both machines. Regenerate older,
+not-yet-installed handoffs with the updated provisioning kit; do not weaken the
+service template to accept an old fragment. Already installed immutable releases
+are not rewritten by updating these scripts.
+The installer snapshots all six regular files into a private temporary directory,
+validates the pin and every payload digest, then uses only those checked bytes.
+It requires exactly the six expected files and validates their
 cross-references. It generates executable Rego from validated authorization data
 using secure services' own `policies/workload-resource-policy.rego.template`.
 The received fragment must match that generated policy (apart from surrounding

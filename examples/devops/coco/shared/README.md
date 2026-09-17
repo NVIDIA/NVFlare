@@ -1,6 +1,6 @@
 # Authoritative shared deployment code
 
-Maintain these implementations here, not in role copies:
+Shared entry points and shell implementations (do not edit generated role copies):
 
 - `validate-config.sh`: hostname, endpoint and private-directory checks for all four roles.
 - `kata-runtime-profile.py`: reviewed token-API configuration derivation and verification for trusted-system and CoCo kits.
@@ -23,9 +23,18 @@ validate, commit, and assemble a new output directory.
 
 ## Application security-context contract
 
-`workload-security-context.py` is the shared source for strict application-context
-approval and structural checks of the generated guest OCI policy. Assembly places
-it in the trusted-system, admin and CoCo role libraries; do not maintain separate copies.
+The canonical Python helpers live in the importable `nvflare/lighter/cc_provision/`
+package: `workload_security.py`, `workload_launch_profile.py`,
+`kata_runtime_profile.py`, and `kbs_audience.py`. Source-tree scripts are adapters.
+Role-kit assembly vendors the reviewed modules so remote machines need no NVFlare
+checkout or installation. It also vendors the canonical successful EAR vector
+from `nvflare/app_opt/confidential_computing/trustee_claims.py`; the authorizer,
+authorization manifest and KBS policy generation all consume that definition.
+Changes to these package sources must be committed before assembly as well.
+
+`workload_security.py` supplies strict application-context approval, handoff
+snapshot authentication, and generated guest OCI validation. Assembly places
+it in all four role libraries; do not maintain separate implementations.
 See the [v3 contract](../admin/APPROVED-LAUNCH-PROFILE.md#approved-application-security-context-v3)
 for migration, the collector exception and the pinned runtime's seccomp limitation.
 
@@ -38,6 +47,19 @@ Policy replacement and fail-open settings remain disabled. A constant Rego
 These checks require the reviewed pinned rules; they do not prove arbitrary Rego
 equivalence. The CoCo launch preflight parses InitData with Python 3.11+ `tomllib`,
 provided by the documented Ubuntu host. No TOML backport is required.
+
+The complete reviewed Kata 3.29 rule preamble is SHA-256 pinned after the
+AdditionalGids/CVE-2026-77176 derivation. Comments, dead branches, additional
+allow rules, and any other preamble edits are rejected; searching for a guard
+substring is not sufficient. Exactly one application OCI and one approved
+non-root `/pause` sandbox OCI are allowed. Both privilege/capability profiles
+are checked, including the pause capability expansion. A Kata rules upgrade
+requires review and an explicit pin/fixture update, not automatic acceptance.
+
+`lib/common-base.sh` owns shared shell primitives and bounded approval prompts.
+Tests call package functions and source callable shell helpers instead of
+extracting executable substrings from installation scripts. Wiring/entry-point
+tests still check that the public adapters call the reviewed implementations.
 
 ## Private bootstrap download cache
 
@@ -77,5 +99,28 @@ in **both templates**, and propagate them to each private `config.env`. Existing
 configurations must add the reviewed pin; missing or malformed pins fail closed.
 Never replace a pin merely to silence an unexpected checksum mismatch.
 
-Independent authentication of the Kubernetes repository signing key remains a
-separate supply-chain review item.
+### Pinned Kubernetes apt signing key
+
+Both role templates set `KUBERNETES_APT_KEY_FINGERPRINT` to the approved primary
+fingerprint `DE15B14486CD377B9E876E1A234654DA9A296436` for the Kubernetes OBS
+repository key. Stage 10 rejects a missing or malformed pin before installing
+packages. The key is downloaded from the
+[Kubernetes package repository](https://pkgs.k8s.io/core:/stable:/v1.34/deb/Release.key),
+but its contents do not define the expected fingerprint.
+
+`install_verified_apt_key` converts the key in a fresh root-private directory,
+uses `gpg --with-colons --show-keys --fingerprint` with an isolated GPG home,
+requires exactly one approved primary key, rejects expired/revoked keys and
+unexpected additional primary keys, and installs the same checked binary keyring.
+Validation failures leave the previous installed keyring unchanged. The key is scoped to
+the Kubernetes source using apt's `signed-by`, not global apt trust.
+
+The pin was checked against the current v1.34 public key and the fingerprint
+recorded in the [upstream Kubernetes repository report](https://github.com/kubernetes/kubernetes/issues/133735).
+This pins the reviewed key identity; it is not independent proof of publisher
+ownership. Existing private `config.env` files must add the pin. For a legitimate
+key rotation, authenticate the replacement through a trusted publisher channel,
+review it, and update both templates and private configurations. A mismatch is
+not permission to adopt the fingerprint just downloaded. If an old cached key
+has expired, retain it for investigation and use a fresh private
+`COCO_STATE_DIR` to fetch the publisher's renewed key; do not bypass verification.

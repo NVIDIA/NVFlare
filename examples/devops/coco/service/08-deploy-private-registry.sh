@@ -71,7 +71,7 @@ chmod 0600 "${PUBLISHER_DIR}/username" "${PUBLISHER_DIR}/password"
 sudo install -o "$(id -u)" -g "$(id -g)" -m 0644 \
     "${REGISTRY_ROOT}/pki/ca.crt" "${PUBLISHER_DIR}/registry-ca.crt"
 
-PASSWORD_HASH="$(openssl passwd -apr1 -in "${PUBLISHER_DIR}/password")"
+PASSWORD_HASH="$(openssl passwd -6 -in "${PUBLISHER_DIR}/password")"
 printf '%s:%s\n' "${REGISTRY_PUBLISHER}" "${PASSWORD_HASH}" | \
     sudo tee "${REGISTRY_ROOT}/auth/htpasswd" >/dev/null
 sudo chown root:www-data "${REGISTRY_ROOT}/auth" \

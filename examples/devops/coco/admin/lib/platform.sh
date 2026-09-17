@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/common-base.sh"
 
 set -Eeuo pipefail
 umask 077
@@ -28,18 +29,8 @@ mkdir -p "${PUBLIC_DIR}" "${SECRETS_DIR}" "${RELEASES_DIR}" \
 chmod 0700 "${SECRETS_DIR}" "${RELEASES_DIR}" "${SIGNING_DIR}" \
     "${REGISTRY_SECRET_DIR}"
 
-die() {
-    printf 'ERROR: %s\n' "$*" >&2
-    exit 1
-}
 
-need_cmd() {
-    command -v "$1" >/dev/null 2>&1 || die "required command is missing: $1"
-}
 
-need_file() {
-    [[ -s "$1" ]] || die "required file is missing or empty: $1"
-}
 
 sha256_check() {
     local expected="$1"

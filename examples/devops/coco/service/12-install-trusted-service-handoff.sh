@@ -7,20 +7,9 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 source "${SCRIPT_DIR}/lib/common.sh"
 
-die() {
-    printf 'ERROR: %s\n' "$*" >&2
-    exit 1
-}
-
-need_cmd() {
-    command -v "$1" >/dev/null 2>&1 || die "required command is missing: $1"
-}
-
-need_file() {
-    [[ -s "$1" ]] || die "required file is missing or empty: $1"
-}
-
-[[ $# -eq 1 ]] || die "usage: $0 TRUSTED-SERVICE-HANDOFF-DIRECTORY"
+[[ $# -eq 2 ]] || die "usage: $0 TRUSTED-SERVICE-HANDOFF-DIRECTORY EXPECTED-SHA256SUMS-SHA256"
+[[ $2 =~ ^[0-9a-f]{64}$ ]] || die 'expected manifest digest must be independently authenticated lowercase SHA-256'
+EXPECTED_MANIFEST_SHA256=$2
 
 HANDOFF_DIR="$(readlink -f -- "$1")"
 [[ -d "${HANDOFF_DIR}" ]] || die "handoff is not a directory: ${HANDOFF_DIR}"
@@ -61,6 +50,18 @@ mapfile -d '' -t RECEIVED_FILES < <(
 [[ "$(find "${HANDOFF_DIR}" -mindepth 1 -maxdepth 1 ! -type f | wc -l)" -eq 0 ]] \
     || die "handoff contains an unexpected directory or special file"
 
+HANDOFF_SOURCE=${HANDOFF_DIR}
+WORK_DIR="$(mktemp -d -p /tmp coco-service-install.XXXXXXXX)"
+trap 'rm -rf -- "${WORK_DIR}"' EXIT
+python3 - "${SCRIPT_DIR}/lib/workload-security-context.py" "${HANDOFF_SOURCE}" "${WORK_DIR}/handoff" "${EXPECTED_MANIFEST_SHA256}" <<'PY'
+import runpy
+import sys
+runpy.run_path(sys.argv[1])["authenticate_handoff"](*sys.argv[2:])
+PY
+HANDOFF_DIR="${WORK_DIR}/handoff"
+printf '%s  %s\n' "${EXPECTED_MANIFEST_SHA256}" "${HANDOFF_DIR}/SHA256SUMS" | sha256sum --check --status \
+    || die 'handoff manifest does not match independently authenticated owner digest'
+
 (
     cd "${HANDOFF_DIR}"
     sha256sum --check --strict SHA256SUMS
@@ -70,18 +71,18 @@ mapfile -d '' -t RECEIVED_FILES < <(
 [[ "$(stat -c '%a' "${HANDOFF_DIR}/image_key")" == "600" ]] \
     || die "received image_key must be mode 0600"
 
-WORK_DIR="$(mktemp -d -p /tmp coco-service-install.XXXXXXXX)"
-trap 'rm -rf -- "${WORK_DIR}"' EXIT
 REVIEWED_FRAGMENT="${WORK_DIR}/reviewed-resource-policy-fragment.rego"
 
 mapfile -d '' -t RELEASE_META < <(
     python3 - "${HANDOFF_DIR}" "${SERVICE_FQDN}:${REGISTRY_PORT}" \
-        "${SCRIPT_DIR}/policies/workload-resource-policy.rego.template" "${REVIEWED_FRAGMENT}" <<'PY'
+        "${SCRIPT_DIR}/policies/workload-resource-policy.rego.template" "${REVIEWED_FRAGMENT}" \
+        "${SCRIPT_DIR}/lib/trustee_claims.py" <<'PY'
 import json
 from pathlib import Path
 import re
 import sys
 from string import Template
+import runpy
 
 root = Path(sys.argv[1])
 authorization = json.loads((root / "release-authorization.json").read_text())
@@ -118,16 +119,7 @@ if authorization.get("snp_init_data_encoding_in_trustee_v0_21") != "lowercase-he
     raise SystemExit("unexpected SNP init-data encoding")
 if authorization.get("required_ear_submods") != ["cpu0", "gpu0"]:
     raise SystemExit("authorization does not require exactly CPU and GPU submodules")
-expected_vector = {
-    "executables": 3,
-    "hardware": 2,
-    "configuration": 3,
-    "file-system": 0,
-    "instance-identity": 0,
-    "runtime-opaque": 0,
-    "storage-opaque": 0,
-    "sourced-data": 0,
-}
+expected_vector = runpy.run_path(sys.argv[5])["TRUST_VECTOR"]
 required_vectors = {name: expected_vector for name in ("cpu0", "gpu0")}
 if authorization.get("required_ear_trust_vectors") != required_vectors:
     raise SystemExit("authorization lacks the exact approved CPU/GPU trust vectors")
@@ -169,6 +161,7 @@ def compact(value):
 # is single-pass, so placeholder-like text in arguments is not interpreted.
 rendered = Template(Path(sys.argv[3]).read_text()).substitute(
     prefix=prefix, initdata=compact(initdata), image=compact(image), args=compact(args),
+    trust_vector=json.dumps(expected_vector, indent=4),
     path_rules="\n".join(
         f'{prefix}_authorized_path(path) if {{ path == {compact(path.split("/"))} }}'
         for path in paths
@@ -342,9 +335,8 @@ diff --unified "${ACTIVE_POLICY}" "${CANDIDATE_POLICY}" || DIFF_STATUS=$?
 [[ "${DIFF_STATUS}" -le 1 ]] || die "failed to display policy diff"
 
 [[ -t 0 ]] || die "interactive terminal required for final approval"
-read -r -t 120 -p "Type the release name within 120 seconds to approve this exact merge: " CONFIRM_RELEASE ||
-    die 'Approval timed out or input closed; installation cancelled'
-[[ "${CONFIRM_RELEASE}" == "${RELEASE_NAME}" ]] || die "release approval did not match"
+confirm_action "${RELEASE_NAME}" "Type the release name within 120 seconds to approve this exact merge: " ||
+    die 'Approval missing, mismatched, timed out or input closed; installation cancelled'
 
 # Some OS images permit passwordless commands while `sudo -v` still asks for
 # a password because of sudoers verifypw policy. Prove noninteractive sudo
@@ -446,11 +438,15 @@ chmod 0600 "${BACKUP_DIR}/installation-receipt.txt"
 
 printf '\nRelease %s is installed and persisted resource hashes match.\n' "${RELEASE_NAME}"
 printf 'Protected backup and receipt: %s\n' "${BACKUP_DIR}"
-read -r -t 120 -p 'Type REMOVE within 120 seconds to shred the staging image_key, or Enter to retain it: ' REMOVE_KEY || REMOVE_KEY=''
+REMOVE_KEY=''
+if confirm_action REMOVE 'Type REMOVE within 120 seconds to shred the staging image_key, or Enter to retain it: '; then
+    REMOVE_KEY=REMOVE
+fi
 if [[ "${REMOVE_KEY}" == "REMOVE" ]]; then
-    shred --remove -- "${HANDOFF_DIR}/image_key"
+    [[ ! -L "${HANDOFF_SOURCE}/image_key" ]] && cmp -s "${HANDOFF_DIR}/image_key" "${HANDOFF_SOURCE}/image_key" \
+        || die 'incoming staging key changed; refusing to remove it'
+    shred --remove -- "${HANDOFF_SOURCE}/image_key"
     printf 'Removed the received staging key. KBS storage remains authoritative.\n'
 else
-    chmod 0600 "${HANDOFF_DIR}/image_key"
-    printf 'Staging key retained at %s; keep the directory private.\n' "${HANDOFF_DIR}/image_key"
+    printf 'Staging key retained at %s; keep the directory private.\n' "${HANDOFF_SOURCE}/image_key"
 fi

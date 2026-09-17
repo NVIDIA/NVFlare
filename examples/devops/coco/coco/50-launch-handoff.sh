@@ -37,103 +37,30 @@ import tomllib
 
 pod = json.loads(Path(sys.argv[1]).read_text())
 runtime, registry = sys.argv[2:4]
-if pod.get("kind") != "Pod" or pod.get("apiVersion") != "v1":
-    raise SystemExit("handoff must contain exactly one v1 Pod")
-spec = pod.get("spec", {})
-containers = spec.get("containers", [])
-if len(containers) != 1:
-    raise SystemExit("handoff must have exactly one container")
-c = containers[0]
+helpers = runpy.run_path(sys.argv[4])
+context = helpers["pod_context"](pod)
+c = pod["spec"]["containers"][0]
 image = c.get("image", "")
 if not image.startswith(registry + "/") or not re.search(r"@sha256:[0-9a-f]{64}$", image):
     raise SystemExit("image must be an immutable digest in the approved registry")
-if spec.get("runtimeClassName") != runtime:
+if pod["spec"].get("runtimeClassName") != runtime:
     raise SystemExit("unexpected confidential runtime class")
-if spec.get("automountServiceAccountToken") is not False:
-    raise SystemExit("service-account token must be disabled")
-if spec.get("enableServiceLinks") is not False:
-    raise SystemExit("Kubernetes service-link environment injection must be disabled")
-for key in ("hostNetwork", "hostPID", "hostIPC", "shareProcessNamespace"):
-    if key == "shareProcessNamespace" and key not in spec:
-        continue
-    if spec.get(key) is not False:
-        raise SystemExit(f"{key} must be false")
-if "volumes" in spec:
-    raise SystemExit("volumes are not allowed in this handoff")
-for key in ("initContainers", "ephemeralContainers", "hostAliases", "imagePullSecrets"):
-    if key in spec:
-        raise SystemExit(f"{key} is not allowed")
-if spec.get("restartPolicy") != "Never":
-    raise SystemExit("restartPolicy must be Never")
-if c.get("stdin") is not False or c.get("tty") is not False:
-    raise SystemExit("interactive stdin/TTY must be disabled")
-if any(key in c for key in ("args", "envFrom", "ports", "volumeMounts")):
-    raise SystemExit("args, envFrom, ports, and volumeMounts are not allowed")
-if c.get("imagePullPolicy") != "Always":
-    raise SystemExit("imagePullPolicy must be Always")
-security = c.get("securityContext", {})
-required = {
-    "privileged": False,
-    "allowPrivilegeEscalation": False,
-    "runAsNonRoot": True,
-}
-for key, value in required.items():
-    if security.get(key) is not value:
-        raise SystemExit(f"securityContext.{key} must be {value}")
-# NVFlare needs guest-local writable storage for logs and runtime state.
-# The authenticated handoff digest and KBS-bound agent policy authorize the
-# exact boolean; the adversarial host cannot use this check to relax policy.
-if type(security.get("readOnlyRootFilesystem")) is not bool:
-    raise SystemExit("readOnlyRootFilesystem must be an explicit boolean")
-if security.get("capabilities", {}).get("drop") != ["ALL"]:
-    raise SystemExit("all Linux capabilities must be dropped")
-if security.get("seccompProfile", {}).get("type") != "RuntimeDefault":
-    raise SystemExit("RuntimeDefault seccomp is required")
-if not isinstance(security.get("runAsUser"), int) or not isinstance(security.get("runAsGroup"), int):
-    raise SystemExit("fixed numeric runAsUser and runAsGroup are required")
-if c.get("resources", {}).get("limits", {}).get("nvidia.com/pgpu") != "1":
-    raise SystemExit("exactly one confidential GPU is required")
 if not isinstance(c.get("command"), list) or not c["command"]:
     raise SystemExit("an explicit command vector is required")
-annotation = pod.get("metadata", {}).get("annotations", {}).get(
-    "io.katacontainers.config.hypervisor.cc_init_data", ""
-)
-try:
-    initdata = gzip.decompress(base64.b64decode(annotation, validate=True)).decode()
-except Exception as exc:
-    raise SystemExit(f"invalid embedded confidential init-data: {exc}")
-policy = tomllib.loads(initdata)["data"]["policy.rego"]
-runpy.run_path(sys.argv[4])["validate_request_policy"](policy)
-for expected_fix in (
-    'p_mount.source != ""',
-    'p_mount.source == ""',
-    'i_storage.driver in {"blk", "scsi"}',
-    'expect_root_path == i_storage.mount_point',
-):
-    if expected_fix not in policy:
-        raise SystemExit(
-            f"embedded policy lacks CVE-2026-77176 workaround: {expected_fix}"
-        )
+helpers["validate_workload_pod"](pod, context, c["command"])
 print("Static handoff invariants passed")
 print("Pod:", pod["metadata"]["name"])
 print("Image:", image)
 print("Command:", json.dumps(c["command"]))
 PY
 
-need_cmd curl
-need_file "/etc/containerd/certs.d/${REGISTRY_HOST}/hosts.toml"
-need_file "/etc/containerd/certs.d/${REGISTRY_HOST}/ca.crt"
-curl --fail --silent --show-error --connect-timeout 5 --max-time 15 \
-    --cacert "/etc/containerd/certs.d/${REGISTRY_HOST}/ca.crt" \
-    --output /dev/null "https://${REGISTRY_HOST}/v2/" ||
-    die 'Registry TLS/access check failed; complete stage 40 before launch'
+check_registry_trust "${REGISTRY_HOST}"
 
 kctl apply --dry-run=server -f "${POD_FILE}" >/dev/null
 printf 'Authenticated Pod SHA-256: %s\n' "${ACTUAL_SHA256}"
 printf 'Do not edit this manifest. Do not use exec, attach, cp, or port-forward.\n'
-read -r -t 120 -p "Type APPLY within 120 seconds to launch the exact handoff: " CONFIRM ||
-    die 'Approval timed out or input closed; launch cancelled'
-[[ "${CONFIRM}" == 'APPLY' ]] || die 'launch cancelled'
+confirm_action APPLY "Type APPLY within 120 seconds to launch the exact handoff: " ||
+    die 'Approval missing, mismatched, timed out or input closed; launch cancelled'
 kctl apply -f "${POD_FILE}"
 POD_NAME="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["metadata"]["name"])' "${POD_JSON}")"
 NAMESPACE="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["metadata"].get("namespace", "default"))' "${POD_JSON}")"

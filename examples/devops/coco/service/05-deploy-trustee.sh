@@ -17,8 +17,7 @@ for image in "${KBS_IMAGE}" "${AS_IMAGE}" "${RVPS_IMAGE}"; do
     sudo docker image inspect "${image}" >/dev/null
 done
 
-sudo docker image inspect "${SETUP_IMAGE}" >/dev/null 2>&1 ||
-    sudo docker pull "${SETUP_IMAGE}"
+ensure_setup_image "${SETUP_IMAGE}"
 
 install -d -m 0700 "${KBS_STORAGE_DIR}" "${KBS_POLICY_DIR}" \
     "${AS_STORAGE_DIR}/attestation_service_policy" "${REFERENCE_DIR}"

@@ -21,6 +21,9 @@ import pytest
 import yaml
 
 from nvflare.cli_exception import CLIException
+from nvflare.lighter.cc_provision.utils import resolve_cc_config
+from nvflare.lighter.constants import PropKey
+from nvflare.lighter.provision import prepare_project
 from nvflare.lighter.utils import update_project_server_name_config
 from nvflare.tool.poc import poc_commands
 from nvflare.tool.poc.poc_commands import (
@@ -222,7 +225,10 @@ class TestPOCCommands:
                 ],
                 "builders": [
                     {"path": "nvflare.lighter.impl.workspace.WorkspaceBuilder", "args": {}},
-                    {"path": "nvflare.lighter.impl.static_file.StaticFileBuilder", "args": {"config_folder": "config"}},
+                    {
+                        "path": "nvflare.lighter.impl.static_file.StaticFileBuilder",
+                        "args": {"config_folder": "config"},
+                    },
                     {"path": "nvflare.lighter.impl.cert.CertBuilder", "args": {}},
                     {"path": "nvflare.lighter.impl.signature.SignatureBuilder", "args": {}},
                 ],
@@ -281,7 +287,9 @@ class TestPOCCommands:
         }
         calls = []
 
-        monkeypatch.setattr(poc_commands, "local_provision", lambda *_args, **_kwargs: (project_config, service_config))
+        monkeypatch.setattr(
+            poc_commands, "local_provision", lambda *_args, **_kwargs: (project_config, service_config)
+        )
         monkeypatch.setattr(poc_commands, "get_prod_dir", lambda *_args, **_kwargs: str(tmp_path / "prod_00"))
         monkeypatch.setattr(poc_commands, "_prepare_poc_docker_deployments", lambda *_args: calls.append("docker"))
         monkeypatch.setattr(poc_commands, "update_storage_locations", lambda **_kwargs: calls.append("storage"))
@@ -410,11 +418,15 @@ class TestPOCCommands:
         monkeypatch.setattr(poc_commands, "Provisioner", Mock(return_value=provisioner))
         result, _ = local_provision([], 1, str(workspace), "", project_conf_path=str(project_file))
         project = provisioner.provision.call_args.args[0]
-        assert project.get_prop("_project_file") == str(project_file)
+        assert project.get_prop(PropKey.PROJECT_FILE) == str(project_file)
         expected = str(source / "cc_site-1.yml")
-        assert result["participants"][2]["cc_config"] == expected
+        assert result["participants"][2]["cc_config"] == "cc_site-1.yml"
+        assert resolve_cc_config(project, "cc_site-1.yml") == expected
         saved = yaml.safe_load((workspace / "project.yml").read_text())
-        assert saved["participants"][2]["cc_config"] == expected
+        assert saved["participants"][2]["cc_config"] == "cc_site-1.yml"
+        assert saved[PropKey.PROJECT_FILE] == str(project_file)
+        relocated = prepare_project(saved, project_file=workspace / "project.yml")
+        assert resolve_cc_config(relocated, "cc_site-1.yml") == expected
 
     def test_patch_poc_docker_client_target_uses_server_alias(self, tmp_path):
         startup_dir = tmp_path / "startup"

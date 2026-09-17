@@ -12,38 +12,31 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Offline checks of deployment snippets; no Docker, network, sudo or cluster access."""
+"""Offline tests of callable deployment helpers; no external operations."""
 
-import ast
 import shlex
 import subprocess
 from pathlib import Path
 
 import pytest
 
+from nvflare.lighter.cc_provision.workload_security import normalize_resources
+
 ROOT = Path(__file__).resolve().parents[5] / "examples/devops/coco"
 SERVICE = "service/12-install-trusted-service-handoff.sh"
 LAUNCH = "coco/50-launch-handoff.sh"
-PREFIX = 'set -Eeuo pipefail\ndie() { echo "$*"; exit 2; }\n'
-
-
-def section(name, start, end):
-    source = (ROOT / name).read_text()
-    return source[source.index(start) : source.index(end, source.index(start))]
+PREFIX = "set -Eeuo pipefail\n" + f'source {shlex.quote(str(ROOT / "shared/lib/common-base.sh"))}\n'
 
 
 @pytest.mark.parametrize("quantity", [1, "1"])
 def test_profile_resource_quantities_match_kubernetes(quantity):
-    source = section("trusted_system/05-define-approved-launch-profile.py", "resources =", "with config_path.open")
     resources = {"limits": {"nvidia.com/pgpu": quantity}}
-    namespace = {"spec": {"containers": [{"resources": resources}]}}
-    exec(compile(ast.parse(source), "profile-resource-normalization", "exec"), namespace)
-    assert namespace["resources"] == {"limits": {"nvidia.com/pgpu": "1"}, "requests": {"nvidia.com/pgpu": "1"}}
+    assert normalize_resources(resources) == {"limits": {"nvidia.com/pgpu": "1"}, "requests": {"nvidia.com/pgpu": "1"}}
 
 
 @pytest.mark.parametrize("cached,pull_status", [(True, 0), (False, 0), (False, 1)])
 def test_setup_image_is_available_before_deployment(cached, pull_status):
-    source = section("service/05-deploy-trustee.sh", 'sudo docker image inspect "${SETUP_IMAGE}"', "install -d")
+    source = 'ensure_setup_image "$SETUP_IMAGE"\n'
     stubs = (
         'SETUP_IMAGE="alpine/openssl@sha256:fixture"\n'
         'sudo() { "$@"; }\n'
@@ -61,7 +54,7 @@ def test_setup_image_is_available_before_deployment(cached, pull_status):
 
 @pytest.mark.parametrize("failure", ["none", "hosts.toml", "ca.crt", "curl"])
 def test_registry_preflight_fails_before_launch(failure):
-    source = section(LAUNCH, "need_cmd curl", "kctl apply --dry-run=server")
+    source = 'check_registry_trust "$REGISTRY_HOST"\n'
     stubs = (
         'REGISTRY_HOST="secure.example.invalid:5000"\n'
         f'FAILURE="{failure}"\n'
@@ -83,19 +76,13 @@ def test_registry_preflight_fails_before_launch(failure):
     "answer,close_input", [("correct\n", True), ("wrong\n", True), ("", True), ("", False), ("correct", False)]
 )
 def test_bounded_approval_and_safe_key_retention(role, answer, close_input):
-    if role == "release":
-        source = section(SERVICE, "read -r -t 120", "# Some OS images")
-        expected, setup = "release-v1", 'RELEASE_NAME="release-v1"\n'
-    elif role == "launch":
-        source = section(LAUNCH, "read -r -t 120", 'kctl apply -f "${POD_FILE}"')
-        expected, setup = "APPLY", ""
+    expected = {"release": "release-v1", "launch": "APPLY", "remove": "REMOVE"}[role]
+    call = f'confirm_action {shlex.quote(expected)} "Approve: " 0.05'
+    if role == "remove":
+        source = f"if {call}; then echo KEY_CHOICE=REMOVE; else echo KEY_CHOICE=; fi\n"
     else:
-        source = section(SERVICE, "read -r -t 120 -p 'Type REMOVE", 'if [[ "${REMOVE_KEY}"')
-        source += 'printf "KEY_CHOICE=%s\\n" "$REMOVE_KEY"\n'
-        expected, setup = "REMOVE", ""
-    # Exercise Bash timeout behavior without waiting two minutes per case.
-    source = source.replace("-t 120", "-t 0.05")
-    script = PREFIX + setup + source + "echo CONTINUE"
+        source = call + " || die 'approval failed'\n"
+    script = PREFIX + source + "echo CONTINUE"
     answer = answer.replace("correct", expected)
     with subprocess.Popen(
         ["bash", "-c", script], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
@@ -114,7 +101,7 @@ def test_bounded_approval_and_safe_key_retention(role, answer, close_input):
         approved = close_input and answer == expected + "\n"
         assert (process.returncode == 0) == (role == "remove" or approved)
         if role == "remove":
-            assert "KEY_CHOICE=" + (expected if approved else ("wrong" if answer == "wrong\n" else "")) + "\n" in output
+            assert "KEY_CHOICE=" + (expected if approved else "") + "\n" in output
         else:
             assert ("CONTINUE" in output) == approved
 
@@ -140,7 +127,7 @@ def rehearsal_preflight(tmp_path):
 
 def run_rehearsal_preflight(inputs, missing_commands=()):
     base, approval, _, _, _ = inputs
-    script = section("trusted_system/07-run-snp-rehearsal.sh", "die()", "KUBECONFIG_PATH=")
+    script = f'source {shlex.quote(str(ROOT / "trusted_system/lib/rehearsal-preflight.sh"))}\nrehearsal_preflight\n'
     # Exercise the actual local preflight with deterministic command discovery;
     # no Docker, kubectl, network access or sudo is permitted in these tests.
     setup = (
@@ -259,7 +246,7 @@ def test_rehearsal_preflight_reports_both_missing_configs(rehearsal_preflight):
 def test_rehearsal_preflight_runs_before_cluster_and_cleanup():
     text = (ROOT / "trusted_system/07-run-snp-rehearsal.sh").read_text()
     assert (
-        text.rindex("\nfinish_preflight\n")
+        text.index("\nrehearsal_preflight\n")
         < text.index('"${KCTL[@]}" get runtimeclass')
         < text.index("trap cleanup EXIT")
     )

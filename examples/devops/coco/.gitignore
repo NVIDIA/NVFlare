@@ -56,3 +56,4 @@ docs/*.pptx
 !admin/lib/
 !trusted_system/lib/
 !coco/lib/
+!service/lib/

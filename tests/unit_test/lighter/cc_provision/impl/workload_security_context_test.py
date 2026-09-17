@@ -15,23 +15,23 @@
 
 """Offline workload-context contract and pinned-policy checks; no new dependencies."""
 
-import ast
 import base64
 import copy
 import gzip
 import hashlib
 import json
 import runpy
-import subprocess
 import sys
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
+from nvflare.lighter.cc_provision import workload_launch_profile, workload_security
+
 ROOT = Path(__file__).resolve().parents[5] / "examples/devops/coco"
-API = runpy.run_path(str(ROOT / "shared/workload-security-context.py"))
-ADMIN = runpy.run_path(str(ROOT / "admin/lib/workload-launch-profile.py"))
+API = vars(workload_security)
+ADMIN = vars(workload_launch_profile)
 IMAGE = "registry.example.invalid/app@sha256:" + "a" * 64
 
 
@@ -170,6 +170,8 @@ def test_pod_level_override_rejected(value):
 
 def policy_data(readonly=False):
     return {
+        "common": {"default_caps": API["PAUSE_DEFAULT_CAPS"]},
+        "cluster_config": {"pause_container_image": API["PAUSE_IMAGE"]},
         "request_defaults": {
             "ReadStreamRequest": False,
             "WriteStreamRequest": False,
@@ -187,19 +189,33 @@ def policy_data(readonly=False):
                     },
                     "Root": {"Readonly": readonly},
                 },
-            }
+            },
+            {
+                "exec_commands": [],
+                "OCI": {
+                    "Annotations": {
+                        "io.kubernetes.cri.container-type": "sandbox",
+                        "io.katacontainers.pkg.oci.container_type": "pod_sandbox",
+                    },
+                    "Process": {
+                        "User": {"UID": 65535, "GID": 65535, "AdditionalGids": []},
+                        "Args": ["/pause"],
+                        "NoNewPrivileges": True,
+                        "Capabilities": {
+                            name: ([] if name in ("Ambient", "Inheritable") else ["$(default_caps)"])
+                            for name in API["CAPABILITY_SETS"]
+                        },
+                    },
+                    "Root": {"Readonly": True},
+                },
+            },
         ],
     }
 
 
 def policy(data):
-    # Structural fixture, NOT an executable Rego/guest attestation test.
-    guards = list(API["REQUIRED_GUARDS"]) + [
-        f"match_caps(p_caps.{key}, i_caps.{key})" for key in API["CAPABILITY_SETS"]
-    ]
-    guards += [f"default {name} := false" for name in API["DENIED_REQUESTS"]]
-    guards += ["default AllowRequestsFailingPolicy := false"]
-    return "\n".join(guards) + "\npolicy_data := " + json.dumps(data)
+    rules = (Path(__file__).parent / "fixtures/kata-3.29-hardened-rules.rego").read_text()
+    return rules + "\npolicy_data := " + json.dumps(data)
 
 
 @pytest.mark.parametrize("readonly", [False, True])
@@ -253,20 +269,14 @@ def test_request_policy_structure_fails_closed(change):
         API["validate_request_policy"](value)
 
 
-@pytest.mark.parametrize("role", ["admin", "coco"])
 @pytest.mark.parametrize("stream_enabled", [False, True])
-def test_actual_role_policy_gate_checks_stream_settings(tmp_path, role, stream_enabled):
+def test_final_pod_policy_gate_checks_stream_settings(stream_enabled):
     pytest.importorskip("tomllib", reason="deployment entrypoints require Python 3.11+")
-    import re
-
-    import yaml
-
     data = policy_data()
     data["request_defaults"]["ReadStreamRequest"] = stream_enabled
     data["containers"][0]["OCI"]["Process"]["Args"] = ["python3"]
     # Structural fixtures only; no claim of executing Rego in a guest.
-    mount_guards = '\np_mount.source != ""\np_mount.source == ""\ni_storage.driver in {"blk", "scsi"}\nexpect_root_path == i_storage.mount_point\n'
-    raw = '[data]\n"policy.rego" = ' + "'''\n" + mount_guards + policy(data) + "\n'''\n"
+    raw = '[data]\n"policy.rego" = ' + "'''\n" + policy(data) + "\n'''\n"
     value = pod()
     value["metadata"] = {
         "name": "review",
@@ -287,22 +297,11 @@ def test_actual_role_policy_gate_checks_stream_settings(tmp_path, role, stream_e
     value["spec"]["containers"][0].update(
         {"stdin": False, "tty": False, "command": ["python3"], "imagePullPolicy": "Always"}
     )
-    helper = ROOT / role / "lib/workload-security-context.py"
-    if role == "admin":
-        source = (ROOT / "admin/30-generate-pod-and-policies.sh").read_text()
-        blocks = re.findall(r"<<'PY'\n(.*?)\nPY", source, re.S)
-        code = next(b for b in blocks if "Pod and generated agent-policy invariants verified" in b)
-        (tmp_path / "pod.yaml").write_text(yaml.safe_dump(value))
-        args = [tmp_path, IMAGE, '["python3"]', "kata-qemu-nvidia-gpu-snp", "65532", "65532", "false", helper]
-    else:
-        source = (ROOT / "coco/50-launch-handoff.sh").read_text()
-        code = re.findall(r"<<'PY'\n(.*?)\nPY", source, re.S)[0]
-        (tmp_path / "pod.json").write_text(json.dumps(value))
-        args = [tmp_path / "pod.json", "kata-qemu-nvidia-gpu-snp", "registry.example.invalid", helper]
-    result = subprocess.run([sys.executable, "-c", code, *map(str, args)], capture_output=True, text=True)
-    assert (result.returncode == 0) is (not stream_enabled), result.stderr
     if stream_enabled:
-        assert "ReadStreamRequest must be false" in result.stderr
+        with pytest.raises(ValueError, match="ReadStreamRequest must be false"):
+            workload_security.validate_workload_pod(value, context(), ["python3"])
+    else:
+        workload_security.validate_workload_pod(value, context(), ["python3"])
 
 
 @pytest.mark.parametrize(
@@ -395,25 +394,12 @@ def test_shared_helper_is_materialized_in_standalone_kit(tmp_path, role):
     assert wrapper["pod_context"](pod()) == context()
     isolated = tmp_path / "kit/lib/workload-security-context.py"
     isolated.parent.mkdir(parents=True)
-    isolated.write_bytes((ROOT / kits["GENERATED"][target]).read_bytes())
+    isolated.write_bytes(Path(workload_security.__file__).read_bytes())
     assert runpy.run_path(str(isolated))["pod_context"](pod()) == context()
     if role == "admin":
         consumer = isolated.parent / "workload-launch-profile.py"
-        consumer.write_bytes((ROOT / "admin/lib/workload-launch-profile.py").read_bytes())
+        consumer.write_bytes(Path(workload_launch_profile.__file__).read_bytes())
         runpy.run_path(str(consumer))["validate_pod"](contract(), pod())
-
-
-def test_stage05_records_application_not_collector_context():
-    source = (ROOT / "trusted_system/05-define-approved-launch-profile.py").read_text()
-    assert 'security["pod_context"](workload)' in source
-    tree = ast.parse(source)
-    assignment = next(
-        n
-        for n in tree.body
-        if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "data" for t in n.targets)
-    )
-    keys = [k.value for k in assignment.value.keys]
-    assert "workload_security_context" in keys
 
 
 @pytest.mark.parametrize("readonly", [True, False])
@@ -455,9 +441,6 @@ def test_stage05_actual_entrypoint(tmp_path, readonly):
 @pytest.mark.parametrize("changed_uid", [False, True])
 def test_stage09_revalidates_source_security_context(tmp_path, changed_uid):
     pytest.importorskip("yaml")
-    shell = (ROOT / "trusted_system/09-finalize-platform-reference.sh").read_text()
-    start = shell.index("import hashlib, json, runpy, sys")
-    code = shell[start : shell.index("\nPY", start)]
     # Deliberately update the source hash to isolate semantic approval checking.
     source = tmp_path / "source.json"
     import yaml
@@ -492,22 +475,15 @@ def test_stage09_revalidates_source_security_context(tmp_path, changed_uid):
             }
         )
     )
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            code,
-            str(profile),
-            str(actual),
-            str(source),
-            str(ROOT / "trusted_system/lib/workload-security-context.py"),
-        ],
-        capture_output=True,
-        text=True,
-    )
-    assert (result.returncode != 0) == changed_uid, result.stderr
     if changed_uid:
-        assert "securityContext differs" in result.stderr
+        with pytest.raises(ValueError, match="securityContext differs"):
+            workload_security.validate_actual_launch(
+                json.loads(profile.read_text()), json.loads(actual.read_text()), source
+            )
+    else:
+        workload_security.validate_actual_launch(
+            json.loads(profile.read_text()), json.loads(actual.read_text()), source
+        )
 
 
 def test_stage30_checks_complete_context_before_genpolicy_and_final_output():

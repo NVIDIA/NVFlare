@@ -210,7 +210,12 @@ host-mounted persistent directory.
 Stage 06 generates a new RSA key and self-signed Trustee leaf certificate with
 the service DNS SAN, then installs the Nginx HTTPS endpoint on **8443**. Both
 the normal health check and a 40,000-byte Authorization-header probe must pass.
-Stage 07 verifies admin audience enforcement without changing release policy.
+Stage 07 uses a read-only HTTP probe: `GET /kbs/v0/resource-policy` must return
+200 for a valid `KBS`-audience admin token, and 401 for correctly signed tokens
+with a wrong or absent audience and for a request without credentials. It signs
+short-lived probes using the local Ed25519 admin key, verifies TLS, disables
+redirects/proxies, and never logs credentials. Unexpected statuses stop the stage;
+the resource policy is not rewritten.
 
 ## 6. Start the private registry and create its TLS identity
 
@@ -225,6 +230,10 @@ random publisher password. The registry backend uses TLS on loopback port
 outside the publisher origin, while mutations require publisher credentials.
 The publisher origin is challenged on every method so OCI tools discover
 authentication at `/v2/`. CoCo needs no registry password.
+
+The publisher password file uses salted SHA-512 crypt (`openssl passwd -6`),
+not MD5 crypt. Existing password files must be regenerated when adopting this
+change; editing the script does not upgrade a stored hash.
 
 Stage 08 verifies an unauthenticated mutation is denied, starts an authenticated
 test upload, checks that its URL preserves `https://FQDN:5000/`, and cancels
@@ -425,7 +434,8 @@ corruption; it is not itself a sender signature. On **secure services**, review 
 
 ```bash
 cd /home/service_operator/coco-service-admin
-bash ./12-install-trusted-service-handoff.sh /home/service_operator/incoming/RELEASE
+EXPECTED_MANIFEST_SHA256='<independently authenticated SHA256SUMS pin from workload owner>'
+bash ./12-install-trusted-service-handoff.sh /home/service_operator/incoming/RELEASE "$EXPECTED_MANIFEST_SHA256"
 ```
 
 The installer displays the complete resource-policy diff, requires the release

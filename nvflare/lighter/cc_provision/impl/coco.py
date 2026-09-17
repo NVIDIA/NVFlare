@@ -15,14 +15,15 @@
 """Client-only CoCo configuration; attestation is performed by Kata/Trustee."""
 
 import json
-import math
 import re
 from pathlib import Path
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
+from nvflare.app_opt.confidential_computing.cc_timeouts import MANAGER_TIMEOUT_DEFAULTS, resolve_token_timeouts
 from nvflare.lighter.cc_provision.cc_constants import CCConfigKey, CCConfigValue
+from nvflare.lighter.cc_provision.utils import resolve_cc_config
 from nvflare.lighter.constants import PropKey, ProvFileName
 from nvflare.lighter.spec import Builder
 
@@ -35,23 +36,6 @@ RETRY_ARGUMENTS = {
     "retry_backoff_multiplier",
     "retry_jitter_ratio",
 }
-MANAGER_TIMEOUT_DEFAULTS = {
-    "registration_token_timeout": 300.0,
-    "refresh_token_timeout": 30.0,
-    "get_token_request_timeout": 45.0,
-}
-
-
-def resolve_cc_config(project, value):
-    if not isinstance(value, str) or not value:
-        raise ValueError("cc_config must be a non-empty YAML path")
-    path = Path(value)
-    if not path.is_absolute():
-        project_file = project.get_prop("_project_file")
-        if not project_file:
-            raise ValueError("Relative cc_config requires prepare_project(..., project_file=...) or an absolute path")
-        path = Path(project_file).parent / path
-    return str(path.resolve())
 
 
 def validate_coco_config(config):
@@ -70,6 +54,14 @@ def validate_coco_config(config):
     }
     if not isinstance(config, dict) or set(config) - allowed:
         raise ValueError("Unsupported CoCo configuration fields")
+    class_allow_list = config.get("class_allow_list", [])
+    if not isinstance(class_allow_list, list) or any(
+        not isinstance(value, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+", value)
+        for value in class_allow_list
+    ):
+        raise ValueError(
+            "CoCo class_allow_list requires explicit component class paths; wildcards/prefixes are forbidden"
+        )
     for key, value in {
         "compute_env": CCConfigValue.CONFIDENTIAL_CONTAINERS,
         "cc_cpu_mechanism": CCConfigValue.AMD_SEV_SNP,
@@ -85,10 +77,16 @@ def validate_coco_config(config):
         if not isinstance(value, str) or not value or "\x00" in value or "\n" in value:
             raise ValueError(f"Invalid {key} path")
     release = config.get("release_name")
-    if not isinstance(release, str) or len(release) > 63 or not re.fullmatch(r"[a-z0-9]([-a-z0-9]*[a-z0-9])?", release):
+    if (
+        not isinstance(release, str)
+        or len(release) > 63
+        or not re.fullmatch(r"[a-z0-9]([-a-z0-9]*[a-z0-9])?", release)
+    ):
         raise ValueError("release_name must be a unique lowercase DNS label")
     repo = config.get("registry_repository")
-    if not isinstance(repo, str) or not re.fullmatch(r"[a-z0-9]+([._-][a-z0-9]+)*(/[a-z0-9]+([._-][a-z0-9]+)*)*", repo):
+    if not isinstance(repo, str) or not re.fullmatch(
+        r"[a-z0-9]+([._-][a-z0-9]+)*(/[a-z0-9]+([._-][a-z0-9]+)*)*", repo
+    ):
         raise ValueError("Invalid registry_repository")
     issuers = config.get("cc_issuers")
     if not isinstance(issuers, list) or len(issuers) != 1:
@@ -117,15 +115,13 @@ def validate_coco_config(config):
     frequency = attestation["check_frequency"]
     if type(age) is not int or not 1 <= age <= 300 or type(frequency) is not int or not 0 < frequency < age:
         raise ValueError("Require 0 < check_frequency < token_expiration <= 300")
-    timeouts = {name: attestation.get(name, default) for name, default in MANAGER_TIMEOUT_DEFAULTS.items()}
-    for name, value in timeouts.items():
-        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
-            raise ValueError(f"{name} must be finite and positive")
-    if timeouts["get_token_request_timeout"] <= timeouts["refresh_token_timeout"]:
-        raise ValueError("get_token_request_timeout must exceed refresh_token_timeout")
+    resolve_token_timeouts(**{name: attestation[name] for name in MANAGER_TIMEOUT_DEFAULTS if name in attestation})
 
 
 class CoCoBuilder(Builder):
+    emits_cc_manager = True
+    is_exclusive = True
+
     def initialize(self, project, ctx):
         packager = project.get_prop("packager", {})
         if packager.get("path") != "nvflare.lighter.cc_provision.impl.coco_packager.CoCoPackager":
@@ -160,7 +156,9 @@ class CoCoBuilder(Builder):
             url = issuer["args"].get("token_url", "http://127.0.0.1:8006/aa/token")
             CoCoAuthorizer(**args, token_url=url)
             attestation = config.get("cc_attestation", {})
-            timeouts = {name: attestation.get(name, default) for name, default in MANAGER_TIMEOUT_DEFAULTS.items()}
+            timeouts = resolve_token_timeouts(
+                **{name: attestation[name] for name in MANAGER_TIMEOUT_DEFAULTS if name in attestation}
+            )
             self.settings[participant.name] = (args, url, attestation.get("check_frequency", 120), timeouts)
         verifier_settings = [
             ({name: value for name, value in s[0].items() if name not in RETRY_ARGUMENTS}, s[2], s[3])
@@ -192,6 +190,8 @@ class CoCoBuilder(Builder):
                     ],
                     "cc_verifier_ids": ["coco_authorizer"],
                     "cc_enabled_sites": list(self.settings),
+                    "required_site_verifier_ids": {site: ["coco_authorizer"] for site in self.settings},
+                    "require_site_binding": True,
                     "verify_frequency": frequency,
                     **timeouts,
                 },
@@ -209,6 +209,8 @@ class CoCoBuilder(Builder):
                 "cc_issuers_conf": [],
                 "cc_verifier_ids": ["coco_authorizer"],
                 "cc_enabled_sites": list(self.settings),
+                "required_site_verifier_ids": {site: ["coco_authorizer"] for site in self.settings},
+                "require_site_binding": True,
                 "verify_frequency": frequency,
                 **timeouts,
             },

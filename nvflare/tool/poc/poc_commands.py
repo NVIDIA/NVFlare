@@ -323,7 +323,8 @@ def get_fl_admins(project_config: OrderedDict, is_project_admin: bool):
     return [
         p["name"]
         for p in participants
-        if p["type"] == "admin" and (p["role"] == "project_admin" if is_project_admin else p["role"] != "project_admin")
+        if p["type"] == "admin"
+        and (p["role"] == "project_admin" if is_project_admin else p["role"] != "project_admin")
     ]
 
 
@@ -376,12 +377,9 @@ def local_provision(
         if docker_image:
             project_config = add_poc_docker_runtime(docker_image, project_config)
     project_config = update_server_default_host(project_config, "localhost")
-    # The saved POC project moves to the workspace. Preserve the source
-    # directory for CC configs, including subsequent dynamic POC additions.
-    for participant in project_config.get("participants", []):
-        cc_config = participant.get("cc_config")
-        if isinstance(cc_config, str) and not os.path.isabs(cc_config):
-            participant["cc_config"] = os.path.abspath(os.path.join(os.path.dirname(src_project_file), cc_config))
+    # Preserve the source origin when saving a project in another directory.
+    # Backend-specific path resolution belongs to the provisioning builders.
+    project_config[PropKey.PROJECT_FILE] = os.path.abspath(project_config.get(PropKey.PROJECT_FILE, src_project_file))
     save_project_config(project_config, dst_project_file)
     service_config = get_service_config(project_config)
     provision_config = copy.deepcopy(project_config)
@@ -1044,7 +1042,9 @@ def _dynamic_poc_project_config(project_config: Dict, participant: Dict) -> Dict
     return dynamic_config
 
 
-def _ensure_dynamic_poc_ca_available(poc_workspace: str, project_name: str, prod_dir: str, project_config: Dict) -> str:
+def _ensure_dynamic_poc_ca_available(
+    poc_workspace: str, project_name: str, prod_dir: str, project_config: Dict
+) -> str:
     state_file = os.path.join(poc_workspace, project_name, "state", "cert.json")
     if not os.path.isfile(state_file):
         raise CLIException(
@@ -1746,7 +1746,9 @@ def start_poc(cmd_args):
         "ready_timeout": ready_timeout,
         "ready": ready,
         "clients": clients,
-        "console_logs": _build_poc_console_logs(poc_workspace, project_config, service_config, services_list, excluded),
+        "console_logs": _build_poc_console_logs(
+            poc_workspace, project_config, service_config, services_list, excluded
+        ),
     }
     result.update(port_diagnostics)
     if json_mode:

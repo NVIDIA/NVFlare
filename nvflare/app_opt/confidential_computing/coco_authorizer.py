@@ -22,6 +22,7 @@ import json
 import logging
 import math
 import random
+import re
 import secrets
 import threading
 import time
@@ -33,18 +34,9 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
 
 from .cc_authorizer import CCAuthorizer, CCTokenGenerateError
+from .trustee_claims import TRUST_VECTOR
 
 COCO_NAMESPACE = "x-trustee-coco"
-TRUST_VECTOR = {
-    "executables": 3,
-    "hardware": 2,
-    "configuration": 3,
-    "file-system": 0,
-    "instance-identity": 0,
-    "runtime-opaque": 0,
-    "storage-opaque": 0,
-    "sourced-data": 0,
-}
 EAT_PROFILE = "tag:github.com,2024:confidential-containers/Trustee"
 MAX_TOKEN_BYTES = 2 * 1024 * 1024
 
@@ -54,6 +46,8 @@ class _TemporaryTokenError(CCTokenGenerateError):
 
 
 class CoCoAuthorizer(CCAuthorizer):
+    supports_site_binding = True
+
     def __init__(
         self,
         trustee_public_key,
@@ -68,6 +62,8 @@ class CoCoAuthorizer(CCAuthorizer):
         retry_max_delay=15.0,
         retry_backoff_multiplier=2.0,
         retry_jitter_ratio=0.5,
+        ear_audience=None,
+        workload_constraints=None,
     ):
         """Configure EAR freshness and the generated/accepted outer proof lifetime separately.
 
@@ -82,6 +78,10 @@ class CoCoAuthorizer(CCAuthorizer):
         Retry delays are in seconds. Each wait is sampled between
         delay * (1 - retry_jitter_ratio) and delay; delay grows by
         retry_backoff_multiplier up to retry_max_delay.
+        ear_audience optionally pins the inner EAR aud, independently of the
+        required FL proof audience. workload_constraints optionally maps signed
+        site subjects to init_data (SHA-256) and/or SNP measurement pins.
+        Unlisted sites or missing claims fail closed when constraints are set.
         """
         self.trustee_key = serialization.load_pem_public_key(trustee_public_key.encode())
         if not isinstance(self.trustee_key, ec.EllipticCurvePublicKey) or not isinstance(
@@ -124,6 +124,27 @@ class CoCoAuthorizer(CCAuthorizer):
         ):
             raise ValueError("token_url must address the guest-local 127.0.0.1 /aa/token API")
         self.audience = audience
+        if ear_audience is not None and (not isinstance(ear_audience, str) or not ear_audience):
+            raise ValueError("ear_audience must be a non-empty string or None")
+        self.ear_audience = ear_audience
+        if workload_constraints is not None:
+            if not isinstance(workload_constraints, dict) or not workload_constraints:
+                raise ValueError("workload_constraints must be a non-empty site mapping")
+            for site, pins in workload_constraints.items():
+                if (
+                    not isinstance(site, str)
+                    or not site
+                    or not isinstance(pins, dict)
+                    or not pins
+                    or set(pins) - {"init_data", "measurement"}
+                ):
+                    raise ValueError("Invalid site workload constraints")
+                for name, value in pins.items():
+                    length = 64 if name == "init_data" else 96
+                    if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{" + str(length) + "}", value):
+                        raise ValueError(f"Invalid workload {name} pin")
+            workload_constraints = {site: dict(pins) for site, pins in workload_constraints.items()}
+        self.workload_constraints = workload_constraints
         self.site_name = site_name
         self.token_url = token_url
         self.max_age = max_token_age_seconds
@@ -163,7 +184,11 @@ class CoCoAuthorizer(CCAuthorizer):
             token,
             self.trustee_key,
             algorithms=["ES256"],
-            options={"require": ["iat", "exp"], "verify_aud": False},
+            audience=self.ear_audience,
+            options={
+                "require": ["iat", "exp"] + (["aud"] if self.ear_audience else []),
+                "verify_aud": self.ear_audience is not None,
+            },
             leeway=self.ear_leeway_seconds,
         )
         now = time.time()
@@ -350,7 +375,7 @@ class CoCoAuthorizer(CCAuthorizer):
             if not isinstance(token, str) or len(token) > MAX_TOKEN_BYTES:
                 return False
             untrusted = jwt.decode(token, options={"verify_signature": False})
-            _, public = self._ear(untrusted["ear"])
+            ear, public = self._ear(untrusted["ear"])
             proof = jwt.decode(
                 token,
                 public,
@@ -371,6 +396,17 @@ class CoCoAuthorizer(CCAuthorizer):
                 or len(proof["jti"]) != 48
             ):
                 raise ValueError("Invalid proof identity or freshness")
+            if self.workload_constraints is not None:
+                pins = self.workload_constraints.get(proof["sub"])
+                if pins is None:
+                    raise ValueError("No workload constraints for authenticated site")
+                evidence = ear["submods"]["cpu0"]["ear.veraison.annotated-evidence"]
+                actual = {
+                    "init_data": evidence.get("init_data"),
+                    "measurement": evidence.get("snp", {}).get("measurement"),
+                }
+                if any(actual[name] != value for name, value in pins.items()):
+                    raise ValueError("Attested workload differs from locally approved constraints")
             with self.lock:
                 self.seen = {k: expiry for k, expiry in self.seen.items() if expiry > now}
                 key = (proof["sub"], proof["jti"])

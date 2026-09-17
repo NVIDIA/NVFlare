@@ -26,9 +26,19 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 ROLES = ("admin", "service", "coco", "trusted_system")
+PACKAGE_SOURCES = {
+    "shared/workload-security-context.py": "nvflare/lighter/cc_provision/workload_security.py",
+    "shared/kbs-admin-audience.py": "nvflare/lighter/cc_provision/kbs_audience.py",
+    "shared/trustee_claims.py": "nvflare/app_opt/confidential_computing/trustee_claims.py",
+    "shared/kata-runtime-profile.py": "nvflare/lighter/cc_provision/kata_runtime_profile.py",
+    "admin/lib/workload-launch-profile.py": "nvflare/lighter/cc_provision/workload_launch_profile.py",
+}
 GENERATED = {f"{role}/lib/validate-config.sh": "shared/validate-config.sh" for role in ROLES}
-for role in ("admin", "trusted_system", "coco"):
+GENERATED.update({f"{role}/lib/common-base.sh": "shared/lib/common-base.sh" for role in ROLES})
+GENERATED["service/lib/kbs-admin-audience.py"] = "shared/kbs-admin-audience.py"
+for role in ROLES:
     GENERATED[f"{role}/lib/workload-security-context.py"] = "shared/workload-security-context.py"
+    GENERATED[f"{role}/lib/trustee_claims.py"] = "shared/trustee_claims.py"
 for role in ("coco", "trusted_system"):
     GENERATED[f"{role}/lib/kata-runtime-profile.py"] = "shared/kata-runtime-profile.py"
     for name in ("lib/common.sh", "templates/kubeadm.yaml.in", "10-install-kubernetes.sh"):
@@ -94,6 +104,26 @@ def assemble(root, output):
     )
     if changes:
         raise ValueError("Commit reviewed package changes before assembly; tracked sources must be clean")
+    repo = root.parents[2]
+    package_changes = subprocess.check_output(
+        ["git", "status", "--porcelain", "--", *PACKAGE_SOURCES.values()], cwd=repo, text=True
+    )
+    if package_changes:
+        raise ValueError("Commit reviewed package helper changes before assembly")
+    for source in PACKAGE_SOURCES.values():
+        entry = (
+            subprocess.check_output(["git", "ls-files", "--stage", "--", source], cwd=repo, text=True).strip().split()
+        )
+        path = Path(source)
+        if (
+            len(entry) != 4
+            or entry[0] not in ("100644", "100755")
+            or entry[2] != "0"
+            or entry[3] != source
+            or any((repo / part).is_symlink() for part in (path, *path.parents))
+            or not (repo / path).is_file()
+        ):
+            raise ValueError(f"Package helper must be a tracked regular source file: {source}")
     names = package_files(root)
     validate_layout(root)
     subprocess.run([sys.executable, str(root / "validate-package.py")], check=True)
@@ -103,10 +133,12 @@ def assemble(root, output):
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(root / name, target)
         target.chmod(0o755 if name.endswith(".sh") else 0o644)
+    for target, source in PACKAGE_SOURCES.items():
+        shutil.copyfile(repo / source, output / target)
     for target, source in GENERATED.items():
         destination = output / target
         destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(root / source, destination)
+        shutil.copyfile(output / source, destination)
         destination.chmod(0o755 if target.endswith(".sh") else 0o644)
     validate_layout(output, assembled=True)
     return output

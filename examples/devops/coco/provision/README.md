@@ -72,6 +72,24 @@ release name for each client and each image/key/policy revision. Clients can
 use different Dockerfiles. `platform_config` must name the prepared admin kit's
 `platform.env`; the pipeline uses scripts from that same kit.
 
+`CoCoPackager.build_image_cmd` is required: the Python wheel does not ship the
+example image builder. Supply the reviewed executable explicitly. This is trusted
+operator configuration, not workload-supplied input; relative `../admin/...` and
+absolute paths intentionally support separate role-kit directories. Authenticate
+and review that executable and its parent directory. The packager validates its
+returned YAML, fixed security context, complete InitData policy and approved
+pause-container profile before releasing a handoff. Unsupported output remains
+in private recovery state.
+
+The deployment host requires system Python 3.11+ for InitData/TOML validation.
+An NVFlare virtualenv on Python 3.10 uses `/usr/bin/python3` for this parsing
+step; it fails closed if that system interpreter is too old. No third-party
+TOML backport is needed, and importing provisioning modules on 3.10 remains safe.
+
+`class_allow_list`, when supplied, must contain fully qualified reviewed class
+names such as `my_application.executor.ReviewedExecutor`. Wildcards, module-prefix
+grants and non-string entries are rejected. Omit it or use `[]` if unnecessary.
+
 `cc_issuers` configures the implemented Trustee CoCo authorizer. The confidential
 client issues proofs; the ordinary FL server verifies them at registration and
 periodically through CCManager without attesting itself. The pinned public-key

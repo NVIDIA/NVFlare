@@ -70,9 +70,14 @@ openssl x509 -in public/registry-ca.crt -noout -subject -issuer -dates -fingerpr
 ./00-install-tools.sh
 ```
 
-After registry certificate rotation, refresh both the registry-specific CA
-directories and `/usr/local/share/ca-certificates/coco-registry-ca.crt`, then
-run `sudo update-ca-certificates`. Kata `genpolicy` uses system trust roots.
+After registry certificate rotation, refresh the registry-specific CA
+directories and `public/registry-ca.crt`. Stage 30 scopes `SSL_CERT_FILE` to
+the `genpolicy` process; never install the registry CA as a host-wide root.
+For an older deployment, review and remove the obsolete
+`/usr/local/share/ca-certificates/coco-registry-ca.crt`, then run
+`sudo update-ca-certificates --fresh` to remove its host-wide trust.
+If a replacement genpolicy build ignores `SSL_CERT_FILE`, stop and configure
+process-scoped roots for that build; do not disable TLS or restore global trust.
 Stages 20 and 25 explicitly pass `public/registry-ca.crt` to Cosign with
 `--registry-cacert`; do not disable TLS verification to work around stale CAs.
 

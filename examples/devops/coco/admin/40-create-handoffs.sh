@@ -46,6 +46,7 @@ install -m 0644 "${OUTPUT_DIR}/resource-policy-fragment.rego" \
         release-authorization.json resource-policy-fragment.rego > SHA256SUMS
 )
 chmod 0600 "${SERVICE_HANDOFF}/SHA256SUMS"
+SERVICE_MANIFEST_SHA256="$(sha256sum "${SERVICE_HANDOFF}/SHA256SUMS" | awk '{print $1}')"
 
 POD_NAME="${RELEASE_NAME}-pod.yaml"
 install -m 0644 "${OUTPUT_DIR}/pod.yaml" "${COCO_HANDOFF}/${POD_NAME}"
@@ -73,6 +74,10 @@ Handoffs created.
 
 Trusted service administrator only (contains image_key):
   ${SERVICE_HANDOFF}
+
+Authenticate this manifest SHA-256 to the service administrator through an
+independent authenticated channel (never trust a pin bundled with the files):
+  ${SERVICE_MANIFEST_SHA256}
 
 The only file to deliver manually to coco IT:
   ${COCO_HANDOFF}/${POD_NAME}

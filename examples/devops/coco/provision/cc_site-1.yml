@@ -35,6 +35,7 @@ release_name: site-1-v1
 registry_repository: workloads/site-1
 platform_config: ../admin/platform.env
 
-# Add only reviewed application module names baked into the image.
+# Add only reviewed fully-qualified application class names baked into the image.
+# Wildcards and module-prefix grants are rejected.
 # class_allow_list:
-#   - my_application.
+#   - my_application.executor.ReviewedExecutor

@@ -14,10 +14,15 @@
 
 import json
 import os
+from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
-from nvflare.lighter.cc_provision.cc_constants import CCConfigKey, CCConfigValue
+from nvflare.apis.fl_context import FLContext
+from nvflare.app_opt.confidential_computing.cc_authorizer import CCAuthorizer
+from nvflare.app_opt.confidential_computing.cc_manager import CC_NAMESPACE, CC_TOKEN, CCManager
+from nvflare.lighter.cc_provision.cc_constants import CC_AUTHORIZERS_KEY, CCConfigKey, CCConfigValue
 from nvflare.lighter.cc_provision.impl.cc import CCBuilder
 from nvflare.lighter.constants import PropKey, ProvFileName
 from nvflare.lighter.ctx import ProvisionContext
@@ -114,3 +119,42 @@ def test_cc_builder_rejects_invalid_class_allow_list(tmp_path):
 
     with pytest.raises(ValueError, match=CCConfigKey.CLASS_ALLOW_LIST):
         builder.build(project, ctx)
+
+
+def test_legacy_heterogeneous_issuers_generate_per_site_requirements(tmp_path):
+    project = Project("heterogeneous", "CPU server and CPU plus GPU client")
+    server = project.set_server("server.example.com", "org", {})
+    client = project.add_client("client1", "org", {})
+    ctx = ProvisionContext(str(tmp_path), project)
+    builder = CCBuilder()
+    builder._cc_enabled_sites = [server, client]
+    for participant, ids in ((server, ["snp"]), (client, ["snp", "gpu"])):
+        participant.set_prop(PropKey.CC_ENABLED, True)
+        participant.set_prop(PropKey.CC_CONFIG_DICT, {CCConfigKey.COMPUTE_ENV: CCConfigValue.ONPREM_CVM})
+        participant.set_prop(PropKey.CC_ISSUERS, [{"id": v, "token_expiration": 300} for v in ids])
+        _write_resources(ctx, participant, {"components": []})
+    ctx[CC_AUTHORIZERS_KEY] = [{"id": "snp"}, {"id": "gpu"}]
+    for participant in (server, client):
+        builder._build_cc_manager_component(participant, ctx)
+        args = json.loads((Path(ctx.get_local_dir(participant)) / "cc_manager__p_resources.json").read_text())[
+            "components"
+        ][0]["args"]
+        assert args["required_site_verifier_ids"] == {"server": ["snp"], "client1": ["snp", "gpu"]}
+        assert set(args["cc_verifier_ids"]) == {"snp", "gpu"}
+        manager = CCManager(**args)
+        verifiers = {}
+        for name in ("snp", "gpu"):
+            verifier = Mock(spec=CCAuthorizer)
+            verifier.get_namespace.return_value = name
+            verifier.verify_for_site.return_value = True
+            verifiers[name] = verifier
+        context = Mock(spec=FLContext)
+        context.get_engine.return_value.get_component.side_effect = verifiers.get
+        manager._setup_cc_authorizers(context)
+        tokens = {
+            "server": [{CC_NAMESPACE: "snp", CC_TOKEN: "proof"}],
+            "client1": [{CC_NAMESPACE: "snp", CC_TOKEN: "proof"}, {CC_NAMESPACE: "gpu", CC_TOKEN: "proof"}],
+        }
+        assert manager._verify_participants_tokens(tokens).error == ""
+        tokens["client1"].pop()
+        assert manager._verify_participants_tokens(tokens).error

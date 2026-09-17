@@ -73,6 +73,7 @@ class PropKey:
     CC_ISSUERS = "cc_issuers"
 
     # the following are internal properties added by builders during provision
+    PROJECT_FILE = "_project_file"
     PARENT = "parent"
     FQCN = "__fqcn__"
     FQSN = "__fqsn__"

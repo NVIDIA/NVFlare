@@ -18,6 +18,7 @@ import hashlib
 import io
 import os
 import shlex
+import shutil
 import subprocess
 import tarfile
 from pathlib import Path
@@ -210,3 +211,126 @@ as_root() {{
     else:
         assert result.returncode == 0, result.stderr
         assert (target / "marker").read_bytes() == b"approved"
+
+
+@pytest.fixture(scope="module")
+def signing_keys(tmp_path_factory):
+    if not shutil.which("gpg") or not shutil.which("gpgconf"):
+        pytest.skip("GnuPG is required for real signing-key regression tests")
+    home = tmp_path_factory.mktemp("signing-keys")
+    home.chmod(0o700)
+    base = ["gpg", "--batch", "--no-options", "--homedir", str(home)]
+    keys = []
+    try:
+        for name in ("approved", "unapproved"):
+            subprocess.run(
+                base
+                + [
+                    "--pinentry-mode",
+                    "loopback",
+                    "--passphrase",
+                    "",
+                    "--quick-generate-key",
+                    name,
+                    "ed25519",
+                    "sign",
+                    "1d",
+                ],
+                check=True,
+                capture_output=True,
+            )
+            listing = subprocess.check_output(base + ["--with-colons", "--list-keys", name], text=True)
+            fingerprint = next(line.split(":")[9] for line in listing.splitlines() if line.startswith("fpr:"))
+            public = subprocess.check_output(base + ["--armor", "--export", fingerprint])
+            keys.append((fingerprint, public))
+        yield keys
+    finally:
+        subprocess.run(["gpgconf", "--homedir", str(home), "--kill", "gpg-agent"], check=True)
+
+
+@pytest.mark.parametrize("kind", ["valid", "lowercase_pin", "wrong_key", "extra_key", "malformed", "wrong_pin"])
+def test_apt_key_installs_only_approved_primary(tmp_path, signing_keys, kind):
+    (pin, good), (_, bad) = signing_keys
+    payload = {"wrong_key": bad, "extra_key": good + bad, "malformed": b"not a public key"}.get(kind, good)
+    source = tmp_path / "key.asc"
+    source.write_bytes(payload)
+    destination = tmp_path / "installed.gpg"
+    destination.write_bytes(b"previous keyring")
+    if kind == "wrong_pin":
+        pin = "0" * 40
+    elif kind == "lowercase_pin":
+        pin = pin.lower()
+    result = run(
+        tmp_path,
+        f"""
+prepare_download_dir
+install -m 0600 {shlex.quote(str(source))} "$STATE_DIR/downloads/Release.key"
+install_verified_apt_key "$STATE_DIR/downloads/Release.key" {pin} {shlex.quote(str(destination))}
+""",
+    )
+    if kind in ("valid", "lowercase_pin"):
+        assert result.returncode == 0, result.stderr
+        expected = subprocess.check_output(
+            ["gpg", "--batch", "--no-options", "--homedir", str(tmp_path), "--dearmor"], input=good
+        )
+        assert destination.read_bytes() == expected
+        assert destination.stat().st_mode & 0o777 == 0o644
+    else:
+        assert result.returncode != 0
+        assert destination.read_bytes() == b"previous keyring"
+
+
+@pytest.mark.parametrize("pin", [None, "", "0" * 39, "g" * 40, "0" * 41])
+def test_apt_missing_or_invalid_pin_fails_before_privileged_setup(tmp_path, pin):
+    source = INSTALLER.read_text()
+    preflight = source[source.index("load_config\n") : source.index('tmp_dir="')]
+    setup = (
+        "unset KUBERNETES_APT_KEY_FINGERPRINT\n"
+        if pin is None
+        else f"KUBERNETES_APT_KEY_FINGERPRINT={shlex.quote(pin)}\n"
+    )
+    result = run(
+        tmp_path,
+        setup
+        + f"CNI_PLUGINS_SHA256={'0' * 64}\n"
+        + "CONFIG_FILE=fixture.env\nload_config() { :; }\n"
+        + "require_root_or_sudo() { echo PRIVILEGED; }\n"
+        + preflight,
+    )
+    assert result.returncode != 0
+    assert "Set KUBERNETES_APT_KEY_FINGERPRINT" in result.stderr
+    assert "PRIVILEGED" not in result.stdout
+
+
+@pytest.mark.parametrize("role", ["coco", "trusted_system/bootstrap"])
+def test_apt_templates_pin_reviewed_primary(role):
+    config = (COMMON.parents[3] / role / "config.env.example").read_text()
+    assert "KUBERNETES_APT_KEY_FINGERPRINT=DE15B14486CD377B9E876E1A234654DA9A296436\n" in config
+
+
+@pytest.mark.parametrize("valid", [True, False])
+def test_bootstrap_rejects_wrong_key_before_repository_update(tmp_path, signing_keys, valid):
+    (pin, approved), (_, wrong) = signing_keys
+    payload = tmp_path / "key.asc"
+    payload.write_bytes(approved if valid else wrong)
+    keyring_dir = tmp_path / "keyrings"
+    source = INSTALLER.read_text()
+    start = source.index("as_root install -d -m 0755 /etc/apt/keyrings")
+    end = source.index('echo "deb [signed-by=', start)
+    section = source[start:end].replace("/etc/apt/keyrings", str(keyring_dir))
+    result = run(
+        tmp_path,
+        f"""
+prepare_download_dir
+download_dir="$STATE_DIR/downloads"
+KUBERNETES_MINOR=v1.34
+KUBERNETES_APT_KEY_FINGERPRINT={pin}
+install -m 0600 {shlex.quote(str(payload))} "$download_dir/kubernetes-v1.34-Release.key"
+curl() {{ echo "Unexpected network request" >&2; return 99; }}
+{section}
+echo REPOSITORY_UPDATE_REACHED
+""",
+    )
+    assert (result.returncode == 0) is valid, result.stderr
+    assert ("REPOSITORY_UPDATE_REACHED" in result.stdout) is valid
+    assert (keyring_dir / "kubernetes-apt-keyring.gpg").exists() is valid

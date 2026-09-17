@@ -27,6 +27,11 @@ hardware := 2 if {
     is_number(min_snp)
     is_number(min_microcode)
 
+    is_number(input.snp.reported_tcb_bootloader)
+    is_number(input.snp.reported_tcb_tee)
+    is_number(input.snp.reported_tcb_snp)
+    is_number(input.snp.reported_tcb_microcode)
+
     input.snp.reported_tcb_bootloader >= min_bootloader
     input.snp.reported_tcb_tee >= min_tee
     input.snp.reported_tcb_snp >= min_snp

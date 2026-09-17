@@ -445,8 +445,9 @@ def prepare_project(project_dict, add_user_file_path=None, add_client_file_path=
     project_name = _normalize_project_name(project_dict)
     project_description = project_dict.get(PropKey.DESCRIPTION, "")
     project = Project(name=project_name, description=project_description, props=project_dict)
+    project_file = project_dict.get(PropKey.PROJECT_FILE, project_file)
     if project_file is not None:
-        project.set_prop("_project_file", os.path.abspath(project_file))
+        project.set_prop(PropKey.PROJECT_FILE, os.path.abspath(project_file))
     participant_defs = project_dict.get("participants")
     if not isinstance(participant_defs, list):
         raise ValueError("missing 'participants' in project config")

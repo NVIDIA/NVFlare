@@ -4,16 +4,7 @@
 ${prefix}_expected_initdata := ${initdata}
 ${prefix}_expected_image := ${image}
 ${prefix}_expected_args := ${args}
-${prefix}_expected_trust_vector := {
-    "executables": 3,
-    "hardware": 2,
-    "configuration": 3,
-    "file-system": 0,
-    "instance-identity": 0,
-    "runtime-opaque": 0,
-    "storage-opaque": 0,
-    "sourced-data": 0,
-}
+${prefix}_expected_trust_vector := ${trust_vector}
 
 ${path_rules}
 

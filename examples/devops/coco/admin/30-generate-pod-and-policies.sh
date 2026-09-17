@@ -292,7 +292,17 @@ pod = yaml.safe_load(path.read_text())
 del pod["spec"]["containers"][0]["securityContext"]["runAsNonRoot"]
 path.write_text(yaml.safe_dump(pod, sort_keys=False))
 PY
-"${GENPOLICY}" \
+# Scope the registry CA to this image-inspection process, never the host trust store.
+python3 - "${PUBLIC_DIR}/registry-ca.crt" "${POLICY_WORK_DIR}/registry-trust.pem" <<'PY'
+from pathlib import Path
+import ssl
+import sys
+system = ssl.get_default_verify_paths().cafile
+if not system:
+    raise SystemExit("System CA bundle is required for public pause-image inspection")
+Path(sys.argv[2]).write_bytes(Path(system).read_bytes() + b"\n" + Path(sys.argv[1]).read_bytes())
+PY
+SSL_CERT_FILE="${POLICY_WORK_DIR}/registry-trust.pem" "${GENPOLICY}" \
     --rego-rules-path "${RELEASE_RULES}" \
     --json-settings-path "${RELEASE_SETTINGS}" \
     --initdata-path="${POLICY_WORK_DIR}/base-initdata.toml" \
@@ -354,18 +364,12 @@ assert pod["spec"]["automountServiceAccountToken"] is False
 assert "volumes" not in pod["spec"] and "volumeMounts" not in c
 assert "ports" not in c and "envFrom" not in c and "args" not in c
 
-runpy.run_path(sys.argv[8])["validate_request_policy"](policy)
-for expected in [image, *command]:
-    if json.dumps(expected) not in policy and expected not in policy:
-        raise SystemExit(f"generated policy lacks exact value: {expected}")
-for expected_fix in (
-    'p_mount.source != ""',
-    'p_mount.source == ""',
-    'i_storage.driver in {"blk", "scsi"}',
-    'expect_root_path == i_storage.mount_point',
-):
-    if expected_fix not in policy:
-        raise SystemExit(f"generated policy lacks CVE-2026-77176 workaround: {expected_fix}")
+security = runpy.run_path(sys.argv[8])
+security["validate_workload_pod"](pod, {
+    "privileged": False, "allowPrivilegeEscalation": False, "runAsNonRoot": True,
+    "runAsUser": uid, "runAsGroup": gid, "readOnlyRootFilesystem": sys.argv[7] == "true",
+    "capabilities": {"drop": ["ALL"]}, "seccompProfile": {"type": "RuntimeDefault"},
+}, command)
 print("Pod and generated agent-policy invariants verified")
 PY
 
@@ -376,7 +380,8 @@ EXPECTED_INITDATA_HEX="$(tr -d '\r\n' < "${POLICY_WORK_DIR}/expected-initdata-sh
 
 python3 - "${POLICY_WORK_DIR}" "${RELEASE_NAME}" "${IMAGE_REF}" \
     "${APP_COMMAND_JSON}" "${EXPECTED_INITDATA_HEX}" \
-    "${KBS_IMAGE_KEY_PATH}" "${KBS_SIGNING_KEY_PATH}" "${KBS_IMAGE_POLICY_PATH}" <<'PY'
+    "${KBS_IMAGE_KEY_PATH}" "${KBS_SIGNING_KEY_PATH}" "${KBS_IMAGE_POLICY_PATH}" \
+    "${SCRIPT_DIR}/lib/trustee_claims.py" <<'PY'
 import json
 from pathlib import Path
 import re
@@ -387,6 +392,8 @@ release, image = sys.argv[2], sys.argv[3]
 args = json.loads(sys.argv[4])
 initdata = sys.argv[5]
 paths = sys.argv[6:9]
+import runpy
+trust_vector = runpy.run_path(sys.argv[9])["TRUST_VECTOR"]
 prefix = "wo_" + re.sub(r"[^a-z0-9_]", "_", release)
 
 def q(value):
@@ -402,16 +409,7 @@ fragment = f'''# Merge this fragment into the trusted service administrator's gl
 {prefix}_expected_initdata := {q(initdata)}
 {prefix}_expected_image := {q(image)}
 {prefix}_expected_args := {q(args)}
-{prefix}_expected_trust_vector := {{
-    "executables": 3,
-    "hardware": 2,
-    "configuration": 3,
-    "file-system": 0,
-    "instance-identity": 0,
-    "runtime-opaque": 0,
-    "storage-opaque": 0,
-    "sourced-data": 0,
-}}
+{prefix}_expected_trust_vector := {json.dumps(trust_vector, indent=4)}
 
 {path_rules}
 
@@ -451,16 +449,7 @@ authorization = {
     "snp_init_data_encoding_in_trustee_v0_21": "lowercase-hex",
     "required_ear_submods": ["cpu0", "gpu0"],
     "required_ear_trust_vectors": {
-        name: {
-            "executables": 3,
-            "hardware": 2,
-            "configuration": 3,
-            "file-system": 0,
-            "instance-identity": 0,
-            "runtime-opaque": 0,
-            "storage-opaque": 0,
-            "sourced-data": 0,
-        }
+        name: trust_vector
         for name in ("cpu0", "gpu0")
     },
     "kbs_resource_paths": paths,

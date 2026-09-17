@@ -49,6 +49,7 @@ class CCManagerArgs:
     CC_VERIFIER_IDS = "cc_verifier_ids"
     VERIFY_FREQUENCY = "verify_frequency"
     CC_ENABLED_SITES = "cc_enabled_sites"
+    REQUIRED_SITE_VERIFIER_IDS = "required_site_verifier_ids"
 
 
 class CCIssuerConfig:

@@ -36,6 +36,9 @@ class Builder(ABC):
     are involved.
     """
 
+    emits_cc_manager = False
+    is_exclusive = False
+
     def initialize(self, project: Project, ctx: ProvisionContext):
         """Prepare the builder with any necessary pre-processing.
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../lib" && pwd)/common-base.sh"
 # Cluster-only bootstrap helpers; no secure-services deployment.
 SUITE_DIR="${COCO_BOOTSTRAP_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 CONFIG_FILE="${COCO_CONFIG:-${SUITE_DIR}/config.env}"
@@ -33,10 +34,6 @@ CHECK
   mkdir -p "$STATE_DIR"
 }
 
-log() { printf '\n[%s] %s\n' "$(date -u +%H:%M:%S)" "$*"; }
-die() { echo "ERROR: $*" >&2; exit 1; }
-need() { command -v "$1" >/dev/null 2>&1 || die "Required command not found: $1"; }
-as_root() { if ((EUID == 0)); then "$@"; else sudo "$@"; fi; }
 
 prepare_download_dir() {
   local directory="$STATE_DIR/downloads" uid mode
@@ -77,19 +74,7 @@ validate_download_path() {
   fi
 }
 
-kctl() {
-  if ((EUID == 0)); then kubectl --kubeconfig "$KUBECONFIG_PATH" "$@"
-  elif [[ -r "$KUBECONFIG_PATH" ]]; then kubectl --kubeconfig "$KUBECONFIG_PATH" "$@"
-  else sudo kubectl --kubeconfig "$KUBECONFIG_PATH" "$@"
-  fi
-}
 
-helmctl() {
-  if ((EUID == 0)); then helm --kubeconfig "$KUBECONFIG_PATH" "$@"
-  elif [[ -r "$KUBECONFIG_PATH" ]]; then helm --kubeconfig "$KUBECONFIG_PATH" "$@"
-  else sudo helm --kubeconfig "$KUBECONFIG_PATH" "$@"
-  fi
-}
 
 # Populate a persistent cache atomically. A missing/empty artifact is downloaded;
 # a verified artifact is also redownloaded whenever its checksum is wrong.
@@ -142,6 +127,33 @@ extract_verified_archive() {
     printf "%s  %s\n" "$2" "$snapshot/archive" | sha256sum --check --status
     tar -C "$3" -xzf "$snapshot/archive"
   ' coco-extract "$archive" "$sha" "$destination"
+}
+
+install_verified_apt_key() {
+  local source=$1 fingerprint=$2 destination=$3
+  [[ $fingerprint =~ ^[0-9A-Fa-f]{40}$ ]] || die 'Invalid apt signing-key fingerprint'
+  validate_download_path "$source"
+  # Convert, inspect and install the SAME private snapshot. Never import into
+  # the operator's keyring or accept extra primary keys alongside the pin.
+  as_root bash -c '
+    set -Eeuo pipefail
+    umask 077
+    snapshot=$(mktemp -d /var/tmp/coco-apt-key.XXXXXXXXXX)
+    trap '\''rm -rf -- "$snapshot"'\'' EXIT
+    cp -- "$1" "$snapshot/Release.key"
+    install -d -m 0700 "$snapshot/gnupg"
+    gpg_args=(--batch --no-options --homedir "$snapshot/gnupg")
+    gpg "${gpg_args[@]}" --dearmor <"$snapshot/Release.key" >"$snapshot/key.gpg"
+    gpg "${gpg_args[@]}" --with-colons --show-keys --fingerprint "$snapshot/key.gpg" >"$snapshot/keys"
+    awk -F: -v expected="${2^^}" '\''
+      $1 == "pub" { count++; primary=1 }
+      $1 == "sec" || $1 == "ssb" { invalid=1 }
+      ($1 == "pub" || $1 == "sub") && ($2 == "r" || $2 == "e") { invalid=1 }
+      $1 == "fpr" && primary { fingerprint=$10; primary=0 }
+      END { exit !(count == 1 && !invalid && fingerprint == expected) }
+    '\'' "$snapshot/keys" || { echo "ERROR: apt signing-key fingerprint mismatch or invalid key bundle" >&2; exit 1; }
+    install -m 0644 -- "$snapshot/key.gpg" "$3"
+  ' coco-apt-key "$source" "$fingerprint" "$destination"
 }
 
 wait_for() {

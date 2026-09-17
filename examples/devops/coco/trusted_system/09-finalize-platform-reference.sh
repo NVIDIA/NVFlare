@@ -137,30 +137,10 @@ if [[ -n "${REHEARSAL_WORKLOAD_YAML:-}" ]]; then
         [[ $(sed -n "s/^${field}: //p" "${PROFILE_DIR}/${REHEARSAL_EVIDENCE_FILE}") == "${binding#*|}" ]] || die "Changed ${field}"
     done
     python3 - "${PROFILE_DIR}/approved-launch-profile.json" "${REHEARSAL_RUN}/actual-launch.json" "${REHEARSAL_WORKLOAD_YAML}" "${SCRIPT_DIR}/lib/workload-security-context.py" <<'PY'
-import hashlib, json, runpy, sys
+import json, runpy, sys
 from pathlib import Path
 profile, actual = (json.loads(Path(p).read_text()) for p in sys.argv[1:3])
-if hashlib.sha256(Path(sys.argv[3]).read_bytes()).hexdigest() != profile['workload_yaml_sha256']:
-    raise SystemExit('Workload source differs from the approved profile')
-security = runpy.run_path(sys.argv[4])
-security['validate_pod_context'](security['read_pod'](Path(sys.argv[3])), profile.get('workload_security_context'))
-if actual['pod_resources'] != [profile['pod_resources']]:
-    raise SystemExit('Actual Pod resources differ from the approved workload profile')
-if actual['artifacts']['kata_config']['sha256'] != profile['kata_config_sha256']:
-    raise SystemExit('Actual Kata configuration differs from the approved profile')
-launched = actual['artifacts']
-if not ('initrd' in launched or 'image' in launched):
-    raise SystemExit('Missing actual initrd or rootfs image')
-for key in ('path', 'firmware', 'kernel', 'initrd', 'image'):
-    target = 'qemu_executable' if key == 'path' else key
-    artifact = profile['artifacts'].get(key)
-    observed = launched.get(target)
-    # Kata may configure both boot modes, but only one is actually used.
-    # An unused rootfs must never stand in for a captured boot artifact.
-    if key in ('initrd', 'image') and observed is None:
-        continue
-    if not artifact or not observed or observed['sha256'] != artifact['sha256']:
-        raise SystemExit(f'Launch artifact differs from approved profile: {key}')
+runpy.run_path(sys.argv[4])["validate_actual_launch"](profile, actual, Path(sys.argv[3]))
 PY
     APPROVED_WORKLOAD_PROFILE_SHA256="$(sha256sum "${PROFILE_DIR}/approved-launch-profile.json" | awk '{print $1}')"
     APPROVED_ACTUAL_LAUNCH_SHA256="$(sha256sum "${REHEARSAL_RUN}/actual-launch.json" | awk '{print $1}')"
