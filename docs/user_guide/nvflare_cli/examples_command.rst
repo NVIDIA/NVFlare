@@ -127,8 +127,12 @@ Use ``--dest`` to choose another new directory:
 
 The destination's parent must already exist. The command never merges with or
 overwrites an existing file, directory, or symbolic link. It creates the
-destination exclusively. If downloading does not complete, remove the incomplete
-destination before retrying. The error identifies its absolute path.
+destination exclusively. If downloading does not complete, it removes the
+incomplete destination so the command can be retried.
+
+Most examples place their files directly under the destination. When an example
+depends on its maintained Python package or script hierarchy, the command keeps
+that hierarchy inside the destination and reports the nested README to follow.
 
 The downloaded directory contains the maintained files from the source
 directory selected by the catalog. The command does not create a root

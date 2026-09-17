@@ -14,9 +14,12 @@
 
 import json
 import re
+import unicodedata
 from pathlib import Path, PurePosixPath
 
 _NAME = re.compile(r"[a-z0-9][a-z0-9-]{0,63}")
+PROVENANCE_FILE = ".nvflare-example.json"
+_PROVENANCE_KEY = unicodedata.normalize("NFC", PROVENANCE_FILE.casefold())
 
 
 class _CatalogObject(dict):
@@ -83,6 +86,8 @@ def load_catalog(path=None):
                 or normalized_path != destination_path
             ):
                 error = "destination_path must be a normalized relative path"
+            elif unicodedata.normalize("NFC", parts[0].casefold()) == _PROVENANCE_KEY:
+                error = f"destination_path cannot use the reserved name {PROVENANCE_FILE}"
         if error:
             errors.append({"name": name, "error": error})
             continue

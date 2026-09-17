@@ -17,6 +17,7 @@
 import json
 import re
 import shlex
+import shutil
 import sys
 import unicodedata
 from pathlib import Path
@@ -26,9 +27,8 @@ import requests
 
 from nvflare.tool.cli_output import get_connect_timeout, is_json_mode, output_error_message, output_ok, print_human
 from nvflare.tool.cli_schema import handle_schema_flag
-from nvflare.tool.examples.catalog import load_catalog
+from nvflare.tool.examples.catalog import PROVENANCE_FILE, load_catalog
 
-PROVENANCE_FILE = ".nvflare-example.json"
 REPOSITORY = "NVIDIA/NVFlare"
 _REVISION = re.compile(r"[0-9a-f]{40}")
 _parsers = {}
@@ -169,6 +169,11 @@ def _validate_tree_entries(entries, source_path):
         relative_parts = entry["path"].split("/")
         if any(part in {"", ".", ".."} or "\\" in part or re.fullmatch(r"[A-Za-z]:", part) for part in relative_parts):
             raise _content_error(f"GitHub returned an invalid path for {source_path}.")
+        if path_key(relative_parts[:1]) == path_key([PROVENANCE_FILE]):
+            raise _content_error(
+                f"The example contains the reserved path {entry['path']}.",
+                "Use the example directly from a Git checkout.",
+            )
         key = path_key(relative_parts)
         if key in entry_keys:
             collision(entry["path"])
@@ -235,12 +240,17 @@ def _download_example(revision, source_path, destination, destination_path=None)
                 if str(entry.get("mode")) == "100755":
                     target.chmod(0o755)
     except requests.RequestException as error:
-        cleanup = f"Remove the incomplete destination directory at {destination}. " if destination_created else ""
+        if destination_created:
+            shutil.rmtree(destination, ignore_errors=True)
         raise ExampleError(
             "EXAMPLE_NETWORK_ERROR",
             f"Could not download the NVFlare example: {error}",
-            f"{cleanup}Check GitHub access and your network settings, then retry.",
+            "Check GitHub access and your network settings, then retry.",
         ) from None
+    except BaseException:
+        if destination_created:
+            shutil.rmtree(destination, ignore_errors=True)
+        raise
 
 
 def get_example(version_info, catalog, *, name, destination=None):
@@ -396,19 +406,27 @@ def handle_examples_cmd(args):
     except ExampleError as error:
         output_error_message(error.code, str(error), error.hint, exit_code=1)
     except KeyboardInterrupt:
-        destination = Path(getattr(args, "dest", None) or getattr(args, "name", "example")).expanduser().absolute()
+        hint = "Retry the command."
+        if key == "get":
+            destination = Path(args.dest or args.name).expanduser().absolute()
+            hint = f"Any incomplete output at {destination} was removed; retry the command."
         output_error_message(
             "EXAMPLE_INTERRUPTED",
             "Example download interrupted.",
-            f"If it exists, remove the incomplete destination at {destination}, then retry the command.",
+            hint,
             exit_code=130,
         )
     except (OSError, RuntimeError) as error:
-        destination = Path(getattr(args, "dest", None) or getattr(args, "name", "example")).expanduser().absolute()
+        hint = "Check the path, permissions, free space, and installation, then retry."
+        if key == "get":
+            destination = Path(args.dest or args.name).expanduser().absolute()
+            hint = (
+                f"Any incomplete output at {destination} was removed; check the path, permissions, free space, "
+                "and installation, then retry."
+            )
         output_error_message(
             "EXAMPLE_IO_ERROR",
             f"Cannot download the example: {error}",
-            f"If it exists, remove the incomplete destination at {destination}, then check the path, permissions, "
-            "free space, and installation.",
+            hint,
             exit_code=1,
         )

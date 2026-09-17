@@ -355,6 +355,20 @@ def test_agent_skill_examples_install_skills_from_repository(example_name):
         {"demo": {"category": "test", "source_path": "examples/demo", "destination_path": "../demo"}},
         {"demo": {"category": "test", "source_path": "examples/demo", "destination_path": "demo/"}},
         {"demo": {"category": "test", "source_path": "examples/demo", "destination_path": "de\x00mo"}},
+        {
+            "demo": {
+                "category": "test",
+                "source_path": "examples/demo",
+                "destination_path": ".nvflare-example.json",
+            }
+        },
+        {
+            "demo": {
+                "category": "test",
+                "source_path": "examples/demo",
+                "destination_path": ".NVFLARE-EXAMPLE.JSON/nested",
+            }
+        },
         {"demo": {"source_path": "examples/demo"}},
         {"demo": {"category": "Bad Category", "source_path": "examples/demo"}},
         {

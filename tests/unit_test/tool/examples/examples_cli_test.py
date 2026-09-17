@@ -74,7 +74,7 @@ class _Session:
     def get(self, url, **kwargs):
         self.requested.append(url)
         response = next(self.responses)
-        if isinstance(response, Exception):
+        if isinstance(response, BaseException):
             raise response
         return response
 
@@ -253,26 +253,51 @@ def test_get_reports_nested_readme_for_package_layout(monkeypatch, tmp_path):
     assert provenance["destination_path"] == "collab/pt_cifar10"
 
 
-@pytest.mark.parametrize("fail_after_tree", [False, True])
-def test_network_failure_is_structured(monkeypatch, tmp_path, fail_after_tree):
+@pytest.mark.parametrize("failure", [requests.ConnectionError("offline"), OSError("disk full"), KeyboardInterrupt()])
+def test_partial_download_is_removed_after_failure(monkeypatch, tmp_path, failure):
     tree_response = _Response(
-        metadata={"truncated": False, "tree": [{"path": "README.md", "type": "blob", "mode": "100644"}]}
+        metadata={
+            "truncated": False,
+            "tree": [
+                {"path": "README.md", "type": "blob", "mode": "100644"},
+                {"path": "job.py", "type": "blob", "mode": "100644"},
+            ],
+        }
     )
-    responses = (
-        (tree_response, requests.ConnectionError("offline"))
-        if fail_after_tree
-        else (requests.ConnectionError("offline"),)
-    )
-    _mock_session(monkeypatch, *responses)
+    _mock_session(monkeypatch, tree_response, _Response(data=b"# Example\n"), failure)
 
     destination = tmp_path / "example"
+    with pytest.raises(BaseException) as error:
+        examples_cli._download_example(REVISION, SOURCE_PATH, destination)
+
+    if isinstance(failure, requests.RequestException):
+        assert isinstance(error.value, examples_cli.ExampleError)
+        assert error.value.code == "EXAMPLE_NETWORK_ERROR"
+    else:
+        assert type(error.value) is type(failure)
+    assert not destination.exists()
+
+    _mock_session(
+        monkeypatch,
+        tree_response,
+        _Response(data=b"# Example\n"),
+        _Response(data=b"print('example')\n"),
+    )
+    examples_cli._download_example(REVISION, SOURCE_PATH, destination)
+    assert (destination / "README.md").read_bytes() == b"# Example\n"
+    assert (destination / "job.py").read_bytes() == b"print('example')\n"
+
+
+def test_network_failure_before_destination_creation_is_structured(monkeypatch, tmp_path):
+    _mock_session(monkeypatch, requests.ConnectionError("offline"))
+    destination = tmp_path / "example"
+
     with pytest.raises(examples_cli.ExampleError) as error:
         examples_cli._download_example(REVISION, SOURCE_PATH, destination)
 
     assert error.value.code == "EXAMPLE_NETWORK_ERROR"
-    assert ("Remove the incomplete destination" in error.value.hint) is fail_after_tree
-    assert (str(destination) in error.value.hint) is fail_after_tree
-    assert destination.exists() is fail_after_tree
+    assert "Check GitHub access" in error.value.hint
+    assert not destination.exists()
 
 
 def test_missing_path_is_not_reported_as_network_failure(monkeypatch, tmp_path):
@@ -352,6 +377,18 @@ def test_missing_tree_key_is_structured_without_creating_destination(monkeypatch
         },
         {"truncated": False, "tree": [{"path": "folder\\file.txt", "type": "blob", "mode": "100644"}]},
         {"truncated": False, "tree": [{"path": "C:/file.txt", "type": "blob", "mode": "100644"}]},
+        {
+            "truncated": False,
+            "tree": [{"path": ".nvflare-example.json", "type": "blob", "mode": "100644"}],
+        },
+        {
+            "truncated": False,
+            "tree": [{"path": ".NVFLARE-EXAMPLE.JSON", "type": "tree", "mode": "040000"}],
+        },
+        {
+            "truncated": False,
+            "tree": [{"path": ".NvFlare-Example.Json/nested.txt", "type": "blob", "mode": "100644"}],
+        },
     ],
 )
 def test_unusable_tree_metadata_is_rejected_before_creating_destination(monkeypatch, tmp_path, metadata):
@@ -696,3 +733,24 @@ def test_cli_failure_is_structured(monkeypatch, capsys, failure, code, exit_code
     assert result["error_code"] == code
     if code in {"EXAMPLE_INTERRUPTED", "EXAMPLE_IO_ERROR"}:
         assert str(Path.cwd() / "hello-pt") in result["hint"]
+
+
+@pytest.mark.parametrize(
+    "subcommand,failure",
+    [
+        ("list", RuntimeError("cannot list")),
+        ("revision", KeyboardInterrupt()),
+    ],
+)
+def test_non_get_failure_does_not_invent_a_destination(monkeypatch, capsys, subcommand, failure):
+    from nvflare import cli
+
+    target = "_load_example_catalog" if subcommand == "list" else "_example_revision"
+    monkeypatch.setattr(examples_cli, target, lambda *args, **kwargs: (_ for _ in ()).throw(failure))
+    monkeypatch.setattr("sys.argv", ["nvflare", "examples", subcommand, "--format", "json"])
+
+    with pytest.raises(SystemExit):
+        cli.run("nvflare")
+
+    result = json.loads(capsys.readouterr().out)
+    assert str(Path.cwd() / "example") not in result["hint"]
