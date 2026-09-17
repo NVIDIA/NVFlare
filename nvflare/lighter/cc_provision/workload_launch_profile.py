@@ -69,9 +69,7 @@ def load_profile(path, expected_sha256, runtime, kata_version):
         profile["schema"] == SECURITY["SCHEMA"], "review, rehearse and export a security-context-enabled v3 profile"
     )
     SECURITY["validate_context"](profile["workload_security_context"])
-    require(
-        profile["guest_token_api"] == "guest-local-aa-token/v1", "approved profile lacks the guest-local token API"
-    )
+    require(profile["guest_token_api"] == "guest-local-aa-token/v1", "approved profile lacks the guest-local token API")
     require(
         isinstance(profile["profile_id"], str)
         and bool(re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9._-]*", profile["profile_id"])),

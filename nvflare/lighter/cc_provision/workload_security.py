@@ -287,17 +287,12 @@ def validate_pause_policy(oci, data):
     require(process.get("Args") == ["/pause"] and process.get("NoNewPrivileges") is True, "unsafe pause process")
     user = process.get("User", {})
     require(
-        type(user.get("UID")) is int
-        and user["UID"] == 65535
-        and type(user.get("GID")) is int
-        and user["GID"] == 65535,
+        type(user.get("UID")) is int and user["UID"] == 65535 and type(user.get("GID")) is int and user["GID"] == 65535,
         "pause UID/GID must match the pinned non-root profile",
     )
     require(user.get("AdditionalGids", []) == [], "unexpected pause supplementary groups")
     require(oci.get("Root", {}).get("Readonly") is True, "pause rootfs must be read-only")
-    require(
-        data.get("common", {}).get("default_caps") == PAUSE_DEFAULT_CAPS, "unapproved default capability expansion"
-    )
+    require(data.get("common", {}).get("default_caps") == PAUSE_DEFAULT_CAPS, "unapproved default capability expansion")
     caps = process.get("Capabilities", {})
     require(set(caps) == set(CAPABILITY_SETS), "invalid pause capability fields")
     for name in CAPABILITY_SETS:

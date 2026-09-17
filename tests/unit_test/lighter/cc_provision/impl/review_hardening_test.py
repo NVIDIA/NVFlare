@@ -31,12 +31,7 @@ from nvflare.lighter.cc_provision.impl.coco import validate_coco_config
 from nvflare.lighter.cc_provision.impl.coco_packager import CoCoPackager
 from nvflare.lighter.cc_provision.workload_security import HANDOFF_FILES, authenticate_handoff, validate_policy
 from tests.unit_test.lighter.cc_provision.impl.test_coco import setup_project, write_fake_result
-from tests.unit_test.lighter.cc_provision.impl.workload_security_context_test import (
-    IMAGE,
-    context,
-    policy,
-    policy_data,
-)
+from tests.unit_test.lighter.cc_provision.impl.workload_security_context_test import IMAGE, context, policy, policy_data
 
 
 @pytest.fixture

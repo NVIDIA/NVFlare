@@ -287,9 +287,7 @@ class TestPOCCommands:
         }
         calls = []
 
-        monkeypatch.setattr(
-            poc_commands, "local_provision", lambda *_args, **_kwargs: (project_config, service_config)
-        )
+        monkeypatch.setattr(poc_commands, "local_provision", lambda *_args, **_kwargs: (project_config, service_config))
         monkeypatch.setattr(poc_commands, "get_prod_dir", lambda *_args, **_kwargs: str(tmp_path / "prod_00"))
         monkeypatch.setattr(poc_commands, "_prepare_poc_docker_deployments", lambda *_args: calls.append("docker"))
         monkeypatch.setattr(poc_commands, "update_storage_locations", lambda **_kwargs: calls.append("storage"))

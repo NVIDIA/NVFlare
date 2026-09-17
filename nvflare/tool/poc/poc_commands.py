@@ -323,8 +323,7 @@ def get_fl_admins(project_config: OrderedDict, is_project_admin: bool):
     return [
         p["name"]
         for p in participants
-        if p["type"] == "admin"
-        and (p["role"] == "project_admin" if is_project_admin else p["role"] != "project_admin")
+        if p["type"] == "admin" and (p["role"] == "project_admin" if is_project_admin else p["role"] != "project_admin")
     ]
 
 
@@ -1042,9 +1041,7 @@ def _dynamic_poc_project_config(project_config: Dict, participant: Dict) -> Dict
     return dynamic_config
 
 
-def _ensure_dynamic_poc_ca_available(
-    poc_workspace: str, project_name: str, prod_dir: str, project_config: Dict
-) -> str:
+def _ensure_dynamic_poc_ca_available(poc_workspace: str, project_name: str, prod_dir: str, project_config: Dict) -> str:
     state_file = os.path.join(poc_workspace, project_name, "state", "cert.json")
     if not os.path.isfile(state_file):
         raise CLIException(
@@ -1746,9 +1743,7 @@ def start_poc(cmd_args):
         "ready_timeout": ready_timeout,
         "ready": ready,
         "clients": clients,
-        "console_logs": _build_poc_console_logs(
-            poc_workspace, project_config, service_config, services_list, excluded
-        ),
+        "console_logs": _build_poc_console_logs(poc_workspace, project_config, service_config, services_list, excluded),
     }
     result.update(port_diagnostics)
     if json_mode:

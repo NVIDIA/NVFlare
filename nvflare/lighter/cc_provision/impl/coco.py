@@ -77,16 +77,10 @@ def validate_coco_config(config):
         if not isinstance(value, str) or not value or "\x00" in value or "\n" in value:
             raise ValueError(f"Invalid {key} path")
     release = config.get("release_name")
-    if (
-        not isinstance(release, str)
-        or len(release) > 63
-        or not re.fullmatch(r"[a-z0-9]([-a-z0-9]*[a-z0-9])?", release)
-    ):
+    if not isinstance(release, str) or len(release) > 63 or not re.fullmatch(r"[a-z0-9]([-a-z0-9]*[a-z0-9])?", release):
         raise ValueError("release_name must be a unique lowercase DNS label")
     repo = config.get("registry_repository")
-    if not isinstance(repo, str) or not re.fullmatch(
-        r"[a-z0-9]+([._-][a-z0-9]+)*(/[a-z0-9]+([._-][a-z0-9]+)*)*", repo
-    ):
+    if not isinstance(repo, str) or not re.fullmatch(r"[a-z0-9]+([._-][a-z0-9]+)*(/[a-z0-9]+([._-][a-z0-9]+)*)*", repo):
         raise ValueError("Invalid registry_repository")
     issuers = config.get("cc_issuers")
     if not isinstance(issuers, list) or len(issuers) != 1:
