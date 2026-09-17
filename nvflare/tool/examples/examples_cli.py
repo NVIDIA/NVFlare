@@ -124,7 +124,26 @@ def _content_error(
 
 def _validate_tree_entries(entries, source_path):
     files = []
-    path_keys = set()
+    entry_keys = set()
+    directory_paths = {}
+    file_keys = set()
+
+    def path_key(parts):
+        return tuple(unicodedata.normalize("NFC", unicodedata.normalize("NFC", part).casefold()) for part in parts)
+
+    def collision(path):
+        raise _content_error(
+            f"The example contains colliding paths: {path}.",
+            "Use the example directly from a Git checkout.",
+        )
+
+    def add_directory(parts, path):
+        key = path_key(parts)
+        original = tuple(parts)
+        if key in file_keys or (key in directory_paths and directory_paths[key] != original):
+            collision(path)
+        directory_paths[key] = original
+
     for entry in entries:
         if (
             not isinstance(entry, dict)
@@ -134,27 +153,28 @@ def _validate_tree_entries(entries, source_path):
             raise _content_error()
         entry_type = entry["type"]
         entry_mode = entry.get("mode")
-        if entry_type == "tree":
-            continue
         if entry_type == "commit" or entry_mode in {"120000", "160000"}:
             raise _content_error(
                 f"The example contains an unsupported symlink or submodule: {entry['path']}.",
                 "Use the example directly from a Git checkout.",
             )
-        if entry_type != "blob":
+        if entry_type not in {"blob", "tree"}:
             raise _content_error()
         relative_parts = entry["path"].split("/")
         if any(part in {"", ".", ".."} for part in relative_parts):
             raise _content_error(f"GitHub returned an invalid path for {source_path}.")
-        path_key = tuple(
-            unicodedata.normalize("NFC", unicodedata.normalize("NFC", part).casefold()) for part in relative_parts
-        )
-        if path_key in path_keys:
-            raise _content_error(
-                f"The example contains colliding paths: {entry['path']}.",
-                "Use the example directly from a Git checkout.",
-            )
-        path_keys.add(path_key)
+        key = path_key(relative_parts)
+        if key in entry_keys:
+            collision(entry["path"])
+        entry_keys.add(key)
+        for length in range(1, len(relative_parts)):
+            add_directory(relative_parts[:length], entry["path"])
+        if entry_type == "tree":
+            add_directory(relative_parts, entry["path"])
+            continue
+        if key in directory_paths:
+            collision(entry["path"])
+        file_keys.add(key)
         files.append((entry, relative_parts))
     if not files:
         raise _content_error("GitHub returned no files for the example.")
@@ -214,7 +234,6 @@ def _download_example(revision, source_path, destination):
             f"Could not download the NVFlare example: {error}",
             f"{cleanup}Check GitHub access and your network settings, then retry.",
         ) from None
-    return tree_url
 
 
 def get_example(version_info, catalog, *, name, destination=None):
@@ -236,12 +255,11 @@ def get_example(version_info, catalog, *, name, destination=None):
 
     revision = _source_revision(version_info)
     entry = catalog[name]
-    tree_url = _download_example(revision, entry["source_path"], destination)
+    _download_example(revision, entry["source_path"], destination)
     warnings = [
         {
             "code": "EXAMPLE_DEPENDENCY_GUIDANCE",
             "message": "Preserve the installed NVFlare distribution when setting up this example.",
-            "paths": [],
             "hint": (
                 "Skip any README or dependency-file instruction that installs nvflare or nvflare-nightly. "
                 "Add required extras to the same stable, nightly, or editable distribution, then install only "
@@ -259,7 +277,6 @@ def get_example(version_info, catalog, *, name, destination=None):
             {
                 "code": "EXAMPLE_README_MISSING",
                 "message": "The downloaded example does not contain a root README.",
-                "paths": [],
                 "hint": "Inspect the downloaded files for dependency, preparation, and run instructions.",
             }
         )
@@ -270,12 +287,11 @@ def get_example(version_info, catalog, *, name, destination=None):
         "example": name,
         "source_path": entry["source_path"],
         "source_url": f"https://github.com/{REPOSITORY}/tree/{revision}/{entry['source_path']}",
-        "nvflare_version": version_info["version"],
+        "nvflare_version": version_info.get("version"),
     }
     (destination / PROVENANCE_FILE).write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
     return {
         **provenance,
-        "tree_url": tree_url,
         "directory": str(destination),
         "readme": str(readme) if readme else None,
         "warnings": warnings,
@@ -338,6 +354,14 @@ def handle_examples_cmd(args):
                         print_human(f"  {error['name']}: {error['error']}")
             return
 
+        invalid_entry = next((error for error in catalog_errors if error["name"] == args.name), None)
+        if invalid_entry:
+            raise ExampleError(
+                "EXAMPLE_CATALOG_INVALID",
+                f"The installed catalog entry '{args.name}' is invalid: {invalid_entry['error']}.",
+                "Reinstall NVFlare, or use the example directly from the NVIDIA/NVFlare GitHub repository.",
+            )
+
         from nvflare import _version
 
         result = get_example(_version.get_versions(), catalog, name=args.name, destination=args.dest)
@@ -348,8 +372,6 @@ def handle_examples_cmd(args):
             print_human(f"Source: {result['source_url']}\n")
             for warning in result["warnings"]:
                 print_human(f"Warning: {warning['message']}")
-                for path in warning["paths"]:
-                    print_human(f"  {path}")
                 print_human(f"{warning['hint']}\n")
             print_human("Next:")
             print_human(f"  cd {shlex.quote(result['directory'])}")

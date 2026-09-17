@@ -6,8 +6,8 @@ The ``nvflare examples`` command downloads example source from the public
 NVIDIA/NVFlare GitHub repository. It selects the source revision recorded in
 the installed NVFlare distribution, so the example matches the version in use.
 A nightly package built from ``main`` retrieves examples from that exact build
-commit. A release package such as NVFlare 2.9.0 retrieves examples from the
-commit recorded in the 2.9.0 package.
+commit. A release package such as NVFlare 2.10.0 retrieves examples from the
+commit recorded in the 2.10.0 package.
 
 Example catalog
 ===============
@@ -94,7 +94,6 @@ already in use with the matching command above. Then run:
 
    nvflare examples get hello-pt
    cd hello-pt
-   pip install -r requirements.txt
    python job.py
 
 Use another catalog name in the same command. The completion output identifies

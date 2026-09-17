@@ -105,7 +105,6 @@ def _mock_download(
             (destination / "nested/requirements.txt").write_text(nested_requirements)
         if requirements is not None:
             (destination / "requirements.txt").write_text(requirements)
-        return "https://api.github.com/tree"
 
     monkeypatch.setattr(examples_cli, "_download_example", download)
 
@@ -125,7 +124,6 @@ def test_get_records_downloaded_source_and_requirements(monkeypatch, tmp_path):
         {
             "code": "EXAMPLE_DEPENDENCY_GUIDANCE",
             "message": "Preserve the installed NVFlare distribution when setting up this example.",
-            "paths": [],
             "hint": (
                 "Skip any README or dependency-file instruction that installs nvflare or nvflare-nightly. "
                 "Add required extras to the same stable, nightly, or editable distribution, then install only "
@@ -155,7 +153,7 @@ def test_nested_requirement_is_not_modified(monkeypatch, tmp_path):
     result = examples_cli.get_example(VERSION, CATALOG, name="hello-pt", destination=tmp_path / "hello-pt")
 
     assert (tmp_path / "hello-pt/nested/requirements.txt").read_text() == requirement
-    assert result["warnings"][0]["paths"] == []
+    assert "paths" not in result["warnings"][0]
 
 
 def test_rst_readme_is_reported(monkeypatch, tmp_path):
@@ -176,7 +174,6 @@ def test_missing_root_readme_warns_without_failing(monkeypatch, tmp_path):
         {
             "code": "EXAMPLE_DEPENDENCY_GUIDANCE",
             "message": "Preserve the installed NVFlare distribution when setting up this example.",
-            "paths": [],
             "hint": (
                 "Skip any README or dependency-file instruction that installs nvflare or nvflare-nightly. "
                 "Add required extras to the same stable, nightly, or editable distribution, then install only "
@@ -186,7 +183,6 @@ def test_missing_root_readme_warns_without_failing(monkeypatch, tmp_path):
         {
             "code": "EXAMPLE_README_MISSING",
             "message": "The downloaded example does not contain a root README.",
-            "paths": [],
             "hint": "Inspect the downloaded files for dependency, preparation, and run instructions.",
         },
     ]
@@ -210,9 +206,9 @@ def test_download_fetches_path_scoped_tree(monkeypatch, tmp_path):
     )
     destination = tmp_path / "example"
 
-    tree_url = examples_cli._download_example(REVISION, SOURCE_PATH, destination)
+    examples_cli._download_example(REVISION, SOURCE_PATH, destination)
 
-    assert tree_url.endswith(f"/{REVISION}:{SOURCE_PATH}?recursive=1")
+    assert session.requested[0].endswith(f"/{REVISION}:{SOURCE_PATH}?recursive=1")
     assert (destination / "README.md").read_bytes() == payloads["README.md"]
     assert (destination / "nested/run.sh").read_bytes() == payloads["run.sh"]
     assert (destination / "nested/run.sh").stat().st_mode & 0o111
@@ -295,6 +291,20 @@ def test_missing_tree_key_is_structured_without_creating_destination(monkeypatch
             "tree": [
                 {"path": "README.md", "type": "blob", "mode": "100644"},
                 {"path": "readme.md", "type": "blob", "mode": "100644"},
+            ],
+        },
+        {
+            "truncated": False,
+            "tree": [
+                {"path": "Foo", "type": "blob", "mode": "100644"},
+                {"path": "foo/bar.txt", "type": "blob", "mode": "100644"},
+            ],
+        },
+        {
+            "truncated": False,
+            "tree": [
+                {"path": "Dir/a.txt", "type": "blob", "mode": "100644"},
+                {"path": "dir/b.txt", "type": "blob", "mode": "100644"},
             ],
         },
     ],
@@ -464,6 +474,28 @@ def test_list_keeps_valid_catalog_entries(monkeypatch, capsys):
     assert result["data"]["catalog_errors"] == [{"name": "broken", "error": "bad path"}]
 
 
+def test_get_rejected_catalog_entry_reports_catalog_error(monkeypatch, capsys):
+    from nvflare import cli
+
+    monkeypatch.setattr(
+        examples_cli,
+        "load_catalog",
+        lambda: (
+            {"hello-pt": {"category": "hello-world", "source_path": SOURCE_PATH}},
+            [{"name": "broken", "error": "bad path"}],
+        ),
+    )
+    monkeypatch.setattr("sys.argv", ["nvflare", "examples", "get", "broken", "--format", "json"])
+
+    with pytest.raises(SystemExit) as error:
+        cli.run("nvflare")
+
+    assert error.value.code == 1
+    result = json.loads(capsys.readouterr().out)
+    assert result["error_code"] == "EXAMPLE_CATALOG_INVALID"
+    assert "bad path" in result["message"]
+
+
 def test_catalog_failure_is_scoped_to_examples_command(monkeypatch, capsys):
     from nvflare import cli
 
@@ -531,7 +563,8 @@ def test_get_json_is_machine_readable(monkeypatch, capsys, tmp_path):
     assert "setup_commands" not in result["data"]
     assert result["data"]["readme"] == str(destination / "README.md")
     assert result["data"]["warnings"][0]["code"] == "EXAMPLE_DEPENDENCY_GUIDANCE"
-    assert result["data"]["warnings"][0]["paths"] == []
+    assert "paths" not in result["data"]["warnings"][0]
+    assert "tree_url" not in result["data"]
 
 
 def test_unknown_example_uses_structured_cli_error(monkeypatch, capsys):

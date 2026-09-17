@@ -30,11 +30,9 @@ python -m pip install -e ".[PT]"
 cd examples/hello-world/hello-pt
 ```
 
-Install the example dependencies from the example directory:
-
-```bash
-python -m pip install -r requirements.txt
-```
+The canonical `requirements.txt` records the branch-compatible stable NVFlare
+dependency. Do not install it after selecting `nvflare-nightly` or an editable
+checkout; the `PT` extra installed above supplies everything this example needs.
 
 For other installation options, see the [NVFlare installation guide](https://nvflare.readthedocs.io/en/main/installation.html).
 
