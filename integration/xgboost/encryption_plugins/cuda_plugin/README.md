@@ -1,4 +1,4 @@
 # CUDA plugin
 
-Use CUDA to do paillier encryption and addition.
+Use CUDA to do Paillier encryption and addition.
 

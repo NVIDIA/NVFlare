@@ -30,10 +30,13 @@ class TestSystemRestart:
         monkeypatch.setattr(cli_output, "_output_format", "json")
 
     def _make_args(self, target="server", client_names=None, force=False):
+        from nvflare.tool.system.system_cli import _DEFAULT_SYSTEM_STATE_CHANGE_TIMEOUT
+
         args = MagicMock()
         args.target = target
         args.client_names = client_names or []
         args.force = force
+        args.timeout = _DEFAULT_SYSTEM_STATE_CHANGE_TIMEOUT
         return args
 
     def test_restart_with_force_no_prompt(self, capsys):
@@ -49,12 +52,29 @@ class TestSystemRestart:
                 cmd_system_restart(args)
                 mock_stdin.readline.assert_not_called()
 
+        mock_sess.restart.assert_called_once_with("server", client_names=None, timeout=30.0)
         captured = capsys.readouterr()
         data = json.loads(captured.out)
         assert data["status"] == "ok"
         assert data["exit_code"] == 0
         assert data["data"]["result"] == "restart initiated"
         assert data["data"]["target"] == "server"
+        assert data["data"]["status"] == "restarted"
+
+    def test_restart_no_wait_reports_initiated(self, capsys):
+        from nvflare.tool.system.system_cli import cmd_system_restart
+
+        args = self._make_args(force=True)
+        args.no_wait = True
+        mock_sess = MagicMock()
+        mock_sess.restart.return_value = "restart initiated"
+
+        with patch("nvflare.tool.system.system_cli._get_system_session", return_value=mock_sess):
+            cmd_system_restart(args)
+
+        mock_sess.restart.assert_called_once_with("server", client_names=None, wait=False)
+        data = json.loads(capsys.readouterr().out)
+        assert data["data"]["status"] == "restart_initiated"
 
     def test_restart_non_interactive_without_force_exits_4(self):
         """Non-interactive mode without --force exits with code 4."""
@@ -146,6 +166,70 @@ class TestSystemRestart:
         assert args.system_sub_cmd == "restart"
         assert args.target == "all"
         assert args.force is True
+
+    def test_restart_parser_accepts_no_wait(self):
+        from nvflare.tool.system.system_cli import def_system_cli_parser
+
+        parser = argparse.ArgumentParser(prog="nvflare system")
+        def_system_cli_parser(parser)
+
+        args = parser.parse_args(["restart", "server", "--force", "--no-wait"])
+        assert args.no_wait is True
+
+    def test_restart_parser_accepts_timeout(self):
+        from nvflare.tool.system.system_cli import def_system_cli_parser
+
+        parser = argparse.ArgumentParser(prog="nvflare system")
+        def_system_cli_parser(parser)
+
+        args = parser.parse_args(["restart", "server", "--force", "--timeout", "120"])
+        assert args.timeout == 120.0
+        with pytest.raises(SystemExit):
+            parser.parse_args(["restart", "server", "--force", "--timeout", "-1"])
+        with pytest.raises(SystemExit):
+            parser.parse_args(["restart", "server", "--force", "--timeout", "0"])
+
+    def test_restart_parser_reports_clean_timeout_type_error(self, capsys):
+        from nvflare.tool.system.system_cli import def_system_cli_parser
+
+        parser = argparse.ArgumentParser(prog="nvflare system")
+        def_system_cli_parser(parser)
+
+        with pytest.raises(SystemExit):
+            parser.parse_args(["restart", "server", "--force", "--timeout", "-1"])
+
+        captured = capsys.readouterr()
+        assert "expected a positive number, got '-1'" in captured.err
+        assert "invalid _positive_float value" not in captured.err
+
+        with pytest.raises(SystemExit):
+            parser.parse_args(["restart", "server", "--force", "--timeout", "0"])
+
+        captured = capsys.readouterr()
+        assert "expected a positive number, got '0'" in captured.err
+
+        with pytest.raises(SystemExit):
+            parser.parse_args(["restart", "server", "--force", "--timeout", "abc"])
+
+        captured = capsys.readouterr()
+        assert "expected a positive number, got 'abc'" in captured.err
+
+    def test_restart_timeout_exits_timeout(self, capsys):
+        from nvflare.tool.system.system_cli import cmd_system_restart
+
+        args = self._make_args(force=True)
+        mock_sess = MagicMock()
+        mock_sess.restart.side_effect = TimeoutError("server did not restart")
+
+        with patch("nvflare.tool.system.system_cli._get_system_session", return_value=mock_sess):
+            with pytest.raises(SystemExit) as exc_info:
+                cmd_system_restart(args)
+
+        assert exc_info.value.code == 3
+        data = json.loads(capsys.readouterr().out)
+        assert data["error_code"] == "TIMEOUT"
+        assert "--timeout" in data["hint"]
+        assert "--no-wait" in data["hint"]
 
     def test_restart_rejects_client_names_for_non_client_target(self, capsys):
         from nvflare.tool.system.system_cli import cmd_system_restart

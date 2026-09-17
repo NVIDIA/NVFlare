@@ -14,26 +14,33 @@
 
 import os
 import time
+from threading import Lock
 from typing import Any, Dict, Optional, Set, Union
 
+from nvflare.apis.controller_spec import TaskCompletionStatus
 from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
 from nvflare.app_common.aggregators.weighted_aggregation_helper import (
+    AggregationStatsKey,
     WeightedAggregationHelper,
     filter_aggregatable_metrics,
 )
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
+from nvflare.app_common.utils.fedprox_utils import normalize_fedprox_mu, set_fedprox_metadata
 from nvflare.app_common.utils.math_utils import parse_compare_criteria
-from nvflare.app_common.utils.tensor_disk_offload_context import (
-    apply_enable_tensor_disk_offload,
-    restore_enable_tensor_disk_offload,
-)
+from nvflare.app_common.utils.tensor_disk_offload_context import cleanup_tensor_disk_offload, setup_tensor_disk_offload
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.log_utils import center_message
 
-from .base_fedavg import BaseFedAvg
+from .base_fedavg import (
+    BaseFedAvg,
+    _get_client_name,
+    _get_num_steps_weight,
+    make_fedavg_metrics_aggregation_info,
+    make_key_metric_info_from_stop_condition,
+)
 
 
 class FedAvg(BaseFedAvg):
@@ -44,6 +51,9 @@ class FedAvg(BaseFedAvg):
 
     Uses InTime (streaming) aggregation for memory efficiency - each client result is
     aggregated immediately upon receipt rather than collecting all results first.
+    Streaming accumulation applies contributions in result-arrival order; floating-point
+    addition is non-associative, so identical inputs can produce ulp-level differences
+    between runs and bitwise reproducibility is not guaranteed for >=2 clients.
 
     Supports custom aggregators via the ModelAggregator interface.
 
@@ -83,6 +93,8 @@ class FedAvg(BaseFedAvg):
             instead of deserializing into memory. Reduces peak server memory from ~N× to ~1×
             model size during aggregation. When used with a custom aggregator, lazy refs are
             passed through directly and must be handled by that aggregator. Defaults to False.
+        fedprox_mu (float or None, optional): Positive FedProx proximal coefficient sent to
+            compatible clients. ``None`` or ``0.0`` disables FedProx. Defaults to None.
     """
 
     def __init__(
@@ -97,6 +109,7 @@ class FedAvg(BaseFedAvg):
         exclude_vars: Optional[str] = None,
         aggregation_weights: Optional[Dict[str, float]] = None,
         enable_tensor_disk_offload: bool = False,
+        fedprox_mu: Optional[float] = None,
         **kwargs,
     ) -> None:
         super().__init__(*args, **kwargs)
@@ -117,6 +130,7 @@ class FedAvg(BaseFedAvg):
         self.exclude_vars = exclude_vars
         self.aggregation_weights = aggregation_weights or {}
         self.enable_tensor_disk_offload = enable_tensor_disk_offload
+        self.fedprox_mu = normalize_fedprox_mu(fedprox_mu)
 
         # Parse stop condition
         if self.stop_cond:
@@ -136,18 +150,22 @@ class FedAvg(BaseFedAvg):
         self._received_count: int = 0
         self._expected_count: int = 0
         self._params_type = None  # Only store params_type, not full result
+        self._site_metric_weights: Dict[str, Dict[str, Any]] = {}
 
     def run(self) -> None:
-        previous_disk_offload, disk_offload_applied = apply_enable_tensor_disk_offload(
-            engine=getattr(self, "engine", None),
-            enabled=self.enable_tensor_disk_offload,
-        )
-        if self.enable_tensor_disk_offload and not disk_offload_applied:
-            self.warning(
-                "enable_tensor_disk_offload=True but no active cell is available; "
-                "falling back to in-memory tensor download"
-            )
+        disk_offload_context = None
         try:
+            disk_offload_context = setup_tensor_disk_offload(
+                engine=getattr(self, "engine", None),
+                enabled=self.enable_tensor_disk_offload,
+                job_id=self.fl_ctx.get_job_id("job"),
+            )
+            if self.enable_tensor_disk_offload and not disk_offload_context.applied:
+                self.warning(
+                    "enable_tensor_disk_offload=True but no active cell is available; "
+                    "falling back to in-memory tensor download"
+                )
+
             self.info(center_message("Start FedAvg."))
 
             # Set NUM_ROUNDS in FL context for persistor and other components.
@@ -193,26 +211,55 @@ class FedAvg(BaseFedAvg):
                 self._received_count = 0
                 self._expected_count = len(clients)
                 self._params_type = None
+                self._site_metric_weights = {}
+
+                # Keep a completed/failed round from publishing partial callback mutations.
+                round_state = {"lock": Lock(), "failed": False, "closed": False}
+
+                def aggregate_one_result(result, state=round_state):
+                    with state["lock"]:
+                        if state["closed"] or state["failed"]:
+                            return False
+                        try:
+                            return self._aggregate_one_result(result)
+                        except Exception:
+                            state["failed"] = True
+                            raise
 
                 # Non-blocking send with callback for streaming aggregation
+                set_fedprox_metadata(model, self.fedprox_mu)
                 self.send_model(
                     task_name=self.task_name,
                     targets=clients,
                     data=model,
-                    callback=self._aggregate_one_result,
+                    callback=aggregate_one_result if not self.aggregator else self._aggregate_one_result,
                 )
 
                 # Wait for all results to be processed
                 while self.get_num_standing_tasks():
+                    if round_state["failed"]:
+                        self.cancel_all_tasks(TaskCompletionStatus.ERROR)
+                        break
                     if self.abort_signal.triggered:
+                        with round_state["lock"]:
+                            round_state["closed"] = True
                         self.info("Abort signal triggered. Finishing FedAvg.")
                         return
                     time.sleep(self._task_check_period)
+
+                # Task retirement can precede callback completion: wait for the consumer.
+                with round_state["lock"]:
+                    round_state["closed"] = True
+                    if round_state["failed"]:
+                        raise RuntimeError("FedAvg aggregation failed; refusing to update or save the model")
 
                 self.event(AppEventType.BEFORE_AGGREGATION)
 
                 # Get final aggregated result
                 aggregate_results = self._get_aggregated_result()
+                self.fire_event_with_data(
+                    AppEventType.AFTER_AGGREGATION, self.fl_ctx, AppConstants.AGGREGATION_RESULT, aggregate_results
+                )
 
                 model = self.update_model(model, aggregate_results)
 
@@ -242,23 +289,20 @@ class FedAvg(BaseFedAvg):
 
             self.info(center_message("Finished FedAvg."))
         finally:
-            restore_enable_tensor_disk_offload(
-                engine=getattr(self, "engine", None),
-                previous_value=previous_disk_offload,
-            )
+            cleanup_tensor_disk_offload(engine=getattr(self, "engine", None), context=disk_offload_context)
 
-    def _aggregate_one_result(self, result: FLModel) -> None:
+    def _aggregate_one_result(self, result: FLModel) -> bool:
         """Callback: aggregate ONE client result immediately (InTime aggregation)."""
         if not result.params:
-            client_name = result.meta.get("client_name", AppConstants.CLIENT_UNKNOWN)
+            client_name = _get_client_name(result)
             self.warning(f"Empty result from client {client_name}, skipping.")
-            return
+            return False
 
         # Store only params_type from first result (not the full model)
         if self._params_type is None:
             self._params_type = result.params_type
 
-        client_name = result.meta.get("client_name", AppConstants.CLIENT_UNKNOWN)
+        client_name = _get_client_name(result)
         if self.aggregator:
             # Use custom aggregator
             self.aggregator.accept_model(result)
@@ -271,11 +315,12 @@ class FedAvg(BaseFedAvg):
             else:
                 aggregation_weight = 1.0
 
-            n_iter = result.meta.get(FLMetaKey.NUM_STEPS_CURRENT_ROUND, None)
-            # Handle None case (e.g., first round of some algorithms like K-Means)
-            if n_iter is None:
-                n_iter = 1.0
-            weight = aggregation_weight * float(n_iter)
+            weight = aggregation_weight * _get_num_steps_weight(result)
+            self._site_metric_weights[client_name] = {
+                "name": client_name,
+                "weight": weight,
+                "weight_key": "effective_fedavg_metric_weight",
+            }
 
             self._aggr_helper.add(
                 data=result.params,
@@ -308,6 +353,7 @@ class FedAvg(BaseFedAvg):
 
         self._received_count += 1
         self.info(f"Aggregated {self._received_count}/{self._expected_count} results")
+        return True
 
     def _get_aggregated_result(self) -> FLModel:
         """Get the final aggregated result after all clients have responded."""
@@ -317,9 +363,17 @@ class FedAvg(BaseFedAvg):
             result.meta = result.meta or {}
             result.meta["nr_aggregated"] = self._received_count
             result.meta["current_round"] = self.current_round
+            if result.current_round is None:
+                result.current_round = self.current_round
+            self._set_metrics_aggregation_info(result)
             return result
         else:
             # Use built-in InTime aggregation
+            aggr_stats = self._aggr_helper.get_aggregation_stats()
+            aggr_stats[AggregationStatsKey.ROUND] = self.current_round
+            if self.fl_ctx:
+                self.fl_ctx.set_prop(AppConstants.AGGREGATION_STATS, aggr_stats, private=True, sticky=False)
+
             aggr_params = self._aggr_helper.get_result()
             aggr_metrics = self._aggr_metrics_helper.get_result() if self._all_metrics else None
             aggr_metrics = aggr_metrics or None
@@ -328,8 +382,47 @@ class FedAvg(BaseFedAvg):
                 params=aggr_params,
                 params_type=self._params_type,
                 metrics=aggr_metrics,
-                meta={"nr_aggregated": self._received_count, "current_round": self.current_round},
+                current_round=self.current_round,
+                meta={
+                    "nr_aggregated": self._received_count,
+                    "current_round": self.current_round,
+                    AppConstants.METRICS_AGGREGATION_INFO: self._make_metrics_aggregation_info(),
+                },
             )
+
+    def _make_metrics_aggregation_info(self) -> Dict[str, Any]:
+        key_metric_info = self._make_key_metric_info()
+        site_weights = list(self._site_metric_weights.values()) if self._site_metric_weights else None
+        weight_formula = None
+        if site_weights:
+            weight_formula = "aggregation_weight * NUM_STEPS_CURRENT_ROUND"
+        info = make_fedavg_metrics_aggregation_info(
+            weight_key="effective_fedavg_metric_weight" if site_weights else FLMetaKey.NUM_STEPS_CURRENT_ROUND,
+            weight_formula=weight_formula,
+            site_weights=site_weights,
+        )
+        if key_metric_info:
+            info["key_metric"] = key_metric_info
+        return info
+
+    def _make_key_metric_info(self) -> Optional[Dict[str, Any]]:
+        return make_key_metric_info_from_stop_condition(self.stop_cond, self.stop_condition)
+
+    def _set_metrics_aggregation_info(self, result: FLModel):
+        key_metric_info = self._make_key_metric_info()
+        existing_info = result.meta.get(AppConstants.METRICS_AGGREGATION_INFO)
+        if isinstance(existing_info, dict):
+            merged_info = dict(existing_info)
+            if "key_metric" not in merged_info and key_metric_info:
+                merged_info["key_metric"] = key_metric_info
+            if "sites" not in merged_info and "use_contribution_sites" not in merged_info:
+                merged_info["use_contribution_sites"] = False
+            result.meta[AppConstants.METRICS_AGGREGATION_INFO] = merged_info
+        else:
+            metrics_info = {"metric_source": "custom_aggregator_flmodel_metrics", "use_contribution_sites": False}
+            if key_metric_info:
+                metrics_info["key_metric"] = key_metric_info
+            result.meta[AppConstants.METRICS_AGGREGATION_INFO] = metrics_info
 
     def should_stop(self, metrics: Optional[Dict] = None) -> bool:
         """Checks whether the current FL experiment should stop.

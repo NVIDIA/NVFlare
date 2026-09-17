@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import copy
+import json
 import os
 import re
 import shutil
@@ -23,6 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import Lock
 from typing import Dict, List, Optional, Tuple
 
+from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.client import Client
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import (
@@ -44,7 +46,7 @@ from nvflare.apis.job_def import Job
 from nvflare.apis.job_launcher_spec import JobLauncherSpec, JobProcessArgs
 from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
 from nvflare.apis.streaming import ConsumerFactory, ObjectProducer, StreamableEngine, StreamContext
-from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx, get_serializable_data
+from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
@@ -218,14 +220,38 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
                 # if process exit but with Execution exception
                 if return_code and return_code != 0:
                     self.logger.info(f"Job: {job_id} child process exit with return code {return_code}")
-                    run_process_info[RunProcessKey.PROCESS_RETURN_CODE] = return_code
-                    if job_id not in self.exception_run_processes:
+                    if job_id in self.exception_run_processes:
+                        # An external path (e.g. fail_run from a client failure
+                        # report) has already recorded an authoritative return
+                        # code for this run. Don't let the SJ's secondary exit
+                        # code (e.g. ABORTED from the abort signal we sent)
+                        # overwrite that signal.
+                        pass
+                    else:
+                        run_process_info[RunProcessKey.PROCESS_RETURN_CODE] = return_code
                         self.exception_run_processes[job_id] = run_process_info
                 self.run_processes.pop(job_id, None)
         self.engine_info.status = MachineStatus.STOPPED
 
     def _start_runner_process(self, job, job_clients, snapshot, fl_ctx: FLContext):
-        job_launcher: JobLauncherSpec = get_job_launcher(job.meta, fl_ctx)
+        workspace_obj: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
+        job_id = job.job_id
+        meta_file = workspace_obj.get_job_meta_path(job_id)
+        if not os.path.exists(meta_file):
+            raise RuntimeError(f"missing deployed job metadata file for server job '{job_id}': {meta_file}")
+        with open(meta_file) as f:
+            deployed_job_meta = json.load(f)
+
+        # AppDeployer records the site-local authorization decision only in the
+        # deployed metadata. Keep the persisted job-store metadata immutable and
+        # pass the locally derived BYOC marker to launcher selection and launch.
+        job_meta = copy.deepcopy(job.meta)
+        if deployed_job_meta.get(AppValidationKey.BYOC) is True:
+            job_meta[AppValidationKey.BYOC] = True
+        else:
+            job_meta.pop(AppValidationKey.BYOC, None)
+
+        job_launcher: JobLauncherSpec = get_job_launcher(job_meta, fl_ctx)
         if snapshot:
             restore_snapshot = True
         else:
@@ -241,12 +267,9 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
         #
         # Each arg is a tuple of (arg_option, arg_value).
         # Note that the arg_option is fixed for each arg, and is not launcher specific!
-        workspace_obj: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
-
         # use a copy of args; otherwise the args will keep adding command options!
         args = copy.deepcopy(fl_ctx.get_prop(FLContextKey.ARGS))
         server = fl_ctx.get_prop(FLContextKey.SITE_OBJ)
-        job_id = job.job_id
         app_root = workspace_obj.get_app_dir(job_id)
         cell = server.cell
         server_state = server.server_state
@@ -268,7 +291,6 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
             JobProcessArgs.WORKSPACE: ("-m", args.workspace),
             JobProcessArgs.STARTUP_CONFIG_FILE: ("-s", "fed_server.json"),
             JobProcessArgs.APP_ROOT: ("-r", app_root),
-            JobProcessArgs.HA_MODE: ("--ha_mode", server.ha_mode),
             JobProcessArgs.AUTH_TOKEN: ("-t", token),
             JobProcessArgs.TOKEN_SIGNATURE: ("-ts", signature),
             JobProcessArgs.PARENT_URL: ("-p", str(cell.get_internal_listener_url())),
@@ -290,7 +312,7 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
                 job_args[JobProcessArgs.PARENT_CONN_SEC] = ("--parent_conn_sec", parent_conn_sec)
 
         fl_ctx.set_prop(key=FLContextKey.JOB_PROCESS_ARGS, value=job_args, private=True, sticky=False)
-        job_handle = job_launcher.launch_job(job.meta, fl_ctx)
+        job_handle = job_launcher.launch_job(job_meta, fl_ctx)
         self.logger.info(f"Launch job_id: {job.job_id}  with job launcher: {type(job_launcher)} ")
 
         if not job_clients:
@@ -334,6 +356,9 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
         self.logger.info("Abort the server app run.")
         command_data = Shareable()
         command_data.set_header(ServerCommandKey.TURN_TO_COLD, turn_to_cold)
+        with self.lock:
+            job_handle = self.run_processes.get(job_id, {}).get(RunProcessKey.JOB_HANDLE)
+        graceful_wait = 10.0
 
         try:
             status_message = self.send_command_to_child_runner_process(
@@ -345,28 +370,43 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
             )
             self.logger.info(f"Abort server status: {status_message}")
         except Exception:
-            with self.lock:
-                child_process = self.run_processes.get(job_id, {}).get(RunProcessKey.JOB_HANDLE, None)
-                if child_process:
-                    child_process.terminate()
-        finally:
-            threading.Thread(target=self._remove_run_processes, args=[job_id]).start()
+            graceful_wait = 0.0
+        # Run cleanup off-thread: its graceful wait can exceed the CLI's 5.0s cmd_timeout.
+        # Keep the worker non-daemon so interpreter exit does not abandon launcher cleanup.
+        threading.Thread(
+            target=self._remove_run_processes,
+            kwargs={"job_id": job_id, "job_handle": job_handle, "max_wait": graceful_wait},
+            daemon=False,
+        ).start()
 
         self.engine_info.status = MachineStatus.STOPPED
         return ""
 
-    def _remove_run_processes(self, job_id):
-        # wait for the run process to gracefully terminated, and ensure to remove from run_processes.
-        max_wait = 5.0
+    def _remove_run_processes(self, job_id, job_handle=None, max_wait=10.0):
+        # Wait for the run process to terminate gracefully, then always call
+        # terminate() for the captured job handle. For launcher-managed jobs
+        # this is the resource cleanup path, not only a force-kill path.
         start = time.time()
         while True:
-            if job_id not in self.run_processes:
-                # job already gone
-                return
+            with self.lock:
+                run_process = self.run_processes.get(job_id)
+                if job_handle is None and run_process:
+                    job_handle = run_process.get(RunProcessKey.JOB_HANDLE)
+            if run_process is None:
+                # graceful shutdown: wait_for_complete already popped this entry
+                break
             if time.time() - start >= max_wait:
                 break
             time.sleep(0.1)
-        self.run_processes.pop(job_id, None)
+
+        if job_handle is not None:
+            try:
+                job_handle.terminate()
+                self.logger.debug(f"job {job_id}: terminated job handle after abort cleanup")
+            except Exception as e:
+                self.logger.error(f"job {job_id}: failed to terminate job handle: {secure_format_exception(e)}")
+        with self.lock:
+            self.run_processes.pop(job_id, None)
 
     def check_app_start_readiness(self, job_id: str) -> str:
         if job_id not in self.run_processes.keys():
@@ -462,6 +502,12 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
     def get_cell(self):
         return self.cell
 
+    def set_cell(self, cell: Cell):
+        """Set the communication cell without registering message handlers."""
+        self.cell = cell
+        if self.run_manager:
+            self.run_manager.cell = cell
+
     def initialize_comm(self, cell: Cell):
         """This is called when the communication cell has been created.
         We will set up aux message handler here.
@@ -473,13 +519,7 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
 
         """
         self.logger.debug("initialize_comm called!")
-        self.cell = cell
-        if self.run_manager:
-            # Note that the aux_runner is created with the self.run_manager as the "engine".
-            # We must set the cell in it; otherwise it won't be able to send messages.
-            # The timing of the creation of the run_manager and the cell is not deterministic, we set the cell here
-            # only if the run_manager has been created.
-            self.run_manager.cell = cell
+        self.set_cell(cell)
 
         cell.register_request_cb(
             channel=CellChannel.AUX_COMMUNICATION,
@@ -514,6 +554,11 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
         self.conf = conf
 
     def build_component(self, config_dict):
+        if not self.conf:
+            raise RuntimeError("No configurator set up.")
+        has_authorizer = getattr(self.conf, "has_component_build_authorizer", None)
+        if not callable(has_authorizer) or not has_authorizer():
+            raise RuntimeError("No component build authorizer set up.")
         return self.conf.build_component(config_dict)
 
     def new_context(self) -> FLContext:
@@ -563,9 +608,60 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
         return ""
 
     def remove_clients(self, clients: List[str]) -> str:
+        """Remove active client-token entries so those clients can register again."""
         for client in clients:
             self._remove_dead_client(client)
         return ""
+
+    @staticmethod
+    def _client_operation_error(client_name: str, e: Exception) -> dict:
+        return {"client_name": client_name, "state": "error", "error": str(e)}
+
+    def disable_clients(self, client_names: List[str]) -> dict:
+        results = []
+        for client_name in client_names:
+            try:
+                already_disabled = self.server.client_manager.is_client_disabled(client_name)
+                removed_tokens = self.server.client_manager.disable_client(client_name)
+                for token in removed_tokens:
+                    self.server.remove_client_data(token)
+                    if self.server.admin_server:
+                        self.server.admin_server.client_dead(token)
+                results.append(
+                    {
+                        "client_name": client_name,
+                        "state": "disabled",
+                        "already_disabled": already_disabled,
+                        "active_session_removed": bool(removed_tokens),
+                        "credential_revoked": False,
+                        "rejoin_allowed": False,
+                    }
+                )
+            except Exception as e:
+                if len(client_names) == 1:
+                    raise
+                results.append(self._client_operation_error(client_name, e))
+        return {"clients": results}
+
+    def enable_clients(self, client_names: List[str]) -> dict:
+        results = []
+        for client_name in client_names:
+            try:
+                was_disabled = self.server.client_manager.enable_client(client_name)
+                results.append(
+                    {
+                        "client_name": client_name,
+                        "state": "enabled",
+                        "was_disabled": was_disabled,
+                        "credential_revoked": False,
+                        "rejoin_allowed": True,
+                    }
+                )
+            except Exception as e:
+                if len(client_names) == 1:
+                    raise
+                results.append(self._client_operation_error(client_name, e))
+        return {"clients": results}
 
     def _remove_dead_client(self, token):
         _ = self.server.client_manager.remove_client(token)
@@ -624,6 +720,9 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
         )
 
     def _get_aux_msg_target(self, name: str):
+        if name.lower() == SiteType.SERVER_PARENT:
+            return AuxMsgTarget.server_parent_target()
+
         if name.lower() == SiteType.SERVER:
             return AuxMsgTarget.server_target()
 
@@ -768,7 +867,7 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
         data = return_data.payload
         clients = data.get(ServerCommandKey.CLIENTS, None)
         if clients is None:
-            self.logger.error(f"parent failed to return clients info for job {job_id}")
+            self.logger.debug(f"parent failed to return clients info for job {job_id}")
         return clients
 
     def update_job_run_status(self):
@@ -829,53 +928,9 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
         return result
 
     def persist_components(self, fl_ctx: FLContext, completed: bool):
-        if not self.server.ha_mode:
-            return
-
-        self.logger.info("Start saving snapshot on server.")
-
-        # Call the State Persistor to persist all the component states
-        # 1. call every component to generate the component states data
-        #    Make sure to include the current round number
-        # 2. call persistence API to save the component states
-
-        try:
-            job_id = fl_ctx.get_job_id()
-            snapshot = RunSnapshot(job_id)
-            for component_id, component in self.run_manager.components.items():
-                if isinstance(component, FLComponent):
-                    snapshot.set_component_snapshot(
-                        component_id=component_id, component_state=component.get_persist_state(fl_ctx)
-                    )
-
-            snapshot.set_component_snapshot(
-                component_id=SnapshotKey.FL_CONTEXT, component_state=copy.deepcopy(get_serializable_data(fl_ctx).props)
-            )
-
-            workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
-            data = zip_directory_to_bytes(workspace.get_run_dir(fl_ctx.get_prop(FLContextKey.CURRENT_RUN)), "")
-            snapshot.set_component_snapshot(component_id=SnapshotKey.WORKSPACE, component_state={"content": data})
-
-            job_info = fl_ctx.get_prop(FLContextKey.JOB_INFO)
-            if not job_info:
-                job_clients = self.get_participating_clients()
-                fl_ctx.set_prop(FLContextKey.JOB_INFO, (job_id, job_clients))
-            else:
-                (job_id, job_clients) = job_info
-            snapshot.set_component_snapshot(
-                component_id=SnapshotKey.JOB_INFO,
-                component_state={SnapshotKey.JOB_CLIENTS: job_clients, SnapshotKey.JOB_ID: job_id},
-            )
-
-            snapshot.completed = completed
-
-            self.server.snapshot_location = self.snapshot_persistor.save(snapshot=snapshot)
-            if not completed:
-                self.logger.info(f"persist the snapshot to: {self.server.snapshot_location}")
-            else:
-                self.logger.info(f"The snapshot: {self.server.snapshot_location} has been removed.")
-        except Exception as e:
-            self.logger.error(f"Failed to persist the components. {secure_format_exception(e)}")
+        # Component snapshot persistence has been removed; keep this as a no-op
+        # so existing callers do not have to be changed.
+        return
 
     def restore_components(self, snapshot: RunSnapshot, fl_ctx: FLContext):
         for component_id, component in self.run_manager.components.items():

@@ -1,0 +1,219 @@
+target: task-local client.py, job.py, model.py, train_utils.py, med_vlm_data_utils.py; shared custom_aggregators.py
+goal: keep VLM task/environment specifics in this task folder while following the global program.md workflow
+
+shared_global_files:
+  - program.md
+  - scripts/
+  - templates/
+  - result ledger helpers
+  - reporting helpers
+
+fixed_invariants:
+  api_loop:
+    - flare.init()
+    - while flare.is_running()
+    - input_model = flare.receive()
+    - flare.send(output_model)
+  model_contract:
+    - model.load_state_dict(input_model.params, strict=True)
+    - global_model = deepcopy(model)
+    - compute_model_diff(model, global_model)
+    - output_model.params_type == ParamsType.DIFF
+  required_meta:
+    - NUM_STEPS_CURRENT_ROUND
+  fixed_assets:
+    - site_datasets mapping
+    - token_f1 cross-site score extraction
+
+mutable_args:
+  aggregation_epochs: {type: int, min: 1, max: 8}
+  local_train_steps: {type: int, min: 0, max: 1000}
+  site_local_steps_spec:
+    type: str
+    note: "Optional comma-separated per-site exact local optimizer steps such as site-1:8,site-2:8,site-3:12; requires local_train_steps > 0."
+  lr: {type: float, min: 0.000001, max: 0.0001, log_scale: true}
+  site_lr_scale_spec:
+    type: str
+    note: "Optional comma-separated per-site LR multipliers such as site-1:1,site-2:1,site-3:1.2."
+  site_lr_scale_end_spec:
+    type: str
+    note: "Optional per-site LR multipliers to decay toward over site_lr_scale_decay_rounds."
+  site_lr_scale_decay_rounds: {type: int, min: 0, max: 20}
+  batch_size: {type: int, choices: [1, 2, 4, 8]}
+  grad_accum: {type: int, choices: [1, 2, 4, 8]}
+  eval_batch_size: {type: int, choices: [1, 2, 4]}
+  num_workers: {type: int, min: 0, max: 8}
+  weight_decay: {type: float, min: 0.0, max: 0.001, log_scale: true}
+  fedproxloss_mu: {type: float, min: 0.0, max: 1.0, log_scale: true}
+  feddyn_alpha:
+    type: float
+    min: 0.0
+    max: 0.001
+    log_scale: true
+    note: "Client-local dynamic regularization coefficient; preserves adapter DIFF uploads and does not add server-client metadata."
+  sam_rho: {type: float, min: 0.0, max: 0.2}
+  sam_eps: {type: float, min: 0.000000000001, max: 0.000001, log_scale: true}
+  train_lora_modules:
+    type: str
+    note: "Comma-separated subset of q_proj,k_proj,v_proj,o_proj to train locally, or all."
+  aggregator:
+    type: str
+    choices: [weighted, default]
+  model_arch:
+    type: str
+    choices: [qwen3vl_lora_adapter]
+  max_model_params: {type: int, min: 1, max: 64000000}
+  lora_r: {type: int, choices: [8, 16, 32, 64]}
+  lora_alpha: {type: int, choices: [16, 32, 64, 128]}
+  lora_dropout: {type: float, min: 0.0, max: 0.2}
+
+comparison_budget_args:
+  local_default_candidate_budget:
+    n_clients: 3
+    num_rounds: 20
+    local_train_steps: 4
+    batch_size: 8
+    grad_accum: 1
+    eval_batch_size: 1
+    max_samples_per_site: 512
+    max_eval_samples: 512
+    site_datasets: vqa-rad,slake,path-vqa
+    seed: 0
+    model_name_or_path: MODEL_PATH
+    hf_cache_dir: /workspace/.hf_cache
+    model_arch: qwen3vl_lora_adapter
+    max_model_params: 8000000
+    lora_r: 16
+    lora_alpha: 32
+    lora_dropout: 0.05
+    aggregator: weighted
+    cross_site_eval: true
+    final_eval_clients: all
+    run_timeout_seconds: 1200
+  fixed_within_campaign:
+    - n_clients
+    - num_rounds
+    - batch_size
+    - grad_accum
+    - eval_batch_size
+    - max_samples_per_site
+    - max_eval_samples
+    - site_datasets
+    - seed
+    - model_name_or_path
+    - model_arch
+    - max_model_params
+    - lora_r
+    - lora_alpha
+    - lora_dropout
+    - cross_site_eval
+    - final_eval_clients
+  note: >
+    Keep communication, data, model, seed, adapter, and evaluation fields fixed
+    within a comparison campaign. aggregation_epochs and local_train_steps are
+    local-compute knobs: local_train_steps=0 means epoch-based training with
+    aggregation_epochs, and local_train_steps>0 means exact optimizer steps per
+    client per round. Vary only one local-compute mode in a narrow sweep.
+  data_mapping: >
+    The default 3-site VLM setup maps site-1/site-2/site-3 to
+    vqa-rad/slake/path-vqa through --site_datasets. Keep the mapping fixed
+    inside a campaign unless the campaign is explicitly a task/data adaptation.
+
+local_sweep:
+  node_profile:
+    gpu_count: 1
+    gpu_type: local_single_gpu
+    gpu_memory_gb: unknown
+  default_candidate_width: 1
+  candidate_width_source: local VLM profile
+  candidate_rule: >
+    Run one heavy VLM candidate at a time by default. If the environment exposes
+    multiple GPUs but this profile should remain a local single-GPU campaign,
+    pin each run with CUDA_VISIBLE_DEVICES=0 instead of spreading candidates
+    across devices. Increase PARALLEL_CANDIDATES only after a representative
+    run proves there is enough GPU and host memory headroom.
+  per_run_artifacts:
+    - RUN_LOG
+    - job --name
+    - AUTOFL_RESULT_DIR_FILE when using scripts/run_iteration.sh
+  batch_decision_rule: >
+    Wait for launched candidates to finish or time out, then rank completed
+    rows against results.tsv before keeping, narrowing, or discarding the sweep
+    axis.
+
+literature_review:
+  trigger_after_non_improving_batches: 2
+  ledger_event_status: literature
+  uses_shared_artifacts:
+    - program.md
+    - templates/literature_loop.md
+    - templates/mutation_report.md
+    - scripts/log_literature_review.py
+    - scripts/plateau_watchdog.py
+  ledger_source_rule: >
+    Record each literature-review cycle as a non-scored results.tsv row with
+    status=literature using the shared ledger scripts. When a candidate
+    implements a method or design choice from a research paper, include a
+    compact source reference in the results.tsv description field, such as
+    [src: Li20 FedProx arXiv:1812.06127]. Put fuller citations and the
+    hypothesis in templates/mutation_report.md or campaign notes.
+  pipeline:
+    - literature_search
+    - challenge_extraction
+    - proposal_scoring
+    - quality_weighted_branch_exploration
+    - reflective_memory
+  proposal_score_axes:
+    - expected_score_gain
+    - contract_safety
+    - implementation_simplicity
+    - evidence_strength
+    - novelty_vs_results_tsv
+    - runtime_cost
+  allowed_topics:
+    - federated_optimization
+    - heterogeneous_medical_vlm_sites
+    - client_drift
+    - robust_aggregation
+    - fedprox_regularization
+    - feddyn_local_regularization
+    - sharpness_aware_minimization
+    - fedopt_server_optimization
+    - adaptive_aggregation
+    - optimizer_and_scheduler_tuning
+    - local_step_scheduling
+    - bounded_adapter_state
+    - prompt_preserving_vlm_training
+  reject_if_requires:
+    - protocol_change
+    - new_dependency
+    - unregistered_model_architecture
+    - model_parameter_count_above_budget
+    - evaluation_change
+    - prompt_format_change
+    - full_model_weight_exchange
+    - duplicate_shared_scripts_or_templates
+
+preferred_targets:
+  - client.py
+  - job.py
+  - model.py
+  - train_utils.py
+  - med_vlm_data_utils.py
+  - tasks/shared/custom_aggregators.py
+
+forbidden_mutations:
+  - duplicate shared scripts or templates inside tasks/vlm_med
+  - switch ParamsType.DIFF to FULL
+  - remove NUM_STEPS_CURRENT_ROUND
+  - rewrite flare task loop
+  - change evaluation data or scoring inside a comparable campaign
+  - add dependencies without human approval
+
+required_loop:
+  - establish baseline first
+  - keep the recipe budget fixed within a campaign
+  - redirect full output to RUN_LOG
+  - record every run in results.tsv with the shared scripts
+  - keep or revert after comparing score and complexity
+  - run literature review after sustained non-improvement instead of local jitter

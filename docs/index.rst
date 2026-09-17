@@ -11,7 +11,7 @@ NVIDIA FLARE
 
    welcome
    roadmap
-   release_notes/flare_272
+   release_notes/flare_290
    industry_use_cases
 
 .. toctree::
@@ -28,11 +28,14 @@ NVIDIA FLARE
    :hidden:
    :caption: User Guide
 
+   Agent Skills <user_guide/agent_skills/index>
+   Choose an API Path <user_guide/data_scientist_guide/api_selection>
    user_guide/data_scientist_guide/client_api_usage
+   Collaboration API (Technical Preview) <user_guide/data_scientist_guide/collab_api>
    user_guide/data_scientist_guide/job_recipe
+   user_guide/data_scientist_guide/recipe_api
    user_guide/data_scientist_guide/available_recipes
    user_guide/data_scientist_guide/flare_api
-   API Evolution & Recommendations <programming_guide/flare_api_evolution>
    user_guide/data_scientist_guide/flower_integration/flower_integration
    programming_guide/experiment_tracking
    Federated XGBoost <user_guide/data_scientist_guide/federated_xgboost/federated_xgboost>
@@ -78,16 +81,23 @@ NVIDIA FLARE
 
    user_guide/admin_guide/deployment/overview
    programming_guide/provisioning_system
+   Multi-Study Support <user_guide/admin_guide/multi_study_guide>
    Distributed Provisioning <user_guide/nvflare_cli/distributed_provisioning>
    user_guide/admin_guide/deployment/dashboard_ui
    user_guide/admin_guide/deployment/cloud_deployment
-   user_guide/admin_guide/deployment/aws_eks
+   Deploy Prepare <user_guide/nvflare_cli/deploy_command>
    Running FLARE in Docker <user_guide/admin_guide/deployment/containerized_deployment>
    Running FLARE in Kubernetes <user_guide/admin_guide/deployment/helm_chart>
+   Running FLARE on Slurm <user_guide/admin_guide/deployment/slurm_job_launcher>
+   Deploying FLARE on OpenShift <user_guide/admin_guide/deployment/openshift>
+   Brev Scripted Deployment Quickstart <user_guide/admin_guide/deployment/brev_scripted_deployment>
+   Brev Kubernetes Helm Deployment <user_guide/admin_guide/deployment/brev_deployment>
    Preflight Check <user_guide/nvflare_cli/preflight_check>
    user_guide/admin_guide/deployment/operation
    user_guide/admin_guide/monitoring
    user_guide/admin_guide/configurations/logging_configuration
+   Live Log Streaming <programming_guide/live_log_streaming>
+   Site Configuration Metadata <user_guide/admin_guide/configurations/site_config>
    System Configuration <user_guide/admin_guide/configurations/system_configuration>
 
 .. toctree::
@@ -98,6 +108,7 @@ NVIDIA FLARE
    system_architecture/security_overview
    user_guide/admin_guide/security/terminologies_and_roles
    Identity & Access Control <user_guide/admin_guide/security/identity_security>
+   Per-Job Certificates <user_guide/admin_guide/security/per_job_certificates>
    user_guide/admin_guide/security/site_policy_management
    Network & Communication <user_guide/admin_guide/security/communication_security>
    Data Privacy & Filters <user_guide/admin_guide/security/data_privacy_protection>
@@ -140,7 +151,9 @@ Start here if you want to federate an existing training script.
 - :doc:`Welcome <welcome>` -- What FLARE is and what it supports
 - :doc:`Installation <installation>` -- Install FLARE and set up your environment
 - :doc:`Quick Start <quickstart>` -- Run a Hello World example and convert your ML code
+- :doc:`Agent Skills <user_guide/agent_skills/index>` -- Optional coding-agent workflows to learn NVFLARE, create federated jobs, optimize with AutoFL, and report results
 - :ref:`Client API <client_api>` -- Recommended high-level API for federated training
+- :ref:`Collaboration API (Technical Preview) <collab_api>` -- Remote Python method calls between server and clients and among peer clients
 - :ref:`Job Recipe API <job_recipe>` -- Pre-built recipes for common FL workflows
 - :doc:`Migration Guide <migration_guide>` -- Upgrade between FLARE versions
 - :ref:`Examples & Tutorials <example_applications>` -- End-to-end examples and tutorials

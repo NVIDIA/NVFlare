@@ -60,7 +60,7 @@ This section describes the key components of the federated Kaplan-Meier example.
 
 ### Data
 
-**Dataset**: This example uses the `veterans_lung_cancer` dataset from `sksurv.datasets.load_veterans_lung_cancer`. The dataset contains survival information for veterans with advanced lung cancer.
+**Dataset**: This example uses the Veterans' Lung Cancer Trial dataset (originally from R's `survival` package), downloaded from the [Rdatasets collection](https://vincentarelbundock.github.io/Rdatasets/csv/survival/veteran.csv). The dataset contains survival information for veterans with advanced lung cancer.
 
 **Key Features**:
 - `Survival Days`: Time from observation start to end (event time)
@@ -203,7 +203,9 @@ Each client generates:
 
 ### Job Recipe
 
-**Configuration**: `job.py` using NVFlare Recipe API
+**Configuration**: `job.py` creates a concrete `KaplanMeierRecipe` from
+`km_recipe.py`, then exports or executes it through the NVFlare Recipe API.
+The lower-level job assembly remains encapsulated in the dedicated recipe.
 
 **Key Parameters**:
 - `--encryption`: Enable/disable Homomorphic Encryption (HE)
@@ -292,7 +294,12 @@ This example supports both **Simulation Mode** (for local testing) and **Product
 
 For simulation mode (testing and development), we manually prepare the data and HE context:
 
-**Step 1: Prepare Data**
+**Step 1: Download and Prepare Data**
+
+Download the Veterans' Lung Cancer dataset:
+```commandline
+python utils/download_data.py
+```
 
 Split and generate data files for each client with binning interval of 7 days:
 ```commandline

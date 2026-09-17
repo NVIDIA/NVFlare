@@ -13,7 +13,7 @@
 # limitations under the License.
 
 
-class EventType(object):
+class EventType:
     """Built-in system events."""
 
     SYSTEM_START = "_system_start"

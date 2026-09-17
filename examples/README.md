@@ -57,7 +57,7 @@ In each example folder, install required packages for training:
 To run examples including notebooks, we recommend using [JupyterLab](https://jupyterlab.readthedocs.io).
 **You need to set up the virtual environment and install nvflare and set additional `PYTHONPATH` before launch the jupyter lab.**
 
-After activating your virtual environment, install JupyterLab:
+After activating your virtual environment, install JupyterLab.
 ```shell
 (nvflare_example)$ pip install jupyterlab
 ```
@@ -77,6 +77,7 @@ When you open a notebook, select the kernel `nvflare_example` using the dropdown
 |------------------------------------------------------------------------------|--------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | [Notebook for Hello Examples](./hello-world/hello_world.ipynb)               | -            | Notebook for examples below.                                                                                                                                    |
 | [Hello NumPy](./hello-world/hello-numpy/README.md)             | Numpy        | Example using [FedAvg](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_common.workflows.fedavg.html) with Recipe API.      |
+| [Hello FedAvg Collab](./hello-world/hello-collab/README.md)   | PyTorch      | Implements a custom FedAvg workflow with the Collab API and ordinary Python function calls.                                                                       |
 | [Hello Cross-Site Validation](./hello-world/hello-numpy-cross-val/README.md) | Numpy        | Example using [CrossSiteEval](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_common.workflows.cross_site_eval.html) controller workflow, and example using previous results without training workflow. |
 | [Hello Cyclic Weight Transfer](./hello-world/hello-cyclic/README.md)         | PyTorch      | Example using [CyclicController](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_common.workflows.cyclic_ctl.html) controller workflow to implement [Cyclic Weight Transfer](https://pubmed.ncbi.nlm.nih.gov/29617797/). |
 | [Hello JAX](./hello-world/hello-jax/README.md)                                | JAX          | Example using an MNIST classifier with [FedAvg](https://arxiv.org/abs/1602.05629) and JAX/Flax as the deep learning training framework. |
@@ -89,7 +90,7 @@ When you open a notebook, select the kernel `nvflare_example` using the dropdown
 | [Intro to the FL Simulator](./tutorials/flare_simulator.ipynb)                                                                         | Shows how to use the FLARE Simulator to run a local simulation.                                                                                                 |
 | [Hello FLARE API](./tutorials/flare_api.ipynb)                                                                                         | Goes through the different commands of the FLARE API.                                                                                                           |
 | [NVFLARE in POC Mode](./tutorials/setup_poc.ipynb)                                                                                     | Shows how to use POC mode.                                                                                                                                |
-| [Job CLI](./tutorials/job_cli.ipynb)                                                                                                   | Walks through the different commands of the Job CLI.                                                                                                   |
+| [NVFlare CLI](./tutorials/nvflare_cli.ipynb)                                                                                           | Walks through the current `nvflare` command groups for local setup, recipes, jobs, systems, studies, provisioning, and deployment.                     |
 | [Job Recipe](./tutorials/job_recipe.ipynb)                                                                                              | Introduces Job Recipes to simplify federated learning job creation and execution with a high-level API.                                                 |
 | [Logging Tutorial](./tutorials/logging.ipynb)                                                                                 | Shows how to use the logging configuration for different modules.                                                                                           |
 
@@ -101,7 +102,7 @@ When you open a notebook, select the kernel `nvflare_example` using the dropdown
 | [Real-world Federated Learning with CIFAR-10](./advanced/cifar10/pt/cifar10-real-world/README.md) | Includes instructions on running [FedAvg](https://arxiv.org/abs/1602.05629) with streaming of TensorBoard metrics to the server during training and [homomorphic encryption](https://developer.nvidia.com/blog/federated-learning-with-homomorphic-encryption/).          |
 | [Distributed Optimization](./advanced/distributed_optimization/README.md)                      | In this example we show how to exploit the lower-level NVFlare APIs to implement and run P2P distributed optimization algorithms. The aim here is twofold: on one hand we provide a few examples showing how to directly use the `nvflare.app_opt.p2p` API to run distributed optimization algorithms, on the other hand we provide a walkthrough of the actual implementation of the APIs in `nvflare.app_opt.p2p` to show how to exploit lower-level NVFlare APIs for advanced use-cases. |
 | [swarm learning](./advanced/swarm_learning/README.md)                                          | This example shows how to use swarm learning using PyTorch with the CIFAR-10 dataset. |
-| [split learning](./advanced/vertical_federated_learning/cifar10-splitnn/README.md)        | This example includes instructions on how to run split learning (SL) using the CIFAR-10 dataset and the FL simulator. |
+| [Split learning](./advanced/vertical_federated_learning/cifar10-splitnn/README.md)        | Two-party CIFAR-10 SplitNN with Collab API and direct activation and gradient exchange. |
 
 ## 4. Traditional ML examples
 | Example                                                                                    | Framework         | Notebooks or Readme                                                                                                   | Summary                                                                                                                                                                                                                                                                                                   |
@@ -155,7 +156,6 @@ When you open a notebook, select the kernel `nvflare_example` using the dropdown
 | Example                                                                             | Framework | Summary                                                                                                               |
 |-------------------------------------------------------------------------------------|-----------|-----------------------------------------------------------------------------------------------------------------------|
 | [Parameter Efficient Fine Turning](../integration/nemo/examples/peft)               | NeMo      | Example utilizing NeMo's PEFT methods to adapt a LLM to a downstream task. |
-| [Prompt-Tuning Example](../integration/nemo/examples/prompt_learning)               | NeMo      | Example for using FLARE with NeMo for prompt learning.|
 | [Supervised Fine Tuning (SFT)](../integration/nemo/examples/supervised_fine_tuning) | NeMo      | Example to fine-tune all parameters of a LLM on supervised data. |
 | [LLM Tuning via HuggingFace SFT Trainer](./advanced/llm_hf)                         | NeMo      | Example for using FLARE with a HuggingFace trainer for LLM tuning tasks. |
 
@@ -181,9 +181,12 @@ When you open a notebook, select the kernel `nvflare_example` using the dropdown
 |-------------------------------------------------------|-----------|--------------------------------------------------------------------------------------------------------------------------|
 | [Flare Edge](./advanced/edge/README.md) | NA        | This example demonstrates FLARE mobile training jobs |
 
-## 14. System Monitoring & Misc.
+## 14. Deployment, Monitoring & Misc.
 
 | Example                                                     | Framework | Summary                                                                                                                  |
 |-------------------------------------------------------------|-----------|--------------------------------------------------------------------------------------------------------------------------|
-| [Docker](./advanced/docker/README.md)                       | NA        | The notebook in this directory walks through the creation and launch of Docker containers for NVIDIA FLARE. |
-| [Monitoring](./advanced/monitoring/README.md)               | NA        | FLARE Monitoring provides a initial solution for tracking system metrics of your federated learning jobs. |
+| [Docker Job Launcher](./docker/README.md)                   | NA        | End-to-end Docker runtime example using `nvflare deploy prepare` and per-job Docker containers. |
+| [Recipe Job on Kubernetes Clients](./advanced/recipe-k8s/README.md) | PyTorch | Train CIFAR-10 through the Recipe API on two NVFlare clients in separate Kubernetes clusters with per-site resource and launcher metadata. |
+| [OpenShift Deployment](./devops/openshift/README.md)        | NA        | OpenShift-specific deployment guide and helper scripts using the Kubernetes runtime support. |
+| [DevOps Deployment Examples](./devops/README.md)            | NA        | Test-only helper scripts for trying NVFlare deployment flows on Kubernetes and managed cloud clusters; not production deployment guidance. |
+| [Monitoring](./advanced/monitoring/README.md)               | NA        | FLARE Monitoring provides an initial solution for tracking system metrics of your federated learning jobs. |

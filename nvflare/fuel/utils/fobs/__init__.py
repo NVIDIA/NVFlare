@@ -53,6 +53,7 @@ class FOBSContextKey:
     DOWNLOAD_REQ_TIMEOUT = "download_req_timeout"
     SEC_CREDS = "sec_creds"
     NUM_RECEIVERS = "num_receivers"
+    RECEIVER_IDS = "receiver_ids"
     # When True, ViaDownloaderDecomposer will NOT download tensors at this hop.
     # Instead it creates LazyDownloadRef placeholders that preserve the original
     # source FQCN/ref_id so the reference can be forwarded verbatim to the next
@@ -61,11 +62,17 @@ class FOBSContextKey:
     # forwarding node (the CJ) and is the foundation of the B1 pass-through
     # architecture.
     PASS_THROUGH = "pass_through"
-    # Optional callable set by FlareAgent before serialising a result message
+    # When True, streamed PyTorch tensors are downloaded into temporary files
+    # and recomposed as disk-backed lazy tensor references.
+    TENSOR_DISK_OFFLOAD = "enable_tensor_disk_offload"
+    # Optional callable set by the trainer-side Client API before serialising a result message
     # when reverse PASS_THROUGH is active (subprocess → CJ → server).  Signature:
     #   cb(tx_id: str, status: str, base_objs: list) -> None
     # _create_downloader() chains this callback into the transaction_done_cb so
     # it fires when the server (or Swarm peer) finishes downloading from this
-    # subprocess's DownloadService.  FlareAgent waits on a threading.Event
+    # trainer's DownloadService. The Client API waits on a threading.Event
     # backed by this callback to gate subprocess exit on download completion.
     DOWNLOAD_COMPLETE_CB = "download_complete_cb"
+    # Optional callable used by streamed materialization paths to report
+    # monotonic transfer progress to a waiting peer.
+    STREAM_PROGRESS_CB = "stream_progress_cb"

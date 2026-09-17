@@ -48,6 +48,10 @@ See the `configuration dictionary schema <https://docs.python.org/3/library/logg
             "FLFilter": {
                 "()": "nvflare.fuel.utils.log_utils.LoggerNameFilter",
                 "logger_names": ["custom", "nvflare.app_common", "nvflare.app_opt"]
+            },
+            "ConciseFilter": {
+                "()": "nvflare.fuel.utils.log_utils.ConciseLogFilter",
+                "logger_names": ["custom", "nvflare.app_common", "nvflare.app_opt"]
             }
         },
         "handlers": {
@@ -71,7 +75,7 @@ See the `configuration dictionary schema <https://docs.python.org/3/library/logg
                 "class": "logging.handlers.RotatingFileHandler",
                 "level": "ERROR",
                 "formatter": "baseFormatter",
-                "filename": "log_error.txt",
+                "filename": "error_log.txt",
                 "mode": "a",
                 "maxBytes": 20971520,
                 "backupCount": 10
@@ -132,7 +136,7 @@ Example configuration and output:
 
 .. code-block:: shell
 
-    01-14-2025 14:44:46 - PTInProcessClientAPIExecutor - nvflare.app_opt.pt.in_process_client_api_executor.PTInProcessClientAPIExecutor - INFO - [identity=site-1, run=fc711945-a7cf-4834-9fc4-aa9cb60e327b, peer=example_project, peer_run=fc711945-a7cf-4834-9fc4-aa9cb60e327b, task_name=train, task_id=a16b7a02-b2ea-4eb5-895a-b40d507b2c5c] - execute for task (train)
+    01-14-2025 14:44:46 - ClientAPIExecutor - nvflare.app_common.executors.client_api_executor.ClientAPIExecutor - INFO - [identity=site-1, run=fc711945-a7cf-4834-9fc4-aa9cb60e327b, peer=example_project, peer_run=fc711945-a7cf-4834-9fc4-aa9cb60e327b, task_name=train, task_id=a16b7a02-b2ea-4eb5-895a-b40d507b2c5c] - execute for task (train)
 
 
 ColorFormatter
@@ -182,7 +186,7 @@ Example configuration and output:
 
 .. code-block:: json
 
-    {"asctime": "2025-01-14 14:44:46,559", "name": "PTInProcessClientAPIExecutor", "fullName": "nvflare.app_opt.pt.in_process_client_api_executor.PTInProcessClientAPIExecutor", "levelname": "INFO", "fl_ctx": "[identity=site-1, run=fc711945-a7cf-4834-9fc4-aa9cb60e327b, peer=example_project, peer_run=fc711945-a7cf-4834-9fc4-aa9cb60e327b, task_name=train, task_id=a16b7a02-b2ea-4eb5-895a-b40d507b2c5c]", "message": "execute for task (train)"}
+    {"asctime": "2025-01-14 14:44:46,559", "name": "ClientAPIExecutor", "fullName": "nvflare.app_common.executors.client_api_executor.ClientAPIExecutor", "levelname": "INFO", "fl_ctx": "[identity=site-1, run=fc711945-a7cf-4834-9fc4-aa9cb60e327b, peer=example_project, peer_run=fc711945-a7cf-4834-9fc4-aa9cb60e327b, task_name=train, task_id=a16b7a02-b2ea-4eb5-895a-b40d507b2c5c]", "message": "execute for task (train)"}
 
 
 Filters
@@ -206,6 +210,23 @@ We leverage this in our FLFilter, which filters loggers related to fl training o
 
     "FLFilter": {
         "()": "nvflare.fuel.utils.log_utils.LoggerNameFilter",
+        "logger_names": ["custom", "nvflare.app_common", "nvflare.app_opt"]
+    }
+
+ConciseLogFilter
+----------------
+:class:`ConciseLogFilter<nvflare.fuel.utils.log_utils.ConciseLogFilter>` extends ``LoggerNameFilter`` for the
+``msg_only`` console mode. It allows records from loggers outside the ``nvflare`` namespace so
+user training logs are visible without requiring :func:`custom_logger<nvflare.fuel.utils.log_utils.custom_logger>`.
+For ``nvflare`` loggers, it applies the inherited ``LoggerNameFilter`` rules, allowing configured logger names and,
+by default, all records above INFO.
+
+We configure this as ``ConciseFilter`` with the same NVFlare application logger allowlist used by ``FLFilter``:
+
+.. code-block:: json
+
+    "ConciseFilter": {
+        "()": "nvflare.fuel.utils.log_utils.ConciseLogFilter",
         "logger_names": ["custom", "nvflare.app_common", "nvflare.app_opt"]
     }
 
@@ -255,7 +276,7 @@ Example configuration:
 The following log file handlers are pre-configured:
 
 - logFileHandler with baseFormatter to write all logs to ``log.txt``
-- errorFileHandler  with baseFormatter and level "ERROR" to write error level logs to ``log_error.txt``
+- errorFileHandler  with baseFormatter and level "ERROR" to write error level logs to ``error_log.txt``
 - jsonFileHandler with jsonFormatter to write json formatted logs to ``log.json``
 - FLFileHandler with baseFormatter and FLFilter to write fl training and custom logs to ``log_fl.txt``
 
@@ -281,7 +302,9 @@ Furthermore, any intermediate logger parents are already created and are configu
 When creating loggers for custom code, we provide a user custom logger function:
 
 :func:`custom_logger<nvflare.fuel.utils.log_utils.custom_logger>`: From a logger, return a new logger with "custom" prepended to the logger name.
-This enables logs from the custom logger to pass through the default FLFilter so the logs will be displayed in "concise" mode.
+This provides an explicit namespace that passes through the default FLFilter into ``log_fl.txt``. The concise and
+message-only console modes additionally display logs from all other non-NVFlare namespaces. Progress mode
+selects workflow progress plus warnings and errors.
 
 When creating loggers for FLARE code, we provide several developer functions to help adhere to the package logger hierarchy:
 
@@ -304,10 +327,21 @@ We provide a log config argument (``-l`` or ``log_config`` in simulator mode, an
 This argument can be any of the following:
 
 - log configuration json file (``/path/to/my_log_config.json``, ``my_log_config.json``)
-- predefined console :class:`LogMode<nvflare.fuel.utils.log_utils.LogMode>` (``concise``, ``full``, ``verbose``)
+- predefined console :class:`LogMode<nvflare.fuel.utils.log_utils.LogMode>` (``concise``, ``progress``, ``msg_only``, ``full``, ``verbose``)
 
-    - ``concise`` (default for simulator mode): FLFilter for FL training logs with simplified log attributes
-    - ``full`` (default in workspaces in poc and production mode): full info level logs
+    - ``concise`` (default for simulator mode): all non-NVFlare logs plus selected NVFlare application logs, with
+      simplified log attributes. This preserves the existing NVFlare 2.9 behavior.
+    - ``progress``: round progress, client and aggregated metrics, evaluation progress,
+      warnings, and errors. INFO progress is formatted as messages only; WARNING,
+      ERROR, and CRITICAL records keep a textual severity label as well as terminal
+      color. Detailed records remain in
+      ``log.txt`` and ``log.json``. ``log_fl.txt`` retains its existing application-log
+      selection and timestamped file formatter, including both progress records and the
+      application INFO records used by monitoring tools. Built-in aggregation and evaluation writers
+      supply these messages; arbitrary client prints remain in diagnostic logs. Jobs assembled
+      directly with ``FedJob`` or JSON must configure their own reporting components.
+    - ``msg_only``: the same log selection as ``concise``, formatted as messages only
+    - ``full`` (default in workspaces in poc and production mode): all info level logs
     - ``verbose``: debug level logs with detailed log attributes
 
 - log level name or number (``debug``, ``info``, ``warning``, ``error``, ``critical``, ``30``)
@@ -319,7 +353,8 @@ FL_LOG_LEVEL Environment Variable
 =================================
 
 The ``FL_LOG_LEVEL`` environment variable can be used to set the log configuration without passing a command-line argument or API parameter.
-It accepts the same values as the :ref:`Log Config Argument <log_config_argument>` above (``concise``, ``full``, ``verbose``, a filepath, or a log level).
+It accepts the same values as the :ref:`Log Config Argument <log_config_argument>` above (``concise``, ``progress``, ``msg_only``,
+``full``, ``verbose``, a filepath, or a log level).
 
 This environment variable is applied across all modes: simulator, POC, and production.
 
@@ -412,7 +447,7 @@ However these commands do not overwrite the log configuration file in the worksp
 - **config**: the log config argument can be any of the following (For more details, refer to :ref:`Log Config Argument <log_config_argument>` above):
 
     - path to a json log configuration file (``/path/to/my_log_config.json``)
-    - predefined log mode (``concise``, ``full``, ``verbose``)
+    - predefined log mode (``concise``, ``progress``, ``msg_only``, ``full``, ``verbose``)
     - log level name or number (``debug``, ``info``, ``warning``, ``error``, ``critical``, ``30``)
     - read the current log configuration file log_config.json from the workspace (``reload``)
 

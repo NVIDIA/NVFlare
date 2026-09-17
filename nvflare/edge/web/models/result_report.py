@@ -54,7 +54,6 @@ class ResultReport(BaseModel):
                 EdgeProtoKey.TASK_NAME,
                 EdgeProtoKey.STATUS,
                 EdgeProtoKey.RESULT,
-                EdgeProtoKey.COOKIE,
             ],
         )
 
@@ -78,7 +77,7 @@ class ResultReport(BaseModel):
             task_name=d.pop(EdgeProtoKey.TASK_NAME),
             status=d.pop(EdgeProtoKey.STATUS),
             result=d.pop(EdgeProtoKey.RESULT),
-            cookie=d.pop(EdgeProtoKey.COOKIE),
+            cookie=d.pop(EdgeProtoKey.COOKIE, None),
         )
         report.update(d)
         return "", report

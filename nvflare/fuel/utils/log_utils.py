@@ -16,8 +16,12 @@ import inspect
 import json
 import logging
 import logging.config
+import numbers
 import os
 import re
+import sys
+import textwrap
+from itertools import islice
 from logging import Logger
 from logging.handlers import RotatingFileHandler
 from typing import Union
@@ -32,6 +36,7 @@ class LogMode:
     RELOAD = "reload"
     FULL = "full"
     CONCISE = "concise"
+    PROGRESS = "progress"
     MSG_ONLY = "msg_only"
     VERBOSE = "verbose"
 
@@ -42,11 +47,26 @@ with open(os.path.join(os.path.dirname(__file__), DEFAULT_LOG_JSON), "r") as f:
 
 concise_log_dict = copy.deepcopy(default_log_dict)
 concise_log_dict["formatters"]["consoleFormatter"]["fmt"] = "%(asctime)s - %(levelname)s - %(message)s"
-concise_log_dict["handlers"]["consoleHandler"]["filters"] = ["FLFilter"]
+concise_log_dict["handlers"]["consoleHandler"]["filters"] = ["ConciseFilter"]
+
+progress_log_dict = copy.deepcopy(default_log_dict)
+progress_log_dict["formatters"]["consoleFormatter"]["()"] = "nvflare.fuel.utils.log_utils.ProgressFormatter"
+progress_log_dict["formatters"]["consoleFormatter"]["fmt"] = "%(message)s"
+progress_log_dict["filters"]["ConciseFilter"] = {
+    "()": "nvflare.fuel.utils.log_utils.ConciseLogFilter",
+    "logger_names": [],
+    "allow_non_nvflare": False,
+    "progress_logger_names": [
+        "nvflare.app_common.widgets.metrics_artifact_writer",
+        "nvflare.app_common.workflows.cross_site_model_eval",
+    ],
+}
+progress_log_dict["handlers"]["consoleHandler"]["filters"] = ["ConciseFilter"]
+
 
 msg_only_log_dict = copy.deepcopy(default_log_dict)
 msg_only_log_dict["formatters"]["consoleFormatter"]["fmt"] = "%(message)s"
-msg_only_log_dict["handlers"]["consoleHandler"]["filters"] = ["FLFilter"]
+msg_only_log_dict["handlers"]["consoleHandler"]["filters"] = ["ConciseFilter"]
 
 verbose_log_dict = copy.deepcopy(default_log_dict)
 verbose_log_dict["formatters"]["consoleFormatter"][
@@ -54,9 +74,11 @@ verbose_log_dict["formatters"]["consoleFormatter"][
 ] = "%(asctime)s - %(identity)s - %(fullName)s - %(levelname)s - %(fl_ctx)s - %(message)s"
 verbose_log_dict["loggers"]["root"]["level"] = "DEBUG"
 
+
 logmode_config_dict = {
     LogMode.FULL: default_log_dict,
     LogMode.CONCISE: concise_log_dict,
+    LogMode.PROGRESS: progress_log_dict,
     LogMode.MSG_ONLY: msg_only_log_dict,
     LogMode.VERBOSE: verbose_log_dict,
 }
@@ -103,6 +125,11 @@ class ANSIColor:
             color = cls.COLORS.get(color.lower(), cls.COLORS["reset"])
 
         return f"\x1b[{color}m{text}\x1b[{cls.COLORS['reset']}m"
+
+
+def _stdout_supports_color() -> bool:
+    isatty = getattr(sys.stdout, "isatty", None)
+    return bool(isatty and isatty())
 
 
 class BaseFormatter(logging.Formatter):
@@ -167,6 +194,17 @@ class BaseFormatter(logging.Formatter):
             self._style._fmt = self._style._fmt.replace(placeholder, "")
 
 
+def console_text(message):
+    """Keep console text readable on streams that cannot encode Unicode decoration."""
+    encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
+    try:
+        message.encode(encoding)
+    except UnicodeEncodeError:
+        message = message.translate(str.maketrans({"✓": "[OK]", "✗": "[X]", "·": "-", "─": "-", "—": "-", "…": "..."}))
+        message = message.encode(encoding, errors="backslashreplace").decode(encoding)
+    return message
+
+
 class ColorFormatter(BaseFormatter):
     def __init__(
         self,
@@ -191,7 +229,9 @@ class ColorFormatter(BaseFormatter):
         self.logger_colors = logger_colors
 
     def format(self, record):
-        record_s = super().format(record)
+        record_s = console_text(super().format(record))
+        if not _stdout_supports_color():
+            return record_s
 
         # Apply level_colors based on record levelname
         log_color = self.level_colors.get(self.record.levelname, "reset")
@@ -207,6 +247,20 @@ class ColorFormatter(BaseFormatter):
                     logger_specificity = name.count(".")
 
         return ANSIColor.colorize(record_s, log_color)
+
+
+class ProgressFormatter(ColorFormatter):
+    """Keep INFO progress concise while labeling warnings and errors in plain text."""
+
+    def format(self, record):
+        if record.levelno > logging.INFO:
+            record = copy.copy(record)
+            record.msg = f"{record.levelname}: {record.getMessage()}"
+            record.args = ()
+            record.exc_info = None
+            record.exc_text = None
+            record.stack_info = None
+        return super().format(record)
 
 
 class JsonFormatter(BaseFormatter):
@@ -241,6 +295,7 @@ class JsonFormatter(BaseFormatter):
         message_dict = {}
         for fmt_key, fmt_val in self.fmt_dict.items():
             message_dict[fmt_key] = record.__dict__.get(fmt_val, "")
+        message_dict["nvflare_progress"] = bool(getattr(record, "nvflare_progress", False))
         return message_dict
 
     def format(self, record) -> str:
@@ -281,6 +336,136 @@ class LoggerNameFilter(logging.Filter):
 
     def matches_name(self, name, logger_names) -> bool:
         return any(name.startswith(logger_name) or name.split(".")[-1] == logger_name for logger_name in logger_names)
+
+
+def _format_metric_value(value):
+    if isinstance(value, numbers.Real) and not isinstance(value, bool):
+        return format(value, ".6g")
+    if isinstance(value, str):
+        value = value[:80] + ("..." if len(value) > 80 else "")
+    elif value is not None and not isinstance(value, bool):
+        return "[see saved result]"
+    return json.dumps(value, ensure_ascii=True)
+
+
+def format_metric_table(rows, label="Client", columns=None, header=True, label_width=None, include_notice=True):
+    """Render a bounded two-metric table without evaluating application objects.
+
+    Missing values use a dash. Truncated names, additional rows/metrics, and
+    structured values refer to the saved artifacts instead of changing values.
+    """
+    try:
+        rows = list(islice(rows, 11))
+        omitted = len(rows) > 10
+        rows = rows[:10]
+        if columns is None:
+            columns = dict.fromkeys(key for _, metrics in rows for key in islice(metrics, 2))
+        columns = list(islice(columns, 2))
+        shortened = False
+
+        def name_text(value):
+            return json.dumps(value[:160] if isinstance(value, str) else "?", ensure_ascii=True)[1:-1]
+
+        row_names = [name_text(label), *(name_text(name) for name, _ in rows)]
+        if label_width is None:
+            label_width = min(24, max(map(len, row_names), default=6))
+        else:
+            label_width = max(1, min(24, label_width))
+
+        def cell_name(value, width):
+            nonlocal shortened
+            text = name_text(value)
+            if len(text) > width:
+                shortened = True
+                return text[: width - 3] + "..."
+            return text
+
+        column_count = len(columns)
+        column_cap = (
+            min(30, max(8, (76 - label_width - 2 * (column_count - 1)) // column_count)) if column_count else 30
+        )
+        names = [cell_name(key, column_cap) for key in columns]
+        widths = [max(min(14, column_cap), len(name)) for name in names]
+
+        def row_line(name, values):
+            return f"  {cell_name(name, label_width):<{label_width}}  " + "  ".join(
+                f"{v:>{w}}" for v, w in zip(values, widths)
+            )
+
+        lines = [row_line(label, names)] if header else []
+        for name, metrics in rows:
+            values = []
+            for key, width in zip(columns, widths):
+                try:
+                    value = _format_metric_value(metrics[key]) if key in metrics else "—"
+                except Exception:
+                    value = "[see artifact]"
+                values.append(value if len(value) <= width else "[see artifact]")
+            lines.append(row_line(name, values))
+        if include_notice and (
+            omitted or shortened or any(key not in columns for _, metrics in rows for key in metrics)
+        ):
+            lines.append("  Full names and additional results are available in the saved artifacts.")
+        return "\n".join(lines)
+    except Exception:
+        return "  See saved artifacts for metrics."
+
+
+def wrap_log_message(message, subsequent_indent="    "):
+    """Wrap long display lines while preserving short lines and table alignment."""
+    return "\n".join(
+        (
+            textwrap.fill(line, width=80, subsequent_indent=subsequent_indent, replace_whitespace=False)
+            if len(line) > 80
+            else line
+        )
+        for line in message.splitlines()
+    )
+
+
+def read_log_tail(stream, max_bytes, *, whole_lines=False):
+    """Return bounded tail bytes and a truncation flag; optionally discard the first partial record."""
+    stream.seek(0, os.SEEK_END)
+    start = max(0, stream.tell() - max_bytes)
+    stream.seek(start)
+    data = stream.read(max_bytes)
+    if start and whole_lines:
+        data = data.partition(b"\n")[2]
+    return data, start > 0
+
+
+def log_progress(logger: logging.Logger, message: str) -> None:
+    """Emit user-facing workflow progress as an explicitly marked log record."""
+    logger.info(message, extra={"nvflare_progress": True})
+
+
+class ConciseLogFilter(LoggerNameFilter):
+    """Show all non-NVFlare logs while suppressing non-application NVFlare INFO logs."""
+
+    def __init__(self, *args, progress_logger_names=None, allow_non_nvflare=True, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.progress_logger_names = progress_logger_names or []
+        self.allow_non_nvflare = allow_non_nvflare
+
+    def filter(self, record):
+        name = getattr(record, "fullName", record.name)
+        if getattr(record, "nvflare_progress", False):
+            return bool(self.progress_logger_names)
+        if self.matches_name(name, self.progress_logger_names):
+            return self.allow_all_error_logs and record.levelno > logging.INFO
+        is_nvflare_logger = name == "nvflare" or name.startswith("nvflare.")
+
+        if self.allow_non_nvflare and not is_nvflare_logger and not self.matches_name(name, self.exclude_logger_names):
+            return True
+
+        return super().filter(record)
+
+
+class ExcludeProgressFilter(logging.Filter):
+    """Keep opt-in progress records out of the existing full and verbose console views."""
+
+    def filter(self, record):
+        return not getattr(record, "nvflare_progress", False)
 
 
 def get_module_logger(module=None, name=None) -> logging.Logger:

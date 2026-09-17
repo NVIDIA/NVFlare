@@ -51,10 +51,44 @@ before they leave the client. These filters are configured in the job definition
 
 ``SVTPrivacy``
     Implements the Sparse Vector Technique (SVT) for differential privacy.
-    Uses Laplace noise and a threshold mechanism to selectively share weight updates
-    while providing formal epsilon-differential privacy guarantees.
+    Uses Laplace noise and a threshold mechanism to selectively share weight updates, with
+    filter-level privacy accounting for the SVT selection and release steps.
 
     Parameters: ``fraction`` (default 0.1), ``epsilon`` (default 0.1), ``noise_var`` (default 0.1)
+
+    .. note::
+
+        ``SVTPrivacy`` uses a practical **filter-level** privacy accountant, which is different from the
+        sample-level accountant used by DP-SGD libraries such as Opacus.
+
+        For stronger sample-level privacy accounting, use DP-SGD during local training. See
+        :doc:`Hello Differential Privacy </hello-world/hello-dp/index>` for the Opacus-based example.
+
+        The current implementation models one filter invocation as the composition of three pure-DP phases:
+
+        - threshold noise with budget ``epsilon_threshold``
+        - query/acceptance noise with budget ``epsilon_query``
+        - release noise with budget ``epsilon_release``
+
+        For one call, the accountant reports:
+
+        ``epsilon_call = epsilon_threshold + epsilon_query + epsilon_release``
+
+        Across repeated calls on the same filter instance, the accountant uses straight sequential composition:
+
+        ``epsilon_total = sum(epsilon_call over calls)``
+
+        This is a conservative pure-DP odometer with ``delta = 0``. It is useful for tracking the cumulative
+        privacy budget spent by the filter across rounds, but it is **not** equivalent to the end-to-end
+        ``(epsilon, delta)`` privacy accounting used for DP-SGD training with Opacus. In particular:
+
+        - no subsampling amplification is assumed
+        - no RDP/PRV/GDP accountant is used
+        - the guarantee is scoped to this filter mechanism, not the whole training procedure
+        - scalar passthrough values are not noise-protected by the SVT accountant and are flagged in the filter metadata
+
+        For backward compatibility, if ``epsilon_release`` is not specified, the filter derives it from the legacy
+        ``noise_var`` parameter so the release-noise scale remains unchanged.
 
 ``StatisticsPrivacyFilter``
     Applies privacy cleansing to federated statistics computations, ensuring that

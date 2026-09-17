@@ -17,8 +17,9 @@ Job2 has the scope "test."
 """
 import argparse
 
+from nvflare.apis.job_def import JobMetaKey
 from nvflare.app_common.np.recipes.fedavg import NumpyFedAvgRecipe
-from nvflare.recipe import ProdEnv
+from nvflare.recipe import ProdEnv, set_recipe_meta
 
 
 def define_parser():
@@ -44,7 +45,7 @@ def main():
         model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]],
         train_script="client.py",
     )
-    recipe.job.job.meta_props = {"scope": "test"}
+    set_recipe_meta(recipe, JobMetaKey.SCOPE, "test")
     print(f"Using startup kit at: {args.startup_kit_location}")
     print(f"Authenticating as: {args.username}")
 

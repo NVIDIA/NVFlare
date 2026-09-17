@@ -19,6 +19,7 @@ from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.storage import StorageException
 from nvflare.app_common.psi.psi_spec import PSIWriter
+from nvflare.app_common.utils.file_utils import resolve_path_under_root
 
 
 def _validate_directory(full_path: str):
@@ -61,4 +62,5 @@ class FilePSIWriter(PSIWriter):
     def get_output_path(self, fl_ctx: FLContext) -> str:
         job_dir = os.path.dirname(os.path.abspath(fl_ctx.get_prop(FLContextKey.APP_ROOT)))
         self.log_info(fl_ctx, "job dir = " + job_dir)
-        return os.path.join(job_dir, fl_ctx.get_identity_name(), self.output_path)
+        site_job_dir = os.path.join(job_dir, fl_ctx.get_identity_name())
+        return resolve_path_under_root(site_job_dir, self.output_path, "output_path")

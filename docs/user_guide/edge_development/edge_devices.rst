@@ -247,7 +247,14 @@ The following is a sample ``simulation_config.json``:
 
 Both ``simulate_rp.sh`` and ``simulate_lcp.sh`` require the ``simulation_config.json`` file.
 
-If you want to install the simulator in LCPs, you need to configure them in ``config_fed_client.json``, as shown in the following example:
+If you want to install the simulator in LCPs manually, you need to configure them in ``config_fed_client.json``,
+as shown in the following example.
+This advanced configuration path uses ``nvflare.edge.*`` components directly.
+Those edge component classes are not included in the provisioned non-BYOC ``class_allow_list``, so jobs that use
+this direct config must go through BYOC authorization and be submitted by users with BYOC permission in
+``authorization.json``.
+For normal job creation, prefer exporting the job with ``EdgeFedBuffRecipe`` or ``ETFedBuffRecipe`` so the job is
+validated through the BYOC workflow before edge components are built.
 
 .. code-block:: json
 
@@ -319,7 +326,8 @@ If you want to install the simulator in LCPs, you need to configure them in ``co
    }
 
 .. note::
-   You do not need to manually create this file. Instead, you should use either the EdgeJob API or EdgeRecipe to create the job configuration.
+   You do not need to manually create this file. Instead, use the EdgeJob API, ``EdgeFedBuffRecipe``, or
+   ``ETFedBuffRecipe`` to create the job configuration, and make sure the submitting role is allowed to submit BYOC jobs.
 
 Model Development
 =================
@@ -413,7 +421,7 @@ An example can be found in the `edge examples <https://github.com/NVIDIA/NVFlare
 
 .. code-block:: python
 
-   recipe = EdgeRecipe(
+   recipe = EdgeFedBuffRecipe(
            job_name=f"pt_job_{fl_mode}{suffix}",
            model=Cifar10ConvNet(),
            model_manager_config=model_manager_config,

@@ -41,25 +41,6 @@ class Datum:
         self.datum_type = datum_type
         self.dot = dot
         self.value = value
-        self.restore_func = None  # func to restore original object.
-        self.restore_func_data = None  # arg to the restore func
-
-    def set_restore_func(self, func, func_data):
-        """Set the restore function and func data.
-        Restore func is set during the serialization process. If set, the func will be called after the serialization
-        to restore the serialized object back to its original state.
-
-         Args:
-             func: the restore function
-             func_data: arg passed to the restore func when called
-
-         Returns: None
-
-        """
-        if not callable(func):
-            raise ValueError(f"func must be callable but got {type(func)}")
-        self.restore_func = func
-        self.restore_func_data = func_data
 
     @staticmethod
     def blob_datum(blob: Union[bytes, bytearray, memoryview], dot=0):
@@ -103,11 +84,6 @@ class DatumManager:
         self.threshold = threshold
         self.datums: Dict[str, Datum] = {}
         self.fobs_ctx = fobs_ctx
-
-        # some decomposers (e.g. Shareable, Learnable, etc.) make a shallow copy of the original object before
-        # serialization. After serialization, only the values in the copy are restored. We need to keep a ref
-        # from the copy to the original object so that values in the original are also restored.
-        self.obj_copies = {}  # copy id => original object
 
         # Post CBs are called after the serialize process is done
         # Post CBs could be used, for example, to prepare files to be downloaded by the message receiver
@@ -190,29 +166,6 @@ class DatumManager:
                 cb(self, **cb_kwargs)
             except Exception as ex:
                 self.set_error(f"exception from post_cb {cb.__name__}: {type(ex)}")
-
-    def register_copy(self, obj_copy, original_obj):
-        """Register the object_copy => original object
-
-        Args:
-            obj_copy: a copy of the original object
-            original_obj: the original object
-
-        Returns: None
-
-        """
-        self.obj_copies[id(obj_copy)] = original_obj
-
-    def get_original(self, obj_copy) -> Any:
-        """Get the registered original object from the object copy.
-
-        Args:
-            obj_copy: a copy of the original object
-
-        Returns: the original object if found; None otherwise.
-
-        """
-        return self.obj_copies.get(id(obj_copy))
 
     def get_datums(self):
         return self.datums

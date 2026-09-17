@@ -15,7 +15,7 @@ import json
 import threading
 import time
 import uuid
-from typing import List
+from typing import Callable, List
 
 from nvflare.apis.job_def import DEFAULT_STUDY
 from nvflare.fuel.f3.cellnet.defs import CellChannel
@@ -24,27 +24,48 @@ from nvflare.fuel.hci.base64_utils import b64str_to_str, str_to_b64str
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import InternalCommands, ReplyKeyword
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
+from nvflare.fuel.hci.server.constants import ConnProps
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.time_utils import time_to_string
 from nvflare.private.fed.utils.identity_utils import IdentityAsserter, TokenVerifier
+from nvflare.security.logging import secure_format_exception
 
 LIST_SESSIONS_CMD_NAME = InternalCommands.LIST_SESSIONS
 CHECK_SESSION_CMD_NAME = InternalCommands.CHECK_SESSION
 
 
 class Session(object):
-    def __init__(self, sess_id, user_name, org, role, origin_fqcn, active_study=DEFAULT_STUDY):
+    def __init__(
+        self,
+        sess_id,
+        user_name,
+        org,
+        role,
+        origin_fqcn,
+        active_study=DEFAULT_STUDY,
+        cert_exp=None,
+        cert_studies=(),
+    ):
         """Object keeping track of an admin client session with token and time data."""
         self.sess_id = sess_id
         self.user_name = user_name
         self.user_org = org
         self.user_role = role
         self.active_study = active_study
+        self.cert_exp = cert_exp
+        self.cert_studies = tuple(cert_studies)
         self.origin_fqcn = origin_fqcn
         self.start_time = time.time()
         self.last_active_time = time.time()
 
     def mark_active(self):
         self.last_active_time = time.time()
+
+    def is_cert_expired(self, now=None):
+        if not self.cert_exp:
+            return False
+        now = time.time() if now is None else now
+        return now >= self.cert_exp
 
     def make_token(self, id_asserter: IdentityAsserter):
         user = {
@@ -54,6 +75,10 @@ class Session(object):
             "s": self.sess_id,
             "study": self.active_study,
         }
+        if self.cert_exp:
+            user["ce"] = self.cert_exp
+        if self.cert_studies:
+            user["cs"] = self.cert_studies
         ds = json.dumps(user)
         bds = str_to_b64str(ds)
         signature = id_asserter.sign(ds, return_str=True)
@@ -62,9 +87,11 @@ class Session(object):
         return f"{bds}:{signature}"
 
     @staticmethod
-    def decode_token(token: str, id_asserter: IdentityAsserter = None):
+    def decode_token(token: str, id_asserter: IdentityAsserter):
         if not isinstance(token, str):
             raise ValueError(f"token must be str but got {type(token)}")
+        if not id_asserter:
+            raise ValueError("cannot decode session token without an identity asserter")
 
         parts = token.split(":")
         if len(parts) != 2:
@@ -73,13 +100,15 @@ class Session(object):
         bds = parts[0]
         signature = parts[1]
         ds = b64str_to_str(bds)
-        if id_asserter:
-            token_verifier = TokenVerifier(id_asserter.cert)
-            is_valid = token_verifier.verify("", ds, signature)
-            if not is_valid:
-                return None
+        token_verifier = TokenVerifier(id_asserter.cert)
+        is_valid = token_verifier.verify("", ds, signature)
+        if not is_valid:
+            return None
 
         user = json.loads(ds)
+        cert_studies = user.get("cs", ())
+        if not isinstance(cert_studies, (list, tuple)) or not all(isinstance(s, str) for s in cert_studies):
+            raise ValueError("invalid certificate studies in session token")
         return Session(
             user_name=user.get("n"),
             role=user.get("r"),
@@ -87,6 +116,8 @@ class Session(object):
             sess_id=user.get("s"),
             origin_fqcn="",
             active_study=user.get("study", user.get("t", DEFAULT_STUDY)),
+            cert_exp=user.get("ce"),
+            cert_studies=cert_studies,
         )
 
 
@@ -102,8 +133,10 @@ class SessionManager(CommandModule):
             monitor_interval = 5
 
         self.cell = cell
+        self.logger = get_obj_logger(self)
         self.sess_update_lock = threading.Lock()
         self.sessions = {}  # token => Session
+        self.downloads = {}  # session ID => {transaction ID: cancel callback}
         self.idle_timeout = idle_timeout
         self.monitor_interval = monitor_interval
         self.asked_to_stop = False
@@ -111,34 +144,36 @@ class SessionManager(CommandModule):
         self.monitor.daemon = True
         self.monitor.start()
 
-    def monitor_sessions(self):
-        """Runs loop in a thread to end sessions that time out."""
-        while True:
-            # print('checking for dead sessions ...')
-            if self.asked_to_stop:
+    def check_sessions(self):
+        """End sessions whose idle or certificate budget has expired."""
+        now = time.time()
+        with self.sess_update_lock:
+            sessions = list(self.sessions.values())
+
+        for sess in sessions:
+            if now - sess.last_active_time > self.idle_timeout or sess.is_cert_expired(now):
+                self.end_session_by_id(sess.sess_id, "Your session is closed due to inactivity or cert expiry.")
                 break
 
-            dead_sess = None
-            for _, sess in self.sessions.items():
-                time_passed = time.time() - sess.last_active_time
-                # print('time passed: {} secs'.format(time_passed))
-                if time_passed > self.idle_timeout:
-                    dead_sess = sess
-                    break
-
-            if dead_sess:
-                # print('ending dead session {}'.format(dead_sess.token))
-                self.end_session_by_id(dead_sess.sess_id, "Your session is closed due to inactivity.")
-            else:
-                # print('no dead sessions found')
-                pass
-
+    def monitor_sessions(self):
+        """Runs loop in a thread to end sessions that time out."""
+        while not self.asked_to_stop:
+            self.check_sessions()
             time.sleep(self.monitor_interval)
 
     def shutdown(self):
         self.asked_to_stop = True
 
-    def create_session(self, user_name, user_org, user_role, origin_fqcn, active_study=DEFAULT_STUDY):
+    def create_session(
+        self,
+        user_name,
+        user_org,
+        user_role,
+        origin_fqcn,
+        active_study=DEFAULT_STUDY,
+        cert_exp=None,
+        cert_studies=(),
+    ):
         """Creates new session with a new session token.
 
         Args:
@@ -146,7 +181,9 @@ class SessionManager(CommandModule):
             user_org: org of the user
             user_role: user's role
             origin_fqcn: request origin FQCN
-            id_asserter: used to sign session token
+            active_study: study selected for the session
+            cert_exp: admin certificate expiration time
+            cert_studies: named studies authorized by the admin certificate
 
         Returns: Session
 
@@ -159,6 +196,8 @@ class SessionManager(CommandModule):
             role=user_role,
             origin_fqcn=origin_fqcn,
             active_study=active_study,
+            cert_exp=cert_exp,
+            cert_studies=cert_studies,
         )
         with self.sess_update_lock:
             self.sessions[sess_id] = sess
@@ -166,12 +205,16 @@ class SessionManager(CommandModule):
 
     def recreate_session(self, token: str, origin_fqcn, id_asserter: IdentityAsserter):
         sess = Session.decode_token(token, id_asserter)
+        if not sess:
+            raise ValueError("invalid session token")
+        if sess.is_cert_expired():
+            raise ValueError("admin certificate for session token is expired")
         sess.origin_fqcn = origin_fqcn
         with self.sess_update_lock:
             self.sessions[sess.sess_id] = sess
         return sess
 
-    def get_session(self, token: str, id_asserter=None):
+    def get_session(self, token: str, id_asserter: IdentityAsserter):
         try:
             sess = Session.decode_token(token, id_asserter)
             if sess is None:
@@ -180,7 +223,39 @@ class SessionManager(CommandModule):
             return None
 
         with self.sess_update_lock:
-            return self.sessions.get(sess.sess_id)
+            stored_session = self.sessions.get(sess.sess_id)
+        if stored_session and stored_session.is_cert_expired():
+            self.end_session_by_id(stored_session.sess_id, "Your session is closed due to inactivity or cert expiry.")
+            return None
+        return stored_session
+
+    def bind_download(self, sess_id: str, tx_id: str, cancel_cb: Callable[[], None]) -> bool:
+        """Bind an authorized download transaction to its current session."""
+        with self.sess_update_lock:
+            sess = self.sessions.get(sess_id)
+            if not sess or sess.is_cert_expired():
+                return False
+            self.downloads.setdefault(sess_id, {})[tx_id] = cancel_cb
+        return True
+
+    def mark_download_active(self, sess_id: str, tx_id: str) -> bool:
+        """Refresh a session only for verified progress from one of its bound downloads."""
+        with self.sess_update_lock:
+            sess = self.sessions.get(sess_id)
+            session_downloads = self.downloads.get(sess_id)
+            if not sess or sess.is_cert_expired() or not session_downloads or tx_id not in session_downloads:
+                return False
+            sess.mark_active()
+        return True
+
+    def end_download(self, sess_id: str, tx_id: str):
+        with self.sess_update_lock:
+            session_downloads = self.downloads.get(sess_id)
+            if not session_downloads:
+                return
+            session_downloads.pop(tx_id, None)
+            if not session_downloads:
+                self.downloads.pop(sess_id, None)
 
     def get_sessions(self):
         result = []
@@ -189,23 +264,27 @@ class SessionManager(CommandModule):
                 result.append(s)
         return result
 
-    def end_session_by_token(self, token, reason=None):
-        try:
-            sess = Session.decode_token(token)
-        except:
-            return
-        self.end_session_by_id(sess.sess_id, reason)
-
     def end_session_by_id(self, sess_id: str, reason=None):
         with self.sess_update_lock:
             sess = self.sessions.pop(sess_id, None)
-            if sess and reason:
+            downloads = self.downloads.pop(sess_id, {})
+        if sess and reason:
+            try:
                 self.cell.fire_and_forget(
                     channel=CellChannel.HCI,
                     topic="SESSION_EXPIRED",
                     targets=sess.origin_fqcn,
                     message=CellMessage(payload=reason),
                     optional=True,
+                )
+            except Exception as ex:
+                self.logger.error(f"failed to notify expired session {sess_id}: {secure_format_exception(ex)}")
+        for tx_id, cancel_cb in downloads.items():
+            try:
+                cancel_cb()
+            except Exception as ex:
+                self.logger.error(
+                    f"failed to cancel download {tx_id} for session {sess_id}: {secure_format_exception(ex)}"
                 )
 
     def get_spec(self):
@@ -258,7 +337,9 @@ class SessionManager(CommandModule):
             conn.append_error("invalid_session")
             return
 
-        sess = self.get_session(token)
+        hci = conn.get_prop(ConnProps.HCI_SERVER)
+        id_asserter = hci.get_id_asserter() if hci else None
+        sess = self.get_session(token, id_asserter)
         if sess:
             conn.append_string("OK")
         else:

@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import ast
 import builtins
 import inspect
 import json
@@ -19,13 +20,15 @@ import shlex
 import shutil
 import subprocess
 import sys
+import uuid
 from enum import Enum
-from tempfile import TemporaryDirectory
+from tempfile import TemporaryDirectory, mkdtemp
 from typing import Dict, List
 
 from nvflare.fuel.utils.class_utils import get_component_init_parameters
+from nvflare.fuel.utils.job_secret_scanner import warn_on_potential_secrets_in_job_dir
 from nvflare.fuel.utils.log_utils import get_obj_logger
-from nvflare.fuel.utils.validation_utils import check_object_type
+from nvflare.fuel.utils.validation_utils import check_job_name, check_object_type
 from nvflare.job_config.base_app_config import BaseAppConfig
 from nvflare.job_config.fed_app_config import FedAppConfig
 from nvflare.private.fed.app.fl_conf import FL_PACKAGES
@@ -36,6 +39,7 @@ CUSTOM = "custom"
 FED_SERVER_JSON = "config_fed_server.json"
 FED_CLIENT_JSON = "config_fed_client.json"
 META_JSON = "meta.json"
+BACKUP_ROOT = ".nvflare_job_backups"
 
 
 class FedJobConfig:
@@ -54,8 +58,7 @@ class FedJobConfig:
         """
         super().__init__()
 
-        if meta_props:
-            check_object_type("meta_props", meta_props, dict)
+        self._validate_meta_props(meta_props)
 
         self.job_name = job_name
         self.min_clients = min_clients
@@ -68,7 +71,15 @@ class FedJobConfig:
         self.resource_specs: Dict[str, Dict] = {}
 
         self.custom_modules = []
+        self._copied_source_by_dest = {}
         self.logger = get_obj_logger(self)
+
+    @staticmethod
+    def _validate_meta_props(meta_props):
+        if meta_props:
+            check_object_type("meta_props", meta_props, dict)
+            if "name" in meta_props:
+                raise ValueError("meta_props must not override the reserved 'name' property")
 
     def set_app_packages(self, app_packages: List[str]):
         """Set app packages.
@@ -109,6 +120,7 @@ class FedJobConfig:
         self.deploy_map[site_name] = app_name
 
     def add_resource_spec(self, site_name: str, resource_spec: Dict):
+        """Add resource requirements for one site or the portable ``@default`` block."""
         if site_name in self.resource_specs.keys():
             raise RuntimeError(f"{site_name} resource specs already exist.")
         if not isinstance(resource_spec, dict):
@@ -116,13 +128,9 @@ class FedJobConfig:
 
         self.resource_specs[site_name] = resource_spec
 
-    def _generate_meta(self, job_dir):
-        """generate the job meta.json
-
-        Returns:
-
-        """
-        meta_file = os.path.join(job_dir, META_JSON)
+    def _prepare_meta(self):
+        """Validate and serialize job metadata before replacing an existing export."""
+        self._validate_meta_props(self.meta_props)
         meta_json = {
             "name": self.job_name,
             "resource_spec": self.resource_specs,
@@ -135,9 +143,20 @@ class FedJobConfig:
         if self.meta_props:
             meta_json.update(self.meta_props)
 
-        with open(meta_file, "w") as outfile:
-            json_dump = json.dumps(meta_json, indent=4)
-            outfile.write(json_dump)
+        return json.dumps(meta_json, indent=4)
+
+    def _generate_meta(self, job_dir, json_dump):
+        """Atomically write the pre-validated job metadata."""
+        meta_file = os.path.join(job_dir, META_JSON)
+        temp_file = f"{meta_file}.tmp"
+        try:
+            with open(temp_file, "w") as outfile:
+                outfile.write(json_dump)
+            os.replace(temp_file, meta_file)
+        except OSError:
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
+            raise
 
     def generate_job_config(self, job_root):
         """generate the job config
@@ -145,31 +164,107 @@ class FedJobConfig:
         Returns:
 
         """
+        # Revalidate at the filesystem boundary in case this low-level object was
+        # constructed directly or job_name was changed after construction.
+        # check_job_name() rejects names starting with ".", so a validated
+        # job name can never collide with BACKUP_ROOT or the staging dirs.
+        check_job_name("job_name", self.job_name)
+        # Anchor to the entry CWD so a CWD change during the long generation
+        # phase cannot redirect the publish/replace operations to a different,
+        # unvalidated directory tree.
+        job_root = os.path.abspath(job_root)
+        os.makedirs(job_root, exist_ok=True)
         job_dir = os.path.join(job_root, self.job_name)
+        backup_root = os.path.join(job_root, BACKUP_ROOT)
+        self._warn_stranded_backups(backup_root)
+        json_dump = self._prepare_meta()
+        replace_existing = False
         if os.path.exists(job_dir):
-            if self._is_valid_job_folder(job_dir) or self._is_partial_export_folder(job_dir):
-                shutil.rmtree(job_dir, ignore_errors=True)
+            if self._is_valid_job_folder(job_dir, self.job_name):
+                replace_existing = True
             else:
-                raise RuntimeError(f"Job folder {job_dir} already exists and is not a valid job folder.")
+                raise RuntimeError(f"Job folder {job_dir} already exists and does not belong to job {self.job_name}.")
 
-        for app_name, fed_app in self.fed_apps.items():
-            self.custom_modules = []
-            config_dir = os.path.join(job_dir, app_name, CONFIG)
-            custom_dir = os.path.join(job_dir, app_name, CUSTOM)
-            os.makedirs(config_dir, exist_ok=True)
-            os.makedirs(custom_dir, exist_ok=True)
+        # Build in a sibling directory and publish only after the ownership
+        # marker and all app files are complete. An interrupted export therefore
+        # cannot leave an unowned job directory that blocks a retry.
+        temp_job_dir = mkdtemp(prefix=f".{self.job_name}.", dir=job_root)
+        try:
+            self._generate_meta(temp_job_dir, json_dump)
 
-            if fed_app.server_app:
-                self._get_server_app(config_dir, custom_dir, fed_app)
+            for app_name, fed_app in self.fed_apps.items():
+                self.custom_modules = []
+                self._copied_source_by_dest = {}
+                config_dir = os.path.join(temp_job_dir, app_name, CONFIG)
+                custom_dir = os.path.join(temp_job_dir, app_name, CUSTOM)
+                os.makedirs(config_dir, exist_ok=True)
+                # custom_dir will be created on-demand if custom code is added.
 
-            if fed_app.client_app:
-                self._get_client_app(config_dir, custom_dir, fed_app)
+                if fed_app.server_app:
+                    self._get_server_app(config_dir, custom_dir, fed_app)
 
-        self._generate_meta(job_dir)
+                if fed_app.client_app:
+                    self._get_client_app(config_dir, custom_dir, fed_app)
+
+            if replace_existing:
+                os.makedirs(backup_root, exist_ok=True)
+                backup_job_dir = os.path.join(backup_root, uuid.uuid4().hex)
+                os.replace(job_dir, backup_job_dir)
+                try:
+                    os.replace(temp_job_dir, job_dir)
+                except BaseException:
+                    os.replace(backup_job_dir, job_dir)
+                    raise
+                # The replacement is committed at this point, so a backup
+                # disposal failure must not be reported as an export failure.
+                try:
+                    self._remove_backup_export(job_root, backup_job_dir)
+                except OSError:
+                    self.logger.warning(
+                        f"The export was published but the replaced backup could not be removed; "
+                        f"it remains at {backup_job_dir} and can be removed manually."
+                    )
+            else:
+                os.replace(temp_job_dir, job_dir)
+        except BaseException:
+            shutil.rmtree(temp_job_dir, ignore_errors=True)
+            raise
+
+    def _warn_stranded_backups(self, backup_root):
+        """Report backups left behind by a previously interrupted replacement.
+
+        A backup is only consumed by the invocation that created it, so it is
+        surfaced for manual recovery instead of being restored or deleted
+        based on its on-disk contents.
+        """
+        try:
+            stranded = os.listdir(backup_root)
+        except OSError:
+            return
+        if stranded:
+            self.logger.warning(
+                f"{backup_root} contains {len(stranded)} backup(s) preserved from interrupted exports; "
+                f"recover or remove them manually."
+            )
+
+    @staticmethod
+    def _remove_backup_root_if_empty(backup_root):
+        try:
+            os.rmdir(backup_root)
+        except OSError:
+            pass
+
+    def _remove_backup_export(self, job_root, backup_job_dir):
+        cleanup_dir = mkdtemp(prefix=".nvflare_job_cleanup.", dir=job_root)
+        os.rmdir(cleanup_dir)
+        os.replace(backup_job_dir, cleanup_dir)
+        self._remove_backup_root_if_empty(os.path.dirname(backup_job_dir))
+        shutil.rmtree(cleanup_dir, ignore_errors=True)
 
     def simulator_run(self, workspace, clients=None, n_clients=None, threads=None, gpu=None, log_config=None):
         with TemporaryDirectory() as job_root:
             self.generate_job_config(job_root)
+            warn_on_potential_secrets_in_job_dir(job_root, job_name=self.job_name)
 
             try:
                 command = (
@@ -194,7 +289,8 @@ class FedJobConfig:
                 new_env = os.environ.copy()
                 process = subprocess.Popen(shlex.split(command, True), shell=False, preexec_fn=os.setsid, env=new_env)
 
-                process.wait()
+                return_code = process.wait()
+                return return_code
 
             except KeyboardInterrupt:
                 self.logger.info("KeyboardInterrupt, terminate all the child processes.")
@@ -222,7 +318,11 @@ class FedJobConfig:
             json_dump = json.dumps(server_app, indent=4)
             outfile.write(json_dump)
 
-        self._copy_ext_scripts(custom_dir, fed_app.server_app.ext_scripts)
+        self._copy_ext_scripts(
+            custom_dir,
+            fed_app.server_app.ext_scripts,
+            fed_app.server_app._ext_script_destinations,
+        )
         self._copy_ext_dirs(custom_dir, fed_app.server_app)
         self._copy_file_sources(config_dir, custom_dir, fed_app.server_app.file_sources)
 
@@ -246,85 +346,278 @@ class FedJobConfig:
             if os.path.isfile(src_path):
                 base_name = os.path.basename(src_path)
                 dest_file = os.path.join(dest_path, base_name)
+                os.makedirs(dest_path, exist_ok=True)
                 shutil.copy(src_path, dest_file)
             else:
                 # this is a dir
                 shutil.copytree(src_path, dest_path, dirs_exist_ok=True)
 
-    def _copy_ext_scripts(self, custom_dir, ext_scripts):
+    def _copy_ext_scripts(self, custom_dir, ext_scripts, ext_script_destinations=None):
+        ext_script_destinations = ext_script_destinations or {}
+        copied_registrations = set()
         for script in ext_scripts:
             if os.path.exists(script):
-                if os.path.isabs(script):
-                    relative_script = self._get_relative_script(script)
+                relative_scripts = ext_script_destinations.get(script)
+                if relative_scripts:
+                    source_file = self._resolved_path(script)
+                    source_path_for_root = source_file
+                elif os.path.isabs(script):
+                    source_file = self._resolved_path(script)
+                    relative_scripts = [self._get_relative_script(source_file)]
+                    source_path_for_root = source_file
                 else:
-                    relative_script = script
-                dest_file = os.path.join(custom_dir, relative_script)
-                module = "".join(relative_script.rsplit(".py", 1)).replace(os.sep, ".")
-                self._copy_source_file(custom_dir, module, script, dest_file)
+                    source_file = script
+                    relative_scripts = [script]
+                    source_path_for_root = os.path.abspath(script)
+                for relative_script in relative_scripts:
+                    relative_script = os.path.normpath(relative_script)
+                    if (
+                        relative_script in ("", os.curdir)
+                        or os.path.isabs(relative_script)
+                        or relative_script == os.pardir
+                        or relative_script.startswith(os.pardir + os.sep)
+                    ):
+                        raise ValueError(f"Invalid external script path: {script}")
+
+                    registration = (source_file, relative_script)
+                    if registration in copied_registrations:
+                        continue
+                    copied_registrations.add(registration)
+
+                    dest_file = os.path.join(custom_dir, relative_script)
+                    module_path = relative_script[:-3] if relative_script.endswith(".py") else relative_script
+                    if os.path.basename(module_path) == "__init__" and os.path.dirname(module_path):
+                        module_path = os.path.dirname(module_path)
+                    module = module_path.replace(os.sep, ".")
+                    path_depth = len(module_path.split(os.sep))
+                    if os.path.basename(source_file) != "__init__.py":
+                        path_depth -= 1
+                    source_root = os.path.dirname(source_path_for_root)
+                    for _ in range(path_depth):
+                        source_root = os.path.dirname(source_root)
+                    self._copy_source_file(
+                        custom_dir,
+                        module,
+                        source_file,
+                        dest_file,
+                        source_root=source_root,
+                        is_external_script=True,
+                    )
 
     def _copy_ext_dirs(self, custom_dir, app_config: BaseAppConfig):
         for dir in app_config.ext_dirs:
             shutil.copytree(dir, custom_dir, dirs_exist_ok=True)
 
     def _get_relative_script(self, script):
-        package_path = ""
+        script_path = self._resolved_path(script)
+        package_path = None
         for path in sys.path:
-            if script.startswith(path):
-                if len(path) > len(package_path):
+            path = self._resolved_path(path or os.curdir)
+            if self._is_path_within(script_path, path):
+                if package_path is None or len(path) > len(package_path):
                     package_path = path
-        return script[len(package_path) + 1 :]
+        if package_path:
+            return os.path.relpath(script_path, package_path)
+        return os.path.basename(script_path)
 
     def _get_class_path(self, obj, custom_dir):
         module = obj.__module__
         source_file = inspect.getsourcefile(obj.__class__)
         if module == "__main__":
-            module = os.path.basename(source_file).strip(".py")
+            module = os.path.splitext(os.path.basename(source_file))[0]
         self._get_custom_file(custom_dir, module, source_file)
 
         return module + "." + obj.__class__.__name__
 
-    def _get_custom_file(self, custom_dir, module, source_file):
-        package = module.split(".")[0]
-        if os.path.exists(source_file):
-            if package not in FL_PACKAGES and package not in self.app_packages and module not in self.custom_modules:
-                module_path = module.replace(".", os.sep)
-                if module_path in source_file:
-                    index = source_file.rindex(module_path)
-                    dest = source_file[index:]
+    @staticmethod
+    def _resolved_path(path):
+        return os.path.normcase(os.path.realpath(os.path.abspath(path)))
 
-                    self.custom_modules.append(module)
-                    os.makedirs(custom_dir, exist_ok=True)
-                    # dest_file = os.path.join(custom_dir, module.replace(".", os.sep) + ".py")
-                    dest_file = os.path.join(custom_dir, dest)
+    @classmethod
+    def _is_path_within(cls, path, root):
+        path = cls._resolved_path(path)
+        root = cls._resolved_path(root)
+        try:
+            return os.path.commonpath([path, root]) == root
+        except ValueError:
+            return False
 
-                    self._copy_source_file(custom_dir, module, source_file, dest_file)
+    @staticmethod
+    def _module_parts(module):
+        parts = module.split(".") if module else []
+        if not parts or any(not part.isidentifier() for part in parts):
+            raise ValueError(f"Invalid module path: {module}")
+        return parts
 
-    def _copy_source_file(self, custom_dir, module, source_file, dest_file):
+    def _derive_source_root(self, module, source_file):
+        module_parts = self._module_parts(module)
+        if os.path.basename(source_file) == "__init__.py":
+            expected_source = os.path.join(*module_parts, "__init__.py")
+        else:
+            expected_source = os.path.join(*module_parts) + ".py"
+
+        source_file = os.path.normpath(os.path.abspath(source_file))
+        source_parts = os.path.normcase(source_file).split(os.sep)
+        expected_parts = os.path.normcase(expected_source).split(os.sep)
+        if source_parts[-len(expected_parts) :] != expected_parts:
+            raise ValueError(f"Source path '{source_file}' does not match module '{module}'")
+
+        source_root = source_file
+        for _ in expected_parts:
+            source_root = os.path.dirname(source_root)
+        return source_root
+
+    def _validate_source_path(self, source_file, source_root):
+        source_file = self._resolved_path(source_file)
+        source_root = self._resolved_path(source_root)
+        if not self._is_path_within(source_file, source_root):
+            raise ValueError(f"Source path '{source_file}' resolves outside the allowed source root '{source_root}'")
+        return source_file, source_root
+
+    def _check_destination_collision(self, source_file, dest_file):
+        existing_source = self._copied_source_by_dest.get(dest_file)
+        if not existing_source:
+            return
+
+        sources_are_same = source_file == existing_source
+        if not sources_are_same:
+            try:
+                sources_are_same = os.path.samefile(source_file, existing_source)
+            except OSError:
+                sources_are_same = False
+        if not sources_are_same:
+            raise ValueError(
+                f"Source paths '{existing_source}' and '{source_file}' map to the same destination '{dest_file}'"
+            )
+
+    def _validate_copy_paths(self, custom_dir, source_file, source_root, dest_file):
         os.makedirs(custom_dir, exist_ok=True)
+        source_file, source_root = self._validate_source_path(source_file, source_root)
+        custom_dir = self._resolved_path(custom_dir)
+        dest_file = self._resolved_path(dest_file)
+        if not self._is_path_within(dest_file, custom_dir):
+            raise ValueError(f"Destination path '{dest_file}' resolves outside the custom directory '{custom_dir}'")
+        paths_are_same = source_file == dest_file
+        if not paths_are_same and os.path.exists(dest_file):
+            try:
+                paths_are_same = os.path.samefile(source_file, dest_file)
+            except OSError:
+                paths_are_same = False
+        if paths_are_same:
+            raise ValueError(f"Source and destination resolve to the same file: {source_file}")
+        self._check_destination_collision(source_file, dest_file)
+        return source_file, source_root, dest_file
+
+    def _get_custom_file(self, custom_dir, module, source_file, source_root=None, flat_import_roots=None):
+        module_parts = self._module_parts(module)
+        if source_root is None:
+            source_root = self._derive_source_root(module=module, source_file=source_file)
+        source_file, source_root = self._validate_source_path(source_file, source_root)
+
+        package = module_parts[0]
+        if package in FL_PACKAGES or package in self.app_packages:
+            return
+
+        if os.path.basename(source_file) == "__init__.py":
+            dest = os.path.join(*module_parts, "__init__.py")
+        else:
+            dest = os.path.join(*module_parts) + ".py"
+        dest_file = os.path.join(custom_dir, dest)
+
+        if module in self.custom_modules:
+            self._validate_copy_paths(custom_dir, source_file, source_root, dest_file)
+            return
+
+        self.custom_modules.append(module)
+        try:
+            self._copy_source_file(
+                custom_dir,
+                module,
+                source_file,
+                dest_file,
+                source_root=source_root,
+                flat_import_roots=flat_import_roots,
+            )
+        except Exception:
+            self.custom_modules.remove(module)
+            raise
+
+    def _resolve_import_module(self, module, import_source, level, source_file):
+        import_parts = self._module_parts(import_source) if import_source else []
+        if level == 0:
+            return ".".join(import_parts)
+
+        module_parts = self._module_parts(module)
+        if os.path.basename(source_file) == "__init__.py":
+            package_parts = module_parts
+        else:
+            package_parts = module_parts[:-1]
+        if level > len(package_parts):
+            relative_import = "." * level + (import_source or "*")
+            raise ValueError(
+                f"Relative import '{relative_import}' from module '{module}' escapes the allowed source root"
+            )
+        keep_parts = len(package_parts) - level + 1
+        resolved_parts = package_parts[:keep_parts] + import_parts
+        return ".".join(resolved_parts) if resolved_parts else None
+
+    def _copy_source_file(
+        self,
+        custom_dir,
+        module,
+        source_file,
+        dest_file,
+        source_root,
+        is_external_script=False,
+        flat_import_roots=None,
+    ):
+        source_file, source_root, dest_file = self._validate_copy_paths(
+            custom_dir=custom_dir,
+            source_file=source_file,
+            source_root=source_root,
+            dest_file=dest_file,
+        )
+        import_specs = []
+        if source_file.endswith(".py"):
+            with open(source_file, "rb") as sf:
+                import_specs = list(self.locate_imports(sf))
+
+        os.makedirs(os.path.dirname(dest_file), exist_ok=True)
+        self._copied_source_by_dest[dest_file] = source_file
+        shutil.copyfile(source_file, dest_file)
+
         source_dir = os.path.dirname(source_file)
-        with open(source_file, "r") as sf:
-            import_lines = list(self.locate_imports(sf, dest_file))
-        for line in import_lines:
-            import_module = line.split(" ")[1]
-
-            import_source = import_module
-            if import_module.startswith("."):
-                import_source = import_source[1:]
-                new_module = module.split(".")[0:-1]
-                new_module.append(import_source)
-                import_module = ".".join(new_module)
-
-            import_source_file = os.path.join(source_dir, import_source.replace(".", os.sep) + ".py")
-            if os.path.exists(import_source_file):
-                # Handle the import from within the same module
-                self._get_custom_file(custom_dir, import_module, import_source_file)
-            else:
-                # Handle the import from outside the module
-                size = len(module.split(".")) - 1
-                source_root = os.sep.join(source_dir.split(os.sep)[0:-size])
-                import_source_file = os.path.join(source_root, import_source.replace(".", os.sep) + ".py")
-                if os.path.exists(import_source_file):
-                    self._get_custom_file(custom_dir, import_module, import_source_file)
+        is_flat_external_script = is_external_script and not os.path.isfile(os.path.join(source_dir, "__init__.py"))
+        is_flat_module = (is_flat_external_script or "." not in module) and os.path.basename(
+            source_file
+        ) != "__init__.py"
+        if is_flat_module and flat_import_roots is None:
+            flat_import_roots = [source_dir, source_root]
+            if is_external_script and "." not in module:
+                flat_import_roots.append(os.path.dirname(source_dir))
+        for import_source, level in import_specs:
+            import_module = self._resolve_import_module(module, import_source, level, source_file)
+            if not import_module:
+                continue
+            import_path = os.path.join(*self._module_parts(import_module)) + ".py"
+            # Flat modules retain the registered script's ordered roots; package modules stay anchored to their root.
+            search_roots = list(flat_import_roots) if level == 0 and is_flat_module else [source_root]
+            checked_roots = set()
+            for search_root in search_roots:
+                search_root = self._resolved_path(search_root)
+                if search_root in checked_roots:
+                    continue
+                checked_roots.add(search_root)
+                import_source_file = os.path.join(search_root, import_path)
+                if os.path.isfile(import_source_file):
+                    self._get_custom_file(
+                        custom_dir,
+                        import_module,
+                        import_source_file,
+                        source_root=search_root,
+                        flat_import_roots=flat_import_roots if "." not in import_module else None,
+                    )
+                    break
 
     def _get_client_app(self, config_dir, custom_dir, fed_app):
         client_app = {"format_version": 2, "executors": []}
@@ -349,7 +642,11 @@ class FedJobConfig:
             json_dump = json.dumps(client_app, indent=4)
             outfile.write(json_dump)
 
-        self._copy_ext_scripts(custom_dir, fed_app.client_app.ext_scripts)
+        self._copy_ext_scripts(
+            custom_dir,
+            fed_app.client_app.ext_scripts,
+            fed_app.client_app._ext_script_destinations,
+        )
         self._copy_ext_dirs(custom_dir, fed_app.client_app)
         self._copy_file_sources(config_dir, custom_dir, fed_app.client_app.file_sources)
 
@@ -414,6 +711,7 @@ class FedJobConfig:
         if hasattr(component, "__dict__"):
             parameters = get_component_init_parameters(component)
             attrs = component.__dict__
+            always_serialize_args = set(getattr(component, "_always_serialize_args", ()))
 
             for param in parameters:
                 attr_key = param if param in attrs.keys() else "_" + param
@@ -421,7 +719,9 @@ class FedJobConfig:
                 if attr_key in ["args", "kwargs"]:
                     continue
 
-                if attr_key in attrs.keys() and self._values_differ(parameters[param].default, attrs[attr_key]):
+                if attr_key in attrs.keys() and (
+                    param in always_serialize_args or self._values_differ(parameters[param].default, attrs[attr_key])
+                ):
                     if attrs[attr_key] is None or type(attrs[attr_key]).__name__ in dir(builtins):
                         args[param] = attrs[attr_key]
                     elif issubclass(attrs[attr_key].__class__, Enum):
@@ -440,33 +740,30 @@ class FedJobConfig:
             r.append({"path": self._get_class_path(f, custom_dir), "args": self._get_args(f, custom_dir)})
         return r
 
-    def locate_imports(self, sf, dest_file):
-        """Locate all the import statements from the python script, including the imports across multiple lines,
-        using the line break continuing.
+    def locate_imports(self, sf):
+        """Locate imported modules in a Python source file.
 
         Args:
             sf: source file
-            dest_file: copy to destination file
 
         Returns:
-            yield all the imports within the source file
+            yield (module name or None, relative import level) tuples
 
         """
-        os.makedirs(os.path.dirname(dest_file), exist_ok=True)
-        with open(dest_file, "w") as df:
-            trimmed = ""
-            for line in sf:
-                df.write(line)
-                trimmed += line.strip()
-                if trimmed.endswith("\\"):
-                    trimmed = trimmed[0:-1]
-                    trimmed = trimmed.strip() + " "
+        source = sf.read()
+        source_file = getattr(sf, "name", "<unknown>")
+        tree = ast.parse(source, filename=source_file)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for imported_name in node.names:
+                    yield imported_name.name, 0
+            elif isinstance(node, ast.ImportFrom):
+                if node.module:
+                    yield node.module, node.level
                 else:
-                    if trimmed.startswith("from ") and ("import " in trimmed):
-                        yield trimmed
-                    elif trimmed.startswith("import "):
-                        yield trimmed
-                    trimmed = ""
+                    for imported_name in node.names:
+                        import_source = None if imported_name.name == "*" else imported_name.name
+                        yield import_source, node.level
 
     def _get_deploy_map(self):
         deploy_map = {}
@@ -482,19 +779,11 @@ class FedJobConfig:
         return ",".join(strings)
 
     @staticmethod
-    def _is_valid_job_folder(job_folder: str) -> bool:
+    def _is_valid_job_folder(job_folder: str, job_name: str) -> bool:
         meta_file = os.path.join(job_folder, META_JSON)
-        return os.path.exists(meta_file)
-
-    def _is_partial_export_folder(self, job_folder: str) -> bool:
-        """True when a previous export created the directory but did not finish writing meta.json.
-
-        A partial export only contains app-named subdirectories (no foreign files), so it is
-        safe to delete and retry.  Any other content means the folder was not created by NVFlare.
-        """
         try:
-            app_names = set(self.fed_apps.keys())
-            entries = os.listdir(job_folder)
-            return all(os.path.isdir(os.path.join(job_folder, e)) and e in app_names for e in entries)
-        except OSError:
+            with open(meta_file) as f:
+                metadata = json.load(f)
+                return isinstance(metadata, dict) and metadata.get("name") == job_name
+        except (OSError, json.JSONDecodeError):
             return False

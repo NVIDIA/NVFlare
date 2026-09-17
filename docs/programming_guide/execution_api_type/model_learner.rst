@@ -4,10 +4,10 @@
 Model Learner
 #############
 
-.. note::
+.. warning::
 
-   Model Learner Pattern is one of earlier pattern used in FLARE to write client side code.
-   The pattern is still valid, but in many cases, Client API is much simpler to use, therefore we recommend take a look at :ref:`client_api` first.
+   The Model Learner pattern is deprecated. It remains available for backward compatibility, but for new
+   projects use the :ref:`job_recipe` with :ref:`client_api`.
 
 
 Introduction
@@ -36,7 +36,7 @@ The following methods must be implemented:
 
 .. code-block:: python
 
-      def initialize(self)
+      def initialize(self):
       def train(self, model: FLModel) -> Union[str, FLModel]:
       def get_model(self, model_name: str) -> Union[str, FLModel]:
       def validate(self, model: FLModel) -> Union[str, FLModel]:
@@ -171,7 +171,6 @@ The following example shows how the model learner is configured in the job's ``c
                "train"
             ],
             "executor": {
-               "name": "LearnerExecutor",
                "path": "nvflare.app_common.executors.model_learner_executor.ModelLearnerExecutor",
                "args": {
                   "learner_id": "np_learner"

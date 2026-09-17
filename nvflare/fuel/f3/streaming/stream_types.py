@@ -27,6 +27,18 @@ class StreamError(Exception):
     pass
 
 
+class StreamTargetUnreachable(StreamError):
+    """A stream cannot be delivered because its target is no longer reachable."""
+
+    pass
+
+
+class BlobSizeError(StreamError):
+    """A blob cannot be streamed because its declared size exceeds the configured limit."""
+
+    pass
+
+
 class StreamCancelled(StreamError):
     """Streaming is cancelled by sender"""
 

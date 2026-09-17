@@ -1,0 +1,171 @@
+# Admin Certificate Providers
+
+## Goal
+
+Allow an admin startup kit to obtain its certificate and private key from a
+configured provider instead of containing static credentials. The built-in
+`step_ca` provider supports OIDC without adding OIDC handling to FLARE servers
+or clients.
+
+```text
+admin CLI -> step CLI -> step-ca -> OIDC provider
+admin CLI <- short-lived admin certificate/key
+admin CLI -> existing FLARE mTLS login and job signing
+```
+
+The built-in `step_ca` provider delegates OIDC discovery, browser login, token
+validation, claim mapping, and certificate issuance to step-ca.
+
+## Trust Model
+
+step-ca signs admin certificates with an intermediate CA rooted in the FLARE
+project root. Existing servers and clients validate the resulting chain with
+`rootCA.pem`. The FLARE server cannot mint an admin certificate or job
+signature unless it controls step-ca, its signing key, or an admin private key.
+
+The issued leaf certificate must contain the fields FLARE already consumes:
+
+- `commonName`: authenticated admin identity
+- `organizationName`: FLARE organization
+- `unstructuredName`: FLARE authorization role
+
+The admin private key is generated on the admin machine by `step ca
+certificate` and is not sent to the OIDC provider or FLARE server.
+
+## Runtime Behavior
+
+A provider-backed admin startup kit contains `admin_cert_provider` instead of
+static `client.crt` and `client.key` files. The admin client:
+
+1. Loads a valid cached credential or invokes its configured provider.
+2. Validates the certificate chain, validity, identity fields, allowed role,
+   and certificate/private-key match.
+3. Uses the existing certificate challenge, mTLS, authorization, and job-signing
+   paths.
+4. Reacquires credentials at startup, login, or job submission when the cached
+   certificate enters its renewal window. Running sessions are not transparently
+   renewed and end when their certificate expires.
+
+The certificate-chain support is implemented separately. This feature adds no
+OIDC token format, server login mode, or server-signed job manifest to FLARE.
+
+## Provisioning
+
+Static and provider-backed admins can coexist in one `project.yml`:
+
+```yaml
+participants:
+  - name: static-admin@example.com
+    type: admin
+    org: example_org
+    role: project_admin
+
+  - name: sso-admin-kit
+    type: admin
+    admin_cert_provider:
+      provider: step_ca
+      renewal_window: 43200
+      provider_config:
+        ca_url: https://step-ca.example.com
+        provisioner: nvflare-admin-oidc
+        cert_ttl: 24h
+        command_timeout: 300
+```
+
+The provider-backed participant omits `org` and `role`; both come from the issued
+certificate. Its name identifies a generic startup kit, not a user. The kit
+contains `rootCA.pem` and provider configuration but no static admin
+certificate or private key. Server and site startup kits are unchanged.
+
+SSO users can log in to the default study. A `project_admin` can explicitly add
+their certificate CN to another study. Declarative certificate-based study
+authorization will be added separately.
+
+## Provider and Cache
+
+`admin_cert_provider.provider` is a built-in provider name or a
+`module:function` path. Its exact contract is:
+
+```python
+def obtain(config: Mapping, root_ca_file: str) -> AdminCertFiles:
+    ...
+```
+
+The returned paths must remain readable until FLARE copies them into its cache.
+Providers that own a temporary directory should attach it to `temp_dir` so
+FLARE can clean it up. FLARE derives `expires_at` from the validated certificate
+and applies the same validation to built-in and custom provider results.
+
+Valid credentials are cached per OS user under
+`~/.nvflare/admin_certificates`. The cache entry is bound to the provider
+configuration and project root. Files are private to the OS user, concurrent
+CLI processes serialize acquisition, and credentials are published atomically
+only after both files have been copied.
+
+The cache is required because each `nvflare` command starts a new process;
+without it every command would repeat browser login. Users must not share an OS
+account because that also shares its cached credential. Deleting the cache
+forces a fresh OIDC login.
+
+## step-ca Requirements
+
+Operators configure step-ca, not FLARE, with:
+
+- an intermediate CA signed by the FLARE project root
+- an OIDC provisioner and matching IdP loopback redirect URI
+- the OIDC client credentials and scopes needed by the X.509 template
+- an X.509 template that writes the required FLARE identity fields
+- a short maximum/default certificate duration, normally 24 hours
+- renewal disabled so extending access requires another OIDC login
+
+The root CA private key returns to offline storage after signing the
+intermediate. The intermediate key remains with step-ca and may be protected by
+an HSM/KMS. Neither private key is distributed to FLARE servers, sites, or
+admins.
+
+### Organization and Role Mapping
+
+The step-ca template must map an exact, allowlisted IdP role to one
+`(organization, FLARE role)` pair. Organization and role must not be accepted as
+independent user-controlled claims.
+
+Example mappings for project `demo` and organization `hospital-a`:
+
+```text
+nvflare-demo-hospital-a-project_admin -> (hospital-a, project_admin)
+nvflare-demo-hospital-a-org_admin     -> (hospital-a, org_admin)
+nvflare-demo-hospital-a-lead          -> (hospital-a, lead)
+nvflare-demo-hospital-a-member        -> (hospital-a, member)
+```
+
+When several mapped roles for the same organization are present, the template
+selects the highest privilege in this order:
+
+```text
+project_admin > org_admin > lead > member
+```
+
+Mappings that produce more than one organization are ambiguous and must fail
+closed. Separate provisioners/templates per organization are the simplest
+deployment model. The FLARE server does not map or rewrite certificate
+organization or role values.
+
+## Lifetime and Clone Behavior
+
+The built-in provider requests a 24-hour certificate by default, and the renewal
+window defaults to 12 hours. Before signing, FLARE reacquires credentials when
+the certificate has 12 hours or less remaining. This reserves time for
+deployment but does not guarantee when the scheduler starts a job. Operators
+must increase both values when queue and deployment delays may exceed 12
+hours. FLARE does not perform revocation checks, so disabling a user prevents
+new issuance but does not invalidate an existing certificate.
+
+`clone_job` copies the original submitter signature without contacting the
+admin client. A clone can therefore become unusable after the original
+certificate expires. This feature adds no special clone protocol or handling.
+
+## References
+
+- [step-ca](https://smallstep.com/docs/step-ca/)
+- [`step ca certificate`](https://smallstep.com/docs/step-cli/reference/ca/certificate/)
+- [step-ca provisioners](https://smallstep.com/docs/step-ca/provisioners/)

@@ -12,17 +12,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import json
+import logging
 import threading
+import time
 import uuid
 from abc import ABC, abstractmethod
 from typing import Any
 
 import nvflare.fuel.utils.app_config_utils as acu
-from nvflare.apis.fl_constant import ConfigVarName
+from nvflare.apis.fl_constant import ConfigVarName, FLMetaKey
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.streaming.download_service import Downloadable
 from nvflare.fuel.f3.streaming.file_downloader import ObjectDownloader
+from nvflare.fuel.f3.streaming.transfer_progress import (
+    DEFAULT_STREAMING_IDLE_TIMEOUT,
+    DIRECTION_RESULT_UPLOAD,
+    DIRECTION_TASK_PAYLOAD_DOWNLOAD,
+    STREAMING_IDLE_TIMEOUT,
+    check_positive_finite_number,
+)
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs.datum import Datum, DatumManager, DatumType
 from nvflare.fuel.utils.log_utils import get_obj_logger
@@ -30,34 +39,35 @@ from nvflare.fuel.utils.log_utils import get_obj_logger
 MIN_DOWNLOAD_TIMEOUT_DEFAULT = 300  # inactivity timeout between chunk requests; 5 min covers GC pauses
 _MIN_DOWNLOAD_TIMEOUT = MIN_DOWNLOAD_TIMEOUT_DEFAULT  # backward-compat alias
 
-# Thread-local flag for synchronous download-initiation detection.
-# Task pipe and metric pipe share the same CoreCell (same site_name + token + mode
-# → same FQCN → same _CellInfo cache entry → same core_cell.fobs_ctx).  A plain
-# fobs_ctx flag would be clobbered by concurrent serialisation calls from different
-# threads on the same cell.  Thread-local gives per-thread isolation because
-# _finalize_download_tx() is always called synchronously in the thread that invoked
-# send_to_peer() → encode_payload() → FOBS serialisation.
-_tls = threading.local()
+RESULT_UPLOAD_PROGRESS_CTX_KEY = "result_upload_progress_context"
+RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY = "result_upload_tx_created_cb"
+RESULT_UPLOAD_RECEIVER_IDS_CTX_KEY = fobs.FOBSContextKey.RECEIVER_IDS
+RESULT_UPLOAD_PROGRESS_INTERVAL = 30.0
 
 
-def was_download_initiated() -> bool:
-    """Return True if _finalize_download_tx() created a download transaction in
-    the current thread's most recent encode_payload() call.
-
-    Called by FlareAgent._do_submit_result() immediately after send_to_peer()
-    returns to decide whether to wait for the server to finish downloading tensors.
-    Returns False for validate results (metrics only, no tensors).
-    """
-    return getattr(_tls, "download_initiated", False)
+class ResultUploadProgressContextKey:
+    JOB_ID = "job_id"
+    TASK_ID = "task_id"
+    STREAMING_IDLE_TIMEOUT = STREAMING_IDLE_TIMEOUT
 
 
-def clear_download_initiated() -> None:
-    """Reset the thread-local flag before a send_to_peer() call.
+class DownloadTransactionInfo:
+    __slots__ = ("created_time", "expected_pairs", "tx_id")
 
-    Prevents a stale True from a previous training round (which did have tensors)
-    from carrying over to the current validate round (which has no tensors).
-    """
-    _tls.download_initiated = False
+    def __init__(self, tx_id: str, expected_pairs: tuple[tuple[str, str | None], ...], created_time: float):
+        self.tx_id = tx_id
+        self.expected_pairs = expected_pairs
+        self.created_time = created_time
+
+
+def _notify_download_transaction_created(fobs_ctx: dict, info: DownloadTransactionInfo, logger):
+    tx_created_cb = fobs_ctx.get(RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY)
+    if not tx_created_cb:
+        return
+    try:
+        tx_created_cb(info)
+    except Exception as ex:
+        logger.warning(f"result_upload transaction-created callback failed for tx={info.tx_id}: {ex}")
 
 
 class LazyDownloadRef:
@@ -94,6 +104,224 @@ class LazyDownloadRef:
         self.ref_id = ref_id
         self.item_id = item_id
         self.dot = dot
+
+
+_GRAPH_LEAF_TYPES = (
+    type(None),
+    bool,
+    int,
+    float,
+    complex,
+    str,
+    bytes,
+    bytearray,
+    memoryview,
+    logging.Filterer,
+    logging.Filter,
+    logging.Formatter,
+    logging.LogRecord,
+    logging.LoggerAdapter,
+    logging.Manager,
+    logging.PlaceHolder,
+)
+
+
+def _iter_slot_names(value):
+    for cls in type(value).__mro__:
+        slots = vars(cls).get("__slots__", ())
+        if isinstance(slots, str):
+            slots = (slots,)
+        for name in slots:
+            if name in ("__dict__", "__weakref__"):
+                continue
+            if name.startswith("__") and not name.endswith("__"):
+                name = f"_{cls.__name__.lstrip('_')}{name}"
+            yield name
+
+
+def _iter_graph_children(value, excluded_dict_keys=None):
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if excluded_dict_keys and key in excluded_dict_keys:
+                continue
+            yield key
+            yield item
+    elif isinstance(value, (list, tuple, set, frozenset)):
+        yield from value
+
+    attributes = getattr(value, "__dict__", None)
+    if isinstance(attributes, dict):
+        yield from attributes.values()
+
+    for name in _iter_slot_names(value):
+        try:
+            yield getattr(value, name)
+        except AttributeError:
+            pass
+
+
+def contains_lazy_download_ref(value, visited=None, excluded_dict_keys=None) -> bool:
+    """Return whether a supported FOBS object graph contains a pass-through download reference."""
+    if isinstance(value, LazyDownloadRef):
+        return True
+    if isinstance(value, _GRAPH_LEAF_TYPES):
+        return False
+
+    if visited is None:
+        visited = set()
+    value_id = id(value)
+    if value_id in visited:
+        return False
+    visited.add(value_id)
+
+    return any(
+        contains_lazy_download_ref(item, visited, excluded_dict_keys)
+        for item in _iter_graph_children(value, excluded_dict_keys)
+    )
+
+
+def _collect_lazy_download_refs(value, refs: list, visited: set, excluded_dict_keys=None):
+    if isinstance(value, LazyDownloadRef):
+        refs.append(value)
+        return
+    if isinstance(value, _GRAPH_LEAF_TYPES):
+        return
+
+    value_id = id(value)
+    if value_id in visited:
+        return
+    visited.add(value_id)
+
+    for item in _iter_graph_children(value, excluded_dict_keys):
+        _collect_lazy_download_refs(item, refs, visited, excluded_dict_keys)
+
+
+def _replace_object_attributes(value, replacements: dict, memo: dict, excluded_dict_keys=None):
+    attributes = getattr(value, "__dict__", None)
+    if isinstance(attributes, dict):
+        for name, item in list(attributes.items()):
+            replaced = _replace_lazy_download_refs(item, replacements, memo, excluded_dict_keys)
+            if replaced is not item:
+                attributes[name] = replaced
+
+    for name in _iter_slot_names(value):
+        try:
+            item = getattr(value, name)
+        except AttributeError:
+            continue
+        replaced = _replace_lazy_download_refs(item, replacements, memo, excluded_dict_keys)
+        if replaced is not item:
+            object.__setattr__(value, name, replaced)
+
+
+def _replace_lazy_download_refs(value, replacements: dict, memo: dict, excluded_dict_keys=None):
+    replacement = replacements.get(id(value))
+    if replacement is not None:
+        return replacement
+    if isinstance(value, _GRAPH_LEAF_TYPES):
+        return value
+
+    value_id = id(value)
+    if value_id in memo:
+        return memo[value_id]
+    memo[value_id] = value
+
+    if isinstance(value, dict):
+        original_items = list(value.items())
+        items = []
+        changed = False
+        for key, item in original_items:
+            if excluded_dict_keys and key in excluded_dict_keys:
+                replaced_key, replaced_item = key, item
+            else:
+                replaced_key = _replace_lazy_download_refs(key, replacements, memo, excluded_dict_keys)
+                replaced_item = _replace_lazy_download_refs(item, replacements, memo, excluded_dict_keys)
+            changed = changed or replaced_key is not key or replaced_item is not item
+            items.append((replaced_key, replaced_item))
+        if changed:
+            dict(items)  # Validate replacement keys before mutating the source mapping.
+            value.clear()
+            value.update(items)
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            value[index] = _replace_lazy_download_refs(item, replacements, memo, excluded_dict_keys)
+    elif isinstance(value, tuple):
+        original_items = tuple(value)
+        items = tuple(
+            _replace_lazy_download_refs(item, replacements, memo, excluded_dict_keys) for item in original_items
+        )
+        if any(replaced is not original for original, replaced in zip(original_items, items)):
+            if hasattr(value, "_fields"):
+                value = type(value)(*items)
+            elif type(value) is tuple:
+                value = items
+            else:
+                value = type(value)(items)
+            memo[value_id] = value
+    elif isinstance(value, set):
+        items = {_replace_lazy_download_refs(item, replacements, memo, excluded_dict_keys) for item in value}
+        value.clear()
+        value.update(items)
+    elif isinstance(value, frozenset):
+        items = frozenset(_replace_lazy_download_refs(item, replacements, memo, excluded_dict_keys) for item in value)
+        if items != value:
+            value = type(value)(items)
+            memo[value_id] = value
+
+    _replace_object_attributes(value, replacements, memo, excluded_dict_keys)
+    return value
+
+
+def materialize_lazy_download_refs(value, cell: Cell, abort_signal=None, excluded_dict_keys=None):
+    """Resolve pass-through references for a consumer in the current process.
+
+    Each original source batch is downloaded once, and only its matching
+    :class:`LazyDownloadRef` leaves are replaced. Concrete values already in the
+    graph are not reserialized or copied through a new local download transaction.
+    """
+    excluded_dict_keys = frozenset(excluded_dict_keys or ())
+    refs = []
+    _collect_lazy_download_refs(value, refs, set(), excluded_dict_keys)
+    if not refs:
+        return value
+    if cell is None:
+        raise RuntimeError("cannot materialize LazyDownloadRef values: Cell is unavailable")
+
+    download_props = {
+        fobs.FOBSContextKey.PASS_THROUGH: False,
+        fobs.FOBSContextKey.TENSOR_DISK_OFFLOAD: False,
+    }
+    if abort_signal is not None:
+        download_props[fobs.FOBSContextKey.ABORT_SIGNAL] = abort_signal
+    download_ctx = cell.get_fobs_context(props=download_props)
+
+    batches = {}
+    for ref in refs:
+        batches.setdefault((ref.dot, ref.fqcn, ref.ref_id), []).append(ref)
+
+    replacements = {}
+    for (dot, fqcn, ref_id), batch_refs in batches.items():
+        handler = fobs.get_dot_handler(dot)
+        if not isinstance(handler, ViaDownloaderDecomposer):
+            raise RuntimeError(f"cannot materialize LazyDownloadRef values: no download handler for dot={dot!r}")
+
+        items = handler._download_from_remote_cell(
+            download_ctx,
+            {_RefKey.FQCN: fqcn, _RefKey.REF_ID: ref_id},
+        )
+        get_item = getattr(items, "get", None)
+        if not callable(get_item):
+            raise RuntimeError(f"downloaded data for dot={dot!r} has invalid type {type(items)}")
+
+        for ref in batch_refs:
+            if hasattr(items, "__contains__") and ref.item_id not in items:
+                raise RuntimeError(f"downloaded data for dot={dot!r} is missing item {ref.item_id}")
+            item = get_item(ref.item_id)
+            if item is None:
+                raise RuntimeError(f"downloaded data for dot={dot!r} has no value for item {ref.item_id}")
+            replacements[id(ref)] = item
+
+    return _replace_lazy_download_refs(value, replacements, {}, excluded_dict_keys)
 
 
 class _LazyBatchInfo:
@@ -153,12 +381,14 @@ class _DecomposeCtx:
         with self.lock:
             target_id = id(item)
             item_id = self.target_to_item.get(target_id)
+            first_item = False
             if not item_id:
                 item_id = f"T{self.last_item_id}"
+                first_item = self.last_item_id == 0
                 self.last_item_id += 1
                 self.target_items[item_id] = item
                 self.target_to_item[target_id] = item_id
-            return item_id, target_id
+            return item_id, target_id, first_item
 
     def get_item_count(self):
         return len(self.target_items)
@@ -200,8 +430,19 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         secure=False,
         optional=False,
         abort_signal=None,
+        progress_cb=None,
     ) -> tuple[str, dict]:
         pass
+
+    def _get_download_kwargs(self, fobs_ctx: dict) -> dict:
+        """Return optional context-aware arguments for ``download``.
+
+        The default must remain empty because external subclasses may implement
+        the legacy ``download`` signature without accepting arbitrary keyword
+        arguments. Subclasses that need call-scoped FOBS context can explicitly
+        opt in by overriding this hook.
+        """
+        return {}
 
     def supported_dots(self):
         return [self.get_download_dot()]
@@ -227,8 +468,8 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         # create a reference item for the target object. The ref item represents the target object in
         # the serialized payload.
         dc = fobs_ctx.get(self.decompose_ctx_key)
-        item_id, target_id = dc.add_item(target)
-        if dc.get_item_count() == 1:
+        item_id, target_id, first_item = dc.add_item(target)
+        if first_item:
             # register the post_process callback to further process these items.
             # only register cb once!
             manager.register_post_cb(self._process_items_to_datum)
@@ -282,6 +523,14 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
                 # items have been serialised.
                 fobs_ctx[lazy_batch_key] = {"fqcn": target.fqcn, "ref_id": target.ref_id}
                 manager.register_post_cb(self._finalize_lazy_batch)
+            else:
+                lazy_batch = fobs_ctx[lazy_batch_key]
+                if lazy_batch["fqcn"] != target.fqcn or lazy_batch["ref_id"] != target.ref_id:
+                    raise RuntimeError(
+                        "LazyDownloadRef payload mixes download batches: "
+                        f"existing fqcn={lazy_batch['fqcn']} ref_id={lazy_batch['ref_id']}, "
+                        f"new fqcn={target.fqcn} ref_id={target.ref_id}"
+                    )
 
             self.logger.debug(
                 f"ViaDownloader: re-emitting LazyDownloadRef {target.item_id=} " f"{target.fqcn=} {target.ref_id=}"
@@ -318,7 +567,9 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         self.logger.debug(f"ViaDownloader: created ref for target {target_id}: {item_id}")
         return {EncKey.TYPE: EncType.REF, EncKey.DATA: item_id}
 
-    def _create_downloader(self, fobs_ctx: dict):
+    def _create_downloader(
+        self, fobs_ctx: dict, progress_cb=None, timeout_override=None, num_receivers_override=None, receiver_ids=None
+    ):
         # Transaction lifecycle is managed solely by _monitor_tx() (download_service.py).
         # We deliberately do NOT subscribe to msg_root deletion here.  The msg_root is
         # deleted as soon as all blobs are delivered, but blob_cb fires asynchronously —
@@ -326,35 +577,51 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         # Subscribing caused a race: delete_transaction() removed refs from _ref_table
         # before blob_cb could finish its _download_from_remote_cell() calls, producing
         # "no ref found" FATAL_SYSTEM_ERROR (RC12 Bug 1).
-        # _monitor_tx() polls is_finished() every 5s and cleans up within 5s of the last
-        # receiver completing all chunk downloads — sufficient for all model sizes.
+        # The final accepted receiver confirmation retires a completed transaction
+        # immediately; _monitor_tx() remains the timeout/budget backstop.
         msg_root_id, msg_root_ttl = self._determine_msg_root(fobs_ctx)
 
-        # Read min_download_timeout from job config so operators can tune
-        # it per-job (e.g. np_min_download_timeout: 600 for a 70B model).
-        # Falls back to the module-level constant (60s) when not set.
+        # The generic streaming idle timeout is the default lifetime floor for streamed
+        # materialization. The legacy per-type min_download_timeout remains an explicit
+        # override and a backward-compatible fallback when the generic key is absent.
+        streaming_idle_timeout = acu.get_positive_float_var(STREAMING_IDLE_TIMEOUT, DEFAULT_STREAMING_IDLE_TIMEOUT)
+        streaming_idle_timeout = check_positive_finite_number(STREAMING_IDLE_TIMEOUT, streaming_idle_timeout)
         min_timeout = acu.get_positive_float_var(
             self._config_var_name(ConfigVarName.MIN_DOWNLOAD_TIMEOUT),
-            _MIN_DOWNLOAD_TIMEOUT,
+            streaming_idle_timeout or _MIN_DOWNLOAD_TIMEOUT,
+        )
+        min_timeout = check_positive_finite_number(
+            self._config_var_name(ConfigVarName.MIN_DOWNLOAD_TIMEOUT), min_timeout
         )
 
-        if msg_root_ttl:
+        if timeout_override is not None:
+            try:
+                timeout = float(timeout_override)
+            except (TypeError, ValueError) as e:
+                raise ValueError(f"{STREAMING_IDLE_TIMEOUT} must be positive finite, got {timeout_override}") from e
+            timeout = check_positive_finite_number(STREAMING_IDLE_TIMEOUT, timeout)
+        elif msg_root_ttl:
             timeout = msg_root_ttl
         else:
             timeout = min_timeout
 
         if timeout < min_timeout:
             timeout = min_timeout
+        timeout = check_positive_finite_number("download timeout", timeout)
 
         self.logger.debug(f"ViaDownloader: {msg_root_id=} {timeout=}")
 
         downloader = None
         cell = fobs_ctx.get(fobs.FOBSContextKey.CELL)
         if cell:
-            num = fobs_ctx.get(fobs.FOBSContextKey.NUM_RECEIVERS)
+            num = (
+                num_receivers_override
+                if num_receivers_override is not None
+                else fobs_ctx.get(fobs.FOBSContextKey.NUM_RECEIVERS)
+            )
             num_receivers = num if num else 1
 
-            # Optional lifecycle callback set by FlareAgent._do_submit_result()
+            # Optional lifecycle callback set by the trainer-side Client API
             # (subprocess → CJ → server reverse path) so the subprocess can wait
             # until the server has finished downloading from its DownloadService
             # before exiting.  None when no gating is needed (forward path).
@@ -365,9 +632,82 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
                 cell=cell,
                 timeout=timeout,
                 transaction_done_cb=on_complete_cb,
+                progress_cb=progress_cb,
+                progress_interval=RESULT_UPLOAD_PROGRESS_INTERVAL,
+                # expected receiver identities: enables the transaction's per-receiver
+                # acquire budget; None when any identity is unknown
+                receiver_ids=receiver_ids,
             )
 
         return downloader
+
+    def _get_result_upload_receiver_ids(self, fobs_ctx: dict, num_receivers: int):
+        receiver_ids = fobs_ctx.get(RESULT_UPLOAD_RECEIVER_IDS_CTX_KEY)
+        if receiver_ids is None:
+            if num_receivers == 1:
+                return (None,)
+            return None
+
+        if isinstance(receiver_ids, str):
+            receiver_ids = [receiver_ids]
+        try:
+            normalized = tuple(None if receiver_id is None else str(receiver_id) for receiver_id in receiver_ids)
+        except TypeError:
+            self.logger.warning(f"invalid {RESULT_UPLOAD_RECEIVER_IDS_CTX_KEY}: {receiver_ids}")
+            return None
+
+        if not normalized:
+            return None
+        deduped = tuple(dict.fromkeys(normalized))
+        if len(deduped) != len(normalized):
+            self.logger.warning(
+                f"{RESULT_UPLOAD_RECEIVER_IDS_CTX_KEY} contains duplicate receiver ids; "
+                f"using {len(deduped)} unique receiver(s)"
+            )
+            normalized = deduped
+            num_receivers = len(normalized)
+        if num_receivers > 0 and len(normalized) != num_receivers:
+            self.logger.warning(
+                f"{RESULT_UPLOAD_RECEIVER_IDS_CTX_KEY} has {len(normalized)} receivers, "
+                f"but DownloadService transaction expects {num_receivers}"
+            )
+            return None
+        return normalized
+
+    @staticmethod
+    def _make_result_upload_progress_cb(fobs_ctx: dict, receiver_ids: tuple[str | None, ...]):
+        progress_cb = fobs_ctx.get(fobs.FOBSContextKey.STREAM_PROGRESS_CB)
+        if not progress_cb:
+            return None
+
+        progress_context = fobs_ctx.get(RESULT_UPLOAD_PROGRESS_CTX_KEY) or {}
+        job_id = progress_context.get(ResultUploadProgressContextKey.JOB_ID)
+        task_id = progress_context.get(ResultUploadProgressContextKey.TASK_ID)
+
+        msg = fobs_ctx.get(fobs.FOBSContextKey.MESSAGE)
+        if msg:
+            if job_id is None:
+                job_id = msg.get_header(FLMetaKey.JOB_ID)
+            if task_id is None:
+                task_id = msg.get_header(MessageHeaderKey.MSG_ROOT_ID) or msg.get_header(MessageHeaderKey.REQ_ID)
+
+        single_receiver_without_identity = receiver_ids == (None,)
+
+        def _progress_cb(**kwargs):
+            event = dict(kwargs)
+            transfer_id = event.get("transfer_id") or event.get("ref_id")
+            receiver_id = None if single_receiver_without_identity else event.get("receiver_id")
+            event["transfer_id"] = transfer_id
+            event.setdefault("transfer_id_kind", "download_ref")
+            event["receiver_id"] = receiver_id
+            event["direction"] = DIRECTION_RESULT_UPLOAD
+            progress_cb(
+                job_id="" if job_id is None else str(job_id),
+                task_id=transfer_id if task_id is None else str(task_id),
+                **event,
+            )
+
+        return _progress_cb
 
     def _process_items_to_datum(self, mgr: DatumManager):
         """This method is called during serialization after all target items are serialized.
@@ -437,14 +777,53 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         downloadable_objs = fobs_ctx.get(_CtxKey.OBJECTS)
 
         if downloadable_objs:
-            downloader = self._create_downloader(fobs_ctx)
+            num_receivers = fobs_ctx.get(fobs.FOBSContextKey.NUM_RECEIVERS) or 1
+            receiver_ids = self._get_result_upload_receiver_ids(fobs_ctx, num_receivers)
+            # Use the deduped receiver tuple length so DownloadService's completion
+            # accounting matches the distinct downstream receivers that can report done.
+            download_num_receivers = len(receiver_ids) if receiver_ids else num_receivers
+            progress_requested = bool(fobs_ctx.get(fobs.FOBSContextKey.STREAM_PROGRESS_CB))
+            progress_cb = self._make_result_upload_progress_cb(fobs_ctx, receiver_ids) if receiver_ids else None
+            progress_trackable = bool(progress_cb and receiver_ids)
+            if progress_requested and receiver_ids is None:
+                self.logger.warning(
+                    "result_upload progress tracking is disabled because expected receiver ids are not known"
+                )
+
+            timeout_override = None
+            if progress_trackable:
+                progress_context = fobs_ctx.get(RESULT_UPLOAD_PROGRESS_CTX_KEY) or {}
+                timeout_override = progress_context.get(ResultUploadProgressContextKey.STREAMING_IDLE_TIMEOUT)
+
+            # forward receiver identities to the transaction only when every identity is
+            # actually known (a (None,) placeholder means unknown-single-receiver)
+            known_receiver_ids = receiver_ids if receiver_ids and all(r is not None for r in receiver_ids) else None
+            downloader = self._create_downloader(
+                fobs_ctx,
+                progress_cb=progress_cb if progress_trackable else None,
+                timeout_override=timeout_override,
+                num_receivers_override=download_num_receivers,
+                receiver_ids=known_receiver_ids,
+            )
+            if downloader is None:
+                self.logger.warning("download transaction was not created because FOBS context has no cell")
+                return
+
+            expected_pairs = []
+            if progress_trackable:
+                for ref_id, _ in downloadable_objs:
+                    for receiver_id in receiver_ids:
+                        expected_pairs.append((ref_id, receiver_id))
+                transaction_info = DownloadTransactionInfo(
+                    tx_id=downloader.tx_id,
+                    expected_pairs=tuple(expected_pairs),
+                    created_time=time.time(),
+                )
+                _notify_download_transaction_created(fobs_ctx, transaction_info, self.logger)
+
             for ref_id, obj in downloadable_objs:
                 self.logger.debug(f"ViaDownloader: adding object to downloader: {ref_id=}")
                 downloader.add_object(obj, ref_id=ref_id)
-            # Signal FlareAgent (same thread) that a download transaction was created.
-            # Thread-local avoids shared-state races when task pipe and metric pipe
-            # share the same CoreCell (RC12 Bug 3).
-            _tls.download_initiated = True
 
     def _finalize_lazy_batch(self, mgr: DatumManager):
         """Post-callback used when re-emitting a LazyDownloadRef batch.
@@ -458,6 +837,9 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         lazy_batch_key = f"{self.prefix}{_LAZY_BATCH_CTX_SUFFIX}"
         lazy_batch = fobs_ctx.get(lazy_batch_key)
         if not lazy_batch:
+            return
+        get_error = getattr(mgr, "get_error", None)
+        if callable(get_error) and get_error():
             return
         ref = {_RefKey.FQCN: lazy_batch["fqcn"], _RefKey.REF_ID: lazy_batch["ref_id"]}
         datum = Datum(datum_type=DatumType.TEXT, value=json.dumps(ref), dot=self.get_download_dot())
@@ -494,7 +876,11 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
             # from the originating source cell.
             ref = json.loads(datum.value)
             self.logger.debug(f"ViaDownloader PASS_THROUGH: preserving lazy ref {ref} instead of downloading")
-            fobs_ctx[self.items_key] = _LazyBatchInfo(ref[_RefKey.FQCN], ref[_RefKey.REF_ID], datum.dot)
+            fobs_ctx[self.items_key] = _LazyBatchInfo(
+                ref[_RefKey.FQCN],
+                ref[_RefKey.REF_ID],
+                datum.dot,
+            )
             return
 
         # data is to be downloaded
@@ -547,6 +933,10 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
             )
             return lazy
 
+        if items is None:
+            self.logger.error(f"cannot find item {item_id} because no downloaded data is loaded")
+            raise RuntimeError(f"FOBS download data is missing for item {item_id}")
+
         self.logger.debug(f"trying to get item for {item_id=} from {type(items)=}")
 
         make_lazy_ref_fn = getattr(items, "make_lazy_ref", None)
@@ -555,10 +945,20 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
             self.logger.debug(f"{tid=} created lazy ref for {item_id}")
             return item
 
+        get_item_fn = getattr(items, "get", None)
+        if not callable(get_item_fn):
+            self.logger.error(f"downloaded data for {item_id} does not support get(): {type(items)}")
+            raise RuntimeError(f"FOBS download data has invalid type for item {item_id}")
+
+        if hasattr(items, "__contains__") and item_id not in items:
+            self.logger.error(f"cannot find item {item_id} from loaded data")
+            raise RuntimeError(f"FOBS download data is incomplete: item {item_id} is missing")
+
         item = items.get(item_id)
         self.logger.debug(f"{tid=} found item {item_id}: {type(item)}")
         if item is None:
-            self.logger.error(f"cannot find item {item_id} from loaded data")
+            self.logger.error(f"downloaded item {item_id} is None")
+            raise RuntimeError(f"FOBS download data is incomplete: item {item_id} is None")
         return item
 
     def _download_from_remote_cell(self, fobs_ctx: dict, ref: dict):
@@ -586,14 +986,30 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         self.logger.debug(f"DOWNLOAD_REQ_TIMEOUT={req_timeout}")
 
         abort_signal = fobs_ctx.get(fobs.FOBSContextKey.ABORT_SIGNAL)
+        stream_progress_cb = self._make_stream_progress_cb(fobs_ctx, ref_id)
 
         self.logger.debug(f"trying to download: {ref_id=} {fqcn=}")
+        download_kwargs = self._get_download_kwargs(fobs_ctx)
+        message = fobs_ctx.get(fobs.FOBSContextKey.MESSAGE)
+        # A protected forwarding hop does not prove that the original source has
+        # Cell encryption credentials. Inherit protection only from that source's
+        # own message; managed external trainers use an authenticated clear local hop.
+        download_kwargs.setdefault(
+            "secure",
+            bool(
+                message
+                and message.get_header(MessageHeaderKey.SECURE, False)
+                and message.get_header(MessageHeaderKey.ORIGIN) == fqcn
+            ),
+        )
         err, items = self.download(
             from_fqcn=fqcn,
             ref_id=ref_id,
             per_request_timeout=req_timeout,
             cell=cell,
             abort_signal=abort_signal,
+            progress_cb=stream_progress_cb,
+            **download_kwargs,
         )
         if err:
             self.logger.error(f"failed to download from {fqcn} for source {ref}: {err}")
@@ -601,6 +1017,31 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         else:
             self.logger.debug(f"downloaded {len(items)} items successfully")
         return items
+
+    @staticmethod
+    def _make_stream_progress_cb(fobs_ctx: dict, ref_id: str):
+        progress_cb = fobs_ctx.get(fobs.FOBSContextKey.STREAM_PROGRESS_CB)
+        if not progress_cb:
+            return None
+
+        msg = fobs_ctx.get(fobs.FOBSContextKey.MESSAGE)
+        task_id = None
+        job_id = None
+        if msg:
+            task_id = msg.get_header(MessageHeaderKey.MSG_ROOT_ID) or msg.get_header(MessageHeaderKey.REQ_ID)
+            job_id = msg.get_header(FLMetaKey.JOB_ID)
+
+        def _progress_cb(**kwargs):
+            progress_cb(
+                job_id=job_id,
+                task_id=task_id,
+                transfer_id=ref_id,
+                transfer_id_kind="download_ref",
+                direction=DIRECTION_TASK_PAYLOAD_DOWNLOAD,
+                **kwargs,
+            )
+
+        return _progress_cb
 
 
 class LazyDownloadRefDecomposer(fobs.Decomposer):

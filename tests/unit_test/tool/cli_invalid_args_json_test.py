@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import json
+from types import SimpleNamespace
 
 import pytest
 
@@ -57,5 +58,77 @@ def test_invalid_subcommand_json_error(capsys, monkeypatch):
     captured = capsys.readouterr()
     payload = json.loads(captured.out)
     assert payload["error_code"] == "INVALID_ARGS"
+    assert "code" not in payload
+    assert "event" not in payload
+    assert "terminal" not in payload
     assert "usage" in payload["data"]
     assert "list" in payload["data"]["choices"]
+
+
+def test_display_unknown_args_preserves_consumed_unknown_option_value():
+    from nvflare import cli as cli_mod
+
+    args = SimpleNamespace(input="example_project")
+
+    result = cli_mod._display_unknown_args(
+        ["package", "--project_name", "example_project"],
+        cli_mod.CMD_PACKAGE,
+        args,
+        ["--project_name"],
+    )
+
+    assert result == ["--project_name", "example_project"]
+
+
+def test_display_unknown_args_keeps_signed_zip_as_positional_input():
+    from nvflare import cli as cli_mod
+
+    args = SimpleNamespace(input="hospital.signed.zip")
+
+    result = cli_mod._display_unknown_args(
+        ["package", "--unknown-flag", "hospital.signed.zip"],
+        cli_mod.CMD_PACKAGE,
+        args,
+        ["--unknown-flag"],
+    )
+
+    assert result == ["--unknown-flag"]
+
+
+def test_jsonl_rejected_for_non_streaming_command(capsys, monkeypatch):
+    from nvflare import cli as cli_mod
+
+    monkeypatch.setattr(
+        cli_mod.sys,
+        "argv",
+        ["nvflare", "job", "wait", "abc123", "--format", "jsonl"],
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli_mod.parse_args("nvflare")
+    assert exc_info.value.code == 4
+
+    payload = json.loads(capsys.readouterr().out)
+    assert "event" not in payload
+    assert "terminal" not in payload
+    assert payload["error_code"] == "INVALID_ARGS"
+    assert "nvflare job monitor" in payload["message"]
+
+
+def test_argparse_json_error_redacts_sensitive_unknown_argument_value(capsys, monkeypatch):
+    from nvflare import cli as cli_mod
+
+    monkeypatch.setattr(
+        cli_mod.sys,
+        "argv",
+        ["nvflare", "job", "list", "--access-token", "token-secret", "--format", "json"],
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli_mod.parse_args("nvflare")
+    assert exc_info.value.code == 4
+
+    payload = json.loads(capsys.readouterr().out)
+    dumped = json.dumps(payload)
+    assert "token-secret" not in dumped
+    assert "access-token <redacted>" in payload["message"]

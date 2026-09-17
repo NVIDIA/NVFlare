@@ -1,37 +1,73 @@
 # Docker Job Launcher Example
 
-End-to-end example of running NVFlare in Docker mode using `DockerLauncherBuilder`.
+End-to-end example of running NVFlare in Docker mode using `nvflare deploy prepare`.
 SP/CP containers are started manually; SJ/CJ containers are launched automatically per job.
 
 ## Prerequisites
 
 - Docker with a working daemon
 - NVFlare installed (development install from repo root: `pip install -e .[dev,PT]`)
-- Run all commands from the **repo root** unless noted otherwise
+- Run all commands from the `examples/docker` directory unless noted otherwise
 
 ## Step 0: Build Docker images
 
 ```bash
-bash examples/docker/build_docker.sh
+bash build_docker.sh
 ```
+
+The recommended way to run this example is from a Git checkout. The build
+script derives the NVFlare base version from the nearest version tag, so no
+version environment variable is required.
+
+GitHub-generated source archives and other Git-less source copies do not contain
+the metadata needed to determine a version. If you intentionally use one, provide
+`NVFL_BASE_VERSION` as an advanced override:
+
+```bash
+NVFL_BASE_VERSION=2.9.0 bash build_docker.sh
+```
+
+Use only the base release number, such as `2.9.0`; the package build adds its
+development suffix when Git metadata is unavailable.
 
 This builds two images:
-- `nvflare-site:latest` — used by SP/CP containers (started by `start_docker.sh`)
-- `nvflare-job:latest` — used by SJ/CJ containers (launched automatically per job)
+- `nvflare-site:latest` — used by SP/CP containers (started by `start_docker.sh`),
+  built from this example's `Dockerfile`
+- `nvflare-job:latest` — used by SJ/CJ containers (launched automatically per job),
+  built from this example's `Dockerfile.nvflare-job`
 
-## Step 1: Create Docker network
-
-```bash
-docker network create nvflare-network
-```
-
-## Step 2: Provision
+## Step 1: Provision
 
 ```bash
-nvflare provision -p examples/docker/project.yml
+nvflare provision -p project.yml
 ```
 
 This generates a workspace under `workspace/docker_test_project/` relative to the current directory.
+
+## Step 2: Prepare Docker runtime kits
+
+Prepare the server and both client startup kits for Docker mode:
+
+```bash
+nvflare deploy prepare \
+  workspace/docker_test_project/prod_00/server \
+  --config docker.yaml \
+  --output workspace/docker_test_project/prepared/server
+
+nvflare deploy prepare \
+  workspace/docker_test_project/prod_00/site-1 \
+  --config docker.yaml \
+  --output workspace/docker_test_project/prepared/site-1
+
+nvflare deploy prepare \
+  workspace/docker_test_project/prod_00/site-2 \
+  --config docker.yaml \
+  --output workspace/docker_test_project/prepared/site-2
+```
+
+The prepared kits include `startup/start_docker.sh`, Docker launcher resources,
+and a `local/study_runtime.yaml` template. The generated start script creates
+the Docker network if needed.
 
 ## Step 3: Add /etc/hosts entries (if needed)
 
@@ -42,54 +78,46 @@ to `/etc/hosts` so the admin CLI can reach the server container by name:
 127.0.0.1  server
 ```
 
-## Step 4: Configure BEResourceManager (required for all Docker-mode sites)
+## Step 4: Start server and clients
 
-In Docker mode, the SP/CP process does not hold GPU resources — job containers handle
-GPUs directly. The default `GPUResourceManager` will reject all jobs. Replace it with
-`BEResourceManager` in `local/resources.json` for every site running in Docker mode,
-**before starting the SP/CP container**. In this example that is site-1:
+The server and both clients run in Docker mode. Their parent containers use
+`start_docker.sh`, and each site launches its per-job process in a separate Docker container.
 
-```json
-{
-  "format_version": 2,
-  "components": [
-    {
-      "id": "resource_manager",
-      "path": "nvflare.app_common.resource_managers.list_resource_manager.BEResourceManager",
-      "args": {}
-    }
-  ]
-}
-```
+The first `start_docker.sh` command creates `nvflare-network` if it does not
+already exist, so no separate `docker network create` command is required.
 
-## Step 5: Start server and clients
-
-This example runs in **hybrid mode**: site-1 uses Docker job launcher (`start_docker.sh`),
-site-2 runs in process mode (`start.sh`). This tests that both modes work together in the
-same federation.
-
-Run each in a separate terminal:
+Start all three parent processes from the `examples/docker` directory:
 
 ```bash
-# Server (Docker mode)
-cd workspace/docker_test_project/prod_00/server
-bash startup/start_docker.sh
-
-# site-1 (Docker mode — job containers launched per job)
-cd workspace/docker_test_project/prod_00/site-1
-bash startup/start_docker.sh
-
-# site-2 (process mode — jobs run as subprocesses of CP)
-cd workspace/docker_test_project/prod_00/site-2
-bash startup/start.sh
+(
+  cd workspace/docker_test_project/prepared/server
+  nohup bash startup/start_docker.sh > server.log 2>&1 < /dev/null &
+)
+(
+  cd workspace/docker_test_project/prepared/site-1
+  nohup bash startup/start_docker.sh > site-1.log 2>&1 < /dev/null &
+)
+(
+  cd workspace/docker_test_project/prepared/site-2
+  nohup bash startup/start_docker.sh > site-2.log 2>&1 < /dev/null &
+)
 ```
 
-## Step 6: Submit a job
+You can watch startup logs with:
+
+```bash
+tail -f \
+  workspace/docker_test_project/prepared/server/server.log \
+  workspace/docker_test_project/prepared/site-1/site-1.log \
+  workspace/docker_test_project/prepared/site-2/site-2.log
+```
+
+## Step 5: Submit a job
 
 ```bash
 nvflare job submit \
-  -j examples/docker/jobs/hello-numpy-docker \
-  -w workspace/docker_test_project/prod_00/admin@nvidia.com
+  -j jobs/hello-numpy-docker \
+  --startup-kit workspace/docker_test_project/prod_00/admin@nvidia.com
 ```
 
 Available jobs:
@@ -102,18 +130,26 @@ Available jobs:
 
 ## Notes
 
-- Job images and Docker resource requirements are specified per-site in `meta.json` under
-  `resource_spec[site][docker]`. Example:
+- Docker launcher settings are specified per-site in `launcher_spec` in
+  `meta.json`. Keep resource requests such as `num_of_gpus` in `resource_spec`,
+  the same way as process-mode jobs. Example:
   ```json
+  "launcher_spec": {
+    "site-1": {"docker": {"image": "nvflare-job:latest", "shm_size": "8g"}},
+    "site-2": {"docker": {"image": "nvflare-job:latest", "shm_size": "8g"}}
+  },
   "resource_spec": {
-    "site-1": {"docker": {"image": "nvflare-job:latest", "num_of_gpus": 1, "shm_size": "8g"}}
+    "site-1": {"num_of_gpus": 1},
+    "site-2": {"num_of_gpus": 1}
   }
   ```
-  Sites without a `docker` entry (e.g. `site-2` in these examples) run in process mode. Both
-  modes can coexist in the same job.
+  Every site configured with a Docker job launcher needs either a site-specific `docker`
+  entry or a `launcher_spec.default.docker` entry that supplies the job image.
 - Site-level Docker defaults (e.g. `shm_size`, `ipc_mode`) can be set via
-  `default_job_container_kwargs` in `resources.json` — job-level `resource_spec` takes
-  precedence on conflict.
+  `job_launcher.default_job_container_kwargs` in `docker.yaml`; `nvflare deploy prepare`
+  writes them to `resources.json`. This example configures `ipc_mode: host` there because
+  host-isolation options are site-owned and cannot be supplied by job metadata. Job-level
+  `launcher_spec[site][docker]` takes precedence for supported options.
 - Some multi-GPU Docker environments may need `NCCL_P2P_DISABLE=1` to avoid NCCL hangs.
   Set this site-wide with `default_job_env` in `resources.json`, for example:
   ```json

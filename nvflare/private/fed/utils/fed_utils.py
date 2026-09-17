@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import copy
 import importlib
 import json
 import logging
@@ -21,7 +22,7 @@ import sys
 import warnings
 from typing import List, Optional, Union
 
-from nvflare.apis.app_validation import AppValidator
+from nvflare.apis.app_validation import AppValidationKey, AppValidator
 from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLContext
@@ -32,6 +33,8 @@ from nvflare.apis.job_launcher_spec import JobLauncherSpec
 from nvflare.apis.utils.decomposers import flare_decomposers
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.decomposers import common_decomposers
+from nvflare.app_common.widgets.component_path_authorizer import ComponentPathAuthorizer
+from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.stats_pool import CsvRecordHandler, StatsPoolManager
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.authz import AuthorizationService
@@ -41,6 +44,7 @@ from nvflare.fuel.utils.fobs.fobs import register_custom_folder
 from nvflare.private.defs import RequestHeader, SSLConstants
 from nvflare.private.event import fire_event
 from nvflare.private.fed.utils.decomposers import private_decomposers
+from nvflare.private.fed.utils.job_cert_utils import NO_JOB_CREDENTIAL, JobCertError, find_job_cert
 from nvflare.private.privacy_manager import PrivacyManager, PrivacyService
 from nvflare.security.logging import secure_format_exception
 from nvflare.security.security import EmptyAuthorizer, FLAuthorizer
@@ -49,11 +53,14 @@ from nvflare.security.study_registry import StudyRegistry, StudyRegistryService
 from ..simulator.simulator_const import SimulatorConstants
 from .app_authz import AppAuthzService
 
-# Distributed provisioning produces startup kits whose certs are signed by a site-local CA
-# rather than the project CA.  The server therefore cannot verify __nvfl_sig.json using its
-# own CA chain, so require_signed_jobs() lets an operator opt out of signature enforcement
-# via fed_server.json.  _warn_once suppresses repeated log noise for the same condition.
+# Job signing uses the same trust model for centralized and distributed provisioning:
+# the submitted job carries the submitter certificate, and verification chains that cert
+# to the site's rootCA.pem.  require_signed_jobs() only controls whether unsigned job
+# folders are accepted.  _warn_once suppresses repeated log noise for the same condition.
 _SIGNED_JOB_WARNINGS_EMITTED = set()
+_DEFAULT_COMPONENT_PATH_AUTHORIZER = ComponentPathAuthorizer()
+_AUTHORIZATION_JOB_META_CACHE = "__authorization_job_meta_cache__"
+_JOB_META_CACHE_MISSING = object()
 
 
 def _warn_once(logger: logging.Logger, cache_key: str, message: str, *args) -> None:
@@ -64,38 +71,56 @@ def _warn_once(logger: logging.Logger, cache_key: str, message: str, *args) -> N
     logger.warning(message, *args)
 
 
-def require_signed_jobs(workspace: Workspace) -> bool:
-    """Return True if the server requires all submitted jobs to carry __nvfl_sig.json.
+def require_signed_jobs(workspace: Workspace, startup_config: str = WorkspaceConstants.SERVER_STARTUP_CONFIG) -> bool:
+    """Return True if the site requires all submitted jobs to carry __nvfl_sig.json.
 
-    In distributed provisioning each site generates its own private key and gets a cert
-    signed by the project CA, but the server's startup kit was provisioned independently
-    and may not share the same CA chain used to sign __nvfl_sig.json.  Operators who use
-    distributed provisioning can set ``require_signed_jobs: false`` in fed_server.json to
-    disable signature enforcement without restarting the server (hot-reload).
+    Centralized and distributed provisioning use the same verification model: the job
+    carries the submitter certificate, and that certificate must chain to the server's
+    or client's rootCA.pem. Operators can set ``require_signed_jobs: false`` in the
+    site's startup config to allow unsigned job folders without restarting the site
+    (hot-reload).
 
     Default: True when rootCA.pem is present (any PKI deployment); False otherwise.
-    Explicit "require_signed_jobs" key in fed_server.json overrides the inferred default.
+    An explicit boolean "require_signed_jobs" overrides the inferred default.
     """
     import stat as _stat
 
     logger = logging.getLogger(__name__)
 
-    server_config_path = os.path.join(workspace.get_startup_kit_dir(), "fed_server.json")
-    if os.path.exists(server_config_path):
+    startup_config_path = os.path.join(workspace.get_startup_kit_dir(), startup_config)
+    if os.path.exists(startup_config_path):
         try:
-            fd = os.open(server_config_path, os.O_RDONLY)
-            with os.fdopen(fd) as f:
-                st = os.fstat(f.fileno())
-                if st.st_mode & (_stat.S_IWGRP | _stat.S_IWOTH):
+            _open_flags = os.O_RDONLY
+            if hasattr(os, "O_NOFOLLOW"):
+                _open_flags |= os.O_NOFOLLOW
+            fd = os.open(startup_config_path, _open_flags)
+            try:
+                with os.fdopen(fd) as f:
+                    fd = -1  # ownership transferred to f
+                    st = os.fstat(f.fileno())
+                    if st.st_mode & (_stat.S_IWGRP | _stat.S_IWOTH):
+                        _warn_once(
+                            logger,
+                            f"writable:{startup_config_path}",
+                            "%s is group/world-writable — require_signed_jobs policy "
+                            "can be altered by other local users (TOCTOU risk)",
+                            startup_config,
+                        )
+                    cfg = json.load(f)
+            except BaseException:
+                if fd != -1:
+                    os.close(fd)
+                raise
+            if "require_signed_jobs" in cfg:
+                value = cfg["require_signed_jobs"]
+                if not isinstance(value, bool):
                     _warn_once(
                         logger,
-                        f"writable:{server_config_path}",
-                        "fed_server.json is group/world-writable — require_signed_jobs policy "
-                        "can be altered by other local users (TOCTOU risk)",
+                        f"invalid:{startup_config_path}",
+                        "invalid require_signed_jobs value in %s: expected a boolean — failing closed",
+                        startup_config,
                     )
-                cfg = json.load(f)
-            if "require_signed_jobs" in cfg:
-                value = bool(cfg["require_signed_jobs"])
+                    return True
                 logger.debug("require_signed_jobs=%s (explicit config)", value)
                 return value
         except FileNotFoundError:
@@ -103,8 +128,9 @@ def require_signed_jobs(workspace: Workspace) -> bool:
         except Exception as e:
             _warn_once(
                 logger,
-                f"parse:{server_config_path}",
-                "failed to parse fed_server.json for require_signed_jobs: %s — failing closed",
+                f"parse:{startup_config_path}",
+                "failed to parse %s for require_signed_jobs: %s — failing closed",
+                startup_config,
                 e,
             )
             return True
@@ -115,11 +141,13 @@ def require_signed_jobs(workspace: Workspace) -> bool:
     return value
 
 
-def _check_secure_content(site_type: str) -> List[str]:
+def _check_secure_content(site_type: str, check_private_key: bool = True) -> List[str]:
     """To check the security contents.
 
     Args:
         site_type (str): "server" or "client"
+        check_private_key: whether the site private key must be present and signed; job processes
+            run on their job credential and launchers may withhold the site key from them.
 
     Returns:
         A list of insecure content.
@@ -136,8 +164,11 @@ def _check_secure_content(site_type: str) -> List[str]:
 
     sites_to_check = data["servers"] if site_type == SiteType.SERVER else [data["client"]]
 
+    filenames = [SSLConstants.CERT, SSLConstants.ROOT_CERT]
+    if check_private_key:
+        filenames.append(SSLConstants.PRIVATE_KEY)
     for site in sites_to_check:
-        for filename in [SSLConstants.CERT, SSLConstants.PRIVATE_KEY, SSLConstants.ROOT_CERT]:
+        for filename in filenames:
             content, sig = SecurityContentService.load_content(site.get(filename))
             if sig != LoadResult.OK:
                 insecure_list.append(site.get(filename))
@@ -177,9 +208,9 @@ def security_init(secure_train: bool, site_org: str, workspace: Workspace, app_v
     startup_dir = workspace.get_startup_kit_dir()
     SecurityContentService.initialize(content_folder=startup_dir)
 
-    # valid_config is False when the startup kit has no signature.json. That is the expected
-    # shape for plain centrally provisioned mTLS kits, where TLS credentials are the trust
-    # anchor and there is no additional content-integrity manifest to verify.
+    # valid_config is False when the startup kit has no signature.json. That is expected
+    # for standard mTLS kits without a startup content-integrity manifest; TLS credentials
+    # remain the trust anchor.
     if secure_train and SecurityContentService.security_content_manager.valid_config:
         insecure_list = _check_secure_content(site_type=site_type)
         if len(insecure_list):
@@ -217,7 +248,7 @@ def security_init(secure_train: bool, site_org: str, workspace: Workspace, app_v
         print("AuthorizationService error: {}".format(err))
         sys.exit(1)
 
-    studies_file = workspace.get_file_path_in_site_config("study_registry.json")
+    studies_file = workspace.get_study_registry_file_path()
     registry = None
     if os.path.exists(studies_file):
         with open(studies_file, "rt") as f:
@@ -233,16 +264,20 @@ def security_init_for_job(secure_train: bool, workspace: Workspace, site_type: s
        workspace: the workspace object.
        site_type (str): server or client. fed_client.json or fed_server.json
     """
+    # secure jobs run only on their per-job credential; never start one on site certificates
+    if secure_train and not find_job_cert(workspace.get_run_dir(job_id)):
+        raise JobCertError(NO_JOB_CREDENTIAL)
+
     # initialize the SecurityContentService.
     # must do this before initializing other services since it may be needed by them!
     startup_dir = workspace.get_startup_kit_dir()
     SecurityContentService.initialize(content_folder=startup_dir)
 
-    # valid_config is False when the startup kit has no signature.json. That is the expected
-    # shape for plain centrally provisioned mTLS kits, where TLS credentials are the trust
-    # anchor and there is no additional content-integrity manifest to verify.
+    # valid_config is False when the startup kit has no signature.json. That is expected
+    # for standard mTLS kits without a startup content-integrity manifest; TLS credentials
+    # remain the trust anchor.
     if secure_train and SecurityContentService.security_content_manager.valid_config:
-        insecure_list = _check_secure_content(site_type=site_type)
+        insecure_list = _check_secure_content(site_type=site_type, check_private_key=False)
         if len(insecure_list):
             print("The following files are not secure content.")
             for item in insecure_list:
@@ -263,6 +298,19 @@ def get_job_meta_from_workspace(workspace: Workspace, job_id: str) -> dict:
     job_meta_file_path = workspace.get_job_meta_path(job_id)
     with open(job_meta_file_path) as file:
         return json.load(file)
+
+
+def _get_job_meta_for_component_authorization(fl_ctx: FLContext, workspace: Workspace, job_id: str):
+    cached_meta = fl_ctx.get_prop(_AUTHORIZATION_JOB_META_CACHE, _JOB_META_CACHE_MISSING)
+    if cached_meta is not _JOB_META_CACHE_MISSING:
+        return copy.deepcopy(cached_meta)
+
+    meta = fl_ctx.get_prop(FLContextKey.JOB_META, _JOB_META_CACHE_MISSING)
+    if meta is _JOB_META_CACHE_MISSING:
+        meta = get_job_meta_from_workspace(workspace, job_id)
+
+    fl_ctx.set_prop(_AUTHORIZATION_JOB_META_CACHE, copy.deepcopy(meta), sticky=False, private=True)
+    return copy.deepcopy(meta)
 
 
 def create_job_processing_context_properties(workspace: Workspace, job_id: str) -> dict:
@@ -315,16 +363,39 @@ def fobs_initialize(workspace: Workspace = None, job_id: Optional[str] = None):
 
 def custom_fobs_initialize(workspace: Workspace = None, job_id: Optional[str] = None):
     if workspace:
+        # site-level decomposers are installed by the site admin and always loaded
         site_custom_dir = workspace.get_client_custom_dir()
         decomposer_dir = os.path.join(site_custom_dir, ConfigVarName.DECOMPOSER_MODULE)
         if os.path.exists(decomposer_dir):
             register_custom_folder(decomposer_dir)
 
         if job_id:
-            app_custom_dir = workspace.get_app_config_dir(job_id)
+            # decomposers shipped with the job are custom code: load them only from the job's
+            # custom dir (the BYOC-detected location) and only for BYOC-enabled jobs. Decomposers
+            # placed under the job config dir are intentionally ignored.
+            app_custom_dir = workspace.get_app_custom_dir(job_id)
             decomposer_dir = os.path.join(app_custom_dir, ConfigVarName.DECOMPOSER_MODULE)
-            if os.path.exists(decomposer_dir):
+            # confirm BYOC before probing the job-controlled path (no filesystem touch otherwise)
+            if _job_allows_byoc(workspace, job_id) and os.path.exists(decomposer_dir):
                 register_custom_folder(decomposer_dir)
+
+
+def _job_allows_byoc(workspace: Workspace, job_id: str) -> bool:
+    try:
+        job_meta = get_job_meta_from_workspace(workspace, job_id)
+        if not isinstance(job_meta, dict):
+            logging.getLogger(__name__).warning(
+                f"job meta for job '{job_id}' is not a dict (got {type(job_meta)}); treating as non-BYOC"
+            )
+            return False
+        return bool(job_meta.get(AppValidationKey.BYOC, False))
+    except Exception as e:
+        # fail safe: deny job decomposers, but log so a corrupted/misconfigured deployment
+        # can be told apart from a legitimate non-BYOC job
+        logging.getLogger(__name__).warning(
+            f"could not read job meta for job '{job_id}'; treating as non-BYOC: {secure_format_exception(e)}"
+        )
+        return False
 
 
 def nvflare_fobs_initialize():
@@ -420,13 +491,21 @@ def authorize_build_component(config_dict, config_ctx, node, fl_ctx: FLContext, 
     job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
     if not job_id:
         raise RuntimeError("missing job id in fl_ctx")
-    meta = get_job_meta_from_workspace(workspace, job_id)
+    meta = _get_job_meta_for_component_authorization(fl_ctx, workspace, job_id)
     fl_ctx.set_prop(FLContextKey.JOB_META, meta, sticky=False, private=True)
     fl_ctx.set_prop(FLContextKey.COMPONENT_CONFIG, config_dict, sticky=False, private=True)
     fl_ctx.set_prop(FLContextKey.CONFIG_CTX, config_ctx, sticky=False, private=True)
     fl_ctx.set_prop(FLContextKey.COMPONENT_NODE, node, sticky=False, private=True)
 
-    fire_event(EventType.BEFORE_BUILD_COMPONENT, event_handlers, fl_ctx)
+    try:
+        _DEFAULT_COMPONENT_PATH_AUTHORIZER.handle_event(EventType.BEFORE_BUILD_COMPONENT, fl_ctx)
+    except UnsafeComponentError as ex:
+        err = str(ex)
+        if not err:
+            err = "Unsafe component detected by built-in component path authorizer"
+        return err
+
+    fire_event(EventType.BEFORE_BUILD_COMPONENT, event_handlers or [], fl_ctx)
 
     err = fl_ctx.get_prop(FLContextKey.COMPONENT_BUILD_ERROR)
     if err:
@@ -476,6 +555,8 @@ def get_target_names(targets):
 
 
 def get_return_code(job_handle, job_id, workspace, logger):
+    launcher_return_code = job_handle.poll()
+    return_code = launcher_return_code
     run_dir = os.path.join(workspace, job_id)
     rc_file = os.path.join(run_dir, FLMetaKey.PROCESS_RC_FILE)
     if os.path.exists(rc_file):
@@ -488,9 +569,8 @@ def get_return_code(job_handle, job_id, workspace, logger):
                 f"Could not get the return code from {rc_file} of the job:{job_id}, "
                 f"falling back to the return code from the job_handle:{job_handle}: {secure_format_exception(e)}"
             )
-            return_code = job_handle.poll()
-    else:
-        return_code = job_handle.poll()
+    if launcher_return_code == ProcessExitCode.INFRASTRUCTURE_ERROR:
+        return launcher_return_code
     return return_code
 
 

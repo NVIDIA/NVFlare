@@ -21,7 +21,6 @@ import { Flex } from "@kui-react/flex";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { AppNames, IconNames } from "../../../src/config";
-import Image from "next/image";
 
 interface AppCardProps {
     title: string;
@@ -53,9 +52,8 @@ export default function AppCard({ title }: AppCardProps) {
     return <Card
         slotContent={<Flex justify="center"><h4 style={{textAlign: 'center', color: "white"}}>{AppNames.get(title)}</h4></Flex>}
         slotMedia={iconName ?
-            <Image width="200" height="150" src={`/images/${iconName}`} alt={title} >
-            </Image> :
-            <Image height="150" width="150" src={`/images/holoscan.png`} alt={title} ></Image>
+            <img width="200" height="150" src={`/images/${iconName}`} alt={title} /> :
+            <img height="150" width="150" src={`/images/holoscan.png`} alt={title} />
         }
         onClick={() => handleClick(title)}
         id={title}

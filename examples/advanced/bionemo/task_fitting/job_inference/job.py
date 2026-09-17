@@ -13,9 +13,9 @@
 # limitations under the License.
 
 """
-Federated Embedding Inference using FedAvgRecipe
+Federated Embedding Inference using FedTaskRecipe
 
-This script replaces the launcher-based approach in task_fitting.ipynb with FedAvgRecipe.
+This script replaces the launcher-based approach in task_fitting.ipynb with a one-round federated task.
 Run this after data splitting to perform federated embedding extraction.
 """
 
@@ -23,8 +23,7 @@ import os
 
 from bionemo.core.data.load import load
 
-from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
-from nvflare.recipe import SimEnv
+from nvflare.recipe import FedTaskRecipe, SimEnv
 
 # Configuration
 n_clients = 3
@@ -43,13 +42,13 @@ os.makedirs(results_path, exist_ok=True)
 # Build script arguments for inference (same for all clients, paths resolved in client script)
 script_args = f"--checkpoint-path {checkpoint_path} --data-root {data_root} --results-path {results_path} --precision bf16-mixed --micro-batch-size {micro_bs} --num-gpus 1"
 
-# Create FedAvgRecipe for inference (1 round only as this is just inference)
-recipe = FedAvgRecipe(
+# Create a one-round federated task for local embedding inference on each client
+recipe = FedTaskRecipe(
     name="esm2_embeddings",
+    task_name="infer",
     min_clients=n_clients,
-    num_rounds=1,  # Inference only needs 1 round
-    train_script="client.py",
-    train_args=script_args,
+    task_script="client.py",
+    task_args=script_args,
 )
 
 # Run simulation

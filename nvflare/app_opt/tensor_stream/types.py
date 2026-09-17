@@ -24,6 +24,7 @@ TensorsMap = Union[dict[str, torch.Tensor], dict[str, dict[str, torch.Tensor]]]
 class TensorCustomKeys:
     TASK_ID = "task_id"
     SAFE_TENSORS_PROP_KEY = "_safe_tensors_blob_"
+    TASK_RESULT_STREAMING_SKIPPED = "_tensor_stream_task_result_streaming_skipped_"
 
 
 class TensorTopics:

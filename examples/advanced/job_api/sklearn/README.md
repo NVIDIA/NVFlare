@@ -5,7 +5,7 @@ We provide examples to quickly get you started using NVFlare's Job API.
 All examples in this folder are based on using [scikit-learn](https://scikit-learn.org/), a popular library for general machine learning with Python.
 
 ## Setup environment
-First, install nvflare and dependencies:
+First, install NVFlare and its dependencies:
 ```commandline
 pip install -r requirements.txt
 ```

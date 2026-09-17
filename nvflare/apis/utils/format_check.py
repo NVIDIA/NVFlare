@@ -16,19 +16,21 @@ import inspect
 import re
 from functools import wraps
 
+from nvflare.fuel.utils.validation_utils import JOB_NAME_PATTERN
+
 type_pattern_mapping = {
     "server": r"^(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])\.)*([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9\-]*[A-Za-z0-9])$",
     "host_name": r"^(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])\.)*([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9\-]*[A-Za-z0-9])$",
-    "overseer": r"^(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])\.)*([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9\-]*[A-Za-z0-9])$",
-    "sp_end_point": r"^((([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])\.)*([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9\-]*[A-Za-z0-9]):[0-9]*:[0-9]*)$",
     "client": r"^[A-Za-z0-9-_]+$",
-    "job_name": r"^[A-Za-z0-9][A-Za-z0-9._-]*$",
+    "job_name": JOB_NAME_PATTERN,
     "relay": r"^[A-Za-z0-9-_]+$",
     "admin": r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}$",
+    "admin_kit": r"^[A-Za-z0-9-_]+$",
     "email": r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}$",
     "org": r"^[A-Za-z0-9_]+$",
     "simple_name": r"^[A-Za-z0-9_]+$",
     "study": r"^[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?$",
+    "site": r"^[A-Za-z0-9-_]+$",
 }
 
 
@@ -36,12 +38,28 @@ def name_check(name: str, entity_type: str):
     regex_pattern = type_pattern_mapping.get(entity_type)
     if regex_pattern is None:
         return True, "entity_type={} not defined, unable to check name={}.".format(entity_type, name)
-    if re.match(regex_pattern, name):
+    if re.fullmatch(regex_pattern, name):
         return False, "name={} passed on regex_pattern={} check".format(name, regex_pattern)
     else:
         return True, "name={} is ill-formatted for entity_type={} based on regex_pattern={}".format(
             name, entity_type, regex_pattern
         )
+
+
+def check_job_id(job_id: str):
+    if not isinstance(job_id, str) or not job_id:
+        raise ValueError("job_id must be a non-empty string")
+    invalid, message = name_check(job_id, "job_name")
+    if invalid:
+        raise ValueError(f"invalid job_id '{job_id}': {message}")
+
+
+def check_job_app_name(app_name: str):
+    if not isinstance(app_name, str) or not app_name:
+        raise ValueError("job app name must be a non-empty string")
+    invalid, message = name_check(app_name, "job_name")
+    if invalid:
+        raise ValueError(f"invalid job app name '{app_name}': {message}")
 
 
 def validate_class_methods_args(cls):

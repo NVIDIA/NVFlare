@@ -25,7 +25,7 @@ Feature Tutorials
 - `Simulator CLI & Python API <https://github.com/NVIDIA/NVFlare/tree/main/examples/tutorials/flare_simulator.ipynb>`_
 - `FLARE Python API: Job Submission & Monitoring <https://github.com/NVIDIA/NVFlare/tree/main/examples/tutorials/flare_api.ipynb>`_
 - `Logging: Configuration & Customization <https://github.com/NVIDIA/NVFlare/tree/main/examples/tutorials/logging.ipynb>`_
-- `Job CLI: Job Submission & Templates <https://github.com/NVIDIA/NVFlare/tree/main/examples/tutorials/job_cli.ipynb>`_
+- `NVFlare CLI: Setup, Jobs, Systems, and Deployment <https://github.com/NVIDIA/NVFlare/tree/main/examples/tutorials/nvflare_cli.ipynb>`_
 - `Job Recipe: Simplified job creation <https://github.com/NVIDIA/NVFlare/tree/main/examples/tutorials/job_recipe.ipynb>`_
 
 Self-Paced Learning

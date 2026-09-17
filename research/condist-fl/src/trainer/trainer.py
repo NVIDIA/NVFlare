@@ -168,7 +168,7 @@ class Trainer(object):
         torch.save(ckpt, str(path))
 
     def load_checkpoint(self, path: str, model: nn.Module) -> nn.Module:
-        ckpt = torch.load(path)
+        ckpt = torch.load(path, weights_only=True)
 
         self.current_step = ckpt.get("global_steps", 0)
         self.current_round = ckpt.get("round", 0)

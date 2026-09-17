@@ -199,6 +199,44 @@ class TestNewtonRaphsonAggregatorFunction:
 
         np.testing.assert_allclose(aggr_result.params["newton_raphson_updates"], expected_updates, rtol=1e-6)
 
+    def test_aggregator_aggregates_generic_numeric_metrics(self):
+        """Test aggregation preserves FedAvg-compatible metrics on the Newton-Raphson update."""
+        controller = FedAvgLR(damping_factor=1.0, epsilon=1.0, n_features=1)
+
+        gradient1 = np.array([[1.0], [2.0]])
+        hessian1 = np.array([[4.0, 0.0], [0.0, 4.0]])
+        result1 = FLModel(
+            params={"gradient": gradient1, "hessian": hessian1},
+            params_type=ParamsType.FULL,
+            metrics={"loss": 0.2, "accuracy": 0.8, "meta": {"site": "site-1"}},
+            current_round=1,
+            meta={
+                "client_name": "site-1",
+                FLMetaKey.NUM_STEPS_CURRENT_ROUND: 2,
+            },
+        )
+
+        gradient2 = np.array([[3.0], [4.0]])
+        hessian2 = np.array([[8.0, 0.0], [0.0, 8.0]])
+        result2 = FLModel(
+            params={"gradient": gradient2, "hessian": hessian2},
+            params_type=ParamsType.FULL,
+            metrics={"loss": 0.8, "accuracy": 0.2, "meta": {"site": "site-2"}},
+            current_round=1,
+            meta={
+                "client_name": "site-2",
+                FLMetaKey.NUM_STEPS_CURRENT_ROUND: 6,
+            },
+        )
+
+        aggr_result = controller.newton_raphson_aggregator_fn([result1, result2])
+
+        assert aggr_result.metrics == {
+            "loss": pytest.approx(0.65),
+            "accuracy": pytest.approx(0.35),
+        }
+        assert "meta" not in aggr_result.metrics
+
     def test_aggregator_with_regularization(self):
         """Test that epsilon regularization prevents singular matrix issues."""
         controller = FedAvgLR(damping_factor=1.0, epsilon=10.0, n_features=2)

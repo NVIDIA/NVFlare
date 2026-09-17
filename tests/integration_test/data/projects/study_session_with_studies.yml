@@ -32,15 +32,13 @@ participants:
 
 studies:
   study-a:
-    sites: [site-1, site-2]
-    admins:
-      admin@nvidia.com: project_admin
-      lead@nvidia.com: lead
+    site_orgs:
+      nvidia: [site-1, site-2]
+    admins: [admin@nvidia.com, lead@nvidia.com]
   study-b:
-    sites: [site-3]
-    admins:
-      admin@nvidia.com: project_admin
-      lead@nvidia.com: member
+    site_orgs:
+      nvidia: [site-3]
+    admins: [admin@nvidia.com, lead@nvidia.com]
 
 builders:
   - path: nvflare.lighter.impl.workspace.WorkspaceBuilder
@@ -49,10 +47,5 @@ builders:
   - path: nvflare.lighter.impl.static_file.StaticFileBuilder
     args:
       config_folder: config
-      overseer_agent:
-        path: nvflare.ha.dummy_overseer_agent.DummyOverseerAgent
-        overseer_exists: false
-        args:
-          sp_end_point: localhost:8202:8203
   - path: nvflare.lighter.impl.cert.CertBuilder
   - path: nvflare.lighter.impl.signature.SignatureBuilder

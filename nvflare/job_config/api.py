@@ -18,10 +18,11 @@ from typing import Any, Dict, List, Optional, Union
 
 from nvflare.apis.executor import Executor
 from nvflare.apis.filter import Filter
+from nvflare.apis.fl_constant import ConfigVarName
 from nvflare.apis.impl.controller import Controller
 from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME
 from nvflare.fuel.utils.class_utils import get_component_init_parameters
-from nvflare.fuel.utils.validation_utils import check_object_type, check_positive_int, check_str
+from nvflare.fuel.utils.validation_utils import check_job_name, check_object_type, check_positive_int
 from nvflare.job_config.fed_app_config import ClientAppConfig, FedAppConfig, ServerAppConfig
 from nvflare.job_config.fed_job_config import FedJobConfig
 
@@ -30,6 +31,15 @@ from .defs import FilterType, JobTargetType
 SPECIAL_CHARACTERS = '"!@#$%^&*()+?=,<>/'
 
 _ADD_TO_JOB_METHOD_NAME = "add_to_fed_job"
+
+
+def validate_target_name(target: str) -> None:
+    """Validate a target name accepted by :class:`FedJob`."""
+    if not target:
+        raise ValueError("Must provide a valid target name")
+
+    if any(c in SPECIAL_CHARACTERS for c in target) and target != ALL_SITES:
+        raise ValueError(f"target {target} name contains invalid character")
 
 
 class FedApp:
@@ -178,6 +188,7 @@ class FedJob:
         min_clients: int = 1,
         mandatory_clients: Optional[List[str]] = None,
         meta_props: Optional[Dict[str, Any]] = None,
+        fail_fast: bool = False,
     ) -> None:
         """FedJob allows users to generate job configurations in a Pythonic way.
         The `to()` routine allows users to send different components to either the server or clients.
@@ -186,17 +197,29 @@ class FedJob:
             name: the name of the NVFlare job
             min_clients: the minimum number of clients for the job
             mandatory_clients: mandatory clients to run the job (optional)
+            meta_props: additional meta properties for the job (optional)
+            fail_fast: if True, sets dead_client_grace_period to 0 so that a client already
+                reported dead is declared disconnected on the next monitor tick (~0.2 s) rather
+                than after the default 60-second grace period. The job then aborts only when the
+                normal deployment policy is violated: alive clients drop below min_clients, all
+                clients die, or a mandatory client is lost. In the common development scenario
+                where min_clients equals the total number of enrolled clients, this means an
+                immediate abort on any client failure; when min_clients < total enrolled, the
+                disconnect is simply detected faster without necessarily aborting the job.
+                When False (the default), the existing dead-client grace period behaviour applies.
 
         """
-        check_str("name", name)
+        check_job_name("name", name)
         check_positive_int("min_clients", min_clients)
         if mandatory_clients:
             check_object_type("mandatory_clients", mandatory_clients, list)
         if meta_props:
             check_object_type("meta_props", meta_props, dict)
+        check_object_type("fail_fast", fail_fast, bool)
 
         self.name = name
         self.clients = []
+        self._fail_fast = fail_fast
         self.job: FedJobConfig = FedJobConfig(
             job_name=self.name,
             min_clients=min_clients,
@@ -554,11 +577,23 @@ class FedJob:
         self.add_file_to(src_path, ALL_SITES, dest_dir, app_folder_type)
 
     def _validate_target(self, target):
-        if not target:
-            raise ValueError("Must provide a valid target name")
+        validate_target_name(target)
 
-        if any(c in SPECIAL_CHARACTERS for c in target) and target != ALL_SITES:
-            raise ValueError(f"target {target} name contains invalid character")
+    def _apply_fail_fast(self, server_config: ServerAppConfig):
+        """Inject fail_fast configuration into the server app config.
+
+        When fail_fast is enabled, sets dead_client_grace_period to 0 so a client
+        already reported dead is declared disconnected on the next monitor tick
+        instead of after the default 60-second grace period. The job still aborts
+        only when the normal deployment policy is violated (alive < min_clients,
+        all dead, or a required client lost) - this only changes how quickly that
+        check trips.
+
+        Args:
+            server_config: the ServerAppConfig to update.
+        """
+        if self._fail_fast:
+            server_config.add_params({ConfigVarName.DEAD_CLIENT_GRACE_PERIOD: 0})
 
     def _set_all_app(self, client_app: ClientApp, server_app: ServerApp):
         if not isinstance(client_app, ClientApp):
@@ -568,6 +603,8 @@ class FedJob:
 
         client_config = client_app.get_app_config()
         server_config = server_app.get_app_config()
+
+        self._apply_fail_fast(server_config)
 
         app_config = FedAppConfig(server_app=server_config, client_app=client_config)
         app_name = "app"
@@ -584,6 +621,7 @@ class FedJob:
             app_config = FedAppConfig(server_app=None, client_app=client_server_config)
             app_name = f"app_{target}"
         elif isinstance(client_server_config, ServerAppConfig):
+            self._apply_fail_fast(client_server_config)  # intentionally server-only; clients don't read this key
             app_config = FedAppConfig(server_app=client_server_config, client_app=None)
             app_name = "app_server"
         else:
@@ -637,7 +675,7 @@ class FedJob:
             clients: client names.
             threads: number of threads.
             gpu: gpu assignments for simulating clients, comma separated
-            log_config: log config mode ('concise', 'msg_only', 'full', 'verbose'), filepath, or level
+            log_config: log config mode ('concise', 'progress', 'msg_only', 'full', 'verbose'), filepath, or level
 
         Returns:
         """
@@ -658,7 +696,7 @@ class FedJob:
         if threads is None:
             threads = n_clients
 
-        self.job.simulator_run(
+        return self.job.simulator_run(
             workspace,
             clients=",".join(self.clients),
             n_clients=n_clients,

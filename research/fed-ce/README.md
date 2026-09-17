@@ -1,6 +1,6 @@
 # FedCE: Fair Federated Learning via Client Contribution Estimation
 
-This directory will contain the code for the fair federated learning algorithm via client **C**ontribution **E**stimation (Fed**CE**) described in
+This directory contains the code for the fair federated learning algorithm via client **C**ontribution **E**stimation (Fed**CE**) described in
 
 ### Fair Federated Medical Image Segmentation via Client Contribution Estimation ([arXiv:2303.16520](https://arxiv.org/abs/2303.16520))
 Accepted to [CVPR2023](https://cvpr2023.thecvf.com/).
@@ -19,47 +19,70 @@ Please refer to [Prostate Example](https://github.com/NVIDIA/NVFlare/tree/main/r
 
 ## Setup
 
-Install required packages for training
-```
-pip install --upgrade pip
-pip install -r ./requirements.txt
+> **Development branch note:** `FedCERecipe` requires NVFlare 2.9. Until that package is published, install
+> NVFlare from this repository and install the remaining example dependencies separately:
+>
+> ```bash
+> python -m pip install --upgrade pip
+> python -m pip install -e "../..[PT]"
+> python -m pip install monai tensorboard tqdm nibabel
+> ```
+
+The `nvflare[PT]~=2.9.0rc` entry in `requirements.txt` records the first compatible release. After NVFlare 2.9
+is published, install the complete environment directly:
+
+```bash
+python -m pip install --upgrade pip
+python -m pip install -r ./requirements.txt
 ```
 
-## Run automated experiments
-We use the NVFlare simulator to run FL training automatically, the 6 clients are named `client_I2CVB,client_MSD,client_NCI_ISBI_3T,client_NCI_ISBI_Dx,client_Promise12,client_PROSTATEx`.
+## Run the experiment
 
-### Prepare local configs
-First, we add the image directory root to `config_train.json` files for generating the absolute path to dataset and datalist. 
-In the current folder structure, it will be `${PWD}/..`. 
-It can be any arbitrary path where the data locates.  
+The example uses `FedCERecipe` with `SimEnv` to run the six documented clients:
+`client_I2CVB`, `client_MSD`, `client_NCI_ISBI_3T`, `client_NCI_ISBI_Dx`, `client_Promise12`, and
+`client_PROSTATEx`. The client training script returns model differences and uses `PTFedCEHelper` to construct
+and validate the leave-one-out model required by FedCE.
+
+Run six clients on two GPUs, with the workspace under `/tmp`:
+
+```bash
+python jobs/fedce_prostate/job.py \
+  --data-root "${PWD}/data_preparation" \
+  --workspace-root /tmp/nvflare/fedce_prostate \
+  --gpu-config 0,1,0,1,0,1 \
+  --num-threads 6 \
+  --num-rounds 100
 ```
-for job in fedce_prostate
-do
-  sed -i "s|DATASET_ROOT|${PWD}/data_preparation|g" jobs/${job}/app/config/config_train.json
-done
-```
-### Use NVFlare simulator to run the experiments
-We use NVFlare simulator to run the FL training experiments, following the pattern:
-```
-nvflare simulator jobs/[job] -w ${workspace_path}/[job] -c [clients] -gpu [gpu] -t [thread]
-```
-`[job]` is the experiment job that will be submitted for the FL training. 
-In this example, this is `fedce_prostate`.  
-The combination of `-c` and `-gpu`/`-t` controls the resource allocation. 
+
+The minimum GPU memory requirement is 10 GB per GPU. Use `--cache-rate 0` to reduce host memory use at the cost
+of loading samples during training.
 
 ## Results on six clients for FedCE
-In this example, we run six clients on 2 GPUs. The minimum GPU memory requirement is 10 GB per GPU. We put the workspace in `/tmp` folder
-```
-nvflare simulator jobs/fedce_prostate -w /tmp/nvflare/fedce_prostate -c client_I2CVB,client_MSD,client_NCI_ISBI_3T,client_NCI_ISBI_Dx,client_Promise12,client_PROSTATEx -gpu 0,1,0,1,0,1
-```
 
 ### Metrics and FedCE contribution estimation curves
+
 In this example, each client computes their validation scores using their own
-validation set. We also record the contribution scores for each client.
-The TensorBoard curves of validation Dice and contribution scores for the 100 epochs (100 rounds, 1 local epoch per round) during training are shown below:
+validation set. The recipe enables TensorBoard experiment tracking, and each client records
+`val_metric_global_model`, `val_metric_minus_model`, `train_loss`, and `FedCE_Coef`.
+
+Launch TensorBoard against the simulation workspace:
+
+```bash
+tensorboard --logdir /tmp/nvflare/fedce_prostate
+```
+
+The original published implementation's TensorBoard curves of validation Dice and contribution scores for 100 epochs
+(100 rounds, 1 local epoch per round) are shown below:
+
 ![All training curve](./figs/all_training.png)
 
 As shown, one of the clients (Promise12) has significant domain shift from others, and hence intuitively it provides more novel information as compared with others. During training, its FedCE weight increases while others gradually decrease. Such that the overall federated learning captures the potential domain variations better. With this mechanism, FedCE provides an indication of reward/profit distribution by measuring the contribution of clients. Please refer to the [FedCE paper](https://arxiv.org/abs/2303.16520) for more details.
+
+The recipe migration was also validated for the full 100 rounds against the original implementation. Promise12's
+recipe coefficient increased from `0.1695` at round 1 to `0.2733` at round 99, while the original implementation
+increased from `0.1690` to `0.2668`. Across all clients and rounds 1–99, the original and recipe coefficient
+series had a correlation of `0.9976`, and the recipe coefficients remained normalized each round. Round 0 has no
+prior contribution coefficient and is therefore excluded from this comparison.
 
 ## Citation
 

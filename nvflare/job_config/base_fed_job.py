@@ -12,11 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
 from nvflare.apis.fl_component import FLComponent
 from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
+from nvflare.app_common.widgets.metrics_artifact_writer import MetricsArtifactWriter
 from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
 from nvflare.job_config.api import FedJob, validate_object_for_job
@@ -39,10 +40,12 @@ class BaseFedJob(FedJob):
         min_clients: int = 1,
         mandatory_clients: Optional[List[str]] = None,
         key_metric: str = "accuracy",
+        key_metric_mode: Literal["min", "max"] = "max",
         validation_json_generator: Optional[ValidationJsonGenerator] = None,
         model_selector: Optional[FLComponent] = None,
         convert_to_fed_event: Optional[ConvertToFedEvent] = None,
         analytics_receiver: Optional[AnalyticsReceiver] = None,
+        metrics_artifact_writer: Optional[MetricsArtifactWriter] = None,
     ):
         """Unified BaseFedJob for PyTorch, TensorFlow, and Scikit-learn.
 
@@ -58,6 +61,9 @@ class BaseFedJob(FedJob):
             key_metric: Metric used to determine if the model is globally best.
                 If metrics are a dict, key_metric can select the metric used for global model selection.
                 Defaults to "accuracy". Only used if model_selector is not provided.
+            key_metric_mode: One of "min" or "max". Use "min" when lower key_metric values are better,
+                such as for loss, and "max" when higher values are better. Defaults to "max".
+                Only used if model_selector is not provided.
             validation_json_generator: A component for generating validation results.
                 If not provided, a ValidationJsonGenerator will be configured.
             model_selector: A component for selecting the best model during training.
@@ -73,7 +79,12 @@ class BaseFedJob(FedJob):
                 If not provided, a ConvertToFedEvent object will be created.
             analytics_receiver: Receive analytics. If not provided, framework-specific
                 child classes may provide defaults (e.g., TBAnalyticsReceiver for PT/TF).
+            metrics_artifact_writer: Component for writing server-side metrics artifacts.
+                If not provided, a MetricsArtifactWriter will be configured.
         """
+        if key_metric_mode not in ("min", "max"):
+            raise ValueError(f"key_metric_mode must be 'min' or 'max', but got {key_metric_mode!r}")
+
         super().__init__(
             name=name,
             min_clients=min_clients,
@@ -97,7 +108,17 @@ class BaseFedJob(FedJob):
             # Default to IntimeModelSelector if key_metric is provided
             from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 
-            self.to_server(id="model_selector", obj=IntimeModelSelector(key_metric=key_metric))
+            self.to_server(
+                id="model_selector",
+                obj=IntimeModelSelector(key_metric=key_metric, negate_key_metric=key_metric_mode == "min"),
+            )
+
+        # Metrics artifact writer
+        if metrics_artifact_writer is not None:
+            validate_object_for_job("metrics_artifact_writer", metrics_artifact_writer, FLComponent)
+        else:
+            metrics_artifact_writer = MetricsArtifactWriter()
+        self.to_server(id="metrics_artifact_writer", obj=metrics_artifact_writer)
 
         # Convert to fed event
         if convert_to_fed_event:

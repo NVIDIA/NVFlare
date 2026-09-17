@@ -14,7 +14,28 @@
 
 import functools
 import inspect
+import threading
 import warnings
+
+_DEPRECATION_WARNING_LOCK = threading.Lock()
+_WARNED_DEPRECATION_MESSAGES = set()
+
+
+def warn_deprecated(message: str, stacklevel: int = 2):
+    """Issue a DeprecationWarning once per process for each unique message.
+
+    ``stacklevel`` follows the same convention as :func:`warnings.warn`:
+    2 (the default) points at the direct caller of ``warn_deprecated``.
+    Pass 3 when calling from inside an ``__init__`` so the warning location
+    is the code that instantiates the class rather than the ``__init__`` body.
+    """
+    with _DEPRECATION_WARNING_LOCK:
+        if message in _WARNED_DEPRECATION_MESSAGES:
+            return
+        with warnings.catch_warnings():
+            warnings.simplefilter("always", DeprecationWarning)
+            warnings.warn(message, category=DeprecationWarning, stacklevel=stacklevel)
+        _WARNED_DEPRECATION_MESSAGES.add(message)
 
 
 def deprecated(reason):
@@ -29,17 +50,14 @@ def deprecated(reason):
 
         @functools.wraps(func)
         def new_func(*args, **kwargs):
-            warnings.simplefilter("always", DeprecationWarning)
-            warnings.warn(
+            warn_deprecated(
                 fmt.format(
                     kind="class" if inspect.isclass(func) else "function",
                     name=func.__name__,
                     reason=f" ({reason})" if reason else "",
                 ),
-                category=DeprecationWarning,
-                stacklevel=2,
+                stacklevel=3,
             )
-            warnings.simplefilter("default", DeprecationWarning)
             return func(*args, **kwargs)
 
         return new_func

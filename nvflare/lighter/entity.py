@@ -11,11 +11,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import logging
 from typing import Any, List, Optional, Union
 
 from nvflare.apis.utils.format_check import name_check
 
 from .constants import DEFINED_PARTICIPANT_TYPES, DEFINED_ROLES, ConnSecurity, ParticipantType, PropKey
+
+_logger = logging.getLogger(__name__)
 
 
 class ListeningHost:
@@ -38,15 +41,22 @@ class ListeningHost:
 
 
 class ConnectTo:
-    def __init__(self, name, host, port, conn_sec):
+    def __init__(self, name, host, port, conn_sec, auth_identity=None):
         self.name = name
         self.host = host
         self.port = port
         self.conn_sec = conn_sec
+        self.auth_identity = auth_identity
 
     def __str__(self):
-        name, host, port, conn_sec = self.name, self.host, self.port, self.conn_sec
-        return f"ConnectTo[{name=} {host=} {port=} {conn_sec=}]"
+        name, host, port, conn_sec, auth_identity = (
+            self.name,
+            self.host,
+            self.port,
+            self.conn_sec,
+            self.auth_identity,
+        )
+        return f"ConnectTo[{name=} {host=} {port=} {conn_sec=} {auth_identity=}]"
 
 
 def _check_host_name(scope: str, prop_key: str, value):
@@ -90,7 +100,8 @@ def parse_connect_to(value, scope=None, prop_key=None) -> ConnectTo:
         host = value.get(PropKey.HOST)
         port = value.get(PropKey.PORT)
         conn_sec = value.get(PropKey.CONN_SECURITY)
-        return ConnectTo(name, host, port, conn_sec)
+        auth_identity = value.get(PropKey.AUTH_IDENTITY)
+        return ConnectTo(name, host, port, conn_sec, auth_identity)
     else:
         raise ValueError(
             f"bad value for {prop_key} '{value}' in {scope}: invalid type {type(value)}; must be str or dict"
@@ -227,7 +238,7 @@ class Entity:
 
 
 class Participant(Entity):
-    def __init__(self, type: str, name: str, org: str, props: Optional[dict] = None, project: Entity = None):
+    def __init__(self, type: str, name: str, org: Optional[str], props: Optional[dict] = None, project: Entity = None):
         """Class to represent a participant.
 
         Each participant communicates to other participant.  Therefore, each participant has its
@@ -245,8 +256,11 @@ class Participant(Entity):
         """
         Entity.__init__(self, f"{type}::{name}", name, props, parent=project)
 
+        admin_cert_provider = type == ParticipantType.ADMIN and bool(props and props.get(PropKey.ADMIN_CERT_PROVIDER))
         if type in DEFINED_PARTICIPANT_TYPES:
             err, reason = name_check(name, type)
+            if err and admin_cert_provider:
+                err, reason = name_check(name, "admin_kit")
             if err:
                 raise ValueError(reason)
         else:
@@ -255,24 +269,34 @@ class Participant(Entity):
                 raise ValueError(reason)
             print(f"Warning: participant type '{type}' of {name} is not a defined type {DEFINED_PARTICIPANT_TYPES}")
 
-        err, reason = name_check(org, "org")
-        if err:
-            raise ValueError(reason)
+        if admin_cert_provider and org:
+            raise ValueError(f"admin '{name}' with admin_cert_provider must not define org; org comes from issued cert")
+        if org:
+            err, reason = name_check(org, "org")
+            if err:
+                raise ValueError(reason)
+        elif not admin_cert_provider:
+            raise ValueError(f"missing participant {PropKey.ORG}")
 
         if type == ParticipantType.ADMIN:
-            if not props:
+            if admin_cert_provider:
+                if props.get(PropKey.ROLE):
+                    raise ValueError(
+                        f"admin '{name}' with admin_cert_provider must not define role; role comes from issued cert"
+                    )
+            elif not props:
                 raise ValueError(f"missing role for admin '{name}'")
+            else:
+                role = props.get(PropKey.ROLE)
+                if not role:
+                    raise ValueError(f"missing role for admin '{name}'")
 
-            role = props.get(PropKey.ROLE)
-            if not role:
-                raise ValueError(f"missing role for admin '{name}'")
+                err, reason = name_check(role, "simple_name")
+                if err:
+                    raise ValueError(f"bad role value '{role}' for admin '{name}': {reason}")
 
-            err, reason = name_check(role, "simple_name")
-            if err:
-                raise ValueError(f"bad role value '{role}' for admin '{name}': {reason}")
-
-            if role not in DEFINED_ROLES:
-                print(f"Warning: '{role}' of admin '{name}' is not a defined role {DEFINED_ROLES}")
+                if role not in DEFINED_ROLES:
+                    print(f"Warning: '{role}' of admin '{name}' is not a defined role {DEFINED_ROLES}")
 
         self.type = type
         self.org = org
@@ -363,7 +387,7 @@ def participant_from_dict(participant_def: dict) -> Participant:
 
     name = _must_get(participant_def, PropKey.NAME)
     t = _must_get(participant_def, PropKey.TYPE)
-    org = _must_get(participant_def, PropKey.ORG)
+    org = participant_def.pop(PropKey.ORG, None)
     return Participant(type=t, name=name, org=org, props=participant_def)
 
 
@@ -435,15 +459,22 @@ class Project(Entity):
         """
         return self.server
 
-    def get_overseer(self) -> Optional[Participant]:
-        """Get the overseer definition.
+    def remove_server(self) -> Optional[Participant]:
+        """Remove the server definition from the project.
 
-        Note: overseer is deprecated.
-
-        Returns: None
+        Returns: removed server participant, or None if no server is defined.
 
         """
-        return None
+        server = self.server
+        if not server:
+            return None
+        self._all_names.pop(server.name, None)
+        participants = self._participants_by_types.get(ParticipantType.SERVER)
+        if participants and server in participants:
+            participants.remove(server)
+        server.parent = None
+        self.server = None
+        return server
 
     def add_participant(self, participant: Participant) -> Participant:
         """Add a participant to the project.
@@ -452,12 +483,18 @@ class Project(Entity):
         - Only one server is allowed in the project
         - Role must be specified for admin type of participant
 
+        Obsolete participant entries are ignored with a warning.
+
         Args:
             participant: the participant to be added.
 
-        Returns: the participant object added.
+        Returns: the participant object added (or None when an obsolete entry is ignored).
 
         """
+        if participant.type == ParticipantType.OVERSEER:
+            _logger.warning(f"Obsolete participant '{participant.name}' in project.yml will be ignored.")
+            return None
+
         if participant.name in self._all_names:
             raise ValueError(f"the project {self.name} already has a participant with the name '{participant.name}'")
 
@@ -466,8 +503,6 @@ class Project(Entity):
             if self.server:
                 raise ValueError(f"cannot add participant {participant.name} as server - server already exists")
             self.server = participant
-        elif participant.type == ParticipantType.OVERSEER:
-            raise ValueError(f"cannot add participant {participant.name} as overseer - overseer is removed")
 
         participants = self._participants_by_types.get(participant.type)
         if not participants:

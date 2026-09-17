@@ -122,6 +122,8 @@ def array_to_dataframe(data_array):
 
 
 def split_data(data_path, out_dir, num_clients, site_name_prefix, seed, alpha):
+    np.random.seed(seed)
+
     # use pandas to read jsonl format
     train_data = pd.read_json(data_path, lines=True)
     assert len(train_data) > 0, f"No data loaded from {data_path}"

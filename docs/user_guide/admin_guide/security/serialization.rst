@@ -33,7 +33,7 @@ registered. For example,
 
 .. code-block::
 
-    TypeError: can not serialize 'xxx' object
+    TypeError: cannot serialize 'xxx' object
 
 Usage
 ~~~~~

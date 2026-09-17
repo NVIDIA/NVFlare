@@ -17,6 +17,7 @@ from unittest.mock import patch
 
 import pytest
 
+from nvflare.apis.fl_constant import JOB_CLONE_DEPRECATION_MESSAGE
 from nvflare.apis.job_def import DEFAULT_STUDY
 from nvflare.fuel.flare_api.api_spec import AuthenticationError, NoConnection
 from nvflare.fuel.flare_api.flare_api import Session, new_secure_session
@@ -46,7 +47,7 @@ def test_submit_job_relies_on_session_study():
     assert captured["props"] is None
 
 
-def test_clone_job_does_not_send_study_cmd_props():
+def test_clone_job_warns_and_does_not_send_study_cmd_props():
     session = _make_session_for_study("multiple-sclerosis")
     captured = {}
 
@@ -55,9 +56,12 @@ def test_clone_job_does_not_send_study_cmd_props():
         return {ResultKey.META: {MetaKey.JOB_ID: "job-2"}}
 
     session._do_command = _fake_do_command
-    session.clone_job("source-job")
+    with patch("nvflare.fuel.flare_api.flare_api.warn_deprecated") as mock_warn:
+        new_job_id = session.clone_job("source-job")
 
     assert captured["props"] is None
+    assert new_job_id == "job-2"
+    mock_warn.assert_called_once_with(JOB_CLONE_DEPRECATION_MESSAGE, stacklevel=3)
 
 
 def test_submit_job_with_default_study_uses_session_context_only():

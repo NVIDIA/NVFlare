@@ -22,6 +22,7 @@ from nvflare.app_common.abstract.fl_model import FLModel
 # this import is to let existing scripts import client.api
 from .api_context import ClientAPIType  # noqa: F401
 from .api_context import APIContext
+from .rank import resolve_process_rank
 
 global_context_lock = Lock()
 context_dict = {}
@@ -53,22 +54,20 @@ def init(rank: Optional[Union[str, int]] = None, config_file: Optional[str] = No
     """Initializes NVFlare Client API environment.
 
     Args:
-        rank (str): local rank of the process.
-            It is only useful when the training script has multiple worker processes. (for example multi GPU)
+        rank (str): optional global process-rank override for Client API control-path behavior.
+            When omitted, initialization resolves an initialized Torch process-group rank or
+            the launcher's global RANK. Never use a device-local rank for this value.
         config_file (str): client api configuration.
 
     Returns:
         APIContext
     """
 
-    # subsequent logic assumes rank is a string
-    if rank is not None:
-        if isinstance(rank, int):
-            rank = str(rank)
-        elif isinstance(rank, str):
-            pass
-        else:
-            raise ValueError(f"rank must be a string or an integer but got {type(rank)}")
+    # Cache contexts by the same canonical rank that API engines use. Rankless
+    # distributed callers resolve from an initialized Torch process group or
+    # the launcher's global RANK and fail before context creation when neither
+    # source is available.
+    rank = resolve_process_rank(rank)
 
     with global_context_lock:
         global context_dict
@@ -102,6 +101,9 @@ def send(model: FLModel, clear_cache: bool = True, ctx: Optional[APIContext] = N
     Args:
         model (FLModel): The FLModel object to be sent.
         clear_cache (bool): Whether to clear the cache after send.
+
+    Raises:
+        RuntimeError: If the model cannot be submitted to NVFLARE.
     """
     if not isinstance(model, FLModel):
         raise TypeError("model needs to be an instance of FLModel")

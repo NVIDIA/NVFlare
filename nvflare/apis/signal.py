@@ -15,7 +15,7 @@
 import time
 
 
-class Signal(object):
+class Signal:
     def __init__(self, parent=None):
         """Init the Signal.
 

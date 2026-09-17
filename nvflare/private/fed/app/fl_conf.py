@@ -14,6 +14,7 @@
 
 """FL Server / Client startup configure."""
 
+import logging
 import os
 import re
 import sys
@@ -28,7 +29,9 @@ from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.json_scanner import Node
 from nvflare.fuel.utils.url_utils import make_url
 from nvflare.fuel.utils.wfconf import ConfigContext, ConfigError
-from nvflare.private.defs import SSLConstants
+from nvflare.private.defs import ClientRegMsgKey, SSLConstants
+from nvflare.private.fed.utils.job_cert_utils import apply_job_cert_config
+from nvflare.private.fed.utils.site_config import project_site_config
 from nvflare.private.json_configer import JsonConfigurator
 from nvflare.private.privacy_manager import PrivacyManager, Scope
 
@@ -38,6 +41,8 @@ from .fl_app_validator import FLAppValidator
 
 FL_PACKAGES = ["nvflare"]
 FL_MODULES = ["server", "client", "app_common", "private"]
+
+_logger = logging.getLogger(__name__)
 
 
 class FLServerStarterConfiger(JsonConfigurator):
@@ -84,7 +89,6 @@ class FLServerStarterConfiger(JsonConfigurator):
         self.deployer = None
         self.app_validator = None
         self.snapshot_persistor = None
-        self.overseer_agent = None
         self.site_org = ""
 
     def start_config(self, config_ctx: ConfigContext):
@@ -111,6 +115,11 @@ class FLServerStarterConfiger(JsonConfigurator):
                     )
         except Exception:
             raise ValueError(f"Server config error: '{self.server_config_file_names}'")
+
+        if self.args.job_id:
+            run_dir = self.workspace.get_run_dir(self.args.job_id)
+            for server in self.config_data["servers"]:
+                apply_job_cert_config(server, run_dir)
 
     def build_component(self, config_dict):
         t = super().build_component(config_dict)
@@ -141,7 +150,7 @@ class FLServerStarterConfiger(JsonConfigurator):
             return
 
         if path == "overseer_agent":
-            self.overseer_agent = self.build_component(element)
+            _logger.warning("'overseer_agent' in server config is obsolete and will be ignored.")
             return
 
         if re.search(r"^components\.#[0-9]+$", path):
@@ -180,7 +189,6 @@ class FLServerStarterConfiger(JsonConfigurator):
             "server_host": self.cmd_vars.get("host", None),
             "site_org": self.cmd_vars.get("org", ""),
             "snapshot_persistor": self.snapshot_persistor,
-            "overseer_agent": self.overseer_agent,
             "server_components": self.components,
             "server_handlers": self.handlers,
         }
@@ -242,7 +250,6 @@ class FLClientStarterConfiger(JsonConfigurator):
         self.workspace = workspace
         self.client_config_file_names = config_files
         self.base_deployer = None
-        self.overseer_agent = None
         self.site_org = ""
         self.app_validator = None
 
@@ -261,7 +268,7 @@ class FLClientStarterConfiger(JsonConfigurator):
             return
 
         if path == "overseer_agent":
-            self.overseer_agent = self.build_component(element)
+            _logger.warning("'overseer_agent' in client config is obsolete and will be ignored.")
             return
 
         if re.search(r"^components\.#[0-9]+$", path):
@@ -298,6 +305,8 @@ class FLClientStarterConfiger(JsonConfigurator):
         if relay_config:
             if relay_config:
                 relay_fqcn = relay_config.get(ConnPropKey.FQCN)
+                relay_identity = relay_config.get(ConnPropKey.IDENTITY)
+                relay_auth_identity = relay_config.get(ConnPropKey.AUTH_IDENTITY, relay_identity)
                 scheme = relay_config.get(ConnPropKey.SCHEME)
                 addr = relay_config.get(ConnPropKey.ADDRESS)
                 relay_conn_security = relay_config.get(ConnPropKey.CONNECTION_SECURITY)
@@ -318,27 +327,44 @@ class FLClientStarterConfiger(JsonConfigurator):
         if relay_fqcn:
             relay_conn_props = {
                 ConnPropKey.FQCN: relay_fqcn,
+                ConnPropKey.IDENTITY: relay_identity,
+                ConnPropKey.AUTH_IDENTITY: relay_auth_identity,
                 ConnPropKey.URL: relay_url,
                 ConnPropKey.CONNECTION_SECURITY: relay_conn_security,
             }
             set_scope_property(client_name, ConnPropKey.RELAY_CONN_PROPS, relay_conn_props)
 
         client = self.config_data["client"]
+        client_auth_identity = client.get(ConnPropKey.AUTH_IDENTITY, client.get(ConnPropKey.IDENTITY, client_name))
+        servers = self.config_data.get("servers", [])
+        server = servers[0] if servers else {}
+        server_identity = server.get(ConnPropKey.AUTH_IDENTITY, server.get(ConnPropKey.IDENTITY))
+        service = server.get("service", {})
+        root_conn_security = client.get(ConnPropKey.CONNECTION_SECURITY)
+        root_conn_props = {
+            ConnPropKey.FQCN: FQCN.ROOT_SERVER,
+            ConnPropKey.IDENTITY: server_identity,
+            ConnPropKey.AUTH_IDENTITY: server_identity,
+            ConnPropKey.CONNECTION_SECURITY: root_conn_security,
+        }
+        root_scheme = service.get(ConnPropKey.SCHEME)
+        root_target = service.get("target")
+        if root_scheme and root_target:
+            root_conn_props[ConnPropKey.URL] = make_url(
+                root_scheme, root_target, root_conn_security != ConnectionSecurity.CLEAR
+            )
 
         if hasattr(self.args, "job_id") and self.args.job_id:
             # this is CJ
             sp_scheme = self.args.sp_scheme
             sp_target = self.args.sp_target
             root_url = f"{sp_scheme}://{sp_target}"
-            root_conn_props = {
-                ConnPropKey.FQCN: FQCN.ROOT_SERVER,
-                ConnPropKey.URL: root_url,
-                ConnPropKey.CONNECTION_SECURITY: client.get(ConnPropKey.CONNECTION_SECURITY),
-            }
-            set_scope_property(client_name, ConnPropKey.ROOT_CONN_PROPS, root_conn_props)
+            root_conn_props[ConnPropKey.URL] = root_url
 
             cp_conn_props = {
                 ConnPropKey.FQCN: cp_fqcn,
+                ConnPropKey.IDENTITY: client_name,
+                ConnPropKey.AUTH_IDENTITY: client_auth_identity,
                 ConnPropKey.URL: self.args.parent_url,
                 ConnPropKey.CONNECTION_SECURITY: self.args.parent_conn_sec,
             }
@@ -346,7 +372,10 @@ class FLClientStarterConfiger(JsonConfigurator):
             # this is CP
             cp_conn_props = {
                 ConnPropKey.FQCN: cp_fqcn,
+                ConnPropKey.IDENTITY: client_name,
+                ConnPropKey.AUTH_IDENTITY: client_auth_identity,
             }
+        set_scope_property(client_name, ConnPropKey.ROOT_CONN_PROPS, root_conn_props)
         set_scope_property(client_name, ConnPropKey.CP_CONN_PROPS, cp_conn_props)
 
     def start_config(self, config_ctx: ConfigContext):
@@ -381,6 +410,9 @@ class FLClientStarterConfiger(JsonConfigurator):
         except Exception:
             raise ValueError(f"Client config error: '{self.client_config_file_names}'")
 
+        if self.args.job_id:
+            apply_job_cert_config(self.config_data["client"], self.workspace.get_run_dir(self.args.job_id))
+
     def finalize_config(self, config_ctx: ConfigContext):
         """Finalize the config process.
 
@@ -391,14 +423,23 @@ class FLClientStarterConfiger(JsonConfigurator):
         if self.cmd_vars.get("secure_train"):
             secure_train = self.cmd_vars["secure_train"]
 
+        client_config = self.config_data["client"]
+        # If the user didn't set site_config explicitly under "client", project
+        # it from the merged config (resources.json + fed_client.json) minus
+        # local-only keys, so site operators can advertise custom top-level
+        # vars to the server just by adding them to resources.json.
+        if ClientRegMsgKey.SITE_CONFIG not in client_config:
+            projected_site_config = project_site_config(self.config_data)
+            if projected_site_config:
+                client_config[ClientRegMsgKey.SITE_CONFIG] = projected_site_config
+
         build_ctx = {
             "client_name": self.cmd_vars.get("uid", ""),
             "site_org": self.cmd_vars.get("org", ""),
             "server_config": self.config_data.get("servers", []),
-            "client_config": self.config_data["client"],
+            "client_config": client_config,
             "secure_train": secure_train,
             "server_host": self.cmd_vars.get("host", None),
-            "overseer_agent": self.overseer_agent,
             "client_components": self.components,
             "client_handlers": self.handlers,
         }

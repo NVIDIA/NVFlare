@@ -14,8 +14,16 @@
 
 from enum import Enum
 
+# Server-to-CLI protocol value used in job metadata to signal that a retry-safe
+# submit token conflicts with an existing submission.
+SUBMIT_TOKEN_CONFLICT_STATUS = "submit_token_conflict"
 
-class ReturnCode(object):
+# Server-to-CLI protocol value used when a retry-safe submit token points to a job
+# that was deliberately deleted.
+SUBMIT_TOKEN_JOB_DELETED_STATUS = "submit_token_job_deleted"
+
+
+class ReturnCode:
 
     OK = "OK"
 
@@ -58,7 +66,7 @@ class MachineStatus(Enum):
     STOPPED = "stopped"
 
 
-class ReservedKey(object):
+class ReservedKey:
 
     MANAGER = "__manager__"
     ENGINE = "__engine__"
@@ -89,6 +97,7 @@ class ReservedKey(object):
     EVENT_DATA = "__event_data__"
     EVENT_SCOPE = "__event_scope__"
     RUN_ABORT_SIGNAL = "__run_abort_signal__"
+    RUN_ABORT_REQUESTED = "__run_abort_requested__"
     SHAREABLE = "__shareable__"
     SHARED_FL_CONTEXT = "__shared_fl_context__"
     ARGS = "__args__"
@@ -98,7 +107,6 @@ class ReservedKey(object):
     FROM_RANK_NUMBER = "__from_rank_number__"
     SECURE_MODE = "__secure_mode__"
     SIMULATE_MODE = "__simulate_mode__"
-    SP_END_POINT = "__sp_end_point__"
     JOB_INFO = "__job_info__"
     JOB_META = "__job_meta__"
     CURRENT_JOB_ID = "__current_job_id__"
@@ -113,7 +121,7 @@ class ReservedKey(object):
     TASK_IS_READY = "__task_is_ready__"
 
 
-class FLContextKey(object):
+class FLContextKey:
 
     TASK_NAME = ReservedKey.TASK_NAME
     TASK_DATA = ReservedKey.TASK_DATA
@@ -136,6 +144,7 @@ class FLContextKey(object):
     WORKFLOW = ReservedKey.WORKFLOW
     SHAREABLE = ReservedKey.SHAREABLE
     RUN_ABORT_SIGNAL = ReservedKey.RUN_ABORT_SIGNAL
+    RUN_ABORT_REQUESTED = ReservedKey.RUN_ABORT_REQUESTED
     ARGS = ReservedKey.ARGS
     REPLY = ReservedKey.REPLY
     WORKSPACE_OBJECT = ReservedKey.WORKSPACE_OBJECT
@@ -144,7 +153,6 @@ class FLContextKey(object):
     FROM_RANK_NUMBER = ReservedKey.FROM_RANK_NUMBER
     SECURE_MODE = ReservedKey.SECURE_MODE
     SIMULATE_MODE = ReservedKey.SIMULATE_MODE
-    SP_END_POINT = ReservedKey.SP_END_POINT
     JOB_INFO = ReservedKey.JOB_INFO
     JOB_META = ReservedKey.JOB_META
     CURRENT_JOB_ID = ReservedKey.CURRENT_JOB_ID
@@ -191,6 +199,7 @@ class FLContextKey(object):
     NOT_READY_TO_END_RUN = "not_ready_to_end_run__"  # component sets this to indicate it's not ready to end run yet
     CLIENT_CONFIG = "__client_config__"
     SERVER_CONFIG = "__server_config__"
+    CLIENT_SITE_CONFIG = "__client_site_config__"
     SERVER_HOST_NAME = "__server_host_name__"
     PROCESS_TYPE = ReservedKey.PROCESS_TYPE
     JOB_PROCESS_ARGS = ReservedKey.JOB_PROCESS_ARGS
@@ -209,7 +218,7 @@ class ProcessType:
     CLIENT_JOB = "CJ"
 
 
-class ReservedTopic(object):
+class ReservedTopic:
 
     END_RUN = "__end_run__"
     ABORT_ASK = "__abort_task__"
@@ -223,8 +232,24 @@ class ReservedTopic(object):
     STOP_CELLNET = "__stop_cellnet__"
 
 
-class AdminCommandNames(object):
+JOB_CLONE_DEPRECATION_MESSAGE = (
+    "Job cloning is deprecated. Cloning preserves the original signing certificate and its expiration; it does not "
+    "renew or replace the certificate. Re-export or reuse the original local job folder and submit it with current "
+    "credentials using 'nvflare job submit -j JOB_FOLDER' so the artifact is signed with the current submitter "
+    "certificate."
+)
 
+
+class AdminCommandNames:
+
+    REGISTER_STUDY = "register_study"
+    ADD_STUDY_SITE = "add_study_site"
+    REMOVE_STUDY_SITE = "remove_study_site"
+    REMOVE_STUDY = "remove_study"
+    LIST_STUDIES = "list_studies"
+    SHOW_STUDY = "show_study"
+    ADD_STUDY_USER = "add_study_user"
+    REMOVE_STUDY_USER = "remove_study_user"
     SUBMIT_JOB = "submit_job"
     LIST_JOBS = "list_jobs"
     GET_JOB_META = "get_job_meta"
@@ -242,6 +267,8 @@ class AdminCommandNames(object):
     ABORT = "abort"
     ABORT_TASK = "abort_task"
     REMOVE_CLIENT = "remove_client"
+    DISABLE_CLIENT = "disable_client"
+    ENABLE_CLIENT = "enable_client"
     SHUTDOWN = "shutdown"
     RESTART = "restart"
     SET_TIMEOUT = "set_timeout"
@@ -268,7 +295,7 @@ class AdminCommandNames(object):
     CONFIGURE_SITE_LOG = "configure_site_log"
 
 
-class ServerCommandNames(object):
+class ServerCommandNames:
 
     GET_RUN_INFO = "get_run_info"
     GET_TASK = "get_task"
@@ -286,7 +313,7 @@ class ServerCommandNames(object):
     APP_COMMAND = "app_command"
 
 
-class ServerCommandKey(object):
+class ServerCommandKey:
 
     COMMAND = "command"
     DATA = "data"
@@ -307,22 +334,23 @@ class ServerCommandKey(object):
     MIN_GET_TASK_TIMEOUT = "min_get_task_timeout"
 
 
-class FedEventHeader(object):
+class FedEventHeader:
 
     TIMESTAMP = "_timestamp"
+    EVENT_ID = "_event_id"
     EVENT_TYPE = "_event_type"
     DIRECTION = "_direction"
     ORIGIN = "_origin"
     TARGETS = "_targets"
 
 
-class EventScope(object):
+class EventScope:
 
     FEDERATION = "federation"
     LOCAL = "local"
 
 
-class NonSerializableKeys(object):
+class NonSerializableKeys:
 
     KEYS = [
         ReservedKey.ENGINE,
@@ -336,7 +364,7 @@ class NonSerializableKeys(object):
     ]
 
 
-class LogMessageTag(object):
+class LogMessageTag:
 
     DEBUG = "log/debug"
     ERROR = "log/error"
@@ -347,7 +375,7 @@ class LogMessageTag(object):
     LOG_RECORD = "log_record"
 
 
-class SnapshotKey(object):
+class SnapshotKey:
 
     FL_CONTEXT = "fl_context"
     SERVER_RUNNER = "_Server_Runner"
@@ -357,7 +385,7 @@ class SnapshotKey(object):
     JOB_CLIENTS = "_job_clients"
 
 
-class RunProcessKey(object):
+class RunProcessKey:
     LISTEN_PORT = "_listen_port"
     CONNECTION = "_conn"
     JOB_HANDLE = "_job_launcher"
@@ -369,7 +397,7 @@ class RunProcessKey(object):
     PROCESS_RETURN_CODE = "_process_return_code"
 
 
-class SystemComponents(object):
+class SystemComponents:
 
     JOB_SCHEDULER = "job_scheduler"
     JOB_MANAGER = "job_manager"
@@ -436,6 +464,7 @@ class WorkspaceConstants:
     PRIVACY_CONFIG = "privacy.json"
     SAMPLE_PRIVACY_CONFIG = PRIVACY_CONFIG + ".sample"
     JOB_RESOURCES_CONFIG = "job_resources.json"
+    STUDY_REGISTRY_CONFIG = "study_registry.json"
 
     ADMIN_STARTUP_CONFIG = "fed_admin.json"
 
@@ -450,6 +479,7 @@ class WorkspaceConstants:
 
 class SiteType:
     SERVER = "server"
+    SERVER_PARENT = "server_parent"
     CLIENT = "client"
     ALL = "@ALL"
 
@@ -547,6 +577,12 @@ class ConfigVarName:
     # server: require prior positive job observation before reporting "missing job on client" as dead-job
     SYNC_CLIENT_JOBS_REQUIRE_PREVIOUS_REPORT = "sync_client_jobs_require_previous_report"
 
+    # server: max time to wait for client terminal outcomes after the server process exits
+    CLIENT_OUTCOME_WAIT_TIMEOUT = "client_outcome_wait_timeout"
+
+    # server: validity in days of the per-job certificates issued at job deploy
+    JOB_CERT_VALID_DAYS = "job_cert_valid_days"
+
     # customized nvflare decomposers module name
     DECOMPOSER_MODULE = "nvflare_decomposers"
 
@@ -606,6 +642,9 @@ class RunnerTask:
 
 class ConnPropKey:
     FQCN = "fqcn"
+    IDENTITY = "identity"
+    AUTH_IDENTITY = "auth_identity"
+    AUTH_IDENTITY_MAP = "auth_identity_map"
     URL = "url"
     SCHEME = "scheme"
     ADDRESS = "address"

@@ -25,6 +25,7 @@ then navigate to the hello-tabular-stats directory:
 
 .. code-block:: text
 
+    cd NVFlare
     git switch <release branch>
     cd examples/hello-world/hello-tabular-stats
 
@@ -96,11 +97,11 @@ Data
 In this example, we are using the UCI (University of California, Irvine) `adult dataset <https://archive.ics.uci.edu/dataset/2/adult>`_.
 
 The original dataset already contains "training" and "test" datasets. Here we simply assume that the training and test data sets belong to different clients.
-so we assigned the training data and test data into two clients.
+So, we assign the training data and test data to two clients.
 
 Now we use data utility to download UCI datasets to separate client package directory to /tmp/nvflare/data/ directory
 
-Please note that the UCI's website may experience occasional downtime.
+Please note that the UCI website may experience occasional downtime.
 
 .. code-block:: text
 

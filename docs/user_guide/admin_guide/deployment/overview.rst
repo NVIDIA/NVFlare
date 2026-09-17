@@ -81,9 +81,8 @@ Customize the provision configuration
 For advanced users, you can customize your provision with additional behavior through additional builders:
 
     - **Zip**: To create password protected zip archives for the startup kits, see :ref:`distribution_builder`
-    - **Docker-compose** *(deprecated)*: Previously used for launching NVIDIA FLARE via docker containers. See :ref:`containerized_deployment` for the current approach.
-    - **Docker**: Provision to launch NVIDIA FLARE system via docker containers. If you just want to use docker files, see :ref:`containerized_deployment`.
-    - **Helm**: To change the provisioning tool to generate an NVIDIA FLARE Helm chart for Kubernetes deployment, see :ref:`helm_chart`.
+    - **Docker Compose** *(deprecated)*: Previously used for launching NVIDIA FLARE via docker containers. See :ref:`containerized_deployment` for the current approach.
+    - **Docker and Kubernetes runtime preparation**: Prepare existing server or client startup kits with :ref:`deploy_prepare_command`. For runtime-specific deployment steps, see :ref:`containerized_deployment` and :ref:`helm_chart`.
     - **CUSTOM**: you can build custom builders specific to your needs like in :ref:`distribution_builder`.
 
 Package distribution
@@ -109,7 +108,10 @@ administrator to deploy a website to gather information about the sites and dist
 
 Introduction to NVFLARE Dashboard
 ---------------------------------
-You can install and run :ref:`nvflare_dashboard_ui` using the dashboard CLI command, ``nvflare dashboard –start`` (stop with ``nvflare dashboard –stop``).
+You can install and run :ref:`nvflare_dashboard_ui` using the dashboard CLI command,
+``nvflare dashboard --start -i nvflare/nvflare:2.7.2`` (stop with ``nvflare dashboard --stop``).
+The image name can point to any registry that the runtime can pull from, such as
+``registry.example.com/nvflare/nvflare:2.7.2``.
 
 For details on how to start Dashboard can be found :ref:`here <dashboard_api>`. The usage information for the Dashboard UI can be found :ref:`here <nvflare_dashboard_ui>`.
 
@@ -150,9 +152,12 @@ Similarly deployment approach to Google Cloud will be made available in a future
 
 Kubernetes Deployment
 =====================
-As mentioned above, you can run NVIDIA FLARE in the public cloud.  If you prefer to deploy NVIDIA FLARE in Amazon Elastic Kubernetes Service (EKS),
-you can find the deployment guide in :ref:`aws_eks`.
+Use ``nvflare deploy prepare`` after provisioning to generate per-participant
+Helm charts and K8s launcher configuration. See :ref:`helm_chart` for the
+current Kubernetes deployment workflow.
 
+
+.. _starting_fl_servers:
 
 Starting Federated Learning Servers
 =============================================
@@ -175,6 +180,19 @@ participants in project.yml) specified when generating the startup kits in the p
 correct IP. If the FL server is on an internal network without a DNS hostname, in Ubuntu, an entry may need to be added
 to ``/etc/hosts`` with the internal IP and the hostname.
 
+.. note::
+
+   For PyTorch FedAvg jobs that enable ``enable_tensor_disk_offload=True``, the FL server writes incoming streamed
+   tensors to the server process temporary directory. This directory is resolved by Python ``tempfile`` from
+   ``TMPDIR``, ``TEMP``, ``TMP``, and the OS default, often ``/tmp``. If ``TMPDIR`` is unset, does not exist, or is not
+   writable, Python may silently fall back to another writable temp directory. Configure the server service or shell
+   that starts ``startup/start.sh`` so ``TMPDIR`` points to an existing, writable, disk-backed mount with enough free
+   space for the expected tensor payloads. Avoid RAM-backed temporary filesystems such as ``tmpfs`` or ``ramfs`` for
+   tensor disk offload, because they do not reduce server memory usage. Verify both the resolved temp directory and its
+   backing filesystem as part of server IT setup.
+
+.. _starting_fl_clients:
+
 Starting Federated Learning Clients
 ============================================
 Each site participating in federated learning training is a client. Each package for a client is named after the client
@@ -182,6 +200,15 @@ name specified when provisioning the project.
 
 In the package for each client, run ``start.sh``
 from the "startup" folder to start the client.
+
+.. note::
+
+   For PyTorch Swarm jobs that enable ``enable_tensor_disk_offload=True``, every
+   client that can become an aggregation client needs an existing, writable,
+   disk-backed ``TMPDIR`` with enough free space for incoming tensor payloads.
+   Avoid RAM-backed ``tmpfs`` or ``ramfs`` mounts; they do not reduce process
+   memory pressure. Verify the resolved temporary directory and its backing
+   filesystem before starting ``startup/start.sh``.
 
 .. tip::
 
@@ -244,6 +271,14 @@ you will need to modify the corresponding script.  The same applies to the other
 The email to participate this FL project is embedded in the CN field of client certificate, which uniquely identifies
 the participant. As such, please safeguard its private key, client.key.
 
+Some projects use admin certificate providers. In that case, the admin startup
+kit contains ``admin_cert_provider`` in ``fed_admin.json`` instead of static
+``client.crt`` and ``client.key`` files. The admin client obtains an admin
+certificate and private key from the configured provider when connecting
+to the server, then uses the same certificate login and job-signing flow as a
+static admin kit. The startup kit name can be a generic name such as
+``sso-admin-kit``; the issued certificate contains the real admin identity.
+
 .. attention::
 
    You will need write access in the directory containing the "startup" folder because the "transfer" directory for
@@ -254,14 +289,14 @@ the participant. As such, please safeguard its private key, client.key.
 Working with Docker
 ===================
 Depending on skill set or preference, some data scientists like to work with pip install; where others prefer to use docker.
-For example, assume a docker image with python and nvflare installed, optional python dependency requirements needed for the workload
-you can the provision with docker name, optionally add docker_requirements.txt, which will install the dependencies inside the docker
+For example, assume a Docker image with Python, NVFlare, and optional workload
+dependencies already installed. To run a provisioned server or client startup
+kit in Docker mode, prepare the existing kit with ``nvflare deploy prepare``.
+The prepared kit contains ``startup/start_docker.sh`` and launcher
+configuration for per-job Docker containers.
 
-If the docker name is specified, then add docker builder in provision project.ymal file, the provision
-process will generate docker.sh, which can be used to start each side.
-
-The docker.sh scripts are executable files that provide a convenient way to run NVIDIA FLARE components in containerized
-environments, with proper volume mounts, networking, and security configurations automatically handled by the provisioning system.
+See :ref:`deploy_prepare_command` for Docker runtime preparation and
+:ref:`launcher_spec` for job-level Docker image settings.
 
 .. note::
 
@@ -285,9 +320,9 @@ You can use the following command:
 
 .. code-block::
 
-    nvflare preflight_check
+    nvflare preflight-check -p /path/to/startup_kit
 
-To learn more about `preflight_check`, see :ref:`preflight_check`.
+To learn more about ``nvflare preflight-check``, see :ref:`preflight_check`.
 
 Workload
 ========
@@ -347,10 +382,3 @@ Administrator side folder and file structure
                 config/
                 models/
                 resources/
-
-
-
-
-
-
-

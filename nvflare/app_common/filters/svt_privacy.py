@@ -12,17 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from threading import Lock
 from typing import List, Tuple, Union
 
 import numpy as np
 
 from nvflare.apis.dxo import DXO, DataKind, MetaKey
 from nvflare.apis.dxo_filter import DXOFilter
+from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 
 # Keep temporary SVT arrays bounded for large models.
 _SVT_CHUNK_SIZE = 1_000_000
+_SVT_PRIVACY_BUDGET = "svt_privacy_budget"
+_SVT_PRIVACY_ACCOUNTANT = "svt_privacy_accountant"
 
 
 def _sample_partition_counts(group_counts: List[int], total_to_sample: int, replace: bool) -> List[int]:
@@ -63,23 +67,100 @@ def _sample_partition_counts(group_counts: List[int], total_to_sample: int, repl
     return sampled_counts
 
 
+def _compute_epsilon_split(
+    epsilon: float, n_upload: int, epsilon_threshold: float = None, epsilon_query: float = None
+) -> Tuple[float, float]:
+    if epsilon <= 0:
+        raise ValueError("epsilon must be > 0.")
+    if n_upload <= 0:
+        raise ValueError("n_upload must be > 0.")
+
+    if epsilon_threshold is not None:
+        epsilon_threshold = float(epsilon_threshold)
+        if epsilon_threshold <= 0:
+            raise ValueError("epsilon_threshold must be > 0.")
+
+    if epsilon_query is not None:
+        epsilon_query = float(epsilon_query)
+        if epsilon_query <= 0:
+            raise ValueError("epsilon_query must be > 0.")
+
+    if epsilon_threshold is None and epsilon_query is None:
+        # Standard SVT budget allocation for non-monotonic queries:
+        # epsilon_threshold : epsilon_query = 1 : (2c)^(2/3).
+        query_ratio = float((2.0 * n_upload) ** (2.0 / 3.0))
+        epsilon_threshold = float(epsilon) / (1.0 + query_ratio)
+        epsilon_query = float(epsilon) - epsilon_threshold
+    elif epsilon_threshold is None:
+        epsilon_threshold = float(epsilon) - epsilon_query
+    elif epsilon_query is None:
+        epsilon_query = float(epsilon) - epsilon_threshold
+
+    if epsilon_threshold <= 0 or epsilon_query <= 0:
+        raise ValueError("epsilon_threshold and epsilon_query must both be > 0.")
+
+    if not np.isclose(epsilon_threshold + epsilon_query, float(epsilon)):
+        raise ValueError("epsilon_threshold + epsilon_query must equal epsilon.")
+
+    return epsilon_threshold, epsilon_query
+
+
+def _compute_release_epsilon(n_upload: int, noise_var: float, epsilon_release: float = None) -> float:
+    if n_upload <= 0:
+        raise ValueError("n_upload must be > 0.")
+
+    if epsilon_release is not None:
+        epsilon_release = float(epsilon_release)
+        if epsilon_release <= 0:
+            raise ValueError("epsilon_release must be > 0.")
+        return epsilon_release
+
+    noise_var = float(noise_var)
+    if noise_var <= 0:
+        raise ValueError("noise_var must be > 0 when epsilon_release is not specified.")
+
+    # Preserve the previous release noise scale:
+    # scale = 2 * gamma / noise_var = (2 * gamma * c) / (c * noise_var)
+    # which corresponds to a total release budget epsilon_release = c * noise_var.
+    return float(n_upload) * noise_var
+
+
 class SVTPrivacy(DXOFilter):
     def __init__(
-        self, fraction=0.1, epsilon=0.1, noise_var=0.1, gamma=1e-5, tau=1e-6, data_kinds: [str] = None, replace=True
+        self,
+        fraction=0.1,
+        epsilon=0.1,
+        noise_var=0.1,
+        gamma=1e-5,
+        tau=1e-6,
+        data_kinds: [str] = None,
+        replace=True,
+        epsilon_threshold: float = None,
+        epsilon_query: float = None,
+        epsilon_release: float = None,
     ):
         """Implementation of the standard Sparse Vector Technique (SVT) differential privacy algorithm.
 
-        lambda_rho = gamma * 2.0 / epsilon
+        lambda_rho = gamma / epsilon_threshold
         threshold = tau + np.random.laplace(scale=lambda_rho)
 
         Args:
             fraction (float, optional): used to determine dataset threshold. Defaults to 0.1.
-            epsilon (float, optional): Defaults to 0.1.
-            noise_var (float, optional): additive noise. Defaults to 0.1.
+            epsilon (float, optional): total privacy budget used for the threshold/query selection phase.
+                Defaults to 0.1.
+            noise_var (float, optional): legacy release-noise control retained for backward compatibility.
+                When epsilon_release is not specified, this implies a total release budget of
+                ``n_upload * noise_var`` and preserves the previous release noise scale. Defaults to 0.1.
             gamma (float, optional): Defaults to 1e-5.
             tau (float, optional): Defaults to 1e-6.
             data_kinds (str, optional): Defaults to None.
             replace (bool): whether to sample with replacement. Defaults to True.
+            epsilon_threshold (float, optional): privacy budget used for threshold noise. When omitted,
+                the standard SVT non-monotonic split is used.
+            epsilon_query (float, optional): privacy budget used for query noise. When omitted,
+                the remainder of epsilon is assigned after applying the selected split.
+            epsilon_release (float, optional): total privacy budget used for the release-noise phase.
+                When omitted, the budget is derived from noise_var to preserve existing behavior.
         """
         if not data_kinds:
             data_kinds = [DataKind.WEIGHT_DIFF, DataKind.WEIGHTS]
@@ -88,11 +169,91 @@ class SVTPrivacy(DXOFilter):
 
         self.fraction = fraction  # fraction of the model to upload
         self.epsilon = epsilon
-        self.eps_2 = None  # to be derived from eps_1
         self.noise_var = noise_var
         self.gamma = gamma
         self.tau = tau
         self.replace = replace
+        self.epsilon_threshold = epsilon_threshold
+        self.epsilon_query = epsilon_query
+        self.epsilon_release = epsilon_release
+        self._accountant_lock = Lock()
+        self._reset_accountant()
+
+    def _reset_accountant(self):
+        with self._accountant_lock:
+            self._privacy_spent = 0.0
+            self._privacy_ledger = []
+
+    def get_privacy_spent(self) -> float:
+        with self._accountant_lock:
+            return self._privacy_spent
+
+    def get_privacy_ledger(self) -> List[dict]:
+        with self._accountant_lock:
+            return list(self._privacy_ledger)
+
+    def handle_event(self, event_type: str, fl_ctx: FLContext):
+        super().handle_event(event_type, fl_ctx)
+        if event_type == EventType.START_RUN:
+            self._reset_accountant()
+
+    def _record_privacy_accounting(
+        self,
+        dxo: DXO,
+        shareable: Shareable,
+        has_scalar_passthrough: bool,
+        n_upload: int,
+        acceptance_passes: int,
+        epsilon_threshold: float,
+        epsilon_query: float,
+        epsilon_release: float,
+        fl_ctx: FLContext,
+    ):
+        current_round = shareable.get_header(MetaKey.CURRENT_ROUND, dxo.get_meta_prop(MetaKey.CURRENT_ROUND, None))
+        epsilon_total = epsilon_threshold + epsilon_query + epsilon_release
+
+        per_call = {
+            "accountant": "pure_dp_sum",
+            "scope": "filter-level",
+            "delta": 0.0,
+            "round": current_round,
+            "epsilon_total": epsilon_total,
+            "epsilon_threshold": epsilon_threshold,
+            "epsilon_query": epsilon_query,
+            "epsilon_release": epsilon_release,
+            "n_upload": n_upload,
+            "acceptance_passes": acceptance_passes,
+            "has_scalar_passthrough": has_scalar_passthrough,
+        }
+        if has_scalar_passthrough:
+            per_call["note"] = "scalar passthrough is not noise-protected by the SVT accountant."
+
+        with self._accountant_lock:
+            self._privacy_spent += epsilon_total
+            self._privacy_ledger.append(dict(per_call))
+            cumulative_epsilon = self._privacy_spent
+            cumulative_calls = len(self._privacy_ledger)
+
+        cumulative = {
+            "accountant": "pure_dp_sum",
+            "scope": "filter-level",
+            "delta": 0.0,
+            "epsilon_total": cumulative_epsilon,
+            "calls": cumulative_calls,
+        }
+        if current_round is not None:
+            cumulative["latest_round"] = current_round
+        if has_scalar_passthrough:
+            cumulative["note"] = "scalar passthrough is not included in the SVT accountant guarantee."
+
+        dxo.set_meta_prop(_SVT_PRIVACY_BUDGET, per_call)
+        dxo.set_meta_prop(_SVT_PRIVACY_ACCOUNTANT, cumulative)
+
+        self.log_info(
+            fl_ctx,
+            "SVT privacy accountant: call epsilon %.6g, cumulative epsilon %.6g (delta=0, pure composition)."
+            % (epsilon_total, cumulative_epsilon),
+        )
 
     def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> Union[None, DXO]:
         """Compute the differentially private SVT.
@@ -112,10 +273,12 @@ class SVTPrivacy(DXOFilter):
         total_params = 0
         max_abs = 0.0
         min_abs = None
+        has_scalar_passthrough = False
 
         for name in sorted(model_diff):
             value = np.asarray(model_diff[name])
             is_scalar = np.ndim(value) == 0
+            has_scalar_passthrough = has_scalar_passthrough or is_scalar
             flat_value = value.reshape(-1)
             total_params += flat_value.size
             param_items.append((name, value, is_scalar))
@@ -142,19 +305,34 @@ class SVTPrivacy(DXOFilter):
             dxo.data = dp_w
             return dxo
 
+        epsilon_threshold, epsilon_query = _compute_epsilon_split(
+            self.epsilon,
+            n_upload,
+            epsilon_threshold=self.epsilon_threshold,
+            epsilon_query=self.epsilon_query,
+        )
+        epsilon_release = _compute_release_epsilon(
+            n_upload,
+            self.noise_var,
+            epsilon_release=self.epsilon_release,
+        )
+
         # eps_1: threshold with noise
-        lambda_rho = self.gamma * 2.0 / self.epsilon
+        lambda_rho = self.gamma / epsilon_threshold
         threshold = self.tau + np.random.laplace(scale=lambda_rho)
         # eps_2: query with noise
-        self.eps_2 = self.epsilon * (2.0 * n_upload) ** (2.0 / 3.0)
-        lambda_nu = self.gamma * 4.0 * n_upload / self.eps_2
+        lambda_nu = self.gamma * 2.0 * n_upload / epsilon_query
+        noise_scale = self.gamma * 2.0 * n_upload / epsilon_release
         self.logger.info(
             "total params: %s, epsilon: %s, "
-            "perparam budget %s, threshold tau: %s + f(eps_1) = %s, "
+            "threshold epsilon: %s, query epsilon: %s, release epsilon: %s, "
+            "threshold tau: %s + f(eps_1) = %s, "
             "clip gamma: %s",
             total_params,
             self.epsilon,
-            self.epsilon / n_upload,
+            epsilon_threshold,
+            epsilon_query,
+            epsilon_release,
             self.tau,
             threshold,
             self.gamma,
@@ -163,8 +341,12 @@ class SVTPrivacy(DXOFilter):
         accepted_masks = [np.zeros(value.size, dtype=np.bool_) for _, value, _ in param_items]
         accepted_counts = [0] * len(param_items)
         total_accepted = 0
+        acceptance_passes = 0
 
         while total_accepted < n_upload:
+            acceptance_passes += 1
+            accepted_before_pass = total_accepted
+
             for idx, (_, value, _) in enumerate(param_items):
                 flat_value = value.reshape(-1)
                 accepted_mask = accepted_masks[idx]
@@ -191,11 +373,25 @@ class SVTPrivacy(DXOFilter):
                     accepted_counts[idx] += n_new
                     total_accepted += n_new
 
-            self.log_debug(fl_ctx, "selected {} responses, requested {}".format(total_accepted, n_upload))
+            self.log_debug(
+                fl_ctx,
+                "SVT acceptance pass {}: +{} responses (total {}/{})".format(
+                    acceptance_passes,
+                    total_accepted - accepted_before_pass,
+                    total_accepted,
+                    n_upload,
+                ),
+            )
+
+        self.log_info(
+            fl_ctx,
+            "SVT acceptance completed in {} passes to reach {}/{} accepted responses.".format(
+                acceptance_passes, total_accepted, n_upload
+            ),
+        )
 
         selected_counts = _sample_partition_counts(accepted_counts, n_upload, self.replace)
 
-        noise_scale = self.gamma * 2.0 / self.noise_var
         noise_max = 0.0
         noise_medians = []
         dp_w = {}
@@ -251,9 +447,8 @@ class SVTPrivacy(DXOFilter):
 
                     chunk = flat_value[start:end]
                     selected_values = chunk[selected_idx].astype(np.float64, copy=False) / total_steps
-                    selected_values = (
-                        np.clip(selected_values + noise, a_min=-self.gamma, a_max=self.gamma) * total_steps
-                    )
+                    selected_values = np.clip(selected_values, a_min=-self.gamma, a_max=self.gamma)
+                    selected_values = (selected_values + noise) * total_steps
                     output_flat[start:end][selected_idx] = selected_values
 
                 remaining_accepted -= chunk_accepted
@@ -263,4 +458,15 @@ class SVTPrivacy(DXOFilter):
         self.log_info(fl_ctx, "noise max: {}, median approx {}".format(noise_max, median_noise))
 
         dxo.data = dp_w
+        self._record_privacy_accounting(
+            dxo,
+            shareable,
+            has_scalar_passthrough,
+            n_upload,
+            acceptance_passes,
+            epsilon_threshold,
+            epsilon_query,
+            epsilon_release,
+            fl_ctx,
+        )
         return dxo

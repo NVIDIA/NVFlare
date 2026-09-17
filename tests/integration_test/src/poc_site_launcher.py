@@ -43,12 +43,6 @@ class POCSiteLauncher(SiteLauncher):
         self.n_servers = n_servers
         self.n_clients = n_clients
 
-    def start_overseer(self):
-        raise RuntimeError("POC mode does not have overseer.")
-
-    def stop_overseer(self):
-        pass
-
     def prepare_workspace(self) -> str:
         update_job_store_path_in_workspace(self.poc_dir, "server")
         update_snapshot_path_in_workspace(self.poc_dir, "server")

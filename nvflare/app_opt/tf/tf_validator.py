@@ -55,31 +55,18 @@ class TFValidator(Executor):
         **Default recommendation**: Use Client API pattern (like PyTorch) for consistency and simplicity.
         TFValidator is provided for flexibility and backward compatibility with NumPy-style workflows.
 
-        Example (Component-based with TFValidator):
+        Example (Component-based with the lower-level Job API):
             ```python
-            from nvflare.app_opt.tf.recipes import FedAvgRecipe
             from nvflare.app_opt.tf.tf_validator import TFValidator
-            from nvflare.recipe.utils import add_cross_site_evaluation
+            from nvflare.job_config.api import FedJob
 
-            # Create recipe
-            recipe = FedAvgRecipe(
-                name="my-job",
-                min_clients=2,
-                num_rounds=3,
-                model=my_model,
-                train_script="client.py"
-            )
-
-            # Add CSE
-            add_cross_site_evaluation(recipe)
-
-            # Manually add TFValidator if you prefer component-based validation
+            job = FedJob(name="my-job", min_clients=2)
             validator = TFValidator(
                 model=my_model,
                 data_loader=test_loader,
                 metric_fn=lambda model, loader: {"accuracy": model.evaluate(loader)[1]}
             )
-            recipe.job.to_clients(validator, tasks=["validate"])
+            job.to_clients(validator, tasks=["validate"])
             ```
 
         Example (Client API pattern - recommended):

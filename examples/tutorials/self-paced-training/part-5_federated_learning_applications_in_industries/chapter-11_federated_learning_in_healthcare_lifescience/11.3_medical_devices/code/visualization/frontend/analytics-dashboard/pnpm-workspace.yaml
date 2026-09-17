@@ -1,0 +1,7 @@
+packages:
+  - "."
+
+overrides:
+  "minimatch@>=3.0.0 <3.1.3": 3.1.3
+  "minimatch@>=9.0.0 <9.0.7": 9.0.7
+  "next@15.5.15>sharp": "-"

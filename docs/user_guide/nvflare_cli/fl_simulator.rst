@@ -1,3 +1,7 @@
+.. deprecated:: 2.8
+   Use ``nvflare.recipe.SimEnv`` from Python instead. See :ref:`recipe_command`
+   and the SimEnv examples under ``examples/advanced``.
+
 .. _fl_simulator:
 
 #########################
@@ -11,10 +15,11 @@ The FL Simulator is a lightweight simulator of a running NVFLARE FL deployment,
 and it can allow researchers to test and debug their application without
 provisioning a real project.
 
-The FL jobs run on a server and
-multiple clients in the same process but in a similar way to how it would run
-in a real deployment so researchers can more quickly build out new components
-and jobs that can then be directly used in a real production deployment.
+The FL jobs run on a local simulator-managed server and simulated clients,
+without provisioning a real project or starting long-running server/client
+daemons. Use the simulator for single-machine development, tests, and
+batch-scheduled experiments where one Python command should start, run, and
+exit. Use POC or production modes for the provisioned deployment model.
 
 ***********************
 Command Usage
@@ -40,7 +45,7 @@ Command Usage
                                 number of parallel running clients
         -gpu GPU, --gpu GPU   list of GPU Device Ids, comma separated
         -l LOG_CONFIG, --log_config LOG_CONFIG
-                                log config mode ('concise', 'full', 'verbose'), filepath, or level
+                                log config mode ('concise', 'progress', 'msg_only', 'full', 'verbose'), filepath, or level
         -m MAX_CLIENTS, --max_clients MAX_CLIENTS
                                 max number of clients
         --end_run_for_all     flag to indicate if running END_RUN event for all clients
@@ -758,7 +763,7 @@ Run an NVFlare job
 This command will run the job following the meta.json in the job. The executing client list can be provided in the command line with the ``-c`` option
 ("client0,client1,client2,client3"). If there is any client not defined in the deploy_map of the meta.json, the simulator will report an error and not run.
 
-.. code-block:: python
+.. code-block:: shell
 
     nvflare simulator NVFlare/examples/hello-world/hello-numpy -w /tmp/nvflare/workspace_folder/ -c client0,client1,client2,client3 -t 1
 
@@ -773,7 +778,7 @@ Run a job with no client name list
 If there is no client name list provided and no number of clients (-n) option provided, the simulator extracts the list of client names from the deployment_map
 in meta.json to run.
 
-.. code-block:: python
+.. code-block:: shell
 
     nvflare simulator NVFlare/examples/hello-world/hello-numpy -w /tmp/nvflare/workspace_folder/ -t 1
 
@@ -794,9 +799,11 @@ application run.
 .. code-block:: python
 
     import argparse
+    import os
     import sys
     from sys import platform
 
+    from nvflare.fuel.utils.log_utils import FL_LOG_LEVEL, LogMode
     from nvflare.private.fed.app.simulator.simulator_runner import SimulatorRunner
 
 
@@ -807,11 +814,20 @@ application run.
         simulator_parser.add_argument("-c", "--clients", type=str, help="client names list")
         simulator_parser.add_argument("-t", "--threads", type=int, help="number of parallel running clients")
         simulator_parser.add_argument("-gpu", "--gpu", type=str, help="list of GPU Device Ids, comma separated")
-        simulator_parser.add_argument("-l", "--log_config", type=str, default="full", help="log config mode ('concise', 'full', 'verbose'), filepath, or level")
+        simulator_parser.add_argument(
+            "-l",
+            "--log_config",
+            type=str,
+            default=None,
+            help="log config mode ('concise', 'progress', 'msg_only', 'full', 'verbose'), filepath, or level",
+        )
         simulator_parser.add_argument("-m", "--max_clients", type=int, default=100, help="max number of clients")
 
 
     def run_simulator(simulator_args):
+        log_config = simulator_args.log_config
+        if log_config is None:
+            log_config = os.environ.get(FL_LOG_LEVEL, LogMode.CONCISE)
         simulator = SimulatorRunner(
             job_folder=simulator_args.job_folder,
             workspace=simulator_args.workspace,
@@ -819,7 +835,7 @@ application run.
             n_clients=simulator_args.n_clients,
             threads=simulator_args.threads,
             gpu=simulator_args.gpu,
-            log_config=simulator_args.log_config,
+            log_config=log_config,
             max_clients=simulator_args.max_clients,
         )
         run_status = simulator.run()
@@ -846,60 +862,69 @@ application run.
 Processes, Clients, and Events
 ******************************
 
-Specifying number of processes
-==============================
-The simulator ``-t`` option provides the ability to specify how many processes to run the simulator with.
+Specifying Client Worker Processes
+==================================
+The simulator ``-t`` option provides the ability to specify how many simulated
+client worker processes can run concurrently.
 
 .. note::
 
-    The ``-t`` and ``--threads`` option for simulator was originally due to clients running in separate threads.
-    However each client now actually runs in a separate process. This distinction will not affect the user experience.
+    The ``-t`` and ``--threads`` option name is historical. Simulated client
+    execution now uses separate worker processes, and the option controls worker
+    process concurrency.
 
 - N = number of clients (``-n``)
-- T = number of processes (``-t``)
+- T = number of concurrent client worker processes (``-t``)
 
-When running the simulator with fewer processes than clients (T < N)
-the simulator will need to swap-in/out the clients for the processes, resulting in some of the clients running sequentially as processes are available.
-This also will cause the ClientRunner/learner objects to go through setup and teardown in every round.
-Using T < N is only needed when trying to simulate of large number of clients using a single machine with limited resources.
+When running the simulator with fewer worker processes than clients (T < N),
+the simulator swaps clients in and out as worker processes become available.
+This also causes the ClientRunner/learner objects to go through setup and
+teardown in every round. Using T < N is only needed when simulating many clients
+on a single machine with limited resources.
 
-In most cases, run the simulator with the same number of processes as clients (T = N). The simulator will run the number of clients in separate processes at the same time. Each
-client will always be running in memory with no swap-in/out, but it will require more resources available.
+In most cases, run the simulator with the same number of worker processes as
+clients (T = N). Each client stays in memory with no swap-in/out, but this
+requires more available resources.
 
 For the dataset / tensorboard initialization, you could make use of EventType.SWAP_IN and EventType.SWAP_OUT
 in the application.
 
 SWAP_IN and SWAP_OUT events
 ===========================
-During FLARE simulator execution, the client Apps are executed in turn in the same execution thread. Each executing client App will go
-fetch the task from the controller on the server, execute the task, and then submit the task results to the controller. Once finished submitting
-results, the current client App will yield the executing thread to the next client App to execute.
+During FLARE simulator execution, simulated client Apps fetch tasks from the
+controller, execute the tasks, and submit results back to the controller. When
+T < N, multiple simulated clients share a smaller pool of worker processes and
+may be swapped in and out as worker processes become available.
 
-If the client App needs to preserve some states for the next "execution turn" to continue, the client executor can make use of the ``SWAP_OUT``
-event fired by the simulator engine to save the current states. When the client App gets the turn to execute again, use the ``SWAP_IN``
-event to recover the previous saved states.
+If the client App needs to preserve state for the next execution turn, the
+client executor can use the ``SWAP_OUT`` event fired by the simulator engine to
+save the current state. When the client App gets another turn to execute, use
+the ``SWAP_IN`` event to recover the previous saved state.
 
 Multi-GPU and Separate Client Process with Simulator
 ====================================================
-The simulator runs within the same process, and it will make use of a single GPU if it is detected with ``nvidia-smi``.
-If there are multiple GPUs available and you want to make use of them all for the simulator run, you can use the
-``-gpu`` option for this. The ``-gpu`` option provides the list of GPUs for the simulator to run on. The
-clients list will be distributed among the GPUs.
+The simulator uses separate client worker processes and assigns GPUs to those
+workers. If there are multiple GPUs available and you want to make use of them
+all for the simulator run, you can use the ``-gpu`` option for this. The
+``-gpu`` option provides the list of GPUs for the simulator to run on. The
+clients list will be distributed among the GPU groups.
 
 For example:
 
-.. code-block::shell
+.. code-block:: shell
 
     -c  c1,c2,c3,c4,c5 -gpu 0,1
 
-The clients c1, c3, and c5 will run on GPU 0 in one process, and clients c2 and c4 will run on GPU 1 in another process.
+The clients c1, c3, and c5 will be assigned to GPU 0, and clients c2 and c4
+will be assigned to GPU 1.
 
-The GPU numbers do not have to be unique. If you use ``-gpu 0,0``, this will run 2 separate client processes on GPU 0, assuming this GPU will have
-enough memory to support the applications.
+The GPU numbers do not have to be unique. If you use ``-gpu 0,0``, this will
+create two client worker slots assigned to GPU 0, assuming this GPU has enough
+memory to support the applications.
 
 .. note::
 
-    If you have invalid GPU IDs assigned and ``nvidia-smi`` is available, the simuilation will be aborted. Otherwise if ``nvidia-smi`` is not available,
+    If you have invalid GPU IDs assigned and ``nvidia-smi`` is available, the simulation will be aborted. Otherwise if ``nvidia-smi`` is not available,
     the simulation will run on CPU.
 
 To change the MAX_CLIENTS

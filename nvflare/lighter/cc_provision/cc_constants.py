@@ -20,6 +20,7 @@ class CCConfigKey:
     CC_ISSUERS = "cc_issuers"
     CC_ATTESTATION_CONFIG = "cc_attestation"
     CVM_IMAGE_NAME = "cvm_image_name"
+    CLASS_ALLOW_LIST = "class_allow_list"
 
 
 class CCConfigValue:

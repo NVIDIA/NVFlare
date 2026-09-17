@@ -43,7 +43,7 @@ Secret at `/var/tmp/nvflare/workspace/startup`.
 | `local/` | Included in the per-job workspace bundle | Bundled whole so local config, resources, and custom code remain available |
 | `<job_id>/` | Included in the per-job workspace bundle | Private runnable job state for exactly one job |
 
-The job pod still mounts the study-data PVC separately at `/var/tmp/nvflare/data`.
+The job pod still mounts study-data PVCs separately at `/data/<study>/<dataset>` when `study_data.yaml` contains dataset mappings for the job study.
 The shared workspace PVC is not mounted into the job pod.
 
 ## Kubernetes Resources
@@ -52,12 +52,17 @@ For each launched job pod, the launcher creates a pod manifest with:
 
 - an `emptyDir` mounted at `/var/tmp/nvflare/workspace`
 - a read-only Secret mount at `/var/tmp/nvflare/workspace/startup`
-- the study-data PVC mounted read-only at `/var/tmp/nvflare/data`
+- optional study-data PVC mounts at `/data/<study>/<dataset>`
 
 The launcher also creates or updates a startup Secret for the participant site.
-That Secret contains the startup-kit files needed by the launched process, such
-as certificates, keys, and JSON config files, and those files appear in the
-pod under `/var/tmp/nvflare/workspace/startup` via the Secret mount.
+That Secret contains the startup-kit files needed by the launched process —
+certificates, `rootCA.pem`, and JSON config files — and those files appear in
+the pod under `/var/tmp/nvflare/workspace/startup` via the Secret mount. Site
+private keys (`*.key`) are never included: the job's own certificate and key
+travel in the per-job credential Secret (`NVFLARE_JOB_CERT` /
+`NVFLARE_JOB_KEY`) and the job process writes them into its run directory
+before creating the bootstrap cell. In secure mode the launcher refuses to
+start a job that has no credential (see `per_job_certs_design.md`).
 
 ## Transfer Architecture
 
@@ -101,7 +106,7 @@ When the Kubernetes launcher starts a job, it performs these steps:
 5. Launch the job pod with:
    - `emptyDir` workspace
    - read-only startup Secret mount
-   - read-only study-data PVC mount
+   - optional read-only study-data PVC mount
    - `NVFL_WORKSPACE_OWNER_FQCN` in the environment
    - `NVFL_WORKSPACE_TRANSFER_TOKEN` in the environment
 
@@ -118,7 +123,8 @@ The download sequence is:
    `NVFL_WORKSPACE_TRANSFER_TOKEN`.
 2. It creates a short-lived bootstrap child cell using the startup kit and the
    existing parent connection settings. The bootstrap FQCN is
-   `<owner_fqcn>.ws_transfer_<job_id>`. When the child process is a client
+   `<owner_fqcn>.ws_transfer_<job_id>`, one of the cells the job credential lists
+   as its own, so the certificate is accepted there. When the child process is a client
    worker, the bootstrap cell reuses that worker's `client_name`, auth token,
    token signature, and `ssid`. When the child process is a server runner, the
    bootstrap cell uses the same server-job auth identity as the main runner.
@@ -159,8 +165,11 @@ The upload sequence is:
 7. The parent extracts the uploaded results back into the parent workspace and
    removes the per-job transfer state.
 
-Upload is performed from the process shutdown path. If upload fails, the worker
-or runner logs a warning with the failure details.
+Upload is performed from the process shutdown path. When a workspace owner is
+configured, successful upload is required for successful child completion. An
+upload failure makes an otherwise successful child fail; if another error is
+already being handled, that primary error is preserved and the upload failure
+is logged as a secondary error.
 
 ## Security Model
 
@@ -200,8 +209,9 @@ artifacts.
 The key protections are:
 
 - `startup/` is mounted read-only from a Kubernetes Secret
-- secure mode bootstrap cells use `rootCA.pem` plus the available startup cert
-  and key pair
+- secure mode bootstrap cells use `rootCA.pem` plus the job credential the
+  launcher delivered; there is no fallback to the site key
+- workspace bundles and result uploads never include `job_cert/`
 - the launcher passes the parent listener's connection-security setting into
   the child process args, and the bootstrap cell installs its CellNet auth
   headers before `cell.start()` so the parent accepts the initial registration

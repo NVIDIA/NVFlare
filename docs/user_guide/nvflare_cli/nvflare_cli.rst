@@ -31,12 +31,16 @@ Command groups
 - ``poc``: manage a local proof-of-concept deployment
 - ``provision``: centralized provisioning workflow
 - ``cert`` / ``package``: distributed (manual) provisioning workflow
+- ``deploy``: prepare existing server or client startup kits for deployment
+  runtimes such as Docker or Kubernetes
 - ``job``: submit and manage jobs
+- ``study``: manage multi-study lifecycle (register, enroll sites, manage users)
 - ``system``: inspect and operate a running FL system
-- ``config``: store local CLI settings such as the startup kit path
+- ``config``: manage local CLI settings, including startup-kit registration
+  and active-kit selection
 - ``recipe``: list built-in recipe families for exported jobs
-- ``preflight_check`` / ``preflight``: validate a provisioned startup kit
-  before deployment (``preflight`` is the preferred alias)
+- ``preflight-check``: validate a provisioned startup kit before deployment
+  (``preflight_check`` and ``preflight`` remain compatibility aliases)
 - ``dashboard``: start the Dashboard service
 
 Deprecated commands still exposed in help, such as ``simulator`` and
@@ -48,11 +52,13 @@ workflows unless you are maintaining an older setup.
 
    fl_simulator
    poc_command
+   config_command
    provision_command
    distributed_provisioning
+   deploy_command
    job_cli
+   study_command
    system_command
-   config_command
    cert_command
    package_command
    recipe_command

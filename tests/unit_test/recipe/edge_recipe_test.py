@@ -15,9 +15,12 @@
 """Tests for Edge FedBuff recipes."""
 
 import importlib.util
+import json
 from unittest.mock import patch
 
 import pytest
+
+from nvflare.recipe.spec import ExecEnv
 
 torch = pytest.importorskip("torch")
 
@@ -41,6 +44,92 @@ def simple_pt_model():
     import torch.nn as nn
 
     return nn.Linear(10, 2)
+
+
+def _iter_component_configs(value):
+    if isinstance(value, dict):
+        if "path" in value or "class_path" in value:
+            yield value
+            return
+        for child in value.values():
+            yield from _iter_component_configs(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from _iter_component_configs(child)
+
+
+class _AllowListWorkspace:
+    def __init__(self, resources_path):
+        self.resources_path = resources_path
+
+    def get_resources_file_path(self):
+        return str(self.resources_path)
+
+
+class _AuthorizingExportEnv(ExecEnv):
+    def __init__(self, job_root):
+        super().__init__()
+        self.job_root = job_root
+        self.authorized_paths = []
+        self.meta = {}
+
+    def deploy(self, job):
+        from nvflare.apis.app_validation import AppValidationKey
+        from nvflare.apis.fl_constant import FLContextKey
+        from nvflare.apis.fl_context import FLContext
+        from nvflare.app_common.widgets.component_path_authorizer import ComponentPathAuthorizer
+        from nvflare.fuel.utils.zip_utils import zip_directory_to_bytes
+        from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
+
+        job.export_job(str(self.job_root))
+        job_dir = self.job_root / job.name
+        job_data = zip_directory_to_bytes("", str(job_dir))
+        valid, error, meta = JobMetaValidator().validate(job.name, job_data)
+        assert valid, error
+        assert AppValidationKey.BYOC not in meta
+        self.meta = meta
+
+        resources_path = self.job_root / "resources.json"
+        resources_path.write_text(json.dumps({"class_allow_list": ["nvflare.", "torch."]}))
+
+        fl_ctx = FLContext()
+        fl_ctx.set_prop(FLContextKey.JOB_META, meta, private=True, sticky=False)
+        fl_ctx.set_prop(
+            FLContextKey.WORKSPACE_OBJECT,
+            _AllowListWorkspace(resources_path),
+            private=True,
+            sticky=False,
+        )
+        authorizer = ComponentPathAuthorizer()
+        for config_path in sorted(job_dir.glob("*/config/config_fed_*.json")):
+            config = json.loads(config_path.read_text())
+            for component_config in _iter_component_configs(config):
+                authorizer.authorize_component_config(component_config, fl_ctx=fl_ctx)
+                self.authorized_paths.append(component_config.get("path") or component_config.get("class_path"))
+
+        return job.name
+
+    def get_job_status(self, job_id: str):
+        return None
+
+    def abort_job(self, job_id: str) -> None:
+        pass
+
+    def get_job_result(self, job_id: str, timeout: float = 0.0):
+        return str(self.job_root / job_id)
+
+
+def test_iter_component_configs_does_not_recurse_into_component_args():
+    component = {
+        "id": "edge_executor",
+        "path": "nvflare.edge.executors.edge_model_executor.EdgeModelExecutor",
+        "args": {
+            "path": "/tmp/local/data",
+            "nested": {"class_path": "not.a.component"},
+        },
+    }
+
+    assert list(_iter_component_configs({"components": [component]})) == [component]
 
 
 class TestEdgeFedBuffRecipe:
@@ -76,7 +165,7 @@ class TestEdgeFedBuffRecipe:
             device_manager_config=device_manager_config,
         )
 
-        assert recipe.job is not None
+        assert recipe._job is not None
 
     def test_initial_ckpt_accepted(
         self, mock_file_system, simple_pt_model, model_manager_config, device_manager_config
@@ -92,7 +181,7 @@ class TestEdgeFedBuffRecipe:
             initial_ckpt="/abs/path/to/model.pt",
         )
 
-        assert recipe.job is not None
+        assert recipe._job is not None
         assert recipe.initial_ckpt == "/abs/path/to/model.pt"
 
     def test_dict_model_config_accepted(self, mock_file_system, model_manager_config, device_manager_config):
@@ -106,7 +195,7 @@ class TestEdgeFedBuffRecipe:
             device_manager_config=device_manager_config,
         )
 
-        assert recipe.job is not None
+        assert recipe._job is not None
 
     def test_dict_model_config_with_evaluator(self, mock_file_system, model_manager_config, device_manager_config):
         """Test that dict model config works with evaluator_config.
@@ -127,10 +216,29 @@ class TestEdgeFedBuffRecipe:
             evaluator_config=evaluator_config,
         )
 
-        assert recipe.job is not None
+        assert recipe._job is not None
         # Verify model is stored as dict
         assert isinstance(recipe.model, dict)
         assert recipe.model["path"] == "torch.nn.Linear"
+
+    def test_run_validates_edge_job_allow_list_before_component_authorization(
+        self, tmp_path, model_manager_config, device_manager_config
+    ):
+        """Exported edge jobs without custom content must use allow-list component authorization."""
+        from nvflare.edge.tools.edge_fed_buff_recipe import EdgeFedBuffRecipe
+
+        recipe = EdgeFedBuffRecipe(
+            job_name="test_edge_authorizer_smoke",
+            model={"class_path": "torch.nn.Linear", "args": {"in_features": 10, "out_features": 2}},
+            model_manager_config=model_manager_config,
+            device_manager_config=device_manager_config,
+        )
+        env = _AuthorizingExportEnv(tmp_path)
+
+        run = recipe.run(env)
+
+        assert run.get_job_id() == "test_edge_authorizer_smoke"
+        assert any(path.startswith("nvflare.edge.") for path in env.authorized_paths)
 
     def test_relative_path_accepted_if_exists(
         self, mock_file_system, simple_pt_model, model_manager_config, device_manager_config
@@ -159,6 +267,31 @@ class TestEdgeFedBuffRecipe:
                 return comp
         raise AssertionError("ModelUpdateAssessor not found in server components")
 
+    def _find_metrics_writer(self, job):
+        """Find the MetricsArtifactWriter component in the job's server config."""
+        from nvflare.app_common.widgets.metrics_artifact_writer import MetricsArtifactWriter
+
+        server_app = job._deploy_map.get("server")
+        assert server_app is not None, "No server app found in job"
+        metrics_writer = server_app.app_config.components.get("metrics_artifact_writer")
+        assert isinstance(metrics_writer, MetricsArtifactWriter)
+        return metrics_writer
+
+    def test_metrics_artifact_writer_is_configured(
+        self, mock_file_system, simple_pt_model, model_manager_config, device_manager_config
+    ):
+        """Test that EdgeFedBuffRecipe configures the server-side metrics artifact writer."""
+        from nvflare.edge.tools.edge_fed_buff_recipe import EdgeFedBuffRecipe
+
+        recipe = EdgeFedBuffRecipe(
+            job_name="test_metrics_writer",
+            model=simple_pt_model,
+            model_manager_config=model_manager_config,
+            device_manager_config=device_manager_config,
+        )
+
+        self._find_metrics_writer(recipe._job)
+
     def test_device_wait_timeout_default_is_none(
         self, mock_file_system, simple_pt_model, model_manager_config, device_manager_config
     ):
@@ -173,7 +306,7 @@ class TestEdgeFedBuffRecipe:
         )
 
         assert recipe.device_wait_timeout is None
-        assessor = self._find_assessor(recipe.job)
+        assessor = self._find_assessor(recipe._job)
         assert assessor.device_wait_timeout is None
 
     def test_device_wait_timeout_explicit_value(
@@ -191,7 +324,7 @@ class TestEdgeFedBuffRecipe:
         )
 
         assert recipe.device_wait_timeout == 120.0
-        assessor = self._find_assessor(recipe.job)
+        assessor = self._find_assessor(recipe._job)
         assert assessor.device_wait_timeout == 120.0
 
     @pytest.mark.parametrize("bad_value", [0, -1, -100.0])
@@ -247,7 +380,7 @@ class TestETFedBuffRecipeSimBasic:
             model_manager_config=model_manager_config,
             device_manager_config=device_manager_config,
         )
-        assert recipe.job is not None
+        assert recipe._job is not None
 
 
 class TestETFedBuffRecipeWithoutExecutorch:

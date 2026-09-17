@@ -27,6 +27,20 @@ from nvflare.private.fed.runner import Runner
 from nvflare.private.fed.server.admin import FedAdminServer
 from nvflare.private.fed.server.fed_server import FederatedServer
 
+_MIN_PYTHON_VERSION = (3, 10)
+_MAX_PYTHON_VERSION = (3, 14)
+
+
+def _format_python_version(version):
+    return f"{version[0]}.{version[1]}"
+
+
+_SUPPORTED_PYTHON_VERSION_RANGE = (
+    f"{_format_python_version(_MIN_PYTHON_VERSION)} through {_format_python_version(_MAX_PYTHON_VERSION)}"
+)
+_LOWEST_UNSUPPORTED_PYTHON_VERSION = (_MAX_PYTHON_VERSION[0], _MAX_PYTHON_VERSION[1] + 1)
+_HIGHEST_UNSUPPORTED_PYTHON_VERSION = (_MIN_PYTHON_VERSION[0], _MIN_PYTHON_VERSION[1] - 1)
+
 
 def monitor_parent_process(runner: Runner, parent_pid, stop_event: threading.Event):
     while True:
@@ -56,13 +70,14 @@ def kill_child_processes(parent_pid):
         process.kill()
 
 
-def create_admin_server(fl_server: FederatedServer, server_conf=None, args=None):
+def create_admin_server(fl_server: FederatedServer, server_conf=None, args=None, enable_hci: bool = True):
     """To create the admin server.
 
     Args:
         fl_server: fl_server
         server_conf: server config
         args: command args
+        enable_hci: whether to enable inbound admin commands and uploads
 
     Returns:
         A FedAdminServer.
@@ -75,18 +90,24 @@ def create_admin_server(fl_server: FederatedServer, server_conf=None, args=None)
         file_download_dir=os.path.join(args.workspace, server_conf.get("admin_storage", "tmp")),
         download_job_url=server_conf.get("download_job_url", "http://"),
         timeout=server_conf.get("admin_timeout", 10.0),
+        enable_hci=enable_hci,
     )
     return admin_server
 
 
 def version_check():
-    if sys.version_info >= (3, 13):
+    python_version = sys.version_info[:2]
+    if python_version > _MAX_PYTHON_VERSION:
         raise RuntimeError(
-            "Python versions 3.13 and above are not yet supported. Please use Python version between 3.9 and 3.12."
+            f"Python versions {_format_python_version(_LOWEST_UNSUPPORTED_PYTHON_VERSION)} and above "
+            f"are not yet supported. "
+            f"Please use Python version {_SUPPORTED_PYTHON_VERSION_RANGE}."
         )
-    if sys.version_info < (3, 9):
+    if python_version < _MIN_PYTHON_VERSION:
         raise RuntimeError(
-            "Python versions 3.8 and below are not supported. Please use Python version between 3.9 and 3.12."
+            f"Python versions {_format_python_version(_HIGHEST_UNSUPPORTED_PYTHON_VERSION)} and below "
+            f"are not supported. "
+            f"Please use Python version {_SUPPORTED_PYTHON_VERSION_RANGE}."
         )
 
 

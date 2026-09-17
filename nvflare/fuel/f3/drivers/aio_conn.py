@@ -21,7 +21,6 @@ from nvflare.fuel.f3.drivers.connector_info import ConnectorInfo
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.drivers.net_utils import MAX_FRAME_SIZE
 from nvflare.fuel.f3.sfm.prefix import PREFIX_LEN, Prefix
-from nvflare.fuel.hci.security import get_certificate_common_name
 from nvflare.security.logging import secure_format_exception
 
 log = logging.getLogger(__name__)
@@ -96,6 +95,9 @@ class AioConnection(Connection):
         if prefix.length == PREFIX_LEN:
             return prefix_buf
 
+        if prefix.length < PREFIX_LEN:
+            raise CommError(CommError.BAD_DATA, f"Frame length below prefix size ({prefix.length} < {PREFIX_LEN})")
+
         if prefix.length > MAX_FRAME_SIZE:
             raise CommError(CommError.BAD_DATA, f"Frame exceeds limit ({prefix.length} > {MAX_FRAME_SIZE}")
 
@@ -128,16 +130,7 @@ class AioConnection(Connection):
         conn_props[DriverParams.LOCAL_ADDR.value] = local_addr
         conn_props[DriverParams.PEER_ADDR.value] = peer_addr
 
-        peer_cert = self.writer.get_extra_info("peercert")
-        if peer_cert:
-            cn = get_certificate_common_name(peer_cert)
-        else:
-            if self.secure:
-                cn = "N/A"
-            else:
-                cn = None
-
-        if cn:
-            conn_props[DriverParams.PEER_CN.value] = cn
+        ssl_object = self.writer.get_extra_info("ssl_object")
+        self.record_peer(conn_props, ssl_object.getpeercert(binary_form=True) if ssl_object else None, self.secure)
 
         return conn_props

@@ -20,8 +20,9 @@ import sys
 import threading
 
 from nvflare.apis.fl_constant import ConfigVarName, JobConstants, SiteType, SystemConfigs
+from nvflare.apis.job_launcher_spec import JobProcessEnv, pop_credential_env
 from nvflare.apis.workspace import Workspace
-from nvflare.app_opt.job_launcher.workspace_cell_transfer import download_workspace, upload_results_safely
+from nvflare.app_opt.job_launcher.workspace_cell_transfer import download_workspace, upload_results_on_shutdown
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.sec.authn import set_add_auth_headers_filters
@@ -30,6 +31,7 @@ from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.log_utils import configure_logging, get_script_logger
 from nvflare.private.defs import AUTH_CLIENT_NAME_FOR_SJ, AppFolderConstants
 from nvflare.private.fed.app.fl_conf import FLServerStarterConfiger
+from nvflare.private.fed.app.job_process_cleanup import shutdown_job_process_runtime
 from nvflare.private.fed.app.utils import monitor_parent_process
 from nvflare.private.fed.server.server_app_runner import ServerAppRunner
 from nvflare.private.fed.server.server_state import HotState
@@ -37,11 +39,11 @@ from nvflare.private.fed.utils.fed_utils import (
     create_stats_pool_files_for_job,
     fobs_initialize,
     register_ext_decomposers,
-    security_close,
     security_init_for_job,
     set_stats_pool_config_for_job,
 )
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
+from nvflare.utils.job_launcher_utils import refresh_custom_dir_import_path
 
 
 def main(args):
@@ -65,8 +67,11 @@ def main(args):
     secure_train = kv_list.get("secure_train", False)
     download_workspace(args, secure_train)
     workspace = Workspace(root_dir=args.workspace, site_name=SiteType.SERVER)
+    refresh_custom_dir_import_path(workspace.get_app_custom_dir(args.job_id))
     set_stats_pool_config_for_job(workspace, args.job_id)
 
+    server = None
+    logger = None
     try:
         os.chdir(args.workspace)
         fobs_initialize(workspace=workspace, job_id=args.job_id)
@@ -95,11 +100,11 @@ def main(args):
         try:
             # create the FL server
             server_config, server = deployer.create_fl_server(args, secure_train=secure_train)
-            server.ha_mode = eval(args.ha_mode)
 
             server.cell = server.create_job_cell(
                 args.job_id, args.root_url, args.parent_url, secure_train, server_config
             )
+            server.engine.set_cell(server.cell)
 
             # set filter to add additional auth headers
             set_add_auth_headers_filters(
@@ -125,15 +130,27 @@ def main(args):
                 workspace, args, args.app_root, args.job_id, snapshot, logger, args.set, event_handlers=event_handlers
             )
         finally:
-            if deployer:
-                deployer.close()
-            stop_event.set()
-            security_close()
-            err = create_stats_pool_files_for_job(workspace, args.job_id)
-            if err:
-                if logger:
+            command_agent = getattr(server, "command_agent", None)
+            cell = getattr(server, "cell", None)
+
+            def _archive_results():
+                err = create_stats_pool_files_for_job(workspace, args.job_id)
+                if err and logger:
                     logger.warning(err)
-            upload_results_safely(args, secure_train, log=logger)
+                upload_results_on_shutdown(args, secure_train, log=logger)
+
+            try:
+                shutdown_job_process_runtime(
+                    stop_command_admission=command_agent.shutdown if command_agent else None,
+                    wait_for_command_callbacks=command_agent.wait_for_callbacks if command_agent else None,
+                    stop_cell=cell.stop if cell else None,
+                    logger=logger,
+                    before_streaming_shutdown=_archive_results,
+                )
+            finally:
+                if deployer:
+                    deployer.close()
+                stop_event.set()
 
     except ConfigError as e:
         logger = get_script_logger()
@@ -144,16 +161,24 @@ def main(args):
 
 def parse_arguments():
     """FL Server program starting point."""
+    # Credentials may arrive via the environment; a CLI-supplied value wins.
+    # The SJ auth token is the job id (public, already in argv), so AUTH_TOKEN goes unused.
+    creds = pop_credential_env()
+    ts = creds[JobProcessEnv.TOKEN_SIGNATURE]
+    ssid = creds[JobProcessEnv.SSID]
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", "-m", type=str, help="WORKSPACE folder", required=True)
     parser.add_argument("--fed_server", "-s", type=str, help="server config json file", required=True)
     parser.add_argument("--app_root", "-r", type=str, help="App Root", required=True)
     parser.add_argument("--job_id", "-n", type=str, help="job id", required=True)
-    parser.add_argument("--token_signature", "-ts", type=str, help="auth token signature", required=True)
+    parser.add_argument(
+        "--token_signature", "-ts", type=str, help="auth token signature", default=ts, required=ts is None
+    )
     parser.add_argument("--root_url", "-u", type=str, help="root_url", required=True)
     parser.add_argument("--host", "-host", type=str, help="server host", required=True)
     parser.add_argument("--port", "-port", type=str, help="service port", required=True)
-    parser.add_argument("--ssid", "-id", type=str, help="SSID", required=True)
+    parser.add_argument("--ssid", "-id", type=str, help="SSID", default=ssid, required=ssid is None)
     parser.add_argument("--parent_url", "-p", type=str, help="parent_url", required=True)
     parser.add_argument(
         "--parent_conn_sec",
@@ -162,9 +187,10 @@ def parse_arguments():
         required=False,
         default="",
     )
-    parser.add_argument("--ha_mode", "-ha_mode", type=str, help="HA mode", required=True)
     parser.add_argument("--set", metavar="KEY=VALUE", nargs="*")
     args = parser.parse_args()
+    args.job_cert_pem = creds[JobProcessEnv.JOB_CERT]
+    args.job_key_pem = creds[JobProcessEnv.JOB_KEY]
     return args
 
 

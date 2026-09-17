@@ -35,8 +35,6 @@ class TestJobSubmitOutput:
         args.debug = False
         args.job_folder = kwargs.get("job_folder", "/fake/job")
         args.config_file = None
-        args.target = kwargs.get("target", None)
-        args.startup_kit = kwargs.get("startup_kit", None)
         return args
 
     def test_json_envelope_on_success(self, capsys):
@@ -127,20 +125,101 @@ class TestJobSubmitOutput:
         assert data["error_code"] == "AUTH_FAILED"
         assert "not authorized" in data["message"].lower()
 
-    def test_internal_submit_job_forwards_all_study_literal(self):
+    def test_internal_submit_job_forwards_named_study(self):
         from nvflare.tool.job.job_cli import internal_submit_job
 
         fake_session = MagicMock()
         fake_session.submit_job.return_value = "abc123"
         cmd_args = MagicMock()
-        cmd_args.study = "all"
+        cmd_args.study = "cancer"
 
         with patch("nvflare.tool.job.job_cli.new_cli_session", return_value=fake_session) as new_session:
             internal_submit_job("/tmp/startup", "admin@nvidia.com", "/tmp/job", cmd_args=cmd_args)
 
-        assert new_session.call_args.kwargs["study"] == "all"
+        assert new_session.call_args.kwargs["study"] == "cancer"
 
-    def test_internal_submit_job_exits_before_output_ok_when_output_error_is_mocked(self):
+    def test_internal_submit_job_forwards_submit_token(self):
+        from nvflare.tool.job.job_cli import internal_submit_job
+
+        fake_session = MagicMock()
+        fake_session.submit_job.return_value = "abc123"
+        cmd_args = MagicMock()
+        cmd_args.study = "default"
+        cmd_args.submit_token = "retry-1"
+
+        with patch("nvflare.tool.job.job_cli.new_cli_session", return_value=fake_session):
+            internal_submit_job("/tmp/startup", "admin@nvidia.com", "/tmp/job", cmd_args=cmd_args)
+
+        fake_session.submit_job.assert_called_once_with("/tmp/job", submit_token="retry-1")
+
+    def test_internal_submit_job_submit_token_conflict_exits_before_output_ok_when_output_error_is_mocked(
+        self,
+    ):
+        from nvflare.fuel.flare_api.api_spec import SubmitTokenConflict
+        from nvflare.tool.job.job_cli import internal_submit_job
+
+        fake_session = MagicMock()
+        fake_session.submit_job.side_effect = SubmitTokenConflict("same token used for different content", "job-1")
+
+        with patch("nvflare.tool.job.job_cli.new_cli_session", return_value=fake_session):
+            with patch("nvflare.tool.cli_output.output_error") as output_error:
+                with patch("nvflare.tool.cli_output.output_ok") as output_ok:
+                    with pytest.raises(SystemExit) as exc_info:
+                        internal_submit_job("/tmp/startup", "admin@nvidia.com", "/tmp/job")
+
+        assert exc_info.value.code == 4
+        output_error.assert_called_once()
+        output_ok.assert_not_called()
+
+    def test_internal_submit_job_submit_token_conflict_is_registered_in_dev_mode(self, capsys, monkeypatch):
+        from nvflare.fuel.flare_api.api_spec import SubmitTokenConflict
+        from nvflare.tool.job.job_cli import internal_submit_job
+
+        monkeypatch.setenv("NVFLARE_DEV", "1")
+        fake_session = MagicMock()
+        fake_session.submit_job.side_effect = SubmitTokenConflict("same token used for different content", "job-1")
+
+        with patch("nvflare.tool.job.job_cli.new_cli_session", return_value=fake_session):
+            with pytest.raises(SystemExit) as exc_info:
+                internal_submit_job("/tmp/startup", "admin@nvidia.com", "/tmp/job")
+
+        assert exc_info.value.code == 4
+        data = json.loads(capsys.readouterr().out)
+        assert data["status"] == "error"
+        assert data["error_code"] == "SUBMIT_TOKEN_CONFLICT"
+        assert "submit token" in data["message"].lower()
+        assert data["data"] == {"existing_job_id": "job-1"}
+
+    def test_internal_submit_job_submit_token_deleted_is_registered_in_dev_mode(self, capsys, monkeypatch):
+        from nvflare.fuel.flare_api.api_spec import SubmitTokenJobDeleted
+        from nvflare.tool.job.job_cli import internal_submit_job
+
+        monkeypatch.setenv("NVFLARE_DEV", "1")
+        fake_session = MagicMock()
+        fake_session.submit_job.side_effect = SubmitTokenJobDeleted(
+            "submit token refers to a deleted job",
+            job_id="job-1",
+            state="job_deleted",
+            deleted_time="2026-04-30T10:00:00-07:00",
+        )
+
+        with patch("nvflare.tool.job.job_cli.new_cli_session", return_value=fake_session):
+            with pytest.raises(SystemExit) as exc_info:
+                internal_submit_job("/tmp/startup", "admin@nvidia.com", "/tmp/job")
+
+        assert exc_info.value.code == 4
+        data = json.loads(capsys.readouterr().out)
+        assert data["status"] == "error"
+        assert data["error_code"] == "SUBMIT_TOKEN_JOB_DELETED"
+        assert data["data"] == {
+            "job_id": "job-1",
+            "state": "job_deleted",
+            "deleted_time": "2026-04-30T10:00:00-07:00",
+        }
+
+    def test_internal_submit_job_exits_before_output_ok_when_output_error_is_mocked(
+        self,
+    ):
         from nvflare.fuel.flare_api.api_spec import InvalidJobDefinition
         from nvflare.tool.job.job_cli import internal_submit_job
 
@@ -172,26 +251,92 @@ class TestJobSubmitOutput:
         parser = def_job_cli_parser(root.add_subparsers(dest="sub_command"))["job"]
 
         with pytest.raises(SystemExit):
-            parser.parse_args(["submit", "-j", "./my_job", "-f", "config_fed_server.conf", "num_rounds=1"])
+            parser.parse_args(
+                [
+                    "submit",
+                    "-j",
+                    "./my_job",
+                    "-f",
+                    "config_fed_server.conf",
+                    "num_rounds=1",
+                ]
+            )
 
-    def test_submit_parser_accepts_startup_target_or_startup_kit(self):
-        root = argparse.ArgumentParser()
-        parser = def_job_cli_parser(root.add_subparsers(dest="sub_command"))["job"]
-
-        args = parser.parse_args(["submit", "-j", "./my_job", "--startup-target", "prod"])
-        assert args.startup_target == "prod"
-        assert args.startup_kit is None
-
-        args = parser.parse_args(["submit", "-j", "./my_job", "--startup-kit", "/tmp/startup"])
-        assert args.startup_kit == "/tmp/startup"
-        assert args.startup_target is None
-
-    def test_submit_parser_rejects_startup_target_with_startup_kit(self):
+    @pytest.mark.parametrize(
+        ("selector", "value"),
+        [
+            ("--startup-target", "prod"),
+            ("--startup_target", "prod"),
+            ("--startup_kit", "/tmp/startup"),
+        ],
+    )
+    def test_submit_parser_rejects_old_startup_selectors(self, selector, value):
         root = argparse.ArgumentParser()
         parser = def_job_cli_parser(root.add_subparsers(dest="sub_command"))["job"]
 
         with pytest.raises(SystemExit):
-            parser.parse_args(["submit", "-j", "./my_job", "--startup-target", "prod", "--startup-kit", "/tmp/startup"])
+            parser.parse_args(["submit", "-j", "./my_job", selector, value])
+
+    @pytest.mark.parametrize(
+        ("selector", "value", "dest"),
+        [
+            ("--startup-kit", "/tmp/startup", "startup_kit"),
+            ("--kit-id", "prod_admin", "kit_id"),
+        ],
+    )
+    def test_submit_parser_accepts_scoped_startup_selectors(self, selector, value, dest):
+        root = argparse.ArgumentParser()
+        parser = def_job_cli_parser(root.add_subparsers(dest="sub_command"))["job"]
+
+        args = parser.parse_args(["submit", "-j", "./my_job", selector, value])
+
+        assert getattr(args, dest) == value
+
+    def test_submit_help_includes_scoped_startup_selectors(self):
+        root = argparse.ArgumentParser()
+        def_job_cli_parser(root.add_subparsers(dest="sub_command"))
+
+        from nvflare.tool.job.job_cli import job_sub_cmd_parser
+
+        help_text = job_sub_cmd_parser["submit"].format_help()
+        assert "--startup-target" not in help_text
+        assert "--startup_target" not in help_text
+        assert "--startup_kit" not in help_text
+        assert "--startup-kit" in help_text
+        assert "--kit-id" in help_text
+
+    def test_submit_schema_includes_scoped_startup_selectors(self, capsys):
+        root = argparse.ArgumentParser()
+        def_job_cli_parser(root.add_subparsers(dest="sub_command"))
+
+        from nvflare.tool.job.job_cli import submit_job
+
+        with patch("sys.argv", ["nvflare", "job", "submit", "--schema"]):
+            with pytest.raises(SystemExit) as exc_info:
+                submit_job(MagicMock())
+
+        assert exc_info.value.code == 0
+        schema_text = capsys.readouterr().out
+        assert "--startup-target" not in schema_text
+        assert "--startup_target" not in schema_text
+        assert "--startup_kit" not in schema_text
+        assert "--startup-kit" in schema_text
+        assert "--kit-id" in schema_text
+        schema = json.loads(schema_text)
+        assert schema["output_modes"] == ["json"]
+        assert schema["streaming"] is False
+        assert schema["mutating"] is True
+        assert schema["idempotent"] is False
+        assert schema["retry_token"] == {
+            "supported": True,
+            "flag": "--submit-token",
+            "scope": "study + submitter + token",
+            "retry_safe_when_present": True,
+            "effect": (
+                "Deduplicates retries for identical submitted job content in the same study by the same submitter; "
+                "different content with the same token is rejected."
+            ),
+        }
 
     def test_submit_parser_rejects_legacy_target_alias(self):
         root = argparse.ArgumentParser()

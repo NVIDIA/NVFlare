@@ -100,7 +100,9 @@ Modify `calculate_data_splits()` in `job.py` to implement different strategies:
 
 Use `per_site_config` to pass `train_args` for per-client configuration:
 ```python
-per_site_config={
+from nvflare.recipe import set_per_site_config
+
+per_site_config = {
     "site-1": {
         "train_args": "--data_path /data/iris.csv --train_start 0 --train_end 40 ..."
     },
@@ -109,6 +111,7 @@ per_site_config={
     },
     # ... more sites
 }
+set_per_site_config(recipe, per_site_config)
 ```
 
 **Alternative: Using Separate Data Files**
@@ -121,7 +124,7 @@ Instead of using data ranges, you can split your data into separate files for ea
 # - /data/site2_iris.csv
 # - /data/site3_iris.csv
 
-per_site_config={
+per_site_config = {
     "site-1": {
         "train_args": "--data_path /data/site1_iris.csv ..."
     },
@@ -130,6 +133,7 @@ per_site_config={
     },
     # ... more sites
 }
+set_per_site_config(recipe, per_site_config)
 ```
 
 ### View Results

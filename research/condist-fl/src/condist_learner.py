@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Dict, Literal, Optional
 
 import numpy as np
+import torch
 from data import DataManager
 from prettytable import PrettyTable
 from torch.utils.tensorboard import SummaryWriter
@@ -184,7 +185,7 @@ class ConDistLearner(Learner):
         if model_name == ModelName.BEST_MODEL:
             model_data = None
             try:
-                model_data = torch.load(self.best_model_path, map_location="cpu")
+                model_data = torch.load(self.best_model_path, map_location="cpu", weights_only=True)
                 self.log_info(fl_ctx, f"Load best model from {self.best_model_path}")
             except Exception as e:
                 self.log_error(fl_ctx, f"Unable to load best model: {e}")
@@ -192,7 +193,7 @@ class ConDistLearner(Learner):
             if model_data:
                 data = {}
                 for var_name in model_data["model"]:
-                    data[var_name] = model_data[var_name].numpy()
+                    data[var_name] = model_data["model"][var_name].numpy()
                 dxo = DXO(data_kind=DataKind.WEIGHTS, data=data)
                 return dxo.to_shareable()
             else:

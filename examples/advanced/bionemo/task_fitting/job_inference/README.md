@@ -16,7 +16,7 @@ No model training occurs in this job - it's purely inference-based.
 ```bash
 job_inference/
 ├── client.py    # Client script for ESM2 inference
-├── job.py       # Job configuration using FedAvgRecipe
+├── job.py       # Job configuration using FedTaskRecipe
 └── README.md    # This file
 ```
 
@@ -77,19 +77,21 @@ subprocess.run(command)
 
 ## Job Recipe
 
-The job uses `FedAvgRecipe` with a single round (since this is inference only):
+The job uses `FedTaskRecipe` because this is a one-round task without a global model:
 
 ```python
-recipe = FedAvgRecipe(
+from nvflare.recipe import FedTaskRecipe
+
+recipe = FedTaskRecipe(
     name="esm2_embeddings",
+    task_name="infer",
     min_clients=n_clients,
-    num_rounds=1,  # Inference only needs 1 round
-    train_script="client.py",
-    train_args=script_args,
-    launch_external_process=True,
-    command="python3",
+    task_script="client.py",
+    task_args=script_args,
 )
 ```
+
+The recipe builds a `FedJob` with the existing `CmdTaskController` on the server and `ScriptRunner` on clients, so it does not require a model, checkpoint, or model persistor.
 
 ## Run Job
 

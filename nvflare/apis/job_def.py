@@ -13,7 +13,6 @@
 # limitations under the License.
 import uuid
 from enum import Enum
-from typing import Dict, List, Optional
 
 from nvflare.apis.fl_constant import SystemComponents
 from nvflare.apis.fl_context import FLContext
@@ -73,7 +72,6 @@ class JobMetaKey(str, Enum):
     LAST_SCHEDULE_TIME = "last_schedule_time"
     SCHEDULE_HISTORY = "schedule_history"
     STATS_POOL_CONFIG = "stats_pool_config"
-    FROM_HUB_SITE = "from_hub_site"
     CUSTOM_PROPS = "custom_props"
     EDGE_METHOD = "edge_method"
     JOB_CLIENTS = "job_clients"  # clients that participated the job
@@ -84,7 +82,54 @@ class JobMetaKey(str, Enum):
         return self.value
 
 
-class TopDir(object):
+# Job metadata keys a recipe author may set through nvflare.recipe.set_recipe_meta().
+# This is the single source of truth for that classification; keep it next to JobMetaKey
+# so it is updated alongside the enum (and can be consulted by JobMetaValidator).
+#
+# Only pure-metadata keys that the server honors as submitted are listed. Intentionally excluded:
+# - Keys with dedicated, validated FedJob constructor fields (e.g. MIN_CLIENTS,
+#   MANDATORY_CLIENTS): setting them through meta_props would diverge from the value the
+#   recipe already used to build its controller/scheduler config. Set those through the
+#   recipe/FedJob constructor.
+# - STUDY: the server assigns it from the admin session's active study at job submission,
+#   so a recipe-set value would be silently overwritten.
+USER_SETTABLE_JOB_META_KEYS = frozenset(
+    {
+        JobMetaKey.RESOURCE_SPEC,
+        JobMetaKey.JOB_LAUNCHER_SPEC,
+        JobMetaKey.SCOPE,
+        JobMetaKey.CUSTOM_PROPS,
+    }
+)
+
+
+class SubmitRecordState(str, Enum):
+    CREATING = "creating"
+    CREATED = "created"
+    JOB_DELETED = "job_deleted"
+
+
+class SubmitRecordKey(str, Enum):
+    SCHEMA_VERSION = "schema_version"
+    STATE = "state"
+    SUBMIT_TOKEN = "submit_token"
+    JOB_ID = "job_id"
+    STUDY = "study"
+    SUBMITTER_NAME = "submitter_name"
+    SUBMITTER_ORG = "submitter_org"
+    SUBMITTER_ROLE = "submitter_role"
+    JOB_NAME = "job_name"
+    JOB_FOLDER_NAME = "job_folder_name"
+    JOB_CONTENT_HASH = "job_content_hash"
+    SUBMIT_TIME = "submit_time"
+    DELETED_TIME = "deleted_time"
+    DELETED_BY = "deleted_by"
+
+    def __repr__(self):
+        return self.value
+
+
+class TopDir:
     JOB = "job"
     WORKSPACE = "workspace"
 
@@ -93,11 +138,11 @@ class Job:
     def __init__(
         self,
         job_id: str,
-        resource_spec: Dict[str, Dict],
-        deploy_map: Dict[str, List[str]],
+        resource_spec: dict[str, dict],
+        deploy_map: dict[str, list[str]],
         meta,
         min_sites: int = 1,
-        required_sites: Optional[List[str]] = None,
+        required_sites: list[str] | None = None,
     ):
         """Job object containing the job metadata.
 
@@ -127,7 +172,7 @@ class Job:
         self.run_record = None  # job id, dispatched time/UUID, finished time, completion code (normal, aborted)
         self.run_aborted = False
 
-    def get_deployment(self) -> Dict[str, List[str]]:
+    def get_deployment(self) -> dict[str, list[str]]:
         """Returns the deployment configuration.
 
         ::

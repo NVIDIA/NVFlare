@@ -10,7 +10,12 @@
     {
       "id": "persistor",
       "path": "nvflare.app_opt.pt.file_model_persistor.PTFileModelPersistor",
-      "args": {}
+      "args": {
+        "model": {
+          "path": "simple_network.SimpleNetwork",
+          "args": {}
+        }
+      }
     },
     {
       "id": "shareable_generator",

@@ -12,18 +12,39 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import argparse
+import io
 import json
 
 import pytest
 
 from nvflare.tool import cli_output
-from nvflare.tool.cli_output import SCHEMA_VERSION, output, output_error, output_error_message, output_ok, print_human
+from nvflare.tool.cli_output import (
+    SCHEMA_VERSION,
+    output,
+    output_error,
+    output_error_message,
+    output_jsonl_event,
+    output_ok,
+    output_usage_error,
+    print_human,
+)
 
 
 @pytest.fixture(autouse=True)
 def reset_cli_output_state(monkeypatch):
     monkeypatch.setattr(cli_output, "_output_format", "txt")
     monkeypatch.setattr(cli_output, "_connect_timeout", 5.0)
+
+
+class _FlushTrackingStringIO(io.StringIO):
+    def __init__(self):
+        super().__init__()
+        self.flush_called = False
+
+    def flush(self):
+        self.flush_called = True
+        super().flush()
 
 
 # --- output() tests (cert/package commands) ---
@@ -166,6 +187,32 @@ class TestOutputOk:
         assert envelope["data"] == {"key": "value"}
         assert "progress message" in captured.err
 
+    def test_jsonl_mode_human_output_goes_to_stderr(self, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "jsonl")
+        print_human("progress message")
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert "progress message" in captured.err
+
+    def test_jsonl_mode_output_ok_emits_terminal_event(self, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "jsonl")
+        output_ok({"key": "value"})
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["schema_version"] == SCHEMA_VERSION
+        assert payload["event"] == "terminal"
+        assert payload["status"] == "ok"
+        assert payload["terminal"] is True
+        assert payload["data"] == {"key": "value"}
+
+    def test_jsonl_event_flushes_stdout(self, monkeypatch):
+        stdout = _FlushTrackingStringIO()
+        monkeypatch.setattr(cli_output.sys, "stdout", stdout)
+
+        output_jsonl_event({"event": "progress"})
+
+        assert stdout.flush_called is True
+        assert json.loads(stdout.getvalue())["event"] == "progress"
+
     def test_human_mode_dict_renders_as_table(self, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "txt")
         output_ok({"status": "running", "id": "abc"})
@@ -182,6 +229,46 @@ class TestOutputOk:
             pytest.fail("Expected non-JSON output in human mode")
         except (json.JSONDecodeError, ValueError):
             pass
+
+    def test_json_mode_redacts_sensitive_data(self, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "json")
+        output_ok(
+            {
+                "user": "admin",
+                "password": "pw123",
+                "nested": {"api_key": "api-secret"},
+                "message": "Authorization: Bearer bearer-secret",
+                "retry_token": {"supported": False},
+                "credential_revoked": False,
+            }
+        )
+        captured = capsys.readouterr()
+        envelope = json.loads(captured.out)
+        assert envelope["data"]["user"] == "admin"
+        assert envelope["data"]["password"] == "<redacted>"
+        assert envelope["data"]["nested"]["api_key"] == "<redacted>"
+        assert envelope["data"]["message"] == "Authorization: Bearer <redacted>"
+        assert envelope["data"]["retry_token"] == {"supported": False}
+        assert envelope["data"]["credential_revoked"] is False
+
+    def test_jsonl_mode_redacts_sensitive_data(self, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "jsonl")
+        output_ok({"access_token": "token-secret", "status": "ok"})
+
+        captured = capsys.readouterr()
+        assert "token-secret" not in captured.out
+        envelope = json.loads(captured.out)
+        assert envelope["data"] == {"access_token": "<redacted>", "status": "ok"}
+
+    def test_json_mode_redacts_sensitive_envelope_text(self, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "json")
+        output_ok(
+            {"ready": True}, message="completed with access_token=secret-value", hint="Authorization: Bearer abc123"
+        )
+
+        envelope = json.loads(capsys.readouterr().out)
+        assert envelope["message"] == "completed with access_token=<redacted>"
+        assert envelope["hint"] == "Authorization: Bearer <redacted>"
 
 
 # --- output_error_message() tests: explicit message/hint/fmt) ---
@@ -220,6 +307,100 @@ class TestOutputErrorCertPackage:
         assert result["hint"] == "Fix hint."
         assert captured.err == ""
 
+    def test_jsonl_format_goes_to_stdout_as_terminal_event(self, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "jsonl")
+        stdout = _FlushTrackingStringIO()
+        monkeypatch.setattr(cli_output.sys, "stdout", stdout)
+
+        with pytest.raises(SystemExit) as exc_info:
+            output_error_message("MY_CODE", "Error message here.", "Fix hint.", None)
+        assert exc_info.value.code == 1
+
+        assert stdout.flush_called is True
+        result = json.loads(stdout.getvalue())
+        assert result["schema_version"] == SCHEMA_VERSION
+        assert result["event"] == "terminal"
+        assert result["status"] == "error"
+        assert result["terminal"] is True
+        assert result["error_code"] == "MY_CODE"
+
+    def test_explicit_jsonl_format_goes_to_stdout_as_terminal_event(self, monkeypatch):
+        stdout = _FlushTrackingStringIO()
+        monkeypatch.setattr(cli_output.sys, "stdout", stdout)
+
+        with pytest.raises(SystemExit) as exc_info:
+            output_error_message("MY_CODE", "Error message here.", "Fix hint.", "jsonl")
+        assert exc_info.value.code == 1
+
+        assert stdout.flush_called is True
+        result = json.loads(stdout.getvalue())
+        assert result["schema_version"] == SCHEMA_VERSION
+        assert result["event"] == "terminal"
+        assert result["status"] == "error"
+        assert result["terminal"] is True
+        assert result["error_code"] == "MY_CODE"
+
+    def test_error_message_redacts_sensitive_detail_text(self, capsys):
+        with pytest.raises(SystemExit):
+            output_error_message("MY_CODE", "Request failed", None, None, detail="password=secret")
+        captured = capsys.readouterr()
+        assert "password=<redacted>" in captured.err
+        assert "secret" not in captured.err
+
+    def test_error_message_json_redacts_private_key_block(self, capsys):
+        private_key = "-----BEGIN PRIVATE KEY-----\nsecret\n-----END PRIVATE KEY-----"
+        with pytest.raises(SystemExit):
+            output_error_message("MY_CODE", private_key, None, "json")
+        captured = capsys.readouterr()
+        payload = json.loads(captured.out)
+        assert payload["message"] == "<redacted>"
+
+    def test_error_message_json_redacts_sensitive_data(self, capsys):
+        with pytest.raises(SystemExit):
+            output_error_message(
+                "MY_CODE",
+                "Error message here.",
+                "Fix hint.",
+                "json",
+                data={"session_token": "session-secret", "job_id": "abc123"},
+            )
+
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["data"] == {"session_token": "<redacted>", "job_id": "abc123"}
+
+    def test_error_message_jsonl_redacts_sensitive_data(self, capsys):
+        with pytest.raises(SystemExit):
+            output_error_message(
+                "MY_CODE",
+                "Error message here.",
+                "Fix hint.",
+                "jsonl",
+                data={"private_key": "private-secret", "job_id": "abc123"},
+            )
+
+        captured = capsys.readouterr()
+        assert "private-secret" not in captured.out
+        payload = json.loads(captured.out)
+        assert payload["data"] == {"private_key": "<redacted>", "job_id": "abc123"}
+
+
+class TestOutputUsageError:
+    def test_jsonl_mode_suppresses_argparse_help(self, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "jsonl")
+        parser = argparse.ArgumentParser(prog="nvflare test")
+        parser.add_argument("--flag")
+
+        with pytest.raises(SystemExit) as exc_info:
+            output_usage_error(parser, "bad flag")
+
+        assert exc_info.value.code == 4
+        captured = capsys.readouterr()
+        payload = json.loads(captured.out)
+        assert payload["event"] == "terminal"
+        assert payload["terminal"] is True
+        assert payload["error_code"] == "INVALID_ARGS"
+        assert "usage:" not in captured.err
+
 
 class TestOutputErrorWithData:
     def test_json_error_can_include_data(self, capsys, monkeypatch):
@@ -231,6 +412,31 @@ class TestOutputErrorWithData:
         assert payload["status"] == "error"
         assert payload["error_code"] == "JOB_FAILED"
         assert payload["data"] == {"status": "FAILED", "job_id": "abc123"}
+
+    def test_jsonl_error_is_terminal_event(self, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "jsonl")
+        with pytest.raises(SystemExit) as exc_info:
+            output_error("JOB_FAILED", exit_code=1, data={"status": "FAILED", "job_id": "abc123"}, job_id="abc123")
+        assert exc_info.value.code == 1
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["status"] == "error"
+        assert payload["error_code"] == "JOB_FAILED"
+        assert payload["event"] == "terminal"
+        assert payload["terminal"] is True
+
+    def test_jsonl_error_flushes_stdout(self, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "jsonl")
+        stdout = _FlushTrackingStringIO()
+        monkeypatch.setattr(cli_output.sys, "stdout", stdout)
+
+        with pytest.raises(SystemExit) as exc_info:
+            output_error("JOB_FAILED", exit_code=1, data={"status": "FAILED"}, job_id="abc123")
+        assert exc_info.value.code == 1
+
+        assert stdout.flush_called is True
+        payload = json.loads(stdout.getvalue())
+        assert payload["event"] == "terminal"
+        assert payload["terminal"] is True
 
     def test_human_error_with_data_renders_context_then_hint_and_code(self, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "txt")
@@ -254,6 +460,28 @@ class TestOutputErrorWithData:
             output_error_message("MY_CODE", "msg", "hint", "json")
         assert exc_info.value.code == 1
 
+    def test_json_error_redacts_sensitive_data_and_detail(self, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "json")
+        with pytest.raises(SystemExit):
+            output_error(
+                "INTERNAL_ERROR",
+                detail="access_token=token-secret",
+                data={"session_token": "session-secret", "job_id": "abc123"},
+            )
+        payload = json.loads(capsys.readouterr().out)
+        assert "access_token=<redacted>" in payload["message"]
+        assert "token-secret" not in payload["message"]
+        assert payload["data"] == {"session_token": "<redacted>", "job_id": "abc123"}
+
+    def test_human_error_redacts_sensitive_data(self, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        with pytest.raises(SystemExit):
+            output_error("INTERNAL_ERROR", data={"password": "pw123", "job_id": "abc123"})
+        captured = capsys.readouterr()
+        assert "password: <redacted>" in captured.out
+        assert "pw123" not in captured.out
+        assert "job_id: abc123" in captured.out
+
 
 # --- output_error() tests: Phase 0+1 pattern (ERROR_REGISTRY lookup) ---
 
@@ -273,6 +501,23 @@ class TestOutputError:
         assert envelope["error_code"] == "CONNECTION_FAILED"
         assert "message" in envelope
         assert "hint" in envelope
+
+    def test_error_envelope_supports_agent_fields(self, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "json")
+
+        with pytest.raises(SystemExit) as exc_info:
+            output_error(
+                "CONNECTION_FAILED",
+                recovery_category="RETRYABLE",
+                suggested_skill="nvflare-diagnose-job",
+            )
+
+        assert exc_info.value.code == 1
+        envelope = json.loads(capsys.readouterr().out)
+        assert envelope["error_code"] == "CONNECTION_FAILED"
+        assert "code" not in envelope
+        assert envelope["recovery_category"] == "RETRYABLE"
+        assert envelope["suggested_skill"] == "nvflare-diagnose-job"
 
     def test_custom_exit_code(self, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "json")
@@ -344,3 +589,51 @@ class TestOutputError:
         captured = capsys.readouterr()
         assert "TIMEOUT" in captured.err
         assert captured.out == ""
+
+
+class TestSensitiveOutputRedaction:
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            ('password="correct horse battery staple"', 'password="<redacted>"'),
+            (
+                '{"client_secret": "alpha beta gamma", "safe": true}',
+                '{"client_secret": "<redacted>", "safe": true}',
+            ),
+            ("--client-secret='alpha beta gamma' --verbose", "--client-secret='<redacted>' --verbose"),
+            ("Authorization: 'alpha beta gamma'", "Authorization: '<redacted>'"),
+            ("Authorization: Basic dXNlcjpwYXNz", "Authorization: <redacted>"),
+            ('Authorization = "Bearer sample-token-123"', 'Authorization = "Bearer <redacted>"'),
+            ("Authorization = 'Bearer sample-token-123'", "Authorization = 'Bearer <redacted>'"),
+            ('Authorization="Bearer sample-token-123"', 'Authorization="Bearer <redacted>"'),
+            ("Authorization=Bearer sample-token-123", "Authorization=Bearer <redacted>"),
+            (
+                '{"Authorization": "Bearer sk-live-abc123"}',
+                '{"Authorization": "Bearer <redacted>"}',
+            ),
+            ('password="sample secret fragment\nsafe diagnostic', 'password="<redacted>\nsafe diagnostic'),
+        ],
+    )
+    def test_redacts_sensitive_text_values(self, text, expected):
+        assert cli_output.sanitize_cli_output(text) == expected
+
+    def test_redacts_authorization_dict_value(self):
+        value = {"headers": {"Authorization": "Bearer sk-live-abc123"}}
+
+        assert cli_output.sanitize_cli_output(value) == {"headers": {"Authorization": "<redacted>"}}
+
+    def test_output_json_redacts_sensitive_fields(self, capsys):
+        output({"credential": "cred-secret", "status": "ok"}, "json")
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["data"] == {"credential": "<redacted>", "status": "ok"}
+
+    def test_jsonl_event_redacts_sensitive_fields(self, capsys):
+        output_jsonl_event({"event": "progress", "private_key": "key-secret"})
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["private_key"] == "<redacted>"
+
+    def test_print_human_redacts_sensitive_inline_text(self, capsys):
+        print_human("failed with api_key=api-secret")
+        captured = capsys.readouterr()
+        assert "api_key=<redacted>" in captured.out
+        assert "api-secret" not in captured.out

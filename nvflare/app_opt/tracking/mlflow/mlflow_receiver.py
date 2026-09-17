@@ -62,8 +62,9 @@ class MLflowReceiver(AnalyticsReceiver):
         """MLflowReceiver receives log events from clients and deliver them to the MLflow tracking server.
 
         Args:
-            tracking_uri (Optional[str], optional): MLflow tracking server URI. When this is not specified, the metrics will be written to the local file system.
-                If the tracking URI is specified, the MLflow tracking server must started before running the job. Defaults to None.
+            tracking_uri (Optional[str], optional): MLflow tracking server URI. When this is not specified, metrics
+                are written to a local SQLite database in the job result directory. If the tracking URI is specified,
+                the MLflow tracking server must be started before running the job. Defaults to None.
             kw_args (Optional[dict], optional): keyword arguments:
                 "experiment_name" (str): Specifies the experiment name. If not specified, the default name of "FLARE FL Experiment" will be used.
                 "run_name" (str): Specifies the run name
@@ -105,8 +106,8 @@ class MLflowReceiver(AnalyticsReceiver):
 
         workspace = fl_ctx.get_workspace()
         job_id = fl_ctx.get_job_id()
-        mlflow_root = os.path.abspath(os.path.join(workspace.get_result_root(job_id), "mlflow"))
-        return f"file://{mlflow_root}"
+        mlflow_db = os.path.abspath(os.path.join(workspace.get_result_root(job_id), "mlflow.db"))
+        return f"sqlite:///{mlflow_db}"
 
     def initialize(self, fl_ctx: FLContext):
         """Initializes MlflowClient for each site.

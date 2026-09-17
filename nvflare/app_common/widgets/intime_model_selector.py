@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import math
+import re
+
 import numpy as np
 
 from nvflare.apis.dxo import DataKind, MetaKey, from_shareable
@@ -23,6 +26,28 @@ from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.widget import Widget
+
+# Best-effort heuristic for lower-is-better metric names; not exhaustive.
+# Substring hints catch compound names like "val_loss" or "error_rate"; token hints
+# catch short names such as "mse" that are unsafe to match as substrings ("dice" contains "ce").
+_LOWER_IS_BETTER_SUBSTRING_HINTS = ("loss", "err")
+_LOWER_IS_BETTER_TOKEN_HINTS = {"bce", "ce", "cer", "mae", "mse", "nll", "perplexity", "ppl", "rmse", "wer"}
+# A "neg" token marks a metric the client already negated, which is the remedy this
+# module's own warning recommends ("neg_<key_metric>"). Such a name is higher-is-better
+# even though it still carries the original lower-is-better hint, so exempt it before
+# applying the hints. Matched as a token, not a substring, so "negative_class_loss" and
+# similar genuinely lower-is-better names are still caught.
+_ALREADY_NEGATED_TOKEN = "neg"
+
+
+def _looks_lower_is_better(metric_name: str) -> bool:
+    name = metric_name.lower()
+    tokens = re.split(r"[^a-z0-9]+", name)
+    if _ALREADY_NEGATED_TOKEN in tokens:
+        return False
+    if any(hint in name for hint in _LOWER_IS_BETTER_SUBSTRING_HINTS):
+        return True
+    return any(token in _LOWER_IS_BETTER_TOKEN_HINTS for token in tokens)
 
 
 class IntimeModelSelector(Widget):
@@ -42,17 +67,30 @@ class IntimeModelSelector(Widget):
             validation_metric_name (str, optional): key used to save initial validation metric in the
                 DXO meta properties (defaults to MetaKey.INITIAL_METRICS).
             key_metric: if metrics are a `dict`, `key_metric` can select the metric used for global model selection.
-                Defaults to "val_accuracy".
-            negate_key_metric: Whether to invert the key metric. Should be used if key metric is a loss. Defaults to `False`.
+                Defaults to "val_accuracy". Higher values are treated as better unless `negate_key_metric` is set.
+            negate_key_metric: Whether to invert the key metric. Must be `True` if the key metric is
+                lower-is-better (e.g., a loss); otherwise the model with the worst metric would be selected
+                as the global best. Defaults to `False`.
         """
         super().__init__()
 
         self.val_metric = self.best_val_metric = -np.inf
+        self.raw_val_metric = self.best_raw_val_metric = None
         self.weigh_by_local_iter = weigh_by_local_iter
         self.validation_metric_name = validation_metric_name
         self.aggregation_weights = aggregation_weights or {}
         self.key_metric = key_metric
         self.negate_key_metric = negate_key_metric
+
+        if not self.negate_key_metric and _looks_lower_is_better(self.key_metric):
+            self.logger.warning(
+                f"key_metric '{self.key_metric}' looks like a lower-is-better metric, but model selection "
+                f"treats higher values as better. If lower values indicate a better model, set "
+                f"key_metric_mode='min' when using the Recipe API, or set negate_key_metric=True when "
+                f"configuring IntimeModelSelector directly. Alternatively, report a negated metric from "
+                f"the client (e.g., 'neg_{self.key_metric}'); otherwise the worst global model will be "
+                f"selected as the best."
+            )
 
         self.logger.info(f"model selection weights control: {aggregation_weights}")
         self._reset_stats()
@@ -72,6 +110,7 @@ class IntimeModelSelector(Widget):
 
     def _reset_stats(self):
         self.validation_metric_weighted_sum = 0
+        self.raw_validation_metric_weighted_sum = 0
         self.validation_metric_sum_of_weights = 0
 
     def _before_accept(self, fl_ctx: FLContext):
@@ -125,6 +164,20 @@ class IntimeModelSelector(Widget):
                 )
                 return False
 
+        try:
+            validation_metric = float(validation_metric)
+        except (TypeError, ValueError):
+            self.log_warning(
+                fl_ctx, f"validation metric {validation_metric!r} from {client_name} is not a number; skipping"
+            )
+            return False
+        if not math.isfinite(validation_metric):
+            self.log_warning(
+                fl_ctx, f"validation metric {validation_metric!r} from {client_name} is not finite; skipping"
+            )
+            return False
+
+        raw_validation_metric = validation_metric
         if self.negate_key_metric:
             validation_metric = -1.0 * validation_metric
 
@@ -140,6 +193,7 @@ class IntimeModelSelector(Widget):
 
         weight = n_iter * aggregation_weights
         self.validation_metric_weighted_sum += validation_metric * weight
+        self.raw_validation_metric_weighted_sum += raw_validation_metric * weight
         self.validation_metric_sum_of_weights += weight
         return True
 
@@ -148,18 +202,42 @@ class IntimeModelSelector(Widget):
             self.log_debug(fl_ctx, "nothing accumulated")
             return False
         self.val_metric = self.validation_metric_weighted_sum / self.validation_metric_sum_of_weights
+        self.raw_val_metric = self.raw_validation_metric_weighted_sum / self.validation_metric_sum_of_weights
         self.logger.debug(f"weighted validation metric {self.val_metric}")
         if self.val_metric > self.best_val_metric:
             self.best_val_metric = self.val_metric
+            self.best_raw_val_metric = self.raw_val_metric
             current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
             self.log_info(fl_ctx, f"new best validation metric at round {current_round}: {self.best_val_metric}")
 
             # Fire event to notify that the current global model is a new best
             fl_ctx.set_prop(AppConstants.VALIDATION_RESULT, self.best_val_metric, private=True, sticky=False)
+            fl_ctx.set_prop(
+                AppConstants.METRICS_SELECTION_INFO,
+                self._make_metrics_selection_info(current_round),
+                private=True,
+                sticky=False,
+            )
             self.fire_event(AppEventType.GLOBAL_BEST_MODEL_AVAILABLE, fl_ctx)
 
         self._reset_stats()
         return True
+
+    def _make_metrics_selection_info(self, current_round):
+        mode = "min" if self.negate_key_metric else "max"
+        return {
+            "source": self.__class__.__name__,
+            "metric_source": self.validation_metric_name,
+            "key_metric": {
+                "name": self.key_metric,
+                "mode": mode,
+                "mode_source": f"{self.__class__.__name__}.negate_key_metric",
+            },
+            "best_round": current_round,
+            "best_metrics": {
+                self.key_metric: self.best_raw_val_metric,
+            },
+        }
 
 
 class IntimeModelSelectionHandler(IntimeModelSelector):

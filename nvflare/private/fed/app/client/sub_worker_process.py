@@ -191,12 +191,13 @@ class SubWorkerExecutor(Runner):
     def _initialize(self, data):
         executor_id = data[CommunicationMetaData.LOCAL_EXECUTOR]
         components_conf = data[CommunicationMetaData.COMPONENTS]
-        component_builder = WorkerComponentBuilder()
-        for item in components_conf:
+        component_builder = WorkerComponentBuilder(fl_ctx=data[CommunicationMetaData.FL_CTX], workspace=self.workspace)
+        for i, item in enumerate(components_conf):
             cid = item.get("id", None)
             if not cid:
                 raise TypeError("missing component id")
-            self.components[cid] = component_builder.build_component(item)
+            node = component_builder.make_component_node(item, i + 1)
+            self.components[cid] = component_builder.build_component(item, node)
             if isinstance(self.components[cid], FLComponent):
                 self.handlers.append(self.components[cid])
 

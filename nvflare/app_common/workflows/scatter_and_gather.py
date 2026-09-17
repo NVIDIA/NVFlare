@@ -26,6 +26,7 @@ from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.utils.error_handling_utils import get_error_handling_message, should_ignore_result_error
+from nvflare.app_common.utils.tensor_disk_offload_context import cleanup_tensor_disk_offload, setup_tensor_disk_offload
 from nvflare.fuel.utils.memory_utils import cleanup_memory
 from nvflare.fuel.utils.validation_utils import check_non_negative_int
 from nvflare.security.logging import secure_format_exception
@@ -50,6 +51,7 @@ class ScatterAndGather(Controller):
         persist_every_n_rounds: int = 1,
         snapshot_every_n_rounds: int = 1,
         memory_gc_rounds: int = 1,
+        enable_tensor_disk_offload: bool = False,
     ):
         """The controller for ScatterAndGather Workflow.
 
@@ -86,6 +88,9 @@ class ScatterAndGather(Controller):
                 If n is 0 then no persist.
             memory_gc_rounds (int, optional): Run memory cleanup (gc.collect + malloc_trim) every N rounds.
                 Set to 0 to disable. Defaults to 1 (every round).
+            enable_tensor_disk_offload (bool, optional): Download tensors to disk during FOBS streaming
+                instead of deserializing into memory. Reduces peak server memory during aggregation when
+                client updates remain as PyTorch tensors. Defaults to False.
 
         Raises:
             TypeError: when any of input arguments does not have correct type
@@ -138,6 +143,7 @@ class ScatterAndGather(Controller):
         self._persist_every_n_rounds = persist_every_n_rounds
         self._snapshot_every_n_rounds = snapshot_every_n_rounds
         self._memory_gc_rounds = memory_gc_rounds
+        self.enable_tensor_disk_offload = enable_tensor_disk_offload
         self.ignore_result_error = ignore_result_error
         self.allow_empty_global_weights = allow_empty_global_weights
 
@@ -216,7 +222,19 @@ class ScatterAndGather(Controller):
             self.fire_event(AppEventType.INITIAL_MODEL_LOADED, fl_ctx)
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext) -> None:
+        disk_offload_context = None
         try:
+            disk_offload_context = setup_tensor_disk_offload(
+                engine=getattr(self, "_engine", None),
+                enabled=self.enable_tensor_disk_offload,
+                job_id=fl_ctx.get_job_id("job"),
+            )
+            if self.enable_tensor_disk_offload and not disk_offload_context.applied:
+                self.log_warning(
+                    fl_ctx,
+                    "enable_tensor_disk_offload=True but no active cell is available; "
+                    "falling back to in-memory tensor download",
+                )
 
             self.log_info(fl_ctx, "Beginning ScatterAndGather training phase.")
             self._phase = AppConstants.PHASE_TRAIN
@@ -327,6 +345,8 @@ class ScatterAndGather(Controller):
             error_msg = f"Exception in ScatterAndGather control_flow: {secure_format_exception(e)}"
             self.log_exception(fl_ctx, error_msg)
             self.system_panic(error_msg, fl_ctx)
+        finally:
+            cleanup_tensor_disk_offload(engine=getattr(self, "_engine", None), context=disk_offload_context)
 
     def stop_controller(self, fl_ctx: FLContext):
         self._phase = AppConstants.PHASE_FINISHED

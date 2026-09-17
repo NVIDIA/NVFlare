@@ -31,14 +31,62 @@ The security of the system comes from the PKI credentials in the Startup Kits. A
     - The Project Admin, who is responsible for the provisioning process of the study, should protect the study's configuration files and store created Startup Kits securely.
     - When distributing Startup Kits, the Project Admin should use trusted communication methods, and never send passwords of the Startup Kits in the same communication. It is preferred to send the Kits and passwords with different communication methods.
     - Org Admin and users must protect their Startup Kits and only use them for intended purposes.
- 
+
+Job processes do not use the site's certificate and private key. In secure mode
+every job process runs on a short-lived certificate issued for that job alone,
+and container and scheduler launchers withhold the site private keys from job
+processes. See :ref:`per_job_certificates`.
+
 .. note::
 
-    The provisioning tool tries to use the strongest cryptography suites possible when generating the PKI credentials. All of the certificates are compliant with the X.509 standard. All private keys are generated with a size of 2048-bits. The backend is openssl 1.1.1f, released on March 31, 2020, with no known CVE.  All certificates expire within 360 days.
+    The provisioning tools generate X.509 certificates with 2048-bit RSA
+    private keys. Certificate lifetime depends on the provisioning workflow
+    and configuration. Centralized ``nvflare provision`` defaults newly
+    created root and participant certificates to 360 days, and
+    ``root_valid_days`` can change a new root's validity. Distributed
+    ``nvflare cert init`` defaults the root CA to 3650 days, while
+    ``nvflare cert approve`` defaults participant certificates to 1095 days.
+    In both workflows, a participant certificate cannot outlive its signing
+    root CA. If the root has less validity remaining than the requested
+    participant lifetime, the participant certificate is shortened to expire
+    with the root.
+    The cryptographic backend is supplied by the installed ``cryptography``
+    runtime and is not fixed to one OpenSSL release.
  
 .. note::
 
     :ref:`NVFlare Dashboard <nvflare_dashboard_ui>` is a website that supports user and site registration. Users will be able to download their Startup Kits (and other artifacts) from the website.
+
+Admin Certificate Providers
+---------------------------
+For admin users, NVFLARE can also provision startup kits that do not contain a
+static admin certificate or private key. In this mode, the admin startup kit
+contains an ``admin_cert_provider`` configuration. When the admin client
+starts, it asks that provider for an admin certificate and private key,
+validates the returned certificate against the project
+``rootCA.pem``, and then uses the normal certificate login and job-signing path.
+Valid provider-issued admin cert/key material is cached under
+``~/.nvflare/admin_certificates`` so repeated CLI commands do not invoke the
+provider until the certificate is invalid, expired, or close to expiry. With
+an SSO-backed provider, this avoids a browser flow for each command. The cache
+is private to the OS user, so administrators should not share an OS account.
+The startup kit can use a generic name such as ``sso-admin-kit``; the actual
+admin identity comes from the issued certificate.
+
+The built-in provider is ``step_ca``. With this provider, step-ca owns OIDC
+login, role claim handling, and certificate issuance. The issued certificate
+must contain the same FLARE identity fields that the existing PKI path consumes:
+``commonName`` for the admin identity, ``organizationName`` for the FLARE org,
+and ``unstructuredName`` for the FLARE authorization role.
+
+The step-ca template must map an exact, allowlisted IdP role to both the FLARE
+organization and role. This binds the authorization tuple before the
+certificate reaches the FLARE server; the server does not derive or rewrite
+either value.
+
+This mode reduces the distribution risk of long-lived admin private keys while
+preserving the existing server and client trust model. Server and FL client
+startup kits still use their normal PKI credentials.
 
 
 .. _federated_authorization:
@@ -171,11 +219,8 @@ Hence it is quite possible that the job is accepted at submission time, but cann
 
 Study-Scoped Authorization
 """"""""""""""""""""""""""
-When multi-study is enabled, the user's role for study-scoped authorization is determined by the active
-study session rather than the certificate role. At login time, the server verifies that the user is mapped
-in the study's ``admins`` configuration and uses the mapped role for subsequent study-scoped authorization
-checks. This means the same user can have different privileges in different studies. See
-:ref:`multi_study_guide` for configuration details.
+The active study scopes operations without overriding the certificate role.
+See :ref:`multi_study_guide` for registry and certificate membership rules.
 
 You may ask why we don't check authorization with each involved FL client at the time of job submission. There are three considerations:
 
@@ -222,6 +267,8 @@ Command Categories
         AC.RESTART: CommandCategory.OPERATE,
         AC.SHUTDOWN: CommandCategory.OPERATE,
         AC.REMOVE_CLIENT: CommandCategory.OPERATE,
+        AC.DISABLE_CLIENT: CommandCategory.OPERATE,
+        AC.ENABLE_CLIENT: CommandCategory.OPERATE,
         AC.SET_TIMEOUT: CommandCategory.OPERATE,
         AC.CALL: CommandCategory.OPERATE,
         AC.CONFIGURE_SITE_LOG: CommandCategory.OPERATE,

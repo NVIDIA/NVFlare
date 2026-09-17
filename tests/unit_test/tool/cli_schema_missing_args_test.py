@@ -33,9 +33,8 @@ class TestSchemaWithMissingArgs:
         with patch("sys.argv", argv):
             from nvflare import cli
 
-            with patch("nvflare.cli.ensure_hidden_config_migrated"):
-                with pytest.raises(SystemExit) as exc_info:
-                    cli.main()
+            with pytest.raises(SystemExit) as exc_info:
+                cli.main()
         return exc_info.value.code
 
     def test_job_abort_schema_no_job_id(self, capsys):

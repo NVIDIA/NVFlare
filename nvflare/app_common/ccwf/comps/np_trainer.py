@@ -28,7 +28,14 @@ from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.model import ModelLearnable
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.np.constants import NPConstants
+from nvflare.app_common.utils.file_utils import resolve_path_under_root
+from nvflare.fuel.utils.deprecated import warn_deprecated
 from nvflare.security.logging import secure_format_exception
+
+_NP_TRAINER_DEPRECATION_MSG = (
+    "NPTrainer is deprecated but remains supported for backward compatibility. "
+    "Use the Recipe API with the Client API for new projects."
+)
 
 
 class NPTrainer(Executor):
@@ -45,6 +52,7 @@ class NPTrainer(Executor):
         # Init functions of components should be very minimal. Init
         # is called when json is read. A big init will cause json loading to halt
         # for long time.
+        warn_deprecated(_NP_TRAINER_DEPRECATION_MSG, stacklevel=3)
         super().__init__()
 
         if not (isinstance(delta, float) or isinstance(delta, int)):
@@ -57,6 +65,13 @@ class NPTrainer(Executor):
         self._train_task_name = train_task_name
         self._submit_model_task_name = submit_model_task_name
         self._validate_model_task_name = validate_model_task_name
+
+    @staticmethod
+    def _model_summary(np_data):
+        weights = np_data.get(NPConstants.NUMPY_KEY) if isinstance(np_data, dict) else None
+        if weights is None:
+            return f"{NPConstants.NUMPY_KEY}=missing"
+        return f"shape={getattr(weights, 'shape', None)}, dtype={getattr(weights, 'dtype', None)}"
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         # if event_type == EventType.START_RUN:
@@ -87,9 +102,9 @@ class NPTrainer(Executor):
 
         # Display properties.
         self.log_info(fl_ctx, f"Incoming data kind: {incoming_dxo.data_kind}")
-        self.log_info(fl_ctx, f"Model: \n{np_data}")
-        self.log_info(fl_ctx, f"Current Round: {current_round}")
-        self.log_info(fl_ctx, f"Total Rounds: {total_rounds}")
+        self.log_info(
+            fl_ctx, f"Model received for round {current_round}/{total_rounds}: {self._model_summary(np_data)}"
+        )
         self.log_info(fl_ctx, f"Client identity: {fl_ctx.get_identity_name()}")
 
         # Check abort signal
@@ -119,7 +134,8 @@ class NPTrainer(Executor):
 
         self.log_info(
             fl_ctx,
-            f"Model after training: {np_data}",
+            f"Completed mock training for round {current_round}/{total_rounds}: "
+            f"added delta={self._delta} to {NPConstants.NUMPY_KEY}; {self._model_summary(np_data)}",
         )
 
         # Checking abort signal again.
@@ -203,7 +219,7 @@ class NPTrainer(Executor):
 
     def _validate_model(self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         dxo = from_shareable(shareable)
-        self.log_info(fl_ctx, f"Validating model {dxo}")
+        self.log_info(fl_ctx, f"Validating model: data_kind={dxo.data_kind}, {self._model_summary(dxo.data)}")
         fake_metric = random.uniform(0.1, 1.0)
         val_results = {"val_accuracy": fake_metric}
         metric_dxo = DXO(data_kind=DataKind.METRICS, data=val_results)
@@ -213,9 +229,9 @@ class NPTrainer(Executor):
         engine = fl_ctx.get_engine()
         job_id = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
         run_dir = engine.get_workspace().get_run_dir(job_id)
-        model_path = os.path.join(run_dir, self._model_dir)
-
-        model_load_path = os.path.join(model_path, self._model_name)
+        model_load_path = resolve_path_under_root(
+            run_dir, os.path.join(self._model_dir, self._model_name), "model path"
+        )
         try:
             np_data = np.load(model_load_path, allow_pickle=False)
         except Exception as e:
@@ -232,10 +248,12 @@ class NPTrainer(Executor):
         engine = fl_ctx.get_engine()
         job_id = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
         run_dir = engine.get_workspace().get_run_dir(job_id)
-        model_path = os.path.join(run_dir, self._model_dir)
+        model_save_path = resolve_path_under_root(
+            run_dir, os.path.join(self._model_dir, self._model_name), "model path"
+        )
+        model_path = os.path.dirname(model_save_path)
         if not os.path.exists(model_path):
             os.makedirs(model_path)
 
-        model_save_path = os.path.join(model_path, self._model_name)
         np.save(model_save_path, model[NPConstants.NUMPY_KEY])
         self.log_info(fl_ctx, f"Saved numpy model to: {model_save_path}")

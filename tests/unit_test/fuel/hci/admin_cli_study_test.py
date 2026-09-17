@@ -19,7 +19,7 @@ import pytest
 
 from nvflare.apis.fl_constant import ConnectionSecurity
 from nvflare.apis.job_def import DEFAULT_STUDY
-from nvflare.fuel.hci.client.api import CommandInfo
+from nvflare.fuel.hci.client.api import CommandInfo, ResultKey
 from nvflare.fuel.hci.client.api_spec import AdminConfigKey, UidSource
 from nvflare.fuel.hci.client.api_status import APIStatus
 from nvflare.fuel.hci.client.cli import AdminClient
@@ -93,6 +93,21 @@ def test_clone_job_does_not_send_session_study_cmd_props():
     client._do_default("clone_job job-1")
 
     assert captured["props"] is None
+
+
+def test_clone_job_warns_and_still_executes():
+    client, captured = _make_admin_client_for_study("multiple-sclerosis")
+    output = []
+    client.write_string = output.append
+
+    client._do_default("clone_job job-1")
+
+    assert captured["line"] == "clone_job job-1"
+    assert len(output) == 1
+    assert "deprecated" in output[0].lower()
+    assert "original signing certificate" in output[0]
+    assert "nvflare job submit -j JOB_FOLDER" in output[0]
+    assert "current submitter certificate" in output[0]
 
 
 def test_admin_main_passes_launch_study_to_admin_client():
@@ -176,11 +191,13 @@ def test_admin_client_passes_study_to_admin_api(tmp_path):
     }
 
     class _FakeAdminAPI:
+        user_name = "cert-admin@example.com"
+
         def __init__(self, **kwargs):
             captured["study"] = kwargs["study"]
 
     with patch("nvflare.fuel.hci.client.cli.AdminAPI", _FakeAdminAPI):
-        AdminClient(
+        client = AdminClient(
             admin_config=admin_config,
             username="admin@nvidia.com",
             handlers=[],
@@ -189,3 +206,66 @@ def test_admin_client_passes_study_to_admin_api(tmp_path):
         )
 
     assert captured["study"] == "cancer-research"
+    assert client.user_name == "cert-admin@example.com"
+
+
+@pytest.mark.parametrize(
+    "confirmation,stale_name,answer,accepted",
+    [
+        (CommandInfo.CONFIRM_AUTH, "", "bob@example.com", True),
+        (CommandInfo.CONFIRM_AUTH, "alice@example.com", "alice@example.com", False),
+        (CommandInfo.CONFIRM_USER_NAME, "alice@example.com", "bob@example.com", True),
+        (CommandInfo.CONFIRM_USER_NAME, "alice@example.com", "alice@example.com", False),
+    ],
+)
+def test_admin_client_confirmation_uses_current_api_identity(confirmation, stale_name, answer, accepted):
+    client, captured = _make_admin_client_for_study(DEFAULT_STUDY)
+    client.user_name = stale_name
+    client.api.user_name = "bob@example.com"
+    client.api.check_command = lambda _line: confirmation
+    output = []
+    client.write_string = output.append
+
+    with patch.object(client, "_user_input", return_value=answer) as user_input:
+        client._do_default("shutdown all")
+
+    user_input.assert_called_once_with("Confirm with User Name: ")
+    assert ("line" in captured) == accepted
+    assert output == ([] if accepted else ["user name mismatch"])
+
+
+def test_admin_client_run_reports_login_rejection_and_skips_cmdloop():
+    calls = []
+    output = []
+    client = AdminClient.__new__(AdminClient)
+
+    class _FakeAPI:
+        @staticmethod
+        def connect(timeout):
+            calls.append(("connect", timeout))
+
+        @staticmethod
+        def login():
+            calls.append(("login",))
+            return {
+                ResultKey.STATUS: APIStatus.ERROR_AUTHENTICATION,
+                ResultKey.DETAILS: "unknown study 'study-a'",
+                ResultKey.AUTH_CODE: "AUTH_UNKNOWN_STUDY",
+            }
+
+        @staticmethod
+        def close():
+            calls.append(("close",))
+
+    client.api = _FakeAPI()
+    client.login_timeout = 5.0
+    client.debug = False
+    client.stopped = False
+    client.write_string = output.append
+    client.cmdloop = lambda *_args, **_kwargs: calls.append(("cmdloop",))
+
+    client.run()
+
+    assert output == ["Login rejected: AUTH_UNKNOWN_STUDY: unknown study 'study-a'"]
+    assert calls == [("connect", 5.0), ("login",), ("close",)]
+    assert client.stopped is True

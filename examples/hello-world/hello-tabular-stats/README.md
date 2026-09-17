@@ -20,8 +20,9 @@ Get the example code from github:
 Then navigate to the hello-tabular-stats directory:
 
 ```
+    cd NVFlare
     git switch <release branch>
-    cd NVFlare/examples/hello-world/hello-tabular-stats
+    cd examples/hello-world/hello-tabular-stats
 ```
 
 ## Install the dependency
@@ -88,7 +89,7 @@ So we assigned the training data and test data into two clients.
  
 Now we use the data utility to download UCI datasets to separate client package directory to /tmp/nvflare/data/ directory
 
-Please note that the UCI's website may experience occasional downtime.
+Please note that the UCI website may experience occasional downtime.
 
 ```shell
 python prepare_data.py

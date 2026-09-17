@@ -43,7 +43,7 @@
             "class": "logging.handlers.RotatingFileHandler",
             "level": "ERROR",
             "formatter": "baseFormatter",
-            "filename": "log_error.txt",
+            "filename": "error_log.txt",
             "mode": "a",
             "maxBytes": 20971520,
             "backupCount": 10
@@ -76,7 +76,6 @@
         }
     }
 }
-
 
 
 

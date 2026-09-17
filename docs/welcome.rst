@@ -105,7 +105,7 @@ Key Features
 - **Cross-Silo to Edge** -- From a handful of hospital sites to millions of mobile devices
 - **Hierarchical Architecture** -- Multi-region, tiered FL for large-scale deployments
 - **Multi-Job Execution** -- Concurrent job execution with resource management
-- **3rd-Party Integration** -- FlareAgent for seamless integration with external systems
+- **Client API Attach Mode** -- Attach independently managed trainers without transferring process ownership to NVFLARE
 
 **Built for Customization**
 
@@ -117,21 +117,26 @@ Key Features
   communication backends without changing application code
 - **Rich Examples** -- Extensive library of FL algorithms, workflows, and application examples to build from
 
-What is New in 2.7.2
+What is New in 2.9.0
 ====================
 
-NVIDIA FLARE 2.7.2 brings the Job Recipe API to general availability, introduces the Tensor-based Downloader for
-efficient large model handling, and adds comprehensive timeout and memory management documentation.
+NVIDIA FLARE 2.9.0's headline changes are Agent Skills for agent-assisted
+federated development, a Python-first Collaboration API, a Slurm job
+launcher, and more reliable large-model training, alongside a broad
+security-hardening pass across the internal transport and admin access.
 
 **Highlights:**
 
-- **Job Recipe API -- Generally Available**: Unified recipe architecture covering FedAvg, FedOpt, SCAFFOLD, Cyclic, XGBoost, and more across all major frameworks
-- **Tensor-based Downloader**: Memory-efficient pull-based model transfer using safetensors format for large model training
-- **Server-Side Memory Cleanup**: Automatic garbage collection and heap trimming to prevent RSS growth in long-running jobs
-- **Edge Development**: New hierarchical architecture with EDIP protocol, mobile SDKs, and device simulation for FL at scale
-- **Confidential Computing**: End-to-end IP protection with AMD SEV-SNP + NVIDIA GPU TEEs
+- **Agent Skills**: agent-assisted federated development
+- **Collaboration API**: a Python-first API for research workflows
+- **Slurm job launcher**: a new HPC execution target alongside process,
+  Docker, and Kubernetes
+- **Large-model training**: a hardened model-transfer streaming transport
+  and FedAvg validated to 72 billion parameters
+- **Security hardening**: authenticated CellNet messages, internal mTLS by
+  default, and hardened admin and job-signing paths
 
-See :doc:`release_notes/flare_272` for full release notes.
+See :doc:`release_notes/flare_290` for full release notes.
 See :doc:`release_notes/previous` for previous releases.
 
 Real-World Use Cases & FLARE Day

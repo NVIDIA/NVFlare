@@ -15,13 +15,14 @@ import logging
 import random
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import BrokenExecutor, ThreadPoolExecutor
 
 from nvflare.fuel.f3.connection import BytesAlike
 from nvflare.fuel.f3.mpm import MainProcessMonitor
 
 STREAM_THREAD_POOL_SIZE = 128
 CALLBACK_THREAD_POOL_SIZE = 64
+DOWNLOAD_REQUEST_THREAD_POOL_SIZE = 64
 ONE_MB = 1024 * 1024
 MILLION = 1000000
 
@@ -38,20 +39,51 @@ class CheckedExecutor(ThreadPoolExecutor):
     def __init__(self, max_workers=None, thread_name_prefix=""):
         super().__init__(max_workers, thread_name_prefix)
         self.stopped = False
+        # ThreadPoolExecutor protects its own shutdown flag, but our public
+        # ``stopped`` check used to happen before entering that protection. A
+        # concurrent shutdown could therefore land between the check and
+        # ``super().submit()`` and raise "cannot schedule new futures after
+        # shutdown" on an F3 worker during process teardown.
+        self._lifecycle_lock = threading.Lock()
 
-    def shutdown(self, wait=True):
-        self.stopped = True
-        super().shutdown(wait)
+    def shutdown(self, wait=True, *, cancel_futures=False):
+        # Mark both our wrapper and the base executor stopped while submitters
+        # are excluded. Do not hold this lock while waiting for workers: an
+        # already-admitted task may itself make a best-effort nested submission.
+        with self._lifecycle_lock:
+            if not self.stopped:
+                self.stopped = True
+                super().shutdown(wait=False, cancel_futures=cancel_futures)
+        if wait:
+            super().shutdown(wait=True, cancel_futures=cancel_futures)
 
     def submit(self, fn, *args, **kwargs):
-        if self.stopped:
-            log.debug(f"Call {fn} is ignored after streaming shutting down")
-            return None
-        return super().submit(fn, *args, **kwargs)
+        with self._lifecycle_lock:
+            if self.stopped:
+                log.debug(f"Call {fn} is ignored after streaming shutting down")
+                return None
+            try:
+                return super().submit(fn, *args, **kwargs)
+            except BrokenExecutor:
+                # A genuinely broken pool is not a lifecycle stop and must remain
+                # visible to the caller.
+                raise
+            except RuntimeError as e:
+                # ThreadPoolExecutor.submit raises RuntimeError after either pool
+                # shutdown or interpreter shutdown. Other RuntimeErrors, notably
+                # Thread.start() failing under PID/thread pressure after submit has
+                # enqueued work, describe a live but resource-starved pool and must
+                # remain visible without permanently bricking future submissions.
+                if not str(e).startswith("cannot schedule new futures after"):
+                    raise
+                self.stopped = True
+                log.debug(f"Call {fn} is ignored after the executor shut down")
+                return None
 
 
 stream_thread_pool = CheckedExecutor(STREAM_THREAD_POOL_SIZE, "stm")
 callback_thread_pool = CheckedExecutor(CALLBACK_THREAD_POOL_SIZE, "stm_cb")
+download_request_thread_pool = CheckedExecutor(DOWNLOAD_REQUEST_THREAD_POOL_SIZE, "stm_dl")
 
 
 def wrap_view(buffer: BytesAlike) -> memoryview:
@@ -126,6 +158,7 @@ def stream_stats_category(fqcn: str, channel: str, topic: str, stream_type: str 
 
 
 def stream_shutdown():
+    download_request_thread_pool.shutdown(wait=True)
     callback_thread_pool.shutdown(wait=True)
     stream_thread_pool.shutdown(wait=True)
 

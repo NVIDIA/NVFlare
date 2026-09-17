@@ -26,16 +26,18 @@ class SysMetricsCollector(MetricsCollector):
         """
         super().__init__(tags=tags, streaming_to_server=streaming_to_server)
 
-        self.pair_events = {
-            EventType.SYSTEM_START: "_system",
-            EventType.SYSTEM_END: "_system",
-            EventType.BEFORE_CHECK_CLIENT_RESOURCES: "_check_client_resources",
-            EventType.AFTER_CHECK_CLIENT_RESOURCES: "_check_client_resources",
-            EventType.BEFORE_CLIENT_REGISTER: "_client_register",
-            EventType.AFTER_CLIENT_REGISTER: "_client_register",
-            EventType.BEFORE_CLIENT_HEARTBEAT: "_client_heartbeat",
-            EventType.AFTER_CLIENT_HEARTBEAT: "_client_heartbeat",
-        }
+        self.pair_events, self.pair_start_events = self._build_pair_event_maps(
+            [
+                (EventType.SYSTEM_START, EventType.SYSTEM_END, "_system"),
+                (
+                    EventType.BEFORE_CHECK_CLIENT_RESOURCES,
+                    EventType.AFTER_CHECK_CLIENT_RESOURCES,
+                    "_check_client_resources",
+                ),
+                (EventType.BEFORE_CLIENT_REGISTER, EventType.AFTER_CLIENT_REGISTER, "_client_register"),
+                (EventType.BEFORE_CLIENT_HEARTBEAT, EventType.AFTER_CLIENT_HEARTBEAT, "_client_heartbeat"),
+            ]
+        )
 
         self.single_events = [
             EventType.CLIENT_DISCONNECTED,
@@ -59,3 +61,6 @@ class SysMetricsCollector(MetricsCollector):
 
     def get_pair_events(self):
         return self.pair_events
+
+    def get_pair_start_events(self):
+        return self.pair_start_events

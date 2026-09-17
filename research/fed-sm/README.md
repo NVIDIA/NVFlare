@@ -65,7 +65,7 @@ python3 ./result_stat/plot_tensorboard_events.py
 The TensorBoard curves (smoothed with weight 0.8) for validation Dice for the 100 epochs (100 rounds, 1 local epoch per round) during training are shown below:
 ![All training curve](./figs/all_training.png)
 
-### Testing score
+### Testing Scores
 The testing score is computed based on the Super Model for FedSM.
 We provide a script for performing validation on testing data split. 
 Please add the correct paths below, and run:

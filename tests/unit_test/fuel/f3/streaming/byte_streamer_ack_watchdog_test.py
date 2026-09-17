@@ -12,15 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import threading
 import time
+from collections import OrderedDict
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
+import pytest
+
+import nvflare.fuel.f3.streaming.byte_streamer as byte_streamer_module
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.message import Message
-from nvflare.fuel.f3.streaming.byte_streamer import TxTask
-from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
-from nvflare.fuel.f3.streaming.stream_types import Stream
+from nvflare.fuel.f3.streaming.byte_streamer import ByteStreamer, TxTask
+from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL, STREAM_DATA_TOPIC, StreamDataType, StreamHeaderKey
+from nvflare.fuel.f3.streaming.stream_types import BlobSizeError, Stream, StreamError, StreamTargetUnreachable
 
 
 class DummyStream(Stream):
@@ -33,6 +39,53 @@ class DummyStream(Stream):
         if not self._chunks:
             return b""
         return self._chunks.pop(0)
+
+
+class ConformingShortReadStream(Stream):
+    def __init__(self, size, read_pattern):
+        super().__init__(size=size, headers={})
+        self.remaining = size
+        self.read_pattern = read_pattern
+        self.read_count = 0
+
+    def read(self, size):
+        if not self.remaining:
+            return b""
+        pattern_size = self.read_pattern[self.read_count % len(self.read_pattern)]
+        self.read_count += 1
+        result_size = min(size, pattern_size, self.remaining)
+        self.remaining -= result_size
+        return b"x" * result_size
+
+
+class OversizedReadStream(Stream):
+    def __init__(self):
+        super().__init__(size=0, headers={})
+
+    def read(self, size):
+        return b"x" * (size + 1)
+
+
+def test_error_context_expiry_cleanup_uses_queue_without_scanning_context_map(monkeypatch):
+    class NoScanDict(OrderedDict):
+        def items(self):
+            raise AssertionError("expiration cleanup must not scan every retained context")
+
+    now = [0.0]
+    monkeypatch.setattr(byte_streamer_module.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(ByteStreamer, "error_context_map", NoScanDict())
+
+    def task(sid):
+        return SimpleNamespace(sid=sid, cell=MagicMock(), target="receiver", channel="ch", topic="tp", headers={})
+
+    ByteStreamer._retain_error_context(task(1))
+    now[0] = byte_streamer_module.STREAM_ERROR_CONTEXT_TTL - 1
+    ByteStreamer._retain_error_context(task(2))
+    assert set(ByteStreamer.error_context_map) == {1, 2}
+
+    now[0] = byte_streamer_module.STREAM_ERROR_CONTEXT_TTL
+    ByteStreamer._retain_error_context(task(3))
+    assert set(ByteStreamer.error_context_map) == {2, 3}
 
 
 class TestByteStreamerAckWatchdog:
@@ -69,10 +122,231 @@ class TestByteStreamerAckWatchdog:
             target="peer",
             headers={},
             stream=stream,
+            reliable=False,
             secure=False,
             optional=False,
         )
         return task, cell
+
+    def test_receiver_error_fails_active_stream(self):
+        cell = MagicMock()
+        cell.my_info.fqcn = "sender"
+        streamer = ByteStreamer(cell)
+        error_callback = MagicMock()
+        streamer.register_error_callback(error_callback)
+        task = TxTask(
+            cell=cell,
+            chunk_size=1,
+            channel="ch",
+            topic="tp",
+            target="receiver",
+            headers={},
+            stream=DummyStream([b"x"]),
+            reliable=False,
+            secure=False,
+            optional=False,
+        )
+        with ByteStreamer.map_lock:
+            ByteStreamer.tx_task_map[task.sid] = task
+        message = Message(
+            {
+                MessageHeaderKey.ORIGIN: "receiver",
+                StreamHeaderKey.STREAM_ID: task.sid,
+                StreamHeaderKey.CHANNEL: "ch",
+                StreamHeaderKey.TOPIC: "tp",
+                StreamHeaderKey.ERROR_MSG: "rejected",
+            }
+        )
+
+        streamer._error_handler(message)
+
+        assert "sender=sender failed_destination=receiver" in str(task.stream_future.exception(timeout=0.1))
+        error_callback.assert_called_once_with(message)
+
+    def test_forwarded_comm_error_fails_correlated_active_stream(self):
+        cell = MagicMock()
+        cell.my_info.fqcn = "sender"
+        streamer = ByteStreamer(cell)
+        error_callback = MagicMock()
+        streamer.register_error_callback(error_callback)
+        task = TxTask(
+            cell=cell,
+            chunk_size=1,
+            channel="ch",
+            topic="tp",
+            target="receiver",
+            headers={},
+            stream=DummyStream([b"x"]),
+            reliable=False,
+            secure=False,
+            optional=False,
+        )
+        with ByteStreamer.map_lock:
+            ByteStreamer.tx_task_map[task.sid] = task
+        message = Message(
+            {
+                MessageHeaderKey.ORIGIN: "relay",
+                StreamHeaderKey.STREAM_ID: task.sid,
+                StreamHeaderKey.CHANNEL: "ch",
+                StreamHeaderKey.TOPIC: "tp",
+                StreamHeaderKey.ERROR_MSG: "downstream connection failed",
+                StreamHeaderKey.ERROR_TYPE: StreamError.__name__,
+                StreamHeaderKey.FAILED_DESTINATION: "receiver",
+            }
+        )
+
+        streamer._error_handler(message)
+
+        error = task.stream_future.exception(timeout=0.1)
+        assert type(error) is StreamError
+        assert "sender=sender failed_destination=receiver" in str(error)
+        error_callback.assert_called_once_with(message)
+
+    def test_non_optional_forward_error_does_not_bypass_reliable_retry(self):
+        cell = MagicMock()
+        cell.my_info.fqcn = "relay"
+        streamer = ByteStreamer(cell)
+        message = Message(
+            {
+                MessageHeaderKey.ORIGIN: "sender",
+                MessageHeaderKey.DESTINATION: "receiver",
+                MessageHeaderKey.OPTIONAL: False,
+                StreamHeaderKey.STREAM_ID: 42,
+                StreamHeaderKey.CHANNEL: "ch",
+                StreamHeaderKey.TOPIC: "tp",
+                StreamHeaderKey.RELIABLE: True,
+            }
+        )
+
+        streamer._forward_error_handler(message, ReturnCode.COMM_ERROR)
+
+        cell.fire_and_forget.assert_not_called()
+
+    def test_uncorrelated_receiver_error_is_ignored(self, caplog):
+        cell = MagicMock()
+        cell.my_info.fqcn = "sender"
+        streamer = ByteStreamer(cell)
+        error_callback = MagicMock()
+        streamer.register_error_callback(error_callback)
+        message = Message(
+            {
+                MessageHeaderKey.ORIGIN: "receiver",
+                StreamHeaderKey.STREAM_ID: 99,
+                StreamHeaderKey.CHANNEL: "ch",
+                StreamHeaderKey.TOPIC: "tp",
+                StreamHeaderKey.ERROR_MSG: "rejected",
+            }
+        )
+
+        with caplog.at_level("WARNING"):
+            streamer._error_handler(message)
+
+        assert "Ignored uncorrelated stream error: stream_id=99" in caplog.text
+        error_callback.assert_not_called()
+
+    def test_late_correlated_receiver_error_is_warning(self, caplog):
+        cell = MagicMock()
+        cell.my_info.fqcn = "sender"
+        streamer = ByteStreamer(cell)
+        error_callback = MagicMock()
+        streamer.register_error_callback(error_callback)
+        task = TxTask(
+            cell=cell,
+            chunk_size=1,
+            channel="ch",
+            topic="tp",
+            target="receiver",
+            headers={StreamHeaderKey.STREAM_REQ_ID: "request-100"},
+            stream=DummyStream([b"x"]),
+            reliable=False,
+            secure=False,
+            optional=False,
+        )
+        task.sid = 100
+        task.remove_task()
+        message = Message(
+            {
+                MessageHeaderKey.ORIGIN: "receiver",
+                StreamHeaderKey.STREAM_ID: 100,
+                StreamHeaderKey.STREAM_REQ_ID: "request-100",
+                StreamHeaderKey.CHANNEL: "ch",
+                StreamHeaderKey.TOPIC: "tp",
+                StreamHeaderKey.ERROR_MSG: "rejected",
+            }
+        )
+
+        with caplog.at_level("WARNING"):
+            streamer._error_handler(message)
+
+        records = [record for record in caplog.records if "stream_id=100" in record.message]
+        assert len(records) == 1
+        assert records[0].levelname == "WARNING"
+        assert "Late stream error" in records[0].message
+        error_callback.assert_called_once_with(message)
+
+    @pytest.mark.parametrize(
+        "changed_header,changed_value",
+        [
+            (MessageHeaderKey.ORIGIN, "attacker"),
+            (StreamHeaderKey.CHANNEL, "other-channel"),
+            (StreamHeaderKey.TOPIC, "other-topic"),
+            (StreamHeaderKey.STREAM_REQ_ID, "other-request"),
+        ],
+    )
+    def test_late_error_with_mismatched_context_is_ignored(self, changed_header, changed_value):
+        cell = MagicMock()
+        cell.my_info.fqcn = "sender"
+        streamer = ByteStreamer(cell)
+        error_callback = MagicMock()
+        streamer.register_error_callback(error_callback)
+        task = TxTask(
+            cell=cell,
+            chunk_size=1,
+            channel="ch",
+            topic="tp",
+            target="receiver",
+            headers={StreamHeaderKey.STREAM_REQ_ID: "request-101"},
+            stream=DummyStream([b"x"]),
+            reliable=False,
+            secure=False,
+            optional=False,
+        )
+        task.sid = 101
+        task.remove_task()
+        headers = {
+            MessageHeaderKey.ORIGIN: "receiver",
+            StreamHeaderKey.STREAM_ID: 101,
+            StreamHeaderKey.STREAM_REQ_ID: "request-101",
+            StreamHeaderKey.CHANNEL: "ch",
+            StreamHeaderKey.TOPIC: "tp",
+            StreamHeaderKey.ERROR_MSG: "rejected",
+            changed_header: changed_value,
+        }
+
+        streamer._error_handler(Message(headers))
+
+        error_callback.assert_not_called()
+
+    def test_receiver_blob_size_error_preserves_error_type(self, monkeypatch):
+        task, _ = self._make_task(
+            monkeypatch,
+            window_size=1,
+            ack_wait=0.5,
+            ack_progress_timeout=2.0,
+            ack_progress_check_interval=0.01,
+            chunks=[b"x"],
+        )
+        message = Message(
+            {
+                MessageHeaderKey.ORIGIN: "peer",
+                StreamHeaderKey.ERROR_MSG: "blob too large",
+                StreamHeaderKey.ERROR_TYPE: BlobSizeError.__name__,
+            }
+        )
+
+        task.handle_ack(message)
+
+        assert isinstance(task.stream_future.exception(timeout=0.1), BlobSizeError)
 
     def test_ack_progress_check_interval_is_clamped_to_prevent_busy_spin(self, monkeypatch):
         task, _ = self._make_task(
@@ -138,6 +412,41 @@ class TestByteStreamerAckWatchdog:
 
         assert task.stream_future.done()
         assert task.stream_future.exception() is None
+
+    def test_short_reads_are_coalesced_into_full_non_final_frames(self, monkeypatch):
+        task, cell = self._make_task(
+            monkeypatch,
+            window_size=1024,
+            ack_wait=0.5,
+            ack_progress_timeout=2.0,
+            ack_progress_check_interval=0.01,
+            chunks=[b""],
+            chunk_size=8,
+        )
+        task.stream = ConformingShortReadStream(size=25, read_pattern=[7, 2])
+        task.stream_future.set_size(25)
+
+        task.send_loop()
+
+        messages = [call.args[3] for call in cell.fire_and_forget.call_args_list]
+        assert [len(message.payload) for message in messages] == [8, 8, 8, 1]
+        assert all(message.get_header(StreamHeaderKey.DATA_TYPE) == StreamDataType.CHUNK for message in messages[:-1])
+        assert messages[-1].get_header(StreamHeaderKey.DATA_TYPE) == StreamDataType.FINAL
+
+    def test_stream_cannot_return_more_than_requested(self, monkeypatch):
+        task, _ = self._make_task(
+            monkeypatch,
+            window_size=1024,
+            ack_wait=0.5,
+            ack_progress_timeout=2.0,
+            ack_progress_check_interval=0.01,
+            chunks=[b""],
+            chunk_size=8,
+        )
+        task.stream = OversizedReadStream()
+
+        with pytest.raises(StreamError, match=r"invalid size: 9 \(requested 8\)"):
+            task.send_loop()
 
     def test_watchdog_stops_when_no_ack_progress(self, monkeypatch):
         task, _ = self._make_task(
@@ -210,3 +519,515 @@ class TestByteStreamerAckWatchdog:
         assert err is not None
         assert "ack made no progress" in str(err).lower()
         assert elapsed < 0.2
+
+
+class TestReliableByteStreamer:
+    def test_shutdown_cancels_active_stream_without_transport_notification(self):
+        task = MagicMock()
+        original_tasks = byte_streamer_module.ByteStreamer.tx_task_map
+        try:
+            byte_streamer_module.ByteStreamer.tx_task_map = {42: task}
+
+            byte_streamer_module.ByteStreamer.shutdown()
+
+            error = task.stop.call_args.args[0]
+            assert isinstance(error, StreamError)
+            assert str(error) == "streaming shutdown"
+            assert task.stop.call_args.kwargs == {"notify": False}
+        finally:
+            byte_streamer_module.ByteStreamer.tx_task_map = original_tasks
+
+    def test_retry_scheduler_shutdown_waits_for_pool(self):
+        scheduler = byte_streamer_module.ReliableRetryScheduler()
+        original_pool = scheduler.retry_task_pool
+        retry_task_pool = MagicMock()
+
+        try:
+            scheduler.retry_task_pool = retry_task_pool
+
+            scheduler.shutdown()
+
+            retry_task_pool.shutdown.assert_called_once_with(wait=True)
+        finally:
+            original_pool.shutdown(wait=False)
+
+    def test_retry_scheduler_shutdown_drains_admitted_retry(self):
+        scheduler = byte_streamer_module.ReliableRetryScheduler()
+        retry_started = threading.Event()
+        release_retry = threading.Event()
+        shutdown_done = threading.Event()
+
+        def retry():
+            retry_started.set()
+            assert release_retry.wait(2.0)
+
+        scheduler.retry_task_pool.submit(retry)
+        assert retry_started.wait(2.0)
+        shutdown_thread = threading.Thread(target=lambda: (scheduler.shutdown(), shutdown_done.set()))
+        shutdown_thread.start()
+        try:
+            assert not shutdown_done.wait(0.05)
+            release_retry.set()
+            assert shutdown_done.wait(2.0)
+        finally:
+            release_retry.set()
+            shutdown_thread.join(timeout=2.0)
+
+    @pytest.fixture
+    def retry_scheduler(self, monkeypatch):
+        calls = {"registered": [], "unregistered": [], "wakeups": 0}
+
+        def fake_register(task):
+            calls["registered"].append(task)
+
+        def fake_unregister(task):
+            calls["unregistered"].append(task)
+
+        def fake_wakeup():
+            calls["wakeups"] += 1
+
+        monkeypatch.setattr(byte_streamer_module.reliable_retry_scheduler, "register", fake_register)
+        monkeypatch.setattr(byte_streamer_module.reliable_retry_scheduler, "unregister", fake_unregister)
+        monkeypatch.setattr(byte_streamer_module.reliable_retry_scheduler, "wakeup", fake_wakeup)
+        return calls
+
+    def _make_reliable_task(self, monkeypatch, retry_scheduler):
+        monkeypatch.setattr(CommConfigurator, "get_streaming_window_size", lambda self, default: 1024)
+        monkeypatch.setattr(CommConfigurator, "get_streaming_ack_wait", lambda self, default: 1.0)
+        monkeypatch.setattr(CommConfigurator, "get_streaming_ack_progress_timeout", lambda self, default: 10.0)
+        monkeypatch.setattr(CommConfigurator, "get_streaming_ack_progress_check_interval", lambda self, default: 1.0)
+        monkeypatch.setattr(CommConfigurator, "get_streaming_retry_wait", lambda self, default: 0.01)
+        monkeypatch.setattr(CommConfigurator, "get_streaming_retry_timeout", lambda self, default: 1.0)
+        monkeypatch.setattr(CommConfigurator, "get_streaming_retry_max_pending_bytes", lambda self, default: default)
+
+        cell = MagicMock()
+        cell.fire_and_forget.return_value = {}
+        task = TxTask(
+            cell=cell,
+            chunk_size=4,
+            channel="ch",
+            topic="tp",
+            target="peer",
+            headers={},
+            stream=DummyStream([b""]),
+            reliable=True,
+            secure=False,
+            optional=False,
+        )
+        assert retry_scheduler["registered"] == [task]
+        return task, cell
+
+    def _patch_common_config(self, monkeypatch):
+        monkeypatch.setattr(CommConfigurator, "get_streaming_window_size", lambda self, default: 1024)
+        monkeypatch.setattr(CommConfigurator, "get_streaming_ack_wait", lambda self, default: 1.0)
+        monkeypatch.setattr(CommConfigurator, "get_streaming_ack_progress_timeout", lambda self, default: 10.0)
+        monkeypatch.setattr(CommConfigurator, "get_streaming_ack_progress_check_interval", lambda self, default: 1.0)
+        monkeypatch.setattr(CommConfigurator, "get_streaming_retry_wait", lambda self, default: 0.01)
+        monkeypatch.setattr(CommConfigurator, "get_streaming_retry_timeout", lambda self, default: 1.0)
+        monkeypatch.setattr(CommConfigurator, "get_streaming_retry_max_pending_bytes", lambda self, default: default)
+
+    def _make_task_with_reliable(self, reliable, monkeypatch):
+        cell = MagicMock()
+        cell.fire_and_forget.return_value = {}
+        return TxTask(
+            cell=cell,
+            chunk_size=4,
+            channel="ch",
+            topic="tp",
+            target="peer",
+            headers={},
+            stream=DummyStream([b""]),
+            reliable=reliable,
+            secure=False,
+            optional=False,
+        )
+
+    def test_reliable_default_comes_from_config(self, monkeypatch, retry_scheduler):
+        self._patch_common_config(monkeypatch)
+        monkeypatch.setattr(CommConfigurator, "get_streaming_reliable", lambda self, default: False)
+
+        task = self._make_task_with_reliable(None, monkeypatch)
+
+        assert task.reliable is False
+        assert task.pending_messages is None
+        assert retry_scheduler["registered"] == []
+
+    def test_reliable_default_is_opt_in_when_config_omitted(self, monkeypatch, retry_scheduler):
+        self._patch_common_config(monkeypatch)
+
+        def get_streaming_reliable(_self, default):
+            assert default is False
+            return default
+
+        monkeypatch.setattr(CommConfigurator, "get_streaming_reliable", get_streaming_reliable)
+
+        task = self._make_task_with_reliable(None, monkeypatch)
+
+        assert task.reliable is False
+        assert task.pending_messages is None
+        assert retry_scheduler["registered"] == []
+
+    def test_explicit_reliable_overrides_config(self, monkeypatch, retry_scheduler):
+        self._patch_common_config(monkeypatch)
+        monkeypatch.setattr(CommConfigurator, "get_streaming_reliable", lambda self, default: False)
+
+        task = self._make_task_with_reliable(True, monkeypatch)
+
+        assert task.reliable is True
+        assert task.pending_messages == {}
+        assert retry_scheduler["registered"] == [task]
+
+    def test_retry_pending_byte_limit_comes_from_config(self, monkeypatch, retry_scheduler):
+        self._patch_common_config(monkeypatch)
+        monkeypatch.setattr(CommConfigurator, "get_streaming_retry_max_pending_bytes", lambda self, default: 7)
+
+        task = self._make_task_with_reliable(True, monkeypatch)
+
+        assert task.retry_max_pending_bytes == 7
+
+    def test_retry_pending_byte_limit_default_scales_with_large_window(self, monkeypatch, retry_scheduler):
+        self._patch_common_config(monkeypatch)
+        window_size = 256 * 1024**2
+        monkeypatch.setattr(CommConfigurator, "get_streaming_window_size", lambda self, default: window_size)
+
+        task = self._make_task_with_reliable(True, monkeypatch)
+
+        assert task.retry_max_pending_bytes == 2 * window_size
+
+    def test_ack_interval_is_clamped_to_window_size(self, monkeypatch, retry_scheduler, caplog):
+        self._patch_common_config(monkeypatch)
+        monkeypatch.setattr(CommConfigurator, "get_streaming_window_size", lambda self, default: 8)
+        monkeypatch.setattr(CommConfigurator, "get_streaming_ack_interval", lambda self, default: 16)
+
+        with caplog.at_level("WARNING"):
+            task = self._make_task_with_reliable(True, monkeypatch)
+
+        assert task.ack_interval == 8
+        assert "streaming_ack_interval 16 exceeds streaming_window_size 8" in caplog.text
+
+    def test_retry_timeout_has_positive_floor(self, monkeypatch, retry_scheduler):
+        self._patch_common_config(monkeypatch)
+        monkeypatch.setattr(CommConfigurator, "get_streaming_retry_timeout", lambda self, default: 0.0)
+
+        task = self._make_task_with_reliable(True, monkeypatch)
+
+        assert task.retry_timeout == 0.01
+
+    def test_reliable_stream_waits_for_sequence_ack_before_completion(self, monkeypatch, retry_scheduler):
+        task, cell = self._make_reliable_task(monkeypatch, retry_scheduler)
+        cell.fire_and_forget.return_value = {"peer": "temporary failure"}
+
+        task.buffer[0:1] = b"x"
+        task.buffer_size = 1
+        task.send_pending_buffer(final=True)
+
+        assert task.pending_messages
+        assert task.pending_message_bytes == 1
+        assert task.offset == 1
+        assert not task.stopped
+
+        task.stop()
+
+        assert task.stopping is True
+        assert not task.stream_future.done()
+
+        ack = Message(
+            {
+                MessageHeaderKey.ORIGIN: "peer",
+                StreamHeaderKey.OFFSET: 1,
+                StreamHeaderKey.SEQUENCE: 0,
+            },
+            None,
+        )
+        task.handle_ack(ack)
+
+        assert task.stopped is True
+        assert task.pending_messages == {}
+        assert task.pending_message_bytes == 0
+        assert task.stream_future.result(timeout=0.1) == 1
+
+    def test_reliable_stream_snapshots_retry_payload(self, monkeypatch, retry_scheduler):
+        task, _ = self._make_reliable_task(monkeypatch, retry_scheduler)
+
+        task.buffer[0:4] = b"abcd"
+        task.buffer_size = 4
+        task.send_pending_buffer()
+
+        _start, _last_retry, message = task.pending_messages[0]
+        task.buffer[0:4] = b"wxyz"
+
+        assert message.payload == b"abcd"
+        assert task.pending_message_bytes == 4
+        assert message.get_header(StreamHeaderKey.RETRY_WAIT) == task.retry_wait
+        assert message.get_header(StreamHeaderKey.RETRY_TIMEOUT) == task.retry_timeout
+        assert message.get_header(StreamHeaderKey.CHUNK_SIZE) == task.chunk_size
+        assert message.get_header(StreamHeaderKey.WINDOW_SIZE) == task.window_size
+        assert message.get_header(StreamHeaderKey.ACK_INTERVAL) == task.ack_interval
+        assert message.get_header(StreamHeaderKey.RETRY_MAX_PENDING_BYTES) is None
+
+        task.buffer[0:1] = b"e"
+        task.buffer_size = 1
+        task.send_pending_buffer()
+
+        _start, _last_retry, next_message = task.pending_messages[1]
+        assert task.pending_message_bytes == 5
+        assert next_message.get_header(StreamHeaderKey.RETRY_WAIT) is None
+        assert next_message.get_header(StreamHeaderKey.RETRY_TIMEOUT) is None
+        assert next_message.get_header(StreamHeaderKey.CHUNK_SIZE) == task.chunk_size
+        assert next_message.get_header(StreamHeaderKey.WINDOW_SIZE) == task.window_size
+        assert next_message.get_header(StreamHeaderKey.ACK_INTERVAL) is None
+        assert next_message.get_header(StreamHeaderKey.RETRY_MAX_PENDING_BYTES) is None
+
+    def test_reliable_send_blocks_concurrent_error_stop_until_send_returns(self, monkeypatch, retry_scheduler):
+        task, cell = self._make_reliable_task(monkeypatch, retry_scheduler)
+        task.buffer[0:1] = b"x"
+        task.buffer_size = 1
+        stop_finished = threading.Event()
+        stop_threads = []
+
+        def stop_task():
+            task.stop(StreamError("failed"), notify=False)
+            stop_finished.set()
+
+        def slow_send(*args, **kwargs):
+            stop_thread = threading.Thread(target=stop_task)
+            stop_threads.append(stop_thread)
+            stop_thread.start()
+            assert not stop_finished.wait(0.05)
+            return {}
+
+        cell.fire_and_forget.side_effect = slow_send
+
+        assert task.send_pending_buffer() is True
+        assert stop_finished.wait(1.0)
+        for stop_thread in stop_threads:
+            stop_thread.join(timeout=1.0)
+            assert not stop_thread.is_alive()
+        assert task.stopped is True
+
+    def test_reliable_stream_rejects_ack_without_sequence(self, monkeypatch, retry_scheduler):
+        task, _ = self._make_reliable_task(monkeypatch, retry_scheduler)
+        task.pending_messages[0] = (time.monotonic(), time.monotonic(), Message(None, b"x"))
+
+        ack = Message({MessageHeaderKey.ORIGIN: "peer", StreamHeaderKey.OFFSET: 1}, None)
+        task.handle_ack(ack)
+
+        err = task.stream_future.exception(timeout=0.1)
+        assert err is not None
+        assert "doesn't support reliable streaming" in str(err)
+
+    def test_retry_pending_byte_limit_stops_stream(self, monkeypatch, retry_scheduler):
+        self._patch_common_config(monkeypatch)
+        monkeypatch.setattr(CommConfigurator, "get_streaming_retry_max_pending_bytes", lambda self, default: 1)
+
+        task = self._make_task_with_reliable(True, monkeypatch)
+        task.buffer[0:4] = b"abcd"
+        task.buffer_size = 4
+
+        assert task.send_pending_buffer() is False
+
+        err = task.stream_future.exception(timeout=0.1)
+        assert err is not None
+        assert "too many retry messages" in str(err)
+        assert task.pending_messages == {}
+        assert task.pending_message_bytes == 0
+        assert task.stopped is True
+
+    def test_stop_unregisters_retry_task(self, monkeypatch, retry_scheduler):
+        task, _ = self._make_reliable_task(monkeypatch, retry_scheduler)
+
+        task.stop(StreamError("failed"))
+
+        assert retry_scheduler["unregistered"] == [task]
+
+    def test_reliable_sequence_ack_counts_as_watchdog_progress(self, monkeypatch, retry_scheduler):
+        task, _ = self._make_reliable_task(monkeypatch, retry_scheduler)
+        task.pending_messages[0] = (0.0, 0.0, Message(None, b"x"))
+        task.pending_messages[1] = (0.0, 0.0, Message(None, b"y"))
+        task.pending_message_bytes = 2
+        task.last_ack_progress_ts = 1.0
+
+        monkeypatch.setattr(byte_streamer_module.time, "monotonic", lambda: 2.0)
+
+        ack = Message(
+            {
+                MessageHeaderKey.ORIGIN: "peer",
+                StreamHeaderKey.OFFSET: 0,
+                StreamHeaderKey.SEQUENCE: 1,
+            },
+            None,
+        )
+        task.handle_ack(ack)
+
+        assert task.offset_ack == 0
+        assert task.seq_ack == 1
+        assert task.last_ack_progress_ts == 2.0
+        assert task.pending_messages == {}
+        assert task.pending_message_bytes == 0
+
+    def test_retry_task_resends_due_pending_message(self, monkeypatch, retry_scheduler):
+        task, cell = self._make_reliable_task(monkeypatch, retry_scheduler)
+        cell.fire_and_forget.return_value = None
+        message = Message(
+            {
+                StreamHeaderKey.STREAM_ID: task.sid,
+                StreamHeaderKey.SEQUENCE: 0,
+            },
+            b"x",
+        )
+        task.pending_messages[0] = (0.0, 0.0, message)
+        task.retry_wait = 0.01
+        task.retry_timeout = 10.0
+
+        monkeypatch.setattr(byte_streamer_module.time, "monotonic", lambda: 1.0)
+
+        assert task.retry_task() == task.retry_wait
+
+        cell.fire_and_forget.assert_called_with(
+            STREAM_CHANNEL,
+            STREAM_DATA_TOPIC,
+            "peer",
+            message,
+            secure=False,
+            optional=False,
+        )
+
+    def test_retry_timeout_starts_at_first_retry(self, monkeypatch, retry_scheduler):
+        task, cell = self._make_reliable_task(monkeypatch, retry_scheduler)
+        cell.fire_and_forget.return_value = None
+        message = Message(
+            {
+                StreamHeaderKey.STREAM_ID: task.sid,
+                StreamHeaderKey.SEQUENCE: 0,
+            },
+            b"x",
+        )
+        task.pending_messages[0] = (None, 0.0, message)
+        task.retry_wait = 1.0
+        task.retry_timeout = 0.5
+        curr_time = [1.1]
+
+        monkeypatch.setattr(byte_streamer_module.time, "monotonic", lambda: curr_time[0])
+
+        assert task.retry_task() == task.retry_timeout
+        assert not task.stream_future.done()
+        retry_start_time, last_retry, _message = task.pending_messages[0]
+        assert retry_start_time == curr_time[0]
+        assert last_retry == curr_time[0]
+        cell.fire_and_forget.assert_called_once_with(
+            STREAM_CHANNEL,
+            STREAM_DATA_TOPIC,
+            "peer",
+            message,
+            secure=False,
+            optional=False,
+        )
+
+        curr_time[0] = 1.61
+        task.retry_task()
+
+        err = task.stream_future.exception(timeout=0.1)
+        assert err is not None
+        assert "retry failed" in str(err)
+
+    def test_optional_retry_timeout_preserves_target_unreachable_reason(self, monkeypatch, retry_scheduler):
+        task, cell = self._make_reliable_task(monkeypatch, retry_scheduler)
+        task.optional = True
+        cell.fire_and_forget.return_value = {"peer": ReturnCode.TARGET_UNREACHABLE}
+        task.buffer[0:1] = b"x"
+        task.buffer_size = 1
+        task.send_pending_buffer()
+        _retry_start, _last_retry, message = task.pending_messages[0]
+        task.pending_messages[0] = (0.0, 0.0, message)
+        task.retry_timeout = 0.5
+
+        monkeypatch.setattr(byte_streamer_module.time, "monotonic", lambda: 1.0)
+
+        task.retry_task()
+
+        assert task.pending_send_errors == {}
+        assert isinstance(task.stream_future.exception(timeout=0.1), StreamTargetUnreachable)
+
+    def test_pending_error_inspection_holds_retry_lock(self, monkeypatch, retry_scheduler):
+        task, _cell = self._make_reliable_task(monkeypatch, retry_scheduler)
+
+        class LockCheckedErrors(dict):
+            def get(self, key, default=None):
+                assert task.retry_lock._is_owned()
+                return super().get(key, default)
+
+            def values(self):
+                assert task.retry_lock._is_owned()
+                return super().values()
+
+        task.pending_send_errors = LockCheckedErrors({0: ReturnCode.TARGET_UNREACHABLE})
+
+        assert isinstance(task._new_pending_error("one", seq=0), StreamTargetUnreachable)
+        assert isinstance(task._new_pending_error("all"), StreamTargetUnreachable)
+
+    def test_retry_task_failure_fails_stream_future(self, monkeypatch, retry_scheduler):
+        task, cell = self._make_reliable_task(monkeypatch, retry_scheduler)
+        message = Message(
+            {
+                StreamHeaderKey.STREAM_ID: task.sid,
+                StreamHeaderKey.SEQUENCE: 0,
+            },
+            b"x",
+        )
+        task.pending_messages[0] = (0.0, 0.0, message)
+        task.retry_wait = 0.01
+        task.retry_timeout = 10.0
+
+        monkeypatch.setattr(byte_streamer_module.time, "monotonic", lambda: 1.0)
+        cell.fire_and_forget.side_effect = RuntimeError("boom")
+
+        task.retry_task()
+
+        err = task.stream_future.exception(timeout=0.1)
+        assert err is not None
+        assert "retry thread ended due to error: boom" in str(err)
+
+    def test_retry_task_exception_notifies_receiver(self, monkeypatch, retry_scheduler):
+        task, cell = self._make_reliable_task(monkeypatch, retry_scheduler)
+        monkeypatch.setattr(task, "_retry_task", MagicMock(side_effect=RuntimeError("boom")))
+
+        task.retry_task()
+
+        err = task.stream_future.exception(timeout=0.1)
+        assert err is not None
+        assert "retry thread ended due to error: boom" in str(err)
+        cell.fire_and_forget.assert_called_once()
+        args = cell.fire_and_forget.call_args.args
+        kwargs = cell.fire_and_forget.call_args.kwargs
+        assert args[:3] == (STREAM_CHANNEL, STREAM_DATA_TOPIC, "peer")
+        assert args[3].get_header(StreamHeaderKey.DATA_TYPE) == StreamDataType.ERROR
+        assert "retry thread ended due to error: boom" in args[3].get_header(StreamHeaderKey.ERROR_MSG)
+        assert kwargs["optional"] is True
+
+    def test_retry_timeout_stops_stream_after_releasing_retry_lock(self, monkeypatch, retry_scheduler):
+        task, _ = self._make_reliable_task(monkeypatch, retry_scheduler)
+        message = Message(
+            {
+                StreamHeaderKey.STREAM_ID: task.sid,
+                StreamHeaderKey.SEQUENCE: 0,
+            },
+            b"x",
+        )
+        task.pending_messages[0] = (0.0, 0.0, message)
+        task.retry_timeout = 0.5
+
+        monkeypatch.setattr(byte_streamer_module.time, "monotonic", lambda: 1.0)
+
+        original_stop = task.stop
+
+        def checked_stop(*args, **kwargs):
+            assert not task.retry_lock._is_owned()
+            return original_stop(*args, **kwargs)
+
+        monkeypatch.setattr(task, "stop", checked_stop)
+
+        task.retry_task()
+
+        err = task.stream_future.exception(timeout=0.1)
+        assert err is not None
+        assert "retry failed" in str(err)

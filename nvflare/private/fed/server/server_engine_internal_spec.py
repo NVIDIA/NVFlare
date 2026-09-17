@@ -148,13 +148,37 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
 
     @abstractmethod
     def remove_clients(self, clients: [str]) -> str:
-        """Remove specified clients.
+        """Remove active client-token entries for specified clients.
 
         Args:
-            clients: clients to be removed
+            clients: client tokens to be removed
 
         Returns:
              An error message. An empty string if successful.
+        """
+        pass
+
+    @abstractmethod
+    def disable_clients(self, client_names: [str]) -> dict:
+        """Disable specified clients so they cannot rejoin until enabled.
+
+        Args:
+            client_names: client names to disable
+
+        Returns:
+             A result dictionary describing disabled clients.
+        """
+        pass
+
+    @abstractmethod
+    def enable_clients(self, client_names: [str]) -> dict:
+        """Enable specified disabled clients so they can rejoin.
+
+        Args:
+            client_names: client names to enable
+
+        Returns:
+             A result dictionary describing enabled clients.
         """
         pass
 

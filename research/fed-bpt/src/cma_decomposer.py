@@ -19,7 +19,7 @@ import cma
 import numpy as np
 from cma import CMADataLogger, CMAOptions
 from cma.constraints_handler import BoundNone
-from cma.evolution_strategy import _CMAParameters, _CMASolutionDict_functional, _CMAStopDict
+from cma.evolution_strategy import _CMAParameters, _CMASolutionDict_functional, _CMAStopDict, _StopTolXStagnation
 from cma.optimization_tools import BestSolution
 from cma.recombination_weights import RecombinationWeights
 from cma.sampler import GaussFullSampler
@@ -31,6 +31,19 @@ from nvflare.app_common.decomposers.numpy_decomposers import Float64ScalarDecomp
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs import Decomposer
 from nvflare.fuel.utils.fobs.datum import DatumManager
+
+
+class RangeDecomposer(Decomposer):
+    """A decomposer for serializing Python range objects in CMA state."""
+
+    def supported_type(self) -> Type[range]:
+        return range
+
+    def decompose(self, target: range, manager: DatumManager = None) -> Any:
+        return target.start, target.stop, target.step
+
+    def recompose(self, data: tuple, manager: DatumManager = None) -> range:
+        return range(*data)
 
 
 class GaussFullSamplerDecomposer(Decomposer):
@@ -143,6 +156,7 @@ class CMADataLoggerDecomposer(Decomposer):
 
 
 def register_decomposers():
+    fobs.register(RangeDecomposer)
     fobs.register(NumpyArrayDecomposer)
     fobs.register(Float64ScalarDecomposer)
     fobs.register(GaussFullSamplerDecomposer)
@@ -164,6 +178,7 @@ def register_decomposers():
         DictFromTagsInString,
         ElapsedWCTime,
         _CMAStopDict,
+        _StopTolXStagnation,
         MoreToWrite,
     )
 

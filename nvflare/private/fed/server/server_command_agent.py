@@ -20,6 +20,7 @@ from nvflare.fuel.f3.cellnet.core_cell import MessageHeaderKey, ReturnCode, make
 from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, new_cell_message
+from nvflare.private.fed.app.callback_admission import CallbackAdmission
 
 from .server_commands import ServerCommands
 
@@ -33,6 +34,7 @@ class ServerCommandAgent(object):
         """
         self.logger = get_obj_logger(self)
         self.asked_to_stop = False
+        self._callback_admission = CallbackAdmission()
         self.engine = engine
         self.cell = cell
 
@@ -53,6 +55,14 @@ class ServerCommandAgent(object):
 
         if not isinstance(request, CellMessage):
             raise RuntimeError("request must be CellMessage but got {}".format(type(request)))
+        if not self._callback_admission.enter():
+            return make_reply(ReturnCode.SERVICE_UNAVAILABLE)
+        try:
+            return self._execute_command(request)
+        finally:
+            self._callback_admission.leave()
+
+    def _execute_command(self, request: CellMessage) -> CellMessage:
 
         command_name = request.get_header(MessageHeaderKey.TOPIC)
         # data = fobs.loads(request.payload)
@@ -110,6 +120,14 @@ class ServerCommandAgent(object):
     def aux_communicate(self, request: CellMessage) -> CellMessage:
 
         assert isinstance(request, CellMessage), "request must be CellMessage but got {}".format(type(request))
+        if not self._callback_admission.enter():
+            return make_reply(ReturnCode.SERVICE_UNAVAILABLE)
+        try:
+            return self._aux_communicate(request)
+        finally:
+            self._callback_admission.leave()
+
+    def _aux_communicate(self, request: CellMessage) -> CellMessage:
         data = request.payload
 
         topic = request.get_header(MessageHeaderKey.TOPIC)
@@ -135,3 +153,7 @@ class ServerCommandAgent(object):
 
     def shutdown(self):
         self.asked_to_stop = True
+        self._callback_admission.close()
+
+    def wait_for_callbacks(self, timeout: float) -> bool:
+        return self._callback_admission.wait(timeout)

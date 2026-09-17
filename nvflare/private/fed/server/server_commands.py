@@ -29,7 +29,7 @@ from nvflare.apis.fl_constant import (
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx
-from nvflare.fuel.utils.log_utils import dynamic_log_config, get_obj_logger
+from nvflare.fuel.utils.log_utils import dynamic_log_config, get_obj_logger, validate_site_log_config
 from nvflare.private.defs import SpecialTaskName, TaskConstant
 from nvflare.security.logging import secure_format_exception, secure_format_traceback
 from nvflare.widgets.widget import WidgetID
@@ -104,7 +104,7 @@ class AbortCommand(CommandProcessor):
 
         """
         server_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
-        # for HA server switch over
+        # Preserve the caller's request to move the runner to a cold state.
         turn_to_cold = data.get_header(ServerCommandKey.TURN_TO_COLD, False)
         if server_runner:
             server_runner.abort(fl_ctx=fl_ctx, turn_to_cold=turn_to_cold)
@@ -453,8 +453,9 @@ class ConfigureJobLogCommand(CommandProcessor):
         engine = fl_ctx.get_engine()
         workspace = engine.get_workspace()
         try:
+            config = validate_site_log_config(data)
             dynamic_log_config(
-                config=data,
+                config=config,
                 dir_path=workspace.get_run_dir(fl_ctx.get_job_id()),
                 reload_path=workspace.get_log_config_file_path(),
             )

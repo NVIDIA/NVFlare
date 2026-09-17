@@ -13,12 +13,19 @@
 # limitations under the License.
 
 
+from unittest.mock import patch
+
 import pytest
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
-from nvflare.app_common.abstract.statistics_spec import Feature, HistogramType, StatisticConfig
+from nvflare.apis.signal import Signal
+from nvflare.app_common.abstract.statistics_spec import Bin, Feature, Histogram, HistogramType, StatisticConfig
+from nvflare.app_common.app_constant import StatisticsConstants as StC
 from nvflare.app_common.executors.statistics.statistics_task_handler import StatisticsTaskHandler
+from nvflare.app_common.statistics.numeric_stats import get_global_stats
+from nvflare.app_common.workflows.statistics_controller import StatisticsController
+from nvflare.fuel.utils import fobs
 from tests.unit_test.app_common.executors.statistics.mock_df_stats_executor import MockDFStatistics
 
 
@@ -44,6 +51,123 @@ class TestStatisticsExecutor:
         assert len(features["train"]) == 1
         assert features["train"][0].feature_name == "Age"
         assert len(features["test"]) == 1
+
+    def test_execute_task_does_not_duplicate_configured_failure_count(self):
+        inputs = Shareable()
+        inputs[StC.STATISTICS_TASK_KEY] = StC.STATS_1st_STATISTICS
+        inputs[StC.STATS_TARGET_STATISTICS] = fobs.dumps(
+            [StatisticConfig(StC.STATS_COUNT, {}), StatisticConfig(StC.STATS_FAILURE_COUNT, {})]
+        )
+
+        with (
+            patch.object(self.stats_executor.stats_generator, "count", return_value=10),
+            patch.object(
+                self.stats_executor.stats_generator,
+                "failure_count",
+                wraps=self.stats_executor.stats_generator.failure_count,
+            ) as failure_count,
+        ):
+            self.stats_executor.execute_task(StC.FED_STATS_TASK, inputs, FLContext(), Signal())
+
+        assert failure_count.call_count == 2
+
+    def test_execute_task_adds_missing_failure_count(self):
+        inputs = Shareable()
+        inputs[StC.STATISTICS_TASK_KEY] = StC.STATS_1st_STATISTICS
+        inputs[StC.STATS_TARGET_STATISTICS] = fobs.dumps([StatisticConfig(StC.STATS_COUNT, {})])
+
+        with (
+            patch.object(self.stats_executor.stats_generator, "count", return_value=10),
+            patch.object(
+                self.stats_executor.stats_generator,
+                "failure_count",
+                wraps=self.stats_executor.stats_generator.failure_count,
+            ) as failure_count,
+        ):
+            self.stats_executor.execute_task(StC.FED_STATS_TASK, inputs, FLContext(), Signal())
+
+        assert failure_count.call_count == 2
+
+    def test_second_round_failure_count_includes_histogram_failures(self):
+        histogram_config = {"*": {"bins": 1}}
+        statistic_configs = {
+            StC.STATS_COUNT: {},
+            StC.STATS_FAILURE_COUNT: {},
+            StC.STATS_HISTOGRAM: histogram_config,
+        }
+        target_statistics = StatisticsController._get_target_statistics(
+            statistic_configs, StC.ordered_statistics[StC.STATS_2nd_STATISTICS]
+        )
+        inputs = Shareable()
+        inputs[StC.STATISTICS_TASK_KEY] = StC.STATS_2nd_STATISTICS
+        inputs[StC.STATS_TARGET_STATISTICS] = fobs.dumps(target_statistics)
+        inputs[StC.STATS_MIN] = {"train": {"Age": 0}, "test": {"Age": 0}}
+        inputs[StC.STATS_MAX] = {"train": {"Age": 10}, "test": {"Age": 10}}
+        failures = {"train": 0, "test": 0}
+
+        def get_failure_count(dataset_name, feature_name):
+            return failures[dataset_name]
+
+        def get_histogram(dataset_name, feature_name, num_of_bins, min_value, max_value):
+            if dataset_name == "train":
+                failures[dataset_name] += 1
+            return Histogram(HistogramType.STANDARD, [Bin(min_value, max_value, 3)])
+
+        with (
+            patch.object(self.stats_executor.stats_generator, "count", return_value=4),
+            patch.object(self.stats_executor.stats_generator, "failure_count", side_effect=get_failure_count),
+            patch.object(self.stats_executor.stats_generator, "histogram", side_effect=get_histogram),
+        ):
+            result = self.stats_executor.execute_task(StC.FED_STATS_TASK, inputs, FLContext(), Signal())
+
+        statistics = fobs.loads(result[StC.STATS_2nd_STATISTICS])
+        assert statistics[StC.STATS_FAILURE_COUNT]["train"]["Age"] == 1
+
+        client_statistics = {
+            StC.STATS_COUNT: {
+                "site-1": statistics[StC.STATS_COUNT],
+                "site-2": {"train": {"Age": 4}},
+            },
+            StC.STATS_FAILURE_COUNT: {
+                "site-1": statistics[StC.STATS_FAILURE_COUNT],
+                "site-2": {"train": {"Age": 0}},
+            },
+            StC.STATS_HISTOGRAM: {
+                "site-1": statistics[StC.STATS_HISTOGRAM],
+                "site-2": {"train": {"Age": Histogram(HistogramType.STANDARD, [Bin(0, 10, 4)])}},
+            },
+        }
+        global_statistics = get_global_stats({}, client_statistics, StC.STATS_1st_STATISTICS, statistic_configs)
+        global_statistics = get_global_stats(
+            global_statistics, client_statistics, StC.STATS_2nd_STATISTICS, statistic_configs
+        )
+
+        assert global_statistics[StC.STATS_COUNT]["train"]["Age"] == 8
+        assert global_statistics[StC.STATS_FAILURE_COUNT]["train"]["Age"] == 1
+        assert global_statistics[StC.STATS_HISTOGRAM]["train"]["Age"].bins == [Bin(0, 10, 7)]
+
+    def test_second_round_failure_count_includes_implicit_count_failures(self):
+        inputs = Shareable()
+        inputs[StC.STATISTICS_TASK_KEY] = StC.STATS_2nd_STATISTICS
+        inputs[StC.STATS_TARGET_STATISTICS] = fobs.dumps([])
+        failures = {"train": 0, "test": 0}
+
+        def get_count(dataset_name, feature_name):
+            failures[dataset_name] += 1
+            return 4
+
+        def get_failure_count(dataset_name, feature_name):
+            return failures[dataset_name]
+
+        with (
+            patch.object(self.stats_executor.stats_generator, "count", side_effect=get_count),
+            patch.object(self.stats_executor.stats_generator, "failure_count", side_effect=get_failure_count),
+        ):
+            result = self.stats_executor.execute_task(StC.FED_STATS_TASK, inputs, FLContext(), Signal())
+
+        statistics = fobs.loads(result[StC.STATS_2nd_STATISTICS])
+        assert statistics[StC.STATS_FAILURE_COUNT]["train"]["Age"] == 1
+        assert statistics[StC.STATS_FAILURE_COUNT]["test"]["Age"] == 1
 
     def test_method_implementation(self):
         with pytest.raises(NotImplementedError):

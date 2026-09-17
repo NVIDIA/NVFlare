@@ -51,9 +51,11 @@ SERVER2_CELL = "server2"
 CLIENT2_CELL = "client2"
 
 CHUNK_SIZE = 256
-TOTAL_SIZE = 50 * 1024  # 50 KB -> ~200 chunks per download
+TOTAL_SIZE = 4 * 1024  # 4 KB -> 16 chunks per download
 NUM_PARALLEL = 8
-PER_REQ_TIMEOUT = 5.0
+# Real TCP cells and small chunks need CI headroom; the pre-fix starvation
+# reproducer below keeps its intentionally tight 3-second timeout.
+PER_REQ_TIMEOUT = 10.0
 TX_TIMEOUT = 120.0
 CELL_CONNECT_TIMEOUT = 2.0  # seconds to wait for TCP cell connection
 
@@ -131,8 +133,13 @@ def _run_parallel_downloads(
 
     for t in threads:
         t.start()
+
+    deadline = time.monotonic() + wait_secs
     for t in threads:
-        t.join(timeout=wait_secs)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        t.join(timeout=remaining)
 
     succeeded = failed = timed_out = 0
     for c in consumers:

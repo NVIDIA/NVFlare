@@ -21,6 +21,12 @@ from nvflare.apis.workspace import Workspace
 
 
 class TestWorkspace:
+    @staticmethod
+    def _make_workspace(root_dir: str):
+        os.makedirs(os.path.join(root_dir, "startup"), exist_ok=True)
+        os.makedirs(os.path.join(root_dir, "local"), exist_ok=True)
+        return Workspace(root_dir)
+
     @pytest.mark.parametrize(
         "root_vars, expected",
         [
@@ -65,3 +71,48 @@ class TestWorkspace:
                 os.environ.pop(n, None)
 
             assert result == expected
+
+    def test_study_registry_path_defaults_to_root_when_absent(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            ws = self._make_workspace(tmp_dir)
+            expected = os.path.join(tmp_dir, WorkspaceConstants.STUDY_REGISTRY_CONFIG)
+            assert ws.get_study_registry_file_path() == expected
+
+    def test_study_registry_path_falls_back_to_site_config_seed(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            ws = self._make_workspace(tmp_dir)
+            seed = os.path.join(tmp_dir, "local", WorkspaceConstants.STUDY_REGISTRY_CONFIG)
+            with open(seed, "wt") as f:
+                f.write("{}")
+            assert ws.get_study_registry_file_path() == seed
+
+    def test_study_registry_path_prefers_root_copy_over_seed(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            ws = self._make_workspace(tmp_dir)
+            seed = os.path.join(tmp_dir, "local", WorkspaceConstants.STUDY_REGISTRY_CONFIG)
+            root_copy = os.path.join(tmp_dir, WorkspaceConstants.STUDY_REGISTRY_CONFIG)
+            for path in (seed, root_copy):
+                with open(path, "wt") as f:
+                    f.write("{}")
+            assert ws.get_study_registry_file_path() == root_copy
+
+    @pytest.mark.parametrize(
+        "job_id",
+        [
+            "../outside",
+            "good/../../outside",
+            "/tmp/outside",
+            "bad\\id",
+            "",
+            None,
+        ],
+    )
+    def test_get_run_dir_rejects_unsafe_job_id(self, job_id):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root_dir = os.path.join(tmp_dir, "config")
+            ws = self._make_workspace(root_dir)
+
+            with pytest.raises(ValueError):
+                ws.get_run_dir(job_id)
+
+            assert not os.path.exists(os.path.join(tmp_dir, "outside"))

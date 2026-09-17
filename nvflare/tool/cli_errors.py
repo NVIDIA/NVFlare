@@ -40,7 +40,7 @@ _ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
     },
     "STARTUP_KIT_MISSING": {
         "message": "Startup kit not found.",
-        "hint": "Set --startup or configure via 'nvflare config'.",
+        "hint": "Run 'nvflare config list' and 'nvflare config use <id>', pass --kit-id <id> or --startup-kit <path>, or set NVFLARE_STARTUP_KIT_DIR for automation.",
     },
     "SITE_NOT_FOUND": {
         "message": "Site '{site}' is not connected.",
@@ -48,11 +48,15 @@ _ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
     },
     "LOG_CONFIG_INVALID": {
         "message": "Log config is not valid JSON or a recognised log mode.",
-        "hint": "Supply a valid dictConfig JSON file or one of: DEBUG, INFO, WARNING, ERROR, CRITICAL, concise, msg_only, full, verbose, reload.",
+        "hint": "Supply a valid dictConfig JSON file or one of: DEBUG, INFO, WARNING, ERROR, CRITICAL, concise, progress, msg_only, full, verbose, reload.",
     },
     "SERVER_UNREACHABLE": {
         "message": "Server stopped or job ended before command was delivered.",
         "hint": "Check server status with 'nvflare system status'.",
+    },
+    "SYSTEM_NOT_READY": {
+        "message": "FLARE system is not ready yet.",
+        "hint": "Wait for clients to connect, then retry 'nvflare system status'. If this persists, check POC service logs or client logs.",
     },
     "INTERNAL_ERROR": {
         "message": "An unexpected error occurred.",
@@ -61,6 +65,46 @@ _ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
     "CLI_ERROR": {
         "message": "Command failed.",
         "hint": "",
+    },
+    "STUDY_NOT_FOUND": {
+        "message": "Study '{study}' not found.",
+        "hint": "Verify the study name. If the study exists and you expect access, contact a project_admin.",
+    },
+    "STUDY_ALREADY_EXISTS": {
+        "message": "Study '{study}' already exists.",
+        "hint": "Use 'nvflare study show {study}' or contact a project_admin to update access.",
+    },
+    "STUDY_HAS_JOBS": {
+        "message": "Study '{study}' has associated jobs and cannot be removed.",
+        "hint": "Archive or delete the associated jobs before retrying.",
+    },
+    "INVALID_STUDY_NAME": {
+        "message": "Invalid study name '{study}'.",
+        "hint": "Use only lowercase letters, numbers, underscores, and hyphens.",
+    },
+    "INVALID_SITE": {
+        "message": "Invalid site value.",
+        "hint": "Use a comma-separated list of valid site names.",
+    },
+    "USER_ALREADY_IN_STUDY": {
+        "message": "User '{user}' is already in study '{study}'.",
+        "hint": "Use a different user or remove the existing entry first.",
+    },
+    "USER_NOT_IN_STUDY": {
+        "message": "User '{user}' is not in study '{study}'.",
+        "hint": "Use 'nvflare study add-user' to add the user first.",
+    },
+    "STARTUP_KIT_NOT_CONFIGURED": {
+        "message": "No active startup kit is configured.",
+        "hint": "Run 'nvflare config list' and 'nvflare config use <id>', pass --kit-id <id> or --startup-kit <path>, or set NVFLARE_STARTUP_KIT_DIR for automation.",
+    },
+    "LOCK_TIMEOUT": {
+        "message": "Study registry is busy.",
+        "hint": "Another study mutation is in progress. Retry shortly.",
+    },
+    "NOT_AUTHORIZED": {
+        "message": "Not authorized for this operation.",
+        "hint": "Use a startup kit with the required admin role.",
     },
     # --- Job commands ---
     "JOB_NOT_FOUND": {
@@ -71,9 +115,28 @@ _ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
         "message": "Job '{job_id}' is not currently running.",
         "hint": "Use 'nvflare job list' to check job status.",
     },
+    "JOB_NOT_DONE": {
+        "message": "Job '{job_id}' has not finished.",
+        "hint": "Use 'nvflare job wait <job_id>' or 'nvflare job monitor <job_id>' before downloading results.",
+    },
     "JOB_INVALID": {
         "message": "Job folder is not a valid NVFlare job.",
         "hint": "Check meta.json and config_fed_server.json.",
+    },
+    "SUBMIT_TOKEN_CONFLICT": {
+        "message": "A job with this submit token already exists with different content.",
+        "hint": (
+            "Use a new submit token when submitting different job content, "
+            "or resubmit identical job content to reuse the existing job."
+        ),
+    },
+    "SUBMIT_TOKEN_JOB_DELETED": {
+        "message": "This submit token refers to a deleted job.",
+        "hint": "Use a new submit token to submit the job again.",
+    },
+    "LOG_NOT_FOUND": {
+        "message": "Job logs are not available for site '{site}'.",
+        "hint": "Verify that client log streaming is enabled and that the site has run this job.",
     },
     # --- Cert commands ---
     "OUTPUT_DIR_NOT_WRITABLE": {
@@ -100,9 +163,13 @@ _ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
         "message": "CSR file not found: {path}.",
         "hint": "Check the path to the .csr file.",
     },
+    "REQUEST_ZIP_NOT_FOUND": {
+        "message": "Request zip not found: {path}.",
+        "hint": "Provide the .request.zip file created by 'nvflare cert request'.",
+    },
     "INVALID_CSR": {
         "message": "Invalid or corrupt CSR file: {path}.",
-        "hint": "Regenerate the CSR with 'nvflare cert csr'.",
+        "hint": "Create a new request with 'nvflare cert request'.",
     },
     "CERT_ALREADY_EXISTS": {
         "message": "Signed certificate already exists at {path}.",
@@ -129,8 +196,8 @@ _ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
         "hint": "Check that the cryptography package is installed and up-to-date.",
     },
     "CERT_TYPE_UNKNOWN": {
-        "message": "Unknown certificate type in '{cert}': the type embedded by 'nvflare cert sign' is missing or unrecognized.",
-        "hint": "Re-sign the CSR with 'nvflare cert sign -t <type>' to embed the correct type.",
+        "message": "Unknown certificate type in '{cert}': the certificate type is missing or unrecognized.",
+        "hint": "Use a signed zip produced by 'nvflare cert approve'.",
     },
     "CERT_SIGNING_FAILED": {
         "message": "Certificate signing failed: {reason}",
@@ -147,7 +214,7 @@ _ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
     },
     "KEY_NOT_FOUND": {
         "message": "Private key file not found: {path}.",
-        "hint": "Provide the private key generated by 'nvflare cert csr'.",
+        "hint": "Provide the private key generated by 'nvflare cert request'.",
     },
     "ROOTCA_NOT_FOUND": {
         "message": "Root CA file not found: {path}.",
@@ -159,15 +226,103 @@ _ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
     },
     "OUTPUT_DIR_EXISTS": {
         "message": "Output directory already exists: {path}.",
-        "hint": "Use --force to package into a new prod_NN stage directory.",
+        "hint": "Use --force only when intentionally replacing the existing participant output.",
+    },
+    "SIGNED_ZIP_NOT_FOUND": {
+        "message": "Signed zip not found: {path}.",
+        "hint": "Provide the .signed.zip returned by 'nvflare cert approve'.",
     },
     "AMBIGUOUS_KEY": {
         "message": "Multiple *.key files found in {path}: {files}",
-        "hint": "--dir mode packages one participant at a time. Use -n to select one or --key/--cert explicitly.",
+        "hint": "Select one participant key for this internal packaging operation.",
+    },
+    # --- Distributed provisioning: signed zip validation ---
+    "INVALID_SIGNED_ZIP": {
+        "message": "Invalid signed zip.",
+        "hint": "Use the .signed.zip returned by 'nvflare cert approve'.",
+    },
+    "INVALID_PROJECT_NAME": {
+        "message": "Invalid project name.",
+        "hint": "Project name must start with a letter or digit and contain only letters, digits, hyphens, underscores, or dots.",
+    },
+    "INVALID_ROOTCA_FINGERPRINT": {
+        "message": "Invalid root CA SHA256 fingerprint.",
+        "hint": "Use SHA256:AA:BB:... or OpenSSL output such as 'sha256 Fingerprint=AA:BB:...'.",
+    },
+    "ROOTCA_FINGERPRINT_MISMATCH": {
+        "message": "Root CA SHA256 fingerprint does not match the expected out-of-band value.",
+        "hint": "Verify that the signed zip came from the intended Project Admin.",
+    },
+    "SIGNED_ZIP_IDENTITY_CONFLICT": {
+        "message": "Signed zip identity conflict.",
+        "hint": "The signed zip project/org/name does not match the local request material.",
+    },
+    # --- Distributed provisioning: local site yaml ---
+    "LOCAL_SITE_MISMATCH": {
+        "message": "Local site.yaml does not match the signed zip identity.",
+        "hint": "Use the site.yaml created by 'nvflare cert request' for this participant.",
+    },
+    "LOCAL_SITE_INVALID": {
+        "message": "Local site.yaml is invalid or missing required fields.",
+        "hint": "Use the site.yaml created by 'nvflare cert request', or re-run 'nvflare cert request'.",
+    },
+    "LOCAL_SITE_UNSUPPORTED_FEATURE": {
+        "message": "Local site.yaml contains an unsupported feature.",
+        "hint": "Remove or update the unsupported configuration in your participant definition file.",
+    },
+    # --- Distributed provisioning: key/cert ---
+    "KEY_INVALID": {
+        "message": "Private key is invalid or corrupt.",
+        "hint": "Re-run 'nvflare cert request' to generate a new key pair.",
+    },
+    "KEY_CERT_MISMATCH": {
+        "message": "Private key does not match the signed certificate.",
+        "hint": "Ensure the private key from 'nvflare cert request' matches the signed zip from 'nvflare cert approve'.",
+    },
+    # --- Distributed provisioning: request directory ---
+    "REQUEST_DIR_NOT_FOUND": {
+        "message": "Request directory not found: {path}.",
+        "hint": "Provide the directory created by 'nvflare cert request', or omit --request-dir to auto-discover.",
+    },
+    "REQUEST_DIR_INCOMPLETE": {
+        "message": "Request directory is missing required local material.",
+        "hint": "Re-run 'nvflare cert request' to regenerate the request directory.",
+    },
+    "REQUEST_DIR_MISMATCH": {
+        "message": "Request directory does not match the signed zip request_id.",
+        "hint": "Use the directory created by 'nvflare cert request' for this signed zip.",
+    },
+    # --- Distributed provisioning: request metadata ---
+    "REQUEST_METADATA_NOT_FOUND": {
+        "message": "Request metadata (request.json) not found in the request directory.",
+        "hint": "Re-run 'nvflare cert request' to regenerate the request directory.",
+    },
+    "REQUEST_METADATA_INVALID": {
+        "message": "Request metadata (request.json) is invalid or corrupted.",
+        "hint": "Re-run 'nvflare cert request' to regenerate the request directory.",
+    },
+    "REQUEST_METADATA_MISMATCH": {
+        "message": "Request metadata does not match the signed zip.",
+        "hint": "Ensure the request directory matches the signed zip from 'nvflare cert approve'.",
+    },
+    # --- Distributed provisioning: project/CA binding ---
+    "PROJECT_CA_MISMATCH": {
+        "message": "Request project does not match the CA project.",
+        "hint": "Use a CA directory initialized for the same project as this request.",
+    },
+    "PROJECT_PROFILE_MISMATCH": {
+        "message": "Request project does not match the project profile.",
+        "hint": "Use the project_profile.yaml for the same project as this request.",
+    },
+    # --- Package build ---
+    "BUILD_FAILED": {
+        "message": "Package build failed.",
+        "hint": "Check builder configuration and logs for details.",
     },
     "UNSIGNED_JOB_REJECTED": {
         "message": "Unsigned job rejected — require_signed_jobs is enabled.",
-        "hint": "Sign the job with an admin cert, or disable require_signed_jobs in fed_server.json.",
+        "hint": "Sign the job with an admin cert, or disable require_signed_jobs in fed_server.json and each "
+        "participating fed_client.json.",
     },
     "CERT_CHAIN_INVALID": {
         "message": "Certificate {cert} is not signed by root CA {rootca}.",
@@ -191,7 +346,7 @@ _ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
     },
     "NO_PARTICIPANTS": {
         "message": "No participants to build after applying type filter.",
-        "hint": "Check the project file and -t filter.",
+        "hint": "Check the project file and participant type filter.",
     },
     # --- Version ---
     "VERSION_MISMATCH": {

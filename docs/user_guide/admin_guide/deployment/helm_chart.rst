@@ -1,481 +1,1288 @@
 .. _helm_chart:
 
-################################
+###########################
 Running FLARE in Kubernetes
-################################
+###########################
 
-NVIDIA FLARE can be deployed to Kubernetes clusters for production-scale federated learning.
+.. contents::
+   :local:
+   :depth: 2
 
-.. note::
+NVIDIA FLARE can be deployed to Kubernetes by first provisioning normal startup
+kits and then preparing each server or client kit for the Kubernetes runtime.
+The prepared kit contains a participant-specific Helm chart plus the
+``startup/`` and ``local/`` folders that must be staged into Kubernetes storage.
 
-    **Coming in 2.8.0: Native Kubernetes Support**
+For example scripts that automate temporary Kubernetes, OpenShift, and managed
+cloud cluster testing flows, see
+:github_nvflare_link:`examples/devops <examples/devops>`. These scripts are
+for development, smoke testing, demos, and learning only; they are not
+production deployment guidance.
 
-    FLARE 2.8.0 will introduce native Kubernetes support with tighter integration,
-    simplified deployment, and native orchestration of FL jobs on K8s.
+Prerequisites
+=============
 
-Current Kubernetes Deployment with Helm Chart
-=============================================
+Before you start, make sure you have:
 
-Currently, FLARE can be deployed to Kubernetes using Helm Charts. The provisioning tool includes
-a ``HelmChartBuilder`` that generates a reference Helm Chart for deploying NVIDIA FLARE to
-Kubernetes instances (e.g., microk8s).
+* ``nvflare`` installed on the workstation where you provision and run
+  ``nvflare deploy prepare``.
+* ``kubectl`` configured for the target cluster. Use a ``kubectl`` version that
+  is compatible with the Kubernetes API server.
+* ``tar`` installed locally and in any temporary pod image used with
+  ``kubectl cp``. The staging examples below use ``busybox:1.36``, which
+  includes ``tar``.
+* Helm 3.
+* A Kubernetes cluster with standard ``apps/v1`` Deployment,
+  ``rbac.authorization.k8s.io/v1`` Role/RoleBinding, Service, Secret, and PVC
+  support.
+* An actively supported Kubernetes release. The generated chart uses stable
+  Kubernetes APIs and does not depend on provider-specific extensions.
+* A default ``StorageClass`` or an explicit ``storageClassName`` for every PVC.
+  Check with ``kubectl get storageclass``.
+* A container registry that every server and client cluster can pull from.
+* NVIDIA GPU Operator or NVIDIA device plugin installed on clusters that will
+  run jobs with ``resource_spec[site].num_of_gpus``. See
+  `Cloud GPU Setup References`_.
+* For Kubernetes job launching, a Kubernetes API-server CA chain that passes
+  Python 3.13+ strict X.509 validation. CA certificates must include required
+  RFC 5280 extensions such as ``keyUsage`` with certificate signing allowed.
 
-.. note::
+The generated charts do not install a Kubernetes cluster, storage class, GPU
+device plugin, ingress controller, or registry credentials.
 
-    The generated Helm Chart is a starting point and serves as a reference. Depending on the Kubernetes cluster,
-    users may need to modify and/or perform additional operations to successfully deploy the chart.
-    
+Cloud GPU Setup References
+--------------------------
 
-.. note::
+Managed Kubernetes services differ in how they handle GPU drivers, the NVIDIA
+Container Toolkit, the NVIDIA GPU Operator, and the NVIDIA Kubernetes device
+plugin. Before running GPU jobs, verify that GPU nodes advertise allocatable
+``nvidia.com/gpu`` resources.
 
-    The following document assumes users have microk8s (common bundle in ubuntu server 20.04 and above) running on his local machine.
-    With the helm chart, users are able to start the servers in the k8s cluster after provisioning.
-    The clients and admin console can connect to the servers in the k8s cluster.
+Use the current provider documentation for your cluster:
 
+* Amazon Elastic Kubernetes Service (EKS): `Manage NVIDIA GPU devices on Amazon
+  EKS <https://docs.aws.amazon.com/eks/latest/userguide/device-management-nvidia.html>`__
+  and `GPU support in eksctl
+  <https://docs.aws.amazon.com/eks/latest/eksctl/gpu-support.html>`__.
+* Google Kubernetes Engine (GKE): `Manage the GPU Stack with the NVIDIA GPU
+  Operator on GKE
+  <https://cloud.google.com/kubernetes-engine/docs/how-to/gpu-operator>`__ and
+  `About GPUs in GKE
+  <https://cloud.google.com/kubernetes-engine/docs/concepts/gpus>`__.
+* Azure Kubernetes Service (AKS): `Use GPUs on AKS
+  <https://learn.microsoft.com/en-us/azure/aks/use-nvidia-gpu>`__ and `NVIDIA
+  GPU Operator with AKS
+  <https://docs.nvidia.com/datacenter/cloud-native/gpu-operator/latest/microsoft-aks.html>`__.
+* NVIDIA: `NVIDIA GPU Operator
+  <https://docs.nvidia.com/datacenter/cloud-native/gpu-operator/latest/>`__.
 
-***************************
-Update on provisioning tool
-***************************
-
-In order to generate the helm chart, add the HelmChartBuilder to the project.yml file.
-
-.. code-block:: yaml
-
-    - path: nvflare.lighter.impl.helm_chart.HelmChartBuilder
-        args:
-        docker_image: localhost:32000/nvfl-min:0.0.1
-
-
-The ``docker_image`` is the actual image used for all pods running in the k8s.  The provisioners have 
-to build it separately and make sure it is available to the k8s cluster.  For microk8s, enabling the docker registry 
-server by running this:
-
-.. code-block:: shell
-
-    microk8s enable registry
-
-This will create a registry server listening to port 32000
-
-********************
-Provisioning results
-********************
-
-Running provision command as usual, either in the new format ``nvflare provision`` or just ``provision``.
-
-After the command, there should a folder with structure similar to the following:
-
-.. code-block:: shell
-
-    $ tree -L 1
-    .
-    ├── admin@nvidia.com
-    ├── compose.yaml
-    ├── nvflare_compose
-    ├── nvflare_hc
-    ├── server1
-    ├── server2
-    ├── site-1
-    └── site-2
-
-    7 directories, 1 file
-
-Note there is a nvflare_hc folder.  This folder is the Helm Chart package.
-
-
-******************
-Preparing microk8s
-******************
-
-Enabling microk8s addons
-========================
-NVIDIA FLARE Helm Chart depends on a few services (aka addons in microk8s) provided by the Kubernetes cluster.  Please
-check if they are enabled.
-
-.. code-block:: shell
-
-    $ microk8s status
-    microk8s is running
-    datastore master nodes: 127.0.0.1:19001
-    datastore standby nodes: none
-    addons:
-    enabled:
-        dns                  # (core) CoreDNS
-        helm3                # (core) Helm 3 - Kubernetes package manager
-        hostpath-storage     # (core) Storage class; allocates storage from host directory
-        ingress              # (core) Ingress controller for external access
-        registry             # (core) Private image registry exposed on localhost:32000
-        storage              # (core) Alias to hostpath-storage add-on, deprecated
-    disabled:
-        community            # (core) The community addons repository
-        dashboard            # (core) The Kubernetes dashboard
-        gpu                  # (core) Automatic enablement of Nvidia CUDA
-        helm                 # (core) Helm 2 - the package manager for Kubernetes
-        host-access          # (core) Allow Pods connecting to Host services smoothly
-        mayastor             # (core) OpenEBS MayaStor
-        metallb              # (core) Loadbalancer for your Kubernetes cluster
-        metrics-server       # (core) K8s Metrics Server for API access to service metrics
-        prometheus           # (core) Prometheus operator for monitoring and logging
-        rbac                 # (core) Role-Based Access Control for authorisation
-
-If any of the enabled services are not enabled in your environment, please enable it.  The following example shows how
-to enable helm3 addon.
-
-.. code-block:: shell
-
-    $ microk8s enable helm3
-    Infer repository core for addon helm3
-    Enabling Helm 3
-    Fetching helm version v3.8.0.
-    % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
-                                    Dload  Upload   Total   Spent    Left  Speed
-    100 12.9M  100 12.9M    0     0  11.5M      0  0:00:01  0:00:01 --:--:-- 11.5M
-    Helm 3 is enabled
-
-
-Allowing network traffic
+Kubernetes Runtime Model
 ========================
 
-We have to change the cluster to allow incoming network traffic, such as those
-from admin consoles and NVIDIA FLARE clients, to enter the cluster.  After the network
-traffic enters the cluster, the cluster also needs to know how to route the traffic
-to the deployed services.
+Kubernetes deployment has two runtime layers:
 
+* A **parent pod** runs the long-lived FLARE server or client process. Helm
+  installs this pod from the per-participant ``helm_chart/`` generated by
+  ``nvflare deploy prepare``. The parent pod mounts the configured workspace PVC
+  at ``parent.workspace_mount_path`` and reads ``startup/`` and ``local/`` from
+  that PVC. Its Python executable is set by ``parent.python_path`` or, when
+  omitted, defaults to ``/usr/local/bin/python3``.
+* A **job pod** is created dynamically by ``ServerK8sJobLauncher`` or
+  ``ClientK8sJobLauncher`` for each submitted job. Job pod image, Python path,
+  CPU, memory, GPU, and ephemeral storage settings come from the submitted
+  job's ``launcher_spec`` and from the ``job_launcher`` defaults in
+  ``k8s.yaml``.
 
-Users have to enable ingress controller and modify some configuration of microk8s cluster.
+The generated Helm chart does not run submitted jobs directly. It installs the
+parent participant process, its Kubernetes Service, its ServiceAccount, and the
+Role/RoleBinding that allow the launcher to create job pods.
 
-Complete the following steps to enable microk8s to open and route
-network traffic to servers.
+When ``job_launcher.config_file_path`` is omitted or set to ``null``, the
+launcher uses Kubernetes in-cluster config from the parent pod's ServiceAccount.
 
-
-Edit configmap of ingress to route traffic
-------------------------------------------
-
-.. code-block:: shell
-
-    $ microk8s kubectl edit cm nginx-ingress-tcp-microk8s-conf -n ingress
-
-Add this section to the configmap
-
-.. code-block:: yaml
-
-    data:
-        "8002": default/server1:8002
-        "8003": default/server1:8003
-        "8102": default/server2:8102
-        "8103": default/server2:8103
-
-Edit DaemonSet of ingress to open ports
----------------------------------------
-
-.. code-block:: shell
-
-    $ microk8s kubectl edit ds nginx-ingress-microk8s-controller -n ingress
-
-Add this section at (spec.template.spec.containers[0].ports)
-
-.. code-block:: yaml
-
-        - containerPort: 8002
-          hostPort: 8002
-          name: server1fl
-          protocol: TCP
-        - containerPort: 8003
-          hostPort: 8003
-          name: server1adm
-          protocol: TCP
-        - containerPort: 8102
-          hostPort: 8102
-          name: server2fl
-          protocol: TCP
-        - containerPort: 8103
-          hostPort: 8103
-          name: server2adm
-          protocol: TCP
-
-
-*********************
-Installing helm chart
-*********************
-
-To install the helm chart, with microk8s environment, run the following command in the same directory as previous section.
-
-.. code-block:: shell
-
-    $ mkdir -p /tmp/nvflare
-    $ microk8s helm3 install --set workspace=$(pwd) --set svc-persist=/tmp/nvflare nvflare-helm-chart-demo nvflare_hc/
-
-    NAME: nvflare-helm-chart-demo
-    LAST DEPLOYED: Fri Sep 23 12:28:24 2022
-    NAMESPACE: default
-    STATUS: deployed
-    REVISION: 1
-    TEST SUITE: None
-
-Here the ``nvflare-helm-chart-demo`` is the name we choose for this installed application.  You can choose a different name so
-that it's easy to recognize the deployed application.
-
-The ``nvflare_hc/`` is the folder provisioning tool generated, as shown in the previous section.  You can take a look at files in
-that folder and feel free to change them for your own environment.
+The parent Service is the stable in-cluster address for dynamically launched job
+pods. ``nvflare deploy prepare`` patches the prepared kit's internal
+communication settings to use the generated Service name and ``parent_port``.
+``parent_port`` is the parent-process port used by job pods for internal
+parent/job communication; it is not the federated learning port that remote
+clients use to reach the server. If you rename or replace the Service, keep the
+Service name, Service port, and prepared kit communication settings consistent.
+These internal TCP links use mTLS by default. The job pod receives the existing
+participant startup CA, certificate, and key, while CellNet binds the certificate
+identity to the participant's logical FQCN rather than the pod name or IP address.
 
 .. note::
 
-    Here we use the host's /tmp/nvflare as the persist storage space for all pods in microk8s.  Please make sure
-    that directory exists before running the above command
-    
-****************************************
-Verifying NVIDIA FLARE is up and running
-****************************************
+   The Kubernetes job launcher requires certificates that allow both
+   ``clientAuth`` and ``serverAuth``, because the internal mTLS links use the
+   participant certificate in both TLS roles (the client parent listens with the
+   client certificate, and the server job connects with the server certificate).
+   Sites whose startup kits carry role-restricted certificates — for example,
+   kits created by NVFlare 2.8 distributed provisioning, which issues
+   certificates with only ``clientAuth`` or only ``serverAuth`` — must be
+   re-provisioned. Kits whose certificates carry no EKU (unrestricted) remain
+   compatible and do not need re-provisioning. After re-provisioning, re-run ``nvflare deploy prepare`` on the new startup kits.
 
-You can use ``kubectl`` to check the status of NVIDIA FLARE application, installed by the chart. For example, in
-microk8s environment, run the following command to see if servers are started.
+The runtime shape is:
 
-.. code-block:: shell
+.. code-block:: text
 
-    $ microk8s kubectl get pods
-    NAME                        READY   STATUS    RESTARTS       AGE
-    dnsutils                    1/1     Running   74 (13m ago)   62d
-    server1-7675668544-xvfvp    1/1     Running   0              4m50s
-    server2-86bc4fc87f-s9n2s    1/1     Running   0              4m50s
+   admin console
+        |
+        | FL/admin traffic to server fed_learn_port/admin_port
+        v
+   server cluster or namespace
+     server parent pod
+       | mounts workspace PVC: startup/, local/, transfer/
+       | launches server job pods through Kubernetes API
+       v
+     server job pod emptyDir workspace
+       | optional mounts: /data/<study>/<dataset> from study-data PVCs
+       | workspace transfer over parent Service on parent_port
 
-The ``dnsutils`` is a built-in addon for dns service inside microk8s. You can ignore it.
+   client cluster or namespace
+     client parent pod
+       | outbound FL connection to server fed_learn_port
+       | mounts workspace PVC: startup/, local/
+       | launches client job pods through Kubernetes API
+       v
+     client job pod emptyDir workspace
+       | optional mounts: /data/<study>/<dataset> from study-data PVCs
+       | workspace transfer over client parent Service on parent_port
 
-For more details on the pods inside Kubernetes cluster, you can run the following command.
+Server and client participants may run in the same Kubernetes cluster or in
+separate clusters. Separate clusters are common because each site controls its
+own compute and data. If participants run in separate clusters, using the same
+namespace and PVC names in each cluster is safe. If multiple participants run in
+one cluster, give each participant its own namespace or its own workspace PVC;
+do not point a server and a client at the same workspace PVC because their
+``startup/`` and ``local/`` contents are different.
 
-.. code-block:: shell
+Client sites need outbound network access to the server endpoint configured
+during provisioning, usually ``<server-host>:<fed_learn_port>``. A client site
+does not need an inbound FL port or an externally exposed Service. The client
+chart creates an in-cluster Service only so that dynamically launched client job
+pods can reach their client parent pod.
 
-    $ microk8s kubectl describe pods
-    Name:         dnsutils
-    Namespace:    default
-    Priority:     0
-    Node:         demolaptop/192.168.1.96
-    Start Time:   Fri, 22 Jul 2022 13:36:54 -0700
-    Labels:       <none>
-    Annotations:  cni.projectcalico.org/containerID: 9cfa2cfbb4ef7b11b10c5793965e2a42682dea5d0b05b4454b4232da9ded6a8e
-                cni.projectcalico.org/podIP: 10.1.179.67/32
-                cni.projectcalico.org/podIPs: 10.1.179.67/32
-    Status:       Running
-    IP:           10.1.179.67
-    IPs:
-    IP:  10.1.179.67
-    Containers:
-    dnsutils:
-        Container ID:  containerd://3c31a42f9c5dc10452d2af0a503682cd78e25a4b078877f96a1174d1156a23a5
-        Image:         k8s.gcr.io/e2e-test-images/jessie-dnsutils:1.3
-        Image ID:      k8s.gcr.io/e2e-test-images/jessie-dnsutils@sha256:8b03e4185ecd305bc9b410faac15d486a3b1ef1946196d429245cdd3c7b152eb
-        Port:          <none>
-        Host Port:     <none>
-        Command:
-        sleep
-        3600
-        State:          Running
-        Started:      Fri, 23 Sep 2022 12:19:55 -0700
-        Last State:     Terminated
-        Reason:       Unknown
-        Exit Code:    255
-        Started:      Thu, 18 Aug 2022 11:18:34 -0700
-        Finished:     Fri, 23 Sep 2022 12:19:25 -0700
-        Ready:          True
-        Restart Count:  74
-        Environment:    <none>
-        Mounts:
-        /var/run/secrets/kubernetes.io/serviceaccount from kube-api-access-f4sxs (ro)
-    Conditions:
-    Type              Status
-    Initialized       True 
-    Ready             True 
-    ContainersReady   True 
-    PodScheduled      True 
-    Volumes:
-    kube-api-access-f4sxs:
-        Type:                    Projected (a volume that contains injected data from multiple sources)
-        TokenExpirationSeconds:  3607
-        ConfigMapName:           kube-root-ca.crt
-        ConfigMapOptional:       <nil>
-        DownwardAPI:             true
-    QoS Class:                   BestEffort
-    Node-Selectors:              <none>
-    Tolerations:                 node.kubernetes.io/not-ready:NoExecute op=Exists for 300s
-                                node.kubernetes.io/unreachable:NoExecute op=Exists for 300s
-    Events:                      <none>
+Each prepared participant folder contains its own chart:
 
+.. code-block:: text
 
-    Name:         server1-7675668544-xvfvp
-    Namespace:    default
-    Priority:     0
-    Node:         demolaptop/192.168.1.96
-    Start Time:   Fri, 23 Sep 2022 12:28:25 -0700
-    Labels:       pod-template-hash=7675668544
-                system=server1
-    Annotations:  cni.projectcalico.org/containerID: 7493a356143ad0c4e4fdbe781d995c01d52c4caa31e961066d4a8769dfa1d360
-                cni.projectcalico.org/podIP: 10.1.179.94/32
-                cni.projectcalico.org/podIPs: 10.1.179.94/32
-    Status:       Running
-    IP:           10.1.179.94
-    IPs:
-    IP:           10.1.179.94
-    Controlled By:  ReplicaSet/server1-7675668544
-    Containers:
-    server1:
-        Container ID:  containerd://16928775549dbf9cb2d68eea6412e682a170f72b5dbcdbf8c56790c8b9a30fd5
-        Image:         localhost:32000/nvfl-min:0.0.1
-        Image ID:      localhost:32000/nvfl-min@sha256:71658dc82b15e6cd5a2580c78e56011d166a70e1ff098306c93584c82cb63821
-        Ports:         8002/TCP, 8003/TCP
-        Host Ports:    0/TCP, 0/TCP
-        Command:
-        /usr/local/bin/python3
-        Args:
-        -u
-        -m
-        nvflare.private.fed.app.server.server_train
-        -m
-        /workspace/server1
-        -s
-        fed_server.json
-        --set
-        secure_train=true
-        config_folder=config
-        State:          Running
-        Started:      Fri, 23 Sep 2022 12:28:27 -0700
-        Ready:          True
-        Restart Count:  0
-        Environment:    <none>
-        Mounts:
-        /tmp/nvflare from svc-persist (rw)
-        /var/run/secrets/kubernetes.io/serviceaccount from kube-api-access-hkhhq (ro)
-        /workspace from workspace (rw)
-    Conditions:
-    Type              Status
-    Initialized       True 
-    Ready             True 
-    ContainersReady   True 
-    PodScheduled      True 
-    Volumes:
-    workspace:
-        Type:          HostPath (bare host directory volume)
-        Path:          /home/nvflare/workspace/nvf_hc_test/demo
-        HostPathType:  Directory
-    svc-persist:
-        Type:          HostPath (bare host directory volume)
-        Path:          /tmp/nvflare
-        HostPathType:  Directory
-    kube-api-access-hkhhq:
-        Type:                    Projected (a volume that contains injected data from multiple sources)
-        TokenExpirationSeconds:  3607
-        ConfigMapName:           kube-root-ca.crt
-        ConfigMapOptional:       <nil>
-        DownwardAPI:             true
-    QoS Class:                   BestEffort
-    Node-Selectors:              <none>
-    Tolerations:                 node.kubernetes.io/not-ready:NoExecute op=Exists for 300s
-                                node.kubernetes.io/unreachable:NoExecute op=Exists for 300s
-    Events:                      <none>
+   server-k8s/
+     helm_chart/
+     local/
+     startup/
+     transfer/
 
+   site-1-k8s/
+     helm_chart/
+     local/
+     startup/
+     transfer/
 
-    Name:         server2-86bc4fc87f-s9n2s
-    Namespace:    default
-    Priority:     0
-    Node:         demolaptop/192.168.1.96
-    Start Time:   Fri, 23 Sep 2022 12:28:25 -0700
-    Labels:       pod-template-hash=86bc4fc87f
-                system=server2
-    Annotations:  cni.projectcalico.org/containerID: 8ac76a0bfad2e4f0b1de9115f0d46c1a0dbacabb847c6160b1f144e82720fe99
-                cni.projectcalico.org/podIP: 10.1.179.96/32
-                cni.projectcalico.org/podIPs: 10.1.179.96/32
-    Status:       Running
-    IP:           10.1.179.96
-    IPs:
-    IP:           10.1.179.96
-    Controlled By:  ReplicaSet/server2-86bc4fc87f
-    Containers:
-    server2:
-        Container ID:  containerd://c1e530fc6fc320d9b9388d81727440324cc11e0bb61e3b3e76a2362638f89357
-        Image:         localhost:32000/nvfl-min:0.0.1
-        Image ID:      localhost:32000/nvfl-min@sha256:71658dc82b15e6cd5a2580c78e56011d166a70e1ff098306c93584c82cb63821
-        Ports:         8102/TCP, 8103/TCP
-        Host Ports:    0/TCP, 0/TCP
-        Command:
-        /usr/local/bin/python3
-        Args:
-        -u
-        -m
-        nvflare.private.fed.app.server.server_train
-        -m
-        /workspace/server2
-        -s
-        fed_server.json
-        --set
-        secure_train=true
-        config_folder=config
-        State:          Running
-        Started:      Fri, 23 Sep 2022 12:28:28 -0700
-        Ready:          True
-        Restart Count:  0
-        Environment:    <none>
-        Mounts:
-        /tmp/nvflare from svc-persist (rw)
-        /var/run/secrets/kubernetes.io/serviceaccount from kube-api-access-6cwbh (ro)
-        /workspace from workspace (rw)
-    Conditions:
-    Type              Status
-    Initialized       True 
-    Ready             True 
-    ContainersReady   True 
-    PodScheduled      True 
-    Volumes:
-    workspace:
-        Type:          HostPath (bare host directory volume)
-        Path:          /home/nvflare/workspace/nvf_hc_test/demo
-        HostPathType:  Directory
-    svc-persist:
-        Type:          HostPath (bare host directory volume)
-        Path:          /tmp/nvflare
-        HostPathType:  Directory
-    kube-api-access-6cwbh:
-        Type:                    Projected (a volume that contains injected data from multiple sources)
-        TokenExpirationSeconds:  3607
-        ConfigMapName:           kube-root-ca.crt
-        ConfigMapOptional:       <nil>
-        DownwardAPI:             true
-    QoS Class:                   BestEffort
-    Node-Selectors:              <none>
-    Tolerations:                 node.kubernetes.io/not-ready:NoExecute op=Exists for 300s
-                                node.kubernetes.io/unreachable:NoExecute op=Exists for 300s
-    Events:                      <none>
+The ``transfer/`` directory is the normal FLARE admin file-transfer directory.
+For the server, it is used under the mounted workspace when admin storage is
+configured as ``transfer``. It is not the Kubernetes job workspace-transfer
+mechanism and job pods do not mount it. Stage or create it on the server
+workspace PVC when you stage ``startup/`` and ``local/``.
 
+Build and Push the FLARE Image
+==============================
 
+The Helm charts need a FLARE runtime image that every participating cluster can
+pull. For the image build and registry-push workflow, see
+:ref:`brev_build_push_flare_image`.
 
-************************
-Login with admin console
-************************
+NVIDIA publishes an official NVFlare Docker image in the NGC container registry
+at ``nvcr.io``. Use a tag that matches the NVFlare version used to provision and
+prepare the startup kits, and set that image in ``parent.docker_image`` in
+``k8s.yaml``.
 
-Now on another terminal, with nvflare installed and /etc/hosts modified to 
-include the IP of server1 and server2, which is the IP of the 
-machine running the microk8s cluster, run fl_admin.sh of admin@nvidia.com/startup.  
-Login as admin@nvidia.com.
+Users can also build their own parent runtime image from this repository by
+modifying ``docker/Dockerfile.parent`` and pushing the result to a registry that
+all participating clusters can pull from. Keep the NVFlare ``K8S`` extra, or
+install the Kubernetes Python client explicitly, so the parent server or client
+can create job pods.
 
-For example: /etc/hosts is modified as (if microk8s is running at 192.168.1.123 and clients and admin console is running at slowdesktop machine)
+The parent image comes from ``parent.docker_image`` in ``k8s.yaml`` and is
+rendered into ``helm_chart/values.yaml``. Submitted jobs must also specify a job
+image in ``meta.json`` under ``launcher_spec[site][k8s].image`` or
+``launcher_spec.default.k8s.image``. The parent image and job image can be the
+same image, but they do not have to be.
 
-.. code-block:: shell
+Prepare Startup Kits
+====================
 
-    $ cat /etc/hosts
-    127.0.0.1       localhost
-    127.0.1.1       slowdesktop
-    192.168.1.123 server1 server2
-    # The following lines are desirable for IPv6 capable hosts
-    ::1     ip6-localhost ip6-loopback
-    fe00::0 ip6-localnet
-    ff00::0 ip6-mcastprefix
-    ff02::1 ip6-allnodes
-    ff02::2 ip6-allrouters
+The provisioning step remains responsible for identity material, certificates,
+server host names, FL ports, and FLARE configuration:
 
+.. code-block:: bash
 
-***********************
-Uninstalling helm chart
-***********************
+   nvflare provision -p project.yml -w workspace
 
-Users can uninstall the chart by running (note ``nvflare-helm-chart-demo`` is the release name we used when installing the chart)
+The server ``default_host`` and ``host_names`` in ``project.yml`` must match the
+external endpoint that clients and admin consoles will use to reach the server.
+If those values change, reprovision and rerun ``nvflare deploy prepare``.
 
-.. code-block:: shell
-    
-    $ microk8s helm3 uninstall nvflare-helm-chart-demo
+After provisioning, prepare each server or client startup kit with
+``nvflare deploy prepare``:
 
+.. code-block:: bash
+
+   nvflare deploy prepare workspace/<project>/prod_00/server \
+       --output server-k8s \
+       --config k8s.yaml
+
+   nvflare deploy prepare workspace/<project>/prod_00/site-1 \
+       --output site-1-k8s \
+       --config k8s.yaml
+
+Example ``k8s.yaml``:
+
+.. code-block:: yaml
+
+   runtime: k8s
+   namespace: nvflare
+   parent:
+     docker_image: registry.example.com/nvflare:dev
+     internal_connection_security: mtls
+     image_pull_secrets:
+       - registry-credentials
+     parent_port: 8102
+     workspace_pvc: nvflws
+     workspace_mount_path: /var/tmp/nvflare/workspace
+     python_path: /usr/local/bin/python3
+     resources:
+       requests:
+         cpu: "2"
+         memory: 8Gi
+   job_launcher:
+     config_file_path:
+     default_python_path: /usr/local/bin/python3
+     image_pull_secrets:
+       - job-registry-credentials
+     pending_timeout: 300
+
+The runtime config controls site-level Kubernetes settings:
+
+* ``namespace`` is where the parent pod and dynamically launched job pods run.
+* ``server_service_name`` sets the FL server Kubernetes Service name. It
+  defaults to ``nvflare-server``.
+* ``parent`` values are rendered into the Helm chart. They set the parent image,
+  Python executable, workspace PVC, parent service port, parent pod resources,
+  optional parent pod security context, and optional image pull Secret
+  references. ``parent.image_pull_secrets`` must name Kubernetes Secrets that
+  already exist in the target namespace; NVFLARE does not create registry
+  credentials. This setting applies to the generated parent pod chart; use
+  ``job_launcher.image_pull_secrets`` for dynamically launched job pods.
+  ``parent.python_path`` controls the long-lived SP/CP parent pod command.
+  ``parent.workspace_mount_path`` is also written into the K8s launcher config
+  so spawned SJ/CJ job pods mount their job workspace and startup kit at the
+  same in-container path.
+  ``parent.internal_connection_security`` accepts ``mtls`` or ``clear`` and
+  defaults to ``mtls``. ``mtls`` preserves ``stcp://`` and authenticates both
+  ends of SP/SJ and CP/CJ links. ``clear`` is an explicit insecure opt-out that
+  emits ``tcp://`` links without certificate authentication; use it only on a
+  trusted, isolated network when compatibility requires clear transport.
+* ``job_launcher`` values are written into the participant's
+  ``local/resources.json.default`` so the parent process can create job pods.
+  ``config_file_path`` may be empty for in-cluster configuration, and
+  ``default_python_path`` controls SJ/CJ job pods when a job does not override
+  ``launcher_spec[site][k8s].python_path``. It does not control the SP/CP parent
+  pod Python path; use ``parent.python_path`` for that command.
+  ``image_pull_secrets`` names existing Kubernetes image pull Secrets attached
+  to every dynamically launched job pod for this prepared site. Configure this
+  during deployment preparation when job images live in a private registry; job
+  authors still only specify the job image in ``meta.json``.
+  Study-specific Pod templates for dynamically launched job pods are configured
+  per study in ``local/study_runtime.yaml`` via ``pod_template``.
+  ``pending_timeout`` is in seconds. It controls how long a dynamically launched
+  job pod can stay in ``Pending`` or ``Unknown`` before the launcher deletes it
+  and reports the run as an execution exception. The admin ``list_jobs`` command
+  then shows ``FINISHED:EXECUTION_EXCEPTION`` instead of treating the timeout as
+  a user abort.
+
+The parent pod and job pods use different Python settings:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Setting
+     - Applies to
+     - Notes
+   * - ``parent.python_path``
+     - Parent server or client pod
+     - Rendered as the Helm container command for ``server_train`` or
+       ``client_train``.
+   * - ``job_launcher.default_python_path``
+     - Dynamically launched job pods
+     - Used when a job does not set
+       ``launcher_spec[site][k8s].python_path``.
+   * - ``launcher_spec[site][k8s].python_path``
+     - Dynamically launched job pods
+     - Per-job override in ``meta.json``.
+
+Prepare Cluster Storage
+=======================
+
+Create and bind any workspace or study-data PVCs required by your cluster before
+starting the participant.
+
+Create the namespace before applying namespaced PVC manifests or installing
+the Helm chart:
+
+.. code-block:: bash
+
+   export NAMESPACE=nvflare
+   kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+
+Workspace PVC
+-------------
+
+The workspace PVC is for the parent server or client pod. The generated chart
+mounts ``parent.workspace_pvc`` at ``parent.workspace_mount_path``, but it does
+not upload files to the PVC. Before installing the chart, choose one of two
+supported staging methods for the parent pod's ``startup/`` and ``local/``
+folders:
+
+- Copy the prepared kit's ``startup/`` and ``local/`` directories into the
+  workspace PVC root.
+- Run ``nvflare deploy k8s stage`` to create a ConfigMap for ``local/`` and a
+  Secret for ``startup/`` and patch the generated chart values.
+
+For server kits using the PVC-copy method, also create or copy ``transfer/`` at
+the workspace root for admin file-transfer storage. If you use ``kubectl cp`` as
+shown below, the temporary copy pod image must contain ``tar`` because
+``kubectl cp`` requires it in the target container.
+
+After either staging method, run ``helm upgrade --install`` for the generated
+chart to start the long-lived parent server or client pod.
+
+Example ``workspace-pvc.yaml``:
+
+.. code-block:: yaml
+
+   apiVersion: v1
+   kind: PersistentVolumeClaim
+   metadata:
+     name: nvflws
+   spec:
+     accessModes:
+       - ReadWriteOnce
+     resources:
+       requests:
+         storage: 10Gi
+     # If your cluster has no default StorageClass, uncomment and set this.
+     # storageClassName: <storage-class-name>
+
+Use a larger size if the server's job history, snapshots, or logs need more
+space. Use a distinct workspace claim per participant when multiple
+participants run in the same namespace.
+
+Method 1: copy into the workspace PVC
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+For example, with a prepared folder named ``server-k8s`` and a workspace PVC
+named ``nvflws``, copy ``startup/`` and ``local/`` directly into the PVC root:
+
+.. code-block:: bash
+
+   export NAMESPACE=nvflare
+   export PREPARED_KIT=server-k8s
+   export WORKSPACE_PVC=nvflws
+
+   kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+   kubectl -n "$NAMESPACE" apply -f workspace-pvc.yaml
+   kubectl -n "$NAMESPACE" get pvc "$WORKSPACE_PVC"
+
+   kubectl -n "$NAMESPACE" delete pod nvflare-pvc-copy --ignore-not-found=true
+   cat >/tmp/nvflare-pvc-copy.json <<EOF
+   {
+     "spec": {
+       "restartPolicy": "Never",
+       "volumes": [
+         {"name": "ws", "persistentVolumeClaim": {"claimName": "${WORKSPACE_PVC}"}}
+       ],
+       "containers": [
+         {
+           "name": "nvflare-pvc-copy",
+           "image": "busybox:1.36",
+           "command": ["sleep", "600"],
+           "volumeMounts": [{"name": "ws", "mountPath": "/mnt/nvflws"}]
+         }
+       ]
+     }
+   }
+   EOF
+   kubectl -n "$NAMESPACE" run nvflare-pvc-copy \
+       --image=busybox:1.36 \
+       --restart=Never \
+       --overrides="$(cat /tmp/nvflare-pvc-copy.json)"
+   kubectl -n "$NAMESPACE" wait --for=condition=Ready pod/nvflare-pvc-copy --timeout=120s
+   kubectl -n "$NAMESPACE" exec nvflare-pvc-copy -- rm -rf /mnt/nvflws/startup /mnt/nvflws/local
+   kubectl -n "$NAMESPACE" cp "$PREPARED_KIT/startup" nvflare-pvc-copy:/mnt/nvflws/startup
+   kubectl -n "$NAMESPACE" cp "$PREPARED_KIT/local" nvflare-pvc-copy:/mnt/nvflws/local
+   kubectl -n "$NAMESPACE" exec nvflare-pvc-copy -- mkdir -p /mnt/nvflws/transfer
+   kubectl -n "$NAMESPACE" exec nvflare-pvc-copy -- ls -la /mnt/nvflws
+   kubectl -n "$NAMESPACE" delete pod nvflare-pvc-copy
+
+The OpenShift helper
+:github_nvflare_link:`examples/devops/openshift/scripts/k8s_deploy.sh <examples/devops/openshift/scripts/k8s_deploy.sh>`
+shows this PVC-copy method end to end. Its ``stage_workspace_pvc`` helper in
+:github_nvflare_link:`examples/devops/openshift/scripts/k8s_common.sh <examples/devops/openshift/scripts/k8s_common.sh>`
+creates a temporary copy pod, copies ``startup/`` and ``local/`` into the PVC,
+and then the script runs Helm for each participant.
+
+The PVC root must contain ``startup/`` and ``local/`` directly. At runtime,
+those folders appear under the configured workspace mount path
+(``parent.workspace_mount_path``, rendered as
+``persistence.workspace.mountPath``). With the example default, the parent
+expects ``/var/tmp/nvflare/workspace/startup`` and
+``/var/tmp/nvflare/workspace/local``. If the PVC root contains a nested
+``server-k8s/`` or ``site-1-k8s/`` folder instead, the parent pod will not find
+those folders under the configured mount path.
+
+Method 2: stage ConfigMap and Secret
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+As an alternative to copying ``startup/`` and ``local/`` into the PVC, run
+``nvflare deploy k8s stage`` to create read-only Kubernetes resources for those
+folders. ``nvflare deploy k8 stage`` is accepted as an alias.
+
+.. code-block:: bash
+
+   nvflare deploy k8s stage "$PREPARED_KIT" --namespace "$NAMESPACE"
+
+Use ``--kubectl oc`` when staging into OpenShift with ``oc`` instead of
+``kubectl``. This creates a ConfigMap for ``local/`` and a Secret for
+``startup/``, then patches ``helm_chart/values.yaml`` so the parent pod mounts them at
+``/var/tmp/nvflare/workspace/local`` and
+``/var/tmp/nvflare/workspace/startup``. The workspace PVC is still mounted at
+the workspace root for writable runtime state such as jobs, snapshots, logs, and
+``transfer/``. After this staging command succeeds, run the printed
+``helm_command`` or the equivalent ``helm upgrade --install`` command for the
+prepared chart. The staged ConfigMap and Secret are separate from the Helm
+release. After uninstalling the release, run the printed ``cleanup_command``
+or the equivalent command below to remove them:
+
+.. code-block:: bash
+
+   helm uninstall "$RELEASE_NAME" --namespace "$NAMESPACE"
+   nvflare deploy k8s unstage "$PREPARED_KIT"
+
+The stage command records the namespace and exact resource names in the
+prepared chart values, so they do not need to be repeated. Pass
+``--namespace`` when cleaning up a kit staged by an older NVFlare version that
+did not record it. Run unstage after Helm uninstall because the parent pod
+depends on the staged volumes while it is installed.
+
+The dynamically launched job pod does **not** mount this workspace PVC. Each job
+pod receives its own writable ``emptyDir`` mounted at the configured workspace
+mount path. The launcher transfers the needed ``local/`` and job workspace
+content into that ``emptyDir`` when the pod starts and uploads the job results
+back to the parent process when the job exits. The job pod workspace size is
+controlled by
+``launcher_spec[site][k8s].ephemeral_storage`` when set, or by the launcher
+default otherwise. The same value is also used for the container
+``ephemeral-storage`` request and limit.
+
+Study Data PVC
+--------------
+
+Study data PVCs are separate from the parent workspace PVC. Configure optional
+study data mappings in ``local/study_runtime.yaml`` inside the prepared kit
+before copying ``local/`` into the workspace PVC (``nvflare deploy prepare``
+writes a commented template; the launcher auto-discovers the file, so no
+launcher arguments are needed). If the kit is already staged, edit the file on
+the PVC or restage ``local/``.
+
+Example ``study_runtime.yaml``:
+
+.. code-block:: yaml
+
+   format_version: 2
+   studies:
+     default:
+       datasets:
+         data:
+           source: nvfldata
+           mode: ro
+
+For Kubernetes, each dataset ``source`` value is a PVC claim name. The job pod
+mounts the dataset at ``/data/<study>/<dataset>``, for example
+``/data/default/data``. ``mode`` must be ``ro`` or ``rw``. Missing entries for
+a job's study mean no study-data PVCs are mounted for that job. The same file
+also configures per-study env vars, secret-backed env vars and mounts, and Pod
+templates; the launcher re-reads it on every job launch. Any template files
+referenced by ``pod_template`` must be staged with ``local/``.
+
+Legacy v1 kits that still use ``local/study_data.yaml`` keep working:
+``nvflare deploy prepare`` then emits the launcher's
+``study_data_pvc_file_path`` pointing at that file and does not write a
+``study_runtime.yaml`` template. The two files must not coexist; to migrate,
+move all studies into ``study_runtime.yaml`` and delete ``study_data.yaml``.
+
+When a study's ``local/study_runtime.yaml`` entry sets ``pod_template``,
+matching jobs use the study-specific Pod template, and ``datasets`` entries
+from the same study are added as PVC volume mounts. The launcher always
+replaces template ``workspace-job`` and ``startup-kit`` volumes and
+job-container mounts with its generated workspace ``emptyDir`` and startup-kit
+Secret mounts.
+
+Minimal Study Job Pod Template
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Reference the template per study in ``local/study_runtime.yaml`` (paths resolve
+relative to ``local/``; an inline pod mapping is also accepted):
+
+.. code-block:: yaml
+
+   format_version: 2
+   studies:
+     study-a:
+       pod_template: pod_specs/default-job-pod.yaml
+
+The following ``pod_specs/default-job-pod.yaml`` starts with the minimal Pod
+template and shows common optional fields, including a node selector for an H100
+node labeled by the NVIDIA GPU Operator or NVIDIA GPU Feature Discovery (GFD).
+Before setting the selector, verify the exact label value in your cluster:
+
+.. code-block:: console
+
+   $ kubectl get nodes -L nvidia.com/gpu.product,nvidia.com/gpu.count,nvidia.com/gpu.present
+
+If you omit the optional fields and keep only the ``nvflare_job`` container, the
+study uses its ``pod_template`` while keeping the same effective job pod
+manifest as the built-in launcher behavior:
+
+.. code-block:: yaml
+
+   apiVersion: v1
+   kind: Pod
+   metadata:
+     labels:
+       nvflare.io/study: study-a
+       workload: h100-training
+     annotations:
+       nvflare.io/study-owner: research-team-a
+       cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
+   spec:
+     serviceAccountName: study-a-job
+     nodeSelector:
+       nvidia.com/gpu.product: NVIDIA-H100-80GB-HBM3
+     tolerations:
+       - key: nvidia.com/gpu
+         operator: Exists
+         effect: NoSchedule
+     containers:
+       - name: nvflare_job
+
+At launch time, NVFLARE selects the ``nvflare_job`` container and overlays the
+same launcher-owned fields used by the built-in manifest: pod name, job
+container name, image, command, args, resources, workspace ``emptyDir``,
+startup-kit Secret, volume mounts, transfer environment variables, image pull
+Secrets, and ``restartPolicy: Never``. Add template fields such as
+``serviceAccountName``, ``nodeSelector``, ``affinity``, ``tolerations``, sidecar
+containers, or additional volumes only when the study needs behavior that
+differs from the original launcher manifest.
+
+Use Kubernetes node labels to steer study job pods to specific nodes. On
+clusters with the NVIDIA GPU Operator or GFD, GPU nodes commonly have labels
+such as ``nvidia.com/gpu.product`` and ``nvidia.com/gpu.count``; the H100
+selector above matches the product label value NVIDIA documents for a full H100
+80GB HBM3 node. If the cluster uses MIG, GPU sharing, or a different H100 form
+factor, copy the exact ``nvidia.com/gpu.product`` value from ``kubectl get
+nodes``. For more complex placement rules, such as accepting multiple H100
+product labels, use ``spec.affinity.nodeAffinity`` instead of, or in addition
+to, ``nodeSelector``:
+
+.. code-block:: yaml
+
+   spec:
+     affinity:
+       nodeAffinity:
+         requiredDuringSchedulingIgnoredDuringExecution:
+           nodeSelectorTerms:
+             - matchExpressions:
+                 - key: nvidia.com/gpu.product
+                   operator: In
+                   values:
+                     - NVIDIA-H100-80GB-HBM3
+                     - NVIDIA-H100-NVL
+
+To target one named node, use a label that identifies that node, such as the
+standard ``kubernetes.io/hostname`` label, or add your own operational label and
+select it from the template. Keep in mind that strict node selection can leave a
+job pod ``Pending`` when the selected node has no available capacity.
+Pod annotations in ``metadata.annotations`` are preserved and can be used by
+admission controllers, schedulers, or monitoring integrations, but Kubernetes
+does not select nodes by annotation alone. GPU resource requests and limits are
+still launcher-owned; set them in the submitted job's
+``launcher_spec[site][k8s].num_of_gpus`` rather than in the Pod template.
+
+Example ``nvfldata-pvc.yaml``:
+
+.. code-block:: yaml
+
+   apiVersion: v1
+   kind: PersistentVolumeClaim
+   metadata:
+     name: nvfldata
+   spec:
+     accessModes:
+       - ReadWriteOnce
+     resources:
+       requests:
+         storage: 50Gi
+     # If your cluster has no default StorageClass, uncomment and set this.
+     # storageClassName: <storage-class-name>
+
+Use an access mode supported by your storage backend. ``ReadWriteOnce`` is
+enough for many single-node or single-job cases. Use ``ReadOnlyMany`` or
+``ReadWriteMany`` storage, or separate per-site claims, when multiple job pods
+on different nodes need concurrent access to the same dataset.
+
+Apply the study-data PVC in the same namespace where the participant's job pods
+will run:
+
+.. code-block:: bash
+
+   kubectl -n "$NAMESPACE" apply -f nvfldata-pvc.yaml
+   kubectl -n "$NAMESPACE" get pvc nvfldata
+
+Install the Charts
+==================
+
+Prepare, stage, and install each server or client kit in the Kubernetes cluster
+or namespace where that participant runs. After either staging method described
+above, install the generated Helm chart to start the long-lived parent pod.
+
+Install the server chart:
+
+.. code-block:: bash
+
+   export NAMESPACE=nvflare
+
+   helm upgrade --install server server-k8s/helm_chart \
+       --namespace "$NAMESPACE"
+
+Install a client chart with the same pattern:
+
+.. code-block:: bash
+
+   helm upgrade --install site-1 site-1-k8s/helm_chart \
+       --namespace "$NAMESPACE"
+
+``nvflare deploy prepare`` writes ``image.repository`` and ``image.tag`` into
+``helm_chart/values.yaml`` from ``parent.docker_image`` in ``k8s.yaml``. For a
+different parent image, rerun ``nvflare deploy prepare`` with the updated
+``k8s.yaml``. If you must override the image at Helm install or upgrade time,
+prefer a values file and pass it to every related ``helm upgrade`` command:
+
+.. code-block:: bash
+
+   cat > server-values.yaml <<'EOF'
+   image:
+     repository: registry.example.com/nvflare
+     tag: dev
+   EOF
+
+   helm upgrade --install server server-k8s/helm_chart \
+       --namespace "$NAMESPACE" \
+       -f server-values.yaml
+
+Avoid using one-off ``--set image.repository=...`` and ``--set image.tag=...``
+flags as the source of truth for image changes. Later upgrade commands that do
+not include the same overrides can render the release with the generated chart
+defaults instead.
+
+If the server and client run in the same namespace, use different workspace PVCs
+or override ``persistence.workspace.claimName`` for one of the releases:
+
+.. code-block:: bash
+
+   helm upgrade --install site-1 site-1-k8s/helm_chart \
+       --namespace "$NAMESPACE" \
+       --set persistence.workspace.claimName=nvflws-site-1
+
+The namespace must already exist before you run namespaced ``kubectl`` commands
+or install the charts. The storage step above creates it explicitly. If you skip
+that flow, create the namespace first:
+
+.. code-block:: bash
+
+   kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+
+Expose FL Traffic
+=================
+
+The generated server chart creates a Kubernetes Service for the FL server. The
+service defaults to ``ClusterIP``, which is reachable only inside the cluster.
+If clients or admin consoles connect from outside the cluster, expose the FL
+server ports with the mechanism that matches your Kubernetes environment:
+
+If you use an override values file for the server release, include the same
+``-f`` file in these ``helm upgrade`` commands too.
+
+* Use a cloud load balancer when available:
+
+  .. code-block:: bash
+
+     helm upgrade --install server server-k8s/helm_chart \
+         --namespace "$NAMESPACE" \
+         --set service.type=LoadBalancer
+     kubectl -n "$NAMESPACE" get svc nvflare-server
+
+* For local testing from the same machine, use port forwarding:
+
+  .. code-block:: bash
+
+     kubectl -n "$NAMESPACE" port-forward svc/nvflare-server 8002:8002 8003:8003
+
+* For single-node or ingress-based clusters, configure your cluster's TCP
+  routing, firewall rules, or host ports so the FL and admin ports from
+  ``project.yml`` reach the ``nvflare-server`` Service. Some single-node
+  deployments use ``--set hostPortEnabled=true`` for the server chart.
+
+Make sure the server host name used during provisioning resolves to the exposed
+address. For example, update DNS or ``/etc/hosts`` for the admin console and for
+any remote client sites.
+
+Verify The Deployment
+=====================
+
+After installing a chart, verify that the deployment, pods, services, and PVCs
+are healthy:
+
+.. code-block:: bash
+
+   kubectl -n "$NAMESPACE" rollout status deployment/server --timeout=300s
+   kubectl -n "$NAMESPACE" rollout status deployment/site-1 --timeout=300s
+   kubectl -n "$NAMESPACE" get pods,svc,pvc
+   kubectl -n "$NAMESPACE" logs deploy/server --tail=200
+   kubectl -n "$NAMESPACE" logs deploy/site-1 --tail=200
+
+If a pod is not ready, inspect the pod and recent events:
+
+.. code-block:: bash
+
+   kubectl -n "$NAMESPACE" describe pod -l app.kubernetes.io/instance=server
+   kubectl -n "$NAMESPACE" get events --sort-by=.lastTimestamp
+
+Pod logs persist only while the pod exists. When a parent pod restarts or is
+recreated by a Helm upgrade, prior logs are lost. Use cluster log aggregation
+or capture logs externally if you need to retain them.
+
+Login With The Admin Console
+============================
+
+Use the admin startup kit produced by ``nvflare provision``. The admin console
+connects to the server host and ports written into the provisioned project, so
+confirm that those names resolve to the exposed Kubernetes endpoint before
+logging in.
+
+.. code-block:: bash
+
+   cd workspace/<project>/prod_00/admin@nvidia.com/startup
+   bash fl_admin.sh
+
+When prompted for ``User Name``, enter the admin identity from ``project.yml``,
+such as ``admin@nvidia.com``.
+
+Private Registry and Image Pull Secrets
+=======================================
+
+The generated chart supports parent-pod image pull Secrets through
+``imagePullSecrets`` in ``helm_chart/values.yaml``. ``nvflare deploy prepare``
+fills this value from ``parent.image_pull_secrets`` in ``k8s.yaml``. The
+Kubernetes Secrets must already exist in the participant namespace; NVFLARE does
+not create registry credentials.
+
+For example:
+
+.. code-block:: bash
+
+   kubectl -n "$NAMESPACE" create secret docker-registry registry-credentials \
+       --docker-server=registry.example.com \
+       --docker-username="$REGISTRY_USERNAME" \
+       --docker-password="$REGISTRY_PASSWORD"
+
+.. code-block:: yaml
+
+   parent:
+     docker_image: registry.example.com/nvflare:dev
+     image_pull_secrets:
+       - registry-credentials
+
+This renders the parent chart value as:
+
+.. code-block:: yaml
+
+   imagePullSecrets:
+     - name: registry-credentials
+
+Dynamically launched job pods are not controlled by the Helm chart after
+installation. For private job images, set ``job_launcher.image_pull_secrets`` in
+``k8s.yaml`` before running ``nvflare deploy prepare``. The K8s launcher writes
+those Secret references into each created job pod's ``spec.imagePullSecrets``.
+
+If your cluster supports node-level registry credentials or the namespace
+default ServiceAccount already has suitable image pull Secrets, you can use that
+instead of explicit ``image_pull_secrets`` settings.
+
+If a parent pod or job pod enters ``ImagePullBackOff``, inspect the pod events
+with ``kubectl describe pod`` and confirm that the image name, tag, registry
+credentials, and image pull policy are correct.
+
+Helm Values Reference
+=====================
+
+``nvflare deploy prepare`` writes each participant's generated defaults to
+``helm_chart/values.yaml``. The most commonly overridden values are image,
+service exposure, resources, and persistence.
+
+.. list-table::
+   :header-rows: 1
+
+   * - Value
+     - Scope
+     - Default source
+     - Purpose
+   * - ``name``
+     - Server and client
+     - Participant name
+     - Deployment name and chart labels unless chart helpers derive another
+       name.
+   * - ``siteName``
+     - Client
+     - Participant name
+     - Client UID passed to ``client_train``.
+   * - ``serviceName``
+     - Server and client
+     - ``server_service_name`` for server; stable site name for client
+     - Kubernetes Service name used by job pods to reach the parent pod.
+   * - ``image.repository``
+     - Server and client
+     - Repository part of ``parent.docker_image``
+     - Parent pod image repository.
+   * - ``image.tag``
+     - Server and client
+     - Tag part of ``parent.docker_image``
+     - Parent pod image tag. If empty, the repository value is used as-is.
+   * - ``image.pullPolicy``
+     - Server and client
+     - ``IfNotPresent`` for server, ``Always`` for client
+     - Parent pod image pull policy.
+   * - ``imagePullSecrets``
+     - Server and client
+     - ``parent.image_pull_secrets`` rendered as ``[{name: ...}]``
+     - Parent pod image pull Secret references. The Secrets must already exist
+       in the release namespace.
+   * - ``serviceAccount.create``
+     - Server and client
+     - ``true``
+     - Creates a ServiceAccount for the parent pod.
+   * - ``serviceAccount.annotations``
+     - Server and client
+     - ``{}``
+     - Adds annotations to the generated ServiceAccount.
+   * - ``serviceAccount.automountServiceAccountToken``
+     - Server and client
+     - ``true``
+     - Must remain enabled when the parent launcher uses in-cluster
+       Kubernetes API access.
+   * - ``rbac.create``
+     - Server and client
+     - ``true``
+     - Creates the Role and RoleBinding needed to create job pods and startup
+       Secrets.
+   * - ``podAnnotations``
+     - Server and client
+     - ``{}``
+     - Adds annotations to the parent pod template.
+   * - ``securityContext``
+     - Server and client
+     - ``parent.pod_security_context`` or ``{}``
+     - Parent pod security context.
+   * - ``resources``
+     - Server and client
+     - ``parent.resources`` or CPU ``2`` and memory ``8Gi`` requests
+     - Parent pod resource requests and limits.
+   * - ``persistence.workspace.claimName``
+     - Server and client
+     - ``parent.workspace_pvc`` or ``nvflws``
+     - Workspace PVC mounted by the parent pod.
+   * - ``persistence.workspace.volumeName``
+     - Server and client
+     - ``workspace``
+     - Internal volume name in the parent pod manifest.
+   * - ``persistence.workspace.mountPath``
+     - Server and client
+     - ``parent.workspace_mount_path``
+     - In-container workspace mount path.
+   * - ``fedLearnPort``
+     - Server
+     - Server ``fed_learn_port`` from provisioning, or ``8002``
+     - FL server port exposed by the server Service and parent container.
+   * - ``adminPort``
+     - Server
+     - Server ``admin_port`` when distinct from ``fedLearnPort``; otherwise
+       ``null``
+     - Admin port exposed by the server Service and parent container.
+   * - ``parentPort``
+     - Server
+     - ``parent.parent_port`` or ``8102``
+     - Internal parent Service port for server job pods.
+   * - ``port``
+     - Client
+     - ``parent.parent_port`` or ``8102``
+     - Internal parent Service port for client job pods.
+   * - ``hostPortEnabled``
+     - Server
+     - ``false``
+     - Adds ``hostPort`` for ``fedLearnPort`` and ``adminPort`` on the server
+       parent pod. Useful for some single-node clusters.
+   * - ``tcpConfigMapEnabled``
+     - Server
+     - ``false``
+     - Emits a MicroK8s nginx ingress TCP-services ConfigMap mapping the FL
+       ports to the server Service. Useful only on MicroK8s clusters that use
+       the nginx ingress addon.
+   * - ``service.type``
+     - Server
+     - ``ClusterIP``
+     - Server Service type, for example ``LoadBalancer``.
+   * - ``service.loadBalancerIP``
+     - Server
+     - ``null``
+     - Optional static load-balancer IP when supported by the cluster.
+   * - ``service.annotations``
+     - Server and client
+     - ``{}``
+     - Adds annotations to the generated Service.
+   * - ``command``
+     - Server and client
+     - ``parent.python_path``
+     - Parent container command.
+   * - ``args``
+     - Server and client
+     - Generated by ``nvflare deploy prepare``
+     - Parent process module and runtime arguments. Override only when you know
+       how the FLARE parent process is launched.
+
+Launcher RBAC
+=============
+
+The generated chart creates a ServiceAccount and namespace-scoped
+Role/RoleBinding by default. The launcher needs permission to:
+
+* create, delete, get, list, and watch pods;
+* create, get, update, patch, and delete Secrets.
+
+The Secret permission is required because the launcher creates or updates a
+per-site startup-kit Secret for dynamically launched job pods, and a per-job
+credential Secret (``nvflare-cred-<pod-name>``) delivering the job bootstrap
+credentials and the job's own certificate and key (see
+:ref:`per_job_certificates`) as env vars via ``secretKeyRef``. The credential
+Secret is patched with an ownerReference to its pod and deleted when the job
+ends. Job pods mount the startup-kit Secret read-only at
+``<workspace_mount_path>/startup``; that Secret contains the certificates,
+``rootCA.pem``, and JSON configuration of the kit but never a private key. The
+startup-kit Secret name uses this pattern:
+
+.. code-block:: text
+
+   nvflare-startup-<rfc1123-site-name>-<8-char-sha256-prefix>
+
+``<rfc1123-site-name>`` is the site name with non-RFC1123 characters replaced.
+The 8-char SHA256 suffix is always appended, even for site names that are
+already RFC1123-compliant, so look up the Secret name with the ``grep`` example
+below rather than constructing it. Service and Deployment names, in contrast,
+track the site name directly when it is already DNS-label compliant (lowercase
+alphanumeric and hyphens, starting and ending with alphanumeric, up to 63
+characters).
+
+For example, inspect startup-kit Secrets with:
+
+.. code-block:: bash
+
+   kubectl -n "$NAMESPACE" get secret | grep nvflare-startup
+
+If your cluster operator disables ``serviceAccount.create`` or ``rbac.create``
+in chart values, provide equivalent API access in the same namespace before job
+submission. The parent pod must run with a ServiceAccount that can create job
+pods and create, update, patch, and delete the startup-kit and per-job
+credential Secrets.
+
+Configure Kubernetes Job Pods
+=============================
+
+Job pod settings live in the submitted job's ``meta.json`` under
+``launcher_spec``. The ``default`` block applies to all sites and a site-specific
+block overrides it:
+
+.. code-block:: json
+
+   {
+     "launcher_spec": {
+       "default": {
+         "k8s": {
+           "image": "registry.example.com/nvflare-job:latest",
+           "python_path": "/usr/local/bin/python3",
+           "cpu": "2",
+           "memory": "8Gi",
+           "ephemeral_storage": "8Gi"
+         }
+       },
+       "site-1": {
+         "k8s": {
+           "image": "registry.example.com/site-1-job:latest",
+           "cpu_request": "1",
+           "memory_request": "4Gi"
+         }
+       }
+     },
+     "resource_spec": {
+       "site-1": {
+         "num_of_gpus": 1
+       }
+     }
+   }
+
+Supported ``launcher_spec[site][k8s]`` keys include:
+
+* ``image``: container image for the job pod. This is required, either in
+  ``launcher_spec.default.k8s`` or in the site-specific ``k8s`` block.
+* ``python_path``: Python executable inside the job image. If omitted, the
+  launcher uses ``job_launcher.default_python_path`` from the prepared site
+  runtime config.
+* ``cpu`` and ``memory``: container limits. When ``cpu_request`` or
+  ``memory_request`` is omitted, the request matches the corresponding limit.
+* ``cpu_request`` and ``memory_request``: optional requests when the request
+  should be lower than the limit.
+* ``ephemeral_storage``: Kubernetes quantity string for the job workspace
+  ``emptyDir.sizeLimit`` and the container ``ephemeral-storage`` request and
+  limit. Set this in ``launcher_spec.default.k8s`` or in a site-specific
+  ``launcher_spec[site].k8s`` block. If omitted, the built-in launcher default
+  is used. The current ``deploy prepare`` runtime config does not expose
+  ``job_launcher.ephemeral_storage`` as a ``k8s.yaml`` setting.
+
+Job pods are created with ``imagePullPolicy: Always``. Tag changes take effect
+immediately, but every submitted job pulls the image once per site. For private
+registries, factor this into rate limits and registry-credential plumbing. Use
+``job_launcher.image_pull_secrets`` when dynamically launched job pods need
+explicit image pull Secrets.
+
+``resource_spec`` remains scheduler-facing. New jobs should place K8s launcher
+settings in ``launcher_spec`` and resource requests such as ``num_of_gpus`` in
+``resource_spec``. The launcher writes ``resource_spec[site].num_of_gpus`` as
+both the ``nvidia.com/gpu`` request and limit.
+
+GPU requests require the NVIDIA GPU Operator or NVIDIA device plugin on the
+target cluster. For MIG, make sure the device plugin exposes a resource that the
+launcher requests. The built-in launcher writes ``nvidia.com/gpu`` for
+``num_of_gpus``; clusters that expose only profile-specific resources such as
+``nvidia.com/mig-1g.5gb`` require cluster configuration or launcher
+customization to request those resource names.
+
+Reprovisioning and Upgrades
+===========================
+
+Provisioned certificates, local config, server communication settings, and
+prepared Kubernetes parent-Service settings are tied to the provisioned project
+state. If you change ``project.yml``, server host names, ports, participants,
+or ``k8s.yaml`` settings, first clean up ConfigMap/Secret staging when that
+method is in use:
+
+.. code-block:: bash
+
+   helm uninstall "$RELEASE_NAME" --namespace "$NAMESPACE"
+   nvflare deploy k8s unstage "$PREPARED_KIT"
+
+Unstage before replacing the prepared output so its recorded namespace and
+exact cleanup names remain available. ``deploy prepare`` refuses to overwrite
+a chart that still references staged resources.
+
+Then:
+
+#. Run ``nvflare provision`` again.
+#. Run ``nvflare deploy prepare`` again for every affected participant.
+#. Back up any PVC content you need to keep before restaging. On the server
+   workspace PVC, that usually includes ``transfer/`` (admin uploads), the
+   site directory holding job history and snapshots, and any log files at the
+   workspace root. Client workspace PVCs typically have little to preserve
+   beyond optional logs.
+#. Restage ``startup/`` and ``local/`` using the selected method. For the PVC
+   method, replace those folders on the participant's workspace PVC and remove
+   stale copies first. For the ConfigMap/Secret method, run
+   ``nvflare deploy k8s stage`` on the new prepared kit.
+#. Run ``helm upgrade --install`` for the affected release.
+
+Do not reuse an old staged ``startup/`` or ``local/`` folder after
+reprovisioning.
+
+Troubleshooting
+===============
+
+PVC stays ``Pending``
+---------------------
+
+Check that the cluster has a default storage class, or add an explicit
+``storageClassName`` under each PVC ``spec``:
+
+.. code-block:: bash
+
+   kubectl get storageclass
+   kubectl -n "$NAMESPACE" describe pvc nvflws
+   kubectl -n "$NAMESPACE" describe pvc nvfldata
+
+Use ``storageClassName: ""`` only when binding to a pre-created PersistentVolume
+without a dynamic storage class.
+
+Parent pod has ``ImagePullBackOff``
+-----------------------------------
+
+Confirm that the parent image exists and that the cluster can pull it:
+
+.. code-block:: bash
+
+   kubectl -n "$NAMESPACE" describe pod -l app.kubernetes.io/instance=server
+   kubectl -n "$NAMESPACE" describe pod -l app.kubernetes.io/instance=site-1
+
+Check the rendered image:
+
+.. code-block:: bash
+
+   helm -n "$NAMESPACE" get values server --all
+   helm -n "$NAMESPACE" get values site-1 --all
+
+For private registries, configure node credentials or add image pull secrets as
+described in `Private Registry and Image Pull Secrets`_.
+
+Parent pod cannot find ``startup`` or ``local``
+-----------------------------------------------
+
+The prepared kit was copied to the wrong level in the PVC, or the wrong PVC is
+mounted. The configured workspace mount path must contain:
+
+.. code-block:: text
+
+   <workspace_mount_path>/startup
+   <workspace_mount_path>/local
+
+With the example default ``workspace_mount_path``, those paths are:
+
+.. code-block:: text
+
+   /var/tmp/nvflare/workspace/startup
+   /var/tmp/nvflare/workspace/local
+
+Use the helper pod from `Workspace PVC`_ to inspect ``/mnt/nvflws`` and restage
+``startup/`` and ``local/`` from the prepared folder.
+
+Parent starts but cannot launch job pods
+----------------------------------------
+
+Check the parent logs for Kubernetes import or authorization failures:
+
+.. code-block:: bash
+
+   kubectl -n "$NAMESPACE" logs deploy/server --tail=200
+   kubectl -n "$NAMESPACE" auth can-i create pods \
+       --as=system:serviceaccount:"$NAMESPACE":server
+   kubectl -n "$NAMESPACE" auth can-i create secrets \
+       --as=system:serviceaccount:"$NAMESPACE":server
+
+If the logs show that the ``kubernetes`` Python package is missing, rebuild the
+parent image with the NVFlare ``K8S`` extra or
+``pip install "kubernetes!=36.0.0"``.
+
+If the logs show ``SSLCertVerificationError`` with
+``CA cert does not include key usage extension``, the parent Kubernetes client
+is rejecting the cluster API-server CA. This is known to affect some MicroK8s
+CA certificates that omit the X.509 ``keyUsage`` extension; see
+`canonical/microk8s#4864 <https://github.com/canonical/microk8s/issues/4864>`__.
+Regenerate or replace the cluster CA with an RFC 5280-compliant CA. As a
+temporary compatibility workaround for development clusters, use a custom
+parent image based on Python 3.12 or earlier. Do not disable Kubernetes API TLS
+verification in production.
+
+Job pod stays ``Pending`` or ``Unknown``
+----------------------------------------
+
+When a submitted job cannot start because an SJ or CJ job pod remains
+``Pending`` or ``Unknown`` longer than ``job_launcher.pending_timeout`` seconds,
+NVFLARE deletes the stuck pod and marks the job as
+``FINISHED:EXECUTION_EXCEPTION``. Check cluster scheduling events:
+
+.. code-block:: bash
+
+   kubectl -n "$NAMESPACE" get pods
+   kubectl -n "$NAMESPACE" describe pod <job-pod-name>
+   kubectl -n "$NAMESPACE" get events --sort-by=.lastTimestamp
+
+Common causes include insufficient CPU, memory, GPU, or ephemeral storage;
+missing study-data PVCs; image pull failures; and missing GPU device-plugin
+resources.
+
+Job pod cannot pull its image
+-----------------------------
+
+Job pods use the image from the submitted job's ``launcher_spec`` and set
+``imagePullPolicy: Always``. Confirm the job image name and configure registry
+credentials for dynamically launched pods. Use
+``job_launcher.image_pull_secrets`` in ``k8s.yaml`` for explicit Secret
+references, or rely on node-level credentials or the namespace default
+ServiceAccount if your cluster is configured that way.
+
+Client cannot connect to the server
+-----------------------------------
+
+Verify these items:
+
+* ``default_host`` in ``project.yml`` matches the DNS name used by the client.
+* The DNS name resolves from the client cluster.
+* The server cluster exposes ``fed_learn_port``.
+* The server certificate includes the DNS name in ``host_names``.
+* Network policy and firewalls allow outbound client traffic to the server.
+
+Run a DNS check from the client cluster:
+
+.. code-block:: bash
+
+   kubectl -n "$NAMESPACE" run dns-test --rm -it \
+       --image=busybox:1.36 -- \
+       nslookup server1.example.com
+
+If you change ``default_host`` or ``host_names``, reprovision, restage the
+updated folders, and redeploy the charts.
+
+Uninstall
+=========
+
+To stop a participant installed by Helm:
+
+.. code-block:: bash
+
+   helm uninstall server -n "$NAMESPACE"
+   helm uninstall site-1 -n "$NAMESPACE"
+
+If the participants used ConfigMap/Secret staging, remove those objects after
+uninstalling the Helm releases. They are not owned by Helm, and the startup
+Secret contains the participant's identity keys and certificates:
+
+.. code-block:: bash
+
+   nvflare deploy k8s unstage ./server-k8s --namespace "$NAMESPACE"
+   nvflare deploy k8s unstage ./site-1-k8s --namespace "$NAMESPACE"
+
+Delete the namespace only if it is dedicated to this deployment:
+
+.. code-block:: bash
+
+   kubectl delete namespace "$NAMESPACE"
+
+Depending on the storage class reclaim policy, PVC-backed volumes may remain
+after deleting Helm releases or namespaces. Remove retained volumes only after
+confirming that the startup kits, logs, snapshots, job history, and study data
+no longer need to be preserved.

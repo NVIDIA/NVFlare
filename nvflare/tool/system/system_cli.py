@@ -12,104 +12,131 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import argparse
 import sys
 import time
 from contextlib import contextmanager
 
 import nvflare
 from nvflare.tool.cli_output import output_error, output_error_message, output_ok, output_usage_error
+from nvflare.tool.cli_session import add_startup_kit_selection_args
 
 CMD_SYSTEM_STATUS = "status"
 CMD_SYSTEM_RESOURCES = "resources"
 CMD_SYSTEM_SHUTDOWN = "shutdown"
 CMD_SYSTEM_RESTART = "restart"
-CMD_SYSTEM_REMOVE_CLIENT = "remove-client"
+CMD_SYSTEM_DISABLE_CLIENT = "disable-client"
+CMD_SYSTEM_ENABLE_CLIENT = "enable-client"
 CMD_SYSTEM_VERSION = "version"
 CMD_SYSTEM_LOG_CONFIG = "log-config"
+
+_DEFAULT_SYSTEM_STATE_CHANGE_TIMEOUT = 30.0
 
 _system_sub_cmd_parsers = {}
 
 
-def _add_system_connection_args(parser):
-    parser.add_argument(
-        "--startup-kit",
-        dest="startup_kit",
-        default=None,
-        help="path to the admin startup kit directory (overrides target-based config lookup)",
-    )
-    parser.add_argument(
-        "--startup-target",
-        choices=["poc", "prod"],
-        default=None,
-        dest="startup_target",
-        help="startup kit target to use from config.conf when --startup-kit is not supplied",
-    )
+def _positive_float(value: str) -> float:
+    try:
+        parsed = float(value)
+    except ValueError as e:
+        raise argparse.ArgumentTypeError(f"expected a positive number, got {value!r}") from e
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError(f"expected a positive number, got {value!r}")
+    return parsed
+
+
+def _get_system_state_change_timeout(args) -> float:
+    timeout = getattr(args, "timeout", _DEFAULT_SYSTEM_STATE_CHANGE_TIMEOUT)
+    if isinstance(timeout, bool) or not isinstance(timeout, (int, float)):
+        return _DEFAULT_SYSTEM_STATE_CHANGE_TIMEOUT
+    return float(timeout)
 
 
 def def_system_cli_parser(system_parser):
     """system_parser is already created in cli.py — add subcommands here."""
-    _add_system_connection_args(system_parser)
     sub = system_parser.add_subparsers(title="system subcommands", metavar="", dest="system_sub_cmd")
 
     # status
     p = sub.add_parser(CMD_SYSTEM_STATUS, help="show server and client status")
-    _add_system_connection_args(p)
     p.add_argument("target", nargs="?", choices=["server", "client"], default=None)
     p.add_argument("client_names", nargs="*", default=[])
+    add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true")
     _system_sub_cmd_parsers[CMD_SYSTEM_STATUS] = p
 
     # resources
     p = sub.add_parser(CMD_SYSTEM_RESOURCES, help="show server and client resource usage")
-    _add_system_connection_args(p)
     p.add_argument("target", nargs="?", choices=["server", "client"], default=None)
     p.add_argument("client_names", nargs="*", default=[])
+    add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true")
     _system_sub_cmd_parsers[CMD_SYSTEM_RESOURCES] = p
 
     # shutdown
     p = sub.add_parser(CMD_SYSTEM_SHUTDOWN, help="shut down server, clients, or all")
-    _add_system_connection_args(p)
     p.add_argument("target", choices=["server", "client", "all"])
     p.add_argument("client_names", nargs="*", default=[])
     p.add_argument("--force", action="store_true")
+    p.add_argument("--no-wait", dest="no_wait", action="store_true")
+    p.add_argument(
+        "--timeout",
+        type=_positive_float,
+        default=_DEFAULT_SYSTEM_STATE_CHANGE_TIMEOUT,
+        help="seconds to wait for shutdown completion",
+    )
+    add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true")
     _system_sub_cmd_parsers[CMD_SYSTEM_SHUTDOWN] = p
 
     # restart
     p = sub.add_parser(CMD_SYSTEM_RESTART, help="restart server, clients, or all")
-    _add_system_connection_args(p)
     p.add_argument("target", choices=["server", "client", "all"])
     p.add_argument("client_names", nargs="*", default=[])
     p.add_argument("--force", action="store_true")
+    p.add_argument("--no-wait", dest="no_wait", action="store_true")
+    p.add_argument(
+        "--timeout",
+        type=_positive_float,
+        default=_DEFAULT_SYSTEM_STATE_CHANGE_TIMEOUT,
+        help="seconds to wait for restart completion",
+    )
+    add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true")
     _system_sub_cmd_parsers[CMD_SYSTEM_RESTART] = p
 
-    # remove-client
-    p = sub.add_parser(CMD_SYSTEM_REMOVE_CLIENT, help="remove a client from the federation")
-    _add_system_connection_args(p)
-    p.add_argument("client_name", help="name of the client to remove")
+    # disable-client
+    p = sub.add_parser(CMD_SYSTEM_DISABLE_CLIENT, help="disable a client from reconnecting")
+    p.add_argument("client_name", help="name of the client to disable")
     p.add_argument("--force", action="store_true")
+    add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true")
-    _system_sub_cmd_parsers[CMD_SYSTEM_REMOVE_CLIENT] = p
+    _system_sub_cmd_parsers[CMD_SYSTEM_DISABLE_CLIENT] = p
+
+    # enable-client
+    p = sub.add_parser(CMD_SYSTEM_ENABLE_CLIENT, help="enable a disabled client to reconnect")
+    p.add_argument("client_name", help="name of the client to enable")
+    p.add_argument("--force", action="store_true")
+    add_startup_kit_selection_args(p)
+    p.add_argument("--schema", action="store_true")
+    _system_sub_cmd_parsers[CMD_SYSTEM_ENABLE_CLIENT] = p
 
     # version
     p = sub.add_parser(CMD_SYSTEM_VERSION, help="show NVFlare version on each remote site")
-    _add_system_connection_args(p)
     p.add_argument("--site", default="all", help="server, a client name, or all")
+    add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true")
     _system_sub_cmd_parsers[CMD_SYSTEM_VERSION] = p
 
     # log-config
     p = sub.add_parser(CMD_SYSTEM_LOG_CONFIG, help="change logging level on server or client sites")
-    _add_system_connection_args(p)
     p.add_argument(
         "level",
         nargs="?",
         default=None,
-        help="DEBUG, INFO, WARNING, ERROR, CRITICAL, concise, msg_only, full, verbose, reload",
+        help="DEBUG, INFO, WARNING, ERROR, CRITICAL, concise, progress, msg_only, full, verbose, reload",
     )
     p.add_argument("--site", default="all", help="server, a client name, or all")
+    add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true")
     _system_sub_cmd_parsers[CMD_SYSTEM_LOG_CONFIG] = p
 
@@ -136,32 +163,18 @@ def _confirm_or_force(prompt, args):
 def _get_system_session(args=None):
     """Create a secure session using the startup kit."""
     from nvflare.tool.cli_output import get_connect_timeout
-    from nvflare.tool.cli_session import new_cli_session
-    from nvflare.utils.cli_utils import get_startup_kit_dir_for_target
-
-    username = None
-    startup = None
+    from nvflare.tool.cli_session import new_cli_session_for_args
 
     try:
-        from nvflare.tool.job.job_cli import _resolve_admin_user_and_dir_from_startup_kit
-
-        startup_target = getattr(args, "startup_target", None) or "poc"
-        startup_override = getattr(args, "startup_kit", None)
-        startup = get_startup_kit_dir_for_target(startup_kit_dir=startup_override, target=startup_target)
-        username, startup = _resolve_admin_user_and_dir_from_startup_kit(startup)
+        return new_cli_session_for_args(args=args, timeout=get_connect_timeout())
     except ValueError as e:
-        output_error("STARTUP_KIT_MISSING", exit_code=4, detail=str(e))
-        raise SystemExit(4)
-    except Exception:
         output_error(
             "STARTUP_KIT_MISSING",
             exit_code=4,
-            detail="admin username could not be resolved from the startup kit",
+            detail=str(e),
+            hint=getattr(e, "hint", None),
         )
         raise SystemExit(4)
-
-    timeout = get_connect_timeout()
-    return new_cli_session(username=username, startup_kit_location=startup, timeout=timeout)
 
 
 @contextmanager
@@ -303,6 +316,10 @@ def _output_system_version(result):
         _render_version_human(result)
 
 
+def _is_no_client_response_error(e: Exception) -> bool:
+    return "no responses from clients" in str(e).lower()
+
+
 def cmd_system_status(args):
     from nvflare.fuel.flare_api.api_spec import AuthenticationError, NoConnection
     from nvflare.tool.cli_schema import handle_schema_flag
@@ -332,6 +349,18 @@ def cmd_system_status(args):
         )
         raise SystemExit(2)
     except Exception as e:
+        if _is_no_client_response_error(e):
+            output_error_message(
+                "SYSTEM_NOT_READY",
+                message="FLARE system is not ready yet.",
+                hint=(
+                    "Wait for clients to connect, then retry 'nvflare system status'. "
+                    "If this persists, check POC service logs or client logs."
+                ),
+                exit_code=2,
+                detail="no responses from clients",
+            )
+            raise SystemExit(2)
         output_error("INTERNAL_ERROR", exit_code=5, detail=str(e))
         raise SystemExit(5)
 
@@ -384,6 +413,9 @@ def cmd_system_shutdown(args):
 
     target = args.target
     client_names = getattr(args, "client_names", [])
+    no_wait = getattr(args, "no_wait", False)
+    no_wait = no_wait if isinstance(no_wait, bool) else False
+    timeout = _get_system_state_change_timeout(args)
 
     if target != "client" and client_names:
         output_error(
@@ -397,17 +429,39 @@ def cmd_system_shutdown(args):
 
     try:
         with _system_session(args) as sess:
-            result = sess.shutdown(target, client_names=client_names or None)
+            if no_wait:
+                result = sess.shutdown(target, client_names=client_names or None, wait=False)
+            else:
+                result = sess.shutdown(target, client_names=client_names or None, timeout=timeout)
     except (AuthenticationError, NoConnection):
         raise
     except InvalidTarget as e:
         output_error("INVALID_ARGS", exit_code=4, detail=str(e))
         raise SystemExit(4)
+    except TimeoutError as e:
+        output_error_message(
+            "TIMEOUT",
+            message="System shutdown did not complete before the timeout.",
+            hint=(
+                "Increase --timeout, check system status, or use "
+                "'nvflare system shutdown <target> --no-wait' for fire-and-forget shutdown."
+            ),
+            exit_code=3,
+            detail=str(e),
+        )
+        raise SystemExit(3)
     except Exception as e:
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
         raise SystemExit(2)
 
-    output_ok({"target": target, "status": "shutdown initiated", "result": result})
+    output_ok(
+        {
+            "target": target,
+            "status": "shutdown_initiated" if no_wait else "stopped",
+            "timeout": None if no_wait else timeout,
+            "result": result,
+        }
+    )
 
 
 def cmd_system_restart(args):
@@ -423,6 +477,9 @@ def cmd_system_restart(args):
 
     target = args.target
     client_names = getattr(args, "client_names", [])
+    no_wait = getattr(args, "no_wait", False)
+    no_wait = no_wait if isinstance(no_wait, bool) else False
+    timeout = _get_system_state_change_timeout(args)
 
     if target != "client" and client_names:
         output_error(
@@ -436,17 +493,39 @@ def cmd_system_restart(args):
 
     try:
         with _system_session(args) as sess:
-            result = sess.restart(target, client_names=client_names or None)
+            if no_wait:
+                result = sess.restart(target, client_names=client_names or None, wait=False)
+            else:
+                result = sess.restart(target, client_names=client_names or None, timeout=timeout)
     except (AuthenticationError, NoConnection):
         raise
     except InvalidTarget as e:
         output_error("INVALID_ARGS", exit_code=4, detail=str(e))
         raise SystemExit(4)
+    except TimeoutError as e:
+        output_error_message(
+            "TIMEOUT",
+            message="System restart did not complete before the timeout.",
+            hint=(
+                "Increase --timeout, check system status, or use "
+                "'nvflare system restart <target> --no-wait' for fire-and-forget restart."
+            ),
+            exit_code=3,
+            detail=str(e),
+        )
+        raise SystemExit(3)
     except Exception as e:
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
         raise SystemExit(2)
 
-    output_ok({"target": target, "status": "restart initiated", "result": result})
+    output_ok(
+        {
+            "target": target,
+            "status": "restart_initiated" if no_wait else "restarted",
+            "timeout": None if no_wait else timeout,
+            "result": result,
+        }
+    )
 
 
 def cmd_system_version(args):
@@ -528,7 +607,7 @@ def cmd_system_log(args):
             exit_code=4,
             error_code="LOG_CONFIG_INVALID",
             message="Log config is not a recognised log mode.",
-            hint="Supply one of: DEBUG, INFO, WARNING, ERROR, CRITICAL, concise, msg_only, full, verbose, reload.",
+            hint="Supply one of: DEBUG, INFO, WARNING, ERROR, CRITICAL, concise, progress, msg_only, full, verbose, reload.",
         )
         raise SystemExit(4)
 
@@ -544,33 +623,70 @@ def cmd_system_log(args):
     output_ok({"site": site, "log_config": level, "status": "applied"})
 
 
-def cmd_system_remove_client(args):
-    from nvflare.fuel.flare_api.api_spec import AuthenticationError, InvalidTarget, NoConnection
+def _first_client_result(result: dict, client_name: str, state: str, rejoin_allowed: bool) -> dict:
+    clients = result.get("clients") if isinstance(result, dict) else None
+    if clients and isinstance(clients, list):
+        first = clients[0]
+        if isinstance(first, dict):
+            return first
+    return {
+        "client_name": client_name,
+        "state": state,
+        "credential_revoked": False,
+        "rejoin_allowed": rejoin_allowed,
+    }
+
+
+def cmd_system_disable_client(args):
+    from nvflare.fuel.flare_api.api_spec import AuthenticationError, NoConnection
     from nvflare.tool.cli_schema import handle_schema_flag
 
     handle_schema_flag(
-        _system_sub_cmd_parsers.get(CMD_SYSTEM_REMOVE_CLIENT),
-        "nvflare system remove-client",
-        ["nvflare system remove-client site-1 --force"],
+        _system_sub_cmd_parsers.get(CMD_SYSTEM_DISABLE_CLIENT),
+        "nvflare system disable-client",
+        ["nvflare system disable-client site-1 --force"],
         sys.argv[1:],
     )
 
     client_name = args.client_name
-    _confirm_or_force(f"Really remove client '{client_name}'?", args)
+    _confirm_or_force(f"Really disable client '{client_name}'?", args)
 
     try:
         with _system_session(args) as sess:
-            sess.remove_client(client_name)
+            result = sess.disable_client(client_name)
     except (AuthenticationError, NoConnection):
         raise
-    except InvalidTarget as e:
-        output_error("INVALID_ARGS", exit_code=4, detail=str(e))
-        raise SystemExit(4)
     except Exception as e:
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
         raise SystemExit(2)
 
-    output_ok({"client_name": client_name, "status": "removed"})
+    output_ok(_first_client_result(result, client_name, "disabled", False))
+
+
+def cmd_system_enable_client(args):
+    from nvflare.fuel.flare_api.api_spec import AuthenticationError, NoConnection
+    from nvflare.tool.cli_schema import handle_schema_flag
+
+    handle_schema_flag(
+        _system_sub_cmd_parsers.get(CMD_SYSTEM_ENABLE_CLIENT),
+        "nvflare system enable-client",
+        ["nvflare system enable-client site-1 --force"],
+        sys.argv[1:],
+    )
+
+    client_name = args.client_name
+    _confirm_or_force(f"Really enable client '{client_name}'?", args)
+
+    try:
+        with _system_session(args) as sess:
+            result = sess.enable_client(client_name)
+    except (AuthenticationError, NoConnection):
+        raise
+    except Exception as e:
+        output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
+        raise SystemExit(2)
+
+    output_ok(_first_client_result(result, client_name, "enabled", True))
 
 
 _system_handlers = {
@@ -578,7 +694,8 @@ _system_handlers = {
     CMD_SYSTEM_RESOURCES: cmd_system_resources,
     CMD_SYSTEM_SHUTDOWN: cmd_system_shutdown,
     CMD_SYSTEM_RESTART: cmd_system_restart,
-    CMD_SYSTEM_REMOVE_CLIENT: cmd_system_remove_client,
+    CMD_SYSTEM_DISABLE_CLIENT: cmd_system_disable_client,
+    CMD_SYSTEM_ENABLE_CLIENT: cmd_system_enable_client,
     CMD_SYSTEM_VERSION: cmd_system_version,
     CMD_SYSTEM_LOG_CONFIG: cmd_system_log,
 }

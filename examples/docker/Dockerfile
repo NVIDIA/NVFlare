@@ -3,6 +3,7 @@
 # This Dockerfile is primarily for building Docker images to publish for dashboard.
 
 FROM python:3.10
+ARG NVFL_BASE_VERSION
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get -y install zip
 COPY nvflare /opt/NVFlare/nvflare
 COPY setup.py /opt/NVFlare/setup.py
@@ -12,4 +13,3 @@ COPY setup.cfg /opt/NVFlare/setup.cfg
 WORKDIR /opt/NVFlare
 RUN pip install -U pip
 RUN pip install -e .
-

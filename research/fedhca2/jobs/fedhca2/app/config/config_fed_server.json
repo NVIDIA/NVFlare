@@ -8,7 +8,7 @@
   "components": [
     {
       "id": "shareable_generator",
-      "name": "FullModelShareableGenerator",
+      "path": "nvflare.app_common.shareablegenerators.full_model_shareable_generator.FullModelShareableGenerator",
       "args": {}
     },
     {
@@ -20,7 +20,7 @@
     },
     {
       "id": "tb_analytics_receiver",
-      "name": "TBAnalyticsReceiver",
+      "path": "nvflare.app_opt.tracking.tb.tb_receiver.TBAnalyticsReceiver",
       "args": {
         "events": [
           "fed.analytix_log_stats"
@@ -31,7 +31,7 @@
   "workflows": [
     {
       "id": "scatter_and_gather",
-      "name": "ScatterAndGather",
+      "path": "nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather",
       "args": {
         "min_clients": 6,
         "num_rounds": 100,

@@ -25,7 +25,7 @@ class LogWriterName(Enum):
     WANDB = "WEIGHTS_AND_BIASES"
 
 
-class TrackConst(object):
+class TrackConst:
     TRACKER_KEY = "tracker_key"
 
     TRACK_KEY = "track_key"
@@ -93,7 +93,10 @@ class AnalyticsData:
             sender (LogWriterName): Type of sender for syntax such as Tensorboard or MLflow
             kwargs (optional, dict): additional arguments to be passed.
         """
-        self._validate_data_types(data_type, key, value, **kwargs)
+        step = kwargs.get(TrackConst.GLOBAL_STEP_KEY, None)
+        if step is not None:
+            kwargs[TrackConst.GLOBAL_STEP_KEY] = self._normalize_global_step(step)
+        value = self._validate_data_types(data_type, key, value, **kwargs)
         self.tag = key
         self.value = value
         self.data_type = data_type
@@ -133,7 +136,7 @@ class AnalyticsData:
             AnalyticsData object
         """
         if not isinstance(dxo, DXO):
-            raise TypeError("expect dxo to be an instance of DXO, but got {}.".format(type(dxo)))
+            raise TypeError(f"expect dxo to be an instance of DXO, but got {type(dxo)}.")
 
         if len(dxo.data) == 0:
             raise ValueError(
@@ -167,45 +170,89 @@ class AnalyticsData:
         **kwargs,
     ):
         if not isinstance(key, str):
-            raise TypeError("expect tag to be an instance of str, but got {}.".format(type(key)))
+            raise TypeError(f"expect tag to be an instance of str, but got {type(key)}.")
         if not isinstance(data_type, AnalyticsDataType):
-            raise TypeError(
-                "expect data_type to be an instance of AnalyticsDataType, but got {}.".format(type(data_type))
-            )
+            raise TypeError(f"expect data_type to be an instance of AnalyticsDataType, but got {type(data_type)}.")
         if kwargs and not isinstance(kwargs, dict):
-            raise TypeError("expect kwargs to be an instance of dict, but got {}.".format(type(kwargs)))
-        step = kwargs.get(TrackConst.GLOBAL_STEP_KEY, None)
-        if step:
-            if not isinstance(step, int):
-                raise TypeError("expect step to be an instance of int, but got {}.".format(type(step)))
-            if step < 0:
-                raise ValueError("expect step to be non-negative int, but got {}.".format(step))
+            raise TypeError(f"expect kwargs to be an instance of dict, but got {type(kwargs)}.")
         path = kwargs.get(TrackConst.PATH_KEY, None)
-        if path and not isinstance(path, str):
-            raise TypeError("expect path to be an instance of str, but got {}.".format(type(step)))
-        if data_type in [AnalyticsDataType.SCALAR, AnalyticsDataType.METRIC] and not (
-            isinstance(value, float) or isinstance(value, int)
-        ):
-            raise TypeError(f"expect '{key}' value to be an instance of float or int, but got '{type(value)}'.")
+        if path is not None and not isinstance(path, str):
+            raise TypeError(f"expect path to be an instance of str, but got {type(path)}.")
+        if data_type in [AnalyticsDataType.SCALAR, AnalyticsDataType.METRIC]:
+            is_numeric_scalar, normalized_value = self._normalize_numeric_scalar(value)
+            if not is_numeric_scalar:
+                raise TypeError(
+                    f"expect '{key}' value to be a numeric scalar "
+                    f"(float/int or scalar-like with item()), but got '{type(value)}'."
+                )
+            value = normalized_value
         elif data_type in [
             AnalyticsDataType.METRICS,
             AnalyticsDataType.PARAMETERS,
             AnalyticsDataType.SCALARS,
-        ] and not isinstance(value, dict):
-            raise TypeError(f"expect '{key}' value to be an instance of dict, but got '{type(value)}'.")
+        ]:
+            if not isinstance(value, dict):
+                raise TypeError(f"expect '{key}' value to be an instance of dict, but got '{type(value)}'.")
+            if data_type in [AnalyticsDataType.METRICS, AnalyticsDataType.SCALARS]:
+                normalized_dict = {}
+                for k, v in value.items():
+                    is_numeric_scalar, normalized_value = self._normalize_numeric_scalar(v)
+                    if not is_numeric_scalar:
+                        raise TypeError(
+                            f"expect all values in '{key}' dict to be numeric scalars, "
+                            f"but got '{type(v)}' for key '{k}'."
+                        )
+                    normalized_dict[k] = normalized_value
+                value = normalized_dict
         elif data_type == AnalyticsDataType.TEXT and not isinstance(value, str):
             raise TypeError(f"expect '{key}' value to be an instance of str, but got '{type(value)}'.")
         elif data_type == AnalyticsDataType.TAGS and not isinstance(value, dict):
             raise TypeError(
                 f"expect '{key}' data type expects value to be an instance of dict, but got '{type(value)}'"
             )
+        return value
+
+    def _normalize_global_step(self, step):
+        is_numeric_scalar, normalized_step = self._normalize_numeric_scalar(step)
+        if not is_numeric_scalar or not isinstance(normalized_step, int):
+            raise TypeError(f"expect step to be an instance of int, but got {type(step)}.")
+        if normalized_step < 0:
+            raise ValueError(f"expect step to be non-negative int, but got {normalized_step}.")
+        return normalized_step
+
+    @staticmethod
+    def _normalize_numeric_scalar(value):
+        if isinstance(value, (float, int)):
+            return True, value
+
+        item = getattr(value, "item", None)
+        if not callable(item):
+            return False, value
+
+        shape = getattr(value, "shape", None)
+        if shape is not None:
+            try:
+                if tuple(shape) != ():
+                    return False, value
+            except TypeError:
+                return False, value
+
+        try:
+            scalar = item()
+        except (TypeError, ValueError):
+            return False, value
+
+        if isinstance(scalar, (float, int)):
+            return True, scalar
+        return False, value
 
     @classmethod
     def convert_data_type(
         cls, sender_data_type: AnalyticsDataType, sender: LogWriterName, receiver: LogWriterName
     ) -> AnalyticsDataType:
 
-        if sender == LogWriterName.TORCH_TB and (receiver == LogWriterName.MLFLOW or sender == LogWriterName.WANDB):
+        # TensorBoard naming → MLflow/W&B naming
+        if sender == LogWriterName.TORCH_TB and (receiver == LogWriterName.MLFLOW or receiver == LogWriterName.WANDB):
             if AnalyticsDataType.SCALAR == sender_data_type:
                 return AnalyticsDataType.METRIC
             elif AnalyticsDataType.SCALARS == sender_data_type:
@@ -213,7 +260,8 @@ class AnalyticsData:
             else:
                 return sender_data_type
 
-        if sender == LogWriterName.MLFLOW and receiver == LogWriterName.TORCH_TB:
+        # MLflow/W&B naming → TensorBoard naming
+        if (sender == LogWriterName.MLFLOW or sender == LogWriterName.WANDB) and receiver == LogWriterName.TORCH_TB:
             if AnalyticsDataType.METRIC == sender_data_type:
                 return AnalyticsDataType.SCALAR
             elif AnalyticsDataType.METRICS == sender_data_type:
@@ -221,8 +269,14 @@ class AnalyticsData:
             else:
                 return sender_data_type
 
-        if sender == LogWriterName.MLFLOW and receiver == LogWriterName.WANDB:
+        # MLflow and W&B share the same METRIC/METRICS naming, so cross-mapping is a pass-through.
+        if (sender == LogWriterName.MLFLOW and receiver == LogWriterName.WANDB) or (
+            sender == LogWriterName.WANDB and receiver == LogWriterName.MLFLOW
+        ):
             return sender_data_type
+
+        # Same sender/receiver, or any combination not covered above: pass through unchanged.
+        return sender_data_type
 
     def __str__(self) -> str:
         return f"AnalyticsData(tag: {self.tag}, value: {self.value}, data_type: {self.data_type}, kwargs: {self.kwargs}, step: {self.step})"

@@ -17,6 +17,7 @@ from typing import Optional
 from pydantic import BaseModel, PositiveInt, field_validator
 
 from nvflare import FedJob
+from nvflare.app_common.widgets.metrics_artifact_writer import MetricsArtifactWriter
 from nvflare.app_common.workflows.lr.fedavg import FedAvgLR
 from nvflare.app_common.workflows.lr.np_persistor import LRModelPersistor
 from nvflare.client.config import ExchangeFormat, TransferType
@@ -50,6 +51,10 @@ class _FedAvgValidator(BaseModel):
 
 class FedAvgLrRecipe(Recipe):
     """A recipe for implementing Federated Averaging (FedAvg) for Logistic Regression with Newton Raphson.
+
+    Recipe parameters become part of the generated job definition and must never
+    contain actual secret values. Read secrets from site environment variables or mounted
+    files; references are supported only where documented in :mod:`nvflare.recipe.secrets`.
 
     FedAvg is a fundamental federated learning algorithm that aggregates model updates
     from multiple clients by computing a weighted average based on the amount of local
@@ -141,6 +146,7 @@ class FedAvgLrRecipe(Recipe):
             source_ckpt_file_full_name=ckpt_path,
         )
         persistor_id = job.to_server(persistor, id="lr_persistor")
+        job.to_server(MetricsArtifactWriter(), id="metrics_artifact_writer")
 
         # Send custom controller to server
         controller = FedAvgLR(

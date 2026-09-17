@@ -13,11 +13,33 @@
 # limitations under the License.
 
 from nvflare.apis.fl_constant import FilterKey, FLContextKey
+from nvflare.apis.shareable import ReservedHeaderKey
+from nvflare.fuel.utils.fobs.decomposers.via_downloader import contains_lazy_download_ref as _contains_lazy_download_ref
+from nvflare.fuel.utils.fobs.decomposers.via_downloader import (
+    materialize_lazy_download_refs as _materialize_lazy_download_refs,
+)
+
+_FILTER_GRAPH_EXCLUDED_DICT_KEYS = frozenset({ReservedHeaderKey.PEER_CTX})
 
 
-def apply_filters(filters_name, filter_data, fl_ctx, config_filters, task_name, direction):
+def contains_lazy_download_ref(value) -> bool:
+    """Return whether filter-visible payload data contains a pass-through reference."""
+    return _contains_lazy_download_ref(value, excluded_dict_keys=_FILTER_GRAPH_EXCLUDED_DICT_KEYS)
+
+
+def materialize_lazy_download_refs(value, cell, abort_signal=None):
+    """Materialize filter-visible payload data without traversing framework-only peer context."""
+    return _materialize_lazy_download_refs(
+        value,
+        cell,
+        abort_signal,
+        excluded_dict_keys=_FILTER_GRAPH_EXCLUDED_DICT_KEYS,
+    )
+
+
+def get_filters(filters_name, fl_ctx, config_filters, task_name, direction):
+    """Return the site- and job-configured filters active for a task direction."""
     filter_list = []
-    fl_ctx.set_prop(FLContextKey.FILTER_DIRECTION, direction, private=True, sticky=False)
     scope_object = fl_ctx.get_prop(FLContextKey.SCOPE_OBJECT)
     if scope_object:
         filters = getattr(scope_object, filters_name)
@@ -27,8 +49,20 @@ def apply_filters(filters_name, filter_data, fl_ctx, config_filters, task_name, 
     task_filter_list = config_filters.get(task_name + FilterKey.DELIMITER + direction)
     if task_filter_list:
         filter_list.extend(task_filter_list)
+    return filter_list
+
+
+def apply_filters(filters_name, filter_data, fl_ctx, config_filters, task_name, direction, abort_signal=None):
+    fl_ctx.set_prop(FLContextKey.FILTER_DIRECTION, direction, private=True, sticky=False)
+    filter_list = get_filters(filters_name, fl_ctx, config_filters, task_name, direction)
 
     if filter_list:
+        if contains_lazy_download_ref(filter_data):
+            engine = fl_ctx.get_engine()
+            get_cell = getattr(engine, "get_cell", None) if engine is not None else None
+            cell = get_cell() if callable(get_cell) else None
+            filter_data = materialize_lazy_download_refs(filter_data, cell, abort_signal)
+
         for f in filter_list:
             filter_data = f.process(filter_data, fl_ctx)
     return filter_data

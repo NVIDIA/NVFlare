@@ -88,7 +88,7 @@ class GlobalMetricLogger(Widget):
             return
 
         current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
-        contribution_round = shareable.get_header(AppConstants.CONTRIBUTION_ROUND)
+        contribution_round = shareable.get_cookie(AppConstants.CONTRIBUTION_ROUND)
         client_name = shareable.get_peer_prop(ReservedKey.IDENTITY_NAME, default="?")
 
         if current_round == 0:

@@ -29,7 +29,7 @@ cd examples/advanced/keycloak-site-authentication
 nvflare poc prepare -i project.yml -c site_a site_b
 ```
 
-All the startup kits will be generated in this folder,
+All the startup kits will be generated in this folder.
 ```
 /tmp/nvflare/poc/keycloak-site-authentication/prod_00
 ```
@@ -40,11 +40,11 @@ Download and install the KeyCloak following the instruction guide from https://w
 
 <!-- markdown-link-check-disable -->
 
-* Start the KeyCLoak by running "bin/kc.sh start-dev"
+* Start KeyCloak by running "bin/kc.sh start-dev".
 * Set up the realm called "myrealm"
 * Setup the user "myuser@example.com"
 * Add the client "myclient"
-* The KeyCLoak will be running at http://localhost:8080/
+* KeyCloak will be running at http://localhost:8080/
 
 ### Set up FL Client Job Authorization Requirement
 

@@ -6,8 +6,119 @@ Migration Guide
 
 This guide covers API and configuration changes when upgrading between FLARE releases.
 
+Upgrading from 2.7.2 to 2.8.0
+=============================
+
+Python and Removed Legacy Surfaces
+----------------------------------
+
+FLARE 2.8.0 targets Python 3.10 through 3.14. Python 3.9 is no longer listed as
+a supported development target.
+
+The deprecated FLAdminAPI surface has been removed. Use the FLARE API, Recipe
+API, Client API, and ``nvflare`` CLI workflows for new automation.
+
+HA/Overseer code has also been removed from the 2.8 branch.
+
+Client API Subprocess Timeout Validation
+----------------------------------------
+
+Subprocess-mode Client API jobs now validate two large-model safety settings at
+job initialization:
+
+- ``download_complete_timeout`` must not be ``None``. The subprocess must stay
+  alive after ``send_to_peer()`` ACKs so the server can finish downloading
+  tensors from the subprocess ``DownloadService``.
+- ``max_resends`` must not be ``None`` when using ``ClientAPILauncherExecutor``.
+  Unlimited resends can turn one delayed large-model transfer into an unbounded
+  series of replacement download transactions.
+
+If your 2.7.x job explicitly set either value to ``None``, update it before
+running on 2.8.0. Recipe-based external-process jobs already serialize the
+default ``max_resends=3`` in executor args, so the following setting is only
+needed when overriding a previous explicit ``None`` or choosing a different
+retry budget:
+
+.. code-block:: python
+
+   recipe.add_client_config({
+       "download_complete_timeout": 1800,
+       "max_resends": 3,  # finite non-negative integer; 0 disables retries
+   })
+
+For large tensor or NumPy payloads, also keep the related streaming timeouts
+consistent. If you explicitly raise ``tensor_streaming_per_request_timeout`` or
+``np_streaming_per_request_timeout``, set ``PEER_READ_TIMEOUT`` and
+``download_complete_timeout`` to values at least as large as the configured
+streaming per-request timeout, and keep ``tensor_min_download_timeout`` or
+``np_min_download_timeout`` at least as large as the same value.
+
+.. code-block:: python
+
+   recipe.add_client_config({
+       "tensor_streaming_per_request_timeout": 600,
+       "tensor_min_download_timeout": 600,
+       "PEER_READ_TIMEOUT": 600,
+       "download_complete_timeout": 1800,
+       "max_resends": 3,
+   })
+
+Late Retry Handling for Finished Download Refs
+----------------------------------------------
+
+FLARE 2.8.0 makes finished ``DownloadService`` refs retry-safe for the same
+requester. If a client completed a large download but retries because the final
+EOF response was delayed, the server returns the same terminal status instead of
+``INVALID_REQUEST`` / ``no ref found``. This is an internal reliability fix and
+does not require job-code changes, but it is most effective when the subprocess
+timeouts above are configured consistently for very large models.
+
 Upcoming Main-Branch Changes
 ============================
+
+Job Clone Deprecation
+---------------------
+
+The ``nvflare job clone`` command, the legacy interactive Admin CLI
+``clone_job`` command, and the Python FLARE API ``clone_job()`` method are
+deprecated for NVFlare 2.10.0. They remain functional during the compatibility
+period, but cloning copies the stored job artifact without running the
+client-side signing path. The clone therefore retains the original
+``.__nvfl_sig.json`` signatures and embedded ``.__nvfl_submitter.crt``
+certificate, including its signer identity and absolute expiration. Cloning
+does not renew or replace the original signing certificate.
+
+To retry or retrigger a job, re-export or reuse the original local job folder
+and submit it with current credentials so the artifact is signed with the
+current submitter certificate:
+
+.. code-block:: shell
+
+   nvflare job submit -j JOB_FOLDER
+
+If you no longer have the original local job folder, the clone command remains
+available during the compatibility period. For a finished job, you can download
+the job, reuse the job definition automatically extracted from ``job.zip``, and
+submit that folder with current credentials. Downloading currently requires the
+job to have finished, so this recovery path does not cover every case supported
+by cloning.
+
+Legacy Client API Stack Removal
+-------------------------------
+
+The legacy converter, launcher, agent, exchanger, and pipe APIs have been
+removed. This includes ``BaseScriptRunner`` and ``ExternalConfigurator`` in
+addition to the legacy executor and pipe classes. Migrate client jobs to
+:class:`ClientAPIExecutor<nvflare.app_common.executors.client_api_executor.ClientAPIExecutor>`
+using ``in_process``, ``external_process``, or ``attach`` mode.
+
+Recipe-level ``pipe_type`` and ``pipe_root_path`` settings are no longer
+accepted. Select transport in site ``comm_config.json`` instead; the F3
+``FileDriver`` remains available as scheme ``shared-file`` for an attached
+trainer. A launched external-process trainer instead requires a clear TCP
+listener bound to loopback. For custom model representation logic,
+transform parameters explicitly around ``flare.receive()`` and
+``flare.send()`` or use helpers in :mod:`nvflare.client.converter_utils`.
 
 FLARE API Compatibility Note
 ----------------------------
@@ -46,34 +157,61 @@ the general system admin API.
 CLI Startup Kit Resolution Change
 ---------------------------------
 
-On the current ``main`` branch, the ``NVFLARE_STARTUP_KIT_DIR`` environment
-variable now takes precedence over the persisted CLI config when resolving the
-startup kit for server-connected CLI commands.
+On the current ``main`` branch, server-connected CLI commands use a shared
+active startup kit registry in ``~/.nvflare/config.conf``.
 
 Impact:
 
-- If both ``NVFLARE_STARTUP_KIT_DIR`` and the CLI config specify startup kit
-  paths, the environment variable wins.
-- Shell profiles that export ``NVFLARE_STARTUP_KIT_DIR`` may override
-  ``poc.startup_kit`` or ``prod.startup_kit`` from ``~/.nvflare/config.conf``.
+- Use ``nvflare config add <id> <startup-kit-dir>`` and
+  ``nvflare config use <id>`` to register and activate a startup kit.
+- ``nvflare config -d/--startup_kit_dir`` remains accepted for compatibility
+  with 2.7.x scripts, but is deprecated.
+- ``NVFLARE_STARTUP_KIT_DIR`` remains an automation override and takes
+  precedence over the active registry entry when set.
+- ``nvflare config -jt/--job_templates_dir`` remains accepted for compatibility
+  with 2.7.x scripts, but job template config is deprecated.
+- Root ``nvflare config`` continues to manage local settings such as the POC
+  workspace. Startup kit paths are managed by the ``nvflare config``
+  subcommands.
 
-If you rely on the persisted CLI config, review your shell environment before
-upgrading to the next release built from ``main``.
+If you use shell profiles or CI settings that export ``NVFLARE_STARTUP_KIT_DIR``,
+review them before upgrading because they override the active registry entry.
 
-CLI Config Flag Clarification
+CLI Config Flag Compatibility
 -----------------------------
 
-On the current ``main`` branch, ``nvflare config`` standardizes on the explicit
-``--poc.workspace`` flag name for the POC workspace setting.
+On the current ``main`` branch, ``nvflare config`` keeps the 2.7.x POC
+workspace flag names.
 
 Impact:
 
-- ``--poc.workspace`` is the preferred flag name in docs and examples.
-- The legacy ``-pw`` shorthand remains accepted as a compatibility alias for
-  the POC workspace setting.
+- ``-pw`` and ``--poc_workspace_dir`` remain the supported flags for setting
+  the POC workspace.
+- The interim development-only ``--poc.workspace`` spelling is not part of the
+  public compatibility contract.
 
-If you have older scripts that still use ``-pw``, they continue to work, but
-new examples and documentation use ``--poc.workspace`` for clarity.
+If you have older scripts that use ``-pw`` or ``--poc_workspace_dir``, they
+continue to work.
+
+Client Disable Semantics
+------------------------
+
+``nvflare system remove-client`` is not exposed as a supported public CLI
+command. The legacy interactive-console ``remove_client`` command is hidden
+from normal help and remains a registry cleanup operation only: it releases
+the active token so the client can register again. It does not stop the client
+process, revoke credentials, or prevent reconnect.
+
+Use the new durable access-control commands when the intent is to keep a client
+out of the federation:
+
+- ``nvflare system disable-client <client> --force`` persists a disabled flag
+  in the server workspace, removes any active registry entry, and rejects
+  later registration or heartbeat from that client.
+- ``nvflare system enable-client <client> --force`` clears the disabled flag so
+  the client can rejoin on the next registration or heartbeat.
+
+This is operational disablement, not certificate revocation.
 
 Study Name Validation Relaxation
 --------------------------------
@@ -101,15 +239,15 @@ Impact:
 - JSON ``dictConfig`` payloads are no longer accepted for site-wide log changes.
 - File-path based logging configs are no longer accepted for site-wide log changes.
 - Supported values remain the standard log levels plus built-in modes such as
-  ``concise``, ``msg_only``, ``full``, ``verbose``, and ``reload``.
+  ``concise``, ``progress``, ``msg_only``, ``full``, ``verbose``, and ``reload``.
 
 If you previously used advanced JSON/file-based configs with
 ``configure_site_log``, switch to the supported level/mode values before
 upgrading to the next release built from ``main``.
 For dict-based or file-path logging, use ``configure_job_log`` on a running job instead.
 
-POC Start Default Service Clarification
----------------------------------------
+POC Start Defaults and Repeatable Selection
+-------------------------------------------
 
 On the current ``main`` branch, the documented default behavior of
 ``nvflare poc start`` is clarified to reflect the actual runtime behavior:
@@ -121,8 +259,14 @@ Impact:
 - Running ``nvflare poc start`` with no explicit ``-p`` / ``--service`` starts
   the server and clients.
 - Admin consoles are not started unless explicitly selected.
+- ``-p`` / ``--service`` and ``-ex`` / ``--exclude`` can be repeated for
+  ``poc start`` and ``poc stop``. Earlier versions silently kept only the last
+  value when an option was repeated.
+- ``poc stop -ex <participant>`` now leaves each excluded participant running;
+  earlier versions ignored exclusions on the default coordinated shutdown path.
 
-This is a documentation/help clarification, not a runtime behavior change.
+The default-start behavior is a documentation/help clarification. Preserving
+repeated participant options is new CLI behavior on ``main``.
 
 Upgrading from 2.7.0/2.7.1 to 2.7.2
 ======================================
@@ -204,7 +348,7 @@ Upgrading from 2.5/2.6 to 2.7
 
 FLARE 2.7.0 introduced several major changes:
 
-- **Job Recipe API** (technical preview): A higher-level API for creating FL jobs. See :ref:`job_recipe`.
+- **Job Recipe API**: A higher-level API for creating FL jobs. See :ref:`job_recipe`.
 - **Client API** is now the recommended pattern for all new FL jobs.
 - **Hierarchical FL**: New relay-based communication hierarchy for large-scale deployments.
   See :ref:`flare_hierarchical_architecture`.

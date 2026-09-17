@@ -24,7 +24,7 @@ Per-Client Data Splits:
 import argparse
 
 from nvflare.app_opt.sklearn import SklearnFedAvgRecipe
-from nvflare.recipe import SimEnv
+from nvflare.recipe import SimEnv, set_per_site_config
 
 
 def define_parser():
@@ -108,9 +108,9 @@ def main():
             "fit_intercept": 1,
         },
         train_script="client.py",
-        per_site_config=per_site_config,
         key_metric="AUC",
     )
+    set_per_site_config(recipe, per_site_config)
 
     print("Executing recipe in simulation environment...")
     env = SimEnv(clients=clients, num_threads=n_clients)

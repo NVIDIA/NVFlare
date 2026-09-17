@@ -145,14 +145,15 @@ This configuration is shared between standalone training and federated learning,
 
 ### Tensor Streaming Setup
 
-The job uses `TensorServerStreamer` and `TensorClientStreamer` components:
+Enable the matching server and client tensor-streaming components through the recipe:
 
 ```python
-recipe.job.to_server(TensorServerStreamer(), "tensor_server_streamer")
-recipe.job.to_clients(TensorClientStreamer(), "tensor_client_streamer")
+recipe.enable_tensor_streaming()
 ```
 
-These streamers handle the efficient transmission of large model tensors between server and clients.
+The helper also accepts `format`, `tasks`, `tensor_send_timeout`, and
+`wait_send_task_data_all_clients_timeout` when the defaults need to be adjusted.
+It applies the shared settings consistently to both sides.
 
 ## Tensor Streaming Components
 

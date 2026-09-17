@@ -1,0 +1,6 @@
+data/
+outputs/
+feature_cache/
+workspace/
+__pycache__/
+*.pyc

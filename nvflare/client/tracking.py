@@ -12,13 +12,63 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from threading import Lock
 from typing import Dict, Optional
 
 from nvflare.apis.analytix import AnalyticsDataType, LogWriterName
+from nvflare.app_common.metrics_exchange.metrics_sender import MetricsSender
 
-# flake8: noqa
-from .api import get_context, log
+from . import api as client_api
 from .api_context import APIContext
+
+_tracking_context_lock = Lock()
+_tracking_context = None
+
+
+def init(rank=None, config_file: Optional[str] = None) -> MetricsSender:
+    """Initialize standalone analytics transport for a process without a Client API context.
+
+    This does not initialize Client API task or model exchange. Client API
+    applications should call ``nvflare.client.init()`` only; tracking writers
+    automatically use that context, so they must not call both initializers.
+    """
+    with _tracking_context_lock:
+        global _tracking_context
+        if _tracking_context is None:
+            context = MetricsSender(config_file=config_file)
+            context.init(rank=rank)
+            _tracking_context = context
+        return _tracking_context
+
+
+def shutdown(ctx=None) -> None:
+    """Shut down a standalone analytics context, or delegate an explicit Client API context."""
+    with _tracking_context_lock:
+        global _tracking_context
+        context = ctx or _tracking_context
+        if isinstance(context, MetricsSender):
+            if context is _tracking_context:
+                _tracking_context = None
+        elif context is None:
+            return
+        else:
+            return client_api.shutdown(context)
+    context.shutdown()
+
+
+def get_context(ctx=None):
+    if ctx is not None:
+        return ctx
+    if _tracking_context is not None:
+        return _tracking_context
+    return client_api.get_context()
+
+
+def log(key: str, value, data_type: AnalyticsDataType, ctx=None, **kwargs):
+    context = get_context(ctx)
+    if isinstance(context, MetricsSender):
+        return context.add(tag=key, value=value, data_type=data_type, **kwargs)
+    return client_api.log(key, value, data_type, ctx=context, **kwargs)
 
 
 class _BaseWriter:
@@ -31,7 +81,9 @@ class SummaryWriter(_BaseWriter):
 
     Users can replace the import of Tensorboard's SummaryWriter with FLARE's SummaryWriter.
     They would then use SummaryWriter the same as before.
-    SummaryWriter will send log records to the FLARE system.
+    SummaryWriter will send log records to the FLARE system. Before creating a
+    writer, initialize either the full Client API with ``nvflare.client.init()``
+    or standalone analytics with ``nvflare.client.tracking.init()``, never both.
 
     For TensorBoard-style time-series plots, pass ``global_step`` explicitly.
     If it is omitted, the receiver writes records at TensorBoard's default step ``0``

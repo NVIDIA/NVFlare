@@ -19,6 +19,7 @@ import weakref
 from typing import Optional
 
 from nvflare.fuel.f3 import drivers
+from nvflare.fuel.f3.cellnet.identity import CellIdentityResolver
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.drivers.driver import Driver
@@ -56,10 +57,10 @@ def load_comm_drivers():
 class Communicator:
     """FCI (Flare Communication Interface) main communication API"""
 
-    def __init__(self, local_endpoint: Endpoint):
+    def __init__(self, local_endpoint: Endpoint, identity_resolver: CellIdentityResolver = None):
         self.local_endpoint = local_endpoint
         self.monitors = []
-        self.conn_manager = ConnManager(local_endpoint)
+        self.conn_manager = ConnManager(local_endpoint, identity_resolver)
         self.stopped = False
 
     def start(self):

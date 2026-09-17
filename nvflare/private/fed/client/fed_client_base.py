@@ -21,7 +21,6 @@ from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import ConnPropKey, FLContextKey, SecureTrainConst, ServerCommandKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import FLCommunicationError
-from nvflare.apis.overseer_spec import SP
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable
 from nvflare.apis.signal import Signal
 from nvflare.fuel.data_event.utils import get_scope_property, set_scope_property
@@ -30,7 +29,6 @@ from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
-from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.security.logging import secure_format_exception
 
@@ -54,7 +52,6 @@ class FederatedClientBase:
         client_state_processors: Optional[List[Filter]] = None,
         handlers: Optional[List[FLComponent]] = None,
         compression=None,
-        overseer_agent=None,
         args=None,
         components=None,
         cell: Cell = None,
@@ -97,6 +94,7 @@ class FederatedClientBase:
             timeout=client_args.get("communication_timeout", 300.0),
             maint_msg_timeout=client_args.get("maint_msg_timeout", 30.0),
         )
+        self._shutdown_lock = threading.Lock()
 
         self.secure_train = secure_train
         self.handlers = handlers
@@ -113,66 +111,33 @@ class FederatedClientBase:
         self.remote_tasks = None
 
         self.sp_established = False
-        self.overseer_agent = overseer_agent
 
-        self.overseer_agent = self._init_agent(args)
+    def connect_to_server(self, project_name, target, scheme="grpc"):
+        """Establish the connection to the FL Server using the configured target.
 
-        if secure_train:
-            if self.overseer_agent:
-                self.overseer_agent.set_secure_context(
-                    ca_path=client_args["ssl_root_cert"],
-                    cert_path=client_args["ssl_cert"],
-                    prv_key_path=client_args["ssl_private_key"],
-                )
+        Args:
+            project_name: the project name (key into self.servers)
+            target: the host:port of the server
+            scheme: communication scheme (grpc, tcp, etc.)
+        """
+        host_name = target.split(":")[0]
+        set_scope_property(scope_name=self.client_name, value=host_name, key=FLContextKey.SERVER_HOST_NAME)
 
-    def start_overseer_agent(self):
-        if self.overseer_agent:
-            self.overseer_agent.start(self.overseer_callback)
+        self.servers[project_name]["target"] = target
+        # Mark established BEFORE _create_cell so client_train.py can proceed
+        # to create the ClientEngine; _create_cell then blocks until that
+        # engine is set on this client. Failures in _create_cell are surfaced
+        # via the connect_error / connect_thread.is_alive() guards in
+        # client_train.py's wait loop and via the engine setup path.
+        self.sp_established = True
 
-    def _init_agent(self, args=None):
-        kv_list = parse_vars(args.set)
-        sp = kv_list.get("sp")
+        scheme_location = scheme + "://" + target
+        if self.cell:
+            self.cell.change_server_root(scheme_location)
+        else:
+            self._create_cell(target, scheme)
 
-        if sp:
-            fl_ctx = FLContext()
-            fl_ctx.set_prop(FLContextKey.SP_END_POINT, sp)
-            self.overseer_agent.initialize(fl_ctx)
-
-        return self.overseer_agent
-
-    def overseer_callback(self, overseer_agent):
-        if overseer_agent.is_shutdown():
-            self.engine.shutdown()
-            return
-
-        sp = overseer_agent.get_primary_sp()
-        self.set_primary_sp(sp)
-
-    def set_sp(self, project_name, sp: SP):
-        if sp and sp.primary is True:
-            server = self.servers[project_name].get("target")
-            location = sp.name + ":" + sp.fl_port
-            if server != location:
-                # The SP name is the server host name that we will connect to.
-                # Save this name for this client so that it can be checked by others
-                set_scope_property(scope_name=self.client_name, value=sp.name, key=FLContextKey.SERVER_HOST_NAME)
-
-                self.servers[project_name]["target"] = location
-                self.sp_established = True
-
-                scheme = self.servers[project_name].get("scheme", "grpc")
-                scheme_location = scheme + "://" + location
-                if self.cell:
-                    self.cell.change_server_root(scheme_location)
-                else:
-                    self._create_cell(location, scheme)
-
-                self.logger.info(f"Got the new primary SP: {scheme_location}")
-
-            if self.ssid and self.ssid != sp.service_session_id:
-                self.ssid = sp.service_session_id
-                thread = threading.Thread(target=self._switch_ssid)
-                thread.start()
+        self.logger.info(f"Connected to server: {scheme_location}")
 
     def _create_cell(self, location, scheme):
         """Create my cell.
@@ -200,6 +165,21 @@ class FederatedClientBase:
 
         cp_conn_props = get_scope_property(self.client_name, ConnPropKey.CP_CONN_PROPS)
         cp_fqcn = cp_conn_props.get(ConnPropKey.FQCN)
+        client_auth_identity = cp_conn_props.get(ConnPropKey.AUTH_IDENTITY, self.client_name)
+        auth_identity_map = {cp_fqcn: client_auth_identity}
+        relay_identity = relay_conn_props.get(ConnPropKey.AUTH_IDENTITY, relay_conn_props.get(ConnPropKey.IDENTITY))
+        if relay_fqcn and relay_identity:
+            auth_identity_map[relay_fqcn] = relay_identity
+
+        root_conn_props = get_scope_property(self.client_name, ConnPropKey.ROOT_CONN_PROPS, {})
+        root_identity = root_conn_props.get(ConnPropKey.AUTH_IDENTITY, root_conn_props.get(ConnPropKey.IDENTITY))
+        if root_identity:
+            auth_identity_map[FQCN.ROOT_SERVER] = root_identity
+
+        configured_identity_map = self.client_args.get(ConnPropKey.AUTH_IDENTITY_MAP)
+        if configured_identity_map:
+            auth_identity_map.update(configured_identity_map)
+
         parent_resources = None
         if self.args.job_id:
             # I am CJ
@@ -230,6 +210,12 @@ class FederatedClientBase:
                 DriverParams.CLIENT_CERT.value: ssl_cert,
                 DriverParams.CLIENT_KEY.value: private_key,
             }
+            if self.args.job_id:
+                # the CJ's ssl_cert is its job credential; pin the server-role credential to it
+                # too: otherwise, on listener-enabled sites, the site's server cert gets
+                # back-filled from the startup kit and message crypto prefers it over CLIENT_CERT
+                credentials[DriverParams.SERVER_CERT.value] = ssl_cert
+                credentials[DriverParams.SERVER_KEY.value] = private_key
         else:
             credentials = {}
 
@@ -246,6 +232,8 @@ class FederatedClientBase:
             create_internal_listener=create_internal_listener,
             parent_url=parent_url,
             parent_resources=parent_resources,
+            auth_identity=client_auth_identity,
+            auth_identity_map=auth_identity_map,
         )
         self.cell.start()
         self.communicator.set_cell(self.cell)
@@ -274,13 +262,6 @@ class FederatedClientBase:
             self.engine.cell = self.cell
             self.engine.admin_agent.register_cell_cb()
 
-    def _switch_ssid(self):
-        if self.engine:
-            for job_id in self.engine.get_all_job_ids():
-                self.engine.abort_task(job_id)
-        # self.register()
-        self.logger.info(f"Primary SP switched to new SSID: {self.ssid}")
-
     def client_register(self, project_name, fl_ctx: FLContext):
         """Register the client to the FL server.
 
@@ -298,9 +279,7 @@ class FederatedClientBase:
                 if self.token is not None:
                     self.fl_ctx.set_prop(FLContextKey.CLIENT_NAME, self.client_name, private=False)
                     self.logger.info(
-                        "Successfully registered client:{} for project {}. Token:{} SSID:{}".format(
-                            self.client_name, project_name, self.token, self.ssid
-                        )
+                        "Successfully registered client:{} for project {}.".format(self.client_name, project_name)
                     )
 
             except FLCommunicationError:
@@ -413,9 +392,6 @@ class FederatedClientBase:
         """Register the client with the server."""
         return self.client_register(self._get_project_name(), fl_ctx)
 
-    def set_primary_sp(self, sp):
-        return self.set_sp(self._get_project_name(), sp)
-
     def run_heartbeat(self, interval):
         """Periodically runs the heartbeat."""
         try:
@@ -450,21 +426,30 @@ class FederatedClientBase:
         if self.communicator.cell:
             self.communicator.cell.stop()
 
+    def send_request_before_shutdown(self, **kwargs):
+        """Send an authenticated request unless client shutdown has started."""
+        with self._shutdown_lock:
+            if self.communicator.heartbeat_done:
+                return None
+            return self.cell.send_request(**kwargs)
+
     def close(self):
         """Quit the remote federated server, close the local session."""
-        self.terminate()
+        with self._shutdown_lock:
+            # Serialize token retirement/logout after any in-flight terminal
+            # report that still uses this authenticated client session.
+            self.communicator.heartbeat_done = True
+            self.terminate()
 
-        if self.engine:
-            fl_ctx = self.engine.new_context()
-        else:
-            fl_ctx = FLContext()
-        self.logout_client(fl_ctx)
-        self.logger.info(f"Logout client: {self.client_name} from server.")
+            if self.engine:
+                fl_ctx = self.engine.new_context()
+            else:
+                fl_ctx = FLContext()
+            self.logout_client(fl_ctx)
+            self.logger.info(f"Logout client: {self.client_name} from server.")
 
         return 0
 
     def terminate(self):
         """Terminating the local client session."""
         self.logger.info(f"Shutting down client run: {self.client_name}")
-        if self.overseer_agent:
-            self.overseer_agent.end()

@@ -1,0 +1,34 @@
+api_version: 3
+name: fed_project
+description: Centralized provisioning version of the distributed provisioning demo
+connection_security: tls
+
+participants:
+  - name: server.example.com
+    type: server
+    org: nvidia
+    fed_learn_port: 8002
+    admin_port: 8003
+  - name: site-1
+    type: client
+    org: org1
+  - name: site-2
+    type: client
+    org: org2
+  - name: alice@nvidia.com
+    type: admin
+    org: nvidia
+    role: lead
+
+builders:
+  - path: nvflare.lighter.impl.workspace.WorkspaceBuilder
+  - path: nvflare.lighter.impl.static_file.StaticFileBuilder
+    args:
+      scheme: grpc
+      overseer_agent:
+        path: nvflare.ha.dummy_overseer_agent.DummyOverseerAgent
+        overseer_exists: false
+        args:
+          sp_end_point: server.example.com:8002:8003
+  - path: nvflare.lighter.impl.cert.CertBuilder
+  - path: nvflare.lighter.impl.signature.SignatureBuilder

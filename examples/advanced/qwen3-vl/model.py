@@ -40,7 +40,7 @@ def load_state_dict_from_checkpoint(checkpoint_dir: str, lora_only: bool = False
     """Load state_dict from a HuggingFace-style checkpoint dir without loading the full model.
 
     Reads .safetensors (or pytorch_model.bin) so the client can send weights back to the server
-    quickly and return to flare.receive(), avoiding cell_pipe send timeouts.
+    quickly and return to flare.receive(), minimizing result-publication latency.
 
     If lora_only=True, loads only adapter weights (adapter_model.safetensors if present,
     otherwise filters full checkpoint to keys containing "lora").

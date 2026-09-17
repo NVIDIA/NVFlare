@@ -18,6 +18,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from nvflare.tool import cli_output
+from nvflare.tool.package_checker.package_checker import CheckStatus
 
 
 class TestPreflightOutput:
@@ -66,7 +67,7 @@ class TestPreflightOutput:
 
         mock_checker = MagicMock()
         mock_checker.should_be_checked.return_value = True
-        mock_checker.check.return_value = 0
+        mock_checker.check.return_value = CheckStatus.PASS
         mock_checker.__class__.__name__ = "ServerPackageChecker"
         mock_checker.report = {str(pkg_path): []}
         # Make print_report() write a sentinel to stderr so we can assert routing
@@ -110,7 +111,7 @@ class TestPreflightOutput:
 
         mock_checker = MagicMock()
         mock_checker.should_be_checked.return_value = True
-        mock_checker.check.return_value = 1  # fail
+        mock_checker.check.return_value = CheckStatus.FAIL_WITH_CLEANUP
         mock_checker.__class__.__name__ = "ServerPackageChecker"
 
         args = MagicMock()
@@ -132,6 +133,70 @@ class TestPreflightOutput:
         assert data["exit_code"] == 1
         assert data["data"]["overall"] == "fail"
 
+    def test_failed_check_without_dry_run_exits_1_without_cleanup(self, capsys, tmp_path):
+        """A required-rule failure exits 1 but does not try dry-run cleanup."""
+        from nvflare.tool.preflight_check import check_packages
+
+        pkg_path = tmp_path / "package2b"
+        pkg_path.mkdir()
+        (pkg_path / "startup").mkdir()
+
+        mock_checker = MagicMock()
+        mock_checker.should_be_checked.return_value = True
+        mock_checker.check.return_value = CheckStatus.FAIL
+        mock_checker.__class__.__name__ = "ServerPackageChecker"
+
+        args = MagicMock()
+        args.package_path = str(pkg_path)
+        args.output = "json"
+
+        with (
+            patch("nvflare.tool.preflight_check.ServerPackageChecker", return_value=mock_checker),
+            patch("nvflare.tool.preflight_check.ClientPackageChecker", return_value=mock_checker),
+            patch("nvflare.tool.preflight_check.NVFlareConsolePackageChecker", return_value=mock_checker),
+        ):
+            with pytest.raises(SystemExit) as exc_info:
+                check_packages(args)
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        assert data["exit_code"] == 1
+        assert data["data"]["overall"] == "fail"
+        assert all(check["status"] == "fail" for check in data["data"]["checks"])
+        assert mock_checker.stop_dry_run.call_count == 0
+
+    def test_successful_dry_run_cleanup_code_is_pass(self, capsys, tmp_path):
+        """Dry-run cleanup status means pass, not check failure."""
+        from nvflare.tool.preflight_check import check_packages
+
+        pkg_path = tmp_path / "package2"
+        pkg_path.mkdir()
+        (pkg_path / "startup").mkdir()
+
+        mock_checker = MagicMock()
+        mock_checker.should_be_checked.return_value = True
+        mock_checker.check.return_value = CheckStatus.PASS_WITH_CLEANUP
+        mock_checker.__class__.__name__ = "ServerPackageChecker"
+
+        args = MagicMock()
+        args.package_path = str(pkg_path)
+        args.output = "json"
+
+        with (
+            patch("nvflare.tool.preflight_check.ServerPackageChecker", return_value=mock_checker),
+            patch("nvflare.tool.preflight_check.ClientPackageChecker", return_value=mock_checker),
+            patch("nvflare.tool.preflight_check.NVFlareConsolePackageChecker", return_value=mock_checker),
+        ):
+            check_packages(args)
+
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        assert data["exit_code"] == 0
+        assert data["data"]["overall"] == "pass"
+        assert all(check["status"] == "pass" for check in data["data"]["checks"])
+        assert mock_checker.stop_dry_run.call_count == 3
+
     def test_per_component_checks(self, capsys, tmp_path):
         """Each checker appears as a separate entry; stdout has only one JSON line."""
         from nvflare.tool.preflight_check import check_packages
@@ -142,7 +207,7 @@ class TestPreflightOutput:
 
         mock_checker = MagicMock()
         mock_checker.should_be_checked.return_value = True
-        mock_checker.check.return_value = 0
+        mock_checker.check.return_value = CheckStatus.PASS
         mock_checker.report = {str(pkg_path): []}
 
         args = MagicMock()
@@ -195,7 +260,7 @@ class TestPreflightOutput:
 
         mock_checker = MagicMock()
         mock_checker.should_be_checked.return_value = True
-        mock_checker.check.return_value = 1
+        mock_checker.check.return_value = CheckStatus.FAIL_WITH_CLEANUP
         mock_checker.__class__.__name__ = "ServerPackageChecker"
 
         args = MagicMock()

@@ -23,7 +23,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from nvflare.apis.fl_constant import FLContextKey, SiteType
-from nvflare.apis.job_def import Job, JobMetaKey
+from nvflare.apis.job_def import Job
 from nvflare.private.admin_defs import Message, MsgHeader, ReturnCode
 from nvflare.private.fed.server.job_runner import JobRunner
 
@@ -268,42 +268,6 @@ class TestTamperedSignature:
 
         assert "signature verification failed" in str(exc_info.value)
         assert "UNSIGNED_JOB_REJECTED" not in str(exc_info.value)
-
-
-# ---------------------------------------------------------------------------
-# from_hub_site bypass
-# ---------------------------------------------------------------------------
-
-
-class TestFromHubSiteBypass:
-    def test_from_hub_site_skips_verification_no_sig(self, tmp_path):
-        """from_hub_site=True, no .__nvfl_sig.json → verification block skipped → deploy succeeds."""
-        job_meta = {JobMetaKey.FROM_HUB_SITE.value: "hub-site-1"}
-
-        runner, fl_ctx, engine, job, ws, deploy_detail = _build_server_deploy_ctx(
-            job_meta=job_meta, app_dir=str(tmp_path), startup_dir=str(tmp_path)
-        )
-
-        job_id, failed = _run_deploy_with_workspace(runner, job, fl_ctx, ws)
-
-        assert job_id == "test-job-1"
-
-    def test_from_hub_site_skips_verification_even_with_tampered_sig(self, tmp_path):
-        """from_hub_site=True with an invalid sig → hub is trusted, block is skipped → deploy succeeds."""
-        sig_file = tmp_path / ".__nvfl_sig.json"
-        sig_file.write_text('{"sig": "tampered"}')
-        job_meta = {JobMetaKey.FROM_HUB_SITE.value: "hub-site-1"}
-
-        runner, fl_ctx, engine, job, ws, deploy_detail = _build_server_deploy_ctx(
-            job_meta=job_meta, app_dir=str(tmp_path), startup_dir=str(tmp_path)
-        )
-
-        # Even if verify_folder_signature would return False, it should never be called
-        with patch("nvflare.private.fed.server.job_runner.verify_folder_signature", return_value=False) as mock_vfs:
-            job_id, failed = _run_deploy_with_workspace(runner, job, fl_ctx, ws)
-
-        mock_vfs.assert_not_called()
-        assert job_id == "test-job-1"
 
 
 # ---------------------------------------------------------------------------

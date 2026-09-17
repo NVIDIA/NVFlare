@@ -21,7 +21,10 @@ from nvflare.tool.cli_errors import ERROR_REGISTRY, get_error
 EXPECTED_CODES = [
     "JOB_NOT_FOUND",
     "JOB_NOT_RUNNING",
+    "JOB_NOT_DONE",
     "JOB_INVALID",
+    "SUBMIT_TOKEN_CONFLICT",
+    "SUBMIT_TOKEN_JOB_DELETED",
     "CONNECTION_FAILED",
     "AUTH_FAILED",
     "TIMEOUT",
@@ -30,6 +33,7 @@ EXPECTED_CODES = [
     "SITE_NOT_FOUND",
     "LOG_CONFIG_INVALID",
     "SERVER_UNREACHABLE",
+    "SYSTEM_NOT_READY",
     "INTERNAL_ERROR",
     "JOB_FAILED",
     "JOB_ABORTED",
@@ -71,6 +75,37 @@ def test_site_not_found_format_substitution():
 
 def test_internal_error_hint_does_not_reference_verbose():
     assert "--verbose" not in ERROR_REGISTRY["INTERNAL_ERROR"]["hint"]
+
+
+def test_startup_kit_hints_name_kit_registry_commands():
+    hints = [
+        ERROR_REGISTRY[code]["hint"]
+        for code in ("STARTUP_KIT_MISSING", "STARTUP_KIT_NOT_CONFIGURED")
+        if code in ERROR_REGISTRY
+    ]
+    combined = " ".join(hints)
+    assert "nvflare config list" in combined
+    assert "nvflare config use <id>" in combined
+    assert "--kit-id <id>" in combined
+    assert "--startup-kit <path>" in combined
+    assert "NVFLARE_STARTUP_KIT_DIR" in combined
+
+
+def test_no_error_hint_recommends_removed_startup_kit_flags():
+    forbidden = [
+        "--startup_kit_dir",
+        "--startup_kit",
+        "poc.startup_kit",
+        "prod.startup_kit",
+        "--{target}.startup_kit",
+    ]
+
+    offenders = {
+        code: entry["hint"]
+        for code, entry in ERROR_REGISTRY.items()
+        if any(old_text in entry["hint"] for old_text in forbidden)
+    }
+    assert offenders == {}
 
 
 def test_missing_substitution_key_falls_back_to_template():
@@ -165,6 +200,16 @@ class TestGetError:
     def test_job_not_found(self):
         message, hint = get_error("JOB_NOT_FOUND", job_id="abc-123")
         assert "abc-123" in message
+
+    def test_submit_token_conflict(self):
+        message, hint = get_error("SUBMIT_TOKEN_CONFLICT")
+        assert "submit token" in message.lower()
+        assert "new submit token" in hint.lower()
+
+    def test_submit_token_job_deleted(self):
+        message, hint = get_error("SUBMIT_TOKEN_JOB_DELETED")
+        assert "deleted job" in message.lower()
+        assert "new submit token" in hint.lower()
 
     def test_unsigned_job_rejected(self):
         message, hint = get_error("UNSIGNED_JOB_REJECTED")

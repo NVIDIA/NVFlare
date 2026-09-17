@@ -30,6 +30,7 @@ Then navigate to the hello-jax directory:
 
 .. code-block:: bash
 
+   cd NVFlare
    git switch <release branch>
    cd examples/hello-world/hello-jax
 

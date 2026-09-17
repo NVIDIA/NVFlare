@@ -75,7 +75,7 @@ class SimulatorServerEngine(ServerEngine):
 
 class SimulatorRunManager(RunManager):
     def create_job_processing_context_properties(self, workspace, job_id):
-        return {}
+        return super().create_job_processing_context_properties(workspace, job_id)
 
 
 class SimulatorIdentityAsserter(IdentityAsserter):
@@ -106,7 +106,6 @@ class SimulatorServer(FederatedServer):
         secure_train=False,
         enable_byoc=False,
         snapshot_persistor=None,
-        overseer_agent=None,
     ):
         super().__init__(
             project_name,
@@ -119,7 +118,6 @@ class SimulatorServer(FederatedServer):
             secure_train,
             # enable_byoc,
             snapshot_persistor,
-            overseer_agent,
         )
 
         self.job_cell = None
@@ -163,7 +161,7 @@ class SimulatorServer(FederatedServer):
         return SimulatorIdentityAsserter("private_key_file", "cert_file")
 
     def deploy(self, args, grpc_args=None, secure_train=False):
-        super(FederatedServer, self).deploy(args, grpc_args, secure_train)
+        super(FederatedServer, self).deploy(args, grpc_args, secure_train, enable_admin_listener=False)
         os.makedirs(os.path.join(args.workspace, "local"), exist_ok=True)
         os.makedirs(os.path.join(args.workspace, "startup"), exist_ok=True)
         workspace = Workspace(args.workspace, "server", args.config_folder)

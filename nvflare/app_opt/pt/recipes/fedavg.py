@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional, Union
+from typing import Any, Literal, Optional, Union
 
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.abstract.aggregator import Aggregator
@@ -25,6 +25,10 @@ from nvflare.recipe.fedavg import FedAvgRecipe as UnifiedFedAvgRecipe
 
 class FedAvgRecipe(UnifiedFedAvgRecipe):
     """A recipe for implementing Federated Averaging (FedAvg) for PyTorch.
+
+    Recipe parameters, including ``train_args`` and nested ``per_site_config`` values,
+    must never contain actual secrets. Read secrets from site environment variables or mounted
+    files; references are supported only where documented in :mod:`nvflare.recipe.secrets`.
 
     FedAvg is a fundamental federated learning algorithm that aggregates model updates
     from multiple clients by computing a weighted average based on the amount of local
@@ -49,31 +53,39 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         min_clients: Minimum number of clients required to start a training round.
         num_rounds: Number of federated training rounds to execute. Defaults to 2.
         train_script: Path to the training script that will be executed on each client.
-        train_args: Command line arguments to pass to the training script.
+        train_args: Command line arguments to pass to the training script as a string or pre-tokenized argv.
         aggregator: Custom aggregator (ModelAggregator) for combining client model updates.
             Must implement accept_model(), aggregate_model(), reset_stats() methods.
             If None, uses built-in memory-efficient weighted averaging.
-        aggregator_data_kind: Data kind to use for the aggregator. Defaults to DataKind.WEIGHTS.
-            Kept for backward compatibility.
+        aggregator_data_kind: Data kind to use for the aggregator. When a custom aggregator
+            declares expected_data_kind, the declaration must match. Defaults to DataKind.WEIGHTS.
         launch_external_process (bool): Whether to launch the script in external process. Defaults to False.
         command (str): If launch_external_process=True, command to run script (prepended to script). Defaults to "python3 -u".
         server_expected_format (str): What format to exchange the parameters between server and client.
-        params_transfer_type (str): How to transfer the parameters. FULL means the whole model parameters are sent.
-            DIFF means that only the difference is sent. Defaults to TransferType.FULL.
+        params_transfer_type (str): How to transfer the parameters. DIFF enables automatic difference
+            calculation for full-model client results. A client's FLModel.params_type remains authoritative.
+            Defaults to TransferType.FULL.
         model_persistor: Custom model persistor. If None, PTFileModelPersistor will be used.
         model_locator: Custom model locator. If None, PTFileModelLocator will be used.
-        per_site_config: Per-site configuration for the federated learning job.
+        per_site_config: Deprecated constructor form. New code should call
+            ``set_per_site_config(recipe, config)`` immediately after construction.
         launch_once: Whether external process is launched once or per task. Defaults to True.
+        launch_timeout: Seconds to wait for an external process to launch and establish its
+            Client API session. ``None`` disables this timeout. Defaults to 300.0.
         shutdown_timeout: Seconds to wait before shutdown. Defaults to 0.0.
         key_metric: Metric used to determine if the model is globally best. Defaults to "accuracy".
+        key_metric_mode: One of "min" or "max". Use "min" when lower key_metric values are better
+            and "max" when higher values are better. If omitted and stop_cond uses the same metric,
+            the mode is inferred from its comparison operator; otherwise it defaults to "max".
         stop_cond: Early stopping condition based on metric. String literal in the format of
             '<key> <op> <value>' (e.g. "accuracy >= 80"). If None, early stopping is disabled.
         patience: Number of rounds with no improvement after which FL will be stopped.
-        save_filename: Filename for saving the best model. Defaults to "FL_global_model.pt".
+        best_model_filename: Filename for saving the best model. If unset, the default
+            PyTorch persistor uses DefaultCheckpointFileName.BEST_GLOBAL_MODEL.
+        save_filename: Deprecated alias for best_model_filename. If both are specified, they must match.
         exclude_vars: Regex pattern for variables to exclude from aggregation.
         aggregation_weights: Per-client aggregation weights dict. Defaults to equal weights.
         enable_tensor_disk_offload: Enable disk-backed tensor offload for incoming streamed payloads.
-
     Example:
         Basic usage with early stopping:
 
@@ -105,23 +117,26 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         min_clients: int,
         num_rounds: int = 2,
         train_script: str,
-        train_args: str = "",
+        train_args: Union[str, list[str]] = "",
         aggregator: Optional[Aggregator] = None,
         aggregator_data_kind: Optional[DataKind] = DataKind.WEIGHTS,
         launch_external_process: bool = False,
-        command: str = "python3 -u",
+        command: Union[str, list[str]] = "python3 -u",
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
         model_persistor: Optional[ModelPersistor] = None,
         model_locator: Optional[ModelLocator] = None,
         per_site_config: Optional[dict[str, dict]] = None,
         launch_once: bool = True,
+        launch_timeout: Optional[float] = 300.0,
         shutdown_timeout: float = 0.0,
         key_metric: str = "accuracy",
+        key_metric_mode: Optional[Literal["min", "max"]] = None,
         # New FedAvg features
         stop_cond: Optional[str] = None,
         patience: Optional[int] = None,
-        save_filename: str = "FL_global_model.pt",
+        best_model_filename: Optional[str] = None,
+        save_filename: Optional[str] = None,
         exclude_vars: Optional[str] = None,
         aggregation_weights: Optional[dict[str, float]] = None,
         server_memory_gc_rounds: int = 0,
@@ -151,10 +166,13 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             model_persistor=model_persistor,
             per_site_config=per_site_config,
             launch_once=launch_once,
+            launch_timeout=launch_timeout,
             shutdown_timeout=shutdown_timeout,
             key_metric=key_metric,
+            key_metric_mode=key_metric_mode,
             stop_cond=stop_cond,
             patience=patience,
+            best_model_filename=best_model_filename,
             save_filename=save_filename,
             exclude_vars=exclude_vars,
             aggregation_weights=aggregation_weights,
@@ -192,6 +210,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             initial_ckpt=ckpt_path,
             locator=self._pt_model_locator,
             allow_numpy_conversion=allow_numpy_conversion,
+            best_model_filename=self.best_model_filename,
         )
         result = job.to_server(pt_model, id="persistor")
         if isinstance(result, dict) and hasattr(job, "comp_ids"):

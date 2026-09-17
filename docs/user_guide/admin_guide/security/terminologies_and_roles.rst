@@ -67,13 +67,10 @@ Member Researcher Role
 This role can be configured for another level of privileges a scientist who works with the Lead Researcher
 to make sure his/her site is properly prepared for the project.
 
-Per-Study Role Override
-^^^^^^^^^^^^^^^^^^^^^^^
-When multi-study is configured (see :ref:`multi_study_guide`), a user's role can be overridden on a per-study
-basis through the ``studies:`` section of ``project.yml``. For example, a user provisioned as ``org_admin`` can
-be assigned the ``lead`` role in one study and ``member`` in another. When the user logs in to a named study,
-the study-specific role is used for study-scoped authorization decisions during that session. The
-``default`` study always uses the role from the user's certificate.
+Study Membership and Roles
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+Study membership does not override the certificate role in any study, including
+``default``. See :ref:`multi_study_guide` for membership and authorization rules.
 
 FLARE Console (previously called Admin Client)
 ----------------------------------------------

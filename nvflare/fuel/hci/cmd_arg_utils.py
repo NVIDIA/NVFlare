@@ -19,8 +19,6 @@ import re
 import shlex
 from typing import List
 
-from nvflare.apis.utils.format_check import type_pattern_mapping
-
 
 def _split_unquoted_args(line: str) -> List[str]:
     line = re.sub(" +", " ", line)
@@ -206,13 +204,3 @@ def validate_file_string(file: str) -> str:
     if err:
         raise SyntaxError(err)
     return file
-
-
-def validate_sp_string(sp_string) -> str:
-    if re.match(
-        type_pattern_mapping.get("sp_end_point"),
-        sp_string,
-    ):
-        return sp_string
-    else:
-        raise SyntaxError("sp_string must be of the format example.com:8002:8003")

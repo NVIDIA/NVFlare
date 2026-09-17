@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from nvflare.app_opt.pt.ditto import PTDittoHelper
+from nvflare.app_opt.pt.fedce import FedCEConstants, FedCEModelAggregator, PTFedCEHelper
 from nvflare.app_opt.pt.fedopt import PTFedOptModelShareableGenerator
 from nvflare.app_opt.pt.fedproxloss import PTFedProxLoss
 from nvflare.app_opt.pt.file_model_locator import PTFileModelLocator

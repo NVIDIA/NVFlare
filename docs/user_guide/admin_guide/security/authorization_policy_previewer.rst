@@ -9,7 +9,7 @@
 Authorization Policy Previewer
 ******************************
 
-:ref:`Authorization <federated_authorization>` is an important security feature of NVFLARE. Since NVFLARE 2.2, each site defines its own authorization policy.
+:ref:`Authorization <federated_authorization>` is an important security feature of NVFLARE. Since NVFLARE 2.2, each site defines its own authorization policies.
 Since authorization policy is vital for system security, and many people can now define policies, it's important to be able
 to validate the policies before deploying them to production.
 

@@ -27,3 +27,46 @@ def test_global_args_after_subcommand(monkeypatch):
     assert args.system_sub_cmd == "version"
     assert args.format == "json"
     assert args.connect_timeout == 7.0
+
+
+def test_jsonl_global_format_allowed_for_job_monitor(monkeypatch):
+    from nvflare import cli as cli_mod
+
+    monkeypatch.setattr(
+        cli_mod.sys,
+        "argv",
+        ["nvflare", "job", "monitor", "abc123", "--format", "jsonl"],
+    )
+
+    _, args, _ = cli_mod.parse_args("nvflare")
+    assert args.sub_command == "job"
+    assert args.job_sub_cmd == "monitor"
+    assert args.format == "jsonl"
+
+
+def test_cert_init_deploy_version_is_command_option(monkeypatch, tmp_path):
+    from nvflare import cli as cli_mod
+
+    profile_path = tmp_path / "project_profile.yaml"
+    profile_path.write_text("name: test_project\n", encoding="utf-8")
+
+    monkeypatch.setattr(
+        cli_mod.sys,
+        "argv",
+        [
+            "nvflare",
+            "cert",
+            "init",
+            "--profile",
+            str(profile_path),
+            "-o",
+            str(tmp_path / "ca"),
+            "--deploy-version",
+            "01",
+        ],
+    )
+
+    _, args, _ = cli_mod.parse_args("nvflare")
+    assert args.sub_command == "cert"
+    assert args.cert_sub_command == "init"
+    assert args.deploy_version == "01"

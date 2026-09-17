@@ -24,9 +24,12 @@ from nvflare.apis.executor import Executor
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import ConfigVarName, FLContextKey, ReturnCode, SystemConfigs
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.fl_exception import UnsafeComponentError
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
+from nvflare.app_common.widgets.component_path_authorizer import ComponentPathAuthorizer
+from nvflare.fuel.common.excepts import ComponentNotAuthorized
 from nvflare.fuel.common.multi_process_executor_constants import (
     CommunicateData,
     CommunicationMetaData,
@@ -40,6 +43,7 @@ from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.utils.class_utils import ModuleScanner
 from nvflare.fuel.utils.component_builder import ComponentBuilder
 from nvflare.fuel.utils.config_service import ConfigService
+from nvflare.fuel.utils.json_scanner import Node
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.defs import CellChannel, CellChannelTopic, new_cell_message
 from nvflare.security.logging import secure_format_exception
@@ -49,13 +53,84 @@ class WorkerComponentBuilder(ComponentBuilder):
     FL_PACKAGES = ["nvflare"]
     FL_MODULES = ["client", "app"]
 
-    def __init__(self) -> None:
+    def __init__(self, fl_ctx: FLContext = None, workspace=None, enforce_authorization=True) -> None:
         """Component to build workers."""
         super().__init__()
         self.module_scanner = ModuleScanner(WorkerComponentBuilder.FL_PACKAGES, WorkerComponentBuilder.FL_MODULES, True)
+        self.fl_ctx = fl_ctx
+        self.workspace = workspace
+        self.enforce_authorization = enforce_authorization
+        self.component_path_authorizer = ComponentPathAuthorizer()
 
     def get_module_scanner(self):
         return self.module_scanner
+
+    @staticmethod
+    def make_component_node(component_config, index=None):
+        """Create a config node for a worker component payload.
+
+        Args:
+            component_config: Component configuration dict.
+            index: Optional 1-based index when the config came from a components list.
+        """
+        node = Node(component_config)
+        node.key = "component"
+        node.paths = ["component"]
+        if index is not None:
+            node.key = f"#{index}"
+            node.paths = ["components", node.key]
+        return node
+
+    @staticmethod
+    def _make_component_node(component_config, index=None):
+        return WorkerComponentBuilder.make_component_node(component_config, index)
+
+    @staticmethod
+    def _make_child_node(parent_node, element, key):
+        node = Node(element)
+        node.processor = parent_node.processor
+        node.parent = parent_node
+        node.level = parent_node.level + 1
+        node.key = str(key)
+        node.paths = parent_node.paths.copy()
+        node.paths.append(node.key)
+        return node
+
+    def _is_authorizable_component_config(self, config_dict, node=None):
+        return self.is_authorizable_component_config(config_dict, node)
+
+    def _authorize_component_config(self, config_dict, node):
+        if not self.enforce_authorization:
+            return
+        try:
+            self.component_path_authorizer.authorize_component_config(
+                config_dict, node, fl_ctx=self.fl_ctx, workspace=self.workspace
+            )
+        except UnsafeComponentError as ex:
+            raise ComponentNotAuthorized(f"component not authorized: {ex}")
+
+    def _authorize_component_config_tree(self, element, node, force_current=False):
+        if isinstance(element, dict):
+            if force_current or self._is_authorizable_component_config(element, node):
+                self._authorize_component_config(element, node)
+                args = element.get("args")
+                if isinstance(args, (dict, list)):
+                    self._authorize_component_config_tree(args, self._make_child_node(node, args, "args"))
+                return
+
+            for key, value in element.items():
+                if isinstance(value, (dict, list)):
+                    self._authorize_component_config_tree(value, self._make_child_node(node, value, key))
+        elif isinstance(element, list):
+            for i, item in enumerate(element):
+                if isinstance(item, (dict, list)):
+                    self._authorize_component_config_tree(item, self._make_child_node(node, item, f"#{i + 1}"))
+
+    def build_component(self, config_dict, node=None):
+        if node is None:
+            node = self.make_component_node(config_dict)
+        self._authorize_component_config_tree(config_dict, node, force_current=True)
+        return super().build_component(config_dict)
 
 
 class MultiProcessExecutor(Executor):
@@ -73,7 +148,7 @@ class MultiProcessExecutor(Executor):
         self.components_conf = components
         self.components = {}
         self.handlers = []
-        self._build_components(components)
+        self._components_built = False
 
         if not isinstance(num_of_processes, int):
             raise TypeError("{} must be an instance of int but got {}".format(num_of_processes, type(num_of_processes)))
@@ -104,13 +179,14 @@ class MultiProcessExecutor(Executor):
         """
         return ""
 
-    def _build_components(self, components):
-        component_builder = WorkerComponentBuilder()
-        for item in components:
+    def _build_components(self, components, fl_ctx: FLContext = None, workspace=None):
+        component_builder = WorkerComponentBuilder(fl_ctx=fl_ctx, workspace=workspace)
+        for i, item in enumerate(components):
             cid = item.get("id", None)
             if not cid:
                 raise TypeError("missing component id")
-            self.components[cid] = component_builder.build_component(item)
+            node = component_builder.make_component_node(item, i + 1)
+            self.components[cid] = component_builder.build_component(item, node)
             if isinstance(self.components[cid], FLComponent):
                 self.handlers.append(self.components[cid])
 
@@ -151,6 +227,14 @@ class MultiProcessExecutor(Executor):
                         )
 
     def initialize(self, fl_ctx: FLContext):
+        if not self._components_built:
+            self._build_components(
+                self.components_conf,
+                fl_ctx=fl_ctx,
+                workspace=fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT),
+            )
+            self._components_built = True
+
         self.executor = self.components.get(self.executor_id, None)
         if not isinstance(self.executor, Executor):
             raise ValueError(

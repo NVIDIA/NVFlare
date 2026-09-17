@@ -15,13 +15,17 @@
 from unittest.mock import Mock, patch
 
 import pytest
+import torch
 
+from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.app_opt.tensor_stream.client import TensorClientStreamer
 from nvflare.app_opt.tensor_stream.receiver import TensorReceiver
 from nvflare.app_opt.tensor_stream.sender import TensorSender
+from nvflare.app_opt.tensor_stream.types import TensorCustomKeys
 from nvflare.client.config import ExchangeFormat
+from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef
 
 
 class TestTensorClientStreamer:
@@ -46,6 +50,8 @@ class TestTensorClientStreamer:
         assert streamer.engine is None
         assert streamer.sender is None
         assert streamer.receiver is None
+        assert streamer.requires_materialized_task_result(expected_tasks[0]) is True
+        assert streamer.requires_materialized_task_result("not-configured") is False
 
     @patch("nvflare.app_opt.tensor_stream.client.TensorReceiver")
     def test_initialize_success(self, mock_receiver_class, mock_fl_context, mock_engine_with_clients):
@@ -144,7 +150,10 @@ class TestTensorClientStreamer:
         mock_peer_context = Mock()
         mock_peer_context.get_identity_name.return_value = "client1"
         mock_fl_context.get_peer_context.return_value = mock_peer_context
-        mock_fl_context.get_prop.return_value = "task_123"
+        mock_fl_context.get_prop.side_effect = lambda key: {
+            FLContextKey.TASK_NAME: "train",
+            FLContextKey.TASK_ID: "task_123",
+        }.get(key)
 
         # Handle BEFORE_TASK_DATA_FILTER event
         streamer.handle_event(EventType.BEFORE_TASK_DATA_FILTER, mock_fl_context)
@@ -155,11 +164,27 @@ class TestTensorClientStreamer:
         # Verify receiver.set_ctx_with_tensors was called
         mock_receiver.set_ctx_with_tensors.assert_called_once_with(mock_fl_context)
 
+    def test_handle_event_before_task_data_filter_skips_unconfigured_task(self, mock_fl_context):
+        streamer = TensorClientStreamer(tasks=["train"])
+        mock_receiver = Mock(spec=TensorReceiver)
+        streamer.receiver = mock_receiver
+        mock_fl_context.get_prop.side_effect = lambda key: {
+            FLContextKey.TASK_NAME: "swarm_config",
+            FLContextKey.TASK_ID: "task_123",
+        }.get(key)
+
+        streamer.handle_event(EventType.BEFORE_TASK_DATA_FILTER, mock_fl_context)
+
+        mock_receiver.wait_for_tensors.assert_not_called()
+        mock_receiver.set_ctx_with_tensors.assert_not_called()
+        mock_fl_context.get_peer_context.assert_not_called()
+
     def test_handle_event_after_task_result_filter(self, mock_fl_context, mock_engine_with_clients):
         """Test handling AFTER_TASK_RESULT_FILTER event."""
         streamer = TensorClientStreamer(format=ExchangeFormat.PYTORCH, tasks=["train"])
         streamer.engine = mock_engine_with_clients
         streamer.send_tensors_to_server = Mock()
+        mock_fl_context.get_prop.return_value = "train"
 
         # Handle AFTER_TASK_RESULT_FILTER event
         streamer.handle_event(EventType.AFTER_TASK_RESULT_FILTER, mock_fl_context)
@@ -167,12 +192,25 @@ class TestTensorClientStreamer:
         # Verify send_tensors_to_server was called
         streamer.send_tensors_to_server.assert_called_once_with(mock_fl_context)
 
+    def test_handle_event_after_task_result_filter_skips_unconfigured_task_without_task_id(self, mock_fl_context):
+        streamer = TensorClientStreamer(tasks=["train"])
+        streamer.send_tensors_to_server = Mock()
+        mock_fl_context.get_prop.side_effect = lambda key, default=None: {
+            FLContextKey.TASK_NAME: "swarm_learn",
+            FLContextKey.TASK_ID: None,
+        }.get(key, default)
+
+        streamer.handle_event(EventType.AFTER_TASK_RESULT_FILTER, mock_fl_context)
+
+        streamer.send_tensors_to_server.assert_not_called()
+
     def test_handle_event_after_task_result_filter_exception(self, mock_fl_context, mock_engine_with_clients):
         """Test handling AFTER_TASK_RESULT_FILTER event when send_tensors_to_server raises exception."""
         streamer = TensorClientStreamer()
         streamer.engine = mock_engine_with_clients
         streamer.send_tensors_to_server = Mock(side_effect=Exception("Send failed"))
         streamer.system_panic = Mock()
+        mock_fl_context.get_prop.return_value = "train"
 
         # Handle AFTER_TASK_RESULT_FILTER event
         streamer.handle_event(EventType.AFTER_TASK_RESULT_FILTER, mock_fl_context)
@@ -190,6 +228,7 @@ class TestTensorClientStreamer:
         # Mock send_tensors_to_server to raise exception during sender creation
         streamer.send_tensors_to_server = Mock(side_effect=Exception("Sender creation failed"))
         streamer.system_panic = Mock()
+        mock_fl_context.get_prop.return_value = "train"
 
         # Handle AFTER_TASK_RESULT_FILTER event
         streamer.handle_event(EventType.AFTER_TASK_RESULT_FILTER, mock_fl_context)
@@ -231,6 +270,31 @@ class TestTensorClientStreamer:
         assert streamer.sender is None
 
     @patch("nvflare.app_opt.tensor_stream.client.TensorSender")
+    @patch("nvflare.app_opt.tensor_stream.client.clean_task_result")
+    def test_send_tensors_to_server_preserves_pass_through_result(
+        self, mock_clean_task_result, mock_sender_class, mock_fl_context, mock_engine_with_clients
+    ):
+        task_result = DXO(
+            data_kind=DataKind.WEIGHTS,
+            data={
+                "large_weight": LazyDownloadRef("site-3.trainer", "result-ref", "T0"),
+                "small_weight": torch.tensor([1.0]),
+            },
+        ).to_shareable()
+        mock_fl_context.get_prop.return_value = task_result
+        streamer = TensorClientStreamer(format=ExchangeFormat.PYTORCH, tasks=["train"])
+        streamer.engine = mock_engine_with_clients
+
+        streamer.send_tensors_to_server(mock_fl_context)
+
+        mock_sender_class.assert_not_called()
+        mock_clean_task_result.assert_not_called()
+        assert streamer.sender is None
+        assert task_result.get_header(TensorCustomKeys.TASK_RESULT_STREAMING_SKIPPED) is True
+        assert task_result["DXO"]["data"]["large_weight"].fqcn == "site-3.trainer"
+        assert torch.equal(task_result["DXO"]["data"]["small_weight"], torch.tensor([1.0]))
+
+    @patch("nvflare.app_opt.tensor_stream.client.TensorSender")
     @patch("nvflare.app_opt.tensor_stream.client.TensorReceiver")
     def test_complete_workflow(self, mock_receiver_class, mock_sender_class, mock_fl_context, mock_engine_with_clients):
         """Test complete client workflow: initialization, receiving task data, sending results."""
@@ -239,7 +303,10 @@ class TestTensorClientStreamer:
         mock_peer_context = Mock()
         mock_peer_context.get_identity_name.return_value = "client1"
         mock_fl_context.get_peer_context.return_value = mock_peer_context
-        mock_fl_context.get_prop.return_value = "task_123"
+        mock_fl_context.get_prop.side_effect = lambda key, default=None: {
+            FLContextKey.TASK_NAME: "train",
+            FLContextKey.TASK_ID: "task_123",
+        }.get(key, default)
 
         mock_sender_instance = Mock(spec=TensorSender)
         mock_receiver_instance = Mock(spec=TensorReceiver)
@@ -307,6 +374,7 @@ class TestTensorClientStreamer:
                 mock_sender_class.assert_not_called()
 
                 # Now trigger AFTER_TASK_RESULT_FILTER event to create sender
+                mock_fl_context.get_prop.return_value = tasks[0]
                 streamer.handle_event(EventType.AFTER_TASK_RESULT_FILTER, mock_fl_context)
 
                 # Verify sender created with correct parameters
@@ -412,6 +480,7 @@ class TestTensorClientStreamer:
 
                     # Sender should be created when handling AFTER_TASK_RESULT_FILTER
                     # ValueError is caught and passed, sender is cleared in finally block
+                    mock_fl_context.get_prop.return_value = "train"
                     streamer.handle_event(EventType.AFTER_TASK_RESULT_FILTER, mock_fl_context)
                     # Sender is always cleared in finally block, even when send raises ValueError
                     assert streamer.sender is None
@@ -430,7 +499,10 @@ class TestTensorClientStreamer:
         mock_peer_context = Mock()
         mock_peer_context.get_identity_name.return_value = "client1"
         mock_fl_context.get_peer_context.return_value = mock_peer_context
-        mock_fl_context.get_prop.return_value = "task_123"
+        mock_fl_context.get_prop.side_effect = lambda key: {
+            FLContextKey.TASK_NAME: "train",
+            FLContextKey.TASK_ID: "task_123",
+        }.get(key)
 
         # Exception should be caught and system_panic should be called
         streamer.handle_event(EventType.BEFORE_TASK_DATA_FILTER, mock_fl_context)
@@ -465,6 +537,7 @@ class TestTensorClientStreamer:
                 assert call_order == ["receiver"]
 
                 # Now trigger sender creation
+                mock_fl_context.get_prop.return_value = "train"
                 streamer.handle_event(EventType.AFTER_TASK_RESULT_FILTER, mock_fl_context)
 
                 # Verify sender is created after receiver
@@ -504,7 +577,10 @@ class TestTensorClientStreamer:
                 mock_peer_context = Mock()
                 mock_peer_context.get_identity_name.return_value = "client1"
                 mock_fl_context.get_peer_context.return_value = mock_peer_context
-                mock_fl_context.get_prop.return_value = "task_123"
+                mock_fl_context.get_prop.side_effect = lambda key, default=None: {
+                    FLContextKey.TASK_NAME: "train",
+                    FLContextKey.TASK_ID: "task_123",
+                }.get(key, default)
 
                 mock_sender_instance = Mock(spec=TensorSender)
                 mock_receiver_instance = Mock(spec=TensorReceiver)

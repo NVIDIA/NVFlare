@@ -18,6 +18,7 @@ import argparse
 
 from model import TabularMLP
 
+from nvflare.apis.dxo import DataKind
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.recipe import SimEnv, add_experiment_tracking
 
@@ -57,6 +58,7 @@ def main():
         # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt",
         train_script=args.train_script,
         train_args=f"--batch_size {batch_size} --epochs {epochs} --target_epsilon {args.target_epsilon} --n_clients {n_clients}",
+        aggregator_data_kind=DataKind.WEIGHT_DIFF,
     )
     add_experiment_tracking(recipe, tracking_type="tensorboard")
 

@@ -1,6 +1,4 @@
-nvflare~=2.5.0rc
-torch
-torchvision
+nvflare[PT]~=2.9.0rc
 tensorboard
 monai
 tqdm

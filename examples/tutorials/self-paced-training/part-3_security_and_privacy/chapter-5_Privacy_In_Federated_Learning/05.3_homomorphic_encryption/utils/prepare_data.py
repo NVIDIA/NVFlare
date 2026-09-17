@@ -17,14 +17,21 @@ import os
 
 import numpy as np
 import pandas as pd
-from sksurv.datasets import load_veterans_lung_cancer
 
 np.random.seed(77)
+
+DEFAULT_DATA_PATH = "/tmp/nvflare/dataset/veteran/veteran.csv"
 
 
 def data_split_args_parser():
     parser = argparse.ArgumentParser(description="Generate data split for dataset")
     parser.add_argument("--site_num", type=int, default=5, help="Total number of sites, default is 5")
+    parser.add_argument(
+        "--data_path",
+        type=str,
+        default=DEFAULT_DATA_PATH,
+        help=f"Path to the Veterans' Lung Cancer dataset CSV. Default: {DEFAULT_DATA_PATH}",
+    )
     parser.add_argument(
         "--site_name_prefix",
         type=str,
@@ -64,9 +71,10 @@ def main():
     parser = data_split_args_parser()
     args = parser.parse_args()
 
-    # Load data
+    # Load data — run download_data.py first if the file does not exist
     # For this KM analysis, we use full timeline and event label only
-    _, data = load_veterans_lung_cancer()
+    data = pd.read_csv(args.data_path)
+    data = data.rename(columns={"time": "Survival_in_days", "status": "Status"})
 
     # Prepare data
     event_clients, time_clients = prepare_data(data=data, site_num=args.site_num, bin_days=args.bin_days)

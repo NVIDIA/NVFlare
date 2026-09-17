@@ -197,6 +197,11 @@ class CyclicController(Controller):
             # update the global learnable with the received result (shareable)
             # e.g. the received result could be weight_diffs, the learnable could be full weights.
             rc = result.get_return_code()
+            if rc not in [ReturnCode.OK, ReturnCode.EARLY_TERMINATION]:
+                self._stop_workflow(task)
+                self.log_error(fl_ctx, f"Stopping workflow due to {rc} from client {client_task.client.name}")
+                return
+
             try:
                 self._last_learnable = self.shareable_generator.shareable_to_learnable(result, fl_ctx)
             except Exception as ex:

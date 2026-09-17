@@ -15,7 +15,11 @@ import socket
 import time
 import traceback
 import uuid
+from typing import Callable, Optional
 
+from cryptography.x509.oid import ExtendedKeyUsageOID
+
+import nvflare
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import FLCommunicationError
 from nvflare.apis.shareable import Shareable
@@ -29,8 +33,16 @@ from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.utils.log_utils import get_obj_logger
-from nvflare.private.defs import CellChannel, CellChannelTopic, CellMessageHeaderKeys, new_cell_message
-from nvflare.private.fed.utils.identity_utils import IdentityAsserter, IdentityVerifier, TokenVerifier, load_crt_bytes
+from nvflare.private import defs as private_defs
+from nvflare.private.defs import CellChannel, CellChannelTopic, CellMessageHeaderKeys, ClientRegMsgKey, new_cell_message
+from nvflare.private.fed.utils.identity_utils import (
+    IdentityAsserter,
+    IdentityVerifier,
+    TokenVerifier,
+    load_crt_chain_bytes,
+)
+
+MISSING_CLIENT_FQCN = ""
 
 
 def _get_client_ip():
@@ -70,6 +82,7 @@ class Authenticator:
         msg_timeout: float,
         retry_interval: float,
         timeout=None,
+        site_config=None,
     ):
         """Authenticator is to be used to register a client to the Server.
 
@@ -86,6 +99,7 @@ class Authenticator:
             msg_timeout: timeout for authentication messages
             retry_interval: interval between tries
             timeout: overall timeout for the authentication.
+            site_config: optional validated site config to report to the server during registration.
         """
         self.cell = cell
         self.project_name = project_name
@@ -99,6 +113,7 @@ class Authenticator:
         self.retry_interval = retry_interval
         self.secure_mode = secure_mode
         self.timeout = timeout
+        self.site_config = site_config
         self.logger = get_obj_logger(self)
 
     def _challenge_server(self):
@@ -128,7 +143,8 @@ class Authenticator:
         assert isinstance(reply, Shareable)
         server_nonce = reply.get(IdentityChallengeKey.NONCE)
         cert_bytes = reply.get(IdentityChallengeKey.CERT)
-        server_cert = load_crt_bytes(cert_bytes)
+        server_cert_chain = load_crt_chain_bytes(cert_bytes)
+        server_cert = server_cert_chain[0]
         server_signature = reply.get(IdentityChallengeKey.SIGNATURE)
         server_cn = reply.get(IdentityChallengeKey.COMMON_NAME)
 
@@ -143,7 +159,12 @@ class Authenticator:
         # - signature received from the server is valid
         id_verifier = IdentityVerifier(root_cert_file=self.root_cert_file)
         id_verifier.verify_common_name(
-            asserter_cert=server_cert, asserted_cn=server_cn, nonce=my_nonce, signature=server_signature
+            asserter_cert=server_cert,
+            asserted_cn=server_cn,
+            nonce=my_nonce,
+            signature=server_signature,
+            intermediate_certs=server_cert_chain[1:],
+            expected_eku=ExtendedKeyUsageOID.SERVER_AUTH,
         )
 
         self.logger.info(f"verified server identity '{self.expected_sp_identity}'")
@@ -220,11 +241,16 @@ class Authenticator:
             shareable[IdentityChallengeKey.COMMON_NAME] = id_asserter.cn
             self.logger.debug(f"sent identity info for client {self.client_name}")
 
+        if self.site_config is not None:
+            shareable[ClientRegMsgKey.SITE_CONFIG] = self.site_config
+
         headers = {
             CellMessageHeaderKeys.CLIENT_NAME: self.client_name,
             CellMessageHeaderKeys.CLIENT_TYPE: self.client_type,
             CellMessageHeaderKeys.CLIENT_IP: local_ip,
             CellMessageHeaderKeys.PROJECT_NAME: self.project_name,
+            CellMessageHeaderKeys.FEDERATION_PROTOCOL_VERSION: private_defs.FEDERATION_PROTOCOL_VERSION,
+            CellMessageHeaderKeys.NVFLARE_VERSION: nvflare.__version__,
         }
         login_message = new_cell_message(headers, shareable)
 
@@ -293,12 +319,30 @@ class Authenticator:
         return token, token_signature, ssid, token_verifier
 
 
-def validate_auth_headers(message: CellMessage, token_verifier: TokenVerifier, logger):
+def _origin_matches_fqcn(origin: str, fqcn: str) -> bool:
+    if not origin or not fqcn:
+        return False
+    return origin == fqcn or FQCN.is_ancestor(fqcn, origin)
+
+
+def validate_auth_headers(
+    message: CellMessage,
+    token_verifier: TokenVerifier,
+    logger,
+    client_fqcn_resolver: Optional[Callable[[str, str], Optional[str]]] = None,
+    local_cell_fqcn: Optional[str] = None,
+):
     """Validate auth headers from messages that go through the server.
 
     Args:
         message: the message to validate
         token_verifier: the TokenVerifier to be used to verify the token and signature
+        client_fqcn_resolver: optional resolver used to bind a client token to its registered CellNet origin.
+            Return None only when the token/name cannot be resolved; return MISSING_CLIENT_FQCN for a registered
+            client with no stored origin so validation fails closed.
+        local_cell_fqcn: the FQCN of the cell that owns this auth filter. Used to bypass auth ONLY for a
+            cellnet ``bye`` that actually terminates at this cell (DESTINATION == local_cell_fqcn). When None,
+            the bye bypass never triggers and byes fall through to the normal auth check.
 
     Returns:
     """
@@ -312,6 +356,29 @@ def validate_auth_headers(message: CellMessage, token_verifier: TokenVerifier, l
     if topic in [CellChannelTopic.Register, CellChannelTopic.Challenge] and channel == CellChannel.SERVER_MAIN:
         # skip: client not registered yet
         logger.debug(f"skip special message {topic=} {channel=}")
+        return None
+
+    # Cellnet protocol-level goodbye is broadcast by Cell.stop() with an empty
+    # Message() that carries no FL-level auth headers. Only bypass auth when the
+    # bye actually TERMINATES at this cell, i.e. DESTINATION == this cell's own
+    # FQCN. This is the true "direct-neighbor" property: the in-filter runs
+    # before CoreCell's forward decision (``if destination != my_fqcn: forward``),
+    # so a bye whose DESTINATION is this cell is handled locally by
+    # _peer_goodbye and never forwarded. A crafted bye that names some OTHER
+    # cell as DESTINATION (to have this cell forward it and evict that cell's
+    # upstream agent) has DESTINATION != local_cell_fqcn and falls through to the
+    # normal auth check. Comparing DESTINATION to a sender-controlled TO_CELL
+    # header would NOT give this guarantee, since both are attacker-controlled;
+    # only comparing against the receiver's own FQCN does. When local_cell_fqcn
+    # is unknown (None), the bypass never triggers (byes get normal auth).
+    destination = message.get_header(MessageHeaderKey.DESTINATION)
+    if (
+        topic == CellChannelTopic.Bye
+        and channel == CellChannel.CELLNET
+        and local_cell_fqcn is not None
+        and destination == local_cell_fqcn
+    ):
+        logger.debug(f"skip direct-neighbor cellnet bye {topic=} {channel=} {destination=}")
         return None
 
     client_name = message.get_header(CellMessageHeaderKeys.CLIENT_NAME)
@@ -337,6 +404,17 @@ def validate_auth_headers(message: CellMessage, token_verifier: TokenVerifier, l
         err = "invalid auth token signature"
         logger.error(f"{err_text}: {err}")
         return make_cellnet_reply(rc=F3ReturnCode.UNAUTHENTICATED, error=err)
+
+    if client_fqcn_resolver:
+        client_fqcn = client_fqcn_resolver(client_name, token)
+        if client_fqcn is not None and not _origin_matches_fqcn(origin, client_fqcn):
+            registered_origin = client_fqcn or "<missing>"
+            err = (
+                f"auth token for client {client_name} is bound to origin {registered_origin}, "
+                f"not message origin {origin}"
+            )
+            logger.error(f"{err_text}: {err}")
+            return make_cellnet_reply(rc=F3ReturnCode.UNAUTHENTICATED, error=err)
 
     # all good
     logger.debug(f"auth headers valid from {origin}: {topic=} {channel=}")

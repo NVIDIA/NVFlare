@@ -56,17 +56,6 @@ def _define_parser() -> argparse.Namespace:
         default=None,
         help="Simulation threads. Defaults to n_clients.",
     )
-    parser.add_argument(
-        "--export_only",
-        action="store_true",
-        help="If set, only export the job config and do not execute.",
-    )
-    parser.add_argument(
-        "--export_dir",
-        type=str,
-        default="/tmp/nvflare/psi/jobs/user_email_match",
-        help="Directory to export the job config to when --export_only is set.",
-    )
     return parser.parse_args()
 
 
@@ -81,11 +70,6 @@ def main() -> None:
         local_psi=local_psi,
         output_path=args.psi_output_path,
     )
-
-    if args.export_only:
-        recipe.export(args.export_dir)
-        print(f"Exported job config to: {args.export_dir}")
-        return
 
     env = SimEnv(
         num_clients=args.n_clients,

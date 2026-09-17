@@ -4,8 +4,9 @@
 Config Command
 #########################
 
-Use ``nvflare config`` to manage local CLI settings stored in
-``~/.nvflare/config.conf``.
+Use ``nvflare config`` to manage local CLI settings, including startup kit
+registration and activation. Normal users should not need to edit or reason
+about the underlying ``~/.nvflare/config.conf`` storage layout.
 
 ***********************
 Command Usage
@@ -13,54 +14,40 @@ Command Usage
 
 .. code-block:: none
 
-   usage: nvflare config [-h] [-d [STARTUP_KIT_DIR]]
-                         [--poc.startup_kit [POC_STARTUP_KIT_DIR]]
-                         [--prod.startup_kit [PROD_STARTUP_KIT_DIR]]
-                         [--poc.workspace [POC_WORKSPACE_DIR]]
-                         [-jt [JOB_TEMPLATES_DIR]]
-                         [--job_templates_dir [JOB_TEMPLATES_DIR]] [-debug] [--schema]
+   usage: nvflare config [-h] [--schema] [-d [STARTUP_KIT_DIR]]
+                         [-pw [POC_WORKSPACE_DIR]] [-jt [JOB_TEMPLATES_DIR]]
+                         {add,use,inspect,list,remove} ...
 
 *****************
 Common Examples
 *****************
 
-Set the default POC admin startup kit directory used by ``nvflare job`` and
-``nvflare system``:
+Register and activate a startup kit:
 
 .. code-block:: shell
 
-   nvflare config --poc.startup_kit /tmp/nvflare/poc/example_project/prod_00/admin@nvidia.com
-
-Set the production admin startup kit directory:
-
-.. code-block:: shell
-
-   nvflare config --prod.startup_kit /path/to/prod/admin_startup_kit
-
-Set the default POC workspace:
-
-.. code-block:: shell
-
-   nvflare config --poc.workspace /tmp/nvflare/poc
-
-Set the job template directory for deprecated ``nvflare job list_templates``:
-
-.. code-block:: shell
-
-   nvflare config --job_templates_dir /path/to/job_templates
-
-.. note::
-
-   Most new job creation workflows use exported job folders or ``nvflare recipe``
-   instead of the legacy template commands.
+   nvflare config add project_admin /tmp/nvflare/poc/example_project/prod_00/admin@nvidia.com
+   nvflare config use project_admin
 
 Configuration notes:
 
 - The saved config format is normalized to v2 with ``version = 2`` as the first line.
-- ``poc.startup_kit`` and ``prod.startup_kit`` should point to admin startup kit
-  directories such as ``.../admin@nvidia.com``.
-- The legacy compatibility alias ``--startup_kit_dir`` updates ``poc.startup_kit``
-  only. It does not set ``prod.startup_kit``. Note: this flag is hidden from
-  ``--help`` because it is a legacy compatibility alias.
-- The legacy compatibility alias ``-pw`` is still accepted for ``--poc.workspace``,
-  but it is hidden from help and docs.
+- ``startup_kits.active`` and ``startup_kits.entries`` are managed by ``nvflare config``.
+- ``nvflare config inspect --format json`` and ``nvflare config list --format json``
+  include best-effort startup-kit identity, certificate expiration, and local
+  stale-path findings for automation.
+- ``nvflare config use`` changes global CLI state. Automation should prefer
+  optional per-command ``--kit-id`` or ``--startup-kit`` selectors when running
+  server-connected commands. These selectors override the active startup kit for
+  one command only and do not mutate ``startup_kits.active``.
+- ``nvflare config -d/--startup_kit_dir`` remains accepted for compatibility
+  with 2.7.x scripts, but is deprecated. Use ``nvflare config add`` and
+  ``nvflare config use`` for new workflows.
+- ``nvflare config -pw/--poc_workspace_dir`` remains accepted for compatibility,
+  but is deprecated. Use ``nvflare poc config --pw <poc-workspace-dir>`` for new
+  workflows.
+- ``nvflare config -jt/--job_templates_dir`` remains accepted for compatibility,
+  but job template config is deprecated. Prefer passing custom template
+  locations to job commands that need them.
+- Development-only spellings such as ``--poc.workspace``, ``--poc.startup_kit``,
+  and ``--prod.startup_kit`` are not supported compatibility flags.

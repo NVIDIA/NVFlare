@@ -105,7 +105,7 @@ FLARE predefined the following System Variables that are also available for you 
 
 Note that system variables are named in UPPERCASE letters. To avoid potential name conflict between user-defined variables and system variables, please name all user-defined variables with lowercase letters.
 
-The next example will show the use of system variables in CellPipe configuration.
+System variables use the same reference syntax as user-defined variables.
 
 OS Environment Variables
 ------------------------
@@ -148,22 +148,23 @@ Just like any other var definitions, OS environment variables can be referenced 
 Parameterized Variable Definitions
 ----------------------------------
 
-Before discussing this advanced topic, let's first show an example of job configuration that does not use this technique for comparison:
+Suppose a client job needs two event converters. Their configurations repeat the same component path and event prefix, while the component ID and event name differ:
 
 .. code-block:: json
 
    {
       "format_version": 2,
-      "pipe_token": "pipe_123",
+      "event_prefix": "fed.",
       "executors": [
          {
             "tasks": [
                "train"
             ],
             "executor": {
-               "path": "nvflare.app_common.executors.task_exchanger.TaskExchanger",
+               "path": "nvflare.app_common.executors.client_api_executor.ClientAPIExecutor",
                "args": {
-                  "pipe_id": "task_pipe"
+                  "execution_mode": "in_process",
+                  "task_script_path": "trainer.py"
                }
             }
          }
@@ -172,152 +173,129 @@ Before discussing this advanced topic, let's first show an example of job config
       "task_data_filters": [],
       "components": [
          {
-            "id": "task_pipe",
-            "path": "nvflare.fuel.utils.pipe.cell_pipe.CellPipe",
+            "id": "metrics_event_converter",
+            "path": "nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent",
             "args": {
-               "mode": "passive",
-               "site_name": "{SITE_NAME}",
-               "token": "{pipe_token}",
-               "root_url": "{ROOT_URL}",
-               "secure_mode": "{SECURE_MODE}",
-               "workspace_dir": "{WORKSPACE}"
+               "events_to_convert": [
+                  "analytix_log_stats"
+               ],
+               "fed_event_prefix": "{event_prefix}"
             }
          },
          {
-            "id": "metric_pipe",
-            "path": "nvflare.fuel.utils.pipe.cell_pipe.CellPipe",
+            "id": "status_event_converter",
+            "path": "nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent",
             "args": {
-               "mode": "passive",
-               "site_name": "{SITE_NAME}",
-               "token": "{pipe_token}",
-               "root_url": "{ROOT_URL}",
-               "secure_mode": "{SECURE_MODE}",
-               "workspace_dir": "{WORKSPACE}"
-            }
-         },
-         {
-            "id": "metric_receiver",
-            "path": "nvflare.widgets.metric_receiver.MetricReceiver",
-            "args": {
-               "pipe_id": "metric_pipe"
+               "events_to_convert": [
+                  "training_status"
+               ],
+               "fed_event_prefix": "{event_prefix}"
             }
          }
       ]
    }
 
 
-This job requires two pipes, one for task exchange (task_pipe), another for metrics collection (metric_pipe).
-If you look at their configuration closely, you will see that: there are many args to configure, and the configs of the two pipes are identical except for their ``id`` values. It is tedious and error-prone to configure many args in multiple places.
+The two converter definitions have the same structure. Repeating that structure is tedious and can lead to inconsistent updates.
 
-One way to improve is to make use of SVR for the args of the two pipes:
+Simple variable references can remove some repeated scalar values, such as the component path and event prefix:
 
 .. code-block:: json
 
    {
       "format_version": 2,
-      "pipe_token": "pipe_123",
+      "converter_path": "nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent",
+      "event_prefix": "fed.",
       "executors": [
          {
             "tasks": [
                "train"
             ],
             "executor": {
-               "path": "nvflare.app_common.executors.task_exchanger.TaskExchanger",
+               "path": "nvflare.app_common.executors.client_api_executor.ClientAPIExecutor",
                "args": {
-                  "pipe_id": "task_pipe"
+                  "execution_mode": "in_process",
+                  "task_script_path": "trainer.py"
                }
             }
          }
       ],
       "task_result_filters": [],
       "task_data_filters": [],
-      "pipe_args": {
-         "mode": "passive",
-         "site_name": "{SITE_NAME}",
-         "token": "{pipe_token}",
-         "root_url": "{ROOT_URL}",
-         "secure_mode": "{SECURE_MODE}",
-         "workspace_dir": "{WORKSPACE}"
-      },
       "components": [
          {
-            "id": "task_pipe",
-            "path": "nvflare.fuel.utils.pipe.cell_pipe.CellPipe",
-            "args": "{pipe_args}"
-         },
-         {
-            "id": "metric_pipe",
-            "path": "nvflare.fuel.utils.pipe.cell_pipe.CellPipe",
-            "args": "{pipe_args}"
-         },
-         {
-            "id": "metric_receiver",
-            "path": "nvflare.widgets.metric_receiver.MetricReceiver",
+            "id": "metrics_event_converter",
+            "path": "{converter_path}",
             "args": {
-               "pipe_id": "metric_pipe"
+               "events_to_convert": [
+                  "analytix_log_stats"
+               ],
+               "fed_event_prefix": "{event_prefix}"
+            }
+         },
+         {
+            "id": "status_event_converter",
+            "path": "{converter_path}",
+            "args": {
+               "events_to_convert": [
+                  "training_status"
+               ],
+               "fed_event_prefix": "{event_prefix}"
             }
          }
       ]
    }
 
-In this version of the example, the args for the two pipes are moved into the var def ``pipe_args``, and the components' ``args`` simply reference the var def.
-This is better than the original version, but the path of the two pipes still must be repeated for both components.
+This removes duplicate scalar values, but the surrounding component structure is still repeated.
 
-Using Parameterized Variable Definition, we can further improve it:
+Using a Parameterized Variable Definition, we can define the component structure once and supply the values that differ at each reference:
 
 .. code-block:: json
 
    {
       "format_version": 2,
-      "pipe_token": "pipe_123",
+      "converter_path": "nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent",
+      "event_prefix": "fed.",
       "executors": [
          {
-         "tasks": [
-            "train"
-         ],
-         "executor": {
-            "path": "nvflare.app_common.executors.task_exchanger.TaskExchanger",
-            "args": {
-               "pipe_id": "task_pipe"
+            "tasks": [
+               "train"
+            ],
+            "executor": {
+               "path": "nvflare.app_common.executors.client_api_executor.ClientAPIExecutor",
+               "args": {
+                  "execution_mode": "in_process",
+                  "task_script_path": "trainer.py"
+               }
             }
-         }
          }
       ],
       "task_result_filters": [],
       "task_data_filters": [],
-      "@pipe_def": {
-         "id": "{pipe_id}",
-         "path": "nvflare.fuel.utils.pipe.cell_pipe.CellPipe",
+      "@event_converter": {
+         "id": "{component_id}",
+         "path": "{converter_path}",
          "args": {
-         "mode": "passive",
-         "site_name": "{SITE_NAME}",
-         "token": "{pipe_token}",
-         "root_url": "{ROOT_URL}",
-         "secure_mode": "{SECURE_MODE}",
-         "workspace_dir": "{WORKSPACE}"
+            "events_to_convert": [
+               "{event_name}"
+            ],
+            "fed_event_prefix": "{event_prefix}"
          }
       },
       "components": [
-         "{@pipe_def:pipe_id=task_pipe}",
-         "{@pipe_def:pipe_id=metric_pipe}",
-         {
-            "id": "metric_receiver",
-            "path": "nvflare.widgets.metric_receiver.MetricReceiver",
-            "args": {
-               "pipe_id": "metric_pipe"
-            }
-         }
+         "{@event_converter:component_id=metrics_event_converter:event_name=analytix_log_stats}",
+         "{@event_converter:component_id=status_event_converter:event_name=training_status}"
       ]
    }
 
-As you can see here, ``@pipe_def`` is a parameterized variable definition (PVD).
+Here, ``@event_converter`` is a parameterized variable definition (PVD).
 The name of a PVD must start with the ``@`` sign. The PVD is usually defined with references to other variables, and the values can be provided at the time the PVD is referenced.
-In this example, the ``@pipe_def`` PVD defines a pipe configuration template that can be resolved to a concrete pipe config.
-In the ``components`` section, this PVD is used for the config of the two pipes: task_pipe and metric_pipe.
+In this example, the PVD defines an event-converter configuration template that resolves to a concrete component configuration.
+The ``components`` section uses it twice, supplying a different ``component_id`` and ``event_name`` for each converter.
 
 A PVD can only be referenced with SVR (simple variable reference).
 To reference a PVD, you provide values for any variables in the PVD.
-In this example, the ``pipe_id`` is the variable that takes two different values for the two different pipes.
+In this example, ``component_id`` and ``event_name`` take different values for the two converters.
 
 The reference to a PVD is in this general format:
 
@@ -328,8 +306,8 @@ You supply the value of each variable in the PVD using N=V, where N is the name 
 Note that the V can even reference other variables!
 
 Note that if there is a value defined for N outside of the reference, the supplied value in the reference takes precedence.
-For example, if your reference supplied a value for ``pipe_token``, then the value you supplied will take precedence over the one defined at the beginning of the file:
+For example, a reference can override the ``event_prefix`` defined at the beginning of the file:
 
-``"{@pipe_def:pipe_id=task_pipe:pipe_token=pipe_789}"``
+``"{@event_converter:component_id=audit_event_converter:event_name=audit_event:event_prefix=global.}"``
 
-In this case, the value of the ``pipe_token`` when creating the pipe ``task_pipe`` will be ``pipe_789``, instead of ``pipe_123`` as defined at the beginning of the file.
+In this case, the ``audit_event_converter`` uses ``global.`` instead of the default ``fed.`` prefix.

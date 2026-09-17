@@ -6,8 +6,11 @@
                 "*"
             ],
             "executor": {
-                "path": "nvflare.app_opt.pt.in_process_client_api_executor.PTInProcessClientAPIExecutor",
+                "path": "nvflare.app_common.executors.client_api_executor.ClientAPIExecutor",
                 "args": {
+                    "execution_mode": "in_process",
+                    "params_exchange_format": "pytorch",
+                    "server_expected_format": "numpy",
                     "task_script_path": "/local/custom/client.py"
                 }
             }

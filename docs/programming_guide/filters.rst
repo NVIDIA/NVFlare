@@ -44,6 +44,14 @@ purpose of security. In fact, privacy and homomorphic encryption techniques are 
     - SVTPrivacy for differential privacy through sparse vector techniques (:mod:`nvflare.app_common.filters.svt_privacy`)
     - Homomorphic encryption filters to encrypt data before sharing (:mod:`nvflare.app_common.homomorphic_encryption.he_model_encryptor.py` and :mod:`nvflare.app_common.homomorphic_encryption.he_model_decryptor`)
 
+Filters are also the right place for model update compression: compress before
+sending and decompress after receiving so trainer and aggregator code can
+exchange normal model updates. Use :ref:`message_quantization` for built-in
+model quantization. For custom schemes, implement a ``DXOFilter`` for
+``DataKind.WEIGHTS`` or ``DataKind.WEIGHT_DIFF`` and register it as a task
+result filter for client-to-server updates, or as a task data filter for
+server-to-client model messages.
+
 DXO - Data Exchange Object
 ===========================
 

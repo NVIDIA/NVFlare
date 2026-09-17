@@ -178,7 +178,7 @@ The following ``project.yml`` demonstrates how to use these properties to specif
    name: mobile
    description: NVIDIA FLARE sample project yaml file
    connection_security: clear
-   allow_error_sending: false
+   allow_log_streaming: false
 
    participants:
     - name: server

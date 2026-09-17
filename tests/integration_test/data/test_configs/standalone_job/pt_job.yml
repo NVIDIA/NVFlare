@@ -1,53 +1,34 @@
+# PyTorch hello-world tests exported directly by the current recipe entrypoint.
+
 n_servers: 1
 n_clients: 2
-jobs_root_dir: ./data/jobs
-cleanup: True
-
+jobs_root_dir: ./data/recipe_jobs/pytorch
+cleanup: true
+poll_period: 1
+event_sequence_timeout: 600
 
 tests:
-  - test_name: "run hello-pt"
+  - test_name: Run current hello-pt example with synthetic data
+    setup:
+      - rm -rf ./data/recipe_jobs/pytorch/hello-pt
+      - /bin/sh -c "cd ../../examples/hello-world/hello-pt && python job.py --export --export-dir ../../../tests/integration_test/data/recipe_jobs/pytorch --n_clients 2 --num_rounds 1 --dataset synthetic"
     event_sequence:
-      - "trigger":
-          "type": "server_log"
-          "data": "Server started"
-        "actions": [ "submit_job hello-pt" ]
-        "result":
-          "type": "job_submit_success"
-      - "trigger":
-          "type": "run_state"
-          "data": { "run_finished": True }
-        "actions": [ "ensure_current_job_done" ]
-        "result":
-          "type": "run_state"
-          "data": { "run_finished": True }
+      - trigger:
+          type: server_log
+          data: Server started
+        actions: [ "submit_job hello-pt" ]
+        result:
+          type: job_submit_success
+      - trigger:
+          type: run_state
+          data: { "run_finished": true }
+        actions: [ "ensure_current_job_done" ]
+        result:
+          type: run_state
+          data: { "run_finished": true }
     validators:
       - path: tests.integration_test.src.validators.PTModelValidator
-      - path: tests.integration_test.src.validators.CrossValResultValidator
-        args: { server_model_names: [ "server" ] }
-    setup:
-      - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='~/data', download=True)"
+      - path: tests.integration_test.src.validators.GlobalModelEvalValidator
+        args: { server_model_names: [ "FL_global_model.pt" ] }
     teardown:
-      - rm -rf ~/data
-  - test_name: "run hello-pt-cse"
-    event_sequence:
-      - "trigger":
-          "type": "server_log"
-          "data": "Server started"
-        "actions": [ "submit_job hello-pt-cse" ]
-        "result":
-          "type": "job_submit_success"
-      - "trigger":
-          "type": "run_state"
-          "data": { "run_finished": True }
-        "actions": [ "ensure_current_job_done" ]
-        "result":
-          "type": "run_state"
-          "data": { "run_finished": True }
-    validators:
-      - path: tests.integration_test.src.validators.PTModelValidator
-    setup:
-      - mkdir -p /tmp/nvflare/data/site-1
-      - mkdir -p /tmp/nvflare/data/site-2
-      - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/data', download=True)"
-    teardown:
-      - rm -rf /tmp/nvflare/data
+      - rm -rf ./data/recipe_jobs/pytorch/hello-pt

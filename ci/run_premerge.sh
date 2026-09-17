@@ -20,6 +20,12 @@
 
 set -ex
 BUILD_TYPE=all
+PYTEST_ARGS=(-v --log-cli-level=INFO --capture=no)
+
+# CRITICAL: Set gRPC environment variables before ANY imports that might use gRPC.
+# See: https://github.com/grpc/grpc/issues/28557
+export GRPC_POLL_STRATEGY="poll"
+export GRPC_ENABLE_FORK_SUPPORT="False"
 
 if [[ $# -eq 1 ]]; then
     BUILD_TYPE=$1
@@ -31,20 +37,23 @@ fi
 
 init_pipenv() {
     echo "initializing pip environment"
-    pipenv install -e .[dev]
+    rm -f Pipfile Pipfile.lock
+    # The environment is disposable and its lockfile is never reused, so skip the expensive lock step.
+    export PIPENV_SKIP_LOCK=1
+    pipenv install -e ".[dev]"
     export PYTHONPATH=$PWD
 }
 
 remove_pipenv() {
     echo "removing pip environment"
     pipenv --rm
-    rm Pipfile Pipfile.lock
+    rm -f Pipfile Pipfile.lock
 }
 
 add_dns_entries() {
-    echo "adding DNS entries for HA test cases"
+    echo "adding DNS entries for integration test cases"
     cp /etc/hosts /etc/hosts_bak
-    echo "127.0.0.1 localhost0 localhost1" | tee -a /etc/hosts > /dev/null
+    echo "127.0.0.1 localhost0" | tee -a /etc/hosts > /dev/null
 }
 
 remove_dns_entries() {
@@ -54,15 +63,23 @@ remove_dns_entries() {
 
 integration_test() {
     echo "Run integration test..."
+    local status
     add_dns_entries
     testFolder="tests/integration_test"
     rm -rf /tmp/nvflare*
     pushd ${testFolder}
-    pipenv run ./run_integration_tests.sh -m numpy
-    pipenv run ./run_integration_tests.sh -m standalone
+    set +e
+    NVFLARE_TEST_FRAMEWORK=numpy pipenv run python -m pytest "${PYTEST_ARGS[@]}" --junitxml=./integration_test.xml system_test.py
+    status=$?
+    if [[ $status -eq 0 ]]; then
+        pipenv run python -m pytest "${PYTEST_ARGS[@]}" --junitxml=./fast_integration_test.xml fast
+        status=$?
+    fi
+    set -e
     popd
     rm -rf /tmp/nvflare*
     remove_dns_entries
+    return $status
 }
 
 unit_test() {

@@ -13,6 +13,7 @@
 # limitations under the License.
 import threading
 import time
+from collections import OrderedDict
 from threading import Lock
 from typing import List, Optional, Tuple, Union
 
@@ -40,6 +41,7 @@ from .task_manager import TaskCheckStatus, TaskManager
 _TASK_KEY_ENGINE = "___engine"
 _TASK_KEY_MANAGER = "___mgr"
 _TASK_KEY_DONE = "___done"
+_COMPLETED_CLIENT_TASK_CACHE_SIZE = 10000
 
 
 def _check_positive_int(name, value):
@@ -80,6 +82,12 @@ class _DeadClientStatus:
         self.disconnect_time = None
 
 
+class _CompletedClientTaskInfo:
+    def __init__(self, client_name: str, task_name: str):
+        self.client_name = client_name
+        self.task_name = task_name
+
+
 class WFCommServer(FLComponent, WFCommSpec):
     def __init__(self, task_check_period=0.2):
         """Manage life cycles of tasks and their destinations.
@@ -92,6 +100,7 @@ class WFCommServer(FLComponent, WFCommSpec):
         self._engine = None
         self._tasks = []  # list of standing tasks
         self._client_task_map = {}  # client_task_id => client_task
+        self._completed_client_task_map = OrderedDict()  # client_task_id => _CompletedClientTaskInfo
         self._all_done = False
         self._task_lock = Lock()
         self._task_monitor = threading.Thread(target=self._monitor_tasks, args=(), name="wf_task", daemon=True)
@@ -122,6 +131,19 @@ class WFCommServer(FLComponent, WFCommSpec):
             name=ConfigVarName.DEAD_CLIENT_GRACE_PERIOD, conf=SystemConfigs.APPLICATION_CONF, default=60.0
         )
         self._task_monitor.start()
+
+    def _cleanup_inflight_tensor_downloads(self, fl_ctx: FLContext):
+        try:
+            from nvflare.app_opt.pt.tensor_downloader import cleanup_active_disk_tensor_downloads
+
+            cleanup_active_disk_tensor_downloads(reason="workflow finalized before tensor download completed")
+        except ImportError:
+            return
+        except Exception as e:
+            self.log_warning(
+                fl_ctx,
+                "failed to cleanup active tensor downloads: {}".format(secure_format_exception(e)),
+            )
 
     def _try_again(self) -> Tuple[str, str, Optional[Shareable]]:
         # TODO: how to tell client no shareable available now?
@@ -372,6 +394,23 @@ class WFCommServer(FLComponent, WFCommSpec):
             # task_id is the uuid associated with the client_task
             return self._client_task_map.get(task_id, None)
 
+    def _remember_completed_client_task(self, client_task: ClientTask):
+        if client_task.result_received_time is None:
+            return
+
+        self._completed_client_task_map[client_task.id] = _CompletedClientTaskInfo(
+            client_name=client_task.client.name, task_name=client_task.task.name
+        )
+        self._completed_client_task_map.move_to_end(client_task.id)
+        while len(self._completed_client_task_map) > _COMPLETED_CLIENT_TASK_CACHE_SIZE:
+            self._completed_client_task_map.popitem(last=False)
+
+    def _get_completed_client_task_info(self, task_id: str):
+        completed_client_task = self._completed_client_task_map.get(task_id)
+        if completed_client_task:
+            self._completed_client_task_map.move_to_end(task_id)
+        return completed_client_task
+
     def process_submission(self, client: Client, task_name: str, task_id: str, result: Shareable, fl_ctx: FLContext):
         """Called to process a submission from one client.
 
@@ -409,9 +448,18 @@ class WFCommServer(FLComponent, WFCommSpec):
         with self._task_lock:
             # task_id is the uuid associated with the client_task
             client_task = self._client_task_map.get(task_id, None)
+            completed_client_task = self._get_completed_client_task_info(task_id) if client_task is None else None
             self.log_debug(fl_ctx, "Get submission from client task={} id={}".format(client_task, task_id))
 
         if client_task is None:
+            if (
+                completed_client_task
+                and completed_client_task.client_name == client.name
+                and completed_client_task.task_name == task_name
+            ):
+                self.log_info(fl_ctx, "client task result is already received - submission dropped")
+                return
+
             # cannot find a standing task for the submission
             self.log_debug(fl_ctx, "no standing task found for {}:{}".format(task_name, task_id))
 
@@ -426,12 +474,24 @@ class WFCommServer(FLComponent, WFCommSpec):
 
         task = client_task.task
         with task.cb_lock:
+            if client_task.client.name != client.name:
+                self.log_warning(
+                    fl_ctx,
+                    f"submission client mismatch for {task_name}:{task_id} - got {client.name} "
+                    f"but task is assigned to {client_task.client.name}",
+                )
+                return
+
             if task.name != task_name:
                 raise ValueError("client specified task name {} doesn't match {}".format(task_name, task.name))
 
             if task.completion_status is not None:
                 # the task is already finished - drop the result
                 self.log_info(fl_ctx, "task is already finished - submission dropped")
+                return
+
+            if client_task.result_received_time is not None:
+                self.log_info(fl_ctx, "client task result is already received - submission dropped")
                 return
 
             # do client task CB processing outside the lock
@@ -754,6 +814,9 @@ class WFCommServer(FLComponent, WFCommSpec):
     def cancel_all_tasks(self, completion_status=TaskCompletionStatus.CANCELLED, fl_ctx: Optional[FLContext] = None):
         """Cancel all standing tasks in this controller.
 
+        This only marks tasks completed. In the normal running path, the task
+        monitor later removes completed tasks and drops their owned resources.
+
         Args:
             completion_status (str, optional): the completion status for this cancellation.
                 Defaults to TaskCompletionStatus.CANCELLED.
@@ -762,6 +825,59 @@ class WFCommServer(FLComponent, WFCommSpec):
         with self._task_lock:
             for t in self._tasks:
                 t.completion_status = completion_status
+
+    def _release_task_resources(self, task: Task, fl_ctx: Optional[FLContext] = None):
+        """Drop references owned by a task after it leaves the communicator."""
+        try:
+            msg_root_id = getattr(task, "msg_root_id", None)
+            if msg_root_id:
+                delete_msg_root(msg_root_id)
+        except Exception as e:
+            self.log_warning(
+                fl_ctx,
+                "error cleaning up download transactions for task {}: {}".format(task.name, secure_format_exception(e)),
+            )
+
+        if hasattr(task, "_broadcast_data"):
+            delattr(task, "_broadcast_data")
+
+        for client_task in task.client_tasks:
+            client_task.result = None
+            client_task.props.clear()
+            client_task.task = None
+
+        task.client_tasks.clear()
+        task.last_client_task_map.clear()
+        task.props.clear()
+        task.data = None
+        task.before_task_sent_cb = None
+        task.after_task_sent_cb = None
+        task.result_received_cb = None
+        # finalize_run is called after controller.run has exited and the
+        # communicator is being torn down. Normal task-exit callbacks are run
+        # by the task monitor drain path; finalization only releases any task
+        # references still owned by this communicator.
+        task.task_done_cb = None
+
+    def _clear_standing_tasks(
+        self, completion_status=TaskCompletionStatus.CANCELLED, fl_ctx: Optional[FLContext] = None
+    ):
+        """Cancel and remove standing tasks, releasing references synchronously.
+
+        finalize_run stops the task monitor, so it cannot rely on
+        cancel_all_tasks() plus a later monitor pass to drain task state.
+        """
+        with self._task_lock:
+            exit_tasks = list(self._tasks)
+            self._tasks.clear()
+            self._client_task_map.clear()
+            self._completed_client_task_map.clear()
+
+        for task in exit_tasks:
+            if task.completion_status is None:
+                task.completion_status = completion_status
+            task.is_standing = False
+            self._release_task_resources(task, fl_ctx)
 
     def finalize_run(self, fl_ctx: FLContext):
         """Do cleanup of the coordinator implementation.
@@ -773,8 +889,10 @@ class WFCommServer(FLComponent, WFCommSpec):
         Args:
             fl_ctx (FLContext): FLContext associated with this action
         """
-        self.cancel_all_tasks()  # unconditionally cancel all tasks
-        self._all_done = True
+        with self._controller_lock:
+            self._cleanup_inflight_tensor_downloads(fl_ctx)
+            self._clear_standing_tasks(fl_ctx=fl_ctx)
+            self._all_done = True
 
     def relay(
         self,
@@ -987,6 +1105,7 @@ class WFCommServer(FLComponent, WFCommSpec):
                 self._tasks.remove(exit_task)
                 for client_task in exit_task.client_tasks:
                     self.logger.debug("Removing client_task with id={}".format(client_task.id))
+                    self._remember_completed_client_task(client_task)
                     self._client_task_map.pop(client_task.id)
 
         # do the task exit processing outside the lock to minimize the locking time
@@ -1087,7 +1206,7 @@ class WFCommServer(FLComponent, WFCommSpec):
                 self.cancel_task(task, fl_ctx=None, completion_status=TaskCompletionStatus.ABORTED)
                 break
 
-            task_done = task.props[_TASK_KEY_DONE]
+            task_done = task.props.get(_TASK_KEY_DONE, False)
             if task_done:
                 break
             time.sleep(self._task_check_period)

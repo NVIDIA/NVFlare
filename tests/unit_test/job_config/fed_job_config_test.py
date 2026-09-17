@@ -11,27 +11,641 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import logging
 import os
-import tempfile
+import sys
+from unittest.mock import Mock, patch
+
+import pytest
 
 from nvflare.job_config.fed_job_config import FedJobConfig
 
 
 class TestFedJobConfig:
+    def test_meta_props_cannot_override_job_name(self):
+        with pytest.raises(ValueError, match="reserved 'name'"):
+            FedJobConfig(job_name="job", min_clients=1, meta_props={"name": "other-job"})
+
+    def test_generate_job_config_rejects_post_construction_job_name_override(self, tmp_path):
+        job_config = FedJobConfig(job_name="job", min_clients=1)
+        job_config.meta_props = {"name": "other-job"}
+
+        with pytest.raises(ValueError, match="reserved 'name'"):
+            job_config.generate_job_config(tmp_path)
+
+        assert not (tmp_path / "job").exists()
+
+    def test_generate_job_config_preserves_existing_export_when_metadata_is_rejected(self, tmp_path):
+        job_config = FedJobConfig(job_name="job", min_clients=1)
+        job_config.generate_job_config(tmp_path)
+        marker = tmp_path / "job" / "notes.txt"
+        marker.write_text("keep me", encoding="utf-8")
+        job_config.meta_props = {"name": "other-job"}
+
+        with pytest.raises(ValueError, match="reserved 'name'"):
+            job_config.generate_job_config(tmp_path)
+
+        assert marker.read_text(encoding="utf-8") == "keep me"
+
+    def test_generate_job_config_can_retry_after_interrupted_export(self, tmp_path, monkeypatch):
+        job_config = FedJobConfig(job_name="job", min_clients=1)
+        original_generate_meta = job_config._generate_meta
+
+        def interrupt_export(*args):
+            raise KeyboardInterrupt()
+
+        monkeypatch.setattr(job_config, "_generate_meta", interrupt_export)
+        with pytest.raises(KeyboardInterrupt):
+            job_config.generate_job_config(tmp_path)
+
+        assert not (tmp_path / "job").exists()
+
+        monkeypatch.setattr(job_config, "_generate_meta", original_generate_meta)
+        job_config.generate_job_config(tmp_path)
+
+        assert (tmp_path / "job" / "meta.json").is_file()
+
+    def test_generate_job_config_preserves_existing_export_when_replacement_generation_fails(
+        self, tmp_path, monkeypatch
+    ):
+        job_config = FedJobConfig(job_name="job", min_clients=1)
+        job_config.generate_job_config(tmp_path)
+        marker = tmp_path / "job" / "notes.txt"
+        marker.write_text("keep me", encoding="utf-8")
+
+        def fail_generation(*args):
+            raise RuntimeError("generation failed")
+
+        monkeypatch.setattr(job_config, "_generate_meta", fail_generation)
+        with pytest.raises(RuntimeError, match="generation failed"):
+            job_config.generate_job_config(tmp_path)
+
+        assert marker.read_text(encoding="utf-8") == "keep me"
+
+    def test_generate_job_config_preserves_export_stranded_during_directory_swap(self, tmp_path, caplog):
+        job_config = FedJobConfig(job_name="job", min_clients=1)
+        job_config.generate_job_config(tmp_path)
+        marker = tmp_path / "job" / "notes.txt"
+        marker.write_text("keep me", encoding="utf-8")
+        backup_job_dir = tmp_path / ".nvflare_job_backups" / "00000000000000000000000000000001"
+        backup_job_dir.parent.mkdir(parents=True)
+        os.replace(tmp_path / "job", backup_job_dir)
+        with caplog.at_level(logging.WARNING):
+            job_config.generate_job_config(tmp_path)
+
+        assert (backup_job_dir / "notes.txt").read_text(encoding="utf-8") == "keep me"
+        assert (tmp_path / "job" / "meta.json").is_file()
+        assert backup_job_dir.exists()
+        assert any(str(backup_job_dir.parent) in record.getMessage() for record in caplog.records)
+
+    def test_generate_job_config_with_relative_job_root_is_immune_to_cwd_change(self, tmp_path, monkeypatch):
+        entry_dir = tmp_path / "a"
+        other_dir = tmp_path / "b"
+        entry_dir.mkdir()
+        (other_dir / "exports").mkdir(parents=True)
+        monkeypatch.chdir(entry_dir)
+        job_config = FedJobConfig(job_name="job", min_clients=1)
+        original_generate_meta = job_config._generate_meta
+
+        def change_cwd_and_generate(*args):
+            os.chdir(other_dir)
+            return original_generate_meta(*args)
+
+        monkeypatch.setattr(job_config, "_generate_meta", change_cwd_and_generate)
+        job_config.generate_job_config("exports")
+
+        assert (entry_dir / "exports" / "job" / "meta.json").is_file()
+        assert not any((other_dir / "exports").iterdir())
+
+    def test_generate_job_config_succeeds_when_backup_cleanup_fails(self, tmp_path, monkeypatch, caplog):
+        job_config = FedJobConfig(job_name="job", min_clients=1)
+        job_config.generate_job_config(tmp_path)
+        marker = tmp_path / "job" / "notes.txt"
+        marker.write_text("replace me", encoding="utf-8")
+
+        def fail_cleanup(*args):
+            raise OSError("cleanup failed")
+
+        monkeypatch.setattr(job_config, "_remove_backup_export", fail_cleanup)
+        with caplog.at_level(logging.WARNING):
+            job_config.generate_job_config(tmp_path)
+
+        assert (tmp_path / "job" / "meta.json").is_file()
+        assert not (tmp_path / "job" / "notes.txt").exists()
+        backups = list((tmp_path / ".nvflare_job_backups").iterdir())
+        assert len(backups) == 1
+        assert (backups[0] / "notes.txt").read_text(encoding="utf-8") == "replace me"
+        assert any("backup" in record.getMessage().lower() for record in caplog.records)
+
+    def test_generate_job_config_does_not_warn_without_stranded_backups(self, tmp_path, caplog):
+        job_config = FedJobConfig(job_name="job", min_clients=1)
+        with caplog.at_level(logging.WARNING):
+            job_config.generate_job_config(tmp_path)
+            job_config.generate_job_config(tmp_path)
+
+        assert (tmp_path / "job" / "meta.json").is_file()
+        assert not any("backup" in record.getMessage() for record in caplog.records)
+
+    def test_generate_job_config_preserves_backup_when_canonical_folder_is_unowned(self, tmp_path):
+        job_config = FedJobConfig(job_name="job", min_clients=1)
+        job_config.generate_job_config(tmp_path)
+        backup_job_dir = tmp_path / ".nvflare_job_backups" / "00000000000000000000000000000001"
+        backup_job_dir.parent.mkdir(parents=True)
+        os.replace(tmp_path / "job", backup_job_dir)
+        job_dir = tmp_path / "job"
+        job_dir.mkdir()
+        marker = job_dir / "notes.txt"
+        marker.write_text("keep me", encoding="utf-8")
+
+        with pytest.raises(RuntimeError, match="does not belong"):
+            job_config.generate_job_config(tmp_path)
+
+        assert marker.read_text(encoding="utf-8") == "keep me"
+        assert (backup_job_dir / "meta.json").is_file()
+
+    def test_generate_job_config_ignores_caller_content_in_backup_folder(self, tmp_path):
+        backup_job_dir = tmp_path / ".nvflare_job_backups" / "00000000000000000000000000000001"
+        backup_job_dir.mkdir(parents=True)
+        (backup_job_dir / "meta.json").write_text('{"name": "job"}', encoding="utf-8")
+        marker = backup_job_dir / "notes.txt"
+        marker.write_text("keep me", encoding="utf-8")
+        job_config = FedJobConfig(job_name="job", min_clients=1)
+
+        job_config.generate_job_config(tmp_path)
+
+        assert marker.read_text(encoding="utf-8") == "keep me"
+        assert (tmp_path / "job" / "meta.json").is_file()
+
+    def test_generate_job_config_does_not_conflict_with_previous_suffixed_job(self, tmp_path):
+        job_config = FedJobConfig(job_name="job", min_clients=1)
+        previous_job_config = FedJobConfig(job_name="job.previous", min_clients=1)
+        previous_job_config.generate_job_config(tmp_path)
+        marker = tmp_path / "job.previous" / "notes.txt"
+        marker.write_text("keep me", encoding="utf-8")
+
+        job_config.generate_job_config(tmp_path)
+        job_config.generate_job_config(tmp_path)
+
+        assert marker.read_text(encoding="utf-8") == "keep me"
+
+    def test_generate_job_config_can_be_repeated_with_meta_props(self, tmp_path):
+        job_config = FedJobConfig(job_name="job", min_clients=1, meta_props={"description": "test job"})
+
+        job_config.generate_job_config(tmp_path)
+        job_config.generate_job_config(tmp_path)
+
+        assert (tmp_path / "job" / "meta.json").is_file()
+
+    @pytest.mark.parametrize("job_name", ["", ".", "..", "../job", "nested/job", "/tmp/job", r"..\evil"])
+    def test_generate_job_config_rejects_path_bearing_job_name(self, tmp_path, job_name):
+        # A meta.json makes the export root look like a replaceable job folder.
+        # Before validation, an empty or "." job name caused rmtree(tmp_path).
+        meta_file = tmp_path / "meta.json"
+        meta_file.write_text("{}", encoding="utf-8")
+        marker = tmp_path / "notes.txt"
+        marker.write_text("keep me", encoding="utf-8")
+        job_config = FedJobConfig(job_name=job_name, min_clients=1)
+
+        with pytest.raises(ValueError):
+            job_config.generate_job_config(tmp_path)
+
+        assert marker.read_text(encoding="utf-8") == "keep me"
+        assert meta_file.exists()
+
+    def test_generate_job_config_preserves_job_folder_with_different_name(self, tmp_path):
+        job_dir = tmp_path / "job"
+        job_dir.mkdir()
+        (job_dir / "meta.json").write_text('{"name": "other-job"}', encoding="utf-8")
+        marker = job_dir / "notes.txt"
+        marker.write_text("keep me", encoding="utf-8")
+        job_config = FedJobConfig(job_name="job", min_clients=1)
+
+        with pytest.raises(RuntimeError, match="does not belong"):
+            job_config.generate_job_config(tmp_path)
+
+        assert marker.read_text(encoding="utf-8") == "keep me"
+
+    @pytest.mark.parametrize("metadata", ["[]", "null"])
+    def test_generate_job_config_preserves_non_object_metadata(self, tmp_path, metadata):
+        job_dir = tmp_path / "job"
+        job_dir.mkdir()
+        (job_dir / "meta.json").write_text(metadata, encoding="utf-8")
+        marker = job_dir / "notes.txt"
+        marker.write_text("keep me", encoding="utf-8")
+        job_config = FedJobConfig(job_name="job", min_clients=1)
+
+        with pytest.raises(RuntimeError, match="does not belong"):
+            job_config.generate_job_config(tmp_path)
+
+        assert marker.read_text(encoding="utf-8") == "keep me"
+
+    def test_generate_job_config_preserves_unowned_partial_export_folder(self, tmp_path):
+        job_dir = tmp_path / "job"
+        job_dir.mkdir()
+        marker = job_dir / "notes.txt"
+        marker.write_text("keep me", encoding="utf-8")
+        job_config = FedJobConfig(job_name="job", min_clients=1)
+
+        with pytest.raises(RuntimeError, match="does not belong"):
+            job_config.generate_job_config(tmp_path)
+
+        assert marker.read_text(encoding="utf-8") == "keep me"
+
+    def test_generate_job_config_can_retry_after_meta_serialization_failure(self, tmp_path):
+        job_config = FedJobConfig(job_name="job", min_clients=1, meta_props={"invalid": object()})
+
+        with pytest.raises(TypeError):
+            job_config.generate_job_config(tmp_path)
+
+        assert not (tmp_path / "job").exists()
+
+        job_config.meta_props = None
+        job_config.generate_job_config(tmp_path)
+
+        assert (tmp_path / "job" / "meta.json").is_file()
+
     def test_locate_imports(self):
         job_config = FedJobConfig(job_name="job_name", min_clients=1)
         cwd = os.path.dirname(__file__)
         source_file = os.path.join(cwd, "../data/job_config/sample_code.data")
         expected = [
-            "from typing import Any, Dict, List",
-            "from nvflare.fuel.f3.drivers.base_driver import BaseDriver",
-            "from nvflare.fuel.f3.drivers.connector_info import ConnectorInfo ",
-            "from nvflare.fuel.f3.drivers.driver_params import DriverCap",
+            ("typing", 0),
+            ("nvflare.fuel.f3.drivers.base_driver", 0),
+            ("nvflare.fuel.f3.drivers.connector_info", 0),
+            ("nvflare.fuel.f3.drivers.driver_params", 0),
         ]
         with open(source_file, "r") as sf:
-            with tempfile.NamedTemporaryFile(dir=cwd, suffix=".py") as dest_file:
-                imports = list(job_config.locate_imports(sf, dest_file=dest_file.name))
+            imports = list(job_config.locate_imports(sf))
         assert imports == expected
+
+    @pytest.mark.parametrize("script", ["client.py", "./client.py"])
+    def test_copy_ext_script_finds_top_level_import_in_parent_directory(self, tmp_path, monkeypatch, script):
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+        (tmp_path / "custom_layers.py").write_text("class PlainAdder:\n    pass\n", encoding="utf-8")
+        (project_dir / "client.py").write_text("from custom_layers import PlainAdder\n", encoding="utf-8")
+        monkeypatch.chdir(project_dir)
+
+        custom_dir = tmp_path / "exported" / "custom"
+        job_config = FedJobConfig(job_name="job_name", min_clients=1)
+        job_config._copy_ext_scripts(str(custom_dir), [script])
+
+        assert (custom_dir / "client.py").is_file()
+        assert (custom_dir / "custom_layers.py").is_file()
+
+    def test_parent_package_import_anchors_transitive_imports_to_parent_directory(self, tmp_path, monkeypatch):
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+        (project_dir / "client.py").write_text("from parent_pkg.a import A\n", encoding="utf-8")
+        parent_package_dir = tmp_path / "parent_pkg"
+        parent_package_dir.mkdir()
+        (parent_package_dir / "a.py").write_text("from parent_pkg.b import B\nA = B\n", encoding="utf-8")
+        (parent_package_dir / "b.py").write_text("B = 'parent'\n", encoding="utf-8")
+        project_package_dir = project_dir / "parent_pkg"
+        project_package_dir.mkdir()
+        (project_package_dir / "b.py").write_text("B = 'project'\n", encoding="utf-8")
+        monkeypatch.chdir(project_dir)
+
+        custom_dir = tmp_path / "exported" / "custom"
+        job_config = FedJobConfig(job_name="job_name", min_clients=1)
+        job_config._copy_ext_scripts(str(custom_dir), ["client.py"])
+
+        assert (custom_dir / "parent_pkg" / "a.py").is_file()
+        exported_module = custom_dir / "parent_pkg" / "b.py"
+        assert exported_module.read_text(encoding="utf-8") == "B = 'parent'\n"
+
+    @pytest.mark.parametrize("with_parent_shadow", [False, True])
+    def test_parent_helper_preserves_project_root_for_transitive_import(
+        self, tmp_path, monkeypatch, with_parent_shadow
+    ):
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+        (project_dir / "client.py").write_text("from parent_helper import VALUE\n", encoding="utf-8")
+        (project_dir / "project_local.py").write_text("VALUE = 'project'\n", encoding="utf-8")
+        (tmp_path / "parent_helper.py").write_text("from project_local import VALUE\n", encoding="utf-8")
+        if with_parent_shadow:
+            (tmp_path / "project_local.py").write_text("VALUE = 'parent'\n", encoding="utf-8")
+        monkeypatch.chdir(project_dir)
+
+        custom_dir = tmp_path / "exported" / "custom"
+        job_config = FedJobConfig(job_name="job_name", min_clients=1)
+        job_config._copy_ext_scripts(str(custom_dir), ["client.py"])
+
+        assert (custom_dir / "parent_helper.py").is_file()
+        exported_module = custom_dir / "project_local.py"
+        assert exported_module.read_text(encoding="utf-8") == "VALUE = 'project'\n"
+
+    def test_copy_ext_script_finds_top_level_import_in_same_directory(self, tmp_path, monkeypatch):
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+        (project_dir / "helper.py").write_text("VALUE = 1\n", encoding="utf-8")
+        (project_dir / "client.py").write_text("import helper\n", encoding="utf-8")
+        monkeypatch.chdir(project_dir)
+
+        custom_dir = tmp_path / "exported" / "custom"
+        job_config = FedJobConfig(job_name="job_name", min_clients=1)
+        job_config._copy_ext_scripts(str(custom_dir), ["client.py"])
+
+        assert (custom_dir / "helper.py").is_file()
+
+    def test_copy_ext_script_finds_top_level_import_from_package_directory(self, tmp_path, monkeypatch):
+        package_dir = tmp_path / "pkg"
+        package_dir.mkdir()
+        (package_dir / "__init__.py").write_text("", encoding="utf-8")
+        (package_dir / "helper.py").write_text("VALUE = 1\n", encoding="utf-8")
+        (package_dir / "client.py").write_text("import helper\n", encoding="utf-8")
+        monkeypatch.chdir(package_dir)
+
+        custom_dir = tmp_path / "exported" / "custom"
+        job_config = FedJobConfig(job_name="job_name", min_clients=1)
+        job_config._copy_ext_scripts(str(custom_dir), ["client.py"])
+
+        assert (custom_dir / "client.py").is_file()
+        assert (custom_dir / "helper.py").is_file()
+
+    def test_copy_ext_script_finds_unqualified_sibling_import_in_subdirectory(self, tmp_path, monkeypatch):
+        script_dir = tmp_path / "src"
+        script_dir.mkdir()
+        (script_dir / "net.py").write_text("class Net:\n    pass\n", encoding="utf-8")
+        (script_dir / "client.py").write_text("from net import Net\n", encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+
+        custom_dir = tmp_path / "exported" / "custom"
+        job_config = FedJobConfig(job_name="job_name", min_clients=1)
+        job_config._copy_ext_scripts(str(custom_dir), ["src/client.py"])
+
+        assert (custom_dir / "src" / "client.py").is_file()
+        assert (custom_dir / "net.py").is_file()
+        assert not (custom_dir / "src" / "net.py").exists()
+
+    def test_flat_sibling_import_preserves_project_root_for_recursion(self, tmp_path, monkeypatch):
+        script_dir = tmp_path / "src"
+        script_dir.mkdir()
+        (tmp_path / "root_helper.py").write_text("VALUE = 1\n", encoding="utf-8")
+        (script_dir / "net.py").write_text("from root_helper import VALUE\n", encoding="utf-8")
+        (script_dir / "client.py").write_text("from net import VALUE\n", encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+
+        custom_dir = tmp_path / "exported" / "custom"
+        job_config = FedJobConfig(job_name="job_name", min_clients=1)
+        job_config._copy_ext_scripts(str(custom_dir), ["src/client.py"])
+
+        assert (custom_dir / "src" / "client.py").is_file()
+        assert (custom_dir / "net.py").is_file()
+        assert (custom_dir / "root_helper.py").is_file()
+
+    def test_flat_sibling_import_prefers_source_directory_during_recursion(self, tmp_path, monkeypatch):
+        script_dir = tmp_path / "src"
+        script_dir.mkdir()
+        (tmp_path / "helper.py").write_text("VALUE = 'project'\n", encoding="utf-8")
+        (script_dir / "helper.py").write_text("VALUE = 'source'\n", encoding="utf-8")
+        (script_dir / "net.py").write_text("from helper import VALUE\n", encoding="utf-8")
+        (script_dir / "client.py").write_text("from net import VALUE\n", encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+
+        custom_dir = tmp_path / "exported" / "custom"
+        job_config = FedJobConfig(job_name="job_name", min_clients=1)
+        job_config._copy_ext_scripts(str(custom_dir), ["src/client.py"])
+
+        exported_module = custom_dir / "helper.py"
+        assert exported_module.read_text(encoding="utf-8") == "VALUE = 'source'\n"
+
+    def test_copy_ext_scripts_reject_distinct_absolute_sources_with_same_destination(self, tmp_path, monkeypatch):
+        first_dir = tmp_path / "first"
+        second_dir = tmp_path / "second"
+        first_dir.mkdir()
+        second_dir.mkdir()
+        first_script = first_dir / "client.py"
+        second_script = second_dir / "client.py"
+        first_script.write_text("SOURCE = 'first'\n", encoding="utf-8")
+        second_script.write_text("SOURCE = 'second'\n", encoding="utf-8")
+        monkeypatch.setattr(sys, "path", [])
+
+        custom_dir = tmp_path / "exported" / "custom"
+        job_config = FedJobConfig(job_name="job_name", min_clients=1)
+
+        with pytest.raises(ValueError, match="map to the same destination"):
+            job_config._copy_ext_scripts(str(custom_dir), [str(first_script), str(second_script)])
+        assert (custom_dir / "client.py").read_text(encoding="utf-8") == "SOURCE = 'first'\n"
+
+    def test_copy_ext_script_accepts_absolute_symlink_alias_within_sys_path(self, tmp_path, monkeypatch):
+        source_root = tmp_path / "source"
+        source_root.mkdir()
+        source_file = source_root / "client.py"
+        source_file.write_text("VALUE = 1\n", encoding="utf-8")
+        source_alias = tmp_path / "source_alias"
+        try:
+            source_alias.symlink_to(source_root, target_is_directory=True)
+        except OSError as e:
+            pytest.skip(f"symlinks are not available: {e}")
+        monkeypatch.setattr(sys, "path", [str(source_root)])
+
+        custom_dir = tmp_path / "exported" / "custom"
+        job_config = FedJobConfig(job_name="job_name", min_clients=1)
+        job_config._copy_ext_scripts(str(custom_dir), [str(source_alias / "client.py")])
+
+        assert (custom_dir / "client.py").read_text(encoding="utf-8") == "VALUE = 1\n"
+
+    def test_absolute_import_does_not_resolve_to_package_sibling(self, tmp_path, monkeypatch):
+        package_dir = tmp_path / "pkg"
+        package_dir.mkdir()
+        (package_dir / "__init__.py").write_text("", encoding="utf-8")
+        (package_dir / "traceback.py").write_text("from ._compatibility import helper\n", encoding="utf-8")
+        (package_dir / "client.py").write_text("import traceback\n", encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+
+        custom_dir = tmp_path / "exported" / "custom"
+        job_config = FedJobConfig(job_name="job_name", min_clients=1)
+        job_config._copy_ext_scripts(str(custom_dir), ["pkg/client.py"])
+
+        assert (custom_dir / "pkg" / "client.py").is_file()
+        assert not (custom_dir / "traceback.py").exists()
+
+    def test_copy_ext_script_resolves_qualified_package_sibling(self, tmp_path, monkeypatch):
+        package_dir = tmp_path / "pkg"
+        package_dir.mkdir()
+        (package_dir / "__init__.py").write_text("", encoding="utf-8")
+        (package_dir / "helper.py").write_text("VALUE = 1\n", encoding="utf-8")
+        (package_dir / "client.py").write_text("import pkg.helper\n", encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+
+        custom_dir = tmp_path / "exported" / "custom"
+        job_config = FedJobConfig(job_name="job_name", min_clients=1)
+        job_config._copy_ext_scripts(str(custom_dir), ["pkg/client.py"])
+
+        assert (custom_dir / "pkg" / "client.py").is_file()
+        assert (custom_dir / "pkg" / "helper.py").is_file()
+        assert not (custom_dir / "helper.py").exists()
+
+    def test_copy_ext_script_resolves_transitive_package_import_from_top_level_script(self, tmp_path, monkeypatch):
+        project_dir = tmp_path / "proj"
+        package_dir = project_dir / "pkg"
+        package_dir.mkdir(parents=True)
+        (project_dir / "train.py").write_text("from pkg.a import A\n", encoding="utf-8")
+        (package_dir / "__init__.py").write_text("", encoding="utf-8")
+        (package_dir / "a.py").write_text("from pkg.b import B\nA = B + 1\n", encoding="utf-8")
+        (package_dir / "b.py").write_text("B = 1\n", encoding="utf-8")
+        monkeypatch.chdir(project_dir)
+
+        custom_dir = tmp_path / "exported" / "custom"
+        job_config = FedJobConfig(job_name="job_name", min_clients=1)
+        job_config._copy_ext_scripts(str(custom_dir), ["train.py"])
+
+        assert (custom_dir / "train.py").is_file()
+        assert (custom_dir / "pkg" / "a.py").is_file()
+        assert (custom_dir / "pkg" / "b.py").read_text(encoding="utf-8") == "B = 1\n"
+
+    def test_transitive_package_import_does_not_resolve_from_parent_directory(self, tmp_path, monkeypatch):
+        project_dir = tmp_path / "proj"
+        package_dir = project_dir / "pkg"
+        package_dir.mkdir(parents=True)
+        (project_dir / "train.py").write_text("from pkg.a import A\n", encoding="utf-8")
+        (package_dir / "__init__.py").write_text("", encoding="utf-8")
+        (package_dir / "a.py").write_text("from pkg.b import B\nA = B + 1\n", encoding="utf-8")
+        (package_dir / "b.py").write_text("B = 'project'\n", encoding="utf-8")
+        parent_package_dir = tmp_path / "pkg"
+        parent_package_dir.mkdir()
+        (parent_package_dir / "b.py").write_text("B = 'foreign'\n", encoding="utf-8")
+        monkeypatch.chdir(project_dir)
+
+        custom_dir = tmp_path / "exported" / "custom"
+        job_config = FedJobConfig(job_name="job_name", min_clients=1)
+        job_config._copy_ext_scripts(str(custom_dir), ["train.py"])
+
+        exported_module = custom_dir / "pkg" / "b.py"
+        assert exported_module.read_text(encoding="utf-8") == "B = 'project'\n"
+
+    def test_copy_ext_script_resolves_valid_multi_level_relative_import(self, tmp_path, monkeypatch):
+        package_dir = tmp_path / "pkg"
+        script_dir = package_dir / "sub"
+        script_dir.mkdir(parents=True)
+        (package_dir / "helper.py").write_text("class Helper:\n    pass\n", encoding="utf-8")
+        (script_dir / "client.py").write_text("from ..helper import Helper\n", encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+
+        custom_dir = tmp_path / "exported" / "custom"
+        job_config = FedJobConfig(job_name="job_name", min_clients=1)
+        job_config._copy_ext_scripts(str(custom_dir), ["pkg/sub/client.py"])
+
+        assert (custom_dir / "pkg" / "helper.py").is_file()
+
+    @pytest.mark.parametrize("import_statement", ["from ..outside import Secret\n", "from .. import *\n"])
+    def test_copy_ext_script_rejects_relative_import_above_source_root(self, tmp_path, monkeypatch, import_statement):
+        package_dir = tmp_path / "pkg"
+        package_dir.mkdir()
+        (package_dir / "client.py").write_text(import_statement, encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+
+        custom_dir = tmp_path / "exported" / "custom"
+        job_config = FedJobConfig(job_name="job_name", min_clients=1)
+
+        with pytest.raises(ValueError, match="escapes the allowed source root"):
+            job_config._copy_ext_scripts(str(custom_dir), ["pkg/client.py"])
+
+    def test_copy_source_file_rejects_source_outside_allowed_root(self, tmp_path):
+        source_root = tmp_path / "source"
+        source_root.mkdir()
+        outside_source = tmp_path / "outside.py"
+        outside_source.write_text("SECRET = True\n", encoding="utf-8")
+        custom_dir = tmp_path / "exported" / "custom"
+        dest_file = custom_dir / "outside.py"
+        job_config = FedJobConfig(job_name="job_name", min_clients=1)
+
+        with pytest.raises(ValueError, match="outside the allowed source root"):
+            job_config._copy_source_file(
+                str(custom_dir),
+                "outside",
+                str(outside_source),
+                str(dest_file),
+                source_root=str(source_root),
+            )
+
+    def test_copy_source_file_rejects_destination_outside_custom_dir(self, tmp_path):
+        source_root = tmp_path / "source"
+        source_root.mkdir()
+        source_file = source_root / "client.py"
+        source_file.write_text("VALUE = 1\n", encoding="utf-8")
+        custom_dir = tmp_path / "exported" / "custom"
+        outside_dest = tmp_path / "outside.py"
+        job_config = FedJobConfig(job_name="job_name", min_clients=1)
+
+        with pytest.raises(ValueError, match="outside the custom directory"):
+            job_config._copy_source_file(
+                str(custom_dir),
+                "client",
+                str(source_file),
+                str(outside_dest),
+                source_root=str(source_root),
+            )
+
+    def test_copy_ext_script_rejects_source_symlink_escape(self, tmp_path, monkeypatch):
+        source_root = tmp_path / "source"
+        project_dir = source_root / "proj"
+        project_dir.mkdir(parents=True)
+        outside_source = tmp_path / "outside.py"
+        outside_source.write_text("SECRET = True\n", encoding="utf-8")
+        helper_link = source_root / "helper.py"
+        try:
+            helper_link.symlink_to(outside_source)
+        except OSError as e:
+            pytest.skip(f"symlinks are not available: {e}")
+        (project_dir / "client.py").write_text("from helper import SECRET\n", encoding="utf-8")
+        monkeypatch.chdir(project_dir)
+
+        custom_dir = tmp_path / "exported" / "custom"
+        job_config = FedJobConfig(job_name="job_name", min_clients=1)
+
+        with pytest.raises(ValueError, match="outside the allowed source root"):
+            job_config._copy_ext_scripts(str(custom_dir), ["client.py"])
+
+    def test_copy_ext_script_rejects_destination_symlink_escape(self, tmp_path, monkeypatch):
+        source_root = tmp_path / "source"
+        project_dir = source_root / "proj"
+        project_dir.mkdir(parents=True)
+        (source_root / "helper.py").write_text("VALUE = 1\n", encoding="utf-8")
+        (project_dir / "client.py").write_text("from helper import VALUE\n", encoding="utf-8")
+        monkeypatch.chdir(project_dir)
+
+        custom_dir = tmp_path / "exported" / "custom"
+        custom_dir.mkdir(parents=True)
+        outside_dest = tmp_path / "outside.py"
+        outside_dest.write_text("DO NOT OVERWRITE\n", encoding="utf-8")
+        try:
+            (custom_dir / "helper.py").symlink_to(outside_dest)
+        except OSError as e:
+            pytest.skip(f"symlinks are not available: {e}")
+        job_config = FedJobConfig(job_name="job_name", min_clients=1)
+
+        with pytest.raises(ValueError, match="outside the custom directory"):
+            job_config._copy_ext_scripts(str(custom_dir), ["client.py"])
+        assert outside_dest.read_text(encoding="utf-8") == "DO NOT OVERWRITE\n"
+
+    def test_copy_ext_script_rejects_source_destination_alias(self, tmp_path, monkeypatch):
+        source_file = tmp_path / "client.py"
+        source_file.write_text("VALUE = 1\n", encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+        job_config = FedJobConfig(job_name="job_name", min_clients=1)
+
+        with pytest.raises(ValueError, match="same file"):
+            job_config._copy_ext_scripts(str(tmp_path), ["client.py"])
+        assert source_file.read_text(encoding="utf-8") == "VALUE = 1\n"
+
+    @pytest.mark.parametrize(
+        ("script", "content"),
+        [
+            ("run-script.sh", "#!/bin/sh\nexit 0\n"),
+            ("train-script.py", "VALUE = 1\n"),
+        ],
+    )
+    def test_copy_ext_script_preserves_non_module_filenames(self, tmp_path, monkeypatch, script, content):
+        (tmp_path / script).write_text(content, encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+        custom_dir = tmp_path / "exported" / "custom"
+        job_config = FedJobConfig(job_name="job_name", min_clients=1)
+
+        job_config._copy_ext_scripts(str(custom_dir), [script])
+
+        assert (custom_dir / script).read_text(encoding="utf-8") == content
 
     def test_trim_whitespace(self):
         job_config = FedJobConfig(job_name="job_name", min_clients=1)
@@ -40,3 +654,25 @@ class TestFedJobConfig:
         assert expected == job_config._trim_whitespace("site-0, site-1")
         assert expected == job_config._trim_whitespace(" site-0,site-1 ")
         assert expected == job_config._trim_whitespace(" site-0, site-1 ")
+
+    def test_simulator_run_returns_process_returncode(self, tmp_path):
+        job_config = FedJobConfig(job_name="test_job", min_clients=1)
+        process = Mock()
+        process.wait.return_value = 0
+
+        with patch.object(job_config, "generate_job_config"):
+            with patch("nvflare.job_config.fed_job_config.subprocess.Popen", return_value=process):
+                result = job_config.simulator_run(str(tmp_path), n_clients=1)
+
+        assert result == 0
+
+    def test_simulator_run_returns_nonzero_process_returncode(self, tmp_path):
+        job_config = FedJobConfig(job_name="job_name", min_clients=1)
+        process = Mock()
+        process.wait.return_value = 2
+
+        with patch.object(job_config, "generate_job_config"):
+            with patch("nvflare.job_config.fed_job_config.subprocess.Popen", return_value=process):
+                result = job_config.simulator_run(workspace=str(tmp_path), clients="site-1", threads=1)
+
+        assert result == 2

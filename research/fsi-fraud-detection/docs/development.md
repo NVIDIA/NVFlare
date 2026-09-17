@@ -14,10 +14,11 @@ After cloning, create a virtual environment and install all dependency groups
 uv venv --seed
 
 # Install all dependencies including dev tools.
-# The --frozen flag ensures the exact versions in the lockfile are used
-# without any updates or checks for the latest versions.
-uv sync --all-groups --frozen
+uv sync --all-groups
 ```
+
+The checked-in `uv.lock.txt` is a reference dependency snapshot only. It is not
+used by `uv sync`, which resolves dependencies from `pyproject.toml`.
 
 ## Running Tests
 

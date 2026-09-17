@@ -64,7 +64,7 @@ The application focuses on volumetric (3D) segmentation of brain tumor subregion
 
 ### Differential Privacy in Federated Learning
 
-The key contribution of this work is applying differential privacy to federated learning for medical imaging. We use the **Sparse Vector Technique (SVT)** [8] to add calibrated noise to model updates, providing formal privacy guarantees while maintaining competitive segmentation accuracy. The implementation uses NVFlare's [SVTPrivacy](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_common.filters.svt_privacy.html) filter.
+The key contribution of this work is applying differential privacy to federated learning for medical imaging. We use the **Sparse Vector Technique (SVT)** [8] to add calibrated noise to model updates and track a mechanism-level privacy budget while maintaining competitive segmentation accuracy. The implementation uses NVFlare's [SVTPrivacy](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_common.filters.svt_privacy.html) filter.
 
 ## Data
 
@@ -143,15 +143,15 @@ When `--enable_dp` is specified, the **SVTPrivacy** filter implements the Sparse
 1. **Sparse Selection**: Select the top k weights with largest absolute values (controlled by `fraction` parameter)
 2. **Noise Addition**: Add Laplace noise calibrated to sensitivity and privacy budget (`epsilon`)
 3. **Clipping**: Apply threshold `gamma` to limit sensitivity of weight updates
-4. **Privacy Guarantee**: The mechanism satisfies (ε, δ)-differential privacy, formally bounding information leakage
+4. **Privacy Accounting**: The filter reports a mechanism-level privacy budget for the SVT selection and release steps
 
 **Parameters**:
 - `--dp_fraction=0.9`: Share top 90% of weights by magnitude (reduces communication and limits information exposure)
-- `--dp_epsilon=0.001`: Privacy budget (smaller = stronger privacy, lower accuracy)
-- `--dp_noise_var=1.0`: Laplace noise scale
+- `--dp_epsilon=21.0`: Privacy budget for the SVT threshold/query split
+- `--dp_noise_var=2.0`: Release noise control for the retuned SVT defaults
 - `--dp_gamma=1e-4`: Gradient clipping threshold
 
-*Defaults are example values. Adjust these parameters to explore different privacy-utility trade-offs.See [Li et al. 2019](https://arxiv.org/abs/1910.00962) [7] for the full privacy analysis and theoretical guarantees.*
+*Defaults are retuned for the current SVT implementation. Adjust these parameters to explore different privacy-utility trade-offs. See [Li et al. 2019](https://arxiv.org/abs/1910.00962) [7] for the original SVT-based method and privacy analysis.*
 
 ## Job Recipe
 
@@ -218,7 +218,7 @@ python job.py --n_clients 4 --num_rounds 100 \
 **Customize differential privacy parameters:**
 ```bash
 python job.py --n_clients 4 --num_rounds 600 --enable_dp \
-  --dp_epsilon 0.01 --dp_fraction 0.8 --dp_noise_var 0.5 \
+  --dp_epsilon 21.0 --dp_fraction 0.9 --dp_noise_var 2.0 \
   --dataset_base_dir "${DATASET_ROOT}" --datalist_json_path "${DATALIST_ROOT}"
 ```
 
@@ -264,7 +264,7 @@ The TensorBoard curves (smoothed with weight 0.8) for validation Dice over 600 r
 
 **Key Findings:**
 - **Federated learning matches centralized training**: FedAvg achieves comparable performance (0.8573 vs 0.8558 Dice), demonstrating that FL can effectively train medical imaging models without centralizing data
-- **Privacy with acceptable trade-off**: SVT differential privacy provides formal privacy guarantees with ~4% Dice reduction (0.8573 → 0.8209), making privacy-preserving FL practical for medical applications
+- **Privacy with acceptable trade-off**: SVT privacy filtering shares clipped, sparse, noisy updates with ~4% Dice reduction (0.8573 → 0.8209), making privacy-preserving FL practical for medical applications
 - **Convergence behavior**: All methods converge within 600 rounds, with DP showing slower convergence due to noisy updates
 
 ### Validation Metrics
@@ -280,9 +280,9 @@ Quantitative results after 600 rounds of training:
 **Analysis:**
 1. **Federated Learning Effectiveness**: FedAvg achieves 0.8573 Dice compared to 0.8558 for centralized training (0.15% difference), demonstrating that collaborative learning across distributed institutions can match centralized performance without sharing raw medical data.
 
-2. **Privacy-Utility Trade-off**: The SVT differential privacy mechanism provides formal privacy guarantees with a 4.2% accuracy reduction (0.8573 → 0.8209). This demonstrates the feasibility of privacy-preserving federated learning for sensitive medical applications.
+2. **Privacy-Utility Trade-off**: The SVT privacy filter trades model utility for clipped, sparse, noisy update sharing, with a 4.2% accuracy reduction (0.8573 → 0.8209). This demonstrates the feasibility of privacy-preserving federated learning for sensitive medical applications.
 
-**Note**: The results above use the default DP parameters from the paper. You can explore different privacy-utility trade-offs by adjusting `--dp_fraction`, `--dp_epsilon`, `--dp_noise_var`, and `--dp_gamma`. Lower epsilon values provide stronger privacy but typically reduce accuracy.
+**Note**: The DP defaults are retuned for the current SVT implementation. You can explore different privacy-utility trade-offs by adjusting `--dp_fraction`, `--dp_epsilon`, `--dp_noise_var`, and `--dp_gamma`. Lower epsilon values provide stronger privacy but typically reduce accuracy.
 
 ## Technical Notes
 

@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import warnings
 from typing import Any, Optional, Union
 
 from pydantic import BaseModel
@@ -49,16 +50,22 @@ class _FedOptValidator(BaseModel):
     server_memory_gc_rounds: int = 1
     client_memory_gc_rounds: int = 0
     cuda_empty_cache: bool = False
+    enable_tensor_disk_offload: bool = False
 
 
 class FedOptRecipe(Recipe):
     """A recipe for implementing Federated Optimization (FedOpt) in NVFlare.
 
+    Recipe parameters, including ``train_args``, ``optimizer_args``, and
+    ``lr_scheduler_args``, must never contain actual secret values. Read secrets from site
+    environment variables or mounted files; references are supported only where documented in
+    :mod:`nvflare.recipe.secrets`.
+
     FedOpt is a federated learning algorithm that optimizes the global model using a server-side optimizer and learning rate scheduler.
     After each round, the global model is updated using the specified optimizer and learning rate scheduler.
     The algorithm is proposed in Reddi et al. "Adaptive Federated Optimization." arXiv preprint arXiv:2003.00295 (2020).
 
-    Note: FedOpt is only implemented for params_transfer_type == TransferType.DIFF and DataKind.WEIGHT_DIFF in the aggregator.
+    Note: FedOpt requires client weight differences and DataKind.WEIGHT_DIFF in the aggregator.
 
     Args:
         name: Name of the federated learning job. Defaults to "fedopt".
@@ -80,17 +87,19 @@ class FedOptRecipe(Recipe):
         server_expected_format (str): What format to exchange the parameters between server and client.
         source_model (str): ID of the source model component. Defaults to "model".
         optimizer_args (dict): Configuration for server-side optimizer with keys:
-            - class_path: Fully qualified optimizer class (e.g., "torch.optim.SGD"). "path" is also accepted.
+            - path: Fully qualified optimizer class (e.g., "torch.optim.SGD"). "class_path" is also accepted.
             - args: Dictionary of optimizer arguments (e.g., {"lr": 1.0, "momentum": 0.6})
             - config_type: Optional; if omitted, set to "dict" so the config is not instantiated at load time.
         lr_scheduler_args (dict): Optional configuration for learning rate scheduler with keys:
-            - class_path: Fully qualified scheduler class (e.g., "torch.optim.lr_scheduler.CosineAnnealingLR"). "path" is also accepted.
+            - path: Fully qualified scheduler class (e.g., "torch.optim.lr_scheduler.CosineAnnealingLR"). "class_path" is also accepted.
             - args: Dictionary of scheduler arguments (e.g., {"T_max": 100, "eta_min": 0.9})
             - config_type: Optional; if omitted, set to "dict" so the config is not instantiated at load time.
         device (str): Device to use for server-side optimization, e.g. "cpu" or "cuda:0".
             Defaults to None; will default to cuda if available and no device is specified.
         server_memory_gc_rounds: Run memory cleanup (gc.collect + malloc_trim) every N rounds on server.
             Set to 0 to disable. Defaults to 1 (every round).
+        enable_tensor_disk_offload (bool): Download streamed PyTorch tensors to disk on the server during
+            FOBS deserialization instead of keeping all incoming client tensors in memory. Defaults to False.
 
     Example:
         ```python
@@ -104,12 +113,12 @@ class FedOptRecipe(Recipe):
             device="cpu",
             source_model="model",
             optimizer_args={
-                "class_path": "torch.optim.SGD",
+                "path": "torch.optim.SGD",
                 "args": {"lr": 1.0, "momentum": 0.6},
                 "config_type": "dict"
             },
             lr_scheduler_args={
-                "class_path": "torch.optim.lr_scheduler.CosineAnnealingLR",
+                "path": "torch.optim.lr_scheduler.CosineAnnealingLR",
                 "args": {"T_max": "{num_rounds}", "eta_min": 0.9},
                 "config_type": "dict"
             }
@@ -139,6 +148,7 @@ class FedOptRecipe(Recipe):
         server_memory_gc_rounds: int = 1,
         client_memory_gc_rounds: int = 0,
         cuda_empty_cache: bool = False,
+        enable_tensor_disk_offload: bool = False,
     ):
         # Validate inputs internally
         v = _FedOptValidator(
@@ -157,6 +167,7 @@ class FedOptRecipe(Recipe):
             server_memory_gc_rounds=server_memory_gc_rounds,
             client_memory_gc_rounds=client_memory_gc_rounds,
             cuda_empty_cache=cuda_empty_cache,
+            enable_tensor_disk_offload=enable_tensor_disk_offload,
         )
 
         self.name = v.name
@@ -164,7 +175,12 @@ class FedOptRecipe(Recipe):
         self.initial_ckpt = v.initial_ckpt
 
         # Validate inputs using shared utilities
-        from nvflare.recipe.utils import ensure_config_type_dict, recipe_model_to_job_model, validate_ckpt
+        from nvflare.recipe.utils import (
+            ensure_config_type_dict,
+            recipe_model_to_job_model,
+            validate_aggregator_data_kind,
+            validate_ckpt,
+        )
 
         validate_ckpt(self.initial_ckpt)
         if isinstance(self.model, dict):
@@ -187,6 +203,22 @@ class FedOptRecipe(Recipe):
         self.server_memory_gc_rounds = v.server_memory_gc_rounds
         self.client_memory_gc_rounds = v.client_memory_gc_rounds
         self.cuda_empty_cache = v.cuda_empty_cache
+        self.enable_tensor_disk_offload = v.enable_tensor_disk_offload
+        validate_aggregator_data_kind(
+            data_kind=DataKind.WEIGHT_DIFF,
+            recipe_name=type(self).__name__,
+            data_kind_arg="expected_data_kind",
+            aggregator=self.aggregator,
+            fixed_data_kind=True,
+        )
+        if self.enable_tensor_disk_offload and self.server_expected_format != ExchangeFormat.PYTORCH:
+            warnings.warn(
+                "enable_tensor_disk_offload=True only applies to streamed PyTorch tensors. "
+                "Set server_expected_format=ExchangeFormat.PYTORCH to enable tensor disk offload; "
+                f"current server_expected_format={self.server_expected_format!r} will not offload NumPy payloads.",
+                UserWarning,
+                stacklevel=2,
+            )
 
         # Replace {num_rounds} placeholder if present in lr_scheduler_args
         processed_lr_scheduler_args = None
@@ -238,6 +270,7 @@ class FedOptRecipe(Recipe):
         persistor = PTFileModelPersistor(
             model=self.source_model,
             source_ckpt_file_full_name=ckpt_path,
+            allow_numpy_conversion=self.server_expected_format != ExchangeFormat.PYTORCH,
         )
         persistor_id = job.to_server(persistor, id="persistor")
 
@@ -271,6 +304,7 @@ class FedOptRecipe(Recipe):
             persistor_id="persistor",
             shareable_generator_id=shareable_generator_id,
             memory_gc_rounds=self.server_memory_gc_rounds,
+            enable_tensor_disk_offload=self.enable_tensor_disk_offload,
         )
         # Send the controller to the server
         job.to_server(controller)

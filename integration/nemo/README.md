@@ -14,7 +14,7 @@ For simplicity, we recommend using NVIDIA's [NeMo docker containers](https://cat
 
 ### Installation in a virtual environment
 
-If preferred to install dependencies locally, 
+If you prefer to install dependencies locally, 
 we recommend following the instructions for setting up a 
 [virtual environment](../../examples/README.md#set-up-a-virtual-environment),
 and using it in [JupyterLab](../../examples/README.md#notebooks) for running 

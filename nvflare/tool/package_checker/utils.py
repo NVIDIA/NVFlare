@@ -22,7 +22,6 @@ import subprocess
 import tempfile
 
 import grpc
-from requests import Response
 
 
 class NVFlareConfig:
@@ -63,44 +62,6 @@ def try_bind_address(host: str, port: int):
     finally:
         sock.close()
     return None
-
-
-def parse_overseer_agent_args(overseer_agent_conf: dict, required_args: list) -> dict:
-    result = {}
-    for k in required_args:
-        value = overseer_agent_conf.get("args", {}).get(k)
-        if value is None:
-            raise Exception(f"overseer agent missing arg '{k}'.")
-        result[k] = value
-    return result
-
-
-def construct_dummy_overseer_response(overseer_agent_conf: dict, role: str) -> Response:
-    overseer_agent_class = overseer_agent_conf.get("path")
-    required_args = get_required_args_for_overseer_agent(overseer_agent_class=overseer_agent_class, role=role)
-    overseer_agent_args = parse_overseer_agent_args(overseer_agent_conf, required_args)
-    psp = {"sp_end_point": overseer_agent_args["sp_end_point"], "primary": True}
-    response_content = {"primary_sp": psp, "sp_list": [psp]}
-    resp = Response()
-    resp.status_code = 200
-    resp._content = str.encode(json.dumps(response_content))
-    return resp
-
-
-def get_required_args_for_overseer_agent(overseer_agent_class: str, role: str) -> list:
-    """Gets required argument list for a specific overseer agent class."""
-    if overseer_agent_class == "nvflare.ha.dummy_overseer_agent.DummyOverseerAgent":
-        required_args = ["sp_end_point"]
-        return required_args
-    else:
-        raise Exception(f"overseer agent {overseer_agent_class} is not supported.")
-
-
-def _prepare_data(args: dict):
-    data = dict(role=args["role"], project=args["project"])
-    if args["role"] == NVFlareRole.SERVER:
-        data["sp_end_point"] = ":".join([args["name"], args["fl_port"], args["admin_port"]])
-    return data
 
 
 def _get_ca_cert_file_name():

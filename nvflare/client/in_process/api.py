@@ -12,18 +12,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
+import logging
 import os
 import time
 from typing import Any, Dict, Optional
 
 from nvflare.apis.analytix import AnalyticsDataType
 from nvflare.apis.fl_constant import FLMetaKey
+from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.client.api_spec import APISpec
-from nvflare.client.config import ClientConfig, ConfigKey, TransferType
+from nvflare.client.config import ClientConfig, ConfigKey, ExchangeFormat, TransferType
 from nvflare.client.constants import SYS_ATTRS
+from nvflare.client.converter_utils import convert_params
 from nvflare.client.utils import DIFF_FUNCS
 from nvflare.fuel.data_event.data_bus import DataBus
 from nvflare.fuel.data_event.event_manager import EventManager
@@ -35,10 +39,21 @@ TOPIC_STOP = "STOP"
 TOPIC_ABORT = "ABORT"
 TOPIC_LOCAL_RESULT = "LOCAL_RESULT"
 TOPIC_GLOBAL_RESULT = "GLOBAL_RESULT"
+_END_RUN_STOP_REASON = "END_RUN received"
+_API_SHUTDOWN_STOP_REASON = "API shutdown called."
+_EXPECTED_STOP_REASONS = {_END_RUN_STOP_REASON, _API_SHUTDOWN_STOP_REASON}
+
+
+def _stop_log_level(reason):
+    return logging.INFO if reason in _EXPECTED_STOP_REASONS else logging.WARNING
 
 
 class InProcessClientAPI(APISpec):
-    def __init__(self, task_metadata: dict, result_check_interval: float = 2.0):
+    def __init__(
+        self,
+        task_metadata: dict,
+        result_check_interval: float = 2.0,
+    ):
         """Initializes the InProcessClientAPI.
 
         Args:
@@ -63,16 +78,20 @@ class InProcessClientAPI(APISpec):
         self.stop_reason = ""
         self.abort = False
         self.stop = False
+        self.closed = False
         self.rank = None
         self.receive_called = False  # to check if users have call received for a new model
+        self._params_conversion_state = {}
+        self._receive_error: Optional[Exception] = None
 
     def init(self, rank: Optional[str] = None, config: Optional[Dict] = None):
         """Initializes NVFlare Client API environment.
 
         Args:
             config (Union[str, Dict]): config dictionary.
-            rank (str): local rank of the process.
-                It is only useful when the training script has multiple worker processes. (for example multi GPU)
+            rank (str): rank of the process for Client API control-path behavior.
+                In distributed training, use the global process rank (for example torchrun's RANK),
+                not the device-local rank used for GPU placement.
         """
 
         self.rank = rank
@@ -98,8 +117,9 @@ class InProcessClientAPI(APISpec):
             client_config.config = self.meta
         self.client_config = client_config
 
-    def set_meta(self, meta: dict):
+    def set_meta(self, meta: dict, fl_ctx: Optional[FLContext] = None):
         self.meta = meta
+        self._receive_error = None
 
     def configure_memory_management(self, gc_rounds: int = 0, cuda_empty_cache: bool = False):
         """Configure memory management settings.
@@ -113,32 +133,58 @@ class InProcessClientAPI(APISpec):
         if gc_rounds > 0:
             self.logger.info(f"Memory management enabled: cleanup every {gc_rounds} round(s)")
 
+    def _dropped_because_closed(self, what: str) -> bool:
+        """Outgoing-publication gate for a closed API.
+
+        An abandoned trainer thread may resume after its backend has finalized. Drop its
+        publications instead of raising: an exception would reach TaskScriptRunner's
+        catch-all and turn orderly teardown into an abort event.
+        """
+        if not self.closed:
+            return False
+        self.logger.warning(f"dropping {what}: this Client API is closed (its job has ended)")
+        return True
+
     def receive(self, timeout: Optional[float] = None) -> Optional[FLModel]:
-        result = self.__receive()
-        self.receive_called = True
+        if self.closed:
+            # closed API: behave as stopped -- the trainer's is_running()/receive loop exits
+            return None
+        result = self.__receive(timeout)
         if result is not None:
+            self.receive_called = True
             self._mem_round = result.current_round
             self._mem_site = self.get_site_name()
             log_rss(f"CA s={self._mem_site} r={result.current_round} recv")
         return result
 
-    def __receive(self) -> Optional[FLModel]:
+    def __receive(self, timeout: Optional[float] = None) -> Optional[FLModel]:
+        self._raise_receive_error()
         if self.fl_model:
             return self.fl_model
 
+        start_time = time.monotonic()
         while True:
+            self._raise_receive_error()
             if not self.__continue_job():
                 break
 
             if self.fl_model is None:
-                self.logger.debug(f"no result global message available, sleep {self.result_check_interval} sec")
-                time.sleep(self.result_check_interval)
+                sleep_time = self.result_check_interval
+                if timeout is not None:
+                    remaining = timeout - (time.monotonic() - start_time)
+                    if remaining <= 0:
+                        break
+                    sleep_time = min(sleep_time, remaining)
+                self.logger.debug(f"no result global message available, sleep {sleep_time} sec")
+                time.sleep(sleep_time)
             else:
                 break
 
         return self.fl_model
 
     def send(self, model: FLModel, clear_cache: bool = True) -> None:
+        if self._dropped_because_closed("result send"):
+            return
         if self.__continue_job():
             self.logger.info("Try to send local model back to peer ")
 
@@ -151,7 +197,17 @@ class InProcessClientAPI(APISpec):
         if model.params is None and model.metrics is None:
             raise RuntimeError("the model to send does not have either params or metrics")
 
-        shareable = FLModelUtils.to_shareable(model)
+        # DIFF is computed above in the trainer-native representation. Adapt only the
+        # shallow wire model so clear_cache=False leaves the user's FLModel native.
+        wire_model = copy.copy(model)
+        wire_model.params = convert_params(
+            model.params,
+            self.client_config.get_exchange_format() or ExchangeFormat.RAW,
+            self.client_config.get_server_expected_format(),
+            self._params_conversion_state,
+            self.logger,
+        )
+        shareable = FLModelUtils.to_shareable(wire_model)
         self.event_manager.fire_event(TOPIC_LOCAL_RESULT, shareable)
 
         if clear_cache:
@@ -214,6 +270,8 @@ class InProcessClientAPI(APISpec):
         return self.meta.get(ConfigKey.TASK_NAME) == self.client_config.get_submit_model_task()
 
     def log(self, key: str, value: Any, data_type: AnalyticsDataType, **kwargs):
+        if self._dropped_because_closed(f"metric log '{key}'"):
+            return
         if self.rank != "0":
             raise RuntimeError("only rank 0 can call log!")
         msg = dict(key=key, value=value, data_type=data_type, **kwargs)
@@ -221,32 +279,53 @@ class InProcessClientAPI(APISpec):
 
     def clear(self):
         self.fl_model = None
+        self.receive_called = False
 
     def _prepare_param_diff(self, model: FLModel) -> FLModel:
         exchange_format = self.client_config.get_exchange_format()
         diff_func = DIFF_FUNCS.get(exchange_format, None)
 
+        # RAW keeps the direct ClientAPIExecutor compatibility behavior: its payload is
+        # unadapted, but the historical generic numerical diff still applies.
+        if diff_func is None and exchange_format == ExchangeFormat.RAW:
+            diff_func = DIFF_FUNCS.get(ExchangeFormat.NUMPY)
+
         if diff_func is None:
             raise RuntimeError(f"no default params diff function for {exchange_format}")
         elif self.fl_model is None:
             raise RuntimeError("no received model")
-        elif self.fl_model.params is not None:
-            if model.params_type == ParamsType.FULL:
-                try:
-                    model.params = diff_func(original=self.fl_model.params, new=model.params)
-                    model.params_type = ParamsType.DIFF
-                except Exception as e:
-                    raise RuntimeError(f"params diff function failed: {e}")
+        elif self.fl_model.params is not None and model.params is not None and model.params_type == ParamsType.FULL:
+            try:
+                model.params = diff_func(original=self.fl_model.params, new=model.params)
+                model.params_type = ParamsType.DIFF
+            except Exception as e:
+                raise RuntimeError(f"params diff function failed: {e}") from e
 
         return model
 
+    def _raise_receive_error(self) -> None:
+        if self._receive_error is not None:
+            raise RuntimeError(f"failed to receive task: {self._receive_error}") from self._receive_error
+
     def __receive_callback(self, topic, data, databus):
+        try:
+            if topic == TOPIC_GLOBAL_RESULT and not isinstance(data, Shareable):
+                raise ValueError(f"expecting a Shareable, but got '{type(data)}'")
 
-        if topic == TOPIC_GLOBAL_RESULT and not isinstance(data, Shareable):
-            raise ValueError(f"expecting a Shareable, but got '{type(data)}'")
-
-        fl_model = FLModelUtils.from_shareable(data)
-        self.fl_model = fl_model
+            fl_model = FLModelUtils.from_shareable(data)
+            exchange = self.client_config.get_exchange_format() or ExchangeFormat.RAW
+            fl_model.params = convert_params(
+                fl_model.params,
+                self.client_config.get_server_expected_format(),
+                exchange,
+                self._params_conversion_state,
+                self.logger,
+            )
+            self.fl_model = fl_model
+        except Exception as e:
+            # DataBus callbacks run in a worker and publish() does not propagate their
+            # exceptions. Surface conversion failures from flare.receive() instead.
+            self._receive_error = e
 
     def __ask_to_abort(self, topic, msg, databus):
         if topic == TOPIC_ABORT:
@@ -256,13 +335,13 @@ class InProcessClientAPI(APISpec):
         elif topic == TOPIC_STOP:
             self.stop = True
             self.stop_reason = msg
-            self.logger.warning(f"ask to stop job: reason: {msg}")
+            self.logger.log(_stop_log_level(msg), f"ask to stop job: reason: {msg}")
 
     def __continue_job(self) -> bool:
         if self.abort:
             raise RuntimeError(f"request to abort the job for reason {self.abort_reason}")
         if self.stop:
-            self.logger.warning(f"request to stop the job for reason {self.stop_reason}")
+            self.logger.log(_stop_log_level(self.stop_reason), f"request to stop the job for reason {self.stop_reason}")
             self.fl_model = None
             return False
 
@@ -270,5 +349,19 @@ class InProcessClientAPI(APISpec):
 
     def shutdown(self):
         self.stop = True
-        self.event_manager.fire_event(TOPIC_STOP)
-        self.stop_reason = "API shutdown called."
+        self.stop_reason = _API_SHUTDOWN_STOP_REASON
+        self.event_manager.fire_event(TOPIC_STOP, _API_SHUTDOWN_STOP_REASON)
+
+    def close(self):
+        """Detaches this API instance from the singleton DataBus, in both directions.
+
+        Incoming callbacks are unsubscribed so the process-global bus does not retain this
+        API or its last model after backend teardown. The closed gate makes send()/log()
+        from an abandoned trainer thread drop instead of publishing. Called by the owning
+        executor/backend at teardown; idempotent.
+        """
+        self.closed = True
+        self._receive_error = None
+        self.data_bus.unsubscribe(TOPIC_GLOBAL_RESULT, self.__receive_callback)
+        self.data_bus.unsubscribe(TOPIC_ABORT, self.__ask_to_abort)
+        self.data_bus.unsubscribe(TOPIC_STOP, self.__ask_to_abort)

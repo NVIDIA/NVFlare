@@ -1,0 +1,2241 @@
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import argparse
+import base64
+import json
+import os
+import shutil
+import socket
+import subprocess
+import tempfile
+from datetime import datetime, timedelta
+
+import pytest
+import yaml
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.x509.oid import NameOID
+
+from nvflare.tool.deploy.deploy_commands import prepare_deployment, stage_k8_deployment, unstage_k8_deployment
+from nvflare.tool.deploy.deploy_common import GPU_RESOURCE_CONSUMER, GPU_RESOURCE_MANAGER, PROCESS_CLIENT_LAUNCHER
+from nvflare.tool.deploy.k8s_deploy import HELM_RELEASE_NAME_MAX_LENGTH, K8S_PARENT_PYTHON_PATH, _k8s_release_name
+
+
+def _write_json(path, data):
+    path.write_text(json.dumps(data, indent=2))
+
+
+def _write_cert(path, common_name="site-1", org="nvidia"):
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    subject = issuer = x509.Name(
+        [
+            x509.NameAttribute(NameOID.COMMON_NAME, common_name),
+            x509.NameAttribute(NameOID.ORGANIZATION_NAME, org),
+        ]
+    )
+    now = datetime.utcnow()
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(subject)
+        .issuer_name(issuer)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - timedelta(days=1))
+        .not_valid_after(now + timedelta(days=1))
+        .sign(key, hashes.SHA256())
+    )
+    path.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+
+
+def _make_client_kit(tmp_path, name="site-1"):
+    kit = tmp_path / name
+    startup = kit / "startup"
+    local = kit / "local"
+    startup.mkdir(parents=True)
+    local.mkdir()
+    _write_json(
+        startup / "fed_client.json",
+        {
+            "format_version": 2,
+            "servers": [{"name": "project", "service": {"scheme": "tcp"}, "identity": "server"}],
+            "client": {
+                "ssl_private_key": "client.key",
+                "ssl_cert": "client.crt",
+                "ssl_root_cert": "rootCA.pem",
+                "fqsn": name,
+                "is_leaf": True,
+                "connection_security": "mtls",
+            },
+        },
+    )
+    _write_cert(startup / "client.crt", common_name=name)
+    (startup / "client.key").write_text("key")
+    (startup / "rootCA.pem").write_text("ca")
+    (startup / "sub_start.sh").write_text(
+        "python3 -m nvflare.private.fed.app.client.client_train --set uid=site-1 org=nvidia config_folder=config\n"
+    )
+    (startup / "start.sh").write_text("#!/usr/bin/env bash\n./sub_start.sh &\n")
+    (startup / "stop_fl.sh").write_text("#!/usr/bin/env bash\ntouch ../shutdown.fl\n")
+    (startup / "docker.sh").write_text("#!/usr/bin/env bash\ndocker run legacy-image\n")
+    _write_json(
+        local / "resources.json.default",
+        {
+            "format_version": 2,
+            "components": [
+                {"id": "resource_manager", "path": "old.ResourceManager", "args": {}},
+                {"id": "resource_consumer", "path": "old.ResourceConsumer", "args": {}},
+                {"id": "process_launcher", "path": "old.ProcessLauncher", "args": {}},
+            ],
+        },
+    )
+    _write_json(
+        local / "resources.json",
+        {
+            "format_version": 2,
+            "components": [
+                {"id": "process_launcher", "path": "stale.ProcessLauncher", "args": {}},
+            ],
+        },
+    )
+    _write_json(
+        local / "comm_config.json",
+        {
+            "allow_adhoc_conns": False,
+            "backbone_conn_gen": 2,
+            "internal": {
+                "scheme": "tcp",
+                "resources": {"host": "localhost", "port": 8102, "connection_security": "clear"},
+            },
+        },
+    )
+    return kit
+
+
+def _make_server_kit(tmp_path, fed_learn_port=8002, admin_port=8003, name="server"):
+    kit = tmp_path / name
+    startup = kit / "startup"
+    local = kit / "local"
+    startup.mkdir(parents=True)
+    local.mkdir()
+    _write_json(
+        startup / "fed_server.json",
+        {
+            "format_version": 2,
+            "servers": [
+                {
+                    "identity": name,
+                    "service": {"scheme": "tcp", "target": f"{name}:{fed_learn_port}"},
+                    "admin_port": admin_port,
+                }
+            ],
+        },
+    )
+    _write_cert(startup / "server.crt", common_name=name)
+    (startup / "server.key").write_text("key")
+    (startup / "rootCA.pem").write_text("ca")
+    (startup / "start.sh").write_text("#!/usr/bin/env bash\n./sub_start.sh &\n")
+    (startup / "sub_start.sh").write_text(
+        "python3 -m nvflare.private.fed.app.server.server_train --set org=nvidia config_folder=config\n"
+    )
+    _write_json(
+        local / "resources.json.default",
+        {
+            "format_version": 2,
+            "components": [
+                {"id": "process_launcher", "path": "old.ProcessLauncher", "args": {}},
+            ],
+        },
+    )
+    _write_json(
+        local / "comm_config.json",
+        {
+            "allow_adhoc_conns": False,
+            "backbone_conn_gen": 2,
+            "internal": {
+                "scheme": "tcp",
+                "resources": {"host": "localhost", "port": 8102, "connection_security": "clear"},
+            },
+        },
+    )
+    return kit
+
+
+def _run_prepare(kit, output, config):
+    config_path = output.parent / f"{output.name}.yaml"
+    config_path.write_text(yaml.safe_dump(config, sort_keys=False))
+    prepare_deployment(argparse.Namespace(kit=str(kit), output=str(output), config=str(config_path)))
+
+
+def _install_fake_docker(tmp_path, monkeypatch):
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    docker_log = tmp_path / "docker.log"
+    fake_docker = fake_bin / "docker"
+    fake_docker.write_text(
+        "#!/usr/bin/env bash\n"
+        'printf \'%s\\n\' "$*" >> "$NVFL_TEST_DOCKER_LOG"\n'
+        'case " $* " in\n'
+        '    *" network ls "*) echo nvflare-network ;;\n'
+        "esac\n"
+        'case " $* " in\n'
+        '    *" --entrypoint /usr/local/bin/python3 "*)\n'
+        '        if [ "${NVFL_TEST_PROBE_FAIL:-}" = "1" ]; then exit 1; fi\n'
+        '        echo "${NVFL_TEST_REMOTE_SOCK_GID:-2375}"\n'
+        "        ;;\n"
+        "esac\n"
+    )
+    fake_docker.chmod(0o755)
+    monkeypatch.setenv("NVFL_TEST_DOCKER_LOG", str(docker_log))
+    monkeypatch.setenv("PATH", f"{fake_bin}:{os.environ['PATH']}")
+    return docker_log
+
+
+def _stage_k8_args(kit, **overrides):
+    args = {
+        "kit": str(kit),
+        "kit_flag": None,
+        "namespace": None,
+        "local_configmap": None,
+        "startup_secret": None,
+        "kubectl": None,
+    }
+    args.update(overrides)
+    return argparse.Namespace(**args)
+
+
+def _unstage_k8_args(kit, **overrides):
+    return _stage_k8_args(kit, **overrides)
+
+
+def _capture_kubectl(monkeypatch, returncode=0, fail_on=None):
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append((cmd, kwargs))
+        if fail_on and fail_on(cmd):
+            return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="boom")
+        return subprocess.CompletedProcess(cmd, returncode, stdout="ok", stderr="")
+
+    monkeypatch.setattr("nvflare.tool.deploy.k8s_stage.subprocess.run", fake_run)
+    return calls
+
+
+def _component(resources, component_id):
+    return next(c for c in resources["components"] if c["id"] == component_id)
+
+
+def _add_server_storage(resources_path, snapshot_persistor=None):
+    resources = json.loads(resources_path.read_text())
+    resources["snapshot_persistor"] = snapshot_persistor or {
+        "path": "nvflare.app_common.state_persistors.storage_state_persistor.StorageStatePersistor",
+        "args": {
+            "uri_root": "/",
+            "storage": {
+                "path": "nvflare.app_common.storages.filesystem_storage.FilesystemStorage",
+                "args": {"root_dir": "/tmp/nvflare/snapshot-storage", "uri_root": "/"},
+            },
+        },
+    }
+    resources["components"].append(
+        {
+            "id": "job_manager",
+            "path": "nvflare.apis.impl.job_def_manager.SimpleJobDefManager",
+            "args": {"uri_root": "/tmp/nvflare/jobs-storage", "job_store_id": "job_store"},
+        }
+    )
+    _write_json(resources_path, resources)
+
+
+def test_prepare_docker_client_copies_and_patches_runtime_files(tmp_path, capsys):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-docker"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "docker",
+            "parent": {"docker_image": "repo/nvflare:dev", "network": "nvflare-test"},
+            "job_launcher": {
+                "default_python_path": "/usr/bin/python",
+                "default_job_env": {"NCCL_P2P_DISABLE": "1"},
+                "default_job_container_kwargs": {"shm_size": "8g"},
+            },
+        },
+    )
+    capsys.readouterr()
+
+    assert not (kit / "startup" / "start_docker.sh").exists()
+    assert (kit / "startup" / "start.sh").exists()
+    assert (kit / "startup" / "stop_fl.sh").exists()
+    assert (kit / "startup" / "docker.sh").exists()
+    assert (output / "startup" / "start_docker.sh").exists()
+    assert not (output / "startup" / "start.sh").exists()
+    assert not (output / "startup" / "sub_start.sh").exists()
+    assert not (output / "startup" / "stop_fl.sh").exists()
+    assert not (output / "startup" / "docker.sh").exists()
+    script_path = output / "startup" / "start_docker.sh"
+    script_bytes = script_path.read_bytes()
+    assert script_path.stat().st_mode & 0o777 == 0o755
+    script = script_bytes.decode()
+    assert "@@NVFLARE_" not in script
+    assert "repo/nvflare:dev" in script
+    assert 'NETWORK_NAME=${NVFLARE_POC_NETWORK_NAME:-"nvflare-test"}' in script
+    assert 'NETWORK_ALIAS_ARGS=(--network-alias "$LOGICAL_CONTAINER_NAME")' in script
+    assert "    --network-alias server " not in script
+    assert "/var/tmp/nvflare/workspace/startup/sub_start.sh" not in script
+    assert "/usr/local/bin/python3" in script
+    assert "nvflare.private.fed.app.client.client_train" in script
+    assert "-m \\\n    /var/tmp/nvflare/workspace" in script
+    assert "fed_client.json" in script
+    assert "uid=site-1" in script
+    assert "org=nvidia" in script
+
+    resources = json.loads((output / "local" / "resources.json.default").read_text())
+    assert (kit / "local" / "resources.json").exists()
+    assert not (output / "local" / "resources.json").exists()
+    component_ids = [c["id"] for c in resources["components"]]
+    assert "process_launcher" not in component_ids
+    assert "resource_consumer" not in component_ids
+    assert _component(resources, "resource_manager")["path"].endswith("PassthroughResourceManager")
+    launcher = _component(resources, "docker_launcher")
+    assert launcher["path"] == "nvflare.app_opt.job_launcher.docker_launcher.ClientDockerJobLauncher"
+    assert launcher["args"]["network"] == "nvflare-test"
+    assert launcher["args"]["default_python_path"] == "/usr/bin/python"
+    assert launcher["args"]["default_job_env"] == {"NCCL_P2P_DISABLE": "1"}
+    assert launcher["args"]["default_job_container_kwargs"] == {"shm_size": "8g"}
+
+    comm_config = json.loads((output / "local" / "comm_config.json").read_text())
+    assert comm_config["internal"]["resources"]["host"] == "0.0.0.0"
+    assert comm_config["internal"]["resources"]["connection_security"] == "mtls"
+    study_runtime_path = output / "local" / "study_runtime.yaml"
+    study_runtime_text = study_runtime_path.read_text()
+    assert "@@NVFLARE_" not in study_runtime_text
+    study_runtime = yaml.safe_load(study_runtime_text)
+    assert study_runtime == {"format_version": 2, "studies": {}}
+    assert not (output / "local" / "study_data.yaml").exists()
+
+
+def test_prepare_docker_start_script_handles_docker_socket_path_and_groups(tmp_path, capsys):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-docker"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "docker",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+
+    script = (output / "startup" / "start_docker.sh").read_text()
+    assert "LOGICAL_CONTAINER_NAME=site-1" in script
+    assert "CONTAINER_NAME=${NVFLARE_POC_CONTAINER_NAME:-$LOGICAL_CONTAINER_NAME}" in script
+    assert 'NETWORK_NAME=${NVFLARE_POC_NETWORK_NAME:-"nvflare-network"}' in script
+    assert 'DOCKER_SOCK="${NVFL_DOCKER_SOCK:-/var/run/docker.sock}"' in script
+    assert 'DOCKER_ENDPOINT="${DOCKER_HOST:-}"' in script
+    assert "docker context inspect" in script
+    assert "DOCKER_ENDPOINT_IS_LOCAL=false" in script
+    assert "DOCKER_ENDPOINT_IS_LOCAL=true" in script
+    assert "ENDPOINT_DOCKER_SOCK=${DOCKER_ENDPOINT#unix://}" in script
+    assert 'DOCKER_SOCK="$ENDPOINT_DOCKER_SOCK"' in script
+    assert 'if [ -z "${NVFL_DOCKER_SOCK:-}" ] && [ -L "$DOCKER_SOCK" ]; then' in script
+    assert 'RESOLVED_DOCKER_SOCK=$(readlink "$DOCKER_SOCK")' in script
+    assert 'if RESOLVED_DOCKER_SOCK_DIR="$(' in script
+    assert "Docker socket path must be absolute" in script
+    assert "Using Docker socket on daemon host" in script
+    assert "Set NVFL_DOCKER_SOCK=/path/to/docker.sock" in script
+    assert "DOCKER_HOST_URI" not in script
+    assert 'DOCKER_CLI_ARGS=(--host "unix://$DOCKER_SOCK")' in script
+    assert 'if ! docker "${DOCKER_CLI_ARGS[@]}" info' in script
+    assert 'if ! docker "${DOCKER_CLI_ARGS[@]}" network inspect' in script
+    assert 'docker "${DOCKER_CLI_ARGS[@]}" network create' in script
+    assert 'docker "${DOCKER_CLI_ARGS[@]}" run' in script
+    assert (
+        "SOCK_GID=$(stat -c '%g' \"$DOCKER_SOCK\" 2>/dev/null || "
+        'stat -f \'%g\' "$DOCKER_SOCK" 2>/dev/null || echo "")'
+    ) in script
+    assert "HOST_OS=$(uname -s)" in script
+    assert "GROUP_ADD_ARGS=()" in script
+    assert 'if [ "$HOST_OS" = "Darwin" ] || [ "$SOCK_GID" = "0" ]; then' in script
+    assert "GROUP_ADD_ARGS+=(--group-add 0)" in script
+    assert "GROUP_ADD_ARGS=(--group-add 0)" not in script
+    assert 'GROUP_ADD_ARGS+=(--group-add "$SOCK_GID")' in script
+    assert '"${GROUP_ADD_ARGS[@]}"' in script
+    assert "NVFL_DOCKER_SOCK_GID" in script
+    assert "--entrypoint /usr/local/bin/python3" in script
+    assert "stat.S_ISSOCK" in script
+    assert '--mount "type=bind,src=$DOCKER_SOCK,dst=/var/run/docker.sock"' in script
+    assert '-e NVFL_DOCKER_NETWORK="$NETWORK_NAME"' in script
+    assert '-v "$DOCKER_SOCK":/var/run/docker.sock' not in script
+    assert "-v /var/run/docker.sock:/var/run/docker.sock" not in script
+
+
+def test_prepare_docker_start_script_allows_daemon_host_socket_path(tmp_path, capsys, monkeypatch):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-docker"
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "docker",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+
+    docker_log = _install_fake_docker(tmp_path, monkeypatch)
+
+    daemon_socket = tmp_path / "daemon-host" / "docker.sock"
+    monkeypatch.setenv("DOCKER_HOST", "tcp://dind:2375")
+    monkeypatch.setenv("NVFL_DOCKER_SOCK", str(daemon_socket))
+    monkeypatch.setenv("NVFL_TEST_REMOTE_SOCK_GID", "2375")
+    monkeypatch.setenv("NVFLARE_POC_CONTAINER_NAME", "nvflare-recipe-site-1")
+    monkeypatch.setenv("NVFLARE_POC_NETWORK_NAME", "nvflare-recipe-network")
+
+    result = subprocess.run(
+        ["bash", str(output / "startup" / "start_docker.sh")],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "Using Docker socket on daemon host" in result.stdout
+    calls = docker_log.read_text().splitlines()
+    assert calls[0] == "info"
+    assert calls[1] == "network inspect nvflare-recipe-network"
+    probe_call = next(call for call in calls if "--entrypoint /usr/local/bin/python3" in call)
+    assert f"--mount type=bind,src={daemon_socket},dst=/var/run/docker.sock" in probe_call
+    run_call = next(call for call in calls if call.startswith("run --name"))
+    assert run_call.startswith("run --name nvflare-recipe-site-1")
+    assert "--network nvflare-recipe-network" in run_call
+    assert "--network-alias site-1" in run_call
+    assert "-e NVFL_DOCKER_NETWORK=nvflare-recipe-network" in run_call
+    assert "--host" not in run_call
+    assert "--group-add 2375" in run_call
+    assert f"--mount type=bind,src={daemon_socket},dst=/var/run/docker.sock" in run_call
+
+
+def test_prepare_docker_start_script_pins_local_socket_override(tmp_path, capsys, monkeypatch):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-docker"
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "docker",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+    docker_log = _install_fake_docker(tmp_path, monkeypatch)
+
+    with tempfile.TemporaryDirectory(prefix=".nvfl-sock-", dir=os.getcwd()) as socket_dir:
+        docker_socket_path = os.path.join(socket_dir, "docker.sock")
+        with socket.socket(socket.AF_UNIX) as docker_socket:
+            docker_socket.bind(docker_socket_path)
+            monkeypatch.setenv("DOCKER_HOST", "unix:///var/run/docker.sock")
+            monkeypatch.setenv("NVFL_DOCKER_SOCK", docker_socket_path)
+
+            result = subprocess.run(
+                ["bash", str(output / "startup" / "start_docker.sh")],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+    assert result.returncode == 0, result.stderr
+    calls = docker_log.read_text().splitlines()
+    expected_prefix = f"--host unix://{docker_socket_path} "
+    assert calls
+    assert all(call.startswith(expected_prefix) for call in calls)
+    assert not any("--entrypoint /usr/local/bin/python3" in call for call in calls)
+    run_call = next(call for call in calls if " run --name" in call)
+    assert f"--mount type=bind,src={docker_socket_path},dst=/var/run/docker.sock" in run_call
+
+
+def test_prepare_docker_start_script_accepts_configured_daemon_host_socket_gid(tmp_path, capsys, monkeypatch):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-docker"
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "docker",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+    docker_log = _install_fake_docker(tmp_path, monkeypatch)
+
+    daemon_socket = tmp_path / "daemon-host" / "docker.sock"
+    monkeypatch.setenv("DOCKER_HOST", "tcp://dind:2375")
+    monkeypatch.setenv("NVFL_DOCKER_SOCK", str(daemon_socket))
+    monkeypatch.setenv("NVFL_DOCKER_SOCK_GID", "4242")
+
+    result = subprocess.run(
+        ["bash", str(output / "startup" / "start_docker.sh")],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "Using configured daemon-host Docker socket GID: 4242" in result.stdout
+    calls = docker_log.read_text().splitlines()
+    assert not any("--entrypoint /usr/local/bin/python3" in call for call in calls)
+    run_call = next(call for call in calls if call.startswith("run --name"))
+    assert "--group-add 4242" in run_call
+
+
+def test_prepare_docker_start_script_fails_when_daemon_host_socket_probe_fails(tmp_path, capsys, monkeypatch):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-docker"
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "docker",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+    docker_log = _install_fake_docker(tmp_path, monkeypatch)
+
+    daemon_socket = tmp_path / "daemon-host" / "docker.sock"
+    monkeypatch.setenv("DOCKER_HOST", "tcp://dind:2375")
+    monkeypatch.setenv("NVFL_DOCKER_SOCK", str(daemon_socket))
+    monkeypatch.setenv("NVFL_TEST_PROBE_FAIL", "1")
+
+    result = subprocess.run(
+        ["bash", str(output / "startup" / "start_docker.sh")],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "Docker socket could not be validated on the daemon host" in result.stdout
+    assert "Set NVFL_DOCKER_SOCK_GID" in result.stdout
+    calls = docker_log.read_text().splitlines()
+    assert not any(call.startswith("run --name") for call in calls)
+
+
+def test_prepare_docker_start_script_rejects_missing_local_socket(tmp_path, capsys, monkeypatch):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-docker"
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "docker",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+
+    missing_socket = tmp_path / "missing" / "docker.sock"
+    monkeypatch.setenv("DOCKER_HOST", f"unix://{missing_socket}")
+
+    result = subprocess.run(
+        ["bash", str(output / "startup" / "start_docker.sh")],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert f"ERROR: Docker socket not found or not a socket: {missing_socket}" in result.stdout
+
+
+@pytest.mark.parametrize(
+    "admin_port, expected_admin_publish_count",
+    [
+        (8002, 0),
+        (8003, 1),
+    ],
+)
+def test_prepare_docker_server_publishes_admin_port_only_when_distinct(
+    tmp_path, capsys, admin_port, expected_admin_publish_count
+):
+    kit = _make_server_kit(tmp_path, fed_learn_port=8002, admin_port=admin_port)
+    output = tmp_path / "server-docker"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "docker",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+
+    script = (output / "startup" / "start_docker.sh").read_text()
+    assert script.count("-p 8002:8002") == 1
+    assert script.count("-p 8003:8003") == expected_admin_publish_count
+
+
+def test_prepare_docker_server_adds_logical_server_network_alias(tmp_path, capsys):
+    kit = _make_server_kit(tmp_path, name="abc.aws.com")
+    output = tmp_path / "server-docker"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "docker",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+
+    script = (output / "startup" / "start_docker.sh").read_text()
+    assert "LOGICAL_CONTAINER_NAME=abc.aws.com" in script
+    assert "CONTAINER_NAME=${NVFLARE_POC_CONTAINER_NAME:-$LOGICAL_CONTAINER_NAME}" in script
+    assert '--name "$CONTAINER_NAME"' in script
+    assert "--network-alias server" in script
+
+
+def test_prepare_docker_server_relocates_storage_to_mounted_workspace(tmp_path, capsys):
+    kit = _make_server_kit(tmp_path)
+    _add_server_storage(kit / "local" / "resources.json.default")
+    output = tmp_path / "server-docker"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "docker",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    captured = capsys.readouterr()
+
+    assert "snapshot_persistor is present" not in captured.out + captured.err
+    resources = json.loads((output / "local" / "resources.json.default").read_text())
+    assert (
+        resources["snapshot_persistor"]["args"]["storage"]["args"]["root_dir"]
+        == "/var/tmp/nvflare/workspace/snapshot-storage"
+    )
+    assert _component(resources, "job_manager")["args"]["uri_root"] == "/var/tmp/nvflare/workspace/jobs-storage"
+
+
+@pytest.mark.parametrize(
+    "admin_port, expected_admin_port",
+    [
+        (8002, None),
+        (8003, 8003),
+    ],
+)
+def test_prepare_k8s_server_exposes_admin_port_only_when_distinct(tmp_path, capsys, admin_port, expected_admin_port):
+    kit = _make_server_kit(tmp_path, fed_learn_port=8002, admin_port=admin_port)
+    output = tmp_path / "server-k8s"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+
+    values = yaml.safe_load((output / "helm_chart" / "values.yaml").read_text())
+    assert values["fedLearnPort"] == 8002
+    assert values["adminPort"] == expected_admin_port
+    assert values["command"] == ["/usr/local/bin/python3"]
+
+    tcp_services = (output / "helm_chart" / "templates" / "server-tcp-services.yaml").read_text()
+    assert ".Values.fedLearnPort" in tcp_services
+    assert ".Values.adminPort" in tcp_services
+
+
+@pytest.mark.parametrize(
+    "make_kit",
+    [
+        _make_server_kit,
+        _make_client_kit,
+    ],
+)
+def test_prepare_k8s_parent_role_allows_reading_events(tmp_path, capsys, make_kit):
+    kit = make_kit(tmp_path)
+    output = tmp_path / "parent-k8s"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+
+    role = (output / "helm_chart" / "templates" / "role.yaml").read_text()
+    assert '- apiGroups: [""]\n  resources: ["events"]\n  verbs: ["get", "list", "watch"]' in role
+
+
+def test_prepare_k8s_server_uses_configured_service_name(tmp_path, capsys):
+    kit = _make_server_kit(tmp_path, fed_learn_port=8002, admin_port=8003)
+    output = tmp_path / "server-k8s"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "namespace": "nvflare",
+            "server_service_name": "custom-nvflare-server",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+
+    values = yaml.safe_load((output / "helm_chart" / "values.yaml").read_text())
+    comm_config = json.loads((output / "local" / "comm_config.json").read_text())
+    service = (output / "helm_chart" / "templates" / "server-service.yaml").read_text()
+    tcp_services = (output / "helm_chart" / "templates" / "server-tcp-services.yaml").read_text()
+
+    assert values["serviceName"] == "custom-nvflare-server"
+    assert comm_config["internal"]["resources"]["host"] == "custom-nvflare-server"
+    assert comm_config["internal"]["resources"]["connection_security"] == "mtls"
+    assert "name: {{ .Values.serviceName }}" in service
+    assert "nvflare-server:%v" not in tcp_services
+    assert ".Values.serviceName" in tcp_services
+
+
+def test_prepare_k8s_server_chart_supports_node_selector(tmp_path, capsys):
+    kit = _make_server_kit(tmp_path)
+    output = tmp_path / "server-k8s"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+
+    values = yaml.safe_load((output / "helm_chart" / "values.yaml").read_text())
+    deployment = (output / "helm_chart" / "templates" / "server-deployment.yaml").read_text()
+    assert values["nodeSelector"] == {}
+    assert ".Values.nodeSelector" in deployment
+
+
+@pytest.mark.skipif(shutil.which("helm") is None, reason="Helm is not installed")
+def test_prepare_k8s_server_chart_renders_node_selector(tmp_path, capsys):
+    kit = _make_server_kit(tmp_path)
+    output = tmp_path / "server-k8s"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+
+    helm = shutil.which("helm")
+    assert helm is not None
+    result = subprocess.run(
+        [
+            helm,
+            "template",
+            "server",
+            str(output / "helm_chart"),
+            "--show-only",
+            "templates/server-deployment.yaml",
+            "--set-string",
+            "nodeSelector.topology\\.kubernetes\\.io/zone=us-west-2a",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    deployment = yaml.safe_load(result.stdout)
+    assert deployment["spec"]["template"]["spec"]["nodeSelector"] == {"topology.kubernetes.io/zone": "us-west-2a"}
+
+
+@pytest.mark.parametrize("runtime", ["docker", "k8s"])
+def test_prepare_server_without_snapshot_persistor_is_silent(tmp_path, capsys, runtime):
+    kit = _make_server_kit(tmp_path)
+    output = tmp_path / f"server-{runtime}"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": runtime,
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    captured = capsys.readouterr()
+
+    assert "snapshot_persistor is present" not in captured.out + captured.err
+
+
+@pytest.mark.parametrize("runtime", ["docker", "k8s"])
+def test_prepare_server_warns_when_snapshot_persistor_shape_is_unexpected(tmp_path, capsys, runtime):
+    kit = _make_server_kit(tmp_path)
+    _add_server_storage(
+        kit / "local" / "resources.json.default",
+        snapshot_persistor={
+            "path": "custom.SnapshotPersistor",
+            "args": {
+                "storage": {
+                    "path": "custom.Storage",
+                }
+            },
+        },
+    )
+    output = tmp_path / f"server-{runtime}"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": runtime,
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    captured = capsys.readouterr()
+
+    combined_output = captured.out + captured.err
+    assert "snapshot_persistor is present" in combined_output
+    assert "snapshot_persistor.args.storage.args.root_dir" in combined_output
+    resources = json.loads((output / "local" / "resources.json.default").read_text())
+    assert "args" not in resources["snapshot_persistor"]["args"]["storage"]
+    assert _component(resources, "job_manager")["args"]["uri_root"] == "/var/tmp/nvflare/workspace/jobs-storage"
+
+
+def test_prepare_k8s_server_uses_parent_python_path_for_chart_command(tmp_path, capsys):
+    kit = _make_server_kit(tmp_path)
+    output = tmp_path / "server-k8s"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev", "python_path": "/opt/conda/bin/python"},
+            "job_launcher": {"default_python_path": "/usr/bin/python3"},
+        },
+    )
+    capsys.readouterr()
+
+    values = yaml.safe_load((output / "helm_chart" / "values.yaml").read_text())
+    assert values["command"] == ["/opt/conda/bin/python"]
+
+
+def test_prepare_k8s_server_does_not_use_job_launcher_python_path_for_chart_command(tmp_path, capsys):
+    kit = _make_server_kit(tmp_path)
+    output = tmp_path / "server-k8s"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+            "job_launcher": {"default_python_path": "/usr/bin/python3"},
+        },
+    )
+    capsys.readouterr()
+
+    values = yaml.safe_load((output / "helm_chart" / "values.yaml").read_text())
+    assert values["command"] == [K8S_PARENT_PYTHON_PATH]
+
+
+def test_prepare_k8s_launcher_default_python_path_matches_parent_default(tmp_path, capsys):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-k8s"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+
+    resources = json.loads((output / "local" / "resources.json.default").read_text())
+    launcher = _component(resources, "k8s_launcher")
+    values = yaml.safe_load((output / "helm_chart" / "values.yaml").read_text())
+    assert launcher["args"]["default_python_path"] == K8S_PARENT_PYTHON_PATH
+    assert values["command"] == [K8S_PARENT_PYTHON_PATH]
+
+
+def test_prepare_docker_reads_org_from_cert_without_sub_start(tmp_path, capsys):
+    kit = _make_client_kit(tmp_path)
+    (kit / "startup" / "sub_start.sh").unlink()
+    output = tmp_path / "site-1-docker"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "docker",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+
+    script = (output / "startup" / "start_docker.sh").read_text()
+    assert "org=nvidia" in script
+    assert not (output / "startup" / "sub_start.sh").exists()
+
+
+def test_prepare_docker_creates_comm_config_when_missing(tmp_path, capsys):
+    kit = _make_client_kit(tmp_path)
+    (kit / "local" / "comm_config.json").unlink()
+    output = tmp_path / "site-1-docker"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "docker",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+
+    comm_config = json.loads((output / "local" / "comm_config.json").read_text())
+    assert comm_config["backbone_conn_gen"] == 2
+    assert comm_config["internal"]["scheme"] == "tcp"
+    assert comm_config["internal"]["resources"] == {
+        "host": "0.0.0.0",
+        "connection_security": "mtls",
+    }
+
+
+def test_prepare_docker_accepts_clear_internal_connection_security(tmp_path, capsys):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-docker"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "docker",
+            "parent": {
+                "docker_image": "repo/nvflare:dev",
+                "internal_connection_security": "clear",
+            },
+        },
+    )
+    capsys.readouterr()
+
+    comm_config = json.loads((output / "local" / "comm_config.json").read_text())
+    assert comm_config["internal"]["resources"]["connection_security"] == "clear"
+
+
+@pytest.mark.parametrize("connection_security", ["tls", "MTLS", "", None, 7, True])
+def test_prepare_docker_rejects_invalid_internal_connection_security(tmp_path, capsys, connection_security):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-docker"
+
+    with pytest.raises(SystemExit):
+        _run_prepare(
+            kit,
+            output,
+            {
+                "runtime": "docker",
+                "parent": {
+                    "docker_image": "repo/nvflare:dev",
+                    "internal_connection_security": connection_security,
+                },
+            },
+        )
+
+    assert "parent.internal_connection_security" in capsys.readouterr().err
+    assert not output.exists()
+
+
+@pytest.mark.parametrize(
+    "runtime, expected_runtime",
+    [
+        ("docker", "Docker"),
+        ("k8s", "Kubernetes"),
+    ],
+)
+def test_prepare_container_runtime_rejects_shared_file_transport(tmp_path, capsys, runtime, expected_runtime):
+    kit = _make_client_kit(tmp_path)
+    _write_json(
+        kit / "local" / "comm_config.json",
+        {
+            "backbone": {"connect_generation": 1},
+            "internal": {
+                "scheme": "shared-file",
+                "resources": {"root_dir": "/shared/nvflare", "connection_security": "clear"},
+            },
+        },
+    )
+    output = tmp_path / f"site-1-{runtime}"
+
+    with pytest.raises(SystemExit):
+        _run_prepare(
+            kit,
+            output,
+            {
+                "runtime": runtime,
+                "parent": {"docker_image": "repo/nvflare:dev"},
+            },
+        )
+
+    err = capsys.readouterr().err
+    assert "INVALID_KIT" in err
+    assert f"{expected_runtime} runtime does not support internal.scheme 'shared-file'." in err
+    assert "Use internal.scheme 'tcp', run the original kit in process mode, or choose the Slurm runtime." in err
+    assert not output.exists()
+
+
+def test_prepare_uses_conventional_config_and_output_paths(tmp_path, capsys):
+    kit = _make_client_kit(tmp_path)
+    output = kit / "prepared" / "docker"
+    (kit / "config.yaml").write_text(
+        yaml.safe_dump({"runtime": "docker", "parent": {"docker_image": "repo/nvflare:dev"}}, sort_keys=False)
+    )
+
+    prepare_deployment(argparse.Namespace(kit=str(kit), kit_flag=None, output=None, config=None))
+    capsys.readouterr()
+
+    assert output.exists()
+    assert (output / "startup" / "start_docker.sh").exists()
+
+    (output / "stale.txt").write_text("stale")
+    prepare_deployment(argparse.Namespace(kit=str(kit), kit_flag=None, output=None, config=None))
+    capsys.readouterr()
+
+    assert not (output / "stale.txt").exists()
+    assert not (output / "prepared").exists()
+    assert (output / "startup" / "start_docker.sh").exists()
+
+
+def test_prepare_default_output_is_runtime_specific(tmp_path, capsys):
+    kit = _make_client_kit(tmp_path)
+    config_path = kit / "config.yaml"
+
+    config_path.write_text(
+        yaml.safe_dump({"runtime": "docker", "parent": {"docker_image": "repo/nvflare:dev"}}, sort_keys=False)
+    )
+    prepare_deployment(argparse.Namespace(kit=str(kit), kit_flag=None, output=None, config=None))
+    capsys.readouterr()
+
+    config_path.write_text(
+        yaml.safe_dump({"runtime": "k8s", "parent": {"docker_image": "repo/nvflare:dev"}}, sort_keys=False)
+    )
+    prepare_deployment(argparse.Namespace(kit=str(kit), kit_flag=None, output=None, config=None))
+    capsys.readouterr()
+
+    assert (kit / "prepared" / "docker" / "startup" / "start_docker.sh").exists()
+    assert (kit / "prepared" / "k8s" / "helm_chart" / "values.yaml").exists()
+    assert not (kit / "prepared" / "k8s" / "prepared").exists()
+
+
+def test_prepare_k8s_client_writes_chart_and_launcher_config(tmp_path, capsys):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-k8s"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "namespace": "flare",
+            "parent": {
+                "docker_image": "repo/nvflare:dev",
+                "internal_connection_security": "clear",
+                "parent_port": 9102,
+                "workspace_pvc": "nvflws.team.example.com",
+                "workspace_mount_path": "/workspace",
+                "resources": {"requests": {"cpu": "1", "memory": "2Gi"}},
+                "pod_security_context": {"runAsUser": 1000},
+            },
+            "job_launcher": {
+                "config_file_path": None,
+                "pending_timeout": 7,
+                "default_python_path": "/usr/bin/python3",
+                "job_pod_security_context": {"runAsNonRoot": True},
+                "image_pull_secrets": ["job-regcred", "site.registry.example.com"],
+            },
+        },
+    )
+    capsys.readouterr()
+
+    resources = json.loads((output / "local" / "resources.json.default").read_text())
+    assert not (output / "local" / "resources.json").exists()
+    launcher = _component(resources, "k8s_launcher")
+    assert launcher["path"] == "nvflare.app_opt.job_launcher.k8s_launcher.ClientK8sJobLauncher"
+    assert launcher["args"]["config_file_path"] is None
+    assert launcher["args"]["namespace"] == "flare"
+    assert "study_data_pvc_file_path" not in launcher["args"]
+    assert launcher["args"]["workspace_mount_path"] == "/workspace"
+    assert launcher["args"]["default_python_path"] == "/usr/bin/python3"
+    assert launcher["args"]["pending_timeout"] == 7
+    assert launcher["args"]["security_context"] == {"runAsNonRoot": True}
+    assert launcher["args"]["image_pull_secrets"] == ["job-regcred", "site.registry.example.com"]
+    assert "study_job_spec_file_path" not in launcher["args"]
+
+    comm_config = json.loads((output / "local" / "comm_config.json").read_text())
+    assert comm_config["internal"]["resources"] == {
+        "host": "site-1",
+        "port": 9102,
+        "connection_security": "clear",
+    }
+
+    values = yaml.safe_load((output / "helm_chart" / "values.yaml").read_text())
+    assert not (output / "startup" / "start.sh").exists()
+    assert not (output / "startup" / "sub_start.sh").exists()
+    assert not (output / "startup" / "stop_fl.sh").exists()
+    assert not (output / "startup" / "docker.sh").exists()
+    assert not (output / "startup" / "start_docker.sh").exists()
+    assert values["name"] == "site-1"
+    assert values["siteName"] == "site-1"
+    assert values["serviceName"] == "site-1"
+    assert values["image"] == {"repository": "repo/nvflare", "tag": "dev", "pullPolicy": "Always"}
+    assert values["persistence"]["workspace"]["claimName"] == "nvflws.team.example.com"
+    assert values["persistence"]["workspace"]["volumeName"] == "workspace"
+    assert values["persistence"]["workspace"]["mountPath"] == "/workspace"
+    assert values["workspaceConfig"] == {
+        "namespace": None,
+        "local": {"configMapName": None, "items": []},
+        "startup": {"secretName": None, "items": []},
+    }
+    assert values["port"] == 9102
+    assert values["command"] == [K8S_PARENT_PYTHON_PATH]
+    assert values["securityContext"] == {"runAsUser": 1000}
+    assert values["resources"] == {"requests": {"cpu": "1", "memory": "2Gi"}}
+    deployment = (output / "helm_chart" / "templates" / "client-deployment.yaml").read_text()
+    assert "workspace-local" in deployment
+    assert "workspace-startup" in deployment
+
+
+@pytest.mark.parametrize("connection_security", ["tls", "MTLS", "", None, 7, True])
+def test_prepare_k8s_rejects_invalid_internal_connection_security(tmp_path, capsys, connection_security):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-k8s"
+
+    with pytest.raises(SystemExit):
+        _run_prepare(
+            kit,
+            output,
+            {
+                "runtime": "k8s",
+                "parent": {
+                    "docker_image": "repo/nvflare:dev",
+                    "internal_connection_security": connection_security,
+                },
+            },
+        )
+
+    assert "parent.internal_connection_security" in capsys.readouterr().err
+    assert not output.exists()
+
+
+def test_stage_k8_creates_configmap_secret_and_patches_chart(tmp_path, capsys, monkeypatch):
+    kit = _make_client_kit(tmp_path)
+    custom_dir = kit / "local" / "custom"
+    custom_dir.mkdir()
+    (custom_dir / "helper.py").write_text("VALUE = 1\n")
+    output = tmp_path / "site-1-k8s"
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "namespace": "flare",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+    calls = _capture_kubectl(monkeypatch)
+
+    stage_k8_deployment(_stage_k8_args(output))
+    out = capsys.readouterr().out
+
+    assert [cmd for cmd, _kwargs in calls] == [["kubectl", "apply", "-f", "-"], ["kubectl", "apply", "-f", "-"]]
+    manifests = [yaml.safe_load(kwargs["input"]) for _cmd, kwargs in calls]
+    configmap, secret = manifests
+
+    assert configmap["kind"] == "ConfigMap"
+    assert configmap["metadata"] == {"name": "nvflare-local-site-1", "namespace": "flare"}
+    values = yaml.safe_load((output / "helm_chart" / "values.yaml").read_text())
+    local_items = {item["path"]: item["key"] for item in values["workspaceConfig"]["local"]["items"]}
+    assert "resources.json.default" in local_items
+    assert "comm_config.json" in local_items
+    assert "study_runtime.yaml" in local_items
+    assert "custom/helper.py" in local_items
+    helper_key = local_items["custom/helper.py"]
+    assert base64.b64decode(configmap["binaryData"][helper_key]).decode() == "VALUE = 1\n"
+
+    assert secret["kind"] == "Secret"
+    assert secret["type"] == "Opaque"
+    assert secret["metadata"] == {"name": "nvflare-startup-site-1", "namespace": "flare"}
+
+    assert values["workspaceConfig"]["local"]["configMapName"] == "nvflare-local-site-1"
+    assert values["workspaceConfig"]["startup"]["secretName"] == "nvflare-startup-site-1"
+    startup_paths = {item["path"] for item in values["workspaceConfig"]["startup"]["items"]}
+    assert {"fed_client.json", "client.crt", "client.key", "rootCA.pem"} <= startup_paths
+    assert "next_step: Start the server/client parent pod with the helm_command." in out
+    assert f"helm_command: helm upgrade --install site-1 {output / 'helm_chart'} --namespace flare" in out
+    assert "cleanup_step: After Helm uninstall, remove the staged credentials with the cleanup_command." in out
+    assert f"cleanup_command: nvflare deploy k8s unstage {output} --kubectl kubectl" in out
+
+
+def test_stage_k8_uses_explicit_resource_names_and_namespace(tmp_path, capsys, monkeypatch):
+    kit = _make_server_kit(tmp_path)
+    output = tmp_path / "server-k8s"
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "namespace": "prepared-ns",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+    calls = _capture_kubectl(monkeypatch)
+
+    stage_k8_deployment(
+        _stage_k8_args(
+            output,
+            namespace="runtime-ns",
+            local_configmap="manual-local",
+            startup_secret="manual-startup",
+            kubectl="oc",
+        )
+    )
+    capsys.readouterr()
+
+    assert [cmd for cmd, _kwargs in calls] == [["oc", "apply", "-f", "-"], ["oc", "apply", "-f", "-"]]
+    manifests = [yaml.safe_load(kwargs["input"]) for _cmd, kwargs in calls]
+    assert manifests[0]["metadata"] == {"name": "manual-local", "namespace": "runtime-ns"}
+    assert manifests[1]["metadata"] == {"name": "manual-startup", "namespace": "runtime-ns"}
+    values = yaml.safe_load((output / "helm_chart" / "values.yaml").read_text())
+    assert values["workspaceConfig"]["local"]["configMapName"] == "manual-local"
+    assert values["workspaceConfig"]["startup"]["secretName"] == "manual-startup"
+
+
+def test_unstage_k8_deletes_staged_objects_and_clears_chart_values(tmp_path, capsys, monkeypatch):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-k8s"
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "namespace": "flare",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+    calls = _capture_kubectl(monkeypatch)
+    stage_k8_deployment(_stage_k8_args(output))
+    capsys.readouterr()
+    calls.clear()
+
+    # Cleanup must not depend on source folders that are no longer intact.
+    shutil.rmtree(output / "local")
+    shutil.rmtree(output / "startup")
+    unstage_k8_deployment(_unstage_k8_args(output))
+    out = capsys.readouterr().out
+
+    assert [cmd for cmd, _kwargs in calls] == [
+        [
+            "kubectl",
+            "delete",
+            "secret/nvflare-startup-site-1",
+            "configmap/nvflare-local-site-1",
+            "--namespace",
+            "flare",
+            "--ignore-not-found=true",
+        ]
+    ]
+    values = yaml.safe_load((output / "helm_chart" / "values.yaml").read_text())
+    assert values["workspaceConfig"] == {
+        "namespace": None,
+        "local": {"configMapName": None, "items": []},
+        "startup": {"secretName": None, "items": []},
+    }
+    assert "status: unstaged" in out
+    assert "startup_secret" not in out
+
+
+def test_unstage_k8_uses_recorded_custom_names_namespace_and_oc(tmp_path, capsys, monkeypatch):
+    kit = _make_server_kit(tmp_path)
+    output = tmp_path / "server-k8s"
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "namespace": "prepared-ns",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+    calls = _capture_kubectl(monkeypatch)
+    stage_k8_deployment(
+        _stage_k8_args(
+            output,
+            namespace="runtime-ns",
+            local_configmap="manual-local",
+            startup_secret="manual-startup",
+            kubectl="oc",
+        )
+    )
+    capsys.readouterr()
+    calls.clear()
+
+    unstage_k8_deployment(_unstage_k8_args(output, kubectl="oc"))
+    capsys.readouterr()
+
+    assert [cmd for cmd, _kwargs in calls] == [
+        [
+            "oc",
+            "delete",
+            "secret/manual-startup",
+            "configmap/manual-local",
+            "--namespace",
+            "runtime-ns",
+            "--ignore-not-found=true",
+        ]
+    ]
+
+
+def test_unstage_k8_is_idempotent_with_exact_inputs(tmp_path, capsys, monkeypatch):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-k8s"
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+    calls = _capture_kubectl(monkeypatch)
+    stage_k8_deployment(_stage_k8_args(output, namespace="nvflare"))
+    capsys.readouterr()
+    calls.clear()
+    args = _unstage_k8_args(
+        output,
+        namespace="nvflare",
+        local_configmap="nvflare-local-site-1",
+        startup_secret="nvflare-startup-site-1",
+    )
+
+    unstage_k8_deployment(args)
+    unstage_k8_deployment(args)
+    capsys.readouterr()
+
+    assert len(calls) == 2
+    assert all("--ignore-not-found=true" in cmd for cmd, _kwargs in calls)
+
+
+def test_unstage_k8_reports_kubectl_failure_and_keeps_retry_state(tmp_path, capsys, monkeypatch):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-k8s"
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+    _capture_kubectl(monkeypatch)
+    stage_k8_deployment(_stage_k8_args(output, namespace="nvflare"))
+    capsys.readouterr()
+    _capture_kubectl(monkeypatch, fail_on=lambda cmd: "delete" in cmd)
+
+    with pytest.raises(SystemExit):
+        unstage_k8_deployment(_unstage_k8_args(output))
+
+    err = capsys.readouterr().err
+    assert "KUBECTL_FAILED" in err
+    assert "kubectl delete 'secret/<staged-name>' configmap/nvflare-local-site-1" in err
+    assert "boom" in err
+    values = yaml.safe_load((output / "helm_chart" / "values.yaml").read_text())
+    assert values["workspaceConfig"]["namespace"] == "nvflare"
+    assert values["workspaceConfig"]["local"]["configMapName"] == "nvflare-local-site-1"
+    assert values["workspaceConfig"]["startup"]["secretName"] == "nvflare-startup-site-1"
+
+
+def test_unstage_k8_rejects_target_that_differs_from_recorded_state(tmp_path, capsys, monkeypatch):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-k8s"
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+    calls = _capture_kubectl(monkeypatch)
+    stage_k8_deployment(_stage_k8_args(output, namespace="recorded-ns"))
+    capsys.readouterr()
+    calls.clear()
+
+    with pytest.raises(SystemExit):
+        unstage_k8_deployment(_unstage_k8_args(output, namespace="wrong-ns"))
+
+    err = capsys.readouterr().err
+    assert "does not match the value recorded by stage" in err
+    assert calls == []
+    values = yaml.safe_load((output / "helm_chart" / "values.yaml").read_text())
+    assert values["workspaceConfig"]["namespace"] == "recorded-ns"
+    assert values["workspaceConfig"]["startup"]["secretName"] == "nvflare-startup-site-1"
+
+
+@pytest.mark.parametrize("replacement_runtime", ["k8s", "docker"])
+def test_prepare_k8_rejects_replacing_output_with_staged_resources(tmp_path, capsys, monkeypatch, replacement_runtime):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-k8s"
+    config = {
+        "runtime": "k8s",
+        "parent": {"docker_image": "repo/nvflare:dev"},
+    }
+    _run_prepare(kit, output, config)
+    capsys.readouterr()
+    _capture_kubectl(monkeypatch)
+    stage_k8_deployment(
+        _stage_k8_args(
+            output,
+            namespace="runtime-ns",
+            local_configmap="manual-local",
+            startup_secret="manual-startup",
+        )
+    )
+    capsys.readouterr()
+
+    replacement_config = {
+        "runtime": replacement_runtime,
+        "parent": {"docker_image": "repo/nvflare:dev"},
+    }
+    with pytest.raises(SystemExit):
+        _run_prepare(kit, output, replacement_config)
+
+    err = capsys.readouterr().err
+    assert "OUTPUT_STAGED" in err
+    assert "deploy k8 unstage" in err
+    values = yaml.safe_load((output / "helm_chart" / "values.yaml").read_text())
+    assert values["workspaceConfig"]["namespace"] == "runtime-ns"
+    assert values["workspaceConfig"]["local"]["configMapName"] == "manual-local"
+    assert values["workspaceConfig"]["startup"]["secretName"] == "manual-startup"
+
+
+def test_stage_k8_legacy_recorded_names_require_explicit_namespace(tmp_path, capsys, monkeypatch):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-k8s"
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "namespace": "prepared-ns",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+    calls = _capture_kubectl(monkeypatch)
+    stage_k8_deployment(_stage_k8_args(output, namespace="runtime-ns"))
+    capsys.readouterr()
+    values_path = output / "helm_chart" / "values.yaml"
+    values = yaml.safe_load(values_path.read_text())
+    values["workspaceConfig"].pop("namespace")
+    values_path.write_text(yaml.safe_dump(values, sort_keys=False))
+    calls.clear()
+
+    with pytest.raises(SystemExit):
+        stage_k8_deployment(_stage_k8_args(output))
+
+    err = capsys.readouterr().err
+    assert "existing staged resource names do not include their Kubernetes namespace" in err
+    assert "--namespace" in err
+    assert calls == []
+
+    stage_k8_deployment(_stage_k8_args(output, namespace="runtime-ns"))
+    capsys.readouterr()
+    assert [
+        manifest["metadata"]["namespace"] for _cmd, kwargs in calls for manifest in [yaml.safe_load(kwargs["input"])]
+    ] == [
+        "runtime-ns",
+        "runtime-ns",
+    ]
+
+
+def test_stage_k8_reuses_recorded_bindings_and_rejects_changes(tmp_path, capsys, monkeypatch):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-k8s"
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+    calls = _capture_kubectl(monkeypatch)
+    stage_k8_deployment(
+        _stage_k8_args(
+            output,
+            namespace="runtime-ns",
+            local_configmap="manual-local",
+            startup_secret="manual-startup",
+        )
+    )
+    capsys.readouterr()
+    calls.clear()
+
+    stage_k8_deployment(_stage_k8_args(output))
+    capsys.readouterr()
+    manifests = [yaml.safe_load(kwargs["input"]) for _cmd, kwargs in calls]
+    assert [manifest["metadata"] for manifest in manifests] == [
+        {"name": "manual-local", "namespace": "runtime-ns"},
+        {"name": "manual-startup", "namespace": "runtime-ns"},
+    ]
+
+    calls.clear()
+    with pytest.raises(SystemExit):
+        stage_k8_deployment(_stage_k8_args(output, startup_secret="different-startup"))
+
+    err = capsys.readouterr().err
+    assert "already staged with a different startup Secret" in err
+    assert "deploy k8 unstage" in err
+    assert calls == []
+
+
+@pytest.mark.parametrize("alias", ["k8", "k8s"])
+def test_deploy_cli_routes_k8_unstage(alias, monkeypatch):
+    from nvflare.tool.deploy import deploy_commands
+    from nvflare.tool.deploy.deploy_cli import def_deploy_cli_parser, handle_deploy_cmd
+
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest="sub_command")
+    def_deploy_cli_parser(subparsers)
+    args = parser.parse_args(
+        [
+            "deploy",
+            alias,
+            "unstage",
+            "/tmp/prepared-kit",
+            "--namespace",
+            "nvflare",
+            "--local-configmap",
+            "local-name",
+            "--startup-secret",
+            "startup-name",
+            "--kubectl",
+            "oc",
+        ]
+    )
+    calls = []
+    monkeypatch.setattr(deploy_commands, "unstage_k8_deployment", lambda actual_args: calls.append(actual_args))
+
+    handle_deploy_cmd(args)
+
+    assert args.deploy_sub_cmd == alias
+    assert args.deploy_k8_sub_cmd == "unstage"
+    assert args.kit == "/tmp/prepared-kit"
+    assert args.namespace == "nvflare"
+    assert args.local_configmap == "local-name"
+    assert args.startup_secret == "startup-name"
+    assert args.kubectl == "oc"
+    assert calls == [args]
+
+
+def test_deploy_cli_does_not_register_slurm_stage():
+    from nvflare.tool.deploy.deploy_cli import def_deploy_cli_parser
+
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest="sub_command")
+    def_deploy_cli_parser(subparsers)
+
+    with pytest.raises(SystemExit):
+        parser.parse_args(["deploy", "slurm", "stage", "/tmp/prepared-kit"])
+
+
+def test_stage_k8_reports_kubectl_failure(tmp_path, capsys, monkeypatch):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-k8s"
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+    _capture_kubectl(monkeypatch, fail_on=lambda _cmd: True)
+
+    with pytest.raises(SystemExit):
+        stage_k8_deployment(_stage_k8_args(output, namespace="nvflare"))
+
+    err = capsys.readouterr().err
+    assert "KUBECTL_FAILED" in err
+    assert "kubectl apply" in err
+    assert "boom" in err
+
+
+def test_stage_k8_reports_kubectl_launch_os_error(tmp_path, capsys, monkeypatch):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-k8s"
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+
+    def fake_run(_cmd, **_kwargs):
+        raise PermissionError("denied")
+
+    monkeypatch.setattr("nvflare.tool.deploy.k8s_stage.subprocess.run", fake_run)
+
+    with pytest.raises(SystemExit):
+        stage_k8_deployment(_stage_k8_args(output, namespace="nvflare"))
+
+    err = capsys.readouterr().err
+    assert "KUBECTL_NOT_FOUND" in err
+    assert "Kubernetes CLI executable could not be started: kubectl" in err
+
+
+def test_stage_k8_rejects_non_k8s_prepared_folder(tmp_path, capsys, monkeypatch):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-docker"
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "docker",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+    calls = _capture_kubectl(monkeypatch)
+
+    with pytest.raises(SystemExit):
+        stage_k8_deployment(_stage_k8_args(output, namespace="nvflare"))
+
+    err = capsys.readouterr().err
+    assert "INVALID_KIT" in err
+    assert "not generated for the Kubernetes runtime" in err
+    assert "nvflare deploy prepare with runtime: k8s" in err
+    assert calls == []
+
+
+def test_stage_k8_rejects_invalid_stage_argument_values(tmp_path, capsys, monkeypatch):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-k8s"
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+    calls = _capture_kubectl(monkeypatch)
+
+    with pytest.raises(SystemExit):
+        stage_k8_deployment(_stage_k8_args(output, namespace="Bad_Namespace"))
+
+    err = capsys.readouterr().err
+    assert "INVALID_ARGS" in err
+    assert "valid Kubernetes namespace" in err
+    assert calls == []
+
+    rejected_kubectl = "opaque-kubectl-value"
+    with pytest.raises(SystemExit):
+        stage_k8_deployment(_stage_k8_args(output, namespace="nvflare", kubectl=rejected_kubectl))
+
+    err = capsys.readouterr().err
+    assert "INVALID_ARGS" in err
+    assert "Kubernetes CLI command must be one of" in err
+    assert rejected_kubectl not in err
+    assert calls == []
+
+    with pytest.raises(SystemExit):
+        stage_k8_deployment(_stage_k8_args(output, namespace="nvflare", kubectl="/usr/bin/kubectl"))
+
+    err = capsys.readouterr().err
+    assert "INVALID_ARGS" in err
+    assert "Kubernetes CLI command must be one of" in err
+    assert calls == []
+
+
+def test_stage_k8_redacts_authorization_in_missing_kit_error(tmp_path, capsys):
+    token = "sample-token-123"
+    missing_kit = tmp_path / f'Authorization = "Bearer {token}"'
+
+    with pytest.raises(SystemExit):
+        stage_k8_deployment(_stage_k8_args(missing_kit, namespace="nvflare"))
+
+    err = capsys.readouterr().err
+    assert "INVALID_KIT" in err
+    assert 'Authorization = "Bearer <redacted>"' in err
+    assert token not in err
+
+
+def test_stage_k8_rejects_symlinked_stage_folder(tmp_path, capsys, monkeypatch):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-k8s"
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+    calls = _capture_kubectl(monkeypatch)
+    external_local = tmp_path / "external-local"
+    external_local.mkdir()
+    (external_local / "resources.json.default").write_text("{}")
+    shutil.rmtree(output / "local")
+    (output / "local").symlink_to(external_local, target_is_directory=True)
+
+    with pytest.raises(SystemExit):
+        stage_k8_deployment(_stage_k8_args(output, namespace="nvflare"))
+
+    err = capsys.readouterr().err
+    assert "INVALID_KIT" in err
+    assert "must not be a symlink" in err
+    assert calls == []
+
+
+def test_prepare_k8s_preserves_zero_pending_timeout(tmp_path, capsys):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-k8s"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+            "job_launcher": {"pending_timeout": 0},
+        },
+    )
+    capsys.readouterr()
+
+    resources = json.loads((output / "local" / "resources.json.default").read_text())
+    launcher = _component(resources, "k8s_launcher")
+    assert launcher["args"]["pending_timeout"] == 0
+
+
+def test_prepare_k8s_preserves_null_pending_timeout(tmp_path, capsys):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-k8s"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+            "job_launcher": {"pending_timeout": None},
+        },
+    )
+    capsys.readouterr()
+
+    resources = json.loads((output / "local" / "resources.json.default").read_text())
+    launcher = _component(resources, "k8s_launcher")
+    assert launcher["args"]["pending_timeout"] is None
+
+
+@pytest.mark.parametrize("pending_timeout", [-1, True])
+def test_prepare_k8s_rejects_invalid_pending_timeout(tmp_path, capsys, pending_timeout):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-k8s"
+
+    with pytest.raises(SystemExit):
+        _run_prepare(
+            kit,
+            output,
+            {
+                "runtime": "k8s",
+                "parent": {"docker_image": "repo/nvflare:dev"},
+                "job_launcher": {"pending_timeout": pending_timeout},
+            },
+        )
+
+    err = capsys.readouterr().err
+    assert "INVALID_CONFIG" in err
+    assert "job_launcher.pending_timeout" in err
+    assert not output.exists()
+
+
+def test_prepare_k8s_launcher_defaults_to_incluster_config(tmp_path, capsys):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-k8s"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+
+    resources = json.loads((output / "local" / "resources.json.default").read_text())
+    launcher = _component(resources, "k8s_launcher")
+    assert launcher["args"]["config_file_path"] is None
+
+
+@pytest.mark.parametrize("reserved_key", ["image", "auto_remove"])
+def test_prepare_docker_rejects_reserved_default_container_kwargs(tmp_path, capsys, reserved_key):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "prepared"
+
+    with pytest.raises(SystemExit):
+        _run_prepare(
+            kit,
+            output,
+            {
+                "runtime": "docker",
+                "parent": {"docker_image": "repo/nvflare:dev"},
+                "job_launcher": {"default_job_container_kwargs": {reserved_key: "anything"}},
+            },
+        )
+
+    err = capsys.readouterr().err
+    assert "INVALID_CONFIG" in err
+    assert reserved_key in err
+    assert "container.image" in err
+
+
+def test_prepare_k8s_keeps_v1_study_data_for_legacy_kit(tmp_path, capsys):
+    kit = _make_client_kit(tmp_path)
+    (kit / "local" / "study_data.yaml").write_text("default:\n  data:\n    source: nvfldata\n    mode: ro\n")
+    output = tmp_path / "site-1-k8s"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev", "workspace_mount_path": "/workspace"},
+        },
+    )
+    capsys.readouterr()
+
+    resources = json.loads((output / "local" / "resources.json.default").read_text())
+    launcher = _component(resources, "k8s_launcher")
+    assert launcher["args"]["study_data_pvc_file_path"] == "/workspace/local/study_data.yaml"
+    # v1 and v2 files must not coexist: no template is written next to a legacy file
+    assert not (output / "local" / "study_runtime.yaml").exists()
+    assert (output / "local" / "study_data.yaml").exists()
+
+
+@pytest.mark.parametrize(
+    "make_kit, template_name",
+    [
+        (_make_server_kit, "server-deployment.yaml"),
+        (_make_client_kit, "client-deployment.yaml"),
+    ],
+)
+def test_prepare_k8s_parent_image_pull_secrets_written_to_chart(tmp_path, capsys, make_kit, template_name):
+    kit = make_kit(tmp_path)
+    output = tmp_path / "prepared-k8s"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {
+                "docker_image": "repo/nvflare:dev",
+                "image_pull_secrets": ["gitlab-regcred", "mirror.registry.example.com"],
+            },
+        },
+    )
+    capsys.readouterr()
+
+    values = yaml.safe_load((output / "helm_chart" / "values.yaml").read_text())
+    deployment = (output / "helm_chart" / "templates" / template_name).read_text()
+    assert values["imagePullSecrets"] == [
+        {"name": "gitlab-regcred"},
+        {"name": "mirror.registry.example.com"},
+    ]
+    assert ".Values.imagePullSecrets" in deployment
+
+
+@pytest.mark.parametrize("namespace", ["nvflare", "1abc", "2026-prod"])
+def test_prepare_k8s_accepts_valid_namespace(tmp_path, capsys, namespace):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / f"prepared-{namespace}"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "namespace": namespace,
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+
+    resources = json.loads((output / "local" / "resources.json.default").read_text())
+    launcher = _component(resources, "k8s_launcher")
+    assert launcher["args"]["namespace"] == namespace
+
+
+@pytest.mark.parametrize(
+    "namespace",
+    ["MyNamespace", "namespace_", "-bad", "bad-", "bad.name", "nvflare\n", "", "a" * 64, None, 7],
+)
+def test_prepare_k8s_rejects_invalid_namespace(tmp_path, capsys, namespace):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "prepared"
+
+    with pytest.raises(SystemExit):
+        _run_prepare(
+            kit,
+            output,
+            {
+                "runtime": "k8s",
+                "namespace": namespace,
+                "parent": {"docker_image": "repo/nvflare:dev"},
+            },
+        )
+
+    err = capsys.readouterr().err
+    assert "INVALID_CONFIG" in err
+    assert "k8s config.namespace" in err
+    assert not output.exists()
+
+
+@pytest.mark.parametrize(
+    "image_pull_secrets",
+    ["gitlab-regcred", [""], ["GitLab-Regcred"], ["gitlab_regcred"], [7], ["bad..name"], ["a."], [".a"]],
+)
+def test_prepare_k8s_rejects_invalid_parent_image_pull_secrets(tmp_path, capsys, image_pull_secrets):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "prepared"
+
+    with pytest.raises(SystemExit):
+        _run_prepare(
+            kit,
+            output,
+            {
+                "runtime": "k8s",
+                "parent": {
+                    "docker_image": "repo/nvflare:dev",
+                    "image_pull_secrets": image_pull_secrets,
+                },
+            },
+        )
+
+    err = capsys.readouterr().err
+    assert "INVALID_CONFIG" in err
+    assert "parent image pull references" in err
+    assert not output.exists()
+
+
+@pytest.mark.parametrize(
+    "image_pull_secrets",
+    ["gitlab-regcred", [""], ["GitLab-Regcred"], ["gitlab_regcred"], [7], ["bad..name"], ["a."], [".a"]],
+)
+def test_prepare_k8s_rejects_invalid_job_launcher_image_pull_secrets(tmp_path, capsys, image_pull_secrets):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "prepared"
+
+    with pytest.raises(SystemExit):
+        _run_prepare(
+            kit,
+            output,
+            {
+                "runtime": "k8s",
+                "parent": {"docker_image": "repo/nvflare:dev"},
+                "job_launcher": {"image_pull_secrets": image_pull_secrets},
+            },
+        )
+
+    err = capsys.readouterr().err
+    assert "INVALID_CONFIG" in err
+    assert "job launcher image pull references" in err
+    assert not output.exists()
+
+
+@pytest.mark.parametrize(
+    "service_name",
+    ["Nvflare", "server_name", "server.name", "-server", "server-", "1server", "", "a" * 64, None, 7],
+)
+def test_prepare_k8s_rejects_invalid_server_service_name(tmp_path, capsys, service_name):
+    kit = _make_server_kit(tmp_path)
+    output = tmp_path / "prepared"
+
+    with pytest.raises(SystemExit):
+        _run_prepare(
+            kit,
+            output,
+            {
+                "runtime": "k8s",
+                "server_service_name": service_name,
+                "parent": {"docker_image": "repo/nvflare:dev"},
+            },
+        )
+
+    err = capsys.readouterr().err
+    assert "INVALID_CONFIG" in err
+    assert "k8s config.server_service_name" in err
+    assert not output.exists()
+
+
+def test_prepare_warns_when_replacing_custom_resource_and_launcher_config(tmp_path, capsys):
+    kit = _make_client_kit(tmp_path)
+    resources_path = kit / "local" / "resources.json.default"
+    resources = json.loads(resources_path.read_text())
+    resources["components"] = [
+        {
+            "id": "resource_manager",
+            "path": "nvflare.app_common.resource_managers.list_resource_manager.ListResourceManager",
+            "args": {"resources": [{"gpu": 1}]},
+        },
+        {
+            "id": "resource_consumer",
+            "path": "custom.AuditResourceConsumer",
+            "args": {},
+        },
+        {
+            "id": "process_launcher",
+            "path": "custom.ProcessLauncher",
+            "args": {},
+        },
+        {
+            "id": "k8s_launcher",
+            "path": "custom.K8sLauncher",
+            "args": {"timeout": 99},
+        },
+    ]
+    _write_json(resources_path, resources)
+    output = tmp_path / "site-1-k8s"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    captured = capsys.readouterr()
+
+    combined_output = captured.out + captured.err
+    assert "replaces component 'resource_manager'" in combined_output
+    assert "removes component 'resource_consumer'" in combined_output
+    assert "replaces component 'process_launcher'" in combined_output
+    assert "replaces component 'k8s_launcher'" in combined_output
+
+
+def test_prepare_does_not_warn_for_default_components_with_empty_args(tmp_path, capsys):
+    kit = _make_client_kit(tmp_path)
+    resources_path = kit / "local" / "resources.json.default"
+    resources = json.loads(resources_path.read_text())
+    resources["components"] = [
+        {"id": "resource_manager", "path": GPU_RESOURCE_MANAGER, "args": {}},
+        {"id": "resource_consumer", "path": GPU_RESOURCE_CONSUMER, "args": {}},
+        {"id": "process_launcher", "path": PROCESS_CLIENT_LAUNCHER, "args": {}},
+    ]
+    _write_json(resources_path, resources)
+    output = tmp_path / "site-1-k8s"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    captured = capsys.readouterr()
+
+    assert "Warning:" not in captured.out + captured.err
+
+
+def test_prepare_k8s_client_sanitizes_service_name_without_changing_site_identity(tmp_path, capsys):
+    kit = _make_client_kit(tmp_path, name="Site_1")
+    output = tmp_path / "site-1-k8s"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+
+    comm_config = json.loads((output / "local" / "comm_config.json").read_text())
+    values = yaml.safe_load((output / "helm_chart" / "values.yaml").read_text())
+    assert values["name"] == "Site_1"
+    assert values["siteName"] == "Site_1"
+    assert values["serviceName"] == comm_config["internal"]["resources"]["host"]
+    assert values["serviceName"] != "Site_1"
+    assert values["serviceName"].startswith("site-1-")
+    assert "_" not in values["serviceName"]
+
+
+def test_prepare_k8s_creates_comm_config_when_missing(tmp_path, capsys):
+    kit = _make_client_kit(tmp_path)
+    (kit / "local" / "comm_config.json").unlink()
+    output = tmp_path / "site-1-k8s"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+
+    comm_config = json.loads((output / "local" / "comm_config.json").read_text())
+    assert comm_config["backbone_conn_gen"] == 2
+    assert comm_config["internal"]["scheme"] == "tcp"
+    assert comm_config["internal"]["resources"] == {
+        "host": "site-1",
+        "port": 8102,
+        "connection_security": "mtls",
+    }
+
+
+def test_k8s_release_name_is_safe_for_helm():
+    safe_names = [
+        _k8s_release_name("1-my-site"),
+        _k8s_release_name("a" * 80),
+        _k8s_release_name("Site_1"),
+    ]
+
+    for name in safe_names:
+        assert len(name) <= HELM_RELEASE_NAME_MAX_LENGTH
+        assert name[0].isalpha()
+        assert name[-1].isalnum()
+        assert name == name.lower()
+        assert all(c.isalnum() or c == "-" for c in name)
+
+    assert _k8s_release_name("site-1") == "site-1"
+    assert _k8s_release_name("1-my-site").startswith("site-1-my-site-")
+    assert _k8s_release_name("a" * 80) != _k8s_release_name("a" * 79 + "b")
+
+
+def test_prepare_rejects_admin_kit_without_writing_output(tmp_path, capsys):
+    kit = tmp_path / "admin"
+    startup = kit / "startup"
+    local = kit / "local"
+    startup.mkdir(parents=True)
+    local.mkdir()
+    _write_json(startup / "fed_admin.json", {"admin": {"name": "admin@nvidia.com"}})
+    (startup / "client.crt").write_text("crt")
+    (startup / "client.key").write_text("key")
+    (startup / "rootCA.pem").write_text("ca")
+    _write_json(local / "resources.json.default", {"components": []})
+
+    output = tmp_path / "admin-docker"
+    config_path = tmp_path / "docker.yaml"
+    config_path.write_text(yaml.safe_dump({"runtime": "docker", "parent": {"docker_image": "repo/nvflare:dev"}}))
+
+    with pytest.raises(SystemExit):
+        prepare_deployment(argparse.Namespace(kit=str(kit), output=str(output), config=str(config_path)))
+
+    assert "UNSUPPORTED_KIT" in capsys.readouterr().err
+    assert not output.exists()
+
+
+@pytest.mark.parametrize(
+    "config, expected",
+    [
+        (
+            {
+                "runtime": "docker",
+                "parent": {"docker_image": "repo/nvflare:dev"},
+                "job_launcher": {"default_python_path": 7},
+            },
+            "job_launcher.default_python_path",
+        ),
+        (
+            {"runtime": "k8s", "parent": {"docker_image": "repo/nvflare:dev", "workspace_pvc": 7}},
+            "parent.workspace_pvc",
+        ),
+        (
+            {"runtime": "k8s", "parent": {"docker_image": "repo/nvflare:dev", "workspace_mount_path": []}},
+            "parent.workspace_mount_path",
+        ),
+        (
+            {"runtime": "k8s", "parent": {"docker_image": "repo/nvflare:dev", "python_path": 7}},
+            "parent.python_path",
+        ),
+        (
+            {
+                "runtime": "k8s",
+                "parent": {"docker_image": "repo/nvflare:dev"},
+                "job_launcher": {"config_file_path": 7},
+            },
+            "job_launcher.config_file_path",
+        ),
+        (
+            {
+                "runtime": "k8s",
+                "parent": {"docker_image": "repo/nvflare:dev"},
+                "job_launcher": {"default_python_path": False},
+            },
+            "job_launcher.default_python_path",
+        ),
+    ],
+)
+def test_prepare_rejects_non_string_optional_config_values(tmp_path, capsys, config, expected):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "prepared"
+
+    with pytest.raises(SystemExit):
+        _run_prepare(kit, output, config)
+
+    err = capsys.readouterr().err
+    assert "INVALID_CONFIG" in err
+    assert expected in err
+    assert not output.exists()

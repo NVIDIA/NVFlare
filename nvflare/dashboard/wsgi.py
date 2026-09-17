@@ -15,8 +15,7 @@
 import os
 import ssl
 
-from application import init_app
-
+from nvflare.dashboard.application import init_app
 from nvflare.dashboard.utils import EnvVar, get_web_root
 
 app = init_app()

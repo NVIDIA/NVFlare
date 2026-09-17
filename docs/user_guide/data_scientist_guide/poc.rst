@@ -24,17 +24,18 @@ Starting the Application Environment in POC Mode
 --------------------------------------------------
 
 Once you are ready to start the FL system, you can run the following command
-to start the server and client systems and an admin console:
+to start the server and clients:
 
 .. code-block::
 
   nvflare poc start
 
-To start the server and client systems without an admin console:
+Admin consoles are optional and are not started by default. To open the project
+admin console, run this command in a separate terminal:
 
 .. code-block::
 
-  nvflare poc start -ex admin@nvidia.com
+  nvflare poc start -p admin@nvidia.com
 
 We can use the :ref:`job_cli` to easily submit a job to the POC system. (Note: We can run the same jobs we ran with the simulator in POC mode. If using the :ref:`fed_job_api`, simply export the job configuration with ``job.export_job()``.)
 

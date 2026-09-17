@@ -1,0 +1,662 @@
+# JobLauncher and JobHandle Design Document
+
+## 1. Overview
+
+NVFlare runs each federated job as a backend execution unit — a subprocess, Docker container, Kubernetes pod, or
+Slurm batch allocation. Two abstractions govern this:
+
+- **JobLauncherSpec** — starts a job and returns a handle.
+- **JobHandleSpec** — represents the running job and provides lifecycle control (poll, wait, terminate).
+
+The upper layers (server engine, client executor) program exclusively against these two interfaces. The concrete backend is determined entirely by **site policy**: whichever launcher is registered in the site's `resources.json` handles all jobs. The engine never inspects job metadata to pick a launcher.
+
+```
+┌──────────────────────────────────────────────────────────┐
+│                    Upper Layer                           │
+│     ServerEngine  /  ClientExecutor                      │
+│                                                          │
+│  1. get_job_launcher(job_meta, fl_ctx) → launcher        │
+│  2. Build JOB_PROCESS_ARGS                               │
+│  3. launcher.launch_job(job_meta, fl_ctx) → job_handle   │
+│  4. job_handle.wait()  /  job_handle.terminate()         │
+└──────────┬──────────────────────┬──────────┬─────────────┘
+           │   BEFORE_JOB_LAUNCH  │          │
+           │   (site's launcher   │          │
+           │    always registers) │          │
+           ▼                      ▼          ▼
+┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐
+│ ProcessJob      │  │ DockerJob       │  │ K8sJob          │
+│ Launcher        │  │ Launcher        │  │ Launcher        │
+│ ─────────────── │  │ ─────────────── │  │ ─────────────── │
+│ ProcessHandle   │  │ DockerJobHandle │  │ K8sJobHandle    │
+└─────────────────┘  └─────────────────┘  └─────────────────┘
+    subprocess           Docker container       K8s Pod
+```
+
+The Slurm strategy follows the same interface: ``ClientSlurmJobLauncher`` or
+``ServerSlurmJobLauncher`` returns a manager-backed ``SlurmJobHandle`` for a
+scheduler allocation. It is omitted from the compact diagram only
+to keep the three-column layout readable.
+
+---
+
+## 2. Specification Layer (`nvflare/apis/job_launcher_spec.py`)
+
+### 2.1 JobHandleSpec
+
+Abstract base class representing a running job (`class JobHandleSpec(ABC)`).
+
+| Method | Signature | Semantics |
+|--------|-----------|-----------|
+| `terminate()` | `() -> None` | Stop the job immediately. |
+| `poll()` | `() -> JobReturnCode` | Non-blocking query for current return code. Returns `UNKNOWN` while running. |
+| `wait()` | `() -> None` | Block until the job finishes. |
+
+### 2.2 JobLauncherSpec
+
+Abstract base class for launching jobs (`class JobLauncherSpec(FLComponent, ABC)`). Extends `FLComponent` for event-system access.
+
+| Method | Signature | Semantics |
+|--------|-----------|-----------|
+| `launch_job(job_meta, fl_ctx)` | `(dict, FLContext) -> JobHandleSpec` | Start a job and return its handle. |
+
+### 2.3 Supporting Types
+
+**JobProcessArgs** — String constants for the keys the upper layer places in `FLContextKey.JOB_PROCESS_ARGS`. Each value is a `(flag, value)` tuple.
+
+| Constant | Value | Used by |
+|----------|-------|---------|
+| `EXE_MODULE` | `"exe_module"` | Server, Client |
+| `WORKSPACE` | `"workspace"` | Server, Client |
+| `STARTUP_DIR` | `"startup_dir"` | Client |
+| `APP_ROOT` | `"app_root"` | Server |
+| `AUTH_TOKEN` | `"auth_token"` | Server, Client |
+| `TOKEN_SIGNATURE` | `"auth_signature"` | Server, Client |
+| `SSID` | `"ssid"` | Server, Client |
+| `JOB_ID` | `"job_id"` | Server, Client |
+| `CLIENT_NAME` | `"client_name"` | Client |
+| `ROOT_URL` | `"root_url"` | Server |
+| `PARENT_URL` | `"parent_url"` | Server, Client |
+| `PARENT_CONN_SEC` | `"parent_conn_sec"` | Client |
+| `SERVICE_HOST` | `"service_host"` | Server |
+| `SERVICE_PORT` | `"service_port"` | Server |
+| `TARGET` | `"target"` | Client |
+| `SCHEME` | `"scheme"` | Client |
+| `STARTUP_CONFIG_FILE` | `"startup_config_file"` | Server, Client |
+| `OPTIONS` | `"options"` | Server, Client |
+
+**JobReturnCode** — Standard exit semantics:
+
+| Code | Value | Meaning |
+|------|-------|---------|
+| `SUCCESS` | 0 | Job completed successfully. |
+| `EXECUTION_ERROR` | 1 | Job failed during execution. |
+| `ABORTED` | 9 | Job was terminated/aborted. |
+| `EXCEPTION` | 101 | Launcher or child process hit an execution exception before normal completion. |
+| `UNKNOWN` | 127 | Status cannot be determined (still running, or lost). |
+
+`JobReturnCode` inherits the shared `ProcessExitCode` values, so launchers can
+also return `EXCEPTION`, `CONFIG_ERROR`, or `UNSAFE_COMPONENT` when the failure
+is detected outside the child job process.
+
+**`add_launcher(launcher, fl_ctx)`** — Appends a launcher to the `FLContextKey.JOB_LAUNCHER` list on `fl_ctx`. Called by launchers during the `BEFORE_JOB_LAUNCH` event to register for the current job.
+
+---
+
+## 3. How the Upper Layer Uses Launchers
+
+### 3.1 Launcher Selection — Site Policy, Not Job Config
+
+The launcher is determined by which concrete `JobLauncherSpec` is registered in the site's `resources.json`. The engine calls `get_job_launcher()` from `nvflare/private/fed/utils/fed_utils.py`:
+
+```python
+def get_job_launcher(job_meta, fl_ctx) -> JobLauncherSpec:
+    engine = fl_ctx.get_engine()
+    with engine.new_context() as job_launcher_ctx:
+        job_launcher_ctx.remove_prop(FLContextKey.JOB_LAUNCHER)
+        job_launcher_ctx.set_prop(FLContextKey.JOB_META, job_meta, private=True, sticky=False)
+        engine.fire_event(EventType.BEFORE_JOB_LAUNCH, job_launcher_ctx)
+        job_launcher = job_launcher_ctx.get_prop(FLContextKey.JOB_LAUNCHER)
+        if not (job_launcher and isinstance(job_launcher, list)):
+            raise RuntimeError(f"There's no job launcher can handle this job: {job_meta}.")
+    launcher = job_launcher[0]
+    if not isinstance(launcher, JobLauncherSpec):
+        raise RuntimeError(f"The job launcher must be JobLauncherSpec but got {type(launcher)}")
+    return job_launcher[0]
+```
+
+Every registered `FLComponent` receives `BEFORE_JOB_LAUNCH`. Every launcher unconditionally calls
+`add_launcher(self, fl_ctx)` — none inspect `job_meta` to decide whether to register. The site's `resources.json`
+contains exactly one launcher type; that launcher always handles every job on that site.
+
+If a job or resolved site/study policy lacks required configuration for the site's launcher (for example, no
+effective image on a container backend), `launch_job` raises a clear launch error. There is no silent fallback to a
+different launcher.
+
+### 3.2 Job-Level Launcher Configuration (`launcher_spec`)
+
+`launcher_spec` is an optional top-level key in `meta.json` that carries per-launcher runtime configuration for the
+job — container settings for Docker/K8s and image/resource settings for Slurm. It is **not** used for launcher
+selection.
+
+```json
+{
+  "launcher_spec": {
+    "default": {
+      "docker": { "image": "nvflare-pt:2.7" },
+      "k8s":    { "image": "nvflare-pt:2.7" },
+      "slurm":  { "image": "/shared/images/nvflare-job.sif", "time": "02:00:00", "pending_timeout": 300 }
+    },
+    "site-1": {
+      "docker": { "image": "nvflare-pt:2.7", "shm_size": "8g" },
+      "k8s":    { "image": "nvflare-pt:2.7", "cpu": "4", "memory": "16Gi", "ephemeral_storage": "8Gi" },
+      "slurm":  { "cpus_per_node": 16, "mem_per_node": 131072 }
+    }
+  },
+  "resource_spec": {
+    "site-1": {
+      "num_of_gpus": 1
+    }
+  }
+}
+```
+
+Resolution model for new job metadata:
+
+1. Merge `launcher_spec["default"][mode]` with `launcher_spec[site_name][mode]` (site wins on conflict).
+2. Keep `resource_spec` separate from launcher settings; it is not a place for new backend-specific configuration.
+
+`resource_spec` (distinct from `launcher_spec`) is scheduler-facing: the scheduler reads it at job admission time to
+decide if the site has the required hardware. Docker, K8s, and Slurm use flat
+`resource_spec[site]["num_of_gpus"]` as the portable GPU total. Slurm permits only `nodes`, `gpus_per_node`,
+`image`, `cpus_per_node`, `mem_per_node`, `time`, and reduce-only `pending_timeout` in its job block. A job image
+requires BYOC authorization and overrides study/site image defaults. Routing, account, QOS, sandbox, setup, and raw
+Slurm flags remain site/study-owned.
+
+### 3.3 Server Side (`ServerEngine`)
+
+Location: `nvflare/private/fed/server/server_engine.py`
+
+```
+_start_runner_process(job, job_clients, snapshot, fl_ctx)
+│
+├─ 1. job_launcher = get_job_launcher(job.meta, fl_ctx)
+│     (fires BEFORE_JOB_LAUNCH; JOB_PROCESS_ARGS not yet set)
+│
+├─ 2. Build job_args dict with server-specific JobProcessArgs
+│
+├─ 3. fl_ctx.set_prop(FLContextKey.JOB_PROCESS_ARGS, job_args)
+│
+├─ 4. job_handle = job_launcher.launch_job(job.meta, fl_ctx)
+│
+├─ 5. Store in run_processes[job_id]
+│
+└─ 6. Background thread → wait_for_complete → job_handle.wait()
+```
+
+### 3.4 Client Side (`ClientExecutor`)
+
+Location: `nvflare/private/fed/client/client_executor.py`
+
+```
+start_app(job_id, job_meta, ...)
+│
+├─ 1. job_launcher = get_job_launcher(job_meta, fl_ctx)
+│
+├─ 2. Build job_args dict with client-specific JobProcessArgs
+│
+├─ 3. fl_ctx.set_prop(FLContextKey.JOB_PROCESS_ARGS, job_args)
+│
+├─ 4. job_handle = job_launcher.launch_job(job_meta, fl_ctx)
+│
+├─ 5. Fire EventType.AFTER_JOB_LAUNCH
+│
+└─ 6. Background thread → _wait_child_process_finish → job_handle.wait()
+```
+
+### 3.5 Return Code Resolution
+
+`get_return_code()` in `fed_utils.py` uses a two-tier strategy:
+
+1. **File-based** — Check for `FLMetaKey.PROCESS_RC_FILE` in the job's run directory. The child writes its own return code here before exiting.
+2. **Handle-based** — Fall back to `job_handle.poll()`.
+
+The Slurm manager resolves and caches the scheduler-aware terminal result before waking waiters. After `wait()`,
+the generic function uses `_process_rc.txt` when the worker wrote it and otherwise polls that cached handle result.
+
+---
+
+## 4. The Four Implementations
+
+### 4.1 Process Launcher (Subprocess)
+
+**Files:**
+
+| File | Class |
+|------|-------|
+| `nvflare/app_common/job_launcher/process_launcher.py` | `ProcessHandle`, `ProcessJobLauncher` |
+| `nvflare/app_common/job_launcher/server_process_launcher.py` | `ServerProcessJobLauncher` |
+| `nvflare/app_common/job_launcher/client_process_launcher.py` | `ClientProcessJobLauncher` |
+
+#### ProcessHandle
+
+Wraps a `ProcessAdapter` that manages a `subprocess.Popen` or a PID.
+
+| Method | Implementation |
+|--------|---------------|
+| `terminate()` | Delegates to `adapter.terminate()`. |
+| `poll()` | Maps exit code: 0 → `SUCCESS`, 1 → `EXECUTION_ERROR`, 9 → `ABORTED`, `None` → `UNKNOWN`. |
+| `wait()` | Delegates to `adapter.wait()`. |
+
+#### ProcessJobLauncher
+
+| Step | Action |
+|------|--------|
+| 1 | Copy `os.environ`. If `app_custom_folder` is non-empty, call `add_custom_dir_to_path()`. |
+| 2 | Merge `get_credential_env(JOB_PROCESS_ARGS)` into the child env — bootstrap credentials travel in the environment, never in argv (see `job_process_credential_transport_design.md`). |
+| 3 | Call `self.get_command(job_meta, fl_ctx)` (abstract). |
+| 4 | `shlex.split(command)`, spawn via `spawn_process(argv, new_env)`. |
+| 5 | Return `ProcessHandle`. |
+
+**Event registration** — unconditionally registers:
+
+```python
+def handle_event(self, event_type, fl_ctx):
+    if event_type == EventType.BEFORE_JOB_LAUNCH:
+        add_launcher(self, fl_ctx)
+```
+
+**Server/Client subclasses** override `get_command()`:
+
+- `ServerProcessJobLauncher` → `generate_server_command(fl_ctx)`
+- `ClientProcessJobLauncher` → `generate_client_command(fl_ctx)`
+
+---
+
+### 4.2 Docker Launcher
+
+**File:** `nvflare/app_opt/job_launcher/docker_launcher.py`
+
+See [docker_job_launcher_design.md](docker_job_launcher_design.md) for deployment topology, networking, security posture, and operational details.
+
+**Class hierarchy:**
+
+```
+JobHandleSpec (ABC)
+  └── DockerJobHandle
+
+JobLauncherSpec (FLComponent, ABC)
+  └── DockerJobLauncher           (abstract: get_module_args)
+        ├── ClientDockerJobLauncher
+        └── ServerDockerJobLauncher
+```
+
+#### DockerJobHandle state mapping
+
+| Docker status | `JobReturnCode` | Notes |
+|---------------|-----------------|-------|
+| `created`, `running`, `paused`, `restarting` | `UNKNOWN` | Still in progress |
+| `exited` (code 0) | `SUCCESS` | |
+| `exited` (code ≠ 0) | `EXECUTION_ERROR` | Reads `container.attrs["State"]["ExitCode"]` |
+| `dead` | `ABORTED` | Killed externally |
+
+Mirrors the `K8sJobHandle` `terminal_state` pattern: once `terminal_state` is set it is never cleared; all subsequent `poll()`/`wait()` calls return immediately.
+
+#### DockerJobLauncher
+
+Constructor parameters (set in `resources.json`):
+
+| Parameter | Default | Purpose |
+|-----------|---------|---------|
+| `workspace` | env `NVFL_DOCKER_WORKSPACE` | Host path of the NVFlare workspace (bind-mounted into job containers). |
+| `network` | `"nvflare-network"` | Docker network. Must already exist. |
+| `default_python_path` | `"/usr/local/bin/python"` | Default Python executable inside job containers. Job meta can override with `launcher_spec[site][docker].python_path`. |
+| `timeout` | `30` | Seconds to wait for container to reach `running`. |
+| `default_job_container_kwargs` | `{}` | Site-level `docker run` kwargs applied to every job container. Job-level `launcher_spec` wins on conflict. |
+| `default_job_env` | `{}` | Site-level environment variables injected into every job container. |
+
+Launch sequence:
+
+| Step | Action |
+|------|--------|
+| 1 | Read `job_image` from `get_job_launcher_spec(job_meta, site_name, "docker").get("image")`. Raise `RuntimeError` if absent. |
+| 2 | Override `PARENT_URL`: replace `localhost` with the site container name so SJ/CJ connects back via Docker DNS. |
+| 3 | Build `command = [python_path, "-u", "-m", exe_module] + module_args`, using `launcher_spec[site][docker].python_path` when present and `default_python_path` otherwise. Module args exclude bootstrap credentials, which are merged into the container `environment` via `get_credential_env(job_args)` — never into the command. |
+| 4 | Resolve `num_of_gpus` from the flat `resource_spec[site]` GPU resource requirement. |
+| 5 | Merge `default_job_container_kwargs` with job-level `launcher_spec` keys (job wins). Set `device_requests` from `num_of_gpus` if not already in merged kwargs. |
+| 6 | `docker_client.containers.run(job_image, command=..., network=..., volumes=..., **merged_kwargs)`. |
+| 7 | `job_handle.enter_states([DockerStatus.RUNNING])`. Return handle. |
+
+**Event registration** — unconditional:
+
+```python
+def handle_event(self, event_type, fl_ctx):
+    if event_type == EventType.BEFORE_JOB_LAUNCH:
+        add_launcher(self, fl_ctx)
+```
+
+---
+
+### 4.3 Kubernetes Launcher
+
+**File:** `nvflare/app_opt/job_launcher/k8s_launcher.py`
+
+**Class hierarchy:**
+
+```
+JobHandleSpec (ABC)
+  └── K8sJobHandle
+
+JobLauncherSpec (FLComponent, ABC)
+  └── K8sJobLauncher              (abstract: get_module_args)
+        ├── ClientK8sJobLauncher
+        └── ServerK8sJobLauncher
+```
+
+#### Pod Name Sanitization
+
+`uuid4_to_rfc1123(job_id)`: lowercase, strip non-`[a-z0-9-]` chars, prefix `"j"` if leading digit, strip trailing hyphens, truncate to 63 chars.
+
+#### K8sJobHandle
+
+| Method | Implementation |
+|--------|---------------|
+| `terminate()` | `delete_namespaced_pod(grace_period_seconds=0)`. Always sets `terminal_state = TERMINATED` regardless of outcome. |
+| `poll()` | Returns `terminal_state` if set; otherwise calls `_query_state()` mapped through `JOB_RETURN_CODE_MAPPING`. |
+| `wait()` | Loops `_query_state()`; sets `terminal_state` when `SUCCEEDED` or `TERMINATED`; sleeps 1s. No timeout. |
+| `_query_phase()` | Calls `read_namespaced_pod`. On 404: sets `terminal_state = TERMINATED`. Returns `PodPhase.UNKNOWN` on any error. |
+| `enter_states()` | Polls every 1s. Exits on: (1) stuck-in-pending → delete pod and preserve `EXCEPTION` return code, (2) terminal pod phase → set `terminal_state`, (3) wall-clock timeout → delete pod and preserve `EXCEPTION` return code. Returns `True` on state reached, `False` otherwise. |
+
+Pod phase mapping:
+
+| Pod Phase | JobState | JobReturnCode |
+|-----------|----------|---------------|
+| `Pending` | `STARTING` | `UNKNOWN` |
+| `Running` | `RUNNING` | `UNKNOWN` |
+| `Succeeded` | `SUCCEEDED` | `SUCCESS` |
+| `Failed` | `TERMINATED` | `ABORTED` |
+| `Unknown` | `UNKNOWN` | `UNKNOWN` |
+
+Manual termination still maps to `ABORTED`. Startup timeout paths are different:
+when Kubernetes reports that a `Pending` pod is unschedulable due to insufficient
+CPU, memory, or GPU resources, `pending_timeout` controls how long to wait before
+deleting the pod. Other startup failures detected from pod status or events,
+such as image pull errors, volume binding/mount failures, container config
+errors, non-resource scheduling failures, or `Unknown` pod phase, fail
+immediately with `EXCEPTION`. Missing the wall-clock `timeout` also deletes the
+pod and preserves `EXCEPTION`, so the server marks `list_jobs` as
+`FINISHED:EXECUTION_EXCEPTION` instead of reporting a user abort.
+`pending_timeout=0` fails fast on the first CPU/memory/GPU shortage observation.
+`pending_timeout=None` disables resource-shortage timeout unless the broader
+launch `timeout` is set.
+
+#### K8sJobLauncher
+
+Constructor parameters:
+
+| Parameter | Default | Purpose |
+|-----------|---------|---------|
+| `config_file_path` | required | Path to kubeconfig. Loaded lazily on first `launch_job`. |
+| `study_data_pvc_file_path` | `None` | Optional YAML file mapping study/dataset names to PVC claim names (v1 legacy). Validated lazily; missing study entries skip data PVC mounts and log a warning. Ignored — and a hard error if its file exists — when the site uses `local/study_runtime.yaml` (v2), which is auto-discovered under the parent workspace and needs no launcher argument. |
+| `timeout` | `None` | Wall-clock seconds for `enter_states([RUNNING])`. |
+| `namespace` | `"default"` | Kubernetes namespace. |
+| `pending_timeout` | `120` | Seconds to wait while the scheduler reports insufficient CPU, memory, or GPU resources. Use `0` to fail fast or `None` to wait indefinitely unless `timeout` is set. Job meta can override with `launcher_spec[site][k8s].pending_timeout`. |
+| `default_python_path` | `"/usr/local/bin/python3"` | Default Python executable in the pod command. Job meta can override with `launcher_spec[site][k8s].python_path`. |
+| `workspace_mount_path` | `"/var/tmp/nvflare/workspace"` | In-container path where job pods mount the transferred job workspace and startup kit. `nvflare deploy prepare` sets this from `parent.workspace_mount_path`. |
+| `image_pull_secrets` | `None` | Optional list of existing Kubernetes Secret names attached to launched job pods as `imagePullSecrets`. |
+| `ephemeral_storage` | `"1Gi"` | Default job pod workspace `emptyDir` size and `ephemeral-storage` request/limit. Job meta can override with `launcher_spec[site][k8s].ephemeral_storage`. |
+
+Launch sequence:
+
+| Step | Action |
+|------|--------|
+| 0 | Lazy init: load kubeconfig and create `CoreV1Api`. |
+| 1 | Sanitize job ID via `uuid4_to_rfc1123`. Extract `site_name`, `job_image` from `get_job_launcher_spec(job_meta, site_name, "k8s")`. Raise if `WORKSPACE_OBJECT` missing. |
+| 2 | Read `JOB_PROCESS_ARGS`; raise if absent or `EXE_MODULE` missing. If `<workspace>/local/study_runtime.yaml` exists, parse it (strict v2) and resolve the job study's datasets, env, secret_env, secret_mounts, container name, and pod template from it; coexistence with a v1 study data file is a hard error. Otherwise resolve dataset PVC mounts from `study_data_pvc_file_path` when configured and the YAML file contains entries for the job study. |
+| 3 | Build `job_config`: name, image, args from `get_module_args()`. Use `launcher_spec[site][k8s].python_path` for the pod command when present, falling back to `default_python_path`. Mount the job workspace at `workspace_mount_path`, mount the startup-kit Secret at `<workspace_mount_path>/startup`, and set custom-code `PYTHONPATH` under `workspace_mount_path`. Add the workspace `emptyDir.sizeLimit` and `resources.requests/limits["ephemeral-storage"]` from `launcher_spec[site][k8s].ephemeral_storage` when present, falling back to the launcher default. Add K8s CPU and memory limits from `launcher_spec`; add GPU limits from the flat `resource_spec[site].num_of_gpus` GPU resource requirement. Apply `launcher_spec[site][k8s].pending_timeout` when present. Missing study entries skip data PVC mounts and log a warning. If a pod template is resolved, preserve template pod fields and sidecars while replacing NVFlare-owned fields such as pod name, job container image/command/args, workspace mounts, transfer env vars, image pull secrets, and resources. |
+| 3.5 | Create the per-job credential Secret `nvflare-cred-<pod_name>` (bootstrap credentials, the workspace transfer token, and — when the job has one — the per-job certificate and key as `NVFLARE_JOB_CERT` / `NVFLARE_JOB_KEY`) and reference it from the job container via `env[].valueFrom.secretKeyRef` — credential values never appear in the pod object. The startup Secret never includes `*.key`; in secure mode a job without a credential is refused. |
+| 4 | Create `K8sJobHandle` (carries the credential Secret name). |
+| 5 | `core_v1.create_namespaced_pod()`, then patch the credential Secret with an ownerReference to the created pod (GC backstop). On any exception: delete the credential Secret if the pod was never created, set `terminal_state = TERMINATED`, preserve `EXCEPTION` as the return code, and return handle. |
+| 6 | `job_handle.enter_states([RUNNING])`. On any `BaseException`: `terminate()` then re-raise. |
+| 7 | Return handle. The handle deletes the credential Secret when the job reaches a terminal state (completed pods are not deleted, so ownerReference GC alone would not fire on success). |
+
+The K8s launcher loads the v1 `study_data_pvc_file_path` file once per launcher
+instance; restart the parent site process to pick up hand edits. The v2
+`local/study_runtime.yaml` is re-read on every launch, so edits (including
+referenced pod template files) take effect on the next job.
+
+Study-specific configuration:
+
+- v1 (`study_data_pvc_file_path`): use the built-in pod manifest and add matching study-data PVC mounts under `/data/<study>/<dataset>`.
+- v2 (`local/study_runtime.yaml`): all study runtime config — datasets, env, secret-backed env vars and mounts, site default job image (`container.image`; a job-supplied image wins), and per-study pod template — comes from the one file. If typed entries are configured and a multi-container template has no main container marked with the `nvflare_job` sentinel, the launch fails rather than falling back to the first container.
+
+When a Pod template is used, `workspace-job` and `startup-kit` remain launcher-owned reserved names. Any same-named template `spec.volumes` or selected job-container `volumeMounts` are replaced by the launcher-generated `emptyDir` workspace and startup-kit Secret mounts. Other named template volumes and mounts are preserved.
+
+**Event registration** — unconditional (site policy, not job config):
+
+```python
+def handle_event(self, event_type, fl_ctx):
+    if event_type == EventType.BEFORE_JOB_LAUNCH:
+        add_launcher(self, fl_ctx)
+```
+
+### 4.4 Slurm Launcher
+
+`ClientSlurmJobLauncher` and `ServerSlurmJobLauncher` return a manager-backed `SlurmJobHandle`. One manager per
+parent submits, monitors, and cancels scheduler allocations. Its live-handle map prevents duplicate submissions
+within that parent. A launch succeeds only when `sbatch --parsable` returns exactly one job ID; otherwise it removes
+the transient job artifacts and reports failure.
+
+The deploy tool prepares the appropriate client or server launcher directly in the shared workspace selected by
+`--output`. Bootstrap validates the workspace and required Slurm accounting service. Apptainer and Pyxis are single-node;
+multi-node allocations require bare mode and application-owned fan-out.
+
+See [`slurm_job_launcher_design.md`](slurm_job_launcher_design.md) for the design and
+`docs/user_guide/admin_guide/deployment/slurm_job_launcher.rst` for operator configuration.
+
+---
+
+## 5. Object-Oriented Design Summary
+
+### 5.1 Full Class Hierarchy
+
+```
+JobHandleSpec (ABC)
+├── ProcessHandle          (wraps ProcessAdapter / subprocess.Popen)
+├── DockerJobHandle        (wraps Docker container + terminal_state pattern)
+├── K8sJobHandle           (wraps CoreV1Api + pod name + terminal_state pattern)
+└── SlurmJobHandle         (manager-backed live scheduler allocation)
+
+JobLauncherSpec (FLComponent, ABC)
+├── ProcessJobLauncher     (abstract: get_command)
+│   ├── ServerProcessJobLauncher
+│   └── ClientProcessJobLauncher
+├── DockerJobLauncher      (abstract: get_module_args)
+│   ├── ServerDockerJobLauncher
+│   └── ClientDockerJobLauncher
+├── K8sJobLauncher         (abstract: get_module_args)
+│   ├── ServerK8sJobLauncher
+│   └── ClientK8sJobLauncher
+└── SlurmJobLauncher
+    ├── ServerSlurmJobLauncher
+    └── ClientSlurmJobLauncher
+```
+
+### 5.2 Design Patterns
+
+**Strategy Pattern** — Each launcher is a strategy for running jobs. The engine programs against `JobLauncherSpec`; the concrete strategy is determined by site configuration.
+
+**Template Method Pattern** — Each base launcher implements `launch_job()` with a fixed algorithm, delegating the variable part to an abstract hook:
+
+| Base Launcher | Abstract hook | Returns |
+|---------------|---------------|---------|
+| `ProcessJobLauncher` | `get_command(job_meta, fl_ctx)` | Shell command string |
+| `DockerJobLauncher` | `get_module_args(job_args)` | `{flag: value}` dict |
+| `K8sJobLauncher` | `get_module_args(job_id, fl_ctx)` | `{flag: value}` dict |
+| `SlurmJobLauncher` | `get_module_args(job_args)` | Structured argument tuple |
+
+**Observer Pattern** — Launchers register for `BEFORE_JOB_LAUNCH` through the `FLComponent` event system. Decouples launcher registration from the engine's control flow.
+
+---
+
+## 6. Comparison: Process vs Docker vs Kubernetes vs Slurm
+
+| Aspect | Process | Docker | Kubernetes | Slurm |
+|--------|---------|--------|------------|-------|
+| **Execution unit** | OS subprocess | Docker container | K8s Pod | Slurm batch allocation |
+| **Isolation** | Shared host env | Per-job image; own env | Per-job image; pod isolation | Apptainer sandbox, trusted Pyxis, or trusted bare process |
+| **Image required** | No | Job/study image | Job/study image | Job/study/site image for container backends |
+| **Workspace access** | Direct filesystem | Host bind mount | PersistentVolumeClaims | Shared POSIX filesystem; explicit binds in container modes |
+| **Data access** | Direct filesystem | Study host-path binds | Study PVC mounts | Validated study host-path binds in container modes |
+| **PARENT_URL** | Local parent | Docker DNS rewrite | Prepared comm config | Runtime compute-reachable `parent_host:internal_port` rewrite |
+| **GPU config** | `GPUResourceManager` / `CUDA_VISIBLE_DEVICES` | `device_requests` | `nvidia.com/gpu` limit | `--gres=gpu:N` from flat total/topology |
+| **Resource manager** | `GPUResourceManager` | `PassthroughResourceManager` | `PassthroughResourceManager` | `PassthroughResourceManager`; Slurm enforces allocation |
+| **Start verification** | None | Container running timeout | Pod pending/stuck detection | Parsed submission ID plus pending timeout |
+| **Terminate** | Process signals | Stop/remove container | Delete pod | Exact-marker/UID verification then retried `scancel` |
+| **Command format** | Shell-derived process argv | Container argv list | Pod command/args | Structured Slurm CLI argv plus generated batch script |
+| **Dependencies** | stdlib only | Docker SDK/daemon | Kubernetes SDK/API | Slurm CLI; selected compute backend |
+| **Typical use** | Simulator, single-machine POC | Isolated jobs on VM/bare metal | Kubernetes cluster | Scheduler-native HPC deployment |
+
+---
+
+## 7. Resource Management
+
+### 7.1 PassthroughResourceManager
+
+`PassthroughResourceManager` always approves resource requests and performs no local tracking. Use with Docker, K8s,
+or Slurm launchers where the runtime or scheduler handles actual resource allocation.
+
+| Method | Behavior |
+|--------|----------|
+| `check_resources()` | Always returns `(True, <token>)`. |
+| `cancel_resources()` | No-op. |
+| `allocate_resources()` | Returns `{}`. |
+| `free_resources()` | No-op. |
+
+### 7.2 GPUResourceManager `ignore_host` flag
+
+`GPUResourceManager(ignore_host=True)` skips the startup check that validates declared GPUs against host hardware. Useful in K8s where the NVFlare process may run on a CPU node.
+
+---
+
+## 8. Sequence Diagram
+
+```
+  Engine                  fed_utils              Launcher                Handle
+    │                        │                      │                      │
+    │  get_job_launcher()    │                      │                      │
+    │───────────────────────>│                      │                      │
+    │                        │  fire BEFORE_JOB_LAUNCH                     │
+    │                        │─────────────────────>│                      │
+    │                        │                      │ add_launcher(self)   │
+    │                        │<─────────────────────│ (always, site policy)│
+    │    return launcher     │                      │                      │
+    │<───────────────────────│                      │                      │
+    │                        │                      │                      │
+    │  launcher.launch_job(job_meta, fl_ctx)        │                      │
+    │─────────────────────────────────────────────->│                      │
+    │                        │                      │  create exec unit    │
+    │                        │                      │─────────────────────>│
+    │                        │                      │  return handle       │
+    │<─────────────────────────────────────────────────────────────────────│
+    │  store handle in run_processes                │                      │
+    │  [background thread] handle.wait()            │                      │
+    │─────────────────────────────────────────────────────────────────────>│
+    │                                               │        blocks/polls  │
+    │  (on abort) handle.terminate()                │                      │
+    │─────────────────────────────────────────────────────────────────────>│
+    │  get_return_code() → check RC file or handle.poll()                  │
+    │<─────────────────────────────────────────────────────────────────────│
+```
+
+---
+
+## 9. Configuration
+
+Each site configures exactly one launcher in `resources.json` (or `local/resources.json` for local overrides). The configured launcher handles all jobs on that site.
+
+### 9.1 Process Launcher (default)
+
+```json
+{
+  "id": "job_launcher",
+  "path": "nvflare.app_common.job_launcher.client_process_launcher.ClientProcessJobLauncher",
+  "args": {}
+}
+```
+
+### 9.2 Docker Launcher
+
+```json
+{
+  "id": "job_launcher",
+  "path": "nvflare.app_opt.job_launcher.docker_launcher.ClientDockerJobLauncher",
+  "args": {
+    "workspace": "/host/path/to/workspace",
+    "network": "nvflare-network",
+    "timeout": 30,
+    "default_job_container_kwargs": {"shm_size": "8g"},
+    "default_job_env": {"NCCL_P2P_DISABLE": "1"}
+  }
+}
+```
+
+See [docker_job_launcher_design.md](docker_job_launcher_design.md) for the full deployment guide including `start_docker.sh`, Docker network setup, and `study_data.yaml`.
+
+### 9.3 Kubernetes Launcher
+
+```json
+{
+  "id": "job_launcher",
+  "path": "nvflare.app_opt.job_launcher.k8s_launcher.ClientK8sJobLauncher",
+  "args": {
+    "config_file_path": "/path/to/kubeconfig",
+    "workspace_pvc": "nvflare-workspace-pvc",
+    "study_data_pvc_file_path": "/path/to/study_data.yaml",
+    "workspace_mount_path": "/var/tmp/nvflare/workspace",
+    "timeout": 120,
+    "namespace": "nvflare"
+  }
+}
+```
+
+The `study_data_pvc_file_path` YAML maps study and dataset names to PVC claim names. Missing study entries mean no data PVC is mounted, and the launcher logs a warning:
+
+```yaml
+default:
+  training:
+    source: default-data-pvc
+    mode: ro
+study-alpha:
+  training:
+    source: alpha-training-pvc
+    mode: ro
+  output:
+    source: alpha-output-pvc
+    mode: rw
+```
+
+For K8s, each dataset `source` is a trusted PVC claim name that is inserted into the pod manifest. For Docker, the same YAML shape is used but `source` is a trusted host path instead of a PVC claim name. Site operators should validate these site-local values before running jobs.
+
+### 9.4 Slurm Launcher
+
+Do not hand-author the Slurm launcher component. `nvflare deploy prepare` writes the client or server launcher and
+`PassthroughResourceManager` directly into the runtime workspace selected by `--output`. See
+`docs/user_guide/admin_guide/deployment/slurm_job_launcher.rst` for public configuration.
+
+---
+
+## 10. Future Improvements
+
+1. **Unified cleanup** — Standardize cleanup policy (auto-remove on exit, configurable retention for debugging) across Docker and K8s handles.
+
+2. **Consistent timeout policy** — The Process launcher has no start timeout. Docker and K8s launchers both call `enter_states` with a configurable timeout.
+
+3. **`ContainerJobLauncher` base class** — If Docker and Kubernetes acquire enough common behavior, extract a base
+with `_run_container()` / `_get_status()` / `_stop_container()` as the runtime-specific interface. Slurm remains a
+scheduler-native strategy rather than a subclass of the Docker launcher.
+
+4. **Observability** — Add optional `get_info()` to `JobHandleSpec` so the engine can log launcher-specific details (pod name, namespace, PID, container ID, or Slurm job ID) for debugging.
+
+5. **Orphaned workload recovery** — Docker, Kubernetes, and Slurm do not terminate workloads that survive an SP/CP
+restart. A future common policy could add optional discovery and cleanup.

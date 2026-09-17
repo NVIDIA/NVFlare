@@ -1,0 +1,55 @@
+# Regression tests for secure external-process Client API streaming.
+# The large-model trainer delays post-HELLO credential installation by two seconds
+# and forces task and result tensors through DownloadService streaming. A successful
+# run proves that TASK_READY is held until SESSION_READY confirms authentication
+# filter installation. test_configs.yml includes this file in the standard Client
+# API integration stage.
+project_yaml: ./data/projects/client_api.yml
+jobs_root_dir: ./data/jobs
+cleanup: True
+
+
+tests:
+  - test_name: "run np-loop-external-process"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job np_loop_external_process" ]
+        "result":
+          "type": "job_submit_success"
+      - "trigger":
+          "type": "run_state"
+          "data": { "run_finished": True }
+        "actions": [ "ensure_current_job_done" ]
+        "result":
+          "type": "run_state"
+          "data": { "run_finished": True }
+  - test_name: "run pt-large-model-pass-through"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job pt_large_model_pass_through" ]
+        "result":
+          "type": "job_submit_success"
+      - "trigger":
+          "type": "run_state"
+          "data": { "run_finished": True }
+        "actions": [ "ensure_current_job_done" ]
+        "result":
+          "type": "run_state"
+          "data": { "run_finished": True }
+    validators:
+      - path: tests.integration_test.src.validators.PTModelValidator
+      - path: tests.integration_test.src.validators.LogPatternValidator
+        args:
+          required_patterns:
+            - "NVFLARE_TEST_AUTH_FILTER_INSTALL_BEGIN"
+            - "NVFLARE_TEST_AUTH_FILTER_INSTALL_END"
+            - "round 1 training loss:"
+          forbidden_patterns:
+            - "Traceback (most recent call last)"
+            - "EXECUTION_EXCEPTION"
+            - "unauthenticated msg"
+            - "missing client name"

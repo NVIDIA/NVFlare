@@ -19,6 +19,7 @@ import pytest
 
 from nvflare.app_common.np.np_model_locator import NPModelLocator
 from nvflare.fuel.common.excepts import ConfigError
+from nvflare.fuel.utils.component_builder import ComponentBuilder
 from tests.unit_test.fuel.utils.mock_component_builder import MockComponentBuilder
 
 
@@ -48,6 +49,10 @@ def is_python_greater_than_309():
 
 
 class TestComponentBuilder:
+    def test_component_builder_is_abstract(self):
+        with pytest.raises(TypeError):
+            ComponentBuilder()
+
     def test_empty_dict(self):
         builder = MockComponentBuilder()
         b = builder.build_component({})

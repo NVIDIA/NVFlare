@@ -1,0 +1,97 @@
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""In-time aggregation with callbacks that process results as they arrive.
+
+Response callbacks can run concurrently on backend result-delivery threads, so
+callbacks that mutate shared state must synchronize access to that state.
+"""
+
+import threading
+
+from collab.async_aggregation.np_utils import parse_array_def
+
+from nvflare.collab import collab
+from nvflare.collab.api import ContextKey
+from nvflare.fuel.utils.log_utils import get_obj_logger
+
+
+class _AggrResult:
+
+    def __init__(self):
+        self.total = 0
+        self.count = 0
+        self.lock = threading.Lock()
+
+
+class NPFedAvgInTime:
+
+    def __init__(self, initial_model, num_rounds=10, timeout=2.0):
+        self.num_rounds = num_rounds
+        self.initial_model = initial_model
+        self.timeout = timeout
+        self.name = "NPFedAvgInTime"
+        self.logger = get_obj_logger(self)
+        self._init_model = parse_array_def(initial_model)
+
+    @collab.main
+    def execute(self):
+        self.logger.info(f"[{collab.call_info}] Start training for {self.num_rounds} rounds")
+        current_model = collab.get_prop(ContextKey.RESULT, self._init_model)
+        for i in range(self.num_rounds):
+            current_model = self._do_one_round(i, current_model)
+            if current_model is None:
+                self.logger.error(f"training failed at round {i}")
+                break
+            score = self._do_eval(current_model)
+            self.logger.info(f"[{collab.call_info}]: eval score in round {i}: {score}")
+        self.logger.info(f"FINAL MODEL: {current_model}")
+        return current_model
+
+    def _do_eval(self, model):
+        results = collab.clients.evaluate(model)
+        total = 0.0
+        for name, value in results:
+            self.logger.info(f"[{collab.call_info}]: got eval result from client {name}: {value}")
+            total += value
+
+        num_results = len(results)
+        return total / num_results if num_results > 0 else 0.0
+
+    def _do_one_round(self, current_round, current_model):
+        aggr_result = _AggrResult()
+
+        timeout = collab.get_app_prop("default_timeout", self.timeout)
+        self.logger.info(f"got timeout: {timeout}")
+        collab.clients(
+            timeout=timeout,
+            process_resp_cb=self._accept_train_result,
+            aggr_result=aggr_result,
+        ).train(current_round, current_model)
+
+        if aggr_result.count == 0:
+            return None
+
+        result = aggr_result.total / aggr_result.count
+        self.logger.info(
+            f"[{collab.call_info}] round {current_round}: " f"aggr result from {aggr_result.count} clients: {result}"
+        )
+        return result
+
+    def _accept_train_result(self, gcc, result, aggr_result: _AggrResult):
+        self.logger.info(f"[{collab.call_info}] got train result from {collab.caller} {result}")
+        with aggr_result.lock:
+            aggr_result.total += result
+            aggr_result.count += 1
+        return None

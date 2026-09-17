@@ -12,7 +12,7 @@
     "components": [
         {
             "id": "data_splitter",
-            "path": "pt.utils.cifar10_data_splitter.Cifar10DataSplitter",
+            "path": "data.cifar10_data_split.Cifar10DataSplitter",
             "args": {
                 "split_dir": "{TRAIN_SPLIT_ROOT}",
                 "num_sites": "{min_clients}",
@@ -21,7 +21,7 @@
         },
         {
             "id": "model",
-            "path": "pt.networks.cifar10_nets.ModerateCNN",
+            "path": "model.ModerateCNN",
             "args": {}
         },
         {

@@ -40,6 +40,101 @@ section includes structured guidance such as:
 This keeps JSON output machine-readable while still carrying follow-up
 instructions.
 
+Root CA validity
+================
+
+Centralized provisioning creates a self-signed project root CA that is valid
+for 360 days by default. To select a different initial validity, set the
+positive integer ``root_valid_days`` for ``CertBuilder`` in ``project.yml``:
+
+.. code-block:: yaml
+
+   builders:
+     - path: nvflare.lighter.impl.cert.CertBuilder
+       args:
+         root_valid_days: 3650
+
+This setting only applies when a workspace creates its root. Later runs reuse
+the root in the workspace's ``state`` directory and report its actual
+``NotBefore`` and ``NotAfter`` values. A configured validity that does not
+match the existing root fails clearly. Participant certificates keep their
+normal 360-day validity unless the root expires sooner.
+
+Changing an established root requires a separate multi-root rollover;
+``root_valid_days`` never extends or replaces it.
+
+Job CA
+======
+
+Provisioning also creates a job-signing intermediate CA, ``job_ca.crt`` /
+``job_ca.key``, in the **server** startup kit only. The server uses it to issue
+a short-lived certificate to every job process (see
+:ref:`per_job_certificates`); in secure mode jobs cannot run without it. It is
+on by default and can be turned off:
+
+.. code-block:: yaml
+
+   builders:
+     - path: nvflare.lighter.impl.cert.CertBuilder
+       args:
+         enable_job_ca: false
+
+Like the participant certificates, the job CA is kept in the workspace's
+``state`` directory and reused on later provisioning runs; an expired one is
+regenerated. Running ``nvflare provision`` again on a workspace created before
+this feature adds the job CA to the server kit without changing any other
+certificate.
+
+Certificate Identity Overrides
+==============================
+
+For mTLS deployments, each CellNet endpoint is authenticated against the peer
+certificate common name (CN). By default, the expected certificate identity is
+derived from the participant name or FQCN. If a participant intentionally uses a
+certificate CN that differs from its FLARE site name, set ``auth_identity`` in
+``project.yml`` before provisioning.
+
+For example, if the FLARE site is named ``site-1`` but its certificate CN is
+``server.example.com``:
+
+.. code-block:: yaml
+
+   participants:
+     - name: site-1
+       type: client
+       org: nvidia
+       auth_identity: server.example.com
+
+Provisioning uses this value to generate the corresponding startup-kit
+configuration, including peer identity mappings needed by the server and by job
+cells. A job cell such as ``site-1.<job_id>`` still authenticates with the
+parent site's configured certificate identity.
+
+.. important::
+
+   Endpoint-to-CN binding is enforced when an mTLS transport exposes the
+   authenticated peer CN. Some active-side gRPC connections do not expose the
+   peer CN to the Python driver, so NVFlare accepts those active connections and
+   relies on passive-side endpoint validation plus the normal application-layer
+   authentication checks.
+
+   Admin console cells use per-session endpoint names and authenticate the admin
+   user by certificate/user identity on the admin listener. Keep admin
+   application-layer authentication configured and protected.
+
+   ``auth_identity`` is loaded when a FLARE process starts. After rotating site
+   certificates or changing certificate CNs, regenerate the startup kits as
+   needed and restart the affected FLARE processes so the in-memory identity
+   resolver uses the new certificate identity.
+
+.. warning::
+
+   Do not edit ``startup/fed_client.json`` or ``startup/fed_server.json`` by
+   hand in a signed startup kit. If ``startup/signature.json`` is present, the
+   startup configuration is covered by the signature and manual edits invalidate
+   that signature. Change ``project.yml`` and re-run provisioning so the startup
+   configuration and signature are generated together.
+
 .. _dynamic_provisioning_cli:
 
 Dynamic Provisioning

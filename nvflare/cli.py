@@ -1,4 +1,4 @@
-# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -28,23 +28,27 @@ from nvflare.fuel.hci.tools.authz_preview import define_authz_preview_parser, ru
 from nvflare.lighter.provision import define_provision_parser, handle_provision
 from nvflare.private.fed.app.simulator.simulator import define_simulator_parser, run_simulator
 from nvflare.private.fed.app.utils import version_check
+from nvflare.tool.agent.agent_cli import def_agent_cli_parser, handle_agent_cmd
 from nvflare.tool.cert.cert_cli import def_cert_cli_parser, handle_cert_cmd
+from nvflare.tool.deploy.deploy_cli import def_deploy_cli_parser, handle_deploy_cmd
 from nvflare.tool.job.job_cli import def_job_cli_parser, handle_job_cli_cmd
+from nvflare.tool.kit.kit_cli import def_kit_cli_parser, default_startup_kit_id, handle_kit_cmd
+from nvflare.tool.kit.kit_config import StartupKitConfigError, add_startup_kit_entry, set_active_startup_kit
 from nvflare.tool.package.package_cli import def_package_cli_parser, handle_package_cmd
 from nvflare.tool.poc.poc_commands import def_poc_parser, handle_poc_cmd
 from nvflare.tool.preflight_check import check_packages, define_preflight_check_parser
 from nvflare.tool.recipe.recipe_cli import def_recipe_parser, handle_recipe_cmd
+from nvflare.tool.study.study_cli import def_study_cli_parser, handle_study_cmd
 from nvflare.tool.system.system_cli import def_system_cli_parser, handle_system_cmd
 from nvflare.utils.cli_utils import (
-    TARGET_POC,
-    TARGET_PROD,
+    CONFIG_VERSION,
+    CURRENT_CONFIG_VERSION,
     backup_hidden_config_file,
     create_job_template_config,
     create_poc_workspace_config,
-    create_startup_kit_config,
-    ensure_hidden_config_migrated,
+    find_startup_kit_config_keys,
     load_hidden_config_state,
-    print_hidden_config_migration_notice,
+    remove_startup_kit_config_keys,
     save_config,
 )
 
@@ -59,7 +63,14 @@ CMD_RECIPE = "recipe"
 CMD_CONFIG = "config"
 CMD_CERT = "cert"
 CMD_PACKAGE = "package"
+CMD_DEPLOY = "deploy"
 CMD_SYSTEM = "system"
+CMD_STUDY = "study"
+CMD_AGENT = "agent"
+
+_JSONL_COMMANDS = {
+    (CMD_JOB, "monitor"),
+}
 
 
 def def_provision_parser(sub_cmd):
@@ -148,36 +159,19 @@ _config_parser = None
 def def_config_parser(sub_cmd):
     global _config_parser
     cmd = "config"
-    config_parser = sub_cmd.add_parser(cmd, help="configure local NVFlare settings (startup kit path, POC workspace)")
+    config_parser = sub_cmd.add_parser(cmd, help="configure local NVFlare settings")
     _config_parser = config_parser
-    config_parser.add_argument(
-        "--poc.startup_kit",
-        dest="poc_startup_kit_dir",
-        type=str,
-        nargs="?",
-        default=None,
-        help="POC startup kit location",
-    )
-    config_parser.add_argument(
-        "--prod.startup_kit",
-        dest="prod_startup_kit_dir",
-        type=str,
-        nargs="?",
-        default=None,
-        help="production startup kit location",
-    )
     config_parser.add_argument(
         "-d",
         "--startup_kit_dir",
-        dest="legacy_startup_kit_dir",
         type=str,
         nargs="?",
         default=None,
-        help=argparse.SUPPRESS,
+        help="startup kit location (deprecated; use 'nvflare config add' and 'nvflare config use')",
     )
     config_parser.add_argument(
         "-pw",
-        "--poc.workspace",
+        "--poc_workspace_dir",
         dest="poc_workspace_dir",
         type=str,
         nargs="?",
@@ -185,10 +179,17 @@ def def_config_parser(sub_cmd):
         help="POC workspace location",
     )
     config_parser.add_argument(
-        "-jt", "--job_templates_dir", type=str, nargs="?", default=None, help="job templates location"
+        "-jt",
+        "--job_templates_dir",
+        type=str,
+        nargs="?",
+        default=None,
+        help="job templates location (deprecated)",
     )
     config_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
     config_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
+    config_subparser = config_parser.add_subparsers(title="config subcommands", metavar="", dest="config_sub_cmd")
+    def_kit_cli_parser(config_subparser)
     return {cmd: config_parser}
 
 
@@ -196,92 +197,101 @@ def handle_config_cmd(args):
     from nvflare.tool.cli_output import output_error, output_ok, print_human
     from nvflare.tool.cli_schema import handle_schema_flag
 
+    if getattr(args, "config_sub_cmd", None):
+        handle_kit_cmd(args)
+        return
+
     handle_schema_flag(
         _config_parser,
         "nvflare config",
         [
-            "nvflare config --poc.startup_kit /path/to/poc_startup",
-            "nvflare config --prod.startup_kit /path/to/prod_startup",
-            "nvflare config --poc.workspace /path/to/poc_workspace",
+            "nvflare config -pw /path/to/poc_workspace",
+            "nvflare poc config --pw /path/to/poc_workspace",
+            "nvflare config add project_admin /path/to/startup-kit",
+            "nvflare config use project_admin",
         ],
         sys.argv[1:],
     )
 
-    config_file_path, loaded_config, migration_needed = load_hidden_config_state()
+    config_file_path, loaded_config, _migration_needed = load_hidden_config_state()
     nvflare_config = loaded_config or CF.parse_string("{}")
-    requested_poc_startup = args.poc_startup_kit_dir
-    requested_prod_startup = args.prod_startup_kit_dir
+    requested_startup_kit = getattr(args, "startup_kit_dir", None)
     requested_poc_workspace = args.poc_workspace_dir
-    legacy_startup_kit_dir = getattr(args, "legacy_startup_kit_dir", None)
+    requested_job_templates = getattr(args, "job_templates_dir", None)
 
-    if legacy_startup_kit_dir is not None:
-        if requested_poc_startup is not None or requested_prod_startup is not None:
-            output_error(
-                "INVALID_ARGS",
-                exit_code=4,
-                detail="--startup_kit_dir cannot be used together with --poc.startup_kit or --prod.startup_kit",
-            )
-            raise SystemExit(4)
-        requested_poc_startup = legacy_startup_kit_dir
-        print_human(
-            "WARNING: 'nvflare config -d/--startup_kit_dir' is deprecated. "
-            "Use '--poc.startup_kit' for the same setting."
-        )
-
-    if (
-        requested_poc_startup is None
-        and requested_prod_startup is None
-        and requested_poc_workspace is None
-        and args.job_templates_dir is None
-    ):
+    if requested_startup_kit is None and requested_poc_workspace is None and requested_job_templates is None:
         # Read-only: print existing config
-        poc_startup_kit_dir = nvflare_config.get("poc.startup_kit", None) if nvflare_config else None
-        prod_startup_kit_dir = nvflare_config.get("prod.startup_kit", None) if nvflare_config else None
-        startup_kit_dir = poc_startup_kit_dir or prod_startup_kit_dir
-        poc_workspace_dir = nvflare_config.get("poc.workspace", None) if nvflare_config else None
-        job_templates_dir = nvflare_config.get("job_template.path", None) if nvflare_config else None
-        output_ok(
-            {
-                "config_file": config_file_path,
-                "startup_kit_dir": startup_kit_dir,
-                "poc_startup_kit_dir": poc_startup_kit_dir,
-                "prod_startup_kit_dir": prod_startup_kit_dir,
-                "poc_workspace_dir": poc_workspace_dir,
-                "job_templates_dir": job_templates_dir,
-            }
-        )
+        poc_workspace_dir = None
+        job_templates_dir = None
+        if nvflare_config:
+            poc_workspace_dir = nvflare_config.get("poc.workspace", None) or nvflare_config.get(
+                "poc_workspace.path", None
+            )
+            job_templates_dir = nvflare_config.get("job_template.path", None)
+        active_startup_kit = nvflare_config.get("startup_kits.active", None) if nvflare_config else None
+        data = {
+            "config_file": config_file_path,
+            "poc_workspace_dir": poc_workspace_dir,
+            "active_startup_kit": active_startup_kit,
+        }
+        if job_templates_dir is not None:
+            data["job_templates_dir"] = job_templates_dir
+        output_ok(data)
         return
 
     try:
-        nvflare_config = create_startup_kit_config(nvflare_config, TARGET_POC, requested_poc_startup)
-        nvflare_config = create_startup_kit_config(nvflare_config, TARGET_PROD, requested_prod_startup)
-        nvflare_config = create_poc_workspace_config(nvflare_config, requested_poc_workspace)
-        nvflare_config = create_job_template_config(nvflare_config, args.job_templates_dir)
-    except ValueError as e:
+        if requested_startup_kit is not None:
+            print_human(
+                "Warning: 'nvflare config -d/--startup_kit_dir' is deprecated; "
+                "use 'nvflare config add <id> <startup-kit-dir>' and 'nvflare config use <id>'."
+            )
+            kit_id = default_startup_kit_id(requested_startup_kit)
+            nvflare_config = add_startup_kit_entry(nvflare_config, kit_id, requested_startup_kit, force=True)
+            nvflare_config = set_active_startup_kit(nvflare_config, kit_id)
+        if requested_poc_workspace is not None:
+            print_human(
+                "Warning: 'nvflare config -pw/--poc_workspace_dir' is deprecated; "
+                "use 'nvflare poc config --pw <poc-workspace-dir>'."
+            )
+            nvflare_config = create_poc_workspace_config(nvflare_config, requested_poc_workspace)
+        if requested_job_templates is not None:
+            print_human(
+                "Warning: 'nvflare config -jt/--job_templates_dir' is deprecated; "
+                "use 'nvflare job create --job_templates_dir <dir>' for custom templates."
+            )
+            nvflare_config = create_job_template_config(nvflare_config, requested_job_templates)
+        removed_startup_kit_keys = find_startup_kit_config_keys(nvflare_config)
+        nvflare_config = remove_startup_kit_config_keys(nvflare_config)
+    except (StartupKitConfigError, ValueError) as e:
         output_error("INVALID_ARGS", exit_code=4, detail=str(e))
         raise SystemExit(4)
 
-    backup_path = backup_hidden_config_file(config_file_path) if migration_needed else None
+    nvflare_config.put(CONFIG_VERSION, CURRENT_CONFIG_VERSION)
+    backup_path = backup_hidden_config_file(config_file_path) if removed_startup_kit_keys else None
     save_config(nvflare_config, config_file_path)
-    if backup_path:
-        print_hidden_config_migration_notice(config_file_path, backup_path)
+    if removed_startup_kit_keys:
+        message = "Warning: removed startup kit config keys now managed by 'nvflare config': " + ", ".join(
+            removed_startup_kit_keys
+        )
+        if backup_path:
+            message += f"; backup saved to {backup_path}"
+        print_human(message)
 
-    poc_startup_kit_dir = nvflare_config.get("poc.startup_kit", None) if nvflare_config else requested_poc_startup
-    prod_startup_kit_dir = nvflare_config.get("prod.startup_kit", None) if nvflare_config else requested_prod_startup
-    startup_kit_dir = poc_startup_kit_dir or prod_startup_kit_dir
-    poc_workspace_dir = nvflare_config.get("poc.workspace", None) if nvflare_config else requested_poc_workspace
-    job_templates_dir = nvflare_config.get("job_template.path", None) if nvflare_config else args.job_templates_dir
+    poc_workspace_dir = None
+    job_templates_dir = None
+    if nvflare_config:
+        poc_workspace_dir = nvflare_config.get("poc.workspace", None) or nvflare_config.get("poc_workspace.path", None)
+        job_templates_dir = nvflare_config.get("job_template.path", None)
+    active_startup_kit = nvflare_config.get("startup_kits.active", None) if nvflare_config else None
 
-    output_ok(
-        {
-            "config_file": config_file_path,
-            "startup_kit_dir": startup_kit_dir,
-            "poc_startup_kit_dir": poc_startup_kit_dir,
-            "prod_startup_kit_dir": prod_startup_kit_dir,
-            "poc_workspace_dir": poc_workspace_dir,
-            "job_templates_dir": job_templates_dir,
-        }
-    )
+    data = {
+        "config_file": config_file_path,
+        "poc_workspace_dir": poc_workspace_dir,
+        "active_startup_kit": active_startup_kit,
+    }
+    if job_templates_dir is not None:
+        data["job_templates_dir"] = job_templates_dir
+    output_ok(data)
 
 
 def _get_subcommand_choices(parser):
@@ -292,10 +302,13 @@ def _get_subcommand_choices(parser):
 
 
 def _emit_argparse_error_json(parser, message):
-    from nvflare.tool.cli_output import SCHEMA_VERSION
+    from nvflare.tool.cli_output import SCHEMA_VERSION, sanitize_cli_output
 
-    # Parser errors intentionally expose usage/choices inline because they are generated before any
-    # command handler runs and therefore sit outside the normal command data envelope.
+    # Parser errors intentionally expose usage/choices inline because they are
+    # generated before any command handler runs and therefore sit outside the
+    # normal command data envelope. Even with --format jsonl, argparse errors
+    # are a single pre-dispatch JSON envelope without event/terminal markers;
+    # command handlers own JSONL terminal events after dispatch succeeds.
     payload = {
         "schema_version": SCHEMA_VERSION,
         "status": "error",
@@ -308,7 +321,7 @@ def _emit_argparse_error_json(parser, message):
             "choices": _get_subcommand_choices(parser),
         },
     }
-    print(json.dumps(payload))
+    print(json.dumps(sanitize_cli_output(payload)))
     parser.exit(4)
 
 
@@ -316,6 +329,41 @@ def _emit_argparse_error_human(parser, message, exit_code: int = 4):
     from nvflare.tool.cli_output import output_usage_error
 
     output_usage_error(parser, message, exit_code=exit_code)
+
+
+def _display_unknown_args(argv, cmd: str, args, unknown: list) -> list:
+    """Return unknown args as users entered them.
+
+    ``argparse.parse_known_args`` can consume the value of an unknown option as an optional
+    positional. This currently matters for ``nvflare package`` because signed-zip mode has
+    an optional positional input. Preserve the original option/value pair in the error while
+    still allowing valid ``*.signed.zip`` positional inputs to remain separate.
+    """
+
+    if cmd != CMD_PACKAGE:
+        return unknown
+
+    input_path = getattr(args, "input", None)
+    if not input_path or str(input_path).lower().endswith(".signed.zip"):
+        return unknown
+
+    unknown_set = set(unknown)
+    display_unknown = []
+    display_unknown_set = set()
+
+    for i, token in enumerate(argv):
+        if token not in unknown_set or token in display_unknown_set:
+            continue
+        display_unknown.append(token)
+        display_unknown_set.add(token)
+        if token.startswith("-") and "=" not in token and i + 1 < len(argv) and argv[i + 1] == input_path:
+            display_unknown.append(argv[i + 1])
+            display_unknown_set.add(argv[i + 1])
+
+    for token in unknown:
+        if token not in display_unknown_set:
+            display_unknown.append(token)
+    return display_unknown
 
 
 def _patch_help_on_error(parser, json_mode: bool = False):
@@ -345,9 +393,12 @@ def _build_global_arg_parser():
     parser.add_argument(
         "--format",
         dest="format",
-        choices=["txt", "json"],
+        choices=["txt", "json", "jsonl"],
         default="txt",
-        help="output format: 'txt' (default, human-readable to stdout/stderr) or 'json' for machine-readable JSON envelope on stdout",
+        help=(
+            "output format: 'txt' (default, human-readable), 'json' for one machine-readable "
+            "JSON envelope, or 'jsonl' for supported streaming commands"
+        ),
     )
     parser.add_argument(
         "--connect-timeout",
@@ -369,13 +420,19 @@ def _normalize_global_args(argv, global_parser):
     option_actions = global_parser._option_string_actions
     global_args = []
     remaining_args = []
+    subcommand_seen = False
     i = 0
     while i < len(argv):
         arg = argv[i]
         option, has_inline_value = (arg.split("=", 1)[0], True) if arg.startswith("--") and "=" in arg else (arg, False)
         action = option_actions.get(option)
+        if option in {"--version", "-V"} and subcommand_seen:
+            remaining_args.append(arg)
+            i += 1
+            continue
         if action is None:
             remaining_args.append(arg)
+            subcommand_seen = True
             i += 1
             continue
 
@@ -410,6 +467,9 @@ def parse_args(prog_name: str):
     sub_cmd_parsers.update(def_config_parser(sub_cmd))
     sub_cmd_parsers.update(def_cert_cli_parser(sub_cmd))
     sub_cmd_parsers.update(def_package_cli_parser(sub_cmd))
+    sub_cmd_parsers.update(def_deploy_cli_parser(sub_cmd))
+    sub_cmd_parsers.update(def_study_cli_parser(sub_cmd))
+    sub_cmd_parsers.update(def_agent_cli_parser(sub_cmd))
     system_parser = sub_cmd.add_parser(CMD_SYSTEM, help="FL system operations (status, shutdown, version, ...)")
     sub_cmd_parsers.update({CMD_SYSTEM: system_parser})
     def_system_cli_parser(system_parser)
@@ -437,15 +497,22 @@ def parse_args(prog_name: str):
         ns.job_sub_cmd = sub_sub
         ns.poc_sub_cmd = sub_sub
         ns.system_sub_cmd = sub_sub
+        ns.study_sub_cmd = sub_sub
+        ns.config_sub_cmd = sub_sub
+        ns.kit_sub_cmd = sub_sub
         ns.cert_sub_command = sub_sub
         ns.recipe_sub_cmd = sub_sub or "list"
+        ns.deploy_sub_cmd = sub_sub
+        ns.deploy_k8_sub_cmd = positionals[2] if len(positionals) > 2 else None
+        ns.agent_sub_cmd = sub_sub
+        ns.agent_inspect_capability = positionals[2] if len(positionals) > 2 else None
         ns.format = global_args.format
         ns.connect_timeout = global_args.connect_timeout
         ns.version = global_args.version
         return _parser, ns, sub_cmd_parsers
 
     # Patch every parser so it prints full help before exiting on error.
-    _patch_help_on_error(_parser, json_mode=global_args.format == "json")
+    _patch_help_on_error(_parser, json_mode=global_args.format in {"json", "jsonl"})
 
     args, unknown = _parser.parse_known_args(normalized_argv)
     args._raw_sub_command = args.__dict__.get("sub_command")
@@ -454,11 +521,17 @@ def parse_args(prog_name: str):
     args.sub_command = cmd
     sub_cmd_parser = sub_cmd_parsers.get(cmd)
     if unknown:
-        msg = f"unrecognized arguments: {' '.join(unknown)}"
-        if args.format == "json":
+        display_unknown = _display_unknown_args(normalized_argv, cmd, args, unknown)
+        msg = f"unrecognized arguments: {' '.join(display_unknown)}"
+        if args.format in {"json", "jsonl"}:
             _emit_argparse_error_json(sub_cmd_parser or _parser, f"{prog_name} {cmd}: {msg}")
         else:
             _emit_argparse_error_human(sub_cmd_parser or _parser, msg, exit_code=4)
+    if args.format == "jsonl":
+        command_path = (getattr(args, "sub_command", None), getattr(args, "job_sub_cmd", None))
+        if command_path not in _JSONL_COMMANDS:
+            detail = "--format jsonl is only supported by streaming commands: nvflare job monitor"
+            _emit_argparse_error_json(sub_cmd_parser or _parser, detail)
     return _parser, args, sub_cmd_parsers
 
 
@@ -474,25 +547,28 @@ handlers = {
     CMD_CONFIG: handle_config_cmd,
     CMD_CERT: handle_cert_cmd,
     CMD_PACKAGE: handle_package_cmd,
+    CMD_DEPLOY: handle_deploy_cmd,
+    CMD_STUDY: handle_study_cmd,
     CMD_SYSTEM: handle_system_cmd,
+    CMD_AGENT: handle_agent_cmd,
 }
 
 
 def _auth_hint_from_detail(detail: str, auth_code: str = None) -> str:
     if auth_code == "AUTH_UNKNOWN_STUDY" or auth_code == "AUTH_STUDY_NOT_CONFIGURED":
-        return "Add the study under 'studies:' in project.yml with api_version: 4, reprovision, redeploy or restart the server, then try again."
+        return "Verify the study name or create the study with 'nvflare study register', then try again."
     if auth_code == "AUTH_STUDY_USER_NOT_MAPPED":
-        return "Add this user under the study's admins mapping in project.yml, reprovision, redeploy or restart the server, then try again."
+        return "Add this user to the study's admins list with 'nvflare study add-user', then try again."
     if auth_code in {"AUTH_INVALID_STUDY_NAME", "AUTH_INVALID_STUDY"}:
-        return "Use a valid study name in project.yml, reprovision, redeploy or restart the server, then try again."
+        return "Use a valid study name and try again."
 
     detail = (detail or "").lower()
     if "unknown study" in detail or "not configured on the server" in detail:
-        return "Add the study under 'studies:' in project.yml with api_version: 4, reprovision, redeploy or restart the server, then try again."
+        return "Verify the study name or create the study with 'nvflare study register', then try again."
     if "not mapped to study" in detail:
-        return "Add this user under the study's admins mapping in project.yml, reprovision, redeploy or restart the server, then try again."
+        return "Add this user to the study's admins list with 'nvflare study add-user', then try again."
     if "invalid study name" in detail:
-        return "Use a valid study name in project.yml, reprovision, redeploy or restart the server, then try again."
+        return "Use a valid study name and try again."
     if "certificate validation failed" in detail:
         return "Check that the startup kit certificate, key, and root CA match the server trust chain."
     return "Check startup kit credentials."
@@ -589,7 +665,6 @@ def print_nvflare_version():
 def main():
     if "--schema" not in sys.argv:
         version_check()
-        ensure_hidden_config_migrated()
     run("nvflare")
 
 

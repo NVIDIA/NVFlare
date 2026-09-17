@@ -21,20 +21,19 @@ Usage:
     # Simulator run with pre-split data from prepare_data.py
     python job.py --n_clients 4 --num_rounds 5 --data_dir /tmp/swarm_data
 
-    # Export job directory for production deployment
-    python job.py --export_dir /tmp/swarm_lora_job
+    # Export the job without running it
+    python job.py --export --export-dir /tmp/swarm_lora_job
 """
 
 import argparse
 import os
-import shutil
 
 from model import QwenLoRAModelWrapper
 
 from nvflare.apis.dxo import DataKind
 from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
 from nvflare.client.config import TransferType
-from nvflare.recipe.sim_env import SimEnv
+from nvflare.recipe import SimEnv
 
 JOB_NAME = "ccwf_swarm_pt_lora"
 MODEL_SIZES = {
@@ -43,11 +42,20 @@ MODEL_SIZES = {
 }
 
 
+def positive_int(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{value!r} is not a valid integer") from None
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("must be greater than 0")
+    return parsed
+
+
 def define_parser():
     parser = argparse.ArgumentParser(description="Swarm LoRA fine-tuning job")
     parser.add_argument("--n_clients", type=int, default=2, help="Number of clients")
     parser.add_argument("--num_rounds", type=int, default=3, help="Number of FL rounds")
-    parser.add_argument("--export_dir", type=str, default="", help="Export job to this directory instead of running")
     parser.add_argument(
         "--data_dir",
         type=str,
@@ -62,6 +70,9 @@ def define_parser():
         help="Root workspace directory for SimEnv (job results written to <workspace>/<job_name>)",
     )
     parser.add_argument("--local_steps", type=int, default=10, help="Gradient steps per client per round")
+    parser.add_argument(
+        "--validation_steps", type=positive_int, default=10, help="Validation batches per client per round"
+    )
     parser.add_argument("--batch_size", type=int, default=4, help="Training batch size")
     parser.add_argument("--max_seq_len", type=int, default=128, help="Maximum tokenized sequence length")
     parser.add_argument(
@@ -85,7 +96,10 @@ def main():
     script_args = f"--model_path {model_path}"
     if args.data_dir:
         script_args += f" --data_dir {args.data_dir}"
-    script_args += f" --local_steps {args.local_steps} --batch_size {args.batch_size} --max_seq_len {args.max_seq_len}"
+    script_args += (
+        f" --local_steps {args.local_steps} --validation_steps {args.validation_steps}"
+        f" --batch_size {args.batch_size} --max_seq_len {args.max_seq_len}"
+    )
     script_args += f" --n_shards {args.n_clients}"
 
     recipe = SwarmLearningRecipe(
@@ -95,6 +109,8 @@ def main():
         train_script="client.py",
         train_args={"script_args": script_args},
         min_clients=args.n_clients,
+        key_metric="val_loss",
+        key_metric_mode="min",
         launch_external_process=True,
         cuda_empty_cache=True,
         # LoRA adapters are small — exchange full adapter state each round (FedAvg)
@@ -125,15 +141,6 @@ def main():
             "np_streaming_per_request_timeout": 120,
         }
     )
-
-    if args.export_dir:
-        recipe.export(args.export_dir)
-        print(f"Exported job to: {args.export_dir}")
-        return
-
-    job_workspace = os.path.join(args.workspace, JOB_NAME)
-    if os.path.isdir(job_workspace):
-        shutil.rmtree(job_workspace)
 
     env = SimEnv(num_clients=args.n_clients, workspace_root=args.workspace)
     recipe.execute(env)

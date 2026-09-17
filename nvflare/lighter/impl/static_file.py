@@ -13,10 +13,13 @@
 # limitations under the License.
 
 import json
+import logging
 import os
 import shutil
 
+from nvflare.app_common.default_component_policy import DEFAULT_CLASS_ALLOW_LIST
 from nvflare.lighter import utils
+from nvflare.lighter.admin_cert_provider import get_admin_cert_provider_config
 from nvflare.lighter.constants import (
     CommConfigArg,
     ConnSecurity,
@@ -30,6 +33,8 @@ from nvflare.lighter.constants import (
 from nvflare.lighter.entity import Participant
 from nvflare.lighter.spec import Builder, Project, ProvisionContext
 
+_logger = logging.getLogger(__name__)
+
 
 class StaticFileBuilder(Builder):
     def __init__(
@@ -39,6 +44,8 @@ class StaticFileBuilder(Builder):
         app_validator="",
         download_job_url="",
         docker_image="",
+        overseer_agent=None,
+        require_signed_jobs=None,
         **kwargs,
     ):
         """Build all static files from template.
@@ -56,7 +63,11 @@ class StaticFileBuilder(Builder):
             app_validator: optional path to an app validator to verify that uploaded app has the expected structure
             docker_image: when docker_image is set to a docker image name, docker.sh will be generated on
             server/client/admin
+            require_signed_jobs: optional boolean rendered into server and client startup configs
         """
+        if overseer_agent is not None:
+            _logger.warning("'overseer_agent' arg in StaticFileBuilder is obsolete and will be ignored.")
+
         if not isinstance(scheme, str):
             raise ValueError(f"invalid scheme: must be str but got {type(scheme)}")
         scheme = scheme.lower().strip()
@@ -72,11 +83,32 @@ class StaticFileBuilder(Builder):
         self.docker_image = docker_image
         self.download_job_url = download_job_url
         self.app_validator = app_validator
+        if require_signed_jobs is not None and not isinstance(require_signed_jobs, bool):
+            raise ValueError("require_signed_jobs must be a boolean")
+        self.require_signed_jobs = require_signed_jobs
         self.aio_schemes = {
             "tcp": "atcp",
             "grpc": "agrpc",
             "http": "http",
         }
+
+    def _build_require_signed_jobs_config(self):
+        if self.require_signed_jobs is None:
+            return ""
+        return f',\n  "require_signed_jobs": {json.dumps(self.require_signed_jobs)}'
+
+    def _validate_require_signed_jobs_config(self, dest_dir, config_name):
+        if self.require_signed_jobs is None:
+            return
+
+        config_path = os.path.join(dest_dir, config_name)
+        with open(config_path) as f:
+            config = json.load(f)
+        if config.get("require_signed_jobs") is not self.require_signed_jobs:
+            raise ValueError(
+                f"{config_name} did not render require_signed_jobs={self.require_signed_jobs}; "
+                "update master_template.yml to include {~~require_signed_jobs_config~~}"
+            )
 
     @staticmethod
     def _build_conn_properties(site: Participant, ctx: ProvisionContext):
@@ -107,6 +139,83 @@ class StaticFileBuilder(Builder):
                 scheme = self.scheme
         return scheme
 
+    @staticmethod
+    def _get_auth_identity(participant: Participant):
+        return participant.get_prop(PropKey.AUTH_IDENTITY, participant.name)
+
+    @staticmethod
+    def _build_optional_json_fields(fields: list, indent: int):
+        lines = []
+        line_prefix = " " * indent
+        for key, value in fields:
+            if not value:
+                continue
+
+            value_text = json.dumps(value, indent=2).replace("\n", "\n" + line_prefix)
+            lines.append(f'{line_prefix}"{key}": {value_text}')
+
+        if not lines:
+            return ""
+
+        return ",\n" + ",\n".join(lines)
+
+    def _build_auth_identity_config(
+        self,
+        auth_identity: str,
+        default_identity: str,
+        auth_identity_map: dict = None,
+        indent: int = 6,
+    ):
+        fields = []
+        if auth_identity and auth_identity != default_identity:
+            fields.append((PropKey.AUTH_IDENTITY, auth_identity))
+
+        if auth_identity_map:
+            fields.append(("auth_identity_map", auth_identity_map))
+
+        return self._build_optional_json_fields(fields, indent)
+
+    @staticmethod
+    def _get_client_cell_fqcn(client: Participant, ctx: ProvisionContext):
+        ct = client.get_connect_to()
+        if ct and ct.name:
+            relay_map = ctx.get(CtxKey.RELAY_MAP)
+            if relay_map:
+                relay = relay_map.get(ct.name)
+                if relay:
+                    return ".".join([relay.get_prop(PropKey.FQCN), client.name])
+
+        return client.name
+
+    @staticmethod
+    def _resolve_default_auth_identity(fqcn: str, local_fqcn: str = None):
+        parts = fqcn.split(".")
+        if local_fqcn and fqcn.startswith(local_fqcn + "."):
+            child_parts = fqcn[len(local_fqcn) + 1 :].split(".")
+            return child_parts[0] if child_parts else None
+
+        return parts[0] if parts else None
+
+    def _build_auth_identity_map(self, project: Project, ctx: ProvisionContext, local_relay: Participant = None):
+        result = {}
+        local_prefix = local_relay.get_prop(PropKey.FQCN) if local_relay else None
+
+        for relay in project.get_relays():
+            fqcn = relay.get_prop(PropKey.FQCN)
+            if fqcn and (not local_prefix or fqcn.startswith(local_prefix + ".")):
+                auth_identity = self._get_auth_identity(relay)
+                if auth_identity != self._resolve_default_auth_identity(fqcn, local_prefix):
+                    result[fqcn] = auth_identity
+
+        for client in project.get_clients():
+            fqcn = self._get_client_cell_fqcn(client, ctx)
+            if fqcn and (not local_prefix or fqcn.startswith(local_prefix + ".")):
+                auth_identity = self._get_auth_identity(client)
+                if auth_identity != self._resolve_default_auth_identity(fqcn, local_prefix):
+                    result[fqcn] = auth_identity
+
+        return result
+
     def _build_server(self, server: Participant, ctx: ProvisionContext):
         project = ctx.get_project()
         dest_dir = ctx.get_kit_dir(server)
@@ -114,8 +223,8 @@ class StaticFileBuilder(Builder):
         admin_port = ctx.get(CtxKey.ADMIN_PORT)
         fed_learn_port = ctx.get(CtxKey.FED_LEARN_PORT)
         target = f"{server.name}:{fed_learn_port}"
-        sp_end_point = f"{server.name}:{fed_learn_port}:{admin_port}"
         conn_sec = self._build_conn_properties(server, ctx)
+        server_auth_identity = self._get_auth_identity(server)
 
         ctx.build_from_template(
             dest_dir,
@@ -128,9 +237,16 @@ class StaticFileBuilder(Builder):
                 "admin_port": admin_port,
                 "scheme": self._determine_scheme(server),
                 "conn_sec": conn_sec,
-                "sp_end_point": sp_end_point,
+                "require_signed_jobs_config": self._build_require_signed_jobs_config(),
+                "auth_identity_config": self._build_auth_identity_config(
+                    auth_identity=server_auth_identity,
+                    default_identity=server.name,
+                    auth_identity_map=self._build_auth_identity_map(project, ctx),
+                    indent=12,
+                ),
             },
         )
+        self._validate_require_signed_jobs_config(dest_dir, ProvFileName.FED_SERVER_JSON)
 
         self._build_comm_config_for_internal_listener(server)
 
@@ -158,7 +274,6 @@ class StaticFileBuilder(Builder):
             dest_dir,
             TemplateSectionKey.START_SERVER_SH,
             ProvFileName.START_SH,
-            replacement={"ha_mode": "false"},
             exe=True,
         )
 
@@ -178,7 +293,11 @@ class StaticFileBuilder(Builder):
         ctx.build_from_template(dest_dir, TemplateSectionKey.LOG_CONFIG, ProvFileName.LOG_CONFIG_DEFAULT, exe=False)
 
         ctx.build_from_template(
-            dest_dir, TemplateSectionKey.LOCAL_SERVER_RESOURCES, ProvFileName.RESOURCES_JSON_DEFAULT, exe=False
+            dest_dir,
+            TemplateSectionKey.LOCAL_SERVER_RESOURCES,
+            ProvFileName.RESOURCES_JSON_DEFAULT,
+            replacement={"class_allow_list": json.dumps(DEFAULT_CLASS_ALLOW_LIST, indent=2)},
+            exe=False,
         )
 
         ctx.build_from_template(
@@ -251,7 +370,8 @@ class StaticFileBuilder(Builder):
         conn_host, conn_port = self._determine_conn_target(client, ctx)
         if conn_port:
             fl_port = conn_port
-        sp_end_point = f"{conn_host}:{fl_port}:{admin_port}"
+        target = f"{conn_host}:{fl_port}"
+        client_auth_identity = self._get_auth_identity(client)
 
         ctx.build_from_template(
             dest_dir,
@@ -260,13 +380,21 @@ class StaticFileBuilder(Builder):
             replacement={
                 "scheme": self._determine_scheme(client),
                 "name": project.name,
-                "server_identity": server.name,
+                "server_identity": self._get_auth_identity(server),
+                "target": target,
                 "fqsn": client.get_prop(PropKey.FQSN),
                 "is_leaf": is_leaf,
                 "conn_sec": self._build_conn_properties(client, ctx),
-                "sp_end_point": sp_end_point,
+                "require_signed_jobs_config": self._build_require_signed_jobs_config(),
+                "auth_identity_config": self._build_auth_identity_config(
+                    auth_identity=client_auth_identity,
+                    default_identity=client.name,
+                    auth_identity_map=self._build_auth_identity_map(project, ctx),
+                    indent=6,
+                ),
             },
         )
+        self._validate_require_signed_jobs_config(dest_dir, ProvFileName.FED_CLIENT_JSON)
 
         # build internal comm
         self._build_comm_config_for_internal_listener(client)
@@ -312,9 +440,17 @@ class StaticFileBuilder(Builder):
             num_gpus = capacity.get(PropKey.NUM_GPUS, 0)
             gpu_mem = capacity.get(PropKey.GPU_MEM, 0)
 
+        # allow_log_streaming is rendered as a JSON literal ("true"/"false").
+        # Default is True at provision time; sites that want to disable
+        # streaming opt out by setting allow_log_streaming=false on the
+        # participant in project.yml or by editing the generated
+        # resources.json.default.
+        allow_log_streaming = bool(client.get_prop_fb(PropKey.ALLOW_LOG_STREAMING, default=True))
         replacement_dict = {
             "num_gpus": num_gpus,
             "gpu_mem": gpu_mem,
+            "allow_log_streaming": "true" if allow_log_streaming else "false",
+            "class_allow_list": json.dumps(DEFAULT_CLASS_ALLOW_LIST, indent=2),
         }
 
         ctx.build_from_template(
@@ -322,8 +458,6 @@ class StaticFileBuilder(Builder):
             TemplateSectionKey.LOCAL_CLIENT_RESOURCES,
             ProvFileName.RESOURCES_JSON_DEFAULT,
             replacement=replacement_dict,
-            content_modify_cb=self._modify_error_sender,
-            client=client,
         )
 
         ctx.build_from_template(
@@ -392,6 +526,11 @@ class StaticFileBuilder(Builder):
             replacement_dict = {
                 "scheme": scheme,
                 "identity": relay.name,
+                "auth_identity_config": self._build_auth_identity_config(
+                    auth_identity=self._get_auth_identity(relay),
+                    default_identity=relay.name,
+                    indent=6,
+                ),
                 "address": addr,
                 "fqcn": fqcn,
                 "conn_sec": conn_sec,
@@ -413,39 +552,6 @@ class StaticFileBuilder(Builder):
         # workspace folder file
         dest_dir = ctx.get_ws_dir(client)
         ctx.build_from_template(dest_dir, TemplateSectionKey.CLIENT_README, ProvFileName.README_TXT)
-
-    def _modify_error_sender(self, section: str, client: Participant) -> str:
-        """Modify the local resources section and remove the "error_log_sender" component if necessary.
-        By default, the "error_log_sender" component is included in local resources.
-        However, if the project does not allow errors to be sent, then this component must be removed.
-
-        Args:
-            section: the local resources section generated from template
-            client: the client being provisioned
-
-        Returns: modified section content
-
-        """
-        allow = client.get_prop_fb(PropKey.ALLOW_ERROR_SENDING, False)
-        if allow:
-            # error sending is allowed - so no change needed.
-            return section
-
-        # convert to dict for easy modification
-        section_dict = json.loads(section)
-        components = section_dict.get("components")
-        if not components:
-            return section
-
-        assert isinstance(components, list)
-        for c in components:
-            if c["id"] == "error_log_sender":
-                # must remove this component
-                components.remove(c)
-                break
-
-        # Must convert to Json string
-        return json.dumps(section_dict, indent=2)
 
     @staticmethod
     def _check_host_name_against_server(host_name: str, server: Participant) -> str:
@@ -507,8 +613,8 @@ class StaticFileBuilder(Builder):
                 port = ct.port
         else:
             # connect_to is not explicitly specified: use the server's name by default
-            # Note: by doing this dynamically, we guarantee the sp_end_point to be correct, even if the
-            # project.yaml does not specify the default server host correctly!
+            # Note: by doing this dynamically, we guarantee the connection target to be correct, even if
+            # the project.yaml does not specify the default server host correctly!
             conn_host = server.get_default_host()
         return conn_host, port
 
@@ -555,7 +661,8 @@ class StaticFileBuilder(Builder):
         if not conn_sec:
             conn_sec = ConnSecurity.MTLS
 
-        uid_source = "user_input"
+        admin_cert_provider = get_admin_cert_provider_config(admin)
+        uid_source = "cert" if admin_cert_provider else "user_input"
         provision_mode = ctx.get_provision_mode()
         if provision_mode == ProvisionMode.POC:
             uid_source = "cert"
@@ -566,8 +673,8 @@ class StaticFileBuilder(Builder):
 
         replacement_dict = {
             "project_name": project.name,
-            "username": "" if provision_mode == ProvisionMode.POC else admin.name,
-            "server_identity": server.name,
+            "username": "" if provision_mode == ProvisionMode.POC or admin_cert_provider else admin.name,
+            "server_identity": self._get_auth_identity(server),
             "scheme": self.scheme,
             "conn_sec": conn_sec,
             "host": conn_host,
@@ -579,6 +686,8 @@ class StaticFileBuilder(Builder):
             temp_section=TemplateSectionKey.FED_ADMIN,
             file_name=ProvFileName.FED_ADMIN_JSON,
             replacement=replacement_dict,
+            content_modify_cb=_modify_fed_admin_config,
+            admin_cert_provider=admin_cert_provider,
         )
 
         # create default resources in local
@@ -611,6 +720,7 @@ class StaticFileBuilder(Builder):
         # default parent is server
         parent_scheme = self.scheme
         parent_identity = server.name
+        parent_auth_identity = self._get_auth_identity(server)
         parent_fqcn = "server"
         parent_host = server.get_default_host()
         parent_port = ctx.get(CtxKey.FED_LEARN_PORT)
@@ -634,6 +744,7 @@ class StaticFileBuilder(Builder):
                     lh = parent_relay.get_listening_host()
                     parent_scheme = lh.scheme
                     parent_fqcn = parent_relay.get_prop(PropKey.FQCN)
+                    parent_auth_identity = self._get_auth_identity(parent_relay)
 
                     # check whether the specified ct.host is available from the parent relay
                     if ct.host:
@@ -648,6 +759,11 @@ class StaticFileBuilder(Builder):
                             # treat it as a hard error since the customer may intentionally connect to
                             # a different host (BYOConn).
                             ctx.warning(f"the connect_to.host '{ct.host}' in relay {relay.name} may be invalid: {err}")
+                else:
+                    parent_auth_identity = self._get_auth_identity(server)
+
+            if ct.auth_identity:
+                parent_auth_identity = ct.auth_identity
 
             # general logic: properties defined in connect_to overrides parent's listening_host.
             if ct.host:
@@ -677,12 +793,24 @@ class StaticFileBuilder(Builder):
                     ctx.warning(f"the connect_to.host '{ct.host}' in relay {relay.name} may be invalid: {err}")
 
         parent_addr = f"{parent_host}:{parent_port}"
+        relay_auth_identity = self._get_auth_identity(relay)
         replacement_dict = {
             "project_name": project.name,
             "identity": relay.name,
-            "server_identity": server.name,
+            "auth_identity_config": self._build_auth_identity_config(
+                auth_identity=relay_auth_identity,
+                default_identity=relay.name,
+                auth_identity_map=self._build_auth_identity_map(project, ctx, relay),
+                indent=4,
+            ),
+            "server_identity": self._get_auth_identity(server),
             "scheme": parent_scheme,
             "parent_identity": parent_identity,
+            "parent_auth_identity_config": self._build_auth_identity_config(
+                auth_identity=parent_auth_identity,
+                default_identity=parent_identity,
+                indent=6,
+            ),
             "address": parent_addr,
             "fqcn": parent_fqcn,
             "conn_sec": parent_conn_sec,
@@ -936,6 +1064,20 @@ def _remove_undefined_port(section: str) -> str:
     else:
         # no change
         return section
+
+
+def _modify_fed_admin_config(section: str, admin_cert_provider=None) -> str:
+    if not admin_cert_provider:
+        return section
+
+    admin_config = json.loads(section)
+    admin = admin_config.get("admin", {})
+    admin.pop("client_key", None)
+    admin.pop("client_cert", None)
+    admin["username"] = ""
+    admin["uid_source"] = "cert"
+    admin[PropKey.ADMIN_CERT_PROVIDER] = dict(admin_cert_provider)
+    return json.dumps(admin_config, indent=2)
 
 
 def check_parent(c: Participant, path: list):

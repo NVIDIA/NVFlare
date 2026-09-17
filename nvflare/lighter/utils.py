@@ -26,10 +26,18 @@ import yaml
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import padding, rsa
-from cryptography.x509.oid import NameOID
+from cryptography.hazmat.primitives.asymmetric import dsa, ec, ed448, ed25519, padding, rsa
+from cryptography.x509.oid import ExtensionOID, NameOID
+from cryptography.x509.verification import ExtensionPolicy, PolicyBuilder, Store
 
+from nvflare.fuel.sec.admin_cert import validate_admin_leaf_cert
 from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE, NVFLARE_SUBMITTER_CRT_FILE
+
+_GENERATE_CERT_RESERVED_EXTENSION_OIDS = {
+    ExtensionOID.SUBJECT_KEY_IDENTIFIER,
+    ExtensionOID.AUTHORITY_KEY_IDENTIFIER,
+    ExtensionOID.SUBJECT_ALTERNATIVE_NAME,
+}
 
 
 class Identity:
@@ -46,6 +54,23 @@ def _host_to_subject_alt_name(host: str):
         return x509.DNSName(host)
 
 
+def build_subject_alt_names(server_default_host=None, server_additional_hosts=None, fallback_subject_name=None):
+    if isinstance(server_additional_hosts, str):
+        server_additional_hosts = [server_additional_hosts]
+
+    if server_default_host:
+        sans = [_host_to_subject_alt_name(server_default_host)]
+        if server_additional_hosts:
+            for h in server_additional_hosts:
+                if h != server_default_host:
+                    sans.append(_host_to_subject_alt_name(h))
+        return sans
+
+    if not fallback_subject_name:
+        raise ValueError("fallback_subject_name is required when server_default_host is not set")
+    return [x509.DNSName(fallback_subject_name)]
+
+
 def generate_cert(
     subject: Identity,
     issuer: Identity,
@@ -55,11 +80,14 @@ def generate_cert(
     ca=False,
     server_default_host=None,
     server_additional_hosts=None,
+    not_valid_before=None,
+    not_valid_after=None,
+    extra_extensions=None,
+    ca_path_length=None,
+    uri_names=None,
 ):
-    if isinstance(server_additional_hosts, str):
-        server_additional_hosts = [server_additional_hosts]
-
-    now = datetime.datetime.now(datetime.timezone.utc)
+    now = not_valid_before or datetime.datetime.now(datetime.timezone.utc)
+    cert_not_valid_after = not_valid_after or now + datetime.timedelta(days=valid_days)
 
     x509_subject = x509_name(subject.name, subject.org, subject.role)
     x509_issuer = x509_name(issuer.name, issuer.org, issuer.role)
@@ -71,7 +99,7 @@ def generate_cert(
         .public_key(subject_pub_key)
         .serial_number(x509.random_serial_number())
         .not_valid_before(now)
-        .not_valid_after(now + datetime.timedelta(days=valid_days))
+        .not_valid_after(cert_not_valid_after)
         .add_extension(
             x509.SubjectKeyIdentifier.from_public_key(subject_pub_key),
             critical=False,
@@ -83,7 +111,9 @@ def generate_cert(
     )
 
     if ca:
-        builder = builder.add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True).add_extension(
+        builder = builder.add_extension(
+            x509.BasicConstraints(ca=True, path_length=ca_path_length), critical=True
+        ).add_extension(
             x509.KeyUsage(
                 digital_signature=True,
                 content_commitment=False,
@@ -98,17 +128,20 @@ def generate_cert(
             critical=True,
         )
 
-    if server_default_host:
-        # This is to generate a server cert.
-        # Use SubjectAlternativeName for all host names or IP addresses.
-        sans = [_host_to_subject_alt_name(server_default_host)]
-        if server_additional_hosts:
-            for h in server_additional_hosts:
-                if h != server_default_host:
-                    sans.append(_host_to_subject_alt_name(h))
-        builder = builder.add_extension(x509.SubjectAlternativeName(sans), critical=False)
-    else:
-        builder = builder.add_extension(x509.SubjectAlternativeName([x509.DNSName(subject.name)]), critical=False)
+    if extra_extensions:
+        seen_extension_oids = set()
+        for extension, critical in extra_extensions:
+            if extension.oid in _GENERATE_CERT_RESERVED_EXTENSION_OIDS:
+                raise ValueError(f"extra_extensions must not include reserved extension OID '{extension.oid._name}'")
+            if extension.oid in seen_extension_oids:
+                raise ValueError(f"duplicate extra extension OID '{extension.oid._name}'")
+            seen_extension_oids.add(extension.oid)
+            builder = builder.add_extension(extension, critical=critical)
+
+    subject_alt_names = build_subject_alt_names(server_default_host, server_additional_hosts, subject.name)
+    if uri_names:
+        subject_alt_names.extend(x509.UniformResourceIdentifier(uri) for uri in uri_names)
+    builder = builder.add_extension(x509.SubjectAlternativeName(subject_alt_names), critical=False)
     return builder.sign(signing_pri_key, hashes.SHA256(), default_backend())
 
 
@@ -131,6 +164,24 @@ def serialize_pri_key(pri_key, passphrase=None):
 
 def serialize_cert(cert):
     return cert.public_bytes(serialization.Encoding.PEM)
+
+
+def write_pri_key_file(path: str, pri_key_pem: bytes):
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    # os.open's mode only applies on creation; re-tighten in case the file pre-existed
+    os.chmod(path, 0o600)
+    with os.fdopen(fd, "wb") as f:
+        f.write(pri_key_pem)
+
+
+def bounded_validity(issuer_cert, valid_days: int, backdate=datetime.timedelta(0)):
+    """(not_valid_before, not_valid_after) for a cert signed by issuer_cert: now minus backdate until
+    valid_days from now, clamped to the issuer's own expiry. Raises ValueError if the issuer has expired."""
+    now = datetime.datetime.now(datetime.timezone.utc)
+    issuer_not_after = issuer_cert.not_valid_after_utc
+    if issuer_not_after <= now:
+        raise ValueError(f"expired at {issuer_not_after.isoformat()}")
+    return now - backdate, min(issuer_not_after, now + datetime.timedelta(days=valid_days))
 
 
 def generate_keys():
@@ -157,6 +208,18 @@ def load_crt_bytes(data: bytes):
     return x509.load_pem_x509_certificate(data, default_backend())
 
 
+def load_crt_chain(path):
+    with open(path, "rb") as f:
+        return load_crt_chain_bytes(f.read())
+
+
+def load_crt_chain_bytes(data: bytes):
+    certs = x509.load_pem_x509_certificates(data)
+    if not certs:
+        raise ValueError("no PEM certificate found")
+    return certs
+
+
 def cert_to_dict(cert):
     return {
         "subject": {attr.oid._name: attr.value for attr in cert.subject},
@@ -167,6 +230,18 @@ def cert_to_dict(cert):
         # "not_valid_after": cert.not_valid_after.isoformat(),
         # "signature_algorithm": cert.signature_algorithm.name,
     }
+
+
+def _cert_to_submitter(cert):
+    def _get_subject_attr(oid):
+        attrs = cert.subject.get_attributes_for_oid(oid)
+        return attrs[0].value if attrs else ""
+
+    return (
+        _get_subject_attr(NameOID.COMMON_NAME),
+        _get_subject_attr(NameOID.ORGANIZATION_NAME),
+        _get_subject_attr(NameOID.UNSTRUCTURED_NAME),
+    )
 
 
 def generate_password(passlen=16):
@@ -212,13 +287,59 @@ def verify_content(content, signature, public_key):
     )
 
 
+def _utc_now():
+    return datetime.datetime.now(datetime.timezone.utc)
+
+
 def verify_cert(cert_to_be_verified, root_ca_public_key):
-    root_ca_public_key.verify(
-        cert_to_be_verified.signature,
-        cert_to_be_verified.tbs_certificate_bytes,
-        padding.PKCS1v15(),
-        cert_to_be_verified.signature_hash_algorithm,
+    _verify_cert_signature(cert_to_be_verified, root_ca_public_key)
+
+
+def verify_cert_chain(leaf_cert, intermediate_certs, root_ca_cert, now=None):
+    """Validate a FLARE certificate chain against the pinned project root.
+
+    FLARE uses this helper for admin, site, and server certificates, so leaf
+    purpose checks stay with the caller. The chain validation itself is handled
+    by cryptography's path verifier, with the project root as the pinned trust
+    store and normal CA constraints required for intermediates.
+    """
+    if leaf_cert is None:
+        raise ValueError("leaf_cert is required")
+    now = now or _utc_now()
+    verifier = (
+        PolicyBuilder()
+        .store(Store([root_ca_cert]))
+        .time(now)
+        .extension_policies(ca_policy=ExtensionPolicy.webpki_defaults_ca(), ee_policy=ExtensionPolicy.permit_all())
+        .build_client_verifier()
     )
+    verifier.verify(leaf_cert, intermediate_certs or [])
+
+
+def _verify_cert_signature(cert, issuer_public_key):
+    if isinstance(issuer_public_key, rsa.RSAPublicKey):
+        issuer_public_key.verify(
+            cert.signature,
+            cert.tbs_certificate_bytes,
+            padding.PKCS1v15(),
+            cert.signature_hash_algorithm,
+        )
+    elif isinstance(issuer_public_key, ec.EllipticCurvePublicKey):
+        issuer_public_key.verify(
+            cert.signature,
+            cert.tbs_certificate_bytes,
+            ec.ECDSA(cert.signature_hash_algorithm),
+        )
+    elif isinstance(issuer_public_key, dsa.DSAPublicKey):
+        issuer_public_key.verify(
+            cert.signature,
+            cert.tbs_certificate_bytes,
+            cert.signature_hash_algorithm,
+        )
+    elif isinstance(issuer_public_key, (ed25519.Ed25519PublicKey, ed448.Ed448PublicKey)):
+        issuer_public_key.verify(cert.signature, cert.tbs_certificate_bytes)
+    else:
+        raise ValueError(f"unsupported certificate issuer public key type: {type(issuer_public_key)}")
 
 
 def load_private_key(data: str):
@@ -230,9 +351,20 @@ def load_private_key_file(file_path):
         return serialization.load_pem_private_key(f.read(), password=None, backend=default_backend())
 
 
+def _check_for_symlinks(root, folders, files):
+    for name in folders + files:
+        path = os.path.join(root, name)
+        if os.path.islink(path):
+            raise ValueError(f"symbolic links are not allowed in signed folders: {path}")
+
+
 def sign_folders(folder, signing_pri_key, crt_path=None, max_depth=9999, signature_file=NVFLARE_SIG_FILE):
+    if os.path.islink(folder):
+        raise ValueError(f"signed folder must not be a symbolic link: {folder}")
+
     depth = 0
     for root, folders, files in os.walk(folder):
+        _check_for_symlinks(root, folders, files)
         depth = depth + 1
         signatures = dict()
         for file in files:
@@ -257,7 +389,9 @@ def sign_folders(folder, signing_pri_key, crt_path=None, max_depth=9999, signatu
             break
 
 
-def verify_folder_signature(src_folder, root_ca_path, single_signer=False, signature_file=NVFLARE_SIG_FILE):
+def verify_folder_signature_and_get_signers(
+    src_folder, root_ca_path, single_signer=False, signature_file=NVFLARE_SIG_FILE
+):
     """Verify the signature of each file in one folder recursively.
 
     This function iterates over all files in one folder verifying its signature stored in the signature_file
@@ -275,26 +409,43 @@ def verify_folder_signature(src_folder, root_ca_path, single_signer=False, signa
         signature_file (str): The file name to store signature.  Defaults to NVFLARE_SIG_FILE.
 
     Returns:
-        True if all files have valid signatures.
-        False if any file fails signature check.
+        A tuple of (verified, signers).
+        verified is True if all files have valid signatures.
+        verified is False if any file fails signature check.
+        signers contains unique (name, org, role) tuples from verified certificates.
 
     """
 
     try:
+        if os.path.islink(src_folder):
+            return False, []
+
         root_ca_cert = load_crt(root_ca_path)
         root_ca_public_key = root_ca_cert.public_key()
+        root_submitter = _cert_to_submitter(root_ca_cert)
+        signers = {}
         for root, folders, files in os.walk(src_folder):
+            _check_for_symlinks(root, folders, files)
             try:
                 with open(os.path.join(root, signature_file), "rt") as f:
                     signatures = json.load(f)
                 if single_signer:
                     public_key = root_ca_public_key
+                    signer = root_submitter
                 else:
-                    cert = load_crt(os.path.join(root, NVFLARE_SUBMITTER_CRT_FILE))
+                    cert_chain = load_crt_chain(os.path.join(root, NVFLARE_SUBMITTER_CRT_FILE))
+                    cert = cert_chain[0]
                     public_key = cert.public_key()
-                    verify_cert(cert_to_be_verified=cert, root_ca_public_key=root_ca_public_key)
+                    verify_cert_chain(
+                        leaf_cert=cert,
+                        intermediate_certs=cert_chain[1:],
+                        root_ca_cert=root_ca_cert,
+                    )
+                    validate_admin_leaf_cert(cert)
+                    signer = _cert_to_submitter(cert)
+                signers[signer] = signer
             except Exception:
-                return False
+                return False, []
 
             for file in files:
                 if file == signature_file or file == NVFLARE_SUBMITTER_CRT_FILE:
@@ -308,7 +459,7 @@ def verify_folder_signature(src_folder, root_ca_path, single_signer=False, signa
                             public_key=public_key,
                         )
                 else:
-                    return False
+                    return False, []
             for folder in folders:
                 signature = signatures.get(folder)
                 if signature:
@@ -318,10 +469,18 @@ def verify_folder_signature(src_folder, root_ca_path, single_signer=False, signa
                         public_key=public_key,
                     )
                 else:
-                    return False
-        return True
+                    return False, []
+        return True, list(signers.values())
     except Exception:
-        return False
+        return False, []
+
+
+def verify_folder_signature(src_folder, root_ca_path, single_signer=False, signature_file=NVFLARE_SIG_FILE):
+    """Verify folder signatures and preserve the legacy boolean return contract."""
+    verified, _signers = verify_folder_signature_and_get_signers(
+        src_folder, root_ca_path, single_signer, signature_file
+    )
+    return verified
 
 
 def sign_all(content_folder, signing_pri_key):

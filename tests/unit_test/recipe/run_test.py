@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import io
+import re
 import tempfile
 from unittest.mock import MagicMock, patch
 
@@ -43,6 +45,58 @@ class TestRunClass:
         """Test get_job_id method."""
         assert self.run.get_job_id() == self.job_id
 
+    @pytest.mark.parametrize("status", ["FINISHED:COMPLETED", "FINISHED_OK", "FINISHED:EXECUTION_EXCEPTION", None])
+    def test_result_presentation_uses_status_without_inferring_success(self, tmp_path, capsys, status):
+        self.mock_env.get_job_result.return_value = str(tmp_path)
+        self.mock_env.get_job_status.return_value = status
+
+        assert self.run.get_result(clean_up=False) == str(tmp_path)
+        output = capsys.readouterr().out
+        if status is None:
+            assert output == ""
+        else:
+            assert " RUN SUMMARY ".center(72, "=") in output
+            if status == "FINISHED:EXECUTION_EXCEPTION":
+                assert "  ✗ Failed" in output
+                assert "  Status    FINISHED:EXECUTION_EXCEPTION" in output
+                assert "  Workspace" not in output
+            assert ("✓ Completed" if status in ("FINISHED:COMPLETED", "FINISHED_OK") else status) in output
+            assert f"Results   {tmp_path}" in output
+            assert "success" not in output.lower()
+        # Reading the cached result neither repeats output nor queries the environment.
+        self.run.get_result()
+        assert capsys.readouterr().out == ""
+        self.mock_env.get_job_result.assert_called_once()
+
+    def test_cleanup_does_not_advertise_a_removed_result_as_available(self, tmp_path, capsys):
+        result_dir = tmp_path / "result"
+        result_dir.mkdir()
+        self.mock_env.get_job_result.return_value = str(result_dir)
+        self.mock_env.get_job_status.return_value = "FINISHED:COMPLETED"
+        self.mock_env.stop.side_effect = lambda **kwargs: result_dir.rmdir()
+
+        assert self.run.get_result() == str(result_dir)
+        output = capsys.readouterr().out
+        assert f"not available locally: {result_dir}" in output
+        assert "get_result(clean_up=False)" in output
+        assert "  Results   " not in output
+
+    def test_missing_result_presentation_does_not_claim_success(self, capsys):
+        self.mock_env.get_job_result.side_effect = RuntimeError("download failed")
+        self.mock_env.get_job_status.return_value = "FINISHED:COMPLETED"
+        assert self.run.get_result() is None
+        assert "No result workspace was returned" in capsys.readouterr().out
+
+    def test_running_job_after_timeout_does_not_print_terminal_summary(self, capsys):
+        self.mock_env.get_job_result.return_value = None
+        self.mock_env.get_job_status.return_value = "RUNNING"
+
+        assert self.run.get_result(timeout=5) is None
+
+        output = capsys.readouterr().out
+        assert "RUN SUMMARY" not in output
+        assert "No result workspace was returned" not in output
+
     def test_get_status_delegates_to_env(self):
         """Test that get_status delegates to exec_env when not stopped."""
         self.mock_env.get_job_status.return_value = "RUNNING"
@@ -72,6 +126,19 @@ class TestRunClass:
         self.mock_env.get_job_result.assert_called_once_with(self.job_id, timeout=30.0)
         self.mock_env.get_job_status.assert_called_once_with(self.job_id)
         self.mock_env.stop.assert_called_once_with(clean_up=True)
+        assert self.run._stopped is True
+        assert self.run._cached_status == "FINISHED"
+        assert self.run._cached_result == "/tmp/workspace/test_job_123"
+
+    def test_get_result_clean_up_false_forwards_to_exec_env_stop(self):
+        """Test that get_result(clean_up=False) forwards clean_up=False to exec_env.stop()."""
+        self.mock_env.get_job_result.return_value = "/tmp/workspace/test_job_123"
+        self.mock_env.get_job_status.return_value = "FINISHED"
+
+        result = self.run.get_result(clean_up=False)
+
+        assert result == "/tmp/workspace/test_job_123"
+        self.mock_env.stop.assert_called_once_with(clean_up=False)
         assert self.run._stopped is True
         assert self.run._cached_status == "FINISHED"
         assert self.run._cached_result == "/tmp/workspace/test_job_123"
@@ -274,9 +341,9 @@ class TestRunIntegration:
         # Simulation environment should return None for status
         assert run.get_status() is None
 
-        # Should return workspace path for results
+        # A Run that was not deployed has no completed result for this attempt.
         result = run.get_result()
-        assert result == "/tmp/test_sim/test_job"
+        assert result is None
 
     def test_run_with_poc_env(self):
         """Test Run with actual PocEnv (mocked dependencies)."""
@@ -303,3 +370,205 @@ class TestRunIntegration:
             with patch.object(prod_env, "abort_job") as mock_abort:
                 run.abort()
                 mock_abort.assert_called_once_with("prod_test_job")
+
+
+@pytest.mark.parametrize("layout", ["server/simulate_job", "workspace", "."])
+def test_summary_reads_real_artifacts_for_each_environment_layout(tmp_path, capsys, layout):
+    import json
+
+    run_dir = tmp_path / layout
+    metrics = run_dir / "metrics"
+    metrics.mkdir(parents=True)
+    (metrics / "metrics_summary.json").write_text(json.dumps({"job_name": "example"}))
+    (metrics / "round_metrics.jsonl").write_text(
+        json.dumps(
+            {"round": 0, "sites": [{"name": "site-1"}], "aggregated_metrics": [{"name": "accuracy", "value": 0.7}]}
+        )
+        + "\n"
+    )
+    evaluation = run_dir / "cross_site_val"
+    evaluation.mkdir()
+    (evaluation / "cross_val_results.json").write_text(json.dumps({"site-1": {"global.pt": {"accuracy": 0.8}}}))
+    app = run_dir / "app_server"
+    app.mkdir()
+    (app / "global.pt").write_bytes(b"not deserialized by summary")
+    env = MagicMock()
+    env.get_job_result.return_value = str(tmp_path)
+    env.get_job_status.return_value = "FINISHED:EXECUTION_EXCEPTION"
+    run = Run(env, "test")
+    assert run.get_result(clean_up=False) == str(tmp_path)
+    output = capsys.readouterr().out
+    assert "RUN SUMMARY" in output
+    assert "aggregated client metrics" in output
+    assert re.search(r"1\s+0.7(?:\s|$)", output)
+    assert "Model evaluation · accuracy" in output
+    assert re.search(r"site-1\s+0.8(?:\s|$)", output)
+    assert "global.pt" in output
+    assert "FINISHED:EXECUTION_EXCEPTION" in output
+    assert "70%" not in output
+    assert "✓ Completed" not in output
+    run.get_result()
+    assert capsys.readouterr().out == ""
+
+
+def test_summary_limits_rounds_and_tolerates_corrupt_evaluation(tmp_path):
+    import json
+
+    from nvflare.recipe._run_summary import result_summary
+
+    metrics = tmp_path / "metrics"
+    metrics.mkdir()
+    (metrics / "metrics_summary.json").write_text('{"job_name": "long-run"}')
+    records = [
+        json.dumps({"round": n, "sites": [], "aggregated_metrics": [{"name": "loss", "value": n}]}) for n in range(100)
+    ]
+    (metrics / "round_metrics.jsonl").write_text("\n".join(records))
+    evaluation = tmp_path / "cross_site_val"
+    evaluation.mkdir()
+    (evaluation / "cross_val_results.json").write_text("{broken")
+    output = result_summary(tmp_path)
+    assert len(re.findall(r"^  \d+\s+\d+$", output, re.MULTILINE)) == 10
+    assert re.search(r"100\s+99", output)
+    assert "Model evaluation ·" not in output
+    assert "cross_val_results.json" in output
+
+
+@pytest.mark.parametrize(
+    "relative_path",
+    ["app_server/global.pt", "app_server/tf_model.weights.h5", "models/server.npy"],
+)
+def test_summary_finds_standard_model_locations_without_loading_weights(tmp_path, relative_path):
+    from nvflare.recipe._run_summary import result_summary
+
+    model_path = tmp_path / relative_path
+    model_path.parent.mkdir(parents=True)
+    model_path.write_bytes(b"not a model")
+
+    output = result_summary(tmp_path)
+
+    assert f"Models    {model_path.parent.relative_to(tmp_path)}/" in output
+
+
+def test_summary_lists_models_once_across_candidate_layouts(tmp_path):
+    from nvflare.recipe._run_summary import result_summary
+
+    for relative_path in ("workspace/app_server/workspace.pt", "app_server/root.pt"):
+        model_path = tmp_path / relative_path
+        model_path.parent.mkdir(parents=True, exist_ok=True)
+        model_path.write_bytes(b"not a model")
+    metrics = tmp_path / "server" / "run-1" / "metrics"
+    metrics.mkdir(parents=True)
+    (metrics / "metrics_summary.json").write_text("{}")
+
+    output = result_summary(tmp_path)
+
+    assert output.count("Models    ") == 1
+    assert "workspace/app_server/" in output
+    assert "app_server/" in output
+
+
+def test_summary_keeps_multirow_metrics_on_separate_aligned_lines(tmp_path):
+    import json
+
+    from nvflare.recipe._run_summary import result_summary
+
+    metrics = tmp_path / "metrics"
+    metrics.mkdir()
+    (metrics / "metrics_summary.json").write_text("{}")
+    (metrics / "round_metrics.jsonl").write_text(
+        "\n".join(
+            json.dumps(
+                {
+                    "round": n,
+                    "aggregated_metrics": [
+                        {"name": "accuracy", "value": value},
+                        {"name": "accuracy_after_local_training", "value": after},
+                    ],
+                }
+            )
+            for n, (value, after) in enumerate(((1, 20), (30, 55), (70, 65)))
+        )
+    )
+    summary = result_summary(tmp_path)
+    rows = [line.split() for line in summary.splitlines() if re.match(r"^  [123] +", line)]
+    assert rows == [["1", "1", "20"], ["2", "30", "55"], ["3", "70", "65"]]
+
+
+def test_unscheduled_job_has_distinct_outcome_without_training_errors(tmp_path, capsys):
+    env = MagicMock()
+    env.get_job_result.return_value = str(tmp_path)
+    env.get_job_status.return_value = "FINISHED:CAN_NOT_SCHEDULE"
+    Run(env, "unscheduled-job").get_result()
+    output = capsys.readouterr().out
+    assert "✗ Not scheduled" in output
+    assert "Status    FINISHED:CAN_NOT_SCHEDULE" in output
+    assert "✗ Failed" not in output
+    assert "Failure details" not in output
+    assert "Check server and client logs" not in output
+
+
+def test_aborted_job_has_distinct_outcome_with_failure_context(tmp_path, capsys):
+    env = MagicMock()
+    env.get_job_result.return_value = str(tmp_path)
+    env.get_job_status.return_value = "FINISHED:ABORTED"
+
+    Run(env, "aborted-job").get_result()
+
+    output = capsys.readouterr().out
+    assert "■ Aborted" in output
+    assert "Status    FINISHED:ABORTED" in output
+    assert "✗ Failed" not in output
+    assert "Failure details" in output
+    assert "No job error details are available locally." in output
+
+
+@pytest.mark.parametrize("outcome", ["✓ Completed", "✗ Failed", "✗ Not scheduled", "■ Aborted"])
+def test_summary_duration_uses_same_column_as_round_progress(outcome):
+    from nvflare.recipe._run_summary import summary_header
+
+    line = summary_header(outcome, 12.5, context="  NVIDIA FLARE · example").splitlines()[-1]
+    assert line.index("12.5s") == 64
+
+
+@pytest.mark.parametrize("encoding", ["ascii", "cp1252", "utf-8"])
+@pytest.mark.parametrize("status", ["FINISHED:COMPLETED", "FAILED"])
+def test_presentation_encoding_does_not_block_deployment_or_result(tmp_path, monkeypatch, encoding, status):
+    import logging
+
+    from nvflare.fuel.utils.log_utils import ColorFormatter
+    from nvflare.recipe._run_summary import run_recipe_job
+
+    output = io.BytesIO()
+    stream = io.TextIOWrapper(output, encoding=encoding)
+    monkeypatch.setattr("sys.stdout", stream)
+    env = MagicMock()
+    env.deploy.return_value = "job-id"
+    env.get_job_result.return_value = str(tmp_path)
+    env.get_job_status.return_value = status
+    job = MagicMock()
+    job.name = "example-模型"
+    run = run_recipe_job(job, env)
+    assert run.get_result() == str(tmp_path)
+    env.deploy.assert_called_once_with(job)
+    env.stop.assert_called_once_with(clean_up=True)
+    record = logging.LogRecord("trainer", logging.INFO, "", 0, "✓ Aggregated · 模型", (), None)
+    stream.write(ColorFormatter(fmt="%(message)s").format(record))
+    stream.flush()
+    text = output.getvalue().decode(encoding)
+    assert "NVIDIA FLARE" in text
+    assert "RUN SUMMARY" in text
+    assert ("Completed" if status == "FINISHED:COMPLETED" else "Failed") in text
+    assert "Results" in text
+    if encoding != "utf-8":
+        assert "[OK]" in text or "[X]" in text
+
+
+def test_closed_presentation_stream_does_not_block_result(tmp_path, monkeypatch):
+    stream = io.StringIO()
+    stream.close()
+    monkeypatch.setattr("sys.stdout", stream)
+    env = MagicMock()
+    env.get_job_result.return_value = str(tmp_path)
+    env.get_job_status.return_value = "FINISHED:COMPLETED"
+    assert Run(env, "job").get_result() == str(tmp_path)
+    env.stop.assert_called_once()

@@ -19,8 +19,7 @@ from typing import Optional
 from packaging.version import InvalidVersion, Version
 
 from nvflare.app_common.tie.defs import Constant
-from nvflare.client.api import ClientAPIType
-from nvflare.client.api_spec import CLIENT_API_TYPE_KEY
+from nvflare.fuel.utils.secret_utils import warn_on_potential_secrets, warn_on_unsupported_secret_refs
 from nvflare.fuel.utils.validation_utils import check_object_type
 from nvflare.recipe.spec import Recipe
 
@@ -60,11 +59,16 @@ def _create_flower_job(**kwargs):
 class FlowerRecipe(Recipe):
     """Recipe class for Flower federated learning using NVFlare.
 
+    Recipe parameters become part of the generated job definition and must never
+    contain actual secret values. Read secrets from the site environment or mounted files in
+    Flower code; ``extra_env`` and ``run_config`` do not resolve secret references.
+
     This class provides a high-level interface for configuring Flower
     federated learning jobs. It wraps the FlowerJob and provides
     a recipe-based interface for easier job configuration and execution.
 
-    Enables metric streaming and use of client API by default.
+    Installs the analytics-only metric relay by default. Add experiment tracking
+    to persist the relayed metrics.
 
     Flower CLI compatibility:
         This recipe requires ``flwr>=1.26``. The integration uses Flower
@@ -73,16 +77,26 @@ class FlowerRecipe(Recipe):
 
     Example usage:
         ```python
+        from nvflare.recipe import add_experiment_tracking
+
         recipe = FlowerRecipe(
             name="my_flower_job",
             flower_content="/path/to/flower/content",
             min_clients=2,
-            stream_metrics=True
+        )
+        add_experiment_tracking(recipe, tracking_type="tensorboard")
+
+        # Pre-deployed mode (no BYOC needed):
+        recipe = FlowerRecipe(
+            name="my_flower_job",
+            flower_app_path="local/custom/my_app",
+            min_clients=2,
         )
         ```
 
     Args:
-        flower_content (str): Content for the flower job. Required.
+        flower_content (str, optional): Local directory path containing Flower app code (BYOC mode).
+        flower_app_path (str, optional): Relative path to pre-deployed Flower app under workspace's local/custom/ directory (pre-deployed mode, no BYOC needed). The server distributes the app to clients via Flower's FAB mechanism.
         name (str): Name of the job. Defaults to "flower_job".
         min_clients (int, optional): The minimum number of clients for the job. Defaults to 1.
         mandatory_clients (List[str], optional): List of mandatory clients for the job. Defaults to None.
@@ -97,11 +111,13 @@ class FlowerRecipe(Recipe):
         client_shutdown_timeout (float, optional): Timeout for client shutdown. Defaults to 5.0 seconds.
         extra_env (dict, optional): optional extra env variables to be passed to Flower client.
         run_config (dict, optional): optional dict for flwr run --run-config arguments.
+        allow_runtime_dependency_installation (bool, optional): whether to allow dynamic dependency installation (only flwr>=1.29). Defaults to False.
     """
 
     def __init__(
         self,
-        flower_content: str,
+        flower_content: Optional[str] = None,
+        flower_app_path: Optional[str] = None,
         name: str = "flower_job",
         min_clients: int = 1,
         mandatory_clients: Optional[list[str]] = None,
@@ -116,6 +132,7 @@ class FlowerRecipe(Recipe):
         client_shutdown_timeout=5.0,
         extra_env: Optional[dict] = None,
         run_config: Optional[dict] = None,
+        allow_runtime_dependency_installation: bool = False,
     ):
         """Initialize the FlowerRecipe.
 
@@ -127,21 +144,17 @@ class FlowerRecipe(Recipe):
         if extra_env is not None:
             check_object_type("extra_env", extra_env, dict)
 
-        # needs to init client api to stream metrics
-        # only external client api works with the current flower integration
-        env = extra_env.copy() if extra_env is not None else {}
-        if CLIENT_API_TYPE_KEY in env and env[CLIENT_API_TYPE_KEY] != ClientAPIType.EX_PROCESS_API.value:
-            raise ValueError(
-                f"'extra_env[{CLIENT_API_TYPE_KEY}]' must be "
-                f"{ClientAPIType.EX_PROCESS_API.value!r} for the Flower integration; "
-                f"got {env[CLIENT_API_TYPE_KEY]!r}."
-            )
-
-        env[CLIENT_API_TYPE_KEY] = ClientAPIType.EX_PROCESS_API.value
+        if extra_env:
+            warn_on_potential_secrets(extra_env, context="recipe parameter 'extra_env'")
+            warn_on_unsupported_secret_refs(extra_env, context="recipe parameter 'extra_env'")
+        if run_config:
+            warn_on_potential_secrets(run_config, context="recipe parameter 'run_config'")
+            warn_on_unsupported_secret_refs(run_config, context="recipe parameter 'run_config'")
 
         job = _create_flower_job(
             name=name,
             flower_content=flower_content,
+            flower_app_path=flower_app_path,
             min_clients=min_clients,
             mandatory_clients=mandatory_clients,
             database=database,
@@ -153,8 +166,9 @@ class FlowerRecipe(Recipe):
             per_msg_timeout=per_msg_timeout,
             tx_timeout=tx_timeout,
             client_shutdown_timeout=client_shutdown_timeout,
-            extra_env=env,
+            extra_env=extra_env,
             run_config=run_config,
+            allow_runtime_dependency_installation=allow_runtime_dependency_installation,
         )
 
         super().__init__(job)

@@ -45,9 +45,9 @@ class PTFedOptModelShareableGenerator(FullModelShareableGenerator):
 
         Args:
             optimizer_args: dictionary of optimizer arguments, e.g.
-                {'class_path': 'torch.optim.SGD', 'args': {'lr': 1.0}} (default). 'path' is also accepted.
+                {'path': 'torch.optim.SGD', 'args': {'lr': 1.0}} (default). 'class_path' is also accepted.
             lr_scheduler_args: dictionary of server-side learning rate scheduler arguments, e.g.
-                {'class_path': 'torch.optim.lr_scheduler.CosineAnnealingLR', 'args': {'T_max': 100}} (default: None). 'path' is also accepted.
+                {'path': 'torch.optim.lr_scheduler.CosineAnnealingLR', 'args': {'T_max': 100}} (default: None). 'class_path' is also accepted.
             source_model: either a valid torch model object or a component ID of a torch model object
             device: specify the device to run server-side optimization, e.g. "cpu" or "cuda:0"
                 (will default to cuda if available and no device is specified).
@@ -58,17 +58,17 @@ class PTFedOptModelShareableGenerator(FullModelShareableGenerator):
         super().__init__()
         if not optimizer_args:
             self.logger.warning("No optimizer_args provided. Using FedOpt with SGD and lr 1.0")
-            optimizer_args = {"name": "SGD", "args": {"lr": 1.0}}
+            optimizer_args = {"path": "torch.optim.SGD", "args": {"lr": 1.0}}
 
         if not isinstance(optimizer_args, dict):
             raise TypeError(
-                "optimizer_args must be a dict of format, e.g. {'class_path': 'torch.optim.SGD', 'args': {'lr': 1.0}}."
+                "optimizer_args must be a dict of format, e.g. {'path': 'torch.optim.SGD', 'args': {'lr': 1.0}}."
             )
         if lr_scheduler_args is not None:
             if not isinstance(lr_scheduler_args, dict):
                 raise TypeError(
                     "lr_scheduler_args must be a dict of format, e.g. "
-                    "{'class_path': 'torch.optim.lr_scheduler.CosineAnnealingLR', 'args': {'T_max': 100}}."
+                    "{'path': 'torch.optim.lr_scheduler.CosineAnnealingLR', 'args': {'T_max': 100}}."
                 )
         self.source_model = source_model
         self.optimizer_args = optimizer_args
@@ -212,29 +212,47 @@ class PTFedOptModelShareableGenerator(FullModelShareableGenerator):
             return Learnable()
 
         model_diff = dxo.data
-
-        start = time.time()
-        weights, updated_params = self.server_update(model_diff)
-        secs = time.time() - start
-
-        # convert to numpy dict of weights
-        start = time.time()
-        for key in weights:
-            weights[key] = weights[key].detach().cpu().numpy()
-        secs_detach = time.time() - start
-
-        # update unnamed parameters such as batch norm layers if there are any using the averaged update
         base_model = fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)
         if not base_model:
             self.system_panic(reason="No global base model!", fl_ctx=fl_ctx)
             return base_model
 
         base_model_weights = base_model[ModelLearnableKey.WEIGHTS]
+        if base_model_weights:
+            preserve_torch_weights = any(isinstance(value, torch.Tensor) for value in base_model_weights.values())
+        else:
+            preserve_torch_weights = any(isinstance(value, torch.Tensor) for value in model_diff.values())
 
+        start = time.time()
+        weights, updated_params = self.server_update(model_diff)
+        secs = time.time() - start
+
+        # Keep the updated model in the same representation as the current global model.
+        start = time.time()
+        for key in weights:
+            if preserve_torch_weights:
+                weights[key] = weights[key].detach().cpu().clone()
+            else:
+                weights[key] = weights[key].detach().cpu().numpy()
+        secs_detach = time.time() - start
+
+        # update unnamed parameters such as batch norm layers if there are any using the averaged update
         n_fedavg = 0
         for key, value in model_diff.items():
             if key not in updated_params:
-                weights[key] = base_model_weights[key] + value
+                # base_model_weights can be empty on the first round when the workflow
+                # allows empty initial global weights; fall back to the server model state.
+                base_value = base_model_weights[key] if key in base_model_weights else weights[key]
+                if preserve_torch_weights:
+                    if isinstance(base_value, torch.Tensor):
+                        base_value = base_value.detach().cpu()
+                    else:
+                        base_value = torch.as_tensor(base_value)
+                    if isinstance(value, torch.Tensor):
+                        value = value.detach().cpu()
+                    else:
+                        value = torch.as_tensor(value)
+                weights[key] = base_value + value
                 n_fedavg += 1
 
         self.log_info(

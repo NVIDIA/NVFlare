@@ -12,6 +12,7 @@ This example demonstrates PyTorch Lightning integration with MLflow tracking:
 
 ```python
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv
 from nvflare.recipe.utils import add_experiment_tracking
 
 # Create FedAvg recipe for Lightning model
@@ -39,7 +40,8 @@ add_experiment_tracking(
     }
 )
 
-recipe.run()
+env = SimEnv(num_clients=2)
+run = recipe.execute(env)
 ```
 
 **Note:** This example uses the standard PyTorch `FedAvgRecipe` which automatically handles Lightning models. The recipe integrates with Lightning's callback system and trainer, while maintaining the same simple tracking API as regular PyTorch examples.
@@ -75,8 +77,13 @@ python job.py -n 3 -t "file:///my/custom/mlruns" -l verbose
 - `-n, --n_clients`: Number of clients (default: 2)
 - `-t, --tracking_uri`: MLflow tracking URI
 - `-w, --work_dir`: Working directory
-- `-e, --export_config`: Export config only (don't run)
 - `-l, --log_config`: Log level (concise/verbose)
+
+To export the Recipe job without running it:
+
+```bash
+python job.py --export --export-dir /tmp/nvflare/jobs
+```
 
 ---
 

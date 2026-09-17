@@ -19,7 +19,7 @@ fi
 
 WORK_DIR="$( cd -P "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 NUM_PARALLEL=1
-DIR_TO_CHECK=("nvflare" "examples" "tests")
+DIR_TO_CHECK=("nvflare" "examples" "tests" "dev_tools")
 
 target="${@: -1}"
 if [[ "${target}" == -* ]] ;then
@@ -28,19 +28,27 @@ fi
 
 function install_deps {
     local extras
-    if [[ $(uname) == "Darwin" ]]; then
+    if [[ "${cmd}" == check_style_type_import* || "${cmd}" == fix_style_import* ]]; then
+      extras=".[test_support]"
+    elif [[ $(uname) == "Darwin" ]]; then
       extras=".[dev_mac]"
+    elif [[ "${torch_backend}" == "cpu" ]]; then
+      extras=".[dev_cpu]"
     else
       extras=".[dev]"
     fi
 
+    if [[ "${torch_backend}" == "cpu" && "${extras}" != ".[test_support]" && $(uname) != "Darwin" ]]; then
+      bash "${WORK_DIR}/ci/install_cpu_torch.sh"
+    fi
+
     if command -v uv >/dev/null 2>&1; then
       echo "Installing dependencies with uv..."
-      if [[ -n "${VIRTUAL_ENV:-}" ]]; then
-        uv pip install -e "${extras}"
-      else
-        uv pip install --system -e "${extras}"
+      local uv_system_flag=""
+      if [[ -z "${VIRTUAL_ENV:-}" ]]; then
+        uv_system_flag="--system"
       fi
+      uv pip install ${uv_system_flag} -e "${extras}"
     else
       echo "Installing dependencies with pip..."
       python3 -m pip install -e "${extras}"
@@ -107,7 +115,7 @@ function dry_run() {
 }
 
 function check_license() {
-    folders_to_check_license=("nvflare" "examples" "tests" "integration" "research")
+    folders_to_check_license=("nvflare" "examples" "tests" "integration" "research" "skills")
     echo "checking license header in folder: ${folders_to_check_license[*]}"
     status=0
     python3 ci/check_license_header.py "${folders_to_check_license[@]}" || status="$?"
@@ -175,12 +183,22 @@ function mypy_check() {
     report_status "$?"
 }
 
+function skill_lint_check() {
+    echo "${separator}${blue}agent-skill-lint${noColor}"
+    # Deterministic v1 lint over the packaged agent skills and their eval suites
+    # (skills/ + each skill's co-located evals/ suite). Fast and dependency-light.
+    python3 -m dev_tools.agent.skills.checks --skills-root skills
+    report_status "$?"
+    echo "Done with agent skill lint checks"
+}
+
 function check_style_type_import() {
     # remove pylint for now
     # pylint_check  "$@"
     black_check   "$@"
     isort_check   "$@"
     flake8_check  "$@"
+    skill_lint_check
     # pytype causing check fails, comment for now
     # pytype_check  "$@"
 
@@ -288,6 +306,8 @@ function help() {
     echo "    -p | --dependencies           : only install dependencies"
     echo "    -c | --coverage               : used with -u command, turn on coverage flag,  It has no effect without -u "
     echo "         --numprocesses=<N|auto>  : number of parallel pytest workers (default: 8)"
+    echo "         --torch-backend=cpu      : install CPU-only PyTorch wheels on Linux"
+    echo "         --skip-install           : skip dependency installation before running the selected command"
     echo "    -v | --verbose                : verbose output (adds -v to pytest)"
     echo "    -d | --dry-run                : set dry run flag, print out command"
     echo "         --clean                  : clean py and other artifacts generated"
@@ -310,6 +330,8 @@ unit_test_report=false
 dry_run_flag=false
 pytest_numprocesses=8
 verbose_flag=false
+torch_backend=""
+skip_install=false
 
 # notebook test defaults
 nb_timeout=1200
@@ -396,6 +418,18 @@ do
             pytest_numprocesses="${key#*=}"
         ;;
 
+        --torch-backend=*)
+            torch_backend="${key#*=}"
+            if [[ "${torch_backend}" != "cpu" ]]; then
+                echo "${red}Error: --torch-backend currently supports only 'cpu'. Got: '${torch_backend}'${noColor}"
+                exit 1
+            fi
+        ;;
+
+        --skip-install)
+            skip_install=true
+        ;;
+
         -v|--verbose)
             verbose_flag=true
         ;;
@@ -419,7 +453,7 @@ elif [[ "${cmd}" == "unit_tests" ]]; then
         target="tests/unit_test"
     fi
 
-    cmd="python3 -m pytest --numprocesses=${pytest_numprocesses} -v "
+    cmd="python3 -m pytest --numprocesses=${pytest_numprocesses} --dist loadgroup "
 
     if [ "${coverage_report}" == true ]; then
         cmd="${cmd} --cov=${target} --cov-report html:cov_html --cov-report xml:cov.xml"
@@ -448,7 +482,11 @@ echo "                 "
 if [[ $dry_run_flag = "true" ]]; then
     dry_run "$cmd"
 else
-    install_deps
+    if [[ "${skip_install}" != "true" ]]; then
+        install_deps
+    else
+        echo "Skipping dependency installation"
+    fi
     eval "$cmd"
 fi
 echo "Done"

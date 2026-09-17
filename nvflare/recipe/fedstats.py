@@ -15,12 +15,17 @@
 from typing import Any, Dict, List
 
 from nvflare.app_common.abstract.statistics_spec import Statistics
+from nvflare.fuel.utils.secret_utils import warn_on_potential_secrets, warn_on_unsupported_secret_refs
 from nvflare.job_config.stats_job import StatsJob
 from nvflare.recipe.spec import Recipe
 
 
 class FedStatsRecipe(Recipe):
     """A recipe for federated statistics computation.
+
+    Recipe parameters become part of the generated job definition and must never
+    contain actual secret values. Read secrets from site environment variables or mounted
+    files; references are supported only where documented in :mod:`nvflare.recipe.secrets`.
 
     FedStatsRecipe is a specialized recipe that facilitates the computation of
     statistics across multiple federated sites. It creates and configures a
@@ -80,6 +85,14 @@ class FedStatsRecipe(Recipe):
         max_noise_level: float = 0.3,
         max_bins_percent: float = 10,
     ):
+        warn_on_potential_secrets(
+            statistic_configs,
+            context="recipe parameter 'statistic_configs'",
+        )
+        warn_on_unsupported_secret_refs(
+            statistic_configs,
+            context="recipe parameter 'statistic_configs'",
+        )
         job = StatsJob(
             name=name,
             statistic_configs=statistic_configs,

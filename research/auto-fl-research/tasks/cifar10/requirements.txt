@@ -1,0 +1,7 @@
+nvflare[PT]>=2.7.2
+numpy
+matplotlib
+torch
+torchvision
+tensorboard
+pyyaml

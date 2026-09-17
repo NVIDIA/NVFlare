@@ -143,7 +143,7 @@ class TestJobAbort:
         assert "job999" in captured.err
         assert "job999" not in captured.out
 
-    def test_abort_job_not_found_exits_1(self):
+    def test_abort_job_not_found_exits_1(self, capsys):
         """JOB_NOT_FOUND exits with code 1."""
         from nvflare.tool.job.job_cli import cmd_job_abort
 
@@ -155,6 +155,10 @@ class TestJobAbort:
             with pytest.raises(SystemExit) as exc_info:
                 cmd_job_abort(args)
         assert exc_info.value.code == 1
+        envelope = json.loads(capsys.readouterr().out)
+        assert envelope["error_code"] == "JOB_NOT_FOUND"
+        assert "searched study 'default'" in envelope["message"]
+        assert "nvflare job list --study <study_name>" in envelope["hint"]
 
     def test_abort_job_not_running_exits_1(self):
         """JOB_NOT_RUNNING exits with code 1 when job is not active."""

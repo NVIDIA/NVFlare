@@ -27,19 +27,19 @@ class ContentBlockedException(Exception):
     pass
 
 
-class FilterChainType(object):
+class FilterChainType:
 
     TASK_DATA_CHAIN = "task_data"
     TASK_RESULT_CHAIN = "task_result"
 
 
-class FilterSource(object):
+class FilterSource:
 
     JOB = "job"
     SITE = "site"
 
 
-class FilterContextKey(object):
+class FilterContextKey:
 
     SOURCE = "__source"
     CHAIN_TYPE = "__chain_type"

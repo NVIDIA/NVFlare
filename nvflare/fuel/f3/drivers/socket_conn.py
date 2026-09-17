@@ -26,7 +26,6 @@ from nvflare.fuel.f3.drivers.driver import ConnectorInfo
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.drivers.net_utils import MAX_FRAME_SIZE
 from nvflare.fuel.f3.sfm.prefix import PREFIX_LEN, Prefix
-from nvflare.fuel.hci.security import get_certificate_common_name
 from nvflare.security.logging import secure_format_exception
 
 log = logging.getLogger(__name__)
@@ -38,8 +37,28 @@ class SocketConnection(Connection):
         self.sock = sock
         self.secure = secure
         self.closing = False
+        config = CommConfigurator()
+        if config.get_tcp_no_delay(True):
+            self._set_tcp_no_delay()
         self.conn_props = self._get_socket_properties()
-        self.send_timeout = CommConfigurator().get_streaming_send_timeout(30.0)
+        self.send_timeout = config.get_streaming_send_timeout(30.0)
+
+    def _set_tcp_no_delay(self):
+        """Disable Nagle's algorithm.
+
+        The cellnet request/reply pattern ping-pongs small frames (requests,
+        final chunks, stream ACKs). With Nagle enabled, each such frame can
+        stall behind the peer's delayed ACK (40-200ms), which dominates
+        per-request latency on real networks. Bulk chunk frames are ~1MiB,
+        so disabling Nagle does not increase small-packet load on the data
+        path. Can be turned off with tcp_no_delay: false in comm_config.
+        """
+        if getattr(self.sock, "family", None) not in (socket.AF_INET, socket.AF_INET6):
+            return
+        try:
+            self.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        except OSError as ex:
+            log.debug(f"cannot set TCP_NODELAY on connection: {ex}")
 
     def get_conn_properties(self) -> dict:
         return self.conn_props
@@ -148,6 +167,9 @@ class SocketConnection(Connection):
         if prefix.length == PREFIX_LEN:
             return prefix_buf
 
+        if prefix.length < PREFIX_LEN:
+            raise CommError(CommError.BAD_DATA, f"Frame length below prefix size ({prefix.length} < {PREFIX_LEN})")
+
         if prefix.length > MAX_FRAME_SIZE:
             raise CommError(CommError.BAD_DATA, f"Frame exceeds limit ({prefix.length} > {MAX_FRAME_SIZE}")
 
@@ -197,12 +219,7 @@ class SocketConnection(Connection):
         conn_props[DriverParams.LOCAL_ADDR.value] = self._format_address(local, fileno)
 
         if self.secure:
-            cert = self.sock.getpeercert()
-            if cert:
-                cn = get_certificate_common_name(cert)
-            else:
-                cn = "N/A"
-            conn_props[DriverParams.PEER_CN.value] = cn
+            self.record_peer(conn_props, self.sock.getpeercert(binary_form=True), secure=True)
 
         return conn_props
 

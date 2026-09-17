@@ -19,13 +19,18 @@ from typing import List, Optional
 
 import numpy as np
 
-from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.np.constants import NPConstants
 from nvflare.app_common.np.np_model_persistor import NPModelPersistor
-from nvflare.app_common.workflows.base_fedavg import BaseFedAvg
+from nvflare.app_common.workflows.base_fedavg import (
+    BaseFedAvg,
+    _aggregate_fl_model_metrics,
+    _get_client_name,
+    _get_num_steps_weight,
+    make_fedavg_metrics_aggregation_info,
+)
 from nvflare.app_common.workflows.lr.np_persistor import LRModelPersistor
 
 
@@ -151,8 +156,8 @@ class FedAvgLR(BaseFedAvg):
         for curr_result in results:
             self.aggregator.add(
                 data=curr_result.params,
-                weight=curr_result.meta.get(FLMetaKey.NUM_STEPS_CURRENT_ROUND, 1.0),
-                contributor_name=curr_result.meta.get("client_name", AppConstants.CLIENT_UNKNOWN),
+                weight=_get_num_steps_weight(curr_result),
+                contributor_name=_get_client_name(curr_result),
                 contribution_round=curr_result.current_round,
             )
 
@@ -176,10 +181,13 @@ class FedAvgLR(BaseFedAvg):
         aggr_result = FLModel(
             params={"newton_raphson_updates": newton_raphson_updates},
             params_type=results[0].params_type,
+            metrics=_aggregate_fl_model_metrics(results),
+            current_round=results[0].current_round,
             meta={
                 "nr_aggregated": len(results),
                 AppConstants.CURRENT_ROUND: results[0].current_round,
                 AppConstants.NUM_ROUNDS: self.num_rounds,
+                AppConstants.METRICS_AGGREGATION_INFO: make_fedavg_metrics_aggregation_info(),
             },
         )
         return aggr_result

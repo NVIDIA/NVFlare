@@ -1,0 +1,7 @@
+name: fed_project
+description: Dynamically added client site
+
+participants:
+  - name: site-3
+    type: client
+    org: org3

@@ -12,10 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 import threading
+import time
 from typing import Optional
 
+from nvflare.fuel.flare_api.job_status import job_status_outcome
 from nvflare.fuel.utils.log_utils import get_obj_logger
+from nvflare.recipe._failure_summary import failure_summary
+from nvflare.recipe._run_summary import _print_output, result_summary, run_context, summary_header
 from nvflare.recipe.spec import ExecEnv
 
 
@@ -50,6 +55,8 @@ class Run:
         self._cached_status: Optional[str] = None
         self._cached_result: Optional[str] = None
         self.logger = get_obj_logger(self)
+        self._started_at = time.monotonic()
+        self._summary_context = run_context(None, exec_env)
 
     def get_job_id(self) -> str:
         """Get the job ID.
@@ -74,16 +81,23 @@ class Run:
                 self.logger.warning(f"Failed to get job status: {e}")
                 return None
 
-    def get_result(self, timeout: float = 0.0) -> Optional[str]:
+    def get_result(self, timeout: float = 0.0, clean_up: bool = True) -> Optional[str]:
         """Get the result workspace of the run.
 
         Waits for job to complete, caches status, then stops execution environment.
 
         Args:
             timeout (float, optional): Timeout for job completion. Defaults to 0.0 (no timeout).
+            clean_up (bool, optional): Whether to remove the execution-environment workspace
+                (e.g. the POC workspace) when stopping. Defaults to True, preserving the
+                existing "each run is independent" behavior. Pass ``clean_up=False`` to keep
+                the workspace on disk after the run so server/client log files (including
+                the per-service ``poc_console.log`` introduced in #4500) remain available
+                for debugging or test assertions.
 
         Returns:
             Optional[str]: Result workspace path, or None if job not finished or on error.
+            The path may be removed by the time this method returns when ``clean_up=True``.
         """
         with self._lock:
             if self._stopped:
@@ -103,12 +117,54 @@ class Run:
                 self.logger.warning(f"Failed to get job status: {e}")
                 self._cached_status = None
 
+            report = ""
+            failure_report = ""
+            outcome = job_status_outcome(self._cached_status)
+            if outcome in ("failed", "aborted"):
+                failure_report = failure_summary(result)
+            if result and os.path.isdir(result):
+                try:
+                    report = result_summary(result)
+                except Exception as e:
+                    self.logger.debug("Could not summarize result artifacts: %s", e)
+            elapsed = time.monotonic() - self._started_at
             try:
-                self.exec_env.stop(clean_up=True)
+                self.exec_env.stop(clean_up=clean_up)
             except Exception as e:
                 self.logger.warning(f"Failed to stop execution environment: {e}")
             finally:
                 self._stopped = True
+
+            if outcome is None:
+                return result
+
+            status_label = {
+                "completed": "✓ Completed",
+                "failed": "✗ Failed",
+                "not_scheduled": "✗ Not scheduled",
+                "aborted": "■ Aborted",
+            }[outcome]
+            _print_output(summary_header(status_label, elapsed, context=self._summary_context), flush=True)
+            if failure_report or outcome in ("not_scheduled", "aborted"):
+                _print_output(f"\n  Status    {self._cached_status}", flush=True)
+            if failure_report:
+                _print_output(failure_report, flush=True)
+            if report:
+                _print_output(report, flush=True)
+
+            if result:
+                if os.path.isdir(result):
+                    _print_output(f"  Results   {result}", flush=True)
+                else:
+                    _print_output(
+                        f"Result workspace is not available locally: {result}. "
+                        "To retain an environment's workspace, use get_result(clean_up=False) when running the job.",
+                        flush=True,
+                    )
+            else:
+                _print_output(
+                    "No result workspace was returned. See the status and preceding messages for details.", flush=True
+                )
 
             return result
 

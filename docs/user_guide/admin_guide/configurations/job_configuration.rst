@@ -31,18 +31,19 @@ If a response is not received from the server within this specified value, then 
 
 The default value is 2.0 seconds.
 
-max_runner_sync_tries
-^^^^^^^^^^^^^^^^^^^^^
+max_runner_sync_timeout
+^^^^^^^^^^^^^^^^^^^^^^^
 
 This variable is for the client-side configuration (config_fed_client.json).
 
-This variable specifies the max number of "runner sync" messages to be sent before receiving a response from the server.
-If a response is still not received after this many tries, the client's job process will terminate.
+This variable specifies the maximum elapsed time allowed for runner synchronization attempts.
+If synchronization has not completed after this time, the client's job process will terminate.
 
-The default value is 30.
+The default value is 60.0 seconds.
 
-The default settings of these two variables mean that if the ClientRunner and the ServerRunner are not synchronized within one minute, the client will terminate.
-If one minute is not enough, you can extend these two variables to meet your requirement.
+With the defaults, each runner sync request waits up to 2.0 seconds and the client stops retrying once the
+60.0-second overall synchronization budget is exceeded. If one minute is not enough, increase
+``max_runner_sync_timeout``.
 
 Task Check
 ----------
@@ -83,20 +84,27 @@ It is crucial to set this variable to a proper value.
 If this value is too short for the server to deliver the response to the client in time, then the server may get repeated requests for the same task.
 This can cause the server to run out of memory (since there could be many messages inflight to the same client).
 
-The default value of this variable is 30 seconds. You change its value by setting it in the config_fed_client.json:
+By default, ``get_task_timeout`` is unset, so the client uses its effective communication timeout. The site-level
+``communication_timeout`` defaults to 300.0 seconds. A configured ``get_task_timeout`` can increase this wait, but
+cannot reduce it below the effective communication timeout. Tensor streaming may raise the required minimum
+automatically. To request a longer wait, set the value in config_fed_client.json:
 
-``get_task_timeout: 60.0``
+``"get_task_timeout": 600.0``
 
 Submit Task Result
 ------------------
 
-The client submits the task result to the server after the task is completed. You can set the submit_task_result_timeout variable to specify how long to wait for the response from the server. If a response is not received from the server within the specified time, the client will try to send the result again until it succeeds.
+The client submits the task result to the server after the task is completed. You can set the
+submit_task_result_timeout variable to specify how long to wait for the response from the server. If a submission
+attempt fails, the client checks whether the task is still valid and retries while the job and task remain active.
 
 It is crucial to set this variable to a proper value. If this value is too short for the server to accept the result and deliver a response to the client in time, then the server may get repeated task results for the same task. This can cause the server to run out of memory (since there could be many messages coming to the server).
 
-The default value of this variable is 30 seconds. You change its value by setting it in the config_fed_client.json:
+By default, ``submit_task_result_timeout`` is unset, so the client uses its effective communication timeout. The
+site-level ``communication_timeout`` defaults to 300.0 seconds. Set a positive job-level value to override that
+fallback. For example, to request a longer wait in config_fed_client.json:
 
-``submit_task_result_timeout: 120.0``
+``"submit_task_result_timeout": 600.0``
 
 Job Heartbeat
 -------------
@@ -113,7 +121,7 @@ job_heartbeat_interval
 This variable is for the client-side configuration (config_fed_client.json).
 This variable specifies how often to send a heartbeat message to the server.
 
-The default value is 30.0 seconds. You can tune this value up or down depending on your communication network's behavior.
+The default value is 10.0 seconds. You can tune this value up or down depending on your communication network's behavior.
 
 Graceful Job Completion
 -----------------------

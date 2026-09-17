@@ -19,6 +19,8 @@ Launch with:
     python -m torch.distributed.run --nnodes=1 --nproc_per_node=2 --master_port=7777 client.py
 """
 
+import os
+
 import torch
 import torch.distributed as dist
 import torch.nn as nn
@@ -61,10 +63,14 @@ def evaluate(input_weights, device, dataloader):
 def main():
     # Initialize distributed process group
     dist.init_process_group("nccl")
-    rank = int(dist.get_rank())
-    device = f"cuda:{rank}"
-    torch.cuda.set_device(rank)
-    print(f"DDP rank {rank} initialized on {device}")
+    global_rank = int(dist.get_rank())
+    if "LOCAL_RANK" not in os.environ:
+        raise RuntimeError("LOCAL_RANK is required for torchrun/DDP GPU training. Launch with torchrun.")
+    local_rank = int(os.environ["LOCAL_RANK"])
+
+    device = f"cuda:{local_rank}"
+    torch.cuda.set_device(local_rank)
+    print(f"DDP global_rank={global_rank}, local_rank={local_rank} initialized on {device}")
 
     # Data setup
     transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
@@ -83,13 +89,21 @@ def main():
     criterion = nn.CrossEntropyLoss()
 
     # (2) initializes NVFlare client API
-    flare.init(rank=f"{rank}")
+    flare.init(rank=global_rank)
 
-    print(f"flare init DDP rank {rank} initialized on {device}")
-    # (3) gets FLModel from NVFlare
-    while flare.is_running():
+    print(f"flare init DDP global_rank={global_rank}, local_rank={local_rank} initialized on {device}")
+    # (3) gets FLModel from NVFlare.
+    # Only rank 0 talks to NVFlare, so flare.is_running() never turns False on
+    # nonzero ranks — rank 0 must broadcast the running state so all ranks exit
+    # the loop together at job end.
+    while True:
+        running = [flare.is_running() if global_rank == 0 else None]
+        dist.broadcast_object_list(running, src=0)
+        if not running[0]:
+            break
+
         input_model = flare.receive()
-        if rank == 0:
+        if global_rank == 0:
             print(f"\n[Round={input_model.current_round}, Site={flare.get_site_name()}]")
             # (4) loads model from NVFlare
             net.load_state_dict(input_model.params)
@@ -97,10 +111,10 @@ def main():
 
         # Wrap model with DDP
         net.to(device)
-        ddp_model = DDP(net, device_ids=[rank])
+        ddp_model = DDP(net, device_ids=[local_rank])
 
         # Sync model across ranks
-        if rank == 0:
+        if global_rank == 0:
             torch.save(ddp_model.state_dict(), CHECKPOINT_PATH)
 
         dist.barrier()
@@ -120,14 +134,14 @@ def main():
                 optimizer.step()
 
                 running_loss += loss.item()
-                if rank == 0 and i % 2000 == 1999:
+                if global_rank == 0 and i % 2000 == 1999:
                     print(f"[{epoch + 1}, {i + 1:5d}] loss: {running_loss / 2000:.3f}")
                     running_loss = 0.0
 
-        print(f"Rank {rank}: Finished Training")
+        print(f"Rank {global_rank}: Finished Training")
 
         # Only rank 0 sends model back
-        if rank == 0:
+        if global_rank == 0:
             # All processes should see same parameters as they all start from same
             # random parameters and gradients are synchronized in backward passes.
             # Therefore, saving it in one process is sufficient.

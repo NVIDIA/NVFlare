@@ -22,7 +22,7 @@ we usually need two steps to prepare data.
 
 * download the data
 
-To avoid each job having to download and split the data, we add a step to prepare the data for all the cifar10 jobs. 
+To avoid each job having to download and split the data, we add a step to prepare the data for all the CIFAR-10 jobs. 
 
 The CIFAR-10 data will be downloaded to a common location, so it will not need to be repeatedly downloaded.
 

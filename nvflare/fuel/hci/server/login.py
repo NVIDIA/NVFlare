@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import datetime
 import traceback
 from typing import List
 
@@ -23,8 +24,9 @@ from nvflare.fuel.hci.proto import InternalCommands, ReplyKeyword
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.security import IdentityKey, get_identity_info
 from nvflare.fuel.hci.server.constants import ConnProps
+from nvflare.fuel.sec.admin_cert import get_admin_study_entitlements, validate_admin_leaf_cert
 from nvflare.fuel.utils.log_utils import get_obj_logger
-from nvflare.lighter.utils import cert_to_dict, load_crt_bytes
+from nvflare.lighter.utils import cert_to_dict, load_crt_chain_bytes
 from nvflare.security.logging import secure_format_exception
 from nvflare.security.study_registry import StudyRegistryService
 
@@ -90,14 +92,20 @@ class LoginModule(CommandModule, CommandFilter):
         hci = conn.get_prop(ConnProps.HCI_SERVER)
         identity_verifier = hci.get_id_verifier()
         id_asserter = hci.get_id_asserter()
+        if not identity_verifier or not id_asserter:
+            self.logger.error("rejecting admin login because the server signing identity is not configured")
+            _reject("server signing identity is not configured", code="AUTH_SERVER_IDENTITY_UNAVAILABLE")
+            return
 
-        cert = load_crt_bytes(cert_data)
+        cert_chain = load_crt_chain_bytes(cert_data)
+        cert = cert_chain[0]
         try:
             ok = identity_verifier.verify_common_name(
                 asserter_cert=cert,
                 asserted_cn=user_name,
                 signature=signature,
                 nonce="",
+                intermediate_certs=cert_chain[1:],
             )
             self.logger.debug(f"verify common name: {ok=}")
         except Exception as ex:
@@ -106,6 +114,14 @@ class LoginModule(CommandModule, CommandFilter):
             ok = False
 
         if not ok:
+            _reject()
+            return
+
+        try:
+            validate_admin_leaf_cert(cert)
+            cert_studies = get_admin_study_entitlements(cert)
+        except Exception as ex:
+            self.logger.error(f"admin certificate validation failed: {secure_format_exception(ex)}")
             _reject()
             return
 
@@ -128,7 +144,7 @@ class LoginModule(CommandModule, CommandFilter):
                 self.logger.warning(f"rejecting login for user '{user_name}': unknown study '{study}'")
                 _reject(f"unknown study '{study}'", code="AUTH_UNKNOWN_STUDY")
                 return
-            if not registry.get_role(user_name, study):
+            if not registry.has_user(user_name, study) and study not in cert_studies:
                 self.logger.warning(f"rejecting login for user '{user_name}': no mapping for study '{study}'")
                 _reject(
                     f"user '{user_name}' is not mapped to study '{study}'",
@@ -150,6 +166,8 @@ class LoginModule(CommandModule, CommandFilter):
             user_role=identity.get(IdentityKey.ROLE) or "",
             origin_fqcn=origin,
             active_study=study,
+            cert_exp=_cert_expiry(cert),
+            cert_studies=cert_studies,
         )
         token = session.make_token(id_asserter)
         self.logger.info(f"Created user session for {user_name}")
@@ -158,9 +176,9 @@ class LoginModule(CommandModule, CommandFilter):
 
     def handle_logout(self, conn: Connection, args: List[str]):
         if self.session_mgr:
-            token = conn.get_prop(ConnProps.TOKEN)
-            if token:
-                self.session_mgr.end_session_by_token(token)
+            session = conn.get_prop(ConnProps.SESSION)
+            if session:
+                self.session_mgr.end_session_by_id(session.sess_id)
         conn.append_string("OK")
 
     def pre_command(self, conn: Connection, args: List[str]):
@@ -191,7 +209,7 @@ class LoginModule(CommandModule, CommandFilter):
                 self.logger.error(f"cannot recreate admin session: {secure_format_exception(ex)}")
                 conn.append_error(ReplyKeyword.SESSION_INACTIVE)
                 conn.append_string(
-                    "user not authenticated or session timed out after {} seconds of inactivity - logged out".format(
+                    "user not authenticated or session timed out/expired after {} seconds of inactivity - logged out".format(
                         self.session_mgr.idle_timeout
                     )
                 )
@@ -204,8 +222,16 @@ class LoginModule(CommandModule, CommandFilter):
         conn.set_prop(ConnProps.USER_ORG, sess.user_org)
         conn.set_prop(ConnProps.USER_ROLE, sess.user_role)
         conn.set_prop(ConnProps.ACTIVE_STUDY, sess.active_study)
+        conn.set_prop(ConnProps.CERT_STUDIES, sess.cert_studies)
         conn.set_prop(ConnProps.TOKEN, token)
         return True
 
     def close(self):
         self.session_mgr.shutdown()
+
+
+def _cert_expiry(cert):
+    value = getattr(cert, "not_valid_after_utc", None)
+    if value is None:
+        value = cert.not_valid_after.replace(tzinfo=datetime.timezone.utc)
+    return value.timestamp()

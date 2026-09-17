@@ -11,7 +11,7 @@ As in typical NVFlare examples (e.g. [hello-pt](../../hello-world/hello-pt/)):
 | `model.py` | Qwen3-VL wrapper used as the FL model; server can save/load `state_dict`. Model config uses HuggingFace ID (e.g. `Qwen/Qwen3-VL-2B-Instruct`). |
 | `client.py` | Client entry point (launched by NVFlare via torchrun): rank 0 receives/sends FL models, all ranks run the vendored training code (`qwenvl.train`) per round, then rank 0 sends updated weights back. |
 | `qwenvl/` | Vendored Qwen-style training and data modules (from [Qwen3-VL](https://github.com/QwenLM/Qwen3-VL) qwen-vl-finetune): model loading (full + adapter-only), `fl_site` data list, data processor, LoRA support. No separate Qwen repo or patches required. |
-| `job.py` | FedAvg recipe: 3 clients, per-site data paths; optional Weights & Biases tracking (`--wandb`); launches each client with a per-site torchrun command (unique `--master_port` per client, configurable `--nproc_per_client`). |
+| `job.py` | FedAvg recipe: 3 clients, per-site data paths; optional Weights & Biases tracking (`--wandb`); launches each client through NVFlare's `torchrun_node` wrapper with configurable `--nproc_per_client`. |
 | `download_data.py` | Downloads PubMedVision (git clone) and unzips image archives into `PubMedVision/` for a standard layout. |
 | `prepare_data.py` | Splits PubMedVision into `site-1`, `site-2`, `site-3` shards. |
 | `run_inference.py` | Inference on PubMedVision-style samples; compares base vs fine-tuned (HuggingFace checkpoint or NVFlare `FL_global_model.pt`). Prints question, ground truth, model answer, and image path(s). |

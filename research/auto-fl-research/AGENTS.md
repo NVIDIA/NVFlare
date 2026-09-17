@@ -1,0 +1,46 @@
+# AGENTS.md
+
+## Entry point
+
+Start with `program.md`. It is the general research-org entry point for the agent.
+Then read the active task profile. If the human does not specify one, use
+`tasks/cifar10/profile.md`.
+
+Use the active task's `mutation_schema.yaml` only when `program.md` or the active task profile directs you to the hard mutation bounds, or when choosing a mutation axis. If anything here conflicts with `program.md`, follow `program.md` unless a human explicitly overrides it. If a task profile conflicts with generic `program.md` text on task budget, environment, metric, or edit surface, follow the task profile.
+
+## Mission
+
+Improve this Auto-FL NVFlare harness without breaking the federated contract.
+
+## Files you may edit
+
+Preferred mutation files:
+- task-local `client.py`
+- shared `tasks/shared/custom_aggregators.py`
+- task-local `job.py`
+- task-local `model.py` for registered architecture variants under the active parameter cap
+
+Do not change unless explicitly requested:
+- shared `data/*` or task-local data bridge files
+
+## Hard invariants
+
+You must preserve all of the following unless a human explicitly asks for a protocol upgrade:
+- `flare.init()`
+- `while flare.is_running():`
+- `input_model = flare.receive()`
+- `flare.send(output_model)`
+- `model.load_state_dict(input_model.params, strict=True)`
+- `compute_model_diff(...)`
+- `output_model.params_type == ParamsType.DIFF`
+- `output_model.meta["NUM_STEPS_CURRENT_ROUND"]`
+- the optional `if flare.is_evaluate():` branch
+- the same selected `model_arch` must be instantiated on server and clients for a run
+- `model_arch` and `max_model_params` are fixed budget fields unless the campaign is explicitly labeled as an architecture subcampaign
+
+## Required workflow after every edit
+
+1. Run the active task profile's validation command, with `TASK_DIR` set to the active task.
+2. Run the active task profile's smoke command. For non-CIFAR tasks, pass the task-specific `SMOKE_ARGS` or run `bash scripts/run_iteration.sh ...` with the active task budget.
+3. Record the mutation in `results.tsv`
+4. Summarize the mutation in `templates/mutation_report.md`

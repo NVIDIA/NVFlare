@@ -57,6 +57,8 @@ class _ConfigKey:
     PROJECT_NAME = "project_name"
     SERVER_IDENTITY = "server_identity"
     IDENTITY = "identity"
+    AUTH_IDENTITY = "auth_identity"
+    AUTH_IDENTITY_MAP = "auth_identity_map"
     CONNECT_TO = "connect_to"
 
 
@@ -102,6 +104,8 @@ def main(args):
     if not my_identity:
         raise RuntimeError(f"invalid relay config file {args.relay_config}: missing {_ConfigKey.IDENTITY}")
 
+    my_auth_identity = relay_config.get(_ConfigKey.AUTH_IDENTITY, my_identity)
+
     parent = relay_config.get(_ConfigKey.CONNECT_TO)
     if not parent:
         raise RuntimeError(f"invalid relay config file {args.relay_config}: missing {_ConfigKey.CONNECT_TO}")
@@ -117,6 +121,18 @@ def main(args):
     parent_fqcn = parent.get(ConnPropKey.FQCN)
     if not parent_fqcn:
         raise RuntimeError(f"invalid relay config file {args.relay_config}: missing parent.fqcn")
+
+    parent_identity = parent.get(_ConfigKey.AUTH_IDENTITY, parent.get(_ConfigKey.IDENTITY))
+    if not parent_identity:
+        if parent_fqcn == FQCN.ROOT_SERVER:
+            parent_identity = server_identity
+        else:
+            parent_identity = FQCN.split(parent_fqcn)[-1]
+
+    auth_identity_map = {parent_fqcn: parent_identity}
+    configured_identity_map = relay_config.get(_ConfigKey.AUTH_IDENTITY_MAP)
+    if configured_identity_map:
+        auth_identity_map.update(configured_identity_map)
 
     cmd_vars = parse_vars(args.set)
     secure_train = cmd_vars.get("secure_train", False)
@@ -164,6 +180,8 @@ def main(args):
         credentials=credentials,
         create_internal_listener=True,
         parent_url=parent_url,
+        auth_identity=my_auth_identity,
+        auth_identity_map=auth_identity_map,
     )
     NetAgent(cell, agent_closed_cb=monitor.cellnet_stopped)
     cell.start()
@@ -203,9 +221,11 @@ def main(args):
             cb=_validate_auth_headers,
             token_verifier=token_verifier,
             logger=logger,
+            local_cell_fqcn=my_fqcn,
+            core_cell=cell.core_cell,
         )
 
-    logger.info(f"Successfully authenticated to {server_identity}: {token=} {ssid=}")
+    logger.info(f"Successfully authenticated to {server_identity}: {ssid=}")
 
     # wait until stopped
     logger.info(f"Started relay {my_identity=} {my_fqcn=} {root_url=} {parent_url=} {parent_fqcn=}")
@@ -214,13 +234,22 @@ def main(args):
     logger.info(f"Relay {my_fqcn} stopped.")
 
 
-def _validate_auth_headers(message: CellMessage, token_verifier: TokenVerifier, logger):
-    """Validate auth headers from messages that go through the server.
+def _validate_auth_headers(
+    message: CellMessage, token_verifier: TokenVerifier, logger, local_cell_fqcn=None, core_cell=None
+):
+    """Validate auth headers from messages that go through the relay.
     Args:
         message: the message to validate
+        token_verifier: verifier for the token and signature
+        logger: logger
+        local_cell_fqcn: FQCN of this relay's cell, used to scope the cellnet bye auth bypass
+        core_cell: relay CoreCell used to verify a post-server message's actual upstream endpoint
     Returns:
     """
-    return validate_auth_headers(message, token_verifier, logger)
+    if core_cell and core_cell.is_server_transit_return(message):
+        logger.debug("accepting sanitized server-transit message from configured upstream parent")
+        return None
+    return validate_auth_headers(message, token_verifier, logger, local_cell_fqcn=local_cell_fqcn)
 
 
 if __name__ == "__main__":

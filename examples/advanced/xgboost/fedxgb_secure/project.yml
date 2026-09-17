@@ -46,16 +46,6 @@ builders:
       # to different url.
       # download_job_url: http://download.server.com/
 
-      overseer_agent:
-        path: nvflare.ha.dummy_overseer_agent.DummyOverseerAgent
-        # if overseer_exists is true, args here are ignored.  Provisioning
-        #   tool will fill role, name and other local parameters automatically.
-        # if overseer_exists is false, args in this section will be used.
-        overseer_exists: false
-        args:
-          sp_end_point: server1:8002:8003
-          heartbeat_interval: 6
-
   - path: nvflare.lighter.impl.cert.CertBuilder
   - path: nvflare.lighter.impl.he.HEBuilder
     args:

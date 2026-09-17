@@ -48,6 +48,11 @@ class _FedOptValidator(BaseModel):
 class FedOptRecipe(Recipe):
     """A recipe for implementing Federated Optimization (FedOpt) in NVFlare with TensorFlow.
 
+    Recipe parameters, including ``train_args``, ``optimizer_args``, and
+    ``lr_scheduler_args``, must never contain actual secret values. Read secrets from site
+    environment variables or mounted files; references are supported only where documented in
+    :mod:`nvflare.recipe.secrets`.
+
     FedOpt is a federated learning algorithm that uses server-side optimization with momentum
     to improve convergence. The algorithm is proposed in Reddi et al. "Adaptive Federated
     Optimization." arXiv preprint arXiv:2003.00295 (2020).
@@ -82,10 +87,10 @@ class FedOptRecipe(Recipe):
         params_transfer_type: How to transfer the parameters between server and client.
             FULL means the whole model parameters are sent. DIFF means that only the difference is sent.
             Defaults to TransferType.FULL.
-        optimizer_args: Dictionary of server-side optimizer arguments with keys 'class_path' (or 'path') and 'args'.
+        optimizer_args: Dictionary of server-side optimizer arguments with keys 'path' (or 'class_path') and 'args'.
             Defaults to SGD with learning_rate=1.0 and momentum=0.6.
         lr_scheduler_args: Dictionary of server-side learning rate scheduler arguments with keys
-            'class_path' (or 'path') and 'args'. Defaults to CosineDecay with initial_learning_rate=1.0 and alpha=0.9.
+            'path' (or 'class_path') and 'args'. Defaults to CosineDecay with initial_learning_rate=1.0 and alpha=0.9.
         server_memory_gc_rounds: Run memory cleanup (gc.collect + malloc_trim) every N rounds on server.
             Set to 0 to disable. Defaults to 0.
 

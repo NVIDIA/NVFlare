@@ -12,14 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import warnings
 from unittest.mock import patch
 
 import pytest
 import torch.nn as nn
 from pydantic import ValidationError
 
+from nvflare.apis.job_def import ALL_SITES
 from nvflare.app_opt.pt.recipes.fedeval import FedEvalRecipe
 from nvflare.client.config import ExchangeFormat
+from nvflare.fuel.utils.secret_utils import PotentialSecretWarning, UnsupportedSecretRefWarning
+from nvflare.recipe import set_per_site_config
 
 
 class SimpleTestModel(nn.Module):
@@ -68,12 +72,85 @@ def assert_recipe_basics(recipe, expected_name, expected_params):
     assert recipe.eval_script == expected_params.get("eval_script", "mock_eval_script.py")
     assert recipe.eval_args == expected_params.get("eval_args", "--batch_size 32")
     assert recipe.min_clients == expected_params.get("min_clients", 2)
-    assert recipe.job is not None
-    assert recipe.job.name == expected_name
+    assert recipe._job is not None
+    assert recipe._job.name == expected_name
+
+
+def get_client_executor(recipe, site_name):
+    return recipe._job._deploy_map[site_name].app_config.executors[0].executor
 
 
 class TestFedEvalRecipe:
     """Test cases for FedEvalRecipe class."""
+
+    def test_warns_on_secret_in_eval_args(self, mock_file_system, base_recipe_params, simple_model):
+        model, _ = simple_model
+        params = dict(base_recipe_params)
+        params["eval_args"] = "--password hunter22x"
+
+        recipe = FedEvalRecipe(name="secret_eval", model=model, **params)
+
+        with pytest.warns(PotentialSecretWarning, match="eval_args"):
+            recipe._warn_potential_secrets_in_params()
+
+    def test_external_command_secret_ref_is_supported(self, mock_file_system, base_recipe_params, simple_model):
+        model, _ = simple_model
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UnsupportedSecretRefWarning)
+            recipe = FedEvalRecipe(
+                name="command_secret_ref",
+                model=model,
+                **base_recipe_params,
+            )
+            set_per_site_config(
+                recipe,
+                {
+                    "site-1": {
+                        "launch_external_process": True,
+                        "command": "env API_TOKEN=${secret:API_TOKEN} python3 -u",
+                    },
+                    "site-2": {},
+                },
+            )
+
+    @pytest.mark.parametrize("field", ["eval_args", "command"])
+    def test_top_level_argv_is_validated_and_copied(self, mock_file_system, base_recipe_params, simple_model, field):
+        model, _ = simple_model
+        argv = ["--value", "/data/cache path"] if field == "eval_args" else ["python3", "-u"]
+        expected = list(argv)
+        params = {**base_recipe_params, field: argv}
+
+        recipe = FedEvalRecipe(name="argv_eval", model=model, **params)
+        argv[-1] = "mutated"
+
+        assert getattr(recipe, field) == expected
+
+        params[field] = ("invalid", "tuple")
+        with pytest.raises(ValueError, match=f"{field} must be a string or list of strings"):
+            FedEvalRecipe(name="invalid_argv_eval", model=model, **params)
+
+    def test_per_site_argv_is_validated_and_copied(self, mock_file_system, base_recipe_params, simple_model):
+        model, _ = simple_model
+        recipe = FedEvalRecipe(name="site_argv_eval", model=model, **base_recipe_params)
+        eval_args = ["--data", "/site/cache path"]
+        command = ["python3", "-u"]
+
+        set_per_site_config(
+            recipe,
+            {
+                "site-1": {"eval_args": eval_args, "command": command},
+                "site-2": {},
+            },
+        )
+        eval_args[-1] = "mutated"
+        command[-1] = "mutated"
+
+        assert recipe.per_site_config["site-1"]["eval_args"] == ["--data", "/site/cache path"]
+        assert recipe.per_site_config["site-1"]["command"] == ["python3", "-u"]
+
+        invalid_recipe = FedEvalRecipe(name="invalid_site_argv_eval", model=model, **base_recipe_params)
+        with pytest.raises(ValueError, match="eval_args must be a string or list of strings"):
+            set_per_site_config(invalid_recipe, {"site-1": {"eval_args": ("invalid",)}, "site-2": {}})
 
     def test_basic_initialization(self, mock_file_system, base_recipe_params, simple_model):
         """Test FedEvalRecipe initialization with default parameters."""
@@ -89,13 +166,33 @@ class TestFedEvalRecipe:
         assert recipe.validation_timeout == 6000
         assert recipe.per_site_config is None
 
+    def test_set_per_site_config_prepares_site_runners_before_client_customization(
+        self, mock_file_system, base_recipe_params, simple_model
+    ):
+        model, _ = simple_model
+        recipe = FedEvalRecipe(name="test_helper_per_site", model=model, **base_recipe_params)
+        config = {"site-1": {"eval_args": "--batch_size 8"}, "site-2": {}}
+
+        assert recipe._job.clients == []
+        set_per_site_config(recipe, config)
+
+        assert recipe.configured_sites() == ["site-1", "site-2"]
+        assert recipe._job.clients == []
+
+        recipe.add_client_config({"configured": True})
+
+        assert recipe._job.clients == ["site-1", "site-2"]
+        assert ALL_SITES not in recipe._job._deploy_map
+        assert get_client_executor(recipe, "site-1")._task_script_args == "--batch_size 8"
+        assert get_client_executor(recipe, "site-2")._task_script_args == "--batch_size 32"
+
     def test_default_job_name(self, mock_file_system, base_recipe_params, simple_model):
         """Test FedEvalRecipe with default job name."""
         model, _ = simple_model
         recipe = FedEvalRecipe(model=model, **base_recipe_params)
 
         assert recipe.name == "eval"
-        assert recipe.job.name == "eval"
+        assert recipe._job.name == "eval"
 
     def test_custom_command(self, mock_file_system, base_recipe_params, simple_model):
         """Test FedEvalRecipe with custom command."""
@@ -191,12 +288,13 @@ class TestFedEvalRecipe:
             },
         }
 
-        recipe = FedEvalRecipe(
-            name="test_per_site",
-            model=model,
-            per_site_config=per_site_config,
-            **base_recipe_params,
-        )
+        with pytest.warns(FutureWarning, match="set_per_site_config"):
+            recipe = FedEvalRecipe(
+                name="test_per_site",
+                model=model,
+                per_site_config=per_site_config,
+                **base_recipe_params,
+            )
 
         assert recipe.per_site_config == per_site_config
 
@@ -207,14 +305,11 @@ class TestFedEvalRecipe:
             "site-1": {
                 "eval_args": "--batch_size 16",
             },
+            "site-2": {},
         }
 
-        recipe = FedEvalRecipe(
-            name="test_partial_override",
-            model=model,
-            per_site_config=per_site_config,
-            **base_recipe_params,
-        )
+        recipe = FedEvalRecipe(name="test_partial_override", model=model, **base_recipe_params)
+        set_per_site_config(recipe, per_site_config)
 
         # Check that default values are stored
         assert recipe.eval_script == "mock_eval_script.py"
@@ -224,6 +319,15 @@ class TestFedEvalRecipe:
 
 class TestFedEvalRecipeValidation:
     """Test FedEvalRecipe input validation."""
+
+    def test_per_site_config_requires_at_least_min_clients(self, mock_file_system, base_recipe_params, simple_model):
+        model, _ = simple_model
+        recipe = FedEvalRecipe(name="test_per_site_client_count", model=model, **base_recipe_params)
+
+        with pytest.raises(ValueError, match=r"defines 1 site.*min_clients=2"):
+            set_per_site_config(recipe, {"site-1": {}})
+
+        assert recipe._job.clients == []
 
     def test_invalid_eval_ckpt_raises_error(self, simple_model):
         """Test that relative eval_ckpt raises when path does not exist locally.
@@ -288,6 +392,20 @@ class TestFedEvalRecipeEdgeCases:
             eval_ckpt=checkpoint_path,
             eval_script="eval.py",
             eval_args="",
+            min_clients=1,
+        )
+
+        assert recipe.eval_args == ""
+
+    def test_none_eval_args_preserves_empty_argv_compatibility(self, mock_file_system, simple_model):
+        model, checkpoint_path = simple_model
+
+        recipe = FedEvalRecipe(
+            name="test_none_args",
+            model=model,
+            eval_ckpt=checkpoint_path,
+            eval_script="eval.py",
+            eval_args=None,
             min_clients=1,
         )
 

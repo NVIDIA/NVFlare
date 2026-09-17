@@ -36,16 +36,15 @@ def update_model(prev_model, model_update):
                 f"add_num_parallel_tree should not change, previous {pre_num_parallel_tree}, current {cur_num_parallel_tree}"
             )
         prev_model["learner"]["gradient_booster"]["model"]["gbtree_model_param"]["num_trees"] = str(
-            pre_num_trees + cur_num_parallel_tree
+            pre_num_trees + add_num_trees
         )
         # append the new trees
         append_info = model_update["learner"]["gradient_booster"]["model"]["trees"]
-        for tree_ct in range(cur_num_parallel_tree):
+        append_tree_info = model_update["learner"]["gradient_booster"]["model"]["tree_info"]
+        for tree_ct in range(add_num_trees):
             append_info[tree_ct]["id"] = pre_num_trees + tree_ct
             prev_model["learner"]["gradient_booster"]["model"]["trees"].append(append_info[tree_ct])
-            prev_model["learner"]["gradient_booster"]["model"]["tree_info"].append(0)
+            prev_model["learner"]["gradient_booster"]["model"]["tree_info"].append(append_tree_info[tree_ct])
         # append iteration_indptr
-        prev_model["learner"]["gradient_booster"]["model"]["iteration_indptr"].append(
-            pre_num_trees + cur_num_parallel_tree
-        )
+        prev_model["learner"]["gradient_booster"]["model"]["iteration_indptr"].append(pre_num_trees + add_num_trees)
         return prev_model

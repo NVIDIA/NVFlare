@@ -237,6 +237,17 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         else:
             fl_ctx.set_prop(key, value, private=default_private, sticky=default_sticky)
 
+    @staticmethod
+    def _clear_training_result(fl_ctx: FLContext) -> None:
+        detail = fl_ctx.get_prop_detail(AppConstants.TRAINING_RESULT)
+        if detail is not None:
+            fl_ctx.set_prop(
+                AppConstants.TRAINING_RESULT,
+                None,
+                private=detail["private"],
+                sticky=detail["sticky"],
+            )
+
     def _process_result(self, client_task: ClientTask, fl_ctx: FLContext) -> None:
         self.fl_ctx = fl_ctx
         result = client_task.result
@@ -249,37 +260,38 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         if current_round is not None:
             self._set_ctx_prop_preserving_attrs(fl_ctx, AppConstants.CURRENT_ROUND, current_round)
 
-        # Check return code and handle errors first
-        self.event(AppEventType.BEFORE_CONTRIBUTION_ACCEPT)
-        accepted = self._accept_train_result(client_name=client_name, result=result, fl_ctx=fl_ctx)
-        self.event(AppEventType.AFTER_CONTRIBUTION_ACCEPT)
-
-        # If result was rejected (error ignored or panic), skip further processing
-        if not accepted:
-            client_task.result = None
-            return
-
-        # Now try to convert result to FLModel
+        # Check the return code, convert the result, and hand it to the consumer before
+        # publishing acceptance.  A result that passes _accept_train_result() can still be
+        # unusable (for example, FLModel conversion fails or an in-time aggregation callback
+        # explicitly skips it), so AGGREGATION_ACCEPTED must describe the definitive outcome.
+        accepted = False
         try:
-            result_model = FLModelUtils.from_shareable(result)
-            result_model.meta["props"] = client_task.task.props[AppConstants.META_DATA]
-            result_model.meta["client_name"] = client_name
-        except Exception as e:
-            self.warning(f"Failed to convert result from {client_name} to FLModel: {e}")
+            self.event(AppEventType.BEFORE_CONTRIBUTION_ACCEPT)
+            preliminarily_accepted = self._accept_train_result(client_name=client_name, result=result, fl_ctx=fl_ctx)
+            if preliminarily_accepted:
+                try:
+                    result_model = FLModelUtils.from_shareable(result)
+                    result_model.meta["props"] = client_task.task.props[AppConstants.META_DATA]
+                    result_model.meta["client_name"] = client_name
+                except Exception as e:
+                    self.warning(f"Failed to convert result from {client_name} to FLModel: {e}")
+                else:
+                    callback = client_task.task.get_prop(AppConstants.TASK_PROP_CALLBACK)
+                    if callback:
+                        try:
+                            # Callbacks may return False to report that a valid result was
+                            # deliberately skipped (FedAvg does this for empty parameters).
+                            accepted = callback(result_model) is not False
+                        except Exception as e:
+                            self.error(f"Unsuccessful callback {callback} for task {client_task.task.name}: {e}")
+                    else:
+                        self._results.append(result_model)
+                        accepted = True
+            self._set_ctx_prop_preserving_attrs(fl_ctx, AppConstants.AGGREGATION_ACCEPTED, accepted)
+            self.event(AppEventType.AFTER_CONTRIBUTION_ACCEPT)
+        finally:
+            self._clear_training_result(fl_ctx)
             client_task.result = None
-            return
-
-        callback = client_task.task.get_prop(AppConstants.TASK_PROP_CALLBACK)
-        if callback:
-            try:
-                callback(result_model)
-            except Exception as e:
-                self.error(f"Unsuccessful callback {callback} for task {client_task.task.name}: {e}")
-        else:
-            self._results.append(result_model)
-
-        # Cleanup task result
-        client_task.result = None
         # Note: Memory cleanup (gc.collect + malloc_trim) is handled by subclasses
         # via _maybe_cleanup_memory() based on memory_gc_rounds setting
 

@@ -19,9 +19,9 @@ communication between clients and server.
 Client API
 ~~~~~~~~~~
 We introduced another :ref:`client_api` implementation,
-:class:`InProcessClientAPIExecutor<nvflare.app_common.executors.in_process_client_api_executor.InProcessClientAPIExecutor>`.
+the then-current ``InProcessClientAPIExecutor``.
 This has the same interface and syntax of the previous Client API using
-:class:`SubprocessLauncher<nvflare.app_common.launchers.subprocess_launcher.SubprocessLauncher>`, except all communication is in memory. 
+the then-current ``SubprocessLauncher``, except all communication is in memory.
 
 Using this in-process client API, we build a :class:`ScriptExecutor<nvflare.app_common.executors.script_executor.ScriptExecutor>`,
 which is directly used in the new Job API.
@@ -128,7 +128,7 @@ The :github_nvflare_link:`FedBN example <research/fed-bn>` showcases a federated
 to address the feature shift problem when aggregating models across different data distributions.
 
 In this work, we propose an effective method that uses local batch normalization to alleviate the feature shift before averaging models.
-The resulting scheme, called FedBN, outperforms both classical FedAvg and FedProx on our extensive experiments. These empirical results
+The resulting scheme, called FedBN, outperforms both classical FedAvg and FedProx in our extensive experiments. These empirical results
 are supported by a convergence analysis that shows in a simplified setting that FedBN has a faster convergence rate than FedAvg.
 
 

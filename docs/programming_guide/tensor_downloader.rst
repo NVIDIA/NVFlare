@@ -81,8 +81,7 @@ The Tensor Downloader is built into all PyTorch workflows in FLARE 2.7.2+. When 
 
 - ``PTFedAvg`` controller
 - ``PTFileModelPersistor``
-- ``PTClientAPILauncherExecutor``
-- ``PTInProcessClientAPIExecutor``
+- ``ClientAPIExecutor`` with ``params_exchange_format="pytorch"``
 - Any PyTorch-based Recipe (``FedAvgRecipe`` from ``nvflare.app_opt.pt.recipes``)
 
 The TensorDecomposer is automatically registered and handles tensor streaming transparently.
@@ -211,6 +210,17 @@ Tuning for Large Models
 For very large models (multiple GB), you may want to tune chunk sizes for optimal performance.
 Larger chunks mean fewer network requests but higher per-chunk memory usage. Smaller chunks
 reduce memory but increase network overhead.
+
+When tensor streaming is used with ``ClientAPIExecutor``, keep
+``tensor_min_download_timeout`` (or ``np_min_download_timeout`` for NumPy)
+aligned with the configured streaming per-request timeout. In
+``external_process`` mode, an active task download extends the
+``task_wait_timeout`` wait while progress remains live. Attach instead applies
+an absolute ``task_wait_timeout`` deadline to task download and trainer
+acceptance, so configure it for the complete delivery path.
+``result_wait_timeout`` bounds result publication; subsequent payload streaming
+uses the shared transfer idle policy. See :ref:`timeout_troubleshooting` and
+:doc:`/programming_guide/timeouts`.
 
 **Example config_fed_server.conf with chunk size tuning:**
 
@@ -441,3 +451,4 @@ See Also
 - :ref:`decomposer_for_large_object` - Details on the FOBS decomposer system and file-based decomposers
 - :ref:`file_streaming` - File streaming for other large data types
 - :ref:`swarm_learning_large_models` - Parameter tuning for large model workflows
+- :ref:`timeout_troubleshooting` - Timeout tuning for large Client API subprocess jobs

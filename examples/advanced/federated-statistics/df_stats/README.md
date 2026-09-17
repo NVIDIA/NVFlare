@@ -15,7 +15,7 @@ So we assigned the training data and test data to two clients.
  
 Now we use the data utility to download the UCI dataset into separate client directories under /tmp/nvflare/df_stats/data/
 
-Please note that the UCI's website may experience occasional downtime.
+Please note that the UCI website may experience occasional downtime.
 
 ```shell
 python prepare_data.py

@@ -31,3 +31,36 @@ tests:
   - pip install -r ../../examples/advanced/xgboost/temp_requirements.txt
   - bash ../../examples/advanced/xgboost/fedxgb/prepare_data.sh /tmp/nvflare/dataset
   - rm -f ../../examples/advanced/xgboost/temp_requirements.txt
+
+- test_name: Test federated random-forest example using xgboost bagging.
+  event_sequence:
+  - actions:
+    - submit_job higgs_2_bagging_uniform_split_uniform
+    result:
+      type: job_submit_success
+    trigger:
+      data: Server started
+      type: server_log
+  - actions:
+    - ensure_current_job_done
+    result:
+      data:
+        run_finished: true
+      type: run_state
+    trigger:
+      data:
+        run_finished: true
+      type: run_state
+  setup:
+  - cp ../../examples/advanced/xgboost/requirements.txt
+    ../../examples/advanced/xgboost/temp_requirements.txt
+  - sed -i '/nvflare\|jupyter\|notebook/d' ../../examples/advanced/xgboost/temp_requirements.txt
+  - pip install -r ../../examples/advanced/xgboost/temp_requirements.txt
+  - bash ../../examples/advanced/xgboost/fedxgb/prepare_data.sh /tmp/nvflare/dataset
+  - rm -f ../../examples/advanced/xgboost/temp_requirements.txt
+  - python tools/export_recipe_job.py --recipe_dir ../../examples/advanced/xgboost/fedxgb
+    --job_file job_tree.py --output_dir ./data/jobs
+    --recipe_args "--site_num 2 --round_num 1 --training_algo bagging --split_method uniform
+    --nthread 2 --tree_method hist --lr_mode uniform --num_local_parallel_tree 1 --local_subsample 0.8"
+  teardown:
+  - rm -rf ./data/jobs/higgs_2_bagging_uniform_split_uniform

@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import functools
 import json
 import os
 import shlex
@@ -21,6 +22,7 @@ from typing import Optional
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.workspace import Workspace
+from nvflare.app_common.metrics_exchange.metrics_sender import ANALYTICS_BOOTSTRAP_ENV, ANALYTICS_BOOTSTRAP_FILE
 from nvflare.app_common.tie.applet import Applet
 from nvflare.app_common.tie.cli_applet import CLIApplet
 from nvflare.app_common.tie.defs import Constant as TieConstant
@@ -29,12 +31,15 @@ from nvflare.app_opt.flower.defs import Constant
 from nvflare.fuel.utils.grpc_utils import create_channel
 from nvflare.security.logging import secure_format_exception
 
+from .path_utils import validate_flower_app_path, validate_flower_app_path_no_symlinks
+
 # Flower CLI executable names
 FLOWER_SUPERLINK = "flower-superlink"
 FLOWER_SUPERNODE = "flower-supernode"
 FLOWER_CLI = "flwr"
 FLOWER_CONFIG_FILE = "config.toml"
 FLOWER_SUPERLINK_CONNECTION = "nvflare"
+MIN_FLWR_VERSION_FOR_RUNTIME_DEPS = "1.29.0"
 
 
 def get_partition_id(fl_ctx: FLContext):
@@ -89,6 +94,29 @@ def _validate_flower_executable(executable_name: str, executable_path: str):
         raise RuntimeError(error_msg)
 
 
+@functools.lru_cache()
+def _check_runtime_dependency_installation_support(logger):
+    """Check if Flower version is >= MIN_FLWR_VERSION_FOR_RUNTIME_DEPS to support runtime dependency installation."""
+    try:
+        import flwr
+        from packaging.version import parse
+
+        version_str = flwr.__version__
+
+        if parse(version_str) >= parse(MIN_FLWR_VERSION_FOR_RUNTIME_DEPS):
+            return True
+        else:
+            logger.warning(
+                f"Flower version {version_str} is lower than {MIN_FLWR_VERSION_FOR_RUNTIME_DEPS}. "
+                "The '--allow-runtime-dependency-installation' option is not supported and will be ignored."
+            )
+            return False
+
+    except (ImportError, AttributeError) as e:
+        logger.warning(f"Could not verify Flower version for runtime dependency installation support: {e}")
+        return False
+
+
 def _format_run_config_value(value) -> str:
     """Format a Flower run_config value as a TOML-compatible scalar literal."""
     if isinstance(value, bool):
@@ -104,9 +132,18 @@ def _format_run_config_value(value) -> str:
 
 
 class FlowerClientApplet(CLIApplet):
-    def __init__(self, extra_env: dict = None):
-        """Constructor of FlowerClientApplet, which extends CLIApplet."""
+    def __init__(
+        self,
+        extra_env: dict = None,
+        allow_runtime_dependency_installation: bool = False,
+    ):
+        """Constructor of FlowerClientApplet, which extends CLIApplet.
+
+        Note: flower_app_path is not used on clients - the Flower app is distributed
+        from the server via Flower's FAB mechanism.
+        """
         CLIApplet.__init__(self, stop_method="term")
+        self.allow_runtime_dependency_installation = allow_runtime_dependency_installation
 
         # Ensure PATH includes the venv bin directory so Flower's internal
         # subprocesses (flower-superexec, etc.) can find executables
@@ -168,19 +205,23 @@ class FlowerClientApplet(CLIApplet):
             f"--clientappio-api-address {clientapp_api_addr}"
         )
 
+        if self.allow_runtime_dependency_installation and _check_runtime_dependency_installation_support(self.logger):
+            cmd += " --allow-runtime-dependency-installation"
+
         # add node config
         node_config_str = self._get_node_config(fl_ctx)
         if node_config_str:
             cmd += node_config_str
 
-        # use app_dir as the cwd for flower's client app.
-        # this is necessary for client_api to be used with the flower client app for metrics logging
-        # client_api expects config info from the "config" folder in the cwd!
+        env = self.extra_env.copy()
+        env[ANALYTICS_BOOTSTRAP_ENV] = os.path.join(ws.get_app_config_dir(job_id), ANALYTICS_BOOTSTRAP_FILE)
+
+        # Use app_dir as the cwd for Flower's client app and its project files.
         self.logger.info(f"starting flower client app: {cmd}")
         return CommandDescriptor(
             cmd=cmd,
             cwd=app_dir,
-            env=self.extra_env,
+            env=env,
             log_file_name="client_app_log.txt",
             stdout_msg_prefix="FLWR-CA",
             stop_method=StopMethod.TERMINATE,
@@ -208,6 +249,8 @@ class FlowerServerApplet(Applet):
         superlink_grace_period=1.0,
         superlink_min_query_interval=10.0,
         run_config: Optional[dict] = None,
+        allow_runtime_dependency_installation: bool = False,
+        flower_app_path: Optional[str] = None,
     ):
         """Constructor of FlowerServerApplet.
 
@@ -217,6 +260,8 @@ class FlowerServerApplet(Applet):
             superlink_grace_period: how long to wait for superlink to gracefully shutdown
             superlink_min_query_interval: minimal interval for querying superlink for status
             run_config: optional dict for flwr run --run-config arguments
+            allow_runtime_dependency_installation: whether to allow dynamic dependency installation (flwr>=1.29)
+            flower_app_path: absolute path to pre-deployed Flower app on the server (clients receive via FAB)
         """
         Applet.__init__(self)
         self._superlink_process_mgr = None
@@ -225,6 +270,8 @@ class FlowerServerApplet(Applet):
         self.superlink_ready_timeout = superlink_ready_timeout
         self.superlink_grace_period = superlink_grace_period
         self.superlink_min_query_interval = superlink_min_query_interval
+        self.allow_runtime_dependency_installation = allow_runtime_dependency_installation
+        self.flower_app_path = flower_app_path
         self.run_id = None
         self.last_query_time = None
         self.last_check_status = None
@@ -279,14 +326,36 @@ class FlowerServerApplet(Applet):
             self.logger.error(f"expect workspace to be Workspace but got {type(ws)}")
             raise RuntimeError("invalid workspace")
 
-        custom_dir = ws.get_app_custom_dir(fl_ctx.get_job_id())
-        self.flower_app_dir = custom_dir
+        if self.flower_app_path:
+            # Resolve relative path to absolute path relative to workspace root
+            workspace_root = ws.get_root_dir()
+            self.flower_app_dir = os.path.abspath(os.path.join(workspace_root, self.flower_app_path))
+
+            # Validate path format
+            validate_flower_app_path(self.flower_app_path)
+
+            # Check for symlinks on the resolved absolute path
+            validate_flower_app_path_no_symlinks(self.flower_app_dir)
+
+            # Check filesystem existence
+            if not os.path.isdir(self.flower_app_dir):
+                raise RuntimeError(
+                    f"flower_app_path '{self.flower_app_path}' does not exist on this host. "
+                    "Ensure the Flower app is pre-deployed on the server. "
+                    "(Clients receive the app from the server via Flower's FAB distribution)."
+                )
+        else:
+            custom_dir = ws.get_app_custom_dir(fl_ctx.get_job_id())
+            self.flower_app_dir = custom_dir
         self.exec_api_addr = exec_api_addr
         self.flwr_home_dir = self._prepare_flwr_home(ws.get_run_dir(fl_ctx.get_job_id()))
 
         db_arg = ""
         if self.database:
-            db_arg = f"--database {self.database}"
+            db_path = self.database
+            if not os.path.isabs(db_path) and db_path not in (":memory:", ":flwr-in-memory:"):
+                db_path = os.path.abspath(db_path)
+            db_arg = f"--database {shlex.quote(db_path)}"
 
         # Get the full path to flower-superlink from the current Python environment
         python_bin_dir = os.path.dirname(sys.executable)
@@ -306,14 +375,22 @@ class FlowerServerApplet(Applet):
         --control-api-address 127.0.0.1:9093
         """
         superlink_cmd = (
-            f"{flower_superlink_path} --insecure --fleet-api-type grpc-adapter {db_arg} "
+            f"{shlex.quote(flower_superlink_path)} --insecure --fleet-api-type grpc-adapter {db_arg} "
             f"--serverappio-api-address {serverapp_api_addr} "
-            f"--fleet-api-address {fleet_api_addr}  "
-            f"--control-api-address {exec_api_addr}"
+            f"--fleet-api-address {fleet_api_addr} "
+            f"--control-api-address {exec_api_addr} "
         )
+
+        if self.allow_runtime_dependency_installation and _check_runtime_dependency_installation_support(self.logger):
+            superlink_cmd += "--allow-runtime-dependency-installation"
+
+        run_dir = ws.get_run_dir(fl_ctx.get_job_id())
+        if not os.path.exists(run_dir):
+            os.makedirs(run_dir, exist_ok=True)
 
         cmd_desc = CommandDescriptor(
             cmd=superlink_cmd,
+            cwd=run_dir,
             env=env,
             log_file_name="superlink_log.txt",
             stdout_msg_prefix="FLWR-SL",

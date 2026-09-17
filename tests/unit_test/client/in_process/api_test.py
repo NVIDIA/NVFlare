@@ -13,6 +13,9 @@
 # limitations under the License.
 
 import unittest
+from copy import deepcopy
+
+import pytest
 
 from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.app_common.abstract.fl_model import FLModel
@@ -37,7 +40,8 @@ class TestInProcessClientAPI(unittest.TestCase):
             "TASK_NAME": "train",
             ConfigKey.TASK_EXCHANGE: {
                 ConfigKey.TRAIN_WITH_EVAL: "train_with_eval",
-                ConfigKey.EXCHANGE_FORMAT: "pytorch",
+                ConfigKey.EXCHANGE_FORMAT: "numpy",
+                ConfigKey.SERVER_EXPECTED_FORMAT: "numpy",
                 ConfigKey.TRANSFER_TYPE: "DIFF",
                 ConfigKey.TRAIN_TASK_NAME: "train",
                 ConfigKey.EVAL_TASK_NAME: "evaluate",
@@ -92,6 +96,18 @@ class TestInProcessClientAPI(unittest.TestCase):
             TOPIC_ABORT,
             TOPIC_STOP,
         ]
+
+    def test_close_unsubscribes_api_callbacks(self):
+        data_bus = DataBus()
+        data_bus.subscribers.clear()
+        client_api = InProcessClientAPI(self.task_metadata)
+
+        client_api.close()
+        client_api.close()  # idempotent
+
+        assert TOPIC_GLOBAL_RESULT not in data_bus.subscribers
+        assert TOPIC_ABORT not in data_bus.subscribers
+        assert TOPIC_STOP not in data_bus.subscribers
 
     def test_memory_management_defaults(self):
         """Test that memory management is disabled by default."""
@@ -262,4 +278,146 @@ class TestInProcessClientAPI(unittest.TestCase):
         self.assertIsNone(output_model.params)
         self.assertEqual(output_model.metrics, {"loss": 0.42})
 
+    def test_diff_config_allows_metrics_only_result(self):
+        """DIFF applies only to parameter results; validation metrics remain metrics."""
+        import numpy as np
+
+        from nvflare.apis.dxo import DataKind, from_shareable
+
+        client_api = InProcessClientAPI(self.task_metadata)
+        client_api.init()
+        sent = []
+
+        def capture(_topic, data, _databus):
+            sent.append(data)
+
+        client_api.data_bus.subscribe([TOPIC_LOCAL_RESULT], capture)
+        try:
+            self._fire_global_model(client_api, {"w": np.ones((10,))})
+            self.assertIsNotNone(client_api.receive())
+
+            client_api.send(FLModel(metrics={"accuracy": 0.75}), clear_cache=False)
+
+            self.assertEqual(len(sent), 1)
+            result = from_shareable(sent[0])
+            self.assertEqual(result.data_kind, DataKind.METRICS)
+            self.assertEqual(result.data, {"accuracy": 0.75})
+        finally:
+            client_api.data_bus.unsubscribe(TOPIC_LOCAL_RESULT, capture)
+
+    def test_receive_timeout_does_not_arm_send_under_congestion(self):
+        """A missing next-round model should time out cleanly and not permit send()."""
+        client_api = InProcessClientAPI(self.task_metadata, result_check_interval=0.001)
+        client_api.init()
+
+        self.assertIsNone(client_api.receive(timeout=0.01))
+        self.assertFalse(client_api.receive_called)
+        with self.assertRaisesRegex(RuntimeError, '"receive" needs to be called'):
+            client_api.send(FLModel(params={"w": 1}))
+
+    def test_receive_timeout_then_later_model_allows_send(self):
+        """A timeout must not poison the next successful receive/send cycle."""
+        import numpy as np
+
+        client_api = InProcessClientAPI(self.task_metadata, result_check_interval=0.001)
+        client_api.init()
+
+        self.assertIsNone(client_api.receive(timeout=0.01))
+        self.assertFalse(client_api.receive_called)
+
+        self._fire_global_model(client_api, {"w": np.ones((10,))})
+        input_model = client_api.receive(timeout=0.01)
+        self.assertIsNotNone(input_model)
+        self.assertIsNotNone(input_model.params)
+        self.assertTrue(client_api.receive_called)
+
+        client_api.send(FLModel(params={"w": np.zeros((10,))}), clear_cache=False)
+        self.assertTrue(client_api.receive_called)
+
+    def test_declared_pytorch_conversion_runs_at_receive_send_boundary(self):
+        import numpy as np
+
+        try:
+            import torch
+        except ImportError:
+            self.skipTest("PyTorch is not installed")
+
+        meta = deepcopy(self.task_metadata)
+        exchange = meta[ConfigKey.TASK_EXCHANGE]
+        exchange[ConfigKey.EXCHANGE_FORMAT] = "pytorch"
+        exchange[ConfigKey.SERVER_EXPECTED_FORMAT] = "numpy"
+        exchange[ConfigKey.TRANSFER_TYPE] = "FULL"
+        client_api = InProcessClientAPI(meta)
+        client_api.init()
+        sent = []
+
+        def capture(_topic, data, _databus):
+            sent.append(data)
+
+        client_api.data_bus.subscribe([TOPIC_LOCAL_RESULT], capture)
+        try:
+            self._fire_global_model(client_api, {"w": np.asarray([1.0, 2.0])})
+            received = client_api.receive()
+            self.assertIsInstance(received.params["w"], torch.Tensor)
+
+            client_api.send(FLModel(params={"w": received.params["w"] + 1}), clear_cache=False)
+
+            from nvflare.apis.dxo import from_shareable
+
+            wire_params = from_shareable(sent[-1]).data
+            self.assertIsInstance(wire_params["w"], np.ndarray)
+            np.testing.assert_array_equal(wire_params["w"], np.asarray([2.0, 3.0]))
+        finally:
+            client_api.data_bus.unsubscribe(TOPIC_LOCAL_RESULT, capture)
+
+    def test_clear_resets_receive_guard_between_rounds(self):
+        """A prior successful round must not arm send() after a later receive timeout."""
+        import numpy as np
+
+        client_api = InProcessClientAPI(self.task_metadata, result_check_interval=0.001)
+        client_api.init()
+
+        self._fire_global_model(client_api, {"w": np.ones((10,))})
+        self.assertIsNotNone(client_api.receive(timeout=0.01))
+        self.assertTrue(client_api.receive_called)
+
+        client_api.send(FLModel(params={"w": np.zeros((10,))}), clear_cache=True)
+        self.assertFalse(client_api.receive_called)
+
+        self.assertIsNone(client_api.receive(timeout=0.01))
+        self.assertFalse(client_api.receive_called)
+        with self.assertRaisesRegex(RuntimeError, '"receive" needs to be called'):
+            client_api.send(FLModel(params={"w": np.zeros((10,))}))
+
     # Add more test methods for other functionalities in the class
+
+
+@pytest.mark.parametrize(
+    "reason,level", [("END_RUN received", "INFO"), ("API shutdown called.", "INFO"), ("unexpected stop", "WARNING")]
+)
+def test_normal_end_run_is_informational_and_other_stops_remain_warnings(caplog, reason, level):
+    client_api = InProcessClientAPI({})
+    try:
+        with caplog.at_level("INFO"):
+            client_api._InProcessClientAPI__ask_to_abort(TOPIC_STOP, reason, None)
+            assert client_api._InProcessClientAPI__continue_job() is False
+        stop_logs = [r for r in caplog.records if "stop job" in r.message or "stop the job" in r.message]
+        assert len(stop_logs) == 2
+        assert all(r.levelname == level for r in stop_logs)
+    finally:
+        client_api.close()
+
+
+def test_api_shutdown_preserves_its_expected_reason(caplog):
+    DataBus().subscribers.clear()
+    client_api = InProcessClientAPI({})
+    try:
+        with caplog.at_level("INFO"):
+            client_api.shutdown()
+            assert client_api._InProcessClientAPI__continue_job() is False
+        assert client_api.stop_reason == "API shutdown called."
+        stop_logs = [r for r in caplog.records if "stop job" in r.message or "stop the job" in r.message]
+        assert len(stop_logs) == 2
+        assert all(r.levelname == "INFO" for r in stop_logs)
+    finally:
+        client_api.close()

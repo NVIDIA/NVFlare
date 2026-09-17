@@ -5,7 +5,7 @@ Scatter and Gather Workflow
 The federated scatter and gather workflow is an included reference implementation of the default workflow in previous versions
 of NVIDIA FLARE, with a server aggregating results from clients that have produced shareable results from their trainer.
 
-At the core, the control_flow of :class:`nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather` is a for loop:
+At the core, the ``control_flow`` of :class:`nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather` is a for loop:
 
 .. image:: ../../resources/fed_sag_round.png
     :height: 400px
@@ -26,7 +26,7 @@ Learnable
 For example, in the deep learning scenario, it can be the model weights.
 In the AutoML case, it can be the network architecture.
 
-A :class:`LearnablePersistor<nvflare.app_common.abstract.learnable_persistor.LearnablePersistor>` defines how to load and save
+A :class:`LearnablePersistor<nvflare.app_common.abstract.learnable_persistor.LearnablePersistor>` defines how to load
 and save a ``Learnable``. ``Learnable`` is a subset of the model file (which can contain other data like LR schedule)
 which is to be learned, like the model weights.
 

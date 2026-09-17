@@ -25,6 +25,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.learnable import Learnable
+from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.workflows.cyclic_ctl import CyclicController, RelayOrder
 
 SITE_1_ID = uuid.uuid4()
@@ -65,6 +66,18 @@ def gen_shareable(is_early_termination: bool = False, is_not_shareable: bool = F
 
 
 PROCESS_RESULT_TEST_CASES = [gen_shareable(is_early_termination=True), gen_shareable(is_not_shareable=True)]
+
+
+def make_client_task(result):
+    client_task = ClientTask(
+        client=Client("site-1", SITE_1_ID),
+        task=Task(
+            name="__test_task",
+            data=Shareable(),
+        ),
+    )
+    client_task.result = result
+    return client_task
 
 
 class TestCyclicController:
@@ -124,14 +137,118 @@ class TestCyclicController:
             mock_method1.return_value = Shareable()
             mock_method2.return_value = Learnable()
 
-            client_task = ClientTask(
-                client=Mock(),
-                task=Task(
-                    name="__test_task",
-                    data=Shareable(),
-                ),
-            )
-            client_task.result = return_result
+            client_task = make_client_task(return_result)
             ctl._process_result(client_task, fl_ctx)
             mock_method.assert_called_once()
             assert ctl._is_done is True
+
+    def test_process_result_stops_on_non_ok_rc_without_converting_shareable(self):
+        ctl = CyclicController(persist_every_n_rounds=0, snapshot_every_n_rounds=0, num_rounds=1)
+        ctl.shareable_generator = Mock()
+
+        fl_ctx = FLContext()
+        result = Shareable()
+        result.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
+        client_task = make_client_task(result)
+
+        with (
+            patch.object(ctl, "cancel_task") as mock_cancel,
+            patch.object(ctl.shareable_generator, "learnable_to_shareable") as mock_to_shareable,
+            patch.object(ctl.shareable_generator, "shareable_to_learnable") as mock_to_learnable,
+        ):
+            ctl._process_result(client_task, fl_ctx)
+
+            mock_cancel.assert_called_once()
+            mock_to_learnable.assert_not_called()
+            mock_to_shareable.assert_not_called()
+            assert ctl._is_done is True
+
+    def test_process_result_converts_allowed_early_termination_before_stopping(self):
+        ctl = CyclicController(
+            persist_every_n_rounds=0, snapshot_every_n_rounds=0, num_rounds=1, allow_early_termination=True
+        )
+        ctl.shareable_generator = Mock()
+
+        fl_ctx = FLContext()
+        result = gen_shareable(is_early_termination=True)
+        client_task = make_client_task(result)
+        learnable = Learnable()
+
+        with (
+            patch.object(ctl, "cancel_task") as mock_cancel,
+            patch.object(ctl.shareable_generator, "learnable_to_shareable") as mock_to_shareable,
+            patch.object(ctl.shareable_generator, "shareable_to_learnable") as mock_to_learnable,
+        ):
+            mock_to_learnable.return_value = learnable
+
+            ctl._process_result(client_task, fl_ctx)
+
+            mock_cancel.assert_called_once()
+            mock_to_learnable.assert_called_once_with(result, fl_ctx)
+            mock_to_shareable.assert_not_called()
+            assert ctl._last_learnable is learnable
+            assert ctl._is_done is True
+
+    def test_process_result_converts_disallowed_early_termination_before_continuing(self):
+        ctl = CyclicController(
+            persist_every_n_rounds=0, snapshot_every_n_rounds=0, num_rounds=1, allow_early_termination=False
+        )
+        ctl.shareable_generator = Mock()
+        ctl._last_learnable = Learnable()
+        ctl._current_round = 3
+
+        fl_ctx = FLContext()
+        result = gen_shareable(is_early_termination=True)
+        client_task = make_client_task(result)
+        learnable = Learnable()
+        next_shareable = Shareable()
+
+        with (
+            patch.object(ctl, "cancel_task") as mock_cancel,
+            patch.object(ctl.shareable_generator, "learnable_to_shareable") as mock_to_shareable,
+            patch.object(ctl.shareable_generator, "shareable_to_learnable") as mock_to_learnable,
+        ):
+            mock_to_learnable.return_value = learnable
+            mock_to_shareable.return_value = next_shareable
+
+            ctl._process_result(client_task, fl_ctx)
+
+            mock_cancel.assert_not_called()
+            mock_to_learnable.assert_called_once_with(result, fl_ctx)
+            mock_to_shareable.assert_called_once_with(learnable, fl_ctx)
+            assert ctl._last_learnable is learnable
+            assert client_task.task.data is next_shareable
+            assert client_task.task.data.get_header(AppConstants.CURRENT_ROUND) == ctl._current_round
+            assert client_task.task.data.get_header(AppConstants.NUM_ROUNDS) == ctl._num_rounds
+            assert client_task.task.data.get_cookie(AppConstants.CONTRIBUTION_ROUND) == ctl._current_round
+            assert ctl._is_done is False
+
+    def test_process_result_converts_ok_result(self):
+        ctl = CyclicController(persist_every_n_rounds=0, snapshot_every_n_rounds=0, num_rounds=1)
+        ctl.shareable_generator = Mock()
+        ctl._current_round = 2
+
+        fl_ctx = FLContext()
+        result = Shareable()
+        client_task = make_client_task(result)
+        learnable = Learnable()
+        next_shareable = Shareable()
+
+        with (
+            patch.object(ctl, "cancel_task") as mock_cancel,
+            patch.object(ctl.shareable_generator, "learnable_to_shareable") as mock_to_shareable,
+            patch.object(ctl.shareable_generator, "shareable_to_learnable") as mock_to_learnable,
+        ):
+            mock_to_learnable.return_value = learnable
+            mock_to_shareable.return_value = next_shareable
+
+            ctl._process_result(client_task, fl_ctx)
+
+            mock_cancel.assert_not_called()
+            mock_to_learnable.assert_called_once_with(result, fl_ctx)
+            mock_to_shareable.assert_called_once_with(learnable, fl_ctx)
+            assert ctl._last_learnable is learnable
+            assert client_task.task.data is next_shareable
+            assert client_task.task.data.get_header(AppConstants.CURRENT_ROUND) == ctl._current_round
+            assert client_task.task.data.get_header(AppConstants.NUM_ROUNDS) == ctl._num_rounds
+            assert client_task.task.data.get_cookie(AppConstants.CONTRIBUTION_ROUND) == ctl._current_round

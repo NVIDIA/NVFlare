@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""B1 pass-through integration test client script.
+"""External-process pass-through integration test client script.
 
 Mirrors the llm_hf/client.py pattern (launch_once=True external process,
 while-loop FL rounds) but uses a simple synthetic-data MLP so no dataset
@@ -20,10 +20,12 @@ download or GPU is required.
 
 The LargeNet model (~8 MB of float32 parameters) exceeds the 2 MB streaming
 threshold, which forces ViaDownloaderDecomposer to route tensors through the
-download service.  With B1 PASS_THROUGH enabled in ClientAPILauncherExecutor,
-the CJ creates LazyDownloadRef placeholders instead of materialising tensors;
-this subprocess then downloads each tensor directly from the FL server.
+download service. The ClientAPIExecutor external-process backend preserves the
+lazy references across the Client Job boundary, and this subprocess
+materializes the tensors through Cell/F3 streaming.
 """
+
+import time
 
 import torch
 import torch.nn as nn
@@ -32,14 +34,30 @@ from large_model_net import LargeNet
 
 # (1) import nvflare client API
 import nvflare.client as flare
+from nvflare.client.cell.api import CellClientAPI
 
 DEVICE = "cpu"  # CPU-only: no GPU required for integration testing
 BATCH_SIZE = 4
 INPUT_DIM = 1024
 NUM_CLASSES = 10
+AUTH_INSTALL_DELAY = 2.0
+
+
+def _install_auth_delay():
+    """Widen the post-HELLO authentication-header installation race."""
+    install_site_auth_headers = CellClientAPI._install_site_auth_headers
+
+    def delayed_install_site_auth_headers(self, secure_mode, auth_token=None, token_signature=None):
+        print(f"NVFLARE_TEST_AUTH_FILTER_INSTALL_BEGIN delay={AUTH_INSTALL_DELAY}s", flush=True)
+        time.sleep(AUTH_INSTALL_DELAY)
+        install_site_auth_headers(self, secure_mode, auth_token, token_signature)
+        print("NVFLARE_TEST_AUTH_FILTER_INSTALL_END", flush=True)
+
+    CellClientAPI._install_site_auth_headers = delayed_install_site_auth_headers
 
 
 def main():
+    _install_auth_delay()
     net = LargeNet()
     net.to(DEVICE)
 
@@ -48,7 +66,7 @@ def main():
 
     # (3) FL training loop — mirrors llm_hf/client.py structure
     while flare.is_running():
-        # (4) receive global model from NVFlare (triggers B1 pass-through download)
+        # (4) receive global model from NVFlare (triggers pass-through download)
         input_model = flare.receive()
         print(f"current_round={input_model.current_round}", flush=True)
 

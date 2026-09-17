@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.mypy_cache/
+.pytest_cache/
+results/
+runs/
+artifacts/
+/tmp/
+run.log
+*.log
+.DS_Store
+.venv
+progress.png

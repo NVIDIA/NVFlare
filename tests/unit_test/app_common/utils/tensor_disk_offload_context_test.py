@@ -13,14 +13,17 @@
 # limitations under the License.
 
 from nvflare.app_common.utils.tensor_disk_offload_context import (
-    apply_enable_tensor_disk_offload,
-    restore_enable_tensor_disk_offload,
+    _TENSOR_DISK_OFFLOAD_ROOT_DIR,
+    cleanup_tensor_disk_offload,
+    setup_tensor_disk_offload,
 )
 
 
 class _MockCell:
-    def __init__(self, enable_tensor_disk_offload: bool):
+    def __init__(self, enable_tensor_disk_offload: bool, root_dir=None):
         self.ctx = {"enable_tensor_disk_offload": enable_tensor_disk_offload}
+        if root_dir is not None:
+            self.ctx[_TENSOR_DISK_OFFLOAD_ROOT_DIR] = root_dir
         self.update_calls = 0
 
     def get_fobs_context(self):
@@ -45,60 +48,129 @@ class _MockRunManager:
         self.cell = cell
 
 
-def test_apply_returns_previous_and_updates():
+def _patch_mkdtemp(monkeypatch, tmp_path):
+    root_dir = tmp_path / "nvflare_tensor_offload_root"
+
+    def fake_mkdtemp(prefix, dir=None):
+        root_dir.mkdir()
+        return str(root_dir)
+
+    monkeypatch.setattr("nvflare.app_common.utils.tensor_disk_offload_context.tempfile.mkdtemp", fake_mkdtemp)
+    return root_dir
+
+
+def test_setup_records_previous_and_updates(tmp_path, monkeypatch):
     cell = _MockCell(enable_tensor_disk_offload=False)
+    root_dir = _patch_mkdtemp(monkeypatch, tmp_path)
 
-    previous, applied = apply_enable_tensor_disk_offload(engine=_MockEngine(cell), enabled=True)
+    context = setup_tensor_disk_offload(engine=_MockEngine(cell), enabled=True, job_id="job")
 
-    assert previous is False
-    assert applied is True
+    assert context.applied is True
+    assert context.previous_value is False
+    assert context.previous_root_dir is None
+    assert context.root_dir == str(root_dir)
     assert cell.ctx["enable_tensor_disk_offload"] is True
+    assert cell.ctx[_TENSOR_DISK_OFFLOAD_ROOT_DIR] == str(root_dir)
     assert cell.update_calls == 1
 
 
-def test_apply_skips_update_when_value_unchanged():
-    cell = _MockCell(enable_tensor_disk_offload=True)
+def test_setup_uses_requested_parent_dir(tmp_path, monkeypatch):
+    cell = _MockCell(enable_tensor_disk_offload=False)
+    requested_parent = tmp_path / "offload_parent"
+    requested_parent.mkdir()
+    observed = {}
 
-    previous, applied = apply_enable_tensor_disk_offload(engine=_MockEngine(cell), enabled=True)
+    def fake_mkdtemp(prefix, dir=None):
+        observed["dir"] = dir
+        root_dir = requested_parent / f"{prefix}test"
+        root_dir.mkdir()
+        return str(root_dir)
 
-    assert previous is True
-    assert applied is True
+    monkeypatch.setattr("nvflare.app_common.utils.tensor_disk_offload_context.tempfile.mkdtemp", fake_mkdtemp)
+
+    context = setup_tensor_disk_offload(
+        engine=_MockEngine(cell), enabled=True, job_id="job", root_dir=str(requested_parent)
+    )
+
+    assert observed["dir"] == str(requested_parent)
+    assert context.root_dir.startswith(str(requested_parent))
+
+
+def test_setup_disabled_does_not_touch_cell():
+    cell = _MockCell(enable_tensor_disk_offload=True, root_dir="/tmp/owner")
+
+    context = setup_tensor_disk_offload(engine=_MockEngine(cell), enabled=False)
+
+    assert context.applied is False
     assert cell.ctx["enable_tensor_disk_offload"] is True
+    assert cell.ctx[_TENSOR_DISK_OFFLOAD_ROOT_DIR] == "/tmp/owner"
     assert cell.update_calls == 0
 
 
-def test_restore_sets_previous_value():
+def test_setup_enabled_without_cell_does_not_create_temp_dir(monkeypatch):
+    def fail_mkdtemp(prefix, dir=None):
+        raise AssertionError("mkdtemp should not be called without an active cell")
+
+    monkeypatch.setattr("nvflare.app_common.utils.tensor_disk_offload_context.tempfile.mkdtemp", fail_mkdtemp)
+
+    for engine in (None, _MockEngine(cell=None)):
+        context = setup_tensor_disk_offload(engine=engine, enabled=True)
+        assert context.applied is False
+        assert context.root_dir is None
+
+
+def test_setup_cleanup_restores_previous_values(tmp_path, monkeypatch):
+    cell = _MockCell(enable_tensor_disk_offload=True, root_dir="/tmp/owner")
+    root_dir = _patch_mkdtemp(monkeypatch, tmp_path)
+
+    context = setup_tensor_disk_offload(engine=_MockEngine(cell), enabled=True, job_id="job")
+    assert context.applied is True
+    assert cell.ctx["enable_tensor_disk_offload"] is True
+    assert cell.ctx[_TENSOR_DISK_OFFLOAD_ROOT_DIR] == str(root_dir)
+
+    cleanup_tensor_disk_offload(engine=_MockEngine(cell), context=context)
+
+    assert cell.ctx["enable_tensor_disk_offload"] is True
+    assert cell.ctx[_TENSOR_DISK_OFFLOAD_ROOT_DIR] == "/tmp/owner"
+    assert not root_dir.exists()
+
+
+def test_cleanup_noop_when_not_applied():
+    cell = _MockCell(enable_tensor_disk_offload=True, root_dir="/tmp/owner")
+
+    cleanup_tensor_disk_offload(engine=_MockEngine(cell), context=None)
+    cleanup_tensor_disk_offload(engine=_MockEngine(cell), context=setup_tensor_disk_offload(engine=None, enabled=True))
+
+    assert cell.ctx["enable_tensor_disk_offload"] is True
+    assert cell.ctx[_TENSOR_DISK_OFFLOAD_ROOT_DIR] == "/tmp/owner"
+    assert cell.update_calls == 0
+
+
+def test_cleanup_removes_root_dir_when_cell_gone(tmp_path, monkeypatch):
     cell = _MockCell(enable_tensor_disk_offload=False)
-    previous, _ = apply_enable_tensor_disk_offload(engine=_MockEngine(cell), enabled=True)
+    root_dir = _patch_mkdtemp(monkeypatch, tmp_path)
 
-    restore_enable_tensor_disk_offload(_MockEngine(cell), previous)
-    assert cell.ctx["enable_tensor_disk_offload"] is False
+    context = setup_tensor_disk_offload(engine=_MockEngine(cell), enabled=True, job_id="job")
+    assert root_dir.exists()
 
+    cleanup_tensor_disk_offload(engine=_MockEngine(cell=None), context=context)
 
-def test_apply_and_restore_noop_when_unavailable():
-    previous, applied = apply_enable_tensor_disk_offload(engine=None, enabled=True)
-    assert previous is None
-    assert applied is False
-
-    previous, applied = apply_enable_tensor_disk_offload(engine=_MockEngine(cell=None), enabled=True)
-    assert previous is None
-    assert applied is False
-
-    restore_enable_tensor_disk_offload(None, False)
-    restore_enable_tensor_disk_offload(None, None)
+    assert not root_dir.exists()
 
 
-def test_apply_and_restore_use_run_manager_cell_when_available():
+def test_setup_cleanup_use_run_manager_cell_when_available(tmp_path, monkeypatch):
     parent_cell = _MockCell(enable_tensor_disk_offload=False)
     run_cell = _MockCell(enable_tensor_disk_offload=False)
     engine = _MockEngine(cell=parent_cell, run_manager=_MockRunManager(run_cell))
+    root_dir = _patch_mkdtemp(monkeypatch, tmp_path)
 
-    previous, applied = apply_enable_tensor_disk_offload(engine=engine, enabled=True)
+    context = setup_tensor_disk_offload(engine=engine, enabled=True, job_id="job")
 
-    assert previous is False
-    assert applied is True
+    assert context.applied is True
     assert run_cell.ctx["enable_tensor_disk_offload"] is True
+    assert run_cell.ctx[_TENSOR_DISK_OFFLOAD_ROOT_DIR] == str(root_dir)
     assert parent_cell.ctx["enable_tensor_disk_offload"] is False
 
-    restore_enable_tensor_disk_offload(engine, previous)
+    cleanup_tensor_disk_offload(engine=engine, context=context)
     assert run_cell.ctx["enable_tensor_disk_offload"] is False
+    assert parent_cell.update_calls == 0

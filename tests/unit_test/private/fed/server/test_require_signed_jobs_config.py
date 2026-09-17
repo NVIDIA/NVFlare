@@ -18,6 +18,8 @@ import json
 import os
 from unittest.mock import MagicMock
 
+import pytest
+
 from nvflare.private.fed.utils.fed_utils import require_signed_jobs as _require_signed_jobs
 
 
@@ -41,6 +43,20 @@ class TestRequireSignedJobs:
         (tmp_path / "fed_server.json").write_text(json.dumps(cfg))
         ws = _make_workspace(str(tmp_path))
         assert _require_signed_jobs(ws) is False
+
+    def test_explicit_false_from_client_config(self, tmp_path):
+        """The same policy helper can read a client-local startup config."""
+        cfg = {"require_signed_jobs": False}
+        (tmp_path / "fed_client.json").write_text(json.dumps(cfg))
+        ws = _make_workspace(str(tmp_path))
+        assert _require_signed_jobs(ws, "fed_client.json") is False
+
+    @pytest.mark.parametrize("value", [None, 0, 1, "false", [], {}])
+    def test_non_boolean_value_fails_closed(self, tmp_path, value):
+        cfg = {"require_signed_jobs": value}
+        (tmp_path / "fed_client.json").write_text(json.dumps(cfg))
+        ws = _make_workspace(str(tmp_path))
+        assert _require_signed_jobs(ws, "fed_client.json") is True
 
     def test_key_absent_rootca_present(self, tmp_path):
         """Key absent in fed_server.json, rootCA.pem present → True (PKI inferred)."""

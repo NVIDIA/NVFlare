@@ -14,7 +14,6 @@
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.tie.executor import TieExecutor
 from nvflare.app_opt.flower.applet import FlowerClientApplet
-from nvflare.app_opt.flower.connectors.grpc_client_connector import GrpcClientConnector
 from nvflare.fuel.utils.validation_utils import check_object_type
 
 from .defs import Constant
@@ -29,6 +28,7 @@ class FlowerExecutor(TieExecutor):
         tx_timeout=100.0,
         client_shutdown_timeout=5.0,
         extra_env: dict = None,
+        allow_runtime_dependency_installation: bool = False,
     ):
         """FlowerExecutor constructor
 
@@ -39,6 +39,7 @@ class FlowerExecutor(TieExecutor):
             tx_timeout: transaction timeout for ReliableMessage
             client_shutdown_timeout: how long to wait for graceful shutdown of the client
             extra_env: extra env variables to be passed to client applet
+            allow_runtime_dependency_installation: whether to allow dynamic dependency installation (only flwr>=1.29)
         """
         TieExecutor.__init__(
             self,
@@ -55,8 +56,11 @@ class FlowerExecutor(TieExecutor):
         self.client_shutdown_timeout = client_shutdown_timeout
         self.num_rounds = None
         self.extra_env = extra_env
+        self.allow_runtime_dependency_installation = allow_runtime_dependency_installation
 
     def get_connector(self, fl_ctx: FLContext):
+        from nvflare.app_opt.flower.connectors.grpc_client_connector import GrpcClientConnector
+
         return GrpcClientConnector(
             int_server_grpc_options=self.int_server_grpc_options,
             per_msg_timeout=self.per_msg_timeout,
@@ -64,7 +68,10 @@ class FlowerExecutor(TieExecutor):
         )
 
     def get_applet(self, fl_ctx: FLContext):
-        return FlowerClientApplet(extra_env=self.extra_env)
+        return FlowerClientApplet(
+            extra_env=self.extra_env,
+            allow_runtime_dependency_installation=self.allow_runtime_dependency_installation,
+        )
 
     def configure(self, config: dict, fl_ctx: FLContext):
         self.num_rounds = config.get(Constant.CONF_KEY_NUM_ROUNDS)

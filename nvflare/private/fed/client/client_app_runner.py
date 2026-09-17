@@ -46,20 +46,22 @@ class ClientAppRunner(Runner):
         self.timeout = time_out
         self.client_runner = None
 
-    def start_run(self, app_root, args, config_folder, federated_client, secure_train, sp, event_handlers):
+    def start_run(self, app_root, args, config_folder, federated_client, secure_train, event_handlers):
         self.client_runner = self.create_client_runner(
             app_root, args, config_folder, federated_client, secure_train, event_handlers
         )
 
         federated_client.set_client_runner(self.client_runner)
-        federated_client.set_primary_sp(sp)
+
+        # Connect the CJ to the FL server using args populated by the CP.
+        project_name = federated_client._get_project_name()
+        federated_client.connect_to_server(project_name, args.sp_target, args.sp_scheme)
 
         with self.client_runner.engine.new_context() as fl_ctx:
             self.start_command_agent(args, federated_client, fl_ctx)
 
         self.sync_up_parents_process(federated_client)
 
-        federated_client.start_overseer_agent()
         notify_timeout = ConfigService.get_float_var(
             name=ConfigVarName.NOTIFY_CP_MSG_TIMEOUT, conf=SystemConfigs.APPLICATION_CONF, default=5.0
         )
@@ -110,8 +112,9 @@ class ClientAppRunner(Runner):
             args=args,
             kv_list=args.set,
         )
-        if event_handlers:
-            conf.set_component_build_authorizer(authorize_build_component, fl_ctx=fl_ctx, event_handlers=event_handlers)
+        conf.set_component_build_authorizer(
+            authorize_build_component, fl_ctx=fl_ctx, event_handlers=event_handlers or []
+        )
         conf.configure()
 
         runner_config = conf.runner_config
@@ -221,6 +224,11 @@ class ClientAppRunner(Runner):
     def close(self):
         if self.command_agent:
             self.command_agent.shutdown()
+
+    def wait_for_command_callbacks(self, timeout: float) -> bool:
+        if not self.command_agent:
+            return True
+        return self.command_agent.wait_for_callbacks(timeout)
 
     def stop(self):
         if self.client_runner:

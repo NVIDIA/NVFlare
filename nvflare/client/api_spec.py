@@ -58,8 +58,9 @@ class APISpec(ABC):
         """Initializes NVFlare Client API environment.
 
         Args:
-            rank (str): local rank of the process.
-                It is only useful when the training script has multiple worker processes. (for example multi GPU)
+            rank (str): optional global process-rank override for Client API control-path behavior.
+                When omitted, public Client API initialization resolves the distributed global rank.
+                Never use a device-local rank for this value.
 
         Returns:
             None
@@ -96,6 +97,9 @@ class APISpec(ABC):
         Args:
             model (FLModel): The FLModel object to be sent.
             clear_cache (bool): Whether to clear the cache after send.
+
+        Raises:
+            RuntimeError: If the model cannot be submitted to NVFLARE.
 
         Example:
 

@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import io
+import json
 import os
 import sys
 import zipfile
@@ -20,7 +21,10 @@ from zipfile import ZipFile
 
 import pytest
 
+from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.fl_constant import JobConstants
+from nvflare.apis.job_def import JobMetaKey
+from nvflare.app_opt.flower.defs import Constant as FlowerConstant
 from nvflare.fuel.utils.zip_utils import get_all_file_paths, normpath_for_zip, split_path
 from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
 
@@ -54,6 +58,22 @@ def _zip_job_with_meta(folder_name: str, meta: str) -> bytes:
     return zip_data
 
 
+def _zip_minimal_job(folder_name: str, meta: dict, server_config: dict) -> bytes:
+    bio = io.BytesIO()
+    with ZipFile(bio, "w", compression=zipfile.ZIP_DEFLATED) as z:
+        z.writestr(f"{folder_name}/app/config/", "")
+        z.writestr(f"{folder_name}/{JobConstants.META_FILE}", json.dumps(meta))
+        z.writestr(
+            f"{folder_name}/app/config/{JobConstants.SERVER_JOB_CONFIG}",
+            json.dumps(server_config),
+        )
+        z.writestr(
+            f"{folder_name}/app/config/{JobConstants.CLIENT_JOB_CONFIG}",
+            json.dumps({"format_version": 2, "executors": []}),
+        )
+    return bio.getvalue()
+
+
 META_WITH_VALID_DEPLOY_MAP = [
     pytest.param({"deploy_map": {"app1": ["@ALL"]}}, id="all"),
     pytest.param({"deploy_map": {"app1": ["@ALL"], "app2": []}}, id="all_idle"),
@@ -70,6 +90,9 @@ META_WITH_VALID_DEPLOY_MAP = [
 
 META_WITH_INVALID_DEPLOY_MAP = [
     pytest.param({"deploy_map": {"app1": ["@ALL", "server"]}}, id="all_other"),
+    pytest.param({"deploy_map": {"/tmp/app": ["server"]}}, id="absolute_app"),
+    pytest.param({"deploy_map": {"../app": ["server"]}}, id="traversing_app"),
+    pytest.param({"deploy_map": {"app/sub": ["server"]}}, id="nested_app"),
     pytest.param({"deploy_map": {"app1": ["@ALL"], "app2": ["@all"]}}, id="dup_all"),
     pytest.param({"deploy_map": {"app1": ["server", "site-1", "site-2"], "app2": ["site-2"]}}, id="dup_client"),
     pytest.param({"deploy_map": {"app1": ["server", "site-1"], "app2": ["server", "site-2"]}}, id="dup_server"),
@@ -118,6 +141,133 @@ class TestJobMetaValidator:
         with pytest.raises(ValueError):
             JobMetaValidator._validate_deploy_map("unit_test", meta)
 
+    @pytest.mark.parametrize("resource_spec", [None, {}])
+    def test_validate_resource_accepts_empty_spec(self, resource_spec):
+        JobMetaValidator._validate_resource("unit_test", {JobMetaKey.RESOURCE_SPEC.value: resource_spec})
+
+    @pytest.mark.parametrize("resource_spec", [[], "", 0, False])
+    def test_validate_resource_rejects_non_mapping_spec(self, resource_spec):
+        with pytest.raises(ValueError, match="Invalid resource_spec"):
+            JobMetaValidator._validate_resource("unit_test", {JobMetaKey.RESOURCE_SPEC.value: resource_spec})
+
+    @pytest.mark.parametrize("site_spec", [None, [], "", 0, False])
+    def test_validate_resource_rejects_non_mapping_site_spec(self, site_spec):
+        with pytest.raises(ValueError, match="expecting a dictionary"):
+            JobMetaValidator._validate_resource("unit_test", {JobMetaKey.RESOURCE_SPEC.value: {"site-1": site_spec}})
+
+    def test_slurm_launcher_spec_is_accepted(self):
+        JobMetaValidator._validate_launcher_spec("unit_test", {"launcher_spec": {"site-1": {"slurm": {"nodes": 2}}}})
+
+    @pytest.mark.parametrize("site", ["default", "site-1"])
+    def test_docker_launcher_spec_allowlist_is_accepted(self, site):
+        JobMetaValidator._validate_launcher_spec(
+            "unit_test",
+            {
+                "launcher_spec": {
+                    site: {
+                        "docker": {
+                            "image": "trusted/image:1",
+                            "python_path": "/usr/bin/python",
+                            "entrypoint": "/bin/sh",
+                            "num_of_gpus": 1,
+                            "shm_size": "8g",
+                        }
+                    }
+                }
+            },
+        )
+
+    @pytest.mark.parametrize(
+        "field",
+        [
+            "privileged",
+            "pid_mode",
+            "ipc_mode",
+            "devices",
+            "device_requests",
+            "cap_add",
+            "security_opt",
+            "network_mode",
+            "volumes",
+        ],
+    )
+    @pytest.mark.parametrize("site", ["default", "site-1"])
+    def test_isolation_sensitive_docker_launcher_options_are_rejected(self, site, field):
+        with pytest.raises(ValueError, match="unsupported job-controlled Docker option"):
+            JobMetaValidator._validate_launcher_spec(
+                "unit_test", {"launcher_spec": {site: {"docker": {field: "attacker-controlled"}}}}
+            )
+
+    def test_legacy_docker_resource_spec_uses_same_allowlist(self):
+        with pytest.raises(ValueError, match="unsupported job-controlled Docker option"):
+            JobMetaValidator._validate_resource(
+                "unit_test", {"resource_spec": {"site-1": {"docker": {"privileged": True}}}}
+            )
+
+    @pytest.mark.parametrize("num_of_gpus", [True, False, "1", 1.5, -1, None])
+    @pytest.mark.parametrize("site", ["default", "site-1"])
+    def test_invalid_docker_num_of_gpus_is_rejected(self, site, num_of_gpus):
+        with pytest.raises(ValueError, match="num_of_gpus.*integer greater than or equal to 0"):
+            JobMetaValidator._validate_launcher_spec(
+                "unit_test", {"launcher_spec": {site: {"docker": {"num_of_gpus": num_of_gpus}}}}
+            )
+
+    @pytest.mark.parametrize("field", ["entrypoint", "shm_size"])
+    @pytest.mark.parametrize("site", ["default", "site-1"])
+    def test_invalid_docker_option_value_is_rejected_from_launcher_spec(self, site, field):
+        with pytest.raises(ValueError, match=rf"field '{field}'"):
+            JobMetaValidator._validate_launcher_spec(
+                "unit_test", {"launcher_spec": {site: {"docker": {field: {"unexpected": 1}}}}}
+            )
+
+    @pytest.mark.parametrize("field", ["entrypoint", "shm_size"])
+    def test_invalid_docker_option_value_is_rejected_from_legacy_resource_spec(self, field):
+        with pytest.raises(ValueError, match=rf"field '{field}'"):
+            JobMetaValidator._validate_resource(
+                "unit_test", {"resource_spec": {"site-1": {"docker": {field: {"unexpected": 1}}}}}
+            )
+
+    @pytest.mark.parametrize("docker_spec", [[], "", 1, False])
+    def test_legacy_docker_resource_spec_requires_dict(self, docker_spec):
+        with pytest.raises(ValueError, match="must be a dict"):
+            JobMetaValidator._validate_resource("unit_test", {"resource_spec": {"site-1": {"docker": docker_spec}}})
+
+    def test_unknown_launcher_mode_is_rejected(self):
+        with pytest.raises(ValueError, match="unknown launcher mode"):
+            JobMetaValidator._validate_launcher_spec("unit_test", {"launcher_spec": {"site-1": {"slurm_typo": {}}}})
+
+    def test_job_validation_rejects_portable_k8s_gpu_conflict(self):
+        meta = {
+            "name": "sag",
+            "deploy_map": {"sag": ["server", "site-1", "site-2"]},
+            "resource_spec": {"site-1": {"num_of_gpus": 1}},
+            "launcher_spec": {"site-1": {"k8s": {"num_of_gpus": 8}}},
+        }
+        data = _zip_job_with_meta("valid_job", json.dumps(meta))
+
+        valid, error, _ = self.validator.validate("valid_job", data)
+
+        assert not valid
+        assert "portable resource 'num_of_gpus' conflicts with launcher_spec k8s" in error
+
+    def test_job_validation_rejects_legacy_nested_gpu_mismatch(self):
+        meta = {
+            "name": "sag",
+            "deploy_map": {"sag": ["server", "site-1", "site-2"]},
+            "resource_spec": {
+                "site-1": {
+                    "process": {"num_of_gpus": 1},
+                    "docker": {"num_of_gpus": 8},
+                }
+            },
+        }
+        data = _zip_job_with_meta("valid_job", json.dumps(meta))
+
+        valid, error, _ = self.validator.validate("valid_job", data)
+
+        assert not valid
+        assert "legacy process num_of_gpus" in error
+
     @pytest.mark.parametrize("job_name", VALID_JOBS)
     def test_validate_valid_jobs(self, job_name):
         self._assert_valid(job_name)
@@ -145,6 +295,91 @@ class TestJobMetaValidator:
         }}
         """
         self._assert_invalid(job_name, meta)
+
+    @pytest.mark.parametrize(
+        "job_id",
+        [
+            pytest.param("../outside", id="relative_traversal"),
+            pytest.param("good/../../outside", id="nested_traversal"),
+            pytest.param("/tmp/outside", id="absolute_path"),
+            pytest.param("bad\\id", id="windows_separator"),
+        ],
+    )
+    def test_invalid_job_id(self, job_id):
+        meta = f"""
+        {{
+            "job_id": {json.dumps(job_id)},
+            "name": "sag",
+            "resource_spec": {{}},
+            "deploy_map": {{"sag": ["server", "site-1", "site-2"]}}
+        }}
+        """
+        self._assert_invalid("valid_job", meta)
+
+    def test_flower_predeployed_flag_is_derived_from_server_config(self):
+        job_name = "flower_job"
+        data = _zip_minimal_job(
+            folder_name=job_name,
+            meta={"deploy_map": {"app": ["server", "site-1"]}},
+            server_config={
+                "format_version": 2,
+                "workflows": [
+                    {
+                        "id": "controller",
+                        "path": "nvflare.app_opt.flower.controller.FlowerController",
+                        "args": {"flower_app_path": "local/custom/preapproved/app"},
+                    }
+                ],
+            },
+        )
+
+        valid, error, meta = self.validator.validate(job_name, data)
+
+        assert valid
+        assert error == ""
+        assert meta[FlowerConstant.FLOWER_PREDEPLOYED] is True
+
+    def test_user_supplied_flower_predeployed_flag_is_removed_without_server_config_path(self):
+        job_name = "non_flower_job"
+        data = _zip_minimal_job(
+            folder_name=job_name,
+            meta={
+                "deploy_map": {"app": ["server", "site-1"]},
+                FlowerConstant.FLOWER_PREDEPLOYED: True,
+            },
+            server_config={
+                "format_version": 2,
+                "workflows": [
+                    {
+                        "id": "controller",
+                        "path": "nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather",
+                    }
+                ],
+            },
+        )
+
+        valid, error, meta = self.validator.validate(job_name, data)
+
+        assert valid
+        assert error == ""
+        assert FlowerConstant.FLOWER_PREDEPLOYED not in meta
+
+    def test_ignores_user_byoc_true_without_custom_folder(self):
+        meta = """
+        {
+            "byoc": true,
+            "name": "sag",
+            "resource_spec": {},
+            "deploy_map": {"sag": ["server", "site-1", "site-2"]}
+        }
+        """
+        data = _zip_job_with_meta("valid_job", meta)
+
+        valid, error, validated_meta = self.validator.validate("valid_job", data)
+
+        assert valid
+        assert error == ""
+        assert AppValidationKey.BYOC not in validated_meta
 
     def _assert_valid(self, job_name: str):
         data = _zip_job_with_meta(job_name, "")

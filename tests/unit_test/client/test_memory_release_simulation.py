@@ -30,6 +30,7 @@ import sys
 import unittest
 
 import numpy as np
+import pytest
 
 from nvflare.apis.dxo import DXO, DataKind
 from nvflare.app_common.abstract.fl_model import FLModel
@@ -38,6 +39,17 @@ from nvflare.client.in_process.api import TOPIC_GLOBAL_RESULT, InProcessClientAP
 from nvflare.fuel.data_event.data_bus import DataBus
 
 # ── helpers ────────────────────────────────────────────────────────────────
+
+
+@pytest.fixture(autouse=True)
+def clean_databus():
+    """Isolate tests without replacing the process-singleton DataBus object."""
+    bus = DataBus()
+    bus.subscribers.clear()
+    bus.data_store.clear()
+    yield bus
+    bus.subscribers.clear()
+    bus.data_store.clear()
 
 
 def _task_metadata():
@@ -86,21 +98,11 @@ class TestInProcessMemoryRelease(unittest.TestCase):
     NUM_ROUNDS = 5
 
     def setUp(self):
-        # Reset the DataBus singleton before each test to prevent stale
-        # subscriptions from other tests contaminating refcount measurements.
-        from nvflare.fuel.data_event.data_bus import DataBus
-
-        with DataBus._lock:
-            DataBus._instance = None
         self.api = InProcessClientAPI(_task_metadata())
         self.api.init()
 
     def tearDown(self):
-        # Clean up singleton so subsequent tests start fresh.
-        from nvflare.fuel.data_event.data_bus import DataBus
-
-        with DataBus._lock:
-            DataBus._instance = None
+        self.api.close()
 
     def _one_round(self, round_num: int):
         """Simulate one FL round: receive → train → send."""
@@ -206,85 +208,6 @@ class TestInProcessMemoryRelease(unittest.TestCase):
             50.0,
             f"RSS grew by {rss_growth:.1f} MB over {self.NUM_ROUNDS} rounds — params not being freed",
         )
-
-
-class TestExProcessMemoryRelease(unittest.TestCase):
-    """Verify release_params() integration for ExProcessClientAPI via ModelRegistry."""
-
-    def test_release_params_end_to_end(self):
-        """ModelRegistry.release_params() correctly nulls both models."""
-        from unittest.mock import MagicMock
-
-        from nvflare.client.config import ClientConfig
-        from nvflare.client.flare_agent import Task
-        from nvflare.client.model_registry import ModelRegistry
-
-        config = ClientConfig(
-            config={
-                ConfigKey.TASK_EXCHANGE: {
-                    ConfigKey.EXCHANGE_FORMAT: ExchangeFormat.NUMPY,
-                    ConfigKey.TRANSFER_TYPE: TransferType.FULL,
-                    ConfigKey.TRAIN_TASK_NAME: "train",
-                    ConfigKey.EVAL_TASK_NAME: "evaluate",
-                    ConfigKey.SUBMIT_MODEL_TASK_NAME: "submit_model",
-                }
-            }
-        )
-        registry = ModelRegistry(config, rank="0", flare_agent=MagicMock())
-
-        # Simulate receive
-        received_params = {"w": np.ones((256, 256))}
-        received_model = FLModel(params=received_params)
-        registry._set_task(Task(task_name="train", task_id="test-task-1", data=received_model))
-
-        # Simulate send
-        sent_params = {"w": np.zeros((256, 256))}
-        sent_model = FLModel(params=sent_params)
-        registry.release_params(sent_model)
-
-        self.assertIsNone(sent_model.params, "sent model params must be None")
-        self.assertIsNone(received_model.params, "received model params must be None")
-
-    def test_multiple_rounds_no_accumulation(self):
-        """After each round, the old arrays must be dereferenced."""
-        import gc
-        from unittest.mock import MagicMock
-
-        from nvflare.client.config import ClientConfig
-        from nvflare.client.flare_agent import Task
-        from nvflare.client.model_registry import ModelRegistry
-
-        config = ClientConfig(
-            config={
-                ConfigKey.TASK_EXCHANGE: {
-                    ConfigKey.EXCHANGE_FORMAT: ExchangeFormat.NUMPY,
-                    ConfigKey.TRANSFER_TYPE: TransferType.FULL,
-                    ConfigKey.TRAIN_TASK_NAME: "train",
-                    ConfigKey.EVAL_TASK_NAME: "evaluate",
-                    ConfigKey.SUBMIT_MODEL_TASK_NAME: "submit_model",
-                }
-            }
-        )
-        registry = ModelRegistry(config, rank="0", flare_agent=MagicMock())
-
-        prev_received = None
-        prev_sent = None
-
-        for r in range(5):
-            received_model = FLModel(params={"w": np.ones((256, 256)) * r})
-            registry._set_task(Task(task_name="train", task_id="test-task-1", data=received_model))
-            sent_model = FLModel(params={"w": np.zeros((256, 256)) + r})
-
-            registry.release_params(sent_model)
-            gc.collect()
-
-            if prev_received is not None:
-                self.assertIsNone(prev_received.params, f"round {r}: stale received params still alive")
-            if prev_sent is not None:
-                self.assertIsNone(prev_sent.params, f"round {r}: stale sent params still alive")
-
-            prev_received = received_model
-            prev_sent = sent_model
 
 
 if __name__ == "__main__":

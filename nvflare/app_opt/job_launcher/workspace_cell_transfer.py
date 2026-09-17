@@ -22,14 +22,18 @@ Launched job pods create short-lived bootstrap child cells to:
 The actual payload transfer uses the existing F3 file downloader infrastructure,
 so large bundles move in chunks instead of being buffered into a single message.
 """
+
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import os
+import posixpath
 import secrets
 import shutil
 import stat
+import sys
 import tempfile
 import threading
 import time
@@ -37,6 +41,10 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 
+import yaml
+
+from nvflare.apis.fl_constant import ConnPropKey, WorkspaceConstants
+from nvflare.apis.workspace import Workspace
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
@@ -49,6 +57,14 @@ from nvflare.fuel.f3.streaming.file_downloader import add_file, download_file
 from nvflare.fuel.f3.streaming.obj_downloader import ObjectDownloader
 from nvflare.fuel.sec.authn import set_add_auth_headers_filters
 from nvflare.private.defs import AUTH_CLIENT_NAME_FOR_SJ
+from nvflare.private.fed.utils.job_cert_utils import (
+    JOB_CERT_DIR_NAME,
+    JOB_CERT_FILE_NAME,
+    JOB_KEY_FILE_NAME,
+    find_job_cert,
+    workspace_transfer_cell_name,
+    write_job_cert,
+)
 from nvflare.security.logging import secure_format_exception
 
 logger = logging.getLogger(__name__)
@@ -65,7 +81,9 @@ PER_REQUEST_TIMEOUT = 300.0
 BOOTSTRAP_CONNECT_TIMEOUT = 30.0
 BOOTSTRAP_CONNECT_POLL_INTERVAL = 0.1
 
-_BOOTSTRAP_CELL_PREFIX = "ws_transfer_"
+_DEFAULT_WORKSPACE_DOWNLOAD_EXCLUDES = frozenset({"local/study_data.yaml", "local/study_runtime.yaml"})
+_RESOURCE_CONFIG_NAMES = ("resources.json", "resources.json.default")
+_K8S_LAUNCHER_COMPONENT_ID = "k8s_launcher"
 
 
 @dataclass
@@ -77,24 +95,142 @@ class _JobTransferRecord:
     download_bundle_path: str = ""
 
 
-def _write_dir_to_zip(zf: zipfile.ZipFile, src: str, root: str) -> None:
+def _safe_rel_path(path: str) -> str | None:
+    if not isinstance(path, str) or not path:
+        return None
+    normalized = posixpath.normpath(path.replace("\\", "/").replace(os.sep, "/"))
+    if normalized in ("", "."):
+        return None
+    rel_path = PurePosixPath(normalized)
+    if rel_path.is_absolute() or ".." in rel_path.parts:
+        return None
+    return normalized
+
+
+def _config_path_to_workspace_rel(path, workspace_root: str, workspace_mount_path=None) -> str | None:
+    if not isinstance(path, str) or not path:
+        return None
+    normalized = path.replace("\\", "/").replace(os.sep, "/")
+    if not posixpath.isabs(normalized):
+        return _safe_rel_path(normalized)
+
+    prefixes = []
+    if isinstance(workspace_mount_path, str) and workspace_mount_path:
+        prefixes.append(workspace_mount_path.replace("\\", "/").replace(os.sep, "/").rstrip("/"))
+    prefixes.append(os.path.abspath(workspace_root).replace(os.sep, "/").rstrip("/"))
+
+    for prefix in prefixes:
+        if normalized.startswith(f"{prefix}/"):
+            return _safe_rel_path(normalized[len(prefix) + 1 :])
+    return None
+
+
+def _add_legacy_study_data_excludes(excluded_paths: set[str], workspace_root: str) -> None:
+    """Exclude a legacy kit's custom study_data_pvc_file_path from job workspace bundles."""
+    local_dir = os.path.join(workspace_root, "local")
+    for resource_config_name in _RESOURCE_CONFIG_NAMES:
+        try:
+            with open(os.path.join(local_dir, resource_config_name), "rt") as f:
+                resource_config = json.load(f)
+        except FileNotFoundError:
+            continue
+        except Exception as e:
+            logger.debug(
+                "could not inspect resource config '%s' for workspace download excludes: %s", resource_config_name, e
+            )
+            continue
+        if not isinstance(resource_config, dict):
+            continue
+        components = resource_config.get("components")
+        if not isinstance(components, list):
+            continue
+        for component in components:
+            if not isinstance(component, dict) or component.get("id") != _K8S_LAUNCHER_COMPONENT_ID:
+                continue
+            args = component.get("args")
+            if not isinstance(args, dict):
+                continue
+            rel_path = _config_path_to_workspace_rel(
+                args.get("study_data_pvc_file_path"), workspace_root, args.get("workspace_mount_path")
+            )
+            if rel_path:
+                excluded_paths.add(rel_path)
+
+
+def _add_study_runtime_excludes(excluded_paths: set[str], workspace_root: str) -> None:
+    """Exclude pod template files referenced by path from local/study_runtime.yaml."""
+    runtime_path = os.path.join(workspace_root, "local", "study_runtime.yaml")
+    try:
+        with open(runtime_path, "rt") as f:
+            study_runtime = yaml.safe_load(f)
+    except FileNotFoundError:
+        return
+    except Exception as e:
+        logger.debug("could not inspect study runtime '%s' for workspace download excludes: %s", runtime_path, e)
+        return
+    if not isinstance(study_runtime, dict):
+        return
+    studies = study_runtime.get("studies")
+    if not isinstance(studies, dict):
+        return
+    for study_config in studies.values():
+        if not isinstance(study_config, dict):
+            continue
+        pod_template = study_config.get("pod_template")
+        if not isinstance(pod_template, str) or not pod_template:
+            continue
+        pod_template_rel_path = _safe_rel_path(posixpath.join("local", pod_template))
+        if pod_template_rel_path:
+            excluded_paths.add(pod_template_rel_path)
+
+
+def _workspace_download_excludes(workspace_root: str) -> frozenset[str]:
+    excluded_paths = set(_DEFAULT_WORKSPACE_DOWNLOAD_EXCLUDES)
+    _add_legacy_study_data_excludes(excluded_paths, workspace_root)
+    _add_study_runtime_excludes(excluded_paths, workspace_root)
+    return frozenset(excluded_paths)
+
+
+def _write_dir_to_zip(zf: zipfile.ZipFile, src: str, root: str, excluded_paths: frozenset[str] = frozenset()) -> None:
     if not os.path.isdir(src):
         return
     for dirpath, _dirs, files in os.walk(src):
         for fname in files:
             abs_path = os.path.join(dirpath, fname)
-            zf.write(abs_path, os.path.relpath(abs_path, root))
+            rel_path = os.path.relpath(abs_path, root).replace(os.sep, "/")
+            if rel_path in excluded_paths:
+                continue
+            zf.write(abs_path, rel_path)
+
+
+def _run_dir_name(job_id: str) -> str:
+    return WorkspaceConstants.WORKSPACE_PREFIX + job_id
+
+
+def _run_dir(workspace_root: str, job_id: str) -> str:
+    # pod side, before startup/local exist (so no Workspace instance): validated and resolved
+    return Workspace.run_dir_path(workspace_root, job_id)
+
+
+def _job_cert_excludes(job_id: str) -> frozenset[str]:
+    # the job credential is delivered through the credential Secret, never inside a bundle
+    cert_dir = posixpath.join(_run_dir_name(job_id), JOB_CERT_DIR_NAME)
+    return frozenset(posixpath.join(cert_dir, fname) for fname in (JOB_CERT_FILE_NAME, JOB_KEY_FILE_NAME))
 
 
 def _zip_workspace_to_file(workspace_root: str, job_id: str, file_path: str) -> None:
+    # entry names are relative to workspace_root, so the run dir is joined without resolving symlinks
+    excluded_paths = _workspace_download_excludes(workspace_root)
+    run_dir = os.path.join(workspace_root, _run_dir_name(job_id))
     with zipfile.ZipFile(file_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        _write_dir_to_zip(zf, os.path.join(workspace_root, "local"), workspace_root)
-        _write_dir_to_zip(zf, os.path.join(workspace_root, job_id), workspace_root)
+        _write_dir_to_zip(zf, os.path.join(workspace_root, "local"), workspace_root, excluded_paths)
+        _write_dir_to_zip(zf, run_dir, workspace_root, _job_cert_excludes(job_id))
 
 
 def _zip_results_to_file(workspace_root: str, job_id: str, file_path: str) -> None:
+    run_dir = os.path.join(workspace_root, _run_dir_name(job_id))
     with zipfile.ZipFile(file_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        _write_dir_to_zip(zf, os.path.join(workspace_root, job_id), workspace_root)
+        _write_dir_to_zip(zf, run_dir, workspace_root, _job_cert_excludes(job_id))
 
 
 def _validate_relative_zip_members(zf: zipfile.ZipFile) -> None:
@@ -123,7 +259,7 @@ def _hash_file(path: str) -> str:
 
 
 def make_workspace_transfer_fqcn(owner_fqcn: str, job_id: str) -> str:
-    return FQCN.join([owner_fqcn, f"{_BOOTSTRAP_CELL_PREFIX}{job_id}"])
+    return FQCN.join([owner_fqcn, workspace_transfer_cell_name(job_id)])
 
 
 def _cleanup_files(paths) -> None:
@@ -384,40 +520,92 @@ def _get_root_url(args) -> str:
     raise RuntimeError("unable to determine root_url for workspace transfer bootstrap cell")
 
 
-def _get_bootstrap_tls_pair(startup_dir: str, owner_fqcn: str) -> tuple[str, str, str, str]:
-    prefer_server = FQCN.get_root(owner_fqcn) == FQCN.ROOT_SERVER
-    if prefer_server:
-        candidates = [
-            ("server.crt", "server.key", DriverParams.SERVER_CERT.value, DriverParams.SERVER_KEY.value),
-            ("client.crt", "client.key", DriverParams.CLIENT_CERT.value, DriverParams.CLIENT_KEY.value),
-        ]
-    else:
-        candidates = [
-            ("client.crt", "client.key", DriverParams.CLIENT_CERT.value, DriverParams.CLIENT_KEY.value),
-            ("server.crt", "server.key", DriverParams.SERVER_CERT.value, DriverParams.SERVER_KEY.value),
-        ]
+def _bootstrap_credentials(run_dir: str, root_ca: str) -> dict:
+    """TLS credentials of the bootstrap cell: the job credential in both roles.
 
-    for cert_name, key_name, cert_key, key_key in candidates:
-        cert_path = os.path.join(startup_dir, cert_name)
-        key_path = os.path.join(startup_dir, key_name)
-        if os.path.exists(cert_path) and os.path.exists(key_path):
-            return cert_path, key_path, cert_key, key_key
-    raise RuntimeError(f"workspace transfer requires cert/key files in startup dir: {startup_dir}")
+    Pinning both roles keeps cellnet's directory-based credential back-fill from ever
+    substituting a site certificate found next to rootCA.pem.
+    """
+    job_cert = find_job_cert(run_dir)
+    if not job_cert:
+        raise RuntimeError(
+            f"workspace transfer requires the job credential in {run_dir}/{JOB_CERT_DIR_NAME}; "
+            "secure jobs run only on per-job certificates"
+        )
+    cert_path, key_path = job_cert
+    return {
+        DriverParams.CA_CERT.value: root_ca,
+        DriverParams.SERVER_CERT.value: cert_path,
+        DriverParams.SERVER_KEY.value: key_path,
+        DriverParams.CLIENT_CERT.value: cert_path,
+        DriverParams.CLIENT_KEY.value: key_path,
+    }
+
+
+def _load_startup_json(startup_dir: str, filename: str) -> dict | None:
+    path = os.path.join(startup_dir, filename)
+    if not os.path.isfile(path):
+        return None
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, json.JSONDecodeError) as ex:
+        logger.warning("failed to load %s: %s", path, secure_format_exception(ex))
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _server_auth_identity(server_cfg) -> str | None:
+    if not isinstance(server_cfg, dict):
+        return None
+    identity = server_cfg.get(ConnPropKey.AUTH_IDENTITY, server_cfg.get(ConnPropKey.IDENTITY))
+    if isinstance(identity, str) and identity:
+        return identity
+    return None
+
+
+def _configured_auth_identity_map(section) -> dict:
+    if not isinstance(section, dict):
+        return {}
+    configured = section.get(ConnPropKey.AUTH_IDENTITY_MAP)
+    return dict(configured) if isinstance(configured, dict) else {}
+
+
+def _bootstrap_auth_identity_map(startup_dir: str) -> dict | None:
+    """Match the regular client job cell: map logical root FQCN to the provisioned server cert identity."""
+    identity_map = {}
+    server_identity = None
+
+    client_cfg = _load_startup_json(startup_dir, "fed_client.json")
+    if client_cfg:
+        servers = client_cfg.get("servers") or []
+        server_identity = _server_auth_identity(servers[0] if servers else None)
+        identity_map.update(_configured_auth_identity_map(client_cfg.get("client")))
+
+    server_cfg = _load_startup_json(startup_dir, "fed_server.json")
+    if server_cfg:
+        servers = server_cfg.get("servers") or []
+        first_server = servers[0] if servers else None
+        if not server_identity:
+            server_identity = _server_auth_identity(first_server)
+        identity_map.update(_configured_auth_identity_map(first_server))
+
+    if server_identity:
+        identity_map[FQCN.ROOT_SERVER] = server_identity
+
+    return identity_map or None
 
 
 def _create_bootstrap_cell(args, owner_fqcn: str, secure_mode: bool) -> tuple[Cell, NetAgent]:
     startup_dir = os.path.join(args.workspace, "startup")
     credentials = {}
+    auth_identity_map = None
     if secure_mode:
         root_ca = os.path.join(startup_dir, "rootCA.pem")
         if not os.path.exists(root_ca):
             raise RuntimeError(f"workspace transfer requires rootCA.pem in startup dir: {startup_dir}")
-        cert_path, key_path, cert_key, key_key = _get_bootstrap_tls_pair(startup_dir, owner_fqcn)
-        credentials = {
-            DriverParams.CA_CERT.value: root_ca,
-            cert_key: cert_path,
-            key_key: key_path,
-        }
+        credentials = _bootstrap_credentials(_run_dir(args.workspace, args.job_id), root_ca)
+        auth_identity_map = _bootstrap_auth_identity_map(startup_dir)
 
     parent_resources = {}
     parent_conn_sec = getattr(args, "parent_conn_sec", "")
@@ -433,6 +621,7 @@ def _create_bootstrap_cell(args, owner_fqcn: str, secure_mode: bool) -> tuple[Ce
         create_internal_listener=False,
         parent_url=args.parent_url,
         parent_resources=parent_resources or None,
+        auth_identity_map=auth_identity_map,
     )
     # Install auth headers BEFORE cell.start(): the cell's initial
     # cellnet.channel registration handshake fires during start(), and the
@@ -486,6 +675,14 @@ def _request_workspace_bundle(cell: Cell, owner_fqcn: str, job_id: str, transfer
     return payload
 
 
+def _install_job_cert(args) -> None:
+    """Write the job credential the launcher passed through the environment (parsed into args) into the run dir."""
+    cert_pem = getattr(args, "job_cert_pem", None)
+    key_pem = getattr(args, "job_key_pem", None)
+    if cert_pem and key_pem:
+        write_job_cert(_run_dir(args.workspace, args.job_id), cert_pem.encode("ascii"), key_pem.encode("ascii"))
+
+
 def download_workspace(args, secure_mode: bool) -> None:
     owner_fqcn = os.environ.get(ENV_WORKSPACE_OWNER_FQCN, "")
     if not owner_fqcn:
@@ -495,6 +692,8 @@ def download_workspace(args, secure_mode: bool) -> None:
         raise RuntimeError(f"workspace transfer requires env var {ENV_WORKSPACE_TRANSFER_TOKEN}")
 
     os.makedirs(args.workspace, exist_ok=True)
+    # the bootstrap cell authenticates with the job credential, so install it before creating the cell
+    _install_job_cert(args)
     temp_dir = tempfile.mkdtemp(prefix="workspace-download-")
     try:
         cell = _get_bootstrap_cell(args, owner_fqcn, secure_mode)
@@ -529,7 +728,7 @@ def upload_results(args, secure_mode: bool) -> None:
 
     run_dir = os.path.join(args.workspace, args.job_id)
     if not os.path.isdir(run_dir):
-        return
+        raise RuntimeError(f"results workspace does not exist for {args.job_id}: {run_dir}")
 
     temp_bundle = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
     temp_bundle.close()
@@ -599,8 +798,14 @@ def upload_results(args, secure_mode: bool) -> None:
         _close_bootstrap_cell()
 
 
-def upload_results_safely(args, secure_mode: bool, log=None) -> None:
+def upload_results_on_shutdown(args, secure_mode: bool, log=None) -> None:
+    has_primary_error = sys.exc_info()[0] is not None
     try:
         upload_results(args, secure_mode)
     except Exception as e:
-        (log or logger).warning(f"failed to upload job results for {args.job_id}: {secure_format_exception(e)}")
+        if not has_primary_error:
+            raise
+        (log or logger).error(
+            f"failed to upload job results for {args.job_id} while handling another error: "
+            f"{secure_format_exception(e)}"
+        )

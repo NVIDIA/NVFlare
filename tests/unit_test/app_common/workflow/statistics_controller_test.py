@@ -13,6 +13,8 @@
 # limitations under the License.
 
 
+from unittest.mock import patch
+
 from nvflare.app_common.abstract.statistics_spec import StatisticConfig
 from nvflare.app_common.app_constant import StatisticsConstants as SC
 from nvflare.app_common.workflows.statistics_controller import StatisticsController
@@ -58,23 +60,25 @@ class TestStatisticsController:
             else:
                 assert mc.config == {"*": {"bins": 10}, "Age": {"bins": 5, "range": [0, 120]}}
 
-    def test_wait_for_all_results(self):
-
-        # waiting for 1 more client
+    def test_wait_for_all_results_stops_after_missing_results_arrive(self):
         client_statistics = {
             "count": {"site-1": {}},
-            "mean": {"site-2": {}},
-            "sum": {"site-3": {}},
-            "stddev": {"site-4": {}},
         }
-        import time
 
-        t0 = time.time()
-        StatisticsController._wait_for_all_results(self.stats_controller.logger, 0.5, 3, client_statistics, 0.1)
-        t = time.time()
-        second_spent = t - t0
-        # for 4 statistic, each have 0.5 second timeout
-        assert second_spent > 0.5 * 4
+        def receive_remaining_results(seconds):
+            assert seconds == 0.1
+            client_statistics["count"].update({"site-2": {}, "site-3": {}})
+
+        with patch(
+            "nvflare.app_common.workflows.statistics_controller.time.sleep", side_effect=receive_remaining_results
+        ) as mock_sleep:
+            result = StatisticsController._wait_for_all_results(
+                self.stats_controller.logger, 0.5, 3, client_statistics, 0.1
+            )
+
+        assert result is True
+        assert set(client_statistics["count"]) == {"site-1", "site-2", "site-3"}
+        mock_sleep.assert_called_once_with(0.1)
 
     def test_prepare_input(self):
         xs = self.stats_controller._prepare_inputs(SC.STATS_1st_STATISTICS)
@@ -100,7 +104,10 @@ class TestStatisticsController:
 
         xs = self.stats_controller._prepare_inputs(SC.STATS_2nd_STATISTICS)
         assert xs[SC.STATISTICS_TASK_KEY] == SC.STATS_2nd_STATISTICS
-        rhs = SC.ordered_statistics[SC.STATS_2nd_STATISTICS]
+        seq = StatisticsController._get_target_statistics(
+            self.stats_controller.statistic_configs, SC.ordered_statistics[SC.STATS_2nd_STATISTICS]
+        )
+        rhs = [mc.name for mc in seq]
         rhs.sort()
         target_statistics: list[StatisticConfig] = fobs.loads(xs[SC.STATS_TARGET_STATISTICS])
         lhs = [mc.name for mc in target_statistics]
@@ -126,3 +133,14 @@ class TestStatisticsController:
             "stddev": {"site-4": {"train": {}}},
         }
         assert not self.stats_controller._validate_min_clients(5, client_statistics)
+
+    def test_validate_min_clients_returns_false_when_no_clients_responded(self):
+        # zero clients responded at all -- must not vacuously pass as "ok to proceed"
+        assert not self.stats_controller._validate_min_clients(5, {})
+
+    def test_validate_min_clients_returns_false_when_no_dataset_has_statistics(self):
+        # clients "responded" (enough of them per statistic), but every one of
+        # them reported an empty per-dataset dict -- resulting_clients ends up
+        # empty too, and must not vacuously pass as "ok to proceed" either.
+        client_statistics = {"count": {"site-1": {}}}
+        assert not self.stats_controller._validate_min_clients(1, client_statistics)

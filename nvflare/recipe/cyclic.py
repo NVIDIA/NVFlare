@@ -21,6 +21,7 @@ from nvflare.app_common.shareablegenerators import FullModelShareableGenerator
 from nvflare.app_common.workflows.cyclic_ctl import CyclicController
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.fuel.utils.constants import FrameworkType
+from nvflare.fuel.utils.secret_utils import warn_on_unsupported_secret_refs_outside_keys
 from nvflare.job_config.script_runner import ScriptRunner
 from nvflare.recipe.spec import Recipe
 
@@ -44,6 +45,8 @@ class _CyclicValidator(BaseModel):
     server_memory_gc_rounds: int = 1
     client_memory_gc_rounds: int = 0
     cuda_empty_cache: bool = False
+    task_assignment_timeout: int = 10
+    shutdown_timeout: float = 0.0
 
 
 class CyclicRecipe(Recipe):
@@ -73,6 +76,8 @@ class CyclicRecipe(Recipe):
         min_clients: Minimum number of clients required to participate. Must be >= 2.
         train_script: Path to the client training script to execute.
         train_args: Additional command-line arguments to pass to the training script.
+            Written in clear text into the generated job config, so it must never contain
+            actual secret values; see :mod:`nvflare.recipe.secrets` for how to pass secrets.
         launch_external_process: Whether to run training in a separate process. Defaults to False.
         command: Shell command to execute the training script. Defaults to "python3 -u".
         framework: ML framework type for compatibility. Defaults to FrameworkType.NUMPY.
@@ -82,6 +87,17 @@ class CyclicRecipe(Recipe):
             Defaults to TransferType.FULL.
         server_memory_gc_rounds: Run memory cleanup (gc.collect + malloc_trim) every N rounds on server.
             Set to 0 to disable. Defaults to 1 (every round).
+        task_assignment_timeout: Seconds to wait for the assigned client to request its
+            task before moving to the next client. Defaults to 10.
+        shutdown_timeout: Seconds to wait for an external client process to exit during
+            shutdown. Defaults to 0.0 and only applies when ``launch_external_process=True``.
+        server_config_overrides: Advanced shallow overrides for ``CyclicController``.
+            Values here take precedence over named constructor parameters.
+            ``task_check_period`` must be positive when supplied.
+            This dictionary is stored in the job definition and must not contain secrets.
+        client_config_overrides: Advanced shallow overrides for ``ScriptRunner``.
+            Values here take precedence over named constructor parameters.
+            This dictionary is stored in the job definition and must not contain secrets.
 
     Raises:
         ValidationError: If min_clients < 2 or other parameter validation fails.
@@ -116,6 +132,10 @@ class CyclicRecipe(Recipe):
         server_memory_gc_rounds: int = 1,
         client_memory_gc_rounds: int = 0,
         cuda_empty_cache: bool = False,
+        task_assignment_timeout: int = 10,
+        shutdown_timeout: float = 0.0,
+        server_config_overrides: Optional[Dict[str, Any]] = None,
+        client_config_overrides: Optional[Dict[str, Any]] = None,
     ):
         # Validate inputs internally
         v = _CyclicValidator(
@@ -134,6 +154,8 @@ class CyclicRecipe(Recipe):
             server_memory_gc_rounds=server_memory_gc_rounds,
             client_memory_gc_rounds=client_memory_gc_rounds,
             cuda_empty_cache=cuda_empty_cache,
+            task_assignment_timeout=task_assignment_timeout,
+            shutdown_timeout=shutdown_timeout,
         )
 
         self.name = v.name
@@ -159,6 +181,15 @@ class CyclicRecipe(Recipe):
         self.server_memory_gc_rounds = v.server_memory_gc_rounds
         self.client_memory_gc_rounds = v.client_memory_gc_rounds
         self.cuda_empty_cache = v.cuda_empty_cache
+        self.task_assignment_timeout = v.task_assignment_timeout
+        self.shutdown_timeout = v.shutdown_timeout
+        self.server_config_overrides = server_config_overrides
+        self.client_config_overrides = client_config_overrides
+        warn_on_unsupported_secret_refs_outside_keys(
+            self.client_config_overrides,
+            supported_value_keys={"command", "script_args"},
+            context="recipe parameter 'client_config_overrides'",
+        )
 
         # Validate that we have at least one model source
         if self.model is None and self.initial_ckpt is None:
@@ -179,30 +210,52 @@ class CyclicRecipe(Recipe):
             )
 
         # Define the controller workflow and send to server
-        controller = CyclicController(
-            num_rounds=self.num_rounds,
-            task_assignment_timeout=10,
-            persistor_id=persistor_id,
-            shareable_generator_id="shareable_generator",
-            task_name="train",
-            task_check_period=0.5,
-            memory_gc_rounds=self.server_memory_gc_rounds,
+        from nvflare.fuel.utils.validation_utils import (
+            check_non_negative_int,
+            check_non_negative_number,
+            check_positive_number,
         )
+        from nvflare.recipe.utils import merge_config_overrides
+
+        server_config = merge_config_overrides(
+            {
+                "num_rounds": self.num_rounds,
+                "task_assignment_timeout": self.task_assignment_timeout,
+                "persistor_id": persistor_id,
+                "shareable_generator_id": "shareable_generator",
+                "task_name": "train",
+                "task_check_period": 0.5,
+                "memory_gc_rounds": self.server_memory_gc_rounds,
+            },
+            self.server_config_overrides,
+            "server_config_overrides",
+        )
+        check_non_negative_int("task_assignment_timeout", server_config.get("task_assignment_timeout"))
+        check_positive_number("task_check_period", server_config.get("task_check_period"))
+        controller = CyclicController(**server_config)
         job.to(controller, "server")
 
         shareable_generator = FullModelShareableGenerator()
         job.to_server(shareable_generator, id="shareable_generator")
 
-        executor = ScriptRunner(
-            script=self.train_script,
-            script_args=self.train_args,
-            launch_external_process=self.launch_external_process,
-            framework=self.framework,
-            server_expected_format=self.server_expected_format,
-            params_transfer_type=self.params_transfer_type,
-            memory_gc_rounds=self.client_memory_gc_rounds,
-            cuda_empty_cache=self.cuda_empty_cache,
+        client_config = merge_config_overrides(
+            {
+                "script": self.train_script,
+                "script_args": self.train_args,
+                "launch_external_process": self.launch_external_process,
+                "command": self.command,
+                "framework": self.framework,
+                "server_expected_format": self.server_expected_format,
+                "params_transfer_type": self.params_transfer_type,
+                "shutdown_timeout": self.shutdown_timeout,
+                "memory_gc_rounds": self.client_memory_gc_rounds,
+                "cuda_empty_cache": self.cuda_empty_cache,
+            },
+            self.client_config_overrides,
+            "client_config_overrides",
         )
+        check_non_negative_number("shutdown_timeout", client_config.get("shutdown_timeout"))
+        executor = ScriptRunner(**client_config)
         job.to_clients(executor)
 
         super().__init__(job)

@@ -18,10 +18,12 @@ class ProcessExitCode:
     EXCEPTION = 101
     UNSAFE_COMPONENT = 102
     CONFIG_ERROR = 103
+    INFRASTRUCTURE_ERROR = 104
 
 
 PROCESS_EXIT_REASON = {
     ProcessExitCode.UNSAFE_COMPONENT: "unsafe component",
     ProcessExitCode.CONFIG_ERROR: "config error",
     ProcessExitCode.EXCEPTION: "exception",
+    ProcessExitCode.INFRASTRUCTURE_ERROR: "infrastructure error",
 }

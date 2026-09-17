@@ -396,11 +396,13 @@ own requirements:
 
     - :class:`WorkspaceBuilder<nvflare.lighter.impl.workspace.WorkspaceBuilder>`
     - :class:`TemplateBuilder<nvflare.lighter.impl.template.TemplateBuilder>`
-    - :class:`DockerBuilder<nvflare.lighter.impl.docker.DockerBuilder>`
-    - :class:`HelmChartBuilder<nvflare.lighter.impl.helm_chart.HelmChartBuilder>`
+    - :class:`DockerBuilder<nvflare.lighter.impl.docker.DockerBuilder>` (legacy Docker Compose builder)
     - :class:`StaticFileBuilder<nvflare.lighter.impl.static_file.StaticFileBuilder>`
     - :class:`CertBuilder<nvflare.lighter.impl.cert.CertBuilder>`
     - :class:`SignatureBuilder<nvflare.lighter.impl.signature.SignatureBuilder>`
+
+Current Docker and Kubernetes runtime launch preparation is handled after
+startup kits are created with ``nvflare deploy prepare``.
 
 ::
 
@@ -412,13 +414,7 @@ own requirements:
         │   │   ├── startup
         │   │   └── transfer
         │   ├── nvflare_compose
-        │   ├── nvflare_hc
-        │   │   └── templates
         │   ├── server1
-        │   │   ├── local
-        │   │   ├── startup
-        │   │   └── transfer
-        │   ├── server2
         │   │   ├── local
         │   │   ├── startup
         │   │   └── transfer
@@ -456,7 +452,8 @@ Edit the project.yml configuration file to meet your project requirements:
     - "api_version" should be set to 3 or 4. Version 4 adds support for multi-study configuration (see :ref:`multi_study_guide`)
     - "name" is used to identify this project.
     - "participants" describes the different parties in the FL system, distinguished by type. For all participants, "name"
-      should be unique, and "org" should be defined in AuthPolicyBuilder. The "name" of the server should
+      should be unique. ``org`` is required except for admin certificate provider entries, whose organization comes from the
+      issued certificate. The "name" of the server should
       be in the format of a fully qualified domain name. It is possible to use a unique hostname rather than FQDN, with
       the IP mapped to the hostname by having it added to ``/etc/hosts``:
 
@@ -465,9 +462,138 @@ Edit the project.yml configuration file to meet your project requirements:
             - "fed_learn_port" is the port number for communication between the FL server and FL clients
             - "admin_port" is the port number for communication between the FL server and FL administration client
         - Type "client" describes the FL clients, with one "org" and "name" for each client as well as "enable_byoc" settings.
-        - Type "admin" describes the admin clients with the name being a unique email. The role must be one of "project_admin", "org_admin", "lead" and "member".
+        - Type "admin" describes the admin clients. For traditional static
+          admin certificates, the name must be a unique email. For startup kits
+          using an admin certificate provider, the name may be a unique kit name
+          such as ``sso-admin-kit`` because the real admin identity comes from
+          the short-lived certificate issued after login. Static admins must
+          define ``org`` and a role of "project_admin", "org_admin", "lead" or
+          "member". Admin certificate provider entries omit ``org`` and ``role``;
+          those values come from the issued certificate.
     - "builders" contains all of the builders and the args to be passed into each. See the details in docstrings of the :ref:`bundled_builders`.
-    - "studies" (optional, requires ``api_version: 4``): defines named studies with per-study site enrollment and admin role mappings. See :ref:`multi_study_guide` for the full schema and examples.
+    - "studies" (optional, requires ``api_version: 4``): defines named studies with per-study site enrollment and admin membership. See :ref:`multi_study_guide` for the full schema and examples.
+
+Admin certificate provider configuration
+========================================
+
+Use an admin certificate provider when admin users should obtain credentials
+from an external certificate provider instead of receiving long-lived private
+keys in their startup kits. Server and client startup kits are unchanged.
+
+The built-in ``step_ca`` provider delegates OIDC login and short-lived
+certificate issuance to step-ca. FLARE only stores the provider configuration in
+the generated admin startup kit and then validates the returned certificate
+before using it. The admin machine must have the ``step`` CLI installed.
+
+Example configuration:
+
+.. code-block:: yaml
+
+  participants:
+    - name: static-admin@example.com
+      type: admin
+      org: nvidia
+      role: project_admin
+
+    - name: sso-admin-kit
+      type: admin
+      admin_cert_provider:
+        provider: step_ca
+        renewal_window: 43200
+        provider_config:
+          ca_url: https://step-ca.example.com
+          provisioner: nvflare-admin-oidc
+          cert_ttl: 24h
+          command_timeout: 300
+
+Only admin participants with ``admin_cert_provider`` receive provider-backed startup
+kits. The generated ``sso-admin-kit`` startup kit contains
+``admin_cert_provider`` in ``fed_admin.json`` and omits static admin
+``client.crt`` and ``client.key``. Traditional admin participants still receive
+static admin certificate material. The admin client invokes the configured
+provider when the cached certificate is missing, invalid, expired, or close to
+expiry. Cached certificate material is stored under
+``~/.nvflare/admin_certificates`` and can be removed manually to force fresh
+credential acquisition. The returned certificate must chain to ``rootCA.pem``, match
+its private key, contain a valid FLARE organization and admin role, and be valid
+for the current time. If ``cert_ttl`` is omitted, the built-in ``step_ca``
+provider requests ``24h``. The renewal window defaults to 43,200 seconds (12
+hours). FLARE reacquires credentials before signing when the certificate has no
+more than that much validity remaining. This reserves deployment time but does
+not guarantee when the scheduler starts a job; increase both the issuer
+certificate lifetime and renewal window when deployments may be delayed longer.
+
+For optional certificate-derived study membership, see :ref:`certificate_study_entitlements`
+and the :ref:`step_ca_study_entitlements` example below.
+
+The certificate provider must map authenticated IdP claims to one allowed
+``(organization, role)`` pair. For example, an IdP role such as
+``nvflare-demo-hospital-a-project_admin`` can map to organization
+``hospital-a`` and role ``project_admin``. Perform this mapping in the step-ca
+X.509 template (or in the IdP), using exact allowlisted values. Do not accept
+organization and role as independent user-controlled claims. If several allowed
+roles for the same organization are present, select the highest privilege; fail
+closed if the organization is ambiguous.
+
+Custom certificate providers can be configured with
+``provider: module:function``. FLARE calls the function as
+``provider(config=provider_config, root_ca_file=root_ca_file)``. It must return
+an ``nvflare.fuel.sec.admin_cert_provider.AdminCertFiles`` instance.
+The certificate and key paths must remain readable until FLARE copies them;
+providers that own a temporary directory should set the result's ``temp_dir``
+so FLARE can clean it up. FLARE derives ``expires_at`` from the certificate.
+FLARE performs the same certificate validation for custom providers as it does
+for ``step_ca``.
+
+.. _step_ca_study_entitlements:
+
+step-ca study entitlement mapping
+----------------------------------------
+
+The example template below adds study URI SANs for a dedicated provisioner with
+one fixed organization and role. The issuer must chain to FLARE's trusted root CA.
+Configure the provisioner to request ``openid`` and ``email`` scopes and your IdP
+to supply these claims in the signed, validated **ID token**, not only an access token:
+
+.. code-block:: json
+
+    {
+      "email": "alice@example.com",
+      "email_verified": true,
+      "groups": ["nvflare-demo-example-lead"],
+      "nvflare_studies": ["cancer-research"]
+    }
+
+``email_verified`` must be ``true``; the required ``groups`` entry permits the
+fixed organization ``example`` and role ``lead``. The resulting certificate has
+``commonName=alice@example.com``, ``organizationName=example``,
+``unstructuredName=lead``, and this study SAN:
+
+.. code-block:: text
+
+    https://nvidia.com/nvflare/v1/project/demo/study/cancer-research
+
+Alice gains membership in the existing ``cancer-research`` study; her role stays
+``lead``. An absent or empty ``nvflare_studies`` array adds no membership.
+See :ref:`certificate_study_entitlements` for authorization rules and limits.
+There is no issuer-side study allowlist; deployments can add one if needed.
+
+Keep group assignments and study entitlements administrator-controlled, not
+self-service profile fields. The template rejects CLI template data
+(``.Insecure.User``) and never derives identity or entitlements from CSR fields.
+
+For a new deployment, customize the fixed values in
+:download:`step_ca_admin.tpl <../resources/step_ca_admin.tpl>` and configure
+the saved file as the OIDC provisioner's ``options.x509.templateFile`` in
+``ca.json``, or use ``step ca provisioner update --x509-template`` for managed
+provisioners. ``projectURIPath`` is the percent-encoded project label described
+in :ref:`certificate_study_entitlements`.
+
+For an existing deployment, merge only the study-to-SAN logic, preserving your
+identity/role mapping rather than replacing it with this example's fixed role.
+
+.. literalinclude:: ../resources/step_ca_admin.tpl
+   :language: text
 
 .. _project_yml:
 

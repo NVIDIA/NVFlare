@@ -14,9 +14,9 @@
 
 import glob
 import os
-from typing import List, Union
 
 from nvflare.apis.fl_constant import WorkspaceConstants
+from nvflare.apis.utils.format_check import check_job_id
 
 
 class Workspace:
@@ -106,6 +106,22 @@ class Workspace:
         else:
             return None
 
+    @staticmethod
+    def _check_job_id(job_id: str):
+        if job_id is None:
+            raise ValueError("job_id must not be None")
+        job_id = str(job_id)
+        check_job_id(job_id)
+        return job_id
+
+    @staticmethod
+    def _join_under_root(root: str, *parts: str) -> str:
+        root_real = os.path.realpath(root)
+        path = os.path.realpath(os.path.join(root_real, *parts))
+        if os.path.commonpath([root_real, path]) != root_real:
+            raise ValueError(f"path {path} escapes root {root_real}")
+        return path
+
     def _fallback_path(self, file_names: [str]):
         for n in file_names:
             f = self.get_file_path_in_site_config(n)
@@ -127,19 +143,32 @@ class Workspace:
     def get_log_config_file_path(self):
         return self._fallback_path([WorkspaceConstants.LOGGING_CONFIG, WorkspaceConstants.DEFAULT_LOGGING_CONFIG])
 
-    def get_file_path_in_site_config(self, file_basename: Union[str, List[str]]):
+    def get_file_path_in_site_config(self, file_basename: str | list[str]):
         if isinstance(file_basename, str):
             return os.path.join(self.get_site_config_dir(), file_basename)
         elif isinstance(file_basename, list):
             return self._fallback_path(file_basename)
         else:
-            raise ValueError(f"invalid file_basename '{file_basename}': must be str or List[str]")
+            raise ValueError(f"invalid file_basename '{file_basename}': must be str or list[str]")
 
     def get_file_path_in_startup(self, file_basename: str):
         return os.path.join(self.get_startup_kit_dir(), file_basename)
 
     def get_file_path_in_root(self, file_basename: str):
         return os.path.join(self.root_dir, file_basename)
+
+    def get_study_registry_write_path(self) -> str:
+        # The registry is runtime-mutable state kept in the workspace root, which stays writable
+        # in deployments that mount the site config dir read-only (e.g. K8s ConfigMap staging).
+        return self.get_file_path_in_root(WorkspaceConstants.STUDY_REGISTRY_CONFIG)
+
+    def get_study_registry_file_path(self) -> str:
+        # A provisioned copy in the site config dir only seeds the registry until the first
+        # runtime mutation is persisted to the workspace root; the root copy then shadows it.
+        write_path = self.get_study_registry_write_path()
+        if os.path.exists(write_path):
+            return write_path
+        return self._fallback_path([WorkspaceConstants.STUDY_REGISTRY_CONFIG]) or write_path
 
     def get_server_startup_file_path(self):
         # this is to get the full path to "fed_server.json"
@@ -181,7 +210,8 @@ class Workspace:
 
     def _get_site_root_dir(self, root, job_id=None):
         if job_id:
-            site_root_dir = os.path.join(root, self.site_name, job_id)
+            job_id = self._check_job_id(job_id)
+            site_root_dir = self._join_under_root(root, self.site_name, job_id)
             if not os.path.exists(site_root_dir):
                 os.makedirs(site_root_dir, exist_ok=True)
             return site_root_dir
@@ -199,8 +229,14 @@ class Workspace:
     def get_root_dir(self) -> str:
         return self.root_dir
 
+    @staticmethod
+    def run_dir_path(root_dir: str, job_id: str) -> str:
+        """Run directory of job_id under root_dir; usable before the workspace exists on disk."""
+        job_id = Workspace._check_job_id(job_id)
+        return Workspace._join_under_root(root_dir, WorkspaceConstants.WORKSPACE_PREFIX + job_id)
+
     def get_run_dir(self, job_id: str) -> str:
-        return os.path.join(self.root_dir, WorkspaceConstants.WORKSPACE_PREFIX + str(job_id))
+        return self.run_dir_path(self.root_dir, job_id)
 
     def get_app_dir(self, job_id: str) -> str:
         return os.path.join(self.get_run_dir(job_id), WorkspaceConstants.APP_PREFIX + self.site_name)

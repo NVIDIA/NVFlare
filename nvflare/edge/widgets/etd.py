@@ -21,6 +21,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
+from nvflare.apis.utils.job_utils import get_event_job_id
 from nvflare.edge.constants import (
     EdgeApiStatus,
     EdgeConfigFile,
@@ -180,9 +181,9 @@ class EdgeTaskDispatcher(Widget):
 
     def _handle_job_done(self, event_type: str, fl_ctx: FLContext):
         self.logger.debug(f"handling event {event_type}")
-        job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
+        job_id = get_event_job_id(fl_ctx)
         if not job_id:
-            self.logger.error(f"missing {FLContextKey.CURRENT_JOB_ID} from fl_ctx for event {event_type}")
+            self.logger.error(f"missing job ID from fl_ctx for event {event_type}")
         else:
             self._remove_job(job_id)
 

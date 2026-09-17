@@ -21,7 +21,6 @@ from nvflare.tool.package_checker.utils import (
     NVFlareRole,
     check_grpc_server_running,
     check_socket_server_running,
-    construct_dummy_overseer_response,
     get_communication_scheme,
     try_bind_address,
     try_write_dir,
@@ -92,13 +91,6 @@ class CheckWriting(CheckRule):
         return CheckResult(CHECK_PASSED, "N/A")
 
 
-def _get_primary_sp(sp_list):
-    for sp in sp_list:
-        if sp["primary"]:
-            return sp
-    return None
-
-
 class CheckServerAvailable(CheckRule):
     def __init__(self, name: str, role: str):
         """Initialize server availability checker.
@@ -143,38 +135,48 @@ class CheckServerAvailable(CheckRule):
             host = admin["host"]
             port = admin["port"]
             scheme = admin.get("scheme", "grpc")
+            uses_admin_cert_provider = bool(admin.get("admin_cert_provider"))
         else:
-            # For client/server, get info from overseer agent
-            overseer_agent_conf = fed_config["overseer_agent"]
-            resp = construct_dummy_overseer_response(overseer_agent_conf=overseer_agent_conf, role=self.role)
-            resp = resp.json()
-            sp_list = resp.get("sp_list", [])
-            psp = _get_primary_sp(sp_list)
-            sp_end_point = psp["sp_end_point"]
-            host, port, admin_port = sp_end_point.split(":")
-            port = int(port)
-
-            # Determine the communication scheme
+            # For client/server, the FL server endpoint is in servers[0].service.target
+            servers = fed_config.get("servers", [])
+            if not servers:
+                return CheckResult(
+                    f"No servers defined in {nvf_config}",
+                    "Please re-provision the package.",
+                )
+            service = servers[0].get("service", {})
+            target = service.get("target")
+            if not target:
+                return CheckResult(
+                    f"Missing servers[0].service.target in {nvf_config}",
+                    "Please re-provision the package.",
+                )
+            host, port = target.split(":")[0], int(target.split(":")[1])
             scheme = get_communication_scheme(package_path, nvf_config, default_scheme="grpc")
+            uses_admin_cert_provider = False
 
-        # Check connectivity based on the communication scheme
-        if scheme in ["grpc", "agrpc"]:
-            if not check_grpc_server_running(startup=startup, host=host, port=int(port)):
-                return CheckResult(
-                    f"Can't connect to {scheme} server ({host}:{port})",
-                    "Please check if server is up.",
-                )
-        elif scheme in ["http", "https", "tcp", "stcp"]:
-            # HTTP/HTTPS use WebSocket, TCP/STCP use raw sockets - both checked via socket connection
-            if not check_socket_server_running(startup=startup, host=host, port=int(port), scheme=scheme):
-                return CheckResult(
-                    f"Can't connect to {scheme} server ({host}:{port})",
-                    "Please check if server is up.",
-                )
-        else:
+        supported_schemes = {"grpc", "agrpc", "http", "https", "tcp", "stcp"}
+        if scheme not in supported_schemes:
             return CheckResult(
                 f"Unsupported communication scheme: {scheme}",
                 f"Scheme '{scheme}' is not supported for connectivity check.",
+            )
+
+        # Check connectivity based on the communication scheme
+        if uses_admin_cert_provider:
+            # Preflight must not trigger interactive SSO. A TCP connection proves
+            # endpoint reachability; the real command validates mTLS after login.
+            server_running = check_socket_server_running(startup=startup, host=host, port=int(port), scheme="tcp")
+        elif scheme in ["grpc", "agrpc"]:
+            server_running = check_grpc_server_running(startup=startup, host=host, port=int(port))
+        else:
+            server_running = check_socket_server_running(startup=startup, host=host, port=int(port), scheme=scheme)
+
+        if not server_running:
+            probe = "TCP reachability" if uses_admin_cert_provider else scheme
+            return CheckResult(
+                f"Can't connect to {scheme} server ({host}:{port}) using {probe}",
+                "Please check if server is up.",
             )
 
         return CheckResult(CHECK_PASSED, "N/A")

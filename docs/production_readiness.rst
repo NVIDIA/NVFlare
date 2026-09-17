@@ -53,7 +53,7 @@ Run the :ref:`Preflight Check <preflight_check>` to validate connectivity:
 
 .. code-block:: bash
 
-   nvflare preflight_check -p startup_kit_dir
+   nvflare preflight-check -p startup_kit_dir
 
 Monitoring & Operations
 ========================

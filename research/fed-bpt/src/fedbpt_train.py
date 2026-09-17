@@ -370,5 +370,6 @@ while flare.is_running():
         metrics={"global_test_accuracy": global_test_acc},
     )
     # send model back to NVFlare
+    output_param_keys = list(output_model.params.keys())
     flare.send(output_model)
-    print("Send params back", list(output_model.params.keys()))
+    print("Send params back", output_param_keys)

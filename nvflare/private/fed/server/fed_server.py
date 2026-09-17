@@ -12,12 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import ipaddress
+import json
+import os
+import socket
 import threading
 import time
 from abc import ABC, abstractmethod
 from threading import Lock
 from typing import Dict, List, Optional
 
+import nvflare
 from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
@@ -37,8 +42,10 @@ from nvflare.apis.fl_constant import (
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import NotAuthenticated
 from nvflare.apis.job_def import JobMetaKey, RunStatus
+from nvflare.apis.job_launcher_spec import JobReturnCode
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.workspace import Workspace
+from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.core_cell import Message
@@ -46,24 +53,26 @@ from nvflare.fuel.f3.cellnet.core_cell import make_reply as make_cellnet_reply
 from nvflare.fuel.f3.cellnet.defs import IdentityChallengeKey, MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.f3.cellnet.identity import ADMIN_LISTENER_KEY
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.sec.authn import add_authentication_headers
-from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.log_utils import get_obj_logger
+from nvflare.private import defs as private_defs
 from nvflare.private.defs import (
     CellChannel,
     CellChannelTopic,
     CellMessageHeaderKeys,
+    ClientRegMsgKey,
     ClientRegSession,
     ClientType,
     InternalFLContextKey,
     JobFailureMsgKey,
     new_cell_message,
 )
-from nvflare.private.fed.authenticator import validate_auth_headers
+from nvflare.private.fed.authenticator import MISSING_CLIENT_FQCN, validate_auth_headers
 from nvflare.private.fed.server.cred_keeper import CredKeeper
 from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
 from nvflare.private.fed.server.server_runner import ServerRunner
@@ -74,18 +83,60 @@ from nvflare.widgets.fed_event import ServerFedEventRunner
 from .client_manager import ClientManager
 from .run_manager import RunManager
 from .server_engine import ServerEngine
-from .server_state import (
-    ABORT_RUN,
-    ACTION,
-    MESSAGE,
-    NIS,
-    Cold2HotState,
-    ColdState,
-    Hot2ColdState,
-    HotState,
-    ServerState,
-)
+from .server_state import ABORT_RUN, ACTION, MESSAGE, NIS, HotState, ServerState
 from .server_status import ServerStatus
+
+
+def _parse_ip_address(host: str):
+    value = host.strip().strip("[]")
+    try:
+        return ipaddress.ip_address(value)
+    except ValueError:
+        try:
+            return ipaddress.IPv4Address(socket.inet_aton(value))
+        except OSError:
+            return None
+
+
+def _normalize_loopback_host(host: str) -> str:
+    """Return a loopback bind address, preserving an empty host as wildcard shorthand."""
+    if host == "":
+        return host
+    if host.rstrip(".").lower() == "localhost":
+        return "127.0.0.1"
+    address = _parse_ip_address(host)
+    if address is None:
+        return host
+    if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped:
+        address = address.ipv4_mapped
+    if isinstance(address, ipaddress.IPv4Address) and address.is_loopback:
+        return str(address)
+    # F3 URL parsing and TCP drivers do not yet support IPv6 end to end.
+    return "127.0.0.1" if address.is_loopback else host
+
+
+def _is_loopback_host(host: str) -> bool:
+    normalized_host = _normalize_loopback_host(host)
+    try:
+        return ipaddress.ip_address(normalized_host).is_loopback
+    except ValueError:
+        return False
+
+
+def _normalize_admin_host(host: str) -> str:
+    """Normalize a configured admin bind host and reject unsupported IPv6 listeners."""
+    if not isinstance(host, str):
+        raise ConfigError(f"admin_host must be a string but got {type(host)}")
+    host = host.strip()
+    if not host:
+        raise ConfigError("admin_host must not be empty")
+    normalized_host = _normalize_loopback_host(host)
+    address = _parse_ip_address(host)
+    if address is None:
+        return normalized_host
+    if isinstance(address, ipaddress.IPv6Address) and normalized_host == host:
+        raise ConfigError(f"IPv6 admin_host is not supported: {host}")
+    return normalized_host
 
 
 class BaseServer(ABC):
@@ -151,8 +202,8 @@ class BaseServer(ABC):
         self.logger.info("server off")
         return 0
 
-    def deploy(self, args, grpc_args=None, secure_train=False):
-        """Start a grpc server and listening the designated port."""
+    def deploy(self, args, grpc_args=None, secure_train=False, enable_admin_listener=True):
+        """Start the server and listen on the configured ports."""
         target = grpc_args["service"].get("target", "0.0.0.0:6007")
         scheme = grpc_args["service"].get("scheme", "grpc")
 
@@ -178,16 +229,44 @@ class BaseServer(ABC):
         if len(parts) != 2:
             raise RuntimeError(f"bad service target: {target}")
 
+        service_host = parts[0]
+        listening_host = _normalize_loopback_host(service_host) if _is_loopback_host(service_host) else None
         fl_port = int(parts[1])
 
-        # get admin port
-        admin_port = int(grpc_args.get("admin_port", fl_port))
-
-        root_url = [f"{scheme}://0:{fl_port}"]
-        if admin_port != fl_port:
-            root_url.append(f"{scheme}://0:{admin_port}")
+        url_host = listening_host or "0"
+        root_url = [f"{scheme}://{url_host}:{fl_port}"]
+        if enable_admin_listener:
+            admin_port = int(grpc_args.get("admin_port", fl_port))
+            configured_admin_host = grpc_args.get("admin_host")
+            admin_host = url_host if configured_admin_host is None else _normalize_admin_host(configured_admin_host)
+            if configured_admin_host is not None:
+                configured_address = _parse_ip_address(configured_admin_host)
+                if (
+                    isinstance(configured_address, ipaddress.IPv6Address)
+                    and admin_host != configured_admin_host.strip()
+                ):
+                    self.logger.warning(
+                        f"IPv6 loopback admin_host '{configured_admin_host.strip()}' is bound as '{admin_host}' "
+                        "because F3 listeners do not yet support IPv6 end to end"
+                    )
+            if admin_port == fl_port and admin_host != url_host:
+                raise ConfigError(
+                    "admin_port must differ from the FL service port when admin_host uses a different bind host"
+                )
+            if configured_admin_host is not None and not secure_train and not _is_loopback_host(admin_host):
+                self.logger.warning(
+                    f"insecure admin listener is exposed on non-loopback host '{admin_host}'; "
+                    "set secure_train=true or configure admin_host as a loopback address with a distinct admin_port"
+                )
+            admin_url = f"{scheme}://{admin_host}:{admin_port}?{ADMIN_LISTENER_KEY}=true"
+            if admin_port == fl_port:
+                root_url = [admin_url]
+            else:
+                root_url.append(admin_url)
 
         my_fqcn = FQCN.ROOT_SERVER
+        auth_identity = grpc_args.get(ConnPropKey.AUTH_IDENTITY)
+        auth_identity_map = grpc_args.get(ConnPropKey.AUTH_IDENTITY_MAP)
         self.cell = Cell(
             fqcn=my_fqcn,
             root_url=root_url,
@@ -195,6 +274,9 @@ class BaseServer(ABC):
             credentials=credentials,
             create_internal_listener=True,
             parent_url=parent_url,
+            internal_listener_host=listening_host,
+            auth_identity=auth_identity,
+            auth_identity_map=auth_identity_map,
         )
 
         self.cell.start()
@@ -234,8 +316,8 @@ class BaseServer(ABC):
         for token in delete:
             client = self.logout_client(token)
             self.logger.info(
-                "Remove the dead Client. Name: {}\t Token: {}.  Total clients: {}".format(
-                    client.name, token, len(self.client_manager.get_clients())
+                "Remove the dead Client. Name: {}.  Total clients: {}".format(
+                    client.name, len(self.client_manager.get_clients())
                 )
             )
 
@@ -284,7 +366,6 @@ class FederatedServer(BaseServer):
         args=None,
         secure_train=False,
         snapshot_persistor=None,
-        overseer_agent=None,
         shutdown_period=30.0,
         check_engine_frequency=3.0,
     ):
@@ -332,12 +413,11 @@ class FederatedServer(BaseServer):
         self.secure_train = secure_train
 
         self.workspace = args.workspace
+        if isinstance(self.workspace, str):
+            self.client_manager.set_disabled_clients_file(os.path.join(self.workspace, "disabled_clients.json"))
         self.snapshot_location = None
-        self.overseer_agent = overseer_agent
-        self.server_state: ServerState = ColdState()
+        self.server_state: ServerState = HotState()
         self.snapshot_persistor = snapshot_persistor
-        self.checking_server_state = False
-        self.ha_mode = False
 
         self.reg_lock = threading.Lock()
         self.name_to_reg = {}
@@ -422,6 +502,23 @@ class FederatedServer(BaseServer):
         )
         self.logger.debug(f"added auth headers:  {origin=} {dest=} {channel=} {topic=}")
 
+    def _strip_peer_transit_headers(self, message: Message):
+        if not message.get_header(MessageHeaderKey.SERVER_TRANSIT_REQUIRED, False):
+            return
+
+        # Cross-client requests and replies authenticate at the server boundary,
+        # but a peer client must never receive another client's bearer material
+        # or an invitation to create a direct ad-hoc connector. Keep the transit
+        # marker so downstream routing knows that the server boundary was crossed.
+        for key in [
+            CellMessageHeaderKeys.CLIENT_NAME,
+            CellMessageHeaderKeys.TOKEN,
+            CellMessageHeaderKeys.TOKEN_SIGNATURE,
+            CellMessageHeaderKeys.SSID,
+        ]:
+            message.remove_header(key)
+        message.remove_header(MessageHeaderKey.CONN_URL)
+
     def _validate_auth_headers(self, message: Message):
         """Validate auth headers from messages that go through the server.
         Args:
@@ -430,15 +527,27 @@ class FederatedServer(BaseServer):
         """
         id_asserter = self._get_id_asserter()
         if not id_asserter:
+            self._strip_peer_transit_headers(message)
             return None
 
         token_verifier = TokenVerifier(id_asserter.cert)
 
-        return validate_auth_headers(
+        reply = validate_auth_headers(
             message=message,
             token_verifier=token_verifier,
             logger=self.logger,
+            client_fqcn_resolver=self._resolve_client_fqcn_for_auth,
+            local_cell_fqcn=self.cell.get_fqcn() if getattr(self, "cell", None) else None,
         )
+        if not reply:
+            self._strip_peer_transit_headers(message)
+        return reply
+
+    def _resolve_client_fqcn_for_auth(self, client_name: str, token: str):
+        client = self.client_manager.clients.get(token)
+        if client and client.name == client_name:
+            return client.get_fqcn() or MISSING_CLIENT_FQCN
+        return None
 
     def sign_auth_token(self, client_name: str, token: str):
         id_asserter = self._get_id_asserter()
@@ -509,7 +618,9 @@ class FederatedServer(BaseServer):
         with self.engine.new_context() as fl_ctx:
             job = job_manager.get_job(job_id, fl_ctx)
             if job.meta.get(JobMetaKey.STATUS) == RunStatus.RUNNING:
-                job_manager.set_status(job_id, RunStatus.FINISHED_ABORTED, fl_ctx)
+                error = self.engine.job_runner.mark_run_aborted(job_id, fl_ctx)
+                if error:
+                    self.logger.warning(error)
 
     def _create_server_engine(self, args, snapshot_persistor):
         return ServerEngine(
@@ -517,16 +628,20 @@ class FederatedServer(BaseServer):
         )
 
     def create_job_cell(self, job_id, root_url, parent_url, secure_train, server_config) -> Cell:
+        server_config = server_config or {}
         my_fqcn = FQCN.join([FQCN.ROOT_SERVER, job_id])
         if secure_train:
             root_cert = server_config[SecureTrainConst.SSL_ROOT_CERT]
             ssl_cert = server_config[SecureTrainConst.SSL_CERT]
             private_key = server_config[SecureTrainConst.PRIVATE_KEY]
 
+            # both TLS roles use the job credential so directory-based back-fill never picks a site cert
             credentials = {
                 DriverParams.CA_CERT.value: root_cert,
                 DriverParams.SERVER_CERT.value: ssl_cert,
                 DriverParams.SERVER_KEY.value: private_key,
+                DriverParams.CLIENT_CERT.value: ssl_cert,
+                DriverParams.CLIENT_KEY.value: private_key,
             }
 
             conn_security = server_config.get(ConnPropKey.CONNECTION_SECURITY)
@@ -535,6 +650,8 @@ class FederatedServer(BaseServer):
         else:
             credentials = {}
 
+        auth_identity = server_config.get(ConnPropKey.AUTH_IDENTITY)
+        auth_identity_map = server_config.get(ConnPropKey.AUTH_IDENTITY_MAP)
         cell = Cell(
             fqcn=my_fqcn,
             root_url=root_url,
@@ -542,6 +659,8 @@ class FederatedServer(BaseServer):
             credentials=credentials,
             create_internal_listener=False,
             parent_url=parent_url,
+            auth_identity=auth_identity,
+            auth_identity_map=auth_identity_map,
         )
 
         cell.start()
@@ -640,6 +759,38 @@ class FederatedServer(BaseServer):
             self.logger.debug(f"challenge ok: {reply=}")
             return make_cellnet_reply(rc=F3ReturnCode.OK, body=reply)
 
+    # Cap on serialized site_config so a misbehaving client cannot push large blobs
+    # into Client objects and downstream job metadata.
+    _SITE_CONFIG_MAX_SERIALIZED_BYTES = 64 * 1024
+
+    def _get_validated_site_config(self, shareable: Shareable, client_name: str):
+        site_config = shareable.get(ClientRegMsgKey.SITE_CONFIG)
+        if site_config is None:
+            return None
+
+        if not isinstance(site_config, dict):
+            self.logger.warning(
+                f"dropping site config from client {client_name}: "
+                f"expected dict but got {type(site_config).__name__}"
+            )
+            return None
+
+        try:
+            serialized_size = len(json.dumps(site_config))
+        except (TypeError, ValueError) as e:
+            self.logger.warning(f"dropping site config from client {client_name}: not JSON-serializable ({e})")
+            return None
+
+        if serialized_size > self._SITE_CONFIG_MAX_SERIALIZED_BYTES:
+            self.logger.warning(
+                f"dropping site config from client {client_name}: "
+                f"serialized size {serialized_size} exceeds limit "
+                f"{self._SITE_CONFIG_MAX_SERIALIZED_BYTES}"
+            )
+            return None
+
+        return site_config
+
     def register_client(self, request: Message) -> Message:
         """Register a new client.
         Each client must be registered before being able to run jobs.
@@ -673,6 +824,12 @@ class FederatedServer(BaseServer):
                 if client_type:
                     fl_ctx.set_prop(key=FLContextKey.CLIENT_TYPE, value=client_type, private=False, sticky=False)
 
+                client_name = request.get_header(CellMessageHeaderKeys.CLIENT_NAME)
+                site_config = self._get_validated_site_config(data, client_name)
+                if site_config is not None and client_type != ClientType.REGULAR:
+                    self.logger.warning(f"dropping site config from non-regular client {client_name}: {client_type}")
+                    site_config = None
+
                 self.engine.fire_event(EventType.CLIENT_REGISTER_RECEIVED, fl_ctx=fl_ctx)
 
                 exceptions = fl_ctx.get_prop(FLContextKey.EXCEPTIONS)
@@ -681,9 +838,17 @@ class FederatedServer(BaseServer):
                         if isinstance(exception, NotAuthenticated):
                             raise exception
 
+                if site_config is not None:
+                    fl_ctx.set_prop(key=FLContextKey.CLIENT_SITE_CONFIG, value=site_config, private=True, sticky=False)
+
                 client = self.client_manager.authenticate(request, fl_ctx)
                 if client and client.token:
-                    client_type = request.get_header(CellMessageHeaderKeys.CLIENT_TYPE)
+                    accepted_site_config = client.get_site_config()
+                    if accepted_site_config:
+                        self.logger.info(
+                            f"client {client.name} registered with site_config keys: "
+                            f"{sorted(accepted_site_config.keys())}"
+                        )
                     if client_type == ClientType.REGULAR:
                         self.tokens[client.token] = self.task_meta_info(client.name)
                         if self.admin_server:
@@ -695,6 +860,8 @@ class FederatedServer(BaseServer):
                         CellMessageHeaderKeys.TOKEN: client.token,
                         CellMessageHeaderKeys.TOKEN_SIGNATURE: token_signature,
                         CellMessageHeaderKeys.SSID: self.server_state.ssid,
+                        CellMessageHeaderKeys.FEDERATION_PROTOCOL_VERSION: private_defs.FEDERATION_PROTOCOL_VERSION,
+                        CellMessageHeaderKeys.NVFLARE_VERSION: nvflare.__version__,
                     }
 
                     # Add CC info if present
@@ -746,29 +913,51 @@ class FederatedServer(BaseServer):
         # Validate sender identity using token only.
         # Note: validate_client() cannot be used here because the
         # REPORT_JOB_FAILURE message (sent by ClientExecutor via
-        # fire_and_forget) does not carry a PROJECT_NAME header —
+        # send_request) does not carry a PROJECT_NAME header —
         # only TOKEN is injected by the outgoing auth filter.
         token = request.get_header(CellMessageHeaderKeys.TOKEN)
         if not token or not self.client_manager.is_from_authorized_client(token):
             self.logger.warning(f"Dropped unauthenticated Job Failure report from {client}")
-            return
+            return make_cellnet_reply(F3ReturnCode.UNAUTHENTICATED, "", None)
 
         if not isinstance(payload, dict):
             self.logger.error(
                 f"dropped bad Job Failure report from {client}: expect payload to be dict but got {type(payload)}"
             )
-            return
+            return make_cellnet_reply(F3ReturnCode.INVALID_REQUEST, "", None)
         job_id = payload.get(JobFailureMsgKey.JOB_ID)
         if not job_id:
             self.logger.error(f"dropped bad Job Failure report from {client}: no job_id")
-            return
+            return make_cellnet_reply(F3ReturnCode.INVALID_REQUEST, "", None)
 
         code = payload.get(JobFailureMsgKey.CODE)
         reason = payload.get(JobFailureMsgKey.REASON, "?")
-        if code == ProcessExitCode.UNSAFE_COMPONENT:
+        registered_client = self.client_manager.clients.get(token)
+        if not registered_client:
+            self.logger.warning(f"Dropped terminal outcome from unknown client token for job {job_id}")
+            return make_cellnet_reply(F3ReturnCode.UNAUTHENTICATED, "", None)
+        client_name = registered_client.name
+        job_runner = self.engine.job_runner
+        if not job_runner.is_client_outcome_pending(job_id, client_name):
+            self.logger.warning(f"Dropped terminal outcome for untracked job/client {job_id}/{client_name}")
+            return make_cellnet_reply(F3ReturnCode.OK, "", None)
+
+        if code in (
+            ProcessExitCode.CONFIG_ERROR,
+            ProcessExitCode.EXCEPTION,
+            ProcessExitCode.INFRASTRUCTURE_ERROR,
+            JobReturnCode.ABORTED,
+        ):
+            with self.engine.new_context() as fl_ctx:
+                self.logger.info(f"Failing job {job_id} due to reported failure from {client}: {reason}")
+                failure_code = ProcessExitCode.EXCEPTION if code == ProcessExitCode.CONFIG_ERROR else code
+                job_runner.fail_run(job_id, failure_code, fl_ctx)
+        elif code == ProcessExitCode.UNSAFE_COMPONENT:
             with self.engine.new_context() as fl_ctx:
                 self.logger.info(f"Aborting job {job_id} due to reported failure from {client}: {reason}")
-                self.engine.job_runner.stop_run(job_id, fl_ctx)
+                job_runner.stop_run(job_id, fl_ctx)
+        job_runner.resolve_client_outcome(job_id, client_name)
+        return make_cellnet_reply(F3ReturnCode.OK, "", None)
 
     def client_heartbeat(self, request: Message) -> Message:
 
@@ -789,8 +978,13 @@ class FederatedServer(BaseServer):
             token = request.get_header(CellMessageHeaderKeys.TOKEN)
             client_name = request.get_header(CellMessageHeaderKeys.CLIENT_NAME)
             client_fqcn = request.get_header(MessageHeaderKey.ORIGIN)
+            if self.client_manager.is_client_disabled(client_name):
+                return make_cellnet_reply(rc=F3ReturnCode.UNAUTHENTICATED, error=f"Client '{client_name}' is disabled")
             if self.client_manager.heartbeat(token, client_name, client_fqcn, fl_ctx):
                 self.tokens[token] = self.task_meta_info(client_name)
+            unauthenticated = fl_ctx.get_prop(FLContextKey.UNAUTHENTICATED, None)
+            if isinstance(unauthenticated, str) and unauthenticated:
+                return make_cellnet_reply(rc=F3ReturnCode.UNAUTHENTICATED, error=str(unauthenticated))
             if self.admin_server:
                 self.admin_server.client_heartbeat(token, client_name, client_fqcn)
 
@@ -817,7 +1011,12 @@ class FederatedServer(BaseServer):
             client_jobs = []
 
         client_jobs = set(client_jobs)
-        server_jobs = set(self.engine.run_processes.keys())
+        outcome_jobs = self.engine.job_runner.get_client_outcome_jobs()
+        # Keep normally completed jobs alive until clients report their outcomes, but do not
+        # protect client jobs after the server job has already failed.
+        server_jobs = set(self.engine.run_processes.keys()).union(
+            {job_id for job_id in outcome_jobs if job_id not in self.engine.exception_run_processes}
+        )
         jobs_need_abort = list(client_jobs.difference(server_jobs))
 
         require_previous_report = ConfigService.get_bool_var(
@@ -847,12 +1046,16 @@ class FederatedServer(BaseServer):
                 self._job_reported_clients.setdefault(job_id, set()).add(client_token)
 
             # Also check jobs that are running on server but not on the client.
-            jobs_on_server_but_not_on_client = list(server_jobs.difference(client_jobs))
+            jobs_on_server_but_not_on_client = list(server_jobs.union(outcome_jobs).difference(client_jobs))
             dead_job_notifications = []
+            missing_outcome_notifications = []
             if jobs_on_server_but_not_on_client:
                 for job_id in jobs_on_server_but_not_on_client:
                     job_info = self.engine.run_processes.get(job_id)
                     if not job_info:
+                        client = self.client_manager.clients.get(client_token)
+                        if client and self.engine.job_runner.is_client_outcome_pending(job_id, client.name):
+                            missing_outcome_notifications.append((client, job_id))
                         continue
 
                     participating_clients = job_info.get(RunProcessKey.PARTICIPANTS, None)
@@ -870,6 +1073,8 @@ class FederatedServer(BaseServer):
 
         for client, job_id in dead_job_notifications:
             self._notify_dead_job(client, job_id, "missing job on client")
+        for client, job_id in missing_outcome_notifications:
+            self._resolve_missing_client_outcome(client, job_id, "missing job on client")
 
         return jobs_need_abort
 
@@ -881,6 +1086,16 @@ class FederatedServer(BaseServer):
                 f"Failed to notify_dead_job to runner process of job {job_id}: {secure_format_exception(ex)}"
             )
 
+    def _resolve_missing_client_outcome(self, client, job_id: str, reason: str):
+        job_runner = self.engine.job_runner
+        if not job_runner.is_client_outcome_pending(job_id, client.name):
+            return
+        if job_id not in self.engine.run_processes and job_id not in self.engine.exception_run_processes:
+            with self.engine.new_context() as fl_ctx:
+                self.logger.warning(f"Failing job {job_id}: terminal outcome unavailable from {client.name}: {reason}")
+                job_runner.fail_run(job_id, ProcessExitCode.INFRASTRUCTURE_ERROR, fl_ctx)
+        job_runner.resolve_client_outcome(job_id, client.name)
+
     def notify_dead_client(self, client):
         """Called to do further processing of the dead client
 
@@ -890,10 +1105,10 @@ class FederatedServer(BaseServer):
         Returns:
 
         """
-        # find all RUNs that this client is participating
-        if not self.engine.run_processes:
-            return
+        for job_id in self.engine.job_runner.get_client_outcome_jobs(client.name):
+            self._resolve_missing_client_outcome(client, job_id, "client dead")
 
+        # find all RUNs that this client is participating
         for job_id, process_info in self.engine.run_processes.items():
             assert isinstance(process_info, dict)
             participating_clients = process_info.get(RunProcessKey.PARTICIPANTS, None)
@@ -1001,122 +1216,28 @@ class FederatedServer(BaseServer):
         # mpm.stop()
         pass
 
-    def deploy(self, args, grpc_args=None, secure_train=False):
-        super().deploy(args, grpc_args, secure_train)
+    def deploy(self, args, grpc_args=None, secure_train=False, enable_admin_listener=True):
+        super().deploy(args, grpc_args, secure_train, enable_admin_listener=enable_admin_listener)
 
         target = grpc_args["service"].get("target", "0.0.0.0:6007")
         with self.lock:
-            self.server_state.host = target.split(":")[0]
-            self.server_state.service_port = target.split(":")[1]
-
-        self.overseer_agent = self._init_agent(args)
-        self.ha_mode = False
-
-        if secure_train:
-            if self.overseer_agent:
-                self.overseer_agent.set_secure_context(
-                    ca_path=grpc_args["ssl_root_cert"],
-                    cert_path=grpc_args["ssl_cert"],
-                    prv_key_path=grpc_args["ssl_private_key"],
-                )
+            self.server_state = HotState(host=target.split(":")[0], port=target.split(":")[1])
 
         self.engine.initialize_comm(self.cell)
         self._register_cellnet_cbs()
 
+        core_cell = self.cell.core_cell
         if secure_train:
-            core_cell = self.cell.core_cell
             core_cell.add_incoming_filter(
                 channel="*",
                 topic="*",
                 cb=self._validate_auth_headers,
             )
 
-            # set filter to add additional auth headers
             core_cell.add_outgoing_reply_filter(channel="*", topic="*", cb=self._add_auth_headers)
             core_cell.add_outgoing_request_filter(channel="*", topic="*", cb=self._add_auth_headers)
-
-        self.overseer_agent.start(self.overseer_callback)
-
-    def _init_agent(self, args=None):
-        kv_list = parse_vars(args.set)
-        sp = kv_list.get("sp")
-
-        if sp:
-            with self.engine.new_context() as fl_ctx:
-                fl_ctx.set_prop(FLContextKey.SP_END_POINT, sp)
-                self.overseer_agent.initialize(fl_ctx)
-
-        return self.overseer_agent
-
-    def _check_server_state(self, overseer_agent):
-        if self.status != ServerStatus.STARTED:
-            return
-
-        if overseer_agent.is_shutdown():
-            self.engine.shutdown_server()
-            return
-
-        sp = overseer_agent.get_primary_sp()
-
-        old_state_name = self.server_state.__class__.__name__
-        with self.lock:
-            with self.engine.new_context() as fl_ctx:
-                self.server_state = self.server_state.handle_sd_callback(sp, fl_ctx)
-
-        if isinstance(self.server_state, Cold2HotState):
-            self._turn_to_hot()
-
-        elif isinstance(self.server_state, Hot2ColdState):
-            self._turn_to_cold(old_state_name)
-
-    def _notify_state_change(self, old_state_name):
-        new_state_name = self.server_state.__class__.__name__
-        if new_state_name != old_state_name:
-            self.logger.info(f"state changed from: {old_state_name} to: {new_state_name}")
-            keys = list(self.engine.run_processes.keys())
-            if keys:
-                target_fqcns = []
-                for job_id in keys:
-                    target_fqcns.append(FQCN.join([FQCN.ROOT_SERVER, job_id]))
-                cell_msg = new_cell_message(headers={}, payload=self.server_state)
-                self.cell.broadcast_request(
-                    channel=CellChannel.SERVER_COMMAND,
-                    topic=ServerCommandNames.SERVER_STATE,
-                    request=cell_msg,
-                    targets=target_fqcns,
-                    timeout=5.0,
-                    optional=True,
-                )
-
-    def overseer_callback(self, overseer_agent):
-        if self.checking_server_state:
-            self.logger.debug("busy checking server state")
-            return
-
-        self.checking_server_state = True
-        try:
-            self._check_server_state(overseer_agent)
-        except Exception as ex:
-            self.logger.error(f"exception in checking server state: {secure_format_exception(ex)}")
-        finally:
-            self.checking_server_state = False
-
-    def _turn_to_hot(self):
-        # Restore Snapshot
-        with self.engine.new_context() as fl_ctx:
-            self.snapshot_persistor.delete()
-            self.engine.job_runner.update_unfinished_jobs(fl_ctx=fl_ctx)
-
-        with self.lock:
-            self.server_state = HotState(
-                host=self.server_state.host, port=self.server_state.service_port, ssid=self.server_state.ssid
-            )
-
-    def _turn_to_cold(self, old_state_name):
-        with self.lock:
-            self.server_state = ColdState(host=self.server_state.host, port=self.server_state.service_port)
-        self._notify_state_change(old_state_name)
-        self.engine.pause_server_jobs()
+        else:
+            core_cell.add_incoming_filter(channel="*", topic="*", cb=self._strip_peer_transit_headers)
 
     def stop_training(self):
         self.status = ServerStatus.STOPPED
@@ -1132,6 +1253,4 @@ class FederatedServer(BaseServer):
         """Shutdown the server."""
         self.logger.info("shutting down server")
         self.shutdown = True
-        if self.overseer_agent:
-            self.overseer_agent.end()
         return super().close()

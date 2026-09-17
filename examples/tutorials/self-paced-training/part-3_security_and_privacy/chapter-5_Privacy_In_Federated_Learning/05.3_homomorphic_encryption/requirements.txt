@@ -1,7 +1,6 @@
-nvflare[HE]~=2.7.0rc
+nvflare[HE]~=2.9.0rc
 torch
 torchvision
 tensorboard
 lifelines
-scikit-survival
 matplotlib

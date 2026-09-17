@@ -30,8 +30,13 @@ from nvflare.app_common.abstract.formatter import Formatter
 from nvflare.app_common.abstract.model_locator import ModelLocator
 from nvflare.app_common.app_constant import AppConstants, ModelName
 from nvflare.app_common.app_event_type import AppEventType
+from nvflare.app_common.utils.file_utils import resolve_path_under_root
+from nvflare.fuel.utils.log_utils import get_module_logger, log_progress
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
+
+# Inherited reporting uses the defining module; subclass diagnostics keep their own logger.
+_logger = get_module_logger(__name__)
 
 
 class CrossSiteModelEval(Controller):
@@ -132,7 +137,7 @@ class CrossSiteModelEval(Controller):
         # Create shareable dirs for models and results
         workspace: Workspace = self._engine.get_workspace()
         run_dir = workspace.get_run_dir(fl_ctx.get_job_id())
-        cross_val_path = os.path.join(run_dir, self._cross_val_dir)
+        cross_val_path = resolve_path_under_root(run_dir, self._cross_val_dir, "cross_val_dir")
         self._cross_val_models_dir = os.path.join(cross_val_path, AppConstants.CROSS_VAL_MODEL_DIR_NAME)
         self._cross_val_results_dir = os.path.join(cross_val_path, AppConstants.CROSS_VAL_RESULTS_DIR_NAME)
 
@@ -195,6 +200,7 @@ class CrossSiteModelEval(Controller):
                     return
 
             self.log_info(fl_ctx, f"Beginning model validation with clients: {self._participating_clients}.")
+            log_progress(_logger, f"\n  Evaluating saved models on {len(self._participating_clients)} clients…")
 
             if self._submit_model_task_name:
                 shareable = Shareable()

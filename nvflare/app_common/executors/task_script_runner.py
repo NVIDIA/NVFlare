@@ -15,44 +15,93 @@ import builtins
 import os
 import runpy
 import sys
+import threading
 import traceback
+from typing import Optional
 
 from nvflare.client.in_process.api import TOPIC_ABORT
 from nvflare.fuel.data_event.data_bus import DataBus
 from nvflare.fuel.data_event.event_manager import EventManager
 from nvflare.fuel.utils.log_utils import get_module_logger
+from nvflare.fuel.utils.secret_utils import resolve_secret_refs, split_command_preserving_secret_refs
+from nvflare.utils.argv_utils import CommandArg, normalize_argv
 
 print_fn = builtins.print
+_print_redirect_state = threading.local()
+_print_redirect_lock = threading.Lock()
+_print_redirect_count = 0
+
+
+def _thread_aware_print(*args, **kwargs):
+    if getattr(_print_redirect_state, "depth", 0):
+        log_print(*args, **kwargs)
+    else:
+        print_fn(*args, **kwargs)
+
+
+def _enable_print_redirect():
+    global _print_redirect_count
+
+    _print_redirect_state.depth = getattr(_print_redirect_state, "depth", 0) + 1
+    with _print_redirect_lock:
+        _print_redirect_count += 1
+        builtins.print = _thread_aware_print
+
+
+def _disable_print_redirect():
+    global _print_redirect_count
+
+    depth = getattr(_print_redirect_state, "depth", 0)
+    if depth <= 1:
+        _print_redirect_state.depth = 0
+    else:
+        _print_redirect_state.depth = depth - 1
+
+    with _print_redirect_lock:
+        _print_redirect_count -= 1
+        if _print_redirect_count == 0 and builtins.print is _thread_aware_print:
+            builtins.print = print_fn
 
 
 class TaskScriptRunner:
     logger = get_module_logger(__module__, __qualname__)
 
-    def __init__(self, custom_dir: str, script_path: str, script_args: str = None, redirect_print_to_log=True):
+    def __init__(
+        self,
+        custom_dir: str,
+        script_path: str,
+        script_args: Optional[CommandArg] = None,
+        redirect_print_to_log=True,
+    ):
         """Wrapper for function given function path and args
 
         Args:
             custom_dir (str): site name
             script_path (str): script file name, such as train.py
-            script_args (str, Optional): script arguments to pass in.
+            script_args: Script arguments as a legacy whitespace-delimited string or
+                pre-tokenized argv. Use argv when values contain whitespace or quotes.
         """
 
         self.redirect_print_to_log = redirect_print_to_log
         self.event_manager = EventManager(DataBus())
-        self.script_args = script_args
+        self.script_args = normalize_argv(script_args, "script_args", allow_none=True)
         self.custom_dir = custom_dir
         self.script_path = script_path
         self.script_full_path = self.get_script_full_path(self.custom_dir, self.script_path)
+        self._runtime_lock = threading.Lock()
+        self._runtime_released = False
+        self._original_argv = None
+        self._original_argv_values = None
+        self._task_argv = None
+        self._print_redirect_enabled = False
 
     def run(self):
         """Call the task_fn with any required arguments."""
         self.logger.info(f"start task run() with full path: {self.script_full_path}")
         try:
-            curr_argv = sys.argv
-            builtins.print = log_print if self.redirect_print_to_log else print_fn
-            sys.argv = self.get_sys_argv()
+            if not self._activate_runtime():
+                return
             runpy.run_path(self.script_full_path, run_name="__main__")
-            sys.argv = curr_argv
         except ImportError as ie:
             msg = "attempted relative import with no known parent package"
             if ie.msg == msg:
@@ -70,10 +119,55 @@ class TaskScriptRunner:
             self.event_manager.fire_event(TOPIC_ABORT, f"'{self.script_full_path}' is aborted, {msg}")
             raise e
         finally:
-            builtins.print = print_fn
+            self.release_runtime()
+
+    def _activate_runtime(self) -> bool:
+        with self._runtime_lock:
+            # finalize() can release a trainer before its thread reaches this point.
+            if self._runtime_released:
+                return False
+            self._original_argv = sys.argv
+            self._original_argv_values = list(sys.argv)
+            self._task_argv = self.get_sys_argv()
+            sys.argv = self._task_argv
+            if self.redirect_print_to_log:
+                _enable_print_redirect()
+                self._print_redirect_enabled = True
+            return True
+
+    def release_runtime(self):
+        """Restore globals owned by this runner, even when its thread must be abandoned."""
+        with self._runtime_lock:
+            first_release = not self._runtime_released
+            self._runtime_released = True
+            if first_release and self._print_redirect_enabled:
+                _disable_print_redirect()
+                self._print_redirect_enabled = False
+            if self._original_argv is not None:
+                self._original_argv[:] = self._original_argv_values
+                if first_release and sys.argv is self._task_argv:
+                    sys.argv = self._original_argv
 
     def get_sys_argv(self):
-        args_list = [] if not self.script_args else self.script_args.split()
+        # Keep legacy strings on their historical whitespace-only path, except that
+        # quoted spans containing secret references remain grouped so the resolved
+        # value stays one argument. New callers can pass argv to preserve exact
+        # boundaries without ambiguous shell parsing (for example, apostrophes
+        # versus single-quoted spans).
+        if isinstance(self.script_args, list):
+            args_list = list(self.script_args)
+        elif self.script_args:
+            args_list = split_command_preserving_secret_refs(
+                self.script_args,
+                posix=False,
+                group_secret_ref_quotes="${secret:" in self.script_args,
+            )
+        else:
+            args_list = []
+        # Resolve ${secret:ENV_VAR} references from this site's environment after splitting,
+        # so injected values containing whitespace stay single arguments. The resolved values
+        # exist only in the argv handed to the script and must never be logged.
+        args_list = [resolve_secret_refs(arg) for arg in args_list]
         return [self.script_full_path] + args_list
 
     def get_script_full_path(self, custom_dir, script_path) -> str:

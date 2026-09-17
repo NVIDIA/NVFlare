@@ -24,7 +24,7 @@ Controllers can be configured in ``config_fed_server.json`` in the workflows sec
   workflows = [
       {
           id = "fedavg_ctl",
-          name = "FedAvg",
+          path = "nvflare.app_common.workflows.fedavg.FedAvg",
           args {
               min_clients = 2,
               num_rounds = 3,

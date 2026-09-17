@@ -198,7 +198,7 @@ class ClientSideController(Executor, TaskController):
             self._add_status_report(report, fl_ctx)
             self.last_status_report_time = report.timestamp
 
-        elif event_type in [EventType.ABORT_TASK, EventType.END_RUN]:
+        elif event_type in [EventType.ABORT_TASK, EventType.ABOUT_TO_END_RUN, EventType.END_RUN]:
             if not self.asked_to_stop and not self.workflow_done:
                 self.asked_to_stop = True
                 self._abort_current_task(fl_ctx)
@@ -421,6 +421,11 @@ class ClientSideController(Executor, TaskController):
 
         current_task.abort_signal.trigger(True)
         fl_ctx.set_prop(FLContextKey.TASK_NAME, current_task.task_name)
+        # This is a task/workflow cancellation, not necessarily an abort of the
+        # enclosing run. Preserve a run-abort marker already latched by the runner;
+        # lifecycle intent is monotonic and must never move from True back to False.
+        if fl_ctx.get_prop(FLContextKey.RUN_ABORT_REQUESTED) is not True:
+            fl_ctx.set_prop(FLContextKey.RUN_ABORT_REQUESTED, False, private=True, sticky=False)
         self.fire_event(EventType.ABORT_TASK, fl_ctx)
 
     def set_learn_task(self, task_data: Shareable, fl_ctx: FLContext) -> bool:
@@ -461,12 +466,33 @@ class ClientSideController(Executor, TaskController):
                 try:
                     self.do_learn_task(t.task_name, t.task_data, t.fl_ctx, t.abort_signal)
                 except:
-                    self.logger.log(f"exception from do_learn_task: {secure_format_traceback()}")
+                    # Snapshot before logging: end-workflow may trigger the
+                    # signal while logging yields, after the task already failed.
+                    task_was_aborted = t.abort_signal.triggered
+                    self.log_exception(t.fl_ctx, "exception from do_learn_task")
+                    if not task_was_aborted:
+                        # report the failure to the server so the job ends with
+                        # an error status instead of FINISHED:COMPLETED. An
+                        # aborted task (e.g. end-of-workflow teardown) is
+                        # expected to raise and is not a job failure.
+                        self.update_status(action="do_learn_task", error=ReturnCode.EXECUTION_EXCEPTION)
                 finally:
-                    # force garbage collection
-                    gc.collect()
-                self.learn_task = None
+                    # Drop all references to the finished task before reclaiming
+                    # memory: `t` and self.learn_task would otherwise pin the
+                    # (possibly multi-GB) task payload until the next task arrives.
+                    self.learn_task = None
+                    t = None
+                    self._cleanup_learn_task_memory()
             time.sleep(self.learn_task_check_interval)
+
+    def _cleanup_learn_task_memory(self):
+        """Reclaim memory after a learn task finishes.
+
+        The base behavior is Python-level garbage collection only. Subclasses
+        may override with allocator-aware cleanup that also returns freed
+        native heap pages to the OS.
+        """
+        gc.collect()
 
     def update_status(self, last_round=None, action=None, error=None, all_done=False):
         with self.status_lock:

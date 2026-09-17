@@ -140,8 +140,8 @@ class ClientJsonConfigurator(FedJsonConfigurator):
             self.current_exe.executor = self.authorize_and_build_component(element, config_ctx, node)
             return
 
-    def build_component(self, config_dict):
-        t = super().build_component(config_dict)
+    def _build_component(self, config_dict):
+        t = super()._build_component(config_dict)
         if isinstance(t, FLComponent):
             self.handlers.append(t)
         return t
@@ -162,6 +162,8 @@ class ClientJsonConfigurator(FedJsonConfigurator):
 
         if len(self.executors) <= 0:
             raise ConfigError("executors are not specified")
+
+        self._validate_client_api_executors()
 
         task_router = TaskRouter()
         for e in self.executors:
@@ -187,3 +189,23 @@ class ClientJsonConfigurator(FedJsonConfigurator):
             section_name=SystemConfigs.APPLICATION_CONF,
             data=self.config_data,
         )
+
+    def _validate_client_api_executors(self):
+        """Reject multiple ClientAPIExecutors that would share Client API runtime state.
+
+        Job authoring treats executor types generically. Runtime validation is authoritative
+        because client apps may also be supplied directly as JSON/HOCON. Other Executor
+        implementations remain unrestricted.
+        """
+        # Deferred import keeps the normal client configurator import path light for jobs
+        # that do not use the Client API executor.
+        from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor
+
+        client_api_executors = [e.executor for e in self.executors if isinstance(e.executor, ClientAPIExecutor)]
+        if len(client_api_executors) > 1:
+            modes = [e.execution_mode for e in client_api_executors]
+            raise ConfigError(
+                "only one ClientAPIExecutor is supported per client job, regardless of execution mode; "
+                f"configured modes: {modes}. Configure one executor for all Client API task names and "
+                "dispatch by task name in the trainer entry point"
+            )

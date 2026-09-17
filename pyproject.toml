@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel", "versioneer"]
+requires = ["setuptools>=61.0", "wheel", "versioneer", "PyYAML>=6.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.isort]
@@ -12,7 +12,7 @@ skip_glob = [ "*.pyi", "**/*_pb2*" ]
 
 [tool.black]
 line-length = 120
-target-version = ["py39", "py310", "py311", "py312", "py313", "py314"]
+target-version = ["py310", "py311", "py312", "py313", "py314"]
 include = '\.pyi?$'
 exclude = '''
 (
@@ -39,4 +39,5 @@ exclude = '''
 markers = [
     "timeout: mark tests with an execution time limit",
     "slow: mark tests as slow-running (excluded from the default test run)",
+    "xdist_group(name): mark tests that must run on the same pytest-xdist worker",
 ]

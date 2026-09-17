@@ -95,7 +95,7 @@ class FileTransferModule(CommandModule):
                 CommandSpec(
                     name="push_folder",
                     description="Submit application to the server",
-                    usage="submit_job job_folder",
+                    usage="submit_job job_folder [submit_args...]",
                     handler_func=self.push_folder,
                     visible=False,
                 ),
@@ -266,6 +266,7 @@ class FileTransferModule(CommandModule):
                 ProtoKey.META: {MetaKey.LOCATION: location},
             }
         else:
+            shutil.rmtree(self._tx_path(tx_id, folder_name), ignore_errors=True)
             return error
 
     @staticmethod
@@ -295,10 +296,11 @@ class FileTransferModule(CommandModule):
         # upload with binary protocol
         cmd_entry = ctx.get_command_entry()
         assert isinstance(cmd_entry, CommandEntry)
-        if len(args) != 2:
+        if len(args) < 2:
             return {"status": APIStatus.ERROR_SYNTAX, "details": "usage: {}".format(cmd_entry.usage)}
 
         folder_name = args[1]
+        submit_args = args[2:]
         if folder_name.endswith("/"):
             folder_name = folder_name.rstrip("/")
 
@@ -306,8 +308,22 @@ class FileTransferModule(CommandModule):
         if not os.path.isdir(full_path):
             return {"status": APIStatus.ERROR_RUNTIME, "details": f"'{full_path}' is not a valid folder."}
 
-        # sign folders and files (skip gracefully when key is absent — e.g. simulator)
         api = ctx.get_api()
+        try:
+            api.ensure_client_cert_valid()
+        except Exception as e:
+            return {"status": APIStatus.ERROR_RUNTIME, "details": f"Failed to refresh admin certificate: {e}"}
+        if not api.is_ready():
+            try:
+                api.connect()
+                login_result = api.login()
+            except Exception as e:
+                return {
+                    "status": APIStatus.ERROR_RUNTIME,
+                    "details": f"Failed to reconnect with refreshed admin certificate: {e}",
+                }
+            if login_result.get("status") != APIStatus.SUCCESS:
+                return login_result
         client_key_file_path = api.client_key
         if client_key_file_path and os.path.exists(client_key_file_path) and api.client_cert:
             try:
@@ -324,6 +340,7 @@ class FileTransferModule(CommandModule):
 
         folder_name = split_path(full_path)[1]
         parts = [cmd_entry.full_command_name(), folder_name]
+        parts.extend(submit_args)
         command = join_args(parts)
         sender = _FileSender(out_file)
         ctx.set_requester(sender)

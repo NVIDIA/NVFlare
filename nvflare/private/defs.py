@@ -79,6 +79,7 @@ class RequestHeader(object):
     JOB_STATUS = "job_status"
     TOPIC = "topic"
     JOB_META = "job_meta"
+    JOB_CERT = "job_cert"
     APP_NAME = "app_name"
     CONTROL_COMMAND = "control_command"
     CALL_NAME = "call_name"
@@ -139,6 +140,7 @@ class AppFolderConstants:
 
 
 ERROR_MSG_PREFIX = "NVFLARE_ERROR"
+FEDERATION_PROTOCOL_VERSION = 1
 
 
 class CellMessageHeaderKeys:
@@ -155,6 +157,12 @@ class CellMessageHeaderKeys:
     JOB_IDS = "job_ids"
     MESSAGE = "message"
     ABORT_JOBS = "abort_jobs"
+    FEDERATION_PROTOCOL_VERSION = "federation_protocol_version"
+    NVFLARE_VERSION = "nvflare_version"
+
+
+class ClientRegMsgKey:
+    SITE_CONFIG = "site_config"
 
 
 class ClientType:

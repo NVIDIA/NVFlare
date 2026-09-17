@@ -13,11 +13,13 @@
 # limitations under the License.
 
 import json
+import os
+from argparse import Namespace
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from nvflare.fuel.flare_api.api_spec import AuthenticationError, JobNotFound
+from nvflare.fuel.flare_api.api_spec import AuthenticationError, JobNotDone, JobNotFound, NoConnection
 from nvflare.tool import cli_output
 
 
@@ -28,70 +30,557 @@ class TestJobDownload:
     def agent_mode(self, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "json")
 
-    def _make_args(self, job_id="abc123", output="json", output_dir="./"):
-        args = MagicMock()
-        args.job_id = job_id
-        args.output = output
-        args.output_dir = output_dir
-        return args
+    def _make_args(self, job_id="abc123", output="json", output_dir=None, study="default", force=False):
+        args = {"job_id": job_id, "output": output, "study": study, "force": force}
+        if output_dir is not None:
+            args["output_dir"] = output_dir
+        return Namespace(**args)
 
-    def test_download_success_json(self, capsys):
-        """job download success: JSON envelope has job_id and path."""
+    def _download_json(self, args, download_path, capsys):
         from nvflare.tool.job.job_cli import cmd_job_download
 
-        args = self._make_args()
         mock_sess = MagicMock()
-        mock_sess.download_job_result.return_value = "/path/to/results"
+        mock_sess.get_job_meta.return_value = {"status": "FINISHED:COMPLETED"}
+        mock_sess.download_job_result.return_value = str(download_path)
 
         with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
             cmd_job_download(args)
 
         captured = capsys.readouterr()
-        data = json.loads(captured.out)
-        assert data["status"] == "ok"
-        assert data["exit_code"] == 0
-        assert data["data"]["job_id"] == "abc123"
-        assert "path" in data["data"]
+        assert captured.err == ""
+        return mock_sess, json.loads(captured.out)
 
-    def test_download_with_output_dir(self):
-        """output_dir is used as destination."""
+    def test_download_success_json_includes_artifact_contract_fields(self, tmp_path, capsys):
+        """job download success: JSON envelope includes the artifact contract."""
+        download_path = tmp_path / "results"
+        download_path.mkdir()
+
+        _, envelope = self._download_json(self._make_args(output_dir=tmp_path / "dest"), download_path, capsys)
+
+        assert envelope["status"] == "ok"
+        assert envelope["exit_code"] == 0
+        data = envelope["data"]
+        assert data["job_id"] == "abc123"
+        assert data["download_path"] == str(download_path)
+        assert data["path"] == data["download_path"]
+        assert data["artifact_discovery"] == "completed"
+        assert data["artifacts"] == {}
+        assert set(data["missing_artifacts"]) == {"global_model", "metrics_summary", "client_logs"}
+
+    def test_download_human_output_omits_artifact_contract_payload(self, tmp_path, capsys, monkeypatch):
+        """Plain text mode reports a concise download result without dumping JSON contract fields."""
         from nvflare.tool.job.job_cli import cmd_job_download
 
-        args = self._make_args(output_dir="/my/results")
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        download_path = tmp_path / "results"
+        download_path.mkdir()
+        args = self._make_args(output_dir=tmp_path / "dest")
         mock_sess = MagicMock()
-        mock_sess.download_job_result.return_value = "/path/to/results"
+        mock_sess.get_job_meta.return_value = {"status": "FINISHED:COMPLETED"}
+        mock_sess.download_job_result.return_value = str(download_path)
 
         with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
             cmd_job_download(args)
 
-        import os
+        captured = capsys.readouterr()
+        assert "Downloading job abc123 from study default ..." in captured.out
+        assert f"Job result downloaded to: {download_path}" in captured.out
+        assert "download_path:" not in captured.out
+        assert "artifact_discovery:" not in captured.out
+        assert "missing_artifacts:" not in captured.out
+        assert captured.err == ""
 
-        expected_dest = os.path.abspath("/my/results")
+    def test_download_schema_includes_command_contract_metadata(self, capsys):
+        import argparse
+
+        from nvflare.tool.job.job_cli import cmd_job_download, def_job_cli_parser
+
+        root = argparse.ArgumentParser()
+        def_job_cli_parser(root.add_subparsers())
+
+        with patch("sys.argv", ["nvflare", "job", "download", "--schema"]):
+            with pytest.raises(SystemExit) as exc_info:
+                cmd_job_download(MagicMock())
+
+        assert exc_info.value.code == 0
+        schema = json.loads(capsys.readouterr().out)
+        assert schema["output_modes"] == ["json"]
+        assert schema["streaming"] is False
+        assert schema["mutating"] is True
+        assert schema["idempotent"] is False
+        assert schema["retry_token"] == {"supported": False}
+
+    def test_download_default_output_dir_is_absolute_current_dir_parent(self, capsys):
+        """omitted output_dir requests cwd as parent so the final path is ./<job_id>, not ./<job_id>/<job_id>."""
+        args = self._make_args(job_id="abc123")
+
+        mock_sess, _ = self._download_json(args, "/path/to/results", capsys)
+
+        expected_dest = os.path.abspath(".")
         mock_sess.download_job_result.assert_called_once_with("abc123", expected_dest)
 
-    def test_download_not_found_exits_1(self):
+    def test_download_with_output_dir(self, tmp_path, capsys):
+        """explicit output_dir is used as an absolute destination."""
+        output_dir = tmp_path / "requested-results"
+        args = self._make_args(output_dir=output_dir)
+
+        mock_sess, _ = self._download_json(args, tmp_path / "downloaded-results", capsys)
+
+        expected_dest = os.path.abspath(output_dir)
+        mock_sess.download_job_result.assert_called_once_with("abc123", expected_dest)
+
+    @pytest.mark.parametrize("model_name", ["FL_global_model.pt", "global_model.pt", "global_model.pth"])
+    def test_download_discovers_global_model_artifact(self, tmp_path, capsys, model_name):
+        """common global model filenames are reported as the global_model artifact."""
+        download_path = tmp_path / "results"
+        download_path.mkdir()
+        model_path = download_path / model_name
+        model_path.write_text("model")
+
+        _, envelope = self._download_json(self._make_args(output_dir=tmp_path / "dest"), download_path, capsys)
+
+        assert envelope["data"]["artifacts"]["global_model"] == str(model_path)
+        assert "global_model" not in envelope["data"]["missing_artifacts"]
+
+    def test_download_does_not_treat_client_checkpoint_as_global_model(self, tmp_path, capsys):
+        download_path = tmp_path / "results"
+        client_dir = download_path / "site-1"
+        client_dir.mkdir(parents=True)
+        (client_dir / "FL_global_model.pt").write_text("client model")
+
+        _, envelope = self._download_json(self._make_args(output_dir=tmp_path / "dest"), download_path, capsys)
+
+        assert "global_model" not in envelope["data"]["artifacts"]
+        assert "global_model" in envelope["data"]["missing_artifacts"]
+
+    def test_download_discovers_global_model_from_workspace_root(self, tmp_path, capsys):
+        download_path = tmp_path / "results"
+        workspace_dir = download_path / "workspace"
+        workspace_dir.mkdir(parents=True)
+        model_path = workspace_dir / "FL_global_model.pt"
+        model_path.write_text("server model")
+
+        _, envelope = self._download_json(self._make_args(output_dir=tmp_path / "dest"), download_path, capsys)
+
+        assert envelope["data"]["artifacts"]["global_model"] == str(model_path)
+
+    def test_download_prefers_canonical_root_model_over_client_checkpoint(self, tmp_path, capsys):
+        download_path = tmp_path / "results"
+        client_dir = download_path / "site-1"
+        client_dir.mkdir(parents=True)
+        root_model = download_path / "global_model.pt"
+        root_model.write_text("server model")
+        (client_dir / "FL_global_model.pt").write_text("client model")
+
+        _, envelope = self._download_json(self._make_args(output_dir=tmp_path / "dest"), download_path, capsys)
+
+        assert envelope["data"]["artifacts"]["global_model"] == str(root_model)
+
+    def test_download_prefers_server_model_over_alphabetically_earlier_client_dir(self, tmp_path, capsys):
+        download_path = tmp_path / "results"
+        client_dir = download_path / "app_client-1"
+        server_dir = download_path / "server"
+        client_dir.mkdir(parents=True)
+        server_dir.mkdir()
+        (client_dir / "FL_global_model.pt").write_text("client model")
+        server_model = server_dir / "global_model.pt"
+        server_model.write_text("server model")
+
+        _, envelope = self._download_json(self._make_args(output_dir=tmp_path / "dest"), download_path, capsys)
+
+        assert envelope["data"]["artifacts"]["global_model"] == str(server_model)
+
+    def test_download_manifest_resolves_custom_global_model_name(self, tmp_path, capsys):
+        download_path = tmp_path / "results"
+        workspace_dir = download_path / "workspace"
+        server_dir = workspace_dir / "app_server"
+        server_dir.mkdir(parents=True)
+        custom_model = server_dir / "production-checkpoint.bin"
+        custom_model.write_text("server model")
+        (workspace_dir / "artifact_manifest.json").write_text(
+            json.dumps({"schema_version": "1", "artifacts": {"global_model": "app_server/production-checkpoint.bin"}})
+        )
+
+        _, envelope = self._download_json(self._make_args(output_dir=tmp_path / "dest"), download_path, capsys)
+
+        assert envelope["data"]["artifacts"]["global_model"] == str(custom_model)
+        assert "global_model" not in envelope["data"]["missing_artifacts"]
+
+    def test_download_does_not_fall_back_when_manifest_target_is_missing(self, tmp_path, capsys):
+        download_path = tmp_path / "results"
+        workspace_dir = download_path / "workspace"
+        workspace_dir.mkdir(parents=True)
+        (workspace_dir / "FL_global_model.pt").write_text("server model")
+        (workspace_dir / "artifact_manifest.json").write_text(
+            json.dumps({"schema_version": "1", "artifacts": {"global_model": "missing-model.pt"}})
+        )
+
+        _, envelope = self._download_json(self._make_args(output_dir=tmp_path / "dest"), download_path, capsys)
+
+        assert "global_model" not in envelope["data"]["artifacts"]
+        assert "global_model" in envelope["data"]["missing_artifacts"]
+
+    def test_download_does_not_fall_back_when_manifest_is_invalid_json(self, tmp_path, capsys):
+        download_path = tmp_path / "results"
+        workspace_dir = download_path / "workspace"
+        workspace_dir.mkdir(parents=True)
+        (workspace_dir / "FL_global_model.pt").write_text("server model")
+        (workspace_dir / "artifact_manifest.json").write_text("{invalid json")
+
+        _, envelope = self._download_json(self._make_args(output_dir=tmp_path / "dest"), download_path, capsys)
+
+        assert "global_model" not in envelope["data"]["artifacts"]
+        assert "global_model" in envelope["data"]["missing_artifacts"]
+
+    def test_download_does_not_fall_back_when_manifest_schema_is_invalid(self, tmp_path, capsys):
+        download_path = tmp_path / "results"
+        workspace_dir = download_path / "workspace"
+        workspace_dir.mkdir(parents=True)
+        model_path = workspace_dir / "FL_global_model.pt"
+        model_path.write_text("server model")
+        (workspace_dir / "artifact_manifest.json").write_text(
+            json.dumps({"schema_version": "2", "artifacts": {"global_model": model_path.name}})
+        )
+
+        _, envelope = self._download_json(self._make_args(output_dir=tmp_path / "dest"), download_path, capsys)
+
+        assert "global_model" not in envelope["data"]["artifacts"]
+        assert "global_model" in envelope["data"]["missing_artifacts"]
+
+    def test_download_manifest_rejects_directory_target(self, tmp_path, capsys):
+        download_path = tmp_path / "results"
+        workspace_dir = download_path / "workspace"
+        model_dir = workspace_dir / "app_server"
+        model_dir.mkdir(parents=True)
+        (workspace_dir / "artifact_manifest.json").write_text(
+            json.dumps({"schema_version": "1", "artifacts": {"global_model": model_dir.name}})
+        )
+
+        _, envelope = self._download_json(self._make_args(output_dir=tmp_path / "dest"), download_path, capsys)
+
+        assert "global_model" not in envelope["data"]["artifacts"]
+        assert "global_model" in envelope["data"]["missing_artifacts"]
+
+    def test_manifest_global_model_rejects_alternate_case_self_target(self, tmp_path):
+        from nvflare.tool.job.job_cli import _manifest_global_model
+
+        download_path = tmp_path / "results"
+        workspace_dir = download_path / "workspace"
+        workspace_dir.mkdir(parents=True)
+        manifest_path = workspace_dir / "artifact_manifest.json"
+        alternate_case_path = workspace_dir / "ARTIFACT_MANIFEST.JSON"
+        manifest_path.write_text(
+            json.dumps({"schema_version": "1", "artifacts": {"global_model": alternate_case_path.name}})
+        )
+        if not alternate_case_path.exists():
+            try:
+                os.link(manifest_path, alternate_case_path)
+            except OSError:
+                pytest.skip("filesystem does not support hard links")
+
+        assert os.path.samefile(manifest_path, alternate_case_path)
+        assert _manifest_global_model(str(download_path), [(0, str(manifest_path))]) == (True, None)
+
+    def test_manifest_global_model_rejects_samefile_error(self, tmp_path):
+        from nvflare.tool.job.job_cli import _manifest_global_model
+
+        download_path = tmp_path / "results"
+        workspace_dir = download_path / "workspace"
+        workspace_dir.mkdir(parents=True)
+        model_path = workspace_dir / "custom-model.pt"
+        model_path.write_text("server model")
+        manifest_path = workspace_dir / "artifact_manifest.json"
+        manifest_path.write_text(json.dumps({"schema_version": "1", "artifacts": {"global_model": model_path.name}}))
+
+        with patch("nvflare.tool.job.job_cli.os.path.samefile", side_effect=OSError):
+            assert _manifest_global_model(str(download_path), [(0, str(manifest_path))]) == (True, None)
+
+    def test_download_manifest_rejects_parent_path(self, tmp_path, capsys):
+        download_path = tmp_path / "results"
+        workspace_dir = download_path / "workspace"
+        workspace_dir.mkdir(parents=True)
+        root_model = download_path / "custom-model.pt"
+        root_model.write_text("server model")
+        (workspace_dir / "artifact_manifest.json").write_text(
+            json.dumps({"schema_version": "1", "artifacts": {"global_model": f"../{root_model.name}"}})
+        )
+
+        # Simulate Windows accepting a forward-slash manifest path while os.sep is a backslash.
+        with patch("nvflare.tool.job.job_cli.os.sep", "\\"):
+            _, envelope = self._download_json(self._make_args(output_dir=tmp_path / "dest"), download_path, capsys)
+
+        assert "global_model" not in envelope["data"]["artifacts"]
+        assert "global_model" in envelope["data"]["missing_artifacts"]
+
+    def test_download_manifest_rejects_symlink_target(self, tmp_path, capsys):
+        download_path = tmp_path / "results"
+        workspace_dir = download_path / "workspace"
+        workspace_dir.mkdir(parents=True)
+        model_path = workspace_dir / "custom-model.pt"
+        model_path.write_text("server model")
+        symlink_path = workspace_dir / "model-link.pt"
+        try:
+            symlink_path.symlink_to(model_path)
+        except OSError:
+            pytest.skip("filesystem does not support symlinks")
+        (workspace_dir / "artifact_manifest.json").write_text(
+            json.dumps({"schema_version": "1", "artifacts": {"global_model": symlink_path.name}})
+        )
+
+        _, envelope = self._download_json(self._make_args(output_dir=tmp_path / "dest"), download_path, capsys)
+
+        assert "global_model" not in envelope["data"]["artifacts"]
+        assert "global_model" in envelope["data"]["missing_artifacts"]
+
+    def test_download_ignores_client_artifact_manifest(self, tmp_path, capsys):
+        download_path = tmp_path / "results"
+        client_dir = download_path / "site-1"
+        client_dir.mkdir(parents=True)
+        client_model = client_dir / "client-checkpoint.bin"
+        client_model.write_text("client model")
+        (client_dir / "artifact_manifest.json").write_text(
+            json.dumps({"schema_version": "1", "artifacts": {"global_model": client_model.name}})
+        )
+
+        _, envelope = self._download_json(self._make_args(output_dir=tmp_path / "dest"), download_path, capsys)
+
+        assert "global_model" not in envelope["data"]["artifacts"]
+        assert "global_model" in envelope["data"]["missing_artifacts"]
+
+    def test_canonical_server_artifact_rank_handles_relpath_error(self):
+        from nvflare.tool.job.job_cli import _canonical_server_artifact_rank
+
+        with patch("nvflare.tool.job.job_cli.os.path.relpath", side_effect=ValueError):
+            assert _canonical_server_artifact_rank("download", "artifact") is None
+
+    def test_download_discovers_metrics_artifacts_and_client_logs(self, tmp_path, capsys):
+        """metrics artifacts and client log.txt files are reported from the local download path."""
+        download_path = tmp_path / "results"
+        metrics_dir = download_path / "metrics"
+        site_log_dir = download_path / "site-1"
+        server_log_dir = download_path / "server"
+        metrics_dir.mkdir(parents=True)
+        site_log_dir.mkdir(parents=True)
+        server_log_dir.mkdir()
+        metrics_path = metrics_dir / "metrics_summary.json"
+        round_metrics_path = metrics_dir / "round_metrics.jsonl"
+        site_log_path = site_log_dir / "log.txt"
+        server_log_path = server_log_dir / "log.txt"
+        metrics_path.write_text("{}")
+        round_metrics_path.write_text("{}\n")
+        site_log_path.write_text("client log")
+        server_log_path.write_text("server log")
+
+        _, envelope = self._download_json(self._make_args(output_dir=tmp_path / "dest"), download_path, capsys)
+
+        artifacts = envelope["data"]["artifacts"]
+        assert artifacts["metrics_summary"] == str(metrics_path)
+        assert artifacts["round_metrics"] == str(round_metrics_path)
+        assert artifacts["client_logs"] == {"site-1": str(site_log_path)}
+        assert str(server_log_path) not in artifacts["client_logs"].values()
+        assert "metrics_summary" not in envelope["data"]["missing_artifacts"]
+        assert "round_metrics" not in envelope["data"]["missing_artifacts"]
+        assert "client_logs" not in envelope["data"]["missing_artifacts"]
+
+    def test_download_client_logs_only_include_log_files(self, tmp_path, capsys):
+        """nested model or metrics files must not be reported as client logs."""
+        download_path = tmp_path / "results"
+        site_dir = download_path / "site-1"
+        site_dir.mkdir(parents=True)
+        model_path = site_dir / "FL_global_model.pt"
+        metrics_path = site_dir / "metrics_summary.json"
+        model_path.write_text("model")
+        metrics_path.write_text("{}")
+
+        _, envelope = self._download_json(self._make_args(output_dir=tmp_path / "dest"), download_path, capsys)
+
+        artifacts = envelope["data"]["artifacts"]
+        assert "global_model" not in artifacts
+        assert artifacts["metrics_summary"] == str(metrics_path)
+        assert "global_model" in envelope["data"]["missing_artifacts"]
+        assert "client_logs" not in artifacts
+        assert "client_logs" in envelope["data"]["missing_artifacts"]
+
+    def test_download_missing_artifacts_do_not_fail_success_response(self, tmp_path, capsys):
+        """missing expected artifact categories are listed without making download fail."""
+        download_path = tmp_path / "results"
+        download_path.mkdir()
+        metrics_path = download_path / "metrics_summary.json"
+        metrics_path.write_text("{}")
+
+        _, envelope = self._download_json(self._make_args(output_dir=tmp_path / "dest"), download_path, capsys)
+
+        assert envelope["status"] == "ok"
+        assert envelope["exit_code"] == 0
+        assert envelope["data"]["artifacts"] == {"metrics_summary": str(metrics_path)}
+        assert set(envelope["data"]["missing_artifacts"]) == {"global_model", "client_logs"}
+
+    def test_download_nonexistent_path_skips_artifact_discovery(self, tmp_path, capsys):
+        """nonexistent final download paths do not claim expected artifacts are missing."""
+        missing_path = tmp_path / "does-not-exist"
+
+        _, envelope = self._download_json(self._make_args(output_dir=tmp_path / "dest"), missing_path, capsys)
+
+        assert envelope["status"] == "ok"
+        assert envelope["data"]["download_path"] == str(missing_path)
+        assert envelope["data"]["artifact_discovery"] == "skipped"
+        assert envelope["data"]["artifacts"] is None
+        assert envelope["data"]["missing_artifacts"] is None
+
+    def test_download_artifact_discovery_skips_symlink_escapes(self, tmp_path, capsys):
+        """reported artifacts must stay under download_path and skip symlink escapes."""
+        outside_dir = tmp_path / "outside"
+        outside_dir.mkdir()
+        outside_model = outside_dir / "FL_global_model.pt"
+        outside_model.write_text("outside")
+
+        download_path = tmp_path / "results"
+        download_path.mkdir()
+        symlink_model = download_path / "FL_global_model.pt"
+        try:
+            symlink_model.symlink_to(outside_model)
+        except OSError:
+            pytest.skip("filesystem does not support symlinks")
+
+        _, envelope = self._download_json(self._make_args(output_dir=tmp_path / "dest"), download_path, capsys)
+
+        assert "global_model" not in envelope["data"]["artifacts"]
+        assert "global_model" in envelope["data"]["missing_artifacts"]
+
+    def test_download_remote_location_is_not_reported_as_local_path(self, capsys):
+        """scheme-based returns are not local artifact paths."""
+        _, envelope = self._download_json(self._make_args(), "https://download.example/jobs/abc123", capsys)
+
+        assert envelope["status"] == "ok"
+        assert envelope["data"]["download_path"] is None
+        assert envelope["data"]["path"] == "https://download.example/jobs/abc123"
+        assert envelope["data"]["artifact_discovery"] == "skipped"
+        assert envelope["data"]["artifacts"] is None
+        assert envelope["data"]["missing_artifacts"] is None
+
+    def test_download_not_found_exits_1(self, capsys):
         """JOB_NOT_FOUND exits with code 1."""
         from nvflare.tool.job.job_cli import cmd_job_download
 
         args = self._make_args(job_id="notfound")
         mock_sess = MagicMock()
-        mock_sess.download_job_result.side_effect = JobNotFound("job not found")
+        mock_sess.get_job_meta.side_effect = JobNotFound("job not found")
 
         with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
             with pytest.raises(SystemExit) as exc_info:
                 cmd_job_download(args)
         assert exc_info.value.code == 1
+        envelope = json.loads(capsys.readouterr().out)
+        assert envelope["error_code"] == "JOB_NOT_FOUND"
+        assert "searched study 'default'" in envelope["message"]
+        assert "nvflare job list --study <study_name>" in envelope["hint"]
 
     def test_download_authentication_error_propagates(self):
         from nvflare.tool.job.job_cli import cmd_job_download
 
         args = self._make_args()
         mock_sess = MagicMock()
+        mock_sess.get_job_meta.return_value = {"status": "FINISHED:COMPLETED"}
         mock_sess.download_job_result.side_effect = AuthenticationError("bad cert")
 
         with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
             with pytest.raises(AuthenticationError):
                 cmd_job_download(args)
+
+    def test_download_connection_failed_exits_2(self, capsys):
+        """NoConnection maps to CONNECTION_FAILED, exit 2."""
+        from nvflare.tool.job.job_cli import cmd_job_download
+
+        args = self._make_args()
+        mock_sess = MagicMock()
+        mock_sess.get_job_meta.return_value = {"status": "FINISHED:COMPLETED"}
+        mock_sess.download_job_result.side_effect = NoConnection("connection refused")
+
+        with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
+            with pytest.raises(SystemExit) as exc_info:
+                cmd_job_download(args)
+        assert exc_info.value.code == 2
+
+        envelope = json.loads(capsys.readouterr().out)
+        assert envelope["status"] == "error"
+        assert envelope["error_code"] == "CONNECTION_FAILED"
+        assert envelope["exit_code"] == 2
+
+    def test_download_running_job_exits_job_not_done(self, capsys, tmp_path):
+        """running jobs are not downloaded as partial results."""
+        from nvflare.tool.job.job_cli import cmd_job_download
+
+        args = self._make_args(job_id="running", output_dir=tmp_path / "dest", study="cancer")
+        mock_sess = MagicMock()
+        mock_sess.get_job_meta.return_value = {"status": "RUNNING"}
+
+        with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
+            with pytest.raises(SystemExit) as exc_info:
+                cmd_job_download(args)
+
+        assert exc_info.value.code == 4
+        envelope = json.loads(capsys.readouterr().out)
+        assert envelope["error_code"] == "JOB_NOT_DONE"
+        assert "current status: RUNNING" in envelope["message"]
+        assert "--study cancer" in envelope["hint"]
+        mock_sess.download_job_result.assert_not_called()
+
+    def test_download_existing_destination_requires_force(self, capsys, tmp_path):
+        """an existing local download directory is a normal CLI error unless --force is used."""
+        from nvflare.tool.job.job_cli import cmd_job_download
+
+        output_dir = tmp_path / "dest"
+        existing = output_dir / "abc123"
+        existing.mkdir(parents=True)
+        args = self._make_args(output_dir=output_dir)
+        mock_sess = MagicMock()
+        mock_sess.get_job_meta.return_value = {"status": "FINISHED:COMPLETED"}
+
+        with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
+            with pytest.raises(SystemExit) as exc_info:
+                cmd_job_download(args)
+
+        assert exc_info.value.code == 4
+        envelope = json.loads(capsys.readouterr().out)
+        assert envelope["error_code"] == "INVALID_ARGS"
+        assert str(existing) in envelope["message"]
+        assert "--force" in envelope["hint"]
+        mock_sess.download_job_result.assert_not_called()
+
+    def test_download_force_replaces_existing_destination(self, capsys, tmp_path):
+        """--force removes the existing local download directory before downloading."""
+        output_dir = tmp_path / "dest"
+        existing = output_dir / "abc123"
+        existing.mkdir(parents=True)
+        marker = existing / "old.txt"
+        marker.write_text("old")
+        args = self._make_args(output_dir=output_dir, force=True)
+        download_path = output_dir / "abc123"
+
+        mock_sess, envelope = self._download_json(args, download_path, capsys)
+
+        assert envelope["status"] == "ok"
+        assert not marker.exists()
+        mock_sess.download_job_result.assert_called_once_with("abc123", os.path.abspath(output_dir))
+
+    def test_download_api_job_not_done_maps_to_job_not_done(self, capsys, tmp_path):
+        """JobNotDone from the server download API remains user-facing."""
+        from nvflare.tool.job.job_cli import cmd_job_download
+
+        args = self._make_args(output_dir=tmp_path / "dest", study="cancer")
+        mock_sess = MagicMock()
+        mock_sess.get_job_meta.return_value = {"status": "FINISHED:COMPLETED"}
+        mock_sess.download_job_result.side_effect = JobNotDone("job is still running")
+
+        with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
+            with pytest.raises(SystemExit) as exc_info:
+                cmd_job_download(args)
+
+        assert exc_info.value.code == 4
+        envelope = json.loads(capsys.readouterr().out)
+        assert envelope["error_code"] == "JOB_NOT_DONE"
+        assert "searched study 'cancer'" in envelope["message"]
+        assert "nvflare job wait abc123 --study cancer" in envelope["hint"]
 
     def test_download_parser(self):
         """download parser should accept job_id and -o flag."""
@@ -105,6 +594,7 @@ class TestJobDownload:
 
         parser = job_sub_cmd_parser["download"]
         assert parser is not None
-        args = parser.parse_args(["abc123", "-o", "/tmp/results"])
+        args = parser.parse_args(["abc123", "-o", "/tmp/results", "--force"])
         assert args.job_id == "abc123"
         assert args.output_dir == "/tmp/results"
+        assert args.force is True

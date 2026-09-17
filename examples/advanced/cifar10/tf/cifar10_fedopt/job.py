@@ -58,7 +58,7 @@ def main():
 
     # Configure FedOpt optimizer arguments
     optimizer_args = {
-        "class_path": "tensorflow.keras.optimizers.SGD",
+        "path": "tensorflow.keras.optimizers.SGD",
         "args": {
             "learning_rate": args.server_lr,
             "momentum": args.server_momentum,
@@ -67,7 +67,7 @@ def main():
 
     # Configure FedOpt learning rate scheduler arguments
     lr_scheduler_args = {
-        "class_path": "tensorflow.keras.optimizers.schedules.CosineDecay",
+        "path": "tensorflow.keras.optimizers.schedules.CosineDecay",
         "args": {
             "initial_learning_rate": args.server_lr,
             "decay_steps": args.num_rounds,

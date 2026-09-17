@@ -83,15 +83,18 @@ class NumpyArrayDecomposer(ViaDownloaderDecomposer):
         secure=False,
         optional=False,
         abort_signal=None,
+        progress_cb=None,
+        fobs_ctx: dict = None,
     ) -> Tuple[str, dict]:
         return download_arrays(
-            from_fqcn,
-            ref_id,
-            per_request_timeout,
-            cell,
-            secure,
-            optional,
-            abort_signal,
+            from_fqcn=from_fqcn,
+            ref_id=ref_id,
+            per_request_timeout=per_request_timeout,
+            cell=cell,
+            secure=secure,
+            optional=optional,
+            abort_signal=abort_signal,
+            progress_cb=progress_cb,
         )
 
     def native_decompose(self, target: np.ndarray, manager: DatumManager = None) -> bytes:

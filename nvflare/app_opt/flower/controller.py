@@ -18,7 +18,6 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.tie.controller import TieController
 from nvflare.app_common.tie.defs import Constant as TieConstant
 from nvflare.app_opt.flower.applet import FlowerServerApplet
-from nvflare.app_opt.flower.connectors.grpc_server_connector import GrpcServerConnector
 from nvflare.fuel.utils.validation_utils import check_positive_number
 
 from .defs import Constant
@@ -42,6 +41,8 @@ class FlowerController(TieController):
         progress_timeout: float = TieConstant.WORKFLOW_PROGRESS_TIMEOUT,
         int_client_grpc_options=None,
         run_config: Optional[dict] = None,
+        allow_runtime_dependency_installation: bool = False,
+        flower_app_path: Optional[str] = None,
     ):
         """Constructor of FlowerController
 
@@ -60,6 +61,8 @@ class FlowerController(TieController):
             progress_timeout: max time allowed for missing overall progress
             int_client_grpc_options: internal grpc client options
             run_config: optional dict for flwr run --run-config arguments
+            allow_runtime_dependency_installation: whether to allow dynamic dependency installation (only flwr>=1.29)
+            flower_app_path: absolute path to pre-deployed Flower app on the server (clients receive via FAB)
         """
         TieController.__init__(
             self,
@@ -85,8 +88,12 @@ class FlowerController(TieController):
         self.int_client_grpc_options = int_client_grpc_options
         self.monitor_interval = monitor_interval
         self.run_config = run_config
+        self.allow_runtime_dependency_installation = allow_runtime_dependency_installation
+        self.flower_app_path = flower_app_path
 
     def get_connector(self, fl_ctx: FLContext):
+        from nvflare.app_opt.flower.connectors.grpc_server_connector import GrpcServerConnector
+
         return GrpcServerConnector(
             int_client_grpc_options=self.int_client_grpc_options,
             monitor_interval=self.monitor_interval,
@@ -99,6 +106,8 @@ class FlowerController(TieController):
             superlink_grace_period=self.superlink_grace_period,
             superlink_min_query_interval=self.superlink_min_query_interval,
             run_config=self.run_config,
+            allow_runtime_dependency_installation=self.allow_runtime_dependency_installation,
+            flower_app_path=self.flower_app_path,
         )
 
     def get_client_config_params(self, fl_ctx: FLContext) -> dict:

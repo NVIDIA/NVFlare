@@ -13,14 +13,17 @@
 # limitations under the License.
 import copy
 import json
+import os
 import threading
 import time
 from abc import ABC, abstractmethod
 
+from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import AdminCommandNames, ConnPropKey, FLContextKey, RunProcessKey, SystemConfigs
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.job_launcher_spec import JobLauncherSpec, JobProcessArgs
+from nvflare.apis.job_def import JobMetaKey
+from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobProcessArgs, JobReturnCode
 from nvflare.apis.resource_manager_spec import ResourceManagerSpec
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.exit_codes import PROCESS_EXIT_REASON, ProcessExitCode
@@ -31,9 +34,62 @@ from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.defs import CellChannel, CellChannelTopic, JobFailureMsgKey, new_cell_message
 from nvflare.private.fed.utils.fed_utils import get_job_launcher, get_return_code
+from nvflare.private.fed.utils.job_cert_utils import remove_job_cert
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 from .client_status import ClientStatus, get_status_message
+
+REPORTABLE_JOB_FAILURES = {
+    ProcessExitCode.EXCEPTION: PROCESS_EXIT_REASON[ProcessExitCode.EXCEPTION],
+    ProcessExitCode.UNSAFE_COMPONENT: PROCESS_EXIT_REASON[ProcessExitCode.UNSAFE_COMPONENT],
+    ProcessExitCode.CONFIG_ERROR: PROCESS_EXIT_REASON[ProcessExitCode.CONFIG_ERROR],
+    ProcessExitCode.INFRASTRUCTURE_ERROR: PROCESS_EXIT_REASON[ProcessExitCode.INFRASTRUCTURE_ERROR],
+    JobReturnCode.ABORTED: "aborted",
+}
+
+_ABORT_REQUESTED_KEY = "_abort_requested"
+
+
+class _PendingJobHandle(JobHandleSpec):
+    """Hold an abort request until a launcher returns the real job handle."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._job_handle = None
+        self._pending_heartbeat_cleanup: bool | None = None
+
+    def attach(self, job_handle: JobHandleSpec) -> bool | None:
+        with self._lock:
+            self._job_handle = job_handle
+            return self._pending_heartbeat_cleanup
+
+    def terminate(self, heartbeat_cleanup=False):
+        with self._lock:
+            job_handle = self._job_handle
+            if job_handle is None:
+                # Preserve a real abort if stop requests race before attachment.
+                if self._pending_heartbeat_cleanup is None or not heartbeat_cleanup:
+                    self._pending_heartbeat_cleanup = heartbeat_cleanup
+                return
+        if heartbeat_cleanup:
+            terminate_for_heartbeat_cleanup = getattr(job_handle, "_terminate_for_heartbeat_cleanup", None)
+            if terminate_for_heartbeat_cleanup:
+                return terminate_for_heartbeat_cleanup()
+        return job_handle.terminate()
+
+    def poll(self):
+        with self._lock:
+            job_handle = self._job_handle
+        if job_handle is None:
+            return None
+        return job_handle.poll()
+
+    def wait(self):
+        with self._lock:
+            job_handle = self._job_handle
+        if job_handle is None:
+            raise RuntimeError("cannot wait for a pending job handle before it is attached")
+        return job_handle.wait()
 
 
 class ClientExecutor(ABC):
@@ -169,8 +225,28 @@ class JobExecutor(ClientExecutor):
         # update the job meta
         workspace = Workspace(args.workspace, site_name=client.client_name)
         meta_file = workspace.get_job_meta_path(job_id)
+        if not os.path.exists(meta_file):
+            raise RuntimeError(f"missing deployed job metadata file for job '{job_id}': {meta_file}")
+        with open(meta_file) as f:
+            deployed_job_meta = json.load(f)
+        for meta_key in (
+            JobMetaKey.JOB_ID.value,
+            JobMetaKey.RESOURCE_SPEC.value,
+            JobMetaKey.JOB_LAUNCHER_SPEC.value,
+            JobMetaKey.SCOPE.value,
+            JobMetaKey.STUDY.value,
+        ):
+            deployed_value = deployed_job_meta.get(meta_key)
+            if deployed_value != job_meta.get(meta_key):
+                raise RuntimeError(f"START_JOB metadata differs from deployed job metadata for '{meta_key}'")
+            if meta_key in deployed_job_meta:
+                job_meta[meta_key] = copy.deepcopy(deployed_value)
+        if deployed_job_meta.get(AppValidationKey.BYOC, False):
+            job_meta[AppValidationKey.BYOC] = True
+        else:
+            job_meta.pop(AppValidationKey.BYOC, None)
 
-        # rewrite the meta file with the received meta
+        # Preserve deploy-time launch metadata while recording scheduler-maintained start metadata.
         with open(meta_file, "w") as f:
             json.dump(job_meta, f, indent=4)
 
@@ -221,7 +297,29 @@ class JobExecutor(ClientExecutor):
                 job_args[JobProcessArgs.PARENT_CONN_SEC] = ("--parent_conn_sec", parent_conn_sec)
 
         fl_ctx.set_prop(key=FLContextKey.JOB_PROCESS_ARGS, value=job_args, private=True, sticky=False)
-        job_handle = job_launcher.launch_job(job_meta, fl_ctx)
+        pending_handle = _PendingJobHandle()
+        with self.lock:
+            if job_id in self.run_processes:
+                raise RuntimeError(f"client app for job '{job_id}' is still registered")
+            self.run_processes[job_id] = {
+                RunProcessKey.JOB_HANDLE: pending_handle,
+                RunProcessKey.STATUS: ClientStatus.STARTING,
+                _ABORT_REQUESTED_KEY: False,
+            }
+        try:
+            job_handle = job_launcher.launch_job(job_meta, fl_ctx)
+            if job_handle is None:
+                raise RuntimeError(f"job launcher returned no job handle for job '{job_id}'")
+        except BaseException:
+            with self.lock:
+                if self.run_processes.get(job_id, {}).get(RunProcessKey.JOB_HANDLE) is pending_handle:
+                    self.run_processes.pop(job_id, None)
+            raise
+
+        heartbeat_cleanup = pending_handle.attach(job_handle)
+        if heartbeat_cleanup is not None:
+            self.abort_app(job_id, heartbeat_cleanup=heartbeat_cleanup)
+
         self.logger.info(f"Launched job {job_id} with job launcher: {type(job_launcher)} ")
 
         fl_ctx.set_prop(FLContextKey.JOB_META, job_meta, private=True, sticky=False)
@@ -229,12 +327,6 @@ class JobExecutor(ClientExecutor):
         engine.fire_event(EventType.AFTER_JOB_LAUNCH, fl_ctx)
 
         client.multi_gpu = False
-
-        with self.lock:
-            self.run_processes[job_id] = {
-                RunProcessKey.JOB_HANDLE: job_handle,
-                RunProcessKey.STATUS: ClientStatus.STARTING,
-            }
 
         thread = threading.Thread(
             target=self._wait_child_process_finish,
@@ -392,23 +484,43 @@ class JobExecutor(ClientExecutor):
             self.logger.error(f"reset_errors execution exception: {secure_format_exception(e)}.")
             secure_log_traceback()
 
-    def abort_app(self, job_id):
+    def abort_app(self, job_id, heartbeat_cleanup=False):
         """Aborts the running app.
 
         Args:
             job_id: the job_id
+            heartbeat_cleanup: whether heartbeat cleanup requested the abort rather than a user or administrator
         """
         # When the HeartBeat cleanup process try to abort the worker process, the job maybe already terminated,
         # Use retry to avoid print out the error stack trace.
         retry = 1
         while retry >= 0:
-            process_status = self.run_processes.get(job_id, {}).get(RunProcessKey.STATUS, ClientStatus.NOT_STARTED)
-            if process_status == ClientStatus.STARTED:
+            with self.lock:
+                process = self.run_processes.get(job_id)
+                if process:
+                    process[_ABORT_REQUESTED_KEY] = True
+                process_status = (
+                    process.get(RunProcessKey.STATUS, ClientStatus.NOT_STARTED) if process else ClientStatus.NOT_STARTED
+                )
+                job_handle = process.get(RunProcessKey.JOB_HANDLE) if process else None
+            if process_status in (ClientStatus.STARTING, ClientStatus.STARTED, ClientStatus.STOPPED):
                 try:
-                    with self.lock:
-                        job_handle = self.run_processes[job_id][RunProcessKey.JOB_HANDLE]
-                    data = {}
-                    request = new_cell_message({}, data)
+                    if process_status == ClientStatus.STARTING:
+                        if heartbeat_cleanup:
+                            job_handle.terminate(heartbeat_cleanup=True)
+                        else:
+                            job_handle.terminate()
+                        break
+                    if process_status == ClientStatus.STOPPED:
+                        # STOPPED means the runner returned, not that the OS
+                        # process exited. Give archival and process-local teardown
+                        # the normal bounded grace period before reclaiming the
+                        # still-registered owned process.
+                        t = threading.Thread(target=self._terminate_job, args=[job_handle, job_id, heartbeat_cleanup])
+                        t.start()
+                        t.join()
+                        break
+                    request = new_cell_message({}, {})
                     self.client.cell.fire_and_forget(
                         targets=self._job_fqcn(job_id),
                         channel=CellChannel.CLIENT_COMMAND,
@@ -417,7 +529,7 @@ class JobExecutor(ClientExecutor):
                         optional=True,
                     )
                     self.logger.debug("abort sent to worker")
-                    t = threading.Thread(target=self._terminate_job, args=[job_handle, job_id])
+                    t = threading.Thread(target=self._terminate_job, args=[job_handle, job_id, heartbeat_cleanup])
                     t.start()
                     t.join()
                     break
@@ -467,16 +579,15 @@ class JobExecutor(ClientExecutor):
             optional=optional,
         )
 
-    def _terminate_job(self, job_handle, job_id):
+    def _terminate_job(self, job_handle, job_id, heartbeat_cleanup=False):
         max_wait = 10.0
-        done = False
         start = time.time()
         while True:
-            process = self.run_processes.get(job_id)
+            with self.lock:
+                process = self.run_processes.get(job_id)
             if not process:
                 # already finished gracefully
-                done = True
-                break
+                return
 
             if time.time() - start > max_wait:
                 # waited enough
@@ -484,7 +595,10 @@ class JobExecutor(ClientExecutor):
 
             time.sleep(0.05)  # we want to quickly check
 
-        job_handle.terminate()
+        if heartbeat_cleanup:
+            job_handle.terminate(heartbeat_cleanup=True)
+        else:
+            job_handle.terminate()
         self.logger.info(f"run ({job_id}): child worker process terminated")
 
     def abort_task(self, job_id):
@@ -511,30 +625,59 @@ class JobExecutor(ClientExecutor):
     ):
         self.logger.info(f"run ({job_id}): waiting for child worker process to finish.")
         job_handle = self.run_processes.get(job_id, {}).get(RunProcessKey.JOB_HANDLE)
+        run_dir = Workspace.run_dir_path(workspace, job_id)
+        try:
+            if job_handle:
+                job_handle.wait()
+        finally:
+            # the job process is gone, or never started: its credential is dead either way
+            remove_job_cert(run_dir)
         if job_handle:
-            job_handle.wait()
-
             return_code = get_return_code(job_handle, job_id, workspace, self.logger)
+
+            with self.lock:
+                process = self.run_processes.get(job_id, {})
+                process_status = process.get(RunProcessKey.STATUS)
+                abort_requested = process.get(_ABORT_REQUESTED_KEY, False)
+            # A generic RC 1 is actionable only while a checked-in worker is still active.
+            # STARTING remains an infrastructure failure, while STOPPED teardown noise and
+            # launcher UNKNOWN retain their existing non-reportable behavior.
+            if return_code == JobReturnCode.EXECUTION_ERROR and not abort_requested:
+                if process_status == ClientStatus.STARTING:
+                    return_code = ProcessExitCode.INFRASTRUCTURE_ERROR
+                elif process_status == ClientStatus.STARTED:
+                    return_code = ProcessExitCode.EXCEPTION
 
             self.logger.info(f"run ({job_id}): child worker process finished with RC {return_code}")
 
-            if return_code in [ProcessExitCode.UNSAFE_COMPONENT, ProcessExitCode.CONFIG_ERROR]:
+            failure_reason = REPORTABLE_JOB_FAILURES.get(return_code)
+            try:
                 request = new_cell_message(
                     headers={},
                     payload={
                         JobFailureMsgKey.JOB_ID: job_id,
                         JobFailureMsgKey.CODE: return_code,
-                        JobFailureMsgKey.REASON: PROCESS_EXIT_REASON[return_code],
+                        JobFailureMsgKey.REASON: failure_reason,
                     },
                 )
-                self.client.cell.fire_and_forget(
-                    targets=[FQCN.ROOT_SERVER],
+                reply = self.client.send_request_before_shutdown(
+                    target=FQCN.ROOT_SERVER,
                     channel=CellChannel.SERVER_MAIN,
                     topic=CellChannelTopic.REPORT_JOB_FAILURE,
-                    message=request,
+                    request=request,
+                    timeout=self.job_query_timeout,
                     optional=True,
                 )
-                self.logger.info(f"reported failure of job {job_id} to server!")
+                if reply is None:
+                    # Shutdown invalidates the site token. The server's client-quit/dead-client
+                    # path resolves any outcome still pending after communication stops.
+                    self.logger.info(
+                        f"not reporting terminal outcome of job {job_id}: client communication has stopped"
+                    )
+                elif reply.get_header(MessageHeaderKey.RETURN_CODE) != ReturnCode.OK:
+                    self.logger.error(f"could not report terminal outcome of job {job_id}")
+            except Exception as e:
+                self.logger.error(f"could not report terminal outcome of job {job_id}: {secure_format_exception(e)}")
 
         if allocated_resource:
             resource_manager.free_resources(

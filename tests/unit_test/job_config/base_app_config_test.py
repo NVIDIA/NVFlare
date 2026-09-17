@@ -35,6 +35,23 @@ class TestBaseAppConfig:
         self.app_config.add_ext_script(script)
         assert script in self.app_config.ext_scripts
 
+    def test_set_ext_script_destination(self):
+        script = "/scripts/sample.py"
+        self.app_config.add_ext_script(script)
+
+        self.app_config._set_ext_script_destination(script, "sample.py")
+
+        assert self.app_config._ext_script_destinations == {script: ["sample.py"]}
+
+        self.app_config._set_ext_script_destination(script, "nested/sample.py")
+        self.app_config._set_ext_script_destination(script, "sample.py")
+
+        assert self.app_config._ext_script_destinations == {script: ["sample.py", "nested/sample.py"]}
+
+    def test_set_ext_script_destination_requires_registered_script(self):
+        with pytest.raises(RuntimeError, match="external script is not registered"):
+            self.app_config._set_ext_script_destination("/scripts/missing.py", "missing.py")
+
     def test_add_ext_script_error(self):
         script = "scripts/sample.py"
         with pytest.raises(Exception):

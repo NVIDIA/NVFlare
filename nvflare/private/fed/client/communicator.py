@@ -37,6 +37,7 @@ from nvflare.private.defs import (
     CellChannel,
     CellChannelTopic,
     CellMessageHeaderKeys,
+    ClientRegMsgKey,
     ClientType,
     SpecialTaskName,
     new_cell_message,
@@ -229,6 +230,19 @@ class Communicator:
 
         return new_cell_message({MessageHeaderKey.RETURN_CODE: ReturnCode.OK}, Shareable())
 
+    def _get_site_config_for_registration(self, fl_ctx: FLContext):
+        client_config = fl_ctx.get_prop(FLContextKey.CLIENT_CONFIG, self.client_config)
+        if not isinstance(client_config, dict):
+            return None
+
+        site_config = client_config.get(ClientRegMsgKey.SITE_CONFIG)
+        if site_config is not None and not isinstance(site_config, dict):
+            self.logger.warning(
+                f"site config will not be sent to server: expected dict but got {type(site_config).__name__}"
+            )
+            return None
+        return site_config
+
     def client_registration(self, client_name, project_name, fl_ctx: FLContext):
         """Register the client with the FLARE Server.
 
@@ -309,6 +323,8 @@ class Communicator:
             cert_file = client_config.get(SecureTrainConst.SSL_CERT)
             root_cert_file = client_config.get(SecureTrainConst.SSL_ROOT_CERT)
 
+        site_config = self._get_site_config_for_registration(fl_ctx)
+
         authenticator = Authenticator(
             cell=self.cell,
             project_name=project_name,
@@ -321,6 +337,7 @@ class Communicator:
             cert_file=cert_file,
             msg_timeout=self.maint_msg_timeout,
             retry_interval=self.client_register_interval,
+            site_config=site_config,
         )
 
         token, signature, ssid, token_verifier = authenticator.authenticate(shared_fl_ctx, self.abort_signal)
@@ -368,8 +385,13 @@ class Communicator:
         )
         job_id = fl_ctx.get_job_id()
 
+        # Use at least the server-required minimum (e.g. for tensor streaming). When the server
+        # sends MIN_GET_TASK_TIMEOUT we update self.timeout; the caller may still pass a smaller
+        # config value, so ensure we never use less than the required minimum.
         if not timeout:
             timeout = self.timeout
+        else:
+            timeout = max(timeout, self.timeout)
 
         parent_fqcn = determine_parent_fqcn(self.client_config, fl_ctx)
         self.logger.debug(f"pulling task from parent FQCN: {parent_fqcn}")
@@ -547,7 +569,7 @@ class Communicator:
             )
             return_code = result.get_header(MessageHeaderKey.RETURN_CODE)
             if return_code == ReturnCode.UNAUTHENTICATED:
-                self.logger.info(f"Client token: {token} has been removed from the server.")
+                self.logger.info("Client token has been removed from the server.")
 
             server_message = result.get_header(CellMessageHeaderKeys.MESSAGE)
 
@@ -621,7 +643,7 @@ class Communicator:
         try:
             if abort_runs:
                 for job in abort_runs:
-                    engine.abort_app(job)
+                    engine.abort_app(job, heartbeat_cleanup=True)
                 self.logger.debug(f"These runs: {display_runs} are not running on the server. Aborted them.")
         except:
             self.logger.debug(f"Failed to clean up the runs: {display_runs}")

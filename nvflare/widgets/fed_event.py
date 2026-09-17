@@ -14,6 +14,8 @@
 
 import threading
 import time
+import uuid
+from collections import OrderedDict
 
 from nvflare.apis.client_engine_spec import ClientEngineSpec
 from nvflare.apis.event_type import EventType
@@ -24,6 +26,7 @@ from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.widgets.widget import Widget
 
 FED_EVENT_TOPIC = "fed.event"
+MAX_EVENT_ID_CACHE_SIZE = 10000
 
 
 class FedEventRunner(Widget):
@@ -45,7 +48,7 @@ class FedEventRunner(Widget):
         self.grace_period = grace_period
         self.queue_empty_period = queue_empty_period
         self.engine = None
-        self.last_timestamps = {}  # client name => last_timestamp
+        self.received_event_ids = {}  # client name => bounded ordered set of event IDs
         self.in_events = []
         self.in_lock = threading.Lock()
         self.last_queue_empty_time = time.time()  # last time when the in_events queue became empty
@@ -94,6 +97,7 @@ class FedEventRunner(Widget):
             event_data.set_header(FedEventHeader.EVENT_TYPE, event_type)
             event_data.set_header(FedEventHeader.ORIGIN, fl_ctx.get_identity_name())
             event_data.set_header(FedEventHeader.TIMESTAMP, time.time())
+            event_data.set_header(FedEventHeader.EVENT_ID, uuid.uuid4().hex)
 
             targets = event_data.get_header(FedEventHeader.TARGETS, None)
             self.fire_and_forget_request(request=event_data, fl_ctx=fl_ctx, targets=targets, secure=False)
@@ -112,6 +116,11 @@ class FedEventRunner(Widget):
             self.log_error(fl_ctx, "missing timestamp in incoming fed event")
             return make_reply(ReturnCode.BAD_REQUEST_DATA)
 
+        event_id = request.get_header(FedEventHeader.EVENT_ID, None)
+        if event_id is not None and (not isinstance(event_id, str) or not event_id):
+            self.log_error(fl_ctx, f"invalid event ID in incoming fed event: {event_id}")
+            return make_reply(ReturnCode.BAD_REQUEST_DATA)
+
         event_type = request.get_header(FedEventHeader.EVENT_TYPE, None)
         if event_type is None:
             self.log_error(fl_ctx, "missing event_type in incoming fed event")
@@ -123,17 +132,30 @@ class FedEventRunner(Widget):
                 self.poster = threading.Thread(target=self._post, name="fed_event_poster")
                 self.poster.start()
 
-            last_timestamp = self.last_timestamps.get(peer_name, None)
-            if last_timestamp is None or timestamp > last_timestamp:
-                # we only keep new items, in case the peer somehow sent old items
-                request.set_header(FedEventHeader.DIRECTION, "in")
-                self.in_events.append(request)
-                self.last_timestamps[peer_name] = timestamp
+            # Legacy senders do not provide a stable event ID. Accept their events unconditionally because
+            # timestamps are neither unique nor ordered. This avoids dropping valid events at the cost of
+            # possible duplicate processing if a legacy sender retransmits an event.
+            if event_id and self._is_duplicate(peer_name, event_id):
+                return make_reply(ReturnCode.OK)
+
+            request.set_header(FedEventHeader.DIRECTION, "in")
+            self.in_events.append(request)
 
         # NOTE: we do not fire event here since event process could take time.
         # Instead, we simply add the package to the queue and return quickly.
         # The posting of events will be handled in the poster thread
         return make_reply(ReturnCode.OK)
+
+    def _is_duplicate(self, peer_name: str, event_id: str) -> bool:
+        """Record an event ID and report whether it was already received from this peer."""
+        peer_event_ids = self.received_event_ids.setdefault(peer_name, OrderedDict())
+        if event_id in peer_event_ids:
+            return True
+
+        peer_event_ids[event_id] = None
+        if len(peer_event_ids) > MAX_EVENT_ID_CACHE_SIZE:
+            peer_event_ids.popitem(last=False)
+        return False
 
     def _post(self):
         """Post an event.
