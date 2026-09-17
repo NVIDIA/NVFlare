@@ -2,35 +2,45 @@
 
 This example demonstrates how to use NVIDIA FLARE with JAX, Flax, and Optax to train an MNIST classifier with federated averaging (FedAvg). It follows the same hello-world recipe structure as `hello-pt`, while using a JAX client training loop and a flattened parameter vector for model exchange.
 
-## NVIDIA FLARE Installation
+## Get NVFlare and the Example
 
-For the complete installation instructions, see [Installation](https://nvflare.readthedocs.io/en/main/installation.html).
-
-```bash
-pip install nvflare
-```
-
-Install the example dependencies:
+Install either the stable or nightly NVFlare distribution:
 
 ```bash
-pip install -r requirements.txt
+# Stable
+python -m pip install nvflare
+
+# Nightly (use instead of the stable command)
+python -m pip install nvflare-nightly
 ```
 
-## Code Structure
+Then download the matching example revision:
 
-First get the example code from GitHub:
+```bash
+nvflare examples get hello-jax
+cd hello-jax
+```
+
+For a source checkout, install that checkout before entering the example directory:
 
 ```bash
 git clone https://github.com/NVIDIA/NVFlare.git
-```
-
-Then navigate to the hello-jax directory:
-
-```bash
 cd NVFlare
 git switch <release branch>
+python -m pip install -e .
 cd examples/hello-world/hello-jax
 ```
+
+Then install the remaining example dependencies:
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+The requirements file intentionally does not install NVFlare. This preserves the stable,
+nightly, or editable distribution that selected the example revision.
+
+## Code Structure
 
 ```text
 hello-jax

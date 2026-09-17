@@ -31,6 +31,7 @@ DEVOPS_ROOT = SCRIPT_DIR.parent
 REPO_ROOT = DEVOPS_ROOT.parent.parent
 DEFAULT_CONFIG = SCRIPT_DIR / "all-clouds.yaml"
 DEFAULT_DOCKERFILE = REPO_ROOT / "docker" / "Dockerfile.parent"
+SOURCE_REPOSITORY = "https://github.com/NVIDIA/NVFlare.git"
 PROVENANCE_FILE = ".nvflare-example.json"
 REVISION_PATTERN = re.compile(r"[0-9a-f]{40}", re.IGNORECASE)
 BASE_VERSION_PATTERN = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
@@ -124,29 +125,18 @@ def downloaded_source_info() -> tuple[str, str]:
 def prepare_revision_source(revision: str) -> tuple[tempfile.TemporaryDirectory, Path]:
     temporary = tempfile.TemporaryDirectory(prefix="nvflare-multicloud-")
     root = Path(temporary.name)
-    repository = root / "repository"
     source = root / "source"
-    repository.mkdir()
-    source.mkdir()
-    run(["git", "-C", str(repository), "init", "--quiet"], dry_run=False, quiet=True)
     run(
-        ["git", "-C", str(repository), "remote", "add", "origin", "https://github.com/NVIDIA/NVFlare.git"],
+        ["git", "clone", "--quiet", "--filter=blob:none", "--no-checkout", SOURCE_REPOSITORY, str(source)],
         dry_run=False,
         quiet=True,
     )
     run(
-        ["git", "-C", str(repository), "fetch", "--quiet", "--depth=1", "origin", revision],
+        ["git", "-C", str(source), "fetch", "--quiet", "origin", revision],
         dry_run=False,
         quiet=True,
     )
-    archive = subprocess.Popen(["git", "-C", str(repository), "archive", "FETCH_HEAD"], stdout=subprocess.PIPE)
-    try:
-        subprocess.run(["tar", "-x", "-C", str(source)], stdin=archive.stdout, check=True)
-    finally:
-        if archive.stdout:
-            archive.stdout.close()
-    if archive.wait() != 0:
-        fail("could not prepare the revision-matched NVFlare source")
+    run(["git", "-C", str(source), "checkout", "--quiet", "--detach", "FETCH_HEAD"], dry_run=False, quiet=True)
     return temporary, source
 
 

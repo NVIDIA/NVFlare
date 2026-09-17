@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -55,6 +56,16 @@ def test_catalog_covers_every_maintained_example_collection():
     catalog, _ = load_catalog()
     source_paths = {Path(entry["source_path"]) for entry in catalog.values()}
     assert len(source_paths) == len(catalog)
+    tracked_files = {
+        Path(path)
+        for path in subprocess.run(
+            ["git", "-C", str(REPO_ROOT), "ls-files", "--", "examples"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.splitlines()
+    }
+    tracked_readme_dirs = {path.parent for path in tracked_files if path.name in {"README.md", "README.rst"}}
 
     split_collections = {
         Path("examples/hello-world/agent-skills"),
@@ -72,38 +83,26 @@ def test_catalog_covers_every_maintained_example_collection():
         Path("examples/advanced/hello-pt-environments"),
         Path("examples/advanced/nlp-ner"),
     }
-    assert all((REPO_ROOT / path).is_dir() for path in excluded)
+    assert excluded <= tracked_readme_dirs
     expected_source_paths = set()
     for parent in (Path("examples/hello-world"), Path("examples/advanced")):
-        for collection in (REPO_ROOT / parent).iterdir():
-            relative = collection.relative_to(REPO_ROOT)
-            if (
-                not collection.is_dir()
-                or relative in excluded
-                or not ((collection / "README.md").is_file() or (collection / "README.rst").is_file())
-            ):
+        for relative in sorted(path for path in tracked_readme_dirs if path.parent == parent):
+            if relative in excluded:
                 continue
             if relative in split_collections:
-                expected_source_paths.update(
-                    child.relative_to(REPO_ROOT)
-                    for child in collection.iterdir()
-                    if child.is_dir() and ((child / "README.md").is_file() or (child / "README.rst").is_file())
-                )
+                expected_source_paths.update(path for path in tracked_readme_dirs if path.parent == relative)
             else:
                 expected_source_paths.add(relative)
 
-    devops = REPO_ROOT / "examples" / "devops"
-    for collection in devops.iterdir():
-        if not collection.is_dir() or collection.name.startswith("."):
-            continue
+    devops = Path("examples/devops")
+    devops_collections = {
+        Path(*path.parts[:3]) for path in tracked_files if len(path.parts) > 3 and path.parts[:2] == devops.parts
+    }
+    for collection in sorted(devops_collections):
         if collection.name in {"aws", "azure", "gcp"}:
-            expected_source_paths.update(
-                child.relative_to(REPO_ROOT)
-                for child in collection.iterdir()
-                if child.is_dir() and ((child / "README.md").is_file() or (child / "README.rst").is_file())
-            )
-        elif (collection / "README.md").is_file() or (collection / "README.rst").is_file():
-            expected_source_paths.add(collection.relative_to(REPO_ROOT))
+            expected_source_paths.update(path for path in tracked_readme_dirs if path.parent == collection)
+        elif collection in tracked_readme_dirs:
+            expected_source_paths.add(collection)
     expected_source_paths.add(Path("examples/docker"))
 
     # This exact comparison checks both membership and count. A new maintained
@@ -162,13 +161,10 @@ def test_collab_pt_async_is_standalone_and_uses_downloaded_package_layout():
 def test_deployment_downloads_preserve_script_directory_depth(name, source_path, destination_path):
     catalog, _ = load_catalog()
     entry = catalog[name]
-    downloaded_root = Path("/downloaded-example")
-    script_directory = downloaded_root / destination_path
     readme = (REPO_ROOT / source_path / "README.md").read_text(encoding="utf-8")
     script = (REPO_ROOT / source_path / "create_cluster.sh").read_text(encoding="utf-8")
 
     assert entry["destination_path"] == destination_path
-    assert script_directory.parents[1] == downloaded_root
     assert "${SCRIPT_DIR}/../.." in script
     assert f"nvflare examples get {name}" in readme
     assert f"cd {name}/{destination_path}" in readme
@@ -217,6 +213,9 @@ def test_openshift_download_contains_image_and_job_dependencies():
     assert 'nvflare examples revision --dir "$DOWNLOAD_ROOT"' in builder
     assert "$DOWNLOAD_ROOT/.nvflare-example.json" in builder
     assert 'version = json.load(f).get("nvflare_version")' in builder
+    assert "git clone --quiet --filter=blob:none --no-checkout" in builder
+    assert 'git -C "$TEMP_SOURCE/source" checkout --quiet --detach FETCH_HEAD' in builder
+    assert "git archive" not in builder
     assert 'client_script = pathlib.Path(example_root) / "jobs" / "numpy_client.py"' in common
     assert "hello-world/hello-numpy" not in common
     assert (example / "jobs" / "numpy_client.py").is_file()
@@ -224,12 +223,13 @@ def test_openshift_download_contains_image_and_job_dependencies():
 
 def test_experiment_tracking_quickstart_uses_downloaded_layout():
     readme = (REPO_ROOT / "examples" / "advanced" / "experiment-tracking" / "README.md").read_text(encoding="utf-8")
+    normalized_readme = " ".join(readme.split())
 
     assert "not installed by `nvflare examples get`" in readme
     assert "python -m pip install mlflow" in readme
     assert "python -m pip install tensorboard" in readme
     assert "python -m pip install wandb" in readme
-    assert "skip their\n**Install Requirements** steps" in readme
+    assert "skip their **Install Requirements** steps" in normalized_readme
     assert "pip install -r requirements.txt" not in readme
     assert "./prepare_data.sh" in readme
     assert "cd tensorboard" in readme
@@ -248,6 +248,38 @@ def test_huggingface_guidance_preserves_installed_distribution():
     assert 'python -m pip install "nvflare-nightly[PT]"' in readme
     assert 'python -m pip install -e ".[PT]"' in readme
     assert "nvflare" not in requirements.casefold()
+
+
+@pytest.mark.parametrize(
+    "name,documentation",
+    [
+        ("hello-flower", "docs/hello-world/hello-flower/index.rst"),
+        ("hello-jax", "docs/hello-world/hello-jax/index.rst"),
+        ("hello-numpy", "docs/examples/hello_numpy.rst"),
+        ("hello-tf", "docs/hello-world/hello-tf/index.rst"),
+    ],
+)
+def test_downloaded_and_source_examples_preserve_the_selected_nvflare_distribution(name, documentation):
+    example = REPO_ROOT / "examples" / "hello-world" / name
+    readme = (example / "README.md").read_text(encoding="utf-8")
+    docs_page = (REPO_ROOT / documentation).read_text(encoding="utf-8")
+    requirements = (example / "requirements.txt").read_text(encoding="utf-8")
+
+    for text in (readme, docs_page):
+        assert "python -m pip install nvflare" in text
+        assert "python -m pip install nvflare-nightly" in text
+        assert f"nvflare examples get {name}" in text
+        assert "python -m pip install -e ." in text
+        assert "python -m pip install -r requirements.txt" in text
+    assert "nvflare" not in requirements.casefold()
+
+
+def test_flower_projects_use_the_parent_nvflare_distribution():
+    example = REPO_ROOT / "examples" / "hello-world" / "hello-flower"
+
+    for project in ("flwr-pt", "flwr-pt-tb"):
+        pyproject = (example / project / "pyproject.toml").read_text(encoding="utf-8")
+        assert '\n    "nvflare' not in pyproject.casefold()
 
 
 def test_hello_pt_guidance_preserves_revision_for_install_and_environment_follow_up():

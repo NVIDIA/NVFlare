@@ -41,11 +41,10 @@ PY
 )"
   fi
   TEMP_SOURCE="$(mktemp -d "${TMPDIR:-/tmp}/nvflare-openshift.XXXXXX")"
-  mkdir "$TEMP_SOURCE/repository" "$TEMP_SOURCE/source"
-  git -C "$TEMP_SOURCE/repository" init --quiet
-  git -C "$TEMP_SOURCE/repository" remote add origin https://github.com/NVIDIA/NVFlare.git
-  git -C "$TEMP_SOURCE/repository" fetch --quiet --depth=1 origin "$REVISION"
-  git -C "$TEMP_SOURCE/repository" archive FETCH_HEAD | tar -x -C "$TEMP_SOURCE/source"
+  git clone --quiet --filter=blob:none --no-checkout \
+    "${NVFL_SOURCE_REPOSITORY:-https://github.com/NVIDIA/NVFlare.git}" "$TEMP_SOURCE/source"
+  git -C "$TEMP_SOURCE/source" fetch --quiet origin "$REVISION"
+  git -C "$TEMP_SOURCE/source" checkout --quiet --detach FETCH_HEAD
   BUILD_CONTEXT="$TEMP_SOURCE/source"
 fi
 

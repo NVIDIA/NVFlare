@@ -5,35 +5,46 @@ This example demonstrates how to use NVIDIA FLARE with Flower to train an image 
 The complete example code can be found in the `hello-flower directory <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/hello-flower>`_.
 It is recommended to create a virtual environment and run everything within a virtualenv.
 
-NVIDIA FLARE Installation
--------------------------
+Get NVFlare and the Example
+---------------------------
 
 For the complete installation instructions, see `Installation <https://nvflare.readthedocs.io/en/main/installation.html>`_.
 
+Install either the stable or nightly NVFlare distribution:
+
 .. code-block:: bash
 
-   pip install nvflare
+   # Stable
+   python -m pip install nvflare
 
+   # Nightly (use instead of the stable command)
+   python -m pip install nvflare-nightly
 
-Get the example code from GitHub:
+Then download the matching example revision:
+
+.. code-block:: bash
+
+   nvflare examples get hello-flower
+   cd hello-flower
+
+For a source checkout, install that checkout before entering the example directory:
 
 .. code-block:: bash
 
    git clone https://github.com/NVIDIA/NVFlare.git
-
-Then navigate to the ``hello-flower`` directory:
-
-.. code-block:: bash
-
    cd NVFlare
    git switch <release branch>
+   python -m pip install -e .
    cd examples/hello-world/hello-flower
 
-Install the dependencies:
+Then install the remaining example dependencies:
 
 .. code-block:: bash
 
-   pip install -r requirements.txt
+   python -m pip install -r requirements.txt
+
+The requirements file intentionally does not install NVFlare. This preserves
+the stable, nightly, or editable distribution that selected the example revision.
 
 .. warning::
 

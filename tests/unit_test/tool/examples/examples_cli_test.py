@@ -14,6 +14,7 @@
 
 import json
 import shlex
+from pathlib import Path
 
 import pytest
 import requests
@@ -342,6 +343,15 @@ def test_missing_tree_key_is_structured_without_creating_destination(monkeypatch
                 {"path": "dir/b.txt", "type": "blob", "mode": "100644"},
             ],
         },
+        {
+            "truncated": False,
+            "tree": [
+                {"path": "\u0390.txt", "type": "blob", "mode": "100644"},
+                {"path": "\u03aa\u0301.txt", "type": "blob", "mode": "100644"},
+            ],
+        },
+        {"truncated": False, "tree": [{"path": "folder\\file.txt", "type": "blob", "mode": "100644"}]},
+        {"truncated": False, "tree": [{"path": "C:/file.txt", "type": "blob", "mode": "100644"}]},
     ],
 )
 def test_unusable_tree_metadata_is_rejected_before_creating_destination(monkeypatch, tmp_path, metadata):
@@ -352,6 +362,25 @@ def test_unusable_tree_metadata_is_rejected_before_creating_destination(monkeypa
         examples_cli._download_example(REVISION, SOURCE_PATH, destination)
 
     assert error.value.code == "EXAMPLE_CONTENT_INVALID"
+    assert not destination.exists()
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        {"path": "linked-config.yaml", "type": "blob", "mode": 120000},
+        {"path": "vendor/project", "type": "commit", "mode": "160000"},
+    ],
+)
+def test_symlinks_and_submodules_report_the_specific_content_error(monkeypatch, tmp_path, entry):
+    _mock_session(monkeypatch, _Response(metadata={"truncated": False, "tree": [entry]}))
+    destination = tmp_path / "example"
+
+    with pytest.raises(examples_cli.ExampleError) as error:
+        examples_cli._download_example(REVISION, SOURCE_PATH, destination)
+
+    assert error.value.code == "EXAMPLE_CONTENT_INVALID"
+    assert "unsupported symlink or submodule" in str(error.value)
     assert not destination.exists()
 
 
@@ -663,4 +692,7 @@ def test_cli_failure_is_structured(monkeypatch, capsys, failure, code, exit_code
     with pytest.raises(SystemExit) as error:
         cli.run("nvflare")
     assert error.value.code == exit_code
-    assert json.loads(capsys.readouterr().out)["error_code"] == code
+    result = json.loads(capsys.readouterr().out)
+    assert result["error_code"] == code
+    if code in {"EXAMPLE_INTERRUPTED", "EXAMPLE_IO_ERROR"}:
+        assert str(Path.cwd() / "hello-pt") in result["hint"]

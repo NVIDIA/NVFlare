@@ -135,7 +135,7 @@ def _validate_tree_entries(entries, source_path):
     file_keys = set()
 
     def path_key(parts):
-        return tuple(unicodedata.normalize("NFC", unicodedata.normalize("NFC", part).casefold()) for part in parts)
+        return tuple(unicodedata.normalize("NFC", part.casefold()) for part in parts)
 
     def collision(path):
         raise _content_error(
@@ -158,7 +158,7 @@ def _validate_tree_entries(entries, source_path):
         ):
             raise _content_error()
         entry_type = entry["type"]
-        entry_mode = entry.get("mode")
+        entry_mode = str(entry.get("mode"))
         if entry_type == "commit" or entry_mode in {"120000", "160000"}:
             raise _content_error(
                 f"The example contains an unsupported symlink or submodule: {entry['path']}.",
@@ -167,7 +167,7 @@ def _validate_tree_entries(entries, source_path):
         if entry_type not in {"blob", "tree"}:
             raise _content_error()
         relative_parts = entry["path"].split("/")
-        if any(part in {"", ".", ".."} for part in relative_parts):
+        if any(part in {"", ".", ".."} or "\\" in part or re.fullmatch(r"[A-Za-z]:", part) for part in relative_parts):
             raise _content_error(f"GitHub returned an invalid path for {source_path}.")
         key = path_key(relative_parts)
         if key in entry_keys:
@@ -232,7 +232,7 @@ def _download_example(revision, source_path, destination, destination_path=None)
                     with target.open("wb") as target_file:
                         for chunk in response.iter_content(1024 * 1024):
                             target_file.write(chunk)
-                if entry.get("mode") == "100755":
+                if str(entry.get("mode")) == "100755":
                     target.chmod(0o755)
     except requests.RequestException as error:
         cleanup = f"Remove the incomplete destination directory at {destination}. " if destination_created else ""
@@ -396,16 +396,19 @@ def handle_examples_cmd(args):
     except ExampleError as error:
         output_error_message(error.code, str(error), error.hint, exit_code=1)
     except KeyboardInterrupt:
+        destination = Path(getattr(args, "dest", None) or getattr(args, "name", "example")).expanduser().absolute()
         output_error_message(
             "EXAMPLE_INTERRUPTED",
             "Example download interrupted.",
-            "Remove any incomplete destination, then retry the command.",
+            f"If it exists, remove the incomplete destination at {destination}, then retry the command.",
             exit_code=130,
         )
     except (OSError, RuntimeError) as error:
+        destination = Path(getattr(args, "dest", None) or getattr(args, "name", "example")).expanduser().absolute()
         output_error_message(
             "EXAMPLE_IO_ERROR",
             f"Cannot download the example: {error}",
-            "Remove any incomplete destination, then check the path, permissions, free space, and installation.",
+            f"If it exists, remove the incomplete destination at {destination}, then check the path, permissions, "
+            "free space, and installation.",
             exit_code=1,
         )

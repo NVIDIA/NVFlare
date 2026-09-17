@@ -6,38 +6,49 @@ Hello NumPy
 This example demonstrates how to use NVIDIA FLARE with NumPy to train a simple model using federated averaging (FedAvg). The complete example code can be found in the :github_nvflare_link:`hello-numpy directory <examples/hello-world/hello-numpy>`.
 It is recommended to create a virtual environment and run everything within a virtualenv.
 
-NVIDIA FLARE Installation
--------------------------
+Get NVFlare and the Example
+---------------------------
 For the complete installation instructions, see :doc:`../installation`
 
-.. code-block:: text
-
-    pip install nvflare
-
-Install the dependency
+Install either the stable or nightly NVFlare distribution:
 
 .. code-block:: text
 
-    pip install -r requirements.txt
+    # Stable
+    python -m pip install nvflare
 
+    # Nightly (use instead of the stable command)
+    python -m pip install nvflare-nightly
 
-Code Structure
---------------
+Then download the matching example revision:
 
-Get the example code from GitHub:
+.. code-block:: text
+
+    nvflare examples get hello-numpy
+    cd hello-numpy
+
+For a source checkout, install that checkout before entering the example directory:
 
 .. code-block:: text
 
     git clone https://github.com/NVIDIA/NVFlare.git
+    cd NVFlare
+    git switch <release branch>
+    python -m pip install -e .
+    cd examples/hello-world/hello-numpy
 
-Navigate to the hello-numpy directory:
+Then install the remaining example dependencies:
 
 .. code-block:: text
 
-    cd NVFlare
-    git switch <release branch>
-    cd examples/hello-world/hello-numpy
+    python -m pip install -r requirements.txt
 
+The requirements file intentionally does not install NVFlare. This preserves
+the stable, nightly, or editable distribution that selected the example revision.
+
+
+Code Structure
+--------------
 
 .. code-block:: text
 

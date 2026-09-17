@@ -16,7 +16,10 @@ import importlib.util
 import io
 import json
 import os
+import shutil
+import subprocess
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -46,6 +49,57 @@ def _load_build_module():
         "multicloud_build_and_push",
         os.path.join(_repo_root(), "examples", "devops", "multicloud", "build_and_push.py"),
     )
+
+
+def _git(repo: Path, *args: str) -> str:
+    return subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True, text=True).stdout.strip()
+
+
+def test_prepared_revision_source_retains_git_metadata(monkeypatch, tmp_path):
+    build = _load_build_module()
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    _git(repository, "init", "--quiet")
+    _git(repository, "config", "user.name", "NVFlare Test")
+    _git(repository, "config", "user.email", "nvflare-test@example.com")
+    shutil.copy(Path(_repo_root()) / "versioneer.py", repository / "versioneer.py")
+    shutil.copy(Path(_repo_root()) / "setup.cfg", repository / "setup.cfg")
+    version_file = repository / "nvflare" / "_version.py"
+    version_file.parent.mkdir()
+    shutil.copy(Path(_repo_root()) / "nvflare" / "_version.py", version_file)
+    _git(repository, "add", ".")
+    _git(repository, "commit", "--quiet", "-m", "test source")
+    _git(repository, "tag", "2.10.0dev0")
+    revision = _git(repository, "rev-parse", "HEAD")
+    monkeypatch.setattr(build, "SOURCE_REPOSITORY", str(repository))
+
+    temporary, source = build.prepare_revision_source(revision)
+    try:
+        assert (source / ".git").is_dir()
+        assert _git(source, "rev-parse", "HEAD") == revision
+
+        deleted = subprocess.Popen(["git", "-C", str(source), "ls-files", "--deleted", "-z"], stdout=subprocess.PIPE)
+        try:
+            subprocess.run(
+                ["git", "-C", str(source), "update-index", "--skip-worktree", "-z", "--stdin"],
+                stdin=deleted.stdout,
+                check=True,
+            )
+        finally:
+            if deleted.stdout:
+                deleted.stdout.close()
+        assert deleted.wait() == 0
+        subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "import versioneer; result = versioneer.get_versions(); assert not result['error'], result['error']",
+            ],
+            cwd=source,
+            check=True,
+        )
+    finally:
+        temporary.cleanup()
 
 
 def test_downloaded_build_dry_run_uses_provenance_without_fetching(monkeypatch, tmp_path, capsys):
