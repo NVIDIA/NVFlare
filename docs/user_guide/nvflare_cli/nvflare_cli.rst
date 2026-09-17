@@ -11,13 +11,14 @@ Running ``nvflare -h`` shows the current command surface:
 
 .. code-block:: none
 
-   usage: nvflare [-h] [--version] [--format {txt,json}]
+   usage: nvflare [-h] [--version [{package,revision}]] [--format {txt,json,jsonl}]
                   [--connect-timeout CONNECT_TIMEOUT] ...
 
 Global options
 ==============
 
-- ``--version`` / ``-V``: print the NVFlare version
+- ``--version`` / ``-V``: print the NVFlare package version; use
+  ``--version revision`` to print its full source Git revision
 - ``--format {txt,json}``: select human-readable output or a JSON envelope
 - ``--connect-timeout``: control server connection timeout for remote commands
 

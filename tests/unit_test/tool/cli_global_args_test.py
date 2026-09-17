@@ -13,6 +13,30 @@
 # limitations under the License.
 
 
+def test_version_defaults_to_package_and_accepts_revision(monkeypatch):
+    from nvflare import cli as cli_mod
+
+    monkeypatch.setattr(cli_mod.sys, "argv", ["nvflare", "--version"])
+    _, args, _ = cli_mod.parse_args("nvflare")
+    assert args.version == "package"
+
+    monkeypatch.setattr(cli_mod.sys, "argv", ["nvflare", "--version", "revision"])
+    _, args, _ = cli_mod.parse_args("nvflare")
+    assert args.version == "revision"
+
+
+def test_version_revision_prints_full_source_revision(monkeypatch, capsys):
+    from nvflare import _version
+    from nvflare import cli as cli_mod
+
+    revision = "a" * 40
+    monkeypatch.setattr(_version, "get_versions", lambda: {"full-revisionid": revision})
+
+    cli_mod.print_nvflare_version("revision")
+
+    assert capsys.readouterr().out == f"{revision}\n"
+
+
 def test_global_args_after_subcommand(monkeypatch):
     from nvflare import cli as cli_mod
 

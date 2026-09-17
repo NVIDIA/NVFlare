@@ -391,7 +391,15 @@ def _patch_help_on_error(parser, json_mode: bool = False):
 
 def _build_global_arg_parser():
     parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument("--version", "-V", action="store_true", help="print nvflare version")
+    parser.add_argument(
+        "--version",
+        "-V",
+        nargs="?",
+        const="package",
+        choices=("package", "revision"),
+        metavar="{package,revision}",
+        help="print the NVFlare package version (default) or full source revision",
+    )
     parser.add_argument(
         "--format",
         dest="format",
@@ -431,6 +439,14 @@ def _normalize_global_args(argv, global_parser):
         if option in {"--version", "-V"} and subcommand_seen:
             remaining_args.append(arg)
             i += 1
+            continue
+        if option in {"--version", "-V"} and not has_inline_value:
+            global_args.append(arg)
+            if i + 1 < len(argv) and argv[i + 1] in {"package", "revision"}:
+                global_args.append(argv[i + 1])
+                i += 2
+            else:
+                i += 1
             continue
         if action is None:
             remaining_args.append(arg)
@@ -599,7 +615,7 @@ def run(prog_name):
                 raise CLIUnknownCmdException(f"unknown command: {sub_cmd}")
             handler(prog_args)
         elif prog_args.version:
-            print_nvflare_version()
+            print_nvflare_version(prog_args.version)
         else:
             prog_parser.print_help()
     except CLIUnknownCmdException as e:
@@ -661,10 +677,15 @@ def _suppress_cli_connector_noise():
         logging.getLogger(name).setLevel(logging.CRITICAL)
 
 
-def print_nvflare_version():
-    import nvflare
+def print_nvflare_version(value="package"):
+    if value == "revision":
+        from nvflare import _version
 
-    print(f"NVFlare version is {nvflare.__version__}")
+        print(_version.get_versions()["full-revisionid"])
+    else:
+        import nvflare
+
+        print(f"NVFlare version is {nvflare.__version__}")
 
 
 def main():

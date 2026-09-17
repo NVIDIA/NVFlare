@@ -69,7 +69,7 @@ before opening the example in Codex or Claude Code:
 
 .. code-block:: bash
 
-   NVFLARE_REVISION=$(python -c 'import json; print(json.load(open(".nvflare-example.json"))["revision"])')
+   NVFLARE_REVISION=$(nvflare --version revision)
    npx skills add "https://github.com/NVIDIA/NVFlare/tree/${NVFLARE_REVISION}/skills" \
      --skill '*' -a codex -a claude-code -y
 
@@ -136,6 +136,20 @@ Schema discovery does not download the example:
    nvflare examples --schema
    nvflare examples list --schema
    nvflare examples get --schema
+
+``nvflare examples list`` and the ``--schema`` commands use the installed
+catalog and do not contact GitHub. Each ``nvflare examples get`` invocation
+makes one unauthenticated GitHub REST API request to locate the selected
+subtree, then downloads its files from ``raw.githubusercontent.com``.
+
+GitHub currently limits unauthenticated REST API traffic to 60 requests per
+hour per originating IP address. This allowance can be shared by machines
+behind the same proxy or NAT gateway. For repeated CI or agent workflows,
+download an example once and reuse that workspace instead of calling ``get``
+in a loop. For bulk retrieval, use a revision-pinned Git checkout. If GitHub
+returns a ``403`` or ``429`` rate-limit response, wait until the reset time
+reported by GitHub before retrying. See `GitHub REST API rate limits
+<https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api>`_.
 
 Failures return a nonzero exit status, an error code, and a recovery hint.
 ``EXAMPLE_DESTINATION_EXISTS`` identifies an existing destination,

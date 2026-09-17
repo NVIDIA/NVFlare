@@ -110,7 +110,7 @@ def test_agent_skill_examples_install_skills_from_repository(example_name):
     )
 
     assert "https://github.com/NVIDIA/NVFlare/tree/${NVFLARE_REVISION}/skills" in readme
-    assert 'json.load(open(".nvflare-example.json"))["revision"]' in readme
+    assert "nvflare --version revision" in readme
     assert "NVFLARE_SKILLS_SOURCE=../../../../skills" in readme
     assert "pip install 'nvflare" not in readme
 
