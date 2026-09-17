@@ -73,7 +73,6 @@ CMD_EXAMPLES = "examples"
 _JSONL_COMMANDS = {
     (CMD_JOB, "monitor"),
 }
-_PACKAGE_VERSION = "__package_version__"
 
 
 def def_provision_parser(sub_cmd):
@@ -392,14 +391,7 @@ def _patch_help_on_error(parser, json_mode: bool = False):
 
 def _build_global_arg_parser():
     parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument(
-        "--version",
-        "-V",
-        nargs="?",
-        const=_PACKAGE_VERSION,
-        metavar="revision",
-        help="print the NVFlare package version (default) or full source revision",
-    )
+    parser.add_argument("--version", "-V", action="store_true", help="print nvflare version")
     parser.add_argument(
         "--format",
         dest="format",
@@ -440,14 +432,6 @@ def _normalize_global_args(argv, global_parser):
             remaining_args.append(arg)
             i += 1
             continue
-        if option in {"--version", "-V"} and not has_inline_value:
-            global_args.append(arg)
-            if i + 1 < len(argv) and argv[i + 1] == "revision":
-                global_args.append(argv[i + 1])
-                i += 2
-            else:
-                i += 1
-            continue
         if action is None:
             remaining_args.append(arg)
             subcommand_seen = True
@@ -471,8 +455,6 @@ def parse_args(prog_name: str):
     global_parser = _build_global_arg_parser()
     normalized_argv = _normalize_global_args(sys.argv[1:], global_parser)
     global_args, remaining_after_global = global_parser.parse_known_args(normalized_argv)
-    if global_args.version not in {None, _PACKAGE_VERSION, "revision"}:
-        global_parser.error("argument --version/-V: expected no value or 'revision'")
     _parser = argparse.ArgumentParser(description=prog_name, parents=[global_parser])
     sub_cmd = _parser.add_subparsers(title="commands", metavar="", dest="sub_command")
     sub_cmd_parsers = {}
@@ -617,7 +599,7 @@ def run(prog_name):
                 raise CLIUnknownCmdException(f"unknown command: {sub_cmd}")
             handler(prog_args)
         elif prog_args.version:
-            print_nvflare_version(prog_args.version)
+            print_nvflare_version()
         else:
             prog_parser.print_help()
     except CLIUnknownCmdException as e:
@@ -679,15 +661,10 @@ def _suppress_cli_connector_noise():
         logging.getLogger(name).setLevel(logging.CRITICAL)
 
 
-def print_nvflare_version(value="package"):
-    if value == "revision":
-        from nvflare import _version
+def print_nvflare_version():
+    import nvflare
 
-        print(_version.get_versions()["full-revisionid"])
-    else:
-        import nvflare
-
-        print(f"NVFlare version is {nvflare.__version__}")
+    print(f"NVFlare version is {nvflare.__version__}")
 
 
 def main():
