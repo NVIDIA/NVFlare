@@ -63,7 +63,6 @@ def contract(profile, source=SOURCE):
         "token_issuer",
     )
     value = {key: profile[key] for key in keys}
-    value["trustee_patch_digest"] = profile.get("trustee_patch_digest", "none")
     for key in ("base_image", "build_firmware", "kbs_cert", "as_public_key", "attestation_policy", "reference_values"):
         value[key + "_sha256"] = digest_file(profile[key])
     value["runtime_source_sha256"] = hashlib.sha256(
@@ -77,7 +76,7 @@ def contract(profile, source=SOURCE):
     value["layout_version"] = 2
     value["dev_mode"] = profile.get("dev_mode", False)
     if profile["gpu"] == "nvidia_cc":
-        for key in ("gpu_policy", "gpu_attestation_binary", "gpu_attestation_library"):
+        for key in ("gpu_policy", "gpu_attestation_library"):
             value[key + "_sha256"] = digest_file(profile[key])
         value["gpu_packages"] = profile["gpu_packages"]
         value["gpu_attestation_url"] = profile["gpu_attestation_url"]
@@ -131,7 +130,6 @@ def provisioning_payload(profile, platform, build_id, job, source, runtime):
         inputs.update(
             {
                 "gpu-policy.json": profile["gpu_policy"],
-                "nvattest": profile["gpu_attestation_binary"],
                 "libnvat.so.1.2.2": profile["gpu_attestation_library"],
             }
         )

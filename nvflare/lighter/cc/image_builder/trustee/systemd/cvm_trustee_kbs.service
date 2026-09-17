@@ -1,5 +1,5 @@
 [Unit]
-Description=Restricted CVM Trustee KBS
+Description=Upstream CoCo Trustee KBS for CVM vaults
 Requires=cvm_key_reconcile.service
 After=network-online.target cvm_key_reconcile.service
 Wants=network-online.target
@@ -10,7 +10,7 @@ User=cvm-trustee
 Group=cvm-trustee
 WorkingDirectory=/opt/cvm-builder
 ExecStartPre=/usr/bin/python3 /opt/cvm-builder/scripts/trustee_preflight.py
-EnvironmentFile=/etc/cvm-trustee/environment
+ExecStartPre=/usr/bin/test -s /var/lib/cvm-trustee/storage/kbs/resource-policy.rego
 Environment=RUST_LOG=warn
 Environment=XDG_CACHE_HOME=/var/cache/cvm-trustee
 CacheDirectory=cvm-trustee
@@ -21,8 +21,8 @@ NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
-ReadOnlyPaths=/var/lib/cvm-trustee-resources /etc/cvm-trustee/as-policies
-ReadWritePaths=/var/lib/cvm-trustee/as /var/lib/cvm-trustee/policy /var/lib/cvm-trustee/rvps
+ReadOnlyPaths=/var/lib/cvm-trustee/storage/repository /var/lib/cvm-trustee/storage/attestation_service_policy /var/lib/cvm-trustee/storage/reference_value
+ReadWritePaths=/var/lib/cvm-trustee/storage/kbs
 Restart=on-failure
 
 [Install]

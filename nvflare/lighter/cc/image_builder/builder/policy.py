@@ -23,11 +23,24 @@ from pathlib import Path
 from .common import PLATFORMS, digest_file, identifier, read_json, require, write_json
 
 PRELUDE = """package policy
-default allow = false
+import rego.v1
+default allow := false
 cpu := input["submods"]["cpu0"]
 ev := cpu["ear.veraison.annotated-evidence"]
 tv := cpu["ear.trustworthiness-vector"]
-approved_cpu(policy_id) {
+fresh_token if {
+    now := time.now_ns() / 1000000000
+    is_number(input.iat)
+    is_number(input.exp)
+    input.iat <= now + 5
+    input.iat >= now - 300
+    input.exp > now
+    input.exp > input.iat
+    input.exp - input.iat <= 300
+    object.get(input, "nbf", 0) <= now + 5
+}
+approved_cpu(policy_id) if {
+    fresh_token
     cpu["ear.appraisal-policy-id"] == policy_id
     cpu["ear.status"] == "affirming"
     tv["executables"] == 3
@@ -63,8 +76,10 @@ def bundle_rule(manifest):
     validate_measurements(platform, values)
     build = json.dumps(identifier(manifest["build_id"]))
     policy = json.dumps(identifier(manifest["attestation_policy_id"]))
-    lines = ["allow {", f"    approved_cpu({policy})", '    is_string(ev["init_data"])']
+    lines = ["allow if {", f"    approved_cpu({policy})", '    is_string(ev["init_data"])']
     contract = manifest.get("contract", {})
+    if contract.get("token_issuer"):
+        lines.append(f'    input.iss == {json.dumps(contract["token_issuer"])}')
     if contract.get("gpu") == "nvidia_cc":
         from .gpu_policy import resource_conditions
 
@@ -87,7 +102,12 @@ def bundle_rule(manifest):
             '    regex.match("^[0-9a-f]{64}0{32}$", ev["init_data"])',
             '    binding_id := ev["init_data"]',
         ]
-    lines += [f'    data["resource-path"] == sprintf("resource/keys/%s/%s", [{build}, binding_id])', "}", ""]
+    lines += [
+        '    data.plugin == "resource"',
+        f'    data["resource-path"] == ["keys", {build}, binding_id]',
+        "}",
+        "",
+    ]
     return "\n".join(lines)
 
 
@@ -174,7 +194,7 @@ ACCEPTANCE_CHECKS = {
     "root_overlay_capacity",
 }
 
-SNP_ACCEPTANCE_CHECKS = {"snp_vcek_cache"}
+SNP_ACCEPTANCE_CHECKS = {"snp_collateral_availability"}
 GPU_ACCEPTANCE_CHECKS = {
     "gpu_negative_key_denial",
     "gpu_positive_key_release",

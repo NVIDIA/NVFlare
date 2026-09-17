@@ -124,22 +124,18 @@ an independently authenticated administrator process before retrying. The
 builder's recorded input digest provides traceability; it does not authenticate
 the publisher or replace this verification step.
 
-Build the pinned `kbs-client` from the official Trustee repository. The reviewed
-source revision is
-<https://github.com/confidential-containers/trustee/tree/a2570329cc33daf9ca16370a1948b5379bb17fbe>:
+Build `kbs-client` from the unmodified CoCo Trustee v0.22.0 checkout, using
+upstream's Linux build prerequisites and Rust toolchain:
 
 ```sh
-git clone https://github.com/confidential-containers/trustee.git /tmp/trustee
-cd /tmp/trustee
-git checkout a2570329cc33daf9ca16370a1948b5379bb17fbe
-cd -
-python3 scripts/patch_trustee.py /tmp/trustee
-cargo build --locked --release \
-  --manifest-path /tmp/trustee/Cargo.toml \
-  -p kbs-client --bin kbs-client --no-default-features \
-  --features tdx-attester,snp-attester,kbs_protocol/background_check,kbs_protocol/passport,kbs_protocol/rust-crypto
+git clone --branch v0.22.0 https://github.com/confidential-containers/trustee.git /tmp/trustee
+cargo build --locked --release --manifest-path /tmp/trustee/Cargo.toml   -p kbs-client --bin kbs-client --no-default-features   --features native-tls,tdx-attester,snp-attester
 install -m 755 /tmp/trustee/target/release/kbs-client inputs/kbs-client
 ```
+
+For a GPU profile add `nvidia-attester` and install upstream's matching NVAT
+build/runtime dependency. Leave the source and dependency lockfile unchanged.
+See [TRUSTEE_GUIDE.md](TRUSTEE_GUIDE.md) for the matching CoCo v0.23.0 backend.
 
 The site operator supplies these trust inputs because they are deployment-specific
 and cannot be downloaded from this repository:
@@ -174,7 +170,7 @@ failed, or incomplete site acceptance report leaves the bundle unapproved.
 The main defaults are:
 
 ```yaml
-profile_version: cpu-2026.09-r3
+profile_version: cpu-2026.09-r4
 guest_release: '26.04'
 gpu: none
 base_image: ../inputs/ubuntu-26.04-server-cloudimg-amd64.img
@@ -248,10 +244,10 @@ The deferred call emits a pending CVM OCI artifact. Copy that `.oci.tar` to its
 matching target host, verify and materialize it, then finalize it:
 
 ```sh
-sudo scripts/cvm_pull cvm_cpu-2026.09-r3_amd_sev_snp.oci.tar \
-  --output /srv/cvm/cvm_cpu-2026.09-r3
+sudo scripts/cvm_pull cvm_cpu-2026.09-r4_amd_sev_snp.oci.tar \
+  --output /srv/cvm/cvm_cpu-2026.09-r4
 sudo scripts/cvm_finalize \
-  /srv/cvm/cvm_cpu-2026.09-r3/amd_sev_snp
+  /srv/cvm/cvm_cpu-2026.09-r4/amd_sev_snp
 ```
 
 Run the site's acceptance matrix there. Then approve its exact report and install
@@ -259,12 +255,12 @@ the bundle's reference values and reusable resource policy:
 
 ```sh
 sudo scripts/admin_approve \
-  /srv/cvm/cvm_cpu-2026.09-r3/amd_sev_snp \
+  /srv/cvm/cvm_cpu-2026.09-r4/amd_sev_snp \
   /srv/cvm/acceptance-report.json
 
 sudo scripts/admin_install \
   /srv/trustee/admin.json \
-  /srv/cvm/cvm_cpu-2026.09-r3/amd_sev_snp
+  /srv/cvm/cvm_cpu-2026.09-r4/amd_sev_snp
 ```
 
 Finalization and approval regenerate the OCI artifact so it includes the final
@@ -279,13 +275,13 @@ profile version, shared contract, platform entry and manifest digest before it
 updates the combined `profile_set.json`:
 
 ```sh
-scripts/cvm_pull cvm_cpu-2026.09-r3_intel_tdx.oci.tar \
-  --output target/final_cvm_cpu-2026.09-r3
-scripts/cvm_pull cvm_cpu-2026.09-r3_amd_sev_snp.oci.tar \
-  --output target/final_cvm_cpu-2026.09-r3 --merge
+scripts/cvm_pull cvm_cpu-2026.09-r4_intel_tdx.oci.tar \
+  --output target/final_cvm_cpu-2026.09-r4
+scripts/cvm_pull cvm_cpu-2026.09-r4_amd_sev_snp.oci.tar \
+  --output target/final_cvm_cpu-2026.09-r4 --merge
 ```
 
-Set `cvm_image: ../target/final_cvm_cpu-2026.09-r3` in
+Set `cvm_image: ../target/final_cvm_cpu-2026.09-r4` in
 `config/vault_build.yml` to use that aggregated folder.
 
 ## 4. Vault Build
@@ -335,7 +331,7 @@ Copy the exact value printed by `docker image inspect` into `image_id` in
 [config/vault_build.yml](config/vault_build.yml):
 
 ```yaml
-cvm_image: ../target/cvm_cpu-2026.09-r3
+cvm_image: ../target/cvm_cpu-2026.09-r4
 docker_archive: ../inputs/application.tar
 image_id: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 # Optional: omit to use every platform available in cvm_image.
@@ -369,7 +365,7 @@ dependencies.
 subdirectories, or a generic CVM OCI registry reference pinned by manifest digest:
 
 ```yaml
-cvm_image: registry.example.org/cvm/cpu-2026.09-r3@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+cvm_image: registry.example.org/cvm/cpu-2026.09-r4@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 ```
 
 `oci://` and `https://` prefixes are also accepted. Use the actual digest printed
@@ -412,15 +408,15 @@ sudo ./vault_build.sh config/vault_build.yml --plain-http
 
 Use a generic CVM profile with `gpu: nvidia_cc`, the required `gpu_count` from 1
 through 8, a reviewed `gpu_policy`, a trusted `gpu_attestation_url`, the pinned
-`gpu_attestation_binary` and `gpu_attestation_library`, and exact `gpu_packages`
+`gpu_attestation_library`, and exact `gpu_packages`
 pins for the NVIDIA guest driver and NVIDIA Container Toolkit.
 Set `requires_gpu: true` in `vault_build.yml`. The builder rejects a GPU
 application paired with a CPU-only profile and rejects a GPU profile paired with
 an application that does not request the GPU.
 
 Point `gpu_policy` at `config/gpu_policy.json` unless a site needs stricter
-rules. The measured root collects raw evidence with NVIDIA's C++ `nvattest` CLI.
-The patched client includes it in the same KBS transaction as the CPU quote.
+rules. The upstream client collects raw evidence using NVIDIA's `libnvat` SDK bindings
+and includes it in the same KBS transaction as the CPU quote.
 Trustee calls NRAS and authenticates its signed EAT; the generated AS GPU policy
 compares every nested value in `required-claims` and driver/VBIOS versions against
 RVPS approvals before KBS can release the vault key. Stage 1 validates
@@ -434,14 +430,10 @@ fields. The policy lists those two fields under `claims-if-present`: a returned
 false or malformed value denies key release. RIM signature, certificate,
 version and measurement checks remain mandatory in `required-claims`.
 
-The checked-in defaults expect `inputs/nvattest` and
-`inputs/libnvat.so.1.2.2`. Obtain the source from NVIDIA's current C++
-attestation SDK, check out a reviewed release, build the CLI for the selected
-guest release, and record its source revision and file digests in release
-provenance. The September 2026 Ubuntu 26.04 validation used SDK commit
-`9d12801cea8a198ea0f29640dfaf8a4017c841c5` (NVAT 1.2.2). NVIDIA's prebuilt
-packages currently target Ubuntu 22.04 and 24.04, so they are not substituted
-into an Ubuntu 26.04 profile.
+The checked-in default expects `inputs/libnvat.so.1.2.2`, matching the NVAT
+2026.06.09 bindings pinned by upstream guest-components. Supply a reviewed
+library built for the selected guest environment. The custom `nvattest` collector
+is no longer installed; evidence collection and verification use CoCo's code.
 
 For a smaller guest, `gpu_packages` may pin a precompiled
 `linux-modules-nvidia-*-<kernel>` package plus its matching

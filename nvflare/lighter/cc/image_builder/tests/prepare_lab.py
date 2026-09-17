@@ -17,11 +17,11 @@
 The PKI is for disposable tests only. It never reads existing KBS private keys.
 """
 
+import argparse
 import datetime
 import ipaddress
 import os
 import subprocess
-import sys
 import tempfile
 from pathlib import Path
 
@@ -33,12 +33,12 @@ from cryptography.hazmat.primitives.asymmetric import ec, ed25519
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 
 
-def prepare(directory):
+def prepare(directory, *, http_only=False):
     directory = Path(directory).resolve()
     inputs = directory / "inputs"
     inputs.mkdir(exist_ok=True)
     tdx_firmware = Path(os.environ.get("CVM_TDX_FIRMWARE", inputs / "OVMF.inteltdx.fd")).resolve()
-    if not tdx_firmware.is_file():
+    if not http_only and not tdx_firmware.is_file():
         raise SystemExit("Provide the validated TDVF at inputs/OVMF.inteltdx.fd or set CVM_TDX_FIRMWARE")
     # These are KBS deployment keys, not vault build scratch. Keep them in a
     # protected backend directory: logind may remove user-owned /dev/shm files
@@ -141,6 +141,10 @@ def prepare(directory):
     (pki / "kbs-admin.pub").write_bytes(
         admin_key.public_key().public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo)
     )
+    if http_only:
+        write_json(directory / "lab-state.json", {"pki": str(pki)})
+        print("Prepared disposable HTTPS test PKI")
+        return
     names = [
         "python3",
         "python3-yaml",
@@ -176,17 +180,14 @@ def prepare(directory):
         "kbs_cert": str(inputs / "test-ca.pem"),
         "as_public_key": str(inputs / "test-as-public.pem"),
         "token_algorithm": "ES256",
-        "token_issuer": None,
+        "token_issuer": "CoCo-Attestation-Service",
         "bootstrap_egress": [443, 19199],
         "vcpus": 4,
         "memory_gib": 8,
         "root_overlay_max_mib": 4096,
         "root_drive_size": 8,
-        "trustee_commit": "a2570329cc33daf9ca16370a1948b5379bb17fbe",
-        "trustee_patch_digest": __import__("hashlib")
-        .sha256((directory / "trustee-source/cvm-boundary.patch").read_bytes())
-        .hexdigest(),
-        "attestation_policy_id": "cvm-v2-test-r1",
+        "trustee_commit": "512fed65642015b849f38fb13bfdec7806639987",
+        "attestation_policy_id": "default",
         "vault_header_bytes": HEADER_BYTES,
         "vault_storage_profile": STORAGE_PROFILE,
         "kernel_version": "7.0.0-31-generic",
@@ -222,4 +223,8 @@ def prepare(directory):
 
 
 if __name__ == "__main__":
-    prepare(sys.argv[1])
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("directory")
+    parser.add_argument("--http-only", action="store_true")
+    args = parser.parse_args()
+    prepare(args.directory, http_only=args.http_only)

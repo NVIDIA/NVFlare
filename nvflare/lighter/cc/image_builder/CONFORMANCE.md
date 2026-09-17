@@ -1,3 +1,7 @@
+> Current implementation targets unmodified CoCo v0.23.0 / Trustee v0.22.0.
+> Earlier hardware results below describe previous profiles. Repeat the complete
+> hardware acceptance matrix for the new upstream profile before production approval.
+
 # NVIDIA Confidential Computing Reference Architecture Conformance
 
 Review date: September 17, 2026
@@ -94,7 +98,7 @@ and
 | RA capability | CPU-only profile | GPU-enabled profile | Implementation evidence and remaining work |
 |---|---|---|---|
 | Launch the workload in a measured CVM | Meets | Evidence pending | SNP and TDX launch assets and shape are pinned in `builder/launcher.py`; exact reference measurements are generated and approved in `builder/policy.py`. Current source changes require fresh hardware acceptance before production approval. |
-| Collect fresh evidence for the CPU TEE, guest image, launch configuration, firmware, and applicable GPU | Meets | Conditional | `builder/attestation.py` obtains a fresh KBS challenge, binds it to an ephemeral key, validates the signed EAR, and checks the selected CPU profile. The patched client collects NVIDIA evidence bound to RCAR runtime data; Trustee verifies NRAS signatures and applies the generated GPU policy. GPU appraisal has not been demonstrated in the complete current CVM flow. |
+| Collect fresh evidence for the CPU TEE, guest image, launch configuration, firmware, and applicable GPU | Meets | Conditional | `builder/attestation.py` obtains a fresh KBS challenge, binds it to an ephemeral key, validates the signed EAR, and checks the selected CPU profile. The upstream CoCo client collects NVIDIA evidence bound to RCAR runtime data; Trustee verifies NRAS signatures and applies the generated GPU policy. GPU appraisal has not been demonstrated in the complete current CVM flow. |
 | Release a protected key only after fresh evidence matches policy | Meets | **Evidence pending** | `authorized_key()` uses a composite RCAR transaction. The CPU quote covers GPU evidence; KBS requires the configured NVIDIA GPU submods before releasing a GPU vault key. CPU-only rules are unchanged. Physical negative acceptance remains pending. |
 | Keep keys out of host-visible storage and normal VM-management paths | Meets | Meets | KBS response decryption uses an ephemeral private key; plaintext keys are held in sealed memory file descriptors and passed to `cryptsetup` through `/proc/self/fd`. No plaintext key is written to a disk or command line. |
 | Keep confidential model artifacts encrypted outside the CVM | Conditional | Conditional | The vault is LUKS2-encrypted and authenticated. `/user_config`, `/user_data`, and `/applog` are intentionally clear sidecars. Confidential model weights, credentials, and proprietary application material must be placed in the vault rather than those sidecars. The builder rejects obvious private keys in public inputs but cannot infer the confidentiality of arbitrary data. |
@@ -155,11 +159,11 @@ source revision.
 The pinned Trustee and guest client now support composite CPU/GPU evidence in a
 single RCAR transaction. CPU REPORT_DATA covers the additional GPU evidence and
 all devices share the challenge and ephemeral response key. The backend performs
-NRAS verification, verifies both signed JWTs and their digest/nonce linkage, and
-emits one GPU submod per distinct NVIDIA device. Immutable CPU/GPU AS policies and
+NRAS verification using CoCo Trustee’s implementation and emits a GPU submod
+for each appraised device. Immutable CPU/GPU AS policies and
 RVPS driver/VBIOS approvals govern the resource rule. Missing, extra, duplicate,
 non-NVIDIA, wrong-policy or non-affirming GPU submods deny GPU vault keys.
-CPU-only rule bytes are unchanged. Periodic authorization repeats the composite
+Both CPU and GPU resource rules use the upstream v0.22 request shape and enforce token freshness. Periodic authorization repeats the composite
 transaction; the guest only controls CUDA readiness.
 
 Policy and signed-fixture tests do not establish physical conformance. Promotion

@@ -16,7 +16,7 @@
 
 AS policies and RVPS reference endorsements are installed by the KBS deployment
 operator. This command verifies that installation, publishes the combined bundle
-resource policy, reads its actual bytes back, and enables resource creation.
+resource policy, checks its persisted bytes, and enables resource creation.
 """
 
 import argparse
@@ -50,7 +50,18 @@ def api(config, method, endpoint, data=None):
     body = (
         encode(canonical({"alg": "EdDSA", "typ": "JWT"}))
         + "."
-        + encode(canonical({"iat": now, "nbf": now - 5, "exp": now + 60}))
+        + encode(
+            canonical(
+                {
+                    "iat": now,
+                    "nbf": now - 5,
+                    "exp": now + 60,
+                    "role": config.get("admin_role", "cvm-policy"),
+                    "iss": config.get("admin_issuer", "cvm-builder"),
+                    "aud": config.get("admin_audience", "coco-trustee"),
+                }
+            )
+        )
     )
     token = body + "." + encode(key.sign(body.encode()))
     context = ssl.create_default_context(cafile=config["ca"])
@@ -73,17 +84,19 @@ def api(config, method, endpoint, data=None):
         raise BuildError("KBS administrative request failed; no credentials logged") from None
 
 
+def read_resource_policy(config):
+    """v0.22 lists policy IDs over HTTP; read bytes from its local_fs storage.
+
+    Administration runs beside Trustee with read access to the same storage.
+    The configured storage directory must be the one mounted into Trustee.
+    """
+    policies = json.loads(api(config, "GET", "resource-policy"))
+    require(isinstance(policies, list) and "resource-policy" in policies, "KBS resource policy is absent")
+    return (Path(config["storage_directory"]) / "kbs/resource-policy.rego").read_bytes()
+
+
 def verify_readback(expected, returned):
-    try:
-        text = returned.decode("ascii")
-        require(
-            text and "=" not in text and encode(base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))) == text,
-            "Noncanonical policy readback",
-        )
-        actual = base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
-        require(actual == expected, "KBS policy readback differs from published bytes")
-    except (UnicodeError, ValueError):
-        raise BuildError("KBS did not return URL-safe unpadded policy bytes") from None
+    require(returned == expected, "KBS policy readback differs from published bytes")
 
 
 def install(config, directory, candidate=False):
@@ -103,15 +116,12 @@ def install(config, directory, candidate=False):
         digest_file(config["trustee_binary"]) == build["binary_sha256"],
         "Installed Trustee binary differs from build provenance",
     )
-    for field in ("trustee_commit", "trustee_patch_digest"):
-        require(build[field] == manifest["contract"][field], "Trustee build provenance mismatch: " + field)
+    require(build.get("source_clean") is True, "Trustee must use unmodified upstream source")
+    require(build["trustee_commit"] == manifest["contract"]["trustee_commit"], "Trustee build provenance mismatch")
     require(
         deployment["trustee_commit"] == manifest["contract"]["trustee_commit"], "Trustee deployment revision mismatch"
     )
-    require(
-        deployment["trustee_patch_digest"] == manifest["contract"]["trustee_patch_digest"],
-        "Untracked Trustee patch set",
-    )
+    require(deployment.get("source_clean") is True, "Trustee deployment must use unmodified upstream source")
     require(
         deployment["policy_selection_tested"] is True and deployment["unauthorized_administration_denied"] is True,
         "Trustee administrative acceptance is incomplete",
@@ -125,9 +135,18 @@ def install(config, directory, candidate=False):
             deployment["immutable_as_policies"].get(policy_name) == manifest["sha256"][artifact],
             "AS policy is not installed immutably: " + policy_name,
         )
-    refs = json.loads(api(config, "GET", "reference-value"))
     expected_refs = read_json(Path(directory) / "reference_values.json")
-    from .references import TCB_NAMES, check_profile, profile_identity
+    refs = {name: json.loads(api(config, "GET", "reference-value/" + name)) for name in expected_refs}
+    from .references import EXPIRY_REFERENCE, TCB_NAMES, check_profile, profile_identity
+
+    expirations = json.loads(api(config, "GET", "reference-value/" + EXPIRY_REFERENCE))
+    require(
+        isinstance(expirations, dict)
+        and all(
+            type(expirations.get(name)) in (int, float) and expirations[name] > time.time() for name in expected_refs
+        ),
+        "RVPS approvals are expired or lack an expiry",
+    )
 
     for name in TCB_NAMES & expected_refs.keys():
         require(refs.get(name) == expected_refs[name], "RVPS TCB approval differs from this profile: " + name)
@@ -162,7 +181,7 @@ def install(config, directory, candidate=False):
         write_json(profile_path, profile_identity(manifest))
         policy = compose(active).encode()
         api(config, "POST", "resource-policy", canonical({"policy": encode(policy)}))
-        verify_readback(policy, api(config, "GET", "resource-policy"))
+        verify_readback(policy, read_resource_policy(config))
         write_json(bundle_dir / (manifest["build_id"] + ".json"), manifest)
         with lock(store.state / "administration.lock"):
             require(not (store.state / "retired" / manifest["build_id"]).exists(), "Bundle retired during publication")
@@ -189,7 +208,7 @@ def retire(config, build_id):
         ]
         policy = compose(active).encode()
         api(config, "POST", "resource-policy", canonical({"policy": encode(policy)}))
-        verify_readback(policy, api(config, "GET", "resource-policy"))
+        verify_readback(policy, read_resource_policy(config))
 
 
 def main():

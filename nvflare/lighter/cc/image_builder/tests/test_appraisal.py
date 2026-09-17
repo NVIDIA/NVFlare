@@ -19,6 +19,7 @@ import json
 import os
 import subprocess
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -34,7 +35,9 @@ class AppraisalTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             (root / "input.json").write_text(json.dumps(claims))
-            (root / "data.json").write_text(json.dumps({"reference": refs}))
+            (root / "data.json").write_text(
+                json.dumps({"reference": dict(refs, cvm_reference_expiry={name: time.time() + 300 for name in refs})})
+            )
             expected = 3 if dimension == "executables" else 2
             result = subprocess.run(
                 [

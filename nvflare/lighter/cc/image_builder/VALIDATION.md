@@ -6,6 +6,46 @@ services and operator guides are maintained together with the provisioning adapt
 in this repository. Repository formatting and license headers change source
 fingerprints; build and approve new generic CVMs for this source snapshot.
 
+## CoCo v0.23.0 / Trustee v0.22.0 migration — 2026-09-17
+
+The current implementation uses unmodified upstream Trustee commit
+`512fed65642015b849f38fb13bfdec7806639987`. The previous custom Rust verifier,
+attester and source patch are removed. The default generic profile advances to
+`cpu-2026.09-r4`; earlier bundle approvals do not cover this migration.
+
+The isolated Linux compatibility tests use the official upstream KBS image
+`ghcr.io/confidential-containers/staged-images/kbs` at digest
+`sha256:92c24e93f60fa259bab4f5404576d70a0edeb48a1b08e0c33ed159526fc87a9a`
+and the matching upstream kbs-client image at digest
+`sha256:d1e65dfc86687553ea58bf308d06cbcf17936c4b4c71e9ab8352cda31d75b638`.
+The release checkout remained clean. The Rego evaluator uses upstream's Regorus
+0.11.0 with its RVPS query extension contract.
+
+- **Combined Linux builder, policy and live HTTPS suite: 152 passed, 20 skipped.**
+  This includes 12 real HTTPS cases covering encrypted key retrieval, cross-vault
+  denial, favorable/incomplete GPU EARs, forged transport signers, stale tokens,
+  idempotent/conflicting uploads, revocation, administrative mutation denial,
+  named RVPS queries, persisted policy verification, and the actual AS denying
+  sample evidence under the installed CPU policy. Remaining skips require
+  hardware or destructive storage/network-fault opt-in.
+- **NVFlare provisioning/entrypoint checks: 33 passed, 1 skipped** on macOS.
+  The skipped Linux contract wrapper is covered by the standalone Linux run.
+- **Scoped repository style checks passed:** Black, isort, flake8 and agent-skill
+  checks through `./runtest.sh -s nvflare/lighter/cc/image_builder`.
+
+CPU/GPU Rego tests enforce reference expiry, fresh EARs, approved measurements,
+TCB and driver/VBIOS references, exact GPU count and distinct identities. The
+backend uses upstream ACLs and local_fs namespaces. Production templates also
+require an installed resource policy and read-only AS/reference/resource mounts;
+the disposable HTTP harness does not qualify production orchestration controls.
+
+The HTTPS GPU cases use signed EAR fixtures. **No new physical TDX/SNP/GPU job or
+full hardware acceptance is claimed for this upstream migration.** NVIDIA
+cryptographic verification now follows CoCo's implementation; deleted custom
+verifier tests are not evidence for upstream behavior. Rebuild, remeasure and
+repeat hardware acceptance before approving the new profiles. All hardware and
+custom-verifier results below are historical and apply to their recorded sources.
+
 ## Recorded hardware validation
 
 The September 16, 2026 candidate-mode run used NVFlare commit

@@ -19,6 +19,7 @@ import json
 import os
 import subprocess
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -38,8 +39,9 @@ def gpu_submod(policy, index=0):
         "ear.trustworthiness-vector": {"executables": 3, "hardware": 2, "configuration": 2},
         "ear.veraison.annotated-evidence": {
             "nvidia": {
-                "verifier": "nras-v3",
-                "x-nvidia-device-type": "gpu",
+                "x-nvidia-overall-att-result": True,
+                "x-nvidia-gpu-attestation-report-nonce-match": True,
+                "x-nvidia-gpu-arch-check": True,
                 "ueid": f"GPU-{index}",
             }
         },
@@ -98,21 +100,18 @@ class GpuAppraisalTests(unittest.TestCase):
         self.nvidia = json.loads((ROOT / "tests/fixtures/nras_gpu_v3.json").read_text())
         self.nvidia.update(
             {
-                "verifier": "nras-v3",
-                "arch": "HOPPER",
-                "x-nvidia-ver": "3.0",
                 "x-nvidia-overall-att-result": True,
-                "x-nvidia-device-type": "gpu",
             }
         )
         self.refs = {"gpu_driver_versions": ["575.28"], "gpu_vbios_versions": ["96.00.AF.00.01"]}
 
-    def evaluate(self, claims, refs):
+    def evaluate(self, claims, refs, *, expiry=None):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             (root / "policy.rego").write_text(render(self.policy))
             (root / "input.json").write_text(json.dumps({"nvidia": claims}))
-            (root / "data.json").write_text(json.dumps({"reference": refs}))
+            expiry = {name: time.time() + 300 for name in refs} if expiry is None else expiry
+            (root / "data.json").write_text(json.dumps({"reference": dict(refs, cvm_reference_expiry=expiry)}))
             result = subprocess.run(
                 [
                     str(ENGINE),
@@ -139,8 +138,8 @@ class GpuAppraisalTests(unittest.TestCase):
                 bad = dict(self.nvidia, **{name: bad_value})
                 self.assertFalse(self.evaluate(bad, self.refs))
         for bad in (
-            dict(self.nvidia, arch="AMPERE"),
-            dict(self.nvidia, verifier="sample"),
+            dict(self.nvidia, **{"x-nvidia-gpu-arch-check": False}),
+            dict(self.nvidia, **{"x-nvidia-gpu-attestation-report-nonce-match": False}),
             dict(self.nvidia, **{"x-nvidia-overall-att-result": False}),
         ):
             self.assertFalse(self.evaluate(bad, self.refs))
@@ -150,3 +149,10 @@ class GpuAppraisalTests(unittest.TestCase):
         for name in self.refs:
             bad = dict(self.refs, **{name: ["unapproved"]})
             self.assertFalse(self.evaluate(self.nvidia, bad))
+
+    def test_missing_or_expired_reference_deadlines_deny_appraisal(self):
+        self.assertFalse(self.evaluate(self.nvidia, self.refs, expiry={}))
+        for name in self.refs:
+            expires = {key: time.time() + 300 for key in self.refs}
+            expires[name] = time.time() - 1
+            self.assertFalse(self.evaluate(self.nvidia, self.refs, expiry=expires))

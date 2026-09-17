@@ -15,6 +15,7 @@
 """Real HTTPS contracts with disposable signed EAR fixtures (not hardware proof)."""
 
 import base64
+import json
 import os
 import ssl
 import time
@@ -23,7 +24,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from builder.admin import api, encode, verify_readback
+from builder.admin import api, encode, read_resource_policy, verify_readback
+from builder.attestation import unb64url, validate_token
 from builder.common import BuildError, canonical, memory_file, read_json, resource_path, run, write_json
 from builder.key_service import ResourceStore, request
 from builder.policy import compose
@@ -40,18 +42,18 @@ class HttpTests(unittest.TestCase):
         cls.pki = Path(read_json(cls.directory / "lab-state.json")["pki"])
         cls.admin = read_json(cls.directory / "lab-kbs/admin.json")
         cls.store = ResourceStore(cls.admin["resources"], cls.admin["key_service_state"])
-        cls.original_policy = api(cls.admin, "GET", "resource-policy")
+        cls.original_policy = read_resource_policy(cls.admin)
         cls.original_ids = read_json(cls.store.state / "approved-bundles.json")
         cls.build_id = "http-test-" + os.urandom(8).hex()
         cls.manifest = {
             "build_id": cls.build_id,
             "platform": "intel_tdx",
-            "attestation_policy_id": "cvm-v2-test-r1",
+            "attestation_policy_id": "default",
             "measurements": {"mr_td": "1" * 96, "rtmr_0": "0" * 96, "rtmr_1": "2" * 96, "rtmr_2": "3" * 96},
         }
         policy = compose([cls.manifest]).encode()
         api(cls.admin, "POST", "resource-policy", canonical({"policy": encode(policy)}))
-        verify_readback(policy, api(cls.admin, "GET", "resource-policy"))
+        verify_readback(policy, read_resource_policy(cls.admin))
         write_json(
             cls.store.state / "approved-bundles.json", {"build_ids": cls.original_ids["build_ids"] + [cls.build_id]}
         )
@@ -62,8 +64,8 @@ class HttpTests(unittest.TestCase):
         for path in cls.paths:
             request(cls.key_service("admin"), "DELETE", path)
         write_json(cls.store.state / "approved-bundles.json", cls.original_ids)
-        api(cls.admin, "POST", "resource-policy", canonical({"policy": cls.original_policy.decode()}))
-        assert api(cls.admin, "GET", "resource-policy") == cls.original_policy
+        api(cls.admin, "POST", "resource-policy", canonical({"policy": encode(cls.original_policy)}))
+        assert read_resource_policy(cls.admin) == cls.original_policy
 
     @classmethod
     def key_service(cls, role="builder"):
@@ -82,9 +84,7 @@ class HttpTests(unittest.TestCase):
         self.paths.append(path)
         return digest, path, secret
 
-    def token(
-        self, digest, tee, *, status="affirming", policy="cvm-v2-test-r1", expired=False, signer="as", gpu_submods=None
-    ):
+    def token(self, digest, tee, *, status="affirming", policy="default", expired=False, signer="as", gpu_submods=None):
         key = serialization.load_pem_private_key((self.pki / (signer + ".key")).read_bytes(), None)
         public = key.public_key().public_numbers()
         certs = [
@@ -101,10 +101,9 @@ class HttpTests(unittest.TestCase):
             "alg": "ES256",
             "x": encode(public.x.to_bytes(32, "big")),
             "y": encode(public.y.to_bytes(32, "big")),
-            # This baseline's EAR broker and verifier both use URL_SAFE_NO_PAD
-            # here (unlike JOSE's standard-base64 x5c). Match its pinned wire contract.
             "x5c": [
-                encode(x509.load_pem_x509_certificate(cert).public_bytes(serialization.Encoding.DER)) for cert in certs
+                base64.b64encode(x509.load_pem_x509_certificate(cert).public_bytes(serialization.Encoding.DER)).decode()
+                for cert in certs
             ],
         }
         public_tee = tee.public_key().public_numbers()
@@ -169,6 +168,44 @@ class HttpTests(unittest.TestCase):
         digest, path, secret = self.create()
         self.assertEqual(self.retrieve(digest, path), secret)
 
+    def test_named_reference_api_uses_upstream_local_fs_records(self):
+        name = "cvm_http_test_reference"
+        target = Path(self.admin["storage_directory"]) / "reference_value" / name
+        value = ["public-fixture"]
+        write_json(target, {"version": "0.1.0", "name": name, "expiration": "2099-01-01T00:00:00Z", "value": value})
+        try:
+            self.assertEqual(json.loads(api(self.admin, "GET", "reference-value/" + name)), value)
+            with self.assertRaises(BuildError):
+                api(self.admin, "GET", "reference-value/absent-fixture")
+        finally:
+            target.unlink()
+
+    def test_upstream_default_cpu_policy_rejects_sample_evidence(self):
+        # The stock minimal CLI uses sample evidence on the non-TEE backend host.
+        # This proves the actual AS loaded our policy, not hardware acceptance.
+        token = run(
+            [
+                self.directory / "inputs/kbs-client",
+                "--url",
+                self.admin["url"],
+                "--cert-file",
+                self.admin["ca"],
+                "attest",
+            ],
+            timeout=30,
+            env=dict(os.environ, RUST_LOG="off"),
+        ).strip()
+        claims = json.loads(unb64url(token.decode().split(".")[1]))
+        self.assertEqual(claims["submods"]["cpu0"]["ear.appraisal-policy-id"], "default")
+        config = {
+            "token_algorithm": "ES256",
+            "token_issuer": "CoCo-Attestation-Service",
+            "as_public_key": str(self.directory / "inputs/test-as-public.pem"),
+            "attestation_policy_id": "default",
+        }
+        with self.assertRaisesRegex(BuildError, "CPU appraisal denied"):
+            validate_token(token, config, bytes(32))
+
     def test_cross_vault_access_denied(self):
         a, _, _ = self.create()
         _, b_path, _ = self.create()
@@ -177,7 +214,7 @@ class HttpTests(unittest.TestCase):
 
     def test_negative_wrong_policy_and_expired_ear_denied(self):
         digest, path, _ = self.create()
-        for claims in ({"status": "contraindicated"}, {"policy": "default"}, {"expired": True}):
+        for claims in ({"status": "contraindicated"}, {"policy": "unselected"}, {"expired": True}):
             with self.subTest(claims=claims), self.assertRaises(BuildError):
                 self.retrieve(digest, path, **claims)
 
@@ -194,7 +231,7 @@ class HttpTests(unittest.TestCase):
         gpu_manifest = dict(self.manifest, contract={"gpu": "nvidia_cc", "gpu_count": 2})
         composed = compose([gpu_manifest]).encode()
         api(self.admin, "POST", "resource-policy", canonical({"policy": encode(composed)}))
-        verify_readback(composed, api(self.admin, "GET", "resource-policy"))
+        verify_readback(composed, read_resource_policy(self.admin))
         try:
             policy = self.manifest["attestation_policy_id"]
             valid = {f"gpu{i}": gpu_submod(policy, i) for i in range(2)}
@@ -220,7 +257,7 @@ class HttpTests(unittest.TestCase):
         for endpoint in ("resource-policy", "attestation-policy", "reference-value"):
             payload = canonical(
                 {
-                    "policy_id": "cvm-v2-test-r1_cpu",
+                    "policy_id": "default_cpu",
                     "type": "rego",
                     "policy": encode(b"package policy\ndefault executables = 3\n"),
                 }
@@ -246,8 +283,8 @@ class HttpTests(unittest.TestCase):
 
     def test_native_resource_mutation_and_as_replacement_denied(self):
         digest, path, secret = self.create()
-        policy_before = api(self.admin, "GET", "resource-policy")
-        for method, expected in (("POST", 403), ("PUT", 405), ("DELETE", 405)):
+        policy_before = read_resource_policy(self.admin)
+        for method, expected in (("POST", 401), ("PUT", 401), ("DELETE", 401)):
             # Preserve the real HTTP code while using the same signed admin
             # request and TLS verification as production administration.
             codes = []
@@ -266,7 +303,7 @@ class HttpTests(unittest.TestCase):
                 api(self.admin, method, "resource/" + path, b"x" * 64)
             self.assertEqual(codes, [expected])
             self.assertEqual(self.retrieve(digest, path), secret)
-            self.assertEqual(api(self.admin, "GET", "resource-policy"), policy_before)
+            self.assertEqual(read_resource_policy(self.admin), policy_before)
         with self.assertRaises(BuildError):
             api(
                 self.admin,
@@ -274,7 +311,7 @@ class HttpTests(unittest.TestCase):
                 "attestation-policy",
                 canonical(
                     {
-                        "policy_id": "cvm-v2-test-r1_cpu",
+                        "policy_id": "default_cpu",
                         "type": "rego",
                         "policy": encode(b"package policy\ndefault executables = 3\n"),
                     }

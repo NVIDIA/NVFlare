@@ -6,7 +6,7 @@ publish = false
 
 [dependencies]
 # Exact engine revision from the DESIGN.md Trustee source pin's Cargo.lock.
-regorus = "=0.2.8"
+regorus = "=0.11.0"
 
 [[bin]]
 name = "cvm-policy-eval"

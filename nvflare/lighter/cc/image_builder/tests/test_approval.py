@@ -81,7 +81,7 @@ class ApprovalTests(unittest.TestCase):
 
     def test_platform_and_gpu_specific_evidence(self):
         for platform, gpu, required in (
-            ("amd_sev_snp", "none", "snp_vcek_cache"),
+            ("amd_sev_snp", "none", "snp_collateral_availability"),
             ("intel_tdx", "nvidia_cc", "gpu_negative_key_denial"),
         ):
             self.manifest.update(platform=platform, contract={"gpu": gpu})

@@ -25,6 +25,23 @@ TDX_HEX = {"mr_seam": 96, "tcb_svn": 32, "xfam": 16}
 GPU_NAMES = {"gpu_driver_versions", "gpu_vbios_versions"}
 TCB_NAMES = GPU_NAMES | SNP_LISTS | SNP_BOOLS | SNP_INTS | set(TDX_HEX) | {"allowed_advisory_ids"}
 MEASUREMENT_NAMES = {"snp_launch_measurement", "mr_td", "rtmr_0", "rtmr_1", "rtmr_2"}
+EXPIRY_REFERENCE = "cvm_reference_expiry"
+# Trustee v0.22 returns reference values without checking their metadata expiry.
+# Keep the deadline in a companion reference and enforce it at every appraisal.
+REFERENCE_REGO = """reference(name) := value if {
+    expiry := query_reference_value("cvm_reference_expiry")[name]
+    is_number(expiry)
+    time.now_ns() < expiry * 1000000000
+    value := query_reference_value(name)
+}
+"""
+
+
+def reference_expirations(records):
+    return {
+        record["name"]: datetime.datetime.fromisoformat(record["expiration"].replace("Z", "+00:00")).timestamp()
+        for record in records
+    }
 
 
 def validate_references(values, platforms=(), *, finalized=False, gpu=False):

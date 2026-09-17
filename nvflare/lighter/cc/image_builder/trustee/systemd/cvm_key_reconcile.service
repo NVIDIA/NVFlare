@@ -14,4 +14,4 @@ NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
-ReadWritePaths=/var/lib/cvm-trustee-resources /var/lib/cvm-trustee-revocations
+ReadWritePaths=/var/lib/cvm-trustee/storage/repository /var/lib/cvm-trustee-revocations

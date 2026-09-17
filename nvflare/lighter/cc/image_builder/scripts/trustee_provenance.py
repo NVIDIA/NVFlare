@@ -13,38 +13,36 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Record the exact reviewed source patch and built KBS binary for deployment."""
+"""Record a clean CoCo Trustee v0.22.0 source revision and its built binary."""
 
 import argparse
-import hashlib
 import subprocess
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from builder.common import digest_file, require, write_json
+from builder.config import PROFILE_DEFAULTS
 
-parser = argparse.ArgumentParser(description=__doc__)
-parser.add_argument("source", type=Path)
-parser.add_argument("binary", type=Path)
-parser.add_argument("output", type=Path)
-args = parser.parse_args()
-commit = subprocess.check_output(["git", "-C", str(args.source), "rev-parse", "HEAD"], text=True).strip()
-diff = subprocess.check_output(["git", "-C", str(args.source), "diff", "HEAD", "--binary"])
-require(
-    diff and diff == (args.source / "cvm-boundary.patch").read_bytes(),
-    "Source differs from the recorded boundary patch",
-)
-guest = args.source / "cvm_guest"
-guest_commit = subprocess.check_output(["git", "-C", str(guest), "rev-parse", "HEAD"], text=True).strip()
-require(guest_commit == "591d0bb45cd7a2c66f3778428940c40f7eec3b7d", "Wrong guest-components revision")
-guest_diff = subprocess.check_output(["git", "-C", str(guest), "diff", "HEAD", "--binary"])
-require(guest_diff == (args.source / "cvm_guest.patch").read_bytes(), "Guest sources differ from the recorded patch")
-write_json(
-    args.output,
-    {
-        "trustee_commit": commit,
-        "trustee_patch_digest": hashlib.sha256(diff).hexdigest(),
-        "binary_sha256": digest_file(args.binary),
-    },
-)
+
+def provenance(source, binary):
+    commit = subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip()
+    require(commit == PROFILE_DEFAULTS["trustee_commit"], "Use the CoCo Trustee v0.22.0 source revision")
+    status = subprocess.check_output(
+        ["git", "-C", str(source), "status", "--porcelain", "--untracked-files=all"], text=True
+    )
+    require(not status, "Trustee source must be an unmodified upstream checkout")
+    return {"trustee_commit": commit, "source_clean": True, "binary_sha256": digest_file(binary)}
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("source", type=Path)
+    parser.add_argument("binary", type=Path)
+    parser.add_argument("output", type=Path)
+    args = parser.parse_args()
+    write_json(args.output, provenance(args.source, args.binary))
+
+
+if __name__ == "__main__":
+    main()

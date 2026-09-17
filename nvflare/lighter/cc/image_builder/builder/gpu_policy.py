@@ -19,7 +19,11 @@ import json
 from .common import require
 
 VECTOR = {"executables": 3, "hardware": 2, "configuration": 2}
-VERIFIER = "nras-v3"
+NRAS_CLAIMS = (
+    "x-nvidia-overall-att-result",
+    "x-nvidia-gpu-attestation-report-nonce-match",
+    "x-nvidia-gpu-arch-check",
+)
 
 
 def validate_submods(submods, count, policy):
@@ -36,7 +40,7 @@ def validate_submods(submods, count, policy):
             all(type(vector.get(k)) is int and vector[k] == v for k, v in VECTOR.items()), "GPU trust vector denied"
         )
         nvidia = item["ear.veraison.annotated-evidence"]["nvidia"]
-        require(nvidia["verifier"] == VERIFIER and nvidia["x-nvidia-device-type"] == "gpu", "Non-NVIDIA GPU appraisal")
+        require(all(nvidia.get(name) is True for name in NRAS_CLAIMS), "Non-NVIDIA GPU appraisal")
         identity = nvidia["ueid"]
         require(isinstance(identity, str) and identity and identity not in identities, "Duplicate GPU identity")
         identities.add(identity)
@@ -52,8 +56,7 @@ def resource_conditions(count, policy):
             f'    {item}["ear.appraisal-policy-id"] == {policy}',
             f'    {item}["ear.status"] == "affirming"',
             *[f'    {item}["ear.trustworthiness-vector"]["{key}"] == {value}' for key, value in VECTOR.items()],
-            f'    {nvidia}["verifier"] == "{VERIFIER}"',
-            f'    {nvidia}["x-nvidia-device-type"] == "gpu"',
+            *[f'    {nvidia}["{name}"] == true' for name in NRAS_CLAIMS],
             f'    is_string({nvidia}["ueid"])',
             f'    {nvidia}["ueid"] != ""',
         ]
@@ -65,11 +68,14 @@ def resource_conditions(count, policy):
 
 def render(policy):
     """Only a completely matching, backend-verified NVIDIA claim set affirms."""
+    from .references import REFERENCE_REGO
+
     lines = [
         "# Generated from the profile's strict gpu_policy.json. Do not edit.",
         "package policy",
         "import rego.v1",
         "",
+        REFERENCE_REGO,
         "default approved := false",
         "default executables := 33",
         "default hardware := 97",
@@ -77,14 +83,12 @@ def render(policy):
         "executables := 3 if approved",
         "hardware := 2 if approved",
         "configuration := 2 if approved",
+        'trust_claims := {"executables": executables, "hardware": hardware, "configuration": configuration}',
         "approved if {",
         "    n := input.nvidia",
-        f'    n.verifier == "{VERIFIER}"',
-        '    n.arch in {"HOPPER", "BLACKWELL"}',
         '    n["x-nvidia-overall-att-result"] == true',
-        '    n["x-nvidia-ver"] == "3.0"',
-        '    n["x-nvidia-gpu-driver-version"] in data.reference.gpu_driver_versions',
-        '    n["x-nvidia-gpu-vbios-version"] in data.reference.gpu_vbios_versions',
+        '    n["x-nvidia-gpu-driver-version"] in reference("gpu_driver_versions")',
+        '    n["x-nvidia-gpu-vbios-version"] in reference("gpu_vbios_versions")',
     ]
 
     def constraints(values, path):

@@ -42,7 +42,7 @@ class ReviewRegressionTests(unittest.TestCase):
             root = Path(directory)
             binary = root / "kbs"
             binary.write_bytes(b"fixture binary")
-            contract = {"gpu": "nvidia_cc", "trustee_commit": "a" * 40, "trustee_patch_digest": "b" * 64}
+            contract = {"gpu": "nvidia_cc", "trustee_commit": "a" * 40}
             manifest = {
                 "build_id": "test-gpu",
                 "profile_version": "test-gpu-r2",
@@ -55,9 +55,10 @@ class ReviewRegressionTests(unittest.TestCase):
                 for name in ("state", "resources", "key_service_state", "deployment_receipt", "trustee_build")
             }
             cfg["trustee_binary"] = str(binary)
-            write_json(cfg["trustee_build"], dict(contract, binary_sha256=digest_file(binary)))
+            write_json(cfg["trustee_build"], dict(contract, source_clean=True, binary_sha256=digest_file(binary)))
             receipt = dict(
                 contract,
+                source_clean=True,
                 policy_selection_tested=True,
                 unauthorized_administration_denied=True,
                 immutable_as_policies={"gpu-r2_cpu": "c" * 64, "gpu-r2_gpu": "d" * 64},
@@ -78,6 +79,7 @@ class ReviewRegressionTests(unittest.TestCase):
                         install(cfg, root, candidate=True)
                     request.assert_not_called()
                 write_json(cfg["deployment_receipt"], receipt)
+                write_json(root / "reference_values.json", {"gpu_driver_versions": ["575.28"]})
                 with self.assertRaisesRegex(RuntimeError, "validated receipt"):
                     install(cfg, root, candidate=True)
                 binary.write_bytes(b"unreviewed binary")

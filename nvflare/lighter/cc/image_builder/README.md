@@ -44,7 +44,7 @@ libguestfs-tools, cryptsetup-bin, e2fsprogs, tar, util-linux, and OpenSSH. Stora
 requires kernel dm-crypt, dm-integrity and NBD support. TDX requires an operational
 QGS and TDVF supporting direct measured kernel boot. SNP requires SNP-enabled
 KVM and compatible OVMF. GPU profiles additionally need pinned driver/toolkit
-packages, a pinned NVIDIA `nvattest` binary and library, and an approved GPU
+packages, the upstream NVIDIA attester’s pinned `libnvat` library, and an approved GPU
 claim policy.
 
 Install the builder requirements with pip or uv:
@@ -73,7 +73,7 @@ sudo ./cvm_build.sh
 
 # Advanced: construct for another platform and finalize there.
 sudo ./cvm_build.sh config/cvm_profile.yml -p amd_sev_snp --defer-measurements
-sudo scripts/cvm_finalize target/cvm_cpu-2026.09-r3/amd_sev_snp
+sudo scripts/cvm_finalize target/cvm_cpu-2026.09-r4/amd_sev_snp
 ```
 
 The builder sends a fixed, source-hashed payload to a plain construction VM. A
@@ -126,69 +126,41 @@ The receipt records operator approval; it is not a substitute for those tests.
 
 ## Trustee administration
 
-The compatibility baseline is Trustee revision
-`a2570329cc33daf9ca16370a1948b5379bb17fbe`. Its unpatched administrative boundary
-and policy selection do not satisfy this design. Apply the explicit, revision-checked
-deployment patch and record its printed SHA-256 in the CVM profile:
+Use unmodified **CoCo Trustee v0.22.0**, paired with **CoCo v0.23.0**.
+The profile pins upstream commit `512fed65642015b849f38fb13bfdec7806639987`;
+there is no custom Rust verifier, attester, or Trustee patch to apply.
+Use the same upstream distribution and image digest as your CoCo deployment.
 
-```sh
-python3 scripts/patch_trustee.py /path/to/clean/pinned/trustee
-cd /path/to/clean/pinned/trustee
-cargo build --locked --release -p kbs --bin kbs --no-default-features --features coco-as-builtin
-cargo build --locked --release -p kbs-client --bin kbs-client --no-default-features \
-  --features tdx-attester,snp-attester,kbs_protocol/background_check,kbs_protocol/passport,kbs_protocol/rust-crypto
-```
+[TRUSTEE_GUIDE.md](TRUSTEE_GUIDE.md) contains the complete setup, including the
+upstream [kbs.json](trustee/kbs.json) configuration, immutable default CPU/GPU
+policies, RVPS references and expiry, role-based administrative ACLs, and the
+create-only vault key adapter. `scripts/trustee_provenance.py` records a clean
+release checkout and binary digest. The upstream client uses the `default` AS
+policy; policy content digests and profile versions identify approved revisions.
 
-The patch selects the immutable AS policy through `CVM_AS_POLICY_ID`, refuses
-native resource writes and AS-policy replacement, enables only SNP/TDX verifiers,
-checks token expiry and age, adapts the DCAP advisory buffer to the installed
-headers, and adds a bounded verified SNP VCEK cache keyed by AMD chip and reported
-TCB. KDS cache misses have explicit connect/total deadlines; repeated appraisals
-do not refetch a verified VCEK. Build the client on a runtime-compatible Linux
-system; copy it into the profile inputs. Its protocol uses PKCS#1 RSA keys and the
-baseline EAR encoding.
+CVM-specific authorization remains in Rego and deployment configuration. The
+resource policy requires a fresh, favorable CPU appraisal and, for GPU profiles,
+exactly the expected favorable NVIDIA GPU appraisals before key release. Native
+resource mutation and AS-policy replacement are denied by upstream admin ACLs
+and read-only storage mounts.
 
-Deploy KBS with authenticated HTTPS administration and trusted AS token-signing
-certificates (`insecure_api=false`, `insecure_key=false`). Install the versioned
-`<policy-id>_cpu.rego` under the configured `policy_dir/opa/` as a read-only
-deployment file and approved reference values
-in RVPS. Missing TCB references deny appraisal. This is a deployment-operator
-step, performed once per approved bundle/policy revision.
+The Python key provisioning adapter handles atomic create-only uploads and
+persistent revocation beside Trustee's unmodified local_fs resource backend.
+It is an application adapter, not an alternate attestation service. The vault
+builder's mTLS identity cannot publish policy or revoke keys.
 
-Run `python3 -m builder.key_service key-service.json` at the trusted backend boundary.
-Its configuration contains `listen`, `port`, `resources`, `state`, `client_ca`,
-`cert`, `key`, and `certificate_roles` (SHA-256 client-certificate fingerprints
-mapped to `builder` or `admin`). Use a dedicated service identity with swap off,
-core dumps disabled and `LimitMEMLOCK=infinity`. The same resource owner must
-be readable by KBS; mount that repository read-only in KBS. Store revocation state
-separately from resource backups. Before serving a restored backup, stop KBS and
-run the key service with `--reconcile` to remove revoked/retired resources.
-
-The key service currently accepts only create-once 64-byte vault keys at
-`PUT /v1/resources/keys/<build_id>/<binding_id>`. Repeating the same bytes is
-idempotent; a different key conflicts. Its generic name allows support for other
-key types to be added later. Only an administrator can DELETE a key.
-The builder's mTLS identity cannot publish policy, reference values, or revocations.
-
-Initialize `state/approved-bundles.json` with `{"build_ids":[]}`. The administration
-command verifies deployment evidence and existing RVPS references, composes the
-active bundle rules, publishes and verifies exact policy bytes, then enables key
-creation for that bundle:
+Administration verifies the installed upstream revision, binary digest, policy
+content hashes, approved reference values and deployment acceptance before
+publishing bundle resource rules:
 
 ```sh
 sudo scripts/admin_install admin.json /path/to/approved/bundle
 sudo scripts/admin_retire admin.json cvm-BUNDLE_ID
 ```
 
-`admin.json` contains `url`, `ca`, `admin_private_key` (Ed25519), `resources`,
-`key_service_state`, `state` (publisher state), and `deployment_receipt`. The receipt
-contains `trustee_commit`, `trustee_patch_digest`, `policy_selection_tested`,
-`unauthorized_administration_denied`, and `immutable_as_policies` mapping policy IDs
-to their SHA-256 digests. Set these only after verifying the deployment.
-
-There is no per-vault measurement registration file. State contains approved
-generic bundles, vault keys, and permanent revocation tombstones. The reusable
-rule derives each permitted key path from signed hardware binding evidence.
+There is no per-vault measurement history. Reference values and keys live in
+Trustee storage; permanent revocation tombstones live separately. Rebuild and
+reapprove generic bundles when migrating from the earlier backend.
 
 ## Stage 2: rebuild for each application release and site
 

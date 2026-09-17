@@ -9,5 +9,7 @@ The version belongs to the signed overall token; neither `x-nvidia-ver` nor
 `x-nvidia-device-type` is required in the detached token. The fixture includes
 the current OCSP freshness/response-validity fields required by this profile.
 Older illustrative responses lacking those security fields intentionally fail
-the strict policy. Tests inject fresh timestamps, issuer and nonce, then sign
-both tokens using disposable keys. This fixture is not hardware evidence.
+the strict policy. Policy tests model the claims emitted by upstream Trustee v0.22.0, including
+the overall result copied from the signed top-level token. HTTPS tests sign EARs
+with disposable AS keys. NVIDIA signature verification is upstream’s responsibility;
+this fixture does not exercise NRAS cryptography and is not hardware evidence.

@@ -114,7 +114,9 @@ class ResourceStore:
 
     def _target(self, resource):
         parts = validate_resource(resource)
-        target = self.resources.joinpath(*parts)
+        # CoCo Trustee v0.22 local_fs stores each key in the repository
+        # namespace, escaping path separators in a single filename.
+        target = self.resources / resource.replace("/", "\\x2F")
         require(target.resolve().is_relative_to(self.resources), "Resource escapes repository")
         require(
             not any(p.is_symlink() for p in [target, *target.parents] if p != self.resources),
@@ -177,12 +179,12 @@ class ResourceStore:
                 if target.parent.exists():
                     fsync_dir(target.parent)
             for retired in (self.state / "retired").iterdir():
-                directory = self.resources / "keys" / retired.name
-                if directory.exists():
-                    for path in directory.iterdir():
+                prefix = "keys\\x2F" + retired.name + "\\x2F"
+                for path in self.resources.iterdir():
+                    if path.name.startswith(prefix):
                         require(path.is_file() and not path.is_symlink(), "Unexpected resource file")
                         path.unlink()
-                    fsync_dir(directory)
+                fsync_dir(self.resources)
 
     def retire(self, build_id):
         from .common import identifier

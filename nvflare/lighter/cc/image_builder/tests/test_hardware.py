@@ -327,11 +327,11 @@ class HardwareTests(unittest.TestCase):
         self.result(attestation_drop_deadline=True, fail_closed_seconds=round(elapsed, 3))
 
     @unittest.skipUnless(os.environ.get("CVM_NETWORK_FAULTS") == "1", "Opt in to isolated host firewall faults")
-    def test_snp_vcek_cache_works_without_kds_after_first_appraisal(self):
+    def test_snp_offline_collateral_works_without_kds(self):
         if self.manifest["platform"] != "amd_sev_snp":
-            self.skipTest("SNP-only VCEK cache acceptance")
+            self.skipTest("SNP-only offline collateral acceptance")
         self.boot()
-        self.ready()  # The first successful appraisal populates Trustee's cache.
+        self.ready()  # The operator preinstalls the upstream SNP offline certificate store.
         before = json.loads(self.request())["periodic_attestation.service"]["invocation"]
         kds_addresses = sorted({item[4][0] for item in socket.getaddrinfo("kdsintf.amd.com", 443)})
         self.assertTrue(kds_addresses, "AMD KDS did not resolve")
@@ -339,15 +339,17 @@ class HardwareTests(unittest.TestCase):
             self.request("/periodic", "POST")
             deadline = time.monotonic() + 45
             while time.monotonic() < deadline:
-                self.assertIsNone(self.process.poll(), "Guest powered off when AMD KDS was unavailable after warmup")
+                self.assertIsNone(
+                    self.process.poll(), "Guest powered off when AMD KDS was unavailable with offline collateral"
+                )
                 status = json.loads(self.request())["periodic_attestation.service"]
                 if status["invocation"] != before and status["active"] == "inactive" and status["result"] == "success":
                     break
                 time.sleep(0.5)
             else:
-                self.fail("Cached SNP appraisal did not finish within 45 seconds")
+                self.fail("Offline SNP appraisal did not finish within 45 seconds")
         self.stop()
-        self.result(snp_vcek_cache=True, amd_kds_blocked_after_warmup=True)
+        self.result(snp_collateral_availability=True, amd_kds_blocked=True)
 
     @unittest.skipUnless(os.environ.get("CVM_GPU_HARDWARE_TESTS") == "1", "Opt in on an NVIDIA CC GPU host")
     @unittest.skipUnless(

@@ -20,6 +20,7 @@ import json
 import os
 import subprocess
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -58,6 +59,8 @@ class ResourcePolicyTests(unittest.TestCase):
         else:
             evidence["tdx"] = {"quote": {"body": measurements.copy()}, "td_attributes": {"debug": False}}
         claims = {
+            "iat": int(time.time()),
+            "exp": int(time.time()) + 120,
             "submods": {
                 "cpu0": {
                     "ear.appraisal-policy-id": "cvm-test",
@@ -65,7 +68,7 @@ class ResourcePolicyTests(unittest.TestCase):
                     "ear.trustworthiness-vector": {"executables": 3, "hardware": 2, "configuration": 2},
                     "ear.veraison.annotated-evidence": evidence,
                 }
-            }
+            },
         }
         path = "resource/" + resource_path("bundle-1", platform, digest)
         return manifest, claims, path
@@ -75,7 +78,9 @@ class ResourcePolicyTests(unittest.TestCase):
             root = Path(temp)
             (root / "policy.rego").write_text(compose([manifest]))
             (root / "input.json").write_text(json.dumps(claims))
-            (root / "data.json").write_text(json.dumps({"resource-path": path}))
+            (root / "data.json").write_text(
+                json.dumps({"plugin": path.split("/")[0], "resource-path": path.split("/")[1:]})
+            )
             result = subprocess.run(
                 [
                     str(ENGINE),
@@ -94,6 +99,26 @@ class ResourcePolicyTests(unittest.TestCase):
         for platform in ("amd_sev_snp", "intel_tdx"):
             with self.subTest(platform=platform):
                 self.assertTrue(self.evaluate(*self.fixture(platform)))
+
+    def test_stale_future_and_overlong_tokens_are_denied(self):
+        manifest, claims, path = self.fixture("intel_tdx")
+        now = int(time.time())
+        for fields in (
+            {"iat": now - 301},
+            {"iat": now + 60},
+            {"exp": now - 1},
+            {"exp": now + 301},
+            {"nbf": now + 60},
+            {"iat": True},
+            {"iat": "invalid"},
+            {"exp": None},
+        ):
+            with self.subTest(fields=fields):
+                self.assertFalse(self.evaluate(manifest, dict(claims, **fields), path))
+        for name in ("iat", "exp"):
+            missing = dict(claims)
+            del missing[name]
+            self.assertFalse(self.evaluate(manifest, missing, path))
 
     def test_cross_vault_and_bundle_denied(self):
         for platform in ("amd_sev_snp", "intel_tdx"):

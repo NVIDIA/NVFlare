@@ -1,7 +1,6 @@
 {
   "version": "3.0",
   "required-claims": {
-    "x-nvidia-device-type": "gpu",
     "secboot": true,
     "dbgstat": "disabled",
     "measres": "success",
@@ -40,6 +39,8 @@
   },
   "claims-if-present": {
     "x-nvidia-gpu-driver-rim-schema-validated": true,
-    "x-nvidia-gpu-vbios-rim-schema-validated": true
+    "x-nvidia-gpu-vbios-rim-schema-validated": true,
+    "x-nvidia-device-type": "gpu",
+    "x-nvidia-ver": "3.0"
   }
 }

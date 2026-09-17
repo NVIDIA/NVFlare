@@ -1,5 +1,5 @@
 # Supply reviewed input files. Example package pins are for Ubuntu 26.04.
-profile_version: cpu-2026.09-r3
+profile_version: cpu-2026.09-r4
 # The normal build invokes site_acceptance from PATH after finalization.
 # This optional field selects a site-specific replacement.
 # acceptance_runner: /usr/local/bin/site_acceptance
@@ -41,14 +41,14 @@ required_system_packages:
   - containerd=2.2.2-0ubuntu1.1
   - linux-image-7.0.0-31-generic=7.0.0-31.31
   - linux-modules-7.0.0-31-generic=7.0.0-31.31
-trustee_commit: a2570329cc33daf9ca16370a1948b5379bb17fbe
-trustee_patch_digest: 13a32cdb2ac6e3dc6be9738961378bff9c41c32b7729ddb9df3cc9d1eef5ac66
+# CoCo v0.23.0 / unmodified Trustee v0.22.0
+trustee_commit: 512fed65642015b849f38fb13bfdec7806639987
 kbs_url: https://kbs.example.org:8443
 kbs_cert: ../inputs/kbs-ca.pem
 as_public_key: ../inputs/as-public.pem
 token_algorithm: ES256
-token_issuer: null
-attestation_policy_id: cvm-cpu-r3
+token_issuer: CoCo-Attestation-Service
+attestation_policy_id: default
 attestation_policy: attestation_policy.rego
 # Supplied by the trusted operator; absent TCB approvals fail closed.
 reference_values: ../inputs/approved-tcb-references.json

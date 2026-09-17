@@ -561,22 +561,22 @@ class ResourceTests(unittest.TestCase):
         self.assertFalse(self.store.put(self.path, self.key))
         with self.assertRaises(BuildError):
             self.store.put(self.path, os.urandom(64))
-        self.assertEqual((self.store.resources / self.path).read_bytes(), self.key)
+        self.assertEqual((self.store.resources / self.path.replace("/", "\\x2F")).read_bytes(), self.key)
 
     def test_concurrent_idempotent_publication(self):
         with ThreadPoolExecutor(max_workers=8) as pool:
             results = list(pool.map(lambda _: self.store.put(self.path, self.key), range(8)))
         self.assertEqual(sum(results), 1)
-        self.assertEqual((self.store.resources / self.path).read_bytes(), self.key)
+        self.assertEqual((self.store.resources / self.path.replace("/", "\\x2F")).read_bytes(), self.key)
 
     def test_revocation_survives_resource_backup_restore(self):
         self.store.put(self.path, self.key)
         self.store.revoke(self.path)
         with self.assertRaises(BuildError):
             self.store.put(self.path, self.key)
-        (self.store.resources / self.path).write_bytes(self.key)
+        (self.store.resources / self.path.replace("/", "\\x2F")).write_bytes(self.key)
         self.store.reconcile()
-        self.assertFalse((self.store.resources / self.path).exists())
+        self.assertFalse((self.store.resources / self.path.replace("/", "\\x2F")).exists())
 
     def test_retirement_does_not_disable_other_bundle(self):
         other = resource_path("bundle-2", "intel_tdx", bytes(32))
@@ -585,7 +585,7 @@ class ResourceTests(unittest.TestCase):
         self.store.retire("bundle-1")
         with self.assertRaises(BuildError):
             self.store.put(self.path, self.key)
-        self.assertEqual((self.store.resources / other).read_bytes(), self.key)
+        self.assertEqual((self.store.resources / other.replace("/", "\\x2F")).read_bytes(), self.key)
 
     def test_unapproved_bundle_and_wrong_key_size_denied(self):
         with self.assertRaises(BuildError):
@@ -594,7 +594,7 @@ class ResourceTests(unittest.TestCase):
             self.store.put(resource_path("unknown", "intel_tdx", bytes(32)), self.key)
 
     def test_symlink_escape_denied(self):
-        (self.store.resources / "keys").symlink_to(self.store.state, target_is_directory=True)
+        (self.store.resources / self.path.replace("/", "\\x2F")).symlink_to(self.store.state / "secret")
         with self.assertRaises(BuildError):
             self.store.put(self.path, self.key)
 
@@ -763,7 +763,7 @@ class RuntimeContractTests(unittest.TestCase):
 
     def test_policy_readback_must_be_exact_and_canonical(self):
         expected = b"package policy\ndefault allow = false\n"
-        verify_readback(expected, base64.urlsafe_b64encode(expected).rstrip(b"="))
+        verify_readback(expected, expected)
         for returned in (b'[{"id":"resource-policy"}]', b"AAAA", b"YWJj=", b"YWJj\n"):
             with self.assertRaises(BuildError):
                 verify_readback(expected, returned)

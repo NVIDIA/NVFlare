@@ -46,7 +46,6 @@ GPU_CERTIFICATE_RULES = {
     "x-nvidia-cert-ocsp-response-valid": True,
 }
 GPU_REQUIRED_CLAIMS = {
-    "x-nvidia-device-type": "gpu",
     "secboot": True,
     "dbgstat": "disabled",
     "measres": "success",
@@ -71,6 +70,8 @@ GPU_REQUIRED_CLAIMS = {
 # Current NRAS v3 responses can omit these descriptive schema claims. RIM
 # signatures, chains, versions and measurements above remain mandatory.
 GPU_CLAIMS_IF_PRESENT = {
+    "x-nvidia-device-type": "gpu",
+    "x-nvidia-ver": "3.0",
     "x-nvidia-gpu-driver-rim-schema-validated": True,
     "x-nvidia-gpu-vbios-rim-schema-validated": True,
 }
@@ -92,7 +93,7 @@ DEFAULT_PACKAGES = [
     "linux-modules-7.0.0-31-generic=7.0.0-31.31",
 ]
 PROFILE_DEFAULTS = {
-    "profile_version": "cpu-2026.09-r3",
+    "profile_version": "cpu-2026.09-r4",
     "guest_release": "26.04",
     "gpu": "none",
     "gpu_count": 1,
@@ -109,17 +110,17 @@ PROFILE_DEFAULTS = {
     "docker_version": "29.1.3-0ubuntu4.1",
     "containerd_version": "2.2.2-0ubuntu1.1",
     "cryptsetup_version": "2:2.8.4-1ubuntu4",
-    "gpu_attestation_binary": str(INPUTS / "nvattest"),
     "gpu_attestation_library": str(INPUTS / "libnvat.so.1.2.2"),
     "required_system_packages": DEFAULT_PACKAGES,
-    "trustee_commit": "a2570329cc33daf9ca16370a1948b5379bb17fbe",
-    "trustee_patch_digest": "13a32cdb2ac6e3dc6be9738961378bff9c41c32b7729ddb9df3cc9d1eef5ac66",
+    # Unmodified CoCo v0.23.0 / Trustee v0.22.0.
+    "trustee_commit": "512fed65642015b849f38fb13bfdec7806639987",
     "kbs_url": "https://kbs.example.org:8443",
     "kbs_cert": str(INPUTS / "kbs-ca.pem"),
     "as_public_key": str(INPUTS / "as-public.pem"),
     "token_algorithm": "ES256",
-    "token_issuer": None,
-    "attestation_policy_id": "cvm-cpu-r3",
+    "token_issuer": "CoCo-Attestation-Service",
+    # The upstream kbs-client CLI uses the default AS policy selector.
+    "attestation_policy_id": "default",
     "attestation_policy": str(SOURCE / "config/attestation_policy.rego"),
     "reference_values": str(INPUTS / "approved-tcb-references.json"),
     "bootstrap_egress": [443, 8443],
@@ -288,17 +289,13 @@ def profile(path):
     require(value.get("vault_storage_profile") == STORAGE_PROFILE, "Unsupported authenticated storage profile")
     require(value.get("guest_release") == "26.04", "This implementation targets an Ubuntu 26.04 guest")
     require(re.fullmatch(r"[a-f0-9]{40}", value.get("trustee_commit", "")), "Pin trustee_commit to a full revision")
-    require(
-        re.fullmatch(r"[a-f0-9]{64}", value.get("trustee_patch_digest", "")),
-        "Pin trustee_patch_digest to the reviewed patch SHA-256",
-    )
+    require("trustee_patch_digest" not in value, "Use unmodified CoCo Trustee; remove trustee_patch_digest")
+    require("gpu_attestation_binary" not in value, "Upstream NVIDIA attestation uses libnvat, not a custom collector")
     identifier(value.get("attestation_policy_id"))
+    require(value["attestation_policy_id"] == "default", "The upstream kbs-client uses the default AS policy")
     require(urlparse(value.get("kbs_url", "")).scheme == "https", "KBS requires HTTPS")
     require(value.get("token_algorithm") in ("RS256", "ES256", "EdDSA"), "Pin the AS token algorithm")
-    # The pinned EAR broker omits iss; its signing key and EAR profile identify
-    # the issuer. Deployments that emit iss can additionally pin it here.
-    require(value.get("token_issuer") is None or isinstance(value["token_issuer"], str), "Invalid token issuer")
-    value.setdefault("token_issuer", None)
+    require(isinstance(value.get("token_issuer"), str) and value["token_issuer"], "Pin the AS token issuer")
     for key in ("kernel_version", "python_version", "docker_version", "containerd_version", "cryptsetup_version"):
         require(isinstance(value.get(key), str) and value[key] and "<" not in value[key], f"Pin {key}")
     packages = value.get("required_system_packages")
@@ -347,7 +344,7 @@ def profile(path):
         read_json(value["reference_values"]), [p for p, v in value["platforms"].items() if v.get("enabled", True)]
     )
     if value["gpu"] == "nvidia_cc":
-        for key in ("gpu_policy", "gpu_attestation_binary", "gpu_attestation_library"):
+        for key in ("gpu_policy", "gpu_attestation_library"):
             value[key] = local_path(path, value.get(key))
         validate_gpu_policy(value["gpu_policy"])
         validate_references(read_json(value["reference_values"]), gpu=True)

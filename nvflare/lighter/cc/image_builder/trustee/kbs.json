@@ -1,0 +1,51 @@
+{
+  "http_server": {
+    "sockets": ["0.0.0.0:8443"],
+    "insecure_http": false,
+    "private_key": "/etc/cvm-trustee/pki/server.key",
+    "certificate": "/etc/cvm-trustee/pki/server.pem"
+  },
+  "attestation_token": {
+    "insecure_header_jwk": false,
+    "trusted_certs_paths": ["/etc/cvm-trustee/pki/as-ca.pem"]
+  },
+  "admin": {
+    "authorization_mode": "AuthenticatedAuthorization",
+    "authentication": {
+      "bearer_jwt": {
+        "identity_providers": [{
+          "issuer": "cvm-builder",
+          "audience": "coco-trustee",
+          "public_key_uri": "/etc/cvm-trustee/pki/kbs-admin.pub"
+        }]
+      }
+    },
+    "authorization": {
+      "regex_acl": {
+        "acls": [{
+          "role": "cvm-policy",
+          "allowed_endpoints": "^/kbs/v0/(resource-policy|reference-value/[^/]+)$"
+        }]
+      }
+    }
+  },
+  "storage_backend": {
+    "storage_type": "local_fs",
+    "backends": {
+      "local_fs": {"dir_path": "/var/lib/cvm-trustee/storage"}
+    }
+  },
+  "session_storage_type": "memory",
+  "attestation_service": {
+    "type": "coco_as_builtin",
+    "attestation_token_broker": {
+      "duration_min": 5,
+      "issuer_name": "CoCo-Attestation-Service",
+      "signer": {
+        "key_path": "/etc/cvm-trustee/pki/as.key",
+        "cert_path": "/etc/cvm-trustee/pki/as-chain.pem"
+      }
+    }
+  },
+  "plugins": [{"name": "resource", "storage_backend_type": "kvstorage"}]
+}
