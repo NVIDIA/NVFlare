@@ -79,6 +79,14 @@ remain aligned if the directory is moved or the active NVFlare installation is
 later upgraded. Use ``--dir <downloaded-example>`` when running it outside that
 directory.
 
+If you already have NVFlare cloned at the same revision, install the skills
+from its top-level ``skills/`` directory instead of downloading them from
+GitHub:
+
+.. code-block:: bash
+
+   npx skills add "<nvflare-repo>/skills" --skill '*' -a codex -a claude-code -y
+
 For Hello PyTorch, first install the ``PT`` extra on the NVFlare distribution
 already in use with the matching command above. Then run:
 

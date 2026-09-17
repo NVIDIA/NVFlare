@@ -7,18 +7,23 @@ converted to a two-site NVFLARE FedAvg job.
 ## Setup
 
 Install NVFLARE using the [Installation guide](https://nvflare.readthedocs.io/en/main/installation.html), keeping
-the stable, nightly, or editable distribution already selected. Then install the example dependencies and the skills
-from the same source revision as this example:
+the stable, nightly, or editable distribution already selected. Then install the example dependencies:
 
 ```bash
 python -m pip install -r source/requirements.txt
-if [ -f .nvflare-example.json ]; then
-  NVFLARE_REVISION=$(nvflare examples revision)
-  NVFLARE_SKILLS_SOURCE="https://github.com/NVIDIA/NVFlare/tree/${NVFLARE_REVISION}/skills"
-else
-  NVFLARE_SKILLS_SOURCE=../../../../skills
-fi
-npx skills add "$NVFLARE_SKILLS_SOURCE" --skill '*' -a codex -a claude-code -y
+```
+
+For an example downloaded with `nvflare examples get`, install the skills from its recorded source revision:
+
+```bash
+NVFLARE_REVISION=$(nvflare examples revision)
+npx skills add "https://github.com/NVIDIA/NVFlare/tree/${NVFLARE_REVISION}/skills" --skill '*' -a codex -a claude-code -y
+```
+
+If you already have NVFLARE cloned at the same revision, use its top-level skills directory instead:
+
+```bash
+npx skills add "<nvflare-repo>/skills" --skill '*' -a codex -a claude-code -y
 ```
 
 ## Code Structure
