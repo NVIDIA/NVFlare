@@ -22,6 +22,7 @@ from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import SERVER_SITE_NAME
 from nvflare.apis.shareable import Shareable
+from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef
 
 from .types import TensorTopics
 
@@ -174,6 +175,14 @@ def chunk_tensors_from_params(
             tensors[key] = torch.from_numpy(value)
         elif isinstance(value, dict):
             yield from chunk_tensors_from_params(value, parent_keys + [key], chunk_size)
+        elif isinstance(value, LazyDownloadRef):
+            raise TypeError(
+                f"Cannot stream '{'.'.join(parent_keys + [key])}': got an unresolved "
+                f"LazyDownloadRef instead of a tensor. Tensor streaming requires materialised "
+                f"tensors, but PASS_THROUGH left this reference unresolved. This happens on the "
+                f"ClientAPILauncherExecutor path, where pass_through_on_send is enabled "
+                f"unconditionally for a CellPipe."
+            )
 
     if tensors:
         if chunk_size is None or chunk_size >= len(tensors):
