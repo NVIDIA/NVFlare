@@ -69,9 +69,15 @@ before opening the example in Codex or Claude Code:
 
 .. code-block:: bash
 
-   NVFLARE_REVISION=$(nvflare --version revision)
+   NVFLARE_REVISION=$(nvflare examples revision)
    npx skills add "https://github.com/NVIDIA/NVFlare/tree/${NVFLARE_REVISION}/skills" \
      --skill '*' -a codex -a claude-code -y
+
+``nvflare examples revision`` reads the durable revision recorded in the
+downloaded directory's ``.nvflare-example.json`` file, so the selected skills
+remain aligned if the directory is moved or the active NVFlare installation is
+later upgraded. Use ``--dir <downloaded-example>`` when running it outside that
+directory.
 
 For Hello PyTorch, first install the ``PT`` extra on the NVFlare distribution
 already in use with the matching command above. Then run:

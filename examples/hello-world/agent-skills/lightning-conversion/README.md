@@ -14,7 +14,7 @@ from the same source revision as this example:
 ```bash
 python -m pip install -r source/requirements.txt
 if [ -f .nvflare-example.json ]; then
-  NVFLARE_REVISION=$(nvflare --version revision)
+  NVFLARE_REVISION=$(nvflare examples revision)
   NVFLARE_SKILLS_SOURCE="https://github.com/NVIDIA/NVFlare/tree/${NVFLARE_REVISION}/skills"
 else
   NVFLARE_SKILLS_SOURCE=../../../../skills

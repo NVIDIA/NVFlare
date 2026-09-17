@@ -36,6 +36,7 @@ _EXAMPLE_COMMANDS = [
     "nvflare examples list",
     "nvflare examples get hello-pt",
     "nvflare examples get hello-numpy --dest ./numpy-demo",
+    "nvflare examples revision",
 ]
 
 
@@ -53,8 +54,10 @@ def def_examples_parser(sub_cmd):
     get = children.add_parser("get", help="download one example into a new directory")
     get.add_argument("name", metavar="NAME", help="example short name from 'nvflare examples list'")
     get.add_argument("--dest", help="new destination directory; default: example name in the current directory")
+    revision = children.add_parser("revision", help="print the source revision recorded by a downloaded example")
+    revision.add_argument("--dir", default=".", help="downloaded example directory; default: current directory")
     _parsers.clear()
-    _parsers.update({None: parser, "list": list_parser, "get": get})
+    _parsers.update({None: parser, "list": list_parser, "get": get, "revision": revision})
     for value in _parsers.values():
         value.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     return {"examples": parser}
@@ -77,6 +80,22 @@ def _source_revision(version_info):
         "This NVFlare installation does not identify its source revision.",
         "Install an official NVFlare wheel or an editable checkout with Git metadata.",
     )
+
+
+def _example_revision(directory):
+    provenance_file = Path(directory).expanduser().absolute() / PROVENANCE_FILE
+    try:
+        provenance = json.loads(provenance_file.read_text(encoding="utf-8"))
+        revision = provenance.get("revision")
+    except (OSError, ValueError, AttributeError):
+        revision = None
+    if not isinstance(revision, str) or not _REVISION.fullmatch(revision):
+        raise ExampleError(
+            "EXAMPLE_PROVENANCE_INVALID",
+            f"Cannot read an NVFlare example revision from {provenance_file}.",
+            "Run this command inside a directory created by 'nvflare examples get', or pass --dir <directory>.",
+        )
+    return {"revision": revision, "provenance_file": str(provenance_file)}
 
 
 def _load_example_catalog():
@@ -277,15 +296,23 @@ def handle_examples_cmd(args):
         streaming=False,
         output_modes=["json"],
         mutating=key == "get",
-        idempotent=key == "list",
+        idempotent=key in {"list", "revision"},
         retry_token={"supported": False},
     )
-    if key not in {"list", "get"}:
+    if key not in {"list", "get", "revision"}:
         output_error_message(
             "INVALID_ARGS", "An examples subcommand is required.", "Run nvflare examples --help.", exit_code=4
         )
 
     try:
+        if key == "revision":
+            result = _example_revision(args.dir)
+            if is_json_mode():
+                output_ok(result)
+            else:
+                print_human(result["revision"])
+            return
+
         catalog, catalog_errors = _load_example_catalog()
         if key == "list":
             examples = [

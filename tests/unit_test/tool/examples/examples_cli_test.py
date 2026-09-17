@@ -339,7 +339,39 @@ def test_unknown_example_and_unknown_revision_are_structured(tmp_path):
     assert error.value.code == "EXAMPLE_VERSION_UNKNOWN"
 
 
-@pytest.mark.parametrize("command", [[], ["list"], ["get"]])
+def test_example_revision_reads_download_provenance(tmp_path):
+    provenance = tmp_path / examples_cli.PROVENANCE_FILE
+    provenance.write_text(json.dumps({"revision": REVISION}), encoding="utf-8")
+
+    assert examples_cli._example_revision(tmp_path) == {
+        "revision": REVISION,
+        "provenance_file": str(provenance),
+    }
+
+
+def test_revision_command_prints_download_provenance(monkeypatch, tmp_path, capsys):
+    from nvflare import cli
+
+    (tmp_path / examples_cli.PROVENANCE_FILE).write_text(json.dumps({"revision": REVISION}), encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("sys.argv", ["nvflare", "examples", "revision"])
+
+    cli.run("nvflare")
+
+    assert capsys.readouterr().out == f"{REVISION}\n"
+
+
+@pytest.mark.parametrize("contents", ["not json", "{}", '{"revision": "main"}'])
+def test_example_revision_rejects_invalid_provenance(tmp_path, contents):
+    (tmp_path / examples_cli.PROVENANCE_FILE).write_text(contents, encoding="utf-8")
+
+    with pytest.raises(examples_cli.ExampleError) as error:
+        examples_cli._example_revision(tmp_path)
+
+    assert error.value.code == "EXAMPLE_PROVENANCE_INVALID"
+
+
+@pytest.mark.parametrize("command", [[], ["list"], ["get"], ["revision"]])
 def test_cli_schema_does_not_download(monkeypatch, capsys, command):
     from nvflare import cli
 
@@ -362,6 +394,10 @@ def test_cli_schema_does_not_download(monkeypatch, capsys, command):
         assert schema["idempotent"] is False
         name_arg = next(argument for argument in schema["args"] if argument["name"] == "name")
         assert "choices" not in name_arg
+    if command == ["revision"]:
+        assert schema["command"] == "nvflare examples revision"
+        assert schema["mutating"] is False
+        assert schema["idempotent"] is True
 
 
 def test_list_prints_short_names_and_source_paths(monkeypatch, capsys):
