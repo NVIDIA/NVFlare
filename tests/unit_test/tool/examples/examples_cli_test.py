@@ -300,6 +300,29 @@ def test_network_failure_before_destination_creation_is_structured(monkeypatch, 
     assert not destination.exists()
 
 
+def test_cleanup_failure_names_the_destination_and_requires_manual_removal(monkeypatch, tmp_path):
+    tree_response = _Response(
+        metadata={
+            "truncated": False,
+            "tree": [
+                {"path": "README.md", "type": "blob", "mode": "100644"},
+                {"path": "job.py", "type": "blob", "mode": "100644"},
+            ],
+        }
+    )
+    _mock_session(monkeypatch, tree_response, _Response(data=b"# Example\n"), OSError("disk full"))
+    monkeypatch.setattr(examples_cli.shutil, "rmtree", lambda path: None)
+    destination = tmp_path / "example"
+
+    with pytest.raises(examples_cli.ExampleError) as error:
+        examples_cli._download_example(REVISION, SOURCE_PATH, destination)
+
+    assert error.value.code == "EXAMPLE_CLEANUP_FAILED"
+    assert str(destination) in str(error.value)
+    assert f"Remove {destination}" in error.value.hint
+    assert destination.exists()
+
+
 def test_missing_path_is_not_reported_as_network_failure(monkeypatch, tmp_path):
     _mock_session(monkeypatch, _Response(status_code=404))
 

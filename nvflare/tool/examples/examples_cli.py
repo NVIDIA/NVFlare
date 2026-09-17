@@ -128,6 +128,23 @@ def _content_error(
     return ExampleError("EXAMPLE_CONTENT_INVALID", message, hint)
 
 
+def _remove_incomplete_destination(destination):
+    try:
+        shutil.rmtree(destination)
+    except OSError as error:
+        raise ExampleError(
+            "EXAMPLE_CLEANUP_FAILED",
+            f"Could not remove the incomplete destination at {destination}: {error}",
+            f"Remove {destination} before retrying.",
+        ) from None
+    if destination.exists() or destination.is_symlink():
+        raise ExampleError(
+            "EXAMPLE_CLEANUP_FAILED",
+            f"Could not remove the incomplete destination at {destination}.",
+            f"Remove {destination} before retrying.",
+        )
+
+
 def _validate_tree_entries(entries, source_path):
     files = []
     entry_keys = set()
@@ -241,7 +258,7 @@ def _download_example(revision, source_path, destination, destination_path=None)
                     target.chmod(0o755)
     except requests.RequestException as error:
         if destination_created:
-            shutil.rmtree(destination, ignore_errors=True)
+            _remove_incomplete_destination(destination)
         raise ExampleError(
             "EXAMPLE_NETWORK_ERROR",
             f"Could not download the NVFlare example: {error}",
@@ -249,7 +266,7 @@ def _download_example(revision, source_path, destination, destination_path=None)
         ) from None
     except BaseException:
         if destination_created:
-            shutil.rmtree(destination, ignore_errors=True)
+            _remove_incomplete_destination(destination)
         raise
 
 
