@@ -14,12 +14,18 @@
 
 import datetime
 
+import pytest
+
 from nvflare.apis.job_def import DEFAULT_STUDY
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
+from nvflare.fuel.f3.cellnet.identity import CellIdentityResolver
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.hci.security import IdentityKey
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.hci.server.login import LoginModule, SessionManager
+from nvflare.fuel.utils.admin_name_utils import new_admin_client_name
+from nvflare.lighter.utils import Identity, generate_cert, generate_keys, serialize_cert, sign_content
+from nvflare.private.fed.utils.identity_utils import IdentityVerifier
 
 
 class _FakeConnection:
@@ -139,9 +145,13 @@ def _make_conn(study=None):
     )
 
 
-def _patch_cert_login(monkeypatch):
+def _patch_cert_login(monkeypatch, entitlements=()):
     monkeypatch.setattr("nvflare.fuel.hci.server.login.load_crt_chain_bytes", lambda _data: [_FakeCert()])
     monkeypatch.setattr("nvflare.fuel.hci.server.login.validate_admin_leaf_cert", lambda _cert: None)
+    monkeypatch.setattr(
+        "nvflare.fuel.hci.server.login.get_admin_study_entitlements",
+        lambda _cert: entitlements,
+    )
 
 
 def test_handle_cert_login_rejects_missing_server_identity():
@@ -178,7 +188,7 @@ def test_handle_logout_ends_preverified_session_without_decoding_token():
 
 
 def test_handle_cert_login_rejects_unknown_study_when_registry_exists(monkeypatch):
-    _patch_cert_login(monkeypatch)
+    _patch_cert_login(monkeypatch, ("trial-study",))
     monkeypatch.setattr(
         "nvflare.fuel.hci.server.login.cert_to_dict",
         lambda _cert: {"subject": {"commonName": "admin@nvidia.com"}},
@@ -273,7 +283,7 @@ def test_handle_cert_login_accepts_mapped_user_for_valid_study(monkeypatch):
 
 
 def test_handle_cert_login_defaults_to_default_study_without_registry(monkeypatch):
-    _patch_cert_login(monkeypatch)
+    _patch_cert_login(monkeypatch, ("study-a",))
     monkeypatch.setattr(
         "nvflare.fuel.hci.server.login.cert_to_dict",
         lambda _cert: {"subject": {"commonName": "admin@nvidia.com"}},
@@ -294,13 +304,15 @@ def test_handle_cert_login_defaults_to_default_study_without_registry(monkeypatc
 
         assert conn.strings == [("OK", None)]
         assert len(conn.tokens) == 1
-        assert list(session_mgr.sessions.values())[0].active_study == DEFAULT_STUDY
+        session = list(session_mgr.sessions.values())[0]
+        assert session.active_study == DEFAULT_STUDY
+        assert session.cert_studies == ("study-a",)
     finally:
         session_mgr.shutdown()
 
 
 def test_handle_cert_login_rejects_non_default_study_without_registry(monkeypatch):
-    _patch_cert_login(monkeypatch)
+    _patch_cert_login(monkeypatch, ("study-a",))
     monkeypatch.setattr(
         "nvflare.fuel.hci.server.login.cert_to_dict",
         lambda _cert: {"subject": {"commonName": "admin@nvidia.com"}},
@@ -324,5 +336,78 @@ def test_handle_cert_login_rejects_non_default_study_without_registry(monkeypatc
         ]
         assert conn.tokens == []
         assert session_mgr.sessions == {}
+    finally:
+        session_mgr.shutdown()
+
+
+@pytest.mark.parametrize(
+    "study,registry_allowed,cert_study,expected_reply",
+    [
+        ("study-a", False, "study-a", "OK"),
+        ("study-a", True, "study-b", "OK"),
+        ("study-a", True, "study-a", "OK"),
+        (
+            "study-a",
+            False,
+            "study-b",
+            "REJECT: AUTH_STUDY_USER_NOT_MAPPED: user 'admin@nvidia.com' is not mapped to study 'study-a'",
+        ),
+        (DEFAULT_STUDY, False, "study-a", "OK"),
+        (DEFAULT_STUDY, False, "study-a\n", "REJECT"),
+        (DEFAULT_STUDY, False, "default\n", "REJECT"),
+        ("study-a", False, "study-a\n", "REJECT"),
+        ("study-a", True, "study-a\n", "REJECT"),
+        ("study-a", False, "default\n", "REJECT"),
+        ("study-a", True, "default\n", "REJECT"),
+    ],
+)
+def test_handle_cert_login_with_real_study_certificate(
+    monkeypatch, tmp_path, study, registry_allowed, cert_study, expected_reply
+):
+    root_key, root_pub = generate_keys()
+    root = Identity("root", "nvidia")
+    root_cert = generate_cert(root, root, root_key, root_pub, ca=True)
+    root_path = tmp_path / "root.crt"
+    root_path.write_bytes(serialize_cert(root_cert))
+    admin_key, admin_pub = generate_keys()
+    user = "admin@nvidia.com"
+    cert = generate_cert(
+        Identity(user, "nvidia", "lead"),
+        root,
+        root_key,
+        admin_pub,
+        uri_names=[f"https://nvidia.com/nvflare/v1/project/demo-project/study/{cert_study}"],
+    )
+    origin = new_admin_client_name()
+    if expected_reply == "REJECT":
+        with pytest.raises(ValueError, match="malformed study URI"):
+            CellIdentityResolver().require_match(origin, user, "admin", peer_cert=cert)
+    else:
+        CellIdentityResolver().require_match(origin, user, "admin", peer_cert=cert)
+    conn = _make_conn(study=study)
+    conn.get_prop(ConnProps.CMD_HEADERS).update(
+        cert=serialize_cert(cert), signature=sign_content(user, admin_key, return_str=False)
+    )
+    verifier = IdentityVerifier(str(root_path))
+    monkeypatch.setattr(conn.get_prop(ConnProps.HCI_SERVER), "get_id_verifier", lambda: verifier)
+    monkeypatch.setattr("nvflare.fuel.hci.server.login.StudyRegistryService", _FakeStudyRegistryService, raising=False)
+    users = {(user, "study-a"): True} if registry_allowed else {}
+    _FakeStudyRegistryService.registry = (
+        None if study == DEFAULT_STUDY else _FakeStudyRegistry(studies={"study-a": {"site-a"}}, users=users)
+    )
+    session_mgr = SessionManager(_FakeCell(), idle_timeout=3600, monitor_interval=3600)
+
+    try:
+        LoginModule(session_mgr).handle_cert_login(conn, ["CERT_LOGIN", user])
+        assert conn.strings == [(expected_reply, None)]
+        if expected_reply == "OK":
+            assert len(conn.tokens) == 1
+            session = next(iter(session_mgr.sessions.values()))
+            assert session.active_study == study
+            assert session.cert_studies == (cert_study,)
+            assert session.user_role == "lead"
+        else:
+            assert conn.tokens == []
+            assert session_mgr.sessions == {}
     finally:
         session_mgr.shutdown()

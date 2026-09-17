@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import copy
+import logging
 import os
 import time
 from typing import Any, Dict, Optional
@@ -38,6 +39,13 @@ TOPIC_STOP = "STOP"
 TOPIC_ABORT = "ABORT"
 TOPIC_LOCAL_RESULT = "LOCAL_RESULT"
 TOPIC_GLOBAL_RESULT = "GLOBAL_RESULT"
+_END_RUN_STOP_REASON = "END_RUN received"
+_API_SHUTDOWN_STOP_REASON = "API shutdown called."
+_EXPECTED_STOP_REASONS = {_END_RUN_STOP_REASON, _API_SHUTDOWN_STOP_REASON}
+
+
+def _stop_log_level(reason):
+    return logging.INFO if reason in _EXPECTED_STOP_REASONS else logging.WARNING
 
 
 class InProcessClientAPI(APISpec):
@@ -327,13 +335,13 @@ class InProcessClientAPI(APISpec):
         elif topic == TOPIC_STOP:
             self.stop = True
             self.stop_reason = msg
-            self.logger.warning(f"ask to stop job: reason: {msg}")
+            self.logger.log(_stop_log_level(msg), f"ask to stop job: reason: {msg}")
 
     def __continue_job(self) -> bool:
         if self.abort:
             raise RuntimeError(f"request to abort the job for reason {self.abort_reason}")
         if self.stop:
-            self.logger.warning(f"request to stop the job for reason {self.stop_reason}")
+            self.logger.log(_stop_log_level(self.stop_reason), f"request to stop the job for reason {self.stop_reason}")
             self.fl_model = None
             return False
 
@@ -341,8 +349,8 @@ class InProcessClientAPI(APISpec):
 
     def shutdown(self):
         self.stop = True
-        self.event_manager.fire_event(TOPIC_STOP)
-        self.stop_reason = "API shutdown called."
+        self.stop_reason = _API_SHUTDOWN_STOP_REASON
+        self.event_manager.fire_event(TOPIC_STOP, _API_SHUTDOWN_STOP_REASON)
 
     def close(self):
         """Detaches this API instance from the singleton DataBus, in both directions.

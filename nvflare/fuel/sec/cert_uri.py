@@ -17,17 +17,22 @@
 Certificate attributes travel as https URI Subject Alternative Names under a root the project
 owns rather than as private X.509 extensions: a URI under a controlled domain is globally
 unique without an OID allocation, and Go, cryptography and OpenSSL parse it natively.
-Readers match the root exactly, ignore URIs on other hosts, and reject malformed URIs
-under the root.
+Readers match the root exactly and ignore URIs on other hosts. All readers reject
+malformed entries, including study URIs.
 """
 
+import re
 from typing import Iterable, List
 from urllib.parse import quote, unquote
 
 from cryptography import x509
 
+from nvflare.apis.job_def import DEFAULT_STUDY
+from nvflare.apis.utils.format_check import name_check
+
 NVFLARE_CERT_URI_ROOT = "https://nvidia.com/nvflare/"
 _V1_PREFIX = NVFLARE_CERT_URI_ROOT + "v1/"
+ADMIN_STUDY_URI_PREFIX = _V1_PREFIX + "project/"
 
 # https://nvidia.com/nvflare/v1/<kind>/<percent-encoded value>
 JOB_URI_KIND = "job"  # leaf: the job the credential belongs to
@@ -48,10 +53,23 @@ def uri_general_names(uris: Iterable[str]) -> List[x509.UniformResourceIdentifie
     return [x509.UniformResourceIdentifier(uri) for uri in uris]
 
 
+def parse_admin_study_uri(uri: str) -> str:
+    """Validate a study URI and return its study; the project label is informational."""
+    if not uri.startswith(ADMIN_STUDY_URI_PREFIX):
+        raise ValueError("unsupported study URI")
+    project, separator, study = uri[len(ADMIN_STUDY_URI_PREFIX) :].partition("/study/")
+    if not separator or not re.fullmatch(r"(?:[A-Za-z0-9._~-]|%[0-9A-Fa-f]{2})+", project):
+        raise ValueError("malformed study URI: invalid project URI segment")
+    if study == DEFAULT_STUDY or name_check(study, "study")[0]:
+        raise ValueError("malformed study URI: invalid study name")
+    return study
+
+
 def cert_uri_values(cert: x509.Certificate, kind: str) -> List[str]:
     """Values of one kind carried by the certificate's NVFlare URI SANs.
 
-    Raises ValueError for a URI under the NVFlare root that is not a well-formed v1 entry.
+    Study URIs are validated but are not identity values. Other entries under the NVFlare root must
+    be well-formed v1 identity URIs or raise ValueError.
     """
     try:
         san = cert.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
@@ -63,6 +81,9 @@ def cert_uri_values(cert: x509.Certificate, kind: str) -> List[str]:
             continue
         if not uri.startswith(_V1_PREFIX):
             raise ValueError(f"unsupported NVFlare certificate URI: {uri}")
+        if uri.startswith(ADMIN_STUDY_URI_PREFIX):
+            parse_admin_study_uri(uri)
+            continue
         uri_kind, separator, encoded_value = uri[len(_V1_PREFIX) :].partition("/")
         if not separator or not uri_kind or not encoded_value or "/" in encoded_value:
             raise ValueError(f"malformed NVFlare certificate URI: {uri}")

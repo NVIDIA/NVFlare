@@ -21,6 +21,8 @@ from nvflare.lighter.impl.cert import serialize_cert
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys, sign_content
 from nvflare.private.fed.utils.identity_utils import IdentityVerifier, InvalidAsserterCert, get_parent_site_name
 
+_STUDY_URI = "https://nvidia.com/nvflare/v1/project/demo/study/study-a"
+
 
 class TestIdentityUtils:
     @pytest.mark.parametrize(
@@ -177,7 +179,8 @@ def test_identity_verifier_rejects_job_scoped_cert_chain(tmp_path):
         )
 
 
-def test_identity_verifier_rejects_leaf_minted_by_job_ca_without_extension(tmp_path):
+@pytest.mark.parametrize("study_uris", [[], [_STUDY_URI]])
+def test_identity_verifier_rejects_leaf_minted_by_job_ca_without_extension(tmp_path, study_uris):
     # stolen job-CA-key attack: mint a clean site cert with NO job-id extension;
     # rejection must key on the root-signed marker in the presented chain
     root_key, root_pub_key = generate_keys()
@@ -196,7 +199,7 @@ def test_identity_verifier_rejects_leaf_minted_by_job_ca_without_extension(tmp_p
         subject_pub_key=job_ca_pub_key,
         ca=True,
         ca_path_length=0,
-        uri_names=[job_ca_marker_uri()],
+        uri_names=study_uris + [job_ca_marker_uri()],
     )
     leaf_key, leaf_pub_key = generate_keys()
     leaf_cert = generate_cert(
@@ -204,6 +207,7 @@ def test_identity_verifier_rejects_leaf_minted_by_job_ca_without_extension(tmp_p
         issuer=Identity("job_ca.test", "nvidia"),
         signing_pri_key=job_ca_key,
         subject_pub_key=leaf_pub_key,
+        uri_names=study_uris,
     )
     root_cert_path = tmp_path / "root.crt"
     root_cert_path.write_bytes(serialize_cert(root_cert))
@@ -221,10 +225,11 @@ def test_identity_verifier_rejects_leaf_minted_by_job_ca_without_extension(tmp_p
         )
 
 
-def test_identity_verifier_rejects_malformed_job_uri(tmp_path):
+@pytest.mark.parametrize("study_uris", [[], [_STUDY_URI]])
+def test_identity_verifier_rejects_malformed_job_uri(tmp_path, study_uris):
     # a malformed NVFlare URI fails closed instead of being ignored
     root_cert, _root_key, client_cert, client_key = _make_root_and_client_certs(
-        uri_names=["https://nvidia.com/nvflare/v1/job/"]
+        uri_names=study_uris + ["https://nvidia.com/nvflare/v1/job/"]
     )
     root_cert_path = tmp_path / "root.crt"
     root_cert_path.write_bytes(serialize_cert(root_cert))
@@ -237,10 +242,11 @@ def test_identity_verifier_rejects_malformed_job_uri(tmp_path):
         )
 
 
-def test_identity_verifier_rejects_job_extension_even_when_root_issued(tmp_path):
+@pytest.mark.parametrize("study_uris", [[], [_STUDY_URI]])
+def test_identity_verifier_rejects_job_extension_even_when_root_issued(tmp_path, study_uris):
     # the rejection is keyed on the job URI, not the issuer
     root_cert, _root_key, client_cert, client_key = _make_root_and_client_certs(
-        uri_names=[cert_uri(JOB_URI_KIND, "job-123")]
+        uri_names=study_uris + [cert_uri(JOB_URI_KIND, "job-123")]
     )
     root_cert_path = tmp_path / "root.crt"
     root_cert_path.write_bytes(serialize_cert(root_cert))
