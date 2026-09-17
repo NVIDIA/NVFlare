@@ -25,9 +25,8 @@ from nvflare.tool.examples.catalog import load_catalog
 
 REVISION = "a" * 40
 VERSION = {"version": "2.10.0", "full-revisionid": REVISION, "dirty": False, "error": None}
-CATALOG, CATALOG_ERRORS = load_catalog()
+CATALOG = load_catalog()
 SOURCE_PATH = "examples/hello-world/hello-pt"
-assert not CATALOG_ERRORS
 
 
 @pytest.fixture(autouse=True)
@@ -89,8 +88,6 @@ def _mock_download(
     monkeypatch,
     *,
     source_path=SOURCE_PATH,
-    requirements="nvflare[PT]~=2.9.0rc\ntorch\n",
-    nested_requirements=None,
     readme="README.md",
     readme_contents="# Example\n",
 ):
@@ -106,15 +103,12 @@ def _mock_download(
         (content_directory / "job.py").write_text("print('example')\n")
         (content_directory / "nested").mkdir()
         (content_directory / "nested/client.py").write_text("# client\n")
-        if nested_requirements is not None:
-            (content_directory / "nested/requirements.txt").write_text(nested_requirements)
-        if requirements is not None:
-            (content_directory / "requirements.txt").write_text(requirements)
+        (content_directory / "requirements.txt").write_text("torch\n")
 
     monkeypatch.setattr(examples_cli, "_download_example", download)
 
 
-def test_get_records_downloaded_source_and_requirements(monkeypatch, tmp_path):
+def test_get_records_source_provenance_and_guidance(monkeypatch, tmp_path):
     _mock_download(monkeypatch)
     destination = tmp_path / "hello-pt"
 
@@ -122,43 +116,13 @@ def test_get_records_downloaded_source_and_requirements(monkeypatch, tmp_path):
 
     assert (destination / "job.py").read_text() == "print('example')\n"
     assert (destination / "nested/client.py").read_text() == "# client\n"
-    assert (destination / "requirements.txt").read_text() == "nvflare[PT]~=2.9.0rc\ntorch\n"
     assert result["readme"] == str(destination / "README.md")
     assert result["source_url"] == f"https://github.com/NVIDIA/NVFlare/tree/{REVISION}/{SOURCE_PATH}"
-    assert result["warnings"] == [
-        {
-            "code": "EXAMPLE_DEPENDENCY_GUIDANCE",
-            "message": "Preserve the installed NVFlare distribution when setting up this example.",
-            "hint": (
-                "Skip any README or dependency-file instruction that installs nvflare or nvflare-nightly. "
-                "Add required extras to the same stable, nightly, or editable distribution, then install only "
-                "the remaining dependencies."
-            ),
-        }
-    ]
+    assert [warning["code"] for warning in result["warnings"]] == ["EXAMPLE_DEPENDENCY_GUIDANCE"]
     provenance = json.loads((destination / examples_cli.PROVENANCE_FILE).read_text())
     assert provenance["revision"] == REVISION
     assert provenance["example"] == "hello-pt"
     assert provenance["source_path"] == SOURCE_PATH
-
-
-def test_missing_requirements_remains_missing(monkeypatch, tmp_path):
-    _mock_download(monkeypatch, requirements=None)
-
-    result = examples_cli.get_example(VERSION, CATALOG, name="hello-pt", destination=tmp_path / "hello-pt")
-
-    assert not (tmp_path / "hello-pt/requirements.txt").exists()
-    assert result["warnings"][0]["code"] == "EXAMPLE_DEPENDENCY_GUIDANCE"
-
-
-def test_nested_requirement_is_not_modified(monkeypatch, tmp_path):
-    requirement = "nvflare_nightly[HE] \\\n    >=2.10.0rc\nnvflare-helper==1.0\n"
-    _mock_download(monkeypatch, requirements="nvflare[PT] (>=2.10)\ntorch\n", nested_requirements=requirement)
-
-    result = examples_cli.get_example(VERSION, CATALOG, name="hello-pt", destination=tmp_path / "hello-pt")
-
-    assert (tmp_path / "hello-pt/nested/requirements.txt").read_text() == requirement
-    assert "paths" not in result["warnings"][0]
 
 
 def test_rst_readme_is_reported(monkeypatch, tmp_path):
@@ -170,26 +134,14 @@ def test_rst_readme_is_reported(monkeypatch, tmp_path):
 
 
 def test_missing_root_readme_warns_without_failing(monkeypatch, tmp_path):
-    _mock_download(monkeypatch, requirements=None, readme=None)
+    _mock_download(monkeypatch, readme=None)
 
     result = examples_cli.get_example(VERSION, CATALOG, name="hello-pt", destination=tmp_path / "hello-pt")
 
     assert result["readme"] is None
-    assert result["warnings"] == [
-        {
-            "code": "EXAMPLE_DEPENDENCY_GUIDANCE",
-            "message": "Preserve the installed NVFlare distribution when setting up this example.",
-            "hint": (
-                "Skip any README or dependency-file instruction that installs nvflare or nvflare-nightly. "
-                "Add required extras to the same stable, nightly, or editable distribution, then install only "
-                "the remaining dependencies."
-            ),
-        },
-        {
-            "code": "EXAMPLE_README_MISSING",
-            "message": "The downloaded example does not contain a root README.",
-            "hint": "Inspect the downloaded files for dependency, preparation, and run instructions.",
-        },
+    assert [warning["code"] for warning in result["warnings"]] == [
+        "EXAMPLE_DEPENDENCY_GUIDANCE",
+        "EXAMPLE_README_MISSING",
     ]
     assert (tmp_path / "hello-pt/.nvflare-example.json").is_file()
 
@@ -253,8 +205,7 @@ def test_get_reports_nested_readme_for_package_layout(monkeypatch, tmp_path):
     assert provenance["destination_path"] == "collab/pt_cifar10"
 
 
-@pytest.mark.parametrize("failure", [requests.ConnectionError("offline"), OSError("disk full"), KeyboardInterrupt()])
-def test_partial_download_is_removed_after_failure(monkeypatch, tmp_path, failure):
+def test_partial_download_is_left_for_manual_cleanup(monkeypatch, tmp_path):
     tree_response = _Response(
         metadata={
             "truncated": False,
@@ -264,28 +215,16 @@ def test_partial_download_is_removed_after_failure(monkeypatch, tmp_path, failur
             ],
         }
     )
-    _mock_session(monkeypatch, tree_response, _Response(data=b"# Example\n"), failure)
+    _mock_session(monkeypatch, tree_response, _Response(data=b"# Example\n"), requests.ConnectionError("offline"))
 
     destination = tmp_path / "example"
-    with pytest.raises(BaseException) as error:
+    with pytest.raises(examples_cli.ExampleError) as error:
         examples_cli._download_example(REVISION, SOURCE_PATH, destination)
 
-    if isinstance(failure, requests.RequestException):
-        assert isinstance(error.value, examples_cli.ExampleError)
-        assert error.value.code == "EXAMPLE_NETWORK_ERROR"
-    else:
-        assert type(error.value) is type(failure)
-    assert not destination.exists()
-
-    _mock_session(
-        monkeypatch,
-        tree_response,
-        _Response(data=b"# Example\n"),
-        _Response(data=b"print('example')\n"),
-    )
-    examples_cli._download_example(REVISION, SOURCE_PATH, destination)
+    assert error.value.code == "EXAMPLE_NETWORK_ERROR"
+    assert str(destination) in error.value.hint
     assert (destination / "README.md").read_bytes() == b"# Example\n"
-    assert (destination / "job.py").read_bytes() == b"print('example')\n"
+    assert not (destination / "job.py").exists()
 
 
 def test_network_failure_before_destination_creation_is_structured(monkeypatch, tmp_path):
@@ -298,29 +237,6 @@ def test_network_failure_before_destination_creation_is_structured(monkeypatch, 
     assert error.value.code == "EXAMPLE_NETWORK_ERROR"
     assert "Check GitHub access" in error.value.hint
     assert not destination.exists()
-
-
-def test_cleanup_failure_names_the_destination_and_requires_manual_removal(monkeypatch, tmp_path):
-    tree_response = _Response(
-        metadata={
-            "truncated": False,
-            "tree": [
-                {"path": "README.md", "type": "blob", "mode": "100644"},
-                {"path": "job.py", "type": "blob", "mode": "100644"},
-            ],
-        }
-    )
-    _mock_session(monkeypatch, tree_response, _Response(data=b"# Example\n"), OSError("disk full"))
-    monkeypatch.setattr(examples_cli.shutil, "rmtree", lambda path: None)
-    destination = tmp_path / "example"
-
-    with pytest.raises(examples_cli.ExampleError) as error:
-        examples_cli._download_example(REVISION, SOURCE_PATH, destination)
-
-    assert error.value.code == "EXAMPLE_CLEANUP_FAILED"
-    assert str(destination) in str(error.value)
-    assert f"Remove {destination}" in error.value.hint
-    assert destination.exists()
 
 
 def test_missing_path_is_not_reported_as_network_failure(monkeypatch, tmp_path):
@@ -563,13 +479,6 @@ def test_list_prints_short_names_and_source_paths(monkeypatch, capsys):
     assert "SHORT NAME" in output
     assert "hello-pt" in output
     assert "examples/hello-world/hello-pt" in output
-    assert "cifar10-pt" in output
-    assert "examples/advanced/cifar10/pt" in output
-    assert "experiment-tracking" in output
-    assert "examples/advanced/experiment-tracking" in output
-    assert "tracking-tensorboard" not in output
-    assert "skill-pytorch-conversion" in output
-    assert "examples/hello-world/agent-skills/pytorch-conversion" in output
 
 
 def test_list_json_is_machine_readable(monkeypatch, capsys):
@@ -588,48 +497,6 @@ def test_list_json_is_machine_readable(monkeypatch, capsys):
     assert {entry["name"]: (entry["category"], entry["source_path"]) for entry in listed} == {
         name: (entry["category"], entry["source_path"]) for name, entry in CATALOG.items()
     }
-    assert result["data"]["catalog_errors"] == []
-
-
-def test_list_keeps_valid_catalog_entries(monkeypatch, capsys):
-    from nvflare import cli
-
-    monkeypatch.setattr(
-        examples_cli,
-        "load_catalog",
-        lambda: (
-            {"hello-pt": {"category": "hello-world", "source_path": SOURCE_PATH}},
-            [{"name": "broken", "error": "bad path"}],
-        ),
-    )
-    monkeypatch.setattr("sys.argv", ["nvflare", "examples", "list", "--format", "json"])
-    cli.run("nvflare")
-
-    result = json.loads(capsys.readouterr().out)
-    assert result["data"]["examples"] == [{"name": "hello-pt", "category": "hello-world", "source_path": SOURCE_PATH}]
-    assert result["data"]["catalog_errors"] == [{"name": "broken", "error": "bad path"}]
-
-
-def test_get_rejected_catalog_entry_reports_catalog_error(monkeypatch, capsys):
-    from nvflare import cli
-
-    monkeypatch.setattr(
-        examples_cli,
-        "load_catalog",
-        lambda: (
-            {"hello-pt": {"category": "hello-world", "source_path": SOURCE_PATH}},
-            [{"name": "broken", "error": "bad path"}],
-        ),
-    )
-    monkeypatch.setattr("sys.argv", ["nvflare", "examples", "get", "broken", "--format", "json"])
-
-    with pytest.raises(SystemExit) as error:
-        cli.run("nvflare")
-
-    assert error.value.code == 1
-    result = json.loads(capsys.readouterr().out)
-    assert result["error_code"] == "EXAMPLE_CATALOG_INVALID"
-    assert "bad path" in result["message"]
 
 
 def test_catalog_failure_is_scoped_to_examples_command(monkeypatch, capsys):

@@ -42,7 +42,6 @@ def load_catalog(path=None):
         raise ValueError(f"duplicate catalog short name: {definitions.duplicate_keys[0]}")
 
     catalog = {}
-    errors = []
     source_paths = set()
     for name, entry in definitions.items():
         error = None
@@ -89,8 +88,7 @@ def load_catalog(path=None):
             elif unicodedata.normalize("NFC", parts[0].casefold()) == _PROVENANCE_KEY:
                 error = f"destination_path cannot use the reserved name {PROVENANCE_FILE}"
         if error:
-            errors.append({"name": name, "error": error})
-            continue
+            raise ValueError(f"invalid catalog entry {name!r}: {error}")
         source_paths.add(source_path)
-        catalog[name] = entry
-    return catalog, errors
+        catalog[name] = dict(entry)
+    return catalog

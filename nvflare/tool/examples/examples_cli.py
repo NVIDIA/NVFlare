@@ -17,7 +17,6 @@
 import json
 import re
 import shlex
-import shutil
 import sys
 import unicodedata
 from pathlib import Path
@@ -106,43 +105,20 @@ def _example_revision(directory):
 
 def _load_example_catalog():
     try:
-        catalog, errors = load_catalog()
+        catalog = load_catalog()
     except (OSError, ValueError) as error:
         raise ExampleError(
             "EXAMPLE_CATALOG_INVALID",
             f"Cannot load the installed example catalog: {error}",
             "Reinstall NVFlare, or use examples directly from the NVIDIA/NVFlare GitHub repository.",
         ) from None
-    if not catalog:
-        raise ExampleError(
-            "EXAMPLE_CATALOG_INVALID",
-            "The installed example catalog contains no valid entries.",
-            "Reinstall NVFlare, or use examples directly from the NVIDIA/NVFlare GitHub repository.",
-        )
-    return catalog, errors
+    return catalog
 
 
 def _content_error(
     message="GitHub returned invalid source metadata.", hint="Retry or use the example directly from GitHub."
 ):
     return ExampleError("EXAMPLE_CONTENT_INVALID", message, hint)
-
-
-def _remove_incomplete_destination(destination):
-    try:
-        shutil.rmtree(destination)
-    except OSError as error:
-        raise ExampleError(
-            "EXAMPLE_CLEANUP_FAILED",
-            f"Could not remove the incomplete destination at {destination}: {error}",
-            f"Remove {destination} before retrying.",
-        ) from None
-    if destination.exists() or destination.is_symlink():
-        raise ExampleError(
-            "EXAMPLE_CLEANUP_FAILED",
-            f"Could not remove the incomplete destination at {destination}.",
-            f"Remove {destination} before retrying.",
-        )
 
 
 def _validate_tree_entries(entries, source_path):
@@ -257,17 +233,14 @@ def _download_example(revision, source_path, destination, destination_path=None)
                 if str(entry.get("mode")) == "100755":
                     target.chmod(0o755)
     except requests.RequestException as error:
+        hint = "Check GitHub access and your network settings, then retry."
         if destination_created:
-            _remove_incomplete_destination(destination)
+            hint = f"Remove the incomplete destination at {destination}, then retry."
         raise ExampleError(
             "EXAMPLE_NETWORK_ERROR",
             f"Could not download the NVFlare example: {error}",
-            "Check GitHub access and your network settings, then retry.",
+            hint,
         ) from None
-    except BaseException:
-        if destination_created:
-            _remove_incomplete_destination(destination)
-        raise
 
 
 def get_example(version_info, catalog, *, name, destination=None):
@@ -371,14 +344,14 @@ def handle_examples_cmd(args):
                 print_human(result["revision"])
             return
 
-        catalog, catalog_errors = _load_example_catalog()
+        catalog = _load_example_catalog()
         if key == "list":
             examples = [
                 {"name": name, "category": entry["category"], "source_path": entry["source_path"]}
                 for name, entry in sorted(catalog.items(), key=lambda item: (item[1]["category"], item[0]))
             ]
             if is_json_mode():
-                output_ok({"examples": examples, "catalog_errors": catalog_errors})
+                output_ok({"examples": examples})
             else:
                 name_width = max(len("SHORT NAME"), *(len(example["name"]) for example in examples))
                 category = None
@@ -390,19 +363,7 @@ def handle_examples_cmd(args):
                         print_human(category.replace("-", " ").upper())
                         print_human(f"  {'SHORT NAME':<{name_width}}  SOURCE PATH")
                     print_human(f"  {example['name']:<{name_width}}  {example['source_path']}")
-                if catalog_errors:
-                    print_human("\nSkipped invalid catalog entries:")
-                    for error in catalog_errors:
-                        print_human(f"  {error['name']}: {error['error']}")
             return
-
-        invalid_entry = next((error for error in catalog_errors if error["name"] == args.name), None)
-        if invalid_entry:
-            raise ExampleError(
-                "EXAMPLE_CATALOG_INVALID",
-                f"The installed catalog entry '{args.name}' is invalid: {invalid_entry['error']}.",
-                "Reinstall NVFlare, or use the example directly from the NVIDIA/NVFlare GitHub repository.",
-            )
 
         from nvflare import _version
 
@@ -426,7 +387,7 @@ def handle_examples_cmd(args):
         hint = "Retry the command."
         if key == "get":
             destination = Path(args.dest or args.name).expanduser().absolute()
-            hint = f"Any incomplete output at {destination} was removed; retry the command."
+            hint = f"Remove any incomplete destination at {destination}, then retry the command."
         output_error_message(
             "EXAMPLE_INTERRUPTED",
             "Example download interrupted.",
@@ -438,8 +399,8 @@ def handle_examples_cmd(args):
         if key == "get":
             destination = Path(args.dest or args.name).expanduser().absolute()
             hint = (
-                f"Any incomplete output at {destination} was removed; check the path, permissions, free space, "
-                "and installation, then retry."
+                f"Remove any incomplete destination at {destination}; check the path, permissions, free space, "
+                "and installation; then retry."
             )
         output_error_message(
             "EXAMPLE_IO_ERROR",

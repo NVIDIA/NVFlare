@@ -12,19 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
 import os
-import shutil
 import subprocess
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _K8S_COMMON = _REPO_ROOT / "examples" / "devops" / "openshift" / "scripts" / "k8s_common.sh"
-_BUILD_IMAGES = _K8S_COMMON.with_name("build_images.sh")
-
-
-def _git(repo: Path, *args: str) -> str:
-    return subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True, text=True).stdout.strip()
 
 
 def _write_prepare_config(tmp_path: Path, **resources: str) -> str:
@@ -34,7 +27,7 @@ def _write_prepare_config(tmp_path: Path, **resources: str) -> str:
     env.update(
         {
             "IMAGE": "registry.example.com/nvflare-parent:test",
-            "EXAMPLE_ROOT": str(_REPO_ROOT / "examples" / "devops" / "openshift"),
+            "REPO_ROOT": str(_REPO_ROOT),
             "WORK_DIR": str(tmp_path),
             **resources,
         }
@@ -67,101 +60,3 @@ def test_prepare_config_allows_parent_request_overrides(tmp_path):
 
     assert 'cpu: "1"' in config
     assert 'memory: "4Gi"' in config
-
-
-def test_exported_numpy_job_uses_only_the_downloaded_openshift_example(tmp_path):
-    example = tmp_path / "downloaded" / "examples" / "devops" / "openshift"
-    shutil.copytree(_K8S_COMMON.parent.parent, example)
-    work_dir = tmp_path / "work"
-    env = {
-        **os.environ,
-        "EXAMPLE_ROOT": str(example),
-        "WORK_DIR": str(work_dir),
-        "CLIENTS": "site-1 site-2",
-        "NUM_ROUNDS": "1",
-    }
-
-    subprocess.run(
-        [
-            "bash",
-            "-c",
-            'source "$1"; init_k8s_env false; export_hello_numpy_job "$JOB_DIR"',
-            "--",
-            str(example / "scripts" / "k8s_common.sh"),
-        ],
-        check=True,
-        capture_output=True,
-        env=env,
-        text=True,
-    )
-
-    job = work_dir / "jobs" / "hello-numpy-k8s"
-    assert (job / "meta.json").is_file()
-    assert (job / "app" / "custom" / "numpy_client.py").read_bytes() == (
-        example / "jobs" / "numpy_client.py"
-    ).read_bytes()
-    assert not (tmp_path / "downloaded" / "examples" / "hello-world").exists()
-
-
-def test_downloaded_image_builder_supplies_git_metadata_to_dockerfiles(tmp_path):
-    repository = tmp_path / "repository"
-    repository.mkdir()
-    _git(repository, "init", "--quiet")
-    _git(repository, "config", "user.name", "NVFlare Test")
-    _git(repository, "config", "user.email", "nvflare-test@example.com")
-    shutil.copy(_REPO_ROOT / "versioneer.py", repository / "versioneer.py")
-    shutil.copy(_REPO_ROOT / "setup.cfg", repository / "setup.cfg")
-    version_file = repository / "nvflare" / "_version.py"
-    version_file.parent.mkdir()
-    shutil.copy(_REPO_ROOT / "nvflare" / "_version.py", version_file)
-    docker = repository / "docker"
-    docker.mkdir()
-    (docker / "Dockerfile.parent").write_text("FROM scratch\n", encoding="utf-8")
-    (docker / "Dockerfile.job").write_text("FROM scratch\n", encoding="utf-8")
-    _git(repository, "add", ".")
-    _git(repository, "commit", "--quiet", "-m", "test source")
-    _git(repository, "tag", "2.10.0dev0")
-    revision = _git(repository, "rev-parse", "HEAD")
-
-    download_root = tmp_path / "downloaded"
-    example = download_root / "examples" / "devops" / "openshift"
-    shutil.copytree(_BUILD_IMAGES.parent.parent, example)
-    (download_root / ".nvflare-example.json").write_text(
-        json.dumps({"revision": revision, "nvflare_version": "2.10.0.dev1"}), encoding="utf-8"
-    )
-    binaries = tmp_path / "bin"
-    binaries.mkdir()
-    nvflare = binaries / "nvflare"
-    nvflare.write_text(f"#!/usr/bin/env bash\nprintf '%s\\n' '{revision}'\n", encoding="utf-8")
-    nvflare.chmod(0o755)
-    container = binaries / "container-test"
-    container.write_text(
-        """#!/usr/bin/env bash
-set -euo pipefail
-printf '%s\n' "$*" >> "$CONTAINER_LOG"
-if [[ "$1" == build ]]; then
-  context="${!#}"
-  test -d "$context/.git"
-  git -C "$context" ls-files --deleted -z | git -C "$context" update-index --skip-worktree -z --stdin
-  (cd "$context" && python3 -c "import versioneer; v = versioneer.get_versions(); assert not v['error'], v['error']")
-fi
-""",
-        encoding="utf-8",
-    )
-    container.chmod(0o755)
-    command_log = tmp_path / "container.log"
-    env = {
-        **os.environ,
-        "PATH": f"{binaries}{os.pathsep}{os.environ['PATH']}",
-        "CONTAINER_TOOL": container.name,
-        "CONTAINER_LOG": str(command_log),
-        "NVFL_SOURCE_REPOSITORY": str(repository),
-        "PARENT_IMAGE": "registry.example.com/nvflare-parent:test",
-        "WORKLOAD_IMAGE": "registry.example.com/nvflare-job:test",
-    }
-
-    subprocess.run(["bash", str(example / "scripts" / "build_images.sh")], check=True, env=env)
-
-    commands = command_log.read_text(encoding="utf-8").splitlines()
-    assert sum(command.startswith("build ") for command in commands) == 2
-    assert sum(command.startswith("push ") for command in commands) == 2

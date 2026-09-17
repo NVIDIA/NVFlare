@@ -39,7 +39,6 @@ Exceptions (plain text, outside the JSON contract):
 
 import json
 import logging
-import math
 import re
 import sys
 from typing import Any, Optional
@@ -131,10 +130,7 @@ def set_connect_timeout(value: float) -> None:
     """Set CLI connection timeout (seconds)."""
     global _connect_timeout
     try:
-        parsed_value = float(value)
-        if not math.isfinite(parsed_value) or parsed_value <= 0:
-            raise ValueError
-        _connect_timeout = parsed_value
+        _connect_timeout = float(value)
     except (TypeError, ValueError):
         logger.warning("invalid CLI connection timeout; using default 5.0 seconds")
         _connect_timeout = 5.0
