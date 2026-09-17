@@ -15,6 +15,7 @@
 """Download examples selected by the installed NVFlare catalog."""
 
 import json
+import math
 import re
 import shlex
 import sys
@@ -333,6 +334,15 @@ def handle_examples_cmd(args):
     if key not in {"list", "get", "revision"}:
         output_error_message(
             "INVALID_ARGS", "An examples subcommand is required.", "Run nvflare examples --help.", exit_code=4
+        )
+
+    connect_timeout = get_connect_timeout()
+    if not math.isfinite(connect_timeout) or connect_timeout <= 0:
+        output_error_message(
+            "INVALID_ARGS",
+            "--connect-timeout must be a finite positive number.",
+            "Pass --connect-timeout with a value greater than zero.",
+            exit_code=4,
         )
 
     try:

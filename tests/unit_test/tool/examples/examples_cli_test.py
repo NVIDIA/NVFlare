@@ -527,6 +527,29 @@ def test_unknown_subcommand_with_schema_is_rejected(monkeypatch, capsys):
     assert json.loads(capsys.readouterr().out)["error_code"] == "INVALID_ARGS"
 
 
+@pytest.mark.parametrize("value", ["0", "-1", "nan", "inf", "-inf"])
+@pytest.mark.parametrize("output_format", ["txt", "json"])
+def test_connect_timeout_requires_finite_positive_value(monkeypatch, capsys, value, output_format):
+    from nvflare import cli
+
+    monkeypatch.setattr(
+        "sys.argv",
+        ["nvflare", "examples", "get", "hello-pt", f"--connect-timeout={value}", "--format", output_format],
+    )
+    with pytest.raises(SystemExit) as error:
+        cli.run("nvflare")
+
+    assert error.value.code == 4
+    output = capsys.readouterr()
+    if output_format == "json":
+        result = json.loads(output.out)
+        assert result["error_code"] == "INVALID_ARGS"
+        assert "finite positive number" in result["message"]
+    else:
+        assert "INVALID_ARGS" in output.err
+        assert "finite positive number" in output.err
+
+
 def test_human_output_points_to_readme(monkeypatch, capsys, tmp_path):
     from nvflare import cli
 
