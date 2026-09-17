@@ -101,8 +101,10 @@ def test_hello_pt_guidance_preserves_revision_for_install_and_environment_follow
     )
     docs_page = (REPO_ROOT / "docs" / "hello-world" / "hello-pt" / "index.rst").read_text(encoding="utf-8")
 
+    assert 'python -m pip install "nvflare[PT]"' in docs_page
+    assert "nvflare examples get hello-pt" in docs_page
     assert 'python -m pip install -e ".[PT]"' in docs_page
-    assert 'python -m pip install "nvflare[PT]"' not in docs_page
+    assert "install that checkout in\neditable mode" in docs_page
     assert "NVFLARE_REVISION=$(nvflare examples revision)" in example_readme
     assert "tree/%s/examples/advanced/hello-pt-environments" in example_readme
     assert 'git -C ../nvflare-source checkout "$NVFLARE_REVISION"' in example_readme
