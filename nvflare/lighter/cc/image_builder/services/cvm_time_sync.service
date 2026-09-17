@@ -1,9 +1,9 @@
 [Unit]
 Description=Synchronize the guest clock before attestation
-After=network-online.target chrony.service cvm-firewall.service
-Requires=chrony.service cvm-firewall.service
-Before=cvm-vault.service
-OnFailure=cvm-fail.service
+After=network-online.target chrony.service cvm_firewall.service
+Requires=chrony.service cvm_firewall.service
+Before=cvm_vault.service
+OnFailure=cvm_fail.service
 
 [Service]
 Type=oneshot

@@ -1,7 +1,7 @@
 [Unit]
 Description=Restricted CVM Trustee KBS
-Requires=cvm-key-reconcile.service
-After=network-online.target cvm-key-reconcile.service
+Requires=cvm_key_reconcile.service
+After=network-online.target cvm_key_reconcile.service
 Wants=network-online.target
 
 [Service]

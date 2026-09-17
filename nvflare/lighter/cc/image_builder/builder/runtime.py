@@ -233,11 +233,11 @@ def bootstrap():
                 .strip()
             )
         validate_mapping("vault")
-        # Type=notify, no dependency on cvm-vault: wait for READY before scan.
-        run(["systemctl", "start", "cvm-integrity.service"], timeout=30)
+        # Type=notify, no dependency on cvm_vault: wait for READY before scan.
+        run(["systemctl", "start", "cvm_integrity.service"], timeout=30)
         scan("/dev/mapper/vault")
         require(
-            run(["systemctl", "is-active", "cvm-integrity.service"]).strip() == b"active",
+            run(["systemctl", "is-active", "cvm_integrity.service"]).strip() == b"active",
             "Integrity monitor stopped during scan",
         )
         run(["mount", "-o", "nosuid,nodev", "/dev/mapper/vault", "/vault"])
@@ -273,7 +273,7 @@ def bootstrap():
         finish_bootstrap(config)
     except Exception:
         subprocess.run(
-            ["systemctl", "stop", "cvm-workload.target"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            ["systemctl", "stop", "cvm_workload.target"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         )
         for mount in reversed(mounted):
             subprocess.run(["umount", mount], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -297,26 +297,26 @@ def finish_bootstrap(config, dev=False):
     install_services(dev=dev)
     run(["systemctl", "daemon-reload"])
     # Workload requires this oneshot, which is still activating until we return.
-    run(["systemctl", "start", "--no-block", "cvm-workload.target"])
+    run(["systemctl", "start", "--no-block", "cvm_workload.target"])
 
 
 def install_services(dev=False):
     from .services import validate_service
 
     destination = Path("/run/systemd/system")
-    wants = destination / "cvm-workload.target.wants"
+    wants = destination / "cvm_workload.target.wants"
     wants.mkdir(exist_ok=True)
     source = Path("/vault/services")
     if source.exists():
         for item in sorted(source.iterdir()):
             text = item.read_text()
             validate_service(item.name, text)
-            deps = "cvm-vault.service" + ("" if dev else " cvm-integrity.service")
+            deps = "cvm_vault.service" + ("" if dev else " cvm_integrity.service")
             unit = (
                 text
                 + "\n[Unit]\n"
                 + f"After={deps}\nRequires={deps}\nBindsTo={deps}\n"
-                + "PartOf=cvm-workload.target\nOnFailure=cvm-fail.service\n"
+                + "PartOf=cvm_workload.target\nOnFailure=cvm_fail.service\n"
                 + "[Service]\nEnvironmentFile=/run/cvm/platform.env\n"
             )
             (destination / item.name).write_text(unit)
@@ -436,7 +436,7 @@ def fail():
     # Security failure handling must not depend on a healthy workload or manager.
     try:
         subprocess.run(
-            ["systemctl", "stop", "cvm-workload.target"],
+            ["systemctl", "stop", "cvm_workload.target"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             timeout=30,

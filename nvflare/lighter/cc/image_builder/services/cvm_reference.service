@@ -1,6 +1,6 @@
 [Unit]
 Description=Emit public boot measurements for bundle acceptance
-Before=cvm-vault.service
+Before=cvm_vault.service
 After=local-fs.target systemd-modules-load.service
 
 [Service]

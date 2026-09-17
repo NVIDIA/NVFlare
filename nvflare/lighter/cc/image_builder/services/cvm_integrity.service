@@ -1,7 +1,7 @@
 [Unit]
 Description=Supervise authenticated vault reads
-OnFailure=cvm-fail.service
-# Deliberately no Requires/After=cvm-vault: bootstrap waits for READY.
+OnFailure=cvm_fail.service
+# Deliberately no Requires/After=cvm_vault: bootstrap waits for READY.
 
 [Service]
 Type=notify

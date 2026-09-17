@@ -104,7 +104,7 @@ Add `CVM_GPU_HARDWARE_TESTS=1` only on a configured NVIDIA CC GPU host; it
 enables the mandatory NRAS failure/poweroff acceptance case for GPU profiles.
 
 For the hardware fault tests, explicitly include `tests/lab_guest_agent.py` as
-executable application payload and `tests/app-acceptance.service` as a service,
+executable application payload and `tests/app_acceptance.service` as a service,
 with ports 18080/18081 and the generic HTTP fixture. The agent refuses non-test
 profiles and is never installed by Stage 1. `CVM_OTHER_RESOURCE` must identify an
 existing different key under the same tested bundle. Tests mutate independent

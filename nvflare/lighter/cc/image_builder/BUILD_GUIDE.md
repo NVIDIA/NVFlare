@@ -322,6 +322,11 @@ services: []
 hosts_entries: {}
 ```
 
+Optional `services` entries point to unit files named `app_<name>.service`,
+using lowercase letters, digits, and underscores, such as `app_helper.service`.
+The builder supplies their bootstrap, integrity-monitor, and workload-target
+dependencies.
+
 `cvm_image` accepts a local folder containing `profile_set.json` and its platform
 subdirectories, or a generic CVM OCI registry reference pinned by manifest digest:
 

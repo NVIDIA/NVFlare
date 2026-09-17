@@ -44,10 +44,10 @@ DIRECTORIES = (
 )
 BOOTSTRAP_UNITS = (
     "chrony.service",
-    "cvm-time-sync.service",
-    "cvm-vault.service",
-    "cvm-firewall.service",
-    "cvm-reference.service",
+    "cvm_time_sync.service",
+    "cvm_vault.service",
+    "cvm_firewall.service",
+    "cvm_reference.service",
 )
 UPDATE_UNITS = (
     "apt-daily.service",
@@ -73,7 +73,7 @@ CRASH_UNITS = (
 )
 LOGIN_UNITS = ("serial-getty@ttyS0.service", "getty@tty1.service", "emergency.service", "rescue.service")
 DEV_DEPENDENCY_FILES = (
-    "/usr/lib/systemd/system/cvm-workload.target",
+    "/usr/lib/systemd/system/cvm_workload.target",
     "/usr/lib/systemd/system/cvm_app.service",
     "/usr/lib/systemd/system/mount_user_data.service",
     "/usr/lib/systemd/system/periodic_attestation.service",
@@ -191,9 +191,9 @@ def install_files(config, payload, root=Path("/")):
     for source in units:
         copy_file(source, root, "/usr/lib/systemd/system/" + source.name, 0o644)
     for unit, name in (
-        ("docker.service", "docker-vault.conf"),
-        ("docker.socket", "socket-vault.conf"),
-        ("containerd.service", "docker-vault.conf"),
+        ("docker.service", "docker_vault.conf"),
+        ("docker.socket", "socket_vault.conf"),
+        ("containerd.service", "docker_vault.conf"),
     ):
         copy_file(services / name, root, f"/etc/systemd/system/{unit}.d/vault.conf", 0o644)
 
@@ -208,7 +208,7 @@ def install_files(config, payload, root=Path("/")):
         write_file(root, "/etc/cvm/dev_mode", "Development only: no TEE and no KBS authorization.")
         for path in DEV_DEPENDENCY_FILES:
             location = target(root, path)
-            location.write_text(location.read_text().replace("cvm-integrity.service", ""))
+            location.write_text(location.read_text().replace("cvm_integrity.service", ""))
 
     module = "sev_guest" if config["platform"] == "amd_sev_snp" else "tdx_guest"
     write_file(root, "/etc/modules-load.d/cvm.conf", f"{module}\ndm_crypt\ndm_integrity\n")

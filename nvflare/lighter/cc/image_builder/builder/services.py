@@ -21,7 +21,10 @@ from .common import require
 
 
 def validate_service(name, text):
-    require(re.fullmatch(r"app-[a-z0-9][a-z0-9_-]*\.service", name), "Application service names must start with app-")
+    require(
+        re.fullmatch(r"app_[a-z0-9][a-z0-9_]*\.service", name),
+        "Application service names must use app_<name>.service with lowercase letters, digits, and underscores",
+    )
     require(len(text) < 65536 and "\x00" not in text and "\\\n" not in text, "Invalid application service")
     require(
         not any(value in text for value in ("/dev/sev", "/dev/tdx", "snpguest", "TEE_PLATFORM=", "TEE_DEVICE=")),

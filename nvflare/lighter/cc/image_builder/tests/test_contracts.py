@@ -350,17 +350,17 @@ class GuestProvisioningTests(unittest.TestCase):
             (self.payload / "inputs" / name).write_text(name)
         (self.payload / "source/builder/runtime.py").write_text("# measured runtime\n")
         services = self.payload / "source/services"
-        (services / "cvm-vault.service").write_text("Requires=cvm-integrity.service\n")
-        (services / "docker-vault.conf").write_text("Requires=cvm-integrity.service\n")
-        (services / "socket-vault.conf").write_text("Requires=cvm-integrity.service\n")
+        (services / "cvm_vault.service").write_text("Requires=cvm_integrity.service\n")
+        (services / "docker_vault.conf").write_text("Requires=cvm_integrity.service\n")
+        (services / "socket_vault.conf").write_text("Requires=cvm_integrity.service\n")
         for name in (
-            "cvm-workload.target",
+            "cvm_workload.target",
             "cvm_app.service",
             "mount_user_data.service",
             "periodic_attestation.service",
             "periodic_attestation.timer",
         ):
-            (services / name).write_text("Requires=cvm-integrity.service\n")
+            (services / name).write_text("Requires=cvm_integrity.service\n")
         for path in ("hooks/cvm_verity", "scripts/local-top/verity_root", "scripts/local-bottom/overlay_root"):
             location = self.payload / "source/initramfs" / path
             location.parent.mkdir(parents=True, exist_ok=True)
@@ -403,10 +403,10 @@ class GuestProvisioningTests(unittest.TestCase):
         self.config["dev_mode"] = True
         install_files(self.config, self.payload, self.root)
         for path in (
-            "usr/lib/systemd/system/cvm-workload.target",
+            "usr/lib/systemd/system/cvm_workload.target",
             "etc/systemd/system/docker.service.d/vault.conf",
         ):
-            self.assertNotIn("cvm-integrity.service", (self.root / path).read_text())
+            self.assertNotIn("cvm_integrity.service", (self.root / path).read_text())
         self.assertTrue((self.root / "etc/cvm/dev_mode").is_file())
 
     def test_gpu_runtime_and_masks_are_explicit(self):
@@ -588,12 +588,12 @@ class ApplicationTests(unittest.TestCase):
 
     def test_service_cannot_override_bootstrap(self):
         good = "[Unit]\nDescription=Application\n[Service]\nExecStart=/vault/application/start\n"
-        validate_service("app-helper.service", good)
+        validate_service("app_helper.service", good)
         for name, text in (
-            ("cvm-vault.service", good),
-            ("app-x.service", good + "ExecStartPre=/bin/true\n"),
-            ("app-x.service", good.replace("Description=Application", "Requires=cvm-vault.service")),
-            ("app-x.service", good + "Environment=TEE_DEVICE=/dev/tdx_guest\n"),
+            ("cvm_vault.service", good),
+            ("app_x.service", good + "ExecStartPre=/bin/true\n"),
+            ("app_x.service", good.replace("Description=Application", "Requires=cvm_vault.service")),
+            ("app_x.service", good + "Environment=TEE_DEVICE=/dev/tdx_guest\n"),
         ):
             with self.assertRaises((BuildError, ValueError)):
                 validate_service(name, text)
@@ -797,7 +797,7 @@ class RuntimeContractTests(unittest.TestCase):
         ):
             runtime.fail()
         commands = [call.args[0] for call in execute.call_args_list]
-        self.assertEqual(commands[0], ["systemctl", "stop", "cvm-workload.target"])
+        self.assertEqual(commands[0], ["systemctl", "stop", "cvm_workload.target"])
         self.assertEqual(commands[-1], ["systemctl", "poweroff", "--force", "--force"])
         poweroff.assert_called_once_with()
 
@@ -823,10 +823,10 @@ class RuntimeContractTests(unittest.TestCase):
 
     def test_workload_start_is_nonblocking_and_monitor_is_synchronous(self):
         source = Path(runtime.__file__).read_text()
-        self.assertIn('["systemctl", "start", "--no-block", "cvm-workload.target"]', source)
-        self.assertIn('["systemctl", "start", "cvm-integrity.service"]', source)
-        monitor = Path(runtime.__file__).parent.parent / "services/cvm-integrity.service"
-        self.assertNotIn("Requires=cvm-vault.service", monitor.read_text())
+        self.assertIn('["systemctl", "start", "--no-block", "cvm_workload.target"]', source)
+        self.assertIn('["systemctl", "start", "cvm_integrity.service"]', source)
+        monitor = Path(runtime.__file__).parent.parent / "services/cvm_integrity.service"
+        self.assertNotIn("Requires=cvm_vault.service", monitor.read_text())
         self.assertIn("Type=notify", monitor.read_text())
         self.assertIn("ExecStopPost=", monitor.read_text())
 

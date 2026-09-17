@@ -80,7 +80,7 @@ def state():
         stream.flush()
         os.fsync(stream.fileno())
     result["applog_writable"] = True
-    for name in ("cvm-integrity.service", "cvm_app.service", "docker.service"):
+    for name in ("cvm_integrity.service", "cvm_app.service", "docker.service"):
         result[name] = run(["systemctl", "show", name, "--property=ActiveState", "--value"]).decode().strip()
     result["periodic_attestation.service"] = {
         "active": run(["systemctl", "show", "periodic_attestation.service", "--property=ActiveState", "--value"])
@@ -218,7 +218,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             threading.Thread(target=write_loop, daemon=True).start()
             self.respond({"writing": True})
         elif url.path == "/kill-monitor":
-            pid = int(run(["systemctl", "show", "cvm-integrity.service", "--property=MainPID", "--value"]))
+            pid = int(run(["systemctl", "show", "cvm_integrity.service", "--property=MainPID", "--value"]))
             require(pid > 1, "No live integrity monitor")
             self.respond({"injected_monitor_crash": True})
             os.kill(pid, signal.SIGKILL)

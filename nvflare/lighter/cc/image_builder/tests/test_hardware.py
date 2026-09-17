@@ -128,7 +128,7 @@ class HardwareTests(unittest.TestCase):
             try:
                 state = json.loads(self.request())
                 if state["marker"] and self.request("/", port=18080) == b"CVM_GENERIC_APPLICATION_OK\n":
-                    self.assertEqual(state["cvm-integrity.service"], "active")
+                    self.assertEqual(state["cvm_integrity.service"], "active")
                     self.assertEqual(state["platform"], self.manifest["platform"])
                     self.assertTrue(state["core_dumps_disabled"])
                     self.assertTrue(state["sidecar_roles_correct"])
@@ -470,7 +470,7 @@ class HardwareTests(unittest.TestCase):
         self.process.wait(timeout=120)
         log = self.logs[-1].read_text(errors="replace")
         self.assertIn("Power down", log)
-        self.assertNotIn("Started \x1b[0;1;39mcvm-integrity.service", log)
+        self.assertNotIn("Started \x1b[0;1;39mcvm_integrity.service", log)
         self.assertNotIn("Authenticated application workload.", log)
         self.result(wrong_binding_prevented_startup=True)
 

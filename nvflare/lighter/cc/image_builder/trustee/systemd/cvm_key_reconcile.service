@@ -1,6 +1,6 @@
 [Unit]
 Description=Apply permanent CVM key revocations before KBS serves resources
-Before=cvm-trustee-kbs.service
+Before=cvm_trustee_kbs.service
 
 [Service]
 Type=oneshot

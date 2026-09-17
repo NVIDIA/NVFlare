@@ -287,12 +287,12 @@ a coordinated profile/backend rollout or a separate instance.
 ```sh
 sudo install -m 0644 trustee/systemd/*.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now cvm-key-service.service cvm-trustee-kbs.service
-sudo systemctl status cvm-key-service.service cvm-trustee-kbs.service --no-pager
-sudo journalctl -u cvm-key-service -u cvm-trustee-kbs -n 50 --no-pager
+sudo systemctl enable --now cvm_key_service.service cvm_trustee_kbs.service
+sudo systemctl status cvm_key_service.service cvm_trustee_kbs.service --no-pager
+sudo journalctl -u cvm_key_service -u cvm_trustee_kbs -n 50 --no-pager
 ```
 
-KBS automatically runs `cvm-key-reconcile.service` before serving requests.
+KBS automatically runs `cvm_key_reconcile.service` before serving requests.
 Check the actual administrative endpoint; this version does not expose a generic
 `/health` endpoint:
 
@@ -343,7 +343,7 @@ appropriate. Copy the finalized bundle to the backend first:
 
 ```sh
 export CVM_BUNDLE=/srv/cvm/bundles/cpu-2026.09/intel_tdx
-sudo systemctl stop cvm-trustee-kbs
+sudo systemctl stop cvm_trustee_kbs
 sudo python3 - "$CVM_BUNDLE/reference_values.json" <<'PY'
 import datetime, json, os, sys
 from pathlib import Path
@@ -366,7 +366,7 @@ stat = path.stat()
 os.chown(temporary, stat.st_uid, stat.st_gid)
 os.replace(temporary, path)
 PY
-sudo systemctl start cvm-trustee-kbs
+sudo systemctl start cvm_trustee_kbs
 ```
 
 Review the combined approved set before running the merge: its expiry applies
@@ -521,10 +521,10 @@ revocation/retirement state separately. During a restore:
 5. Run reconciliation, then start the services. Startup also reconciles before KBS.
 
 ```sh
-sudo systemctl stop cvm-trustee-kbs cvm-key-service
+sudo systemctl stop cvm_trustee_kbs cvm_key_service
 # Restore the selected backup while both services are stopped.
-sudo systemctl start cvm-key-reconcile
-sudo systemctl start cvm-key-service cvm-trustee-kbs
+sudo systemctl start cvm_key_reconcile
+sudo systemctl start cvm_key_service cvm_trustee_kbs
 ```
 
 Verify revoked resources are still denied before reopening access. After renewing

@@ -1,10 +1,10 @@
 [Unit]
 Description=Run the application's Docker image
-Requires=cvm-vault.service cvm-integrity.service docker.service mount_user_data.service
-After=cvm-vault.service cvm-integrity.service docker.service mount_user_data.service
-BindsTo=cvm-integrity.service
-PartOf=cvm-workload.target
-OnFailure=cvm-fail.service
+Requires=cvm_vault.service cvm_integrity.service docker.service mount_user_data.service
+After=cvm_vault.service cvm_integrity.service docker.service mount_user_data.service
+BindsTo=cvm_integrity.service
+PartOf=cvm_workload.target
+OnFailure=cvm_fail.service
 
 [Service]
 Type=simple
