@@ -111,13 +111,11 @@ appropriate for that revision. A small ``.nvflare-example.json`` file records
 the example name, installed NVFlare version, Git revision, and canonical source
 path.
 
-If any root or nested ``requirements.txt`` names ``nvflare`` or
-``nvflare-nightly``, a ``pyproject.toml`` declares either distribution, or a
-README contains a direct pip install command for either distribution, the
-command reports each affected path in human and JSON output. Keep the NVFlare
-distribution already installed, add required extras to that same distribution
-as shown above, and install the remaining example dependencies without
-reinstalling NVFlare.
+Every successful download includes the same dependency notice in human and JSON
+output: keep the NVFlare distribution already installed, add required extras to
+that same stable, nightly, or editable distribution as shown above, and follow
+the README for the remaining example dependencies. The command does not try to
+interpret each example's dependency files.
 
 If the selected directory has no root README, retrieval still succeeds and
 reports a warning to inspect the downloaded files for instructions.

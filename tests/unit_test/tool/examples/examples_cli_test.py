@@ -14,7 +14,6 @@
 
 import json
 import shlex
-from pathlib import Path
 
 import pytest
 import requests
@@ -37,12 +36,59 @@ def reset_output_mode():
     set_output_format("txt")
 
 
+class _Response:
+    def __init__(self, *, status_code=200, metadata=None, data=b""):
+        self.status_code = status_code
+        self.metadata = metadata
+        self.data = data
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        pass
+
+    def raise_for_status(self):
+        pass
+
+    def json(self):
+        return self.metadata
+
+    def iter_content(self, chunk_size):
+        assert chunk_size == 1024 * 1024
+        yield self.data
+
+
+class _Session:
+    def __init__(self, responses):
+        self.responses = iter(responses)
+        self.requested = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        pass
+
+    def get(self, url, **kwargs):
+        self.requested.append(url)
+        response = next(self.responses)
+        if isinstance(response, Exception):
+            raise response
+        return response
+
+
+def _mock_session(monkeypatch, *responses):
+    session = _Session(responses)
+    monkeypatch.setattr(requests, "Session", lambda: session)
+    return session
+
+
 def _mock_download(
     monkeypatch,
     *,
     requirements="nvflare[PT]~=2.9.0rc\ntorch\n",
     nested_requirements=None,
-    pyproject=None,
     readme="README.md",
     readme_contents="# Example\n",
 ):
@@ -59,8 +105,6 @@ def _mock_download(
             (destination / "nested/requirements.txt").write_text(nested_requirements)
         if requirements is not None:
             (destination / "requirements.txt").write_text(requirements)
-        if pyproject is not None:
-            (destination / "pyproject.toml").write_text(pyproject)
         return "https://api.github.com/tree"
 
     monkeypatch.setattr(examples_cli, "_download_example", download)
@@ -79,12 +123,12 @@ def test_get_records_downloaded_source_and_requirements(monkeypatch, tmp_path):
     assert result["source_url"] == f"https://github.com/NVIDIA/NVFlare/tree/{REVISION}/{SOURCE_PATH}"
     assert result["warnings"] == [
         {
-            "code": "EXAMPLE_NVFLARE_REQUIREMENT",
-            "message": "Downloaded instructions or dependency files name an NVFlare distribution.",
-            "paths": ["requirements.txt"],
+            "code": "EXAMPLE_DEPENDENCY_GUIDANCE",
+            "message": "Preserve the installed NVFlare distribution when setting up this example.",
+            "paths": [],
             "hint": (
-                "Keep the installed NVFlare distribution. Install required extras on that same distribution, "
-                "then install the remaining example dependencies without reinstalling NVFlare."
+                "Install required extras on that same stable, nightly, or editable distribution, "
+                "then follow the README for remaining dependencies."
             ),
         }
     ]
@@ -100,89 +144,17 @@ def test_missing_requirements_remains_missing(monkeypatch, tmp_path):
     result = examples_cli.get_example(VERSION, CATALOG, name="hello-pt", destination=tmp_path / "hello-pt")
 
     assert not (tmp_path / "hello-pt/requirements.txt").exists()
-    assert result["warnings"] == []
+    assert result["warnings"][0]["code"] == "EXAMPLE_DEPENDENCY_GUIDANCE"
 
 
-def test_nested_nvflare_requirement_is_reported_without_modification(monkeypatch, tmp_path):
+def test_nested_requirement_is_not_modified(monkeypatch, tmp_path):
     requirement = "nvflare_nightly[HE] \\\n    >=2.10.0rc\nnvflare-helper==1.0\n"
     _mock_download(monkeypatch, requirements="nvflare[PT] (>=2.10)\ntorch\n", nested_requirements=requirement)
 
     result = examples_cli.get_example(VERSION, CATALOG, name="hello-pt", destination=tmp_path / "hello-pt")
 
     assert (tmp_path / "hello-pt/nested/requirements.txt").read_text() == requirement
-    assert result["warnings"][0]["paths"] == ["nested/requirements.txt", "requirements.txt"]
-
-
-def test_similarly_named_distribution_does_not_trigger_warning(monkeypatch, tmp_path):
-    _mock_download(monkeypatch, requirements="nvflare-helper==1.0\n")
-
-    result = examples_cli.get_example(VERSION, CATALOG, name="hello-pt", destination=tmp_path / "hello-pt")
-
-    assert result["warnings"] == []
-
-
-def test_readme_nvflare_install_is_reported_without_modification(monkeypatch, tmp_path):
-    readme = "# Example\n\n```bash\npython -m pip install 'nvflare==2.7.1'\n```\n"
-    _mock_download(monkeypatch, requirements="torch\n", readme_contents=readme)
-
-    result = examples_cli.get_example(VERSION, CATALOG, name="hello-pt", destination=tmp_path / "hello-pt")
-
-    assert (tmp_path / "hello-pt/README.md").read_text() == readme
-    assert result["warnings"][0]["paths"] == ["README.md"]
-
-
-def test_readme_nvflare_mention_without_install_does_not_trigger_warning(monkeypatch, tmp_path):
-    _mock_download(
-        monkeypatch,
-        requirements="torch\n",
-        readme_contents="# Example\n\nThis example uses NVFlare. Do not replace the installed distribution.\n",
-    )
-
-    result = examples_cli.get_example(VERSION, CATALOG, name="hello-pt", destination=tmp_path / "hello-pt")
-
-    assert result["warnings"] == []
-
-
-def test_pyproject_nvflare_requirement_is_reported(monkeypatch, tmp_path):
-    pyproject = '[project]\ndependencies = ["torch", "nvflare[PT]>=2.10"]\n'
-    _mock_download(monkeypatch, requirements="torch\n", pyproject=pyproject)
-
-    result = examples_cli.get_example(VERSION, CATALOG, name="hello-pt", destination=tmp_path / "hello-pt")
-
-    assert (tmp_path / "hello-pt/pyproject.toml").read_text() == pyproject
-    assert result["warnings"][0]["paths"] == ["pyproject.toml"]
-
-
-def test_pyproject_non_dependency_mentions_do_not_trigger_warning(monkeypatch, tmp_path):
-    pyproject = """[project]
-description = "nvflare demo without an NVFlare dependency"
-keywords = ["nvflare", "federated-learning"]
-dependencies = ["torch"]
-"""
-    _mock_download(monkeypatch, requirements="torch\n", pyproject=pyproject)
-
-    result = examples_cli.get_example(VERSION, CATALOG, name="hello-pt", destination=tmp_path / "hello-pt")
-
-    assert result["warnings"] == []
-
-
-def test_pyproject_optional_dependency_is_reported(monkeypatch, tmp_path):
-    pyproject = '[project.optional-dependencies]\nhe = ["nvflare-nightly[HE]>=2.10"]\n'
-    _mock_download(monkeypatch, requirements="torch\n", pyproject=pyproject)
-
-    result = examples_cli.get_example(VERSION, CATALOG, name="hello-pt", destination=tmp_path / "hello-pt")
-
-    assert result["warnings"][0]["paths"] == ["pyproject.toml"]
-
-
-@pytest.mark.parametrize("dependency", ["nvflare", '"nvflare"', "'nvflare-nightly'"])
-def test_pyproject_poetry_dependency_is_reported(monkeypatch, tmp_path, dependency):
-    pyproject = f'[tool.poetry.dependencies]\npython = "^3.10"\n{dependency} = "^2.10"\n'
-    _mock_download(monkeypatch, requirements="torch\n", pyproject=pyproject)
-
-    result = examples_cli.get_example(VERSION, CATALOG, name="hello-pt", destination=tmp_path / "hello-pt")
-
-    assert result["warnings"][0]["paths"] == ["pyproject.toml"]
+    assert result["warnings"][0]["paths"] == []
 
 
 def test_rst_readme_is_reported(monkeypatch, tmp_path):
@@ -201,11 +173,20 @@ def test_missing_root_readme_warns_without_failing(monkeypatch, tmp_path):
     assert result["readme"] is None
     assert result["warnings"] == [
         {
+            "code": "EXAMPLE_DEPENDENCY_GUIDANCE",
+            "message": "Preserve the installed NVFlare distribution when setting up this example.",
+            "paths": [],
+            "hint": (
+                "Install required extras on that same stable, nightly, or editable distribution, "
+                "then follow the README for remaining dependencies."
+            ),
+        },
+        {
             "code": "EXAMPLE_README_MISSING",
             "message": "The downloaded example does not contain a root README.",
             "paths": [],
             "hint": "Inspect the downloaded files for dependency, preparation, and run instructions.",
-        }
+        },
     ]
     assert (tmp_path / "hello-pt/.nvflare-example.json").is_file()
 
@@ -219,48 +200,12 @@ def test_download_fetches_path_scoped_tree(monkeypatch, tmp_path):
         ],
     }
     payloads = {"README.md": b"# Example\n", "run.sh": b"run\n"}
-
-    class Response:
-        status_code = 200
-
-        def __init__(self, *, metadata=None, data=None):
-            self.metadata = metadata
-            self.data = data
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            pass
-
-        def raise_for_status(self):
-            pass
-
-        def json(self):
-            return self.metadata
-
-        def iter_content(self, chunk_size):
-            assert chunk_size == 1024 * 1024
-            yield self.data
-
-    class Session:
-        def __init__(self):
-            self.requested = []
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            pass
-
-        def get(self, url, **kwargs):
-            self.requested.append(url)
-            if "api.github.com" in url:
-                return Response(metadata=tree)
-            return Response(data=payloads[Path(url).name])
-
-    session = Session()
-    monkeypatch.setattr(requests, "Session", lambda: session)
+    session = _mock_session(
+        monkeypatch,
+        _Response(metadata=tree),
+        _Response(data=payloads["README.md"]),
+        _Response(data=payloads["run.sh"]),
+    )
     destination = tmp_path / "example"
 
     tree_url = examples_cli._download_example(REVISION, SOURCE_PATH, destination)
@@ -276,37 +221,15 @@ def test_download_fetches_path_scoped_tree(monkeypatch, tmp_path):
 
 @pytest.mark.parametrize("fail_after_tree", [False, True])
 def test_network_failure_is_structured(monkeypatch, tmp_path, fail_after_tree):
-    class Response:
-        status_code = 200
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            pass
-
-        def raise_for_status(self):
-            pass
-
-        def json(self):
-            return {"truncated": False, "tree": [{"path": "README.md", "type": "blob", "mode": "100644"}]}
-
-    class Session:
-        calls = 0
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            pass
-
-        def get(self, *args, **kwargs):
-            self.calls += 1
-            if fail_after_tree and self.calls == 1:
-                return Response()
-            raise requests.ConnectionError("offline")
-
-    monkeypatch.setattr(requests, "Session", Session)
+    tree_response = _Response(
+        metadata={"truncated": False, "tree": [{"path": "README.md", "type": "blob", "mode": "100644"}]}
+    )
+    responses = (
+        (tree_response, requests.ConnectionError("offline"))
+        if fail_after_tree
+        else (requests.ConnectionError("offline"),)
+    )
+    _mock_session(monkeypatch, *responses)
 
     destination = tmp_path / "example"
     with pytest.raises(examples_cli.ExampleError) as error:
@@ -319,26 +242,7 @@ def test_network_failure_is_structured(monkeypatch, tmp_path, fail_after_tree):
 
 
 def test_missing_path_is_not_reported_as_network_failure(monkeypatch, tmp_path):
-    class Response:
-        status_code = 404
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            pass
-
-    class Session:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            pass
-
-        def get(self, *args, **kwargs):
-            return Response()
-
-    monkeypatch.setattr(requests, "Session", Session)
+    _mock_session(monkeypatch, _Response(status_code=404))
 
     destination = tmp_path / "example"
     with pytest.raises(examples_cli.ExampleError) as error:
@@ -351,32 +255,7 @@ def test_missing_path_is_not_reported_as_network_failure(monkeypatch, tmp_path):
 
 
 def test_missing_tree_key_is_structured_without_creating_destination(monkeypatch, tmp_path):
-    class Response:
-        status_code = 200
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            pass
-
-        def raise_for_status(self):
-            pass
-
-        def json(self):
-            return {}
-
-    class Session:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            pass
-
-        def get(self, *args, **kwargs):
-            return Response()
-
-    monkeypatch.setattr(requests, "Session", Session)
+    _mock_session(monkeypatch, _Response(metadata={}))
     destination = tmp_path / "example"
 
     with pytest.raises(examples_cli.ExampleError) as error:
@@ -419,32 +298,7 @@ def test_missing_tree_key_is_structured_without_creating_destination(monkeypatch
     ],
 )
 def test_unusable_tree_metadata_is_rejected_before_creating_destination(monkeypatch, tmp_path, metadata):
-    class Response:
-        status_code = 200
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            pass
-
-        def raise_for_status(self):
-            pass
-
-        def json(self):
-            return metadata
-
-    class Session:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            pass
-
-        def get(self, *args, **kwargs):
-            return Response()
-
-    monkeypatch.setattr(requests, "Session", Session)
+    _mock_session(monkeypatch, _Response(metadata=metadata))
     destination = tmp_path / "example"
 
     with pytest.raises(examples_cli.ExampleError) as error:
@@ -614,8 +468,8 @@ def test_human_output_points_to_readme(monkeypatch, capsys, tmp_path):
     assert f"Downloaded example: {destination}" in output
     assert f"  cd {shlex.quote(str(destination))}" in output
     assert "pip install -r requirements.txt" not in output
-    assert "Warning: Downloaded instructions or dependency files name an NVFlare distribution." in output
-    assert "Keep the installed NVFlare distribution." in output
+    assert "Warning: Preserve the installed NVFlare distribution when setting up this example." in output
+    assert "same stable, nightly, or editable distribution" in output
     assert "Follow README.md for dependency, preparation, and run instructions." in output
     assert "python job.py" not in output
 
@@ -638,8 +492,8 @@ def test_get_json_is_machine_readable(monkeypatch, capsys, tmp_path):
     assert result["data"]["directory"] == str(destination)
     assert "setup_commands" not in result["data"]
     assert result["data"]["readme"] == str(destination / "README.md")
-    assert result["data"]["warnings"][0]["code"] == "EXAMPLE_NVFLARE_REQUIREMENT"
-    assert result["data"]["warnings"][0]["paths"] == ["requirements.txt"]
+    assert result["data"]["warnings"][0]["code"] == "EXAMPLE_DEPENDENCY_GUIDANCE"
+    assert result["data"]["warnings"][0]["paths"] == []
 
 
 def test_unknown_example_uses_structured_cli_error(monkeypatch, capsys):

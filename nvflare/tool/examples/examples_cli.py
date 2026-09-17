@@ -31,20 +31,6 @@ from nvflare.tool.examples.catalog import load_catalog
 PROVENANCE_FILE = ".nvflare-example.json"
 REPOSITORY = "NVIDIA/NVFlare"
 _REVISION = re.compile(r"[0-9a-f]{40}")
-_NVFLARE_NAME = r"nvflare(?:[-_.]+nightly)?(?![-_.a-z0-9])"
-_NVFLARE_REQUIREMENT = re.compile(rf"^\s*{_NVFLARE_NAME}", re.IGNORECASE)
-_PYPROJECT_NVFLARE_REQUIREMENT = re.compile(rf"[\"']{_NVFLARE_NAME}", re.IGNORECASE)
-_PYPROJECT_SECTION = re.compile(r"^\s*\[([^]]+)]\s*(?:#.*)?$")
-_PYPROJECT_DEPENDENCIES = re.compile(r"^\s*dependencies\s*=\s*\[")
-_PYPROJECT_ARRAY_END = re.compile(r"]\s*(?:#.*)?$")
-_POETRY_NVFLARE_REQUIREMENT = re.compile(
-    rf"""^\s*(?:{_NVFLARE_NAME}|"{_NVFLARE_NAME}"|'{_NVFLARE_NAME}')\s*=""",
-    re.IGNORECASE,
-)
-_README_NVFLARE_INSTALL = re.compile(
-    rf"\b(?:python(?:3(?:\.\d+)?)?\s+-m\s+)?pip(?:3)?\s+install\b[^\n#]*\b{_NVFLARE_NAME}",
-    re.IGNORECASE,
-)
 _parsers = {}
 _EXAMPLE_COMMANDS = [
     "nvflare examples list",
@@ -212,67 +198,6 @@ def _download_example(revision, source_path, destination):
     return tree_url
 
 
-def _pyproject_has_nvflare_requirement(contents):
-    section = None
-    in_dependencies = False
-    for line in contents.splitlines():
-        section_match = _PYPROJECT_SECTION.match(line)
-        if section_match:
-            section = section_match.group(1).strip()
-            in_dependencies = False
-            continue
-
-        if section == "project":
-            if not in_dependencies:
-                if not _PYPROJECT_DEPENDENCIES.match(line):
-                    continue
-                in_dependencies = True
-            if _PYPROJECT_NVFLARE_REQUIREMENT.search(line):
-                return True
-            if _PYPROJECT_ARRAY_END.search(line):
-                in_dependencies = False
-        elif section == "project.optional-dependencies" and _PYPROJECT_NVFLARE_REQUIREMENT.search(line):
-            return True
-        elif section == "tool.poetry.dependencies" and _POETRY_NVFLARE_REQUIREMENT.match(line):
-            return True
-    return False
-
-
-def _dependency_warnings(destination):
-    paths = []
-    for dependency_file in destination.rglob("*"):
-        file_name = dependency_file.name.casefold()
-        if not dependency_file.is_file() or file_name not in {
-            "requirements.txt",
-            "pyproject.toml",
-            "readme.md",
-            "readme.rst",
-        }:
-            continue
-        contents = dependency_file.read_text(encoding="utf-8", errors="replace")
-        if file_name == "requirements.txt":
-            found = any(_NVFLARE_REQUIREMENT.match(line) for line in contents.splitlines())
-        elif file_name == "pyproject.toml":
-            found = _pyproject_has_nvflare_requirement(contents)
-        else:
-            found = bool(_README_NVFLARE_INSTALL.search(contents))
-        if found:
-            paths.append(dependency_file.relative_to(destination).as_posix())
-    if not paths:
-        return []
-    return [
-        {
-            "code": "EXAMPLE_NVFLARE_REQUIREMENT",
-            "message": "Downloaded instructions or dependency files name an NVFlare distribution.",
-            "paths": sorted(paths),
-            "hint": (
-                "Keep the installed NVFlare distribution. Install required extras on that same distribution, "
-                "then install the remaining example dependencies without reinstalling NVFlare."
-            ),
-        }
-    ]
-
-
 def get_example(version_info, catalog, *, name, destination=None):
     if name not in catalog:
         raise ExampleError(
@@ -293,7 +218,17 @@ def get_example(version_info, catalog, *, name, destination=None):
     revision = _source_revision(version_info)
     entry = catalog[name]
     tree_url = _download_example(revision, entry["source_path"], destination)
-    warnings = _dependency_warnings(destination)
+    warnings = [
+        {
+            "code": "EXAMPLE_DEPENDENCY_GUIDANCE",
+            "message": "Preserve the installed NVFlare distribution when setting up this example.",
+            "paths": [],
+            "hint": (
+                "Install required extras on that same stable, nightly, or editable distribution, "
+                "then follow the README for remaining dependencies."
+            ),
+        }
+    ]
 
     readme = next(
         (candidate for candidate in (destination / "README.md", destination / "README.rst") if candidate.is_file()),
