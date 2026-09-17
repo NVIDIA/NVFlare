@@ -125,6 +125,10 @@ python prepare_initial_adapter.py \
   --seed=42
 ```
 
+Keep `MODEL_REVISION` set for Lightning initialization, training, and evaluation. Omitting revision arguments uses the
+model repository's current revision and prevents the adapter manifest from enforcing one immutable model/tokenizer
+snapshot.
+
 ## Run
 
 Start with a one-client, one-round tiny smoke on GPU:
@@ -157,6 +161,43 @@ python job.py \
   --no-use_chat_template \
   --initial_adapter_ckpt=models/nemotron3_nano_lora_init.pt
 ```
+
+To exercise the Lightning profile directly, run a small pinned one-client smoke. The profile supplies the published
+Lightning LoRA, backend, and optimizer defaults; the command-line values below set the workload size and GPU:
+
+```bash
+python job.py \
+  --model_profile=lightning35 \
+  --model_revision="${MODEL_REVISION}" \
+  --tokenizer_revision="${MODEL_REVISION}" \
+  --seed=42 \
+  --n_clients=1 \
+  --num_rounds=1 \
+  --num_threads=1 \
+  --gpu="[0]" \
+  --max_steps=2 \
+  --seq_length=512 \
+  --initial_adapter_ckpt=models/nemotron35_lightning_lora_init.pt
+```
+
+Evaluate its native final adapter on the validation split:
+
+```bash
+LIGHTNING_SERVER_MODEL=/tmp/nvflare/nemotron35_lightning_peft/nemotron35-lightning-peft/server/simulate_job/app_server/FL_global_model.pt
+test -s "${LIGHTNING_SERVER_MODEL}"
+python evaluate_sentiment.py \
+  --model_profile=lightning35 \
+  --model_revision="${MODEL_REVISION}" \
+  --tokenizer_revision="${MODEL_REVISION}" \
+  --adapter_dir="${LIGHTNING_SERVER_MODEL}" \
+  --validation_file=data/FinancialPhraseBank-v1.0/financial_phrase_bank_val.jsonl \
+  --validation_only \
+  --no-search_validation_bias \
+  --output_dir=models/nemotron35_lightning_exact_eval
+```
+
+This uses the supported native adapter reload path. It does not convert the Lightning adapter into a Hugging Face PEFT
+directory.
 
 To reproduce the 30B H100 result below, prepare the initial adapter from the 30B model, then run three rounds with
 300 local steps per client and a lower learning rate:
@@ -249,6 +290,9 @@ The runner pins `nvcr.io/nvidia/nemo-automodel:26.08`, records the resolved imag
 cache, resolves one model/tokenizer revision, installs the mounted NVFlare checkout, selects one idle GPU, and runs the
 stages sequentially. It stops when a required gate fails. If the two-step smoke runs out of memory, it retries that
 workload with activation checkpointing; a second failure is recorded as a single-GPU feasibility failure.
+
+The runner requires a clean checkout. The documented Financial PhraseBank inputs, generated site split, and `models/`
+outputs are ignored by the example's `.gitignore`; other non-ignored checkout changes still stop the run.
 
 The cache normally lives below the timestamped run directory. To resume after a runner failure without downloading the
 pinned snapshot again, set `CACHE_ROOT` to the previous attempt's `cache/huggingface` directory. The model and tokenizer

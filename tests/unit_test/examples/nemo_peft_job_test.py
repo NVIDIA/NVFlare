@@ -520,7 +520,21 @@ def test_lightning_runner_rejects_missing_server_checkpoints():
 
     assert len(evaluation_lookups) == 4
     assert all("; test -n " in line for line in evaluation_lookups)
-    assert all(" && python evaluate_sentiment.py" in line for line in evaluation_lookups)
+    assert all(
+        " || { echo 'Missing " in line and "exit 1; }; python evaluate_sentiment.py" in line
+        for line in evaluation_lookups
+    )
+
+
+def test_readme_has_pinned_lightning_training_and_native_evaluation_commands():
+    with open(os.path.join(_example_dir(), "README.md")) as f:
+        readme = f.read()
+
+    assert "python job.py \\\n  --model_profile=lightning35" in readme
+    assert '--model_revision="${MODEL_REVISION}"' in readme
+    assert "python evaluate_sentiment.py \\\n  --model_profile=lightning35" in readme
+    assert '--adapter_dir="${LIGHTNING_SERVER_MODEL}"' in readme
+    assert "supported native adapter reload path" in readme
 
 
 def test_nemo_peft_dataset_prompt_matches_notebook_inference():

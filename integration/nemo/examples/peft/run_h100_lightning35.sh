@@ -208,8 +208,8 @@ else
     ACTIVATION_ARG="--no-activation_checkpointing"
 fi
 
-run_stage smoke_eval_a "FINAL=\$(find /host_out/runs/${SMOKE_LABEL}/workspace -path '*/server_rounds/round_0/FL_global_model.pt' -print -quit); test -n \"\${FINAL}\" && python evaluate_sentiment.py ${PROFILE_ARGS} --no-search_validation_bias --validation_only --adapter_dir=\${FINAL} --validation_file=/host_out/data/financial_phrase_bank_val.jsonl --output_dir=/host_out/evaluation/smoke_a"
-run_stage smoke_eval_b "FINAL=\$(find /host_out/runs/${SMOKE_LABEL}/workspace -path '*/server_rounds/round_0/FL_global_model.pt' -print -quit); test -n \"\${FINAL}\" && python evaluate_sentiment.py ${PROFILE_ARGS} --no-search_validation_bias --validation_only --adapter_dir=\${FINAL} --validation_file=/host_out/data/financial_phrase_bank_val.jsonl --output_dir=/host_out/evaluation/smoke_b"
+run_stage smoke_eval_a "FINAL=\$(find /host_out/runs/${SMOKE_LABEL}/workspace -path '*/server_rounds/round_0/FL_global_model.pt' -print -quit); test -n \"\${FINAL}\" || { echo 'Missing round 0 server checkpoint for ${SMOKE_LABEL}.' >&2; exit 1; }; python evaluate_sentiment.py ${PROFILE_ARGS} --no-search_validation_bias --validation_only --adapter_dir=\${FINAL} --validation_file=/host_out/data/financial_phrase_bank_val.jsonl --output_dir=/host_out/evaluation/smoke_a"
+run_stage smoke_eval_b "FINAL=\$(find /host_out/runs/${SMOKE_LABEL}/workspace -path '*/server_rounds/round_0/FL_global_model.pt' -print -quit); test -n \"\${FINAL}\" || { echo 'Missing round 0 server checkpoint for ${SMOKE_LABEL}.' >&2; exit 1; }; python evaluate_sentiment.py ${PROFILE_ARGS} --no-search_validation_bias --validation_only --adapter_dir=\${FINAL} --validation_file=/host_out/data/financial_phrase_bank_val.jsonl --output_dir=/host_out/evaluation/smoke_b"
 run_stage smoke_reload_compare "python - <<'PY'
 import assess_validation
 import json
@@ -224,9 +224,9 @@ for seed in 42 43; do
     label="learning_seed${seed}"
     run_federation "${label}" 3 3 300 "${seed}" "${ACTIVATION_ARG}"
     for round in 0 1 2; do
-        run_stage "${label}_round${round}_val" "CKPT=\$(find /host_out/runs/${label}/workspace -path \"*/server_rounds/round_${round}/FL_global_model.pt\" -print -quit); test -n \"\${CKPT}\" && python evaluate_sentiment.py ${PROFILE_ARGS} --no-search_validation_bias --validation_only --adapter_dir=\${CKPT} --validation_file=/host_out/data/financial_phrase_bank_val.jsonl --output_dir=/host_out/evaluation/${label}/round_${round}_validation"
+        run_stage "${label}_round${round}_val" "CKPT=\$(find /host_out/runs/${label}/workspace -path \"*/server_rounds/round_${round}/FL_global_model.pt\" -print -quit); test -n \"\${CKPT}\" || { echo 'Missing round ${round} server checkpoint for ${label}.' >&2; exit 1; }; python evaluate_sentiment.py ${PROFILE_ARGS} --no-search_validation_bias --validation_only --adapter_dir=\${CKPT} --validation_file=/host_out/data/financial_phrase_bank_val.jsonl --output_dir=/host_out/evaluation/${label}/round_${round}_validation"
     done
-    run_stage "${label}_final_test" "CKPT=\$(find /host_out/runs/${label}/workspace -path '*/server_rounds/round_2/FL_global_model.pt' -print -quit); test -n \"\${CKPT}\" && python evaluate_sentiment.py ${PROFILE_ARGS} --no-search_validation_bias --adapter_dir=\${CKPT} --validation_file=/host_out/data/financial_phrase_bank_val.jsonl --test_file=/host_out/data/financial_phrase_bank_test.jsonl --output_dir=/host_out/evaluation/${label}/final"
+    run_stage "${label}_final_test" "CKPT=\$(find /host_out/runs/${label}/workspace -path '*/server_rounds/round_2/FL_global_model.pt' -print -quit); test -n \"\${CKPT}\" || { echo 'Missing final server checkpoint for ${label}.' >&2; exit 1; }; python evaluate_sentiment.py ${PROFILE_ARGS} --no-search_validation_bias --adapter_dir=\${CKPT} --validation_file=/host_out/data/financial_phrase_bank_val.jsonl --test_file=/host_out/data/financial_phrase_bank_test.jsonl --output_dir=/host_out/evaluation/${label}/final"
 done
 
 run_stage acceptance "python assess_validation.py --base_summary=/host_out/evaluation/base/summary.json --smoke_client_root=/host_out/runs/${SMOKE_LABEL}/workspace/automodel_work --continuity_report=/host_out/runs/continuity/continuity.json --seed_summary=/host_out/evaluation/learning_seed42/final/summary.json --seed_summary=/host_out/evaluation/learning_seed43/final/summary.json --output=/host_out/artifacts/acceptance.json"
