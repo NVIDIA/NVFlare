@@ -94,6 +94,7 @@ already in use with the matching command above. Then run:
 
    nvflare examples get hello-pt
    cd hello-pt
+   pip install -r requirements.txt
    python job.py
 
 Use another catalog name in the same command. The completion output identifies
