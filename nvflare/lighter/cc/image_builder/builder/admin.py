@@ -33,7 +33,7 @@ from pathlib import Path
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519
 
-from .common import BuildError, canonical, identifier, lock, read_json, require, write_json
+from .common import BuildError, canonical, digest_file, identifier, lock, read_json, require, write_json
 from .key_service import NoRedirect, ResourceStore
 from .policy import approve_bundle, compose, verify_approval, verify_bundle
 
@@ -98,6 +98,13 @@ def install(config, directory, candidate=False):
     # Deployment receipts are per policy/revision, not per vault. The operator
     # must have tested selection/admin denial and installed immutable AS files.
     deployment = read_json(config["deployment_receipt"])
+    build = read_json(config["trustee_build"])
+    require(
+        digest_file(config["trustee_binary"]) == build["binary_sha256"],
+        "Installed Trustee binary differs from build provenance",
+    )
+    for field in ("trustee_commit", "trustee_patch_digest"):
+        require(build[field] == manifest["contract"][field], "Trustee build provenance mismatch: " + field)
     require(
         deployment["trustee_commit"] == manifest["contract"]["trustee_commit"], "Trustee deployment revision mismatch"
     )
@@ -110,12 +117,20 @@ def install(config, directory, candidate=False):
         "Trustee administrative acceptance is incomplete",
     )
     pid = manifest["attestation_policy_id"]
-    require(
-        deployment["immutable_as_policies"][pid] == manifest["sha256"]["attestation_policy.rego"],
-        "AS policy is not installed immutably",
-    )
+    policies = {pid + "_cpu": "attestation_policy.rego"}
+    if manifest["contract"].get("gpu") == "nvidia_cc":
+        policies[pid + "_gpu"] = "gpu_attestation_policy.rego"
+    for policy_name, artifact in policies.items():
+        require(
+            deployment["immutable_as_policies"].get(policy_name) == manifest["sha256"][artifact],
+            "AS policy is not installed immutably: " + policy_name,
+        )
     refs = json.loads(api(config, "GET", "reference-value"))
     expected_refs = read_json(Path(directory) / "reference_values.json")
+    from .references import TCB_NAMES, check_profile, profile_identity
+
+    for name in TCB_NAMES & expected_refs.keys():
+        require(refs.get(name) == expected_refs[name], "RVPS TCB approval differs from this profile: " + name)
     require(
         all(
             key in refs
@@ -129,6 +144,9 @@ def install(config, directory, candidate=False):
         "RVPS lacks the approved bundle/TCB reference values",
     )
     with lock(state / "publisher.lock"):
+        profile_path = state / "security_profile.json"
+        if profile_path.exists():
+            check_profile(read_json(profile_path), manifest)
         require(not (store.state / "retired" / manifest["build_id"]).exists(), "Retired bundle cannot be re-enabled")
         bundle_dir = state / "bundles"
         bundle_dir.mkdir(exist_ok=True)
@@ -137,6 +155,11 @@ def install(config, directory, candidate=False):
             require(manifests[manifest["build_id"]] == manifest, "Bundle ID already names a different manifest")
         manifests[manifest["build_id"]] = manifest
         active = [item for key, item in manifests.items() if not (store.state / "retired" / key).exists()]
+        for item in manifests.values():
+            check_profile(profile_identity(item), manifest)
+        # Pin before publication; retirement never makes an instance reusable
+        # for a different profile whose TCB references could broaden approvals.
+        write_json(profile_path, profile_identity(manifest))
         policy = compose(active).encode()
         api(config, "POST", "resource-policy", canonical({"policy": encode(policy)}))
         verify_readback(policy, api(config, "GET", "resource-policy"))

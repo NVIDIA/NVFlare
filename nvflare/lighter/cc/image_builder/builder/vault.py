@@ -71,6 +71,10 @@ def populate(root, app):
     write_json(root / "config/application.json", config.runtime_config(app))
     if app.get("application_files"):
         copy_tree(app["application_files"], root / "application")
+    for name in ("runtime", "data"):
+        path = root / "application" / name
+        require(not path.is_symlink(), "Writable application directory cannot be a symlink")
+        path.mkdir(exist_ok=True)
     for service in app["services"]:
         shutil.copyfile(service, root / "services" / Path(service).name)
 
@@ -153,6 +157,8 @@ def delivery(directory, app, manifest, digest, internal, bundle):
         resource=resource_path(manifest["build_id"], manifest["platform"], digest),
         allowed_ports=app["allowed_ports"],
     )
+    # A plaintext content digest leaks equality and permits known-content probes.
+    public.pop("content_sha256", None)
     if manifest.get("dev_mode"):
         del public["vault_bind"]
         del public["resource"]
@@ -162,7 +168,7 @@ def delivery(directory, app, manifest, digest, internal, bundle):
     package.mkdir()
     # Only host launcher modules; application/key-service inputs never enter delivery.
     source = Path(__file__).parent
-    for name in ("__init__.py", "common.py", "platforms.py", "policy.py", "launcher.py"):
+    for name in ("__init__.py", "common.py", "platforms.py", "policy.py", "gpu_policy.py", "launcher.py"):
         shutil.copyfile(source / name, package / name)
     for script in ("launch_cvm.sh", "shutdown_cvm.sh"):
         template = (bundle / (script + ".tmpl")).read_text()
@@ -187,7 +193,7 @@ def delivery(directory, app, manifest, digest, internal, bundle):
         "The guest independently validates the vault binding and current KBS authorization.\n"
         "Only vault.qcow2 is encrypted. user_config and user_data are clear, read-only guest inputs.\n"
         "applog is deliberately clear and writable for offline operator access.\n"
-        "Do not place secrets in any sidecar; use /vault for confidential data and logs.\n"
+        "Do not place secrets in any sidecar; use /vault/application/data for confidential data and logs.\n"
     )
     return public
 

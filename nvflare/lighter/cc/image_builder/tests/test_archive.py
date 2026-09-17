@@ -16,6 +16,9 @@
 
 import hashlib
 import io
+import json
+import subprocess
+import sys
 import tarfile
 import tempfile
 import unittest
@@ -34,10 +37,45 @@ from builder.oci import (
     materialize,
     publish,
 )
-from builder.vault import package_deliveries, validate_archive
+from builder.vault import delivery, package_deliveries, validate_archive
 
 
 class ArchiveTests(unittest.TestCase):
+    def test_delivery_omits_plaintext_hash_and_has_gpu_policy_dependency(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            bundle = root / "bundle"
+            bundle.mkdir()
+            destination = root / "delivery"
+            destination.mkdir()
+            for name in ("cvm_manifest.json", "resource_policy.rego", "launch_cvm.sh.tmpl", "shutdown_cvm.sh.tmpl"):
+                (bundle / name).write_text("fixture")
+            manifest = {
+                "build_id": "gpu-bundle",
+                "platform": "intel_tdx",
+                "attestation_policy_id": "gpu-policy",
+                "contract": {"gpu": "nvidia_cc", "gpu_count": 1},
+                "sha256": {},
+                "measurements": {name: "00" * 48 for name in ("mr_td", "rtmr_0", "rtmr_1", "rtmr_2")},
+            }
+            internal = {"content_sha256": "confidential-content-fingerprint"}
+            with patch("builder.vault.verify_bundle", return_value=manifest):
+                public = delivery(destination, {"allowed_ports": []}, manifest, bytes(32), internal, bundle)
+            self.assertNotIn("content_sha256", public)
+            self.assertEqual(internal["content_sha256"], "confidential-content-fingerprint")
+            self.assertNotIn("confidential-content", (destination / "vault_manifest.json").read_text())
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    "import json, sys; from builder.policy import compose; compose([json.loads(sys.argv[1])])",
+                    json.dumps(manifest),
+                ],
+                cwd=destination,
+                capture_output=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_delivery_oci_artifact_is_self_contained_and_excludes_build_records(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -126,6 +164,7 @@ class ArchiveTests(unittest.TestCase):
                     },
                 },
             )
+            write_json(bundle / "reference-evidence.json", {"report": "private platform evidence"})
             artifact = package_bundle(bundle)
             first_digest = digest_file(artifact)
             self.assertEqual(digest_file(package_bundle(bundle)), first_digest)
@@ -135,6 +174,7 @@ class ArchiveTests(unittest.TestCase):
             self.assertEqual(config["state"], "finalized")
             self.assertTrue((extracted / "profile_set.json").is_file())
             self.assertTrue((extracted / "intel_tdx/cvm_manifest.json").is_file())
+            self.assertFalse((extracted / "intel_tdx/reference-evidence.json").exists())
 
             second_root = Path(directory) / "second" / "cvm_cpu-2026.09"
             second_bundle = second_root / "amd_sev_snp"

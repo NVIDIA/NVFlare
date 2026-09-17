@@ -11,7 +11,8 @@ Include `scripts/trustee_preflight.py` under `/opt/cvm-builder`; the KBS unit us
 it to reject host swap and piped core collectors before loading keys. Configure
 the host's crash-collection policy alongside its swap policy.
 
-Create the directories named in the units, owned by `cvm-trustee` with mode 0700.
+Create the directories named in the units, including
+`/var/lib/cvm-trustee-resources/default`, owned by `cvm-trustee` with mode 0700.
 Keep `/var/lib/cvm-trustee-revocations` outside restorable resource backups.
 Both processes read the same 0600 resource files; KBS's mount namespace makes the
 resource repository read-only. Only the key service and reconciliation unit can
@@ -33,7 +34,8 @@ configuration, including any collateral-service credential. Keep that file
 read-only and do not put credentials into images or logs.
 
 In KBS configuration, use HTTPS, authenticated administrative APIs, and trusted
-AS signing certificates. Point the LocalFs resource plugin at the resource
+AS signing certificates from a dedicated AS root; transport/client roots must
+never be trusted as attestation signers. Point the LocalFs resource plugin at the resource
 repository. Point the EAR broker's `policy_dir` at
 `/etc/cvm-trustee/as-policies`; preinstall both its deny-by-default
 `opa/default_cpu.rego` and the reviewed `opa/<policy-id>_cpu.rego`. Set the resource
@@ -46,3 +48,10 @@ deployment's authentication, policy-selection, mutation-denial, durable-upload,
 revocation, restore and retirement tests before writing a deployment receipt.
 The lab helper deliberately uses separate disposable paths and does not install
 these units or modify another KBS service.
+
+GPU profiles also install the immutable `opa/<policy-id>_gpu.rego`, generated from
+the measured profile policy, and record both policy digests. Configure
+`CVM_NVIDIA_CONFIG` for backend NRAS verification with a pinned JWKS snapshot;
+see the main Trustee guide. Each backend instance serves one exact security
+profile and imports TCB and GPU driver/VBIOS approvals without unioning sets or
+renewing existing expiry dates.

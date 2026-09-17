@@ -86,7 +86,10 @@ def contract(profile, source=SOURCE):
 
 @contextlib.contextmanager
 def owned_process(command, log):
-    with open(log, "wb") as output:
+    # Boot logs may contain hardware evidence; never create them world-readable.
+    fd = os.open(log, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    os.fchmod(fd, 0o600)
+    with os.fdopen(fd, "wb") as output:
         process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT)
         try:
             yield process
@@ -402,7 +405,7 @@ def collect_reference(manifest, directory, *, gpu=None, timeout=300):
                     evidence = serial_evidence(text)
                     if evidence is not None:
                         verify_reference(platform, evidence)
-                        write_json(directory / "reference-evidence.json", evidence, mode=0o644)
+                        write_json(directory / "reference-evidence.json", evidence)
                         return evidence["measurements"]
                     for line in text.splitlines():
                         if "CVM_REFERENCE=" in line:
@@ -411,7 +414,7 @@ def collect_reference(manifest, directory, *, gpu=None, timeout=300):
                             except json.JSONDecodeError:
                                 continue
                             verify_reference(platform, evidence)
-                            write_json(directory / "reference-evidence.json", evidence, mode=0o644)
+                            write_json(directory / "reference-evidence.json", evidence)
                             return evidence["measurements"]
                     require(process.poll() is None, "Reference VM exited; inspect reference-boot.log")
                     time.sleep(1)
@@ -445,7 +448,7 @@ def package_bundle(directory):
         require(digest_file(directory / member) == expected, f"CVM artifact hash mismatch: {member}")
     members = [(directory / name, platform + "/" + name) for name in manifest["sha256"]]
     members.append((directory / manifest_name, platform + "/" + manifest_name))
-    for name in ("resource_policy.rego", "reference-evidence.json", "approval.json"):
+    for name in ("resource_policy.rego", "approval.json"):
         if (directory / name).is_file():
             members.append((directory / name, platform + "/" + name))
     temporary_profile = None
@@ -527,7 +530,7 @@ def finalize_locked(directory, evidence=None, gpu=None):
         evidence = read_json(evidence)
         verify_reference(manifest["platform"], evidence)
         manifest["measurements"] = evidence["measurements"]
-        write_json(directory / "reference-evidence.json", evidence, mode=0o644)
+        write_json(directory / "reference-evidence.json", evidence)
     # Hardware references are bundle artifacts. Production approval separately
     # verifies a signed quote, CCEL replay, policy and failure-path acceptance.
     references = read_json(directory / "reference_values.json")
@@ -663,6 +666,11 @@ def build(path, explicit=None, output=None, *, defer_measurements=False, gpu=Non
             "launch_cvm.sh.tmpl",
             "shutdown_cvm.sh.tmpl",
         ]
+        if profile["gpu"] == "nvidia_cc":
+            from .gpu_policy import render
+
+            (directory / "gpu_attestation_policy.rego").write_text(render(read_json(profile["gpu_policy"])))
+            artifacts.append("gpu_attestation_policy.rego")
         if settings.get("shim") and not dev:
             shutil.copyfile(settings["shim"], directory / "shim.efi")
             artifacts.append("shim.efi")
@@ -706,7 +714,9 @@ def main():
     )
     parser.add_argument("--dev", action="store_true", help="Separate dev- profile with no TEE or KBS authorization")
     parser.add_argument("--finalize", metavar="BUNDLE", help="Finalize a previously constructed bundle")
-    parser.add_argument("--reference-evidence", help="Public report captured from this bundle on a trusted target host")
+    parser.add_argument(
+        "--reference-evidence", help="Private reference report captured from this bundle on a trusted target host"
+    )
     parser.add_argument("--gpu", action="append", help="Repeat once per explicit NVIDIA GPU PCI address")
     parser.add_argument(
         "--acceptance-runner",

@@ -23,7 +23,7 @@ from urllib.parse import urlparse
 
 import yaml
 
-from .common import HEADER_BYTES, PLATFORMS, STORAGE_PROFILE, BuildError, canonical, identifier, require
+from .common import HEADER_BYTES, PLATFORMS, STORAGE_PROFILE, BuildError, canonical, identifier, read_json, require
 
 PRIVATE_KEY_MARKERS = (
     b"-----BEGIN PRIVATE KEY-----",
@@ -77,7 +77,7 @@ GPU_CLAIMS_IF_PRESENT = {
 DEFAULT_PACKAGES = [
     "python3=3.14.3-0ubuntu2",
     "python3-yaml=6.0.3-1build1",
-    "python3-cryptography=46.0.5-1ubuntu2",
+    "python3-cryptography=46.0.5-1ubuntu2.2",
     "initramfs-tools=0.151ubuntu1",
     "cryptsetup-bin=2:2.8.4-1ubuntu4",
     "nfs-common=1:2.8.5-1ubuntu1",
@@ -92,7 +92,7 @@ DEFAULT_PACKAGES = [
     "linux-modules-7.0.0-31-generic=7.0.0-31.31",
 ]
 PROFILE_DEFAULTS = {
-    "profile_version": "cpu-2026.09",
+    "profile_version": "cpu-2026.09-r2",
     "guest_release": "26.04",
     "gpu": "none",
     "gpu_count": 1,
@@ -113,13 +113,13 @@ PROFILE_DEFAULTS = {
     "gpu_attestation_library": str(INPUTS / "libnvat.so.1.2.2"),
     "required_system_packages": DEFAULT_PACKAGES,
     "trustee_commit": "a2570329cc33daf9ca16370a1948b5379bb17fbe",
-    "trustee_patch_digest": "9994ed10c83c0a82a31f8d550a1d1114a3ad7ed1e05138a27976d002b7febfa6",
+    "trustee_patch_digest": "94de3a62f7abc62664be7734667bb300fefdc6aec52ae99e4662c03678bc720e",
     "kbs_url": "https://kbs.example.org:8443",
     "kbs_cert": str(INPUTS / "kbs-ca.pem"),
     "as_public_key": str(INPUTS / "as-public.pem"),
     "token_algorithm": "ES256",
     "token_issuer": None,
-    "attestation_policy_id": "cvm-v2-cpu-r1",
+    "attestation_policy_id": "cvm-cpu-r2",
     "attestation_policy": str(SOURCE / "config/attestation_policy.rego"),
     "reference_values": str(INPUTS / "approved-tcb-references.json"),
     "bootstrap_egress": [443, 8443],
@@ -134,7 +134,7 @@ PROFILE_DEFAULTS = {
         "intel_tdx": {
             "enabled": True,
             "attester": "tdx",
-            "firmware": "/usr/share/ovmf/OVMF.inteltdx.ms.fd",
+            "firmware": str(INPUTS / "OVMF.inteltdx.fd"),
             "kbs_client": str(INPUTS / "kbs-client"),
             "cpu_model": "host",
             "quote_generation": {"type": "vsock", "cid": 2, "port": 4050},
@@ -231,7 +231,7 @@ def resolve_root_overlay_max_mib(profile):
 def validate_gpu_policy(path):
     """Refuse a GPU policy that would accept a non-confidential or debug GPU.
 
-    The measured runtime compares NVAT's version 3.0 JSON result against every
+    The AS compares the verified NRAS version 3.0 claims against every
     rule stated here. Require the full safe rule set at Stage 1 so a profile
     cannot weaken appraisal by omitting a claim.
     See config/gpu_policy.json for a conforming policy.
@@ -331,16 +331,26 @@ def profile(path):
         require(type(settings.get("enabled", True)) is bool, "enabled must be boolean")
         for key in ("firmware", "kbs_client"):
             settings[key] = local_path(path, settings.get(key))
+        require(
+            not str(settings["firmware"]).endswith(".ms.fd") or settings.get("shim"),
+            "Secure Boot firmware requires a reviewed signed shim/kernel path; use inputs/OVMF.inteltdx.fd for measured direct boot",
+        )
         if settings.get("shim"):
             require(name == "intel_tdx", "Shim direct boot currently requires the TDX/QEMU 10 profile")
             settings["shim"] = local_path(path, settings["shim"])
         require(settings.get("cpu_model") and re.fullmatch(r"[A-Za-z0-9_.-]+", settings["cpu_model"]), "Pin CPU model")
     for key in ("base_image", "build_firmware", "kbs_cert", "as_public_key", "attestation_policy", "reference_values"):
         value[key] = local_path(path, value.get(key))
+    from .references import validate_references
+
+    validate_references(
+        read_json(value["reference_values"]), [p for p, v in value["platforms"].items() if v.get("enabled", True)]
+    )
     if value["gpu"] == "nvidia_cc":
         for key in ("gpu_policy", "gpu_attestation_binary", "gpu_attestation_library"):
             value[key] = local_path(path, value.get(key))
         validate_gpu_policy(value["gpu_policy"])
+        validate_references(read_json(value["reference_values"]), gpu=True)
         require(urlparse(value.get("gpu_attestation_url", "")).scheme == "https", "GPU attestation requires HTTPS")
         gpu_packages = value.get("gpu_packages")
         require(isinstance(gpu_packages, list) and gpu_packages, "Pin GPU driver/toolkit and NVAT packages")
@@ -444,6 +454,7 @@ def application(path):
         "allowed_out_ports",
         "requires_gpu",
         "services",
+        "nfs_mount",
     }
     require(not set(value) - allowed, "Unknown application input; provisioning schemas are external to the builder")
     for key, default in {
@@ -523,6 +534,13 @@ def application(path):
             source.parts[1] not in ("user_config", "user_data") or volume["read_only"],
             "Sidecar inputs must remain read-only",
         )
+        if source.parts[1] == "vault":
+            require(source.is_relative_to("/vault/application"), "Container cannot mount vault control files")
+            require(
+                volume["read_only"]
+                or any(source.is_relative_to(p) for p in ("/vault/application/runtime", "/vault/application/data")),
+                "Only application runtime/data may be writable",
+            )
         require(
             str(target) not in ("/", "/vault", "/applog", "/user_config", "/user_data", "/host/bin"),
             "Cannot replace mandatory mounts",
@@ -553,11 +571,33 @@ def application(path):
     value["services"] = [local_path(path, item) for item in value["services"]]
     for item in value["services"]:
         validate_service(Path(item).name, Path(item).read_text())
+    if value.get("nfs_mount") is not None:
+        validate_nfs_mount(value["nfs_mount"])
     return value
 
 
 def runtime_config(value):
-    return {
+    result = {
         key: value[key]
         for key in ("image_id", "container", "hosts_entries", "requires_gpu", "allowed_ports", "allowed_out_ports")
     }
+    if value.get("nfs_mount") is not None:
+        result["nfs_mount"] = value["nfs_mount"]
+    return result
+
+
+def validate_nfs_mount(value):
+    require(
+        isinstance(value, dict) and set(value) == {"server", "export", "security"},
+        "nfs_mount requires server, export, security",
+    )
+    require(value["security"] == "krb5p", "NFS requires authenticated and encrypted Kerberos transport (krb5p)")
+    require(
+        isinstance(value["server"], str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.-]*", value["server"]),
+        "Invalid NFS server",
+    )
+    path = PurePosixPath(value["export"])
+    require(
+        path.is_absolute() and ".." not in path.parts and re.fullmatch(r"/[A-Za-z0-9_./-]*", value["export"]),
+        "Invalid NFS export",
+    )

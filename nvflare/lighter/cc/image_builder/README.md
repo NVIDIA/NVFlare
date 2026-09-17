@@ -73,7 +73,7 @@ sudo ./cvm_build.sh
 
 # Advanced: construct for another platform and finalize there.
 sudo ./cvm_build.sh config/cvm_profile.yml -p amd_sev_snp --defer-measurements
-sudo scripts/cvm_finalize target/cvm_cpu-2026.09/amd_sev_snp
+sudo scripts/cvm_finalize target/cvm_cpu-2026.09-r2/amd_sev_snp
 ```
 
 The builder sends a fixed, source-hashed payload to a plain construction VM. A
@@ -270,7 +270,8 @@ stops the workload and powers off the guest.
 Bootstrap and periodic appraisal write allowlisted metadata to the journal and
 `/applog/attestation.log`; token, key and application values are never audit fields.
 
-The container receives `/vault`, `/applog`, `/user_config` (read-only), `/user_data`
+The container receives `/vault/application` read-only, its `runtime/` and `data/`
+subdirectories writable, `/applog`, `/user_config` (read-only), `/user_data`
 (read-only), and `/host/bin` (read-only). Additional mounts and command overrides
 are optional. TEE-device access is opt-in and platform-neutral in the application
 configuration. `/applog` is a clear output-only channel so an operator can read
@@ -278,11 +279,16 @@ logs without a KBS key. `/user_config` and `/user_data` are clear, host-readable
 untrusted inputs. QEMU opens both input disks read-only, the guest mounts them
 `ro,noload,nosuid,nodev,noexec`, and Docker bind-mounts them read-only. The builder
 rejects private-key filenames, containers, PEM content and symlinks in both input
-trees. Put secrets and confidential logs in `/vault`. Optional NFS input uses one
-`server:/export` line in `/user_data/ext_mount.conf` and mounts at `/user_data/mnt`.
+trees. Put application state and confidential logs in `/vault/application/data`.
+Optional NFS input uses authenticated `nfs_mount` configuration in the encrypted
+application JSON and Kerberos `krb5p`; clear `ext_mount.conf` is rejected. See
+[BUILD_GUIDE.md](BUILD_GUIDE.md#trusted-nfs-configuration-and-application-write-access).
 
 Each CPU appraisal transaction has one 60-second budget across attestation and
-resource retrieval. GPU appraisal has a 180-second deadline. Silent packet loss,
+resource retrieval. GPU profiles use a single 240-second composite CPU/GPU
+transaction: KBS verifies NVIDIA evidence and requires the exact configured GPU
+count before key release. CUDA readiness is enabled only afterward. The periodic
+service has a 300-second outer deadline; hardware timing acceptance is pending. Silent packet loss,
 negative appraisal, GPU failure, integrity failure or lost clock synchronization
 stops the workload and uses the forced poweroff path.
 

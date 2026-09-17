@@ -73,7 +73,9 @@ This builder uses Trustee commit
 `a2570329cc33daf9ca16370a1948b5379bb17fbe` with the repository's boundary patch.
 An arbitrary upstream image does not include that patch. It selects the explicit
 AS policy, prevents native KBS key writes and AS-policy replacement, enforces
-token freshness, and caches verified SNP VCEKs.
+token freshness, caches verified SNP VCEKs, and backports NVIDIA composite
+evidence onto guest-components `591d0bb45cd7a2c66f3778428940c40f7eec3b7d`.
+Sample TEEs and unsupported SEV/TPM verifiers return errors instead of panicking.
 
 Install Intel's quote-verification development/runtime packages. The example
 uses the `resolute` repository for Ubuntu 26.04, as on the TDX test host:
@@ -102,15 +104,21 @@ cargo build --locked --release -p kbs --bin kbs \
   --no-default-features --features coco-as-builtin
 cargo build --locked --release -p kbs-client --bin kbs-client \
   --no-default-features \
-  --features tdx-attester,snp-attester,kbs_protocol/background_check,kbs_protocol/passport,kbs_protocol/rust-crypto
+  --features tdx-attester,snp-attester,nvidia-attester,kbs_protocol/background_check,kbs_protocol/passport,kbs_protocol/rust-crypto
 cd "$CVM_BUILDER_SOURCE"
 ```
 
 Apply the patch once to a clean checkout. It prints a digest and writes
-`cvm-boundary.patch`; retain this digest for the CVM profile and deployment receipt.
+`cvm-boundary.patch`, including the companion `cvm_guest.patch`. The script
+clones the exact guest-components pin into `cvm_guest/` and patches the evidence
+collector. Retain both source trees and patches. The client uses the measured
+NVAT CLI only to collect raw evidence; it does not call NRAS from the guest.
+Retain the boundary digest for the CVM profile and deployment receipt.
 
 ```sh
 sha256sum "$TRUSTEE_SOURCE/cvm-boundary.patch"
+python3 scripts/trustee_provenance.py "$TRUSTEE_SOURCE" \
+  "$TRUSTEE_SOURCE/target/release/kbs" trustee_build.json
 sudo install -d /opt/cvm-trustee/bin /opt/cvm-builder
 sudo install -m 0755 "$TRUSTEE_SOURCE/target/release/kbs" /opt/cvm-trustee/bin/kbs
 sudo cp -a builder scripts /opt/cvm-builder/
@@ -136,7 +144,8 @@ id cvm-trustee >/dev/null 2>&1 || sudo useradd --system --home /nonexistent \
 sudo install -d -m 0750 -o root -g cvm-trustee /etc/cvm-trustee \
   /etc/cvm-trustee/pki /etc/cvm-trustee/as-policies /etc/cvm-trustee/as-policies/opa
 sudo install -d -m 0700 -o cvm-trustee -g cvm-trustee \
-  /var/lib/cvm-trustee-resources /var/lib/cvm-trustee-revocations \
+  /var/lib/cvm-trustee-resources /var/lib/cvm-trustee-resources/default \
+  /var/lib/cvm-trustee-revocations \
   /var/lib/cvm-trustee /var/lib/cvm-trustee/as /var/lib/cvm-trustee/policy \
   /var/lib/cvm-trustee/rvps /var/lib/cvm-trustee/admin
 sudo -u cvm-trustee sh -c 'umask 077; test -e /var/lib/cvm-trustee-revocations/approved-bundles.json || printf "%s\n" "{\"build_ids\":[]}" > /var/lib/cvm-trustee-revocations/approved-bundles.json'
@@ -146,6 +155,17 @@ Vault key files are plaintext inside this trusted repository. Protect backend
 storage and backups with your site's encryption/access controls. The service
 templates make the repository read-only to KBS and writable to the key service.
 Keep revocation state outside backups that can restore an older key repository.
+
+Install the build record:
+
+```sh
+sudo install -m 0644 -o root -g root trustee_build.json /etc/cvm-trustee/trustee_build.json
+```
+
+ `admin_install` compares its source revision/patch digest
+with the CVM contract and checks the installed binary's digest. Retain the trusted
+build record with release evidence; copying strings into an acceptance receipt
+is insufficient.
 
 ## 4. Create certificates and administrative identities
 
@@ -159,10 +179,13 @@ umask 077
 export TRUSTEE_PKI="$HOME/workspace/cvm-trustee-pki"
 mkdir -p "$TRUSTEE_PKI"
 cd "$TRUSTEE_PKI"
-openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
-  -keyout ca.key -out ca.pem -days 365 -subj '/CN=CVM Trustee Test CA' \
-  -addext 'basicConstraints=critical,CA:TRUE,pathlen:0' \
-  -addext 'keyUsage=critical,keyCertSign,cRLSign'
+for authority in ca as-ca; do
+  openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
+    -keyout "$authority.key" -out "$authority.pem" -days 365 \
+    -subj "/CN=CVM Trustee $authority" \
+    -addext 'basicConstraints=critical,CA:TRUE,pathlen:0' \
+    -addext 'keyUsage=critical,keyCertSign,cRLSign'
+done
 for identity in server as builder admin; do
   openssl req -new -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
     -keyout "$identity.key" -out "$identity.csr" -subj "/CN=$identity"
@@ -174,19 +197,26 @@ for identity in server as builder admin; do
   else
     printf '%s\n' 'extendedKeyUsage=clientAuth' >> "$identity.ext"
   fi
-  openssl x509 -req -in "$identity.csr" -CA ca.pem -CAkey ca.key \
+  issuer=ca
+  if [ "$identity" = as ]; then issuer=as-ca; fi
+  openssl x509 -req -in "$identity.csr" -CA "$issuer.pem" -CAkey "$issuer.key" \
     -CAcreateserial -out "$identity.pem" -days 90 -sha256 -extfile "$identity.ext"
 done
-cat as.pem ca.pem > as-chain.pem
+cat as.pem as-ca.pem > as-chain.pem
 openssl pkey -in as.key -pubout -out as-public.pem
 openssl genpkey -algorithm Ed25519 -out kbs-admin.key
 openssl pkey -in kbs-admin.key -pubout -out kbs-admin.pub
 sudo install -m 0640 -o root -g cvm-trustee \
-  ca.pem server.pem server.key as.key as-chain.pem kbs-admin.pub /etc/cvm-trustee/pki/
+  ca.pem as-ca.pem server.pem server.key as.key as-chain.pem kbs-admin.pub /etc/cvm-trustee/pki/
 cd "$CVM_BUILDER_SOURCE"
 ```
 
-Retain `ca.key` and `kbs-admin.key` with the administrator. Give only `builder.pem`,
+The AS signing root must issue only AS signing identities. Never add the transport
+CA to KBS `trusted_certs_paths`: a builder client certificate must not be able to
+sign an accepted attestation token. Test direct resource retrieval with EARs
+signed by builder, admin, server, and an unrelated signer; every request must fail.
+
+Retain `ca.key`, `as-ca.key`, and `kbs-admin.key` with the administrator. Give only `builder.pem`,
 `builder.key`, and `ca.pem` to the vault builder. The key-service admin client uses
 `admin.pem`/`admin.key`; it is distinct from the Ed25519 KBS policy administrator.
 Public `as-public.pem` and `ca.pem` go into CVM profile inputs. No backend private
@@ -206,7 +236,7 @@ Create `/etc/cvm-trustee/kbs.json` with the following content:
   },
   "attestation_token": {
     "insecure_key": false,
-    "trusted_certs_paths": ["/etc/cvm-trustee/pki/ca.pem"]
+    "trusted_certs_paths": ["/etc/cvm-trustee/pki/as-ca.pem"]
   },
   "admin": {
     "insecure_api": false,
@@ -263,11 +293,11 @@ policy ID in the CVM profile and KBS environment:
 
 ```sh
 sudo install -m 0640 -o root -g cvm-trustee config/attestation_policy.rego \
-  /etc/cvm-trustee/as-policies/opa/cvm-v2-cpu-r1_cpu.rego
+  /etc/cvm-trustee/as-policies/opa/cvm-cpu-r2_cpu.rego
 printf '%s\n' 'package policy' 'import rego.v1' \
   'default executables := 33' 'default hardware := 97' 'default configuration := 36' |
   sudo tee /etc/cvm-trustee/as-policies/opa/default_cpu.rego >/dev/null
-printf '%s\n' 'CVM_AS_POLICY_ID=cvm-v2-cpu-r1' |
+printf '%s\n' 'CVM_AS_POLICY_ID=cvm-cpu-r2' |
   sudo tee /etc/cvm-trustee/environment >/dev/null
 sudo -u cvm-trustee sh -c 'umask 077; test -e /var/lib/cvm-trustee/policy/resource-policy.rego || printf "%s\n" "package policy" "default allow = false" > /var/lib/cvm-trustee/policy/resource-policy.rego'
 sudo -u cvm-trustee sh -c 'umask 077; test -e /var/lib/cvm-trustee/rvps/references.json || printf "[]\n" > /var/lib/cvm-trustee/rvps/references.json'
@@ -281,6 +311,65 @@ The pinned AS engine adds `opa/` to `policy_dir`. The `default_cpu.rego` file is
 required at initialization even though the patched selector uses the explicit
 policy ID. KBS selects one AS policy ID per instance; a policy-ID migration needs
 a coordinated profile/backend rollout or a separate instance.
+
+### GPU profiles: configure the backend verifier and second AS policy
+
+Use a separate instance and a new profile version/policy ID, for example
+`gpu-2026.09-r2` / `cvm-gpu-r2`. This patch explicitly supports **NRAS remote
+verification on the KBS host**. Local RIM/OCSP appraisal is not enabled and there
+is no fallback to guest-side appraisal. NRAS performs RIM/certificate/OCSP
+checks; KBS verifies its signed overall and per-device JWTs, digest linkage,
+issuer, timestamps and the exact RCAR-derived nonce.
+
+Obtain a reviewed NVIDIA JWKS snapshot from
+`https://nras.attestation.nvidia.com/.well-known/jwks.json`, verify its origin
+through the site's trusted channel, and install it read-only. Pin its SHA-256 in
+`/etc/cvm-trustee/nvidia.json`:
+
+```json
+{
+  "mode": "remote",
+  "url": "https://nras.attestation.nvidia.com/v4/attest/gpu",
+  "issuer": "https://nras.attestation.nvidia.com",
+  "jwks": "/etc/cvm-trustee/nras_jwks.json",
+  "jwks_sha256": "REPLACE_WITH_REVIEWED_JWKS_SHA256"
+}
+```
+
+Add `CVM_NVIDIA_CONFIG=/etc/cvm-trustee/nvidia.json` to the KBS environment.
+Set `CVM_AS_POLICY_ID=cvm-gpu-r2` in that same file. The service account must
+read both JSON files; keep them root-owned and non-writable by KBS. Allow outbound
+HTTPS to NRAS from the **backend**. Unknown rotated signing keys fail closed;
+review and install a new JWKS pin and restart KBS rather than accepting keys
+from an attestation response.
+
+Stage 1 renders `gpu_attestation_policy.rego` from the profile's strict
+`gpu_policy.json`. Install it alongside the CPU policy from that exact bundle:
+
+```sh
+export CVM_BUNDLE=/srv/cvm/bundles/gpu-2026.09-r2/amd_sev_snp
+sudo install -m 0640 -o root -g cvm-trustee "$CVM_BUNDLE/attestation_policy.rego" \
+  /etc/cvm-trustee/as-policies/opa/cvm-gpu-r2_cpu.rego
+sudo install -m 0640 -o root -g cvm-trustee "$CVM_BUNDLE/gpu_attestation_policy.rego" \
+  /etc/cvm-trustee/as-policies/opa/cvm-gpu-r2_gpu.rego
+sudo sha256sum /etc/cvm-trustee/as-policies/opa/cvm-gpu-r2_*.rego
+```
+
+`CVM_BUNDLE` here is the finalized GPU bundle directory. Record **both** digests
+under `immutable_as_policies` keys `cvm-gpu-r2_cpu` and `cvm-gpu-r2_gpu` in the
+deployment receipt. `admin_install` requires both. The pinned EAR broker initializes
+only `default_cpu.rego`; no `default_gpu.rego` is required. A missing selected GPU
+policy fails closed.
+
+GPU reference inputs additionally require reviewed, nonempty
+`gpu_driver_versions` and `gpu_vbios_versions` string lists. Import them with the
+bundle through §7; never infer approval from a device's claimed version. AS
+compares signed NRAS version claims with those RVPS values and requires secure
+boot, debug disabled, successful measurements, nonce/report/RIM/certificate checks
+and an approved supported architecture. GPU submods must be exactly `gpu0` through
+`gpuN-1`, with distinct NVIDIA device identities, the same policy ID as `cpu0`,
+and the affirming integer trust vector. Sample-device claims cannot satisfy this
+rule. CPU-only resource rule bytes are unchanged.
 
 ## 6. Start the services
 
@@ -311,13 +400,13 @@ to `inputs/`. Configure these fields in the CVM profile:
 
 ```yaml
 trustee_commit: a2570329cc33daf9ca16370a1948b5379bb17fbe
-trustee_patch_digest: 9994ed10c83c0a82a31f8d550a1d1114a3ad7ed1e05138a27976d002b7febfa6
+trustee_patch_digest: 94de3a62f7abc62664be7734667bb300fefdc6aec52ae99e4662c03678bc720e
 kbs_url: https://kbs.example.org:8443
 kbs_cert: ../inputs/kbs-ca.pem
 as_public_key: ../inputs/as-public.pem
 token_algorithm: ES256
 token_issuer: null
-attestation_policy_id: cvm-v2-cpu-r1
+attestation_policy_id: cvm-cpu-r2
 attestation_policy: attestation_policy.rego
 reference_values: ../inputs/approved-tcb-references.json
 bootstrap_egress: [443, 8443]
@@ -331,48 +420,45 @@ contains `mr_seam`, `tcb_svn`, `xfam`, and `allowed_advisory_ids`. Empty or miss
 approvals fail closed. Do not approve arbitrary measurements simply because a
 guest reports them. Review platform firmware/TCB endorsements and site policy.
 
+For TDX, inspect the private reference report captured by the initial build:
+
+```sh
+python3 /opt/cvm-builder/scripts/tcb_inspect.py /restricted/reference-evidence.json
+```
+
+The output contains **unapproved candidate** `mr_seam`, `tcb_svn`, and `xfam`
+values. It does not import references or verify a platform endorsement. Obtain
+advisory IDs from a real signed-quote appraisal and review its TCB status before
+creating the administrator-approved reference file. Keep the source report in
+the restricted acceptance record; do not publish it with the bundle.
+
 Build and finalize the CVM using [Advanced CVM Build](BUILD_GUIDE.md#3-advanced-cvm-build)
 for the initial backend bring-up. Finalization adds its software measurements to
 the bundle's `reference_values.json`. The backend operator then imports that
 file into RVPS. This happens once per approved CVM bundle, not once per vault.
 
-For this LocalJson deployment, stop KBS before editing its file. The following
-example merges array-valued references and refuses conflicting scalar settings.
-It assigns a 90-day expiry; set the site's reviewed validity period instead when
-appropriate. Copy the finalized bundle to the backend first:
+Each Trustee instance serves one security profile (the exact profile version
+and contract). Use separate instances, resource stores, publisher state and policy
+IDs for CPU-only, GPU, or differently approved TCB profiles. `admin_install` and
+the importer enforce this isolation, including after all bundles are retired.
+
+For LocalJson, stop KBS and import references as its service identity. Choose an
+explicit reviewed expiry. Existing values must match exactly; imports neither
+union values nor renew existing expiry dates. A TCB change requires a new profile
+and instance. Renewal is a separate administrator review, not a side effect of
+adding a bundle.
 
 ```sh
-export CVM_BUNDLE=/srv/cvm/bundles/cpu-2026.09/intel_tdx
+export CVM_BUNDLE=/srv/cvm/bundles/cpu-2026.09-r2/intel_tdx
 sudo systemctl stop cvm_trustee_kbs
-sudo python3 - "$CVM_BUNDLE/reference_values.json" <<'PY'
-import datetime, json, os, sys
-from pathlib import Path
-path = Path('/var/lib/cvm-trustee/rvps/references.json')
-records = {entry['name']: entry for entry in json.loads(path.read_text())}
-incoming = json.load(open(sys.argv[1]))
-expires = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=90)).strftime('%Y-%m-%dT%H:%M:%SZ')
-for name, value in incoming.items():
-    if name in records:
-        old = records[name]['value']
-        if isinstance(old, list) and isinstance(value, list):
-            value = list(dict.fromkeys(old + value))
-        elif old != value:
-            raise SystemExit('Conflicting approved scalar reference: ' + name)
-    records[name] = {'version': '0.1.0', 'name': name, 'expiration': expires, 'value': value}
-temporary = path.with_suffix('.pending')
-temporary.write_text(json.dumps(list(records.values()), separators=(',', ':')))
-temporary.chmod(0o600)
-stat = path.stat()
-os.chown(temporary, stat.st_uid, stat.st_gid)
-os.replace(temporary, path)
-PY
+sudo -u cvm-trustee python3 /opt/cvm-builder/scripts/trustee_references.py \
+  "$CVM_BUNDLE" --store /var/lib/cvm-trustee/rvps/references.json \
+  --state /var/lib/cvm-trustee/admin --expires 2026-12-01T00:00:00Z
 sudo systemctl start cvm_trustee_kbs
 ```
 
-Review the combined approved set before running the merge: its expiry applies
-to the combined values for each incoming name. Retire obsolete references instead
-of repeatedly extending them. RVPS expiry must be monitored and renewed through
-the same approval process.
+Monitor RVPS expiration and retire obsolete profiles. Unknown input keys are
+rejected before building; JSON `_comment_*` entries are not reference values.
 
 ## 8. Verify the backend and enable a bundle
 
@@ -387,7 +473,9 @@ local repository/state paths, so run it there; it is not a remote-only client.
   "resources": "/var/lib/cvm-trustee-resources",
   "key_service_state": "/var/lib/cvm-trustee-revocations",
   "state": "/var/lib/cvm-trustee/admin",
-  "deployment_receipt": "/root/cvm-trustee-admin/deployment-receipt.json"
+  "deployment_receipt": "/root/cvm-trustee-admin/deployment-receipt.json",
+  "trustee_binary": "/opt/cvm-trustee/bin/kbs",
+  "trustee_build": "/etc/cvm-trustee/trustee_build.json"
 }
 ```
 
@@ -397,11 +485,11 @@ mode 0700 and file mode 0600. The deployment receipt has this structure:
 ```json
 {
   "trustee_commit": "a2570329cc33daf9ca16370a1948b5379bb17fbe",
-  "trustee_patch_digest": "9994ed10c83c0a82a31f8d550a1d1114a3ad7ed1e05138a27976d002b7febfa6",
+  "trustee_patch_digest": "94de3a62f7abc62664be7734667bb300fefdc6aec52ae99e4662c03678bc720e",
   "policy_selection_tested": false,
   "unauthorized_administration_denied": false,
   "immutable_as_policies": {
-    "cvm-v2-cpu-r1": "REPLACE_WITH_INSTALLED_POLICY_SHA256"
+    "cvm-cpu-r2_cpu": "REPLACE_WITH_INSTALLED_CPU_POLICY_SHA256"
   }
 }
 ```
@@ -409,14 +497,17 @@ mode 0700 and file mode 0600. The deployment receipt has this structure:
 Obtain the policy hash with:
 
 ```sh
-sudo sha256sum /etc/cvm-trustee/as-policies/opa/cvm-v2-cpu-r1_cpu.rego
+sudo sha256sum /etc/cvm-trustee/as-policies/opa/cvm-cpu-r2_cpu.rego
 ```
 
 The two flags are deliberately false in the sample. Set them to true only after
 verifying policy selection and administrative denial on the deployed revision.
 Specifically, verify that the selected AS policy reports its explicit ID, rejects
 unapproved TCB/measurements, and cannot be replaced through the AS policy API;
-unauthorized policy/RVPS writes and native KBS resource writes must fail. Verify
+unauthorized policy/RVPS writes and native KBS resource writes must fail.
+For the pinned router, authenticated native resource POST returns 403; unsupported
+PUT and DELETE return 405. Check each method and confirm that stored key bytes
+and policy bytes remain unchanged; a non-200 status alone is insufficient. Verify
 the KBS process sees the key repository and AS policy directory as read-only.
 The repository's isolated HTTPS tests in `tests/test_http.py` exercise policy
 readback, denied mutation, key creation/conflict, cross-vault denial, expiry,
@@ -478,9 +569,9 @@ uploads the key using mutual TLS. Repeating an upload with the same path and key
 is idempotent; changing the bytes for an existing path is rejected. The key and
 client credentials are not packaged into the OCI delivery. The recipient follows
 [USER_GUIDE.md](USER_GUIDE.md); the launched CVM retrieves its own key after CPU
-attestation. CPU-only applications are supported. GPU-enabled applications also
-run guest GPU appraisal; this deployment does not claim that Trustee jointly
-gates the vault key on CPU and GPU evidence.
+attestation. CPU-only applications retain CPU-only authorization. GPU profiles
+require a composite CPU/GPU EAR at KBS before key release, including during
+periodic reauthorization. Failed or missing GPU evidence cannot unlock their vault.
 
 ## 10. Revoke, retire, back up, and restore
 
@@ -537,6 +628,7 @@ public trust material and coordinate the rollout.
 | Symptom | Check |
 | --- | --- |
 | Service refuses startup | Swap, `core_pattern`, file ownership, Python requirements, TLS paths, `CVM_AS_POLICY_ID`, and `journalctl`. |
+| Key service returns HTTP 503 | The protected journal reports the failing operation and exception class/errno. Check repository permissions, filesystem capacity and I/O health; no keys, tokens, request bodies or exception text are logged. |
 | Key service returns HTTP 409 | Build ID not enabled, conflicting existing key, revoked identity, or invalid 64-byte upload/path. |
 | `admin_install` rejects the receipt | Exact Trustee commit/patch hash, installed policy hash, and completed backend checks. |
 | RVPS references missing | Import finalized bundle references, restart the LocalJson KBS, and check expiration. |

@@ -38,15 +38,53 @@ materialization do not require it. Installation packages and instructions are at
 use Cosign; installation instructions are at
 <https://docs.sigstore.dev/cosign/system_config/installation/>.
 
-The official Ubuntu 26.04 `ovmf` package provides the default plain, SNP, and TDX
-firmware paths used by `config/cvm_profile.yml`. The package and its component
-packages are listed at <https://packages.ubuntu.com/resolute/ovmf>. Verify the
-files after installation:
+The tested host baseline is Ubuntu 26.04 with kernel 7.0.0-31 and QEMU 10.2.1.
+Use Intel's repository for a published, supported distribution; do not substitute
+an arbitrary Ubuntu codename (for example, `questing`/`plucky`) in the DCAP URL.
+Follow the [Intel host setup guide](https://cc-enabling.trustedservices.intel.com/intel-tdx-enabling-guide/05/host_os_setup/)
+for host enablement and the collateral service selected by your site.
+
+For TDX, complete these steps before a full build:
+
+1. Enable `nohibernate kvm_intel.tdx=1` in the host kernel command line and reboot.
+   Alternatively configure `options kvm_intel tdx=1` in modprobe configuration.
+   Verify `/sys/module/kvm_intel/parameters/tdx` is `Y`. TDX module initialization
+   may be lazy; absence of an early boot message alone is not a failure.
+2. Install `tdx-qgs` from the supported Intel DCAP repository. In `/etc/qgs.conf`,
+   uncomment/set `port = 4050` for the supplied vsock profile, then start/restart
+   `qgsd`. A commented port selects a Unix socket, which does not match the sample.
+3. Configure `/etc/sgx_default_qcnl.conf` for your approved PCS or caching service.
+   A dedicated PCCS and personal PCS key are not universally required; use the
+   credentials and registration procedure for the selected service. Multi-package
+   hosts may require Intel platform registration before PCK certificates can be
+   retrieved. Check that registration and collateral retrieval succeed: a 404 for
+   `pckcerts` needs investigation before blaming the CVM policy.
+4. Supply a reviewed direct-boot TDVF as `inputs/OVMF.inteltdx.fd`. The packaged
+   `OVMF.inteltdx.ms.fd` enables Secure Boot and is not the default for an unsigned
+   direct-boot kernel. The tested TDVF build uses `SECURE_BOOT_ENABLE=FALSE`; its
+   exact build is recorded in [VALIDATION.md](VALIDATION.md). TDX measurements
+   authenticate this firmware and kernel through the approved launch profile.
+   A Secure Boot deployment must separately validate its signed kernel/shim chain;
+   `platforms.intel_tdx.shim` supplies the shim to QEMU's `-shim` option.
+5. Run a minimal TD quote smoke test against the intended collateral/backend path.
+   A successful local TDREPORT is not proof that QGS can generate a signed quote.
+
+```sh
+sudo python3 scripts/tdx_preflight.py --firmware inputs/OVMF.inteltdx.fd \
+  --quote-probe /usr/local/sbin/site_tdx_quote_probe
+```
+
+`site_tdx_quote_probe` is a site-provided executable that boots a minimal TD and
+requires a nonempty, successfully verified quote. The preflight exits nonzero if
+that check is omitted. It does not fabricate evidence or silently approve TCB
+values. On failure, inspect `journalctl -u qgsd`, collateral-service access and
+platform registration. Resolve these prerequisites before building/sealing.
+
+For the plain construction VM and SNP, verify the packaged firmware paths:
 
 ```sh
 test -r /usr/share/ovmf/OVMF.fd
 test -r /usr/share/ovmf/OVMF.amdsev.fd
-test -r /usr/share/ovmf/OVMF.inteltdx.ms.fd
 ```
 
 Authenticate the Ubuntu 26.04 cloud-image checksum before using the base image.
@@ -64,18 +102,18 @@ signature, a missing or duplicate image checksum, or an image digest mismatch:
   set -eu
   mkdir -p inputs
   cd inputs
-  cvm_image_name=ubuntu-26.04-server-cloudimg-amd64.img
-  cvm_image_url=https://cloud-images.ubuntu.com/releases/26.04/release
-  curl -fL "$cvm_image_url/SHA256SUMS" -o SHA256SUMS
-  curl -fL "$cvm_image_url/SHA256SUMS.gpg" -o SHA256SUMS.gpg
+  base_image_name=ubuntu-26.04-server-cloudimg-amd64.img
+  base_image_url=https://cloud-images.ubuntu.com/releases/26.04/release
+  curl -fL "$base_image_url/SHA256SUMS" -o SHA256SUMS
+  curl -fL "$base_image_url/SHA256SUMS.gpg" -o SHA256SUMS.gpg
   gpgv --keyring /usr/share/keyrings/ubuntu-cloudimage-keyring.gpg \
     SHA256SUMS.gpg SHA256SUMS
-  awk -v image="$cvm_image_name" '
+  awk -v image="$base_image_name" '
     $2 == image || $2 == "*" image { print; found++ }
     END { if (found != 1) exit 1 }
-  ' SHA256SUMS > "$cvm_image_name.sha256"
-  curl -fL "$cvm_image_url/$cvm_image_name" -o "$cvm_image_name"
-  sha256sum --check --strict "$cvm_image_name.sha256"
+  ' SHA256SUMS > "$base_image_name.sha256"
+  curl -fL "$base_image_url/$base_image_name" -o "$base_image_name"
+  sha256sum --check --strict "$base_image_name.sha256"
 )
 ```
 
@@ -136,7 +174,7 @@ failed, or incomplete site acceptance report leaves the bundle unapproved.
 The main defaults are:
 
 ```yaml
-profile_version: cpu-2026.09
+profile_version: cpu-2026.09-r2
 guest_release: '26.04'
 gpu: none
 base_image: ../inputs/ubuntu-26.04-server-cloudimg-amd64.img
@@ -157,7 +195,7 @@ platforms:
     firmware: /usr/share/ovmf/OVMF.amdsev.fd
     kbs_client: ../inputs/kbs-client
   intel_tdx:
-    firmware: /usr/share/ovmf/OVMF.inteltdx.ms.fd
+    firmware: ../inputs/OVMF.inteltdx.fd
     kbs_client: ../inputs/kbs-client
 ```
 
@@ -210,10 +248,10 @@ The deferred call emits a pending CVM OCI artifact. Copy that `.oci.tar` to its
 matching target host, verify and materialize it, then finalize it:
 
 ```sh
-sudo scripts/cvm_pull cvm_cpu-2026.09_amd_sev_snp.oci.tar \
-  --output /srv/cvm/cvm_cpu-2026.09
+sudo scripts/cvm_pull cvm_cpu-2026.09-r2_amd_sev_snp.oci.tar \
+  --output /srv/cvm/cvm_cpu-2026.09-r2
 sudo scripts/cvm_finalize \
-  /srv/cvm/cvm_cpu-2026.09/amd_sev_snp
+  /srv/cvm/cvm_cpu-2026.09-r2/amd_sev_snp
 ```
 
 Run the site's acceptance matrix there. Then approve its exact report and install
@@ -221,12 +259,12 @@ the bundle's reference values and reusable resource policy:
 
 ```sh
 sudo scripts/admin_approve \
-  /srv/cvm/cvm_cpu-2026.09/amd_sev_snp \
+  /srv/cvm/cvm_cpu-2026.09-r2/amd_sev_snp \
   /srv/cvm/acceptance-report.json
 
 sudo scripts/admin_install \
   /srv/trustee/admin.json \
-  /srv/cvm/cvm_cpu-2026.09/amd_sev_snp
+  /srv/cvm/cvm_cpu-2026.09-r2/amd_sev_snp
 ```
 
 Finalization and approval regenerate the OCI artifact so it includes the final
@@ -241,13 +279,13 @@ profile version, shared contract, platform entry and manifest digest before it
 updates the combined `profile_set.json`:
 
 ```sh
-scripts/cvm_pull cvm_cpu-2026.09_intel_tdx.oci.tar \
-  --output target/final_cvm_cpu-2026.09
-scripts/cvm_pull cvm_cpu-2026.09_amd_sev_snp.oci.tar \
-  --output target/final_cvm_cpu-2026.09 --merge
+scripts/cvm_pull cvm_cpu-2026.09-r2_intel_tdx.oci.tar \
+  --output target/final_cvm_cpu-2026.09-r2
+scripts/cvm_pull cvm_cpu-2026.09-r2_amd_sev_snp.oci.tar \
+  --output target/final_cvm_cpu-2026.09-r2 --merge
 ```
 
-Set `cvm_image: ../target/final_cvm_cpu-2026.09` in
+Set `cvm_image: ../target/final_cvm_cpu-2026.09-r2` in
 `config/vault_build.yml` to use that aggregated folder.
 
 ## 4. Vault Build
@@ -297,7 +335,7 @@ Copy the exact value printed by `docker image inspect` into `image_id` in
 [config/vault_build.yml](config/vault_build.yml):
 
 ```yaml
-cvm_image: ../target/cvm_cpu-2026.09
+cvm_image: ../target/cvm_cpu-2026.09-r2
 docker_archive: ../inputs/application.tar
 image_id: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 # Optional: omit to use every platform available in cvm_image.
@@ -331,7 +369,7 @@ dependencies.
 subdirectories, or a generic CVM OCI registry reference pinned by manifest digest:
 
 ```yaml
-cvm_image: registry.example.org/cvm/cpu-2026.09@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+cvm_image: registry.example.org/cvm/cpu-2026.09-r2@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 ```
 
 `oci://` and `https://` prefixes are also accepted. Use the actual digest printed
@@ -381,9 +419,11 @@ application paired with a CPU-only profile and rejects a GPU profile paired with
 an application that does not request the GPU.
 
 Point `gpu_policy` at `config/gpu_policy.json` unless a site needs stricter
-rules. The measured root runs NVIDIA's C++ `nvattest` CLI, requires a successful
-remote appraisal with signed EAT evidence, checks the fresh nonce and exact GPU
-count, and compares every nested value in `required-claims`. Stage 1 validates
+rules. The measured root collects raw evidence with NVIDIA's C++ `nvattest` CLI.
+The patched client includes it in the same KBS transaction as the CPU quote.
+Trustee calls NRAS and authenticates its signed EAT; the generated AS GPU policy
+compares every nested value in `required-claims` and driver/VBIOS versions against
+RVPS approvals before KBS can release the vault key. Stage 1 validates
 that the policy requires secure boot, disabled debug mode, successful
 measurements, valid report/RIM certificate and OCSP state, verified signatures,
 matching driver/VBIOS RIMs and no VBIOS-index conflict. Adding constraints is
@@ -391,7 +431,7 @@ supported; removing these minimum constraints is rejected.
 
 Current NRAS responses can omit the driver and VBIOS RIM schema-validation
 fields. The policy lists those two fields under `claims-if-present`: a returned
-false or malformed value still denies startup. RIM signature, certificate,
+false or malformed value denies key release. RIM signature, certificate,
 version and measurement checks remain mandatory in `required-claims`.
 
 The checked-in defaults expect `inputs/nvattest` and
@@ -503,3 +543,31 @@ Rebuild the vault when the application image, application files, site, or
 configuration changes. Reuse the approved generic CVM bundle.
 
 Continue with [USER_GUIDE.md](USER_GUIDE.md).
+
+### Trusted NFS configuration and application write access
+
+Configure an NFS input in the encrypted `application.json`, not a clear sidecar:
+
+```json
+"nfs_mount": {"server": "files.example.org", "export": "/datasets", "security": "krb5p"}
+```
+
+The guest mounts `/user_data/mnt` with `ro,nosuid,nodev,noexec,sec=krb5p`.
+Provision the site's Kerberos configuration and credentials through protected
+vault inputs and reviewed guest services; permit the required KDC/NFS egress.
+There is no unauthenticated fallback. Legacy `/user_data/ext_mount.conf` is
+rejected because host-controlled bytes must not select a root kernel NFS peer.
+
+Containers receive `/vault/application` read-only; only its `runtime/` and `data/`
+subdirectories are writable. Place application state and confidential logs there.
+Optional volume mappings cannot expose `/vault/config`, `/vault/services`, Docker
+storage or other vault control files. Vault services remain trusted code admitted
+by the builder; their executable must resolve inside the immutable application
+payload, outside those writable subdirectories. This is not a sandbox for a
+malicious root guest service.
+
+Raw CPU reference reports stay in mode-0600 build/acceptance records and are
+excluded from OCI archives. Normal vault boots do not print reports to the serial
+console. Public manifests include only required launch measurements and omit
+plaintext application content hashes. Retain acceptance logs under the site's
+restricted evidence policy.

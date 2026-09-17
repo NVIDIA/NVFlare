@@ -19,6 +19,7 @@ This is a deployment patch, not a production approval. Published AS policies
 must additionally be mounted read-only; resource storage must be read-only to
 KBS and writable only by the mTLS key service.
 """
+
 import argparse
 import hashlib
 import re
@@ -28,7 +29,7 @@ from pathlib import Path
 PIN = "a2570329cc33daf9ca16370a1948b5379bb17fbe"
 
 
-def patch(root):
+def patch(root, guest_source="https://github.com/confidential-containers/guest-components.git"):
     root = Path(root).resolve()
     revision = subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
     if revision != PIN:
@@ -215,12 +216,164 @@ def patch(root):
     verifier_cargo.write_text(
         text.replace(old_feature, 'snp-verifier = ["asn1-rs", "openssl", "sev", "x509-parser", "tokio/sync"]')
     )
+    composite(root, guest_source)
     diff = subprocess.check_output(["git", "-C", str(root), "diff", "HEAD", "--binary"])
     (root / "cvm-boundary.patch").write_bytes(diff)
     print(hashlib.sha256(diff).hexdigest())
 
 
+def composite(root, guest_source):
+    """Backport NVIDIA composite evidence without moving the compatibility pins."""
+    guest_pin = "591d0bb45cd7a2c66f3778428940c40f7eec3b7d"
+    guest = root / "cvm_guest"
+    if guest.exists():
+        raise SystemExit("Refusing to replace an existing cvm_guest checkout")
+    subprocess.run(["git", "clone", "--no-checkout", guest_source, str(guest)], check=True)
+    subprocess.run(["git", "-C", str(guest), "checkout", "--detach", guest_pin], check=True)
+    source = Path(__file__).resolve().parent.parent / "trustee"
+
+    def replace(path, old, new):
+        text = path.read_text()
+        if text.count(old) != 1:
+            raise SystemExit(f"Composite patch anchor mismatch: {path.relative_to(root)}")
+        path.write_text(text.replace(old, new))
+
+    verifier = root / "deps/verifier/src/lib.rs"
+    replace(verifier, "pub mod sample;", '#[cfg(feature = "nvidia-verifier")]\npub mod nvidia;\npub mod sample;')
+    replace(
+        verifier,
+        "Tee::Nvidia => todo!(),",
+        """Tee::Nvidia => {
+            cfg_if::cfg_if! {
+                if #[cfg(feature = "nvidia-verifier")] {
+                    Ok(Box::new(nvidia::Nvidia::new()?) as Box<dyn Verifier + Send + Sync>)
+                } else { bail!("NVIDIA verifier is not enabled"); }
+            }
+        },""",
+    )
+    replace(verifier, "Tee::Sev => todo!(),", 'Tee::Sev => bail!("SEV is not supported"),')
+    replace(verifier, "Tee::Tpm => todo!(),", 'Tee::Tpm => bail!("TPM is not supported"),')
+    replace(
+        verifier,
+        """Tee::Sample => Ok(Box::<sample::Sample>::default() as Box<dyn Verifier + Send + Sync>),
+        Tee::SampleDevice => Ok(Box::<sample_device::SampleDeviceVerifier>::default()
+            as Box<dyn Verifier + Send + Sync>),""",
+        'Tee::Sample | Tee::SampleDevice => bail!("Sample evidence is disabled"),',
+    )
+    target = root / "deps/verifier/src/nvidia.rs"
+    target.write_bytes((source / "nvidia_verifier.rs").read_bytes())
+    subprocess.run(["git", "-C", str(root), "add", "--intent-to-add", str(target)], check=True)
+    replace(
+        root / "deps/verifier/Cargo.toml",
+        "[dependencies]",
+        'nvidia-verifier = ["jsonwebtoken", "openssl", "tokio/time", "reqwest/json"]\n\n[dependencies]',
+    )
+    replace(
+        root / "attestation-service/Cargo.toml",
+        "[features]",
+        '[features]\nnvidia-verifier = ["verifier/nvidia-verifier"]',
+    )
+    replace(
+        root / "kbs/Cargo.toml", '"snp-verifier", "tdx-verifier",', '"snp-verifier", "tdx-verifier", "nvidia-verifier",'
+    )
+    # Only NVIDIA emits a list in this backport. Keep other verifier APIs and
+    # CPU policy behavior unchanged, while issuing a separate EAR per GPU.
+    replace(
+        root / "attestation-service/src/lib.rs",
+        """            tee_claims.push(TeeClaims {
+                tee: verification_request.tee,
+                tee_class,
+                claims: claims_from_tee_evidence,
+                init_data_claims,
+                runtime_data_claims,
+            });""",
+        """            let device_claims = if verification_request.tee == kbs_types::Tee::Nvidia {
+                claims_from_tee_evidence.as_array().context("Invalid NVIDIA claims")?.clone()
+            } else { vec![claims_from_tee_evidence] };
+            for claims in device_claims {
+                tee_claims.push(TeeClaims {
+                    tee: verification_request.tee,
+                    tee_class: tee_class.clone(),
+                    claims,
+                    init_data_claims: init_data_claims.clone(),
+                    runtime_data_claims: runtime_data_claims.clone(),
+                });
+            }""",
+    )
+
+    attester = guest / "attestation-agent/attester/src/lib.rs"
+    replace(attester, "pub mod sample;", '#[cfg(feature = "nvidia-attester")]\npub mod nvidia;\npub mod sample;')
+    replace(
+        attester,
+        """            Tee::Sample => Box::<sample::SampleAttester>::default(),
+            Tee::SampleDevice => Box::<sample_device::SampleDeviceAttester>::default(),""",
+        """            Tee::Sample | Tee::SampleDevice => bail!("Sample attestation is disabled"),
+            #[cfg(feature = "nvidia-attester")]
+            Tee::Nvidia => Box::<nvidia::NvidiaAttester>::default(),""",
+    )
+    replace(
+        attester,
+        """    if sample_device::detect_platform() {
+        additional_devices.push(Tee::SampleDevice);
+    }""",
+        """    #[cfg(feature = "nvidia-attester")]
+    if nvidia::detect_platform() {
+        additional_devices.push(Tee::Nvidia);
+    }""",
+    )
+    target = guest / "attestation-agent/attester/src/nvidia.rs"
+    target.write_bytes((source / "nvidia_attester.rs").read_bytes())
+    subprocess.run(["git", "-C", str(guest), "add", "--intent-to-add", str(target)], check=True)
+    replace(guest / "attestation-agent/attester/Cargo.toml", "[features]", '[features]\nnvidia-attester = ["tokio"]')
+    replace(
+        guest / "attestation-agent/kbs_protocol/Cargo.toml",
+        "[features]",
+        '[features]\nnvidia-attester = ["attester/nvidia-attester"]',
+    )
+    replace(
+        root / "tools/kbs-client/Cargo.toml",
+        "[features]",
+        '[features]\nnvidia-attester = ["kbs_protocol/nvidia-attester"]',
+    )
+    replace(
+        guest / "attestation-agent/kbs_protocol/src/builder.rs",
+        "        let mut http_client_builder = reqwest::Client::builder()",
+        """        let request_timeout = KBS_REQ_TIMEOUT_SEC;
+        #[cfg(feature = "nvidia-attester")]
+        let request_timeout = if attester::nvidia::detect_platform() { 190 } else { request_timeout };
+        let mut http_client_builder = reqwest::Client::builder()""",
+    )
+    replace(
+        guest / "attestation-agent/kbs_protocol/src/builder.rs",
+        ".timeout(Duration::from_secs(KBS_REQ_TIMEOUT_SEC))",
+        ".timeout(Duration::from_secs(request_timeout))",
+    )
+    for name, path in (("kbs_protocol", "attestation-agent/kbs_protocol"), ("kms", "confidential-data-hub/kms")):
+        replace(
+            root / "Cargo.toml",
+            name
+            + ' = { git = "https://github.com/confidential-containers/guest-components.git", rev = "591d0bb", default-features = false }',
+            name + ' = { path = "cvm_guest/' + path + '", default-features = false }',
+        )
+    replace(root / "Cargo.toml", "[workspace]", '[workspace]\nexclude = ["cvm_guest"]')
+    # Cargo uses the same exact packages, now from the pinned, patched checkout.
+    lock = root / "Cargo.lock"
+    text = lock.read_text()
+    text = text.replace(
+        'source = "git+https://github.com/confidential-containers/guest-components.git?rev=591d0bb#'
+        + guest_pin
+        + '"\n',
+        "",
+    )
+    lock.write_text(text)
+    guest_patch = subprocess.check_output(["git", "-C", str(guest), "diff", "HEAD", "--binary"])
+    (root / "cvm_guest.patch").write_bytes(guest_patch)
+    subprocess.run(["git", "-C", str(root), "add", "--intent-to-add", "cvm_guest.patch"], check=True)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source")
-    patch(parser.parse_args().source)
+    parser.add_argument("--guest-source", default="https://github.com/confidential-containers/guest-components.git")
+    args = parser.parse_args()
+    patch(args.source, args.guest_source)

@@ -1,8 +1,9 @@
 # NVIDIA Confidential Computing Reference Architecture Conformance
 
-Review date: September 15, 2026
+Review date: September 17, 2026
 Original review: commit `eaff81ca0b7a09f6a128aa9bd9f14c76586088ed`.
-September 15 follow-up validation is recorded below.
+September 15 follow-up validation is recorded below. The September 17 composite
+GPU authorization and PR boundary tests are recorded in [VALIDATION.md](VALIDATION.md).
 
 Reference: NVIDIA *Deploying Proprietary Models in Confidential Compute —
 Self-Hosted VMs*, last updated June 4, 2026
@@ -52,12 +53,11 @@ vault storage, fail-closed workload startup and periodic re-attestation.
 The CPU-only NVFlare profile does not have a GPU conformance gap; it follows the
 CPU-CVM trust path and is outside the cited RA's GPU-inference scope.
 
-The GPU-enabled profile is not yet fully conformant. Its vault key is released and
-used to decrypt the vault during `bootstrap()` before GPU appraisal runs in
-`application()`. GPU appraisal can prevent the container from starting and can
-power off the guest, but it cannot prove that a GPU-sensitive key was unavailable
-before a successful GPU decision. This gap applies only when a key's resource
-policy requires a confidential GPU.
+The GPU-enabled profile now gates vault keys on a composite CPU/GPU EAR at
+Trustee. Its implementation is covered by policy, signed-token and HTTPS tests;
+physical acceptance of the new composite path remains pending. Full conformance
+also depends on the exact production hardware/BOM and remaining deployment
+requirements below.
 
 Additional work is required to make a production conformance claim: record the
 exact approved deployment profile, restrict network traffic by endpoint as well
@@ -82,7 +82,7 @@ holding the physical GPU.
 See [VALIDATION.md](VALIDATION.md) for completed test counts, timed build stages,
 and the exact limits of the evidence. The [Trustee setup guide](TRUSTEE_GUIDE.md)
 adds deployment instructions without changing the CPU-only key-release policy
-or closing the GPU-dependent key-release ordering gap described above.
+or establishing hardware acceptance of the new composite key-release path.
 
 ## Required capabilities
 
@@ -94,11 +94,11 @@ and
 | RA capability | CPU-only profile | GPU-enabled profile | Implementation evidence and remaining work |
 |---|---|---|---|
 | Launch the workload in a measured CVM | Meets | Evidence pending | SNP and TDX launch assets and shape are pinned in `builder/launcher.py`; exact reference measurements are generated and approved in `builder/policy.py`. Current source changes require fresh hardware acceptance before production approval. |
-| Collect fresh evidence for the CPU TEE, guest image, launch configuration, firmware, and applicable GPU | Meets | Conditional | `builder/attestation.py` obtains a fresh KBS challenge, binds it to an ephemeral key, validates the signed EAR, and checks the selected CPU profile. `builder/gpu.py` uses a fresh random nonce, exact guest-visible GPU count, NVIDIA remote appraisal, and the measured-root GPU policy. GPU appraisal has not been demonstrated in the complete current CVM flow. |
-| Release a protected key only after fresh evidence matches policy | Meets | **Gap** | `builder/runtime.py` (`bootstrap`) checks local binding, calls `authorized_key()`, and unlocks the vault. GPU appraisal occurs later at `builder/runtime.py` (`application`). For `gpu: nvidia_cc`, the GPU decision must precede release of a GPU-dependent vault or model key. For `gpu: none`, CPU-only release is the intended behavior. |
+| Collect fresh evidence for the CPU TEE, guest image, launch configuration, firmware, and applicable GPU | Meets | Conditional | `builder/attestation.py` obtains a fresh KBS challenge, binds it to an ephemeral key, validates the signed EAR, and checks the selected CPU profile. The patched client collects NVIDIA evidence bound to RCAR runtime data; Trustee verifies NRAS signatures and applies the generated GPU policy. GPU appraisal has not been demonstrated in the complete current CVM flow. |
+| Release a protected key only after fresh evidence matches policy | Meets | **Evidence pending** | `authorized_key()` uses a composite RCAR transaction. The CPU quote covers GPU evidence; KBS requires the configured NVIDIA GPU submods before releasing a GPU vault key. CPU-only rules are unchanged. Physical negative acceptance remains pending. |
 | Keep keys out of host-visible storage and normal VM-management paths | Meets | Meets | KBS response decryption uses an ephemeral private key; plaintext keys are held in sealed memory file descriptors and passed to `cryptsetup` through `/proc/self/fd`. No plaintext key is written to a disk or command line. |
 | Keep confidential model artifacts encrypted outside the CVM | Conditional | Conditional | The vault is LUKS2-encrypted and authenticated. `/user_config`, `/user_data`, and `/applog` are intentionally clear sidecars. Confidential model weights, credentials, and proprietary application material must be placed in the vault rather than those sidecars. The builder rejects obvious private keys in public inputs but cannot infer the confidentiality of arbitrary data. |
-| Fail closed when attestation, policy evaluation, key release, integrity validation, or re-attestation fails | Meets | Conditional | Systemd failure handling powers off the guest; the workload target is reached only after vault and integrity gates. Periodic CPU/KBS and GPU checks also fail closed. The GPU path still needs key-release ordering and full hardware validation. |
+| Fail closed when attestation, policy evaluation, key release, integrity validation, or re-attestation fails | Meets | Conditional | Systemd failure handling powers off the guest; the workload target is reached only after vault and integrity gates. Periodic CPU/KBS and GPU checks also fail closed. The composite GPU path still needs full hardware validation. |
 | Emit privacy-safe audit records for attestation and key release | Conditional | Conditional | `builder/audit.py` records time, build ID, vault ID, measurements, policy ID, and allow/deny without tokens, keys, or payloads. It lacks a correlation/request ID, verifier identity, key-resource ID, safe failure-reason code, and a demonstrated SIEM/export integration. Trustee/KBS logs may supply some fields, but the deployment must prove the combined record. |
 
 ## Architecture and deployment controls
@@ -139,7 +139,7 @@ source revision.
 | Positive key release | Evidence pending | Rebuild and approve current SNP and TDX bundles, boot each delivered CVM plus vault, and record successful fresh appraisal, key authorization, integrity scan, and application readiness. For a GPU profile, include successful GPU appraisal before the protected key release. |
 | Unapproved image | Conditional | Exact measurement denial is covered by policy and unit tests. Repeat on current hardware with a modified or unapproved image and show that the key is unavailable. |
 | Tampered launch parameters | Evidence pending | Test changed vCPU count, CPU model, memory/launch shape, firmware, and measured boot inputs as applicable; show appraisal or binding denial before key release. |
-| GPU CC mode disabled or invalid GPU evidence | **Gap for a GPU profile** | On a configured NVIDIA CC host, disable or invalidate GPU CC evidence and prove that a GPU-dependent key is never released. The current NRAS-failure path runs after the vault key has already been released and therefore does not satisfy this test. CPU-only profiles do not run this test. |
+| GPU CC mode disabled or invalid GPU evidence | **Evidence pending for a GPU profile** | Composite authorization is implemented. Run missing/tampered/replayed GPU and CC-disabled hardware cases and prove no key release, no vault mapper, no allow record and bounded poweroff. CPU-only profiles do not run this test. |
 | Expired or revoked collateral | Conditional | JWT lifetime, appraisal status, trust vector, and collateral claims are checked in software tests. Add a real expired/revoked attestation collateral case on the production verifier path. |
 | KBS/KMS outage | Meets, refresh after rebuild | The recorded TDX KBS DROP test powered the guest off within the acceptance limit. Repeat on the final production artifacts and both selected CPU platforms. |
 | Key disable or revocation | Meets, refresh after rebuild | KBS resource deletion/retirement and periodic authorization failure are implemented and tested. Repeat on final artifacts and retain the KBS audit record. |
@@ -150,26 +150,24 @@ source revision.
 
 ### C1 — Gate GPU-dependent keys on GPU appraisal
 
-Severity: High for `gpu: nvidia_cc`; not applicable to `gpu: none`.
+**Status: Evidence pending.** Applies only to `gpu: nvidia_cc`.
 
-`bootstrap()` currently releases the vault key after CPU attestation and local
-vault binding. `application()` appraises the GPU later. For a GPU-enabled profile,
-move or compose GPU appraisal into the authorization path before requesting the
-key that protects the GPU workload. A CPU-only profile must continue to use CPU
-attestation without a GPU prerequisite.
+The pinned Trustee and guest client now support composite CPU/GPU evidence in a
+single RCAR transaction. CPU REPORT_DATA covers the additional GPU evidence and
+all devices share the challenge and ephemeral response key. The backend performs
+NRAS verification, verifies both signed JWTs and their digest/nonce linkage, and
+emits one GPU submod per distinct NVIDIA device. Immutable CPU/GPU AS policies and
+RVPS driver/VBIOS approvals govern the resource rule. Missing, extra, duplicate,
+non-NVIDIA, wrong-policy or non-affirming GPU submods deny GPU vault keys.
+CPU-only rule bytes are unchanged. Periodic authorization repeats the composite
+transaction; the guest only controls CUDA readiness.
 
-The preferred policy model is resource-specific:
-
-- CPU-only vault or service key: fresh CPU-CVM evidence and vault/resource
-  binding.
-- Confidential-GPU model key: fresh CPU-CVM evidence, vault/resource binding,
-  and fresh GPU evidence matching the selected GPU profile.
-
-If Trustee cannot consume a compound CPU/GPU attestation result directly, a
-measured in-guest coordinator may obtain both decisions and request a distinct
-GPU-dependent resource through a policy-bound protocol. The acceptance property
-is the same: failure or absence of required GPU evidence must leave that resource
-key unavailable.
+Policy and signed-fixture tests do not establish physical conformance. Promotion
+to **Meets** requires exact-profile hardware evidence for
+`gpu_negative_key_denial`, `gpu_positive_key_release`, `gpu_policy_selection`,
+`cross_class_denial` and `periodic_gpu_denial`, including CC-disabled, tampered,
+replayed and missing-device cases. Verify no allow record or vault mapper before
+key denial and bounded poweroff. Existing hardware evidence predates this change.
 
 ### C2 — Bind approval to an exact production profile and BOM
 

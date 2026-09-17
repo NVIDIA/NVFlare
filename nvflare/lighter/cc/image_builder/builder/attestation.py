@@ -97,14 +97,20 @@ def validate_token(token, config, digest, *, now=None):
                 evidence["snp"]["policy_debug_allowed"] is False and evidence["snp"]["policy_migrate_ma"] is False,
                 "SNP debug or migration is enabled",
             )
+        if config.get("gpu") == "nvidia_cc":
+            from .gpu_policy import validate_submods
+
+            validate_submods(claims["submods"], config["gpu_count"], config["attestation_policy_id"])
         return claims
     except (ValueError, KeyError, TypeError, InvalidSignature, UnicodeError):
         raise BuildError("Invalid or unauthenticated KBS appraisal") from None
 
 
 @contextlib.contextmanager
-def authorized_key(config, digest, *, budget=ATTESTATION_BUDGET_SECONDS):
-    require(type(budget) in (int, float) and 0 < budget <= ATTESTATION_BUDGET_SECONDS, "Invalid attestation budget")
+def authorized_key(config, digest, *, budget=None):
+    maximum = 240 if config.get("gpu") == "nvidia_cc" else ATTESTATION_BUDGET_SECONDS
+    budget = maximum if budget is None else budget
+    require(type(budget) in (int, float) and 0 < budget <= maximum, "Invalid attestation budget")
     deadline = time.monotonic() + budget
 
     def remaining():

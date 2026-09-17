@@ -144,3 +144,64 @@ must select supported pins, endorse the reference values, validate the complete
 deployment-specific acceptance matrix and approve each exact generic bundle.
 Sector/snapshot replay and continued use of an already released key remain the
 documented limitations; key deletion prevents future retrieval.
+
+## 2026-09-17 — PR boundary fixes and composite GPU authorization
+
+This change set replaces the post-unlock GPU check with a single composite RCAR
+transaction. CPU-only resource rules retain their previous bytes. GPU rules
+require the exact configured count of distinct NVIDIA EAR submods, with matching
+policy IDs, affirming status and trust vectors. The guest collects evidence;
+Trustee verifies the NRAS overall/device signatures, digest linkage, issuer,
+freshness and challenge binding, then applies the generated GPU policy and RVPS
+driver/VBIOS approvals before releasing the key.
+
+The compatibility revisions remain Trustee
+`a2570329cc33daf9ca16370a1948b5379bb17fbe` and guest-components
+`591d0bb45cd7a2c66f3778428940c40f7eec3b7d`. The reviewed composite boundary patch
+SHA-256 is `94de3a62f7abc62664be7734667bb300fefdc6aec52ae99e4662c03678bc720e`.
+The default profile is now `cpu-2026.09-r2`; use a new GPU profile and rebuild,
+remeasure and reapprove affected bundles. Existing hardware results and approvals
+do not cover these new sources.
+
+Validation performed:
+
+- Linux standalone suite with the pinned Rego evaluator: **136 passed, 31
+  skipped** (167 discovered). Skips cover opt-in hardware/storage/live-backend
+  tests and the separately executed clean-checkout provenance test.
+- Isolated live KBS/key-service HTTPS tests: **10 passed**. Includes real encrypted
+  resource responses, CPU-only release, valid composite GPU EARs, missing/extra/
+  duplicate/wrong-policy/non-NVIDIA GPU submods, expired tokens, forged
+  builder/admin/server/untrusted signers, create/revoke/retry behavior, byte-exact
+  policy readback, POST 403 and PUT/DELETE 405 with no key/policy mutation.
+- Backend Rust tests: **2 passed**, including valid ES384 NRAS detached EATs and
+  invalid device/overall signatures, digests, nonces, issuers, timestamps, claims
+  versions and device counts, plus unsupported/sample TEE error dispatch.
+- KBS and the composite SNP/TDX/NVIDIA client both build with `cargo build
+  --locked --release`. No dependency version update is required.
+- Clean-checkout provenance test: **1 passed**, applying the patch twice to the
+  exact pins, checking the configured digest, and detecting modified companion
+  guest sources.
+- NVFlare provisioning/entrypoint tests on macOS: **96 passed, 1 skipped** (the
+  Linux-only contract wrapper). The standalone Linux suite above supplies that
+  platform coverage.
+- `./runtest.sh -s nvflare/lighter/cc/image_builder` passed Black, isort, flake8
+  and agent-skill checks. Archive tests also verify that raw reference reports
+  and plaintext content fingerprints are excluded and that a delivered GPU
+  policy can run using only its packaged Python helpers.
+
+The HTTPS and NRAS tests use disposable signed fixtures; they are **not physical
+GPU attestation evidence**. The occupied AMD GPU workload was left running.
+No new two-machine federated GPU job or GPU hardware acceptance is claimed.
+`CONFORMANCE.md` C1 and the GPU negative-release row remain **Evidence pending**.
+
+Before production approval, run `gpu_negative_key_denial` with CC disabled,
+tampered/replayed evidence and too few GPUs; `gpu_positive_key_release`;
+`gpu_policy_selection`; `cross_class_denial`; and `periodic_gpu_denial`. Confirm
+no key/allow record/vault mapper before a successful GPU decision and measure
+fail-closed timing. The initial transaction budget is 240 seconds for GPU
+profiles (60 seconds CPU-only), with a 300-second periodic service deadline.
+The hardware harness's NRAS fault-injection cases require
+`CVM_GPU_HARDWARE_TESTS=1` and `CVM_BACKEND_LOCAL=1`, on a dedicated lab setup with
+KBS on the same host: the network fault must affect the **backend's** NRAS egress.
+Its backend-outage check is additional coverage, not a substitute for the
+CC-disabled/tampered/replayed/missing-device production acceptance cases.

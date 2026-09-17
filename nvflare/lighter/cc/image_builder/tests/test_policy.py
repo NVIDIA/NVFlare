@@ -108,6 +108,28 @@ class ResourcePolicyTests(unittest.TestCase):
                 with self.subTest(platform=platform, path=other):
                     self.assertFalse(self.evaluate(manifest, claims, other))
 
+    def test_composite_gpu_rules_and_cpu_only_compatibility(self):
+        from test_gpu_composite import gpu_submod, invalid_submods
+
+        for platform in ("amd_sev_snp", "intel_tdx"):
+            manifest, claims, path = self.fixture(platform)
+            original = compose([manifest])
+            manifest["contract"] = {"gpu": "none", "gpu_count": 2}
+            self.assertEqual(compose([manifest]), original)
+            for submods in invalid_submods("cvm-test", 2):
+                cpu_only = copy.deepcopy(claims)
+                cpu_only["submods"].update(submods)
+                self.assertTrue(self.evaluate(manifest, cpu_only, path))
+            manifest["contract"] = {"gpu": "nvidia_cc", "gpu_count": 2}
+            good = copy.deepcopy(claims)
+            good["submods"].update({f"gpu{i}": gpu_submod("cvm-test", i) for i in range(2)})
+            self.assertTrue(self.evaluate(manifest, good, path))
+            for submods in invalid_submods("cvm-test", 2):
+                bad = copy.deepcopy(claims)
+                bad["submods"].update(submods)
+                with self.subTest(platform=platform, submods=submods):
+                    self.assertFalse(self.evaluate(manifest, bad, path))
+
     def test_negative_or_incomplete_appraisal_denied(self):
         for platform in ("amd_sev_snp", "intel_tdx"):
             manifest, original, path = self.fixture(platform)

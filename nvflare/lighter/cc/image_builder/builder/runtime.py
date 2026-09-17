@@ -19,9 +19,7 @@ import base64
 import ctypes
 import json
 import os
-import re
 import subprocess
-import sys
 from pathlib import Path
 
 from .attestation import authorized_key
@@ -45,7 +43,6 @@ CONFIG = Path("/etc/cvm/runtime.json")
 STATE = Path("/run/cvm")
 CLOCK_MAX_CORRECTION_SECONDS = 0.5
 CLOCK_MAX_SKEW_PPM = 1000
-GPU_ATTESTATION_TIMEOUT_SECONDS = 180
 MOUNT_POINTS = {"vault": "/vault", "applog": "/applog", "user-config": "/user_config", "user-data": "/user_data"}
 
 
@@ -121,6 +118,11 @@ def reference():
         return
     platform = guest_platform()
     report, nonce = local_report(platform)
+    # Full reports are acceptance records, not normal boot-console output.
+    # Reference launches use an all-zero hardware binding and no vault disk.
+    binding_bytes = report[576:624] if platform == "intel_tdx" else report[192:224]
+    if any(binding_bytes):
+        return
     value = {
         "platform": platform,
         "measurements": measurements(platform, report),
@@ -131,7 +133,8 @@ def reference():
         ccel = Path("/sys/firmware/acpi/tables/data/CCEL")
         require(ccel.is_file(), "TDX CCEL is unavailable")
         value["ccel"] = base64.b64encode(ccel.read_bytes()).decode()
-    # Public hardware evidence only. Never emit app configuration or secrets.
+    # The reference launcher's serial capture is a mode-0600 acceptance record.
+    # These frames must never be forwarded to public logs or OCI artifacts.
     # CCEL can exceed journald's record limit. Use bounded serial frames with
     # compression, so console forwarding cannot silently drop the reference.
     from .evidence import serial_frames
@@ -311,6 +314,19 @@ def install_services(dev=False):
         for item in sorted(source.iterdir()):
             text = item.read_text()
             validate_service(item.name, text)
+            from .services import service_executable
+
+            executable = service_executable(text)
+            require(
+                executable.resolve().is_relative_to("/vault/application"), "Service executable symlink escapes payload"
+            )
+            require(
+                not any(
+                    executable.resolve().is_relative_to(p)
+                    for p in ("/vault/application/runtime", "/vault/application/data")
+                ),
+                "Service executable cannot reside in writable application data",
+            )
             deps = "cvm_vault.service" + ("" if dev else " cvm_integrity.service")
             unit = (
                 text
@@ -335,8 +351,9 @@ def periodic():
     # authorization; a valid signature or a cached EAR is insufficient.
     with authorized_key(config, digest):
         pass
-    if config["gpu"] == "nvidia_cc":
-        run([sys.executable, "-m", "builder.gpu"], timeout=GPU_ATTESTATION_TIMEOUT_SECONDS)
+    from .gpu import readiness
+
+    readiness(config, True)
 
 
 def docker_argv(app, *, device=None, defaults=None):
@@ -345,7 +362,9 @@ def docker_argv(app, *, device=None, defaults=None):
     for port in cfg["ports"]:
         args += ["--publish", f'{port["host"]}:{port["container"]}/tcp']
     for source, target, ro in [
-        ("/vault", "/vault", False),
+        ("/vault/application", "/vault/application", True),
+        ("/vault/application/runtime", "/vault/application/runtime", False),
+        ("/vault/application/data", "/vault/application/data", False),
         ("/applog", "/applog", False),
         ("/user_config", "/user_config", True),
         ("/user_data", "/user_data", True),
@@ -384,6 +403,12 @@ def docker_argv(app, *, device=None, defaults=None):
 
 def application():
     app = read_json("/vault/config/application.json")
+    for name in ("runtime", "data"):
+        directory = Path("/vault/application") / name
+        require(directory.is_dir() and not directory.is_symlink(), "Invalid writable application directory")
+    for volume in app["container"]["volumes"]:
+        source = Path(volume["source"])
+        require(source.resolve() == source, "Container volume source contains a symlink")
     marker = Path("/vault/docker/image-loaded.json")
     expected = app["image_id"]
 
@@ -404,8 +429,9 @@ def application():
         run(["sync", "-f", "/vault/docker"])
     config = read_json(CONFIG)
     if app["requires_gpu"]:
-        time_sync(max_tries=5)
-        run([sys.executable, "-m", "builder.gpu"], timeout=GPU_ATTESTATION_TIMEOUT_SECONDS)
+        from .gpu import readiness
+
+        readiness(config, True)
     device = {"intel_tdx": "/dev/tdx_guest", "amd_sev_snp": "/dev/sev-guest"}.get(config["platform"])
     # Env values are passed through the environment, not visible in process argv.
     command = docker_argv(app, device=device, defaults=loaded["Config"])
@@ -417,20 +443,39 @@ def application():
 
 
 def mount_user_data():
-    # Optional, untrusted NFS input specification. It can select only an NFS
-    # export mounted read-only at the fixed /user_data/mnt path.
-    path = Path("/user_data/ext_mount.conf")
-    if not path.exists():
+    # Only the authenticated vault can select a kernel filesystem peer. Legacy
+    # clear sidecars are rejected, not silently interpreted as trusted config.
+    require(
+        not Path("/user_data/ext_mount.conf").exists(),
+        "Move ext_mount.conf into authenticated application nfs_mount configuration",
+    )
+    settings = read_json("/vault/config/application.json").get("nfs_mount")
+    if settings is None:
         return
-    lines = [
-        line.strip() for line in path.read_text().splitlines() if line.strip() and not line.lstrip().startswith("#")
-    ]
-    require(len(lines) == 1 and re.fullmatch(r"[A-Za-z0-9_.-]+:/[A-Za-z0-9_./-]+", lines[0]), "Invalid NFS input")
-    require(".." not in lines[0].split(":", 1)[1].split("/"), "NFS path traversal")
-    run(["mount", "-t", "nfs", "-o", "ro,nosuid,nodev,noexec,resvport", lines[0], "/user_data/mnt"], timeout=90)
+    from .config import validate_nfs_mount
+
+    validate_nfs_mount(settings)
+    run(
+        [
+            "mount",
+            "-t",
+            "nfs4",
+            "-o",
+            "ro,nosuid,nodev,noexec,sec=krb5p",
+            settings["server"] + ":" + settings["export"],
+            "/user_data/mnt",
+        ],
+        timeout=90,
+    )
 
 
 def fail():
+    try:
+        from .gpu import readiness
+
+        readiness(read_json(CONFIG), False)
+    except Exception:
+        pass
     # Stop the target synchronously, kill a stuck container process, then bypass
     # the systemd transaction queue for the final kernel poweroff operation.
     # Security failure handling must not depend on a healthy workload or manager.

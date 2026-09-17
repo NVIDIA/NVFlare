@@ -24,14 +24,72 @@ import argparse
 import hashlib
 import hmac
 import http.server
+import logging
 import os
+import socket
 import ssl
 import tempfile
+import threading
 import urllib.error
 import urllib.request
 from pathlib import Path
 
 from .common import BuildError, lock, protect_process, read_json, require, validate_resource, write_json
+
+LOG = logging.getLogger(__name__)
+
+
+def log_failure(operation, error):
+    # Do not log exception text: it can contain request data or secret material.
+    LOG.error(
+        "key_service operation=%s error=%s errno=%s", operation, type(error).__name__, getattr(error, "errno", None)
+    )
+
+
+class BoundedTLSServer(http.server.HTTPServer):
+    """Bound admission, handshake and complete request lifetime, including headers."""
+
+    def __init__(self, address, handler_class, tls, *, workers=8, deadline=15):
+        self.tls, self.deadline = tls, deadline
+        self.slots = threading.BoundedSemaphore(workers)
+        super().__init__(address, handler_class)
+
+    def process_request(self, request, client_address):
+        if not self.slots.acquire(blocking=False):
+            self.shutdown_request(request)
+            return
+        try:
+            threading.Thread(target=self.serve_connection, args=(request, client_address), daemon=True).start()
+        except Exception:
+            self.slots.release()
+            self.shutdown_request(request)
+            raise
+
+    def serve_connection(self, request, client_address):
+        connection = request
+        timer = None
+
+        def expire():
+            try:
+                connection.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+
+        try:
+            request.settimeout(self.deadline)
+            connection = self.tls.wrap_socket(request, server_side=True, do_handshake_on_connect=False)
+            timer = threading.Timer(self.deadline, expire)
+            timer.daemon = True
+            timer.start()
+            connection.do_handshake()
+            self.finish_request(connection, client_address)
+        except (OSError, ValueError) as error:
+            log_failure("connection", error)
+        finally:
+            if timer is not None:
+                timer.cancel()
+            self.shutdown_request(connection)
+            self.slots.release()
 
 
 def fsync_dir(path):
@@ -202,7 +260,8 @@ def handler(store, roles):
                     self.respond(204)
             except (BuildError, ValueError):
                 self.respond(409)
-            except Exception:
+            except Exception as error:
+                log_failure(method, error)
                 self.respond(503)
 
         def do_PUT(self):
@@ -226,16 +285,16 @@ def main():
             store.reconcile()
             return
         protect_process()
-        server = http.server.HTTPServer(
-            (config.get("listen", "127.0.0.1"), config["port"]), handler(store, config["certificate_roles"])
-        )
         tls = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH, cafile=config["client_ca"])
         tls.minimum_version = ssl.TLSVersion.TLSv1_3
         tls.verify_mode = ssl.CERT_REQUIRED
         tls.load_cert_chain(config["cert"], config["key"])
-        server.socket = tls.wrap_socket(server.socket, server_side=True)
+        server = BoundedTLSServer(
+            (config.get("listen", "127.0.0.1"), config["port"]), handler(store, config["certificate_roles"]), tls
+        )
         server.serve_forever()
-    except (BuildError, OSError, ValueError, KeyError):
+    except (BuildError, OSError, ValueError, KeyError) as error:
+        log_failure("startup", error)
         parser.exit(1, "Key service could not start; check its protected configuration\n")
 
 

@@ -266,28 +266,6 @@ class ProfileTests(unittest.TestCase):
         with self.assertRaises(BuildError):
             config.validate_gpu_policy(self.write_gpu_policy(value))
 
-    def test_optional_schema_claims_cannot_accept_negative_results(self):
-        policy = self.shipped_gpu_policy()
-        nonce = "ab" * 32
-        result = {
-            "result_code": 0,
-            "detached_eat": [["JWT", "overall"], {"GPU-0": "detached"}],
-            "claims": [{**policy["required-claims"], "eat_nonce": nonce}],
-        }
-        # NRAS can omit the schema fields; mandatory RIM validation remains.
-        gpu.validate_result(result, policy, nonce, 1)
-        for claim in config.GPU_CLAIMS_IF_PRESENT:
-            result["claims"][0][claim] = True
-            gpu.validate_result(result, policy, nonce, 1)
-            for unsafe in (False, 1, "true", None):
-                result["claims"][0][claim] = unsafe
-                with self.subTest(claim=claim, value=unsafe), self.assertRaises(BuildError):
-                    gpu.validate_result(result, policy, nonce, 1)
-            del result["claims"][0][claim]
-        del policy["claims-if-present"]
-        with self.assertRaises(BuildError):
-            config.validate_gpu_policy(self.write_gpu_policy(policy))
-
     def test_gpu_policy_rejects_malformed_or_unreadable_files(self):
         directory = Path(self.temp_directory())
         broken = directory / "broken.json"
@@ -304,37 +282,6 @@ class ProfileTests(unittest.TestCase):
             mutate(value)
             with self.subTest(mutation=repr(value)[:40]), self.assertRaises(BuildError):
                 config.validate_gpu_policy(self.write_gpu_policy(value))
-
-    def test_nvat_result_requires_signed_claims_nonce_and_exact_count(self):
-        policy = self.shipped_gpu_policy()
-        nonce = "ab" * 32
-        result = {
-            "result_code": 0,
-            "result_message": "Ok",
-            "detached_eat": [["JWT", "overall"], {"GPU-0": "detached"}],
-            "claims": [{**policy["required-claims"], "eat_nonce": nonce, "extra": "allowed"}],
-        }
-        gpu.validate_result(result, policy, nonce, 1)
-        for mutate in (
-            lambda value: value.update(result_code=12),
-            lambda value: value.pop("detached_eat"),
-            lambda value: value.update(claims=[]),
-            lambda value: value["claims"][0].update(eat_nonce="00" * 32),
-            lambda value: value["claims"][0].update(secboot=False),
-        ):
-            value = json.loads(json.dumps(result))
-            mutate(value)
-            with self.subTest(mutation=repr(value)[:80]), self.assertRaises(BuildError):
-                gpu.validate_result(value, policy, nonce, 1)
-
-    def test_gpu_policy_mismatch_reports_only_the_failed_claim_path(self):
-        expected = {"outer": {"claim": True}, "other": "good"}
-        self.assertIsNone(gpu.policy_mismatch(expected, expected))
-        self.assertEqual(gpu.policy_mismatch(expected, {"outer": {}}), "required-claims.outer.claim")
-        self.assertEqual(
-            gpu.policy_mismatch(expected, {"outer": {"claim": False}, "other": "good"}),
-            "required-claims.outer.claim",
-        )
 
 
 class GuestProvisioningTests(unittest.TestCase):
@@ -742,9 +689,9 @@ class RuntimeContractTests(unittest.TestCase):
 
     def test_guest_requires_the_measured_gpu_count(self):
         with patch("builder.gpu.run", return_value=b"0000:41:00.0\n0000:43:00.0\n"):
-            self.assertEqual(len(gpu.validate_gpu_count({"gpu_count": 2})), 2)
+            gpu.readiness({"gpu": "nvidia_cc", "gpu_count": 2}, True)
             with self.assertRaises(BuildError):
-                gpu.validate_gpu_count({"gpu_count": 1})
+                gpu.readiness({"gpu": "nvidia_cc", "gpu_count": 1}, True)
 
     def test_attestation_commands_share_one_hard_deadline(self):
         config = {

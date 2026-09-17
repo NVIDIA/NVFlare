@@ -161,6 +161,16 @@ def find_bundle(directory, delivery, explicit=None):
     if explicit:
         candidates = [Path(explicit).resolve()]
     else:
+        # A delivery's embedded bundle is authoritative. Do not make a local
+        # build cache with the same build ID turn a self-contained launch into
+        # an ambiguity. The caller verifies all artifact hashes before launch.
+        embedded = directory / "cvm_bundle"
+        if embedded.exists():
+            require(
+                read_json(embedded / "cvm_manifest.json").get("build_id") == delivery["cvm_build_id"],
+                "Embedded CVM bundle identity mismatch",
+            )
+            return embedded.resolve()
         root = directory.parent.parent
         name = "cvm_" + delivery["profile_version"]
         platform = delivery["platform"]

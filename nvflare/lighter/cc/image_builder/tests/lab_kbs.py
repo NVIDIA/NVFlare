@@ -27,7 +27,7 @@ import sys
 import time
 from pathlib import Path
 
-from builder.common import read_json, write_json
+from builder.common import digest_file, read_json, write_json
 from cryptography import x509
 from cryptography.hazmat.primitives import serialization
 
@@ -35,6 +35,8 @@ from cryptography.hazmat.primitives import serialization
 def main(directory):
     directory = Path(directory).resolve()
     pki = Path(read_json(directory / "lab-state.json")["pki"])
+    kbs_port = int(os.environ.get("CVM_LAB_KBS_PORT", "19199"))
+    key_port = int(os.environ.get("CVM_LAB_KEY_PORT", "19200"))
     state = directory / "lab-kbs"
     state.mkdir(mode=0o700, exist_ok=True)
     policies = state / "as-policies"
@@ -44,6 +46,9 @@ def main(directory):
     opa.mkdir(exist_ok=True)
     strict = (directory / "config/attestation_policy.rego").read_bytes()
     (opa / "cvm-v2-test-r1_cpu.rego").write_bytes(strict)
+    from builder.gpu_policy import render
+
+    (opa / "cvm-v2-test-r1_gpu.rego").write_text(render(read_json(directory / "config/gpu_policy.json")))
     # The broker insists on a default file at initialization, even when the
     # patched selector always chooses the explicit versioned policy.
     (opa / "default_cpu.rego").write_text(
@@ -52,21 +57,24 @@ def main(directory):
     resource_policy = state / "resource-policy.rego"
     if not resource_policy.exists():
         resource_policy.write_text("package policy\ndefault allow = false\n")
-    (pki / "as-chain.pem").write_bytes((pki / "as.pem").read_bytes() + (directory / "inputs/test-ca.pem").read_bytes())
+    (pki / "as-chain.pem").write_bytes(
+        (pki / "as.pem").read_bytes() + (directory / "inputs/test-as-ca.pem").read_bytes()
+    )
     resources = state / "resources"
     resources.mkdir(mode=0o700, exist_ok=True)
+    (resources / "default").mkdir(mode=0o700, exist_ok=True)
     revocation = directory / "lab-revocation"
     revocation.mkdir(mode=0o700, exist_ok=True)
     if not (revocation / "approved-bundles.json").exists():
         write_json(revocation / "approved-bundles.json", {"build_ids": []})
     config = {
         "http_server": {
-            "sockets": ["127.0.0.1:19199"],
+            "sockets": [f"127.0.0.1:{kbs_port}"],
             "insecure_http": False,
             "private_key": str(pki / "server.key"),
             "certificate": str(pki / "server.pem"),
         },
-        "attestation_token": {"insecure_key": False, "trusted_certs_paths": [str(directory / "inputs/test-ca.pem")]},
+        "attestation_token": {"insecure_key": False, "trusted_certs_paths": [str(directory / "inputs/test-as-ca.pem")]},
         "admin": {"insecure_api": False, "auth_public_key": str(pki / "kbs-admin.pub")},
         "policy_engine": {"policy_path": str(resource_policy)},
         "attestation_service": {
@@ -95,7 +103,7 @@ def main(directory):
         state / "key-service.json",
         {
             "listen": "127.0.0.1",
-            "port": 19200,
+            "port": key_port,
             "resources": str(resources),
             "state": str(revocation),
             "client_ca": str(directory / "inputs/test-ca.pem"),
@@ -105,15 +113,26 @@ def main(directory):
         },
     )
     config_admin = {
-        "url": "https://127.0.0.1:19199",
+        "url": f"https://127.0.0.1:{kbs_port}",
         "ca": str(directory / "inputs/test-ca.pem"),
         "admin_private_key": str(pki / "kbs-admin.key"),
         "resources": str(resources),
         "key_service_state": str(revocation),
         "state": str(state / "admin"),
         "deployment_receipt": str(state / "deployment-receipt.json"),
+        "key_service_url": f"https://127.0.0.1:{key_port}",
+        "trustee_binary": str(directory / "trustee-source/target/release/kbs"),
+        "trustee_build": str(state / "trustee_build.json"),
     }
     write_json(state / "admin.json", config_admin)
+    write_json(
+        state / "trustee_build.json",
+        {
+            "trustee_commit": "a2570329cc33daf9ca16370a1948b5379bb17fbe",
+            "trustee_patch_digest": digest_file(directory / "trustee-source/cvm-boundary.patch"),
+            "binary_sha256": digest_file(directory / "trustee-source/target/release/kbs"),
+        },
+    )
     processes = []
     stopping = False
 

@@ -12,6 +12,6 @@ WorkingDirectory=/usr/lib/cvm
 ExecStart=/usr/bin/python3 -m builder.runtime periodic
 LimitMEMLOCK=infinity
 LimitCORE=0
-TimeoutStartSec=250
+TimeoutStartSec=300
 StandardOutput=journal+console
 StandardError=journal+console

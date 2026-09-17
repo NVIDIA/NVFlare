@@ -64,6 +64,11 @@ def bundle_rule(manifest):
     build = json.dumps(identifier(manifest["build_id"]))
     policy = json.dumps(identifier(manifest["attestation_policy_id"]))
     lines = ["allow {", f"    approved_cpu({policy})", '    is_string(ev["init_data"])']
+    contract = manifest.get("contract", {})
+    if contract.get("gpu") == "nvidia_cc":
+        from .gpu_policy import resource_conditions
+
+        lines += resource_conditions(contract["gpu_count"], policy)
     if platform == "amd_sev_snp":
         lines += [
             f'    ev["snp"]["measurement"] == {json.dumps(values["snp.measurement"])}',
@@ -111,6 +116,8 @@ def verify_bundle(directory):
         "launch_cvm.sh.tmpl",
         "shutdown_cvm.sh.tmpl",
     }
+    if manifest["contract"].get("gpu") == "nvidia_cc":
+        required_artifacts.add("gpu_attestation_policy.rego")
     if manifest["launch_shape"].get("shim"):
         required_artifacts.add("shim.efi")
     require(set(manifest["sha256"]) == required_artifacts, "Incomplete bundle artifact hashes")
@@ -168,7 +175,13 @@ ACCEPTANCE_CHECKS = {
 }
 
 SNP_ACCEPTANCE_CHECKS = {"snp_vcek_cache"}
-GPU_ACCEPTANCE_CHECKS = {"gpu_appraisal_failure_poweroff"}
+GPU_ACCEPTANCE_CHECKS = {
+    "gpu_negative_key_denial",
+    "gpu_positive_key_release",
+    "gpu_policy_selection",
+    "cross_class_denial",
+    "periodic_gpu_denial",
+}
 
 
 def required_acceptance_checks(manifest):

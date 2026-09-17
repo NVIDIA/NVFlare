@@ -63,6 +63,24 @@ def prepare(directory):
     )
     (inputs / "test-ca.pem").write_bytes(ca.public_bytes(serialization.Encoding.PEM))
 
+    as_ca_key = ec.generate_private_key(ec.SECP256R1())
+    as_ca_name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Disposable CVM AS signing CA")])
+    as_ca = (
+        x509.CertificateBuilder()
+        .subject_name(as_ca_name)
+        .issuer_name(as_ca_name)
+        .public_key(as_ca_key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - datetime.timedelta(minutes=1))
+        .not_valid_after(now + datetime.timedelta(days=3))
+        .add_extension(x509.BasicConstraints(ca=True, path_length=0), critical=True)
+        .add_extension(x509.SubjectKeyIdentifier.from_public_key(as_ca_key.public_key()), critical=False)
+        .add_extension(x509.AuthorityKeyIdentifier.from_issuer_public_key(as_ca_key.public_key()), critical=False)
+        .add_extension(x509.KeyUsage(True, False, False, False, False, True, True, None, None), critical=True)
+        .sign(as_ca_key, hashes.SHA256())
+    )
+    (inputs / "test-as-ca.pem").write_bytes(as_ca.public_bytes(serialization.Encoding.PEM))
+
     def keyfile(name, key):
         path = pki / (name + ".key")
         path.write_bytes(
@@ -73,13 +91,15 @@ def prepare(directory):
         path.chmod(0o600)
 
     keyfile("ca", ca_key)
+    keyfile("as-ca", as_ca_key)
     for name in ("server", "builder", "admin", "untrusted", "as"):
+        issuer, issuer_key = (as_ca, as_ca_key) if name == "as" else (ca, ca_key)
         key = ec.generate_private_key(ec.SECP256R1())
         keyfile(name, key)
         builder = (
             x509.CertificateBuilder()
             .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, name)]))
-            .issuer_name(ca.subject)
+            .issuer_name(issuer.subject)
             .public_key(key.public_key())
             .serial_number(x509.random_serial_number())
             .not_valid_before(now - datetime.timedelta(minutes=1))
@@ -88,7 +108,7 @@ def prepare(directory):
         )
         builder = (
             builder.add_extension(x509.SubjectKeyIdentifier.from_public_key(key.public_key()), critical=False)
-            .add_extension(x509.AuthorityKeyIdentifier.from_issuer_public_key(ca_key.public_key()), critical=False)
+            .add_extension(x509.AuthorityKeyIdentifier.from_issuer_public_key(issuer_key.public_key()), critical=False)
             .add_extension(x509.KeyUsage(True, False, False, False, False, False, False, None, None), critical=True)
         )
         if name == "server":
@@ -108,7 +128,7 @@ def prepare(directory):
             ),
             critical=False,
         )
-        cert = builder.sign(ca_key, hashes.SHA256())
+        cert = builder.sign(issuer_key, hashes.SHA256())
         (pki / (name + ".pem")).write_bytes(cert.public_bytes(serialization.Encoding.PEM))
         if name == "as":
             (inputs / "test-as-public.pem").write_bytes(

@@ -54,7 +54,17 @@ protect_process()
 
 
 def state():
-    result = {"platform": CONFIG["platform"], "marker": Path("/vault/docker/image-loaded.json").exists()}
+    from builder.platforms import local_report, measurements, parse_snp_report, parse_tdx_report
+
+    evidence, nonce = local_report(CONFIG["platform"])
+    parse = parse_tdx_report if CONFIG["platform"] == "intel_tdx" else parse_snp_report
+    binding = parse(evidence, nonce)
+    result = {
+        "measurements": measurements(CONFIG["platform"], evidence),
+        "binding": binding.hex(),
+        "platform": CONFIG["platform"],
+        "marker": Path("/vault/docker/image-loaded.json").exists(),
+    }
     result["core_dumps_disabled"] = (
         Path("/proc/sys/kernel/core_pattern").read_text().strip() == "/dev/null"
         and Path("/proc/sys/kernel/core_uses_pid").read_text().strip() == "0"
@@ -136,7 +146,7 @@ def cross_vault(path):
         token = run(
             command + ["attest", "--tee-key-file", f"/proc/self/fd/{private}"],
             pass_fds=(private,),
-            timeout=60,
+            timeout=240 if CONFIG["gpu"] == "nvidia_cc" else 60,
             env=dict(os.environ, RUST_LOG="off"),
         ).strip()
         validate_token(token, CONFIG, digest)

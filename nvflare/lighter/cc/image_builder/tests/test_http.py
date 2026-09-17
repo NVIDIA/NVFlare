@@ -68,7 +68,7 @@ class HttpTests(unittest.TestCase):
     @classmethod
     def key_service(cls, role="builder"):
         return {
-            "url": "https://127.0.0.1:19200",
+            "url": cls.admin.get("key_service_url", "https://127.0.0.1:19200"),
             "ca": cls.admin["ca"],
             "cert": str(cls.pki / (role + ".pem")),
             "key": str(cls.pki / (role + ".key")),
@@ -82,10 +82,19 @@ class HttpTests(unittest.TestCase):
         self.paths.append(path)
         return digest, path, secret
 
-    def token(self, digest, tee, *, status="affirming", policy="cvm-v2-test-r1", expired=False):
-        key = serialization.load_pem_private_key((self.pki / "as.key").read_bytes(), None)
+    def token(
+        self, digest, tee, *, status="affirming", policy="cvm-v2-test-r1", expired=False, signer="as", gpu_submods=None
+    ):
+        key = serialization.load_pem_private_key((self.pki / (signer + ".key")).read_bytes(), None)
         public = key.public_key().public_numbers()
-        certs = [(self.pki / "as.pem").read_bytes(), Path(self.admin["ca"]).read_bytes()]
+        certs = [
+            (self.pki / (signer + ".pem")).read_bytes(),
+            (
+                (self.directory / "inputs/test-as-ca.pem").read_bytes()
+                if signer == "as"
+                else Path(self.admin["ca"]).read_bytes()
+            ),
+        ]
         jwk = {
             "kty": "EC",
             "crv": "P-256",
@@ -123,6 +132,7 @@ class HttpTests(unittest.TestCase):
                 }
             },
         }
+        claims["submods"].update(gpu_submods or {})
         body = encode(canonical({"alg": "ES256", "jwk": jwk})) + "." + encode(canonical(claims))
         r, s = utils.decode_dss_signature(key.sign(body.encode(), ec.ECDSA(hashes.SHA256())))
         return (body + "." + encode(r.to_bytes(32, "big") + s.to_bytes(32, "big"))).encode()
@@ -132,7 +142,8 @@ class HttpTests(unittest.TestCase):
         pem = tee.private_bytes(
             serialization.Encoding.PEM, serialization.PrivateFormat.TraditionalOpenSSL, serialization.NoEncryption()
         )
-        with memory_file(pem) as private, memory_file(self.token(digest, tee, **claims)) as token:
+        cpu_token = self.token(digest, tee, **claims)
+        with memory_file(pem) as private, memory_file(cpu_token) as token:
             value = run(
                 [
                     self.directory / "inputs/kbs-client",
@@ -169,6 +180,30 @@ class HttpTests(unittest.TestCase):
         for claims in ({"status": "contraindicated"}, {"policy": "default"}, {"expired": True}):
             with self.subTest(claims=claims), self.assertRaises(BuildError):
                 self.retrieve(digest, path, **claims)
+
+    def test_transport_identities_cannot_forge_attestation(self):
+        digest, path, _ = self.create()
+        for signer in ("builder", "admin", "server", "untrusted"):
+            with self.subTest(signer=signer), self.assertRaises(BuildError):
+                self.retrieve(digest, path, signer=signer)
+
+    def test_gpu_keys_require_composite_ear_and_matching_policy(self):
+        from test_gpu_composite import gpu_submod, invalid_submods
+
+        digest, path, secret = self.create()
+        gpu_manifest = dict(self.manifest, contract={"gpu": "nvidia_cc", "gpu_count": 2})
+        composed = compose([gpu_manifest]).encode()
+        api(self.admin, "POST", "resource-policy", canonical({"policy": encode(composed)}))
+        verify_readback(composed, api(self.admin, "GET", "resource-policy"))
+        try:
+            policy = self.manifest["attestation_policy_id"]
+            valid = {f"gpu{i}": gpu_submod(policy, i) for i in range(2)}
+            self.assertEqual(self.retrieve(digest, path, gpu_submods=valid), secret)
+            for submods in invalid_submods(policy, 2):
+                with self.subTest(submods=submods), self.assertRaises(BuildError):
+                    self.retrieve(digest, path, gpu_submods=submods)
+        finally:
+            api(self.admin, "POST", "resource-policy", canonical({"policy": encode(compose([self.manifest]).encode())}))
 
     def test_idempotent_upload_and_conflict(self):
         _, path, secret = self.create()
@@ -210,9 +245,28 @@ class HttpTests(unittest.TestCase):
             request(self.key_service(), "PUT", path, secret)
 
     def test_native_resource_mutation_and_as_replacement_denied(self):
-        _, path, _ = self.create()
-        with self.assertRaises(BuildError):
-            api(self.admin, "POST", "resource/" + path, b"x" * 64)
+        digest, path, secret = self.create()
+        policy_before = api(self.admin, "GET", "resource-policy")
+        for method, expected in (("POST", 403), ("PUT", 405), ("DELETE", 405)):
+            # Preserve the real HTTP code while using the same signed admin
+            # request and TLS verification as production administration.
+            codes = []
+            original_open = urllib.request.OpenerDirector.open
+
+            def observe(opener, *args, **kwargs):
+                try:
+                    return original_open(opener, *args, **kwargs)
+                except urllib.error.HTTPError as error:
+                    codes.append(error.code)
+                    raise
+
+            from unittest.mock import patch
+
+            with patch.object(urllib.request.OpenerDirector, "open", observe), self.assertRaises(BuildError):
+                api(self.admin, method, "resource/" + path, b"x" * 64)
+            self.assertEqual(codes, [expected])
+            self.assertEqual(self.retrieve(digest, path), secret)
+            self.assertEqual(api(self.admin, "GET", "resource-policy"), policy_before)
         with self.assertRaises(BuildError):
             api(
                 self.admin,

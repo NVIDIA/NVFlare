@@ -35,7 +35,6 @@ from urllib.parse import urlparse
 
 from builder.common import digest_file, read_json, require, run, write_json
 from builder.config import contains_private_key
-from builder.evidence import serial_evidence
 from builder.policy import verify_bundle
 from builder.storage import mounted, nbd, snapshot_header
 
@@ -228,12 +227,8 @@ class HardwareTests(unittest.TestCase):
     def test_generic_app_binding_and_exclusive_attachment(self):
         self.boot()
         state = self.ready()
-        evidence = serial_evidence(self.logs[-1].read_text(errors="replace"))
-        self.assertEqual(evidence["measurements"], self.manifest["measurements"])
-        import base64
-
-        report = base64.b64decode(evidence["report"])
-        actual = report[576:624] if self.manifest["platform"] == "intel_tdx" else report[192:224]
+        self.assertEqual(state["measurements"], self.manifest["measurements"])
+        actual = bytes.fromhex(state["binding"])
         expected = bytes.fromhex(read_json(self.vault / "vault_manifest.json")["vault_bind"])
         self.assertEqual(actual, expected + (bytes(16) if len(actual) == 48 else b""))
         self.assertEqual(state["root_overlay_bytes"], self.manifest["contract"]["root_overlay_max_mib"] * 1024 * 1024)
@@ -355,7 +350,10 @@ class HardwareTests(unittest.TestCase):
         self.result(snp_vcek_cache=True, amd_kds_blocked_after_warmup=True)
 
     @unittest.skipUnless(os.environ.get("CVM_GPU_HARDWARE_TESTS") == "1", "Opt in on an NVIDIA CC GPU host")
-    def test_gpu_appraisal_failure_powers_off(self):
+    @unittest.skipUnless(
+        os.environ.get("CVM_BACKEND_LOCAL") == "1", "NRAS fault injection requires an isolated local KBS"
+    )
+    def test_periodic_gpu_denial_powers_off(self):
         self.assertEqual(self.manifest["contract"]["gpu"], "nvidia_cc")
         self.boot()
         self.ready()
@@ -364,11 +362,30 @@ class HardwareTests(unittest.TestCase):
         started = time.monotonic()
         with self.drop_egress(endpoint.port or 443, addresses):
             self.request("/periodic", "POST")
-            self.process.wait(timeout=230)
+            self.process.wait(timeout=350)
         elapsed = time.monotonic() - started
-        self.assertLessEqual(elapsed, 225)
+        self.assertLessEqual(elapsed, 345)
         self.assertIn("Power down", self.logs[-1].read_text(errors="replace"))
-        self.result(gpu_appraisal_failure_poweroff=True, fail_closed_seconds=round(elapsed, 3))
+        self.result(periodic_gpu_denial=True, backend_nras_drop=True, fail_closed_seconds=round(elapsed, 3))
+
+    @unittest.skipUnless(
+        os.environ.get("CVM_GPU_HARDWARE_TESTS") == "1" and os.environ.get("CVM_BACKEND_LOCAL") == "1",
+        "Opt in with GPU hardware and an isolated local KBS",
+    )
+    def test_gpu_backend_unavailable_never_opens_vault(self):
+        self.assertEqual(self.manifest["contract"]["gpu"], "nvidia_cc")
+        endpoint = urlparse(self.manifest["contract"]["gpu_attestation_url"])
+        addresses = sorted({item[4][0] for item in socket.getaddrinfo(endpoint.hostname, endpoint.port or 443)})
+        with self.drop_egress(endpoint.port or 443, addresses):
+            self.boot()
+            self.process.wait(timeout=480)
+        text = self.logs[-1].read_text(errors="replace")
+        self.assertIn("CVM bootstrap failed", text)
+        self.assertIn("Power down", text)
+        # The bootstrap audit is emitted only after authorization and mounting;
+        # an NRAS-unavailable boot must never reach that successful boundary.
+        self.assertNotIn('"decision":"allow"', text.replace(" ", ""))
+        self.result(gpu_backend_outage_key_denial=True, hardware_fault="backend_nras_drop")
 
     def test_reboot_after_writes_and_journal_interruption(self):
         self.boot()
@@ -388,8 +405,7 @@ class HardwareTests(unittest.TestCase):
         self.boot(reverse_scsi=True)
         state = self.ready()
         self.assertEqual(len(set(state["disk_paths"].values())), 5)
-        evidence = serial_evidence(self.logs[-1].read_text(errors="replace"))
-        self.assertEqual(evidence["measurements"], self.manifest["measurements"])
+        self.assertEqual(state["measurements"], self.manifest["measurements"])
         self.stop()
         self.result(reversed_scsi_targets=True, correct_sidecar_mounts=True, disk_paths=state["disk_paths"])
 

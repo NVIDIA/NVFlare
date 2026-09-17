@@ -1,5 +1,5 @@
 # Supply reviewed input files. Example package pins are for Ubuntu 26.04.
-profile_version: cpu-2026.09
+profile_version: cpu-2026.09-r2
 # The normal build invokes site_acceptance from PATH after finalization.
 # This optional field selects a site-specific replacement.
 # acceptance_runner: /usr/local/bin/site_acceptance
@@ -28,7 +28,7 @@ cryptsetup_version: '2:2.8.4-1ubuntu4'
 required_system_packages:
   - python3=3.14.3-0ubuntu2
   - python3-yaml=6.0.3-1build1
-  - python3-cryptography=46.0.5-1ubuntu2
+  - python3-cryptography=46.0.5-1ubuntu2.2
   - initramfs-tools=0.151ubuntu1
   - cryptsetup-bin=2:2.8.4-1ubuntu4
   - nfs-common=1:2.8.5-1ubuntu1
@@ -42,13 +42,13 @@ required_system_packages:
   - linux-image-7.0.0-31-generic=7.0.0-31.31
   - linux-modules-7.0.0-31-generic=7.0.0-31.31
 trustee_commit: a2570329cc33daf9ca16370a1948b5379bb17fbe
-trustee_patch_digest: 9994ed10c83c0a82a31f8d550a1d1114a3ad7ed1e05138a27976d002b7febfa6
+trustee_patch_digest: 94de3a62f7abc62664be7734667bb300fefdc6aec52ae99e4662c03678bc720e
 kbs_url: https://kbs.example.org:8443
 kbs_cert: ../inputs/kbs-ca.pem
 as_public_key: ../inputs/as-public.pem
 token_algorithm: ES256
 token_issuer: null
-attestation_policy_id: cvm-v2-cpu-r1
+attestation_policy_id: cvm-cpu-r2
 attestation_policy: attestation_policy.rego
 # Supplied by the trusted operator; absent TCB approvals fail closed.
 reference_values: ../inputs/approved-tcb-references.json
@@ -63,7 +63,7 @@ platforms:
   intel_tdx:
     enabled: true
     attester: tdx
-    firmware: /usr/share/ovmf/OVMF.inteltdx.ms.fd
+    firmware: ../inputs/OVMF.inteltdx.fd
     kbs_client: ../inputs/kbs-client
     cpu_model: host
     quote_generation: {type: vsock, cid: 2, port: 4050}
