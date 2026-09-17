@@ -533,8 +533,8 @@ vcpus: 4                          # pinned; part of the SNP measurement input / 
 memory_gib: 8
 root_overlay_max_mib: 4096        # optional; defaults to half of memory_gib (4096 here)
 trustee_commit: a2570329cc33daf9ca16370a1948b5379bb17fbe
-trustee_patch_digest: 94de3a62f7abc62664be7734667bb300fefdc6aec52ae99e4662c03678bc720e
-attestation_policy_id: cvm-cpu-r2  # immutable policy id; content digest in manifest
+trustee_patch_digest: 13a32cdb2ac6e3dc6be9738961378bff9c41c32b7729ddb9df3cc9d1eef5ac66
+attestation_policy_id: cvm-cpu-r3  # immutable policy id; content digest in manifest
 vault_storage_profile: luks2-xts-random-hmac-sha256-v1
 vault_header_bytes: 16777216       # fixed logical block range; validated at format/open
 kernel_version: 7.0.0-31-generic   # ONE kernel for both platforms (D4)

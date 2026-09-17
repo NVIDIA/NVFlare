@@ -174,7 +174,7 @@ failed, or incomplete site acceptance report leaves the bundle unapproved.
 The main defaults are:
 
 ```yaml
-profile_version: cpu-2026.09-r2
+profile_version: cpu-2026.09-r3
 guest_release: '26.04'
 gpu: none
 base_image: ../inputs/ubuntu-26.04-server-cloudimg-amd64.img
@@ -248,10 +248,10 @@ The deferred call emits a pending CVM OCI artifact. Copy that `.oci.tar` to its
 matching target host, verify and materialize it, then finalize it:
 
 ```sh
-sudo scripts/cvm_pull cvm_cpu-2026.09-r2_amd_sev_snp.oci.tar \
-  --output /srv/cvm/cvm_cpu-2026.09-r2
+sudo scripts/cvm_pull cvm_cpu-2026.09-r3_amd_sev_snp.oci.tar \
+  --output /srv/cvm/cvm_cpu-2026.09-r3
 sudo scripts/cvm_finalize \
-  /srv/cvm/cvm_cpu-2026.09-r2/amd_sev_snp
+  /srv/cvm/cvm_cpu-2026.09-r3/amd_sev_snp
 ```
 
 Run the site's acceptance matrix there. Then approve its exact report and install
@@ -259,12 +259,12 @@ the bundle's reference values and reusable resource policy:
 
 ```sh
 sudo scripts/admin_approve \
-  /srv/cvm/cvm_cpu-2026.09-r2/amd_sev_snp \
+  /srv/cvm/cvm_cpu-2026.09-r3/amd_sev_snp \
   /srv/cvm/acceptance-report.json
 
 sudo scripts/admin_install \
   /srv/trustee/admin.json \
-  /srv/cvm/cvm_cpu-2026.09-r2/amd_sev_snp
+  /srv/cvm/cvm_cpu-2026.09-r3/amd_sev_snp
 ```
 
 Finalization and approval regenerate the OCI artifact so it includes the final
@@ -279,13 +279,13 @@ profile version, shared contract, platform entry and manifest digest before it
 updates the combined `profile_set.json`:
 
 ```sh
-scripts/cvm_pull cvm_cpu-2026.09-r2_intel_tdx.oci.tar \
-  --output target/final_cvm_cpu-2026.09-r2
-scripts/cvm_pull cvm_cpu-2026.09-r2_amd_sev_snp.oci.tar \
-  --output target/final_cvm_cpu-2026.09-r2 --merge
+scripts/cvm_pull cvm_cpu-2026.09-r3_intel_tdx.oci.tar \
+  --output target/final_cvm_cpu-2026.09-r3
+scripts/cvm_pull cvm_cpu-2026.09-r3_amd_sev_snp.oci.tar \
+  --output target/final_cvm_cpu-2026.09-r3 --merge
 ```
 
-Set `cvm_image: ../target/final_cvm_cpu-2026.09-r2` in
+Set `cvm_image: ../target/final_cvm_cpu-2026.09-r3` in
 `config/vault_build.yml` to use that aggregated folder.
 
 ## 4. Vault Build
@@ -335,7 +335,7 @@ Copy the exact value printed by `docker image inspect` into `image_id` in
 [config/vault_build.yml](config/vault_build.yml):
 
 ```yaml
-cvm_image: ../target/cvm_cpu-2026.09-r2
+cvm_image: ../target/cvm_cpu-2026.09-r3
 docker_archive: ../inputs/application.tar
 image_id: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 # Optional: omit to use every platform available in cvm_image.
@@ -369,7 +369,7 @@ dependencies.
 subdirectories, or a generic CVM OCI registry reference pinned by manifest digest:
 
 ```yaml
-cvm_image: registry.example.org/cvm/cpu-2026.09-r2@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+cvm_image: registry.example.org/cvm/cpu-2026.09-r3@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 ```
 
 `oci://` and `https://` prefixes are also accepted. Use the actual digest printed

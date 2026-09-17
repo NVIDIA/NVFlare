@@ -293,11 +293,11 @@ policy ID in the CVM profile and KBS environment:
 
 ```sh
 sudo install -m 0640 -o root -g cvm-trustee config/attestation_policy.rego \
-  /etc/cvm-trustee/as-policies/opa/cvm-cpu-r2_cpu.rego
+  /etc/cvm-trustee/as-policies/opa/cvm-cpu-r3_cpu.rego
 printf '%s\n' 'package policy' 'import rego.v1' \
   'default executables := 33' 'default hardware := 97' 'default configuration := 36' |
   sudo tee /etc/cvm-trustee/as-policies/opa/default_cpu.rego >/dev/null
-printf '%s\n' 'CVM_AS_POLICY_ID=cvm-cpu-r2' |
+printf '%s\n' 'CVM_AS_POLICY_ID=cvm-cpu-r3' |
   sudo tee /etc/cvm-trustee/environment >/dev/null
 sudo -u cvm-trustee sh -c 'umask 077; test -e /var/lib/cvm-trustee/policy/resource-policy.rego || printf "%s\n" "package policy" "default allow = false" > /var/lib/cvm-trustee/policy/resource-policy.rego'
 sudo -u cvm-trustee sh -c 'umask 077; test -e /var/lib/cvm-trustee/rvps/references.json || printf "[]\n" > /var/lib/cvm-trustee/rvps/references.json'
@@ -315,11 +315,18 @@ a coordinated profile/backend rollout or a separate instance.
 ### GPU profiles: configure the backend verifier and second AS policy
 
 Use a separate instance and a new profile version/policy ID, for example
-`gpu-2026.09-r2` / `cvm-gpu-r2`. This patch explicitly supports **NRAS remote
+`gpu-2026.09-r3` / `cvm-gpu-r3`. This patch explicitly supports **NRAS remote
 verification on the KBS host**. Local RIM/OCSP appraisal is not enabled and there
 is no fallback to guest-side appraisal. NRAS performs RIM/certificate/OCSP
 checks; KBS verifies its signed overall and per-device JWTs, digest linkage,
 issuer, timestamps and the exact RCAR-derived nonce.
+
+NRAS's signed overall token carries `x-nvidia-ver`; its signed `GPU-0` digest
+identifies the detached GPU token. The verifier preserves all detached claims
+and adds the validated version and device-class marker for policy evaluation.
+It rejects contradictory markers if the detached token supplies them. Driver,
+VBIOS, secure-boot, RIM and OCSP claims must actually be present and satisfy the
+strict policy; no successful security claim is synthesized when absent.
 
 Obtain a reviewed NVIDIA JWKS snapshot from
 `https://nras.attestation.nvidia.com/.well-known/jwks.json`, verify its origin
@@ -337,7 +344,7 @@ through the site's trusted channel, and install it read-only. Pin its SHA-256 in
 ```
 
 Add `CVM_NVIDIA_CONFIG=/etc/cvm-trustee/nvidia.json` to the KBS environment.
-Set `CVM_AS_POLICY_ID=cvm-gpu-r2` in that same file. The service account must
+Set `CVM_AS_POLICY_ID=cvm-gpu-r3` in that same file. The service account must
 read both JSON files; keep them root-owned and non-writable by KBS. Allow outbound
 HTTPS to NRAS from the **backend**. Unknown rotated signing keys fail closed;
 review and install a new JWKS pin and restart KBS rather than accepting keys
@@ -347,16 +354,16 @@ Stage 1 renders `gpu_attestation_policy.rego` from the profile's strict
 `gpu_policy.json`. Install it alongside the CPU policy from that exact bundle:
 
 ```sh
-export CVM_BUNDLE=/srv/cvm/bundles/gpu-2026.09-r2/amd_sev_snp
+export CVM_BUNDLE=/srv/cvm/bundles/gpu-2026.09-r3/amd_sev_snp
 sudo install -m 0640 -o root -g cvm-trustee "$CVM_BUNDLE/attestation_policy.rego" \
-  /etc/cvm-trustee/as-policies/opa/cvm-gpu-r2_cpu.rego
+  /etc/cvm-trustee/as-policies/opa/cvm-gpu-r3_cpu.rego
 sudo install -m 0640 -o root -g cvm-trustee "$CVM_BUNDLE/gpu_attestation_policy.rego" \
-  /etc/cvm-trustee/as-policies/opa/cvm-gpu-r2_gpu.rego
-sudo sha256sum /etc/cvm-trustee/as-policies/opa/cvm-gpu-r2_*.rego
+  /etc/cvm-trustee/as-policies/opa/cvm-gpu-r3_gpu.rego
+sudo sha256sum /etc/cvm-trustee/as-policies/opa/cvm-gpu-r3_*.rego
 ```
 
 `CVM_BUNDLE` here is the finalized GPU bundle directory. Record **both** digests
-under `immutable_as_policies` keys `cvm-gpu-r2_cpu` and `cvm-gpu-r2_gpu` in the
+under `immutable_as_policies` keys `cvm-gpu-r3_cpu` and `cvm-gpu-r3_gpu` in the
 deployment receipt. `admin_install` requires both. The pinned EAR broker initializes
 only `default_cpu.rego`; no `default_gpu.rego` is required. A missing selected GPU
 policy fails closed.
@@ -400,13 +407,13 @@ to `inputs/`. Configure these fields in the CVM profile:
 
 ```yaml
 trustee_commit: a2570329cc33daf9ca16370a1948b5379bb17fbe
-trustee_patch_digest: 94de3a62f7abc62664be7734667bb300fefdc6aec52ae99e4662c03678bc720e
+trustee_patch_digest: 13a32cdb2ac6e3dc6be9738961378bff9c41c32b7729ddb9df3cc9d1eef5ac66
 kbs_url: https://kbs.example.org:8443
 kbs_cert: ../inputs/kbs-ca.pem
 as_public_key: ../inputs/as-public.pem
 token_algorithm: ES256
 token_issuer: null
-attestation_policy_id: cvm-cpu-r2
+attestation_policy_id: cvm-cpu-r3
 attestation_policy: attestation_policy.rego
 reference_values: ../inputs/approved-tcb-references.json
 bootstrap_egress: [443, 8443]
@@ -449,7 +456,7 @@ and instance. Renewal is a separate administrator review, not a side effect of
 adding a bundle.
 
 ```sh
-export CVM_BUNDLE=/srv/cvm/bundles/cpu-2026.09-r2/intel_tdx
+export CVM_BUNDLE=/srv/cvm/bundles/cpu-2026.09-r3/intel_tdx
 sudo systemctl stop cvm_trustee_kbs
 sudo -u cvm-trustee python3 /opt/cvm-builder/scripts/trustee_references.py \
   "$CVM_BUNDLE" --store /var/lib/cvm-trustee/rvps/references.json \
@@ -485,11 +492,11 @@ mode 0700 and file mode 0600. The deployment receipt has this structure:
 ```json
 {
   "trustee_commit": "a2570329cc33daf9ca16370a1948b5379bb17fbe",
-  "trustee_patch_digest": "94de3a62f7abc62664be7734667bb300fefdc6aec52ae99e4662c03678bc720e",
+  "trustee_patch_digest": "13a32cdb2ac6e3dc6be9738961378bff9c41c32b7729ddb9df3cc9d1eef5ac66",
   "policy_selection_tested": false,
   "unauthorized_administration_denied": false,
   "immutable_as_policies": {
-    "cvm-cpu-r2_cpu": "REPLACE_WITH_INSTALLED_CPU_POLICY_SHA256"
+    "cvm-cpu-r3_cpu": "REPLACE_WITH_INSTALLED_CPU_POLICY_SHA256"
   }
 }
 ```
@@ -497,7 +504,7 @@ mode 0700 and file mode 0600. The deployment receipt has this structure:
 Obtain the policy hash with:
 
 ```sh
-sudo sha256sum /etc/cvm-trustee/as-policies/opa/cvm-cpu-r2_cpu.rego
+sudo sha256sum /etc/cvm-trustee/as-policies/opa/cvm-cpu-r3_cpu.rego
 ```
 
 The two flags are deliberately false in the sample. Set them to true only after

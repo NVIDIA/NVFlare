@@ -63,7 +63,6 @@ impl Nvidia {
         ensure!(iat <= now + 5 && now.saturating_sub(iat) <= 180 && exp > now && exp > iat,
             "Stale NRAS response");
         ensure!(claims["eat_nonce"].as_str() == Some(nonce), "NRAS nonce mismatch");
-        ensure!(claims["x-nvidia-ver"] == "3.0", "Unexpected NVIDIA claims version");
         Ok(claims)
     }
 
@@ -74,6 +73,7 @@ impl Nvidia {
         let overall = parts[0].as_array().context("Invalid NRAS overall token")?;
         ensure!(overall.len() == 2 && overall[0] == "JWT", "Invalid NRAS token type");
         let overall = self.jwt(overall[1].as_str().context("Missing overall JWT")?, nonce)?;
+        ensure!(overall["x-nvidia-ver"] == "3.0", "Unexpected NVIDIA claims version");
         ensure!(overall["x-nvidia-overall-att-result"] == true, "NRAS overall appraisal denied");
         let devices = parts[1].as_object().context("Invalid NRAS devices")?;
         let digests = overall["submods"].as_object().context("Missing NRAS device digests")?;
@@ -84,10 +84,18 @@ impl Nvidia {
         let expected = json!(["DIGEST", ["SHA-256", hex::encode(Sha256::digest(token.as_bytes()))]]);
         ensure!(digests.get(name) == Some(&expected), "NRAS device digest mismatch");
         let mut claims = self.jwt(token, nonce)?;
-        ensure!(claims["x-nvidia-device-type"] == "gpu"
-            && claims["x-nvidia-gpu-attestation-report-nonce-match"] == true,
+        // NRAS puts the version in the signed overall JWT and identifies the
+        // device class with its signed GPU-0 digest key. Neither field must be
+        // repeated in the detached JWT; reject contradictions if supplied.
+        ensure!(claims.get("x-nvidia-ver").is_none_or(|value| value == "3.0"),
+            "Conflicting NVIDIA device claims version");
+        ensure!(claims.get("x-nvidia-device-type").is_none_or(|value| value == "gpu"),
+            "Conflicting NVIDIA device type");
+        ensure!(claims["x-nvidia-gpu-attestation-report-nonce-match"] == true,
             "NRAS GPU evidence is not bound to the challenge");
         ensure!(claims["ueid"].as_str().is_some_and(|id| !id.is_empty()), "Missing GPU identity");
+        claims["x-nvidia-ver"] = overall["x-nvidia-ver"].clone();
+        claims["x-nvidia-device-type"] = json!("gpu");
         claims["x-nvidia-overall-att-result"] = json!(true);
         claims["verifier"] = json!("nras-v3");
         Ok(claims)
@@ -175,7 +183,7 @@ mod tests {
         let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
         let nonce = hex::encode([0xab; 32]);
         let claims = json!({"iss": "https://nras.test", "iat": now, "nbf": now - 1, "exp": now + 120,
-            "eat_nonce": nonce, "x-nvidia-ver": "3.0", "x-nvidia-device-type": "gpu",
+            "eat_nonce": nonce,
             "x-nvidia-gpu-attestation-report-nonce-match": true, "ueid": "gpu0"});
         (verifier, signer, nonce, claims)
     }
@@ -190,8 +198,11 @@ mod tests {
         if damage == "report-nonce" { device["x-nvidia-gpu-attestation-report-nonce-match"] = json!(false); }
         if damage == "device-expired" { device["exp"] = json!(1); }
         if damage == "device-issuer" { device["iss"] = json!("attacker"); }
+        if damage == "device-version" { device["x-nvidia-ver"] = json!("2.0"); }
+        if damage == "device-type" { device["x-nvidia-device-type"] = json!("switch"); }
         let token = signed(key, &device);
         let mut overall = claims.clone();
+        overall["x-nvidia-ver"] = json!("3.0");
         overall["x-nvidia-overall-att-result"] = json!(damage != "overall");
         overall["submods"] = json!({"GPU-0": ["DIGEST", ["SHA-256", hex::encode(Sha256::digest(token.as_bytes()))]]});
         if damage == "digest" { overall["submods"]["GPU-0"][1][1] = json!("00"); }
@@ -215,12 +226,59 @@ mod tests {
         assert_eq!(verifier.response(&eat(&key, &claims, ""), &nonce).unwrap()["verifier"], "nras-v3");
         assert!(verifier.response(&eat(&key, &claims, ""), "another-transaction").is_err());
         for damage in ["device-nonce", "report-nonce", "device-expired", "device-issuer", "overall",
-            "digest", "overall-nonce", "stale", "future", "missing-nbf", "version", "extra-device", "signature"] {
+            "digest", "overall-nonce", "stale", "future", "missing-nbf", "version", "extra-device", "signature",
+            "device-version", "device-type"] {
             assert!(verifier.response(&eat(&key, &claims, damage), &nonce).is_err(), "accepted {damage}");
         }
         for input in [b"{}".as_slice(), b"null", b"[]", b"[[], {}]"] {
             assert!(verifier.response(input, &nonce).is_err());
         }
+    }
+
+    // Opt in via tests/run_nras_policy_test.py with the pinned policy evaluator.
+    // The fixture follows the documented NRAS v3 detached shape independently
+    // of gpu_policy.json: the overall JWT owns the version, and GPU-0 owns type.
+    #[test]
+    #[ignore = "Requires the CVM fixture and generated policy evaluator inputs"]
+    fn signed_v3_device_claims_reach_generated_policy() {
+        let (verifier, key, nonce, fresh) = fixture();
+        let root = PathBuf::from(std::env::var("CVM_NRAS_POLICY_TEST").unwrap());
+        let mut device: Value = serde_json::from_slice(&std::fs::read(root.join("device.json")).unwrap()).unwrap();
+        for name in ["iss", "iat", "nbf", "exp", "eat_nonce"] {
+            device[name] = fresh[name].clone();
+        }
+        assert!(device.get("x-nvidia-ver").is_none());
+        assert!(device.get("x-nvidia-device-type").is_none());
+        let verified = verifier.response(&eat(&key, &device, ""), &nonce).unwrap();
+        for (name, value) in device.as_object().unwrap() {
+            assert_eq!(verified.get(name), Some(value), "discarded signed claim {name}");
+        }
+        assert_eq!(verified["x-nvidia-ver"], "3.0");
+        assert_eq!(verified["x-nvidia-device-type"], "gpu");
+        let evaluate = |mut claims: Value| {
+            // devices() attaches this checked architecture before TeeClaims;
+            // the EAR broker namespaces the complete claims under Tee::Nvidia.
+            claims["arch"] = json!("HOPPER");
+            std::fs::write(root.join("input.json"), serde_json::to_vec(&json!({"nvidia": claims})).unwrap()).unwrap();
+            let output = std::process::Command::new(std::env::var("CVM_POLICY_EVAL").unwrap())
+                .arg(root.join("policy.rego")).arg(root.join("input.json"))
+                .arg(root.join("data.json")).arg("data.policy.approved").output().unwrap();
+            assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+            String::from_utf8(output.stdout).unwrap().trim() == "true"
+        };
+        assert!(evaluate(verified));
+        for name in ["secboot", "x-nvidia-gpu-driver-version", "x-nvidia-gpu-vbios-version",
+            "x-nvidia-gpu-driver-rim-cert-chain", "x-nvidia-gpu-attestation-report-signature-verified"] {
+            let mut missing = device.clone();
+            missing.as_object_mut().unwrap().remove(name);
+            let verified = verifier.response(&eat(&key, &missing, ""), &nonce).unwrap();
+            assert!(!evaluate(verified), "accepted missing signed claim {name}");
+        }
+        let mut incomplete_ocsp = device.clone();
+        incomplete_ocsp["x-nvidia-gpu-driver-rim-cert-chain"].as_object_mut().unwrap()
+            .remove("x-nvidia-cert-ocsp-nonce-matches");
+        let verified = verifier.response(&eat(&key, &incomplete_ocsp, ""), &nonce).unwrap();
+        assert!(!evaluate(verified), "accepted missing OCSP freshness claim");
     }
 
     #[test]

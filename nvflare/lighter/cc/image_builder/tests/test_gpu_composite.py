@@ -94,18 +94,18 @@ class CompositeGuestTests(unittest.TestCase):
 class GpuAppraisalTests(unittest.TestCase):
     def setUp(self):
         self.policy = json.loads((ROOT / "config/gpu_policy.json").read_text())
-        self.nvidia = copy.deepcopy(self.policy["required-claims"])
+        # Keep the NRAS wire fixture independent of the policy being tested.
+        self.nvidia = json.loads((ROOT / "tests/fixtures/nras_gpu_v3.json").read_text())
         self.nvidia.update(
             {
                 "verifier": "nras-v3",
                 "arch": "HOPPER",
                 "x-nvidia-ver": "3.0",
                 "x-nvidia-overall-att-result": True,
-                "x-nvidia-gpu-driver-version": "fixture-driver",
-                "x-nvidia-gpu-vbios-version": "fixture-vbios",
+                "x-nvidia-device-type": "gpu",
             }
         )
-        self.refs = {"gpu_driver_versions": ["fixture-driver"], "gpu_vbios_versions": ["fixture-vbios"]}
+        self.refs = {"gpu_driver_versions": ["575.28"], "gpu_vbios_versions": ["96.00.AF.00.01"]}
 
     def evaluate(self, claims, refs):
         with tempfile.TemporaryDirectory() as temp:

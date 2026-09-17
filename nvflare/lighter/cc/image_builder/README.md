@@ -73,7 +73,7 @@ sudo ./cvm_build.sh
 
 # Advanced: construct for another platform and finalize there.
 sudo ./cvm_build.sh config/cvm_profile.yml -p amd_sev_snp --defer-measurements
-sudo scripts/cvm_finalize target/cvm_cpu-2026.09-r2/amd_sev_snp
+sudo scripts/cvm_finalize target/cvm_cpu-2026.09-r3/amd_sev_snp
 ```
 
 The builder sends a fixed, source-hashed payload to a plain construction VM. A

@@ -205,3 +205,44 @@ The hardware harness's NRAS fault-injection cases require
 KBS on the same host: the network fault must affect the **backend's** NRAS egress.
 Its backend-outage check is additional coverage, not a substitute for the
 CC-disabled/tampered/replayed/missing-device production acceptance cases.
+
+## 2026-09-17 — NRAS detached-claim compatibility follow-up
+
+A second PR review exposed an assumption in the verifier fixtures: they repeated
+`x-nvidia-ver` and `x-nvidia-device-type` in the detached GPU token. NVIDIA's
+[documented NRAS example](https://docs.nvidia.com/attestation/quick-start-guide/latest/attestation-examples/hopper_single_gpu.html#decoded-nras-token)
+places the version in the signed overall token and identifies the detached token
+through the signed `GPU-0` digest. The corrected fixture reproduced the original
+`Unexpected NVIDIA claims version` rejection before the fix.
+
+The verifier now checks the version on the overall token, preserves every signed
+detached claim, and derives the policy's version/device marker from the verified
+overall token and its GPU digest linkage. Conflicting detached markers still
+fail. Required driver/VBIOS, secure-boot, RIM and OCSP claims are not defaulted.
+The strict policy intentionally rejects older illustrative responses that omit
+its required OCSP freshness or response-validity claims.
+
+The updated boundary patch digest is
+`13a32cdb2ac6e3dc6be9738961378bff9c41c32b7729ddb9df3cc9d1eef5ac66`.
+The default profile/policy advance to `cpu-2026.09-r3` / `cvm-cpu-r3`; GPU
+examples use `gpu-2026.09-r3` / `cvm-gpu-r3`. Rebuild, remeasure and reapprove
+affected bundles. Physical GPU acceptance remains pending.
+
+The reproducible regression signs an independent v3 fixture with disposable
+ES384 keys, verifies it using the shipped Rust verifier, and passes the resulting
+claims to the generated policy using the pinned Rego engine. It checks a positive
+decision and denial for missing secure-boot, driver/VBIOS, RIM, report-signature
+and OCSP-freshness claims. Run it after applying the current Trustee patch and
+building `tests/policy_engine`:
+
+```sh
+python3 tests/run_nras_policy_test.py /path/to/patched-trustee \
+  --policy-eval "$PWD/tests/policy_engine/target/release/cvm-policy-eval"
+```
+
+Both standard verifier tests and this additional verifier-to-policy test passed
+on Linux. The Linux builder suite again passed 136 tests with 31 opt-in skips;
+all 10 isolated live HTTPS tests passed against the rebuilt KBS. Clean-checkout
+patch reproducibility, scoped project style and Python license checks also passed.
+This is a claim-schema and signature/policy test, not a physical GPU attestation
+test.
