@@ -6,10 +6,6 @@ This example demonstrates how to use NVIDIA FLARE with Flower to train an image 
 
 For the complete installation instructions, see [Installation](https://nvflare.readthedocs.io/en/main/installation.html)
 
-```bash
-pip install "nvflare[PT]"
-```
-
 Get the example code from github:
 
 ```

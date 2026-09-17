@@ -12,7 +12,7 @@ For the complete installation instructions, see `Installation <https://nvflare.r
 
 .. code-block:: bash
 
-   pip install "nvflare[PT]"
+   pip install nvflare
 
 
 Get the example code from GitHub:
