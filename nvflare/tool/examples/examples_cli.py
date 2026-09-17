@@ -31,17 +31,18 @@ from nvflare.tool.examples.catalog import load_catalog
 PROVENANCE_FILE = ".nvflare-example.json"
 REPOSITORY = "NVIDIA/NVFlare"
 _REVISION = re.compile(r"[0-9a-f]{40}")
-_NVFLARE_REQUIREMENT = re.compile(r"^\s*nvflare(?:[-_.]+nightly)?(?![-_.a-z0-9])", re.IGNORECASE)
-_PYPROJECT_NVFLARE_REQUIREMENT = re.compile(r'["\']nvflare(?:[-_.]+nightly)?(?![-_.a-z0-9])', re.IGNORECASE)
+_NVFLARE_NAME = r"nvflare(?:[-_.]+nightly)?(?![-_.a-z0-9])"
+_NVFLARE_REQUIREMENT = re.compile(rf"^\s*{_NVFLARE_NAME}", re.IGNORECASE)
+_PYPROJECT_NVFLARE_REQUIREMENT = re.compile(rf"[\"']{_NVFLARE_NAME}", re.IGNORECASE)
 _PYPROJECT_SECTION = re.compile(r"^\s*\[([^]]+)]\s*(?:#.*)?$")
 _PYPROJECT_DEPENDENCIES = re.compile(r"^\s*dependencies\s*=\s*\[")
 _PYPROJECT_ARRAY_END = re.compile(r"]\s*(?:#.*)?$")
 _POETRY_NVFLARE_REQUIREMENT = re.compile(
-    r"""^\s*(?:nvflare(?:[-_.]+nightly)?|"nvflare(?:[-_.]+nightly)?"|'nvflare(?:[-_.]+nightly)?')\s*=""",
+    rf"""^\s*(?:{_NVFLARE_NAME}|"{_NVFLARE_NAME}"|'{_NVFLARE_NAME}')\s*=""",
     re.IGNORECASE,
 )
 _README_NVFLARE_INSTALL = re.compile(
-    r"\b(?:python(?:3(?:\.\d+)?)?\s+-m\s+)?pip(?:3)?\s+install\b[^\n#]*" r"\bnvflare(?:[-_.]+nightly)?(?![-_.a-z0-9])",
+    rf"\b(?:python(?:3(?:\.\d+)?)?\s+-m\s+)?pip(?:3)?\s+install\b[^\n#]*\b{_NVFLARE_NAME}",
     re.IGNORECASE,
 )
 _parsers = {}
@@ -110,6 +111,51 @@ def _load_example_catalog():
     return catalog, errors
 
 
+def _content_error(
+    message="GitHub returned invalid source metadata.", hint="Retry or use the example directly from GitHub."
+):
+    return ExampleError("EXAMPLE_CONTENT_INVALID", message, hint)
+
+
+def _validate_tree_entries(entries, source_path):
+    files = []
+    path_keys = set()
+    for entry in entries:
+        if (
+            not isinstance(entry, dict)
+            or not isinstance(entry.get("type"), str)
+            or not isinstance(entry.get("path"), str)
+        ):
+            raise _content_error()
+        entry_type = entry["type"]
+        entry_mode = entry.get("mode")
+        if entry_type == "tree":
+            continue
+        if entry_type == "commit" or entry_mode in {"120000", "160000"}:
+            raise _content_error(
+                f"The example contains an unsupported symlink or submodule: {entry['path']}.",
+                "Use the example directly from a Git checkout.",
+            )
+        if entry_type != "blob":
+            raise _content_error()
+        relative_parts = entry["path"].split("/")
+        if any(part in {"", ".", ".."} for part in relative_parts):
+            raise _content_error(f"GitHub returned an invalid path for {source_path}.")
+        path_key = tuple(
+            unicodedata.normalize("NFC", unicodedata.normalize("NFC", part).casefold()) for part in relative_parts
+        )
+        if path_key in path_keys:
+            raise _content_error(
+                f"The example contains colliding paths: {entry['path']}.",
+                "Use the example directly from a Git checkout.",
+            )
+        path_keys.add(path_key)
+        files.append((entry, relative_parts))
+    if not files:
+        raise _content_error("GitHub returned no files for the example.")
+    return files
+
+
 def _download_example(revision, source_path, destination):
     encoded_source_path = quote(source_path, safe="/")
     tree_url = f"https://api.github.com/repos/{REPOSITORY}/git/trees/{revision}:{encoded_source_path}?recursive=1"
@@ -134,65 +180,8 @@ def _download_example(revision, source_path, destination):
                     metadata = {}
                     entries = None
                 if metadata.get("truncated") or not isinstance(entries, list) or not entries:
-                    raise ExampleError(
-                        "EXAMPLE_CONTENT_INVALID",
-                        "GitHub returned invalid source metadata.",
-                        "Retry or use the example directly from GitHub.",
-                    ) from None
-            files = []
-            path_keys = set()
-            for entry in entries:
-                if (
-                    not isinstance(entry, dict)
-                    or not isinstance(entry.get("type"), str)
-                    or not isinstance(entry.get("path"), str)
-                ):
-                    raise ExampleError(
-                        "EXAMPLE_CONTENT_INVALID",
-                        "GitHub returned invalid source metadata.",
-                        "Retry or use the example directly from GitHub.",
-                    )
-                entry_type = entry["type"]
-                entry_mode = entry.get("mode")
-                if entry_type == "tree":
-                    continue
-                if entry_type == "commit" or entry_mode in {"120000", "160000"}:
-                    raise ExampleError(
-                        "EXAMPLE_CONTENT_INVALID",
-                        f"The example contains an unsupported symlink or submodule: {entry['path']}.",
-                        "Use the example directly from a Git checkout.",
-                    )
-                if entry_type != "blob":
-                    raise ExampleError(
-                        "EXAMPLE_CONTENT_INVALID",
-                        "GitHub returned invalid source metadata.",
-                        "Retry or use the example directly from GitHub.",
-                    )
-                relative_parts = entry["path"].split("/")
-                if any(part in {"", ".", ".."} for part in relative_parts):
-                    raise ExampleError(
-                        "EXAMPLE_CONTENT_INVALID",
-                        f"GitHub returned an invalid path for {source_path}.",
-                        "Retry or use the example directly from GitHub.",
-                    )
-                path_key = tuple(
-                    unicodedata.normalize("NFC", unicodedata.normalize("NFC", part).casefold())
-                    for part in relative_parts
-                )
-                if path_key in path_keys:
-                    raise ExampleError(
-                        "EXAMPLE_CONTENT_INVALID",
-                        f"The example contains colliding paths: {entry['path']}.",
-                        "Use the example directly from a Git checkout.",
-                    )
-                path_keys.add(path_key)
-                files.append((entry, relative_parts))
-            if not files:
-                raise ExampleError(
-                    "EXAMPLE_CONTENT_INVALID",
-                    "GitHub returned no files for the example.",
-                    "Retry or use the example directly from GitHub.",
-                )
+                    raise _content_error() from None
+            files = _validate_tree_entries(entries, source_path)
             try:
                 destination.mkdir()
             except FileExistsError:

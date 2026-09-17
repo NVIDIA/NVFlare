@@ -53,8 +53,9 @@ def load_catalog(path=None):
             error = "category must be a lowercase name"
         if not error:
             source_path = entry["source_path"]
-            normalized_path = PurePosixPath(source_path).as_posix() if isinstance(source_path, str) else None
-            parts = PurePosixPath(source_path).parts if isinstance(source_path, str) else ()
+            path_value = PurePosixPath(source_path) if isinstance(source_path, str) else None
+            normalized_path = path_value.as_posix() if path_value else None
+            parts = path_value.parts if path_value else ()
             if (
                 len(parts) < 2
                 or parts[0] != "examples"
