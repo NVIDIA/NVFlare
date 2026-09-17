@@ -116,6 +116,11 @@
     "destination_path": "collab/pt_cifar10",
     "category": "advanced"
   },
+  "collab-pt-async": {
+    "source_path": "examples/advanced/collab/pt_async_cifar10",
+    "destination_path": "collab/pt_async_cifar10",
+    "category": "advanced"
+  },
   "custom-auth": {
     "source_path": "examples/advanced/custom_authentication",
     "category": "advanced"
@@ -260,16 +265,34 @@
     "source_path": "examples/advanced/xgboost",
     "category": "advanced"
   },
+  "docker-runtime": {
+    "source_path": "examples/docker",
+    "destination_path": "examples/docker",
+    "category": "deployment"
+  },
   "devops-aws-eks": {
     "source_path": "examples/devops/aws/eks",
+    "destination_path": "aws/eks",
     "category": "deployment"
   },
   "devops-azure-aks": {
     "source_path": "examples/devops/azure/aks",
+    "destination_path": "azure/aks",
     "category": "deployment"
   },
   "devops-gcp-gke": {
     "source_path": "examples/devops/gcp/gke",
+    "destination_path": "gcp/gke",
+    "category": "deployment"
+  },
+  "devops-multicloud": {
+    "source_path": "examples/devops/multicloud",
+    "destination_path": "examples/devops/multicloud",
+    "category": "deployment"
+  },
+  "devops-openshift": {
+    "source_path": "examples/devops/openshift",
+    "destination_path": "examples/devops/openshift",
     "category": "deployment"
   }
 }

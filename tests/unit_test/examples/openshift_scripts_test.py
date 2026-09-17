@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -27,7 +28,7 @@ def _write_prepare_config(tmp_path: Path, **resources: str) -> str:
     env.update(
         {
             "IMAGE": "registry.example.com/nvflare-parent:test",
-            "REPO_ROOT": str(_REPO_ROOT),
+            "EXAMPLE_ROOT": str(_REPO_ROOT / "examples" / "devops" / "openshift"),
             "WORK_DIR": str(tmp_path),
             **resources,
         }
@@ -60,3 +61,37 @@ def test_prepare_config_allows_parent_request_overrides(tmp_path):
 
     assert 'cpu: "1"' in config
     assert 'memory: "4Gi"' in config
+
+
+def test_exported_numpy_job_uses_only_the_downloaded_openshift_example(tmp_path):
+    example = tmp_path / "downloaded" / "examples" / "devops" / "openshift"
+    shutil.copytree(_K8S_COMMON.parent.parent, example)
+    work_dir = tmp_path / "work"
+    env = {
+        **os.environ,
+        "EXAMPLE_ROOT": str(example),
+        "WORK_DIR": str(work_dir),
+        "CLIENTS": "site-1 site-2",
+        "NUM_ROUNDS": "1",
+    }
+
+    subprocess.run(
+        [
+            "bash",
+            "-c",
+            'source "$1"; init_k8s_env false; export_hello_numpy_job "$JOB_DIR"',
+            "--",
+            str(example / "scripts" / "k8s_common.sh"),
+        ],
+        check=True,
+        capture_output=True,
+        env=env,
+        text=True,
+    )
+
+    job = work_dir / "jobs" / "hello-numpy-k8s"
+    assert (job / "meta.json").is_file()
+    assert (job / "app" / "custom" / "numpy_client.py").read_bytes() == (
+        example / "jobs" / "numpy_client.py"
+    ).read_bytes()
+    assert not (tmp_path / "downloaded" / "examples" / "hello-world").exists()

@@ -35,6 +35,11 @@ def test_catalog_entries_have_category_and_source_path_and_exist():
         "source_path": "examples/advanced/collab/pt_cifar10",
         "destination_path": "collab/pt_cifar10",
     }
+    assert catalog["collab-pt-async"] == {
+        "category": "advanced",
+        "source_path": "examples/advanced/collab/pt_async_cifar10",
+        "destination_path": "collab/pt_async_cifar10",
+    }
     for entry in catalog.values():
         assert {"category", "source_path"} <= set(entry) <= {"category", "source_path", "destination_path"}
         assert not entry["source_path"].startswith("examples/tutorials/")
@@ -46,27 +51,80 @@ def test_catalog_entries_have_category_and_source_path_and_exist():
         ), f"{entry['source_path']} contains no example files"
 
 
-def test_catalog_excludes_examples_that_require_files_outside_the_downloaded_subtree():
+def test_catalog_covers_every_maintained_example_collection():
     catalog, _ = load_catalog()
-    source_paths = {entry["source_path"] for entry in catalog.values()}
+    source_paths = {Path(entry["source_path"]) for entry in catalog.values()}
+    assert len(source_paths) == len(catalog)
 
-    assert "examples/advanced/cifar10/pt" in source_paths
-    assert "examples/advanced/collab/pt_cifar10" in source_paths
-    assert "examples/advanced/experiment-tracking" in source_paths
+    split_collections = {
+        Path("examples/hello-world/agent-skills"),
+        Path("examples/advanced/cifar10"),
+        Path("examples/advanced/collab"),
+        Path("examples/advanced/federated-statistics"),
+        Path("examples/advanced/job_api"),
+        Path("examples/advanced/monai"),
+        Path("examples/advanced/multi-gpu"),
+        Path("examples/advanced/vertical_federated_learning"),
+    }
+    excluded = {
+        Path("examples/advanced/finance"),
+        Path("examples/advanced/finance-end-to-end"),
+        Path("examples/advanced/hello-pt-environments"),
+        Path("examples/advanced/nlp-ner"),
+    }
+    assert all((REPO_ROOT / path).is_dir() for path in excluded)
+    expected_source_paths = set()
+    for parent in (Path("examples/hello-world"), Path("examples/advanced")):
+        for collection in (REPO_ROOT / parent).iterdir():
+            relative = collection.relative_to(REPO_ROOT)
+            if (
+                not collection.is_dir()
+                or relative in excluded
+                or not ((collection / "README.md").is_file() or (collection / "README.rst").is_file())
+            ):
+                continue
+            if relative in split_collections:
+                expected_source_paths.update(
+                    child.relative_to(REPO_ROOT)
+                    for child in collection.iterdir()
+                    if child.is_dir() and ((child / "README.md").is_file() or (child / "README.rst").is_file())
+                )
+            else:
+                expected_source_paths.add(relative)
+
+    devops = REPO_ROOT / "examples" / "devops"
+    for collection in devops.iterdir():
+        if not collection.is_dir() or collection.name.startswith("."):
+            continue
+        if collection.name in {"aws", "azure", "gcp"}:
+            expected_source_paths.update(
+                child.relative_to(REPO_ROOT)
+                for child in collection.iterdir()
+                if child.is_dir() and ((child / "README.md").is_file() or (child / "README.rst").is_file())
+            )
+        elif (collection / "README.md").is_file() or (collection / "README.rst").is_file():
+            expected_source_paths.add(collection.relative_to(REPO_ROOT))
+    expected_source_paths.add(Path("examples/docker"))
+
+    # This exact comparison checks both membership and count. A new maintained
+    # example must be cataloged, and a stale catalog entry cannot linger after
+    # its source is removed.
+    assert source_paths == expected_source_paths
+    assert len(catalog) == len(expected_source_paths)
+
+    assert Path("examples/advanced/cifar10/pt") in source_paths
+    assert Path("examples/advanced/collab/pt_cifar10") in source_paths
+    assert Path("examples/advanced/collab/pt_async_cifar10") in source_paths
+    assert Path("examples/advanced/experiment-tracking") in source_paths
     assert (REPO_ROOT / "examples/advanced/experiment-tracking/prepare_data.sh").is_file()
-    assert "examples/hello-world/agent-skills/pytorch-conversion" in source_paths
+    assert Path("examples/hello-world/agent-skills/pytorch-conversion") in source_paths
     assert source_paths.isdisjoint(
         {
-            "examples/advanced/cifar10/pt/cifar10-real-world",
-            "examples/advanced/cifar10/pt/cifar10-sim",
-            "examples/advanced/collab/pt_async_cifar10",
-            "examples/advanced/experiment-tracking/mlflow",
-            "examples/advanced/experiment-tracking/tensorboard",
-            "examples/advanced/experiment-tracking/wandb",
-            "examples/advanced/hello-pt-environments",
-            "examples/docker",
-            "examples/devops/multicloud",
-            "examples/devops/openshift",
+            Path("examples/advanced/cifar10/pt/cifar10-real-world"),
+            Path("examples/advanced/cifar10/pt/cifar10-sim"),
+            Path("examples/advanced/experiment-tracking/mlflow"),
+            Path("examples/advanced/experiment-tracking/tensorboard"),
+            Path("examples/advanced/experiment-tracking/wandb"),
         }
     )
 
@@ -78,6 +136,85 @@ def test_collab_pt_quickstart_uses_downloaded_package_layout():
     assert "python -m pip install -r collab/pt_cifar10/requirements.txt" in readme
     assert "python collab/pt_cifar10/prepare_data.py" in readme
     assert "python -m collab.pt_cifar10.fedavg.job" in readme
+
+
+def test_collab_pt_async_is_standalone_and_uses_downloaded_package_layout():
+    example = REPO_ROOT / "examples" / "advanced" / "collab" / "pt_async_cifar10"
+    readme = (example / "README.md").read_text(encoding="utf-8")
+    job = (example / "job.py").read_text(encoding="utf-8")
+    prepare = (example / "prepare_data.sh").read_text(encoding="utf-8")
+
+    assert "nvflare examples get collab-pt-async" in readme
+    assert "cd collab-pt-async/collab/pt_async_cifar10" in readme
+    assert "from cifar10_data import split_and_save" in job
+    assert "../../cifar10" not in prepare
+    assert (example / "cifar10_data.py").is_file()
+
+
+@pytest.mark.parametrize(
+    "name,source_path,destination_path",
+    [
+        ("devops-aws-eks", "examples/devops/aws/eks", "aws/eks"),
+        ("devops-azure-aks", "examples/devops/azure/aks", "azure/aks"),
+        ("devops-gcp-gke", "examples/devops/gcp/gke", "gcp/gke"),
+    ],
+)
+def test_deployment_downloads_preserve_script_directory_depth(name, source_path, destination_path):
+    catalog, _ = load_catalog()
+    entry = catalog[name]
+    downloaded_root = Path("/downloaded-example")
+    script_directory = downloaded_root / destination_path
+    readme = (REPO_ROOT / source_path / "README.md").read_text(encoding="utf-8")
+    script = (REPO_ROOT / source_path / "create_cluster.sh").read_text(encoding="utf-8")
+
+    assert entry["destination_path"] == destination_path
+    assert script_directory.parents[1] == downloaded_root
+    assert "${SCRIPT_DIR}/../.." in script
+    assert f"nvflare examples get {name}" in readme
+    assert f"cd {name}/{destination_path}" in readme
+
+
+def test_docker_runtime_prepares_revision_matched_build_context():
+    catalog, _ = load_catalog()
+    example = REPO_ROOT / "examples" / "docker"
+    script = (example / "build_docker.sh").read_text(encoding="utf-8")
+    readme = (example / "README.md").read_text(encoding="utf-8")
+
+    assert catalog["docker-runtime"]["destination_path"] == "examples/docker"
+    assert 'nvflare examples revision --dir "$REPO_ROOT"' in script
+    assert 'git -C "$TEMP_CHECKOUT/repository" fetch --quiet --depth=1 origin "$REVISION"' in script
+    assert 'git -C "$TEMP_CHECKOUT/repository" archive FETCH_HEAD' in script
+    assert '"$BUILD_CONTEXT"' in script
+    assert "nvflare examples get docker-runtime" in readme
+    assert "cd docker-runtime/examples/docker" in readme
+
+
+def test_multicloud_prepares_revision_matched_build_context():
+    catalog, _ = load_catalog()
+    example = REPO_ROOT / "examples" / "devops" / "multicloud"
+    script = (example / "build_and_push.py").read_text(encoding="utf-8")
+    readme = (example / "README.md").read_text(encoding="utf-8")
+
+    assert catalog["devops-multicloud"]["destination_path"] == "examples/devops/multicloud"
+    assert '["nvflare", "examples", "revision", "--dir", str(REPO_ROOT)]' in script
+    assert 'f"NVFL_BASE_VERSION={installed_base_version()}"' in script
+    assert "nvflare examples get devops-multicloud" in readme
+    assert "cd devops-multicloud" in readme
+
+
+def test_openshift_download_contains_image_and_job_dependencies():
+    catalog, _ = load_catalog()
+    example = REPO_ROOT / "examples" / "devops" / "openshift"
+    common = (example / "scripts" / "k8s_common.sh").read_text(encoding="utf-8")
+    builder = (example / "scripts" / "build_images.sh").read_text(encoding="utf-8")
+    readme = (example / "README.md").read_text(encoding="utf-8")
+
+    assert catalog["devops-openshift"]["destination_path"] == "examples/devops/openshift"
+    assert "nvflare examples get devops-openshift" in readme
+    assert 'nvflare examples revision --dir "$DOWNLOAD_ROOT"' in builder
+    assert 'client_script = pathlib.Path(example_root) / "jobs" / "numpy_client.py"' in common
+    assert "hello-world/hello-numpy" not in common
+    assert (example / "jobs" / "numpy_client.py").is_file()
 
 
 def test_experiment_tracking_quickstart_uses_downloaded_layout():
@@ -127,6 +264,25 @@ def test_hello_pt_guidance_preserves_revision_for_install_and_environment_follow
     assert "python -m pip install -r requirements.txt" not in advanced_readme
 
 
+def test_hello_lightning_guidance_preserves_installed_distribution():
+    readme = (REPO_ROOT / "examples" / "hello-world" / "hello-lightning" / "README.md").read_text(encoding="utf-8")
+    docs_page = (REPO_ROOT / "docs" / "hello-world" / "hello-lightning" / "index.rst").read_text(encoding="utf-8")
+
+    for text in (readme, docs_page):
+        assert 'python -m pip install "nvflare[PT]"' in text
+        assert 'python -m pip install "nvflare-nightly[PT]"' in text
+        assert 'python -m pip install -e ".[PT]"' in text
+        assert "nvflare examples get hello-lightning" in text
+
+
+def test_tracking_guidance_combines_required_extras():
+    guide = (REPO_ROOT / "docs" / "user_guide" / "nvflare_cli" / "examples_command.rst").read_text(encoding="utf-8")
+
+    assert 'python -m pip install "nvflare[PT,TRACKING]"' in guide
+    assert 'python -m pip install "nvflare-nightly[PT,TRACKING]"' in guide
+    assert 'python -m pip install -e ".[PT,TRACKING]"' in guide
+
+
 @pytest.mark.parametrize(
     "example_name",
     [
@@ -157,9 +313,11 @@ def test_agent_skill_examples_install_skills_from_repository(example_name):
         {"demo": {"category": "test", "source_path": "outside/demo"}},
         {"demo": {"category": "test", "source_path": "examples/../demo"}},
         {"demo": {"category": "test", "source_path": "examples/demo/"}},
+        {"demo": {"category": "test", "source_path": "examples/de\x00mo"}},
         {"demo": {"category": "test", "source_path": "examples/demo", "destination_path": "/demo"}},
         {"demo": {"category": "test", "source_path": "examples/demo", "destination_path": "../demo"}},
         {"demo": {"category": "test", "source_path": "examples/demo", "destination_path": "demo/"}},
+        {"demo": {"category": "test", "source_path": "examples/demo", "destination_path": "de\x00mo"}},
         {"demo": {"source_path": "examples/demo"}},
         {"demo": {"category": "Bad Category", "source_path": "examples/demo"}},
         {

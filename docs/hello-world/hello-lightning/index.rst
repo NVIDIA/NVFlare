@@ -13,27 +13,40 @@ It is recommended to create a virtual environment and run everything within a vi
 NVIDIA FLARE Installation
 -------------------------
 
-For the complete installation instructions, see :doc:`Installation </installation>`. Install the example
-dependencies with:
+For the complete installation instructions, see :doc:`Installation </installation>`. For a released NVFlare
+package, choose the matching command to add its PyTorch extra:
 
 .. code-block:: bash
 
+   # Stable installation
    python -m pip install "nvflare[PT]"
-   python -m pip install -r requirements.txt
 
-get the example code from github:
+   # Nightly installation
+   python -m pip install "nvflare-nightly[PT]"
 
-.. code-block:: text
+Then download the matching example:
+
+.. code-block:: bash
+
+   nvflare examples get hello-lightning
+   cd hello-lightning
+
+To work from source instead, clone NVFlare and install that checkout in editable
+mode before entering the example directory:
+
+.. code-block:: bash
 
    git clone https://github.com/NVIDIA/NVFlare.git
+   cd NVFlare
+   git switch <release branch>
+   python -m pip install -e ".[PT]"
+   cd examples/hello-world/hello-lightning
 
-then navigate to the hello-lightning directory:
+Install the remaining example dependencies from that directory:
 
-.. code-block:: text
+.. code-block:: bash
 
-    cd NVFlare
-    git switch <release branch>
-    cd examples/hello-world/hello-lightning
+   python -m pip install -r requirements.txt
 
 Code Structure
 --------------

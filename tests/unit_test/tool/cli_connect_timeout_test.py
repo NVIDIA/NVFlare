@@ -14,6 +14,8 @@
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 
 def _called_active_session_mock(*mocks):
     called = [mock for mock in mocks if mock.called]
@@ -49,11 +51,12 @@ def test_cli_sets_connect_timeout(monkeypatch):
     mock_set_timeout.assert_called_once_with(7.5)
 
 
-def test_set_connect_timeout_warns_and_uses_default_for_invalid_value(caplog):
+@pytest.mark.parametrize("value", ["not-a-number", 0, -1, float("nan"), float("inf")])
+def test_set_connect_timeout_warns_and_uses_default_for_invalid_value(caplog, value):
     from nvflare.tool import cli_output
 
     cli_output.set_connect_timeout(9.0)
-    cli_output.set_connect_timeout("not-a-number")
+    cli_output.set_connect_timeout(value)
 
     assert cli_output.get_connect_timeout() == 5.0
     assert "invalid CLI connection timeout" in caplog.text

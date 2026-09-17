@@ -3,6 +3,19 @@
 YAML-driven deploy of one NVFlare server + N clients across existing
 Kubernetes clusters.
 
+Download the complete example layout without cloning NVFlare:
+
+```bash
+nvflare examples get devops-multicloud
+cd devops-multicloud
+```
+
+The downloaded directory preserves `examples/devops/multicloud`. Commands in
+this guide therefore work from its root exactly as shown. When
+`build_and_push.py` does not find repository package sources, it reads the
+download provenance and prepares the exact source revision in a temporary
+directory for the image build.
+
 ## Audience And Scope
 
 This example is for NVFlare developers and users who want a simple Kubernetes

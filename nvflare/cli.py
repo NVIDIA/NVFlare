@@ -14,6 +14,7 @@
 
 import argparse
 import json
+import math
 import os
 import sys
 import traceback
@@ -476,6 +477,12 @@ def parse_args(prog_name: str):
     system_parser = sub_cmd.add_parser(CMD_SYSTEM, help="FL system operations (status, shutdown, version, ...)")
     sub_cmd_parsers.update({CMD_SYSTEM: system_parser})
     def_system_cli_parser(system_parser)
+
+    if not math.isfinite(global_args.connect_timeout) or global_args.connect_timeout <= 0:
+        message = "--connect-timeout must be a finite positive number"
+        if global_args.format in {"json", "jsonl"}:
+            _emit_argparse_error_json(_parser, message)
+        _emit_argparse_error_human(_parser, message, exit_code=4)
 
     # Normalize CLI aliases so the handlers dict can use canonical names.
     _CMD_ALIASES = {

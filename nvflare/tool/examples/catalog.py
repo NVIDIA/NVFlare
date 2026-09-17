@@ -63,6 +63,7 @@ def load_catalog(path=None):
             if (
                 len(parts) < 2
                 or parts[0] != "examples"
+                or "\x00" in source_path
                 or any(part in {"", ".", ".."} for part in parts)
                 or normalized_path != source_path
             ):
@@ -77,6 +78,7 @@ def load_catalog(path=None):
             if (
                 not parts
                 or path_value.is_absolute()
+                or "\x00" in destination_path
                 or any(part in {"", ".", ".."} for part in parts)
                 or normalized_path != destination_path
             ):

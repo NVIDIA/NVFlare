@@ -72,6 +72,12 @@ def _destination_exists(destination):
 
 
 def _source_revision(version_info):
+    if version_info.get("dirty"):
+        raise ExampleError(
+            "EXAMPLE_VERSION_DIRTY",
+            "This editable NVFlare checkout contains uncommitted changes, so its exact source revision is unknown.",
+            "Commit or stash the changes, or install an official NVFlare wheel, then retry.",
+        )
     revision = version_info.get("full-revisionid")
     if isinstance(revision, str) and _REVISION.fullmatch(revision):
         return revision

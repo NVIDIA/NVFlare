@@ -384,6 +384,17 @@ def test_unknown_example_and_unknown_revision_are_structured(tmp_path):
     assert error.value.code == "EXAMPLE_VERSION_UNKNOWN"
 
 
+def test_dirty_editable_revision_is_rejected(tmp_path):
+    with pytest.raises(examples_cli.ExampleError) as error:
+        examples_cli.get_example(
+            {**VERSION, "dirty": True}, CATALOG, name="hello-pt", destination=tmp_path / "hello-pt"
+        )
+
+    assert error.value.code == "EXAMPLE_VERSION_DIRTY"
+    assert "uncommitted changes" in str(error.value)
+    assert not (tmp_path / "hello-pt").exists()
+
+
 def test_example_revision_reads_download_provenance(tmp_path):
     provenance = tmp_path / examples_cli.PROVENANCE_FILE
     provenance.write_text(json.dumps({"revision": REVISION}), encoding="utf-8")
@@ -481,6 +492,7 @@ def test_list_json_is_machine_readable(monkeypatch, capsys):
     result = json.loads(capsys.readouterr().out)
     assert result["status"] == "ok"
     listed = result["data"]["examples"]
+    assert len(listed) == len(CATALOG)
     assert [(entry["category"], entry["name"]) for entry in listed] == sorted(
         (entry["category"], entry["name"]) for entry in listed
     )

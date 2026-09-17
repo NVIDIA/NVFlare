@@ -19,6 +19,7 @@ import argparse
 import shlex
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import yaml
@@ -89,6 +90,50 @@ def capture(cmd: list[str]) -> str:
             print(e.stderr, file=sys.stderr, end="")
         raise SystemExit(e.returncode) from e
     return result.stdout
+
+
+def installed_base_version() -> str:
+    output = capture(
+        [
+            sys.executable,
+            "-c",
+            "import re, nvflare; m = re.match(r'[0-9]+\\.[0-9]+\\.[0-9]+', nvflare.__version__); "
+            "print(m.group(0) if m else '')",
+        ]
+    ).strip()
+    if not output:
+        fail("could not determine the installed NVFlare base version")
+    return output
+
+
+def prepare_revision_source() -> tuple[tempfile.TemporaryDirectory, Path]:
+    revision = capture(["nvflare", "examples", "revision", "--dir", str(REPO_ROOT)]).strip()
+    temporary = tempfile.TemporaryDirectory(prefix="nvflare-multicloud-")
+    root = Path(temporary.name)
+    repository = root / "repository"
+    source = root / "source"
+    repository.mkdir()
+    source.mkdir()
+    run(["git", "-C", str(repository), "init", "--quiet"], dry_run=False, quiet=True)
+    run(
+        ["git", "-C", str(repository), "remote", "add", "origin", "https://github.com/NVIDIA/NVFlare.git"],
+        dry_run=False,
+        quiet=True,
+    )
+    run(
+        ["git", "-C", str(repository), "fetch", "--quiet", "--depth=1", "origin", revision],
+        dry_run=False,
+        quiet=True,
+    )
+    archive = subprocess.Popen(["git", "-C", str(repository), "archive", "FETCH_HEAD"], stdout=subprocess.PIPE)
+    try:
+        subprocess.run(["tar", "-x", "-C", str(source)], stdin=archive.stdout, check=True)
+    finally:
+        if archive.stdout:
+            archive.stdout.close()
+    if archive.wait() != 0:
+        fail("could not prepare the revision-matched NVFlare source")
+    return temporary, source
 
 
 def load_config(config_path: Path) -> dict:
@@ -202,6 +247,10 @@ def main() -> int:
     config_path = resolve_path(args.config)
     dockerfile = resolve_path(args.dockerfile)
     context = resolve_path(args.context)
+    temporary = None
+    if args.dockerfile == DEFAULT_DOCKERFILE and args.context == REPO_ROOT and not dockerfile.is_file():
+        temporary, context = prepare_revision_source()
+        dockerfile = context / "docker" / "Dockerfile.parent"
     config = load_config(config_path)
     images = collect_images(config)
     validate_images(images, dry_run=args.dry_run)
@@ -215,13 +264,28 @@ def main() -> int:
         auth_registry(image, dry_run=args.dry_run)
 
     run(
-        ["docker", "build", "--platform", args.platform, "-t", primary, "-f", str(dockerfile), str(context)],
+        [
+            "docker",
+            "build",
+            "--platform",
+            args.platform,
+            "--build-arg",
+            f"NVFL_BASE_VERSION={installed_base_version()}",
+            "-t",
+            primary,
+            "-f",
+            str(dockerfile),
+            str(context),
+        ],
         dry_run=args.dry_run,
     )
     for image in images[1:]:
         run(["docker", "tag", primary, image], dry_run=args.dry_run)
     for image in images:
         run(["docker", "push", image], dry_run=args.dry_run)
+
+    if temporary:
+        temporary.cleanup()
 
     print(f"=== built and pushed {len(images)} tag(s) ===")
     return 0

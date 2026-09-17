@@ -47,10 +47,23 @@ PyTorch support:
    # Editable source installation, run from the NVFlare checkout
    python -m pip install -e ".[PT]"
 
-Replace ``PT`` with another available group such as ``HE``, ``SKLEARN``, or
-``TRACKING`` when the example requires it. Download the example, then follow
-its README for remaining dependencies, data download, preparation, and run
-steps:
+Replace or combine optional groups according to the example. For example,
+experiment tracking with PyTorch requires both groups:
+
+.. code-block:: bash
+
+   # Stable installation
+   python -m pip install "nvflare[PT,TRACKING]"
+
+   # Nightly installation
+   python -m pip install "nvflare-nightly[PT,TRACKING]"
+
+   # Editable source installation, run from the NVFlare checkout
+   python -m pip install -e ".[PT,TRACKING]"
+
+Other examples may use groups such as ``HE`` or ``SKLEARN``. Download the
+example, then follow its README for remaining dependencies, data download,
+preparation, and run steps:
 
 .. code-block:: bash
 

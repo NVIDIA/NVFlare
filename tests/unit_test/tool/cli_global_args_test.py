@@ -13,6 +13,11 @@
 # limitations under the License.
 
 
+import json
+
+import pytest
+
+
 def test_global_args_after_subcommand(monkeypatch):
     from nvflare import cli as cli_mod
 
@@ -70,3 +75,34 @@ def test_cert_init_deploy_version_is_command_option(monkeypatch, tmp_path):
     assert args.sub_command == "cert"
     assert args.cert_sub_command == "init"
     assert args.deploy_version == "01"
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "nan", "inf", "-inf"])
+def test_connect_timeout_requires_finite_positive_value_in_json(monkeypatch, capsys, value):
+    from nvflare import cli as cli_mod
+
+    monkeypatch.setattr(
+        cli_mod.sys,
+        "argv",
+        ["nvflare", "examples", "list", f"--connect-timeout={value}", "--format", "json"],
+    )
+
+    with pytest.raises(SystemExit) as error:
+        cli_mod.parse_args("nvflare")
+
+    assert error.value.code == 4
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["error_code"] == "INVALID_ARGS"
+    assert "finite positive number" in payload["message"]
+
+
+def test_connect_timeout_requires_finite_positive_value_in_human_output(monkeypatch, capsys):
+    from nvflare import cli as cli_mod
+
+    monkeypatch.setattr(cli_mod.sys, "argv", ["nvflare", "examples", "list", "--connect-timeout", "0"])
+
+    with pytest.raises(SystemExit) as error:
+        cli_mod.parse_args("nvflare")
+
+    assert error.value.code == 4
+    assert "finite positive number" in capsys.readouterr().err
