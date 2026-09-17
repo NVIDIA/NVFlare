@@ -17,9 +17,12 @@ Running ``nvflare -h`` shows the current command surface:
 Global options
 ==============
 
-- ``--version`` / ``-V``: print the NVFlare package version; use
-  ``--version revision`` to print its full source Git revision
-- ``--format {txt,json}``: select human-readable output or a JSON envelope
+- ``--version`` / ``-V``: print the installed NVFlare package version.
+  ``--version package`` is the explicit equivalent. Use ``--version revision``
+  to print the full source Git revision embedded in the installation.
+- ``--format {txt,json,jsonl}``: select human-readable output or a JSON
+  envelope. JSON Lines output is supported only by the streaming
+  ``nvflare job monitor`` command; other commands reject ``jsonl``.
 - ``--connect-timeout``: control server connection timeout for remote commands
 
 Human-readable argument errors print command help first, then the specific
