@@ -127,8 +127,9 @@ def test_get_records_downloaded_source_and_requirements(monkeypatch, tmp_path):
             "message": "Preserve the installed NVFlare distribution when setting up this example.",
             "paths": [],
             "hint": (
-                "Install required extras on that same stable, nightly, or editable distribution, "
-                "then follow the README for remaining dependencies."
+                "Skip any README or dependency-file instruction that installs nvflare or nvflare-nightly. "
+                "Add required extras to the same stable, nightly, or editable distribution, then install only "
+                "the remaining dependencies."
             ),
         }
     ]
@@ -177,8 +178,9 @@ def test_missing_root_readme_warns_without_failing(monkeypatch, tmp_path):
             "message": "Preserve the installed NVFlare distribution when setting up this example.",
             "paths": [],
             "hint": (
-                "Install required extras on that same stable, nightly, or editable distribution, "
-                "then follow the README for remaining dependencies."
+                "Skip any README or dependency-file instruction that installs nvflare or nvflare-nightly. "
+                "Add required extras to the same stable, nightly, or editable distribution, then install only "
+                "the remaining dependencies."
             ),
         },
         {

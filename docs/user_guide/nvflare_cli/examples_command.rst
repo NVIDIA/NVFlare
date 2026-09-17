@@ -113,9 +113,10 @@ path.
 
 Every successful download includes the same dependency notice in human and JSON
 output: keep the NVFlare distribution already installed, add required extras to
-that same stable, nightly, or editable distribution as shown above, and follow
-the README for the remaining example dependencies. The command does not try to
-interpret each example's dependency files.
+that same stable, nightly, or editable distribution as shown above, and skip
+any README or dependency-file instruction that installs ``nvflare`` or
+``nvflare-nightly``. Install only the remaining example dependencies. The
+command does not try to interpret each example's dependency files.
 
 If the selected directory has no root README, retrieval still succeeds and
 reports a warning to inspect the downloaded files for instructions.
