@@ -163,17 +163,39 @@ Run these commands from the downloaded `experiment-tracking` directory.
 
 ### 1. Choose and configure a tracking backend
 
-Install the selected backend and follow its README for backend-specific configuration:
+Install only the selected tracking package. These commands leave the installed NVFlare distribution unchanged:
+
+**MLflow**:
+
+```bash
+python -m pip install mlflow
+```
+
+The `hello-lightning-mlflow` variant also requires PyTorch Lightning:
+
+```bash
+python -m pip install pytorch-lightning
+```
+
+**TensorBoard**:
+
+```bash
+python -m pip install tensorboard
+```
+
+**Weights & Biases**:
+
+```bash
+python -m pip install wandb
+wandb login
+```
+
+The backend READMEs provide configuration and result-viewing details. When using a downloaded example, skip their
+**Install Requirements** steps because those requirements may name a different NVFlare version:
 
 - [MLflow](./mlflow/README.md)
 - [TensorBoard](./tensorboard/README.md)
 - [Weights & Biases](./wandb/README.md)
-
-Weights & Biases also requires authentication before running its example:
-
-```bash
-wandb login
-```
 
 ### 2. Download Data
 

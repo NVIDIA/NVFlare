@@ -70,6 +70,11 @@ def test_experiment_tracking_quickstart_uses_downloaded_layout():
     readme = (REPO_ROOT / "examples" / "advanced" / "experiment-tracking" / "README.md").read_text(encoding="utf-8")
 
     assert "not installed by `nvflare examples get`" in readme
+    assert "python -m pip install mlflow" in readme
+    assert "python -m pip install tensorboard" in readme
+    assert "python -m pip install wandb" in readme
+    assert "skip their\n**Install Requirements** steps" in readme
+    assert "pip install -r requirements.txt" not in readme
     assert "./prepare_data.sh" in readme
     assert "cd tensorboard" in readme
     assert "cd wandb" in readme
