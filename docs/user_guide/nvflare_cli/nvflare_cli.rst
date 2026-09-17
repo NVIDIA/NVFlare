@@ -11,15 +11,15 @@ Running ``nvflare -h`` shows the current command surface:
 
 .. code-block:: none
 
-   usage: nvflare [-h] [--version [{package,revision}]] [--format {txt,json,jsonl}]
+   usage: nvflare [-h] [--version [revision]] [--format {txt,json,jsonl}]
                   [--connect-timeout CONNECT_TIMEOUT] ...
 
 Global options
 ==============
 
-- ``--version`` / ``-V``: print the installed NVFlare package version.
-  ``--version package`` is the explicit equivalent. Use ``--version revision``
-  to print the full source Git revision embedded in the installation.
+- ``--version`` / ``-V``: print the installed NVFlare package version. Use
+  ``--version revision`` to print the full source Git revision embedded in the
+  installation.
 - ``--format {txt,json,jsonl}``: select human-readable output or a JSON
   envelope. JSON Lines output is supported only by the streaming
   ``nvflare job monitor`` command; other commands reject ``jsonl``.

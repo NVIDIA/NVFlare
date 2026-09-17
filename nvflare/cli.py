@@ -73,6 +73,7 @@ CMD_EXAMPLES = "examples"
 _JSONL_COMMANDS = {
     (CMD_JOB, "monitor"),
 }
+_PACKAGE_VERSION = "__package_version__"
 
 
 def def_provision_parser(sub_cmd):
@@ -395,9 +396,8 @@ def _build_global_arg_parser():
         "--version",
         "-V",
         nargs="?",
-        const="package",
-        choices=("package", "revision"),
-        metavar="{package,revision}",
+        const=_PACKAGE_VERSION,
+        metavar="revision",
         help="print the NVFlare package version (default) or full source revision",
     )
     parser.add_argument(
@@ -442,7 +442,7 @@ def _normalize_global_args(argv, global_parser):
             continue
         if option in {"--version", "-V"} and not has_inline_value:
             global_args.append(arg)
-            if i + 1 < len(argv) and argv[i + 1] in {"package", "revision"}:
+            if i + 1 < len(argv) and argv[i + 1] == "revision":
                 global_args.append(argv[i + 1])
                 i += 2
             else:
@@ -471,6 +471,8 @@ def parse_args(prog_name: str):
     global_parser = _build_global_arg_parser()
     normalized_argv = _normalize_global_args(sys.argv[1:], global_parser)
     global_args, remaining_after_global = global_parser.parse_known_args(normalized_argv)
+    if global_args.version not in {None, _PACKAGE_VERSION, "revision"}:
+        global_parser.error("argument --version/-V: expected no value or 'revision'")
     _parser = argparse.ArgumentParser(description=prog_name, parents=[global_parser])
     sub_cmd = _parser.add_subparsers(title="commands", metavar="", dest="sub_command")
     sub_cmd_parsers = {}
