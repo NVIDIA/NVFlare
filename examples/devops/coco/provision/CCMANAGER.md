@@ -15,6 +15,31 @@ network connection to Trustee. Token generation has different prerequisites:
 | `generate()` | Protected client inside the CoCo guest | Guest-local AA token API; AA contacts Trustee/KBS when a new attestation token is needed |
 | `verify_for_site(token, authenticated_site)` | Ordinary server or another participant | Local pinned AS public key, signed subject matching the authenticated peer, token claims, and in-memory replay cache; no Trustee/RVPS query |
 
+### Required attestation coverage
+
+`cc_enabled_sites` is the locally provisioned **required set**, not a hint that a
+peer can override. If it includes `server`, registration requires an envelope
+containing exactly NVFlare's authenticated logical root-server identity `server`
+and verifies its token against that identity. This logical name is not the
+certificate DNS name. Secure FL authentication must remain enabled. Generated
+CoCo client-only deployments intentionally omit `server` from this set, so their
+ordinary server still does not need a TEE or a generated token.
+
+Periodic and pre-job validation require verified tokens covering every locally
+configured protected participant. Server discovery supplies routes only: missing
+required sites, duplicate names/routes or a substituted root-server route fail
+closed. A complete set with an invalid token still fails. Ordinary participants
+outside the required set do not acquire an attestation requirement.
+
+The first periodic round waits one configured verification interval plus
+0–20% jitter for coordinated startup; pre-job validation does not wait and cannot
+pass with missing attestations. All required sites must be connected and able to
+attest by that first round and remain available thereafter. An omitted/offline site
+is a validation failure, not an implicit membership removal, and follows the
+existing federation-shutdown policy. Coordinate startup and review the configured
+validation interval; changing federation membership requires trusted
+reprovisioning rather than accepting a shorter server-provided list.
+
 ## Before provisioning
 
 ### Secure-services owner: export the AS signing public key

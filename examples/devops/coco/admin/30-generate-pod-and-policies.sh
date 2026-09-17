@@ -299,13 +299,14 @@ PY
     --yaml-file "${POLICY_WORK_DIR}/pod.yaml"
 
 python3 - "${POLICY_WORK_DIR}" "${IMAGE_REF}" "${APP_COMMAND_JSON}" \
-    "${RUNTIME_CLASS}" "${APP_UID}" "${APP_GID}" "${APP_READ_ONLY_ROOT_FILESYSTEM}" <<'PY'
+    "${RUNTIME_CLASS}" "${APP_UID}" "${APP_GID}" "${APP_READ_ONLY_ROOT_FILESYSTEM}" \
+    "${SCRIPT_DIR}/lib/workload-security-context.py" <<'PY'
 import base64
 import gzip
 import hashlib
 import json
 from pathlib import Path
-import re
+import runpy
 import sys
 import tomllib
 import yaml
@@ -353,16 +354,10 @@ assert pod["spec"]["automountServiceAccountToken"] is False
 assert "volumes" not in pod["spec"] and "volumeMounts" not in c
 assert "ports" not in c and "envFrom" not in c and "args" not in c
 
-for request in ("ExecProcessRequest", "ReadStreamRequest", "WriteStreamRequest", "SetPolicyRequest"):
-    if not re.search(rf"default\s+{request}\s*:?=\s*false", policy):
-        raise SystemExit(f"generated policy does not default-deny {request}")
-if not re.search(r"AllowRequestsFailingPolicy[^\n]*false", policy):
-    raise SystemExit("generated policy does not fail closed")
+runpy.run_path(sys.argv[8])["validate_request_policy"](policy)
 for expected in [image, *command]:
     if json.dumps(expected) not in policy and expected not in policy:
         raise SystemExit(f"generated policy lacks exact value: {expected}")
-if re.search(r'"exec_commands"\s*:\s*\[\s*[^\]]', policy):
-    raise SystemExit("generated policy unexpectedly authorizes an exec command")
 for expected_fix in (
     'p_mount.source != ""',
     'p_mount.source == ""',

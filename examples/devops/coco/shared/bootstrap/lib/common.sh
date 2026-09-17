@@ -39,11 +39,42 @@ need() { command -v "$1" >/dev/null 2>&1 || die "Required command not found: $1"
 as_root() { if ((EUID == 0)); then "$@"; else sudo "$@"; fi; }
 
 prepare_download_dir() {
-  local owner_uid owner_gid
-  owner_uid="${SUDO_UID:-$(id -u)}"
-  owner_gid="${SUDO_GID:-$(id -g)}"
-  as_root install -d -m 0775 "$STATE_DIR/downloads"
-  as_root chown "$owner_uid:$owner_gid" "$STATE_DIR/downloads"
+  local directory="$STATE_DIR/downloads" uid mode
+  [[ $STATE_DIR == /* && $STATE_DIR != / && $STATE_DIR != "$HOME" && $STATE_DIR != /home &&
+     $STATE_DIR != /tmp && $STATE_DIR != /var/tmp && $STATE_DIR != *'/../'* && $STATE_DIR != */.. &&
+     $STATE_DIR != *'/./'* && $STATE_DIR != */. ]] || die 'Unsafe cache state path'
+  # Inspect parents too: a private child can be renamed through a writable
+  # parent. Refuse legacy shared caches instead of trusting their contents.
+  while [[ $directory != / ]]; do
+    [[ ! -L $directory ]] || die "Symlink in cache path: $directory"
+    if [[ -e $directory ]]; then
+      [[ -d $directory ]] || die "Cache parent is not a directory: $directory"
+      uid=$(stat -c %u -- "$directory")
+      mode=$(stat -c %a -- "$directory")
+      [[ $uid == 0 || $uid == "$EUID" || $uid == "${SUDO_UID:-$EUID}" ]] || die "Untrusted cache owner: $directory"
+      if (( (8#$mode & 0022) != 0 )); then
+        # Root-owned sticky /tmp-style ancestors cannot have our child renamed
+        # by other users. Never allow this exception for the state/cache itself.
+        [[ $uid == 0 && $directory != "$STATE_DIR" && $directory != "$STATE_DIR/downloads" ]] &&
+          (( (8#$mode & 01000) != 0 )) || die "Writable cache path: $directory; use a fresh private COCO_STATE_DIR"
+      fi
+    fi
+    directory=$(dirname -- "$directory")
+  done
+  install -d -m 0700 -- "$STATE_DIR" "$STATE_DIR/downloads"
+}
+
+validate_download_path() {
+  local out=$1 uid mode
+  prepare_download_dir
+  [[ $(dirname -- "$out") == "$STATE_DIR/downloads" && ! -L $out ]] || die "Unsafe download path: $out"
+  if [[ -e $out ]]; then
+    [[ -f $out && $(stat -c %h -- "$out") == 1 ]] || die "Download must be a regular, unlinked file: $out"
+    uid=$(stat -c %u -- "$out")
+    mode=$(stat -c %a -- "$out")
+    [[ $uid == 0 || $uid == "$EUID" || $uid == "${SUDO_UID:-$EUID}" ]] || die "Untrusted download owner: $out"
+    (( (8#$mode & 0022) == 0 )) || die "Writable cached artifact: $out"
+  fi
 }
 
 kctl() {
@@ -64,43 +95,53 @@ helmctl() {
 # a verified artifact is also redownloaded whenever its checksum is wrong.
 ensure_download() {
   local url=$1 out=$2 partial
+  validate_download_path "$out"
   [[ -s "$out" ]] && return 0
-  mkdir -p "$(dirname "$out")"
-  partial="${out}.partial.$$"
+  partial=$(mktemp "$STATE_DIR/downloads/.download.XXXXXXXXXX")
   if ! curl -L --fail --silent --show-error "$url" -o "$partial"; then
     rm -f "$partial"
     return 1
   fi
-  mv "$partial" "$out"
+  mv -T -- "$partial" "$out"
 }
 
 ensure_download_verified() {
   local url=$1 sha=$2 out=$3 partial
+  [[ $sha =~ ^[0-9a-fA-F]{64}$ ]] || die 'Invalid artifact SHA-256'
+  validate_download_path "$out"
   if [[ -s "$out" ]]; then
     if echo "$sha  $out" | sha256sum --check --status; then
       return 0
     fi
-    if [[ "${IGNORE_CHECKSUM_MISMATCH:-0}" == 1 ]]; then
-      echo "WARNING: ignoring checksum mismatch for cached artifact $out (expected SHA-256: $sha)" >&2
-      return 0
-    fi
   fi
-  mkdir -p "$(dirname "$out")"
-  partial="${out}.partial.$$"
+  partial=$(mktemp "$STATE_DIR/downloads/.download.XXXXXXXXXX")
   if ! curl -L --fail --silent --show-error "$url" -o "$partial"; then
     rm -f "$partial"
     return 1
   fi
   if ! echo "$sha  $partial" | sha256sum -c -; then
-    if [[ "${IGNORE_CHECKSUM_MISMATCH:-0}" == 1 ]]; then
-      echo "WARNING: ignoring checksum mismatch for downloaded artifact $url (expected SHA-256: $sha)" >&2
-      mv "$partial" "$out"
-      return 0
-    fi
     rm -f "$partial"
     return 1
   fi
-  mv "$partial" "$out"
+  mv -T -- "$partial" "$out"
+}
+
+extract_verified_archive() {
+  local archive=$1 sha=$2 destination=$3
+  [[ $sha =~ ^[0-9a-fA-F]{64}$ ]] || die 'Invalid extraction SHA-256'
+  validate_download_path "$archive"
+  # Verification and extraction consume the SAME root-private snapshot, not a
+  # mutable cache pathname. This also protects a privileged consumer if a cache
+  # file is changed after its initial download verification.
+  as_root bash -c '
+    set -Eeuo pipefail
+    umask 077
+    snapshot=$(mktemp -d /var/tmp/coco-extract.XXXXXXXXXX)
+    trap '\''rm -rf -- "$snapshot"'\'' EXIT
+    cp -- "$1" "$snapshot/archive"
+    printf "%s  %s\n" "$2" "$snapshot/archive" | sha256sum --check --status
+    tar -C "$3" -xzf "$snapshot/archive"
+  ' coco-extract "$archive" "$sha" "$destination"
 }
 
 wait_for() {

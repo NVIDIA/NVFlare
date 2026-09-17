@@ -43,7 +43,7 @@ if [[ ! -x /usr/local/bin/containerd ]] || [[ "$(/usr/local/bin/containerd --ver
   log "Installing containerd ${CONTAINERD_VERSION}"
   archive="$download_dir/containerd-${CONTAINERD_VERSION}-linux-amd64.tar.gz"
   ensure_download_verified "https://github.com/containerd/containerd/releases/download/v${CONTAINERD_VERSION}/containerd-${CONTAINERD_VERSION}-linux-amd64.tar.gz" "$CONTAINERD_SHA256" "$archive"
-  as_root tar -C /usr/local -xzf "$archive"
+  extract_verified_archive "$archive" "$CONTAINERD_SHA256" /usr/local
 fi
 
 log "Installing CNI plugins ${CNI_PLUGINS_VERSION}"
@@ -62,7 +62,10 @@ if ! (cd "$download_dir" && sha256sum -c "$(basename "$cni_archive.sha256")"); t
   fi
 fi
 as_root install -d -m 0755 /opt/cni/bin
-as_root tar -C /opt/cni/bin -xzf "$cni_archive"
+# The upstream checksum was checked above; freeze the verified bytes for the
+# privileged consumer. Independent CNI publisher-key/hash pinning is separate.
+cni_sha=$(sha256sum "$cni_archive" | awk '{print $1}')
+extract_verified_archive "$cni_archive" "$cni_sha" /opt/cni/bin
 
 as_root install -d -m 0755 /etc/containerd /etc/containerd/conf.d
 as_root tee /etc/containerd/config.toml >/dev/null <<'EOF'
@@ -143,7 +146,7 @@ if [[ ! -x /usr/local/bin/helm ]] || [[ "$(/usr/local/bin/helm version --short 2
   log "Installing Helm ${HELM_VERSION}"
   helm_archive="$download_dir/helm-${HELM_VERSION}-linux-amd64.tar.gz"
   ensure_download_verified "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz" "$HELM_SHA256" "$helm_archive"
-  tar -C "$tmp_dir" -xzf "$helm_archive"
+  extract_verified_archive "$helm_archive" "$HELM_SHA256" "$tmp_dir"
   as_root install -m 0755 "$tmp_dir/linux-amd64/helm" /usr/local/bin/helm
 fi
 

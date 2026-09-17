@@ -34,6 +34,7 @@ CONTEXT_KEYS = {
     "seccompProfile",
 }
 CAPABILITY_SETS = ("Ambient", "Bounding", "Effective", "Inheritable", "Permitted")
+DENIED_REQUESTS = ("ExecProcessRequest", "ReadStreamRequest", "WriteStreamRequest", "SetPolicyRequest")
 # Structural checks of the pinned rules, not a general-purpose Rego verifier.
 REQUIRED_GUARDS = (
     "p_oci.Root.Readonly == i_oci.Root.Readonly",
@@ -109,6 +110,58 @@ def read_pod(path):
     return yaml.load(path.read_text(), Loader=UniqueLoader)
 
 
+def validate_request_policy(policy):
+    """Validate effective request settings in the pinned Kata 3.29 policy format.
+
+    This is not an arbitrary-Rego equivalence checker: the generation workflow
+    must still use reviewed rules. A constant default-deny rule alone does not
+    disable a request that has a conditional allow rule.
+    """
+    parts = re.split(r"(?m)^policy_data := ", policy)
+    require(len(parts) == 2, "expected one pinned genpolicy JSON policy_data assignment")
+    rules, raw = parts
+    data = json.loads(raw, object_pairs_hook=unique_object)
+    require(isinstance(data, dict), "policy_data must be an object")
+    defaults = data.get("request_defaults")
+    require(isinstance(defaults, dict), "explicit request_defaults required")
+    for name in DENIED_REQUESTS:
+        require(
+            re.search(rf"(?m)^\s*default\s+{name}\s*:?=\s*false\s*(?:#.*)?$", rules),
+            f"missing default-deny {name}",
+        )
+    for name in ("ReadStreamRequest", "WriteStreamRequest"):
+        require(defaults.get(name) is False, f"request_defaults.{name} must be false")
+    # SetPolicy has no conditional allow rule or settings entry in the pin.
+    # Reject an added rule or a future setting that could enable replacement.
+    require(defaults.get("SetPolicyRequest", False) is False, "SetPolicyRequest must remain disabled")
+    require(
+        len(re.findall(r"(?m)^\s*(?:default\s+)?SetPolicyRequest\b", rules)) == 1,
+        "unexpected SetPolicyRequest rule",
+    )
+    fail_open = re.findall(r"(?m)^\s*(?:default\s+)?AllowRequestsFailingPolicy\b[^\n]*", rules)
+    require(
+        len(fail_open) == 1
+        and re.fullmatch(r"\s*(?:default\s+)?AllowRequestsFailingPolicy\s*:?=\s*false\s*(?:#.*)?", fail_open[0]),
+        "policy must fail closed",
+    )
+    exec_defaults = defaults.get("ExecProcessRequest")
+    require(
+        isinstance(exec_defaults, dict)
+        and set(exec_defaults) == {"allowed_commands", "regex"}
+        and exec_defaults["allowed_commands"] == []
+        and exec_defaults["regex"] == [],
+        "global exec command and regex allowlists must be empty",
+    )
+    containers = data.get("containers")
+    require(isinstance(containers, list) and bool(containers), "container policies required")
+    for container in containers:
+        require(
+            isinstance(container, dict) and container.get("exec_commands") == [],
+            "each container exec_commands allowlist must be explicitly empty",
+        )
+    return rules, data
+
+
 def validate_policy(policy, image, context):
     """Check actual genpolicy OCI data and pinned guard presence before publication.
 
@@ -116,10 +169,7 @@ def validate_policy(policy, image, context):
     requirement, NOT a claim that this guest enforces a seccomp filter.
     """
     expected = validate_context(context)
-    parts = re.split(r"(?m)^policy_data := ", policy)
-    require(len(parts) == 2, "expected one pinned genpolicy JSON policy_data assignment")
-    rules, raw = parts
-    data = json.loads(raw, object_pairs_hook=unique_object)
+    rules, data = validate_request_policy(policy)
     for guard in REQUIRED_GUARDS:
         require(guard in rules, f"missing pinned guest security guard: {guard}")
     for name in CAPABILITY_SETS:

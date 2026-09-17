@@ -256,6 +256,7 @@ class TestCCManager:
         reply = manager._handle_token_refresh_request(new_cell_message({}, {"requester": "server"}))
         issuer.generate.return_value = VALID_TOKEN
         manager.site_name = "server"
+        manager.cc_enabled_sites = ["server", "client1"]
         cell = Mock()
         cell.send_request.return_value = reply
         context.get_engine().get_cell = Mock(return_value=cell)
@@ -482,6 +483,7 @@ class TestCCManager:
     def test_periodic_response_cannot_rename_requested_site(self, cc_test_env, returned_name):
         manager, context, _ = cc_test_env
         manager.site_name = "server"
+        manager.cc_enabled_sites = ["server", "client1"]
         response = Mock()
         response.get_header.return_value = "ok"
         response.payload = {
@@ -496,6 +498,128 @@ class TestCCManager:
             else:
                 with pytest.raises(RuntimeError, match="Failed to collect tokens"):
                     manager._collect_all_site_tokens(context)
+
+    @pytest.mark.parametrize(
+        "payload", [None, {}, {"x": []}, {"client1": []}, {"server": []}, {"server": [], "x": []}, []]
+    )
+    def test_protected_server_requires_exact_identity(self, cc_test_env, payload):
+        manager, _, verifier = cc_test_env
+        context = FLContext()
+        context.set_prop(CC_INFO, payload)
+        with patch.object(manager, "_shutdown_system") as shutdown:
+            manager._validate_server_tokens(context)
+        shutdown.assert_called_once()
+        verifier.verify_for_site.assert_not_called()
+
+    @pytest.mark.parametrize("token,valid", [(VALID_TOKEN, True), (INVALID_TOKEN, False)])
+    def test_protected_server_token_is_bound_to_root_identity(self, cc_test_env, token, valid):
+        manager, _, verifier = cc_test_env
+        context = FLContext()
+        context.set_prop(CC_INFO, {"server": [{CC_TOKEN: token, CC_NAMESPACE: TDX_NAMESPACE}]})
+        with patch.object(manager, "_shutdown_system") as shutdown:
+            manager._validate_server_tokens(context)
+        assert shutdown.called is not valid
+        verifier.verify_for_site.assert_called_once_with(token, "server")
+
+    @pytest.mark.parametrize("payload", [None, {}, {"server": []}])
+    def test_explicitly_ordinary_server_needs_no_token(self, cc_test_env, payload):
+        manager, _, verifier = cc_test_env
+        manager.cc_enabled_sites = ["client1", "client2"]
+        context = FLContext()
+        context.set_prop(CC_INFO, payload)
+        with patch.object(manager, "_shutdown_system") as shutdown:
+            manager._validate_server_tokens(context)
+        shutdown.assert_not_called()
+        verifier.verify_for_site.assert_not_called()
+
+    @pytest.mark.parametrize("sites", [[("client1", "client1")], [("server", "server"), ("client1", "client1")]])
+    def test_server_cannot_omit_locally_required_participants(self, cc_test_env, sites):
+        manager, _, verifier = cc_test_env
+        manager.site_name = "client1"
+        context = Mock(spec=FLContext)
+        cell = context.get_engine().get_cell()
+        cell.send_request.return_value = new_cell_message(
+            {MessageHeaderKey.RETURN_CODE: F3ReturnCode.OK}, {"sites": sites}
+        )
+        with patch.object(manager, "_shutdown_system") as shutdown:
+            assert manager._perform_cross_site_validation(context) is False
+        shutdown.assert_called_once()
+        assert "Missing required CC participants" in shutdown.call_args.args[0]
+        # Only the discovery request was sent; an incomplete set never passes.
+        assert cell.send_request.call_count == 1
+        verifier.verify_for_site.assert_not_called()
+
+    @pytest.mark.parametrize("server_protected", [False, True])
+    def test_complete_periodic_coverage_passes(self, cc_test_env, server_protected):
+        manager, _, verifier = cc_test_env
+        manager.site_name = "client1"
+        manager.cc_enabled_sites = ["client1", "client2"] + (["server"] if server_protected else [])
+        context = Mock(spec=FLContext)
+        cell = context.get_engine().get_cell()
+        tokens = [{CC_TOKEN: VALID_TOKEN, CC_NAMESPACE: TDX_NAMESPACE}]
+        sites = [(name, name) for name in manager.cc_enabled_sites]
+        cell.send_request.side_effect = [
+            new_cell_message({MessageHeaderKey.RETURN_CODE: F3ReturnCode.OK}, {"sites": sites}),
+            *[
+                new_cell_message(
+                    {MessageHeaderKey.RETURN_CODE: F3ReturnCode.OK}, {"site_name": name, "cc_info": tokens}
+                )
+                for name in manager.cc_enabled_sites
+                if name != manager.site_name
+            ],
+        ]
+        with patch.object(manager, "_shutdown_system") as shutdown:
+            assert manager._perform_cross_site_validation(context) is True
+        shutdown.assert_not_called()
+        assert {call.args[1] for call in verifier.verify_for_site.call_args_list} == set(manager.cc_enabled_sites)
+
+    def test_collected_tokens_cannot_omit_required_site(self, cc_test_env):
+        manager, context, _ = cc_test_env
+        own = {"client1": [{CC_TOKEN: VALID_TOKEN, CC_NAMESPACE: TDX_NAMESPACE}]}
+        with (
+            patch.object(manager, "_collect_all_site_tokens", return_value=own),
+            patch.object(manager, "_shutdown_system") as shutdown,
+        ):
+            assert manager._perform_cross_site_validation(context) is False
+        assert "Missing required CC participants" in shutdown.call_args.args[0]
+
+    def test_first_periodic_round_has_bounded_startup_window(self, cc_test_env):
+        manager, context, _ = cc_test_env
+        stop = Mock()
+        stop.wait.return_value = True
+        manager.cross_validation_stop_event = stop
+        with patch("nvflare.app_opt.confidential_computing.cc_manager.random.uniform", return_value=0):
+            manager._cross_site_validation_loop(context)
+        stop.wait.assert_called_once_with(timeout=manager.cross_validation_interval)
+
+    @pytest.mark.parametrize(
+        "sites",
+        [
+            [None],
+            [["client2"]],
+            [["", "client2"]],
+            [("client2", "client2"), ("client2", "client2")],
+            [("server", "client2")],
+            [("client2", "server")],
+        ],
+    )
+    def test_invalid_discovery_routes_are_rejected(self, cc_test_env, sites):
+        manager, context, _ = cc_test_env
+        manager.site_name = "client1"
+        context.get_engine().get_cell = Mock()
+        with patch.object(manager, "_get_all_cc_enabled_sites", return_value=sites):
+            with pytest.raises(RuntimeError):
+                manager._collect_all_site_tokens(context)
+
+    def test_complete_coverage_does_not_accept_invalid_tokens(self, cc_test_env):
+        manager, context, _ = cc_test_env
+        tokens = {name: [{CC_TOKEN: INVALID_TOKEN, CC_NAMESPACE: TDX_NAMESPACE}] for name in manager.cc_enabled_sites}
+        with (
+            patch.object(manager, "_collect_all_site_tokens", return_value=tokens),
+            patch.object(manager, "_shutdown_system") as shutdown,
+        ):
+            assert manager._perform_cross_site_validation(context) is False
+        assert "Cross-site validation failed" in shutdown.call_args.args[0]
 
     def test_generate_and_attach_tokens(self, logger, cc_test_env):
         """Test generating and attaching tokens to FL context."""

@@ -27,7 +27,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 ROLES = ("admin", "service", "coco", "trusted_system")
 GENERATED = {f"{role}/lib/validate-config.sh": "shared/validate-config.sh" for role in ROLES}
-for role in ("admin", "trusted_system"):
+for role in ("admin", "trusted_system", "coco"):
     GENERATED[f"{role}/lib/workload-security-context.py"] = "shared/workload-security-context.py"
 for role in ("coco", "trusted_system"):
     GENERATED[f"{role}/lib/kata-runtime-profile.py"] = "shared/kata-runtime-profile.py"

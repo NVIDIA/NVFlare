@@ -55,3 +55,4 @@ docs/*.pptx
 # New thin wrappers must be included in Git-based role-kit assembly.
 !admin/lib/
 !trusted_system/lib/
+!coco/lib/

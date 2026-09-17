@@ -170,8 +170,14 @@ def test_pod_level_override_rejected(value):
 
 def policy_data(readonly=False):
     return {
+        "request_defaults": {
+            "ReadStreamRequest": False,
+            "WriteStreamRequest": False,
+            "ExecProcessRequest": {"allowed_commands": [], "regex": []},
+        },
         "containers": [
             {
+                "exec_commands": [],
                 "OCI": {
                     "Annotations": {"io.kubernetes.cri.image-name": IMAGE},
                     "Process": {
@@ -180,9 +186,9 @@ def policy_data(readonly=False):
                         "Capabilities": {key: [] for key in API["CAPABILITY_SETS"]},
                     },
                     "Root": {"Readonly": readonly},
-                }
+                },
             }
-        ]
+        ],
     }
 
 
@@ -191,12 +197,112 @@ def policy(data):
     guards = list(API["REQUIRED_GUARDS"]) + [
         f"match_caps(p_caps.{key}, i_caps.{key})" for key in API["CAPABILITY_SETS"]
     ]
+    guards += [f"default {name} := false" for name in API["DENIED_REQUESTS"]]
+    guards += ["default AllowRequestsFailingPolicy := false"]
     return "\n".join(guards) + "\npolicy_data := " + json.dumps(data)
 
 
 @pytest.mark.parametrize("readonly", [False, True])
 def test_generated_policy_matches_context(readonly):
     API["validate_policy"](policy(policy_data(readonly)), IMAGE, context(readonly))
+
+
+@pytest.mark.parametrize("request_name", ["ReadStreamRequest", "WriteStreamRequest"])
+@pytest.mark.parametrize("value", [True, None, 0, "false", "missing"])
+def test_effective_stream_permissions_fail_closed(request_name, value):
+    data = policy_data()
+    if value == "missing":
+        del data["request_defaults"][request_name]
+    else:
+        data["request_defaults"][request_name] = value
+    with pytest.raises(ValueError, match=request_name):
+        API["validate_policy"](policy(data), IMAGE, context())
+
+
+@pytest.mark.parametrize("target", ["allowed_commands", "regex", "container", "second_container"])
+def test_every_exec_allowlist_must_be_empty(target):
+    data = policy_data()
+    if target in ("allowed_commands", "regex"):
+        data["request_defaults"]["ExecProcessRequest"][target] = [".*"]
+    else:
+        if target == "second_container":
+            data["containers"].append(copy.deepcopy(data["containers"][0]))
+        data["containers"][-1]["exec_commands"] = [["sh"]]
+    with pytest.raises(ValueError, match="exec"):
+        API["validate_request_policy"](policy(data))
+
+
+@pytest.mark.parametrize(
+    "change", ["set_policy", "fail_open", "commented_default", "missing_defaults", "duplicate_defaults"]
+)
+def test_request_policy_structure_fails_closed(change):
+    data = policy_data()
+    value = policy(data)
+    if change == "set_policy":
+        value = "SetPolicyRequest if { true }\n" + value
+    elif change == "fail_open":
+        value = value.replace("AllowRequestsFailingPolicy := false", "AllowRequestsFailingPolicy := true")
+    elif change == "commented_default":
+        value = value.replace("default ReadStreamRequest", "# default ReadStreamRequest")
+    elif change == "missing_defaults":
+        del data["request_defaults"]
+        value = policy(data)
+    else:
+        value = value.replace('"request_defaults":', '"request_defaults": {}, "request_defaults":', 1)
+    with pytest.raises(ValueError):
+        API["validate_request_policy"](value)
+
+
+@pytest.mark.parametrize("role", ["admin", "coco"])
+@pytest.mark.parametrize("stream_enabled", [False, True])
+def test_actual_role_policy_gate_checks_stream_settings(tmp_path, role, stream_enabled):
+    pytest.importorskip("tomllib", reason="deployment entrypoints require Python 3.11+")
+    import re
+
+    import yaml
+
+    data = policy_data()
+    data["request_defaults"]["ReadStreamRequest"] = stream_enabled
+    data["containers"][0]["OCI"]["Process"]["Args"] = ["python3"]
+    # Structural fixtures only; no claim of executing Rego in a guest.
+    mount_guards = '\np_mount.source != ""\np_mount.source == ""\ni_storage.driver in {"blk", "scsi"}\nexpect_root_path == i_storage.mount_point\n'
+    raw = '[data]\n"policy.rego" = ' + "'''\n" + mount_guards + policy(data) + "\n'''\n"
+    value = pod()
+    value["metadata"] = {
+        "name": "review",
+        "annotations": {
+            "io.katacontainers.config.hypervisor.cc_init_data": base64.b64encode(gzip.compress(raw.encode())).decode()
+        },
+    }
+    value["spec"].update(
+        {
+            "hostNetwork": False,
+            "hostPID": False,
+            "hostIPC": False,
+            "restartPolicy": "Never",
+            "automountServiceAccountToken": False,
+            "enableServiceLinks": False,
+        }
+    )
+    value["spec"]["containers"][0].update(
+        {"stdin": False, "tty": False, "command": ["python3"], "imagePullPolicy": "Always"}
+    )
+    helper = ROOT / role / "lib/workload-security-context.py"
+    if role == "admin":
+        source = (ROOT / "admin/30-generate-pod-and-policies.sh").read_text()
+        blocks = re.findall(r"<<'PY'\n(.*?)\nPY", source, re.S)
+        code = next(b for b in blocks if "Pod and generated agent-policy invariants verified" in b)
+        (tmp_path / "pod.yaml").write_text(yaml.safe_dump(value))
+        args = [tmp_path, IMAGE, '["python3"]', "kata-qemu-nvidia-gpu-snp", "65532", "65532", "false", helper]
+    else:
+        source = (ROOT / "coco/50-launch-handoff.sh").read_text()
+        code = re.findall(r"<<'PY'\n(.*?)\nPY", source, re.S)[0]
+        (tmp_path / "pod.json").write_text(json.dumps(value))
+        args = [tmp_path / "pod.json", "kata-qemu-nvidia-gpu-snp", "registry.example.invalid", helper]
+    result = subprocess.run([sys.executable, "-c", code, *map(str, args)], capture_output=True, text=True)
+    assert (result.returncode == 0) is (not stream_enabled), result.stderr
+    if stream_enabled:
+        assert "ReadStreamRequest must be false" in result.stderr
 
 
 @pytest.mark.parametrize(
@@ -280,7 +386,7 @@ def test_final_handoff_cannot_omit_policy():
     assert '--pod "${OUTPUT_DIR}/pod.yaml" --require-policy' in (ROOT / "admin/40-create-handoffs.sh").read_text()
 
 
-@pytest.mark.parametrize("role", ["admin", "trusted_system"])
+@pytest.mark.parametrize("role", ["admin", "trusted_system", "coco"])
 def test_shared_helper_is_materialized_in_standalone_kit(tmp_path, role):
     kits = runpy.run_path(str(ROOT / "role_kits.py"))
     target = f"{role}/lib/workload-security-context.py"

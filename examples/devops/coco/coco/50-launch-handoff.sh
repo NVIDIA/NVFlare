@@ -24,16 +24,19 @@ ACTUAL_SHA256="$(sha256sum "${POD_FILE}" | awk '{print $1}')"
 POD_JSON="$(mktemp)"
 trap 'rm -f "${POD_JSON}"' EXIT
 kctl create --dry-run=client --validate=false -f "${POD_FILE}" -o json > "${POD_JSON}"
-python3 - "${POD_JSON}" "${RUNTIME_CLASS}" "${REGISTRY_HOST}" <<'PY'
+python3 - "${POD_JSON}" "${RUNTIME_CLASS}" "${REGISTRY_HOST}" \
+    "${SCRIPT_DIR}/lib/workload-security-context.py" <<'PY'
 import base64
 import gzip
 import json
 from pathlib import Path
 import re
+import runpy
 import sys
+import tomllib
 
 pod = json.loads(Path(sys.argv[1]).read_text())
-runtime, registry = sys.argv[2:]
+runtime, registry = sys.argv[2:4]
 if pod.get("kind") != "Pod" or pod.get("apiVersion") != "v1":
     raise SystemExit("handoff must contain exactly one v1 Pod")
 spec = pod.get("spec", {})
@@ -99,18 +102,15 @@ try:
     initdata = gzip.decompress(base64.b64decode(annotation, validate=True)).decode()
 except Exception as exc:
     raise SystemExit(f"invalid embedded confidential init-data: {exc}")
-for request in ("ExecProcessRequest", "ReadStreamRequest", "WriteStreamRequest", "SetPolicyRequest"):
-    if not re.search(rf"default\s+{request}\s*:?=\s*false", initdata):
-        raise SystemExit(f"embedded policy does not default-deny {request}")
-if not re.search(r"AllowRequestsFailingPolicy[^\n]*false", initdata):
-    raise SystemExit("embedded policy is not fail-closed")
+policy = tomllib.loads(initdata)["data"]["policy.rego"]
+runpy.run_path(sys.argv[4])["validate_request_policy"](policy)
 for expected_fix in (
     'p_mount.source != ""',
     'p_mount.source == ""',
     'i_storage.driver in {"blk", "scsi"}',
     'expect_root_path == i_storage.mount_point',
 ):
-    if expected_fix not in initdata:
+    if expected_fix not in policy:
         raise SystemExit(
             f"embedded policy lacks CVE-2026-77176 workaround: {expected_fix}"
         )

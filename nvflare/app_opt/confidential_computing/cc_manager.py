@@ -233,9 +233,15 @@ class CCManager(FLComponent):
 
     def _validate_server_tokens(self, fl_ctx: FLContext):
         """Validate the server's CC info during registration."""
+        # FL authenticates the root server before AFTER_CLIENT_REGISTER. Its
+        # logical CC identity is "server", not a peer-supplied envelope key or
+        # the deployment's certificate DNS name (see CCBuilder).
+        server_name = FQCN.ROOT_SERVER
+        if server_name not in self.cc_enabled_sites:
+            return  # An explicitly ordinary server does not need attestation.
         server_cc_info = fl_ctx.get_prop(CC_INFO)
-        if not server_cc_info:
-            msg = "No server CC info!"
+        if not isinstance(server_cc_info, dict) or set(server_cc_info) != {server_name}:
+            msg = "CC info must name exactly the authenticated root server"
             self.logger.error(msg)
             self._shutdown_system(msg, fl_ctx)
             return
@@ -352,6 +358,10 @@ class CCManager(FLComponent):
                 self.logger.error("No tokens collected for validation")
                 self._shutdown_system("No tokens collected for validation", fl_ctx)
                 return False
+
+            missing = set(self.cc_enabled_sites) - set(all_tokens)
+            if missing:
+                raise RuntimeError(f"Missing required CC participants: {sorted(missing)}")
 
             # Validate all tokens
             err = self._validate_participants_tokens(all_tokens)
@@ -480,11 +490,13 @@ class CCManager(FLComponent):
         my_thread = threading.current_thread()
         stop_event = self.cross_validation_stop_event
 
-        # Add random jitter (0-20% of interval) to avoid thundering herd
-        # This prevents all sites from validating at exactly the same time
+        # Allow one configured interval for the required federation to start.
+        # Pre-job validation remains immediate, so this bootstrap window never
+        # authorizes a job with missing attestations. Add jitter to avoid a herd.
         jitter = random.uniform(0, self.cross_validation_interval * 0.2)
-        self.logger.info(f"Cross-site validation thread starting with {jitter:.1f}s jitter")
-        if stop_event.wait(timeout=jitter):
+        initial_delay = self.cross_validation_interval + jitter
+        self.logger.info(f"First periodic cross-site validation in {initial_delay:.1f}s")
+        if stop_event.wait(timeout=initial_delay):
             self.logger.info("Cross-site validation stopped before first run")
             return
 
@@ -527,8 +539,28 @@ class CCManager(FLComponent):
 
         # Step 2: Get list of all sites (exclude self)
         all_sites = self._get_all_cc_enabled_sites(fl_ctx)
+        # Discovery supplies routes, never the attestation requirement. In
+        # particular, a server must not remove itself or another required peer.
+        if not isinstance(all_sites, list) or any(
+            not isinstance(site, (list, tuple))
+            or len(site) != 2
+            or any(not isinstance(value, str) or not value for value in site)
+            for site in all_sites
+        ):
+            raise RuntimeError("Invalid CC participant discovery response")
+        names = [name for _, name in all_sites]
+        routes = [fqcn for fqcn, _ in all_sites]
+        if len(set(names)) != len(names) or len(set(routes)) != len(routes):
+            raise RuntimeError("Duplicate CC participant names or routes")
+        if any((name == FQCN.ROOT_SERVER) != (fqcn == FQCN.ROOT_SERVER) for fqcn, name in all_sites):
+            raise RuntimeError("CC root-server route/identity mismatch")
+        missing = set(self.cc_enabled_sites) - {self.site_name} - set(names)
+        if missing:
+            raise RuntimeError(f"Missing required CC participants: {sorted(missing)}")
         # use FQCN
-        other_sites = [(fqcn, name) for fqcn, name in all_sites if name != self.site_name]
+        other_sites = [
+            (fqcn, name) for fqcn, name in all_sites if name != self.site_name and name in self.cc_enabled_sites
+        ]
 
         if not other_sites:
             self.logger.info("No other sites for validation, only this site")
