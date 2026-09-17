@@ -182,6 +182,8 @@ def test_docker_runtime_prepares_revision_matched_build_context():
 
     assert catalog["docker-runtime"]["destination_path"] == "examples/docker"
     assert 'nvflare examples revision --dir "$REPO_ROOT"' in script
+    assert "$REPO_ROOT/.nvflare-example.json" in script
+    assert 'version = json.load(f).get("nvflare_version")' in script
     assert 'git -C "$TEMP_CHECKOUT/repository" fetch --quiet --depth=1 origin "$REVISION"' in script
     assert 'git -C "$TEMP_CHECKOUT/repository" archive FETCH_HEAD' in script
     assert '"$BUILD_CONTEXT"' in script
@@ -196,8 +198,9 @@ def test_multicloud_prepares_revision_matched_build_context():
     readme = (example / "README.md").read_text(encoding="utf-8")
 
     assert catalog["devops-multicloud"]["destination_path"] == "examples/devops/multicloud"
-    assert '["nvflare", "examples", "revision", "--dir", str(REPO_ROOT)]' in script
-    assert 'f"NVFL_BASE_VERSION={installed_base_version()}"' in script
+    assert 'PROVENANCE_FILE = ".nvflare-example.json"' in script
+    assert "revision, nvflare_base_version = downloaded_source_info()" in script
+    assert 'f"NVFL_BASE_VERSION={nvflare_base_version}"' in script
     assert "nvflare examples get devops-multicloud" in readme
     assert "cd devops-multicloud" in readme
 
@@ -212,6 +215,8 @@ def test_openshift_download_contains_image_and_job_dependencies():
     assert catalog["devops-openshift"]["destination_path"] == "examples/devops/openshift"
     assert "nvflare examples get devops-openshift" in readme
     assert 'nvflare examples revision --dir "$DOWNLOAD_ROOT"' in builder
+    assert "$DOWNLOAD_ROOT/.nvflare-example.json" in builder
+    assert 'version = json.load(f).get("nvflare_version")' in builder
     assert 'client_script = pathlib.Path(example_root) / "jobs" / "numpy_client.py"' in common
     assert "hello-world/hello-numpy" not in common
     assert (example / "jobs" / "numpy_client.py").is_file()

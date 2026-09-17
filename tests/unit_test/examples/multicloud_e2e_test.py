@@ -41,6 +41,59 @@ def _load_verify_module():
     )
 
 
+def _load_build_module():
+    return _load_module(
+        "multicloud_build_and_push",
+        os.path.join(_repo_root(), "examples", "devops", "multicloud", "build_and_push.py"),
+    )
+
+
+def test_downloaded_build_dry_run_uses_provenance_without_fetching(monkeypatch, tmp_path, capsys):
+    build = _load_build_module()
+    revision = "a" * 40
+    (tmp_path / ".nvflare-example.json").write_text(
+        json.dumps({"revision": revision, "nvflare_version": "2.9.0.dev42"}), encoding="utf-8"
+    )
+    config = tmp_path / "all-clouds.yaml"
+    config.write_text(
+        "participants:\n  - {name: server, cloud: gcp}\n"
+        "clouds:\n  gcp:\n    prepare:\n      parent:\n        docker_image: registry.example.com/nvflare:test\n",
+        encoding="utf-8",
+    )
+    default_dockerfile = tmp_path / "docker" / "Dockerfile.parent"
+    monkeypatch.setattr(build, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(build, "DEFAULT_DOCKERFILE", default_dockerfile)
+    monkeypatch.setattr(
+        build,
+        "parse_args",
+        lambda: SimpleNamespace(
+            config=config,
+            dockerfile=default_dockerfile,
+            context=tmp_path,
+            platform="linux/amd64",
+            dry_run=True,
+        ),
+    )
+    monkeypatch.setattr(
+        build,
+        "prepare_revision_source",
+        lambda revision: pytest.fail("dry-run must not fetch or prepare source"),
+    )
+    monkeypatch.setattr(
+        build,
+        "installed_base_version",
+        lambda: pytest.fail("downloaded examples must use the provenance version"),
+    )
+
+    assert build.main() == 0
+
+    output = capsys.readouterr().out
+    assert f"would prepare NVFlare source revision {revision}" in output
+    assert "NVFL_BASE_VERSION=2.9.0" in output
+    assert "<revision-matched-nvflare-source>" in output
+    assert set(tmp_path.iterdir()) == {tmp_path / ".nvflare-example.json", config}
+
+
 def _validate_args(tmp_path, log_message, num_rounds=1, job_type="numpy"):
     download_json = tmp_path / "download.json"
     logs_json = tmp_path / "logs.json"

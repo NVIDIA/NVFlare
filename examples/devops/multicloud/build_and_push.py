@@ -16,6 +16,8 @@
 from __future__ import annotations
 
 import argparse
+import json
+import re
 import shlex
 import subprocess
 import sys
@@ -29,6 +31,9 @@ DEVOPS_ROOT = SCRIPT_DIR.parent
 REPO_ROOT = DEVOPS_ROOT.parent.parent
 DEFAULT_CONFIG = SCRIPT_DIR / "all-clouds.yaml"
 DEFAULT_DOCKERFILE = REPO_ROOT / "docker" / "Dockerfile.parent"
+PROVENANCE_FILE = ".nvflare-example.json"
+REVISION_PATTERN = re.compile(r"[0-9a-f]{40}", re.IGNORECASE)
+BASE_VERSION_PATTERN = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
 
 
 def parse_args() -> argparse.Namespace:
@@ -92,22 +97,31 @@ def capture(cmd: list[str]) -> str:
     return result.stdout
 
 
+def base_version(version: object) -> str:
+    match = BASE_VERSION_PATTERN.match(version) if isinstance(version, str) else None
+    if not match:
+        fail(f"could not determine the NVFlare base version from {version!r}")
+    return match.group(0)
+
+
 def installed_base_version() -> str:
-    output = capture(
-        [
-            sys.executable,
-            "-c",
-            "import re, nvflare; m = re.match(r'[0-9]+\\.[0-9]+\\.[0-9]+', nvflare.__version__); "
-            "print(m.group(0) if m else '')",
-        ]
-    ).strip()
-    if not output:
-        fail("could not determine the installed NVFlare base version")
-    return output
+    version = capture([sys.executable, "-c", "import nvflare; print(nvflare.__version__)"]).strip()
+    return base_version(version)
 
 
-def prepare_revision_source() -> tuple[tempfile.TemporaryDirectory, Path]:
-    revision = capture(["nvflare", "examples", "revision", "--dir", str(REPO_ROOT)]).strip()
+def downloaded_source_info() -> tuple[str, str]:
+    provenance_path = REPO_ROOT / PROVENANCE_FILE
+    try:
+        provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        fail(f"could not read download provenance {provenance_path}: {e}")
+    revision = provenance.get("revision") if isinstance(provenance, dict) else None
+    if not isinstance(revision, str) or not REVISION_PATTERN.fullmatch(revision):
+        fail(f"download provenance contains an invalid revision: {revision!r}")
+    return revision, base_version(provenance.get("nvflare_version"))
+
+
+def prepare_revision_source(revision: str) -> tuple[tempfile.TemporaryDirectory, Path]:
     temporary = tempfile.TemporaryDirectory(prefix="nvflare-multicloud-")
     root = Path(temporary.name)
     repository = root / "repository"
@@ -249,8 +263,15 @@ def main() -> int:
     context = resolve_path(args.context)
     temporary = None
     if args.dockerfile == DEFAULT_DOCKERFILE and args.context == REPO_ROOT and not dockerfile.is_file():
-        temporary, context = prepare_revision_source()
+        revision, nvflare_base_version = downloaded_source_info()
+        if args.dry_run:
+            context = Path("<revision-matched-nvflare-source>")
+            print(f"would prepare NVFlare source revision {revision} at {context}")
+        else:
+            temporary, context = prepare_revision_source(revision)
         dockerfile = context / "docker" / "Dockerfile.parent"
+    else:
+        nvflare_base_version = installed_base_version()
     config = load_config(config_path)
     images = collect_images(config)
     validate_images(images, dry_run=args.dry_run)
@@ -270,7 +291,7 @@ def main() -> int:
             "--platform",
             args.platform,
             "--build-arg",
-            f"NVFL_BASE_VERSION={installed_base_version()}",
+            f"NVFL_BASE_VERSION={nvflare_base_version}",
             "-t",
             primary,
             "-f",

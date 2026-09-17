@@ -18,6 +18,21 @@ if [[ ! -d "$BUILD_CONTEXT/nvflare" || ! -f "$BUILD_CONTEXT/setup.py" ]]; then
         exit 1
     }
     REVISION="$(nvflare examples revision --dir "$REPO_ROOT")"
+    if [[ -z "${NVFL_BASE_VERSION:-}" ]]; then
+        NVFL_BASE_VERSION="$(python3 - "$REPO_ROOT/.nvflare-example.json" <<'PY'
+import json
+import re
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as f:
+    version = json.load(f).get("nvflare_version")
+match = re.match(r"[0-9]+\.[0-9]+\.[0-9]+", version or "")
+if not match:
+    raise SystemExit(f"invalid nvflare_version in download provenance: {version!r}")
+print(match.group(0))
+PY
+)"
+    fi
     TEMP_CHECKOUT="$(mktemp -d "${TMPDIR:-/tmp}/nvflare-docker.XXXXXX")"
     mkdir "$TEMP_CHECKOUT/repository" "$TEMP_CHECKOUT/source"
     git -C "$TEMP_CHECKOUT/repository" init --quiet
