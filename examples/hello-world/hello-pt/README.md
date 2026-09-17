@@ -258,7 +258,24 @@ deterministic quickstart and its tested defaults are defined by `job.py`.
 
 ## Continue to POC and Production
 
-After completing the simulation, continue with the
-[advanced environment-continuity example](../../advanced/hello-pt-environments/README.md)
-to run the same learning application in a local POC or an already-running production deployment. That example also
-covers experiment tracking, full cross-site evaluation, external-process execution, and memory tuning.
+The advanced environment-continuity example reuses files from this example, so
+it must run from a full NVFlare checkout. If you are already using a source
+checkout, continue in `examples/advanced/hello-pt-environments`.
+
+If you downloaded this standalone directory with `nvflare examples get`, use
+its recorded revision to retrieve the matching source layout:
+
+```bash
+NVFLARE_REVISION=$(nvflare examples revision)
+printf 'Guide: https://github.com/NVIDIA/NVFlare/tree/%s/examples/advanced/hello-pt-environments\n' \
+  "$NVFLARE_REVISION"
+git clone https://github.com/NVIDIA/NVFlare.git ../nvflare-source
+git -C ../nvflare-source checkout "$NVFLARE_REVISION"
+cd ../nvflare-source/examples/advanced/hello-pt-environments
+```
+
+Keep using the same revision-matched NVFlare installation and `PT` extra from
+the beginner example. Then follow that directory's README to run the same
+learning application in a local POC or an already-running production
+deployment. It also covers experiment tracking, full cross-site evaluation,
+external-process execution, and memory tuning.

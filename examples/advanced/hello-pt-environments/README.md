@@ -13,12 +13,19 @@ cd examples/hello-world/hello-pt
 python job.py
 ```
 
-Then enter this directory and install the matching NVFlare 2.10 dependencies:
+If you started from a source checkout, install that checkout with its PyTorch
+extra before entering this directory:
 
 ```bash
-cd ../../advanced/hello-pt-environments
-python -m pip install -r requirements.txt
+cd /path/to/NVFlare
+python -m pip install -e ".[PT]"
+cd examples/advanced/hello-pt-environments
 ```
+
+If you arrived from a standalone `nvflare examples get hello-pt` download,
+keep using the revision-matched NVFlare installation and `PT` extra already in
+that environment. Do not install this directory's `requirements.txt` over a
+nightly or editable NVFlare installation.
 
 ## Compare the three environments
 

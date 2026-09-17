@@ -94,6 +94,23 @@ def test_huggingface_guidance_preserves_installed_distribution():
     assert "nvflare" not in requirements.casefold()
 
 
+def test_hello_pt_guidance_preserves_revision_for_install_and_environment_follow_up():
+    example_readme = (REPO_ROOT / "examples" / "hello-world" / "hello-pt" / "README.md").read_text(encoding="utf-8")
+    advanced_readme = (REPO_ROOT / "examples" / "advanced" / "hello-pt-environments" / "README.md").read_text(
+        encoding="utf-8"
+    )
+    docs_page = (REPO_ROOT / "docs" / "hello-world" / "hello-pt" / "index.rst").read_text(encoding="utf-8")
+
+    assert 'python -m pip install -e ".[PT]"' in docs_page
+    assert 'python -m pip install "nvflare[PT]"' not in docs_page
+    assert "NVFLARE_REVISION=$(nvflare examples revision)" in example_readme
+    assert "tree/%s/examples/advanced/hello-pt-environments" in example_readme
+    assert 'git -C ../nvflare-source checkout "$NVFLARE_REVISION"' in example_readme
+    assert "../../advanced/hello-pt-environments/README.md" not in example_readme
+    assert 'python -m pip install -e ".[PT]"' in advanced_readme
+    assert "python -m pip install -r requirements.txt" not in advanced_readme
+
+
 @pytest.mark.parametrize(
     "example_name",
     [
