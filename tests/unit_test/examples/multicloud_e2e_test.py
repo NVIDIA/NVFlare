@@ -111,13 +111,10 @@ def test_downloaded_build_dry_run_uses_provenance_without_fetching(monkeypatch, 
         ),
     )
     monkeypatch.setattr(build, "prepare_revision_source", lambda _: pytest.fail("dry-run fetched source"))
-    monkeypatch.setattr(build, "installed_base_version", lambda: pytest.fail("dry-run used the active installation"))
-
     assert build.main() == 0
 
     output = capsys.readouterr().out
     assert f"would prepare NVFlare source revision {revision}" in output
-    assert "NVFL_BASE_VERSION=2.9.0" in output
     assert set(tmp_path.iterdir()) == {tmp_path / ".nvflare-example.json", config}
 
 

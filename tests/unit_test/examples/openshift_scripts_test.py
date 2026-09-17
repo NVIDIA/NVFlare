@@ -111,7 +111,6 @@ python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["revision"])' "
 set -euo pipefail
 if [[ "$1" == build ]]; then
   context="${!#}"
-  [[ "$*" == *"NVFL_BASE_VERSION=2.10.0"* ]]
   test "$(git -C "$context" rev-parse HEAD)" = "$EXPECTED_REVISION"
   (cd "$context" && python3 -c "import versioneer; assert not versioneer.get_versions()['error']")
 fi

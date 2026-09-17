@@ -25,21 +25,6 @@ if [[ ! -d "$BUILD_CONTEXT/nvflare" || ! -f "$BUILD_CONTEXT/docker/Dockerfile.pa
     exit 1
   }
   REVISION="$(nvflare examples revision --dir "$DOWNLOAD_ROOT")"
-  if [[ -z "${NVFL_BASE_VERSION:-}" ]]; then
-    NVFL_BASE_VERSION="$(python3 - "$DOWNLOAD_ROOT/.nvflare-example.json" <<'PY'
-import json
-import re
-import sys
-
-with open(sys.argv[1], encoding="utf-8") as f:
-    version = json.load(f).get("nvflare_version")
-match = re.match(r"[0-9]+\.[0-9]+\.[0-9]+", version or "")
-if not match:
-    raise SystemExit(f"invalid nvflare_version in download provenance: {version!r}")
-print(match.group(0))
-PY
-)"
-  fi
   TEMP_SOURCE="$(mktemp -d "${TMPDIR:-/tmp}/nvflare-openshift.XXXXXX")"
   git clone --quiet --filter=blob:none --no-checkout \
     "${NVFL_SOURCE_REPOSITORY:-https://github.com/NVIDIA/NVFlare.git}" "$TEMP_SOURCE/source"
@@ -48,17 +33,7 @@ PY
   BUILD_CONTEXT="$TEMP_SOURCE/source"
 fi
 
-if [[ -z "${NVFL_BASE_VERSION:-}" ]]; then
-  NVFL_BASE_VERSION="$(python3 -c 'import re, nvflare; m = re.match(r"[0-9]+\.[0-9]+\.[0-9]+", nvflare.__version__); print(m.group(0) if m else "")')"
-fi
-[[ -n "$NVFL_BASE_VERSION" ]] || {
-  echo "Unable to determine NVFL_BASE_VERSION; set it explicitly and retry." >&2
-  exit 1
-}
-
-"$CONTAINER_TOOL" build --build-arg "NVFL_BASE_VERSION=$NVFL_BASE_VERSION" \
-  -t "$PARENT_IMAGE" -f "$BUILD_CONTEXT/docker/Dockerfile.parent" "$BUILD_CONTEXT"
-"$CONTAINER_TOOL" build --build-arg "NVFL_BASE_VERSION=$NVFL_BASE_VERSION" \
-  -t "$WORKLOAD_IMAGE" -f "$BUILD_CONTEXT/docker/Dockerfile.job" "$BUILD_CONTEXT"
+"$CONTAINER_TOOL" build -t "$PARENT_IMAGE" -f "$BUILD_CONTEXT/docker/Dockerfile.parent" "$BUILD_CONTEXT"
+"$CONTAINER_TOOL" build -t "$WORKLOAD_IMAGE" -f "$BUILD_CONTEXT/docker/Dockerfile.job" "$BUILD_CONTEXT"
 "$CONTAINER_TOOL" push "$PARENT_IMAGE"
 "$CONTAINER_TOOL" push "$WORKLOAD_IMAGE"
