@@ -337,7 +337,7 @@ def handle_examples_cmd(args):
         )
 
     connect_timeout = get_connect_timeout()
-    if not math.isfinite(connect_timeout) or connect_timeout <= 0:
+    if key == "get" and (not math.isfinite(connect_timeout) or connect_timeout <= 0):
         output_error_message(
             "INVALID_ARGS",
             "--connect-timeout must be a finite positive number.",

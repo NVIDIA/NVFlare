@@ -40,15 +40,16 @@ def test_catalog_covers_every_maintained_example_collection():
     catalog = load_catalog()
     source_paths = {Path(entry["source_path"]) for entry in catalog.values()}
     assert len(source_paths) == len(catalog)
-    tracked_files = {
-        Path(path)
-        for path in subprocess.run(
+    try:
+        tracked_output = subprocess.run(
             ["git", "-C", str(REPO_ROOT), "ls-files", "--", "examples"],
             check=True,
             capture_output=True,
             text=True,
-        ).stdout.splitlines()
-    }
+        ).stdout
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        pytest.skip("catalog coverage requires an NVFlare Git checkout")
+    tracked_files = {Path(path) for path in tracked_output.splitlines()}
     tracked_readme_dirs = {path.parent for path in tracked_files if path.name in {"README.md", "README.rst"}}
 
     split_collections = {

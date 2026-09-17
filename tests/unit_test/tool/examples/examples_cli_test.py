@@ -550,6 +550,16 @@ def test_connect_timeout_requires_finite_positive_value(monkeypatch, capsys, val
         assert "finite positive number" in output.err
 
 
+def test_offline_command_ignores_connect_timeout(monkeypatch, capsys):
+    from nvflare import cli
+
+    monkeypatch.setattr("sys.argv", ["nvflare", "examples", "list", "--connect-timeout=0"])
+
+    cli.run("nvflare")
+
+    assert "HELLO WORLD" in capsys.readouterr().out
+
+
 def test_human_output_points_to_readme(monkeypatch, capsys, tmp_path):
     from nvflare import cli
 
