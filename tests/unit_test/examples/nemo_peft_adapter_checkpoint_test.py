@@ -286,7 +286,6 @@ def test_adapter_checkpoint_module_remains_independent_of_nvflare_imports():
 def test_independent_fp32_fedavg_matches_three_unequal_clients_for_three_rounds():
     import torch
 
-    verify = _load_example_module("verify_federated_run")
     from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
 
     global_state = {"layer.lora_A.weight": torch.zeros((2,), dtype=torch.float32)}
@@ -299,8 +298,10 @@ def test_independent_fp32_fedavg_matches_three_unequal_clients_for_three_rounds(
         for site_idx, (state, weight) in enumerate(zip(client_states, weights), start=1):
             helper.add(state, weight, f"site-{site_idx}", round_idx)
         global_state = helper.get_result()
-        report = verify.verify_aggregate(client_states, weights, global_state)
-        assert report["max_abs_error"] == 0.0
+        expected = sum(
+            state["layer.lora_A.weight"].float() * weight for state, weight in zip(client_states, weights)
+        ) / sum(weights)
+        assert torch.equal(global_state["layer.lora_A.weight"], expected)
     assert torch.equal(global_state["layer.lora_A.weight"], torch.full((2,), 2.25))
 
 

@@ -7,7 +7,7 @@ NVFlare API surface:
 - `automodel_peft_client.py` uses explicit NVFlare Client API calls: `flare.init()`, `flare.receive()`, and
   `flare.send()`.
 - The server uses an example-local `PTFileModelPersistor` extension with an adapter-only PyTorch checkpoint, so it
-  does not instantiate the base language model and keeps every round aggregate for verification.
+  does not instantiate the base language model and keeps every round aggregate for inspection.
 
 The default fine-tuning target is `nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16`, the small local "Edge" Nano variant. This
 keeps the example practical on a single high-memory GPU while staying in the Nemotron 3 family. For larger Nano 30B-A3B
@@ -275,47 +275,8 @@ python job.py \
 
 Use `--backend=mock` for a CPU/static smoke of NVFlare adapter exchange only. This does not run NeMo AutoModel.
 
-### Lightning H100 validation
-
-Run the complete staged validation from a retained `tmux` session on the H100 host:
-
-```bash
-tmux new -s nvflare-lightning35
-CHECKOUT_DIR=/path/to/NVFlare \
-  RUN_ROOT=/path/to/validation-output \
-  ./integration/nemo/examples/peft/run_h100_lightning35.sh
-```
-
-The runner pins `nvcr.io/nvidia/nemo-automodel:26.08`, records the resolved image digest, creates a dedicated model
-cache, resolves one model/tokenizer revision, installs the mounted NVFlare checkout, selects one idle GPU, and runs the
-stages sequentially. It stops when a required gate fails. If the two-step smoke runs out of memory, it retries that
-workload with activation checkpointing; a second failure is recorded as a single-GPU feasibility failure.
-
-The runner requires a clean checkout. The documented Financial PhraseBank inputs, generated site split, and `models/`
-outputs are ignored by the example's `.gitignore`; other non-ignored checkout changes still stop the run.
-
-The cache normally lives below the timestamped run directory. To resume after a runner failure without downloading the
-pinned snapshot again, set `CACHE_ROOT` to the previous attempt's `cache/huggingface` directory. The model and tokenizer
-revision checks still run before training.
-
-The runner preserves client adapters and manifests, every server round aggregate, exact-label evaluation output,
-commands, package versions, exit codes, timing logs, and GPU telemetry under a timestamped directory in
-`RUN_ROOT` (or `/tmp/nvflare/` by default). `verify_federated_run.py` independently computes every aggregate in FP32
-using the actual optimizer-step weights. The final acceptance check requires both seeds to lower held-out validation
-response-token loss and their mean final test Macro-F1 to equal or exceed the base model. Intermediate rounds evaluate
-validation only; only the predetermined final round is evaluated on test.
-
-The smoke reload gate requires identical accuracy, Macro-F1, confusion matrix, prediction counts, and response-token
-count across two clean native loads. It allows an absolute response-token-loss difference of at most `5e-4` for
-non-bit-exact Transformer Engine reductions.
-
-Docker access must work before launching. The runner reports a blocked prerequisite and exits without changing
-`/var/run/docker.sock` ownership or permissions. `run_h100_nano_regression.sh` supplies the separate two-client,
-two-round Nano regression in its documented `26.04` image.
-
 Nano preserves its native adapter dtype during exchange by default. Add `--fp32_adapter_exchange` to a Nano `job.py`
-run when the server must accumulate adapters in FP32, such as an independently verified model-comparison campaign.
-Lightning exchange is always FP32.
+run when server-side FP32 accumulation is desired. Lightning exchange is always FP32.
 
 ## Adapter Continuity Across Rounds
 
