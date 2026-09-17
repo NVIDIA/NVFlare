@@ -55,5 +55,27 @@ Legacy mode-0775 caches are refused without modifying their contents. Set
 under the operator's private home**, then rerun bootstrap to download and verify
 fresh artifacts. Do not copy old cache contents or merely chmod a potentially
 tampered cache. Existing services and recovery records are not deleted by this
-migration. This does not add independent publisher authentication for CNI or the
-Kubernetes repository signing key; those are separate supply-chain review items.
+migration.
+
+### Pinned CNI release
+
+Both `coco/config.env.example` and `trusted_system/bootstrap/config.env.example`
+pin the linux-amd64 CNI archive using `CNI_PLUGINS_VERSION` and
+`CNI_PLUGINS_SHA256`. Stage 10 requires a 64-hex digest before installing packages,
+checks downloads against that configured pin, and checks the private extraction
+snapshot against the **same pin**. It does not fetch or trust a checksum sidecar
+at installation time, derive the expected hash from downloaded bytes, or allow
+a checksum-mismatch bypass.
+
+The v1.8.0 pin was checked against the
+[official release](https://github.com/containernetworking/plugins/releases/tag/v1.8.0)
+checksum, GitHub release-asset digest, and the downloaded archive's SHA-256.
+These checks agree but are not independent publisher-signature authentication;
+the reviewed configuration is the installation trust anchor. For upgrades,
+review the new artifact and its provenance, update version and digest together
+in **both templates**, and propagate them to each private `config.env`. Existing
+configurations must add the reviewed pin; missing or malformed pins fail closed.
+Never replace a pin merely to silence an unexpected checksum mismatch.
+
+Independent authentication of the Kubernetes repository signing key remains a
+separate supply-chain review item.

@@ -5,6 +5,7 @@ TEMPLATE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/templates" && pwd)"
 # shellcheck source=lib/common.sh
 source "$SCRIPT_DIR/lib/common.sh"
 load_config
+[[ ${CNI_PLUGINS_SHA256:-} =~ ^[0-9a-fA-F]{64}$ ]] || die "Set CNI_PLUGINS_SHA256 to the reviewed release digest in $CONFIG_FILE before installing"
 require_root_or_sudo
 
 tmp_dir="$(mktemp -d)"
@@ -49,23 +50,9 @@ fi
 log "Installing CNI plugins ${CNI_PLUGINS_VERSION}"
 cni_name="cni-plugins-linux-amd64-${CNI_PLUGINS_VERSION}.tgz"
 cni_archive="$download_dir/$cni_name"
-ensure_download "https://github.com/containernetworking/plugins/releases/download/${CNI_PLUGINS_VERSION}/$cni_name" "$cni_archive"
-ensure_download "https://github.com/containernetworking/plugins/releases/download/${CNI_PLUGINS_VERSION}/$cni_name.sha256" "$cni_archive.sha256"
-if ! (cd "$download_dir" && sha256sum -c "$(basename "$cni_archive.sha256")"); then
-  if [[ "$IGNORE_CHECKSUM_MISMATCH" == 1 ]]; then
-    echo "WARNING: ignoring CNI plugin checksum mismatch for $cni_archive" >&2
-  else
-    rm -f "$cni_archive" "$cni_archive.sha256"
-    ensure_download "https://github.com/containernetworking/plugins/releases/download/${CNI_PLUGINS_VERSION}/$cni_name" "$cni_archive"
-    ensure_download "https://github.com/containernetworking/plugins/releases/download/${CNI_PLUGINS_VERSION}/$cni_name.sha256" "$cni_archive.sha256"
-    (cd "$download_dir" && sha256sum -c "$(basename "$cni_archive.sha256")")
-  fi
-fi
+ensure_download_verified "https://github.com/containernetworking/plugins/releases/download/${CNI_PLUGINS_VERSION}/$cni_name" "$CNI_PLUGINS_SHA256" "$cni_archive"
 as_root install -d -m 0755 /opt/cni/bin
-# The upstream checksum was checked above; freeze the verified bytes for the
-# privileged consumer. Independent CNI publisher-key/hash pinning is separate.
-cni_sha=$(sha256sum "$cni_archive" | awk '{print $1}')
-extract_verified_archive "$cni_archive" "$cni_sha" /opt/cni/bin
+extract_verified_archive "$cni_archive" "$CNI_PLUGINS_SHA256" /opt/cni/bin
 
 as_root install -d -m 0755 /etc/containerd /etc/containerd/conf.d
 as_root tee /etc/containerd/config.toml >/dev/null <<'EOF'
