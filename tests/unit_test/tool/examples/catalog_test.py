@@ -83,6 +83,17 @@ def test_experiment_tracking_quickstart_uses_downloaded_layout():
     assert "<framework>/jobs/<job_name>/code" not in readme
 
 
+def test_huggingface_guidance_preserves_installed_distribution():
+    example = REPO_ROOT / "examples" / "hello-world" / "hello-huggingface"
+    readme = (example / "README.md").read_text(encoding="utf-8")
+    requirements = (example / "requirements.txt").read_text(encoding="utf-8")
+
+    assert 'python -m pip install "nvflare[PT]"' in readme
+    assert 'python -m pip install "nvflare-nightly[PT]"' in readme
+    assert 'python -m pip install -e ".[PT]"' in readme
+    assert "nvflare" not in requirements.casefold()
+
+
 @pytest.mark.parametrize(
     "example_name",
     [

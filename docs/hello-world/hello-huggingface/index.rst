@@ -12,11 +12,23 @@ Install NVFLARE and Dependencies
 --------------------------------
 
 For complete installation instructions, see :doc:`Installation </installation>`.
-Install NVFLARE and the example dependencies:
+Install the PyTorch extra on the same NVFLARE distribution that supplied this example:
 
 .. code-block:: bash
 
+   # Stable installation
    python -m pip install "nvflare[PT]"
+
+   # Nightly installation
+   python -m pip install "nvflare-nightly[PT]"
+
+   # Editable installation, run from the NVFlare checkout
+   python -m pip install -e ".[PT]"
+
+Then install the remaining example dependencies from the example directory:
+
+.. code-block:: bash
+
    python -m pip install -r requirements.txt
 
 Code Structure
