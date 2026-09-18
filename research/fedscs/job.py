@@ -1,4 +1,4 @@
-# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2026, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,17 +16,18 @@
 
 import os
 
+from src.fedscs_aggregator import FedSCSAggregator
+from src.model import SimpleCNN
+
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.client.config import TransferType
 from nvflare.recipe import SimEnv
-
-from src.fedscs_aggregator import FedSCSAggregator
-from src.model import SimpleCNN
 
 
 def main():
     """Create and execute the FedSCS job."""
     job_dir = os.path.dirname(os.path.abspath(__file__))
+    data_dir = os.path.join(job_dir, "data")
 
     # Create the server-side model used by FedAvgRecipe.
     model = SimpleCNN()
@@ -44,12 +45,15 @@ def main():
         max_update_norm=max_update_norm,
     )
 
+    # Five clients are used in this example to provide a peer group
+    # for the FedSCS consensus calculation.
     recipe = FedAvgRecipe(
         name="fedscs",
         min_clients=5,
         num_rounds=10,
         model=model,
         train_script=os.path.join(job_dir, "client.py"),
+        train_args=f"--data_dir {data_dir}",
         aggregator=aggregator,
         params_transfer_type=TransferType.DIFF,
     )

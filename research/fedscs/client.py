@@ -18,14 +18,14 @@ import argparse
 import copy
 import os
 
-import nvflare.client as flare
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from nvflare.app_common.abstract.fl_model import ParamsType
 from src.model import SimpleCNN
 from torch.utils.data import DataLoader, TensorDataset
 
+import nvflare.client as flare
+from nvflare.app_common.abstract.fl_model import ParamsType
 
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -120,7 +120,7 @@ def evaluate(model, data_loader, criterion):
             correct += (predictions == labels).sum().item()
 
     if total == 0:
-        raise ValueError("Evaluation data loader is empty. " "Check the dataset preparation.")
+        raise ValueError("Evaluation data loader is empty. Check the dataset preparation.")
 
     return total_loss / total, correct / total
 
@@ -158,7 +158,10 @@ def compute_model_diff(local_model, global_model):
 
 def compute_update_norm(model_diff):
     """Compute the L2 norm of a model DIFF update."""
-    squared_norm = torch.tensor(0.0, dtype=torch.float64)
+    squared_norm = torch.tensor(
+        0.0,
+        dtype=torch.float64,
+    )
 
     for name, value in model_diff.items():
         tensor = value.detach().to(dtype=torch.float64)
@@ -209,19 +212,14 @@ def train_one_round(
             total_batches += 1
 
     if total_batches == 0:
-        raise ValueError("Training data loader is empty. " "Check the dataset preparation.")
+        raise ValueError("Training data loader is empty. Check the dataset preparation.")
 
     return total_loss / total_batches
 
 
 def main(args):
     """Run the NVFLARE client."""
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-
-    data_dir = os.path.join(
-        script_dir,
-        "data",
-    )
+    data_dir = os.path.abspath(args.data_dir)
 
     flare.init()
 
@@ -230,6 +228,7 @@ def main(args):
     print("=" * 60)
     print(f"Starting FedSCS client: {site_name}")
     print(f"Device: {DEVICE}")
+    print(f"Data directory: {data_dir}")
     print("=" * 60)
 
     train_dataset = load_client_dataset(
@@ -257,9 +256,8 @@ def main(args):
         pin_memory=torch.cuda.is_available(),
     )
 
-    print(f"{site_name}: " f"{len(train_dataset)} training samples")
-
-    print(f"{site_name}: " f"{len(test_dataset)} test samples")
+    print(f"{site_name}: {len(train_dataset)} training samples")
+    print(f"{site_name}: {len(test_dataset)} test samples")
 
     model = SimpleCNN().to(DEVICE)
 
@@ -416,6 +414,15 @@ if __name__ == "__main__":
         type=int,
         default=2,
         help="Number of DataLoader workers.",
+    )
+
+    parser.add_argument(
+        "--data_dir",
+        default=os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "data",
+        ),
+        help="Directory containing the prepared CIFAR-10 datasets.",
     )
 
     args = parser.parse_args()

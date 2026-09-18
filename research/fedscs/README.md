@@ -6,7 +6,7 @@ FedSCS is a robust federated aggregation method that assigns adaptive weights to
 
 ## Motivation
 
-Standard FedAvg primarily weights clients according to local dataset size. When client data are non-IID or an update is substantially different from the updates of other clients, this can give an inconsistent update undesirable influence on the global model.
+Standard FedAvg primarily weights clients according to local dataset size. When client data are non-IID or a client update is substantially different from the updates of other clients, dataset-size weighting alone may assign substantial influence to an update that is inconsistent with the prevailing update direction.
 
 FedSCS addresses this by comparing each client update with the aggregate direction of its peers and tracking the client's similarity across communication rounds. Updates that are consistently aligned with their peers receive higher aggregation weights.
 
@@ -14,7 +14,7 @@ FedSCS does **not** require access to clients' raw training data and should not 
 
 ## FedSCS
 
-For client (i) at round (t), FedSCS:
+For client \(i\) at round \(t\), FedSCS:
 
 1. Computes the peer-consensus update from the other participating clients.
 2. Computes the non-negative cosine similarity between the client update and peer consensus.
@@ -23,7 +23,7 @@ For client (i) at round (t), FedSCS:
 5. Normalizes the resulting scores into aggregation weights.
 6. Aggregates client updates using these weights.
 
-The method requires (O(Nd)) operations for (N) participating clients and update dimension (d), without constructing a pairwise client-similarity matrix.
+The method requires \(O(Nd)\) operations for \(N\) participating clients and update dimension \(d\), without constructing a pairwise client-similarity matrix.
 
 ## NVIDIA FLARE Integration
 
@@ -53,7 +53,15 @@ Model updates are transferred using NVIDIA FLARE's `DIFF` transfer type.
 
 The example uses CIFAR-10 with five simulated clients. The dataset is prepared locally and is not included in the repository.
 
-The example can be configured to study heterogeneous client updates, including a client with corrupted/noisy training data, while the standard CIFAR-10 test set is used for evaluation.
+The dataset preparation creates four regular clients and one intentionally noisy client (`site-5`). For `site-5`, 80% of the training samples are corrupted using salt-and-pepper noise, with a salt probability of 0.30 and a pepper probability of 0.30. The standard clean CIFAR-10 test set is used for evaluation.
+
+This setup provides a controlled example of heterogeneous client updates and allows FedSCS to evaluate client updates based on their similarity to the updates of the other participating clients.
+
+## Update Safety
+
+FedSCS uses cosine similarity, whose trust score is invariant to positive scalar rescaling of a client update. To provide defense in depth against arbitrarily large finite DIFF values, this implementation applies a configurable L2 norm bound to received client updates before they are used by the aggregator. The default example uses a maximum update norm of 10.0.
+
+This magnitude bound is an implementation-level safety control and is separate from the Stable Cosine Similarity scoring formulation described in the FedSCS paper.
 
 ## Project Structure
 
@@ -71,8 +79,8 @@ research/fedscs/
 
 ## Requirements
 
-* Python 3.9+
-* NVIDIA FLARE 2.9.0rc2
+* Python 3.10+
+* NVIDIA FLARE ~= 2.9.0
 * PyTorch
 * torchvision
 * NumPy
@@ -85,7 +93,7 @@ pip install -r research/fedscs/requirements.txt
 
 ## Prepare CIFAR-10
 
-From the NVFlare repository root:
+From the NVIDIA FLARE repository root:
 
 ```bash
 ./research/fedscs/prepare_data.sh
@@ -95,6 +103,8 @@ The preparation script downloads CIFAR-10 and validates the required dataset fil
 
 ## Run the Example
 
+From the NVIDIA FLARE repository root:
+
 ```bash
 cd research/fedscs
 python job.py
@@ -102,11 +112,13 @@ python job.py
 
 The example runs a simulated federated learning experiment using the standard NVIDIA FLARE Recipe workflow and the custom `FedSCSAggregator`.
 
+During training, the FedSCS aggregator reports the per-round client scores, Stable Cosine Similarity (SCS) values, and normalized aggregation weights in the NVIDIA FLARE log. Inspect these values across rounds to see how FedSCS adapts the contribution of each client.
+
+In particular, compare the aggregation weight assigned to `site-5` with the weights of the other clients. Because `site-5` contains intentionally noisy training data, its FedSCS weight reflects its similarity and stability relative to the other participating clients.
+
 ## Limitations
 
-FedSCS relies on the assumption that peer consensus provides a useful reference for evaluating client updates. With only two participating clients, peer-consensus discrimination is degenerate because each client has only one peer. The example therefore uses at least three clients.
-
-The CIFAR-10 experiment is a controlled demonstration and does not represent all forms of non-IID data, adversarial behavior, or client heterogeneity.
+FedSCS relies on peer consensus as a reference for evaluating client updates. The example uses five clients, with four regular clients and one noisy client, and provides a controlled CIFAR-10 demonstration rather than covering all forms of non-IID data, client heterogeneity, data corruption, or adversarial behavior.
 
 ## Citation
 
@@ -121,4 +133,3 @@ IEEE ICCST, 2025.
 ## License
 
 This research example follows the licensing terms of the NVIDIA FLARE repository.
-

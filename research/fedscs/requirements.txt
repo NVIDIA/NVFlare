@@ -1,10 +1,9 @@
 # NVIDIA FLARE
-nvflare==2.9.0rc2
+nvflare~=2.9.0
 
 # PyTorch
 torch>=2.2.0
 torchvision>=0.17.0
-torchaudio>=2.2.0
 
 # Numerical computing
 numpy>=1.26.0
