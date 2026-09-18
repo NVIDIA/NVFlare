@@ -224,6 +224,7 @@ class TestCyclicController:
             patch.object(ctl, "cancel_task") as mock_cancel,
             patch.object(ctl.shareable_generator, "learnable_to_shareable") as mock_to_shareable,
             patch.object(ctl.shareable_generator, "shareable_to_learnable") as mock_to_learnable,
+            patch.object(ctl, "fire_event") as fire_event,
         ):
             mock_to_learnable.return_value = learnable
             mock_to_shareable.return_value = next_shareable
@@ -239,6 +240,35 @@ class TestCyclicController:
             assert client_task.task.data.get_header(AppConstants.NUM_ROUNDS) == ctl._num_rounds
             assert client_task.task.data.get_cookie(AppConstants.CONTRIBUTION_ROUND) == ctl._current_round
             assert ctl._is_done is False
+            fire_event.assert_any_call(AppEventType.AFTER_CONTRIBUTION_ACCEPT, fl_ctx)
+            assert fl_ctx.get_prop(AppConstants.AGGREGATION_ACCEPTED) is True
+
+    def test_process_result_rejects_unconvertible_disallowed_early_termination(self):
+        ctl = CyclicController(
+            persist_every_n_rounds=0, snapshot_every_n_rounds=0, num_rounds=1, allow_early_termination=False
+        )
+        ctl.shareable_generator = Mock()
+        ctl._last_learnable = Learnable()
+        ctl._current_round = 3
+
+        fl_ctx = FLContext()
+        result = gen_shareable(is_early_termination=True)
+        client_task = make_client_task(result)
+        next_shareable = Shareable()
+
+        with (
+            patch.object(ctl, "cancel_task") as mock_cancel,
+            patch.object(ctl.shareable_generator, "learnable_to_shareable", return_value=next_shareable),
+            patch.object(ctl.shareable_generator, "shareable_to_learnable", side_effect=ValueError("bad result")),
+            patch.object(ctl, "fire_event") as fire_event,
+        ):
+            ctl._process_result(client_task, fl_ctx)
+
+        mock_cancel.assert_not_called()
+        fire_event.assert_any_call(AppEventType.AFTER_CONTRIBUTION_ACCEPT, fl_ctx)
+        assert fl_ctx.get_prop(AppConstants.AGGREGATION_ACCEPTED) is False
+        assert client_task.task.data is next_shareable
+        assert ctl._is_done is False
 
     def test_process_result_converts_ok_result(self):
         ctl = CyclicController(persist_every_n_rounds=0, snapshot_every_n_rounds=0, num_rounds=1)

@@ -202,8 +202,10 @@ class CyclicController(Controller):
                 self.log_error(fl_ctx, f"Stopping workflow due to {rc} from client {client_task.client.name}")
                 return
 
+            converted = False
             try:
                 self._last_learnable = self.shareable_generator.shareable_to_learnable(result, fl_ctx)
+                converted = True
             except Exception as ex:
                 if rc != ReturnCode.EARLY_TERMINATION:
                     self._stop_workflow(task)
@@ -226,8 +228,11 @@ class CyclicController(Controller):
                         fl_ctx,
                         f"Ignored {rc} from client {client_task.client.name} because early termination is not allowed",
                     )
+            # When early termination is disabled, only the request to stop is ignored.  A
+            # successfully converted payload is still forwarded to the next client and is
+            # therefore a processed update.  A payload that could not be converted is not.
             fl_ctx.set_prop(AppConstants.TRAINING_RESULT, result, private=True, sticky=False)
-            fl_ctx.set_prop(AppConstants.AGGREGATION_ACCEPTED, True, private=True, sticky=False)
+            fl_ctx.set_prop(AppConstants.AGGREGATION_ACCEPTED, converted, private=True, sticky=False)
             self.fire_event(AppEventType.AFTER_CONTRIBUTION_ACCEPT, fl_ctx)
         else:
             self._stop_workflow(task)
