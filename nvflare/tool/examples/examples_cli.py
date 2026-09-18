@@ -15,17 +15,24 @@
 """Download examples selected by the installed NVFlare catalog."""
 
 import json
-import math
+import os
 import re
 import shlex
 import sys
 import unicodedata
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from urllib.parse import quote
 
 import requests
 
-from nvflare.tool.cli_output import get_connect_timeout, is_json_mode, output_error_message, output_ok, print_human
+from nvflare.tool.cli_output import (
+    get_connect_timeout,
+    get_validated_connect_timeout,
+    is_json_mode,
+    output_error_message,
+    output_ok,
+    print_human,
+)
 from nvflare.tool.cli_schema import handle_schema_flag
 from nvflare.tool.examples.catalog import PROVENANCE_FILE, load_catalog
 
@@ -122,6 +129,17 @@ def _content_error(
     return ExampleError("EXAMPLE_CONTENT_INVALID", message, hint)
 
 
+def _github_api_headers():
+    for variable in ("GITHUB_TOKEN", "GH_TOKEN"):
+        token = os.environ.get(variable)
+        if not token:
+            continue
+        token = token.strip()
+        if re.fullmatch(r"[\x21-\x7e]+", token):
+            return {"Authorization": f"Bearer {token}", "X-GitHub-Api-Version": "2022-11-28"}
+    return None
+
+
 def _validate_tree_entries(entries, source_path):
     files = []
     entry_keys = set()
@@ -194,7 +212,7 @@ def _download_example(revision, source_path, destination, destination_path=None)
     destination_created = False
     try:
         with requests.Session() as session:
-            with session.get(tree_url, timeout=timeout) as response:
+            with session.get(tree_url, headers=_github_api_headers(), timeout=timeout) as response:
                 if response.status_code == 404:
                     raise ExampleError(
                         "EXAMPLE_SOURCE_NOT_FOUND",
@@ -234,6 +252,12 @@ def _download_example(revision, source_path, destination, destination_path=None)
                             target_file.write(chunk)
                 if str(entry.get("mode")) == "100755":
                     target.chmod(0o755)
+    except requests.exceptions.InvalidHeader:
+        raise ExampleError(
+            "EXAMPLE_NETWORK_ERROR",
+            "Could not send the GitHub request because an HTTP header is invalid.",
+            "Check the GitHub token environment variables and retry.",
+        ) from None
     except requests.RequestException as error:
         hint = "Check GitHub access and your network settings, then retry."
         if destination_created:
@@ -245,6 +269,140 @@ def _download_example(revision, source_path, destination, destination_path=None)
         ) from None
 
 
+def _provenance(version_info, revision, name, entry, destination_path=None):
+    result = {
+        "schema_version": 1,
+        "repository": REPOSITORY,
+        "revision": revision,
+        "example": name,
+        "source_path": entry["source_path"],
+        "source_url": f"https://github.com/{REPOSITORY}/tree/{revision}/{entry['source_path']}",
+        "nvflare_version": version_info.get("version"),
+    }
+    if destination_path:
+        result["destination_path"] = destination_path
+    if entry.get("dependencies"):
+        result["dependencies"] = list(entry["dependencies"])
+    return result
+
+
+def _write_provenance(directory, provenance):
+    (directory / PROVENANCE_FILE).write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
+
+
+def _component_reuse_status(directory, expected):
+    provenance_file = directory / PROVENANCE_FILE
+    try:
+        existing = json.loads(provenance_file.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return "incomplete"
+    except (OSError, ValueError):
+        return "conflict"
+    if not isinstance(existing, dict):
+        return "conflict"
+    identity_matches = all(
+        existing.get(key) == expected.get(key)
+        for key in ("repository", "revision", "example", "source_path", "destination_path")
+    )
+    if not identity_matches:
+        return "conflict"
+    if not any(path != provenance_file and not path.is_symlink() and path.is_file() for path in directory.rglob("*")):
+        return "incomplete"
+    return "matching"
+
+
+def _dependency_order(catalog, name):
+    ordered = []
+    visited = set()
+
+    def visit(current):
+        if current in visited:
+            return
+        for dependency in catalog[current].get("dependencies", []):
+            visit(dependency)
+        visited.add(current)
+        ordered.append(current)
+
+    visit(name)
+    return ordered
+
+
+def _dependency_destination(root, entry):
+    source_path = PurePosixPath(entry["source_path"])
+    return root.joinpath(*source_path.parts[1:])
+
+
+def _dependency_conflict(name, directory):
+    raise ExampleError(
+        "EXAMPLE_DEPENDENCY_CONFLICT",
+        f"Example destination does not contain the matching {name} example: {directory}",
+        "Move the existing path or choose another --dest, then retry.",
+    )
+
+
+def _dependency_incomplete(name, directory):
+    raise ExampleError(
+        "EXAMPLE_DEPENDENCY_CONFLICT",
+        f"Example component is incomplete for {name}: {directory}",
+        f"Remove the incomplete component at {directory}, then retry. If it contains unrelated files, move it "
+        "or choose another --dest instead.",
+    )
+
+
+def _prepare_dependency_parent(root, directory):
+    relative = directory.relative_to(root)
+    current = root
+    for part in relative.parts[:-1]:
+        current /= part
+        if current.is_symlink() or (current.exists() and not current.is_dir()):
+            _dependency_conflict(relative.as_posix(), current)
+        current.mkdir(exist_ok=True)
+
+
+def _incomplete_download_hint(destination, destination_existed, action):
+    if destination_existed:
+        return (
+            f"Preserve the pre-existing destination at {destination}. Remove only any incomplete example component "
+            f"created inside it, then {action}."
+        )
+    return f"Remove any incomplete destination at {destination}, then {action}."
+
+
+def _get_example_with_dependencies(version_info, revision, catalog, name, destination):
+    if destination.is_symlink() or (destination.exists() and not destination.is_dir()):
+        _destination_exists(destination)
+    destination.mkdir(exist_ok=True)
+
+    components = []
+    requested_directory = None
+    requested_provenance = None
+    for component_name in _dependency_order(catalog, name):
+        entry = catalog[component_name]
+        component_directory = _dependency_destination(destination, entry)
+        provenance = _provenance(version_info, revision, component_name, entry)
+        reused = False
+        _prepare_dependency_parent(destination, component_directory)
+        if component_directory.exists() or component_directory.is_symlink():
+            if component_directory.is_symlink() or not component_directory.is_dir():
+                _dependency_conflict(component_name, component_directory)
+            reuse_status = _component_reuse_status(component_directory, provenance)
+            if reuse_status == "matching":
+                reused = True
+            elif reuse_status == "incomplete":
+                _dependency_incomplete(component_name, component_directory)
+            else:
+                _dependency_conflict(component_name, component_directory)
+        else:
+            _download_example(revision, entry["source_path"], component_directory)
+            _write_provenance(component_directory, provenance)
+        components.append({"name": component_name, "directory": str(component_directory), "reused": reused})
+        if component_name == name:
+            requested_directory = component_directory
+            requested_provenance = provenance
+
+    return requested_directory, requested_provenance, components
+
+
 def get_example(version_info, catalog, *, name, destination=None):
     if name not in catalog:
         raise ExampleError(
@@ -253,7 +411,9 @@ def get_example(version_info, catalog, *, name, destination=None):
             "Run 'nvflare examples list' to choose an available short name.",
         )
     destination = Path(destination or name).expanduser().absolute()
-    if destination.exists() or destination.is_symlink():
+    entry = catalog[name]
+    dependencies = entry.get("dependencies", [])
+    if not dependencies and (destination.exists() or destination.is_symlink()):
         _destination_exists(destination)
     if not destination.parent.is_dir():
         raise ExampleError(
@@ -263,9 +423,17 @@ def get_example(version_info, catalog, *, name, destination=None):
         )
 
     revision = _source_revision(version_info)
-    entry = catalog[name]
     destination_path = entry.get("destination_path")
-    _download_example(revision, entry["source_path"], destination, destination_path)
+    components = None
+    if dependencies:
+        content_directory, provenance, components = _get_example_with_dependencies(
+            version_info, revision, catalog, name, destination
+        )
+    else:
+        _download_example(revision, entry["source_path"], destination, destination_path)
+        content_directory = destination / destination_path if destination_path else destination
+        provenance = _provenance(version_info, revision, name, entry, destination_path)
+        _write_provenance(destination, provenance)
     warnings = [
         {
             "code": "EXAMPLE_DEPENDENCY_GUIDANCE",
@@ -278,7 +446,6 @@ def get_example(version_info, catalog, *, name, destination=None):
         }
     ]
 
-    content_directory = destination / destination_path if destination_path else destination
     readme = next(
         (
             candidate
@@ -295,24 +462,16 @@ def get_example(version_info, catalog, *, name, destination=None):
                 "hint": "Inspect the downloaded files for dependency, preparation, and run instructions.",
             }
         )
-    provenance = {
-        "schema_version": 1,
-        "repository": REPOSITORY,
-        "revision": revision,
-        "example": name,
-        "source_path": entry["source_path"],
-        "source_url": f"https://github.com/{REPOSITORY}/tree/{revision}/{entry['source_path']}",
-        "nvflare_version": version_info.get("version"),
-    }
-    if destination_path:
-        provenance["destination_path"] = destination_path
-    (destination / PROVENANCE_FILE).write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
-    return {
+    result = {
         **provenance,
-        "directory": str(destination),
+        "directory": str(content_directory if components is not None else destination),
         "readme": str(readme) if readme else None,
         "warnings": warnings,
     }
+    if components is not None:
+        result["download_root"] = str(destination)
+        result["components"] = components
+    return result
 
 
 def handle_examples_cmd(args):
@@ -337,15 +496,11 @@ def handle_examples_cmd(args):
             "INVALID_ARGS", "An examples subcommand is required.", "Run nvflare examples --help.", exit_code=4
         )
 
-    connect_timeout = get_connect_timeout()
-    if key == "get" and (not math.isfinite(connect_timeout) or connect_timeout <= 0):
-        output_error_message(
-            "INVALID_ARGS",
-            "--connect-timeout must be a finite positive number.",
-            "Pass --connect-timeout with a value greater than zero.",
-            exit_code=4,
-        )
+    if key == "get":
+        get_validated_connect_timeout()
 
+    destination = None
+    destination_existed = False
     try:
         if key == "revision":
             result = _example_revision(args.dir)
@@ -358,7 +513,12 @@ def handle_examples_cmd(args):
         catalog = _load_example_catalog()
         if key == "list":
             examples = [
-                {"name": name, "category": entry["category"], "source_path": entry["source_path"]}
+                {
+                    "name": name,
+                    "category": entry["category"],
+                    "source_path": entry["source_path"],
+                    **({"dependencies": list(entry["dependencies"])} if entry.get("dependencies") else {}),
+                }
                 for name, entry in sorted(catalog.items(), key=lambda item: (item[1]["category"], item[0]))
             ]
             if is_json_mode():
@@ -378,6 +538,8 @@ def handle_examples_cmd(args):
 
         from nvflare import _version
 
+        destination = Path(args.dest or args.name).expanduser().absolute()
+        destination_existed = destination.exists() or destination.is_symlink()
         result = get_example(_version.get_versions(), catalog, name=args.name, destination=args.dest)
         if is_json_mode():
             output_ok(result)
@@ -396,9 +558,8 @@ def handle_examples_cmd(args):
         output_error_message(error.code, str(error), error.hint, exit_code=1)
     except KeyboardInterrupt:
         hint = "Retry the command."
-        if key == "get":
-            destination = Path(args.dest or args.name).expanduser().absolute()
-            hint = f"Remove any incomplete destination at {destination}, then retry the command."
+        if destination is not None:
+            hint = _incomplete_download_hint(destination, destination_existed, "retry the command")
         output_error_message(
             "EXAMPLE_INTERRUPTED",
             "Example download interrupted.",
@@ -407,11 +568,11 @@ def handle_examples_cmd(args):
         )
     except (OSError, RuntimeError) as error:
         hint = "Check the path, permissions, free space, and installation, then retry."
-        if key == "get":
-            destination = Path(args.dest or args.name).expanduser().absolute()
-            hint = (
-                f"Remove any incomplete destination at {destination}; check the path, permissions, free space, "
-                "and installation; then retry."
+        if destination is not None:
+            hint = _incomplete_download_hint(
+                destination,
+                destination_existed,
+                "check the path, permissions, free space, and installation, then retry",
             )
         output_error_message(
             "EXAMPLE_IO_ERROR",

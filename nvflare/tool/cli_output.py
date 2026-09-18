@@ -39,6 +39,7 @@ Exceptions (plain text, outside the JSON contract):
 
 import json
 import logging
+import math
 import re
 import sys
 from typing import Any, Optional
@@ -91,7 +92,8 @@ _SENSITIVE_CLI_OPTION_PATTERN = re.compile(
     r")(?:\s+|=))"
     rf"(?P<value>{_SENSITIVE_TEXT_VALUE_PATTERN})"
 )
-_BEARER_TOKEN_PATTERN = re.compile(r"(?i)\b(authorization[\"']?\s*[:=]\s*[\"']?bearer\s+)([A-Za-z0-9._~+/=-]+)")
+_BEARER_TOKEN_PATTERN = re.compile(r"(?i)\b((?:authorization[\"']?\s*[:=]\s*[\"']?)?bearer\s+)([A-Za-z0-9._~+/=-]+)")
+_GITHUB_TOKEN_PATTERN = re.compile(r"(?i)\b(?:github_pat_[a-z0-9_]+|gh[pousr]_[a-z0-9_]+)\b")
 _AUTH_VALUE_PATTERN = re.compile(
     r"(?i)(?P<prefix>\bauthorization[\"']?\s*[:=](?!\s*[\"']?bearer\s+)\s*)"
     rf"(?P<value>{_QUOTED_TEXT_VALUE_PATTERN}|[^\r\n]+)"
@@ -138,6 +140,19 @@ def set_connect_timeout(value: float) -> None:
 
 def get_connect_timeout() -> float:
     return _connect_timeout
+
+
+def get_validated_connect_timeout() -> float:
+    """Return the configured timeout or report a structured CLI argument error."""
+    timeout = get_connect_timeout()
+    if not math.isfinite(timeout) or timeout <= 0:
+        output_error_message(
+            "INVALID_ARGS",
+            "--connect-timeout must be a finite positive number.",
+            "Pass --connect-timeout with a value greater than zero.",
+            exit_code=4,
+        )
+    return timeout
 
 
 def _is_json_mode() -> bool:
@@ -192,6 +207,7 @@ def _redact_sensitive_match(match: re.Match) -> str:
 def _redact_sensitive_text(text: str) -> str:
     redacted = _PEM_PRIVATE_KEY_PATTERN.sub(_REDACTED, text)
     redacted = _BEARER_TOKEN_PATTERN.sub(r"\1" + _REDACTED, redacted)
+    redacted = _GITHUB_TOKEN_PATTERN.sub(_REDACTED, redacted)
     redacted = _AUTH_VALUE_PATTERN.sub(_redact_sensitive_match, redacted)
     redacted = _URL_PASSWORD_PATTERN.sub(r"\1" + _REDACTED + r"\3", redacted)
     redacted = _SENSITIVE_CLI_OPTION_PATTERN.sub(_redact_sensitive_match, redacted)

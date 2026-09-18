@@ -27,7 +27,9 @@ category:
 The list and ``get`` lookup use the catalog. Command help and JSON schema use a
 generic ``NAME`` argument instead of enumerating the catalog. Adding a
 category, short name, and source path to ``catalog.json`` makes an example
-available without a Python code change.
+available without a Python code change. An entry can also name other catalog
+examples that it requires. The command retrieves those dependencies from the
+same source revision.
 
 Get an example
 ==============
@@ -110,6 +112,20 @@ already in use with the matching command above. Then run:
    pip install -r requirements.txt
    python job.py
 
+The advanced Hello PyTorch environments example reuses the beginner example.
+Download both at their maintained relative locations with one command:
+
+.. code-block:: bash
+
+   nvflare examples get hello-pt-environments
+   cd hello-pt-environments/advanced/hello-pt-environments
+   python job.py --env poc
+
+The download root contains ``advanced/hello-pt-environments`` and its
+``hello-world/hello-pt`` dependency. Each directory has its own provenance
+file. A retry reuses a dependency when its repository, revision, example name,
+and source path match; a conflicting directory is never overwritten.
+
 Use another catalog name in the same command. The completion output identifies
 the README:
 
@@ -125,14 +141,19 @@ Use ``--dest`` to choose another new directory:
 
    nvflare examples get hello-pt --dest ./my-hello-pt
 
-The destination's parent must already exist. The command never merges with or
-overwrites an existing file, directory, or symbolic link. It creates the
-destination exclusively. If downloading does not complete, the error identifies
-the incomplete destination. Remove that directory before retrying.
+The destination's parent must already exist. For an example without catalog
+dependencies, the command never merges with or overwrites an existing file,
+directory, or symbolic link and creates the destination exclusively. For an
+example with dependencies, the destination is a common download root. Existing
+component directories are reused only when their provenance matches exactly;
+other existing component paths are rejected. If downloading does not complete,
+the error identifies the incomplete destination. Remove that incomplete
+component before retrying.
 
 Most examples place their files directly under the destination. When an example
-depends on its maintained Python package or script hierarchy, the command keeps
-that hierarchy inside the destination and reports the nested README to follow.
+depends on its maintained Python package, script hierarchy, or another catalog
+example, the command keeps the required relative layout inside the destination
+and reports the requested example's nested README to follow.
 
 The downloaded directory contains the maintained files from the source
 directory selected by the catalog. The command does not create a root
@@ -170,17 +191,40 @@ Schema discovery does not download the example:
    nvflare examples get --schema
 
 ``nvflare examples list`` and the ``--schema`` commands use the installed
-catalog and do not contact GitHub. Each ``nvflare examples get`` invocation
-makes one unauthenticated GitHub REST API request to locate the selected
-subtree, then downloads its files from ``raw.githubusercontent.com``.
+catalog and do not contact GitHub. ``nvflare examples get`` makes one GitHub
+REST API request for each missing example component, then downloads that
+component's files from ``raw.githubusercontent.com``. A standalone example
+therefore makes one API request, a fresh example with one dependency makes two,
+and a fully reused dependency download makes none. Requests are anonymous by
+default. When ``GITHUB_TOKEN`` or ``GH_TOKEN`` is set, the command uses that
+token for the API requests; ``GITHUB_TOKEN`` takes precedence when both are
+set.
 
 GitHub currently limits unauthenticated REST API traffic to 60 requests per
 hour per originating IP address. This allowance can be shared by machines
 behind the same proxy or NAT gateway. For repeated CI or agent workflows,
 download an example once and reuse that workspace instead of calling ``get``
 in a loop. For bulk retrieval, use a revision-pinned Git checkout. If GitHub
-returns a ``403`` or ``429`` rate-limit response, wait until the reset time
-reported by GitHub before retrying. See `GitHub REST API rate limits
+returns a ``403`` or ``429`` rate-limit response, wait for the limit window to
+reset before retrying. The bare request below checks the anonymous allowance:
+
+.. code-block:: bash
+
+   curl https://api.github.com/rate_limit
+
+When a valid token is configured, use the command for the token selected by the
+CLI. It prefers a valid ``GITHUB_TOKEN`` and otherwise uses a valid
+``GH_TOKEN``:
+
+.. code-block:: bash
+
+   # When GITHUB_TOKEN is valid
+   curl -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/rate_limit
+
+   # When the CLI falls back to GH_TOKEN
+   curl -H "Authorization: Bearer $GH_TOKEN" https://api.github.com/rate_limit
+
+See `GitHub REST API rate limits
 <https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api>`_.
 
 Failures return a nonzero exit status, an error code, and a recovery hint.
