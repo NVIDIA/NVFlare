@@ -51,16 +51,15 @@ def test_cvm_builder_contracts():
         "scripts/admin_approve",
         "scripts/admin_install",
         "scripts/admin_retire",
-        "scripts/trustee_provenance.py",
-        "scripts/trustee_references.py",
-        "scripts/tdx_preflight.py",
-        "scripts/tcb_inspect.py",
+        "scripts/trustee_provenance",
+        "scripts/trustee_references",
+        "scripts/tdx_preflight",
+        "scripts/tcb_inspect",
     ],
 )
 def test_cvm_builder_entrypoints(entrypoint):
     result = subprocess.run(
         [
-            *([sys.executable] if entrypoint.endswith(".py") else []),
             str(BUILDER / entrypoint),
             # This wrapper supplies --finalize, which consumes a bundle argument.
             *(["unused-bundle"] if entrypoint == "scripts/cvm_finalize" else []),

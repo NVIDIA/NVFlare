@@ -134,7 +134,7 @@ Use the same upstream distribution and image digest as your CoCo deployment.
 [TRUSTEE_GUIDE.md](TRUSTEE_GUIDE.md) contains the complete setup, including the
 upstream [kbs.json](trustee/kbs.json) configuration, immutable default CPU/GPU
 policies, RVPS references and expiry, role-based administrative ACLs, and native
-resource uploads. `scripts/trustee_provenance.py` records a clean
+resource uploads. `scripts/trustee_provenance` records a clean
 release checkout and binary digest. The upstream client uses the `default` AS
 policy; policy content digests and profile versions identify approved revisions.
 

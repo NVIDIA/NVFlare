@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/bin/sh
 # Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,13 +13,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Compatibility entry point for trustee.provenance."""
-
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from cvm.trustee.provenance import main
-
-if __name__ == "__main__":
-    main()
+set -eu
+builder_dir=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
+export PYTHONPATH="$builder_dir${PYTHONPATH:+:$PYTHONPATH}"
+if [ -n "${CVM_BUILDER_PYTHON:-}" ]; then
+    python=$CVM_BUILDER_PYTHON
+elif [ -x "$builder_dir/.venv/bin/python" ]; then
+    python=$builder_dir/.venv/bin/python
+else
+    python=python3
+fi
+exec "$python" -m cvm.trustee.import_references "$@"

@@ -37,7 +37,7 @@ and Rust toolchain. Leave Cargo.toml, Cargo.lock, and guest-components unchanged
 git clone --branch v0.22.0 https://github.com/confidential-containers/trustee.git /tmp/trustee
 cargo build --locked --release --manifest-path /tmp/trustee/Cargo.toml   -p kbs --bin kbs --no-default-features --features coco-as-builtin
 cargo build --locked --release --manifest-path /tmp/trustee/Cargo.toml   -p kbs-client --bin kbs-client --features tdx-attester,snp-attester,nvidia-attester
-python3 scripts/trustee_provenance.py /tmp/trustee   /tmp/trustee/target/release/kbs /tmp/trustee_build.json
+scripts/trustee_provenance /tmp/trustee   /tmp/trustee/target/release/kbs /tmp/trustee_build.json
 ```
 
 Keep the client's default crypto features. In this release, `native-tls` selects
@@ -234,7 +234,7 @@ references. Import a finalized bundle's reviewed values with an operator-chosen
 expiry:
 
 ```sh
-sudo -u cvm-trustee python3 scripts/trustee_references.py /path/to/bundle   --store /var/lib/cvm-trustee/storage/reference_value   --state /var/lib/cvm-trustee/admin --expires 2026-12-01T00:00:00Z
+sudo -u cvm-trustee scripts/trustee_references /path/to/bundle   --store /var/lib/cvm-trustee/storage/reference_value   --state /var/lib/cvm-trustee/admin --expires 2026-12-01T00:00:00Z
 ```
 
 The import uses upstream RVPS record files and a `cvm_reference_expiry` companion
@@ -244,7 +244,7 @@ approvals cannot be silently broadened or renewed by this importer. Missing or
 expired approvals deny appraisal. Measurements remain in Trustee property storage.
 
 Apply configuration through CoCo's normal deployment mechanism. Run
-`scripts/trustee_preflight.py` on the trusted deployment host and confirm the
+`scripts/trustee_preflight` on the trusted deployment host and confirm the
 initial deny-all resource policy exists before accepting traffic. The repository
 contains no Trustee systemd services to install or enable.
 

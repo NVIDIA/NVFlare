@@ -70,7 +70,7 @@ For TDX, complete these steps before a full build:
    A successful local TDREPORT is not proof that QGS can generate a signed quote.
 
 ```sh
-sudo python3 scripts/tdx_preflight.py --firmware inputs/OVMF.inteltdx.fd \
+sudo scripts/tdx_preflight --firmware inputs/OVMF.inteltdx.fd \
   --quote-probe /usr/local/sbin/site_tdx_quote_probe
 ```
 
