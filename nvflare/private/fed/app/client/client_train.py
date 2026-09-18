@@ -130,6 +130,10 @@ def main(args):
         client_engine = ClientEngine(federated_client, args, rank)
 
         while federated_client.cell is None:
+            if connect_error:
+                raise RuntimeError("failed to connect to server") from connect_error[0]
+            if not connect_thread.is_alive():
+                raise RuntimeError("connect_to_server thread exited before creating the client cell")
             time.sleep(1.0)
 
         client_engine.initialize_comm(federated_client.cell)

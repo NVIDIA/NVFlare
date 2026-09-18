@@ -82,15 +82,22 @@ class TcpDriver(BaseDriver):
         port = int(params.get(DriverParams.PORT.value))
 
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
-        context = get_ssl_context(params, ssl_server=False)
-        if context:
-            sock = context.wrap_socket(sock)
-
-        sock.connect((host, port))
+        try:
+            sock.settimeout(params.get(DriverParams.CONNECT_TIMEOUT))
+            context = get_ssl_context(params, ssl_server=False)
+            if context:
+                sock = context.wrap_socket(sock)
+            sock.connect((host, port))
+            sock.settimeout(None)
+        except Exception:
+            sock.close()
+            raise
 
         connection = SocketConnection(sock, connector, bool(context))
         self.add_connection(connection)
+        # Shutdown may have missed this connection while connect/TLS was still in progress.
+        if connector.stopped.is_set():
+            connection.close()
         connection.read_loop()
         self.close_connection(connection)
 

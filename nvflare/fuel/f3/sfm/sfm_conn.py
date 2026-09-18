@@ -21,7 +21,7 @@ import msgpack
 
 from nvflare.fuel.f3.connection import BytesAlike, Connection
 from nvflare.fuel.f3.endpoint import Endpoint
-from nvflare.fuel.f3.sfm.constants import HandshakeKeys, Types
+from nvflare.fuel.f3.sfm.constants import FLARE_PROTOCOL_VERSION, HandshakeKeys, Types
 from nvflare.fuel.f3.sfm.prefix import PREFIX_LEN, Prefix
 
 log = logging.getLogger(__name__)
@@ -87,6 +87,7 @@ class SfmConnection:
         if self.local_endpoint.properties:
             data.update(self.local_endpoint.properties)
 
+        data[HandshakeKeys.FLARE_PROTOCOL] = FLARE_PROTOCOL_VERSION
         self.send_dict(frame_type, 1, data)
 
     def send_heartbeat(self, frame_type: int, data: Optional[dict] = None):
