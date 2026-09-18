@@ -211,3 +211,55 @@ def test_catalog_dependencies_are_validated(tmp_path):
     )
     with pytest.raises(ValueError, match="catalog dependency cycle"):
         load_catalog(path)
+
+
+@pytest.mark.parametrize(
+    "definitions,match",
+    [
+        (
+            {
+                "base": {
+                    "category": "test",
+                    "source_path": "examples/base",
+                    "destination_path": "package/base",
+                },
+                "child": {
+                    "category": "test",
+                    "source_path": "examples/child",
+                    "dependencies": ["base"],
+                },
+            },
+            "cannot include destination_path on 'base'",
+        ),
+        (
+            {
+                "base": {"category": "test", "source_path": "examples/group"},
+                "child": {
+                    "category": "test",
+                    "source_path": "examples/group/child",
+                    "dependencies": ["base"],
+                },
+            },
+            "contains overlapping source paths for 'base' and 'child'",
+        ),
+        (
+            {
+                "base": {"category": "test", "source_path": "examples/group/base"},
+                "sibling": {"category": "test", "source_path": "examples/group/sibling"},
+                "child": {
+                    "category": "test",
+                    "source_path": "examples/child",
+                    "dependencies": ["base", "sibling"],
+                    "destination_path": "package/child",
+                },
+            },
+            "cannot include destination_path on 'child'",
+        ),
+    ],
+)
+def test_dependency_groups_require_independent_source_layouts(tmp_path, definitions, match):
+    path = tmp_path / "catalog.json"
+    path.write_text(json.dumps(definitions))
+
+    with pytest.raises(ValueError, match=match):
+        load_catalog(path)

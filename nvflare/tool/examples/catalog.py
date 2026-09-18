@@ -104,20 +104,40 @@ def load_catalog(path=None):
         source_paths.add(source_path)
         catalog[name] = dict(entry)
 
-    def visit(name, visiting, visited):
+    resolved_dependencies = {}
+
+    def resolve_dependencies(name, visiting):
+        if name in resolved_dependencies:
+            return resolved_dependencies[name]
         if name in visiting:
             raise ValueError(f"catalog dependency cycle includes {name!r}")
-        if name in visited:
-            return
         visiting.add(name)
+        resolved = {name}
         for dependency in catalog[name].get("dependencies", []):
             if dependency not in catalog:
                 raise ValueError(f"catalog entry {name!r} depends on unknown example {dependency!r}")
-            visit(dependency, visiting, visited)
+            resolved.update(resolve_dependencies(dependency, visiting))
         visiting.remove(name)
-        visited.add(name)
+        resolved_dependencies[name] = resolved
+        return resolved
 
-    visited = set()
     for name in catalog:
-        visit(name, set(), visited)
+        components = resolve_dependencies(name, set())
+        if len(components) == 1:
+            continue
+        for component in components:
+            if "destination_path" in catalog[component]:
+                raise ValueError(
+                    f"catalog dependency group for {name!r} cannot include destination_path on {component!r}"
+                )
+        component_paths = {
+            component: PurePosixPath(catalog[component]["source_path"]).parts for component in components
+        }
+        for component, parts in component_paths.items():
+            for other, other_parts in component_paths.items():
+                if component != other and len(parts) < len(other_parts) and other_parts[: len(parts)] == parts:
+                    raise ValueError(
+                        f"catalog dependency group for {name!r} contains overlapping source paths for "
+                        f"{component!r} and {other!r}"
+                    )
     return catalog
