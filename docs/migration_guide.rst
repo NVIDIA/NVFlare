@@ -6,6 +6,27 @@ Migration Guide
 
 This guide covers API and configuration changes when upgrading between FLARE releases.
 
+Upgrading from 2.9 to 2.10
+=========================
+
+Copy each existing client kit to a **separate workspace** and start it in a
+2.10 environment, keeping the 2.9 client running. Shared workspaces conflict
+on PID and shutdown files. No certificate or endpoint changes are needed.
+The staged client probes under a distinct name without registering. It waits
+for a compatible server, retrying every 60 seconds (configurable via
+``client.upgrade_probe_interval``). Stop the process to cancel waiting.
+
+At cutover, finish or abort jobs and issue ``shutdown all`` from the 2.9 admin
+console. Exit the old server process, then start 2.10 using its existing kit
+and workspace. Upgrade the admin environment and any relays; start upgraded
+relays **after the 2.10 server is ready**. A relay handshake identifies the
+relay's protocol, not the root server's protocol.
+
+Staged clients join on a subsequent probe; late sites join when installed.
+Verify with ``nvflare system version``. Leftover 2.9 peers are rejected before
+endpoint attachment and cannot replace a 2.10 connection. This procedure
+includes a server outage and does not resume running jobs across the upgrade.
+
 Upgrading from 2.7.2 to 2.8.0
 =============================
 

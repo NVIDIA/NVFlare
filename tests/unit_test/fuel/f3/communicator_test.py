@@ -15,6 +15,8 @@
 import logging
 import time
 from threading import Event
+from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -24,6 +26,8 @@ from nvflare.fuel.f3.drivers.connector_info import Mode
 from nvflare.fuel.f3.drivers.net_utils import parse_url
 from nvflare.fuel.f3.endpoint import Endpoint, EndpointMonitor, EndpointState
 from nvflare.fuel.f3.message import Message, MessageReceiver
+from nvflare.fuel.f3.sfm.constants import FLARE_PROTOCOL_VERSION, HandshakeKeys, Types
+from nvflare.fuel.f3.sfm.sfm_conn import SfmConnection
 
 log = logging.getLogger(__name__)
 
@@ -85,6 +89,35 @@ def get_comm_b(comm_state):
 
 
 class TestCommunicator:
+    @pytest.mark.parametrize("frame_type", [Types.HELLO, Types.READY])
+    @pytest.mark.parametrize("version", [None, 3, "2", 2.0])
+    def test_protocol_gate_preserves_existing_connection(self, frame_type, version):
+        comm = Communicator(Endpoint("server"))
+        peer = MagicMock(connector=SimpleNamespace(params={}))
+        peer.get_conn_properties.return_value = {}
+        sender = SfmConnection(peer, Endpoint("site-1"))
+        active = SfmConnection(peer, comm.local_endpoint)
+        try:
+            sender.send_handshake(frame_type)
+            comm.conn_manager.process_frame_task(active, peer.send_frame.call_args.args[0])
+            endpoint = comm.find_endpoint("site-1")
+            assert endpoint.state == EndpointState.READY
+            assert endpoint.get_prop(HandshakeKeys.FLARE_PROTOCOL) == FLARE_PROTOCOL_VERSION
+            data = {HandshakeKeys.ENDPOINT_NAME: "site-1"}
+            if version is not None:
+                data[HandshakeKeys.FLARE_PROTOCOL] = version
+            sender.send_dict(frame_type, 1, data)
+            rejected = SfmConnection(MagicMock(), comm.local_endpoint)
+            comm.conn_manager.process_frame_task(rejected, peer.send_frame.call_args.args[0])
+            rejected.conn.close.assert_called_once()
+            rejected.conn.send_frame.assert_not_called()
+            peer.close.assert_not_called()
+            assert comm.find_endpoint("site-1") is endpoint
+            assert comm.conn_manager.get_connections("site-1") == [active]
+            assert rejected.sfm_endpoint is None
+        finally:
+            comm.stop()
+
     @pytest.mark.parametrize(
         "scheme, port_range",
         [

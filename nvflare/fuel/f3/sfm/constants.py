@@ -13,6 +13,10 @@
 # limitations under the License.
 
 
+# Wire compatibility boundary introduced in FLARE 2.10.
+FLARE_PROTOCOL_VERSION = 2
+
+
 class Types:
     DATA = 1
     FRAG = 2
@@ -26,6 +30,7 @@ class Types:
 class HandshakeKeys:
     ENDPOINT_NAME = "endpoint_name"
     TIMESTAMP = "timestamp"
+    FLARE_PROTOCOL = "flare_protocol"
 
 
 class Flags:

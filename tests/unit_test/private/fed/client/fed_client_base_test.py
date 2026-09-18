@@ -13,12 +13,17 @@
 # limitations under the License.
 
 import threading
+from contextlib import nullcontext
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import pytest
+
 from nvflare.apis.fl_constant import ConnPropKey, SecureTrainConst
+from nvflare.apis.signal import Signal
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
-from nvflare.private.fed.client import fed_client_base
+from nvflare.fuel.f3.endpoint import Endpoint, EndpointState
+from nvflare.private.fed.client import fed_client_base, upgrade
 from nvflare.private.fed.client.fed_client_base import FederatedClientBase
 
 _SITE_ARGS = {
@@ -32,6 +37,44 @@ _JOB_ARGS = {
     SecureTrainConst.SSL_CERT: "job.crt",
     SecureTrainConst.PRIVATE_KEY: "job.key",
 }
+
+
+@pytest.mark.parametrize("cancel", [False, True])
+@pytest.mark.parametrize("initial_state", [EndpointState.ERROR, None])
+def test_upgrade_probe_retries_and_cleans_up(monkeypatch, initial_state, cancel):
+    signal = Signal()
+    probes = [MagicMock(), MagicMock()]
+    factory = MagicMock(side_effect=probes)
+    monkeypatch.setattr(upgrade, "Communicator", factory)
+    monkeypatch.setattr(upgrade.MainProcessMonitor, "_stopping", False)
+
+    def report(probe, state):
+        if state is not None:
+            endpoint = Endpoint("server")
+            endpoint.state = state
+            probe.register_monitor.call_args.args[0].state_change(endpoint)
+
+    probes[0].start.side_effect = lambda: report(probes[0], initial_state)
+    probes[1].start.side_effect = lambda: signal.trigger(True) if cancel else report(probes[1], EndpointState.READY)
+    with pytest.raises(RuntimeError, match="cancelled") if cancel else nullcontext():
+        upgrade.wait_for_server(
+            "site-1",
+            "server",
+            "tcp://localhost:8002",
+            False,
+            {},
+            None,
+            {},
+            signal,
+            retry_interval=0.01,
+            timeout=0.01,
+        )
+    assert factory.call_count == 2
+    for call, probe in zip(factory.call_args_list, probes):
+        assert call.args[0].name == "site-1.upgrade-probe"
+        probe.stop.assert_called_once()
+        probe.send.assert_not_called()
+        probe.register_message_receiver.assert_not_called()
 
 
 def _make_client():
@@ -52,6 +95,7 @@ def _create_cell_credentials(monkeypatch, job_id, client_args):
 
     class _FakeCell:
         def __init__(self, **kwargs):
+            assert job_id or "probe" in captured
             captured.update(kwargs)
 
         def start(self):
@@ -62,6 +106,7 @@ def _create_cell_credentials(monkeypatch, job_id, client_args):
 
     conn_props = {ConnPropKey.CP_CONN_PROPS: {ConnPropKey.FQCN: "site-1", ConnPropKey.URL: "tcp://cp:1"}}
     monkeypatch.setattr(fed_client_base, "Cell", _FakeCell)
+    monkeypatch.setattr(fed_client_base, "wait_for_server", lambda **kwargs: captured.update(probe=kwargs))
     monkeypatch.setattr(fed_client_base, "NetAgent", lambda cell: MagicMock())
     monkeypatch.setattr(fed_client_base.mpm, "add_cleanup_cb", lambda cb: None)
     monkeypatch.setattr(
@@ -72,6 +117,7 @@ def _create_cell_credentials(monkeypatch, job_id, client_args):
     client.secure_train = True
     client.client_args = dict(client_args)
     client.args = SimpleNamespace(job_id=job_id)
+    client.abort_signal = MagicMock()
     client.communicator = MagicMock()
     client.engine_create_timeout = 1.0
     client.cell_check_frequency = 0.001
@@ -79,20 +125,28 @@ def _create_cell_credentials(monkeypatch, job_id, client_args):
     client.client_runner = MagicMock()
 
     client._create_cell("localhost:8002", "grpc")
-    return captured["credentials"]
+    return captured
 
 
 def test_cp_cell_uses_site_credential(monkeypatch):
-    credentials = _create_cell_credentials(monkeypatch, None, _SITE_ARGS)
+    captured = _create_cell_credentials(monkeypatch, None, _SITE_ARGS)
+    credentials = captured["credentials"]
 
     assert credentials[DriverParams.CLIENT_CERT.value] == "client.crt"
     assert credentials[DriverParams.CLIENT_KEY.value] == "client.key"
     assert DriverParams.SERVER_CERT.value not in credentials
+    assert captured["probe"]["credentials"] == credentials
+    assert captured["probe"]["fqcn"] == "site-1"
+    assert captured["probe"]["peer_fqcn"] == "server"
+    assert captured["probe"]["url"] == "grpc://localhost:8002"
+    assert captured["probe"]["retry_interval"] == 60.0
 
 
 def test_cj_cell_uses_job_credential_in_both_tls_roles(monkeypatch):
-    credentials = _create_cell_credentials(monkeypatch, "job-1", _JOB_ARGS)
+    captured = _create_cell_credentials(monkeypatch, "job-1", _JOB_ARGS)
+    credentials = captured["credentials"]
 
+    assert "probe" not in captured
     assert credentials[DriverParams.CLIENT_CERT.value] == "job.crt"
     assert credentials[DriverParams.CLIENT_KEY.value] == "job.key"
     assert credentials[DriverParams.SERVER_CERT.value] == "job.crt"

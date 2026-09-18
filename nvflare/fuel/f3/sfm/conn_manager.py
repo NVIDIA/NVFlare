@@ -31,7 +31,7 @@ from nvflare.fuel.f3.drivers.driver_params import DriverCap, DriverParams
 from nvflare.fuel.f3.drivers.net_utils import ssl_required
 from nvflare.fuel.f3.endpoint import Endpoint, EndpointMonitor, EndpointState
 from nvflare.fuel.f3.message import Message, MessageReceiver
-from nvflare.fuel.f3.sfm.constants import HandshakeKeys, Types
+from nvflare.fuel.f3.sfm.constants import FLARE_PROTOCOL_VERSION, HandshakeKeys, Types
 from nvflare.fuel.f3.sfm.heartbeat_monitor import HeartbeatMonitor
 from nvflare.fuel.f3.sfm.prefix import PREFIX_LEN, Prefix
 from nvflare.fuel.f3.sfm.sfm_conn import SfmConnection
@@ -358,10 +358,21 @@ class ConnManager(ConnMonitor):
                 headers = msgpack.unpackb(frame[PREFIX_LEN : PREFIX_LEN + prefix.header_len])
 
             if prefix.type in (Types.HELLO, Types.READY):
+                data = self.get_dict_payload(prefix, frame)
+                version = data.get(HandshakeKeys.FLARE_PROTOCOL)
+                if type(version) is not int or version != FLARE_PROTOCOL_VERSION:
+                    name = data.get(HandshakeKeys.ENDPOINT_NAME)
+                    log.warning(f"Rejecting endpoint {name}: incompatible FLARE protocol {version!r}")
+                    sfm_conn.conn.close()
+                    # Report the failed attempt without touching an existing endpoint of the same name.
+                    endpoint = Endpoint(name, data)
+                    endpoint.state = EndpointState.ERROR
+                    self.notify_monitors(endpoint)
+                    return
+
                 if prefix.type == Types.HELLO:
                     sfm_conn.send_handshake(Types.READY)
 
-                data = self.get_dict_payload(prefix, frame)
                 self.update_endpoint(sfm_conn, data)
             elif prefix.type == Types.PING:
                 sfm_conn.send_heartbeat(Types.PONG)
@@ -369,6 +380,9 @@ class ConnManager(ConnMonitor):
                 log.debug(f"PONG received for {sfm_conn.conn}")
                 # No action is needed for PONG. The last_activity is already updated
             elif prefix.type == Types.DATA:
+                if sfm_conn.sfm_endpoint is None:
+                    sfm_conn.conn.close()
+                    return
                 if prefix.length > PREFIX_LEN + prefix.header_len:
                     payload = frame[PREFIX_LEN + prefix.header_len :]
                 else:
