@@ -567,8 +567,9 @@ diagnostics on the console, run:
 
 For custom workflows using ``MetricsArtifactWriter``, client contributions can place a current post-training metric
 mapping, such as ``{"auc": 0.85}``, in ``AppConstants.PROGRESS_METRICS``. The writer uses that mapping for progress
-display and metric artifacts without changing the incoming-model meaning of ``INITIAL_METRICS`` used by model-selection
-components.
+display and records it separately as per-site ``progress_metrics`` in metric artifacts. The per-site ``metrics`` values
+retain their aggregation or evaluation phase, without changing the incoming-model meaning of ``INITIAL_METRICS`` used by
+model-selection components.
 
 Recipe consumes ``--log_config`` as a system argument before the script's own
 argument parser. The ``concise``, ``progress``, ``msg_only``, ``full``, and

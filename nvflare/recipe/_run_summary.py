@@ -115,20 +115,45 @@ def result_summary(result):
                 records = data.splitlines()[-11:]
                 truncated = truncated or len(records) > 10
                 records = records[-10:]
-                rows = []
+                aggregate_rows = []
+                site_rows = []
+                site_title = "Training"
                 for raw in records:
                     try:
                         record = json.loads(raw)
                         values = {m["name"]: m["value"] for m in record["aggregated_metrics"]}
                         round_index = record["round"]
                         label = str(round_index + 1) if type(round_index) is int else "?"
-                        rows.append((label, values))
+                        if values:
+                            aggregate_rows.append((label, values))
+                            continue
+                        site_title = _text(record.get("progress_title", "Training"))
+                        sites = record.get("sites", [])
+                        if not isinstance(sites, list):
+                            continue
+                        for site in sites:
+                            if not isinstance(site, dict):
+                                continue
+                            metrics = site.get("progress_metrics") or site.get("metrics")
+                            if not isinstance(metrics, list):
+                                continue
+                            site_values = {
+                                metric["name"]: metric["value"]
+                                for metric in metrics
+                                if isinstance(metric, dict) and "name" in metric and "value" in metric
+                            }
+                            if site_values:
+                                site_rows.append((_text(site.get("name", "unknown")), site_values))
                     except (ValueError, TypeError, KeyError):
                         continue
-                if rows:
+                if aggregate_rows:
                     heading = "  Training · aggregated client metrics"
                     lines.extend(["", heading + (" (last 10 rounds)" if truncated else ""), ""])
-                    lines.append(format_metric_table(rows, label="Round"))
+                    lines.append(format_metric_table(aggregate_rows, label="Round"))
+                if site_rows:
+                    heading = f"  {site_title} · client metrics"
+                    lines.extend(["", heading + (" (last 10 rounds)" if truncated else ""), ""])
+                    lines.append(format_metric_table(site_rows, label="Client"))
             except (OSError, ValueError, TypeError, KeyError):
                 lines.append("Training details: see the saved metrics artifacts.")
             artifacts.append(f"  Metrics   {summary_path.parent.relative_to(root)}/")

@@ -231,10 +231,12 @@ class TestMetricsArtifactWriterAggregationEvents:
             metrics={"auc": 0.8},
             progress_metrics={"auc": 0.85},
         )
-        _record_round(writer, fl_ctx, 1, {"auc": 0.82})
+        _record_round(writer, fl_ctx, 1, {"auc": 0.3})
 
         rounds = _read_rounds(run_dir)
-        assert _metrics_to_dict(rounds[0]["sites"][0]["metrics"]) == {"auc": 0.85}
+        assert _metrics_to_dict(rounds[0]["aggregated_metrics"]) == {"auc": 0.3}
+        assert _metrics_to_dict(rounds[0]["sites"][0]["metrics"]) == {"auc": 0.8}
+        assert _metrics_to_dict(rounds[0]["sites"][0]["progress_metrics"]) == {"auc": 0.85}
 
     def test_writes_summary_and_jsonl_from_aggregation_events(self, tmp_path):
         writer = MetricsArtifactWriter()
@@ -972,10 +974,13 @@ def test_progress_owner_suppresses_non_aggregation_client_round(tmp_path, caplog
 
 
 def test_round_done_completes_non_aggregation_workflow(tmp_path, caplog):
+    from nvflare.recipe._run_summary import result_summary
+
     writer = MetricsArtifactWriter()
     fl_ctx = _make_fl_ctx(tmp_path)
     fl_ctx.set_prop(AppConstants.CURRENT_ROUND, 0, private=True, sticky=False)
     fl_ctx.set_prop(AppConstants.NUM_ROUNDS, 2, private=True, sticky=False)
+    fl_ctx.set_prop(AppConstants.PROGRESS_TITLE, "Model evaluation", private=True, sticky=False)
 
     with caplog.at_level("INFO"):
         writer.handle_event(EventType.START_RUN, fl_ctx)
@@ -1002,6 +1007,11 @@ def test_round_done_completes_non_aggregation_workflow(tmp_path, caplog):
     assert summary["status"] == "metrics_reported"
     assert summary["final_round"] == 0
     assert summary["final_aggregated_metrics"] == []
+    rendered_summary = result_summary(tmp_path)
+    assert "Model evaluation · client metrics" in rendered_summary
+    assert "site-1" in rendered_summary
+    assert "0.8" in rendered_summary
+    assert "aggregated client metrics" not in rendered_summary
 
 
 def test_progress_only_writer_does_not_publish_partial_artifacts(tmp_path, caplog):
