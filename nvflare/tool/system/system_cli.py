@@ -133,7 +133,7 @@ def def_system_cli_parser(system_parser):
         "level",
         nargs="?",
         default=None,
-        help="DEBUG, INFO, WARNING, ERROR, CRITICAL, concise, msg_only, full, verbose, reload",
+        help="DEBUG, INFO, WARNING, ERROR, CRITICAL, concise, progress, msg_only, full, verbose, reload",
     )
     p.add_argument("--site", default="all", help="server, a client name, or all")
     add_startup_kit_selection_args(p)
@@ -162,11 +162,11 @@ def _confirm_or_force(prompt, args):
 
 def _get_system_session(args=None):
     """Create a secure session using the startup kit."""
-    from nvflare.tool.cli_output import get_connect_timeout
+    from nvflare.tool.cli_output import get_validated_connect_timeout
     from nvflare.tool.cli_session import new_cli_session_for_args
 
     try:
-        return new_cli_session_for_args(args=args, timeout=get_connect_timeout())
+        return new_cli_session_for_args(args=args, timeout=get_validated_connect_timeout())
     except ValueError as e:
         output_error(
             "STARTUP_KIT_MISSING",
@@ -607,7 +607,7 @@ def cmd_system_log(args):
             exit_code=4,
             error_code="LOG_CONFIG_INVALID",
             message="Log config is not a recognised log mode.",
-            hint="Supply one of: DEBUG, INFO, WARNING, ERROR, CRITICAL, concise, msg_only, full, verbose, reload.",
+            hint="Supply one of: DEBUG, INFO, WARNING, ERROR, CRITICAL, concise, progress, msg_only, full, verbose, reload.",
         )
         raise SystemExit(4)
 

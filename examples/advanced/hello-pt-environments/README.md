@@ -3,22 +3,30 @@
 This advanced continuation moves the [Hello PyTorch](../../hello-world/hello-pt/README.md) application from local
 simulation to a local POC federation and then to a provisioned production system. It reuses the beginner example's
 actual `client.py`, `model.py`, and `prepare_data.py`; only the Recipe options and execution environment change.
-Keep this directory in a full NVFlare checkout alongside `examples/hello-world/hello-pt`; copying this directory alone
-does not include the shared application.
+Keep this directory at `advanced/hello-pt-environments` beside `hello-world/hello-pt`. A full source checkout already
+has that layout. `nvflare examples get hello-pt-environments` downloads both catalog entries at those relative paths.
 
 Complete the beginner simulation first so you already understand its training, evaluation, and artifacts:
 
 ```bash
-cd examples/hello-world/hello-pt
+cd ../../hello-world/hello-pt
 python job.py
+cd ../../advanced/hello-pt-environments
 ```
 
-Then enter this directory and install the matching NVFlare 2.10 dependencies:
+If you started from a source checkout, install that checkout with its PyTorch
+extra before entering this directory:
 
 ```bash
-cd ../../advanced/hello-pt-environments
-python -m pip install -r requirements.txt
+cd /path/to/NVFlare
+python -m pip install -e ".[PT]"
+cd examples/advanced/hello-pt-environments
 ```
+
+If you arrived through `nvflare examples get hello-pt-environments`, keep using
+the revision-matched NVFlare installation and `PT` extra already in that
+environment. Do not install this directory's `requirements.txt` over a nightly
+or editable NVFlare installation.
 
 ## Compare the three environments
 

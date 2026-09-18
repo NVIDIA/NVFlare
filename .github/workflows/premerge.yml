@@ -292,3 +292,15 @@ jobs:
           uv pip install --system build twine
       - name: Run wheel build
         run: python3 -m build --wheel
+      - name: Verify bundled example catalog
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          from zipfile import ZipFile
+
+          wheel = next(Path("dist").glob("*.whl"))
+          with ZipFile(wheel) as archive:
+              catalog = json.loads(archive.read("nvflare/tool/examples/catalog.json"))
+          assert catalog, "wheel contains an empty example catalog"
+          PY

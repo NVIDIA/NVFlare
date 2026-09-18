@@ -16,9 +16,12 @@
 from __future__ import annotations
 
 import argparse
+import json
+import re
 import shlex
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import yaml
@@ -28,6 +31,9 @@ DEVOPS_ROOT = SCRIPT_DIR.parent
 REPO_ROOT = DEVOPS_ROOT.parent.parent
 DEFAULT_CONFIG = SCRIPT_DIR / "all-clouds.yaml"
 DEFAULT_DOCKERFILE = REPO_ROOT / "docker" / "Dockerfile.parent"
+SOURCE_REPOSITORY = "https://github.com/NVIDIA/NVFlare.git"
+PROVENANCE_FILE = ".nvflare-example.json"
+REVISION_PATTERN = re.compile(r"[0-9a-f]{40}", re.IGNORECASE)
 
 
 def parse_args() -> argparse.Namespace:
@@ -89,6 +95,36 @@ def capture(cmd: list[str]) -> str:
             print(e.stderr, file=sys.stderr, end="")
         raise SystemExit(e.returncode) from e
     return result.stdout
+
+
+def downloaded_source_revision() -> str:
+    provenance_path = REPO_ROOT / PROVENANCE_FILE
+    try:
+        provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        fail(f"could not read download provenance {provenance_path}: {e}")
+    revision = provenance.get("revision") if isinstance(provenance, dict) else None
+    if not isinstance(revision, str) or not REVISION_PATTERN.fullmatch(revision):
+        fail(f"download provenance contains an invalid revision: {revision!r}")
+    return revision
+
+
+def prepare_revision_source(revision: str) -> tuple[tempfile.TemporaryDirectory, Path]:
+    temporary = tempfile.TemporaryDirectory(prefix="nvflare-multicloud-")
+    root = Path(temporary.name)
+    source = root / "source"
+    run(
+        ["git", "clone", "--quiet", "--filter=blob:none", "--no-checkout", SOURCE_REPOSITORY, str(source)],
+        dry_run=False,
+        quiet=True,
+    )
+    run(
+        ["git", "-C", str(source), "fetch", "--quiet", "origin", revision],
+        dry_run=False,
+        quiet=True,
+    )
+    run(["git", "-C", str(source), "checkout", "--quiet", "--detach", "FETCH_HEAD"], dry_run=False, quiet=True)
+    return temporary, source
 
 
 def load_config(config_path: Path) -> dict:
@@ -202,6 +238,15 @@ def main() -> int:
     config_path = resolve_path(args.config)
     dockerfile = resolve_path(args.dockerfile)
     context = resolve_path(args.context)
+    temporary = None
+    if args.dockerfile == DEFAULT_DOCKERFILE and args.context == REPO_ROOT and not dockerfile.is_file():
+        revision = downloaded_source_revision()
+        if args.dry_run:
+            context = Path("<revision-matched-nvflare-source>")
+            print(f"would prepare NVFlare source revision {revision} at {context}")
+        else:
+            temporary, context = prepare_revision_source(revision)
+        dockerfile = context / "docker" / "Dockerfile.parent"
     config = load_config(config_path)
     images = collect_images(config)
     validate_images(images, dry_run=args.dry_run)
@@ -215,13 +260,26 @@ def main() -> int:
         auth_registry(image, dry_run=args.dry_run)
 
     run(
-        ["docker", "build", "--platform", args.platform, "-t", primary, "-f", str(dockerfile), str(context)],
+        [
+            "docker",
+            "build",
+            "--platform",
+            args.platform,
+            "-t",
+            primary,
+            "-f",
+            str(dockerfile),
+            str(context),
+        ],
         dry_run=args.dry_run,
     )
     for image in images[1:]:
         run(["docker", "tag", primary, image], dry_run=args.dry_run)
     for image in images:
         run(["docker", "push", image], dry_run=args.dry_run)
+
+    if temporary:
+        temporary.cleanup()
 
     print(f"=== built and pushed {len(images)} tag(s) ===")
     return 0

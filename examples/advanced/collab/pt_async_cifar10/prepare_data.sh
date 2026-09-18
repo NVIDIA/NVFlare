@@ -1,6 +1,6 @@
 #!/bin/bash
 
-script_dir="$( dirname -- "$0"; )";
-cifar10_src="${script_dir}"/../../cifar10/pt/src
+script_dir="$(cd "$(dirname -- "$0")" && pwd)"
 
-PYTHONPATH="${cifar10_src}${PYTHONPATH:+:${PYTHONPATH}}" python3 "${cifar10_src}"/data/cifar10_data_utils.py
+PYTHONPATH="${script_dir}${PYTHONPATH:+:${PYTHONPATH}}" python3 -c \
+  'from cifar10_data import download_cifar10; download_cifar10("/tmp/cifar10")'
