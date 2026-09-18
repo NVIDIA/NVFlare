@@ -25,6 +25,10 @@ from nvflare.app_common.statistics.numpy_utils import dtype_to_data_type, get_st
 from nvflare.fuel.utils.import_utils import optional_import
 
 
+def _to_python_scalar(value):
+    return value.item() if isinstance(value, np.generic) else value
+
+
 class DFStatisticsCore(Statistics, ABC):
     def __init__(self, max_bin=None):
         # assumption: the data can be loaded and cached in the memory
@@ -49,7 +53,7 @@ class DFStatisticsCore(Statistics, ABC):
 
     def sum(self, dataset_name: str, feature_name: str) -> float:
         df: pd.DataFrame = self.data[dataset_name]
-        return df[feature_name].sum().item()
+        return _to_python_scalar(df[feature_name].sum())
 
     def mean(self, dataset_name: str, feature_name: str) -> float:
 
@@ -59,7 +63,7 @@ class DFStatisticsCore(Statistics, ABC):
 
     def stddev(self, dataset_name: str, feature_name: str) -> float:
         df = self.data[dataset_name]
-        return df[feature_name].std().item()
+        return _to_python_scalar(df[feature_name].std())
 
     def variance_with_mean(
         self, dataset_name: str, feature_name: str, global_mean: float, global_count: float
@@ -67,7 +71,7 @@ class DFStatisticsCore(Statistics, ABC):
         df = self.data[dataset_name]
         tmp = (df[feature_name] - global_mean) * (df[feature_name] - global_mean)
         variance = tmp.sum() / (global_count - 1)
-        return variance.item()
+        return _to_python_scalar(variance)
 
     def histogram(
         self, dataset_name: str, feature_name: str, num_of_bins: int, global_min_value: float, global_max_value: float
