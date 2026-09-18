@@ -299,14 +299,16 @@ def test_get_reuses_matching_downloaded_dependencies(monkeypatch, tmp_path):
     assert all(component["reused"] for component in result["components"])
 
 
-@pytest.mark.parametrize("write_provenance", [False, True])
-def test_get_rejects_incomplete_dependency(monkeypatch, tmp_path, write_provenance):
+@pytest.mark.parametrize("state", ["missing-provenance", "provenance-only", "empty-directories"])
+def test_get_rejects_incomplete_dependency(monkeypatch, tmp_path, state):
     root = tmp_path / "hello-pt-environments"
     dependency = root / "hello-world/hello-pt"
     dependency.mkdir(parents=True)
-    if write_provenance:
+    if state != "missing-provenance":
         provenance = examples_cli._provenance(VERSION, REVISION, "hello-pt", CATALOG["hello-pt"])
         (dependency / examples_cli.PROVENANCE_FILE).write_text(json.dumps(provenance))
+    if state == "empty-directories":
+        (dependency / "nested/empty").mkdir(parents=True)
     monkeypatch.setattr(examples_cli, "_download_example", lambda *args, **kwargs: pytest.fail("downloaded"))
 
     with pytest.raises(examples_cli.ExampleError) as error:

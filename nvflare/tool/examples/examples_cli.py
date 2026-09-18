@@ -290,8 +290,9 @@ def _write_provenance(directory, provenance):
 
 
 def _component_reuse_status(directory, expected):
+    provenance_file = directory / PROVENANCE_FILE
     try:
-        existing = json.loads((directory / PROVENANCE_FILE).read_text(encoding="utf-8"))
+        existing = json.loads(provenance_file.read_text(encoding="utf-8"))
     except FileNotFoundError:
         return "incomplete"
     except (OSError, ValueError):
@@ -304,7 +305,7 @@ def _component_reuse_status(directory, expected):
     )
     if not identity_matches:
         return "conflict"
-    if not any(path.name != PROVENANCE_FILE for path in directory.iterdir()):
+    if not any(path != provenance_file and not path.is_symlink() and path.is_file() for path in directory.rglob("*")):
         return "incomplete"
     return "matching"
 
