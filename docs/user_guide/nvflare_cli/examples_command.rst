@@ -212,12 +212,17 @@ reset before retrying. The bare request below checks the anonymous allowance:
 
    curl https://api.github.com/rate_limit
 
-When either token variable is configured, use the same token selection as the
-CLI to check its authenticated allowance:
+When a valid token is configured, use the command for the token selected by the
+CLI. It prefers a valid ``GITHUB_TOKEN`` and otherwise uses a valid
+``GH_TOKEN``:
 
 .. code-block:: bash
 
-   curl -H "Authorization: Bearer ${GITHUB_TOKEN:-$GH_TOKEN}" https://api.github.com/rate_limit
+   # When GITHUB_TOKEN is valid
+   curl -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/rate_limit
+
+   # When the CLI falls back to GH_TOKEN
+   curl -H "Authorization: Bearer $GH_TOKEN" https://api.github.com/rate_limit
 
 See `GitHub REST API rate limits
 <https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api>`_.
