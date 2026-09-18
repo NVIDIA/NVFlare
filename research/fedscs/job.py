@@ -32,9 +32,11 @@ def main():
     # Create the server-side model used by FedAvgRecipe.
     model = SimpleCNN()
 
-    # Derive the authoritative parameter schema from the server-side model.
-    # The aggregator stores only parameter names and shapes, not model values.
+    # Derive the authoritative parameter schema and dtypes from the
+    # server-side model. Dtypes are stored as strings because the
+    # recipe configuration must be JSON serializable.
     expected_schema = {name: tuple(value.shape) for name, value in model.state_dict().items()}
+    expected_dtypes = {name: str(value.dtype).replace("torch.", "") for name, value in model.state_dict().items()}
 
     # Defense-in-depth bound for received client DIFF updates.
     # This is separate from the published FedSCS scoring formulation.
@@ -42,6 +44,7 @@ def main():
 
     aggregator = FedSCSAggregator(
         expected_schema=expected_schema,
+        expected_dtypes=expected_dtypes,
         max_update_norm=max_update_norm,
     )
 

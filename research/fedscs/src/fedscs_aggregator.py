@@ -29,6 +29,7 @@ class FedSCSAggregator(ModelAggregator):
     def __init__(
         self,
         expected_schema: Dict[str, Tuple[int, ...]],
+        expected_dtypes: Dict[str, str],
         max_update_norm: Optional[float] = 10.0,
         eps: float = 1e-12,
     ):
@@ -37,13 +38,43 @@ class FedSCSAggregator(ModelAggregator):
         if not expected_schema:
             raise ValueError("expected_schema must not be empty.")
 
+        if not expected_dtypes:
+            raise ValueError("expected_dtypes must not be empty.")
+
+        if set(expected_schema) != set(expected_dtypes):
+            raise ValueError("expected_schema and expected_dtypes must contain the same parameters.")
+
+        self.expected_schema = {name: tuple(shape) for name, shape in expected_schema.items()}
+
+        # Store dtypes as strings because the aggregator configuration is
+        # serialized to JSON by FedAvgRecipe. Do not store np.dtype objects
+        # here because they are not JSON serializable.
+        self.expected_dtypes: Dict[str, str] = {}
+
+        for name, dtype in expected_dtypes.items():
+            if not isinstance(dtype, str):
+                raise ValueError(
+                    f"Expected dtype for parameter '{name}' must be " f"a string; got {type(dtype).__name__}."
+                )
+
+            dtype_name = dtype.replace("torch.", "")
+
+            try:
+                numpy_dtype = np.dtype(dtype_name)
+            except TypeError as e:
+                raise ValueError(f"Unsupported dtype '{dtype}' for parameter '{name}'.") from e
+
+            if not np.issubdtype(numpy_dtype, np.number):
+                raise ValueError(f"Expected dtype for parameter '{name}' must be numeric; " f"got {dtype}.")
+
+            # Store the original string, not np.dtype.
+            self.expected_dtypes[name] = dtype_name
+
         if max_update_norm is not None and (not np.isfinite(max_update_norm) or max_update_norm <= 0.0):
             raise ValueError("max_update_norm must be positive and finite.")
 
         if not np.isfinite(eps) or eps <= 0.0:
             raise ValueError("eps must be positive and finite.")
-
-        self.expected_schema = {name: tuple(shape) for name, shape in expected_schema.items()}
 
         self.max_update_norm = float(max_update_norm) if max_update_norm is not None else None
         self.eps = float(eps)
@@ -63,9 +94,13 @@ class FedSCSAggregator(ModelAggregator):
 
         self._params_type: Optional[ParamsType] = None
 
-        # Preserve the original parameter dtype while using float64
-        # internally for numerically safer aggregation.
-        self._input_dtypes: Dict[str, np.dtype] = {}
+    @staticmethod
+    def _get_numpy_dtype(dtype_name: str) -> np.dtype:
+        """Convert a serialized dtype name to a NumPy dtype."""
+        try:
+            return np.dtype(dtype_name)
+        except TypeError as e:
+            raise ValueError(f"Unsupported parameter dtype '{dtype_name}'.") from e
 
     @staticmethod
     def _flatten_update(
@@ -152,6 +187,23 @@ class FedSCSAggregator(ModelAggregator):
                     f"has shape {actual_shape}; expected {expected_shape}."
                 )
 
+    def _validate_dtypes(
+        self,
+        update: Dict[str, np.ndarray],
+        client_name: str,
+    ) -> None:
+        """Validate client parameter dtypes against the server model."""
+        for name, expected_dtype_name in self.expected_dtypes.items():
+            actual_dtype = np.asarray(update[name]).dtype
+            expected_dtype = self._get_numpy_dtype(expected_dtype_name)
+
+            if actual_dtype != expected_dtype:
+                raise ValueError(
+                    f"Parameter '{name}' for client '{client_name}' "
+                    f"has dtype {actual_dtype}; expected "
+                    f"{expected_dtype}."
+                )
+
     def _bound_update_norm(
         self,
         update: Dict[str, np.ndarray],
@@ -183,7 +235,7 @@ class FedSCSAggregator(ModelAggregator):
         scale = self.max_update_norm / update_norm
 
         if not np.isfinite(scale) or scale <= 0.0:
-            raise ValueError(f"Invalid update scaling factor for client " f"'{client_name}'.")
+            raise ValueError(f"Invalid update scaling factor for client '{client_name}'.")
 
         bounded_update = {}
 
@@ -226,7 +278,7 @@ class FedSCSAggregator(ModelAggregator):
             raise ValueError("Overflow or invalid arithmetic while computing " "cosine-similarity norms.") from e
 
         if not np.isfinite(update_norm) or not np.isfinite(peer_norm):
-            raise ValueError("Non-finite norm encountered while computing " "cosine similarity.")
+            raise ValueError("Non-finite norm encountered while computing cosine similarity.")
 
         if update_norm <= self.eps or peer_norm <= self.eps:
             return 0.0
@@ -270,7 +322,7 @@ class FedSCSAggregator(ModelAggregator):
         current_round = self.fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
 
         if current_round is None:
-            raise RuntimeError("Current FL round is not available in the " "aggregator context.")
+            raise RuntimeError("Current FL round is not available in the aggregator context.")
 
         self.round_number = int(current_round) + 1
         t = self.round_number
@@ -284,6 +336,7 @@ class FedSCSAggregator(ModelAggregator):
             update = self.client_updates[client_name]
 
             self._validate_schema(update, client_name)
+            self._validate_dtypes(update, client_name)
 
             for name in self.expected_schema:
                 try:
@@ -299,7 +352,7 @@ class FedSCSAggregator(ModelAggregator):
                     raise ValueError(f"Overflow or invalid arithmetic while " f"aggregating parameter '{name}'.") from e
 
                 if not np.all(np.isfinite(total_update[name])):
-                    raise ValueError(f"Aggregated parameter '{name}' became " "non-finite.")
+                    raise ValueError(f"Aggregated parameter '{name}' became non-finite.")
 
         current_scores = {}
         current_scs = {}
@@ -385,7 +438,7 @@ class FedSCSAggregator(ModelAggregator):
                     scs = score / (1.0 + volatility)
             except FloatingPointError as e:
                 raise ValueError(
-                    f"Overflow or invalid arithmetic while " f"computing FedSCS score for client " f"'{client_name}'."
+                    f"Overflow or invalid arithmetic while " f"computing FedSCS score for " f"client '{client_name}'."
                 ) from e
 
             if not np.isfinite(scs):
@@ -472,19 +525,12 @@ class FedSCSAggregator(ModelAggregator):
             client_name,
         )
 
-        # Record the original dtype for each parameter so that internal
-        # float64 accumulation can be converted back before returning.
-        for name, value in model.params.items():
-            array = np.asarray(value)
-
-            if name not in self._input_dtypes:
-                self._input_dtypes[name] = array.dtype
-            elif array.dtype != self._input_dtypes[name]:
-                raise ValueError(
-                    f"Parameter '{name}' for client '{client_name}' "
-                    f"has dtype {array.dtype}; expected "
-                    f"{self._input_dtypes[name]}."
-                )
+        # Validate against authoritative dtypes from the server-side model.
+        # A client cannot define the expected dtype.
+        self._validate_dtypes(
+            model.params,
+            client_name,
+        )
 
         if self._params_type is None:
             self._params_type = model.params_type
@@ -533,6 +579,10 @@ class FedSCSAggregator(ModelAggregator):
                 update,
                 client_name,
             )
+            self._validate_dtypes(
+                update,
+                client_name,
+            )
 
             for name in self.expected_schema:
                 try:
@@ -557,17 +607,25 @@ class FedSCSAggregator(ModelAggregator):
             if not np.all(np.isfinite(value)):
                 raise RuntimeError(f"Final aggregated DIFF parameter '{name}' " "contains non-finite values.")
 
-        # Restore the original parameter dtype. This keeps the
-        # server-side model in its original dtype (e.g., float32)
-        # while preserving float64 accumulation internally.
+        # Restore the authoritative server-side parameter dtype.
+        # Aggregation remains float64 internally, but the returned DIFF
+        # matches the dtype of the server-side model.
         for name in aggregated_delta:
-            if name not in self._input_dtypes:
-                raise RuntimeError(f"Missing input dtype for parameter '{name}'.")
+            expected_dtype_name = self.expected_dtypes[name]
+            expected_dtype = self._get_numpy_dtype(expected_dtype_name)
 
-            aggregated_delta[name] = aggregated_delta[name].astype(
-                self._input_dtypes[name],
-                copy=False,
-            )
+            try:
+                aggregated_delta[name] = aggregated_delta[name].astype(
+                    expected_dtype,
+                    copy=False,
+                )
+            except (TypeError, ValueError) as e:
+                raise RuntimeError(
+                    f"Unable to cast aggregated parameter '{name}' " f"to expected dtype {expected_dtype}."
+                ) from e
+
+            if not np.all(np.isfinite(aggregated_delta[name])):
+                raise RuntimeError(f"Aggregated parameter '{name}' became non-finite " "after dtype conversion.")
 
         return FLModel(
             params=aggregated_delta,
