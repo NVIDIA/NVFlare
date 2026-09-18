@@ -83,6 +83,10 @@ def test_survival_completion_is_not_reported_after_abort(file_name):
         controller.run()
 
     assert not any("completed" in call.args[1] for call in progress.call_args_list)
+    if hasattr(controller, "start_fl_collect_max_idx"):
+        controller.start_fl_collect_max_idx.assert_not_called()
+    else:
+        controller.start_fl_collect_hist.assert_not_called()
     controller.distribute_global_hist.assert_not_called()
 
 

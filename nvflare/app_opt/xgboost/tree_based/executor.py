@@ -216,10 +216,8 @@ class FedXGBTreeExecutor(Executor):
         # Cyclic mode
         # starting from global model
         # return the whole boosting tree series
-        incoming_auc = self._evaluate_model(self.bst, fl_ctx)
         self.bst.update(self.train_data, self.bst.num_boosted_rounds())
         updated_auc = self._evaluate_model(self.bst, fl_ctx)
-        self._last_metrics = {self.eval_metric: incoming_auc}
         self._progress_metrics = {self.eval_metric: updated_auc}
         self.log_info(
             fl_ctx,
@@ -271,9 +269,10 @@ class FedXGBTreeExecutor(Executor):
                 )
             else:
                 loadable_model = bytearray(model_update["model_data"])
-                incoming_bst = xgb.Booster(params=params)
-                incoming_bst.load_model(loadable_model)
-                incoming_metric = self._evaluate_model(incoming_bst, fl_ctx)
+                if self.training_mode == "bagging":
+                    incoming_bst = xgb.Booster(params=params)
+                    incoming_bst.load_model(loadable_model)
+                    incoming_metric = self._evaluate_model(incoming_bst, fl_ctx)
                 bst = xgb.train(
                     params,
                     self.train_data,
@@ -284,7 +283,7 @@ class FedXGBTreeExecutor(Executor):
                 )
             validation_metrics = evals_result.get("validate", {})
             metric_values = validation_metrics.get(self.eval_metric, [])
-            if model_update:
+            if model_update and self.training_mode == "bagging":
                 self._last_metrics = {self.eval_metric: incoming_metric}
             if metric_values:
                 self._progress_metrics = {self.eval_metric: metric_values[-1]}

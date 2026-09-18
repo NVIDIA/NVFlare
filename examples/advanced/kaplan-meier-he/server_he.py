@@ -34,6 +34,8 @@ class KM_HE(ModelController):
         self.num_rounds = 3
 
     def run(self):
+        if self._is_aborted():
+            return
         log_progress(self.logger, "\n  Federated Kaplan-Meier survival analysis · homomorphic encryption")
         log_progress(self.logger, "\n  Collecting histogram bounds…")
         max_idx_results = self.start_fl_collect_max_idx()

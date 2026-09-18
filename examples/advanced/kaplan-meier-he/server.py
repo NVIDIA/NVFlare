@@ -28,6 +28,8 @@ class KM(ModelController):
         self.num_rounds = 2
 
     def run(self):
+        if self._is_aborted():
+            return
         log_progress(self.logger, "\n  Federated Kaplan-Meier survival analysis\n\n  Collecting local histograms…")
         hist_local = self.start_fl_collect_hist()
         if self._is_aborted():

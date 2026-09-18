@@ -565,9 +565,10 @@ diagnostics on the console, run:
 
    python job.py --log_config full
 
-For custom workflows using ``MetricsArtifactWriter``, client contributions can place a current post-training value in
-``AppConstants.PROGRESS_METRICS``. The writer uses that value for progress display and metric artifacts without changing
-the incoming-model meaning of ``INITIAL_METRICS`` used by model-selection components.
+For custom workflows using ``MetricsArtifactWriter``, client contributions can place a current post-training metric
+mapping, such as ``{"auc": 0.85}``, in ``AppConstants.PROGRESS_METRICS``. The writer uses that mapping for progress
+display and metric artifacts without changing the incoming-model meaning of ``INITIAL_METRICS`` used by model-selection
+components.
 
 Recipe consumes ``--log_config`` as a system argument before the script's own
 argument parser. The ``concise``, ``progress``, ``msg_only``, ``full``, and

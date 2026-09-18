@@ -342,10 +342,10 @@ This argument can be any of the following:
       and evaluation writers supply these messages; arbitrary client prints remain in diagnostic logs. Jobs assembled
       directly with ``FedJob`` or JSON must configure their own reporting components.
 
-      Custom executors used with ``MetricsArtifactWriter`` can publish a current post-training value in
-      ``AppConstants.PROGRESS_METRICS`` contribution metadata. The writer prefers that value for progress display and
-      metric artifacts, leaving ``INITIAL_METRICS`` available for its established incoming-model and model-selection
-      semantics.
+      Custom executors used with ``MetricsArtifactWriter`` can publish a current post-training metric mapping, such as
+      ``{"auc": 0.85}``, in ``AppConstants.PROGRESS_METRICS`` contribution metadata. The writer prefers that mapping
+      for progress display and metric artifacts, leaving ``INITIAL_METRICS`` available for its established
+      incoming-model and model-selection semantics.
     - ``msg_only``: the same log selection as ``concise``, formatted as messages only
     - ``full`` (default in workspaces in poc and production mode): all info level logs
     - ``verbose``: debug level logs with detailed log attributes
