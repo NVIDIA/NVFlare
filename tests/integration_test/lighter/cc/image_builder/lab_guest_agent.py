@@ -34,19 +34,12 @@ import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, "/usr/lib/cvm")
-from builder.attestation import validate_token
-from builder.common import (
-    DISK_ROLES,
-    BuildError,
-    disk_device,
-    memory_file,
-    protect_process,
-    read_json,
-    require,
-    resource_path,
-    run,
-    validate_resource,
-)
+from cvm.common.contracts import DISK_ROLES, resource_path, validate_resource
+from cvm.common.errors import BuildError, require
+from cvm.common.io import read_json
+from cvm.common.linux import memory_file, protect_process, run
+from cvm.runtime.attestation import validate_token
+from cvm.runtime.storage import disk_device
 
 CONFIG = read_json("/etc/cvm/runtime.json")
 require(CONFIG["profile_version"].startswith("test-"), "Acceptance payload requires a test profile")
@@ -54,7 +47,8 @@ protect_process()
 
 
 def state():
-    from builder.platforms import local_report, measurements, parse_snp_report, parse_tdx_report
+    from cvm.common.measurements import measurements, parse_snp_report, parse_tdx_report
+    from cvm.runtime.platforms import local_report
 
     evidence, nonce = local_report(CONFIG["platform"])
     parse = parse_tdx_report if CONFIG["platform"] == "intel_tdx" else parse_snp_report
@@ -90,19 +84,18 @@ def state():
         stream.flush()
         os.fsync(stream.fileno())
     result["applog_writable"] = True
-    for name in ("cvm_integrity.service", "cvm_app.service", "docker.service"):
+    for name in ("cvm_bootstrap.service", "cvm_integrity.service", "cvm_app.service", "docker.service"):
         result[name] = run(["systemctl", "show", name, "--property=ActiveState", "--value"]).decode().strip()
-    result["periodic_attestation.service"] = {
-        "active": run(["systemctl", "show", "periodic_attestation.service", "--property=ActiveState", "--value"])
-        .decode()
-        .strip(),
-        "result": run(["systemctl", "show", "periodic_attestation.service", "--property=Result", "--value"])
-        .decode()
-        .strip(),
-        "invocation": run(["systemctl", "show", "periodic_attestation.service", "--property=InvocationID", "--value"])
-        .decode()
-        .strip(),
-    }
+    result["periodic"] = read_json("/run/cvm/periodic.json")
+    result["cvm_units"] = [
+        line.split()[0]
+        for line in run(["systemctl", "list-unit-files", "cvm_*", "--no-legend", "--no-pager"]).decode().splitlines()
+    ]
+    result["docker_socket"] = (
+        run(["systemctl", "show", "docker.socket", "--property=UnitFileState", "--value"]).decode().strip()
+    )
+    result["nftables_enabled"] = run(["systemctl", "is-enabled", "nftables.service"]).decode().strip()
+    result["firewall_present"] = bool(run(["nft", "list", "table", "inet", "cvm"]))
     result["ssh_units"] = {
         name: {
             "active": run(["systemctl", "show", name, "--property=ActiveState", "--value"]).decode().strip(),
@@ -249,12 +242,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
             )
         elif url.path == "/periodic":
             self.respond({"requested_periodic_check": True})
-            run(["systemctl", "start", "--no-block", "periodic_attestation.service"])
+            run(["systemctl", "kill", "--kill-whom=main", "--signal=SIGUSR1", "cvm_bootstrap.service"])
         elif url.path == "/scan":
             self.respond({"requested_authenticated_scan": True})
             run(["sync"])
             Path("/proc/sys/vm/drop_caches").write_text("3\n")
-            from builder.storage import scan
+            from cvm.common.luks import scan
 
             scan("/dev/mapper/vault")
         elif url.path == "/prepare-interrupted-load":

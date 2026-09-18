@@ -1,14 +1,14 @@
 [Unit]
 Description=Supervise authenticated vault reads
-OnFailure=cvm_fail.service
-# Deliberately no Requires/After=cvm_vault: bootstrap waits for READY.
+# Deliberately no Requires/After=cvm_bootstrap: bootstrap waits for READY.
+FailureAction=poweroff-force
+SuccessAction=poweroff-force
 
 [Service]
 Type=notify
 NotifyAccess=main
 WorkingDirectory=/usr/lib/cvm
-ExecStart=/usr/bin/python3 -m builder.integrity
-ExecStopPost=/usr/bin/python3 -m builder.runtime fail
+ExecStart=/usr/bin/python3 -m cvm.runtime.integrity
 TimeoutStartSec=20
 WatchdogSec=15
 Restart=no

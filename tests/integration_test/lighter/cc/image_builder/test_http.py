@@ -17,22 +17,24 @@
 import base64
 import json
 import os
-import ssl
 import time
 import unittest
 import urllib.error
 import urllib.request
 from pathlib import Path
 
-from builder.admin import api, encode, read_resource_policy, verify_readback
-from builder.attestation import unb64url, validate_token
-from builder.common import BuildError, canonical, memory_file, read_json, resource_path, run, write_json
-from builder.config import SOURCE
-from builder.key_service import ResourceStore, request
-from builder.policy import compose
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec, rsa, utils
+from cvm.build.config import SOURCE
+from cvm.common.contracts import resource_path
+from cvm.common.errors import BuildError
+from cvm.common.io import canonical, read_json, write_json
+from cvm.common.linux import memory_file, run
+from cvm.common.policy import compose
+from cvm.runtime.attestation import unb64url, validate_token
+from cvm.trustee.admin import read_resource_policy, verify_readback
+from cvm.trustee.client import api, delete_resource, encode, upload_resource
 
 
 @unittest.skipUnless(os.environ.get("CVM_HTTP_TESTS") == "1", "Opt-in isolated lab HTTPS tests")
@@ -42,9 +44,8 @@ class HttpTests(unittest.TestCase):
         cls.directory = Path(os.environ.get("CVM_LAB_DIRECTORY", SOURCE)).resolve()
         cls.pki = Path(read_json(cls.directory / "lab-state.json")["pki"])
         cls.admin = read_json(cls.directory / "lab-kbs/admin.json")
-        cls.store = ResourceStore(cls.admin["resources"], cls.admin["key_service_state"])
+        cls.resources = read_json(cls.directory / "lab-kbs/resources.json")
         cls.original_policy = read_resource_policy(cls.admin)
-        cls.original_ids = read_json(cls.store.state / "approved-bundles.json")
         cls.build_id = "http-test-" + os.urandom(8).hex()
         cls.manifest = {
             "build_id": cls.build_id,
@@ -55,33 +56,20 @@ class HttpTests(unittest.TestCase):
         policy = compose([cls.manifest]).encode()
         api(cls.admin, "POST", "resource-policy", canonical({"policy": encode(policy)}))
         verify_readback(policy, read_resource_policy(cls.admin))
-        write_json(
-            cls.store.state / "approved-bundles.json", {"build_ids": cls.original_ids["build_ids"] + [cls.build_id]}
-        )
         cls.paths = []
 
     @classmethod
     def tearDownClass(cls):
         for path in cls.paths:
-            request(cls.key_service("admin"), "DELETE", path)
-        write_json(cls.store.state / "approved-bundles.json", cls.original_ids)
+            delete_resource(cls.resources, path)
         api(cls.admin, "POST", "resource-policy", canonical({"policy": encode(cls.original_policy)}))
         assert read_resource_policy(cls.admin) == cls.original_policy
-
-    @classmethod
-    def key_service(cls, role="builder"):
-        return {
-            "url": cls.admin.get("key_service_url", "https://127.0.0.1:19200"),
-            "ca": cls.admin["ca"],
-            "cert": str(cls.pki / (role + ".pem")),
-            "key": str(cls.pki / (role + ".key")),
-        }
 
     def create(self):
         digest = os.urandom(32)
         path = resource_path(self.build_id, "intel_tdx", digest)
         secret = os.urandom(64)
-        request(self.key_service(), "PUT", path, secret)
+        upload_resource(self.resources, path, secret)
         self.paths.append(path)
         return digest, path, secret
 
@@ -226,7 +214,7 @@ class HttpTests(unittest.TestCase):
                 self.retrieve(digest, path, signer=signer)
 
     def test_gpu_keys_require_composite_ear_and_matching_policy(self):
-        from test_gpu_composite import gpu_submod, invalid_submods
+        from common.test_gpu_composite import gpu_submod, invalid_submods
 
         digest, path, secret = self.create()
         gpu_manifest = dict(self.manifest, contract={"gpu": "nvidia_cc", "gpu_count": 2})
@@ -243,46 +231,44 @@ class HttpTests(unittest.TestCase):
         finally:
             api(self.admin, "POST", "resource-policy", canonical({"policy": encode(compose([self.manifest]).encode())}))
 
-    def test_idempotent_upload_and_conflict(self):
-        _, path, secret = self.create()
-        request(self.key_service(), "PUT", path, secret)
-        with self.assertRaises(BuildError):
-            request(self.key_service(), "PUT", path, os.urandom(64))
-
-    def test_builder_cannot_revoke_or_change_policy(self):
-        _, path, _ = self.create()
-        with self.assertRaises(BuildError):
-            request(self.key_service(), "DELETE", path)
-        context = ssl.create_default_context(cafile=self.admin["ca"])
-        context.load_cert_chain(self.key_service()["cert"], self.key_service()["key"])
-        for endpoint in ("resource-policy", "attestation-policy", "reference-value"):
-            payload = canonical(
-                {
-                    "policy_id": "default_cpu",
-                    "type": "rego",
-                    "policy": encode(b"package policy\ndefault executables = 3\n"),
-                }
-            )
-            req = urllib.request.Request(self.admin["url"] + "/kbs/v0/" + endpoint, data=payload, method="POST")
-            with self.subTest(endpoint=endpoint), self.assertRaises(urllib.error.HTTPError) as error:
-                urllib.request.urlopen(req, context=context)
-            self.assertIn(error.exception.code, (401, 403))
-            error.exception.close()
-
-    def test_unknown_client_certificate_is_denied(self):
-        path = resource_path(self.build_id, "intel_tdx", os.urandom(32))
-        with self.assertRaises(BuildError):
-            request(self.key_service("untrusted"), "PUT", path, os.urandom(64))
-
-    def test_revoked_key_is_unavailable_and_cannot_be_recreated(self):
+    def test_native_upload_retries_and_replacement_semantics(self):
         digest, path, secret = self.create()
-        request(self.key_service("admin"), "DELETE", path)
+        upload_resource(self.resources, path, secret)
+        self.assertEqual(self.retrieve(digest, path), secret)
+        replacement = os.urandom(64)
+        upload_resource(self.resources, path, replacement)
+        self.assertEqual(self.retrieve(digest, path), replacement)
+
+    def test_resource_token_cannot_change_policy(self):
+        for endpoint in ("resource-policy", "attestation-policy", "reference-value"):
+            with self.subTest(endpoint=endpoint), self.assertRaises(BuildError):
+                api(self.resources, "POST", endpoint, canonical({"policy": encode(b"allow := true")}))
+
+    def test_forged_resource_token_cannot_upload(self):
+        import tempfile
+
+        path = resource_path(self.build_id, "intel_tdx", os.urandom(32))
+        token = Path(self.resources["admin_token_file"]).read_text()
+        header, payload, signature = token.split(".")
+        claims = json.loads(unb64url(payload))
+        claims["role"] = "cvm-policy"
+        with tempfile.TemporaryDirectory() as directory:
+            token_path = Path(directory) / "forged.jwt"
+            token_path.write_text(header + "." + encode(canonical(claims)) + "." + signature)
+            with self.assertRaises(BuildError):
+                upload_resource(dict(self.resources, admin_token_file=str(token_path)), path, os.urandom(64))
+
+    def test_native_delete_denies_release_but_does_not_tombstone(self):
+        digest, path, secret = self.create()
+        delete_resource(self.resources, path)
         with self.assertRaises(BuildError):
             self.retrieve(digest, path)
-        with self.assertRaises(BuildError):
-            request(self.key_service(), "PUT", path, secret)
+        # This is deliberately native CoCo behavior. Operators must fence uploads
+        # and preserve deletions across restore, rather than relying on tombstones.
+        upload_resource(self.resources, path, secret)
+        self.assertEqual(self.retrieve(digest, path), secret)
 
-    def test_native_resource_mutation_and_as_replacement_denied(self):
+    def test_policy_role_cannot_mutate_resources_or_replace_as(self):
         digest, path, secret = self.create()
         policy_before = read_resource_policy(self.admin)
         for method, expected in (("POST", 401), ("PUT", 401), ("DELETE", 401)):

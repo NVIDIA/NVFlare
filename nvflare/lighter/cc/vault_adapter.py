@@ -385,16 +385,14 @@ class VaultAdapter:
         path = path.resolve()
         with path.open() as stream:
             config = yaml.safe_load(stream)
+        _require(isinstance(config, dict) and set(config) == {"trustee"}, "cvm_project.yml must contain only trustee")
+        service = config["trustee"]
         _require(
-            isinstance(config, dict) and set(config) == {"key_service"}, "cvm_project.yml must contain only key_service"
-        )
-        service = config["key_service"]
-        _require(
-            isinstance(service, dict) and set(service) == {"url", "ca", "cert", "key"},
-            "Project key_service requires url, ca, cert and key",
+            isinstance(service, dict) and set(service) == {"url", "ca", "admin_token_file"},
+            "Project trustee requires url, ca and admin_token_file",
         )
         endpoint = service["url"]
-        _require(isinstance(endpoint, str), "Project key_service requires an HTTPS endpoint")
+        _require(isinstance(endpoint, str), "Project trustee requires an HTTPS endpoint")
         parsed = urlparse(endpoint)
         _require(
             parsed.scheme == "https"
@@ -404,15 +402,15 @@ class VaultAdapter:
             and not parsed.query
             and not parsed.fragment
             and not any(c.isspace() for c in endpoint),
-            "Project key_service requires an HTTPS endpoint without credentials, query or fragment",
+            "Project trustee requires an HTTPS endpoint without credentials, query or fragment",
         )
-        for key in ("ca", "cert", "key"):
+        for key in ("ca", "admin_token_file"):
             value = service[key]
-            _require(isinstance(value, str) and value, f"Missing project key_service {key}")
+            _require(isinstance(value, str) and value, f"Missing project trustee {key}")
             credential = Path(value)
             if not credential.is_absolute():
                 credential = path.parent / credential
-            _require(credential.is_file(), f"Missing project key_service credential: {credential}")
+            _require(credential.is_file(), f"Missing project trustee credential: {credential}")
         return path.resolve()
 
     def _application(self, values):

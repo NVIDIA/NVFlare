@@ -2,7 +2,7 @@
 
 This example configures a TDX server and an AMD SEV-SNP client with an NVIDIA
 confidential-computing GPU. Configure a trusted Linux worker with CVM Builder,
-approved generic images, and the shared key service before provisioning.
+approved generic images, and the existing CoCo Trustee before provisioning.
 
 CVM Builder is included at
 [`nvflare/lighter/cc/image_builder`](../../../../nvflare/lighter/cc/image_builder).
@@ -13,8 +13,8 @@ update it if you copy `project.yml` elsewhere.
 
 1. Edit `project.yml`: set the reachable server name,
    `cvm_image` folders, Docker archive, and bootstrap egress ports.
-2. Edit `cvm_project.yml` with the project's key-service endpoint and existing
-   builder credentials. Relative credential paths resolve against this file.
+2. Edit `cvm_project.yml` with the project's Trustee endpoint and scoped
+   resource token. Relative credential paths resolve against this file.
 3. Run `nvflare provision -p project.yml -w ./workspace`.
 
 The Docker archive must be a `docker save` archive containing one Linux amd64
@@ -37,7 +37,7 @@ fresh per-build subdirectories.
 
 Shared `cvm_project.yml` is discovered beside `project.yml` or in its ancestors.
 Set `cvm_vault.project_config` to select another file. Per-participant
-`key_service` settings are not accepted.
+`trustee` settings are not accepted.
 
 Builds create application vaults from existing approved CVMs. Provisioning does
 not boot or publish them. Use the returned OCI archive paths or JSON result

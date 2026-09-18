@@ -18,4 +18,4 @@ Keep root pytest discovery from importing the builder's isolated module namespac
 Direct unittest discovery with the builder directory on PYTHONPATH is unaffected.
 """
 
-collect_ignore_glob = ["test_*.py"]
+collect_ignore_glob = ["test_*.py", "**/test_*.py"]

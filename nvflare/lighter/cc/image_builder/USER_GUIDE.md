@@ -182,3 +182,25 @@ directly and read the public logs without a KBS key.
 
 See [BUILD_GUIDE.md](BUILD_GUIDE.md) for creation and
 [VALIDATION.md](VALIDATION.md) for acceptance testing.
+
+
+## Guest service supervision
+
+The measured root ships three CVM units: `cvm_bootstrap.service`,
+`cvm_integrity.service` and `cvm_app.service`. Bootstrap performs the firewall,
+clock, vault, sidecar and optional NFS gates, then notifies readiness before
+starting the application units. Its supervisor runs fresh re-attestation children
+every five minutes with a 300-second deadline. Tick status is recorded in
+`/run/cvm/periodic.json`; acceptance tooling can request an immediate check with
+`systemctl kill --kill-whom=main --signal=SIGUSR1 cvm_bootstrap.service`.
+
+The distro `nftables.service` loads measured bootstrap rules before networking.
+Docker socket activation is masked; provisioning configures the Docker daemon to
+open its Unix socket directly. The independent integrity monitor retains its
+watchdog. A security failure, or exit of either supervisor, makes PID 1 force
+poweroff without a Python shutdown handler. This skips application graceful-stop
+hooks on security failure. Development images use the same unit files and omit
+TEE/KBS and integrity-monitor work.
+
+Rebuild and reapprove generic CVM bundles after this change. Earlier hardware
+acceptance records do not cover the new boot and shutdown sequence.

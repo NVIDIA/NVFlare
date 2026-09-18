@@ -287,3 +287,104 @@ all 10 isolated live HTTPS tests passed against the rebuilt KBS. Clean-checkout
 patch reproducibility, scoped project style and Python license checks also passed.
 This is a claim-schema and signature/policy test, not a physical GPU attestation
 test.
+
+## 2026-09-18 — native CoCo resource administration
+
+CVM Builder now uses the existing CoCo Trustee deployment directly. Removed the
+three Trustee systemd templates and the Python key-administration server.
+Project configuration uses `trustee.url`, `trustee.ca`, and a pre-issued
+`trustee.admin_token_file`; issuer signing keys stay with the deployment operator.
+Native resource POST/DELETE replaces the custom create-only/revocation API.
+
+Validation performed against unmodified Trustee v0.22.0:
+
+- Linux builder contracts with the pinned Rego evaluator: **140 passed**.
+- Linux NVFlare wrapper and CLI checks: **5 passed**.
+- NVFlare adapter and CLI checks on macOS: **96 passed, 1 skipped**
+  (the Linux-only wrapper; exercised separately above).
+- Isolated live HTTPS tests: **12 passed**. Covered native upload and replacement,
+  deletion and recreation, forged resource tokens, resource/policy role separation,
+  encrypted key retrieval, default-policy selection, cross-vault denial, expired
+  and wrong-policy EARs, and composite CPU/GPU authorization using signed fixtures.
+- Scoped project style checks passed. The disposable Trustee process was stopped
+  after testing and its listening port released.
+
+The overwrite/recreation tests document native CoCo behavior. This revision does
+not provide the removed adapter's immutable key publication or permanent
+revocation tombstones. CoCo operators must fence active uploads and preserve
+current deletions and bundle retirement policy during backup recovery. Existing
+adapter deployments require the migration steps in `TRUSTEE_GUIDE.md`.
+
+Signed EAR fixtures are not physical attestation evidence. No VM or GPU workload
+was started, and the paused two-machine end-to-end test remains paused.
+
+
+## 2026-09-18 — separate CVM Python packages
+
+Replaced the mixed `builder` package with `cvm.build`, `cvm.runtime`, `cvm.host`,
+`cvm.trustee`, `cvm.artifacts` and `cvm.common`. Build configuration, physical-host
+access, guest hardware access, policy generation and artifact verification now
+have separate owners. Public shell entry points and configuration fields remain
+unchanged. Python operator scripts are thin entry points into the packages.
+
+Validation:
+
+- Linux standalone unit suite with the pinned Trustee Rego evaluator: **145 passed**.
+- Linux NVFlare wrapper and public CLI entry points: **13 passed**.
+- NVFlare adapter and CLI tests on macOS: **104 passed, 1 skipped** (Linux wrapper).
+- Isolated-interpreter checks passed for both staged payloads and for the runtime
+  installed by the construction provisioner. Tests enforce package dependency
+  boundaries, include lazy imports, and cover the source fingerprint of runtime,
+  provisioning and payload-manifest changes.
+- Normal NVFlare lighter pytest collection: **264 tests collected**, with the
+  standalone tests kept behind the Linux subprocess wrapper.
+- Opt-in integration suite imports successfully: **32 skipped** because hardware,
+  storage and live HTTPS tests were not enabled for this refactor.
+- Scoped project style checks and explicit checks of all moved Python files passed.
+
+No CVM was built or booted and no GPU workload was started. The installed guest
+paths and contents changed, so rebuilt generic images, fresh measurements and new
+hardware acceptance/approval are required before production use. Existing
+self-contained deliveries are unaffected; new builds should use newly approved
+generic bundles. The paused two-machine end-to-end test remains paused.
+
+## 2026-09-18 — three guest systemd units
+
+Consolidated the guest lifecycle into `cvm_bootstrap.service`,
+`cvm_integrity.service` and `cvm_app.service`. Bootstrap emits reference frames,
+checks the firewall and clock, opens and configures the vault, then sends
+readiness before synchronously starting application services. Its supervisor
+runs isolated periodic children every five minutes or on SIGUSR1. PID 1 now
+handles security shutdown directly through unit failure/success actions.
+
+Stage 1 installs measured bootstrap rules in `/etc/nftables.conf` and enables
+the distro nftables unit. Docker socket activation is masked; its measured
+vendor unit opens the Unix socket directly instead of requiring `docker.socket`.
+Development images use the same three unit files without dependency rewriting.
+
+Validation:
+
+- Linux standalone unit suite with the pinned Trustee Rego evaluator: **155 passed**.
+  Covers gate ordering, wrong-binding denial before KBS/monitor startup, monitor
+  readiness before scan, dev behavior, generated unit dependencies, actual notify
+  datagrams, a real queued SIGUSR1, periodic success/failure, and GPU-revocation
+  failure. Provisioning tests check the three-unit layout and measured firewall.
+- Linux NVFlare wrapper and public CLI entry points: **13 passed**.
+- NVFlare adapter and CLI tests on macOS: **104 passed, 1 skipped** (Linux wrapper).
+- `systemd-analyze verify` passed for all three units and the modified Docker
+  vendor unit on systemd 259.5. Offline `systemctl --root` checks confirmed that
+  Docker/containerd remain disabled, Docker's socket remains masked after disable,
+  and chrony, nftables and bootstrap are enabled.
+- Bootstrap and application nftables rules passed syntax checks and successive
+  application in a private network namespace. The host firewall was not changed.
+- Opt-in integration suite imports successfully: **32 skipped**. Hardware helpers
+  now request periodic checks via SIGUSR1, inspect the atomic tick record, and
+  assert the three-unit inventory, masked Docker socket and enabled firewall.
+- Scoped project style and explicit Python formatting/lint checks passed.
+
+No generic CVM was built or booted and no GPU workload was started. The paused
+hardware end-to-end test remains paused. Rebuilt SNP/TDX images still require
+reference collection, positive boots, wrong-binding denial, monitor death and
+corruption, periodic/GPU denial timing, development boot, and crash-consistency
+acceptance before approval. Earlier boot and timing evidence does not validate
+this changed shutdown path.

@@ -22,8 +22,10 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from builder.common import digest_file, require, run, write_json
-from builder.policy import verify_bundle
+from cvm.artifacts.bundle import verify_bundle
+from cvm.common.errors import require
+from cvm.common.io import digest_file, write_json
+from cvm.common.linux import run
 
 
 def main():

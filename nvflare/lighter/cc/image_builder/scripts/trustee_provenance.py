@@ -13,36 +13,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Record a clean CoCo Trustee v0.22.0 source revision and its built binary."""
+"""Compatibility entry point for trustee.provenance."""
 
-import argparse
-import subprocess
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from builder.common import digest_file, require, write_json
-from builder.config import PROFILE_DEFAULTS
-
-
-def provenance(source, binary):
-    commit = subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip()
-    require(commit == PROFILE_DEFAULTS["trustee_commit"], "Use the CoCo Trustee v0.22.0 source revision")
-    status = subprocess.check_output(
-        ["git", "-C", str(source), "status", "--porcelain", "--untracked-files=all"], text=True
-    )
-    require(not status, "Trustee source must be an unmodified upstream checkout")
-    return {"trustee_commit": commit, "source_clean": True, "binary_sha256": digest_file(binary)}
-
-
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("source", type=Path)
-    parser.add_argument("binary", type=Path)
-    parser.add_argument("output", type=Path)
-    args = parser.parse_args()
-    write_json(args.output, provenance(args.source, args.binary))
-
+from cvm.trustee.provenance import main
 
 if __name__ == "__main__":
     main()

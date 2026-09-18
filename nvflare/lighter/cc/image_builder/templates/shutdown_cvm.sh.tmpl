@@ -3,4 +3,4 @@
 # Vault binding: __vault_bind__.
 set -eu
 cd -- "$(dirname -- "$0")"
-exec python3 -m builder.launcher --vault-directory "$PWD" --shutdown
+exec python3 -m cvm.host.launcher --vault-directory "$PWD" --shutdown

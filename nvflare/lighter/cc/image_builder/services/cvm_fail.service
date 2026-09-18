@@ -1,9 +1,0 @@
-[Unit]
-Description=Stop workloads and power off after a security failure
-DefaultDependencies=no
-
-[Service]
-Type=oneshot
-WorkingDirectory=/usr/lib/cvm
-ExecStart=/usr/bin/python3 -m builder.runtime fail
-TimeoutStartSec=50

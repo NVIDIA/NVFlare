@@ -13,16 +13,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Refuse unsafe host dump/swap settings before starting the key broker."""
+"""Compatibility entry point for trustee.preflight."""
 
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from builder.common import BuildError, require, validate_core_policy
+from cvm.trustee.preflight import main
 
-try:
-    validate_core_policy()
-    require(len(Path("/proc/swaps").read_text().splitlines()) == 1, "Disable Trustee host swap")
-except (BuildError, OSError):
-    raise SystemExit("Trustee requires swap disabled and no piped core collector") from None
+if __name__ == "__main__":
+    main()

@@ -20,41 +20,42 @@ import json
 import os
 import stat
 import struct
-import subprocess
 import tempfile
 import unittest
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
 
 import yaml
-from builder import config, gpu, platforms, runtime
-from builder.admin import verify_readback
-from builder.attestation import ATTESTATION_BUDGET_SECONDS, authorized_key, validate_token
-from builder.builder import kernel_command_line
-from builder.common import (
-    DISK_ROLES,
-    HEADER_BYTES,
-    BuildError,
-    binding,
-    binding_id,
-    canonical,
-    disk_device,
-    memory_file,
-    qemu_binding,
-    resource_path,
-    validate_core_policy,
-    validate_resource,
-    write_json,
-)
-from builder.evidence import serial_evidence, serial_frames
-from builder.integrity import healthy_status
-from builder.key_service import ResourceStore
-from builder.launcher import qemu_command
-from builder.services import validate_service
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec, utils
-from provisioning.guest import docker_configuration, install_files, load_config, mask, suppress_service_starts
+from cvm.build import config
+from cvm.build.cvm import kernel_command_line
+from cvm.build.provisioning import docker_configuration, install_files, load_config, mask, suppress_service_starts
+from cvm.common import measurements as report_measurements
+from cvm.common.contracts import (
+    DISK_ROLES,
+    HEADER_BYTES,
+    binding,
+    binding_id,
+    qemu_binding,
+    resource_path,
+    validate_resource,
+)
+from cvm.common.errors import BuildError
+from cvm.common.evidence import serial_evidence, serial_frames
+from cvm.common.io import canonical
+from cvm.common.linux import memory_file, validate_core_policy
+from cvm.common.services import validate_service
+from cvm.common.validation import runtime_config
+from cvm.host import platforms
+from cvm.host.launcher import qemu_command
+from cvm.runtime import bootstrap as runtime
+from cvm.runtime import gpu
+from cvm.runtime import platforms as guest_platforms
+from cvm.runtime.attestation import ATTESTATION_BUDGET_SECONDS, authorized_key, validate_token
+from cvm.runtime.integrity import healthy_status
+from cvm.runtime.storage import disk_device
+from cvm.trustee.admin import verify_readback
 
 
 class BindingTests(unittest.TestCase):
@@ -126,18 +127,18 @@ class BindingTests(unittest.TestCase):
         report[0] = 0x81
         report[128:192] = nonce
         report[576:624] = bytes(range(48))
-        self.assertEqual(platforms.parse_tdx_report(report, nonce), bytes(range(48)))
+        self.assertEqual(report_measurements.parse_tdx_report(report, nonce), bytes(range(48)))
         with self.assertRaises(BuildError):
-            platforms.parse_tdx_report(report, bytes(64))
+            report_measurements.parse_tdx_report(report, bytes(64))
         with self.assertRaises(BuildError):
-            platforms.parse_tdx_report(report[:-1], nonce)
+            report_measurements.parse_tdx_report(report[:-1], nonce)
 
     def test_tdx_measurements_include_rtmr0(self):
         report = bytearray(1024)
         for offset, value in ((528, 1), (720, 2), (768, 3), (816, 4)):
             report[offset : offset + 48] = bytes([value]) * 48
         self.assertEqual(
-            platforms.measurements("intel_tdx", report),
+            report_measurements.measurements("intel_tdx", report),
             {
                 "mr_td": (bytes([1]) * 48).hex(),
                 "rtmr_0": (bytes([2]) * 48).hex(),
@@ -152,13 +153,13 @@ class BindingTests(unittest.TestCase):
         struct.pack_into("<I", report, 0, 3)
         report[80:144] = nonce
         report[192:224] = bytes(range(32))
-        self.assertEqual(platforms.parse_snp_report(report, nonce), bytes(range(32)))
+        self.assertEqual(report_measurements.parse_snp_report(report, nonce), bytes(range(32)))
         with self.assertRaises(BuildError):
-            platforms.parse_snp_report(report, bytes(64))
+            report_measurements.parse_snp_report(report, bytes(64))
 
     def test_tdx_nonzero_padding_denied(self):
-        with patch("builder.platforms.local_binding", return_value=bytes(47) + b"x"), self.assertRaises(BuildError):
-            platforms.verify_local_binding("intel_tdx", bytes(32))
+        with patch("cvm.runtime.platforms.local_binding", return_value=bytes(47) + b"x"), self.assertRaises(BuildError):
+            guest_platforms.verify_local_binding("intel_tdx", bytes(32))
 
 
 class PlatformTests(unittest.TestCase):
@@ -291,23 +292,21 @@ class GuestProvisioningTests(unittest.TestCase):
         self.directory = Path(self.temp.name)
         self.payload = self.directory / "payload"
         self.root = self.directory / "root"
-        for path in ("inputs", "source/builder", "source/services"):
+        for path in ("inputs", "source/cvm/runtime", "source/services"):
             (self.payload / path).mkdir(parents=True)
         for name in ("kbs-client", "kbs-ca.pem", "as-public.pem", "runtime.json"):
             (self.payload / "inputs" / name).write_text(name)
-        (self.payload / "source/builder/runtime.py").write_text("# measured runtime\n")
+        (self.payload / "source/cvm/runtime/bootstrap.py").write_text("# measured runtime\n")
         services = self.payload / "source/services"
-        (services / "cvm_vault.service").write_text("Requires=cvm_integrity.service\n")
-        (services / "docker_vault.conf").write_text("Requires=cvm_integrity.service\n")
-        (services / "socket_vault.conf").write_text("Requires=cvm_integrity.service\n")
-        for name in (
-            "cvm_workload.target",
-            "cvm_app.service",
-            "mount_user_data.service",
-            "periodic_attestation.service",
-            "periodic_attestation.timer",
-        ):
-            (services / name).write_text("Requires=cvm_integrity.service\n")
+        for unit in (config.SOURCE / "services").iterdir():
+            (services / unit.name).write_bytes(unit.read_bytes())
+        (self.payload / "inputs/nftables.conf").write_text("flush ruleset\ntable inet cvm {}\n")
+        vendor = self.root / "usr/lib/systemd/system"
+        vendor.mkdir(parents=True)
+        (vendor / "docker.service").write_text(
+            "[Unit]\nRequires=docker.socket\nAfter=network-online.target docker.socket\n"
+            "[Service]\nExecStart=/usr/bin/dockerd -H fd:// --containerd=/run/containerd/containerd.sock\n"
+        )
         for path in ("hooks/cvm_verity", "scripts/local-top/verity_root", "scripts/local-bottom/overlay_root"):
             location = self.payload / "source/initramfs" / path
             location.parent.mkdir(parents=True, exist_ok=True)
@@ -345,15 +344,25 @@ class GuestProvisioningTests(unittest.TestCase):
         daemon = json.loads((self.root / "etc/docker/daemon.json").read_text())
         self.assertEqual(daemon["data-root"], "/vault/docker/data")
         self.assertFalse(daemon["features"]["containerd-snapshotter"])
+        self.assertEqual(
+            {path.name for path in (self.root / "usr/lib/systemd/system").glob("cvm_*")},
+            {"cvm_bootstrap.service", "cvm_integrity.service", "cvm_app.service"},
+        )
+        self.assertEqual(
+            (self.root / "etc/nftables.conf").read_bytes(), (self.payload / "inputs/nftables.conf").read_bytes()
+        )
+        self.assertEqual(os.readlink(self.root / "etc/systemd/system/docker.socket"), "/dev/null")
+        docker = (self.root / "usr/lib/systemd/system/docker.service").read_text()
+        self.assertIn("-H unix:///var/run/docker.sock", docker)
+        self.assertNotIn("fd://", docker)
+        self.assertNotIn("docker.socket", docker)
+        self.assertFalse((self.root / "etc/systemd/system/docker.service.d").exists())
 
-    def test_development_layout_removes_integrity_dependencies(self):
+    def test_development_layout_keeps_identical_three_unit_files(self):
         self.config["dev_mode"] = True
         install_files(self.config, self.payload, self.root)
-        for path in (
-            "usr/lib/systemd/system/cvm_workload.target",
-            "etc/systemd/system/docker.service.d/vault.conf",
-        ):
-            self.assertNotIn("cvm_integrity.service", (self.root / path).read_text())
+        for path in (config.SOURCE / "services").iterdir():
+            self.assertEqual((self.root / "usr/lib/systemd/system" / path.name).read_bytes(), path.read_bytes())
         self.assertTrue((self.root / "etc/cvm/dev_mode").is_file())
 
     def test_gpu_runtime_and_masks_are_explicit(self):
@@ -432,7 +441,7 @@ class ApplicationTests(unittest.TestCase):
                 self.load()
 
     def test_removed_vault_input_fields_are_rejected(self):
-        for key, value in (("deployment_id", "generic-app"), ("cvm_profile", "profile_set.json"), ("key_service", {})):
+        for key, value in (("deployment_id", "generic-app"), ("cvm_profile", "profile_set.json"), ("trustee", {})):
             self.value[key] = value
             with self.subTest(key=key), self.assertRaises(BuildError):
                 self.load()
@@ -451,9 +460,9 @@ class ApplicationTests(unittest.TestCase):
     def test_runtime_has_no_build_paths_or_admin_credentials(self):
         self.value["container"]["env"] = {"APP_SECRET": "authenticated-only"}
         app = self.load()
-        app["key_service"] = {"url": "https://vault-keys.test", "key": str(self.root / "key")}
-        projected = config.runtime_config(app)
-        self.assertNotIn("key_service", projected)
+        app["trustee"] = {"url": "https://trustee.test", "admin_token_file": str(self.root / "token.jwt")}
+        projected = runtime_config(app)
+        self.assertNotIn("trustee", projected)
         self.assertNotIn("docker_archive", projected)
         self.assertNotIn(str(self.root), json.dumps(projected))
         self.assertEqual(projected["container"]["env"]["APP_SECRET"], "authenticated-only")
@@ -537,66 +546,13 @@ class ApplicationTests(unittest.TestCase):
         good = "[Unit]\nDescription=Application\n[Service]\nExecStart=/vault/application/start\n"
         validate_service("app_helper.service", good)
         for name, text in (
-            ("cvm_vault.service", good),
+            ("cvm_bootstrap.service", good),
             ("app_x.service", good + "ExecStartPre=/bin/true\n"),
-            ("app_x.service", good.replace("Description=Application", "Requires=cvm_vault.service")),
+            ("app_x.service", good.replace("Description=Application", "Requires=cvm_bootstrap.service")),
             ("app_x.service", good + "Environment=TEE_DEVICE=/dev/tdx_guest\n"),
         ):
             with self.assertRaises((BuildError, ValueError)):
                 validate_service(name, text)
-
-
-class ResourceTests(unittest.TestCase):
-    def setUp(self):
-        self.temp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.temp.cleanup)
-        root = Path(self.temp.name)
-        self.store = ResourceStore(root / "resources", root / "revocation")
-        write_json(self.store.state / "approved-bundles.json", {"build_ids": ["bundle-1", "bundle-2"]})
-        self.path = resource_path("bundle-1", "intel_tdx", bytes(32))
-        self.key = os.urandom(64)
-
-    def test_create_retry_and_conflicting_overwrite(self):
-        self.assertTrue(self.store.put(self.path, self.key))
-        self.assertFalse(self.store.put(self.path, self.key))
-        with self.assertRaises(BuildError):
-            self.store.put(self.path, os.urandom(64))
-        self.assertEqual((self.store.resources / self.path.replace("/", "\\x2F")).read_bytes(), self.key)
-
-    def test_concurrent_idempotent_publication(self):
-        with ThreadPoolExecutor(max_workers=8) as pool:
-            results = list(pool.map(lambda _: self.store.put(self.path, self.key), range(8)))
-        self.assertEqual(sum(results), 1)
-        self.assertEqual((self.store.resources / self.path.replace("/", "\\x2F")).read_bytes(), self.key)
-
-    def test_revocation_survives_resource_backup_restore(self):
-        self.store.put(self.path, self.key)
-        self.store.revoke(self.path)
-        with self.assertRaises(BuildError):
-            self.store.put(self.path, self.key)
-        (self.store.resources / self.path.replace("/", "\\x2F")).write_bytes(self.key)
-        self.store.reconcile()
-        self.assertFalse((self.store.resources / self.path.replace("/", "\\x2F")).exists())
-
-    def test_retirement_does_not_disable_other_bundle(self):
-        other = resource_path("bundle-2", "intel_tdx", bytes(32))
-        self.store.put(self.path, self.key)
-        self.store.put(other, self.key)
-        self.store.retire("bundle-1")
-        with self.assertRaises(BuildError):
-            self.store.put(self.path, self.key)
-        self.assertEqual((self.store.resources / other.replace("/", "\\x2F")).read_bytes(), self.key)
-
-    def test_unapproved_bundle_and_wrong_key_size_denied(self):
-        with self.assertRaises(BuildError):
-            self.store.put(self.path, b"short")
-        with self.assertRaises(BuildError):
-            self.store.put(resource_path("unknown", "intel_tdx", bytes(32)), self.key)
-
-    def test_symlink_escape_denied(self):
-        (self.store.resources / self.path.replace("/", "\\x2F")).symlink_to(self.store.state / "secret")
-        with self.assertRaises(BuildError):
-            self.store.put(self.path, self.key)
 
 
 class TokenTests(unittest.TestCase):
@@ -688,7 +644,7 @@ class RuntimeContractTests(unittest.TestCase):
             self.assertNotIn("4460", rules.split("chain forward", 1)[1])
 
     def test_guest_requires_the_measured_gpu_count(self):
-        with patch("builder.gpu.run", return_value=b"0000:41:00.0\n0000:43:00.0\n"):
+        with patch("cvm.runtime.gpu.run", return_value=b"0000:41:00.0\n0000:43:00.0\n"):
             gpu.readiness({"gpu": "nvidia_cc", "gpu_count": 2}, True)
             with self.assertRaises(BuildError):
                 gpu.readiness({"gpu": "nvidia_cc", "gpu_count": 1}, True)
@@ -702,22 +658,22 @@ class RuntimeContractTests(unittest.TestCase):
             "platform": "intel_tdx",
         }
         with (
-            patch("builder.attestation.run", side_effect=[b"token", base64.b64encode(bytes(64))]) as execute,
-            patch("builder.attestation.validate_token"),
-            patch("builder.attestation.time.monotonic", side_effect=[100, 110, 140]),
+            patch("cvm.runtime.attestation.run", side_effect=[b"token", base64.b64encode(bytes(64))]) as execute,
+            patch("cvm.runtime.attestation.validate_token"),
+            patch("cvm.runtime.attestation.time.monotonic", side_effect=[100, 110, 140]),
         ):
             with authorized_key(config, bytes(32), budget=ATTESTATION_BUDGET_SECONDS):
                 pass
         self.assertEqual([round(call.kwargs["timeout"]) for call in execute.call_args_list], [50, 20])
 
     def test_clock_gate_uses_bounded_chrony_correction(self):
-        with patch("builder.runtime.run") as execute:
+        with patch("cvm.runtime.bootstrap.run") as execute:
             runtime.time_sync(max_tries=5)
         self.assertEqual(execute.call_args.kwargs["timeout"], 7)
         self.assertEqual(execute.call_args.args[0], ["/usr/bin/chronyc", "waitsync", "5", "0.5", "1000", "1"])
 
     def test_cold_clock_collects_samples_before_enforcing_final_quality_gate(self):
-        with patch("builder.runtime.run") as execute:
+        with patch("cvm.runtime.bootstrap.run") as execute:
             runtime.time_sync(max_tries=90, initialize=True)
         self.assertEqual(
             [call.args[0] for call in execute.call_args_list],
@@ -732,28 +688,9 @@ class RuntimeContractTests(unittest.TestCase):
 
     def test_cold_clock_rejects_unsynchronized_or_excessive_skew(self):
         for failure_at in (1, 3):
-            with patch("builder.runtime.run", side_effect=[None] * failure_at + [BuildError("clock not ready")]):
+            with patch("cvm.runtime.bootstrap.run", side_effect=[None] * failure_at + [BuildError("clock not ready")]):
                 with self.assertRaises(BuildError):
                     runtime.time_sync(max_tries=90, initialize=True)
-
-    def test_fail_closed_forces_poweroff_after_stopping_workload(self):
-        completed = subprocess.CompletedProcess([], 0)
-        with (
-            patch("builder.runtime.subprocess.run", return_value=completed) as execute,
-            patch("builder.runtime.kernel_poweroff") as poweroff,
-        ):
-            runtime.fail()
-        commands = [call.args[0] for call in execute.call_args_list]
-        self.assertEqual(commands[0], ["systemctl", "stop", "cvm_workload.target"])
-        self.assertEqual(commands[-1], ["systemctl", "poweroff", "--force", "--force"])
-        poweroff.assert_called_once_with()
-
-    def test_kernel_poweroff_uses_linux_reboot_command(self):
-        with patch("builder.runtime.ctypes.CDLL") as loader:
-            loader.return_value.reboot.return_value = 0
-            runtime.kernel_poweroff()
-        loader.assert_called_once_with(None, use_errno=True)
-        loader.return_value.reboot.assert_called_once_with(0x4321FEDC)
 
     def test_monitor_status_is_fail_closed(self):
         healthy_status("0 123456 integrity 0 123456 0")
@@ -767,15 +704,6 @@ class RuntimeContractTests(unittest.TestCase):
         for returned in (b'[{"id":"resource-policy"}]', b"AAAA", b"YWJj=", b"YWJj\n"):
             with self.assertRaises(BuildError):
                 verify_readback(expected, returned)
-
-    def test_workload_start_is_nonblocking_and_monitor_is_synchronous(self):
-        source = Path(runtime.__file__).read_text()
-        self.assertIn('["systemctl", "start", "--no-block", "cvm_workload.target"]', source)
-        self.assertIn('["systemctl", "start", "cvm_integrity.service"]', source)
-        monitor = Path(runtime.__file__).parent.parent / "services/cvm_integrity.service"
-        self.assertNotIn("Requires=cvm_vault.service", monitor.read_text())
-        self.assertIn("Type=notify", monitor.read_text())
-        self.assertIn("ExecStopPost=", monitor.read_text())
 
     def test_qemu_keeps_boot_inputs_and_binding_separate(self):
         for platform in platforms.PLATFORMS:

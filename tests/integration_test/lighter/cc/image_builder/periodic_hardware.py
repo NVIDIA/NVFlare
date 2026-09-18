@@ -24,8 +24,9 @@ import os
 import time
 from pathlib import Path
 
-from builder.common import require, write_json
-from builder.storage import mounted, nbd
+from cvm.build.storage import mounted, nbd
+from cvm.common.errors import require
+from cvm.common.io import write_json
 from test_hardware import HardwareTests
 
 

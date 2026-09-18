@@ -10,4 +10,4 @@ elif [ -x "$builder_dir/.venv/bin/python" ]; then
 else
     python=python3
 fi
-exec "$python" -m builder.builder "$@"
+exec "$python" -m cvm.build.cvm "$@"

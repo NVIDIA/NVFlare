@@ -23,7 +23,7 @@ Run provisioning and vault construction on a trusted Linux worker configured for
 CVM Builder (the tested builder environment is Ubuntu 26.04). Follow the
 builder's ``nvflare/lighter/cc/image_builder/BUILD_GUIDE.md`` and
 ``TRUSTEE_GUIDE.md`` for disk tools, disabled swap,
-core-dump policy, locked memory, approved bundles, and key-service configuration.
+core-dump policy, locked memory, approved bundles, and Trustee administration configuration.
 Provisioning does not change those host settings or launch a CVM.
 
 Install NVFlare and the builder's requirements in their respective environments.
@@ -53,8 +53,10 @@ identity and validates approval for every bundle in the resulting profile set.
 The included builder supports shared project configuration and generates the
 deployment ID for each vault build.
 Trustee reference values, reusable policies, and enabled CVM build IDs must already
-be installed. The mTLS ``key_service`` endpoint accepts vault key uploads; it is
-distinct from the guest-facing attestation/KBS endpoint in the generic CVM.
+be installed. The existing CoCo Trustee accepts native vault key uploads using a scoped
+bearer token. CVM Builder installs no backend services. Native uploads can
+overwrite keys, and deletions require operator-controlled retry and restore
+procedures to remain effective.
 
 Prepare a Linux amd64 image containing NVFlare, Bash, and the workload dependencies:
 
@@ -74,11 +76,10 @@ Create a shared ``cvm_project.yml`` beside ``project.yml``:
 
 .. code-block:: yaml
 
-   key_service:
-     url: https://key-service.example.org:9443
-     ca: ./credentials/key-service-ca.pem
-     cert: ./credentials/builder-client.pem
-     key: ./credentials/builder-client.key
+   trustee:
+     url: https://trustee.example.org:8443
+     ca: ./credentials/kbs-ca.pem
+     admin_token_file: ./credentials/kbs-resource-token.jwt
 
 Credential paths resolve against this file. NVFlare finds the nearest
 ``cvm_project.yml`` starting beside ``project.yml`` and walking upward, then
@@ -86,7 +87,7 @@ passes its absolute path through ``--project-config`` on every build. To select
 a different file, set ``cvm_vault.project_config``; relative paths resolve against
 ``project.yml``. Invalid nearest or explicit configuration fails without fallback.
 The shared settings and credentials are not copied into application vaults or
-public result metadata. There is no per-participant key-service override.
+public result metadata. There is no per-participant Trustee credential override.
 
 Configure provisioning
 ----------------------
@@ -235,7 +236,7 @@ The adapter calls
 once per participant, without ``--candidate`` or ``--dev``. Generated
 ``vault_build.yml`` contains ``cvm_image`` and the automatically derived
 ``image_id``. It never contains ``deployment_id``, ``cvm_profile`` or
-``key_service``. Omitted ``platforms`` remains omitted so the builder selects all
+``trustee``. Omitted ``platforms`` remains omitted so the builder selects all
 available platforms; an explicit subset is preserved.
 
 With the default output location:
@@ -279,7 +280,7 @@ platform deliveries. Inspect ``build_failure.json`` when present and each
 platform's ``provisioning.json``: ``uploading`` can mean the key was accepted but
 the acknowledgement was lost; ``active`` confirms acknowledgement. Packaging can
 fail after activation without a ``build_failure.json``. Resolve partial or
-uncertain activation with the key-service administrator before deliberately
+uncertain activation with the Trustee administrator before deliberately
 starting a fresh build. The adapter never retries construction or removes
 recovery records automatically.
 

@@ -40,10 +40,32 @@ def test_cvm_builder_contracts():
     assert result.returncode == 0, result.stdout + result.stderr
 
 
-@pytest.mark.parametrize("entrypoint", ["cvm_build.sh", "vault_build.sh", "scripts/cvm_pull", "scripts/cvm_publish"])
+@pytest.mark.parametrize(
+    "entrypoint",
+    [
+        "cvm_build.sh",
+        "vault_build.sh",
+        "scripts/cvm_pull",
+        "scripts/cvm_publish",
+        "scripts/cvm_finalize",
+        "scripts/admin_approve",
+        "scripts/admin_install",
+        "scripts/admin_retire",
+        "scripts/trustee_provenance.py",
+        "scripts/trustee_references.py",
+        "scripts/tdx_preflight.py",
+        "scripts/tcb_inspect.py",
+    ],
+)
 def test_cvm_builder_entrypoints(entrypoint):
     result = subprocess.run(
-        [str(BUILDER / entrypoint), "--help"],
+        [
+            *([sys.executable] if entrypoint.endswith(".py") else []),
+            str(BUILDER / entrypoint),
+            # This wrapper supplies --finalize, which consumes a bundle argument.
+            *(["unused-bundle"] if entrypoint == "scripts/cvm_finalize" else []),
+            "--help",
+        ],
         cwd=BUILDER.parent,
         env=dict(os.environ, CVM_BUILDER_PYTHON=sys.executable),
         capture_output=True,

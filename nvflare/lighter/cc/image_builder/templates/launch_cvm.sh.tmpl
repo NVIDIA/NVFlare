@@ -3,4 +3,4 @@
 # Vault binding: __vault_bind__ (checked against guest hardware at boot).
 set -eu
 cd -- "$(dirname -- "$0")"
-exec python3 -m builder.launcher --vault-directory "$PWD" "$@"
+exec python3 -m cvm.host.launcher --vault-directory "$PWD" "$@"

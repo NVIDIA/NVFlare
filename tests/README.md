@@ -38,7 +38,9 @@ Please refer to [integration tests README](./integration_test/README.md).
 ## CVM Builder Tests
 
 `unit_test/lighter/cc/image_builder/` contains the standalone CVM Builder contracts,
-fixtures and policy evaluator. The regular unit suite invokes these contracts in
+fixtures and policy evaluator. Focused tests are grouped under `build`, `runtime`,
+`host`, `trustee`, `artifacts` and `common`; cross-package contracts remain at the
+test root. The regular unit suite invokes these contracts in
 a separate process on Linux through
 [`cvm_builder_test.py`](unit_test/lighter/cvm_builder_test.py).
 

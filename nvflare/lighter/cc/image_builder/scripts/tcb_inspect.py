@@ -13,35 +13,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Inspect candidate TDX TCB fields; this command never approves or imports them."""
+"""Compatibility entry point for trustee.inspect_tcb."""
 
-import argparse
-import base64
-import json
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from builder.builder import verify_reference
-from builder.common import read_json, require
+from cvm.trustee.inspect_tcb import main
 
-parser = argparse.ArgumentParser(description=__doc__)
-parser.add_argument("evidence", type=Path)
-args = parser.parse_args()
-evidence = read_json(args.evidence)
-require(evidence["platform"] == "intel_tdx", "This inspector expects TDX reference evidence")
-verify_reference("intel_tdx", evidence)
-report = base64.b64decode(evidence["report"], validate=True)
-print(
-    json.dumps(
-        {
-            "unapproved_candidate_tcb": {
-                "mr_seam": [report[280:328].hex()],
-                "tcb_svn": [report[264:280].hex()],
-                "xfam": [report[520:528].hex()],
-            },
-            "review_required": "Validate platform endorsements and TCB status; obtain advisory IDs from a real signed-quote appraisal. This output is not an approved reference file.",
-        },
-        indent=2,
-    )
-)
+if __name__ == "__main__":
+    main()

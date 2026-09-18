@@ -24,4 +24,4 @@ container:
   tee_device: false
 services: []
 hosts_entries: {}
-# Shared key_service settings belong in the project's cvm_project.yml.
+# Shared trustee settings belong in the project's cvm_project.yml.

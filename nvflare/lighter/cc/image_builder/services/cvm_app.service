@@ -1,16 +1,15 @@
 [Unit]
 Description=Run the application's Docker image
-Requires=cvm_vault.service cvm_integrity.service docker.service mount_user_data.service
-After=cvm_vault.service cvm_integrity.service docker.service mount_user_data.service
-BindsTo=cvm_integrity.service
-PartOf=cvm_workload.target
-OnFailure=cvm_fail.service
+Requires=cvm_bootstrap.service docker.service
+After=cvm_bootstrap.service docker.service
+BindsTo=cvm_bootstrap.service
+FailureAction=poweroff-force
 
 [Service]
 Type=simple
 WorkingDirectory=/usr/lib/cvm
 EnvironmentFile=/run/cvm/platform.env
-ExecStart=/usr/bin/python3 -m builder.runtime application
+ExecStart=/usr/bin/python3 -m cvm.runtime.bootstrap application
 ExecStop=-/usr/bin/docker stop --time 15 cvm-application
 TimeoutStopSec=25
 Restart=no

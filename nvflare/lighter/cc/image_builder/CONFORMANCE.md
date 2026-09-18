@@ -27,7 +27,7 @@ deployment profiles:
   evidence.
 
 GPU attestation is therefore a policy condition, not a global requirement of the
-key service. The key service may hold other keys with CPU-only or other resource
+Trustee deployment. Trustee may hold other keys with CPU-only or other resource
 policies. A CPU-only NVFlare deployment must not be rejected because it has no
 GPU. Conversely, a deployment must not claim conformance to the cited
 GPU-inference RA unless its GPU-dependent keys are gated by successful GPU
@@ -97,13 +97,13 @@ and
 
 | RA capability | CPU-only profile | GPU-enabled profile | Implementation evidence and remaining work |
 |---|---|---|---|
-| Launch the workload in a measured CVM | Meets | Evidence pending | SNP and TDX launch assets and shape are pinned in `builder/launcher.py`; exact reference measurements are generated and approved in `builder/policy.py`. Current source changes require fresh hardware acceptance before production approval. |
-| Collect fresh evidence for the CPU TEE, guest image, launch configuration, firmware, and applicable GPU | Meets | Conditional | `builder/attestation.py` obtains a fresh KBS challenge, binds it to an ephemeral key, validates the signed EAR, and checks the selected CPU profile. The upstream CoCo client collects NVIDIA evidence bound to RCAR runtime data; Trustee verifies NRAS signatures and applies the generated GPU policy. GPU appraisal has not been demonstrated in the complete current CVM flow. |
+| Launch the workload in a measured CVM | Meets | Evidence pending | SNP and TDX launch assets and shape are pinned in `cvm/host/launcher.py`; reference evidence is collected in `cvm/build/cvm.py` and acceptance receipts are verified in `cvm/artifacts/bundle.py`. Current source changes require fresh hardware acceptance before production approval. |
+| Collect fresh evidence for the CPU TEE, guest image, launch configuration, firmware, and applicable GPU | Meets | Conditional | `cvm/runtime/attestation.py` obtains a fresh KBS challenge, binds it to an ephemeral key, validates the signed EAR, and checks the selected CPU profile. The upstream CoCo client collects NVIDIA evidence bound to RCAR runtime data; Trustee verifies NRAS signatures and applies the generated GPU policy. GPU appraisal has not been demonstrated in the complete current CVM flow. |
 | Release a protected key only after fresh evidence matches policy | Meets | **Evidence pending** | `authorized_key()` uses a composite RCAR transaction. The CPU quote covers GPU evidence; KBS requires the configured NVIDIA GPU submods before releasing a GPU vault key. CPU-only rules are unchanged. Physical negative acceptance remains pending. |
 | Keep keys out of host-visible storage and normal VM-management paths | Meets | Meets | KBS response decryption uses an ephemeral private key; plaintext keys are held in sealed memory file descriptors and passed to `cryptsetup` through `/proc/self/fd`. No plaintext key is written to a disk or command line. |
 | Keep confidential model artifacts encrypted outside the CVM | Conditional | Conditional | The vault is LUKS2-encrypted and authenticated. `/user_config`, `/user_data`, and `/applog` are intentionally clear sidecars. Confidential model weights, credentials, and proprietary application material must be placed in the vault rather than those sidecars. The builder rejects obvious private keys in public inputs but cannot infer the confidentiality of arbitrary data. |
-| Fail closed when attestation, policy evaluation, key release, integrity validation, or re-attestation fails | Meets | Conditional | Systemd failure handling powers off the guest; the workload target is reached only after vault and integrity gates. Periodic CPU/KBS and GPU checks also fail closed. The composite GPU path still needs full hardware validation. |
-| Emit privacy-safe audit records for attestation and key release | Conditional | Conditional | `builder/audit.py` records time, build ID, vault ID, measurements, policy ID, and allow/deny without tokens, keys, or payloads. It lacks a correlation/request ID, verifier identity, key-resource ID, safe failure-reason code, and a demonstrated SIEM/export integration. Trustee/KBS logs may supply some fields, but the deployment must prove the combined record. |
+| Fail closed when attestation, policy evaluation, key release, integrity validation, or re-attestation fails | Meets | Conditional | PID 1 poweroff actions cover failure of all three guest units and any exit of the two supervisors; application services start only after vault and integrity gates. Periodic CPU/KBS and GPU checks also fail closed. The composite GPU path still needs full hardware validation. |
+| Emit privacy-safe audit records for attestation and key release | Conditional | Conditional | `cvm/runtime/audit.py` records time, build ID, vault ID, measurements, policy ID, and allow/deny without tokens, keys, or payloads. It lacks a correlation/request ID, verifier identity, key-resource ID, safe failure-reason code, and a demonstrated SIEM/export integration. Trustee/KBS logs may supply some fields, but the deployment must prove the combined record. |
 
 ## Architecture and deployment controls
 
@@ -146,7 +146,7 @@ source revision.
 | GPU CC mode disabled or invalid GPU evidence | **Evidence pending for a GPU profile** | Composite authorization is implemented. Run missing/tampered/replayed GPU and CC-disabled hardware cases and prove no key release, no vault mapper, no allow record and bounded poweroff. CPU-only profiles do not run this test. |
 | Expired or revoked collateral | Conditional | JWT lifetime, appraisal status, trust vector, and collateral claims are checked in software tests. Add a real expired/revoked attestation collateral case on the production verifier path. |
 | KBS/KMS outage | Meets, refresh after rebuild | The recorded TDX KBS DROP test powered the guest off within the acceptance limit. Repeat on the final production artifacts and both selected CPU platforms. |
-| Key disable or revocation | Meets, refresh after rebuild | KBS resource deletion/retirement and periodic authorization failure are implemented and tested. Repeat on final artifacts and retain the KBS audit record. |
+| Key disable or revocation | Conditional | Native KBS deletion and bundle-policy retirement deny future retrieval. Native uploads can recreate deleted keys; demonstrate upload fencing and preservation of deletions/current policy across backup restore, then repeat periodic denial on final artifacts. |
 | Administrator bypass attempts | Evidence pending | Existing tests cover SSH/service/socket/core-dump hardening. Add console, QEMU monitor, host attach, memory-dump, and direct vault-access attempts expected by the deployed management stack. |
 | Artifact and key rotation | Conditional | Versioned builds, vaults, resource paths, approval, retirement, and OCI digests support rotation. Demonstrate an old-artifact denial and new-artifact success on the final release. |
 

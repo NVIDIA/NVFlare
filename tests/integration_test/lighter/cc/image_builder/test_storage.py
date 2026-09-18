@@ -19,18 +19,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from builder.common import BuildError, binding, memory_file, run
-from builder.storage import (
-    create_image,
-    format_vault,
-    inspect_header,
-    mounted,
-    nbd,
-    opened_vault,
-    scan,
-    sidecar,
-    snapshot_header,
-)
+from cvm.build.storage import create_image, format_vault, mounted, nbd, opened_vault, sidecar
+from cvm.common.contracts import binding
+from cvm.common.errors import BuildError
+from cvm.common.linux import memory_file, run
+from cvm.common.luks import inspect_header, scan, snapshot_header
 
 
 @unittest.skipUnless(os.environ.get("CVM_STORAGE_TESTS") == "1" and os.geteuid() == 0, "Opt-in root storage tests")

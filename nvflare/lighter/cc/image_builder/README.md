@@ -21,7 +21,7 @@ the [provisioning example](../../../../examples/advanced/cc_provision/cvm_builde
 
 For operational instructions, see:
 
-- [TRUSTEE_GUIDE.md](TRUSTEE_GUIDE.md): deploy Trustee and the key service,
+- [TRUSTEE_GUIDE.md](TRUSTEE_GUIDE.md): configure the existing CoCo Trustee,
   enable approved CVM bundles, and manage vault keys.
 - [BUILD_GUIDE.md](BUILD_GUIDE.md): build the reusable CVM bundle and a fresh
   vault for each application release and site.
@@ -114,7 +114,7 @@ evidence binding. Hardware reference collection alone does **not** approve a bun
 operator must validate the signed quote, replay TDX CCEL where applicable, verify
 the TCB references, and complete the design's acceptance matrix. An acceptance
 report must identify the exact manifest hash and contain successful, hashed
-evidence for every check returned by `builder.policy.required_acceptance_checks`
+evidence for every check returned by `cvm.artifacts.bundle.required_acceptance_checks`
 for that platform and CPU/GPU profile:
 
 ```sh
@@ -133,21 +133,19 @@ Use the same upstream distribution and image digest as your CoCo deployment.
 
 [TRUSTEE_GUIDE.md](TRUSTEE_GUIDE.md) contains the complete setup, including the
 upstream [kbs.json](trustee/kbs.json) configuration, immutable default CPU/GPU
-policies, RVPS references and expiry, role-based administrative ACLs, and the
-create-only vault key adapter. `scripts/trustee_provenance.py` records a clean
+policies, RVPS references and expiry, role-based administrative ACLs, and native
+resource uploads. `scripts/trustee_provenance.py` records a clean
 release checkout and binary digest. The upstream client uses the `default` AS
 policy; policy content digests and profile versions identify approved revisions.
 
 CVM-specific authorization remains in Rego and deployment configuration. The
 resource policy requires a fresh, favorable CPU appraisal and, for GPU profiles,
-exactly the expected favorable NVIDIA GPU appraisals before key release. Native
-resource mutation and AS-policy replacement are denied by upstream admin ACLs
-and read-only storage mounts.
-
-The Python key provisioning adapter handles atomic create-only uploads and
-persistent revocation beside Trustee's unmodified local_fs resource backend.
-It is an application adapter, not an alternate attestation service. The vault
-builder's mTLS identity cannot publish policy or revoke keys.
+exactly the expected favorable NVIDIA GPU appraisals before key release.
+Vault builds use a scoped bearer token for native KBS resource POST. Policy
+publishing remains a separate administrative role. CVM Builder runs no custom
+key server and ships no Trustee systemd services; CoCo manages the backend.
+Native uploads may overwrite, and native deletion has no permanent tombstone.
+Fence active builds before deletion and preserve revocations during backup restore.
 
 Administration verifies the installed upstream revision, binary digest, policy
 content hashes, approved reference values and deployment acceptance before
@@ -159,18 +157,18 @@ sudo scripts/admin_retire admin.json cvm-BUNDLE_ID
 ```
 
 There is no per-vault measurement history. Reference values and keys live in
-Trustee storage; permanent revocation tombstones live separately. Rebuild and
+Trustee storage; bundle retirement records stay in the publisher's admin state. Rebuild and
 reapprove generic bundles when migrating from the earlier backend.
 
 ## Stage 2: rebuild for each application release and site
 
 Create a Docker save archive and record the image's immutable ID. Configure
 `docker_archive`, `image_id`, application files, ports, optional mounts/environment,
-and `cvm_image` in `config/vault_build.yml`. Configure the shared create-only
-key-service identity once in [cvm_project.yml](cvm_project.yml). Vault Build finds
+and `cvm_image` in `config/vault_build.yml`. Configure the existing Trustee endpoint and scoped
+resource token once in [cvm_project.yml](cvm_project.yml). Vault Build finds
 the nearest project file above the build YAML; credential paths are relative to
 that project file. Use `--project-config /path/cvm_project.yml` for build inputs
-staged elsewhere. Per-build `key_service` fields are rejected:
+staged elsewhere. Per-build `trustee` fields are rejected:
 
 ```sh
 docker image inspect --format '{{.Id}}' my-application:release
@@ -264,10 +262,58 @@ service has a 300-second outer deadline; hardware timing acceptance is pending. 
 negative appraisal, GPU failure, integrity failure or lost clock synchronization
 stops the workload and uses the forced poweroff path.
 
+## Guest service supervision
+
+The measured root ships three CVM units: `cvm_bootstrap.service`,
+`cvm_integrity.service` and `cvm_app.service`. Bootstrap performs the firewall,
+clock, vault, sidecar and optional NFS gates, then notifies readiness before
+starting the application units. Its supervisor runs fresh re-attestation children
+every five minutes with a 300-second deadline. Tick status is recorded in
+`/run/cvm/periodic.json`; acceptance tooling can request an immediate check with
+`systemctl kill --kill-whom=main --signal=SIGUSR1 cvm_bootstrap.service`.
+
+The distro `nftables.service` loads measured bootstrap rules before networking.
+Docker socket activation is masked; provisioning configures the Docker daemon to
+open its Unix socket directly. The independent integrity monitor retains its
+watchdog. A security failure, or exit of either supervisor, makes PID 1 force
+poweroff without a Python shutdown handler. This skips application graceful-stop
+hooks on security failure. Development images use the same unit files and omit
+TEE/KBS and integrity-monitor work.
+
+Rebuild and reapprove generic CVM bundles after this change. Earlier hardware
+acceptance records do not cover the new boot and shutdown sequence.
+
+## Python package layout
+
+The standalone `cvm` namespace has no NVFlare imports. Its packages separate
+construction, guest execution, host launch, Trustee administration and artifact
+transport:
+
+| Package | Responsibility |
+|---|---|
+| `cvm.build` | Generic CVM construction, application vault sealing, build inputs and construction provisioning |
+| `cvm.runtime` | Guest bootstrap, attestation, application lifecycle, GPU readiness, integrity and audit |
+| `cvm.host` | Host capability checks, QEMU launch/shutdown and GPU assignment |
+| `cvm.trustee` | Client/admin tools for the existing upstream CoCo Trustee; no server implementation |
+| `cvm.artifacts` | Bundle/approval verification, OCI packaging and registry transport |
+| `cvm.common` | Shared binding formats, measurement parsing, validation, pure policies and Linux primitives |
+
+Guest images receive only `cvm.runtime` and the shared modules listed in
+`cvm/build/payload.py`. Deliveries receive `cvm.host`, bundle verification and
+their shared dependencies. Neither includes build or Trustee administration
+code. The construction provisioner runs separately and is not installed in the
+finished guest. Public shell commands and YAML fields are unchanged.
+
+The package migration changes installed guest bytes and launcher templates.
+Rebuild generic bundles with a new profile version, collect fresh measurements
+and obtain new approval before creating deliveries with the reorganized tools.
+Existing deliveries remain self-contained. The source fingerprint still covers
+all construction sources, provisioning logic, payload lists and launch assets.
+
 ## Development and validation
 
 Use a separate `dev-` profile plus `--dev` on both builders for an unencrypted
-development vault and plain VM. Do not provide key-service credentials to a dev
+development vault and plain VM. Do not provide Trustee administration credentials to a dev
 vault: `--dev` skips project discovery and rejects `--project-config`.
 Dev artifacts cannot receive production approval or be mixed with production
 deliveries. A test build requiring real TEE/KBS behavior instead uses a `test-`
@@ -276,7 +322,7 @@ profile and the explicit `--candidate` flag on Stage 2 and bundle administration
 Run the builder contracts on Linux with Python unittest. NVFlare's regular unit
 suite also runs these contracts through
 [`cvm_builder_test.py`](../../../../tests/unit_test/lighter/cvm_builder_test.py).
-Use an isolated Linux test host and key service for storage, HTTPS and hardware
+Use an isolated Linux test host and upstream Trustee for storage, HTTPS and hardware
 acceptance; these tests are opt-in. Run these commands from the repository root:
 
 ```sh

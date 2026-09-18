@@ -33,10 +33,13 @@ import urllib.request
 from pathlib import Path
 from urllib.parse import urlparse
 
-from builder.common import digest_file, read_json, require, run, write_json
-from builder.config import contains_private_key
-from builder.policy import verify_bundle
-from builder.storage import mounted, nbd, snapshot_header
+from cvm.artifacts.bundle import verify_bundle
+from cvm.build.config import contains_private_key
+from cvm.build.storage import mounted, nbd
+from cvm.common.errors import require
+from cvm.common.io import digest_file, read_json, write_json
+from cvm.common.linux import run
+from cvm.common.luks import snapshot_header
 
 
 @unittest.skipUnless(os.environ.get("CVM_HARDWARE_TESTS") == "1", "Opt-in real TEE acceptance")
@@ -92,7 +95,7 @@ class HardwareTests(unittest.TestCase):
         self.boot_started = time.monotonic()
         log = self.directory / f"boot-{len(self.logs)}.log"
         self.logs.append(log)
-        entry = ["-m", "builder.launcher"]
+        entry = ["-m", "cvm.host.launcher"]
         if reverse_scsi:
             # Keep the normal launcher checks and locking, but emulate a host
             # presenting the five disks at different SCSI target addresses.
@@ -127,7 +130,15 @@ class HardwareTests(unittest.TestCase):
             try:
                 state = json.loads(self.request())
                 if state["marker"] and self.request("/", port=18080) == b"CVM_GENERIC_APPLICATION_OK\n":
+                    self.assertEqual(state["cvm_bootstrap.service"], "active")
                     self.assertEqual(state["cvm_integrity.service"], "active")
+                    self.assertEqual(
+                        set(state["cvm_units"]),
+                        {"cvm_bootstrap.service", "cvm_integrity.service", "cvm_app.service"},
+                    )
+                    self.assertEqual(state["docker_socket"], "masked")
+                    self.assertEqual(state["nftables_enabled"], "enabled")
+                    self.assertTrue(state["firewall_present"])
                     self.assertEqual(state["platform"], self.manifest["platform"])
                     self.assertTrue(state["core_dumps_disabled"])
                     self.assertTrue(state["sidecar_roles_correct"])
@@ -236,7 +247,7 @@ class HardwareTests(unittest.TestCase):
             [
                 "python3",
                 "-m",
-                "builder.launcher",
+                "cvm.host.launcher",
                 "--cvm-bundle",
                 str(self.bundle),
                 "--vault-directory",
@@ -309,7 +320,7 @@ class HardwareTests(unittest.TestCase):
         self.boot(bundle=damaged)
         self.process.wait(timeout=120)
         log = self.logs[-1].read_text(errors="replace")
-        self.assertNotIn("Authenticated application workload.", log)
+        self.assertNotIn("CVM_WORKLOAD_STARTED", log)
         self.result(root_disk_corruption_prevented_startup=True, launch_measurements_unchanged=True)
 
     @unittest.skipUnless(os.environ.get("CVM_NETWORK_FAULTS") == "1", "Opt in to isolated host firewall faults")
@@ -332,7 +343,7 @@ class HardwareTests(unittest.TestCase):
             self.skipTest("SNP-only offline collateral acceptance")
         self.boot()
         self.ready()  # The operator preinstalls the upstream SNP offline certificate store.
-        before = json.loads(self.request())["periodic_attestation.service"]["invocation"]
+        before = json.loads(self.request())["periodic"]["sequence"]
         kds_addresses = sorted({item[4][0] for item in socket.getaddrinfo("kdsintf.amd.com", 443)})
         self.assertTrue(kds_addresses, "AMD KDS did not resolve")
         with self.drop_egress(443, kds_addresses):
@@ -342,8 +353,8 @@ class HardwareTests(unittest.TestCase):
                 self.assertIsNone(
                     self.process.poll(), "Guest powered off when AMD KDS was unavailable with offline collateral"
                 )
-                status = json.loads(self.request())["periodic_attestation.service"]
-                if status["invocation"] != before and status["active"] == "inactive" and status["result"] == "success":
+                status = json.loads(self.request())["periodic"]
+                if status["sequence"] != before and status["result"] == "success":
                     break
                 time.sleep(0.5)
             else:
@@ -489,7 +500,7 @@ class HardwareTests(unittest.TestCase):
         log = self.logs[-1].read_text(errors="replace")
         self.assertIn("Power down", log)
         self.assertNotIn("Started \x1b[0;1;39mcvm_integrity.service", log)
-        self.assertNotIn("Authenticated application workload.", log)
+        self.assertNotIn("CVM_WORKLOAD_STARTED", log)
         self.result(wrong_binding_prevented_startup=True)
 
     def test_payload_corruption_prevents_startup(self):
@@ -506,5 +517,5 @@ class HardwareTests(unittest.TestCase):
         self.process.wait(timeout=180)
         log = self.logs[-1].read_text(errors="replace")
         self.assertIn("Power down", log)
-        self.assertNotIn("Authenticated application workload.", log)
+        self.assertNotIn("CVM_WORKLOAD_STARTED", log)
         self.result(payload_corruption_prevented_startup=True, unchanged_header=True)

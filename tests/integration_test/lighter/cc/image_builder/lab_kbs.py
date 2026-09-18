@@ -12,14 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Run an isolated, deny-by-default lab Trustee and key service.
+"""Run an isolated, deny-by-default lab upstream Trustee.
 
 Requires unmodified CoCo Trustee v0.22.0 binaries on
 the lab host, and the disposable PKI from prepare_lab.py. Never touches another
 KBS deployment or its credentials.
 """
 
-import hashlib
 import os
 import signal
 import subprocess
@@ -27,17 +26,16 @@ import sys
 import time
 from pathlib import Path
 
-from builder.common import read_json, write_json
-from cryptography import x509
 from cryptography.hazmat.primitives import serialization
-from scripts.trustee_provenance import provenance
+from cvm.common.io import canonical, read_json, write_json
+from cvm.trustee.client import encode
+from cvm.trustee.provenance import provenance
 
 
 def main(directory):
     directory = Path(directory).resolve()
     pki = Path(read_json(directory / "lab-state.json")["pki"])
     kbs_port = int(os.environ.get("CVM_LAB_KBS_PORT", "19199"))
-    key_port = int(os.environ.get("CVM_LAB_KEY_PORT", "19200"))
     state = directory / "lab-kbs"
     state.mkdir(mode=0o700, exist_ok=True)
     storage = state / "storage"
@@ -45,7 +43,7 @@ def main(directory):
     policies.mkdir(parents=True, exist_ok=True)
     strict = (directory / "config/attestation_policy.rego").read_bytes()
     (policies / "default_cpu.rego").write_bytes(strict)
-    from builder.gpu_policy import render
+    from cvm.common.gpu_policy import render
 
     (policies / "default_gpu.rego").write_text(render(read_json(directory / "config/gpu_policy.json")))
     for device in ("switch", "ppcie"):
@@ -60,12 +58,7 @@ def main(directory):
     (pki / "as-chain.pem").write_bytes(
         (pki / "as.pem").read_bytes() + (directory / "inputs/test-as-ca.pem").read_bytes()
     )
-    resources = storage / "repository"
-    resources.mkdir(mode=0o700, exist_ok=True)
-    revocation = directory / "lab-revocation"
-    revocation.mkdir(mode=0o700, exist_ok=True)
-    if not (revocation / "approved-bundles.json").exists():
-        write_json(revocation / "approved-bundles.json", {"build_ids": []})
+    (storage / "repository").mkdir(mode=0o700, exist_ok=True)
     config = {
         "http_server": {
             "sockets": [f"127.0.0.1:{kbs_port}"],
@@ -96,7 +89,11 @@ def main(directory):
                         {
                             "role": "cvm-policy",
                             "allowed_endpoints": "^/kbs/v0/(resource-policy|reference-value/[^/]+)$",
-                        }
+                        },
+                        {
+                            "role": "cvm-resources",
+                            "allowed_endpoints": "^/kbs/v0/resource/keys/[^/]+/[^/]+$",
+                        },
                     ]
                 }
             },
@@ -117,33 +114,36 @@ def main(directory):
         "plugins": [{"name": "resource", "storage_backend_type": "kvstorage"}],
     }
     write_json(state / "kbs.json", config)
-    roles = {}
-    for role in ("builder", "admin"):
-        cert = x509.load_pem_x509_certificate((pki / (role + ".pem")).read_bytes())
-        roles[hashlib.sha256(cert.public_bytes(serialization.Encoding.DER)).hexdigest()] = role
+    # Only the lab issuer has the signing key; builders get a fixed-role token.
+    key = serialization.load_pem_private_key((pki / "kbs-admin.key").read_bytes(), None)
+    now = int(time.time())
+    claims = {
+        "iat": now,
+        "nbf": now - 5,
+        "exp": now + 3600,
+        "role": "cvm-resources",
+        "iss": "cvm-builder",
+        "aud": "coco-trustee",
+    }
+    body = encode(canonical({"alg": "EdDSA", "typ": "JWT"})) + "." + encode(canonical(claims))
+    token_path = pki / "resource-token.jwt"
+    token_path.write_text(body + "." + encode(key.sign(body.encode())))
+    token_path.chmod(0o600)
     write_json(
-        state / "key-service.json",
+        state / "resources.json",
         {
-            "listen": "127.0.0.1",
-            "port": key_port,
-            "resources": str(resources),
-            "state": str(revocation),
-            "client_ca": str(directory / "inputs/test-ca.pem"),
-            "cert": str(pki / "server.pem"),
-            "key": str(pki / "server.key"),
-            "certificate_roles": roles,
+            "url": f"https://127.0.0.1:{kbs_port}",
+            "ca": str(directory / "inputs/test-ca.pem"),
+            "admin_token_file": str(token_path),
         },
     )
     config_admin = {
         "url": f"https://127.0.0.1:{kbs_port}",
         "ca": str(directory / "inputs/test-ca.pem"),
         "admin_private_key": str(pki / "kbs-admin.key"),
-        "resources": str(resources),
         "storage_directory": str(storage),
-        "key_service_state": str(revocation),
         "state": str(state / "admin"),
         "deployment_receipt": str(state / "deployment-receipt.json"),
-        "key_service_url": f"https://127.0.0.1:{key_port}",
         "trustee_binary": str(directory / "trustee-source/target/release/kbs"),
         "trustee_build": str(state / "trustee_build.json"),
     }
@@ -178,26 +178,8 @@ def main(directory):
                 env=dict(os.environ, RUST_LOG="warn"),
             )
         )
-        plog = (state / "key-service.log").open("ab")
-        # Only the key service needs locked memory for transient upload copies.
-        processes.append(
-            subprocess.Popen(
-                [
-                    "sudo",
-                    "-n",
-                    "env",
-                    "PYTHONPATH=" + str(directory),
-                    "python3",
-                    "-m",
-                    "builder.key_service",
-                    str(state / "key-service.json"),
-                ],
-                stdout=plog,
-                stderr=plog,
-            )
-        )
-        write_json(state / "pids.json", {"kbs": processes[0].pid, "key_service_parent": processes[1].pid})
-        print("Isolated lab KBS and key service started; resource release remains policy controlled", flush=True)
+        write_json(state / "pids.json", {"kbs": processes[0].pid})
+        print("Isolated upstream Trustee started", flush=True)
         while not stopping and all(process.poll() is None for process in processes):
             time.sleep(1)
         if stopping:

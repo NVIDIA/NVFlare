@@ -26,11 +26,12 @@ import tempfile
 from pathlib import Path
 
 import yaml
-from builder.common import HEADER_BYTES, STORAGE_PROFILE, write_json
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec, ed25519
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
+from cvm.common.contracts import HEADER_BYTES, STORAGE_PROFILE
+from cvm.common.io import write_json
 
 
 def prepare(directory, *, http_only=False):

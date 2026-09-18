@@ -103,16 +103,15 @@ def configuration(tmp_path):
     profile_dir.mkdir()
     write_profile(profile_dir)
     write_docker_archive(tmp_path / "image.tar")
-    for name in ("ca.pem", "builder.pem", "builder.key"):
+    for name in ("ca.pem", "builder.jwt"):
         (tmp_path / name).write_text("input")
     (tmp_path / "cvm_project.yml").write_text(
         yaml.safe_dump(
             {
-                "key_service": {
+                "trustee": {
                     "url": "https://keys.example.com:9443",
                     "ca": "ca.pem",
-                    "cert": "builder.pem",
-                    "key": "builder.key",
+                    "admin_token_file": "builder.jwt",
                 }
             }
         )
@@ -169,7 +168,7 @@ def make_adapter(config, tmp_path):
 
 def fake_build(builder_dir, config_file, output, log_file, project_config):
     app = yaml.safe_load(config_file.read_text())
-    assert not {"deployment_id", "cvm_profile", "key_service"} & app.keys()
+    assert not {"deployment_id", "cvm_profile", "trustee"} & app.keys()
     assert project_config.is_absolute() and project_config.is_file()
     output.mkdir(mode=0o700)
     log_file.write_text("build complete\n")
@@ -247,7 +246,7 @@ def test_opt_in_finalized_signed_isolated_workspace(configuration, tmp_path, mon
     result = ctx[CtxKey.CVM_VAULT_RESULTS][0]
     assert result["participant"] == "site-1"
     assert result["artifacts"][0]["cvm_build_id"] == "generic-intel_tdx"
-    assert "key_service" not in json.dumps(result)
+    assert "trustee" not in json.dumps(result)
     assert not (Path(ctx[CtxKey.CURRENT_PROD_DIR]) / "site-2/signature.json").exists()
     assert len(observed) == 1
 
@@ -255,7 +254,7 @@ def test_opt_in_finalized_signed_isolated_workspace(configuration, tmp_path, mon
 @pytest.mark.parametrize("registry", [False, True])
 @pytest.mark.parametrize("participant", ["server.example.com", "site-1"])
 def test_inputs_match_included_builder(configuration, tmp_path, monkeypatch, registry, participant):
-    from nvflare.lighter.cc.image_builder.builder import config as builder_config
+    from nvflare.lighter.cc.image_builder.cvm.build import config as builder_config
 
     builder = Path(adapter_module.__file__).parent / "image_builder"
     settings = configuration["cvm_vault"]
@@ -273,7 +272,7 @@ def test_inputs_match_included_builder(configuration, tmp_path, monkeypatch, reg
         assert "platforms" not in app
         assert app["image_id"] == docker_image_id(tmp_path / "image.tar")
         assert app["cvm_image"] == (REGISTRY_IMAGE if registry else str(tmp_path / "profile"))
-        assert project["key_service"]["key"] == str(tmp_path / "builder.key")
+        assert project["trustee"]["admin_token_file"] == str(tmp_path / "builder.jwt")
         assert app["container"]["command"][-2:] == ["--verify", "--foreground"]
         observed.append(app)
         fake_build(builder_dir, config_file, output, log, project_config)
@@ -343,7 +342,7 @@ def test_no_new_prod_directory_is_not_success(configuration, tmp_path, monkeypat
         ({"candidate": True}, "Unknown cvm_vault"),
         ({"image_id": "latest"}, "Unknown cvm_vault"),
         ({"builder_dir": "external builder"}, "Unknown cvm_vault"),
-        ({"key_service": {}}, "Unknown cvm_vault"),
+        ({"trustee": {}}, "Unknown cvm_vault"),
         ({"requires_gpu": True}, "match the CVM profile"),
         ({"platforms": ["wrong"]}, "Requested platforms"),
         ({"allowed_ports": [True]}, "Ports must be integers"),
@@ -422,7 +421,7 @@ def test_private_keys_rejected_in_public_inputs(configuration, tmp_path, name, c
 def test_public_symlink_rejected(configuration, tmp_path):
     public = tmp_path / "public"
     public.mkdir()
-    (public / "data").symlink_to(tmp_path / "builder.key")
+    (public / "data").symlink_to(tmp_path / "builder.jwt")
     configuration["cvm_vault"]["user_data"] = "public"
     with pytest.raises(ValueError, match="symbolic link"):
         make_adapter(configuration, tmp_path)
@@ -754,7 +753,7 @@ def test_project_config_shared_and_never_staged(configuration, tmp_path, monkeyp
 
     def build(*args):
         configs.append(args[4])
-        assert "key_service" not in yaml.safe_load(args[1].read_text())
+        assert "trustee" not in yaml.safe_load(args[1].read_text())
         assert not list(args[1].parent.rglob("builder.key"))
         fake_build(*args)
 
@@ -771,7 +770,7 @@ def test_bad_project_config_fails_before_provisioning(configuration, tmp_path, d
     elif damage == "invalid":
         path.write_text("unexpected: true\n")
     elif damage == "credential":
-        (tmp_path / "builder.key").unlink()
+        (tmp_path / "builder.jwt").unlink()
     elif damage == "url":
         path.write_text(path.read_text().replace("https:", "http:"))
     else:
@@ -785,8 +784,8 @@ def test_explicit_project_config_overrides_invalid_nearest(configuration, tmp_pa
     other = tmp_path / "other"
     other.mkdir()
     config = yaml.safe_load((tmp_path / "cvm_project.yml").read_text())
-    for key in ("ca", "cert", "key"):
-        config["key_service"][key] = "../" + config["key_service"][key]
+    for key in ("ca", "admin_token_file"):
+        config["trustee"][key] = "../" + config["trustee"][key]
     (other / "selected.yml").write_text(yaml.safe_dump(config))
     (tmp_path / "cvm_project.yml").write_text("invalid: true\n")
     configuration["cvm_vault"]["project_config"] = "other/selected.yml"
@@ -803,7 +802,7 @@ def test_invalid_nearest_project_does_not_fall_back(configuration, tmp_path):
     settings = copy.deepcopy(configuration["cvm_vault"])
     for key in ("cvm_builder_dir", "cvm_image", "docker_archive", "output_root"):
         settings[key] = str(tmp_path / settings[key])
-    with pytest.raises(ValueError, match="only key_service"):
+    with pytest.raises(ValueError, match="only trustee"):
         VaultAdapter(settings, nested / "project.yml", tmp_path / "workspace", prepare_project(configuration))
 
 

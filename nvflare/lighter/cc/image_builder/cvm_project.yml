@@ -1,7 +1,6 @@
-# Project-wide builder settings. Configure once for all application vault builds.
-# Credential paths are relative to this file; keep private keys out of deliveries.
-key_service:
-  url: https://key-service.example.org:9443
-  ca: ./inputs/key-service-ca.pem
-  cert: ./inputs/builder-client.pem
-  key: ./inputs/builder-client.key
+# Project-wide settings for the existing CoCo Trustee deployment.
+# The operator issues a scoped bearer JWT; keep it on the trusted build host.
+trustee:
+  url: https://trustee.example.org:8443
+  ca: ./inputs/kbs-ca.pem
+  admin_token_file: ./inputs/kbs-resource-token.jwt

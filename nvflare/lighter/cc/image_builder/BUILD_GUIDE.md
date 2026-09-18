@@ -6,8 +6,8 @@ it for every compatible application. Build a new vault for every application
 release and site.
 
 Set up the attestation and key backend first using
-[TRUSTEE_GUIDE.md](TRUSTEE_GUIDE.md). It includes service configuration, test
-certificates, reference-value installation, and the `key_service` credentials
+[TRUSTEE_GUIDE.md](TRUSTEE_GUIDE.md). It covers existing CoCo deployment configuration, test
+certificates, reference-value installation, and the `trustee` credentials
 used by Vault Build.
 
 ## 1. Prepare the build host
@@ -129,9 +129,14 @@ upstream's Linux build prerequisites and Rust toolchain:
 
 ```sh
 git clone --branch v0.22.0 https://github.com/confidential-containers/trustee.git /tmp/trustee
-cargo build --locked --release --manifest-path /tmp/trustee/Cargo.toml   -p kbs-client --bin kbs-client --no-default-features   --features native-tls,tdx-attester,snp-attester
+cargo build --locked --release --manifest-path /tmp/trustee/Cargo.toml   -p kbs-client --bin kbs-client --features tdx-attester,snp-attester
 install -m 755 /tmp/trustee/target/release/kbs-client inputs/kbs-client
 ```
+
+Keep the default crypto configuration: v0.22.0's optional `native-tls` feature
+selects an OpenSSL RSA decryptor that does not support the RSA-OAEP-256 responses
+used by this builder. Verify encrypted resource retrieval with the exact binary
+before building a CVM.
 
 For a GPU profile add `nvidia-attester` and install upstream's matching NVAT
 build/runtime dependency. Leave the source and dependency lockfile unchanged.
@@ -290,20 +295,19 @@ Configure the shared key endpoint once in [cvm_project.yml](cvm_project.yml)
 at your project root. The checked-in file uses paths under the builder's `inputs/`:
 
 ```yaml
-key_service:
-  url: https://key-service.example.org:9443
-  ca: ./inputs/key-service-ca.pem
-  cert: ./inputs/builder-client.pem
-  key: ./inputs/builder-client.key
+trustee:
+  url: https://trustee.example.org:8443
+  ca: ./inputs/kbs-ca.pem
+  admin_token_file: ./inputs/kbs-resource-token.jwt
 ```
 
-Use your actual HTTPS endpoint and mTLS credential files from
-[TRUSTEE_GUIDE.md](TRUSTEE_GUIDE.md#9-upload-keys-through-vault-build).
+Use your actual HTTPS endpoint and scoped resource-administration token from
+[TRUSTEE_GUIDE.md](TRUSTEE_GUIDE.md#5-use-native-trustee-resource-administration).
 Credential paths resolve relative to `cvm_project.yml`. Each vault build searches
 from its build YAML directory upward and uses the nearest `cvm_project.yml`.
 It does not search from the shell's working directory or merge ancestor files.
 A missing or invalid project configuration fails before CVM retrieval or key creation.
-Do not put `key_service` in `vault_build.yml`; per-build overrides are rejected.
+Do not put `trustee` in `vault_build.yml`; per-build overrides are rejected.
 
 For generated YAML outside the project, select the shared file explicitly:
 
@@ -315,7 +319,7 @@ sudo ./vault_build.sh /tmp/site-inputs/vault_build.yml \
 Relative `--project-config` paths resolve from the shell's working directory.
 This option selects one complete project file; a missing explicit file never
 falls back to discovery. Plaintext `--dev` builds skip project discovery and
-reject `--project-config`. Candidate builds still require the project key service.
+reject `--project-config`. Candidate builds still require the project Trustee configuration.
 
 The container can run any Linux amd64 application. Pull the selected image, print
 its immutable `image_id`, and save it as an archive:
@@ -358,8 +362,7 @@ hosts_entries: {}
 
 Optional `services` entries point to unit files named `app_<name>.service`,
 using lowercase letters, digits, and underscores, such as `app_helper.service`.
-The builder supplies their bootstrap, integrity-monitor, and workload-target
-dependencies.
+The builder supplies their bootstrap dependencies and PID 1 failure actions.
 
 `cvm_image` accepts a local folder containing `profile_set.json` and its platform
 subdirectories, or a generic CVM OCI registry reference pinned by manifest digest:
@@ -430,9 +433,10 @@ fields. The policy lists those two fields under `claims-if-present`: a returned
 false or malformed value denies key release. RIM signature, certificate,
 version and measurement checks remain mandatory in `required-claims`.
 
-The checked-in default expects `inputs/libnvat.so.1.2.2`, matching the NVAT
-2026.06.09 bindings pinned by upstream guest-components. Supply a reviewed
-library built for the selected guest environment. The custom `nvattest` collector
+The checked-in default expects `inputs/libnvat.so.1.2.2`. Trustee v0.22.0's
+Cargo.lock pins guest-components with the NVAT 2026.03.02 Rust bindings;
+the 1.2.2 library provides the matching C API. Supply a reviewed library built
+for the selected guest environment. The custom `nvattest` collector
 is no longer installed; evidence collection and verification use CoCo's code.
 
 For a smaller guest, `gpu_packages` may pin a precompiled
