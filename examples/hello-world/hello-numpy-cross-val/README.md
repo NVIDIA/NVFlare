@@ -256,6 +256,6 @@ recipe.export(job_dir="/tmp/nvflare/prod/job_config", env=env)  # Creates job fi
 
 ## Next Steps
 
-- Try the [PyTorch CSE example](../hello-pt) for deep learning models
+- Try [Hello PyTorch execution environments](../../advanced/hello-pt-environments) with `python job.py --evaluation cross-site` for deep learning models
 - Learn about [experiment tracking](../../advanced/experiment-tracking) with TensorBoard, MLflow, or Weights & Biases
 - Explore [custom recipes](https://nvflare.readthedocs.io/en/main/user_guide/data_scientist_guide/job_recipe.html) in the documentation

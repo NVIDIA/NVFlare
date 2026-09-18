@@ -7,15 +7,30 @@ tracking service.
 
 ## Install
 
-Create and activate a virtual environment, then get the source and enter the
-example directory:
+Create and activate a virtual environment. If you downloaded this directory
+with `nvflare examples get hello-pt`, add the `PT` extra to the same
+NVFlare distribution already in use by running the matching command:
+
+```bash
+# Stable installation
+python -m pip install "nvflare[PT]"
+
+# Nightly installation
+python -m pip install "nvflare-nightly[PT]"
+```
+
+Do not run both commands. If you are working from a source checkout instead,
+install that checkout in editable mode so the example and NVFlare revision
+stay aligned:
 
 ```bash
 git clone https://github.com/NVIDIA/NVFlare.git
-cd NVFlare/examples/hello-world/hello-pt
+cd NVFlare
+python -m pip install -e ".[PT]"
+cd examples/hello-world/hello-pt
 ```
 
-Install the example dependencies from that directory:
+Install the remaining example dependencies from the example directory:
 
 ```bash
 python -m pip install -r requirements.txt
@@ -40,6 +55,7 @@ The default run uses:
 | Training examples per client | 200 |
 | Evaluation examples per client | 100 |
 | Batch size | 32 |
+| SGD learning rate | 0.1 for synthetic data; 0.01 for CIFAR-10 |
 | Data-loader workers | 0 |
 | Experiment tracking | Off |
 | Post-training evaluation | Final global model on both clients |
@@ -57,8 +73,8 @@ persisted model after the last aggregation, use the `SRV_FL_global_model.pt` res
 `cross_val_results.json`. A `best` model can also appear because training-round metrics score the global model received
 at the start of a round; the final aggregate is produced after the last such score. The final model can therefore
 outperform both the last reported training-round accuracy and the model selected earlier as `best` in this short run.
-The automated acceptance test requires
-at least 60% accuracy on both sites and at least a 40 percentage-point improvement over the initial global model.
+The automated acceptance test requires initial global-model accuracy at or below 20%,
+at least 60% final accuracy on both sites, and at least a 40 percentage-point improvement over the initial global model.
 These thresholds are calibrated to the fixed model and data seeds with the three-round default. They verify that this
 specific federated run changed the model meaningfully; they are not guarantees for other initializations or
 hyperparameters and are not benchmark claims.
@@ -211,8 +227,10 @@ python prepare_data.py --data_root /data/cifar
 python job.py --dataset cifar10 --data_root /data/cifar
 ```
 
-If required cache files are missing, `job.py` stops before starting the simulator
-and prints the preparation command for the selected path. Exporting a job does
+Each client checks for missing or empty cache files when loading data and reports
+the preparation command in its error log. This happens after the simulator starts;
+`job.py` does not validate the cache. Use an absolute client-local `--data_root` path
+to avoid depending on a client process's working directory. Exporting a job does
 not require a local cache; prepare the data on its execution clients instead.
 
 All simulated clients then read the same logical CIFAR-10 training and test
@@ -223,9 +241,7 @@ evaluation samples from the same IID distribution.
 
 The beginner entry point intentionally exposes only the number of clients,
 number of rounds, dataset choice, and its client-local data root. Environment
-selection, experiment tracking, full cross-site evaluation, external-process
-execution, and memory tuning belong in the environment-continuity follow-up
-rather than the first federated-learning run.
+selection and advanced Recipe controls are covered in [Continue to POC and Production](#continue-to-poc-and-production).
 
 ## Export a deployable job
 
@@ -239,3 +255,25 @@ The exported job is written under `/tmp/nvflare/jobs/job_config/hello-pt`.
 
 For an interactive CIFAR-10 and TensorBoard-oriented variant, see [`hello-pt.ipynb`](hello-pt.ipynb). The canonical
 deterministic quickstart and its tested defaults are defined by `job.py`.
+
+## Continue to POC and Production
+
+The advanced environment-continuity example reuses files from this example. If
+you are already using a source checkout, continue in
+`examples/advanced/hello-pt-environments`.
+
+If you downloaded this standalone directory with `nvflare examples get`, move
+to its parent and retrieve the advanced example with its revision-matched
+Hello PyTorch dependency:
+
+```bash
+cd ..
+nvflare examples get hello-pt-environments
+cd hello-pt-environments/advanced/hello-pt-environments
+```
+
+Keep using the same revision-matched NVFlare installation and `PT` extra from
+the beginner example. Then follow that directory's README to run the same
+learning application in a local POC or an already-running production
+deployment. It also covers experiment tracking, full cross-site evaluation,
+external-process execution, and memory tuning.

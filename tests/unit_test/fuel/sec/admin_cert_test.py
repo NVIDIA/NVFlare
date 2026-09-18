@@ -14,10 +14,18 @@
 
 import pytest
 from cryptography import x509
-from cryptography.x509.oid import ExtendedKeyUsageOID
+from cryptography.x509.oid import ExtendedKeyUsageOID, ExtensionOID
 
-from nvflare.fuel.sec.admin_cert import AdminCertValidationError, validate_admin_leaf_cert
+from nvflare.fuel.sec.admin_cert import (
+    MAX_ADMIN_STUDIES,
+    AdminCertValidationError,
+    get_admin_study_entitlements,
+    validate_admin_leaf_cert,
+)
+from nvflare.fuel.sec.cert_uri import ADMIN_STUDY_URI_PREFIX, cert_uri_values
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys
+
+_PROJECT = "demo"
 
 
 def _make_admin_cert(role="lead", common_name="alice@nvidia.com", org="nvidia", ca=False, extra_extensions=None):
@@ -39,6 +47,16 @@ def _make_admin_cert(role="lead", common_name="alice@nvidia.com", org="nvidia", 
         extra_extensions=extra_extensions,
     )
     return root_cert, admin_cert
+
+
+def _study_uri(study, project=_PROJECT):
+    return f"{ADMIN_STUDY_URI_PREFIX}{project}/study/{study}"
+
+
+def _make_cert_with_uris(*uris):
+    san = x509.SubjectAlternativeName([x509.UniformResourceIdentifier(uri) for uri in uris])
+    extensions = x509.Extensions([x509.Extension(ExtensionOID.SUBJECT_ALTERNATIVE_NAME, False, san)])
+    return type("CertWithUriSans", (), {"extensions": extensions})()
 
 
 @pytest.mark.parametrize("role", ["project_admin", "org_admin", "lead", "member"])
@@ -98,3 +116,72 @@ def test_validate_admin_leaf_cert_rejects_eku_without_client_auth():
 
     with pytest.raises(AdminCertValidationError, match="clientAuth"):
         validate_admin_leaf_cert(admin_cert)
+
+
+def test_get_admin_study_entitlements_returns_empty_when_san_is_absent():
+    _root_cert, admin_cert = _make_admin_cert()
+
+    assert get_admin_study_entitlements(admin_cert) == ()
+
+
+def test_get_admin_study_entitlements_reads_uri_sans_and_ignores_unrelated_uris():
+    cert = _make_cert_with_uris(
+        "https://example.com/not-an-nvflare-claim",
+        _study_uri("cancer-research"),
+        _study_uri("study_2", project="other-project"),
+    )
+
+    assert get_admin_study_entitlements(cert) == ("cancer-research", "study_2")
+
+
+@pytest.mark.parametrize(
+    "project",
+    [
+        "other-project",
+        "demo%2Fproject",
+        "demo%2fproject",
+        "%64emo",
+        "caf%c3%a9",
+        "demo%252Fproject",
+    ],
+)
+def test_get_admin_study_entitlements_does_not_restrict_project_label(project):
+    uri = _study_uri("study-a", project=project)
+
+    assert get_admin_study_entitlements(_make_cert_with_uris(uri)) == ("study-a",)
+
+
+@pytest.mark.parametrize(
+    "uri",
+    [
+        "https://nvidia.com/nvflare/v2/project/demo/study/study-a",
+        ADMIN_STUDY_URI_PREFIX,
+        f"{ADMIN_STUDY_URI_PREFIX}{_PROJECT}/all-studies",
+        _study_uri("default"),
+        _study_uri("default\n"),
+        _study_uri("study-a\n"),
+        _study_uri("Invalid"),
+        _study_uri("study-a", project=""),
+        _study_uri("study-a", project="demo/project"),
+        _study_uri("study-a", project="demo%ZZ"),
+    ],
+)
+def test_get_admin_study_entitlements_rejects_invalid_nvflare_uri(uri):
+    cert = _make_cert_with_uris(uri)
+    with pytest.raises(AdminCertValidationError):
+        get_admin_study_entitlements(cert)
+    for kind in ("cell", "job", "ca"):
+        with pytest.raises(ValueError):
+            cert_uri_values(cert, kind)
+
+
+@pytest.mark.parametrize("project", [_PROJECT, "other-project"])
+def test_get_admin_study_entitlements_rejects_duplicate_studies(project):
+    with pytest.raises(AdminCertValidationError, match="duplicate"):
+        get_admin_study_entitlements(_make_cert_with_uris(_study_uri("study-a"), _study_uri("study-a", project)))
+
+
+def test_get_admin_study_entitlements_rejects_too_many_studies():
+    uris = [_study_uri(f"study-{i}") for i in range(MAX_ADMIN_STUDIES + 1)]
+    with pytest.raises(AdminCertValidationError, match="too many"):
+        get_admin_study_entitlements(_make_cert_with_uris(*uris))

@@ -12,29 +12,136 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
+import logging
 import os
 import tempfile
+import time
 from typing import Dict, Optional
 
 from nvflare.fuel.flare_api.api_spec import MonitorReturnCode
 from nvflare.fuel.flare_api.flare_api import Session, new_secure_session
+from nvflare.fuel.flare_api.job_status import job_status_outcome
 from nvflare.fuel.utils.job_secret_scanner import warn_on_potential_secrets_in_job_dir
+from nvflare.fuel.utils.log_utils import (
+    FL_LOG_LEVEL,
+    ConciseLogFilter,
+    LogMode,
+    ProgressFormatter,
+    get_module_logger,
+    progress_log_dict,
+)
 from nvflare.job_config.api import FedJob
+from nvflare.recipe._failure_summary import collect_client_errors
+from nvflare.recipe._run_summary import _print_output
+
+
+def _show_job_progress(session, job_id, state):
+    """Replay a bounded tail of existing server logs with bounded deduplication."""
+    try:
+        response = session.get_job_logs(
+            job_id, target="server", log_file_name="log.json", tail_lines=200, max_bytes=64 * 1024
+        )
+        logs = response.get("logs", {})
+        text = logs.get("server", "")
+        structured = True
+        if not text:
+            fallback = session.get_job_logs(
+                job_id, target="server", log_file_name="log.txt", tail_lines=50, max_bytes=64 * 1024
+            )
+            fallback_logs = fallback.get("logs", {})
+            text = fallback_logs.get("server", "") if isinstance(fallback_logs, dict) else ""
+            structured = False
+            if text and not state.get("fallback_notified"):
+                _print_output(
+                    "Structured live progress is unavailable; showing the bounded server log tail.", flush=True
+                )
+                state["fallback_notified"] = True
+            elif not text:
+                state["unavailable_count"] = state.get("unavailable_count", 0) + 1
+                if state["unavailable_count"] >= 2 and not state.get("unavailable_warned"):
+                    _print_output(
+                        "Live progress logs are unavailable. Continue monitoring; use `nvflare job logs` or "
+                        "inspect the downloaded result logs when access permits.",
+                        flush=True,
+                    )
+                    state["unavailable_warned"] = True
+                return
+        if not isinstance(text, str):
+            raise TypeError("server log response must be text")
+        state["unavailable_count"] = 0
+        formatter = ProgressFormatter(fmt=progress_log_dict["formatters"]["consoleFormatter"]["fmt"])
+        filter_config = progress_log_dict["filters"]["ConciseFilter"]
+        filter_args = {key: value for key, value in filter_config.items() if key != "()"}
+        log_filter = ConciseLogFilter(**filter_args)
+        recent = set()
+        # The existing API caps the transfer at 5 MiB. Bound parsing and retained
+        # state independently: only complete records from the last 64 KiB / 200 lines.
+        data = text.encode("utf-8")
+        if len(data) > 65536:
+            data = data[-65536:].partition(b"\n")[2]
+        text = data.decode("utf-8", errors="ignore")
+        for line in text.splitlines()[-(200 if structured else 50) :]:
+            if not structured:
+                recent.add(line)
+                if line not in state["seen"]:
+                    _print_output(line, flush=True)
+                continue
+            try:
+                record = json.loads(line)
+            except (ValueError, TypeError):
+                continue  # An in-flight final line may be incomplete; retry on the next callback.
+            if not isinstance(record, dict):
+                continue
+            name = record.get("fullName", "")
+            level = record.get("levelname", "INFO")
+            if not isinstance(name, str) or not isinstance(level, str):
+                continue
+            log_record = logging.LogRecord(name, getattr(logging, level, logging.INFO), "", 0, "", (), None)
+            marker = record.get("nvflare_progress")
+            log_record.nvflare_progress = (
+                marker is True if "nvflare_progress" in record else name in filter_args.get("progress_logger_names", [])
+            )
+            if not log_filter.filter(log_record):
+                continue
+            already_shown = line in state["seen"] or line in recent
+            recent.add(line)
+            if already_shown:
+                continue
+            message = record.get("message", "")
+            context = record.get("fl_ctx", "")
+            if isinstance(context, str) and context:
+                message = f"{context}: {message}"
+            log_record.msg = message
+            _print_output(formatter.format(log_record), flush=True)
+        state["seen"] = recent
+    except Exception as ex:
+        if not state.get("warned"):
+            _print_output("Live progress could not be retrieved. Detailed logs remain on the server.", flush=True)
+            state["warned"] = True
+        get_module_logger().debug("Could not retrieve progress for %s: %s", job_id, ex)
 
 
 def _job_monitor_callback(session: Session, job_id: str, job_meta, *cb_args, **cb_kwargs) -> bool:
-    """Shared callback to print job meta during monitoring."""
-    # cb_run_counter is a dictionary that is passed to the callback and is used to keep track of the number of times the callback has been called
-    if cb_kwargs["cb_run_counter"]["count"] == 0:
-        print("Job ID: ", job_id)
-        print("Job Meta: ", job_meta)
-
-    if job_meta["status"] == "RUNNING":
-        print(".", end="")
-    else:
-        print("\n" + str(job_meta))
-
-    cb_kwargs["cb_run_counter"]["count"] += 1
+    """Show status changes, with the existing server progress log when requested."""
+    state = cb_kwargs["cb_run_counter"]
+    now = time.monotonic()
+    status = job_meta["status"]
+    if state["count"] == 0:
+        state["started"] = now
+        _print_output(f"Job ID: {job_id}", flush=True)
+    changed = state["count"] == 0 or status != state.get("status")
+    if "progress" in state and (changed or now - state["last_progress"] >= 5):
+        _show_job_progress(session, job_id, state["progress"])
+        state["last_progress"] = now
+    if changed:
+        _print_output(f"Job status: {status} ({now - state['started']:.0f}s monitored)", flush=True)
+        state["status"] = status
+        if os.environ.get(FL_LOG_LEVEL, LogMode.CONCISE) in (LogMode.FULL, LogMode.VERBOSE):
+            _print_output(f"Job metadata: {job_meta}", flush=True)
+        else:
+            get_module_logger().debug("Job metadata: %s", job_meta)
+    state["count"] += 1
     return True
 
 
@@ -64,7 +171,7 @@ class SessionManager:
                 job_id = sess.submit_job(job_path)
             finally:
                 sess.close()
-            print(f"Submitted job '{job.name}' with ID: {job_id}")
+            _print_output(f"Submitted job '{job.name}' with ID: {job_id}")
             return job_id
 
     def get_job_status(self, job_id: str) -> Optional[str]:
@@ -78,31 +185,32 @@ class SessionManager:
         """Abort the running job."""
         sess = self._get_session()
         msg = sess.abort_job(job_id)
-        print(f"Job {job_id} aborted successfully with message: {msg}")
+        _print_output(f"Job {job_id} aborted successfully with message: {msg}")
         sess.close()
 
     def get_job_result(self, job_id: str, timeout: float = 0.0) -> Optional[str]:
         """Get the result workspace of the job."""
         sess = self._get_session()
         cb_run_counter = {"count": 0}
+        if os.environ.get(FL_LOG_LEVEL, LogMode.CONCISE) == LogMode.PROGRESS:
+            cb_run_counter["progress"] = {"seen": set()}
         rc = sess.monitor_job(job_id, timeout=timeout, cb=_job_monitor_callback, cb_run_counter=cb_run_counter)
-        print(f"job monitor done: {rc=}")
         if rc == MonitorReturnCode.JOB_FINISHED:
+            _print_output("Downloading job results...", flush=True)
             result = sess.download_job_result(job_id)
+            if result and job_status_outcome(cb_run_counter.get("status")) in ("failed", "aborted"):
+                try:
+                    collect_client_errors(sess, job_id, result)
+                except Exception as ex:
+                    get_module_logger().debug("Could not retrieve client error logs for %s: %s", job_id, ex)
             sess.close()
             return result
         elif rc == MonitorReturnCode.TIMEOUT:
-            print(
-                f"Job {job_id} did not complete within {timeout} seconds. "
-                "Job is still running. Try calling get_result() again with a longer timeout."
-            )
+            _print_output(f"Monitoring job {job_id} timed out after {timeout} seconds. No results were downloaded.")
             sess.close()
             return None
         elif rc == MonitorReturnCode.ENDED_BY_CB:
-            print(
-                "Job monitoring was stopped early by callback. "
-                "Result may not be available yet. Check job status and try again."
-            )
+            _print_output("Job monitoring was stopped early by callback. No results were downloaded.")
             sess.close()
             return None
         else:

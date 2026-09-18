@@ -364,9 +364,25 @@ class Cell(StreamCell):
         Returns: None
 
         """
-        encode_payload(message, encoding_key=StreamHeaderKey.PAYLOAD_ENCODING, fobs_ctx=self.get_fobs_context())
         if isinstance(targets, str):
             targets = [targets]
+
+        num_receivers = len(set(targets))
+        if not num_receivers:
+            message.set_prop(MessagePropKey.FUTURES, {})
+            return {}
+        # Receivers may enable pass-through locally, so routing targets are not
+        # necessarily the final payload consumers. Track only their count.
+        encode_payload(
+            message,
+            encoding_key=StreamHeaderKey.PAYLOAD_ENCODING,
+            fobs_ctx=self.get_fobs_context(
+                {
+                    FOBSContextKey.NUM_RECEIVERS: num_receivers,
+                    FOBSContextKey.RECEIVER_IDS: None,
+                }
+            ),
+        )
 
         result = {}
         futures = {}

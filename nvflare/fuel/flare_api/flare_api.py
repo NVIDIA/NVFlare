@@ -30,6 +30,7 @@ from nvflare.apis.utils.format_check import name_check
 from nvflare.apis.utils.job_submit_token import validate_submit_token
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
+from nvflare.fuel.flare_api.job_status import is_terminal_job_status
 from nvflare.fuel.hci.client.api import AdminAPI, APIStatus, ResultKey
 from nvflare.fuel.hci.client.api_spec import AdminConfigKey, UidSource
 from nvflare.fuel.hci.client.config import secure_load_admin_config
@@ -78,13 +79,6 @@ _VALID_TARGET_TYPES = [TargetType.ALL, TargetType.SERVER, TargetType.CLIENT]
 _DEFAULT_STATE_CHANGE_TIMEOUT = 30.0
 _STATE_CHANGE_POLL_INTERVAL = 0.5
 _STATE_CHANGE_CONNECT_TIMEOUT = 1.0
-_LEGACY_TERMINAL_JOB_STATUSES = {
-    "FINISHED_OK",
-    "FINISHED_EXCEPTION",
-    "ABORTED",
-    "ABANDONED",
-    "FAILED",
-}
 _CONNECTION_RETRY_COMMANDS = {AdminCommandNames.ABORT_JOB, AdminCommandNames.SHUTDOWN}
 _CONNECTION_RETRY_ATTEMPTS = 3
 _CONNECTION_RETRY_BACKOFF = 0.5
@@ -101,10 +95,6 @@ def _should_retry_connection_failure(command: str, result: dict) -> bool:
         and isinstance(result, dict)
         and result.get(ResultKey.STATUS) == APIStatus.ERROR_SERVER_CONNECTION
     )
-
-
-def _is_terminal_job_status(status: str) -> bool:
-    return isinstance(status, str) and (status.startswith("FINISHED") or status in _LEGACY_TERMINAL_JOB_STATUSES)
 
 
 def _validate_job_polling_options(timeout: float, poll_interval: float) -> None:
@@ -1449,6 +1439,8 @@ class Session(SessionSpec):
         tail_lines: Optional[int] = None,
         grep_pattern: Optional[str] = None,
         log_file_name: str = WorkspaceConstants.LOG_FILE_NAME,
+        *,
+        max_bytes: Optional[int] = None,
     ) -> dict:
         """Retrieve job logs from the server-side log store.
 
@@ -1458,6 +1450,9 @@ class Session(SessionSpec):
             tail_lines (int, optional): deprecated compatibility filter that returns only the last N lines
             grep_pattern (str, optional): deprecated compatibility filter that returns matching lines
             log_file_name (str): internal log file selector. Defaults to log.txt.
+            max_bytes (int, optional): positive UTF-8 log-byte limit per site, applied on the server
+                before transfer (also capped by the server's 5 MiB limit). Older servers may not
+                support this option; the request is never retried without the limit.
 
         Returns: dict with "logs" mapping site name to log text, and optional
             "unavailable" mapping site names to reasons.
@@ -1466,15 +1461,22 @@ class Session(SessionSpec):
         self._validate_job_id(job_id)
         if not isinstance(target, str) or not target:
             raise ValueError("target must be a non-empty str")
+        if max_bytes is not None and (type(max_bytes) is not int or max_bytes <= 0):
+            raise ValueError("max_bytes must be a positive integer")
 
         parts = [AdminCommandNames.GET_JOB_LOG, job_id, target]
         if log_file_name != WorkspaceConstants.LOG_FILE_NAME:
             parts.append(log_file_name)
+        if max_bytes is not None:
+            parts.extend(["--tail-bytes", str(max_bytes)])
         command = join_args(parts)
         try:
             reply = self._do_command(command, enforce_meta=False)
         except InternalError as e:
-            if log_file_name != WorkspaceConstants.LOG_FILE_NAME and "unrecognized arguments" in str(e):
+            error = str(e)
+            unsupported_selector = log_file_name != WorkspaceConstants.LOG_FILE_NAME
+            unsupported_byte_limit = max_bytes is not None and "--tail-bytes" in error
+            if (unsupported_selector or unsupported_byte_limit) and "unrecognized arguments" in error:
                 return {"logs": {}}
             raise
         payload = self._get_dict_data(reply)
@@ -1675,7 +1677,7 @@ class Session(SessionSpec):
             if not job_status:
                 raise InternalError(f"missing status in job {job_id}")
 
-            if _is_terminal_job_status(job_status):
+            if is_terminal_job_status(job_status):
                 return MonitorReturnCode.JOB_FINISHED, job_meta
 
             time.sleep(poll_interval)

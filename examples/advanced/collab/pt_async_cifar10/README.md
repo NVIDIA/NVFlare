@@ -4,20 +4,33 @@ This example implements online buffered asynchronous federated learning on
 CIFAR-10. Client jobs remain active across global-model updates, and the
 server aggregates each full update buffer using FedBuff.
 
-Run all commands below from this directory:
+Download the example and enter its preserved Python package layout:
 
 ```bash
-cd examples/advanced/collab/pt_async_cifar10
+nvflare examples get collab-pt-async
+cd collab-pt-async/collab/pt_async_cifar10
 ```
+
+From an NVFlare source checkout, use
+`cd examples/advanced/collab/pt_async_cifar10` instead.
 
 ## NVIDIA FLARE Installation
 
-Install NVFlare from this repository and the example dependencies:
+Add the PT extra to the same stable or nightly NVFlare distribution that
+provided the example, then install its remaining dependencies:
 
 ```bash
-python -m pip install -e ../../../..
+# Stable installation
+python -m pip install "nvflare[PT]"
+
+# Nightly installation
+python -m pip install "nvflare-nightly[PT]"
+
 python -m pip install -r requirements.txt
 ```
+
+For a source checkout, install that checkout from its repository root with
+`python -m pip install -e ".[PT]"` before returning to this directory.
 
 ## Code Structure
 
@@ -26,7 +39,8 @@ pt_async_cifar10/
 ├── async_aggregator.py  # Server-side FedBuff scheduler and aggregation
 ├── trainer.py           # Published client-side local training
 ├── model.py             # FedAvg ModerateCNN and state helpers
-├── prepare_data.sh      # Shared CIFAR-10 download entry point
+├── cifar10_data.py      # Local CIFAR-10 download and Dirichlet splitter
+├── prepare_data.sh      # Standalone CIFAR-10 download entry point
 ├── job.py               # CollabRecipe CLI and simulator wiring
 └── requirements.txt
 ```
@@ -64,15 +78,14 @@ accepted-update budget while using FedBuff's immediate refill policy.
 
 ## Data
 
-Use the single preparation script shared with the existing CIFAR-10 simulator
-examples to download the dataset to `/tmp/cifar10`:
+Use the included preparation script to download the dataset to `/tmp/cifar10`:
 
 ```bash
 ./prepare_data.sh
 ```
 
-`job.py` then calls the same shared `split_and_save()` function as the existing
-FedAvg job. The defaults create eight non-overlapping Dirichlet shards with
+`job.py` then calls the included `split_and_save()` function. The defaults
+create eight non-overlapping Dirichlet shards with
 alpha 0.5 and seed 0 at:
 
 ```text

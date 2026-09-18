@@ -1029,9 +1029,9 @@ def create_app_dir(job_folder, app_name: str = "app"):
 
 def _get_session(args=None, admin_user_dir=None, username=None, study="default"):
     """Create a secure session using command selectors, env, or active startup kit."""
-    from nvflare.tool.cli_output import get_connect_timeout, output_error
+    from nvflare.tool.cli_output import get_validated_connect_timeout, output_error
 
-    timeout = get_connect_timeout()
+    timeout = get_validated_connect_timeout()
 
     if admin_user_dir is None and username is None:
         try:
@@ -3105,7 +3105,7 @@ def cmd_job_log(cmd_args):
             exit_code=4,
             error_code="LOG_CONFIG_INVALID",
             message="Log config is not a recognised log mode.",
-            hint="Supply one of: DEBUG, INFO, WARNING, ERROR, CRITICAL, concise, msg_only, full, verbose, reload.",
+            hint="Supply one of: DEBUG, INFO, WARNING, ERROR, CRITICAL, concise, progress, msg_only, full, verbose, reload.",
         )
         return
 
@@ -3205,7 +3205,7 @@ def define_job_log_parser(job_subparser):
         "level",
         nargs="?",
         default=None,
-        help="log level or mode: DEBUG, INFO, WARNING, ERROR, CRITICAL, concise, msg_only, full, verbose, reload",
+        help="log level or mode: DEBUG, INFO, WARNING, ERROR, CRITICAL, concise, progress, msg_only, full, verbose, reload",
     )
     p.add_argument("--site", default="all", help="target site name or all")
     p.add_argument("--study", type=str, default="default", help="study containing the job")

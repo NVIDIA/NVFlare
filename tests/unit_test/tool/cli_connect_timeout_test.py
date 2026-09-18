@@ -12,7 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 
 def _called_active_session_mock(*mocks):
@@ -59,11 +62,30 @@ def test_set_connect_timeout_warns_and_uses_default_for_invalid_value(caplog):
     assert "invalid CLI connection timeout" in caplog.text
 
 
+@pytest.mark.parametrize("value", [0.0, -1.0, float("nan"), float("inf"), float("-inf")])
+@pytest.mark.parametrize("output_format", ["txt", "json"])
+def test_validated_connect_timeout_rejects_non_positive_or_non_finite_values(capsys, value, output_format):
+    from nvflare.tool import cli_output
+
+    cli_output.set_output_format(output_format)
+    cli_output.set_connect_timeout(value)
+
+    with pytest.raises(SystemExit) as error:
+        cli_output.get_validated_connect_timeout()
+
+    assert error.value.code == 4
+    output = capsys.readouterr()
+    if output_format == "json":
+        assert json.loads(output.out)["error_code"] == "INVALID_ARGS"
+    else:
+        assert "finite positive number" in output.err
+
+
 def test_job_get_session_uses_active_session_with_connect_timeout(monkeypatch):
     from nvflare.tool.job import job_cli
 
     with (
-        patch("nvflare.tool.cli_output.get_connect_timeout", return_value=3.25),
+        patch("nvflare.tool.cli_output.get_validated_connect_timeout", return_value=3.25),
         patch(
             "nvflare.tool.cli_session.new_cli_session_for_args",
             return_value=MagicMock(),
@@ -84,7 +106,7 @@ def test_system_get_session_uses_active_session_with_connect_timeout(monkeypatch
     from nvflare.tool.system import system_cli
 
     with (
-        patch("nvflare.tool.cli_output.get_connect_timeout", return_value=4.0),
+        patch("nvflare.tool.cli_output.get_validated_connect_timeout", return_value=4.0),
         patch(
             "nvflare.tool.cli_session.new_cli_session_for_args",
             return_value=MagicMock(),

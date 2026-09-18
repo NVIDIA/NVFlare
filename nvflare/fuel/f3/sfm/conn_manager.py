@@ -19,6 +19,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, List, Optional
 
 import msgpack
+from cryptography import x509
 
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.identity import CellIdentityResolver, get_param, is_admin_listener, is_mtls_connection
@@ -30,7 +31,7 @@ from nvflare.fuel.f3.drivers.driver_params import DriverCap, DriverParams
 from nvflare.fuel.f3.drivers.net_utils import ssl_required
 from nvflare.fuel.f3.endpoint import Endpoint, EndpointMonitor, EndpointState
 from nvflare.fuel.f3.message import Message, MessageReceiver
-from nvflare.fuel.f3.sfm.constants import HandshakeKeys, Types
+from nvflare.fuel.f3.sfm.constants import FLARE_PROTOCOL_VERSION, HandshakeKeys, Types
 from nvflare.fuel.f3.sfm.heartbeat_monitor import HeartbeatMonitor
 from nvflare.fuel.f3.sfm.prefix import PREFIX_LEN, Prefix
 from nvflare.fuel.f3.sfm.sfm_conn import SfmConnection
@@ -51,6 +52,11 @@ log = logging.getLogger(__name__)
 
 handle_lock = threading.Lock()
 handle_count = 0
+
+
+def _peer_cert(conn_props: dict):
+    der = get_param(conn_props, DriverParams.PEER_CERT)
+    return x509.load_der_x509_certificate(der) if der else None
 
 
 def get_handle():
@@ -279,6 +285,7 @@ class ConnManager(ConnMonitor):
             starter = connector.driver.listen
 
         wait = INIT_WAIT
+        quiet_reconnect = connector.params.get(DriverParams.QUIET_RECONNECT.value, False)
         while not connector.stopped.is_set():
             start_time = time.time()
             try:
@@ -287,7 +294,7 @@ class ConnManager(ConnMonitor):
                 fail_msg = (
                     f"Connector {connector} failed with exception {type(ex).__name__}: {secure_format_exception(ex)}"
                 )
-                if wait < SILENT_RECONNECT_TIME:
+                if quiet_reconnect or wait < SILENT_RECONNECT_TIME:
                     log.debug(fail_msg)
                 else:
                     log.error(fail_msg)
@@ -304,7 +311,7 @@ class ConnManager(ConnMonitor):
 
             reconnect_msg = f"Retrying {connector} in {wait} seconds"
             # First few retries may happen in normal shutdown, show it as debug
-            if wait < SILENT_RECONNECT_TIME:
+            if quiet_reconnect or wait < SILENT_RECONNECT_TIME:
                 log.debug(reconnect_msg)
             else:
                 log.info(reconnect_msg)
@@ -352,10 +359,21 @@ class ConnManager(ConnMonitor):
                 headers = msgpack.unpackb(frame[PREFIX_LEN : PREFIX_LEN + prefix.header_len])
 
             if prefix.type in (Types.HELLO, Types.READY):
+                data = self.get_dict_payload(prefix, frame)
+                version = data.get(HandshakeKeys.FLARE_PROTOCOL)
+                if type(version) is not int or version != FLARE_PROTOCOL_VERSION:
+                    name = data.get(HandshakeKeys.ENDPOINT_NAME)
+                    log.warning(f"Rejecting endpoint {name}: incompatible FLARE protocol {version!r}")
+                    sfm_conn.conn.close()
+                    # Report the failed attempt without touching an existing endpoint of the same name.
+                    endpoint = Endpoint(name, data)
+                    endpoint.state = EndpointState.ERROR
+                    self.notify_monitors(endpoint)
+                    return
+
                 if prefix.type == Types.HELLO:
                     sfm_conn.send_handshake(Types.READY)
 
-                data = self.get_dict_payload(prefix, frame)
                 self.update_endpoint(sfm_conn, data)
             elif prefix.type == Types.PING:
                 sfm_conn.send_heartbeat(Types.PONG)
@@ -363,6 +381,10 @@ class ConnManager(ConnMonitor):
                 log.debug(f"PONG received for {sfm_conn.conn}")
                 # No action is needed for PONG. The last_activity is already updated
             elif prefix.type == Types.DATA:
+                if sfm_conn.sfm_endpoint is None:
+                    # READY may arrive before the concurrent handshake task finishes attaching the endpoint.
+                    log.debug("Ignoring DATA before endpoint attachment")
+                    return
                 if prefix.length > PREFIX_LEN + prefix.header_len:
                     payload = frame[PREFIX_LEN + prefix.header_len :]
                 else:
@@ -435,7 +457,12 @@ class ConnManager(ConnMonitor):
                         f"Admin endpoint '{endpoint_name}' can only connect through an admin listener",
                     )
                 try:
-                    self.identity_resolver.require_match(endpoint_name, peer_cn, f"connection {sfm_conn.get_name()}")
+                    self.identity_resolver.require_match(
+                        endpoint_name,
+                        peer_cn,
+                        f"connection {sfm_conn.get_name()}",
+                        peer_cert=_peer_cert(conn_props),
+                    )
                 except ValueError as ex:
                     sfm_conn.conn.close()
                     raise CommError(CommError.BAD_DATA, str(ex))

@@ -32,6 +32,29 @@ _VALID_SPLITS = ("train", "eval")
 _CIFAR10_FILES = tuple(f"data_batch_{i}" for i in range(1, 6)) + ("test_batch", "batches.meta")
 
 
+def add_dataset_arguments(parser: argparse.ArgumentParser):
+    """Add the shared dataset selection and client-local cache options."""
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
+        "--dataset",
+        choices=DATASET_CHOICES,
+        help="Training dataset: offline synthetic images (default) or a prepared CIFAR-10 cache.",
+    )
+    group.add_argument(
+        "--synthetic_data",
+        action="store_const",
+        const="synthetic",
+        dest="dataset",
+        help="Deprecated alias for --dataset synthetic.",
+    )
+    parser.set_defaults(dataset=DEFAULT_DATASET)
+    parser.add_argument(
+        "--data_root",
+        default=DATASET_PATH,
+        help=f"Client-local CIFAR-10 cache (default: {DATASET_PATH}). Ignored for synthetic data.",
+    )
+
+
 def stable_seed(site_name: str, purpose: str) -> int:
     """Derive a process-independent PyTorch seed for one site and purpose."""
     if not site_name:
@@ -83,14 +106,16 @@ class SyntheticImageDataset(Dataset):
         return self.images[index], self.labels[index]
 
 
-def validate_cifar10(data_root: str):
-    """Reject a missing or incomplete CIFAR-10 cache without downloading it."""
+def validate_cifar10(data_root: str, prepare_script: str = "prepare_data.py"):
+    """Reject missing or empty CIFAR-10 files without downloading or hashing them."""
     batch_dir = Path(data_root).expanduser() / "cifar-10-batches-py"
-    missing = [name for name in _CIFAR10_FILES if not (batch_dir / name).is_file()]
+    missing = [
+        name for name in _CIFAR10_FILES if not (batch_dir / name).is_file() or (batch_dir / name).stat().st_size == 0
+    ]
     if missing:
-        command = f"python prepare_data.py --data_root {shlex.quote(str(data_root))}"
+        command = f"python {shlex.quote(prepare_script)} --data_root {shlex.quote(str(data_root))}"
         raise FileNotFoundError(
-            f"Missing CIFAR-10 files under {batch_dir}: {', '.join(missing)}. Run `{command}` before starting clients."
+            f"Missing or empty CIFAR-10 files under {batch_dir}: {', '.join(missing)}. Run `{command}` before starting clients."
         )
 
 

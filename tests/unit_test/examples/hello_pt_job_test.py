@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import argparse
 import ast
 import importlib.util
 import json
@@ -44,9 +45,10 @@ def test_example_module_isolated_from_another_examples_cached_sibling(monkeypatc
     original_sys_path = list(sys.path)
 
     with load_hello_pt_module(file_name) as module:
-        assert module.DATASET_CHOICES == ("synthetic", "cifar10")
-        assert module.DATASET_PATH == "/tmp/nvflare/data"
-        assert module.DEFAULT_DATASET == "synthetic"
+        parser = argparse.ArgumentParser()
+        module.add_dataset_arguments(parser)
+        assert vars(parser.parse_args([])) == {"dataset": "synthetic", "data_root": "/tmp/nvflare/data"}
+        assert parser.parse_args(["--dataset", "cifar10"]).dataset == "cifar10"
 
     assert sys.modules["prepare_data"] is conflicting_module
     assert sys.modules["model"] is conflicting_model
@@ -163,18 +165,14 @@ def test_website_pytorch_snippets_are_internally_consistent():
     assert {token for token in shlex.split(train_args[0]) if token.startswith("--")} <= client_options
 
 
-def test_main_reports_simulation_success_without_requesting_status(tmp_path, monkeypatch, capsys):
+def test_main_reports_simulation_success(tmp_path, monkeypatch, capsys):
     job_module = _load_job_module()
     result_dir = tmp_path / "simulation-result"
     result_dir.mkdir()
     calls = []
 
-    def unsupported_status():
-        raise AssertionError("SimEnv status must not be requested by the example")
-
     run = SimpleNamespace(
         get_result=lambda: calls.append(("get_result",)) or str(result_dir),
-        get_status=unsupported_status,
     )
     env = object()
     recipe = SimpleNamespace(execute=lambda value: calls.append(("execute", value)) or run)
@@ -215,19 +213,12 @@ def test_default_recipe_uses_final_global_evaluation(monkeypatch):
     assert calls == [("final", recipe)]
 
 
-def test_cifar_main_rejects_missing_data_before_creating_environment(tmp_path, monkeypatch):
-    job_module = _load_job_module()
-    monkeypatch.setattr(job_module, "SimEnv", lambda **kwargs: pytest.fail("simulation must not start"))
-    monkeypatch.setattr(job_module, "create_recipe", lambda args: pytest.fail("recipe must not be constructed"))
-
-    with pytest.raises(FileNotFoundError, match="python prepare_data.py --data_root"):
-        job_module.main(["--dataset", "cifar10", "--data_root", str(tmp_path)])
-
-
-def test_cifar_cli_export_does_not_require_local_data(tmp_path):
+@pytest.mark.parametrize("relative_cache", [False, True])
+def test_cifar_cli_export_does_not_require_local_data(tmp_path, relative_cache):
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
     example_dir = os.path.join(repo_root, "examples", "hello-world", "hello-pt")
-    remote_cache = str(tmp_path / "remote site's cache")
+    cache_path = tmp_path / "remote site's cache"
+    remote_cache = os.path.relpath(cache_path, example_dir) if relative_cache else str(cache_path)
     subprocess.run(
         [
             sys.executable,
@@ -250,7 +241,7 @@ def test_cifar_cli_export_does_not_require_local_data(tmp_path):
     client_config = tmp_path / "export" / "hello-pt" / "app" / "config" / "config_fed_client.json"
     executor_args = json.loads(client_config.read_text())["executors"][0]["executor"]["args"]
     assert executor_args["task_script_args"] == ["--dataset", "cifar10", "--data_root", remote_cache]
-    assert not os.path.exists(remote_cache)
+    assert not cache_path.exists()
 
 
 def test_cifar_recipe_preserves_data_root_with_spaces(monkeypatch):
