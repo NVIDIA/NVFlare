@@ -478,14 +478,15 @@ def run_vm(command, directory):
         for sig in (signal.SIGTERM, signal.SIGHUP, signal.SIGQUIT, signal.SIGINT):
             previous[sig] = signal.signal(sig, terminate)
         if stopping is not None:
-            return -stopping
+            return 128 + stopping
         process = subprocess.Popen(command)
         if stopping is not None:
-            return -stopping
+            return 128 + stopping
         write_runtime_state(directory, process)
-        return process.wait()
+        result = process.wait()
+        return 128 - result if result < 0 else result
     except KeyboardInterrupt:
-        return -(stopping or signal.SIGINT)
+        return 128 + (stopping or signal.SIGINT)
     finally:
         cleaning = True
         try:

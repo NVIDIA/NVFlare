@@ -6,6 +6,21 @@ services and operator guides are maintained together with the provisioning adapt
 in this repository. Repository formatting and license headers change source
 fingerprints; build and approve new generic CVMs for this source snapshot.
 
+## Resource-role and boot review follow-up — 2026-09-18
+
+**195 Linux unit/policy tests passed with no skips**, including the pinned Regorus
+engine and Linux memfd tests. New coverage verifies explicit resource-role signing,
+unchanged default policy-role signing, safe diagnostics for forbidden preissued
+tokens, malformed Docker/OCI archives, conventional signal exit codes, and reference
+boot behavior on both TEE platforms. Signed administrative test tokens are verified
+cryptographically; no live Trustee deployment was used for these role tests.
+
+When a vault disk is already present, boot skips only the reference-only report
+probe. The vault's fresh hardware binding check still precedes key authorization;
+an absent disk still requires an all-zero hardware binding before emitting reference
+frames. Scoped repository style checks and `git diff --check` passed. The hardware
+end-to-end run below was not repeated for this follow-up.
+
 ## Launcher and diagnostics review fixes — 2026-09-18
 
 - **186 Linux unit/policy tests passed with no skips**, using the pinned Regorus

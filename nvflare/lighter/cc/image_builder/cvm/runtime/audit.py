@@ -42,6 +42,8 @@ def append(path, line):
         if stat.S_ISREG(os.fstat(fd).st_mode):
             remaining = memoryview(line)
             while remaining:
+                # EAGAIN can leave an incomplete advisory record. Do not wait or
+                # retry a full/untrusted log filesystem and delay shutdown.
                 written = os.write(fd, remaining)
                 if written <= 0:
                     raise OSError("Audit write made no progress")

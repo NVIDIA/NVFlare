@@ -148,7 +148,9 @@ def parser():
     retire.add_argument("build_id")
     retire.set_defaults(handler=lambda a: admin.retire(read_json(a.config), a.build_id))
     revoke = actions.add_parser("revoke")
-    revoke.add_argument("config")
+    revoke.add_argument(
+        "config", help="use a cvm-resources admin_token_file, or admin_private_key with admin_role=cvm-resources"
+    )
     revoke.add_argument("resource")
     revoke.set_defaults(handler=lambda a: delete_resource(read_json(a.config), a.resource))
 

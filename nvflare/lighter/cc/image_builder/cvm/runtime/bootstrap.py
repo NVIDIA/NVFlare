@@ -74,6 +74,11 @@ def firewall(inbound, outbound, mappings=()):
 def reference():
     if Path("/etc/cvm/dev_mode").exists():
         return
+    # Disk presence only skips reference logging; it never authorizes a vault.
+    # Normal boot still reads a fresh report in verify_local_binding(). If udev
+    # has not found the disk yet, the hardware zero-binding check below applies.
+    if Path(disk_device("vault")).is_block_device():
+        return
     platform = guest_platform()
     report, nonce = local_report(platform)
     # Full reports are acceptance records, not normal boot-console output.

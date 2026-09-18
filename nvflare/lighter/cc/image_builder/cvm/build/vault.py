@@ -56,6 +56,15 @@ def populate(root, app):
 
 
 def validate_archive(path, image_id):
+    try:
+        return _archive_image_id(path, image_id)
+    except (BuildError, OSError, ValueError, KeyError, TypeError, AttributeError, EOFError, tarfile.TarError):
+        # Archives can embed private paths, image metadata or credentials. Do not
+        # expose parser exceptions, even though this check precedes key creation.
+        raise ConfigurationError("Invalid docker_archive; regenerate it with docker save and verify image_id") from None
+
+
+def _archive_image_id(path, image_id):
     # Only inspect manifest/config members, never unpack layers on the build host.
 
     with tarfile.open(path, "r:*") as archive:

@@ -16,9 +16,11 @@
 
 import configparser
 import contextlib
+import io
 import os
 import signal
 import socket
+import struct
 import tempfile
 import unittest
 from pathlib import Path
@@ -27,12 +29,58 @@ from unittest.mock import MagicMock, Mock, mock_open, patch
 from cvm.build.config import SOURCE
 from cvm.common.contracts import HEADER_BYTES, STORAGE_PROFILE
 from cvm.common.errors import BuildError
+from cvm.common.evidence import serial_evidence, verify_reference
 from cvm.common.io import read_json
 from cvm.runtime import bootstrap, supervisor
 from cvm.runtime.systemd import notify
 
 
 class BootstrapTests(unittest.TestCase):
+    def test_attached_vault_skips_only_the_reference_report_probe(self):
+        with (
+            patch.object(bootstrap.Path, "exists", return_value=False),
+            patch.object(bootstrap.Path, "is_block_device", return_value=True),
+            patch.object(bootstrap, "disk_device", return_value="/dev/vault") as disk,
+            patch.object(bootstrap, "local_report") as report,
+            contextlib.redirect_stdout(io.StringIO()) as output,
+        ):
+            bootstrap.reference()
+        disk.assert_called_once_with("vault")
+        report.assert_not_called()
+        self.assertEqual(output.getvalue(), "")
+
+    def test_absent_vault_emits_reference_only_for_zero_hardware_binding(self):
+        for platform in ("intel_tdx", "amd_sev_snp"):
+            for bound in (False, True):
+                nonce = b"n" * 64
+                report = bytearray(1024 if platform == "intel_tdx" else 1184)
+                if platform == "intel_tdx":
+                    report[0] = 0x81
+                    report[128:192] = nonce
+                    report[576:624] = bytes([int(bound)]) * 48
+                else:
+                    struct.pack_into("<I", report, 0, 3)
+                    report[80:144] = nonce
+                    report[192:224] = bytes([int(bound)]) * 32
+                with (
+                    self.subTest(platform=platform, bound=bound),
+                    patch.object(bootstrap.Path, "exists", return_value=False),
+                    patch.object(bootstrap.Path, "is_block_device", return_value=False),
+                    patch.object(bootstrap.Path, "is_file", return_value=True),
+                    patch.object(bootstrap.Path, "read_bytes", return_value=b"fixture-ccel"),
+                    patch.object(bootstrap, "guest_platform", return_value=platform),
+                    patch.object(bootstrap, "local_report", return_value=(bytes(report), nonce)) as read_report,
+                    contextlib.redirect_stdout(io.StringIO()) as output,
+                ):
+                    bootstrap.reference()
+                read_report.assert_called_once_with(platform)
+                if bound:
+                    self.assertEqual(output.getvalue(), "")
+                else:
+                    evidence = serial_evidence(output.getvalue())
+                    self.assertIsNotNone(evidence)
+                    verify_reference(platform, evidence)
+
     def test_bootstrap_orders_reference_firewall_clock_mount_and_workload(self):
         for dev in (False, True):
             events = []

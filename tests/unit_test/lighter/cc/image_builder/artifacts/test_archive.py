@@ -36,7 +36,7 @@ from cvm.artifacts.oci import (
 )
 from cvm.artifacts.packaging import package_bundle, package_deliveries
 from cvm.build.vault import delivery, validate_archive
-from cvm.common.errors import BuildError
+from cvm.common.errors import BuildError, ConfigurationError
 from cvm.common.io import canonical, digest_file, read_json, write_json
 from cvm.host.launcher import find_bundle
 
@@ -281,6 +281,49 @@ class ArchiveTests(unittest.TestCase):
             path, config_id, index_id = self.archive(directory)
             self.assertEqual(validate_archive(path, config_id), config_id)
             self.assertEqual(validate_archive(path, index_id), config_id)
+
+    def test_corrupt_docker_archives_have_fixed_secret_free_configuration_errors(self):
+        secret = "secret-archive-metadata"
+        cases = [
+            {"manifest.json": data}
+            for data in (
+                ("[" + secret).encode(),
+                canonical({"private": secret}),
+                canonical([None]),
+                canonical([secret]),
+                canonical([{}]),
+                canonical([{"Config": []}]),
+                canonical([{"Config": secret}]),
+            )
+        ]
+        for members in cases:
+            with self.subTest(members=members), tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "application.tar"
+                with tarfile.open(path, "w") as archive:
+                    for name, data in members.items():
+                        member = tarfile.TarInfo(name)
+                        member.size = len(data)
+                        archive.addfile(member, io.BytesIO(data))
+                with self.assertRaisesRegex(ConfigurationError, "Invalid docker_archive.*docker save") as error:
+                    validate_archive(path, "sha256:" + "a" * 64)
+                self.assertNotIn(secret, str(error.exception))
+                path.write_bytes(secret.encode())
+                with self.assertRaisesRegex(ConfigurationError, "Invalid docker_archive"):
+                    validate_archive(path, "sha256:" + "a" * 64)
+
+    def test_malformed_oci_descriptor_does_not_expose_parser_errors(self):
+        for value in (None, [], {"manifests": [None]}, {"manifests": [{"platform": "secret-platform"}]}):
+            with self.subTest(value=value), tempfile.TemporaryDirectory() as directory:
+                path, _, _ = self.archive(directory)
+                data = canonical(value)
+                image_id = "sha256:" + hashlib.sha256(data).hexdigest()
+                with tarfile.open(path, "a") as archive:
+                    member = tarfile.TarInfo("blobs/sha256/" + image_id[7:])
+                    member.size = len(data)
+                    archive.addfile(member, io.BytesIO(data))
+                with self.assertRaisesRegex(ConfigurationError, "Invalid docker_archive") as error:
+                    validate_archive(path, image_id)
+                self.assertNotIn("secret-platform", str(error.exception))
 
     def test_tampered_or_ambiguous_manifest_denied(self):
         for options in ({"tamper": True}, {"ambiguous": True}):

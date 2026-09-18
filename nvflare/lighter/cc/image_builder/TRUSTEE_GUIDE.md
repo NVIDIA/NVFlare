@@ -365,6 +365,13 @@ containing `url`, `ca` and `admin_token_file`, revoke a vault through native KBS
 python3 -m cvm admin revoke resources.json keys/BUILD_ID/BINDING_ID
 ```
 
+The token must carry the `cvm-resources` role. If a trusted operator instead uses
+an `admin_private_key` configuration to sign the token, set
+`"admin_role": "cvm-resources"` explicitly. The default `cvm-policy` role is for
+policy publication; resource requests with that signing configuration are rejected
+locally before reading the key or contacting Trustee. Preissued tokens remain
+subject to Trustee's signature and ACL checks.
+
 This sends `DELETE /kbs/v0/resource/keys/<build_id>/<binding_id>`. It prevents
 future retrieval while the resource is absent; an authorized POST can recreate
 it. Token revocation/expiry and backup recovery belong to the CoCo operator.

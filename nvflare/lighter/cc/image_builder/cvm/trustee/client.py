@@ -48,6 +48,13 @@ def api(config, method, endpoint, data=None, *, content_type="application/json")
             "Invalid Trustee administration token",
         )
     else:
+        role = config.get("admin_role", "cvm-policy")
+        if endpoint.startswith("resource/"):
+            require(
+                role == "cvm-resources",
+                "Resource administration requires admin_role=cvm-resources when signing a token; "
+                "or supply a scoped cvm-resources token through admin_token_file",
+            )
         key = serialization.load_pem_private_key(Path(config["admin_private_key"]).read_bytes(), password=None)
         require(isinstance(key, ed25519.Ed25519PrivateKey), "KBS administration requires an Ed25519 key")
         now = int(time.time())
@@ -60,7 +67,7 @@ def api(config, method, endpoint, data=None, *, content_type="application/json")
                         "iat": now,
                         "nbf": now - 5,
                         "exp": now + 60,
-                        "role": config.get("admin_role", "cvm-policy"),
+                        "role": role,
                         "iss": config.get("admin_issuer", "cvm-builder"),
                         "aud": config.get("admin_audience", "coco-trustee"),
                     }
@@ -83,6 +90,8 @@ def api(config, method, endpoint, data=None, *, content_type="application/json")
             return result
     except urllib.error.HTTPError as exc:
         exc.close()
+        if exc.code == 403 and endpoint.startswith("resource/"):
+            raise BuildError("KBS resource request forbidden; check the cvm-resources token and endpoint ACL") from None
         raise BuildError("KBS administrative request rejected; no credentials logged") from None
     except (urllib.error.URLError, OSError):
         raise BuildError("KBS administrative request failed; no credentials logged") from None

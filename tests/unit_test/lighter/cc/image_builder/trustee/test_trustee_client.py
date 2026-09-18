@@ -14,12 +14,17 @@
 
 """Native Trustee upload authentication, failure and retirement boundaries."""
 
+import base64
+import io
+import json
 import tempfile
 import unittest
 import urllib.error
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ed25519
 from cvm.common.contracts import resource_path
 from cvm.common.errors import BuildError
 from cvm.common.io import canonical, write_json
@@ -29,6 +34,65 @@ from cvm.trustee.client import NoRedirect, api, delete_resource, encode, upload_
 
 
 class TrusteeClientTests(unittest.TestCase):
+    def test_resource_signing_requires_explicit_resource_role_before_key_or_network_access(self):
+        config = {"url": self.config["url"], "ca": "ca.pem", "admin_private_key": "secret-key-path"}
+        for extra in ({}, {"admin_role": "cvm-policy"}, {"admin_role": None}, {"admin_role": "other"}):
+            for operation, args in ((delete_resource, (self.resource,)), (upload_resource, (self.resource, b"a" * 64))):
+                with (
+                    self.subTest(extra=extra, operation=operation.__name__),
+                    patch("cvm.trustee.client.Path.read_bytes") as key,
+                    patch("cvm.trustee.client.urllib.request.build_opener") as opener,
+                    self.assertRaisesRegex(BuildError, "admin_role=cvm-resources") as error,
+                ):
+                    operation(dict(config, **extra), *args)
+                key.assert_not_called()
+                opener.assert_not_called()
+                self.assertNotIn("secret-key-path", str(error.exception))
+
+    def test_explicit_resource_signing_and_default_policy_signing_preserve_role_separation(self):
+        key = ed25519.Ed25519PrivateKey.generate()
+        key_path = self.root / "issuer.key"
+        key_path.write_bytes(
+            key.private_bytes(
+                serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()
+            )
+        )
+        config = {"url": self.config["url"], "ca": "ca.pem", "admin_private_key": str(key_path)}
+        response = Mock()
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=False)
+        response.read.return_value = b""
+        opener = Mock()
+        opener.open.return_value = response
+        with (
+            patch("cvm.trustee.client.ssl.create_default_context"),
+            patch("cvm.trustee.client.urllib.request.build_opener", return_value=opener),
+        ):
+            api(config, "GET", "resource-policy")
+            delete_resource(dict(config, admin_role="cvm-resources"), self.resource)
+            upload_resource(dict(config, admin_role="cvm-resources"), self.resource, b"a" * 64)
+        requests = [call.args[0] for call in opener.open.call_args_list]
+        self.assertEqual([request.method for request in requests], ["GET", "DELETE", "POST"])
+        for request, role in zip(requests, ("cvm-policy", "cvm-resources", "cvm-resources")):
+            token = request.get_header("Authorization").removeprefix("Bearer ")
+            header, claims, signature = token.split(".")
+            self.assertEqual(json.loads(base64.urlsafe_b64decode(claims + "=="))["role"], role)
+            key.public_key().verify(base64.urlsafe_b64decode(signature + "=="), (header + "." + claims).encode())
+
+    def test_forbidden_preissued_resource_token_reports_role_without_response_or_credentials(self):
+        opener = Mock()
+        opener.open.side_effect = urllib.error.HTTPError(
+            "https://trustee.test", 403, "Forbidden", {}, io.BytesIO(b"secret-backend-response")
+        )
+        with (
+            patch("cvm.trustee.client.ssl.create_default_context"),
+            patch("cvm.trustee.client.urllib.request.build_opener", return_value=opener),
+            self.assertRaisesRegex(BuildError, "cvm-resources token and endpoint ACL") as error,
+        ):
+            delete_resource(self.config, self.resource)
+        self.assertNotIn("secret-backend-response", str(error.exception))
+        self.assertNotIn("header.payload.signature", str(error.exception))
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)

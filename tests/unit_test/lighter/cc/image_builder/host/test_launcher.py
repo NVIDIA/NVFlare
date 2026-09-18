@@ -87,13 +87,26 @@ class LauncherTests(unittest.TestCase):
                         patch("cvm.host.launcher.write_runtime_state", side_effect=publish) as writer,
                         patch("cvm.host.launcher._process_start", return_value=456),
                     ):
-                        self.assertEqual(run_vm(["qemu"], temporary), -sig)
+                        self.assertEqual(run_vm(["qemu"], temporary), 128 + sig)
                     process.terminate.assert_called_once()
                     process.wait.assert_called_once_with(timeout=30)
                     if window == "spawn":
                         writer.assert_not_called()
                     self.assertFalse(state.exists())
                     self.assertEqual(handlers, original)
+
+    def test_qemu_exit_status_preserves_exit_codes_and_converts_signals(self):
+        for status, expected in ((0, 0), (7, 7), (-signal.SIGTERM, 143), (-signal.SIGKILL, 137)):
+            process = Mock(**{"poll.return_value": status, "wait.return_value": status})
+            with (
+                self.subTest(status=status),
+                tempfile.TemporaryDirectory() as directory,
+                patch("cvm.host.launcher.subprocess.Popen", return_value=process),
+                patch("cvm.host.launcher.runtime_state_path", return_value=Path(directory) / "state.json"),
+                patch("cvm.host.launcher.write_runtime_state"),
+            ):
+                self.assertEqual(run_vm(["qemu"], directory), expected)
+            process.terminate.assert_not_called()
 
     def test_shutdown_detects_orphaned_disk_locks_without_signalling_processes(self):
         with tempfile.TemporaryDirectory() as temporary:

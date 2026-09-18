@@ -332,6 +332,8 @@ def profile(path):
         "root_overlay_max_mib",
     }
     unknown = set(value) - allowed
+    # Stage 1 profiles are public build inputs. Secret-bearing fields would need
+    # redacted diagnostics and must also be excluded from public build provenance.
     require(not unknown, "Unknown profile fields: " + ", ".join(sorted(map(str, unknown))))
     supplied_platforms = value.pop("platforms", None)
     defaults = copy.deepcopy(PROFILE_DEFAULTS)

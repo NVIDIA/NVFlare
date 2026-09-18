@@ -109,6 +109,37 @@ class CliTests(unittest.TestCase):
         self.assertIn("build_failure.json", stderr.getvalue())
         self.assertNotIn("sensitive-upload-token", stderr.getvalue())
 
+    def test_corrupt_archive_diagnostic_reaches_cli_before_any_key_operation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            archive = Path(directory) / "application.tar"
+            archive.write_bytes(b"secret-corrupt-archive")
+            app = {
+                "cvm_image": "profile",
+                "docker_archive": str(archive),
+                "image_id": "sha256:" + "a" * 64,
+                "requires_gpu": False,
+                "allowed_out_ports": [443],
+            }
+            profiles = {"contract": {"gpu": "none", "bootstrap_egress": [443]}}
+            stderr = io.StringIO()
+            with (
+                patch.object(cli.vault.config, "application", return_value=app),
+                patch.object(cli.vault.config, "project", return_value={"trustee": {}}),
+                patch.object(cli.vault, "profile_from_image", return_value=contextlib.nullcontext(profiles)),
+                patch.object(cli.vault, "protect_process") as protect,
+                patch.object(cli.vault, "memory_file") as key,
+                contextlib.redirect_stdout(io.StringIO()),
+                contextlib.redirect_stderr(stderr),
+                self.assertRaises(SystemExit) as error,
+            ):
+                cli.main(["vault", "app.yml"])
+            self.assertEqual(error.exception.code, 1)
+            self.assertIn("Invalid docker_archive; regenerate it with docker save", stderr.getvalue())
+            self.assertNotIn("secret-corrupt-archive", stderr.getvalue())
+            self.assertNotIn("Traceback", stderr.getvalue())
+            protect.assert_not_called()
+            key.assert_not_called()
+
     def test_host_preflight_without_quote_probe_retains_incomplete_status(self):
         with (
             patch.object(cli, "check_host", return_value=False) as check,
