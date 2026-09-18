@@ -113,6 +113,12 @@ def define_parser():
             "this opt-in flag enables the same aggregation precision for Nano without changing its default."
         ),
     )
+    parser.add_argument(
+        "--verify_adapter_reload",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Re-export and reload the incoming Lightning adapter to verify the native checkpointer round-trip.",
+    )
     parser.add_argument("--mock_delta", type=float, default=0.01)
     return model_profiles.resolve_model_profile(parser.parse_args())
 
@@ -408,12 +414,14 @@ def _run_automodel_round(args, round_dir: str, incoming_state: Mapping[str, torc
         env.update(
             {
                 "NVFLARE_AUTOMODEL_REPORT": report_path,
-                "NVFLARE_LOADED_ADAPTER_DIR": os.path.join(round_dir, "loaded_adapter"),
                 "NVFLARE_MODEL_PROFILE": args.model_profile,
                 "NVFLARE_OUTPUT_ADAPTER_DIR": output_adapter_dir,
                 "NVFLARE_PROFILE_SETTINGS": json.dumps(adapter_identity["profile_settings"], sort_keys=True),
+                "NVFLARE_VERIFY_ADAPTER_RELOAD": "1" if args.verify_adapter_reload else "0",
             }
         )
+        if args.verify_adapter_reload:
+            env["NVFLARE_LOADED_ADAPTER_DIR"] = os.path.join(round_dir, "loaded_adapter")
 
     print(f"Running NeMo AutoModel: {shlex.join(command)}")
     subprocess.run(command, cwd=round_dir, check=True, env=env)
@@ -560,14 +568,8 @@ def main():
             exchange_state,
             identity=model_profiles.adapter_identity(args),
         )
-        outgoing_adapter_dir = os.path.join(round_dir, "outgoing_adapter")
-        checkpoint_location = adapter_checkpoint.save_hf_adapter_state_dir(
-            exchange_state,
-            outgoing_adapter_dir,
-            adapter_manifest=outgoing_manifest,
-        )
         received_hash = adapter_checkpoint.state_hash(incoming_state)
-        outgoing_hash = adapter_checkpoint.state_hash(exchange_state)
+        outgoing_hash = outgoing_manifest["adapter_hash"]
         loaded_hash = automodel_report.get("loaded_adapter_hash", received_hash)
         loaded_matches_received = automodel_report.get(
             "loaded_matches_received_after_dtype_cast", loaded_hash == received_hash
@@ -586,11 +588,14 @@ def main():
             "loaded_tensor_count": automodel_report.get("loaded_tensor_count", len(incoming_state)),
             "outgoing_tensor_count": len(exchange_state),
             "fp32_adapter_exchange": use_fp32_exchange,
+            "reload_verified": args.verify_adapter_reload,
             "actual_optimizer_steps": steps,
             "update_norm": adapter_checkpoint.update_norm(incoming_state, exchange_state),
-            "checkpoint_location": os.path.abspath(checkpoint_location),
             "automodel_report": automodel_report,
         }
+        checkpoint_location = automodel_report.get("output_adapter_dir")
+        if checkpoint_location:
+            round_manifest["checkpoint_location"] = os.path.abspath(checkpoint_location)
         with open(os.path.join(round_dir, "round_manifest.json"), "w") as f:
             json.dump(round_manifest, f, indent=2, sort_keys=True)
         updated_params = adapter_checkpoint.add_model_prefix(exchange_state)

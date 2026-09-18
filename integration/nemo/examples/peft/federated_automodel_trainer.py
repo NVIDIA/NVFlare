@@ -95,31 +95,38 @@ class FederatedTrainFinetuneRecipeForNextTokenPrediction(TrainFinetuneRecipeForN
 
         self.checkpointer.load_model(self.model_parts, restore_from)
 
-        verification_root = os.environ.get("NVFLARE_LOADED_ADAPTER_DIR")
-        if not verification_root:
-            verification_root = str(Path(self.checkpointer.config.checkpoint_dir) / "loaded_adapter_verification")
-        verification_dir = self._export_adapter(verification_root, is_final_checkpoint=False)
-        loaded_state = adapter_checkpoint.load_adapter_state(verification_dir)
-        loaded_state = adapter_checkpoint.align_adapter_state_strict(loaded_state, incoming_state)
         received_hash = adapter_checkpoint.state_hash(incoming_state)
-        loaded_hash = adapter_checkpoint.state_hash(loaded_state)
-        mismatches = []
-        for key, received_value in incoming_state.items():
-            expected_loaded = received_value.to(loaded_state[key].dtype)
-            if not torch.equal(loaded_state[key], expected_loaded):
-                mismatches.append(key)
-        if mismatches:
-            raise RuntimeError(f"Native adapter reload changed values for {len(mismatches)} tensors: {mismatches[:5]}")
         self._federated_load_report = {
             "restore_from": os.path.abspath(restore_from),
             "received_adapter_hash": received_hash,
-            "loaded_adapter_hash": loaded_hash,
             "received_tensor_count": len(incoming_state),
-            "loaded_tensor_count": len(loaded_state),
-            "loaded_checkpoint_dir": verification_dir,
-            "loaded_matches_received_after_dtype_cast": True,
             **trainable,
         }
+        if os.environ.get("NVFLARE_VERIFY_ADAPTER_RELOAD") == "1":
+            verification_root = os.environ.get("NVFLARE_LOADED_ADAPTER_DIR")
+            if not verification_root:
+                verification_root = str(Path(self.checkpointer.config.checkpoint_dir) / "loaded_adapter_verification")
+            verification_dir = self._export_adapter(verification_root, is_final_checkpoint=False)
+            loaded_state = adapter_checkpoint.load_adapter_state(verification_dir)
+            loaded_state = adapter_checkpoint.align_adapter_state_strict(loaded_state, incoming_state)
+            loaded_hash = adapter_checkpoint.state_hash(loaded_state)
+            mismatches = []
+            for key, received_value in incoming_state.items():
+                expected_loaded = received_value.to(loaded_state[key].dtype)
+                if not torch.equal(loaded_state[key], expected_loaded):
+                    mismatches.append(key)
+            if mismatches:
+                raise RuntimeError(
+                    f"Native adapter reload changed values for {len(mismatches)} tensors: {mismatches[:5]}"
+                )
+            self._federated_load_report.update(
+                {
+                    "loaded_adapter_hash": loaded_hash,
+                    "loaded_tensor_count": len(loaded_state),
+                    "loaded_checkpoint_dir": verification_dir,
+                    "loaded_matches_received_after_dtype_cast": True,
+                }
+            )
         self._write_report(self._federated_load_report)
 
     def run_train_validation_loop(self):

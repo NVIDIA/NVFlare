@@ -296,6 +296,9 @@ manifest-conflicting adapters. They export only after successful training and re
 hashes, tensor counts, actual optimizer steps, update norm, and checkpoint location. Each local segment creates a fresh
 optimizer and scheduler.
 
+`--verify_adapter_reload` re-exports and reloads the incoming adapter after native load and asserts bit-equality, for
+debugging checkpointer issues; it is off by default because it doubles adapter disk I/O per round.
+
 Use `--backend=mock` for a CPU/static continuity check of the same Recipe, Client API, and full-adapter path before
 running GPU training.
 

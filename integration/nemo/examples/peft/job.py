@@ -101,6 +101,12 @@ def define_parser():
             "this opt-in flag enables the same aggregation precision for Nano without changing its default."
         ),
     )
+    parser.add_argument(
+        "--verify_adapter_reload",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Re-export and reload the incoming Lightning adapter to verify the native checkpointer round-trip.",
+    )
     parser.add_argument("--mock_delta", type=float, default=0.01)
     parser.add_argument("--mock_site_steps", default=None, help="Comma-separated per-site mock weights for CPU tests.")
     parser.add_argument("--mock_site_deltas", default=None, help="Comma-separated per-site mock tensor deltas.")
@@ -200,6 +206,10 @@ def _build_train_args(args, train_file: str, site_name: str) -> str:
         train_args.append("--fp32_adapter_exchange")
     else:
         train_args.append("--no-fp32_adapter_exchange")
+    if args.verify_adapter_reload:
+        train_args.append("--verify_adapter_reload")
+    else:
+        train_args.append("--no-verify_adapter_reload")
     if model_profiles.is_lightning35(args):
         train_args.extend(["--adapter_contract", adapter_checkpoint.ADAPTER_CONTRACT_FILE])
     if args.balance_train_labels:

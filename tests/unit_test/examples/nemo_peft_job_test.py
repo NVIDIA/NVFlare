@@ -136,6 +136,7 @@ def _args(tmp_path, initial_adapter_ckpt):
         use_triton_lora=False,
         server_tensor_device="cpu",
         fp32_adapter_exchange=False,
+        verify_adapter_reload=False,
         mock_delta=0.01,
     )
 
@@ -254,6 +255,27 @@ def test_nemo_peft_train_args_are_shell_safe(tmp_path):
     assert parts[parts.index("--work_dir") + 1].endswith("workspace/automodel_work/site-1")
     assert "--balance_train_labels" in parts
     assert "--no-use_chat_template" in parts
+
+
+@pytest.mark.parametrize(
+    ("verify_adapter_reload", "expected_flag", "unexpected_flag"),
+    [
+        (True, "--verify_adapter_reload", "--no-verify_adapter_reload"),
+        (False, "--no-verify_adapter_reload", "--verify_adapter_reload"),
+    ],
+)
+def test_nemo_peft_train_args_forward_adapter_reload_verification(
+    tmp_path, verify_adapter_reload, expected_flag, unexpected_flag
+):
+    job_module = _load_job_module()
+    args = _args(tmp_path, tmp_path / "init_adapter.pt")
+    args.verify_adapter_reload = verify_adapter_reload
+
+    train_args = job_module._build_train_args(args, str(tmp_path / "split data" / "alpha10.0_site-1.jsonl"), "site-1")
+
+    parts = shlex.split(train_args)
+    assert expected_flag in parts
+    assert unexpected_flag not in parts
 
 
 def test_nemo_peft_automodel_config_uses_helper_files(tmp_path):
