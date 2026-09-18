@@ -30,3 +30,21 @@ def test_cyclic_xgboost_records_evaluation_metric():
     executor._local_boost_cyclic(FLContext())
 
     assert executor._last_metrics == {"auc": 0.8}
+
+
+def test_bagging_xgboost_records_metric_after_local_training():
+    executor = FedXGBTreeExecutor(training_mode="bagging", lr_scale=1.0, data_loader_id="data")
+    executor.train_data = MagicMock()
+    executor.val_data = MagicMock()
+    executor.bst = MagicMock()
+    executor.bst.num_boosted_rounds.return_value = 2
+    executor.bst.eval_set.side_effect = [
+        "[1]\ttrain-auc:0.90000\tvalid-auc:0.80000",
+        "[2]\ttrain-auc:0.92000\tvalid-auc:0.85000",
+    ]
+    executor.bst.__getitem__.return_value = MagicMock()
+
+    executor._local_boost_bagging(FLContext())
+
+    executor.bst.update.assert_called_once()
+    assert executor._last_metrics == {"auc": 0.85}

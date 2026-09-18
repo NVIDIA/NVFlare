@@ -212,7 +212,9 @@ class StatisticsController(Controller):
             return False
 
         self.log_info(fl_ctx, "start post processing")
-        if self.post_fn(self.task_name, fl_ctx):
+        post_succeeded = self._validate_min_clients(self.min_clients, self.client_statistics)
+        self.post_fn(self.task_name, fl_ctx)
+        if post_succeeded and not abort_signal.triggered:
             log_progress(self.logger, "\n  ✓ Federated statistics completed")
 
         self.log_info(fl_ctx, f"task {self.task_name} control flow end.")
@@ -411,19 +413,17 @@ class StatisticsController(Controller):
 
         return True
 
-    def post_fn(self, task_name: str, fl_ctx: FLContext) -> bool:
+    def post_fn(self, task_name: str, fl_ctx: FLContext):
 
         ok_to_proceed = self._validate_min_clients(self.min_clients, self.client_statistics)
         if not ok_to_proceed:
             self.system_panic(f"Not all required {self.min_clients} statistics received, aborted the job.", fl_ctx)
-            return False
         else:
             self.log_info(fl_ctx, "Combine all clients' statistics")
             ds_stats = self._combine_all_statistics()
             self.log_info(fl_ctx, "Save statistics result to persistence store")
             writer: StatisticsWriter = fl_ctx.get_engine().get_component(self.writer_id)
             writer.save(ds_stats, overwrite_existing=True, fl_ctx=fl_ctx)
-            return True
 
     def _combine_all_statistics(self):
         result = {}

@@ -156,6 +156,7 @@ class TestStatisticsController:
 
         with (
             patch.object(StatisticsController, "_wait_for_all_results", return_value=True),
+            patch.object(controller, "_validate_min_clients", return_value=True),
             patch("nvflare.app_common.workflows.statistics_controller.log_progress") as progress,
         ):
             controller.control_flow(Signal(), FLContext())

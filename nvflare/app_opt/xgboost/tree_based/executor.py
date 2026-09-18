@@ -183,23 +183,29 @@ class FedXGBTreeExecutor(Executor):
             evals=[(self.train_data, "train"), (self.val_data, "valid")], iteration=self.bst.num_boosted_rounds() - 1
         )
         self.log_info(fl_ctx, eval_results)
-        auc = float(eval_results.split("\t")[2].split(":")[1])
-        self._last_metrics = {self.eval_metric: auc}
+        incoming_auc = float(eval_results.split("\t")[2].split(":")[1])
         for i in range(self.num_local_round):
             self.bst.update(self.train_data, self.bst.num_boosted_rounds())
+
+        eval_results = self.bst.eval_set(
+            evals=[(self.train_data, "train"), (self.val_data, "valid")], iteration=self.bst.num_boosted_rounds() - 1
+        )
+        self.log_info(fl_ctx, eval_results)
+        updated_auc = float(eval_results.split("\t")[2].split(":")[1])
+        self._last_metrics = {self.eval_metric: updated_auc}
 
         # extract newly added self.num_local_round using xgboost slicing api
         bst = self.bst[self.bst.num_boosted_rounds() - self.num_local_round : self.bst.num_boosted_rounds()]
 
         self.log_info(
             fl_ctx,
-            f"Global AUC {auc}",
+            f"Global AUC {incoming_auc}; local AUC after training {updated_auc}",
         )
         if self.writer:
             # note: writing auc before current training step, for passed in global model
             self.writer.add_scalar(
                 "train_metrics",
-                auc,
+                incoming_auc,
                 int((self.bst.num_boosted_rounds() - self.num_local_round - 1) / self.num_client_bagging),
             )
         return bst
