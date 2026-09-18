@@ -12,9 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
+from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.signal import Signal
+from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_opt.xgboost.tree_based.executor import FedXGBTreeExecutor
 
 
@@ -49,3 +52,37 @@ def test_bagging_xgboost_records_metric_after_local_training():
     executor.bst.update.assert_called_once()
     assert executor._last_metrics == {"auc": 0.8}
     assert executor._progress_metrics == {"auc": 0.85}
+
+
+def test_first_bagging_invocation_evaluates_received_model_before_training():
+    executor = FedXGBTreeExecutor(training_mode="bagging", lr_scale=1.0, data_loader_id="data")
+    executor.client_id = "site-1"
+    executor.train_data = MagicMock()
+    executor.val_data = MagicMock()
+
+    incoming_bst = MagicMock()
+    incoming_bst.num_boosted_rounds.return_value = 2
+    incoming_bst.eval_set.return_value = "[1]\ttrain-auc:0.90000\tvalid-auc:0.80000"
+
+    trained_bst = MagicMock()
+    trained_bst.num_boosted_rounds.return_value = 3
+    trained_bst.save_config.return_value = "{}"
+    trained_bst.save_raw.return_value = b"{}"
+
+    def train_with_metrics(*_args, evals_result, **_kwargs):
+        evals_result["validate"] = {"auc": [0.85]}
+        return trained_bst
+
+    model_data = b"existing model"
+    request = DXO(data_kind=DataKind.WEIGHTS, data={"model_data": model_data}).to_shareable()
+    with (
+        patch("nvflare.app_opt.xgboost.tree_based.executor.xgb.Booster", return_value=incoming_bst),
+        patch("nvflare.app_opt.xgboost.tree_based.executor.xgb.train", side_effect=train_with_metrics),
+        patch("nvflare.app_opt.xgboost.tree_based.executor.mask_sum_hessian", return_value=0),
+    ):
+        result = executor.train(request, FLContext(), Signal())
+
+    incoming_bst.load_model.assert_called_once_with(bytearray(model_data))
+    result_dxo = from_shareable(result)
+    assert result_dxo.get_meta_prop(MetaKey.INITIAL_METRICS) == {"auc": 0.8}
+    assert result_dxo.get_meta_prop(AppConstants.PROGRESS_METRICS) == {"auc": 0.85}
