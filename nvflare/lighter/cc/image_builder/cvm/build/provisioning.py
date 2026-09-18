@@ -185,7 +185,6 @@ def install_files(config, payload, root=Path("/")):
     write_file(root, "/etc/cvm_profile_version", config["profile_version"] + "\n")
 
     if config["gpu"] == "nvidia_cc":
-        copy_file(payload / "inputs/gpu-policy.json", root, "/etc/cvm/gpu-policy.json", 0o644)
         library = target(root, "/usr/lib/x86_64-linux-gnu/libnvat.so.1.2.2")
         copy_file(payload / "inputs/libnvat.so.1.2.2", root, "/usr/lib/x86_64-linux-gnu/libnvat.so.1.2.2", 0o644)
         target(root, "/usr/lib/x86_64-linux-gnu/libnvat.so.1").symlink_to(library.name)

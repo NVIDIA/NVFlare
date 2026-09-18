@@ -132,12 +132,7 @@ def provisioning_payload(profile, platform, build_id, job, source, runtime):
         "runtime.json": runtime,
     }
     if profile["gpu"] == "nvidia_cc":
-        inputs.update(
-            {
-                "gpu-policy.json": profile["gpu_policy"],
-                "libnvat.so.1.2.2": profile["gpu_attestation_library"],
-            }
-        )
+        inputs["libnvat.so.1.2.2"] = profile["gpu_attestation_library"]
     for name, path in inputs.items():
         shutil.copyfile(path, payload / "inputs" / name)
     (payload / "inputs/nftables.conf").write_text("flush ruleset\n" + firewall_rules([], profile["bootstrap_egress"]))
@@ -280,7 +275,7 @@ def plain_build(profile, platform, build_id, job, *, dev=False, source=SOURCE):
         if dev:
             runtime["platform"] = "none"
         if profile["gpu"] == "nvidia_cc":
-            runtime.update(gpu_policy="/etc/cvm/gpu-policy.json", gpu_attestation_url=profile["gpu_attestation_url"])
+            runtime.update(gpu_attestation_url=profile["gpu_attestation_url"])
         write_json(job / "runtime.json", runtime)
         archive = provisioning_payload(profile, platform, build_id, job, source, job / "runtime.json")
         destination = profile["build_user"] + "@127.0.0.1"
