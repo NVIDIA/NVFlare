@@ -18,11 +18,13 @@ import pytest
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, Task
 from nvflare.apis.dxo import DXO, DataKind
+from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import Shareable
+from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import PSIConst
 from nvflare.app_common.psi.dh_psi.dh_psi_workflow import DhPSIWorkFlow, SiteSize
+from nvflare.app_common.psi.psi_controller import PSIController
 from nvflare.app_common.workflows.broadcast_operator import BroadcastAndWait
 
 
@@ -128,3 +130,36 @@ class TestDhPSIWorkflow:
         assert f"Processing {PSIConst.TASK}" in messages
         assert "Received result" in messages
         assert "private-site-alpha" in bop.results
+
+    @pytest.mark.parametrize(
+        "return_code,raises",
+        [(ReturnCode.EXECUTION_EXCEPTION, False), (ReturnCode.EXECUTION_RESULT_ERROR, True)],
+    )
+    def test_psi_error_callback_does_not_log_participant_identity(self, return_code, raises):
+        wf = DhPSIWorkFlow()
+        wf.fl_ctx = FLContext()
+        wf.controller = PSIController(psi_workflow_id="psi_workflow")
+        wf.controller.log_error = MagicMock()
+        wf.controller.system_panic = MagicMock()
+        bop = wf._new_broadcast_operator()
+        bop.log_info = MagicMock()
+
+        task = Task(name=PSIConst.TASK, data=Shareable())
+        client_task = ClientTask(Client("private-site-alpha", "token"), task)
+        client_task.result = make_reply(return_code)
+
+        if raises:
+            with pytest.raises(ValueError) as error:
+                bop.results_cb(client_task, wf.fl_ctx)
+            exception_message = str(error.value)
+        else:
+            bop.results_cb(client_task, wf.fl_ctx)
+            exception_message = ""
+
+        messages = [call.args[1] for call in bop.log_info.call_args_list]
+        messages.extend(call.args[1] for call in wf.controller.log_error.call_args_list)
+        messages.extend(call.args[0] for call in wf.controller.system_panic.call_args_list)
+        messages.append(exception_message)
+        combined = "\n".join(messages)
+        assert "private-site-alpha" not in combined
+        assert "a PSI participant" in combined
