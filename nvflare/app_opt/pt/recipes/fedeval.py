@@ -57,6 +57,8 @@ class EvalController(ModelController):
         self.event(AppEventType.ROUND_STARTED)
         self.info("Sending model for evaluation")
         results = self.send_model_and_wait(targets=None, data=model, task_name="validate", timeout=self.timeout)
+        if self.abort_signal.triggered:
+            return
         self.info(f"Got {len(results)} results")
         for r in results:
             self.info(f"Metrics: {r.metrics}")

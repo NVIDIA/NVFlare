@@ -384,6 +384,48 @@ class TestDhPSIWorkflow:
             "  Verifying intersection agreement…",
         ]
 
+    def test_run_stops_after_aborted_forward_pass(self):
+        wf = DhPSIWorkFlow()
+        abort_signal = Signal()
+        wf.ordered_sites = [SiteSize("site-1", 10), SiteSize("site-2", 20)]
+
+        def forward_pass(*args):
+            abort_signal.trigger("stopped")
+            return SiteSize("site-2", 5)
+
+        wf.forward_pass = MagicMock(side_effect=forward_pass)
+        wf.backward_pass = MagicMock()
+        wf.check_processed_sites = MagicMock()
+
+        with patch("nvflare.app_common.psi.dh_psi.dh_psi_workflow.log_progress") as progress:
+            result = wf.run(abort_signal)
+
+        assert result is False
+        wf.backward_pass.assert_not_called()
+        wf.check_processed_sites.assert_not_called()
+        progress.assert_not_called()
+
+    def test_run_stops_after_aborted_backward_pass(self):
+        wf = DhPSIWorkFlow()
+        abort_signal = Signal()
+        wf.ordered_sites = [SiteSize("site-1", 10), SiteSize("site-2", 20)]
+        wf.forward_pass = MagicMock(return_value=SiteSize("site-2", 5))
+        wf.check_processed_sites = MagicMock()
+
+        def backward_pass(*args):
+            abort_signal.trigger("stopped")
+            return {}
+
+        wf.backward_pass = MagicMock(side_effect=backward_pass)
+        wf.check_final_intersection_sizes = MagicMock()
+
+        with patch("nvflare.app_common.psi.dh_psi.dh_psi_workflow.log_progress") as progress:
+            result = wf.run(abort_signal)
+
+        assert result is False
+        wf.check_final_intersection_sizes.assert_not_called()
+        assert [call.args[1] for call in progress.call_args_list] == ["  Distributing encrypted intersection…"]
+
     def test_forward_reduction_reports_each_pass_without_private_values(self):
         wf = DhPSIWorkFlow()
         wf.abort_signal = Signal()

@@ -63,10 +63,13 @@ class FullModelShareableGenerator(ShareableGenerator):
             weights = base_model[ModelLearnableKey.WEIGHTS]
             if dxo.data is not None:
                 model_diff = dxo.data
-                updated_weights = {}
+                # Validate every update before mutating the model, but discard each
+                # validation result immediately to keep peak memory bounded for large models.
                 for v_name, v_value in model_diff.items():
-                    updated_weights[v_name] = weights[v_name] + v_value
-                weights.update(updated_weights)
+                    validated_value = weights[v_name] + v_value
+                    del validated_value
+                for v_name, v_value in model_diff.items():
+                    weights[v_name] = weights[v_name] + v_value
         elif dxo.data_kind == DataKind.WEIGHTS:
             if not base_model:
                 base_model = ModelLearnable()

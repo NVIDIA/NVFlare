@@ -70,6 +70,8 @@ class DhPSIWorkFlow(PSIWorkflow):
         self._forward_passes = (len(self.ordered_sites) - 1).bit_length()
 
         intersect_site = self.forward_pass(self.ordered_sites, self.forward_processed)
+        if abort_signal.triggered:
+            return False
 
         self.log_info(
             self.fl_ctx,
@@ -81,6 +83,8 @@ class DhPSIWorkFlow(PSIWorkflow):
 
         log_progress(self.logger, "  Distributing encrypted intersection…")
         self.backward_processed.update(self.backward_pass(self.ordered_sites, intersect_site))
+        if abort_signal.triggered:
+            return False
 
         self.log_info(
             self.fl_ctx,
