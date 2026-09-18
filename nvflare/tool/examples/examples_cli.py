@@ -130,13 +130,14 @@ def _content_error(
 
 
 def _github_api_headers():
-    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
-    if not token:
-        return None
-    token = token.strip()
-    if not re.fullmatch(r"[\x21-\x7e]+", token):
-        return None
-    return {"Authorization": f"Bearer {token}", "X-GitHub-Api-Version": "2022-11-28"}
+    for variable in ("GITHUB_TOKEN", "GH_TOKEN"):
+        token = os.environ.get(variable)
+        if not token:
+            continue
+        token = token.strip()
+        if re.fullmatch(r"[\x21-\x7e]+", token):
+            return {"Authorization": f"Bearer {token}", "X-GitHub-Api-Version": "2022-11-28"}
+    return None
 
 
 def _validate_tree_entries(entries, source_path):
@@ -385,11 +386,12 @@ def _get_example_with_dependencies(version_info, revision, catalog, name, destin
             if component_directory.is_symlink() or not component_directory.is_dir():
                 _dependency_conflict(component_name, component_directory)
             reuse_status = _component_reuse_status(component_directory, provenance)
-            if reuse_status == "incomplete":
+            if reuse_status == "matching":
+                reused = True
+            elif reuse_status == "incomplete":
                 _dependency_incomplete(component_name, component_directory)
-            if reuse_status != "matching":
+            else:
                 _dependency_conflict(component_name, component_directory)
-            reused = True
         else:
             _download_example(revision, entry["source_path"], component_directory)
             _write_provenance(component_directory, provenance)

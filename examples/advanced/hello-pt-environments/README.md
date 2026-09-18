@@ -9,8 +9,9 @@ has that layout. `nvflare examples get hello-pt-environments` downloads both cat
 Complete the beginner simulation first so you already understand its training, evaluation, and artifacts:
 
 ```bash
-cd examples/hello-world/hello-pt
+cd ../../hello-world/hello-pt
 python job.py
+cd ../../advanced/hello-pt-environments
 ```
 
 If you started from a source checkout, install that checkout with its PyTorch

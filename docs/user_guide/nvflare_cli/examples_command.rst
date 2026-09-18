@@ -206,8 +206,20 @@ behind the same proxy or NAT gateway. For repeated CI or agent workflows,
 download an example once and reuse that workspace instead of calling ``get``
 in a loop. For bulk retrieval, use a revision-pinned Git checkout. If GitHub
 returns a ``403`` or ``429`` rate-limit response, wait for the limit window to
-reset before retrying. You can check the current allowance and reset time with
-``curl https://api.github.com/rate_limit``. See `GitHub REST API rate limits
+reset before retrying. The bare request below checks the anonymous allowance:
+
+.. code-block:: bash
+
+   curl https://api.github.com/rate_limit
+
+When either token variable is configured, use the same token selection as the
+CLI to check its authenticated allowance:
+
+.. code-block:: bash
+
+   curl -H "Authorization: Bearer ${GITHUB_TOKEN:-$GH_TOKEN}" https://api.github.com/rate_limit
+
+See `GitHub REST API rate limits
 <https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api>`_.
 
 Failures return a nonzero exit status, an error code, and a recovery hint.

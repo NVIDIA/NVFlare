@@ -199,10 +199,14 @@ def test_download_authenticates_only_the_github_api_request(monkeypatch, tmp_pat
     assert "headers" not in session.request_kwargs[1]
 
 
-def test_malformed_github_token_is_not_used(monkeypatch):
+def test_malformed_github_token_uses_valid_fallback(monkeypatch):
     monkeypatch.setenv("GITHUB_TOKEN", "github\ntoken")
+    monkeypatch.setenv("GH_TOKEN", "fallback-token")
 
-    assert examples_cli._github_api_headers() is None
+    assert examples_cli._github_api_headers() == {
+        "Authorization": "Bearer fallback-token",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
 
 
 def test_invalid_header_error_does_not_expose_token(monkeypatch, tmp_path):
@@ -335,6 +339,7 @@ def test_get_rejects_reused_dependency_through_symlinked_ancestor(monkeypatch, t
     outside = tmp_path / "outside"
     dependency = outside / "hello-pt"
     dependency.mkdir(parents=True)
+    (dependency / "README.md").write_text("# Example\n")
     (dependency / examples_cli.PROVENANCE_FILE).write_text(
         json.dumps(
             {
@@ -365,6 +370,9 @@ def test_get_rejects_non_directory_dependency_component(monkeypatch, tmp_path, k
     else:
         outside = tmp_path / "outside"
         outside.mkdir()
+        provenance = examples_cli._provenance(VERSION, REVISION, "hello-pt", CATALOG["hello-pt"])
+        (outside / examples_cli.PROVENANCE_FILE).write_text(json.dumps(provenance))
+        (outside / "README.md").write_text("# Example\n")
         component.symlink_to(outside, target_is_directory=True)
     monkeypatch.setattr(examples_cli, "_download_example", lambda *args, **kwargs: pytest.fail("downloaded"))
 
