@@ -360,10 +360,10 @@ class DhPSIWorkFlow(PSIWorkflow):
         else:
             expected_clients = [client if isinstance(client, str) else client.name for client in clients]
             sizes = self._response_values(results, expected_clients, PSIConst.ITEMS_SIZE, "PSI preparation")
-            if any(not isinstance(size, Integral) or size <= 0 for size in sizes.values()):
+            if any(not isinstance(size, Integral) or size < 0 for size in sizes.values()):
                 raise RuntimeError("PSI preparation failed: one or more participant responses are malformed")
             self.ordered_sites = sorted(
-                (SiteSize(site_name, size) for site_name, size in sizes.items()), key=lambda site: site.size
+                (SiteSize(site_name, size) for site_name, size in sizes.items() if size > 0), key=lambda site: site.size
             )
 
     def prepare_setup_messages(self, s: SiteSize, other_site_sizes: Set[int]) -> Dict[str, str]:

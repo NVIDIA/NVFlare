@@ -65,6 +65,28 @@ class TestDhPSIWorkflow:
         assert "91001" not in message
         assert "92002" not in message
 
+    def test_prepare_filters_empty_participant_without_exposing_private_values(self):
+        wf = DhPSIWorkFlow()
+        wf.fl_ctx = FLContext()
+        wf.fl_ctx.get_engine = MagicMock()
+        wf.fl_ctx.get_engine.return_value.get_clients.return_value = ["private-site-empty", "private-site-active"]
+        wf.controller = MagicMock()
+        wf.log_info = MagicMock()
+        results = {
+            "private-site-empty": DXO(data_kind=DataKind.PSI, data={PSIConst.ITEMS_SIZE: 0}),
+            "private-site-active": DXO(data_kind=DataKind.PSI, data={PSIConst.ITEMS_SIZE: 91001}),
+        }
+
+        with patch("nvflare.app_common.psi.dh_psi.dh_psi_workflow.BroadcastAndWait") as broadcast_and_wait:
+            broadcast_and_wait.return_value.broadcast_and_wait.return_value = results
+            wf.prepare_sites(Signal())
+
+        assert wf.ordered_sites == [SiteSize("private-site-active", 91001)]
+        message = wf.log_info.call_args.args[1]
+        assert message == f"{PSIConst.TASK_PREPARE} received 2 participant responses"
+        assert "private-site" not in message
+        assert "91001" not in message
+
     def test_prepare_rejects_partial_results_without_identifying_missing_participant(self):
         wf = DhPSIWorkFlow()
         wf.fl_ctx = FLContext()
