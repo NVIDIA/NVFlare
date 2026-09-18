@@ -25,6 +25,7 @@ import shutil
 import stat
 import subprocess
 from pathlib import Path
+from urllib.parse import urlparse
 
 DIRECTORIES = (
     "/usr/lib/cvm/bin",
@@ -99,7 +100,7 @@ def load_config(path):
         "profile_version",
         "required_system_packages",
     }
-    if not isinstance(value, dict) or set(value) != required:
+    if not isinstance(value, dict) or set(value) - {"apt_repositories"} != required:
         raise ValueError("Invalid provisioning configuration fields")
     if not isinstance(value["build_id"], str) or not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", value["build_id"]):
         raise ValueError("Invalid provisioning identity")
@@ -126,7 +127,53 @@ def load_config(path):
     names = [item.split("=", 1)[0] for item in packages]
     if len(names) != len(set(names)):
         raise ValueError("Duplicate package pin")
+    validate_apt_repositories(value.get("apt_repositories", []))
+    if value["gpu"] == "nvidia_cc" and not value.get("apt_repositories"):
+        raise ValueError("GPU construction requires authenticated package repositories")
     return value
+
+
+def validate_apt_repositories(repositories):
+    if not isinstance(repositories, list):
+        raise ValueError("Invalid GPU apt repositories")
+    for repository in repositories:
+        if not isinstance(repository, dict) or set(repository) != {"url", "suite", "components", "keyring_sha256"}:
+            raise ValueError("Invalid GPU apt repository fields")
+        url = repository["url"]
+        if not isinstance(url, str) or not re.fullmatch(r"https://[A-Za-z0-9._:/-]+", url):
+            raise ValueError("GPU repository requires a plain HTTPS URL")
+        parsed = urlparse(url)
+        if not parsed.hostname or parsed.username or parsed.password:
+            raise ValueError("Invalid GPU repository URL")
+        suite, components = repository["suite"], repository["components"]
+        if not isinstance(suite, str) or not re.fullmatch(r"[A-Za-z0-9_./-]+", suite):
+            raise ValueError("Invalid GPU repository suite")
+        if not isinstance(components, list) or not all(
+            isinstance(component, str) and re.fullmatch(r"[A-Za-z0-9_.-]+", component) for component in components
+        ):
+            raise ValueError("Invalid GPU repository components")
+        if suite.endswith("/") != (len(components) == 0):
+            raise ValueError("Flat repositories require a trailing slash and no components")
+        checksum = repository["keyring_sha256"]
+        if not isinstance(checksum, str) or not re.fullmatch(r"[a-f0-9]{64}", checksum):
+            raise ValueError("Pin the GPU repository keyring SHA-256")
+
+
+def install_apt_repositories(config, payload, root=Path("/")):
+    repositories = config.get("apt_repositories", [])
+    validate_apt_repositories(repositories)
+    for index, repository in enumerate(repositories):
+        source = Path(payload) / f"inputs/gpu_apt_{index}.gpg"
+        if digest(source) != repository["keyring_sha256"]:
+            raise ValueError("GPU repository keyring digest mismatch")
+        keyring = f"/usr/share/keyrings/cvm_gpu_{index}.gpg"
+        copy_file(source, root, keyring, 0o644)
+        write_file(
+            root,
+            f"/etc/apt/sources.list.d/cvm_gpu_{index}.sources",
+            f"Types: deb\nURIs: {repository['url']}\nSuites: {repository['suite']}\n"
+            f"Components: {' '.join(repository['components'])}\nArchitectures: amd64\nSigned-By: {keyring}\n",
+        )
 
 
 def docker_configuration(gpu):
@@ -185,9 +232,8 @@ def install_files(config, payload, root=Path("/")):
     write_file(root, "/etc/cvm_profile_version", config["profile_version"] + "\n")
 
     if config["gpu"] == "nvidia_cc":
-        library = target(root, "/usr/lib/x86_64-linux-gnu/libnvat.so.1.2.2")
-        copy_file(payload / "inputs/libnvat.so.1.2.2", root, "/usr/lib/x86_64-linux-gnu/libnvat.so.1.2.2", 0o644)
-        target(root, "/usr/lib/x86_64-linux-gnu/libnvat.so.1").symlink_to(library.name)
+        library = target(root, "/usr/lib/x86_64-linux-gnu/libnvat.so.1")
+        copy_file(payload / "inputs/libnvat.so.1", root, "/usr/lib/x86_64-linux-gnu/libnvat.so.1", 0o644)
         target(root, "/usr/lib/x86_64-linux-gnu/libnvat.so").symlink_to(library.name)
 
     services = payload / "source/services"
@@ -263,9 +309,10 @@ def verify_guest(config):
 
 def install(config, payload):
     verify_guest(config)
+    install_apt_repositories(config, payload)
     environment = dict(os.environ, DEBIAN_FRONTEND="noninteractive")
     with suppress_service_starts():
-        execute(["apt-get", "update"], env=environment)
+        execute(["apt-get", "-o", "APT::Update::Error-Mode=any", "update"], env=environment)
         execute(
             ["apt-get", "-y", "--no-install-recommends", "install", *config["required_system_packages"]],
             env=environment,

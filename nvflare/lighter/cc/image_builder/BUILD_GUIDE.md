@@ -74,11 +74,31 @@ sudo scripts/tdx_preflight --firmware inputs/OVMF.inteltdx.fd \
   --quote-probe /usr/local/sbin/site_tdx_quote_probe
 ```
 
-`site_tdx_quote_probe` is a site-provided executable that boots a minimal TD and
-requires a nonempty, successfully verified quote. The preflight exits nonzero if
-that check is omitted. It does not fabricate evidence or silently approve TCB
-values. On failure, inspect `journalctl -u qgsd`, collateral-service access and
-platform registration. Resolve these prerequisites before building/sealing.
+`site_tdx_quote_probe` is a site-provided executable; it is not shipped here.
+For a concrete reference implementation, follow Canonical's
+[TD image creation](https://github.com/canonical/tdx#create-td-image),
+[TD boot procedure](https://github.com/canonical/tdx#boot-td), and
+[quote generation and remote verification example](https://github.com/canonical/tdx#perform-remote-attestation).
+The example uses a small Ubuntu TD without a GPU. After installing its guest
+attestation tools and configuring an Intel Tiber Trust Services API key, run
+inside that TD:
+
+```sh
+umask 077
+trustauthority-cli evidence --tdx --config ./config.json > evidence.json
+trustauthority-cli token --config ./config.json > token.txt
+test -s token.txt
+```
+
+The first command exercises QGS; the second requests verification and a token.
+Token presence alone does not establish an acceptable appraisal: validate its
+signature, nonce, expiry and TCB result using the reference workflow. This is an
+optional external-service smoke test, not a replacement for CoCo Trustee or CVM
+reference approval. A site's automated probe must perform those checks against
+its intended verifier and collateral channel, exit zero only on success, and
+stop its temporary TD. The preflight runs it with a 180-second limit and exits
+nonzero if it is omitted. On failure, inspect `journalctl -u qgsd`, collateral
+access and platform registration before building/sealing.
 
 For a previously working host that stops producing quotes, or a verified quote
 that is appraised as `OutOfDate`, follow
@@ -143,8 +163,8 @@ selects an OpenSSL RSA decryptor that does not support the RSA-OAEP-256 response
 used by this builder. Verify encrypted resource retrieval with the exact binary
 before building a CVM.
 
-For a GPU profile add `nvidia-attester` and install upstream's matching NVAT
-build/runtime dependency. Leave the source and dependency lockfile unchanged.
+For a GPU profile follow [GPU_BUILD.md](GPU_BUILD.md) to build the pinned NVAT
+dependency and add `nvidia-attester`. Leave Trustee's source and dependency lockfile unchanged.
 See [TRUSTEE_GUIDE.md](TRUSTEE_GUIDE.md) for the matching CoCo v0.23.0 backend.
 
 The site operator supplies these trust inputs because they are deployment-specific
@@ -416,8 +436,10 @@ sudo ./vault_build.sh config/vault_build.yml --plain-http
 
 Use a generic CVM profile with `gpu: nvidia_cc`, the required `gpu_count` from 1
 through 8, a reviewed `gpu_policy`, a trusted `gpu_attestation_url`, the pinned
-`gpu_attestation_library`, and exact `gpu_packages`
-pins for the NVIDIA guest driver and NVIDIA Container Toolkit.
+`gpu_attestation_library`, its `gpu_attestation_provenance`, authenticated
+`gpu_apt_repositories`, and exact `gpu_packages` pins for the NVIDIA guest driver
+and NVIDIA Container Toolkit. [GPU_BUILD.md](GPU_BUILD.md) supplies the concrete
+repository/keyring inputs, package pins, and NVAT build recipe for a clean base image.
 Set `requires_gpu: true` in `vault_build.yml`. The builder rejects a GPU
 application paired with a CPU-only profile and rejects a GPU profile paired with
 an application that does not request the GPU.
@@ -438,11 +460,11 @@ fields. The policy lists those two fields under `claims-if-present`: a returned
 false or malformed value denies key release. RIM signature, certificate,
 version and measurement checks remain mandatory in `required-claims`.
 
-The checked-in default expects `inputs/libnvat.so.1.2.2`. Trustee v0.22.0's
-Cargo.lock pins guest-components with the NVAT 2026.03.02 Rust bindings;
-the 1.2.2 library provides the matching C API. Supply a reviewed library built
-for the selected guest environment. The custom `nvattest` collector
-is no longer installed; evidence collection and verification use CoCo's code.
+The default expects `inputs/libnvat.so.1` plus `inputs/nvat_build.json`.
+Trustee v0.22.0's Cargo.lock pins the NVAT 2026.03.02 source, which builds library
+version 1.2.0 with soname 1. Stage 1 checks the source revision, reviewed libxml2
+compatibility patch, build environment and binary digest in the provenance
+record. Evidence collection and verification use CoCo's code.
 
 For a smaller guest, `gpu_packages` may pin a precompiled
 `linux-modules-nvidia-*-<kernel>` package plus its matching

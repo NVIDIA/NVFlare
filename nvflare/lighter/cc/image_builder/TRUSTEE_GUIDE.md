@@ -36,7 +36,7 @@ and Rust toolchain. Leave Cargo.toml, Cargo.lock, and guest-components unchanged
 ```sh
 git clone --branch v0.22.0 https://github.com/confidential-containers/trustee.git /tmp/trustee
 cargo build --locked --release --manifest-path /tmp/trustee/Cargo.toml   -p kbs --bin kbs --no-default-features --features coco-as-builtin
-cargo build --locked --release --manifest-path /tmp/trustee/Cargo.toml   -p kbs-client --bin kbs-client --features tdx-attester,snp-attester,nvidia-attester
+cargo build --locked --release --manifest-path /tmp/trustee/Cargo.toml   -p kbs-client --bin kbs-client --features tdx-attester,snp-attester
 scripts/trustee_provenance /tmp/trustee   /tmp/trustee/target/release/kbs /tmp/trustee_build.json
 ```
 
@@ -44,11 +44,19 @@ Keep the client's default crypto features. In this release, `native-tls` selects
 an OpenSSL RSA decryptor incompatible with the builder's RSA-OAEP-256 resource
 responses. Test encrypted key retrieval before packaging the client.
 
-The NVIDIA client feature uses upstream's NVAT SDK bindings and requires the
-matching `libnvat` development/runtime libraries. CPU-only clients may omit
-`nvidia-attester`. Compile guest binaries for the guest's Linux environment.
+For the NVIDIA client feature, first follow [GPU_BUILD.md](GPU_BUILD.md) to build
+NVAT from the revision in Trustee's Cargo.lock, apply the recorded Ubuntu 26.04
+libxml2 compatibility patch, and install its header/library in the disposable
+build environment. That guide then builds the client with `NVAT_USE_SYSTEM_LIB=1`
+and `nvidia-attester`. The command above builds a CPU-only client. Compile guest
+binaries for the guest's Linux environment.
 The provenance command rejects dirty source and records the revision and binary
 SHA-256; it does not build or modify Trustee.
+
+Build CVM clients from this clean source checkout. Upstream's `sample_only`
+kbs-client OCI artifacts are for sample-attester tests, not the TDX/SNP/NVIDIA
+feature set needed here. A library or executable SHA-256 identifies file bytes;
+an OCI manifest digest identifies a registry artifact. Do not interchange them.
 
 ## 2. Prepare storage and identities
 

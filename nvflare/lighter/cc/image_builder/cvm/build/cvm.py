@@ -80,8 +80,13 @@ def contract(profile, source=SOURCE):
     value["layout_version"] = 2
     value["dev_mode"] = profile.get("dev_mode", False)
     if profile["gpu"] == "nvidia_cc":
-        for key in ("gpu_policy", "gpu_attestation_library"):
+        for key in ("gpu_policy", "gpu_attestation_library", "gpu_attestation_provenance"):
             value[key + "_sha256"] = digest_file(profile[key])
+        value["gpu_attestation_provenance"] = read_json(profile["gpu_attestation_provenance"])
+        value["gpu_apt_repositories"] = [
+            {key: item for key, item in repository.items() if key != "keyring"}
+            for repository in profile["gpu_apt_repositories"]
+        ]
         value["gpu_packages"] = profile["gpu_packages"]
         value["gpu_attestation_url"] = profile["gpu_attestation_url"]
     return value
@@ -132,7 +137,9 @@ def provisioning_payload(profile, platform, build_id, job, source, runtime):
         "runtime.json": runtime,
     }
     if profile["gpu"] == "nvidia_cc":
-        inputs["libnvat.so.1.2.2"] = profile["gpu_attestation_library"]
+        inputs["libnvat.so.1"] = profile["gpu_attestation_library"]
+        for index, repository in enumerate(profile["gpu_apt_repositories"]):
+            inputs[f"gpu_apt_{index}.gpg"] = repository["keyring"]
     for name, path in inputs.items():
         shutil.copyfile(path, payload / "inputs" / name)
     (payload / "inputs/nftables.conf").write_text("flush ruleset\n" + firewall_rules([], profile["bootstrap_egress"]))
@@ -149,6 +156,10 @@ def provisioning_payload(profile, platform, build_id, job, source, runtime):
             "platform": platform,
             "profile_version": profile["profile_version"],
             "required_system_packages": packages,
+            "apt_repositories": [
+                {key: item for key, item in repository.items() if key != "keyring"}
+                for repository in profile.get("gpu_apt_repositories", [])
+            ],
         },
         mode=0o644,
     )

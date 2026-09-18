@@ -25,8 +25,9 @@ from pathlib import Path
 from .errors import BuildError, require
 
 
-def run(argv, *, input=None, pass_fds=(), timeout=3600, cwd=None, env=None):
-    """No shell, no echoed arguments/output: child errors can contain secrets."""
+def run(argv, *, input=None, pass_fds=(), timeout=3600, cwd=None, env=None, operation=None):
+    """Suppress child arguments/output; operation must be a static, secret-free label."""
+    label = operation or Path(argv[0]).name
     try:
         result = subprocess.run(
             [str(a) for a in argv],
@@ -40,8 +41,8 @@ def run(argv, *, input=None, pass_fds=(), timeout=3600, cwd=None, env=None):
             check=False,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
-        raise BuildError(f"{Path(argv[0]).name} could not complete ({type(exc).__name__})") from None
-    require(result.returncode == 0, f"{Path(argv[0]).name} failed (exit {result.returncode}); no output logged")
+        raise BuildError(f"{label} could not complete ({type(exc).__name__})") from None
+    require(result.returncode == 0, f"{label} failed (exit {result.returncode}); no output logged")
     return result.stdout
 
 

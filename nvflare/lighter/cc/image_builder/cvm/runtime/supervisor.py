@@ -66,13 +66,18 @@ def supervise(config, units, state):
     try:
         write_json(state / "periodic.json", {"sequence": 0, "result": "idle"})
         emit("allow")
+        deadline = time.monotonic() + PERIODIC_INTERVAL_SECONDS
         notify("READY=1\nSTATUS=Vault authenticated; starting application services")
         # READY completes our own start job before units depending on us start.
         run(["systemctl", "start", *units], timeout=300)
         print("CVM_WORKLOAD_STARTED", flush=True)
         sequence = 0
         while True:
-            signal.sigtimedwait(signals, PERIODIC_INTERVAL_SECONDS)
+            signal.sigtimedwait(signals, max(0, deadline - time.monotonic()))
+            # Include the child's runtime in the interval. An explicit request
+            # starts a fresh interval; slow startup/ticks never add another full
+            # sleep, and the synchronous loop never overlaps children.
+            deadline = time.monotonic() + PERIODIC_INTERVAL_SECONDS
             sequence += 1
             periodic_tick(config, state, sequence)
     finally:

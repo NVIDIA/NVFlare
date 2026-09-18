@@ -623,6 +623,24 @@ class TokenTests(unittest.TestCase):
     def test_positive_signed_appraisal(self):
         validate_token(self.token(), self.config, bytes(32), now=1001)
 
+    def test_genuine_trustee_snp_token_signature_and_binding(self):
+        fixture = json.loads((Path(__file__).parent / "fixtures/snp_trustee_v022.json").read_text())
+        public = Path(self.temp.name) / "upstream-as.pem"
+        public.write_text(fixture["as_public_key"])
+        config = dict(
+            self.config,
+            as_public_key=str(public),
+            token_issuer="CoCo-Attestation-Service",
+            platform="amd_sev_snp",
+            attestation_policy_id="default",
+        )
+        token = fixture["token"].encode()
+        now = fixture["issued_at"] + 1
+        claims = validate_token(token, config, bytes(32), now=now)
+        self.assertEqual(claims["submods"]["cpu0"]["ear.status"], "affirming")
+        with self.assertRaisesRegex(BuildError, "binding mismatch"):
+            validate_token(token, config, bytes([1]) * 32, now=now)
+
     def test_upstream_snp_hex_binding_and_legacy_encoding_rejected(self):
         digest = bytes.fromhex("fbff" * 16)
         self.config["platform"] = "amd_sev_snp"
@@ -699,6 +717,10 @@ class RuntimeContractTests(unittest.TestCase):
             with authorized_key(config, bytes(32), budget=ATTESTATION_BUDGET_SECONDS):
                 pass
         self.assertEqual([round(call.kwargs["timeout"]) for call in execute.call_args_list], [50, 20])
+        self.assertEqual(
+            [call.kwargs["operation"] for call in execute.call_args_list],
+            ["KBS quote/appraisal", "KBS resource retrieval/decryption"],
+        )
 
     def test_clock_gate_uses_bounded_chrony_correction(self):
         with patch("cvm.runtime.bootstrap.run") as execute:

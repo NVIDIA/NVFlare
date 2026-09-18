@@ -23,6 +23,23 @@ from pathlib import Path
 from ..common.errors import BuildError, require
 
 
+def check_qgs_config(path=Path("/etc/qgs.conf")):
+    """Accept Intel's headerless file and sectioned distribution variants."""
+    qgs = configparser.ConfigParser(interpolation=None, inline_comment_prefixes=("#", ";"))
+    try:
+        content = Path(path).read_text()
+        try:
+            qgs.read_string(content)
+        except configparser.MissingSectionHeaderError:
+            qgs.read_string("[DEFAULT]\n" + content)
+    except (OSError, configparser.Error) as error:
+        raise BuildError(f"Cannot read QGS configuration ({type(error).__name__})") from None
+    require(
+        any(section.get("port", "").strip() == "4050" for section in qgs.values()),
+        "Set QGS port=4050 explicitly; the commented default selects a Unix socket",
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--firmware", type=Path, required=True)
@@ -49,12 +66,7 @@ def main():
             subprocess.run(["systemctl", "is-active", "--quiet", "qgsd"], check=False).returncode == 0,
             "Install tdx-qgs and start qgsd",
         )
-        qgs = configparser.ConfigParser()
-        require(qgs.read("/etc/qgs.conf"), "QGS configuration is missing")
-        require(
-            any(section.get("port", "").strip() == "4050" for section in qgs.values()),
-            "Set QGS port=4050 explicitly; the commented default selects a Unix socket",
-        )
+        check_qgs_config()
         require(
             Path("/etc/sgx_default_qcnl.conf").is_file(),
             "Configure the approved PCS/collateral service in sgx_default_qcnl.conf",

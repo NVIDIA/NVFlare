@@ -46,8 +46,9 @@ libguestfs-tools, cryptsetup-bin, e2fsprogs, tar, util-linux, and OpenSSH. Stora
 requires kernel dm-crypt, dm-integrity and NBD support. TDX requires an operational
 QGS and TDVF supporting direct measured kernel boot. SNP requires SNP-enabled
 KVM and compatible OVMF. GPU profiles additionally need pinned driver/toolkit
-packages, the upstream NVIDIA attester’s pinned `libnvat` library, and an approved GPU
-claim policy.
+packages from authenticated repositories, the upstream NVIDIA attester’s pinned
+`libnvat` library and provenance, and an approved GPU claim policy.
+See [GPU_BUILD.md](GPU_BUILD.md) for the clean-base package inputs and SDK recipe.
 
 Install the builder requirements with pip or uv:
 

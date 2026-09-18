@@ -5,6 +5,8 @@ profile_version: cpu-2026.09-r4
 # acceptance_runner: /usr/local/bin/site_acceptance
 guest_release: '26.04'
 gpu: none
+# For gpu: nvidia_cc, GPU_BUILD.md supplies the required gpu_apt_repositories,
+# exact gpu_packages, gpu_attestation_library and gpu_attestation_provenance.
 # A GPU profile passes exactly this many GPUs (1-8) through to the CVM.
 # Automatic detection selects all assignable NVIDIA display GPUs and requires
 # this count.

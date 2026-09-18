@@ -135,6 +135,7 @@ def authorized_key(config, digest, *, budget=None):
             pass_fds=(tee_key,),
             timeout=remaining(),
             env=environment,
+            operation="KBS quote/appraisal",
         ).strip()
         validate_token(token, config, digest)
         with memory_file(token) as token_fd:
@@ -153,6 +154,7 @@ def authorized_key(config, digest, *, budget=None):
                 pass_fds=(tee_key, token_fd),
                 timeout=remaining(),
                 env=environment,
+                operation="KBS resource retrieval/decryption",
             ).strip()
             try:
                 key = base64.b64decode(encoded, validate=True)

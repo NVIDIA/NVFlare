@@ -242,12 +242,73 @@ class SupervisorTests(unittest.TestCase):
             patch.object(supervisor, "emit", side_effect=lambda *a: events.append("audit")),
             patch.object(supervisor, "run", side_effect=lambda *a, **k: events.append("start")) as start,
             patch.object(supervisor, "periodic_tick", side_effect=lambda *a: events.append("tick")),
+            patch.object(supervisor.time, "monotonic", return_value=100),
         ):
             with self.assertRaises(KeyboardInterrupt):
                 supervisor.supervise({}, ["cvm_app.service", "app_test.service"], Path(directory))
             self.assertEqual(events, ["mask", "audit", "ready", "start", "tick", "mask"])
             self.assertEqual(start.call_args.args[0], ["systemctl", "start", "cvm_app.service", "app_test.service"])
             self.assertEqual(wait.call_args.args, ({signal.SIGUSR1}, 300))
+
+    def test_cadence_accounts_for_startup_and_slow_appraisal(self):
+        clock = [0]
+        starts = []
+        waits = []
+
+        def wait(signals, timeout):
+            waits.append(timeout)
+            clock[0] += timeout
+
+        def tick(*args):
+            starts.append(clock[0])
+            clock[0] += 240
+            if len(starts) == 3:
+                raise KeyboardInterrupt
+
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.object(supervisor.signal, "pthread_sigmask", return_value=set()),
+            patch.object(supervisor.signal, "sigtimedwait", side_effect=wait),
+            patch.object(supervisor.time, "monotonic", side_effect=lambda: clock[0]),
+            patch.object(supervisor, "notify"),
+            patch.object(supervisor, "emit"),
+            patch.object(supervisor, "run", side_effect=lambda *a, **k: clock.__setitem__(0, 100)),
+            patch.object(supervisor, "periodic_tick", side_effect=tick),
+        ):
+            with self.assertRaises(KeyboardInterrupt):
+                supervisor.supervise({}, ["cvm_app.service"], Path(directory))
+        self.assertEqual(starts, [300, 600, 900])
+        self.assertEqual(waits, [200, 60, 60])
+
+    def test_requested_tick_and_overrun_do_not_add_a_full_sleep(self):
+        clock = [0]
+        waits = []
+        starts = []
+
+        def wait(signals, timeout):
+            waits.append(timeout)
+            clock[0] += 20 if len(waits) == 1 else timeout
+
+        def tick(*args):
+            starts.append(clock[0])
+            clock[0] += 301
+            if len(starts) == 2:
+                raise KeyboardInterrupt
+
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.object(supervisor.signal, "pthread_sigmask", return_value=set()),
+            patch.object(supervisor.signal, "sigtimedwait", side_effect=wait),
+            patch.object(supervisor.time, "monotonic", side_effect=lambda: clock[0]),
+            patch.object(supervisor, "notify"),
+            patch.object(supervisor, "emit"),
+            patch.object(supervisor, "run"),
+            patch.object(supervisor, "periodic_tick", side_effect=tick),
+        ):
+            with self.assertRaises(KeyboardInterrupt):
+                supervisor.supervise({}, ["cvm_app.service"], Path(directory))
+        self.assertEqual(starts, [20, 321])
+        self.assertEqual(waits, [300, 0])
 
     def test_sigusr1_queued_during_workload_start_runs_immediately(self):
         with (

@@ -98,6 +98,25 @@ class ResourcePolicyTests(unittest.TestCase):
             with self.subTest(platform=platform):
                 self.assertTrue(self.evaluate(*self.fixture(platform)))
 
+    def test_genuine_upstream_snp_ear_matches_hex_references_and_resource_path(self):
+        fixture = json.loads((Path(__file__).parents[1] / "fixtures/snp_trustee_v022.json").read_text())
+        encoded = fixture["token"].split(".")[1]
+        claims = json.loads(base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4)))
+        # Only refresh token timestamps for the policy's real-clock evaluation.
+        # Signature validation at capture time is tested separately.
+        claims.update(iat=int(time.time()), exp=int(time.time()) + 120)
+        manifest = {
+            "build_id": "upstream-snp-fixture",
+            "platform": "amd_sev_snp",
+            "measurements": {"snp.measurement": fixture["references"]["snp_launch_measurement"][0]},
+            "attestation_policy_id": "default",
+        }
+        evidence = claims["submods"]["cpu0"]["ear.veraison.annotated-evidence"]
+        path = "resource/" + resource_path(manifest["build_id"], manifest["platform"], bytes(32))
+        self.assertTrue(self.evaluate(manifest, claims, path))
+        evidence["init_data"] = base64.b64encode(bytes(32)).decode()
+        self.assertFalse(self.evaluate(manifest, claims, path))
+
     def test_stale_future_and_overlong_tokens_are_denied(self):
         manifest, claims, path = self.fixture("intel_tdx")
         now = int(time.time())

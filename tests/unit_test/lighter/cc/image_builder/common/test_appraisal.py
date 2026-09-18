@@ -14,6 +14,7 @@
 
 """Evaluate the actual AS policy, including TCB and event-log failure paths."""
 
+import base64
 import copy
 import json
 import os
@@ -33,6 +34,17 @@ POLICY = SOURCE / "config/attestation_policy.rego"
 
 @unittest.skipUnless(ENGINE.is_file(), "Build the pinned policy engine first")
 class AppraisalTests(unittest.TestCase):
+    def test_genuine_snp_claims_from_upstream_signed_evidence(self):
+        fixture = json.loads((Path(__file__).parents[1] / "fixtures/snp_trustee_v022.json").read_text())
+        encoded = fixture["token"].split(".")[1]
+        claims = json.loads(base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4)))
+        evidence = claims["submods"]["cpu0"]["ear.veraison.annotated-evidence"]
+        for dimension in ("executables", "hardware", "configuration"):
+            self.assertTrue(self.evaluate(evidence, fixture["references"], dimension))
+        refs = dict(fixture["references"])
+        refs["snp_launch_measurement"] = [base64.b64encode(bytes.fromhex(refs["snp_launch_measurement"][0])).decode()]
+        self.assertFalse(self.evaluate(evidence, refs, "executables"))
+
     def evaluate(self, claims, refs, dimension):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

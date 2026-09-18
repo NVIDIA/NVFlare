@@ -6,6 +6,38 @@ services and operator guides are maintained together with the provisioning adapt
 in this repository. Repository formatting and license headers change source
 fingerprints; build and approve new generic CVMs for this source snapshot.
 
+## PR review verification — 2026-09-18
+
+- **171 Linux unit/policy tests passed**, including the pinned Regorus engine,
+  monotonic re-attestation scheduling with a simulated 240-second appraisal,
+  operation-specific errors that suppress secret output, QGS configuration
+  variants, repository key substitution, and NVAT provenance validation.
+- A clean upstream Trustee v0.22.0 `restful-as` cryptographically verified its
+  public signed SNP evidence fixture and issued an affirming ES256 EAR under the
+  CVM CPU policy with isolated test references. The committed fixture tests its
+  original signature and hex encodings in guest, AS and resource-policy checks.
+  This uses archived public evidence; it is not a fresh hardware challenge or a
+  live SNP vault-unlock test. See the [fixture provenance and regeneration steps](../../../../tests/unit_test/lighter/cc/image_builder/fixtures/README.md).
+- The actual Intel lab host's headerless `/etc/qgs.conf` passed preflight parsing.
+- NVAT commit `0c1be386a8fbb8f2766a6a556d10df86f5fed9d3` built successfully on
+  Ubuntu 26.04 using only the recorded const-correctness patch. The resulting
+  library version is 1.2.0, soname `libnvat.so.1`, using `libxml2.so.16`.
+  The documented source/provenance checks passed. This build's library SHA-256
+  was `7477e3d947910d3d2b1bfb628962c2c2bdc59b123c900c0933356ddd17379bb3`;
+  record the hash produced by the selected build environment rather than treating
+  this test result as a published binary artifact.
+- **GPU Stage 1 construction from the clean Ubuntu cloud image passed**, including
+  authenticated repository setup, pinned 580.178.04 driver packages, Container
+  Toolkit 1.20.0-1, NVAT installation, hardening, verity root construction and OCI
+  packaging. It used a plain construction VM with no GPU assignment and deferred
+  hardware measurements; the resulting bundle remains unapproved.
+- Scoped repository style checks passed for the builder, unit tests and
+  integration helpers (`./runtest.sh --skip-install -s <directory>`).
+
+These checks do not qualify a new live TDX/SNP/GPU job, GPU denial timing, or the
+full hardware acceptance suite. The changed measured runtime and GPU inputs need
+new generic images, reference collection and acceptance before production approval.
+
 ## CoCo v0.23.0 / Trustee v0.22.0 migration — 2026-09-17
 
 The current implementation uses unmodified upstream Trustee commit
@@ -15,10 +47,12 @@ attester and source patch are removed. The default generic profile advances to
 
 The isolated Linux compatibility tests use the official upstream KBS image
 `ghcr.io/confidential-containers/staged-images/kbs` at digest
-`sha256:92c24e93f60fa259bab4f5404576d70a0edeb48a1b08e0c33ed159526fc87a9a`
-and the matching upstream kbs-client image at digest
-`sha256:d1e65dfc86687553ea58bf308d06cbcf17936c4b4c71e9ab8352cda31d75b638`.
-The release checkout remained clean. The Rego evaluator uses upstream's Regorus
+`sha256:92c24e93f60fa259bab4f5404576d70a0edeb48a1b08e0c33ed159526fc87a9a`.
+The earlier kbs-client image/digest claim was incorrect and is withdrawn; it is
+not a retrievable client pin. CVM clients must follow the clean-source build in
+[BUILD_GUIDE.md](BUILD_GUIDE.md), with the requested hardware features and the
+resulting executable SHA-256 recorded. Sample-attester tests do not qualify those
+hardware clients. The release checkout remained clean. The Rego evaluator uses upstream's Regorus
 0.11.0 with its RVPS query extension contract.
 
 - **Combined Linux builder, policy and live HTTPS suite: 152 passed, 20 skipped.**

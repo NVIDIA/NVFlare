@@ -25,9 +25,10 @@ import yaml
 
 from ..common.contracts import HEADER_BYTES, PLATFORMS, STORAGE_PROFILE, identifier
 from ..common.errors import BuildError, require
-from ..common.io import canonical, read_json
+from ..common.io import canonical, digest_file, read_json
 from ..common.validation import ports, validate_nfs_mount
-from ..common.versions import TRUSTEE_COMMIT
+from ..common.versions import NVAT_COMMIT, TRUSTEE_COMMIT
+from .provisioning import validate_apt_repositories
 
 PRIVATE_KEY_MARKERS = (
     b"-----BEGIN PRIVATE KEY-----",
@@ -127,7 +128,8 @@ PROFILE_DEFAULTS = {
     "docker_version": "29.1.3-0ubuntu4.1",
     "containerd_version": "2.2.2-0ubuntu1.1",
     "cryptsetup_version": "2:2.8.4-1ubuntu4",
-    "gpu_attestation_library": str(INPUTS / "libnvat.so.1.2.2"),
+    "gpu_attestation_library": str(INPUTS / "libnvat.so.1"),
+    "gpu_attestation_provenance": str(INPUTS / "nvat_build.json"),
     "required_system_packages": DEFAULT_PACKAGES,
     # Unmodified CoCo v0.23.0 / Trustee v0.22.0.
     "trustee_commit": TRUSTEE_COMMIT,
@@ -275,6 +277,40 @@ def validate_gpu_policy(path):
     return path
 
 
+def gpu_inputs(path, value):
+    """Bind GPU repository trust roots and NVAT source provenance to Stage 1."""
+    repositories = value.get("gpu_apt_repositories")
+    require(isinstance(repositories, list) and repositories, "Supply authenticated gpu_apt_repositories")
+    normalized = []
+    for repository in repositories:
+        require(isinstance(repository, dict) and "keyring" in repository, "GPU repository requires a keyring")
+        metadata = {key: item for key, item in repository.items() if key != "keyring"}
+        try:
+            validate_apt_repositories([metadata])
+        except ValueError as error:
+            raise BuildError(str(error)) from None
+        keyring = local_path(path, repository["keyring"])
+        require(digest_file(keyring) == metadata["keyring_sha256"], "GPU repository keyring digest mismatch")
+        normalized.append(dict(metadata, keyring=keyring))
+    value["gpu_apt_repositories"] = normalized
+    provenance = read_json(value["gpu_attestation_provenance"])
+    require(isinstance(provenance, dict), "Invalid NVAT provenance")
+    require(
+        provenance.get("source_repository") == "https://github.com/NVIDIA/attestation-sdk.git"
+        and provenance.get("source_commit") == NVAT_COMMIT,
+        "NVAT provenance must match Trustee v0.22.0's pinned SDK source",
+    )
+    require(
+        provenance.get("patch_sha256") == digest_file(SOURCE / "cvm/build/nvat_libxml2_const.patch"),
+        "NVAT provenance must record the reviewed libxml2 compatibility patch",
+    )
+    require(
+        provenance.get("library_sha256") == digest_file(value["gpu_attestation_library"]),
+        "NVAT library digest differs from its provenance",
+    )
+    require(provenance.get("build_environment") == "ubuntu-26.04-x86_64", "Build NVAT for the guest environment")
+
+
 def profile(path):
     value = load_yaml(path)
     supplied_platforms = value.pop("platforms", None)
@@ -354,8 +390,9 @@ def profile(path):
         read_json(value["reference_values"]), [p for p, v in value["platforms"].items() if v.get("enabled", True)]
     )
     if value["gpu"] == "nvidia_cc":
-        for key in ("gpu_policy", "gpu_attestation_library"):
+        for key in ("gpu_policy", "gpu_attestation_library", "gpu_attestation_provenance"):
             value[key] = local_path(path, value.get(key))
+        gpu_inputs(path, value)
         validate_gpu_policy(value["gpu_policy"])
         validate_references(read_json(value["reference_values"]), gpu=True)
         require(urlparse(value.get("gpu_attestation_url", "")).scheme == "https", "GPU attestation requires HTTPS")
