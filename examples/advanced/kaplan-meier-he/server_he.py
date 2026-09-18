@@ -17,11 +17,9 @@ import logging
 import os
 
 import tenseal as ts
-from server import _final_distribution_completed
 
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.workflows.model_controller import ModelController
-from nvflare.fuel.utils.log_utils import log_progress
 
 # Controller Workflow
 
@@ -35,18 +33,11 @@ class KM_HE(ModelController):
         self.num_rounds = 3
 
     def run(self):
-        log_progress(self.logger, "\n  Federated Kaplan-Meier survival analysis · homomorphic encryption")
-        log_progress(self.logger, "\n  Collecting histogram bounds…")
         max_idx_results = self.start_fl_collect_max_idx()
         global_res = self.aggr_max_idx(max_idx_results)
-        log_progress(self.logger, "  Collecting encrypted survival histograms…")
         enc_hist_results = self.distribute_max_idx_collect_enc_stats(global_res)
-        log_progress(self.logger, "  Aggregating encrypted histograms…")
         hist_obs_global, hist_cen_global = self.aggr_he_hist(enc_hist_results)
-        log_progress(self.logger, "  Distributing the encrypted global survival curve…")
-        results = self.distribute_global_hist(hist_obs_global, hist_cen_global)
-        if _final_distribution_completed(self, results):
-            log_progress(self.logger, "\n  ✓ Encrypted survival analysis completed")
+        _ = self.distribute_global_hist(hist_obs_global, hist_cen_global)
 
     def read_data(self, file_name: str):
         # Handle both absolute and relative paths
