@@ -377,6 +377,17 @@ verify denials before reopening traffic. An unsuccessful policy update is not a
 completed retirement: retry the command and verify readback. Deletion and policy
 changes cannot retract secrets already released to a running guest.
 
+If an earlier deployment supplies `key_service_state`, both `admin install` and
+`admin retire` reject the configuration, even when the value is empty or null.
+Before removing that field, fence builds, policy publication and key release;
+apply outstanding legacy revocations through CoCo Trustee and preserve them in
+the operator's recovery records. Merge every legacy `retired/` marker into the
+publisher's configured `state/retired/`, preserving existing markers, bundle IDs
+and the current resource policy. Do not discard markers for bundles that are
+currently absent. Verify the migrated state before removing `key_service_state`,
+then verify retired bundles and revoked resources remain denied before reopening
+traffic. Updating the builder does not migrate this state automatically.
+
 ## Upstream contracts
 
 - [CoCo release pairing](https://github.com/confidential-containers/trustee/releases/tag/v0.22.0)

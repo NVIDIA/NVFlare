@@ -45,7 +45,16 @@ def verify_readback(expected, returned):
     require(returned == expected, "KBS policy readback differs from published bytes")
 
 
+def check_migration(config):
+    # Policy publication must not silently discard the earlier backend's denials.
+    require(
+        "key_service_state" not in config,
+        "Migrate legacy revocations and bundle retirements before removing key_service_state; see TRUSTEE_GUIDE.md",
+    )
+
+
 def install(config, directory, candidate=False):
+    check_migration(config)
     manifest = verify_bundle(directory) if candidate else verify_approval(directory)
     require(
         not candidate or manifest["profile_version"].startswith("test-"),
@@ -136,6 +145,7 @@ def install(config, directory, candidate=False):
 
 
 def retire(config, build_id):
+    check_migration(config)
     identifier(build_id)
     state = Path(config["state"])
     state.mkdir(parents=True, exist_ok=True, mode=0o700)

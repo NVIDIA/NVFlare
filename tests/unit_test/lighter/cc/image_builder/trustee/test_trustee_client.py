@@ -24,7 +24,7 @@ from cvm.common.contracts import resource_path
 from cvm.common.errors import BuildError
 from cvm.common.io import canonical, write_json
 from cvm.common.policy import compose
-from cvm.trustee.admin import retire
+from cvm.trustee.admin import install, retire
 from cvm.trustee.client import NoRedirect, api, delete_resource, encode, upload_resource
 
 
@@ -123,3 +123,25 @@ class TrusteeClientTests(unittest.TestCase):
         ):
             retire(config, "bundle-1")
         request.assert_called_once_with(config, "POST", "resource-policy", canonical({"policy": encode(policy)}))
+
+    def test_legacy_retirement_state_requires_migration_before_any_side_effects(self):
+        state = self.root / "publisher"
+        for legacy_state in (str(self.root / "legacy"), "", None):
+            config = {"state": str(state), "key_service_state": legacy_state}
+            for operation, args in (
+                (install, (config, self.root)),
+                (install, (config, self.root, True)),
+                (retire, (config, "bundle-1")),
+            ):
+                with (
+                    self.subTest(operation=operation.__name__, candidate=len(args) == 3, legacy_state=legacy_state),
+                    patch("cvm.trustee.admin.verify_approval") as approval,
+                    patch("cvm.trustee.admin.verify_bundle") as bundle,
+                    patch("cvm.trustee.admin.api") as request,
+                ):
+                    with self.assertRaisesRegex(BuildError, "Migrate legacy revocations and bundle retirements"):
+                        operation(*args)
+                    approval.assert_not_called()
+                    bundle.assert_not_called()
+                    request.assert_not_called()
+                    self.assertFalse(state.exists())
