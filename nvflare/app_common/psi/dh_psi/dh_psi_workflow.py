@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from numbers import Integral
-from typing import Dict, List, NamedTuple, Set
+from typing import Dict, List, NamedTuple, Optional, Set
 
 from nvflare.apis.dxo import DXO
 from nvflare.apis.fl_context import FLContext
@@ -82,9 +82,10 @@ class DhPSIWorkFlow(PSIWorkflow):
         self.check_processed_sites(intersect_site, self.forward_processed)
 
         log_progress(self.logger, "  Distributing encrypted intersection…")
-        self.backward_processed.update(self.backward_pass(self.ordered_sites, intersect_site))
+        backward_processed = self.backward_pass(self.ordered_sites, intersect_site)
         if abort_signal.triggered:
             return False
+        self.backward_processed.update(backward_processed)
 
         self.log_info(
             self.fl_ctx,
@@ -144,9 +145,9 @@ class DhPSIWorkFlow(PSIWorkflow):
         return site_sizes
 
     @measure_time
-    def forward_pass(self, ordered_sites: List[SiteSize], processed: Dict[str, int]) -> SiteSize:
+    def forward_pass(self, ordered_sites: List[SiteSize], processed: Dict[str, int]) -> Optional[SiteSize]:
         if self.abort_signal.triggered:
-            return ordered_sites[0]
+            return None
 
         total_sites = len(ordered_sites)
         if total_sites <= 1:
@@ -170,6 +171,8 @@ class DhPSIWorkFlow(PSIWorkflow):
         results = bop.multicasts_and_wait(
             task_name=self.task_name, task_inputs=task_inputs, fl_ctx=self.fl_ctx, abort_signal=self.abort_signal
         )
+        if self.abort_signal.triggered:
+            return {}
         return self._response_values(results, task_inputs, PSIConst.SETUP_MSG, "PSI setup")
 
     def pairwise_requests(self, ordered_sites: List[SiteSize], setup_msgs: Dict[str, str]):
@@ -191,6 +194,8 @@ class DhPSIWorkFlow(PSIWorkflow):
         results = bop.multicasts_and_wait(
             task_name=self.task_name, task_inputs=task_inputs, fl_ctx=self.fl_ctx, abort_signal=self.abort_signal
         )
+        if self.abort_signal.triggered:
+            return {}
         return self._response_values(results, task_inputs, PSIConst.REQUEST_MSG, "PSI request")
 
     def pairwise_responses(self, ordered_sites: List[SiteSize], request_msgs: Dict[str, str]):
@@ -212,6 +217,8 @@ class DhPSIWorkFlow(PSIWorkflow):
         results = bop.multicasts_and_wait(
             task_name=self.task_name, task_inputs=task_inputs, fl_ctx=self.fl_ctx, abort_signal=self.abort_signal
         )
+        if self.abort_signal.triggered:
+            return {}
         return self._response_values(results, task_inputs, PSIConst.RESPONSE_MSG, "PSI response")
 
     def pairwise_intersect(self, ordered_sites: List[SiteSize], response_msg: Dict[str, str]):
@@ -233,9 +240,14 @@ class DhPSIWorkFlow(PSIWorkflow):
         results = bop.multicasts_and_wait(
             task_name=self.task_name, task_inputs=task_inputs, fl_ctx=self.fl_ctx, abort_signal=self.abort_signal
         )
+        if self.abort_signal.triggered:
+            return {}
         return self._response_values(results, task_inputs, PSIConst.ITEMS_SIZE, "PSI intersection")
 
     def parallel_forward_pass(self, target_sites, processed: dict):
+        if self.abort_signal.triggered:
+            return None
+
         self.log_info(self.fl_ctx, f"forward pass targets {len(target_sites)} participants")
         total_sites = len(target_sites)
         if total_sites < 2:
@@ -249,9 +261,17 @@ class DhPSIWorkFlow(PSIWorkflow):
                 f"  Reducing encrypted inputs · pass {self._forward_pass}/{self._forward_passes}",
             )
             setup_msgs = self.pairwise_setup(target_sites)
+            if self.abort_signal.triggered:
+                return None
             request_msgs = self.pairwise_requests(target_sites, setup_msgs)
+            if self.abort_signal.triggered:
+                return None
             response_msgs = self.pairwise_responses(target_sites, request_msgs)
+            if self.abort_signal.triggered:
+                return None
             it_sites = self.pairwise_intersect(target_sites, response_msgs)
+            if self.abort_signal.triggered:
+                return None
             processed.update(it_sites)
             new_targets = [SiteSize(site.name, it_sites[site.name]) for site in target_sites if site.name in it_sites]
             if total_sites % 2 == 1:
@@ -269,6 +289,8 @@ class DhPSIWorkFlow(PSIWorkflow):
         if total_clients <= 1:
             return processed
         status = self.parallel_backward_pass(ordered_clients, intersect_site)
+        if self.abort_signal.triggered:
+            return processed
 
         time_taken = self.parallel_backward_pass.time_taken
         self.log_info(self.fl_ctx, f"parallel_back_pass took {time_taken} (ms)")
@@ -276,6 +298,9 @@ class DhPSIWorkFlow(PSIWorkflow):
 
     @measure_time
     def parallel_backward_pass(self, ordered_clients: list, intersect_site: SiteSize):
+        if self.abort_signal.triggered:
+            return {}
+
         # parallel version
         other_sites = [site for site in ordered_clients if site.name != intersect_site.name]
         other_sites = self.get_updated_site_sizes(other_sites)
@@ -286,13 +311,19 @@ class DhPSIWorkFlow(PSIWorkflow):
         s = intersect_site
         other_site_sizes = set([site.size for site in other_sites])
         setup_msgs: Dict[str, str] = self.prepare_setup_messages(s, other_site_sizes)
+        if self.abort_signal.triggered:
+            return {}
 
         setup_msgs = self._required_values(
             setup_msgs, (str(site.size) for site in other_sites), "PSI backward-pass setup"
         )
         site_setup_msgs = {site.name: setup_msgs[str(site.size)] for site in other_sites}
         request_msgs: Dict[str, str] = self.create_requests(site_setup_msgs)
+        if self.abort_signal.triggered:
+            return {}
         response_msgs: Dict[str, str] = self.process_requests(s, request_msgs)
+        if self.abort_signal.triggered:
+            return {}
         return self.calculate_intersections(response_msgs)
 
     def calculate_intersections(self, response_msg) -> Dict[str, int]:
@@ -306,6 +337,8 @@ class DhPSIWorkFlow(PSIWorkflow):
         results = bop.multicasts_and_wait(
             task_name=self.task_name, task_inputs=task_inputs, fl_ctx=self.fl_ctx, abort_signal=self.abort_signal
         )
+        if self.abort_signal.triggered:
+            return {}
 
         intersects = self._response_values(results, task_inputs, PSIConst.ITEMS_SIZE, "PSI intersection calculation")
         self.log_info(self.fl_ctx, f"received encrypted intersection results from {len(intersects)} participants")
@@ -323,6 +356,8 @@ class DhPSIWorkFlow(PSIWorkflow):
             targets=[s.name],
             abort_signal=self.abort_signal,
         )
+        if self.abort_signal.triggered:
+            return {}
 
         response_msgs = self._response_values(results, [s.name], PSIConst.RESPONSE_MSG, "PSI request processing")
         response_msg = next(iter(response_msgs.values()))
@@ -340,6 +375,8 @@ class DhPSIWorkFlow(PSIWorkflow):
         results = bop.multicasts_and_wait(
             task_name=self.task_name, task_inputs=task_inputs, fl_ctx=self.fl_ctx, abort_signal=self.abort_signal
         )
+        if self.abort_signal.triggered:
+            return {}
         return self._response_values(results, task_inputs, PSIConst.REQUEST_MSG, "PSI request creation")
 
     def get_updated_site_sizes(self, ordered_sites):
@@ -369,6 +406,8 @@ class DhPSIWorkFlow(PSIWorkflow):
             min_responses=min_responses,
             abort_signal=abort_signal,
         )
+        if abort_signal.triggered:
+            return
         response_count = len(results) if isinstance(results, dict) else 0
         self.log_info(self.fl_ctx, f"{PSIConst.TASK_PREPARE} received {response_count} participant responses")
         if not results:
@@ -398,6 +437,8 @@ class DhPSIWorkFlow(PSIWorkflow):
             targets=[s.name],
             abort_signal=self.abort_signal,
         )
+        if self.abort_signal.triggered:
+            return {}
         setup_msgs = self._response_values(results, [s.name], PSIConst.SETUP_MSG, "PSI setup preparation")
         return next(iter(setup_msgs.values()))
 

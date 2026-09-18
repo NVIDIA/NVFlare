@@ -147,14 +147,6 @@ class TestDhPSIWorkflow:
         wf.forward_pass = MagicMock(return_value=SiteSize("private-site-beta", 50001))
         wf.forward_processed = {"private-site-beta": 50001}
         wf.backward_pass = MagicMock(return_value={"private-site-alpha": 50001})
-
-    def test_run_reports_privacy_safe_protocol_progress(self):
-        wf = DhPSIWorkFlow()
-        wf.abort_signal = Signal()
-        wf.ordered_sites = [SiteSize("site-1", 10), SiteSize("site-2", 20), SiteSize("site-3", 30)]
-        intersect_site = SiteSize("site-3", 5)
-        wf.forward_pass = MagicMock(return_value=intersect_site)
-        wf.backward_pass = MagicMock(return_value={"site-1": 5, "site-2": 5})
         wf.check_processed_sites = MagicMock()
         wf.check_final_intersection_sizes = MagicMock()
         wf.log_pass_time_taken = MagicMock()
@@ -169,6 +161,25 @@ class TestDhPSIWorkflow:
         assert "91001" not in messages
         assert "92002" not in messages
         assert "50001" not in messages
+
+    def test_run_reports_privacy_safe_protocol_progress(self):
+        wf = DhPSIWorkFlow()
+        wf.abort_signal = Signal()
+        wf.ordered_sites = [SiteSize("site-1", 10), SiteSize("site-2", 20), SiteSize("site-3", 30)]
+        intersect_site = SiteSize("site-3", 5)
+        wf.forward_pass = MagicMock(return_value=intersect_site)
+        wf.backward_pass = MagicMock(return_value={"site-1": 5, "site-2": 5})
+        wf.check_processed_sites = MagicMock()
+        wf.check_final_intersection_sizes = MagicMock()
+        wf.log_pass_time_taken = MagicMock()
+
+        with patch("nvflare.app_common.psi.dh_psi.dh_psi_workflow.log_progress") as progress:
+            wf.run(wf.abort_signal)
+
+        assert [call.args[1] for call in progress.call_args_list] == [
+            "  Distributing encrypted intersection…",
+            "  Verifying intersection agreement…",
+        ]
 
     @pytest.mark.parametrize("check_name", ["check_processed_sites", "check_final_intersection_sizes"])
     def test_validation_errors_do_not_include_site_sizes(self, check_name):
@@ -423,6 +434,7 @@ class TestDhPSIWorkflow:
             result = wf.run(abort_signal)
 
         assert result is False
+        assert wf.backward_processed == {}
         wf.check_final_intersection_sizes.assert_not_called()
         assert [call.args[1] for call in progress.call_args_list] == ["  Distributing encrypted intersection…"]
 
@@ -446,3 +458,57 @@ class TestDhPSIWorkflow:
         ]
         assert all("site" not in message.lower() for message in messages)
         assert all(private_value not in " ".join(messages) for private_value in ("10", "20", "30"))
+
+    @pytest.mark.parametrize("abort_phase", range(4))
+    def test_forward_pass_stops_at_each_aborted_broadcast_boundary(self, abort_phase):
+        wf = DhPSIWorkFlow()
+        wf.abort_signal = Signal()
+        wf._forward_passes = 1
+        sites = [SiteSize("site-1", 10), SiteSize("site-2", 20)]
+        responses = [
+            {"site-1": DXO(data_kind=DataKind.PSI, data={PSIConst.SETUP_MSG: "setup"})},
+            {"site-2": DXO(data_kind=DataKind.PSI, data={PSIConst.REQUEST_MSG: "request"})},
+            {"site-1": DXO(data_kind=DataKind.PSI, data={PSIConst.RESPONSE_MSG: "response"})},
+            {"site-2": DXO(data_kind=DataKind.PSI, data={PSIConst.ITEMS_SIZE: 5})},
+        ]
+        operators = [MagicMock() for _ in responses]
+        for phase, operator in enumerate(operators):
+            if phase == abort_phase:
+                operator.multicasts_and_wait.side_effect = lambda **kwargs: wf.abort_signal.trigger("stopped")
+            else:
+                operator.multicasts_and_wait.return_value = responses[phase]
+
+        with patch(
+            "nvflare.app_common.psi.dh_psi.dh_psi_workflow.BroadcastAndWait", side_effect=operators
+        ) as operator_factory:
+            result = wf.parallel_forward_pass(sites, {})
+
+        assert result is None
+        assert operator_factory.call_count == abort_phase + 1
+
+    @pytest.mark.parametrize("abort_phase", range(4))
+    def test_backward_pass_stops_at_each_aborted_broadcast_boundary(self, abort_phase):
+        wf = DhPSIWorkFlow()
+        wf.abort_signal = Signal()
+        sites = [SiteSize("site-1", 10), SiteSize("site-2", 20)]
+        responses = [
+            {"site-1": DXO(data_kind=DataKind.PSI, data={PSIConst.SETUP_MSG: {"20": "setup"}})},
+            {"site-2": DXO(data_kind=DataKind.PSI, data={PSIConst.REQUEST_MSG: "request"})},
+            {"site-1": DXO(data_kind=DataKind.PSI, data={PSIConst.RESPONSE_MSG: {"site-2": "response"}})},
+            {"site-2": DXO(data_kind=DataKind.PSI, data={PSIConst.ITEMS_SIZE: 5})},
+        ]
+        operators = [MagicMock() for _ in responses]
+        for phase, operator in enumerate(operators):
+            operation = operator.broadcast_and_wait if phase in (0, 2) else operator.multicasts_and_wait
+            if phase == abort_phase:
+                operation.side_effect = lambda **kwargs: wf.abort_signal.trigger("stopped")
+            else:
+                operation.return_value = responses[phase]
+
+        with patch(
+            "nvflare.app_common.psi.dh_psi.dh_psi_workflow.BroadcastAndWait", side_effect=operators
+        ) as operator_factory:
+            result = wf.parallel_backward_pass(sites, sites[0])
+
+        assert result == {}
+        assert operator_factory.call_count == abort_phase + 1
