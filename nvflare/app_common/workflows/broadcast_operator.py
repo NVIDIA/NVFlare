@@ -94,7 +94,6 @@ class BroadcastAndWait(FLComponent):
     def results_cb(self, client_task: ClientTask, fl_ctx: FLContext):
         client_name = client_task.client.name
         task_name = client_task.task.name
-        print("task_name", task_name)
         processing_client_detail = f" from client {client_name}" if self.log_client_names else ""
         self.log_info(fl_ctx, f"Processing {task_name}, {self.task} result{processing_client_detail}")
         result = client_task.result
