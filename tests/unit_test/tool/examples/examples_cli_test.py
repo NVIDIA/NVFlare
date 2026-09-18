@@ -205,6 +205,80 @@ def test_get_reports_nested_readme_for_package_layout(monkeypatch, tmp_path):
     assert provenance["destination_path"] == "collab/pt_cifar10"
 
 
+def test_get_downloads_catalog_dependencies_in_their_example_locations(monkeypatch, tmp_path):
+    calls = []
+
+    def download(revision, source_path, destination, destination_path=None):
+        assert revision == REVISION
+        assert destination_path is None
+        calls.append((source_path, destination))
+        destination.mkdir()
+        (destination / "README.md").write_text(f"# {source_path}\n")
+        (destination / "job.py").write_text("# job\n")
+
+    monkeypatch.setattr(examples_cli, "_download_example", download)
+    root = tmp_path / "hello-pt-environments"
+
+    result = examples_cli.get_example(VERSION, CATALOG, name="hello-pt-environments", destination=root)
+
+    hello_pt = root / "hello-world/hello-pt"
+    environments = root / "advanced/hello-pt-environments"
+    assert calls == [
+        ("examples/hello-world/hello-pt", hello_pt),
+        ("examples/advanced/hello-pt-environments", environments),
+    ]
+    assert result["directory"] == str(environments)
+    assert result["download_root"] == str(root)
+    assert result["readme"] == str(environments / "README.md")
+    assert [component["name"] for component in result["components"]] == ["hello-pt", "hello-pt-environments"]
+    assert not any(component["reused"] for component in result["components"])
+    assert json.loads((hello_pt / examples_cli.PROVENANCE_FILE).read_text())["example"] == "hello-pt"
+    assert json.loads((environments / examples_cli.PROVENANCE_FILE).read_text())["example"] == ("hello-pt-environments")
+    assert json.loads((environments / examples_cli.PROVENANCE_FILE).read_text())["dependencies"] == ["hello-pt"]
+
+
+def test_get_reuses_matching_downloaded_dependencies(monkeypatch, tmp_path):
+    downloads = []
+
+    def download(revision, source_path, destination, destination_path=None):
+        downloads.append(source_path)
+        destination.mkdir()
+        (destination / "README.md").write_text("# Example\n")
+
+    monkeypatch.setattr(examples_cli, "_download_example", download)
+    root = tmp_path / "hello-pt-environments"
+    examples_cli.get_example(VERSION, CATALOG, name="hello-pt-environments", destination=root)
+    downloads.clear()
+
+    result = examples_cli.get_example(VERSION, CATALOG, name="hello-pt-environments", destination=root)
+
+    assert downloads == []
+    assert all(component["reused"] for component in result["components"])
+
+
+def test_get_rejects_mismatched_downloaded_dependency(monkeypatch, tmp_path):
+    root = tmp_path / "hello-pt-environments"
+    dependency = root / "hello-world/hello-pt"
+    dependency.mkdir(parents=True)
+    (dependency / examples_cli.PROVENANCE_FILE).write_text(
+        json.dumps(
+            {
+                "repository": examples_cli.REPOSITORY,
+                "revision": "b" * 40,
+                "example": "hello-pt",
+                "source_path": "examples/hello-world/hello-pt",
+            }
+        )
+    )
+    monkeypatch.setattr(examples_cli, "_download_example", lambda *args, **kwargs: pytest.fail("downloaded"))
+
+    with pytest.raises(examples_cli.ExampleError) as error:
+        examples_cli.get_example(VERSION, CATALOG, name="hello-pt-environments", destination=root)
+
+    assert error.value.code == "EXAMPLE_DEPENDENCY_CONFLICT"
+    assert str(dependency) in str(error.value)
+
+
 def test_partial_download_is_left_for_manual_cleanup(monkeypatch, tmp_path):
     tree_response = _Response(
         metadata={
@@ -497,6 +571,7 @@ def test_list_json_is_machine_readable(monkeypatch, capsys):
     assert {entry["name"]: (entry["category"], entry["source_path"]) for entry in listed} == {
         name: (entry["category"], entry["source_path"]) for name, entry in CATALOG.items()
     }
+    assert next(entry for entry in listed if entry["name"] == "hello-pt-environments")["dependencies"] == ["hello-pt"]
 
 
 def test_catalog_failure_is_scoped_to_examples_command(monkeypatch, capsys):

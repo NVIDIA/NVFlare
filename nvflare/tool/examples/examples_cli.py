@@ -20,7 +20,7 @@ import re
 import shlex
 import sys
 import unicodedata
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from urllib.parse import quote
 
 import requests
@@ -245,6 +245,107 @@ def _download_example(revision, source_path, destination, destination_path=None)
         ) from None
 
 
+def _provenance(version_info, revision, name, entry, destination_path=None):
+    result = {
+        "schema_version": 1,
+        "repository": REPOSITORY,
+        "revision": revision,
+        "example": name,
+        "source_path": entry["source_path"],
+        "source_url": f"https://github.com/{REPOSITORY}/tree/{revision}/{entry['source_path']}",
+        "nvflare_version": version_info.get("version"),
+    }
+    if destination_path:
+        result["destination_path"] = destination_path
+    if entry.get("dependencies"):
+        result["dependencies"] = list(entry["dependencies"])
+    return result
+
+
+def _write_provenance(directory, provenance):
+    (directory / PROVENANCE_FILE).write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
+
+
+def _has_matching_provenance(directory, expected):
+    try:
+        existing = json.loads((directory / PROVENANCE_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError, AttributeError):
+        return False
+    return all(existing.get(key) == expected[key] for key in ("repository", "revision", "example", "source_path"))
+
+
+def _dependency_order(catalog, name):
+    ordered = []
+    visited = set()
+
+    def visit(current):
+        if current in visited:
+            return
+        for dependency in catalog[current].get("dependencies", []):
+            visit(dependency)
+        visited.add(current)
+        ordered.append(current)
+
+    visit(name)
+    return ordered
+
+
+def _dependency_destination(root, entry):
+    source_path = PurePosixPath(entry["source_path"])
+    return root.joinpath(*source_path.parts[1:])
+
+
+def _dependency_conflict(name, directory):
+    raise ExampleError(
+        "EXAMPLE_DEPENDENCY_CONFLICT",
+        f"Example destination does not contain the matching {name} example: {directory}",
+        "Move the existing path or choose another --dest, then retry.",
+    )
+
+
+def _prepare_dependency_parent(root, directory):
+    relative = directory.relative_to(root)
+    current = root
+    for part in relative.parts[:-1]:
+        current /= part
+        if current.is_symlink() or (current.exists() and not current.is_dir()):
+            _dependency_conflict(relative.as_posix(), current)
+        current.mkdir(exist_ok=True)
+
+
+def _get_example_with_dependencies(version_info, revision, catalog, name, destination):
+    if destination.is_symlink() or (destination.exists() and not destination.is_dir()):
+        _destination_exists(destination)
+    destination.mkdir(exist_ok=True)
+
+    components = []
+    requested_directory = None
+    requested_provenance = None
+    for component_name in _dependency_order(catalog, name):
+        entry = catalog[component_name]
+        component_directory = _dependency_destination(destination, entry)
+        provenance = _provenance(version_info, revision, component_name, entry)
+        reused = False
+        if component_directory.exists() or component_directory.is_symlink():
+            if (
+                component_directory.is_symlink()
+                or not component_directory.is_dir()
+                or not _has_matching_provenance(component_directory, provenance)
+            ):
+                _dependency_conflict(component_name, component_directory)
+            reused = True
+        else:
+            _prepare_dependency_parent(destination, component_directory)
+            _download_example(revision, entry["source_path"], component_directory)
+            _write_provenance(component_directory, provenance)
+        components.append({"name": component_name, "directory": str(component_directory), "reused": reused})
+        if component_name == name:
+            requested_directory = component_directory
+            requested_provenance = provenance
+
+    return requested_directory, requested_provenance, components
+
+
 def get_example(version_info, catalog, *, name, destination=None):
     if name not in catalog:
         raise ExampleError(
@@ -253,7 +354,9 @@ def get_example(version_info, catalog, *, name, destination=None):
             "Run 'nvflare examples list' to choose an available short name.",
         )
     destination = Path(destination or name).expanduser().absolute()
-    if destination.exists() or destination.is_symlink():
+    entry = catalog[name]
+    dependencies = entry.get("dependencies", [])
+    if not dependencies and (destination.exists() or destination.is_symlink()):
         _destination_exists(destination)
     if not destination.parent.is_dir():
         raise ExampleError(
@@ -263,9 +366,17 @@ def get_example(version_info, catalog, *, name, destination=None):
         )
 
     revision = _source_revision(version_info)
-    entry = catalog[name]
     destination_path = entry.get("destination_path")
-    _download_example(revision, entry["source_path"], destination, destination_path)
+    components = None
+    if dependencies:
+        content_directory, provenance, components = _get_example_with_dependencies(
+            version_info, revision, catalog, name, destination
+        )
+    else:
+        _download_example(revision, entry["source_path"], destination, destination_path)
+        content_directory = destination / destination_path if destination_path else destination
+        provenance = _provenance(version_info, revision, name, entry, destination_path)
+        _write_provenance(destination, provenance)
     warnings = [
         {
             "code": "EXAMPLE_DEPENDENCY_GUIDANCE",
@@ -278,7 +389,6 @@ def get_example(version_info, catalog, *, name, destination=None):
         }
     ]
 
-    content_directory = destination / destination_path if destination_path else destination
     readme = next(
         (
             candidate
@@ -295,24 +405,16 @@ def get_example(version_info, catalog, *, name, destination=None):
                 "hint": "Inspect the downloaded files for dependency, preparation, and run instructions.",
             }
         )
-    provenance = {
-        "schema_version": 1,
-        "repository": REPOSITORY,
-        "revision": revision,
-        "example": name,
-        "source_path": entry["source_path"],
-        "source_url": f"https://github.com/{REPOSITORY}/tree/{revision}/{entry['source_path']}",
-        "nvflare_version": version_info.get("version"),
-    }
-    if destination_path:
-        provenance["destination_path"] = destination_path
-    (destination / PROVENANCE_FILE).write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
-    return {
+    result = {
         **provenance,
-        "directory": str(destination),
+        "directory": str(content_directory if components is not None else destination),
         "readme": str(readme) if readme else None,
         "warnings": warnings,
     }
+    if components is not None:
+        result["download_root"] = str(destination)
+        result["components"] = components
+    return result
 
 
 def handle_examples_cmd(args):
@@ -358,7 +460,12 @@ def handle_examples_cmd(args):
         catalog = _load_example_catalog()
         if key == "list":
             examples = [
-                {"name": name, "category": entry["category"], "source_path": entry["source_path"]}
+                {
+                    "name": name,
+                    "category": entry["category"],
+                    "source_path": entry["source_path"],
+                    **({"dependencies": list(entry["dependencies"])} if entry.get("dependencies") else {}),
+                }
                 for name, entry in sorted(catalog.items(), key=lambda item: (item[1]["category"], item[0]))
             ]
             if is_json_mode():

@@ -51,10 +51,11 @@ def load_catalog(path=None):
             error = f"contains duplicate key {entry.duplicate_keys[0]}"
         elif not {"category", "source_path"} <= set(entry) or set(entry) - {
             "category",
+            "dependencies",
             "source_path",
             "destination_path",
         }:
-            error = "must contain category and source_path, with optional destination_path"
+            error = "must contain category and source_path, with optional dependencies and destination_path"
         elif not isinstance(entry["category"], str) or not _NAME.fullmatch(entry["category"]):
             error = "category must be a lowercase name"
         if not error:
@@ -87,8 +88,36 @@ def load_catalog(path=None):
                 error = "destination_path must be a normalized relative path"
             elif unicodedata.normalize("NFC", parts[0].casefold()) == _PROVENANCE_KEY:
                 error = f"destination_path cannot use the reserved name {PROVENANCE_FILE}"
+        if not error and "dependencies" in entry:
+            dependencies = entry["dependencies"]
+            if (
+                not isinstance(dependencies, list)
+                or not dependencies
+                or any(
+                    not isinstance(dependency, str) or not _NAME.fullmatch(dependency) for dependency in dependencies
+                )
+                or len(dependencies) != len(set(dependencies))
+            ):
+                error = "dependencies must be a non-empty list of unique catalog short names"
         if error:
             raise ValueError(f"invalid catalog entry {name!r}: {error}")
         source_paths.add(source_path)
         catalog[name] = dict(entry)
+
+    def visit(name, visiting, visited):
+        if name in visiting:
+            raise ValueError(f"catalog dependency cycle includes {name!r}")
+        if name in visited:
+            return
+        visiting.add(name)
+        for dependency in catalog[name].get("dependencies", []):
+            if dependency not in catalog:
+                raise ValueError(f"catalog entry {name!r} depends on unknown example {dependency!r}")
+            visit(dependency, visiting, visited)
+        visiting.remove(name)
+        visited.add(name)
+
+    visited = set()
+    for name in catalog:
+        visit(name, set(), visited)
     return catalog

@@ -27,7 +27,9 @@ category:
 The list and ``get`` lookup use the catalog. Command help and JSON schema use a
 generic ``NAME`` argument instead of enumerating the catalog. Adding a
 category, short name, and source path to ``catalog.json`` makes an example
-available without a Python code change.
+available without a Python code change. An entry can also name other catalog
+examples that it requires. The command retrieves those dependencies from the
+same source revision.
 
 Get an example
 ==============
@@ -110,6 +112,20 @@ already in use with the matching command above. Then run:
    pip install -r requirements.txt
    python job.py
 
+The advanced Hello PyTorch environments example reuses the beginner example.
+Download both at their maintained relative locations with one command:
+
+.. code-block:: bash
+
+   nvflare examples get hello-pt-environments
+   cd hello-pt-environments/advanced/hello-pt-environments
+   python job.py --env poc
+
+The download root contains ``advanced/hello-pt-environments`` and its
+``hello-world/hello-pt`` dependency. Each directory has its own provenance
+file. A retry reuses a dependency when its repository, revision, example name,
+and source path match; a conflicting directory is never overwritten.
+
 Use another catalog name in the same command. The completion output identifies
 the README:
 
@@ -125,14 +141,19 @@ Use ``--dest`` to choose another new directory:
 
    nvflare examples get hello-pt --dest ./my-hello-pt
 
-The destination's parent must already exist. The command never merges with or
-overwrites an existing file, directory, or symbolic link. It creates the
-destination exclusively. If downloading does not complete, the error identifies
-the incomplete destination. Remove that directory before retrying.
+The destination's parent must already exist. For an example without catalog
+dependencies, the command never merges with or overwrites an existing file,
+directory, or symbolic link and creates the destination exclusively. For an
+example with dependencies, the destination is a common download root. Existing
+component directories are reused only when their provenance matches exactly;
+other existing component paths are rejected. If downloading does not complete,
+the error identifies the incomplete destination. Remove that incomplete
+component before retrying.
 
 Most examples place their files directly under the destination. When an example
-depends on its maintained Python package or script hierarchy, the command keeps
-that hierarchy inside the destination and reports the nested README to follow.
+depends on its maintained Python package, script hierarchy, or another catalog
+example, the command keeps the required relative layout inside the destination
+and reports the requested example's nested README to follow.
 
 The downloaded directory contains the maintained files from the source
 directory selected by the catalog. The command does not create a root
