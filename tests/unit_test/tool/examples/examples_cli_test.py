@@ -63,6 +63,7 @@ class _Session:
     def __init__(self, responses):
         self.responses = iter(responses)
         self.requested = []
+        self.request_kwargs = []
 
     def __enter__(self):
         return self
@@ -72,6 +73,7 @@ class _Session:
 
     def get(self, url, **kwargs):
         self.requested.append(url)
+        self.request_kwargs.append(kwargs)
         response = next(self.responses)
         if isinstance(response, BaseException):
             raise response
@@ -172,6 +174,29 @@ def test_download_fetches_path_scoped_tree(monkeypatch, tmp_path):
     assert len(session.requested) == 3
     assert session.requested[1].endswith(f"/{REVISION}/{SOURCE_PATH}/README.md")
     assert session.requested[2].endswith(f"/{REVISION}/{SOURCE_PATH}/nested/run.sh")
+
+
+def test_download_authenticates_only_the_github_api_request(monkeypatch, tmp_path):
+    monkeypatch.setenv("GITHUB_TOKEN", "github-token")
+    monkeypatch.setenv("GH_TOKEN", "fallback-token")
+    session = _mock_session(
+        monkeypatch,
+        _Response(
+            metadata={
+                "truncated": False,
+                "tree": [{"path": "README.md", "type": "blob", "mode": "100644"}],
+            }
+        ),
+        _Response(data=b"# Example\n"),
+    )
+
+    examples_cli._download_example(REVISION, SOURCE_PATH, tmp_path / "example")
+
+    assert session.request_kwargs[0]["headers"] == {
+        "Authorization": "Bearer github-token",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    assert "headers" not in session.request_kwargs[1]
 
 
 def test_download_preserves_catalog_destination_path(monkeypatch, tmp_path):

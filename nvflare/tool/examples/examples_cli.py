@@ -15,7 +15,7 @@
 """Download examples selected by the installed NVFlare catalog."""
 
 import json
-import math
+import os
 import re
 import shlex
 import sys
@@ -25,7 +25,14 @@ from urllib.parse import quote
 
 import requests
 
-from nvflare.tool.cli_output import get_connect_timeout, is_json_mode, output_error_message, output_ok, print_human
+from nvflare.tool.cli_output import (
+    get_connect_timeout,
+    get_validated_connect_timeout,
+    is_json_mode,
+    output_error_message,
+    output_ok,
+    print_human,
+)
 from nvflare.tool.cli_schema import handle_schema_flag
 from nvflare.tool.examples.catalog import PROVENANCE_FILE, load_catalog
 
@@ -122,6 +129,13 @@ def _content_error(
     return ExampleError("EXAMPLE_CONTENT_INVALID", message, hint)
 
 
+def _github_api_headers():
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if not token:
+        return None
+    return {"Authorization": f"Bearer {token}", "X-GitHub-Api-Version": "2022-11-28"}
+
+
 def _validate_tree_entries(entries, source_path):
     files = []
     entry_keys = set()
@@ -194,7 +208,7 @@ def _download_example(revision, source_path, destination, destination_path=None)
     destination_created = False
     try:
         with requests.Session() as session:
-            with session.get(tree_url, timeout=timeout) as response:
+            with session.get(tree_url, headers=_github_api_headers(), timeout=timeout) as response:
                 if response.status_code == 404:
                     raise ExampleError(
                         "EXAMPLE_SOURCE_NOT_FOUND",
@@ -439,14 +453,8 @@ def handle_examples_cmd(args):
             "INVALID_ARGS", "An examples subcommand is required.", "Run nvflare examples --help.", exit_code=4
         )
 
-    connect_timeout = get_connect_timeout()
-    if key == "get" and (not math.isfinite(connect_timeout) or connect_timeout <= 0):
-        output_error_message(
-            "INVALID_ARGS",
-            "--connect-timeout must be a finite positive number.",
-            "Pass --connect-timeout with a value greater than zero.",
-            exit_code=4,
-        )
+    if key == "get":
+        get_validated_connect_timeout()
 
     try:
         if key == "revision":

@@ -192,16 +192,20 @@ Schema discovery does not download the example:
 
 ``nvflare examples list`` and the ``--schema`` commands use the installed
 catalog and do not contact GitHub. Each ``nvflare examples get`` invocation
-makes one unauthenticated GitHub REST API request to locate the selected
-subtree, then downloads its files from ``raw.githubusercontent.com``.
+makes one GitHub REST API request to locate the selected subtree, then
+downloads its files from ``raw.githubusercontent.com``. The request is
+anonymous by default. When ``GITHUB_TOKEN`` or ``GH_TOKEN`` is set, the command
+uses that token for the API request; ``GITHUB_TOKEN`` takes precedence when
+both are set.
 
 GitHub currently limits unauthenticated REST API traffic to 60 requests per
 hour per originating IP address. This allowance can be shared by machines
 behind the same proxy or NAT gateway. For repeated CI or agent workflows,
 download an example once and reuse that workspace instead of calling ``get``
 in a loop. For bulk retrieval, use a revision-pinned Git checkout. If GitHub
-returns a ``403`` or ``429`` rate-limit response, wait until the reset time
-reported by GitHub before retrying. See `GitHub REST API rate limits
+returns a ``403`` or ``429`` rate-limit response, wait for the limit window to
+reset before retrying. You can check the current allowance and reset time with
+``curl https://api.github.com/rate_limit``. See `GitHub REST API rate limits
 <https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api>`_.
 
 Failures return a nonzero exit status, an error code, and a recovery hint.

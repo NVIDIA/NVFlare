@@ -77,11 +77,11 @@ def _resolve_startup_kit_dir_for_args(args=None) -> str:
 
 @contextmanager
 def _study_session(args):
-    from nvflare.tool.cli_output import get_connect_timeout
+    from nvflare.tool.cli_output import get_validated_connect_timeout
     from nvflare.tool.cli_session import new_cli_session_for_args
 
     try:
-        sess = new_cli_session_for_args(args=args, timeout=get_connect_timeout(), study=DEFAULT_STUDY)
+        sess = new_cli_session_for_args(args=args, timeout=get_validated_connect_timeout(), study=DEFAULT_STUDY)
     except ValueError as e:
         output_error(
             "STARTUP_KIT_MISSING",

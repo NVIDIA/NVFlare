@@ -39,6 +39,7 @@ Exceptions (plain text, outside the JSON contract):
 
 import json
 import logging
+import math
 import re
 import sys
 from typing import Any, Optional
@@ -138,6 +139,19 @@ def set_connect_timeout(value: float) -> None:
 
 def get_connect_timeout() -> float:
     return _connect_timeout
+
+
+def get_validated_connect_timeout() -> float:
+    """Return the configured timeout or report a structured CLI argument error."""
+    timeout = get_connect_timeout()
+    if not math.isfinite(timeout) or timeout <= 0:
+        output_error_message(
+            "INVALID_ARGS",
+            "--connect-timeout must be a finite positive number.",
+            "Pass --connect-timeout with a value greater than zero.",
+            exit_code=4,
+        )
+    return timeout
 
 
 def _is_json_mode() -> bool:
