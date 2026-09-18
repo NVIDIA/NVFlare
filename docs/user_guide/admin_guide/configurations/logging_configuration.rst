@@ -331,14 +331,15 @@ This argument can be any of the following:
 
     - ``concise`` (default for simulator mode): all non-NVFlare logs plus selected NVFlare application logs, with
       simplified log attributes. This preserves the existing NVFlare 2.9 behavior.
-    - ``progress``: round progress, client and aggregated metrics, evaluation progress,
-      warnings, and errors. INFO progress is formatted as messages only; WARNING,
+    - ``progress``: training rounds and metrics for deep-learning and traditional-ML FedAvg jobs,
+      evaluation progress, and workflow phases for federated statistics, PSI, Swarm learning,
+      and XGBoost, plus warnings and errors. INFO progress is formatted as messages only; WARNING,
       ERROR, and CRITICAL records keep a textual severity label as well as terminal
       color. Detailed records remain in
       ``log.txt`` and ``log.json``. ``log_fl.txt`` retains its existing application-log
       selection and timestamped file formatter, including both progress records and the
-      application INFO records used by monitoring tools. Built-in aggregation and evaluation writers
-      supply these messages; arbitrary client prints remain in diagnostic logs. Jobs assembled
+      application INFO records used by monitoring tools. Built-in workflows, aggregation writers,
+      and evaluation writers supply these messages; arbitrary client prints remain in diagnostic logs. Jobs assembled
       directly with ``FedJob`` or JSON must configure their own reporting components.
     - ``msg_only``: the same log selection as ``concise``, formatted as messages only
     - ``full`` (default in workspaces in poc and production mode): all info level logs

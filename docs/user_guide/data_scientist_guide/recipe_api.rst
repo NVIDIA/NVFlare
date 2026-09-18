@@ -549,9 +549,10 @@ the resolved client count; POC and production print status changes while the job
 runs.
 
 The simulator continues to use ``concise`` logging by default, preserving the
-existing timestamped application-log view. Select ``progress`` for the focused
-round headings, client and aggregated metrics, evaluation progress, warnings,
-and errors introduced by this reporting feature:
+existing timestamped application-log view. Select ``progress`` for focused
+training rounds and metrics in deep-learning and traditional-ML FedAvg jobs,
+evaluation progress, or workflow phases for federated statistics, PSI, Swarm
+learning, and XGBoost. Warnings and errors remain visible:
 
 .. code-block:: bash
 
@@ -590,7 +591,7 @@ prints a ``RUN SUMMARY`` containing:
 * the completed, failed, or not-scheduled status and elapsed time;
 * up to ten recorded rounds of aggregated training metrics;
 * cross-site model-evaluation results when present; and
-* locations of model, metric, evaluation, and log artifacts.
+* locations of model, statistics, metric, evaluation, and log artifacts.
 
 The summary reads existing artifacts and does not load model weights or change
 metric values. Missing, malformed, oversized, or custom-layout artifacts do not

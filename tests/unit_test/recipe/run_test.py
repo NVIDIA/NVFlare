@@ -435,7 +435,13 @@ def test_summary_limits_rounds_and_tolerates_corrupt_evaluation(tmp_path):
 
 @pytest.mark.parametrize(
     "relative_path",
-    ["app_server/global.pt", "app_server/tf_model.weights.h5", "models/server.npy"],
+    [
+        "app_server/global.pt",
+        "app_server/tf_model.weights.h5",
+        "models/server.npy",
+        "app_server/model_param.joblib",
+        "app_server/xgboost_model.json",
+    ],
 )
 def test_summary_finds_standard_model_locations_without_loading_weights(tmp_path, relative_path):
     from nvflare.recipe._run_summary import result_summary
@@ -447,6 +453,28 @@ def test_summary_finds_standard_model_locations_without_loading_weights(tmp_path
     output = result_summary(tmp_path)
 
     assert f"Models    {model_path.parent.relative_to(tmp_path)}/" in output
+
+
+def test_summary_finds_federated_statistics_artifacts(tmp_path):
+    from nvflare.recipe._run_summary import result_summary
+
+    statistics_dir = tmp_path / "server" / "simulate_job" / "statistics"
+    statistics_dir.mkdir(parents=True)
+    (statistics_dir / "stats.json").write_text("{}")
+
+    output = result_summary(tmp_path)
+
+    assert "Statistics server/simulate_job/statistics/" in output
+
+
+def test_summary_does_not_treat_application_metadata_as_xgboost_model(tmp_path):
+    from nvflare.recipe._run_summary import result_summary
+
+    app_server = tmp_path / "app_server"
+    app_server.mkdir()
+    (app_server / ".__nvfl_sig.json").write_text("{}")
+
+    assert "Models    " not in result_summary(tmp_path)
 
 
 def test_summary_lists_models_once_across_candidate_layouts(tmp_path):

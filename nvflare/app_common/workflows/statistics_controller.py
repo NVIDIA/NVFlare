@@ -30,6 +30,7 @@ from nvflare.app_common.app_constant import StatisticsConstants as StC
 from nvflare.app_common.statistics.numeric_stats import get_global_stats
 from nvflare.app_common.statistics.statisitcs_objects_decomposer import fobs_registration
 from nvflare.fuel.utils import fobs
+from nvflare.fuel.utils.log_utils import log_progress
 
 
 class StatisticsController(Controller):
@@ -173,14 +174,26 @@ class StatisticsController(Controller):
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
 
         self.log_info(fl_ctx, f"{self.task_name} control flow started.")
+        log_progress(
+            self.logger,
+            f"\n  Federated statistics · {self.min_clients} "
+            f"client{'s' if self.min_clients != 1 else ''}\n\n  Preparing client datasets…",
+        )
 
         if abort_signal.triggered:
             return False
 
         if self.enable_pre_run_task:
             self.pre_run_task_flow(abort_signal, fl_ctx)
+            if abort_signal.triggered:
+                return False
 
+        log_progress(self.logger, "  Computing first-pass statistics…")
         self.statistics_task_flow(abort_signal, fl_ctx, StC.STATS_1st_STATISTICS)
+        if abort_signal.triggered:
+            return False
+
+        log_progress(self.logger, "  Computing derived statistics…")
         self.statistics_task_flow(abort_signal, fl_ctx, StC.STATS_2nd_STATISTICS)
 
         if not StatisticsController._wait_for_all_results(
@@ -190,7 +203,8 @@ class StatisticsController(Controller):
             return False
 
         self.log_info(fl_ctx, "start post processing")
-        self.post_fn(self.task_name, fl_ctx)
+        if self.post_fn(self.task_name, fl_ctx):
+            log_progress(self.logger, "\n  ✓ Federated statistics completed")
 
         self.log_info(fl_ctx, f"task {self.task_name} control flow end.")
 
@@ -388,17 +402,19 @@ class StatisticsController(Controller):
 
         return True
 
-    def post_fn(self, task_name: str, fl_ctx: FLContext):
+    def post_fn(self, task_name: str, fl_ctx: FLContext) -> bool:
 
         ok_to_proceed = self._validate_min_clients(self.min_clients, self.client_statistics)
         if not ok_to_proceed:
             self.system_panic(f"Not all required {self.min_clients} statistics received, aborted the job.", fl_ctx)
+            return False
         else:
             self.log_info(fl_ctx, "Combine all clients' statistics")
             ds_stats = self._combine_all_statistics()
             self.log_info(fl_ctx, "Save statistics result to persistence store")
             writer: StatisticsWriter = fl_ctx.get_engine().get_component(self.writer_id)
             writer.save(ds_stats, overwrite_existing=True, fl_ctx=fl_ctx)
+            return True
 
     def _combine_all_statistics(self):
         result = {}

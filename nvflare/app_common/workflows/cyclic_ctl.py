@@ -26,6 +26,7 @@ from nvflare.app_common.abstract.learnable_persistor import LearnablePersistor
 from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
+from nvflare.fuel.utils.log_utils import log_progress
 from nvflare.fuel.utils.memory_utils import cleanup_memory
 from nvflare.fuel.utils.validation_utils import check_non_negative_int
 from nvflare.security.logging import secure_format_exception
@@ -253,6 +254,9 @@ class CyclicController(Controller):
 
                 self.log_debug(fl_ctx, "Starting current round={}.".format(self._current_round))
                 fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self._current_round, private=True, sticky=True)
+                ordinal = self._current_round - self._start_round + 1
+                heading = f" ROUND {ordinal} / {self._num_rounds} ".center(72, "=")
+                log_progress(self.logger, f"\n{heading}\n\n  Cyclic training\n")
 
                 # Task for one cyclic
                 targets = self._get_relay_orders(fl_ctx)
@@ -280,6 +284,9 @@ class CyclicController(Controller):
                     dynamic_targets=False,
                     abort_signal=abort_signal,
                 )
+
+                if not self._is_done and not abort_signal.triggered:
+                    log_progress(self.logger, "  ✓ Cyclic round completed")
 
                 if self._persist_every_n_rounds != 0 and (self._current_round + 1) % self._persist_every_n_rounds == 0:
                     self.log_info(fl_ctx, "Start persist model on server.")

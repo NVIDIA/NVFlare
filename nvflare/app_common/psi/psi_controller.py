@@ -23,6 +23,7 @@ from nvflare.app_common.app_constant import PSIConst
 from nvflare.app_common.psi.psi_workflow_spec import PSIWorkflow
 from nvflare.app_common.utils.component_utils import check_component_type
 from nvflare.app_common.workflows.error_handling_controller import ErrorHandlingController
+from nvflare.fuel.utils.log_utils import log_progress
 
 
 class PSIController(ErrorHandlingController):
@@ -38,6 +39,12 @@ class PSIController(ErrorHandlingController):
         if abort_signal.triggered:
             return False
 
+        clients = fl_ctx.get_engine().get_clients()
+        log_progress(
+            self.logger,
+            f"\n  Private set intersection · {len(clients)} client{'s' if len(clients) != 1 else ''}"
+            "\n\n  Preparing private inputs…",
+        )
         self.log_info(fl_ctx, "start pre workflow")
         self.psi_workflow.pre_process(abort_signal)
 
@@ -45,6 +52,7 @@ class PSIController(ErrorHandlingController):
             return False
 
         self.log_info(fl_ctx, "start workflow")
+        log_progress(self.logger, "  Computing encrypted intersection…")
         self.psi_workflow.run(abort_signal)
 
         if abort_signal.triggered:
@@ -53,6 +61,10 @@ class PSIController(ErrorHandlingController):
         self.log_info(fl_ctx, "start post workflow")
         self.psi_workflow.post_process(abort_signal)
 
+        if abort_signal.triggered:
+            return False
+
+        log_progress(self.logger, "\n  ✓ Private set intersection completed")
         self.log_info(fl_ctx, f"task {self.task_name} control flow end.")
 
     def start_controller(self, fl_ctx: FLContext):

@@ -32,6 +32,7 @@ from nvflare.app_common.ccwf.common import (
     status_report_from_dict,
     topic_for_end_workflow,
 )
+from nvflare.fuel.utils.log_utils import log_progress
 from nvflare.fuel.utils.validation_utils import (
     DefaultValuePolicy,
     check_number_range,
@@ -157,6 +158,8 @@ class ServerSideController(Controller):
         self.cw_started = False
         self.asked_to_stop = False
         self.workflow_id = None
+        self._last_progress_round = None
+        self._workflow_completed = False
 
         if min_clients < 0:
             raise ValueError(f"min_clients must be >= 0, but got {min_clients}")
@@ -225,10 +228,23 @@ class ServerSideController(Controller):
     def prepare_config(self) -> dict:
         return {}
 
+    def progress_label(self) -> str:
+        """Return a user-facing label when this workflow supports progress presentation."""
+        return ""
+
     def sub_flow(self, abort_signal: Signal, fl_ctx: FLContext):
         pass
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
+        progress_label = self.progress_label()
+        if progress_label:
+            client_count = len(self.participating_clients)
+            log_progress(
+                self.logger,
+                f"\n  {progress_label} · {client_count} client{'s' if client_count != 1 else ''} · "
+                f"{self.num_rounds} round{'s' if self.num_rounds != 1 else ''}\n\n  Configuring clients…",
+            )
+
         # wait for every client to become ready
         self.log_info(fl_ctx, f"Waiting for clients to be ready: {self.participating_clients}")
 
@@ -323,6 +339,8 @@ class ServerSideController(Controller):
                 return
 
             self.log_info(fl_ctx, f"started workflow {self.workflow_id} on client {self.starting_client}")
+            if progress_label:
+                log_progress(self.logger, "  Training across clients…")
 
         # a subclass could provide additional control flow
         self.sub_flow(abort_signal, fl_ctx)
@@ -335,6 +353,8 @@ class ServerSideController(Controller):
                 break
 
         self.log_info(fl_ctx, f"Workflow {self.workflow_id} finished on all clients")
+        if progress_label and self._workflow_completed:
+            log_progress(self.logger, f"\n  ✓ {progress_label} completed")
 
         # ask all clients to end the workflow
         self.log_info(fl_ctx, f"asking all clients to end workflow {self.workflow_id}")
@@ -455,6 +475,7 @@ class ServerSideController(Controller):
 
             if cs.status.all_done:
                 self.log_info(fl_ctx, f"Got ALL_DONE from client {client_name}")
+                self._workflow_completed = True
                 return True
 
             if now - cs.last_report_time > self.max_status_report_interval:
@@ -526,6 +547,7 @@ class ServerSideController(Controller):
             # updated
             cs.status = report
             cs.last_progress_time = now
+            self._log_round_progress(report)
             timestamp = datetime.fromtimestamp(report.timestamp) if report.timestamp else False
             self.log_info(
                 fl_ctx,
@@ -536,6 +558,18 @@ class ServerSideController(Controller):
             self.log_debug(
                 fl_ctx, f"ignored status report from client {client_name} at round {report.last_round}: no change"
             )
+
+    def _log_round_progress(self, report: StatusReport):
+        if not self.progress_label() or type(report.last_round) is not int:
+            return
+        ordinal = report.last_round - self.start_round + 1
+        if ordinal < 1 or ordinal > self.num_rounds:
+            return
+        if self._last_progress_round is not None and ordinal <= self._last_progress_round:
+            return
+        self._last_progress_round = ordinal
+        heading = f" ROUND {ordinal} / {self.num_rounds} ".center(72, "=")
+        log_progress(self.logger, f"\n{heading}\n\n  {self.progress_label()}\n")
 
     def process_result_of_unknown_task(
         self, client: Client, task_name: str, client_task_id: str, result: Shareable, fl_ctx: FLContext

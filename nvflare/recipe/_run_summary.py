@@ -77,10 +77,15 @@ def _text(value):
 
 def _model_artifacts(run_dir, root):
     """Return standard model directories without deserializing their contents."""
-    extensions = (".pt", ".pth", ".npy", ".npz", ".h5", ".keras")
+    extensions = (".pt", ".pth", ".npy", ".npz", ".h5", ".keras", ".joblib", ".pkl")
+
+    def is_model_file(path):
+        name = path.name.lower()
+        return path.is_file() and (name.endswith(extensions) or ("model" in name and name.endswith((".json", ".ubj"))))
+
     locations = []
     for model_dir in (run_dir / "app_server", run_dir / "models"):
-        if model_dir.is_dir() and any(p.is_file() and p.name.endswith(extensions) for p in model_dir.iterdir()):
+        if model_dir.is_dir() and any(is_model_file(path) for path in model_dir.iterdir()):
             locations.append(f"{model_dir.relative_to(root)}/")
     return locations
 
@@ -98,6 +103,7 @@ def result_summary(result):
     candidates = [root / "workspace", root]
     candidates.extend(islice(root.glob("server/*"), 20))
     model_locations = []
+    statistics_locations = []
     for run_dir in candidates:
         metrics = run_dir / "metrics"
         summary_path = metrics / "metrics_summary.json"
@@ -164,10 +170,17 @@ def result_summary(result):
         for location in _model_artifacts(run_dir, root):
             if location not in model_locations:
                 model_locations.append(location)
+        statistics_dir = run_dir / "statistics"
+        if statistics_dir.is_dir() and any(path.is_file() for path in statistics_dir.iterdir()):
+            location = f"{statistics_dir.relative_to(root)}/"
+            if location not in statistics_locations:
+                statistics_locations.append(location)
         if summary_path.is_file() or evaluation_path.is_file():
             break
     if model_locations:
         artifacts.insert(0, "  Models    " + " · ".join(model_locations))
+    if statistics_locations:
+        artifacts.append("  Statistics " + " · ".join(statistics_locations))
     log_paths = list(islice(root.glob("*/log.txt"), 6))
     if not log_paths:
         log_paths = list(islice(root.glob("workspace/log*.txt"), 6))

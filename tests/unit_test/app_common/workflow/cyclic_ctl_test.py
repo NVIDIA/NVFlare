@@ -108,6 +108,7 @@ class TestCyclicController:
             with (
                 patch.object(ctl.shareable_generator, "learnable_to_shareable") as mock_method1,
                 patch.object(ctl.shareable_generator, "shareable_to_learnable") as mock_method2,
+                patch("nvflare.app_common.workflows.cyclic_ctl.log_progress") as progress,
             ):
                 mock_method1.return_value = Shareable()
                 mock_method2.return_value = Learnable()
@@ -115,6 +116,9 @@ class TestCyclicController:
                 ctl.control_flow(abort_signal, fl_ctx)
 
                 mock_method.assert_called_once()
+                messages = [call.args[1] for call in progress.call_args_list]
+                assert "ROUND 1 / 1" in messages[0]
+                assert messages[1] == "  ✓ Cyclic round completed"
 
     @pytest.mark.parametrize("return_result", PROCESS_RESULT_TEST_CASES)
     def test_process_result(self, return_result):
