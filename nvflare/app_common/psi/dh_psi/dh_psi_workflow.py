@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from numbers import Integral
 from typing import Dict, List, NamedTuple, Set
 
 from nvflare.apis.dxo import DXO
@@ -158,11 +159,14 @@ class DhPSIWorkFlow(PSIWorkflow):
         results = bop.multicasts_and_wait(
             task_name=self.task_name, task_inputs=task_inputs, fl_ctx=self.fl_ctx, abort_signal=self.abort_signal
         )
-        return {site_name: results[site_name].data[PSIConst.SETUP_MSG] for site_name in results}
+        return self._response_values(results, task_inputs, PSIConst.SETUP_MSG, "PSI setup")
 
     def pairwise_requests(self, ordered_sites: List[SiteSize], setup_msgs: Dict[str, str]):
         total_sites = len(ordered_sites)
         n = int(total_sites / 2)
+        setup_msgs = self._required_values(
+            setup_msgs, (ordered_sites[i].name for i in range(n)), "PSI request preparation"
+        )
         task_inputs = {}
         for i in range(n):
             s = ordered_sites[i]
@@ -176,11 +180,14 @@ class DhPSIWorkFlow(PSIWorkflow):
         results = bop.multicasts_and_wait(
             task_name=self.task_name, task_inputs=task_inputs, fl_ctx=self.fl_ctx, abort_signal=self.abort_signal
         )
-        return {site_name: results[site_name].data[PSIConst.REQUEST_MSG] for site_name in results}
+        return self._response_values(results, task_inputs, PSIConst.REQUEST_MSG, "PSI request")
 
     def pairwise_responses(self, ordered_sites: List[SiteSize], request_msgs: Dict[str, str]):
         total_sites = len(ordered_sites)
         n = int(total_sites / 2)
+        request_msgs = self._required_values(
+            request_msgs, (ordered_sites[i + n].name for i in range(n)), "PSI response preparation"
+        )
         task_inputs = {}
         for i in range(n):
             s = ordered_sites[i]
@@ -194,11 +201,14 @@ class DhPSIWorkFlow(PSIWorkflow):
         results = bop.multicasts_and_wait(
             task_name=self.task_name, task_inputs=task_inputs, fl_ctx=self.fl_ctx, abort_signal=self.abort_signal
         )
-        return {site_name: results[site_name].data[PSIConst.RESPONSE_MSG] for site_name in results}
+        return self._response_values(results, task_inputs, PSIConst.RESPONSE_MSG, "PSI response")
 
     def pairwise_intersect(self, ordered_sites: List[SiteSize], response_msg: Dict[str, str]):
         total_sites = len(ordered_sites)
         n = int(total_sites / 2)
+        response_msg = self._required_values(
+            response_msg, (ordered_sites[i].name for i in range(n)), "PSI intersection preparation"
+        )
         task_inputs = {}
         for i in range(n):
             s = ordered_sites[i]
@@ -212,7 +222,7 @@ class DhPSIWorkFlow(PSIWorkflow):
         results = bop.multicasts_and_wait(
             task_name=self.task_name, task_inputs=task_inputs, fl_ctx=self.fl_ctx, abort_signal=self.abort_signal
         )
-        return {site_name: results[site_name].data[PSIConst.ITEMS_SIZE] for site_name in results}
+        return self._response_values(results, task_inputs, PSIConst.ITEMS_SIZE, "PSI intersection")
 
     def parallel_forward_pass(self, target_sites, processed: dict):
         self.log_info(self.fl_ctx, f"forward pass targets {len(target_sites)} participants")
@@ -261,6 +271,9 @@ class DhPSIWorkFlow(PSIWorkflow):
         other_site_sizes = set([site.size for site in other_sites])
         setup_msgs: Dict[str, str] = self.prepare_setup_messages(s, other_site_sizes)
 
+        setup_msgs = self._required_values(
+            setup_msgs, (str(site.size) for site in other_sites), "PSI backward-pass setup"
+        )
         site_setup_msgs = {site.name: setup_msgs[str(site.size)] for site in other_sites}
         request_msgs: Dict[str, str] = self.create_requests(site_setup_msgs)
         response_msgs: Dict[str, str] = self.process_requests(s, request_msgs)
@@ -278,7 +291,7 @@ class DhPSIWorkFlow(PSIWorkflow):
             task_name=self.task_name, task_inputs=task_inputs, fl_ctx=self.fl_ctx, abort_signal=self.abort_signal
         )
 
-        intersects = {client_name: results[client_name].data[PSIConst.ITEMS_SIZE] for client_name in results}
+        intersects = self._response_values(results, task_inputs, PSIConst.ITEMS_SIZE, "PSI intersection calculation")
         self.log_info(self.fl_ctx, f"received encrypted intersection results from {len(intersects)} participants")
         return intersects
 
@@ -295,9 +308,8 @@ class DhPSIWorkFlow(PSIWorkflow):
             abort_signal=self.abort_signal,
         )
 
-        dxo = results[s.name]
-        response_msgs = dxo.data[PSIConst.RESPONSE_MSG]
-        return response_msgs
+        response_msgs = self._response_values(results, [s.name], PSIConst.RESPONSE_MSG, "PSI request processing")
+        return next(iter(response_msgs.values()))
 
     def create_requests(self, site_setup_msgs) -> Dict[str, str]:
         task_inputs = {}
@@ -311,8 +323,7 @@ class DhPSIWorkFlow(PSIWorkflow):
         results = bop.multicasts_and_wait(
             task_name=self.task_name, task_inputs=task_inputs, fl_ctx=self.fl_ctx, abort_signal=self.abort_signal
         )
-        request_msgs = {client_name: results[client_name].data[PSIConst.REQUEST_MSG] for client_name in results}
-        return request_msgs
+        return self._response_values(results, task_inputs, PSIConst.REQUEST_MSG, "PSI request creation")
 
     def get_updated_site_sizes(self, ordered_sites):
         updated_sites = []
@@ -329,7 +340,8 @@ class DhPSIWorkFlow(PSIWorkflow):
         inputs[PSIConst.BLOOM_FILTER_FPR] = self.bloom_filter_fpr
         targets = None
         engine = self.fl_ctx.get_engine()
-        min_responses = len(engine.get_clients())
+        clients = engine.get_clients()
+        min_responses = len(clients)
 
         bop = self._new_broadcast_operator()
         results = bop.broadcast_and_wait(
@@ -346,7 +358,13 @@ class DhPSIWorkFlow(PSIWorkflow):
             abort_signal.trigger("no items to perform PSI")
             raise RuntimeError("There is no item to perform PSI calculation")
         else:
-            self.ordered_sites = self.get_ordered_sites(results)
+            expected_clients = [client if isinstance(client, str) else client.name for client in clients]
+            sizes = self._response_values(results, expected_clients, PSIConst.ITEMS_SIZE, "PSI preparation")
+            if any(not isinstance(size, Integral) or size <= 0 for size in sizes.values()):
+                raise RuntimeError("PSI preparation failed: one or more participant responses are malformed")
+            self.ordered_sites = sorted(
+                (SiteSize(site_name, size) for site_name, size in sizes.items()), key=lambda site: site.size
+            )
 
     def prepare_setup_messages(self, s: SiteSize, other_site_sizes: Set[int]) -> Dict[str, str]:
         inputs = Shareable()
@@ -360,8 +378,28 @@ class DhPSIWorkFlow(PSIWorkflow):
             targets=[s.name],
             abort_signal=self.abort_signal,
         )
-        dxo = results[s.name]
-        return dxo.data[PSIConst.SETUP_MSG]
+        setup_msgs = self._response_values(results, [s.name], PSIConst.SETUP_MSG, "PSI setup preparation")
+        return next(iter(setup_msgs.values()))
+
+    @staticmethod
+    def _required_values(values: dict, required_keys, phase: str) -> dict:
+        if not isinstance(values, dict):
+            raise RuntimeError(f"{phase} failed: participant response data is malformed")
+
+        required_keys = list(required_keys)
+        if any(key not in values for key in required_keys):
+            raise RuntimeError(f"{phase} failed: required participant response data is incomplete")
+        return {key: values[key] for key in required_keys}
+
+    @classmethod
+    def _response_values(cls, results: dict, required_keys, data_key: str, phase: str) -> dict:
+        required_results = cls._required_values(results, required_keys, phase)
+        values = {}
+        for key, result in required_results.items():
+            if not isinstance(result, DXO) or not isinstance(result.data, dict) or data_key not in result.data:
+                raise RuntimeError(f"{phase} failed: one or more participant responses are malformed")
+            values[key] = result.data[data_key]
+        return values
 
     def _new_broadcast_operator(self):
         return BroadcastAndWait(self.fl_ctx, self.controller, log_client_names=False)

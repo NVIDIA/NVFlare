@@ -47,7 +47,7 @@ class TestDhPSIWorkflow:
         wf = DhPSIWorkFlow()
         wf.fl_ctx = FLContext()
         wf.fl_ctx.get_engine = MagicMock()
-        wf.fl_ctx.get_engine.return_value.get_clients.return_value = ["client-1", "client-2"]
+        wf.fl_ctx.get_engine.return_value.get_clients.return_value = ["private-site-alpha", "private-site-beta"]
         wf.controller = MagicMock()
         wf.log_info = MagicMock()
         results = {
@@ -64,6 +64,32 @@ class TestDhPSIWorkflow:
         assert "private-site" not in message
         assert "91001" not in message
         assert "92002" not in message
+
+    def test_prepare_rejects_partial_results_without_identifying_missing_participant(self):
+        wf = DhPSIWorkFlow()
+        wf.fl_ctx = FLContext()
+        wf.fl_ctx.get_engine = MagicMock()
+        wf.fl_ctx.get_engine.return_value.get_clients.return_value = [
+            "private-site-alpha",
+            "private-site-beta",
+        ]
+        wf.controller = MagicMock()
+        wf.log_info = MagicMock()
+        results = {
+            "private-site-alpha": DXO(data_kind=DataKind.PSI, data={PSIConst.ITEMS_SIZE: 91001}),
+        }
+
+        with (
+            patch("nvflare.app_common.psi.dh_psi.dh_psi_workflow.BroadcastAndWait") as broadcast_and_wait,
+            pytest.raises(RuntimeError) as error,
+        ):
+            broadcast_and_wait.return_value.broadcast_and_wait.return_value = results
+            wf.prepare_sites(Signal())
+
+        message = str(error.value)
+        assert "incomplete" in message
+        assert "private-site" not in message
+        assert "91001" not in message
 
     def test_run_logs_phase_counts_without_site_sizes(self):
         wf = DhPSIWorkFlow()
@@ -106,6 +132,69 @@ class TestDhPSIWorkflow:
         assert "92002" not in message
         assert "50001" not in message
         assert "50002" not in message
+
+    def test_missing_pairwise_input_raises_value_free_error(self):
+        wf = DhPSIWorkFlow()
+        ordered_sites = [SiteSize("private-site-alpha", 91001), SiteSize("private-site-beta", 92002)]
+
+        with pytest.raises(RuntimeError) as error:
+            wf.pairwise_requests(ordered_sites, setup_msgs={})
+
+        message = str(error.value)
+        assert "incomplete" in message
+        assert "private-site" not in message
+        assert "91001" not in message
+        assert "92002" not in message
+
+    def test_missing_size_key_raises_value_free_error(self):
+        wf = DhPSIWorkFlow()
+        wf.abort_signal = Signal()
+        wf.prepare_setup_messages = MagicMock(return_value={})
+        intersect_site = SiteSize("private-intersection-holder", 50001)
+        ordered_sites = [intersect_site, SiteSize("private-site-alpha", 91001)]
+
+        with pytest.raises(RuntimeError) as error:
+            wf.parallel_backward_pass(ordered_sites, intersect_site)
+
+        message = str(error.value)
+        assert "incomplete" in message
+        assert "private-" not in message
+        assert "50001" not in message
+        assert "91001" not in message
+
+    def test_partial_result_map_raises_value_free_error(self):
+        wf = DhPSIWorkFlow()
+        wf.abort_signal = Signal()
+        operator = MagicMock()
+        operator.broadcast_and_wait.return_value = {}
+        wf._new_broadcast_operator = MagicMock(return_value=operator)
+
+        with pytest.raises(RuntimeError) as error:
+            wf.process_requests(SiteSize("private-site-alpha", 91001), {"request": "encrypted"})
+
+        message = str(error.value)
+        assert "incomplete" in message
+        assert "private-site-alpha" not in message
+        assert "91001" not in message
+
+    def test_malformed_result_map_raises_value_free_error(self):
+        wf = DhPSIWorkFlow()
+        wf.abort_signal = Signal()
+        operator = MagicMock()
+        operator.multicasts_and_wait.return_value = {
+            "private-site-alpha": DXO(data_kind=DataKind.PSI, data={}),
+        }
+        wf._new_broadcast_operator = MagicMock(return_value=operator)
+        ordered_sites = [SiteSize("private-site-alpha", 91001), SiteSize("private-site-beta", 92002)]
+
+        with pytest.raises(RuntimeError) as error:
+            wf.pairwise_setup(ordered_sites)
+
+        message = str(error.value)
+        assert "malformed" in message
+        assert "private-site" not in message
+        assert "91001" not in message
+        assert "92002" not in message
 
     @pytest.mark.parametrize("log_client_names", [False, True])
     def test_result_callback_participant_identity_logging(self, log_client_names, caplog):
