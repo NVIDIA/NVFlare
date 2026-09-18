@@ -129,14 +129,23 @@ def _content_error(
     return ExampleError("EXAMPLE_CONTENT_INVALID", message, hint)
 
 
-def _github_api_headers():
+class _GitHubApiAuth(requests.auth.AuthBase):
+    def __init__(self, token):
+        self._token = token
+
+    def __call__(self, request):
+        request.headers["Authorization"] = f"Bearer {self._token}"
+        return request
+
+
+def _github_api_auth():
     for variable in ("GITHUB_TOKEN", "GH_TOKEN"):
         token = os.environ.get(variable)
         if not token:
             continue
         token = token.strip()
         if re.fullmatch(r"[\x21-\x7e]+", token):
-            return {"Authorization": f"Bearer {token}", "X-GitHub-Api-Version": "2022-11-28"}
+            return _GitHubApiAuth(token)
     return None
 
 
@@ -212,7 +221,12 @@ def _download_example(revision, source_path, destination, destination_path=None)
     destination_created = False
     try:
         with requests.Session() as session:
-            with session.get(tree_url, headers=_github_api_headers(), timeout=timeout) as response:
+            with session.get(
+                tree_url,
+                headers={"X-GitHub-Api-Version": "2022-11-28"},
+                auth=_github_api_auth(),
+                timeout=timeout,
+            ) as response:
                 if response.status_code == 404:
                     raise ExampleError(
                         "EXAMPLE_SOURCE_NOT_FOUND",
