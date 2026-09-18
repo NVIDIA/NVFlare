@@ -19,6 +19,12 @@ from nvflare.app_common.workflows.model_controller import ModelController
 from nvflare.fuel.utils.log_utils import log_progress
 
 
+def _final_distribution_completed(controller: ModelController, results: list[FLModel]) -> bool:
+    """Return whether every targeted client acknowledged the final result."""
+    aborted = bool(controller.abort_signal and controller.abort_signal.triggered)
+    return bool(results) and len(results) == controller._current_num_targets and not aborted
+
+
 # Controller Workflow
 class KM(ModelController):
     def __init__(self, min_clients: int):
@@ -33,8 +39,9 @@ class KM(ModelController):
         log_progress(self.logger, "  Aggregating survival histograms…")
         hist_obs_global, hist_cen_global = self.aggr_hist(hist_local)
         log_progress(self.logger, "  Distributing the global survival curve…")
-        _ = self.distribute_global_hist(hist_obs_global, hist_cen_global)
-        log_progress(self.logger, "\n  ✓ Survival analysis completed")
+        results = self.distribute_global_hist(hist_obs_global, hist_cen_global)
+        if _final_distribution_completed(self, results):
+            log_progress(self.logger, "\n  ✓ Survival analysis completed")
 
     def start_fl_collect_hist(self):
         self.logger.info("send initial message to all sites to start FL \n")
