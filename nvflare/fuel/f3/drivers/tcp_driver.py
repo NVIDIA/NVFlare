@@ -95,6 +95,9 @@ class TcpDriver(BaseDriver):
 
         connection = SocketConnection(sock, connector, bool(context))
         self.add_connection(connection)
+        # Shutdown may have missed this connection while connect/TLS was still in progress.
+        if connector.stopped.is_set():
+            connection.close()
         connection.read_loop()
         self.close_connection(connection)
 
