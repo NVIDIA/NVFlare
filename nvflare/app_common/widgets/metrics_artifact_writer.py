@@ -30,7 +30,7 @@ from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.utils.file_utils import resolve_path_under_root
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
-from nvflare.fuel.utils.log_utils import format_metric_table, get_module_logger, log_progress
+from nvflare.fuel.utils.log_utils import format_metric_table, get_module_logger, log_progress, log_progress_round
 from nvflare.widgets.widget import Widget
 
 METRICS_AGGREGATION_INFO = AppConstants.METRICS_AGGREGATION_INFO
@@ -103,22 +103,36 @@ class MetricsArtifactWriter(Widget):
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
             self._reset()
-        elif event_type == AppEventType.ROUND_STARTED:
+            return
+        if event_type == EventType.END_RUN:
+            self._write_summary_if_needed(fl_ctx)
+            return
+        if not self._is_progress_owner(fl_ctx):
+            return
+        if event_type == AppEventType.ROUND_STARTED:
             current_round = self._safe_round(fl_ctx.get_prop(AppConstants.CURRENT_ROUND, None))
             if self._first_round is None:
-                self._first_round = current_round
+                configured_start = self._safe_round(fl_ctx.get_prop(AppConstants.START_ROUND, None))
+                self._first_round = configured_start if configured_start is not None else current_round
             self._round_started_at = time.monotonic()
             self._reset_progress()
-            heading = self._round_label(current_round, fl_ctx).upper().replace("/", " / ")
-            log_progress(_logger, "\n" + f" {heading} ".center(72, "=") + "\n\n  Training\n")
+            self._round_label(current_round, fl_ctx)
+            ordinal = current_round - self._first_round + 1 if current_round is not None else 1
+            title = fl_ctx.get_prop(AppConstants.PROGRESS_TITLE, "Training")
+            log_progress_round(_logger, ordinal, self._total_rounds or ordinal, title)
         elif event_type == AppEventType.AFTER_CONTRIBUTION_ACCEPT:
             self._handle_after_contribution_accept(fl_ctx)
         elif event_type == AppEventType.AFTER_AGGREGATION:
             self._handle_after_aggregation(fl_ctx)
+        elif event_type == AppEventType.ROUND_DONE:
+            self._handle_round_done(fl_ctx)
         elif event_type == AppEventType.GLOBAL_BEST_MODEL_AVAILABLE:
             self._handle_global_best_model_available(fl_ctx)
-        elif event_type == EventType.END_RUN:
-            self._write_summary_if_needed(fl_ctx)
+
+    @staticmethod
+    def _is_progress_owner(fl_ctx: FLContext) -> bool:
+        owner = fl_ctx.get_prop(AppConstants.PROGRESS_OWNER, None)
+        return not owner or owner == fl_ctx.get_identity_name()
 
     def _round_label(self, current_round, fl_ctx):
         if current_round is None:
@@ -200,7 +214,7 @@ class MetricsArtifactWriter(Widget):
         if not has_aggregation_details:
             if custom_aggregator_metrics:
                 self._custom_aggregator_no_metric_rounds.append(current_round)
-        else:
+        elif aggregated_metrics:
             log_progress(_logger, "  " + "─" * 66)
             self._log_progress_metrics("Aggregated", aggregated_metrics)
         if self._progress_metrics_omitted:
@@ -242,6 +256,24 @@ class MetricsArtifactWriter(Widget):
         self._aggregation = aggregation if aggregation else self._aggregation
         if key_metric:
             self._key_metric = key_metric
+
+    def _handle_round_done(self, fl_ctx: FLContext):
+        if not self._round_contribution_count:
+            return
+        current_round = self._safe_round(fl_ctx.get_prop(AppConstants.CURRENT_ROUND, None))
+        self._round_sites.pop(current_round, None)
+        self._round_skipped.pop(current_round, None)
+        self._round_site_metric_counts.pop(current_round, None)
+        if self._progress_metrics_omitted:
+            log_progress(_logger, "  Additional metric results are available in the saved metrics artifacts.")
+        duration = ""
+        if self._round_started_at is not None:
+            duration = f"{time.monotonic() - self._round_started_at:.1f}s"
+        completion = f"✓ Processed {self._round_contribution_count} client update"
+        if self._round_contribution_count != 1:
+            completion += "s"
+        log_progress(_logger, "\n" + f"  {completion}".ljust(64) + duration)
+        self._reset_progress()
 
     @staticmethod
     def _to_fl_model(value):

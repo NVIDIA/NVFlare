@@ -26,7 +26,6 @@ from nvflare.app_common.abstract.learnable_persistor import LearnablePersistor
 from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
-from nvflare.fuel.utils.log_utils import log_progress
 from nvflare.fuel.utils.memory_utils import cleanup_memory
 from nvflare.fuel.utils.validation_utils import check_non_negative_int
 from nvflare.security.logging import secure_format_exception
@@ -227,6 +226,9 @@ class CyclicController(Controller):
                         fl_ctx,
                         f"Ignored {rc} from client {client_task.client.name} because early termination is not allowed",
                     )
+            fl_ctx.set_prop(AppConstants.TRAINING_RESULT, result, private=True, sticky=False)
+            fl_ctx.set_prop(AppConstants.AGGREGATION_ACCEPTED, True, private=True, sticky=False)
+            self.fire_event(AppEventType.AFTER_CONTRIBUTION_ACCEPT, fl_ctx)
         else:
             self._stop_workflow(task)
             self.log_error(
@@ -254,10 +256,7 @@ class CyclicController(Controller):
 
                 self.log_debug(fl_ctx, "Starting current round={}.".format(self._current_round))
                 fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self._current_round, private=True, sticky=True)
-                ordinal = self._current_round - self._start_round + 1
-                heading = f" ROUND {ordinal} / {self._num_rounds} ".center(72, "=")
-                log_progress(self.logger, f"\n{heading}\n\n  Cyclic training\n")
-
+                self.fire_event(AppEventType.ROUND_STARTED, fl_ctx)
                 # Task for one cyclic
                 targets = self._get_relay_orders(fl_ctx)
                 if targets is None:
@@ -285,9 +284,6 @@ class CyclicController(Controller):
                     abort_signal=abort_signal,
                 )
 
-                if not self._is_done and not abort_signal.triggered:
-                    log_progress(self.logger, "  ✓ Cyclic round completed")
-
                 if self._persist_every_n_rounds != 0 and (self._current_round + 1) % self._persist_every_n_rounds == 0:
                     self.log_info(fl_ctx, "Start persist model on server.")
                     self.fire_event(AppEventType.BEFORE_LEARNABLE_PERSIST, fl_ctx)
@@ -302,6 +298,8 @@ class CyclicController(Controller):
                     # Call the self._engine to persist the snapshot of all the FLComponents
                     self._engine.persist_components(fl_ctx, completed=False)
 
+                if not self._is_done and not abort_signal.triggered:
+                    self.fire_event(AppEventType.ROUND_DONE, fl_ctx)
                 self.log_debug(fl_ctx, "Ending current round={}.".format(self._current_round))
 
                 # Memory cleanup at end of round (if configured)

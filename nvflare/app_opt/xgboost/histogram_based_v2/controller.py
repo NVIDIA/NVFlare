@@ -26,7 +26,6 @@ from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.reliable_message import ReliableMessage
 from nvflare.app_opt.xgboost.histogram_based_v2.adaptors.xgb_adaptor import XGBServerAdaptor
-from nvflare.fuel.utils.log_utils import log_progress
 from nvflare.fuel.utils.validation_utils import check_number_range, check_object_type, check_positive_number, check_str
 from nvflare.security.logging import secure_format_exception
 
@@ -564,13 +563,6 @@ class XGBController(Controller):
 
         """
         self.abort_signal = abort_signal
-        mode = "Horizontal" if self.data_split_mode == 0 else "Vertical"
-        client_count = len(self.participating_clients)
-        log_progress(
-            self.logger,
-            f"\n  {mode} XGBoost · {client_count} client{'s' if client_count != 1 else ''} · "
-            f"{self.num_rounds} round{'s' if self.num_rounds != 1 else ''}\n\n  Configuring clients…",
-        )
 
         # the adaptor uses the same abort signal!
         self.adaptor.set_abort_signal(abort_signal)
@@ -602,16 +594,12 @@ class XGBController(Controller):
 
         # monitor client health
         # we periodically check job status until all clients are done or the system is stopped
-        log_progress(self.logger, "  Training collectively…")
         self.log_info(fl_ctx, "Waiting for clients to finish ...")
         while not self._is_stopped():
             done = self._check_job_status(fl_ctx)
             if done:
                 break
             time.sleep(self.job_status_check_interval)
-
-        if self.client_statuses and all(status.xgb_done for status in self.client_statuses.values()):
-            log_progress(self.logger, "\n  ✓ XGBoost training completed")
 
     def _xgb_server_stopped(self, rc, fl_ctx: FLContext):
         # This CB is called when XGB server target is stopped

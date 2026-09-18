@@ -26,6 +26,7 @@ from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.learnable import Learnable
 from nvflare.app_common.app_constant import AppConstants
+from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.workflows.cyclic_ctl import CyclicController, RelayOrder
 
 SITE_1_ID = uuid.uuid4()
@@ -108,7 +109,7 @@ class TestCyclicController:
             with (
                 patch.object(ctl.shareable_generator, "learnable_to_shareable") as mock_method1,
                 patch.object(ctl.shareable_generator, "shareable_to_learnable") as mock_method2,
-                patch("nvflare.app_common.workflows.cyclic_ctl.log_progress") as progress,
+                patch.object(ctl, "fire_event") as fire_event,
             ):
                 mock_method1.return_value = Shareable()
                 mock_method2.return_value = Learnable()
@@ -116,9 +117,8 @@ class TestCyclicController:
                 ctl.control_flow(abort_signal, fl_ctx)
 
                 mock_method.assert_called_once()
-                messages = [call.args[1] for call in progress.call_args_list]
-                assert "ROUND 1 / 1" in messages[0]
-                assert messages[1] == "  ✓ Cyclic round completed"
+                assert fire_event.call_args_list[0].args[0] == AppEventType.ROUND_STARTED
+                assert fire_event.call_args_list[-1].args[0] == AppEventType.ROUND_DONE
 
     @pytest.mark.parametrize("return_result", PROCESS_RESULT_TEST_CASES)
     def test_process_result(self, return_result):
@@ -145,6 +145,19 @@ class TestCyclicController:
             ctl._process_result(client_task, fl_ctx)
             mock_method.assert_called_once()
             assert ctl._is_done is True
+
+    def test_process_result_emits_standard_contribution_event(self):
+        ctl = CyclicController(persist_every_n_rounds=0, snapshot_every_n_rounds=0, num_rounds=1)
+        ctl.shareable_generator = Mock()
+        ctl.shareable_generator.shareable_to_learnable.return_value = Learnable()
+        ctl.shareable_generator.learnable_to_shareable.return_value = Shareable()
+        fl_ctx = FLContext()
+
+        with patch.object(ctl, "fire_event") as fire_event:
+            ctl._process_result(make_client_task(Shareable()), fl_ctx)
+
+        fire_event.assert_called_once_with(AppEventType.AFTER_CONTRIBUTION_ACCEPT, fl_ctx)
+        assert fl_ctx.get_prop(AppConstants.AGGREGATION_ACCEPTED) is True
 
     def test_process_result_stops_on_non_ok_rc_without_converting_shareable(self):
         ctl = CyclicController(persist_every_n_rounds=0, snapshot_every_n_rounds=0, num_rounds=1)

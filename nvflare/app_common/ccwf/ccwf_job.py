@@ -20,6 +20,7 @@ from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.ccwf.common import Constant, CyclicOrder
+from nvflare.app_common.widgets.metrics_artifact_writer import MetricsArtifactWriter
 from nvflare.job_config.api import FedJob, validate_object_for_job
 from nvflare.widgets.widget import Widget
 
@@ -257,6 +258,7 @@ class CCWFJob(FedJob):
             min_clients=server_config.min_clients,
         )
         self.to_server(controller)
+        self.to_clients(MetricsArtifactWriter(), id="swarm_metrics_artifact_writer")
 
         metric_comparator_id = None
         if client_config.metric_comparator:

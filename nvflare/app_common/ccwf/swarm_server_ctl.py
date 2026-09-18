@@ -70,9 +70,6 @@ class SwarmServerController(ServerSideController):
         self.aggr_clients = aggr_clients
         self.train_clients = train_clients
 
-    def progress_label(self) -> str:
-        return "Swarm learning"
-
     def start_controller(self, fl_ctx: FLContext):
         super().start_controller(fl_ctx)
 

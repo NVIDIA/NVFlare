@@ -84,6 +84,8 @@ class AppConstants(object):
     AGGREGATION_ACCEPTED = "_aggregation_accepted"
     TRAIN_SHAREABLE = "_train_shareable_"
     TRAINING_RESULT = "_training_result_"
+    PROGRESS_OWNER = "_progress_owner_"
+    PROGRESS_TITLE = "_progress_title_"
 
     SUBMIT_MODEL_FAILURE_REASON = "_submit_model_failure_reason"
     CROSS_VAL_DIR = "cross_site_val"

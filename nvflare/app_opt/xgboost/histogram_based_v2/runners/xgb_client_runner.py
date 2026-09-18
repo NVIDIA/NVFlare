@@ -28,13 +28,51 @@ from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant
 from nvflare.app_opt.xgboost.histogram_based_v2.runners.xgb_runner import AppRunner
 from nvflare.app_opt.xgboost.metrics_cb import MetricsCallback
 from nvflare.fuel.utils.config_service import ConfigService
-from nvflare.fuel.utils.log_utils import get_obj_logger
+from nvflare.fuel.utils.log_utils import get_obj_logger, log_progress, log_progress_round
 from nvflare.utils.cli_utils import get_package_root
 
 PLUGIN_PARAM_KEY = "federated_plugin"
 PLUGIN_KEY_NAME = "name"
 PLUGIN_KEY_PATH = "path"
 MODEL_FILE_NAME = "model.json"
+
+
+class _ProgressCallback(callback.TrainingCallback):
+    def __init__(self, logger, rank: int, num_rounds: int):
+        self.logger = logger
+        self.rank = rank
+        self.num_rounds = num_rounds
+
+    @staticmethod
+    def _latest_metrics(metrics: dict) -> dict:
+        result = {}
+        for name, values in metrics.items():
+            if len(result) >= 2 or not isinstance(values, list) or not values:
+                continue
+            value = values[-1]
+            if isinstance(value, tuple) and value:
+                value = value[0]
+            result[name] = value
+        return result
+
+    def after_iteration(self, model, epoch: int, evals_log: dict) -> bool:
+        if self.rank != 0:
+            return False
+        rows = []
+        for data_name, metrics in evals_log.items():
+            if isinstance(data_name, str) and isinstance(metrics, dict):
+                values = self._latest_metrics(metrics)
+                if values:
+                    rows.append((data_name, values))
+        log_progress_round(
+            self.logger,
+            epoch + 1,
+            self.num_rounds,
+            "XGBoost training",
+            rows=rows,
+            label="Dataset",
+        )
+        return False
 
 
 def _check_ctx(ctx: dict):
@@ -111,7 +149,10 @@ class XGBClientRunner(AppRunner, FLComponent):
         # Specify validations set to watch performance
         watchlist = [(val_data, "eval"), (train_data, "train")]
 
-        callbacks = [callback.EvaluationMonitor(rank=self._rank)]
+        callbacks = [
+            callback.EvaluationMonitor(rank=self._rank),
+            _ProgressCallback(self.logger, self._rank, num_rounds),
+        ]
         if self._metrics_writer:
             callbacks.append(MetricsCallback(self._metrics_writer))
 
@@ -140,6 +181,8 @@ class XGBClientRunner(AppRunner, FLComponent):
             callbacks=callbacks,
             xgb_model=xgb_model,
         )
+        if self._rank == 0:
+            log_progress(self.logger, "\n  ✓ XGBoost training completed")
         return bst
 
     def run(self, ctx: dict):

@@ -17,7 +17,7 @@ import os
 
 import xgboost as xgb
 
-from nvflare.apis.dxo import DXO, DataKind, from_shareable
+from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_constant import FLContextKey, ReturnCode
@@ -101,6 +101,7 @@ class FedXGBTreeExecutor(Executor):
         self.global_model_as_dict = None
         self.config = None
         self.local_model = None
+        self._last_metrics = {}
 
         self.data_loader_id = data_loader_id
         self.train_data = None
@@ -183,6 +184,7 @@ class FedXGBTreeExecutor(Executor):
         )
         self.log_info(fl_ctx, eval_results)
         auc = float(eval_results.split("\t")[2].split(":")[1])
+        self._last_metrics = {self.eval_metric: auc}
         for i in range(self.num_local_round):
             self.bst.update(self.train_data, self.bst.num_boosted_rounds())
 
@@ -212,6 +214,7 @@ class FedXGBTreeExecutor(Executor):
         )
         self.log_info(fl_ctx, eval_results)
         auc = float(eval_results.split("\t")[2].split(":")[1])
+        self._last_metrics = {self.eval_metric: auc}
         self.log_info(
             fl_ctx,
             f"Client {self.client_id} AUC after training: {auc}",
@@ -248,12 +251,14 @@ class FedXGBTreeExecutor(Executor):
                 fl_ctx,
                 f"Client {self.client_id} initial training from scratch",
             )
+            evals_result = {}
             if not model_update:
                 bst = xgb.train(
                     params,
                     self.train_data,
                     num_boost_round=self.num_local_round,
                     evals=[(self.val_data, "validate"), (self.train_data, "train")],
+                    evals_result=evals_result,
                 )
             else:
                 loadable_model = bytearray(model_update["model_data"])
@@ -263,7 +268,12 @@ class FedXGBTreeExecutor(Executor):
                     num_boost_round=self.num_local_round,
                     xgb_model=loadable_model,
                     evals=[(self.val_data, "validate"), (self.train_data, "train")],
+                    evals_result=evals_result,
                 )
+            validation_metrics = evals_result.get("validate", {})
+            metric_values = validation_metrics.get(self.eval_metric, [])
+            if metric_values:
+                self._last_metrics = {self.eval_metric: metric_values[-1]}
             self.config = bst.save_config()
             self.bst = bst
         else:
@@ -313,7 +323,11 @@ class FedXGBTreeExecutor(Executor):
         # report updated model in shareable
         # Convert dict back to bytearray for compatibility with downstream code
         self.local_model = bytearray(json.dumps(self.local_model), "utf-8")
-        dxo = DXO(data_kind=DataKind.WEIGHTS, data={"model_data": self.local_model})
+        dxo = DXO(
+            data_kind=DataKind.WEIGHTS,
+            data={"model_data": self.local_model},
+            meta={MetaKey.INITIAL_METRICS: self._last_metrics},
+        )
         self.log_info(fl_ctx, "Local epochs finished. Returning shareable")
         new_shareable = dxo.to_shareable()
 

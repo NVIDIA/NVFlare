@@ -934,6 +934,43 @@ def test_progress_uses_reported_metrics_and_retains_total_after_context_change(t
     assert "complete" not in " ".join(progress)  # Aggregation does not prove persistence or job success.
 
 
+def test_progress_owner_suppresses_non_aggregation_client_round(tmp_path, caplog):
+    writer = MetricsArtifactWriter()
+    fl_ctx = _make_fl_ctx(tmp_path)
+    fl_ctx.get_identity_name = Mock(return_value="site-2")
+    fl_ctx.set_prop(AppConstants.PROGRESS_OWNER, "site-1", private=True, sticky=False)
+    fl_ctx.set_prop(AppConstants.CURRENT_ROUND, 0, private=True, sticky=False)
+    fl_ctx.set_prop(AppConstants.NUM_ROUNDS, 2, private=True, sticky=False)
+
+    with caplog.at_level("INFO"):
+        writer.handle_event(EventType.START_RUN, fl_ctx)
+        writer.handle_event(AppEventType.ROUND_STARTED, fl_ctx)
+
+    assert not [r for r in caplog.records if r.name == "nvflare.app_common.widgets.metrics_artifact_writer"]
+
+
+def test_round_done_completes_non_aggregation_workflow(tmp_path, caplog):
+    writer = MetricsArtifactWriter()
+    fl_ctx = _make_fl_ctx(tmp_path)
+    fl_ctx.set_prop(AppConstants.CURRENT_ROUND, 0, private=True, sticky=False)
+    fl_ctx.set_prop(AppConstants.NUM_ROUNDS, 2, private=True, sticky=False)
+
+    with caplog.at_level("INFO"):
+        writer.handle_event(EventType.START_RUN, fl_ctx)
+        writer.handle_event(AppEventType.ROUND_STARTED, fl_ctx)
+        _record_contribution(writer, fl_ctx, 0, "site-1", {"auc": 0.8})
+        writer.handle_event(AppEventType.ROUND_DONE, fl_ctx)
+
+    output = "\n".join(
+        record.message
+        for record in caplog.records
+        if record.name == "nvflare.app_common.widgets.metrics_artifact_writer"
+    )
+    assert "ROUND 1 / 2" in output
+    assert "site-1" in output and "auc" in output and "0.8" in output
+    assert "Processed 1 client update" in output
+
+
 def test_scaffold_aggregation_resets_contribution_count_without_round_started(tmp_path, caplog):
     from nvflare.app_common.app_constant import AlgorithmConstants
     from nvflare.app_common.workflows.scaffold import scaffold_aggregate_fn
