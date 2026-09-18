@@ -366,7 +366,7 @@ def test_fl_model_serializes_lora_tensors_with_nvflare_fobs():
 
 
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required for adapter loader tests")
-def test_automodel_adapter_loader_requires_complete_state_on_target_dtype_and_device():
+def test_automodel_adapter_loader_maps_complete_incoming_subset_on_target_dtype_and_device():
     import torch
 
     automodel_adapter_loader = _load_example_module("automodel_adapter_loader")
@@ -374,6 +374,8 @@ def test_automodel_adapter_loader_requires_complete_state_on_target_dtype_and_de
     model_state = {
         "layer.lora_A.weight": torch.zeros((2, 2), dtype=torch.bfloat16),
         "layer.lora_B.weight": torch.zeros((2, 2), dtype=torch.float32),
+        "lm_head.lora_A.weight": torch.zeros((2, 2), dtype=torch.bfloat16),
+        "lm_head.lora_B.weight": torch.zeros((2, 2), dtype=torch.bfloat16),
     }
     adapter_state = {
         "base_model.model.layer.lora_A.weight": torch.ones((2, 2), dtype=torch.float32),
@@ -386,14 +388,16 @@ def test_automodel_adapter_loader_requires_complete_state_on_target_dtype_and_de
     assert compatible["layer.lora_A.weight"].dtype == torch.bfloat16
     assert compatible["layer.lora_A.weight"].device == model_state["layer.lora_A.weight"].device
     assert compatible["layer.lora_B.weight"].dtype == torch.float32
+    assert "lm_head.lora_A.weight" not in compatible
+    assert "lm_head.lora_B.weight" not in compatible
 
-    with pytest.raises(ValueError, match="missing=1"):
+    with pytest.raises(ValueError, match="no matching AutoModel LoRA parameter"):
         automodel_adapter_loader._compatible_adapter_state(
             model_state,
-            {"base_model.model.layer.lora_A.weight": adapter_state["base_model.model.layer.lora_A.weight"]},
+            {"base_model.model.unknown.lora_A.weight": torch.ones((2, 2))},
         )
-    with pytest.raises(ValueError, match="unexpected=1"):
+    with pytest.raises(ValueError, match="shape mismatch"):
         automodel_adapter_loader._compatible_adapter_state(
             model_state,
-            {**adapter_state, "extra.lora_A.weight": torch.ones((2, 2))},
+            {"base_model.model.layer.lora_A.weight": torch.ones((1, 2))},
         )

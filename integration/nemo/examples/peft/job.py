@@ -210,8 +210,7 @@ def _build_train_args(args, train_file: str, site_name: str) -> str:
         train_args.append("--verify_adapter_reload")
     else:
         train_args.append("--no-verify_adapter_reload")
-    if model_profiles.is_lightning35(args):
-        train_args.extend(["--adapter_contract", adapter_checkpoint.ADAPTER_CONTRACT_FILE])
+    train_args.extend(["--adapter_contract", adapter_checkpoint.ADAPTER_CONTRACT_FILE])
     if args.balance_train_labels:
         train_args.append("--balance_train_labels")
     else:
@@ -323,13 +322,20 @@ def create_recipe(args):
     recipe.add_client_file("automodel_adapter_loader.py", clients=client_names)
     recipe.add_client_file("federated_automodel_trainer.py", clients=client_names)
     recipe.add_client_file("model_profiles.py", clients=client_names)
-    if model_profiles.is_lightning35(args):
-        initial_manifest = adapter_checkpoint.load_adapter_manifest(args.initial_adapter_ckpt)
-        contract_path = os.path.join(os.path.abspath(args.workspace), adapter_checkpoint.ADAPTER_CONTRACT_FILE)
-        os.makedirs(os.path.dirname(contract_path), exist_ok=True)
-        with open(contract_path, "w") as f:
-            json.dump(initial_manifest, f, indent=2, sort_keys=True)
-        recipe.add_client_file(contract_path, clients=client_names)
+    initial_state = adapter_checkpoint.strip_model_prefix(
+        adapter_checkpoint.load_adapter_state(args.initial_adapter_ckpt)
+    )
+    initial_manifest = adapter_checkpoint.load_adapter_manifest(args.initial_adapter_ckpt)
+    if initial_manifest:
+        adapter_checkpoint.validate_adapter_manifest(initial_manifest, initial_state, expected=adapter_identity)
+        contract = initial_manifest
+    else:
+        contract = adapter_checkpoint.build_adapter_manifest(initial_state, identity=adapter_identity)
+    contract_path = os.path.join(os.path.abspath(args.workspace), adapter_checkpoint.ADAPTER_CONTRACT_FILE)
+    os.makedirs(os.path.dirname(contract_path), exist_ok=True)
+    with open(contract_path, "w") as f:
+        json.dump(contract, f, indent=2, sort_keys=True)
+    recipe.add_client_file(contract_path, clients=client_names)
     recipe.add_server_file("adapter_checkpoint.py")
     recipe.add_server_file("adapter_persistor.py")
     _configure_timeouts(

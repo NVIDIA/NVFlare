@@ -477,10 +477,8 @@ def _resolve_packaged_contract(path: str) -> str:
 
 
 def _validate_incoming_contract(args, incoming_state: Mapping[str, torch.Tensor]) -> None:
-    if not model_profiles.is_lightning35(args):
-        return
     if not args.adapter_contract:
-        raise ValueError("The lightning35 profile requires --adapter_contract.")
+        raise ValueError(f"The {args.model_profile} profile requires --adapter_contract.")
     contract_path = _resolve_packaged_contract(args.adapter_contract)
     with open(contract_path) as f:
         contract = json.load(f)

@@ -292,10 +292,11 @@ client task to release GPU memory, but the fine-tuning state does not restart fr
 4. The client sends the full updated adapter.
 5. FedAvg averages the adapter tensors and replaces the global adapter with the aggregate.
 
-Lightning clients reject incomplete, unexpected, duplicate-normalized, shape-incompatible, non-finite, or
-manifest-conflicting adapters. They export only after successful training and record received, loaded, and outgoing
-hashes, tensor counts, actual optimizer steps, update norm, and checkpoint location. Each local segment creates a fresh
-optimizer and scheduler.
+The clients validate each incoming adapter against the tensor contract created from the initial checkpoint and reject
+missing, unexpected, duplicate-normalized, shape-incompatible, non-finite, or manifest-conflicting adapters. They
+export only after successful training and record received and outgoing hashes, tensor counts, actual optimizer steps,
+update norm, and checkpoint location. When reload verification is enabled, they also record the loaded adapter hash and
+tensor count. Each local segment creates a fresh optimizer and scheduler.
 
 `--verify_adapter_reload` re-exports and reloads the incoming adapter after native load and asserts bit-equality, for
 debugging checkpointer issues; it is off by default because it doubles adapter disk I/O per round.

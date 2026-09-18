@@ -91,9 +91,15 @@ def resolve_model_profile(args):
     profile_name = getattr(args, "model_profile", NANO_PROFILE)
     if profile_name not in PROFILES:
         raise ValueError(f"Unknown model profile: {profile_name}")
+    model_name_overridden = getattr(args, "model_name_or_path", None) is not None
+    tokenizer_name_overridden = getattr(args, "tokenizer_name_or_path", None) is not None
     args.model_profile = profile_name
     values = deepcopy(PROFILES[profile_name])
     for name, value in values.items():
+        if name == "model_revision" and model_name_overridden:
+            continue
+        if name == "tokenizer_revision" and (model_name_overridden or tokenizer_name_overridden):
+            continue
         if not hasattr(args, name) or getattr(args, name) is None:
             setattr(args, name, value)
     if not args.tokenizer_name_or_path:

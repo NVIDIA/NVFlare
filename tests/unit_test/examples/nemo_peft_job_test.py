@@ -184,12 +184,14 @@ def test_nemo_peft_recipe_exports_modern_fedavg_config(tmp_path):
     command = executor_args["command"]
     assert "custom/automodel_peft_client.py" in command
     assert command[command.index("--backend") + 1] == "mock"
+    assert command[command.index("--adapter_contract") + 1] == adapter_checkpoint.ADAPTER_CONTRACT_FILE
     assert command[command.index("--train_file") + 1].endswith("split data/alpha10.0_site-1.jsonl")
     assert executor_args["launch_once"] is False
     assert (job_dir / "app_site-1" / "custom" / "automodel_peft_client.py").exists()
     assert (job_dir / "app_site-1" / "custom" / "adapter_checkpoint.py").exists()
     assert (job_dir / "app_site-1" / "custom" / "automodel_adapter_loader.py").exists()
     assert (job_dir / "app_site-1" / "custom" / "automodel_financial_phrase_dataset.py").exists()
+    assert len(list((job_dir / "app_site-1" / "custom").rglob(adapter_checkpoint.ADAPTER_CONTRACT_FILE))) == 1
 
     controller = server_config["workflows"][0]
     assert controller["path"] == "nvflare.app_common.workflows.fedavg.FedAvg"
@@ -304,6 +306,8 @@ def test_lightning35_profile_pins_the_validated_model_and_tokenizer_revision(tmp
     job_module = _load_job_module()
     args = _args(tmp_path, tmp_path / "init_adapter.pt")
     args.model_profile = "lightning35"
+    args.model_name_or_path = None
+    args.tokenizer_name_or_path = None
     args.model_revision = None
     args.tokenizer_revision = None
 
@@ -312,6 +316,39 @@ def test_lightning35_profile_pins_the_validated_model_and_tokenizer_revision(tmp
     expected_revision = "a9904d24bcc1d289a1950fa9d2b978c47cf903b9"
     assert resolved.model_revision == expected_revision
     assert resolved.tokenizer_revision == expected_revision
+
+
+def test_lightning35_profile_does_not_apply_foreign_revisions_to_model_override(tmp_path):
+    job_module = _load_job_module()
+    args = _args(tmp_path, tmp_path / "init_adapter.pt")
+    args.model_profile = "lightning35"
+    args.model_name_or_path = "example/custom-model"
+    args.tokenizer_name_or_path = None
+    args.model_revision = None
+    args.tokenizer_revision = None
+
+    resolved = job_module.model_profiles.resolve_model_profile(args)
+
+    assert resolved.model_name_or_path == "example/custom-model"
+    assert resolved.tokenizer_name_or_path == "example/custom-model"
+    assert resolved.model_revision is None
+    assert resolved.tokenizer_revision is None
+
+
+def test_lightning35_profile_does_not_apply_foreign_revision_to_tokenizer_override(tmp_path):
+    job_module = _load_job_module()
+    args = _args(tmp_path, tmp_path / "init_adapter.pt")
+    args.model_profile = "lightning35"
+    args.model_name_or_path = None
+    args.tokenizer_name_or_path = "example/custom-tokenizer"
+    args.model_revision = None
+    args.tokenizer_revision = None
+
+    resolved = job_module.model_profiles.resolve_model_profile(args)
+
+    assert resolved.model_revision == "a9904d24bcc1d289a1950fa9d2b978c47cf903b9"
+    assert resolved.tokenizer_name_or_path == "example/custom-tokenizer"
+    assert resolved.tokenizer_revision is None
 
 
 def test_lightning35_profile_uses_native_recipe_and_official_lora_defaults(tmp_path):
