@@ -209,6 +209,7 @@ class FedXGBTreeExecutor(Executor):
             evals=[(self.train_data, "train"), (self.val_data, "valid")], iteration=bst.num_boosted_rounds() - 1
         )
         self.log_info(fl_ctx, eval_results)
+        # XGBoost returns: [iteration]\ttrain-<metric>:<value>\tvalid-<metric>:<value>.
         return float(eval_results.split("\t")[2].split(":")[1])
 
     def _local_boost_cyclic(self, fl_ctx: FLContext):
