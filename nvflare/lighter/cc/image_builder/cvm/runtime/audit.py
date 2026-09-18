@@ -40,7 +40,12 @@ def append(path, line):
     fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600)
     try:
         if stat.S_ISREG(os.fstat(fd).st_mode):
-            os.write(fd, line)
+            remaining = memoryview(line)
+            while remaining:
+                written = os.write(fd, remaining)
+                if written <= 0:
+                    raise OSError("Audit write made no progress")
+                remaining = remaining[written:]
     finally:
         os.close(fd)
 

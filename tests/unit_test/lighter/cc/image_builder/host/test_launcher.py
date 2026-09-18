@@ -14,11 +14,14 @@
 
 """Runtime bundle discovery and GPU selection use deterministic local inputs."""
 
+import os
 import signal
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from cvm.common.errors import BuildError
 from cvm.common.io import write_json
@@ -26,6 +29,7 @@ from cvm.host.launcher import (
     find_bundle,
     gpu_devices,
     qemu_command,
+    run_vm,
     runtime_state_path,
     select_gpus,
     shutdown,
@@ -34,6 +38,112 @@ from cvm.host.launcher import (
 
 
 class LauncherTests(unittest.TestCase):
+    def test_all_launch_modes_disable_vmport(self):
+        for platform in ("intel_tdx", "amd_sev_snp"):
+            for dev in (False, True):
+                manifest = {
+                    "platform": platform,
+                    "dev_mode": dev,
+                    "contract": {"gpu": "none"},
+                    "launch_shape": {
+                        "cpu_model": "host",
+                        "vcpus": 4,
+                        "memory_gib": 8,
+                        "quote_generation": {"type": "vsock", "cid": 2, "port": 4050},
+                    },
+                    "cmdline": "root=/dev/mapper/verity_root",
+                }
+                with self.subTest(platform=platform, dev=dev):
+                    command = qemu_command(manifest, "/bundle", [f"/disk-{i}" for i in range(5)], bytes(32), cbit=51)
+                    self.assertIn("vmport=off", command[command.index("-machine") + 1].split(","))
+
+    def test_startup_signals_stop_qemu_and_restore_handlers(self):
+        for sig in (signal.SIGTERM, signal.SIGHUP, signal.SIGQUIT, signal.SIGINT):
+            for window in ("spawn", "state"):
+                with self.subTest(signal=sig, window=window), tempfile.TemporaryDirectory() as temporary:
+                    process = Mock(pid=123, **{"poll.return_value": None})
+                    handlers = {}
+                    original = {s: object() for s in (signal.SIGTERM, signal.SIGHUP, signal.SIGQUIT, signal.SIGINT)}
+                    state = Path(temporary) / "runtime.json"
+
+                    def register(number, handler):
+                        old = handlers.get(number, original[number])
+                        handlers[number] = handler
+                        return old
+
+                    def spawn(command):
+                        if window == "spawn":
+                            handlers[sig](sig, None)
+                        return process
+
+                    def publish(directory, child):
+                        write_json(state, {"launcher_pid": os.getpid(), "launcher_start": 456})
+                        handlers[sig](sig, None)
+
+                    with (
+                        patch("cvm.host.launcher.signal.signal", side_effect=register),
+                        patch("cvm.host.launcher.subprocess.Popen", side_effect=spawn),
+                        patch("cvm.host.launcher.runtime_state_path", return_value=state),
+                        patch("cvm.host.launcher.write_runtime_state", side_effect=publish) as writer,
+                        patch("cvm.host.launcher._process_start", return_value=456),
+                    ):
+                        self.assertEqual(run_vm(["qemu"], temporary), -sig)
+                    process.terminate.assert_called_once()
+                    process.wait.assert_called_once_with(timeout=30)
+                    if window == "spawn":
+                        writer.assert_not_called()
+                    self.assertFalse(state.exists())
+                    self.assertEqual(handlers, original)
+
+    def test_shutdown_detects_orphaned_disk_locks_without_signalling_processes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            image = directory / "vault.qcow2"
+            image.touch()
+            state = directory / "runtime.json"
+            for lock in ("flock(f, fcntl.LOCK_EX)", "lockf(f, fcntl.LOCK_EX, 1, 100)"):
+                command = (
+                    "import fcntl, sys; f = open(sys.argv[1], 'r+b'); "
+                    f"fcntl.{lock}; print('ready', flush=True); sys.stdin.read(1)"
+                )
+                with subprocess.Popen(
+                    [sys.executable, "-c", command, str(image)], stdin=subprocess.PIPE, stdout=subprocess.PIPE
+                ) as holder:
+                    try:
+                        self.assertEqual(holder.stdout.readline(), b"ready\n")
+                        for stale in (False, True):
+                            if stale:
+                                write_json(state, {"launcher_pid": 123, "launcher_start": 456})
+                            with (
+                                self.subTest(lock=lock, stale=stale),
+                                patch("cvm.host.launcher.runtime_state_path", return_value=state),
+                                patch("cvm.host.launcher._process_start", side_effect=FileNotFoundError),
+                                patch("cvm.host.launcher.os.kill") as kill,
+                                self.assertRaisesRegex(BuildError, "Vault is still locked"),
+                            ):
+                                shutdown(directory)
+                            kill.assert_not_called()
+                    finally:
+                        holder.communicate(b"x", timeout=5)
+
+    def test_state_publication_failure_kills_unresponsive_qemu_and_restores_signals(self):
+        signals = (signal.SIGTERM, signal.SIGHUP, signal.SIGQUIT, signal.SIGINT)
+        original = {sig: signal.getsignal(sig) for sig in signals}
+        process = Mock(pid=123, **{"poll.return_value": None})
+        process.wait.side_effect = [subprocess.TimeoutExpired("qemu", 30), -signal.SIGKILL]
+        with tempfile.TemporaryDirectory() as directory:
+            with (
+                patch("cvm.host.launcher.subprocess.Popen", return_value=process),
+                patch("cvm.host.launcher.runtime_state_path", return_value=Path(directory) / "state.json"),
+                patch("cvm.host.launcher.write_runtime_state", side_effect=OSError("state unavailable")),
+                self.assertRaisesRegex(OSError, "state unavailable"),
+            ):
+                run_vm(["qemu"], directory)
+        process.terminate.assert_called_once()
+        process.kill.assert_called_once()
+        self.assertEqual(process.wait.call_args_list[-1].kwargs, {"timeout": 10})
+        self.assertEqual({sig: signal.getsignal(sig) for sig in signals}, original)
+
     def test_self_contained_delivery_finds_embedded_bundle(self):
         with tempfile.TemporaryDirectory() as temporary:
             delivery = Path(temporary) / "intel_tdx"

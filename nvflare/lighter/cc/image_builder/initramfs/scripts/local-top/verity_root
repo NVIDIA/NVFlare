@@ -4,10 +4,17 @@ set -eu
 case "${1:-}" in prereqs) exit 0;; esac
 . /scripts/functions
 root_hash= hash_offset=
+root_hash_seen=false hash_offset_seen=false
 for word in $(cat /proc/cmdline); do
     case "$word" in
-        roothash=*) root_hash=${word#roothash=};;
-        verity_hash_offset=*) hash_offset=${word#verity_hash_offset=};;
+        roothash=*)
+            [ "$root_hash_seen" = false ] || panic "Duplicate verity root hash"
+            root_hash_seen=true
+            root_hash=${word#roothash=};;
+        verity_hash_offset=*)
+            [ "$hash_offset_seen" = false ] || panic "Duplicate verity hash offset"
+            hash_offset_seen=true
+            hash_offset=${word#verity_hash_offset=};;
     esac
 done
 case "$root_hash" in *[!0-9a-f]*|'') panic "Missing verity root hash";; esac

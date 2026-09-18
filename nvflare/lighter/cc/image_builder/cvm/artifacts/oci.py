@@ -395,6 +395,8 @@ def materialize(source, output=None, merge=False, plain_http=False):
             command = ["oras", "cp", "--to-oci-layout"]
             if plain_http:
                 command.append("--from-plain-http")
+            # Multi-disk transfers can take hours on slow links. The operator
+            # controls the transfer deadline; do not apply run()'s short default.
             run([*command, reference, f"{layout}:{REF_NAME}"], timeout=None)
         _, _, config = inspect_layout(layout)
         destination = output or config["materialized_name"]
@@ -425,6 +427,7 @@ def publish(source, destination, plain_http=False):
         command = ["oras", "cp", "--from-oci-layout"]
         if plain_http:
             command.append("--to-plain-http")
+        # As for pulls, the operator controls the deadline for large transfers.
         run([*command, f"{layout}:{REF_NAME}", reference], timeout=None)
     repository = reference.split("@", 1)[0]
     last_slash = repository.rfind("/")

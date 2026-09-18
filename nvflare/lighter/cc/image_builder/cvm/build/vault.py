@@ -28,7 +28,7 @@ from ..artifacts.bundle import load_profile_set, verify_approval, verify_bundle
 from ..artifacts.oci import CVM_ARTIFACT_TYPE, materialize
 from ..artifacts.packaging import package_deliveries
 from ..common.contracts import HEADER_BYTES, STORAGE_PROFILE, binding, resource_path
-from ..common.errors import BuildError, require
+from ..common.errors import BuildError, ConfigurationError, require, require_config
 from ..common.io import is_sha256, write_json
 from ..common.linux import memory_file, protect_process, run
 from ..common.luks import scan, snapshot_header
@@ -259,11 +259,22 @@ def build_dev(app, profiles, output):
 
 
 def build(path, output=None, candidate=False, dev=False, plain_http=False, project_config=None):
-    app = config.application(path)
-    if dev:
-        require(project_config is None, "--dev must not receive --project-config or Trustee administration credentials")
-    else:
-        app["trustee"] = config.project(path, project_config)["trustee"]
+    section = "vault_build.yml"
+    try:
+        app = config.application(path)
+        if dev:
+            require_config(
+                project_config is None, "--dev must not receive --project-config or Trustee administration credentials"
+            )
+        else:
+            section = "cvm_project.yml"
+            app["trustee"] = config.project(path, project_config)["trustee"]
+    except ConfigurationError:
+        raise
+    except (BuildError, OSError, ValueError, KeyError, TypeError):
+        # Lower-level file/service validators may interpolate confidential paths
+        # or input values. Only explicitly classified schema diagnostics escape.
+        raise ConfigurationError(f"Invalid {section} inputs; check referenced files and field types") from None
     app["deployment_id"] = uuid.uuid4().hex
     print(f"Deployment ID: {app['deployment_id']}", flush=True)
     with profile_from_image(app["cvm_image"], approved=not (candidate or dev), plain_http=plain_http) as profiles:

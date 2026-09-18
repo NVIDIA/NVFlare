@@ -26,7 +26,7 @@ from .artifacts.bundle import approve_bundle
 from .artifacts.packaging import package_bundle
 from .build import config, cvm, vault
 from .common.contracts import PLATFORMS
-from .common.errors import BuildError
+from .common.errors import BuildError, ConfigurationError
 from .common.io import read_json, write_json
 from .host.preflight import check_host
 from .trustee import admin
@@ -183,6 +183,8 @@ def main(argv=None):
     args = cli.parse_args(argv)
     try:
         args.handler(args)
+    except ConfigurationError as exc:
+        cli.exit(1, f"Invalid configuration: {exc}\n")
     except (BuildError, OSError, ValueError, KeyError, tarfile.TarError, subprocess.SubprocessError) as exc:
         if args.command == "vault":
             # Application inputs and key-upload failures can contain secrets.

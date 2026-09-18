@@ -19,6 +19,16 @@ class BuildError(Exception):
     """An actionable, non-secret diagnostic safe to print."""
 
 
+class ConfigurationError(BuildError):
+    """A configuration diagnostic containing schema names, never input values."""
+
+
+def require_config(condition, message):
+    """Use only fixed messages or schema-defined field names, never user values."""
+    if not condition:
+        raise ConfigurationError(message)
+
+
 def require(condition, message):
     if not condition:
         raise BuildError(message)

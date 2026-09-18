@@ -208,28 +208,58 @@ def write_runtime_state(directory, process):
     return path
 
 
+def require_detached(directory):
+    """Detect launcher flocks and QEMU byte-range locks, including orphaned QEMU."""
+    image = Path(directory) / "vault.qcow2"
+    if not image.exists():
+        return
+    with image.open("r+b") as vault:
+        try:
+            fcntl.flock(vault, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.lockf(vault, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise BuildError(
+                "Vault is still locked by another process; inspect its QEMU owner before stopping or copying it"
+            ) from None
+
+
 def shutdown(directory, timeout=60):
     path = runtime_state_path(directory)
-    require(path.is_file() and not path.is_symlink(), "No CVM is running for this vault directory")
+    require(not path.is_symlink(), "Unsafe launcher runtime state")
+    if not path.is_file():
+        require_detached(directory)
+        raise BuildError("No CVM is running for this vault directory")
     state = read_json(path)
     pid = state.get("launcher_pid")
     start = state.get("launcher_start")
     require(type(pid) is int and type(start) is int, "Invalid launcher runtime state")
     try:
-        require(_process_start(pid) == start, "Launcher runtime state is stale")
+        active = _process_start(pid) == start
     except FileNotFoundError:
+        active = False
+    if not active:
         path.unlink(missing_ok=True)
+        require_detached(directory)
         raise BuildError("No CVM is running for this vault directory") from None
     os.kill(pid, signal.SIGTERM)
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        if not path.exists():
-            return
         try:
             if _process_start(pid) != start:
+                require_detached(directory)
                 return
         except FileNotFoundError:
+            require_detached(directory)
             return
+        if not path.exists():
+            try:
+                # The record is removed just before the launcher releases its
+                # vault lock. Allow that final cleanup to finish.
+                require_detached(directory)
+            except BuildError:
+                pass
+            else:
+                return
         time.sleep(0.2)
     raise BuildError("Timed out waiting for the CVM to stop")
 
@@ -281,7 +311,7 @@ def qemu_command(manifest, bundle, disks, digest, *, gpus=None, host_ports=(), c
         require(platform == "intel_tdx", "Unsupported shim boot profile")
         args += ["-shim", str(Path(bundle) / "shim.efi")]
     if manifest.get("dev_mode"):
-        args += ["-machine", "q35"]
+        args += ["-machine", "q35,vmport=off"]
     elif platform == "amd_sev_snp":
         require(type(cbit) is int and 0 < cbit < 64, "SNP requires the host C-bit position")
         obj = {
@@ -318,7 +348,7 @@ def qemu_command(manifest, bundle, disks, digest, *, gpus=None, host_ports=(), c
             require(set(quote) == {"type", "path"} and Path(quote["path"]).is_absolute(), "Invalid QGS Unix socket")
             obj["quote-generation-socket"] = quote
         memory = {"qom-type": "memory-backend-ram", "id": "ram0", "size": shape["memory_gib"] * 1024**3}
-        machine = "q35,kernel-irqchip=split,confidential-guest-support=tee0,memory-backend=ram0"
+        machine = "q35,kernel-irqchip=split,confidential-guest-support=tee0,memory-backend=ram0,vmport=off"
     if not manifest.get("dev_mode"):
         args += ["-object", json.dumps(memory), "-object", json.dumps(obj), "-machine", machine]
     args += ["-device", "virtio-scsi-pci,id=scsi0,disable-legacy=on,iommu_platform=true,romfile="]
@@ -425,42 +455,60 @@ def launch(directory, bundle=None, gpu=None):
             host_ports=delivery["allowed_ports"],
             cbit=cbit_position() if manifest["platform"] == "amd_sev_snp" and not manifest.get("dev_mode") else None,
         )
+        return run_vm(command, directory)
+
+
+def run_vm(command, directory):
+    """Own QEMU from spawn through exit, even when interrupted during startup."""
+    process = None
+    state_path = runtime_state_path(directory)
+    previous = {}
+    stopping = None
+    cleaning = False
+
+    def terminate(signum, frame):
+        nonlocal stopping
+        stopping = signum
+        # Popen may still be constructing its return value. Remember the signal
+        # until we own the process object; never unwind that assignment window.
+        if process is not None and not cleaning:
+            raise KeyboardInterrupt
+
+    try:
+        for sig in (signal.SIGTERM, signal.SIGHUP, signal.SIGQUIT, signal.SIGINT):
+            previous[sig] = signal.signal(sig, terminate)
+        if stopping is not None:
+            return -stopping
         process = subprocess.Popen(command)
-        state_path = None
-        previous = {}
-
-        def terminate(signum, frame):
-            if process.poll() is None:
-                process.terminate()
-
+        if stopping is not None:
+            return -stopping
+        write_runtime_state(directory, process)
+        return process.wait()
+    except KeyboardInterrupt:
+        return -(stopping or signal.SIGINT)
+    finally:
+        cleaning = True
         try:
-            state_path = write_runtime_state(directory, process)
-            previous = {sig: signal.signal(sig, terminate) for sig in (signal.SIGTERM, signal.SIGHUP)}
-            return process.wait()
-        except KeyboardInterrupt:
-            process.terminate()
-            return process.wait()
-        finally:
-            # Hold the vault lock until our exact QEMU process has stopped.
-            # A terminated wrapper must not leave an unattended writer behind.
-            if process.poll() is None:
+            # The caller retains disk/GPU ownership until this exact child exits.
+            if process is not None and process.poll() is None:
                 process.terminate()
                 try:
                     process.wait(timeout=30)
                 except subprocess.TimeoutExpired:
                     process.kill()
                     process.wait(timeout=10)
-            for sig, handler in previous.items():
-                signal.signal(sig, handler)
-            if state_path is not None:
-                try:
+            try:
+                if state_path.is_file():
                     state = read_json(state_path)
                     if state.get("launcher_pid") == os.getpid() and state.get("launcher_start") == _process_start(
                         os.getpid()
                     ):
                         state_path.unlink(missing_ok=True)
-                except (OSError, ValueError, KeyError):
-                    pass
+            except (OSError, ValueError, KeyError):
+                pass
+        finally:
+            for sig, handler in previous.items():
+                signal.signal(sig, handler)
 
 
 def main():

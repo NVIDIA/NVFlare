@@ -25,7 +25,7 @@ from urllib.parse import urlparse
 import yaml
 
 from ..common.contracts import HEADER_BYTES, PLATFORMS, STORAGE_PROFILE
-from ..common.errors import BuildError, require
+from ..common.errors import BuildError, ConfigurationError, require, require_config
 from ..common.io import canonical, digest_file, read_json
 from ..common.references import validate_references
 from ..common.services import validate_service
@@ -186,7 +186,7 @@ def mapping(loader, node, deep=False):
     result = {}
     for key, value in node.value:
         key = loader.construct_object(key, deep=deep)
-        require(isinstance(key, str) and key not in result, "Duplicate or non-string YAML key")
+        require_config(isinstance(key, str) and key not in result, "Duplicate or non-string YAML key")
         result[key] = loader.construct_object(value, deep=deep)
     return result
 
@@ -196,9 +196,17 @@ UniqueLoader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, map
 
 def load_yaml(path):
     path = Path(path).resolve()
-    with path.open() as stream:
-        value = yaml.load(stream, Loader=UniqueLoader)
-    require(isinstance(value, dict), "Configuration must be a mapping")
+    try:
+        with path.open() as stream:
+            value = yaml.load(stream, Loader=UniqueLoader)
+    except yaml.YAMLError as error:
+        # Parser exception strings include source lines, which may hold secrets.
+        mark = getattr(error, "problem_mark", None)
+        position = f" at line {mark.line + 1}, column {mark.column + 1}" if mark is not None else ""
+        raise ConfigurationError("Invalid configuration YAML" + position) from None
+    except OSError:
+        raise ConfigurationError("Cannot read configuration file; check its path and permissions") from None
+    require_config(isinstance(value, dict), "Configuration must be a mapping")
     return value
 
 
@@ -351,6 +359,7 @@ def profile(path):
     require(urlparse(value.get("kbs_url", "")).scheme == "https", "KBS requires HTTPS")
     require(value.get("token_algorithm") in ("RS256", "ES256", "EdDSA"), "Pin the AS token algorithm")
     require(isinstance(value.get("token_issuer"), str) and value["token_issuer"], "Pin the AS token issuer")
+    # Reject unfilled documentation placeholders such as <exact-version>.
     for key in ("kernel_version", "python_version", "docker_version", "containerd_version", "cryptsetup_version"):
         require(isinstance(value.get(key), str) and value[key] and "<" not in value[key], f"Pin {key}")
     packages = value.get("required_system_packages")
@@ -447,7 +456,7 @@ def project(build_config, project_config=None):
     """Load shared builder settings; credentials are relative to this file."""
     if project_config is not None:
         path = Path(project_config).expanduser().resolve()
-        require(path.is_file(), f"Project configuration does not exist: {path}")
+        require_config(path.is_file(), "Project configuration does not exist; check --project-config")
     else:
         directory = Path(build_config).resolve().parent
         path = next(
@@ -458,19 +467,19 @@ def project(build_config, project_config=None):
             ),
             None,
         )
-        require(path is not None, "No cvm_project.yml found; create it or pass --project-config")
-        require(path.is_file(), f"Project configuration is not a file: {path}")
+        require_config(path is not None, "No cvm_project.yml found; create it or pass --project-config")
+        require_config(path.is_file(), "Project configuration is not a file; check cvm_project.yml")
     value = load_yaml(path)
-    require(set(value) == {"trustee"}, "Project configuration must contain only trustee")
+    require_config(set(value) == {"trustee"}, "Project configuration must contain only trustee")
     service = value["trustee"]
-    require(
+    require_config(
         isinstance(service, dict) and set(service) == {"url", "ca", "admin_token_file"},
         "Project trustee requires url, ca and admin_token_file",
     )
     endpoint = service["url"]
-    require(isinstance(endpoint, str) and endpoint, "Trustee requires an HTTPS URL")
+    require_config(isinstance(endpoint, str) and endpoint, "Trustee requires an HTTPS URL")
     parsed = urlparse(endpoint)
-    require(
+    require_config(
         parsed.scheme == "https"
         and parsed.hostname
         and parsed.username is None
@@ -487,7 +496,7 @@ def project(build_config, project_config=None):
 
 def application(path):
     value = load_yaml(path)
-    require("trustee" not in value, "Move trustee from vault_build.yml to cvm_project.yml")
+    require_config("trustee" not in value, "Move trustee from vault_build.yml to cvm_project.yml")
     allowed = {
         "cvm_image",
         "docker_archive",
@@ -508,7 +517,9 @@ def application(path):
         "services",
         "nfs_mount",
     }
-    require(not set(value) - allowed, "Unknown application input; provisioning schemas are external to the builder")
+    require_config(
+        not set(value) - allowed, "Unknown application input; provisioning schemas are external to the builder"
+    )
     for key, default in {
         "applog_drive_size": 1,
         "user_config_drive_size": 1,
@@ -516,14 +527,14 @@ def application(path):
         "vault_drive_size": 8,
     }.items():
         value.setdefault(key, default)
-    require(
+    require_config(
         re.fullmatch(r"sha256:[a-f0-9]{64}", value.get("image_id", "")), "image_id must be an immutable Docker image ID"
     )
     value["cvm_image"] = cvm_image(path, value.get("cvm_image"))
     value["docker_archive"] = local_path(path, value.get("docker_archive"))
     if "platforms" in value:
         platforms = value["platforms"]
-        require(
+        require_config(
             isinstance(platforms, list)
             and platforms
             and all(isinstance(platform, str) and platform in PLATFORMS for platform in platforms)
@@ -537,27 +548,27 @@ def application(path):
         if key in value:
             public_sidecar(value[key])
     for key in ("applog_drive_size", "user_config_drive_size", "user_data_drive_size", "vault_drive_size"):
-        require(type(value.get(key)) is int and value[key] > 0, f"{key} must be a positive integer GiB size")
-    require(type(value.get("requires_gpu", False)) is bool, "requires_gpu must be boolean")
+        require_config(type(value.get(key)) is int and value[key] > 0, f"{key} must be a positive integer GiB size")
+    require_config(type(value.get("requires_gpu", False)) is bool, "requires_gpu must be boolean")
     value.setdefault("requires_gpu", False)
     for key in ("allowed_ports", "allowed_out_ports"):
         ports(value.setdefault(key, []))
     container = value.setdefault("container", {})
-    require(isinstance(container, dict), "container must be a mapping")
-    require(
+    require_config(isinstance(container, dict), "container must be a mapping")
+    require_config(
         not set(container) - {"entrypoint", "command", "env", "volumes", "ports", "tee_device"},
         "Unknown container option",
     )
     for key in ("entrypoint", "command"):
         if key in container:
-            require(
+            require_config(
                 isinstance(container[key], list)
                 and all(isinstance(x, str) and "\x00" not in x for x in container[key]),
                 f"container.{key} must be an argument array",
             )
-    require(type(container.get("tee_device", False)) is bool, "tee_device must be boolean")
+    require_config(type(container.get("tee_device", False)) is bool, "tee_device must be boolean")
     env = container.setdefault("env", {})
-    require(
+    require_config(
         isinstance(env, dict)
         and all(
             re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", k) and isinstance(v, str) and "\x00" not in v
@@ -565,60 +576,64 @@ def application(path):
         ),
         "Invalid environment mapping",
     )
-    require(isinstance(container.setdefault("volumes", []), list), "container.volumes must be a list")
-    require(isinstance(container.setdefault("ports", []), list), "container.ports must be a list")
+    require_config(isinstance(container.setdefault("volumes", []), list), "container.volumes must be a list")
+    require_config(isinstance(container.setdefault("ports", []), list), "container.ports must be a list")
     for volume in container["volumes"]:
-        require(isinstance(volume, dict) and set(volume) == {"source", "target", "read_only"}, "Invalid volume mapping")
-        require(type(volume["read_only"]) is bool, "read_only must be boolean")
+        require_config(
+            isinstance(volume, dict) and set(volume) == {"source", "target", "read_only"}, "Invalid volume mapping"
+        )
+        require_config(type(volume["read_only"]) is bool, "read_only must be boolean")
         source, target = PurePosixPath(volume["source"]), PurePosixPath(volume["target"])
-        require(
+        require_config(
             source.is_absolute()
             and target.is_absolute()
             and ".." not in source.parts + target.parts
             and "," not in str(source) + str(target),
             "Volume paths must be absolute without traversal",
         )
-        require(
+        require_config(
             source.parts[1:2] in (("vault",), ("applog",), ("user_config",), ("user_data",)),
             "Unsupported volume source",
         )
-        require(
+        require_config(
             source.parts[1] not in ("user_config", "user_data") or volume["read_only"],
             "Sidecar inputs must remain read-only",
         )
         if source.parts[1] == "vault":
-            require(source.is_relative_to("/vault/application"), "Container cannot mount vault control files")
-            require(
+            require_config(source.is_relative_to("/vault/application"), "Container cannot mount vault control files")
+            require_config(
                 volume["read_only"]
                 or any(source.is_relative_to(p) for p in ("/vault/application/runtime", "/vault/application/data")),
                 "Only application runtime/data may be writable",
             )
-        require(
+        require_config(
             str(target) not in ("/", "/vault", "/applog", "/user_config", "/user_data", "/host/bin"),
             "Cannot replace mandatory mounts",
         )
     for port in container["ports"]:
-        require(isinstance(port, dict) and set(port) == {"host", "container"}, "Port mappings need host/container")
+        require_config(
+            isinstance(port, dict) and set(port) == {"host", "container"}, "Port mappings need host/container"
+        )
         ports([port["host"]])
         ports([port["container"]])
-        require(port["host"] in value["allowed_ports"], "Container port is not allowed by firewall")
+        require_config(port["host"] in value["allowed_ports"], "Container port is not allowed by firewall")
     hosts = value.setdefault("hosts_entries", {})
-    require(isinstance(hosts, dict), "hosts_entries must be a mapping")
+    require_config(isinstance(hosts, dict), "hosts_entries must be a mapping")
     for hostname, address in hosts.items():
-        require(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.-]*", hostname), "Invalid hostname")
+        require_config(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.-]*", hostname), "Invalid hostname")
         try:
             ipaddress.ip_address(address)
         except ValueError:
-            require(False, "hosts_entries requires literal IP addresses")
+            require_config(False, "hosts_entries requires literal IP addresses")
     text = canonical(container).decode()
-    require(
+    require_config(
         not any(
             item in text for item in ("/dev/sev", "/dev/tdx", "snpguest", "cpu_attestation_snp", "cpu_attestation_tdx")
         ),
         "Launch configuration must obtain TEE settings from the generic runtime",
     )
 
-    require(isinstance(value.setdefault("services", []), list), "services must be a list of unit file paths")
+    require_config(isinstance(value.setdefault("services", []), list), "services must be a list of unit file paths")
     value["services"] = [local_path(path, item) for item in value["services"]]
     for item in value["services"]:
         validate_service(Path(item).name, Path(item).read_text())

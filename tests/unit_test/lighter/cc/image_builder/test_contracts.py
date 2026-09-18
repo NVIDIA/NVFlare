@@ -20,6 +20,7 @@ import json
 import os
 import stat
 import struct
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -248,6 +249,28 @@ class ProfileTests(unittest.TestCase):
         source = script.read_text()
         self.assertIn("cvm.root_overlay_max_mib=*", source)
         self.assertIn("size=${root_overlay_max_mib}M", source)
+
+    def test_verity_cmdline_rejects_duplicates_including_empty_first_values(self):
+        source = (config.SOURCE / "initramfs/scripts/local-top/verity_root").read_text()
+        # Execute the shipped parser and validation, before any device operations.
+        source = source.split("modprobe dm_verity", 1)[0].replace(
+            ". /scripts/functions", 'panic() { printf "%s\\n" "$1" >&2; exit 1; }'
+        )
+        source = 'cat() { printf "%s\\n" "$CVM_TEST_CMDLINE"; }\n' + source
+        valid = "roothash=" + "a" * 64 + " verity_hash_offset=4096"
+        for command, expected in (
+            (valid, ""),
+            ("roothash= " + valid, "Duplicate verity root hash"),
+            (valid + " roothash=" + "b" * 64, "Duplicate verity root hash"),
+            ("verity_hash_offset= " + valid, "Duplicate verity hash offset"),
+            (valid + " verity_hash_offset=8192", "Duplicate verity hash offset"),
+        ):
+            with self.subTest(command=command):
+                result = subprocess.run(
+                    ["sh", "-c", source], env=dict(os.environ, CVM_TEST_CMDLINE=command), capture_output=True, text=True
+                )
+                self.assertEqual(result.returncode, 1 if expected else 0)
+                self.assertIn(expected, result.stderr)
 
     def test_gpu_profile_reallocates_large_pci_bars(self):
         command = kernel_command_line("ab" * 32, 1024, 3072, "nvidia_cc")

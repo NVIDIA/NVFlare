@@ -197,6 +197,18 @@ validates its exact-manifest report, and writes `approval.json`. A missing,
 failed, or incomplete site acceptance report leaves the bundle unapproved.
 `--acceptance-runner` is available only when a site uses a different executable.
 
+Construction uses a disposable SSH key and a loopback-only forwarded port on the
+trusted build host. The temporary port reservation is released before QEMU binds
+it, and SSH host-key checking is disabled for the disposable guest. Run Stage 1 on
+a host without untrusted local users; it carries no application vault keys. A
+port collision fails the build, and production approval still requires the exact
+bundle's acceptance report.
+
+Registry transfers have no fixed CLI deadline because multi-disk artifacts can
+take hours over slow links. Apply the site's transfer deadline externally when
+needed. The trusted acceptance runner likewise owns the deadlines for its hardware
+and soak tests; an unfinished runner never approves a bundle.
+
 The main defaults are:
 
 ```yaml

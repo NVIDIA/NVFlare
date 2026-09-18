@@ -145,6 +145,10 @@ sample vault:
 curl http://127.0.0.1:8080/
 ```
 
+Forwarded ports listen on all host IPv4 interfaces (`0.0.0.0`), so other machines
+can reach the application. Use the host firewall to restrict permitted interfaces
+and source networks; the launcher does not currently provide a bind-address option.
+
 The application receives `/vault`, `/applog`, `/user_config`, `/user_data`, and
 `/host/bin`. Only `/vault` is encrypted and authenticated at rest. `/applog` is
 the CVM's clear output-only channel, intended for logs the operator must read
@@ -168,6 +172,14 @@ process has stopped. `Ctrl-C` in the launch terminal remains supported.
 Wait for shutdown to finish before copying, moving, backing up, or inspecting any
 writable disk. If no matching CVM is running, the shutdown command fails without
 signalling another process.
+
+The launcher handles SIGINT, SIGTERM, SIGHUP and SIGQUIT during startup and runtime.
+SIGKILL and host crashes cannot run its cleanup. If the runtime record is missing
+or stale, shutdown checks the vault's file locks and reports a still-attached disk.
+It does not kill a process based solely on a file lock. Identify the QEMU process
+holding this delivery's `vault.qcow2` (for example with `sudo lsof /path/to/vault.qcow2`),
+verify its command line and disk paths, stop that process, and confirm its locks
+are released before reusing the delivery.
 
 ## 6. Keep vault attachment exclusive
 

@@ -14,14 +14,29 @@
 
 """Audit metadata remains narrow even when inputs contain sensitive fields."""
 
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from cvm.runtime.audit import append, record
 
 
 class AuditTests(unittest.TestCase):
+    def test_short_writes_complete_and_no_progress_does_not_spin(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "audit.log"
+            write = os.write
+            with patch("cvm.runtime.audit.os.write", side_effect=lambda fd, data: write(fd, data[:2])):
+                append(path, b"complete line\n")
+            self.assertEqual(path.read_bytes(), b"complete line\n")
+            for result in (0, BlockingIOError()):
+                options = {"side_effect": result} if isinstance(result, Exception) else {"return_value": result}
+                with patch("cvm.runtime.audit.os.write", **options) as call, self.assertRaises(OSError):
+                    append(path, b"next\n")
+                call.assert_called_once()
+
     def test_only_public_fields_are_serialized(self):
         value = record(
             {"build_id": "bundle-1", "attestation_policy_id": "policy-1", "secret": "never-log"},

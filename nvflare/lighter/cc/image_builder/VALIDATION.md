@@ -6,6 +6,26 @@ services and operator guides are maintained together with the provisioning adapt
 in this repository. Repository formatting and license headers change source
 fingerprints; build and approve new generic CVMs for this source snapshot.
 
+## Launcher and diagnostics review fixes — 2026-09-18
+
+- **186 Linux unit/policy tests passed with no skips**, using the pinned Regorus
+  engine. Added coverage includes disabling `vmport` in every launch mode,
+  interruption during process creation and state publication, forced child cleanup,
+  orphaned file locks, configuration-error redaction, duplicate verity arguments,
+  and short audit writes. Existing read-only NBD and mount options remain in use
+  by the hardware, periodic-attestation and storage integration tests.
+- **Nine real-QEMU process checks passed** with paused, non-confidential QEMU
+  guests and disposable disks. SIGTERM, SIGHUP, SIGQUIT and SIGINT during both
+  process creation and state publication stopped the child and removed its runtime
+  record. After SIGKILL of the launcher, shutdown detected the surviving QEMU's
+  actual byte-range disk lock and reported it without signalling an unverified
+  process. All smoke-test QEMU processes were stopped and their locks released.
+- Scoped repository style checks and `git diff --check` passed.
+
+These checks validate the review fixes; they do not repeat the TDX/SNP/GPU
+end-to-end run recorded below. The updated guest sources and initramfs hook
+require fresh images, measurements and acceptance before production approval.
+
 ## CLI refactor and distribution packaging — 2026-09-18
 
 A fresh candidate-mode end-to-end run passed with an Intel TDX server, an AMD

@@ -204,13 +204,15 @@ def construction_vm(profile, build_id, job):
     (job / "meta-data").write_text("instance-id: " + build_id + "\nlocal-hostname: cvm-build\n")
     run(["cloud-localds", job / "seed.img", job / "user-data", job / "meta-data"])
     with socket.socket() as reservation:
+        # QEMU cannot inherit this reservation. Construction assumes a trusted
+        # local host; a bind collision is detected by the process liveness check.
         reservation.bind(("127.0.0.1", 0))
         port = reservation.getsockname()[1]
     command = [
         "qemu-system-x86_64",
         "-enable-kvm",
         "-machine",
-        "q35",
+        "q35,vmport=off",
         "-cpu",
         "host",
         "-smp",
@@ -234,6 +236,8 @@ def construction_vm(profile, build_id, job):
         "-o",
         "IdentitiesOnly=yes",
         "-o",
+        # The disposable guest gets a fresh host key. This local-only channel
+        # requires a trusted build host and carries no application vault keys.
         "StrictHostKeyChecking=no",
         "-o",
         "UserKnownHostsFile=/dev/null",
@@ -500,6 +504,8 @@ def run_acceptance(runner, directory):
     resolved = resolve_acceptance_runner(runner)
     with tempfile.TemporaryDirectory(prefix="cvm-acceptance-", dir=directory.parent) as temporary:
         report = Path(temporary) / "acceptance-report.json"
+        # Sites may run long hardware/soak matrices. The trusted adapter owns
+        # their deadlines; approval still requires its successful exact report.
         run([resolved, str(directory), str(report)], timeout=None)
         require(report.is_file(), "Acceptance runner did not create its requested report")
         approve_bundle(directory, read_json(report))
