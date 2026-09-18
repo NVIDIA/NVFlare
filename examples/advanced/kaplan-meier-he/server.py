@@ -16,6 +16,7 @@ import logging
 
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.workflows.model_controller import ModelController
+from nvflare.fuel.utils.log_utils import log_progress
 
 
 # Controller Workflow
@@ -27,9 +28,16 @@ class KM(ModelController):
         self.num_rounds = 2
 
     def run(self):
+        log_progress(self.logger, "\n  Federated Kaplan-Meier survival analysis\n\n  Collecting local histograms…")
         hist_local = self.start_fl_collect_hist()
+        log_progress(self.logger, "  Aggregating survival histograms…")
         hist_obs_global, hist_cen_global = self.aggr_hist(hist_local)
-        _ = self.distribute_global_hist(hist_obs_global, hist_cen_global)
+        log_progress(self.logger, "  Distributing the global survival curve…")
+        targets = self.sample_clients()
+        results = self.distribute_global_hist(hist_obs_global, hist_cen_global, targets)
+        aborted = bool(getattr(getattr(self, "abort_signal", None), "triggered", False))
+        if results and len(results) == len(targets) and not aborted:
+            log_progress(self.logger, "\n  ✓ Survival analysis completed")
 
     def start_fl_collect_hist(self):
         self.logger.info("send initial message to all sites to start FL \n")
@@ -68,7 +76,7 @@ class KM(ModelController):
 
         return hist_obs_global, hist_cen_global
 
-    def distribute_global_hist(self, hist_obs_global, hist_cen_global):
+    def distribute_global_hist(self, hist_obs_global, hist_cen_global, targets=None):
         self.logger.info("send global accumulated histograms within HE to all sites \n")
 
         model = FLModel(
@@ -79,5 +87,5 @@ class KM(ModelController):
             total_rounds=self.num_rounds,
         )
 
-        results = self.send_model_and_wait(data=model)
+        results = self.send_model_and_wait(data=model, targets=targets)
         return results
