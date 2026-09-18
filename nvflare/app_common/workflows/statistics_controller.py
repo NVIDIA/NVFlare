@@ -179,11 +179,10 @@ class StatisticsController(Controller):
         client_count = self._participating_client_count
         if client_count is None:
             client_count = self.min_clients
-        log_progress(
-            self.logger,
-            f"\n  Federated statistics · {client_count} "
-            f"client{'s' if client_count != 1 else ''}\n\n  Preparing client datasets…",
-        )
+        start_message = f"\n  Federated statistics · {client_count} client{'s' if client_count != 1 else ''}"
+        if self.enable_pre_run_task:
+            start_message += "\n\n  Preparing client datasets…"
+        log_progress(self.logger, start_message)
 
         if abort_signal.triggered:
             return False
@@ -212,8 +211,11 @@ class StatisticsController(Controller):
             return False
 
         self.log_info(fl_ctx, "start post processing")
-        post_succeeded = self._validate_min_clients(self.min_clients, self.client_statistics)
-        self.post_fn(self.task_name, fl_ctx)
+        post_succeeded = self.post_fn(self.task_name, fl_ctx)
+        if post_succeeded is None:
+            # Preserve compatibility with existing overrides that predate the
+            # optional boolean completion result.
+            post_succeeded = self._validate_min_clients(self.min_clients, self.client_statistics)
         if post_succeeded and not abort_signal.triggered:
             log_progress(self.logger, "\n  ✓ Federated statistics completed")
 
@@ -413,17 +415,19 @@ class StatisticsController(Controller):
 
         return True
 
-    def post_fn(self, task_name: str, fl_ctx: FLContext):
+    def post_fn(self, task_name: str, fl_ctx: FLContext) -> bool:
 
         ok_to_proceed = self._validate_min_clients(self.min_clients, self.client_statistics)
         if not ok_to_proceed:
             self.system_panic(f"Not all required {self.min_clients} statistics received, aborted the job.", fl_ctx)
+            return False
         else:
             self.log_info(fl_ctx, "Combine all clients' statistics")
             ds_stats = self._combine_all_statistics()
             self.log_info(fl_ctx, "Save statistics result to persistence store")
             writer: StatisticsWriter = fl_ctx.get_engine().get_component(self.writer_id)
             writer.save(ds_stats, overwrite_existing=True, fl_ctx=fl_ctx)
+            return True
 
     def _combine_all_statistics(self):
         result = {}

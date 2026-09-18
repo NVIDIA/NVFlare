@@ -17,6 +17,7 @@ from unittest.mock import patch
 import numpy as np
 
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.app_constant import AlgorithmConstants, AppConstants
 from nvflare.app_common.app_event_type import AppEventType
@@ -26,6 +27,7 @@ from nvflare.app_common.workflows.scaffold import Scaffold
 def test_scaffold_publishes_standard_round_start_before_client_work():
     controller = Scaffold(num_clients=2, num_rounds=1, persistor_id="")
     controller.fl_ctx = FLContext()
+    controller.abort_signal = Signal()
     controller.model = FLModel(params={"weight": np.array([1.0])}, meta={})
     controller._global_ctrl_weights = {"weight": np.array([0.0])}
     aggregate_result = FLModel(
@@ -49,3 +51,29 @@ def test_scaffold_publishes_standard_round_start_before_client_work():
     assert calls == [AppEventType.ROUND_STARTED, "send", AppEventType.ROUND_DONE]
     assert controller.fl_ctx.get_prop(AppConstants.CURRENT_ROUND) == 0
     assert controller.fl_ctx.get_prop(AppConstants.NUM_ROUNDS) == 1
+
+
+def test_scaffold_stops_before_aggregation_when_client_wait_is_aborted():
+    controller = Scaffold(num_clients=2, num_rounds=1, persistor_id="")
+    controller.fl_ctx = FLContext()
+    controller.abort_signal = Signal()
+    controller.model = FLModel(params={"weight": np.array([1.0])}, meta={})
+    controller._global_ctrl_weights = {"weight": np.array([0.0])}
+
+    def abort_wait(**_kwargs):
+        controller.abort_signal.trigger("aborted")
+        return [FLModel(params={"weight": np.array([2.0])})]
+
+    with (
+        patch.object(controller, "info"),
+        patch.object(controller, "event") as event,
+        patch.object(controller, "sample_clients", return_value=["site-1", "site-2"]),
+        patch.object(controller, "send_model_and_wait", side_effect=abort_wait),
+        patch.object(controller, "aggregate") as aggregate,
+        patch.object(controller, "save_model") as save_model,
+    ):
+        controller._run_rounds()
+
+    aggregate.assert_not_called()
+    save_model.assert_not_called()
+    assert [call.args[0] for call in event.call_args_list] == [AppEventType.ROUND_STARTED]

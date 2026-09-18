@@ -102,6 +102,7 @@ class FedXGBTreeExecutor(Executor):
         self.config = None
         self.local_model = None
         self._last_metrics = {}
+        self._progress_metrics = {}
 
         self.data_loader_id = data_loader_id
         self.train_data = None
@@ -192,7 +193,8 @@ class FedXGBTreeExecutor(Executor):
         )
         self.log_info(fl_ctx, eval_results)
         updated_auc = float(eval_results.split("\t")[2].split(":")[1])
-        self._last_metrics = {self.eval_metric: updated_auc}
+        self._last_metrics = {self.eval_metric: incoming_auc}
+        self._progress_metrics = {self.eval_metric: updated_auc}
 
         # extract newly added self.num_local_round using xgboost slicing api
         bst = self.bst[self.bst.num_boosted_rounds() - self.num_local_round : self.bst.num_boosted_rounds()]
@@ -238,6 +240,9 @@ class FedXGBTreeExecutor(Executor):
         if abort_signal.triggered:
             self.finalize(fl_ctx)
             return make_reply(ReturnCode.TASK_ABORTED)
+
+        self._last_metrics = {}
+        self._progress_metrics = {}
 
         # retrieve current global model download from server's shareable
         dxo = from_shareable(shareable)
@@ -329,10 +334,13 @@ class FedXGBTreeExecutor(Executor):
         # report updated model in shareable
         # Convert dict back to bytearray for compatibility with downstream code
         self.local_model = bytearray(json.dumps(self.local_model), "utf-8")
+        meta = {MetaKey.INITIAL_METRICS: self._last_metrics}
+        if self._progress_metrics:
+            meta[AppConstants.PROGRESS_METRICS] = self._progress_metrics
         dxo = DXO(
             data_kind=DataKind.WEIGHTS,
             data={"model_data": self.local_model},
-            meta={MetaKey.INITIAL_METRICS: self._last_metrics},
+            meta=meta,
         )
         self.log_info(fl_ctx, "Local epochs finished. Returning shareable")
         new_shareable = dxo.to_shareable()

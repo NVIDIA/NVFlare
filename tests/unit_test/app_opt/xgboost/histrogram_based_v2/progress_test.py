@@ -32,7 +32,7 @@ def test_collective_xgboost_rank_zero_reports_round_metrics():
     assert progress.call_args.args[:4] == (callback.logger, 2, 3, "XGBoost training")
     assert progress.call_args.kwargs["rows"] == [("eval", {"auc": 0.8}), ("train", {"auc": 0.85})]
     assert progress.call_args.kwargs["label"] == "Dataset"
-    callback.logger.info.assert_called_once_with("[1]\teval-auc:0.8\ttrain-auc:0.85")
+    callback.logger.info.assert_called_once_with("[1]\teval-auc:0.80000\ttrain-auc:0.85000")
 
 
 def test_collective_xgboost_nonzero_rank_does_not_duplicate_progress():
@@ -42,7 +42,7 @@ def test_collective_xgboost_nonzero_rank_does_not_duplicate_progress():
         callback.after_iteration(model=MagicMock(), epoch=0, evals_log={"eval": {"auc": [0.8]}})
 
     progress.assert_not_called()
-    callback.logger.info.assert_not_called()
+    callback.logger.info.assert_called_once_with("[0]\teval-auc:0.80000")
 
 
 def test_collective_xgboost_training_does_not_install_raw_evaluation_monitor(tmp_path):

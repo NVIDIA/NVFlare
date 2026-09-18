@@ -128,6 +128,9 @@ class Scaffold(BaseFedAvg):
             global_model.meta[AlgorithmConstants.SCAFFOLD_CTRL_GLOBAL] = self._global_ctrl_weights
 
             results = self.send_model_and_wait(targets=clients, data=global_model)
+            if self.abort_signal and self.abort_signal.triggered:
+                self.info("Scaffold aborted while waiting for client results.")
+                return
 
             aggregate_results = self.aggregate(results, aggregate_fn=scaffold_aggregate_fn)
 

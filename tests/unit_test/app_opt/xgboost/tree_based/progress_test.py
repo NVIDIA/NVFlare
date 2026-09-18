@@ -47,4 +47,5 @@ def test_bagging_xgboost_records_metric_after_local_training():
     executor._local_boost_bagging(FLContext())
 
     executor.bst.update.assert_called_once()
-    assert executor._last_metrics == {"auc": 0.85}
+    assert executor._last_metrics == {"auc": 0.8}
+    assert executor._progress_metrics == {"auc": 0.85}

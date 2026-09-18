@@ -143,11 +143,14 @@ def _record_shareable_round(writer, fl_ctx, round_num, metrics):
         fl_ctx.set_prop(AppConstants.AGGREGATION_RESULT, None, private=True, sticky=False)
 
 
-def _record_contribution(writer, fl_ctx, round_num, site_name, metrics, weight=1):
+def _record_contribution(writer, fl_ctx, round_num, site_name, metrics, weight=1, progress_metrics=None):
+    meta = {FLMetaKey.SITE_NAME: site_name, FLMetaKey.NUM_STEPS_CURRENT_ROUND: weight}
+    if progress_metrics is not None:
+        meta[AppConstants.PROGRESS_METRICS] = progress_metrics
     result = FLModel(
         metrics=metrics,
         current_round=round_num,
-        meta={FLMetaKey.SITE_NAME: site_name, FLMetaKey.NUM_STEPS_CURRENT_ROUND: weight},
+        meta=meta,
     )
     shareable = FLModelUtils.to_shareable(result)
     try:
@@ -214,6 +217,25 @@ def _collect_metric_names(value):
 
 
 class TestMetricsArtifactWriterAggregationEvents:
+    def test_progress_metrics_do_not_replace_model_selection_metrics(self, tmp_path):
+        writer = MetricsArtifactWriter()
+        run_dir = tmp_path / "run"
+        fl_ctx = _make_fl_ctx(run_dir)
+
+        writer.handle_event(EventType.START_RUN, fl_ctx)
+        _record_contribution(
+            writer,
+            fl_ctx,
+            1,
+            "site-1",
+            metrics={"auc": 0.8},
+            progress_metrics={"auc": 0.85},
+        )
+        _record_round(writer, fl_ctx, 1, {"auc": 0.82})
+
+        rounds = _read_rounds(run_dir)
+        assert _metrics_to_dict(rounds[0]["sites"][0]["metrics"]) == {"auc": 0.85}
+
     def test_writes_summary_and_jsonl_from_aggregation_events(self, tmp_path):
         writer = MetricsArtifactWriter()
         run_dir = tmp_path / "run"

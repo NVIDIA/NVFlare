@@ -86,6 +86,7 @@ class AppConstants(object):
     TRAINING_RESULT = "_training_result_"
     PROGRESS_OWNER = "_progress_owner_"
     PROGRESS_TITLE = "_progress_title_"
+    PROGRESS_METRICS = "_progress_metrics_"
 
     SUBMIT_MODEL_FAILURE_REASON = "_submit_model_failure_reason"
     CROSS_VAL_DIR = "cross_site_val"

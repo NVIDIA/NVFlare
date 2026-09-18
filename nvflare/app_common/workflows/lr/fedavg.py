@@ -125,6 +125,9 @@ class FedAvgLR(BaseFedAvg):
             #
             self.info("sending server side global model to clients")
             results = self.send_model_and_wait(targets=clients, data=model)
+            if self.abort_signal and self.abort_signal.triggered:
+                self.info("Federated Averaging Newton Raphson aborted while waiting for client results.")
+                return
 
             # Aggregate results received from clients.
             aggregate_results = self.aggregate(results, aggregate_fn=self.newton_raphson_aggregator_fn)

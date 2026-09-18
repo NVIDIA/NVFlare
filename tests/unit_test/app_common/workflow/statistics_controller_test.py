@@ -152,7 +152,7 @@ class TestStatisticsController:
         controller._participating_client_count = 3
         controller.pre_run_task_flow = MagicMock()
         controller.statistics_task_flow = MagicMock()
-        controller.post_fn = MagicMock(return_value=True)
+        controller.post_fn = MagicMock(return_value=None)
 
         with (
             patch.object(StatisticsController, "_wait_for_all_results", return_value=True),
@@ -168,6 +168,35 @@ class TestStatisticsController:
             "  Computing derived statistics…",
             "\n  ✓ Federated statistics completed",
         ]
+
+    def test_control_flow_respects_explicit_post_processing_failure(self):
+        controller = StatisticsController(statistic_configs={SC.STATS_COUNT: {}}, writer_id="writer", min_clients=2)
+        controller.pre_run_task_flow = MagicMock()
+        controller.statistics_task_flow = MagicMock()
+        controller.post_fn = MagicMock(return_value=False)
+
+        with (
+            patch.object(StatisticsController, "_wait_for_all_results", return_value=True),
+            patch("nvflare.app_common.workflows.statistics_controller.log_progress") as progress,
+        ):
+            controller.control_flow(Signal(), FLContext())
+
+        assert "✓ Federated statistics completed" not in "\n".join(call.args[1] for call in progress.call_args_list)
+
+    def test_control_flow_omits_preparation_phase_when_disabled(self):
+        controller = StatisticsController(
+            statistic_configs={SC.STATS_COUNT: {}}, writer_id="writer", min_clients=2, enable_pre_run_task=False
+        )
+        controller.statistics_task_flow = MagicMock()
+        controller.post_fn = MagicMock(return_value=True)
+
+        with (
+            patch.object(StatisticsController, "_wait_for_all_results", return_value=True),
+            patch("nvflare.app_common.workflows.statistics_controller.log_progress") as progress,
+        ):
+            controller.control_flow(Signal(), FLContext())
+
+        assert "Preparing client datasets" not in "\n".join(call.args[1] for call in progress.call_args_list)
 
     def test_control_flow_does_not_report_completion_after_second_pass_abort(self):
         controller = StatisticsController(statistic_configs={SC.STATS_COUNT: {}}, writer_id="writer", min_clients=2)

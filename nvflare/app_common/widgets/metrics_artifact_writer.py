@@ -118,7 +118,7 @@ class MetricsArtifactWriter(Widget):
                 self._first_round = configured_start if configured_start is not None else current_round
             self._round_started_at = time.monotonic()
             self._reset_progress()
-            self._round_label(current_round, fl_ctx)
+            self._update_total_rounds(fl_ctx)
             ordinal = current_round - self._first_round + 1 if current_round is not None else 1
             title = fl_ctx.get_prop(AppConstants.PROGRESS_TITLE, "Training")
             log_progress_round(_logger, ordinal, self._total_rounds or ordinal, title)
@@ -136,16 +136,10 @@ class MetricsArtifactWriter(Widget):
         owner = fl_ctx.get_prop(AppConstants.PROGRESS_OWNER, None)
         return not owner or owner == fl_ctx.get_identity_name()
 
-    def _round_label(self, current_round, fl_ctx):
-        if current_round is None:
-            return "Round"
-        ordinal = current_round - self._first_round + 1 if self._first_round is not None else current_round + 1
+    def _update_total_rounds(self, fl_ctx):
         total = fl_ctx.get_prop(AppConstants.NUM_ROUNDS, None)
         if isinstance(total, int) and not isinstance(total, bool) and total > 0:
             self._total_rounds = total
-        total = self._total_rounds
-        suffix = f"/{total}" if total is not None and ordinal <= total else ""
-        return f"Round {ordinal}{suffix}"
 
     def _log_progress_metrics(self, label, metrics):
         try:
@@ -336,14 +330,17 @@ class MetricsArtifactWriter(Widget):
         except Exception:
             return
         self._round_contribution_count += 1
-        if not model.metrics:
+        meta = model.meta or {}
+        progress_metrics = meta.get(AppConstants.PROGRESS_METRICS)
+        metrics_source = progress_metrics if isinstance(progress_metrics, dict) else model.metrics
+        if not metrics_source:
             self._log_contribution_progress(self._get_site_name(model, fl_ctx), [])
             return
 
         current_round = self._get_current_round(model, fl_ctx)
         skipped = []
         site_name = self._get_site_name(model, fl_ctx)
-        metrics = self._normalize_metrics(model.metrics, site=site_name, skipped=skipped)
+        metrics = self._normalize_metrics(metrics_source, site=site_name, skipped=skipped)
         if skipped:
             self._extend_round_skipped(current_round, skipped)
         if not metrics:
@@ -369,7 +366,6 @@ class MetricsArtifactWriter(Widget):
             "name": self._sanitize_name(site_name),
             "metrics": metrics,
         }
-        meta = model.meta or {}
         weight = self._safe_weight(meta.get(FLMetaKey.NUM_STEPS_CURRENT_ROUND))
         if weight is not None:
             site["weight"] = weight

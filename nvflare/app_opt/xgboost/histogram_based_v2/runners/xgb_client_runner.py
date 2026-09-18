@@ -56,8 +56,6 @@ class _ProgressCallback(callback.TrainingCallback):
         return result
 
     def after_iteration(self, model, epoch: int, evals_log: dict) -> bool:
-        if self.rank != 0:
-            return False
         rows = []
         details = []
         for data_name, metrics in evals_log.items():
@@ -71,11 +69,13 @@ class _ProgressCallback(callback.TrainingCallback):
                     value = history[-1]
                     if isinstance(value, tuple) and value:
                         value = value[0]
-                    details.append(f"{data_name}-{metric_name}:{value}")
+                    details.append(f"{data_name}-{metric_name}:{value:.5f}")
         if details:
             # Normal INFO records remain available in full/verbose output and log
             # files while the progress filter keeps them out of the focused view.
             self.logger.info(f"[{epoch}]\t" + "\t".join(details))
+        if self.rank != 0:
+            return False
         log_progress_round(
             self.logger,
             epoch + 1,
