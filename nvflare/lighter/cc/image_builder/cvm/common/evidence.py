@@ -50,7 +50,10 @@ def serial_evidence(text):
     # A serial log may be read while the guest is still writing its final frame.
     # Require the line terminator emitted by print() before treating a frame as
     # complete; otherwise a valid Base64 prefix can be decoded prematurely.
-    for match in re.finditer(r"(?m)^CVM_REFERENCE_V2 (\d+)/(\d+) ([A-Za-z0-9+/=]+)\r?\n", text):
+    # journal+console prefixes service output with a monotonic timestamp and
+    # process identity; direct serial output has no prefix.
+    prefix = r"(?:\[\s*\d+(?:\.\d+)?\]\s+[^\s\[\]:]+\[\d+\]:\s+)?"
+    for match in re.finditer(r"(?m)^" + prefix + r"CVM_REFERENCE_V2 (\d+)/(\d+) ([A-Za-z0-9+/=]+)\r?\n", text):
         index, total = int(match[1]), int(match[2])
         require(1 <= index <= total <= 16384 and (count is None or total == count), "Invalid reference frame count")
         require(index not in frames or frames[index] == match[3], "Conflicting reference frame")

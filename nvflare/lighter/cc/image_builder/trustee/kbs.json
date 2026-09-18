@@ -52,6 +52,13 @@
   "session_storage_type": "memory",
   "attestation_service": {
     "type": "coco_as_builtin",
+    "verifier_config": {
+      "dcap_verifier": {
+        "collateral_service": "https://api.trustedservices.intel.com/sgx/certification/v4/",
+        "use_secure_cert": true,
+        "tcb_update_type": "standard"
+      }
+    },
     "attestation_token_broker": {
       "duration_min": 5,
       "issuer_name": "CoCo-Attestation-Service",

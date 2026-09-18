@@ -67,8 +67,8 @@ def bundle_rule(manifest):
             f'    ev["snp"]["measurement"] == {json.dumps(values["snp.measurement"])}',
             '    ev["snp"]["policy_debug_allowed"] == false',
             '    ev["snp"]["policy_migrate_ma"] == false',
-            '    regex.match("^[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]=$", ev["init_data"])',
-            '    binding_id := replace(replace(trim_suffix(ev["init_data"], "="), "+", "-"), "/", "_")',
+            '    regex.match("^[0-9a-f]{64}$", ev["init_data"])',
+            '    binding_id := ev["init_data"]',
         ]
     else:
         lines += [

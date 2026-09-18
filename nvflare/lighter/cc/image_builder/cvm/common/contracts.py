@@ -48,7 +48,7 @@ def binding(header):
 def binding_id(platform, value):
     require(platform in PLATFORMS and len(value) == 32, "Invalid platform/binding")
     if platform == "amd_sev_snp":
-        return base64.urlsafe_b64encode(value).decode().rstrip("=")
+        return value.hex()
     return (value + bytes(16)).hex()
 
 
@@ -66,7 +66,7 @@ def validate_resource(path):
     require(len(parts) == 3 and parts[0] == "keys", "Invalid resource namespace")
     identifier(parts[1])
     tag = parts[2]
-    snp = re.fullmatch(r"[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]", tag)
+    snp = re.fullmatch(r"[0-9a-f]{64}", tag)
     tdx = re.fullmatch(r"[0-9a-f]{64}0{32}", tag)
     require(snp or tdx, "Noncanonical binding identifier")
     return parts

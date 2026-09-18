@@ -27,6 +27,7 @@ import time
 from pathlib import Path
 
 from cryptography.hazmat.primitives import serialization
+from cvm.build.config import SOURCE
 from cvm.common.io import canonical, read_json, write_json
 from cvm.trustee.client import encode
 from cvm.trustee.provenance import provenance
@@ -105,6 +106,7 @@ def main(directory):
         "session_storage_type": "memory",
         "attestation_service": {
             "type": "coco_as_builtin",
+            "verifier_config": read_json(SOURCE / "trustee/kbs.json")["attestation_service"]["verifier_config"],
             "attestation_token_broker": {
                 "duration_min": 5,
                 "issuer_name": "CoCo-Attestation-Service",

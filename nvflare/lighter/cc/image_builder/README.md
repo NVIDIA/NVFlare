@@ -26,6 +26,8 @@ For operational instructions, see:
 - [BUILD_GUIDE.md](BUILD_GUIDE.md): build the reusable CVM bundle and a fresh
   vault for each application release and site.
 - [USER_GUIDE.md](USER_GUIDE.md): verify, launch, operate, and stop a delivered CVM.
+- [TDX_TROUBLESHOOTING.md](TDX_TROUBLESHOOTING.md): diagnose Intel quote-generation
+  failures, recover QGS after PCK cache expiry, and select the Trustee TCB channel.
 
 ## Inputs and prerequisites
 

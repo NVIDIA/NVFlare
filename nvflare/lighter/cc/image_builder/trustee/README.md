@@ -9,6 +9,11 @@ Merge the relevant settings from [kbs.json](kbs.json) into the existing deployme
 and follow [TRUSTEE_GUIDE.md](../TRUSTEE_GUIDE.md). Preserve existing workloads'
 policies and references when selecting a compatible CVM security profile.
 
+The reference configuration explicitly uses Intel's `standard` TCB update
+channel. Upstream Trustee defaults to `early`; choose the channel as a deployment
+security policy and keep it explicit. CPU appraisal still requires `UpToDate`
+and unexpired collateral. See the guide for the firmware baseline implications.
+
 Vault builds upload through the native resource API using a scoped bearer token.
 The policy-publisher role is separate from the resource role. KBS writes native
 resources and releases them only after attestation and policy authorization.

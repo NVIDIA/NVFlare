@@ -94,7 +94,7 @@ def validate_token(token, config, digest, *, now=None):
             require(evidence["init_data"] == (digest + bytes(16)).hex(), "Appraised TDX binding mismatch")
             require(evidence["tdx"]["td_attributes"]["debug"] is False, "TDX debug is enabled")
         else:
-            require(evidence["init_data"] == base64.b64encode(digest).decode(), "Appraised SNP binding mismatch")
+            require(evidence["init_data"] == digest.hex(), "Appraised SNP binding mismatch")
             require(
                 evidence["snp"]["policy_debug_allowed"] is False and evidence["snp"]["policy_migrate_ma"] is False,
                 "SNP debug or migration is enabled",

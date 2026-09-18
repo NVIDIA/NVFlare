@@ -327,7 +327,7 @@ Each sealed copy has its own header and therefore its own `vault_bind`. The copy
 **Deterministic resource identity.** `cvm-bundle-id` is the existing `cvm_build_id`, not a new identifier or registry entry. Stage 1 chooses an immutable unique value matching `[a-z0-9][a-z0-9_-]{0,63}`, writes it to `/etc/cvm_build_id` before measuring the root, and records it as `build_id` in the generic manifest. Never reuse an id for another bundle. The guest obtains it only from the verified root; the builder obtains it from the trusted profile set. `vault-binding-id` encodes the checked header digest as specified below. The LUKS UUID remains diagnostic and manifest metadata; it no longer selects the key.
 
 ```
-SNP binding-id = base64url_no_pad(vault_bind)              # 43 URL-safe characters
+SNP binding-id = lowercase_hex(vault_bind)                # 64 hex characters
 TDX binding-id = lowercase_hex(vault_bind ‖ 16 zero bytes) # 96 hex characters
 client resource = keys/<cvm_build_id>/<binding-id>
 KBS resource URI = kbs:///keys/<cvm_build_id>/<binding-id>  # repository/type/tag
@@ -349,9 +349,9 @@ The claim/path contract uses unmodified CoCo Trustee v0.22.0 (`512fed65642015b84
 | Value | SNP | TDX |
 |---|---|---|
 | QEMU instance-field argument | base64 of 32-byte digest | base64 of digest plus 16 zero bytes |
-| EAR `ev["init_data"]` | standard base64 of HOSTDATA | lowercase hex of the complete 48-byte MRCONFIGID (96 characters) |
-| EAR measurement claims | `snp.measurement`, standard base64 | `tdx.quote.body.mr_td`, `rtmr_0`, `rtmr_1`, `rtmr_2`, lowercase hex |
-| Resource binding id | URL-safe base64 of 32-byte digest, without padding (43 characters) | same 96-character lowercase hex as EAR, including 16 zero bytes |
+| EAR `ev["init_data"]` | lowercase hex of HOSTDATA (64 characters) | lowercase hex of the complete 48-byte MRCONFIGID (96 characters) |
+| EAR measurement claims | `snp.measurement`, lowercase hex (96 characters) | `tdx.quote.body.mr_td`, `rtmr_0`, `rtmr_1`, `rtmr_2`, lowercase hex |
+| Resource binding id | lowercase hex of the 32-byte digest (64 characters) | same 96-character lowercase hex as EAR, including 16 zero bytes |
 | Client resource path | `keys/<SNP_build_id>/<SNP_binding_id>` | `keys/<TDX_build_id>/<TDX_binding_id>` |
 | Policy request path | `data.plugin == "resource"` and `data["resource-path"] == ["keys", "<SNP_build_id>", "<SNP_binding_id>"]` | corresponding TDX bundle and binding |
 
@@ -360,7 +360,7 @@ The KBS HTTP router supplies `plugin`, the resource-path **array** without the p
 The resource policy contains one rule per approved generic bundle. `cvm/common/policy.py` generates Rego v1 for the pinned engine; it requires a fresh token (at most five minutes old and five minutes total lifetime), the configured issuer, favorable CPU appraisal, approved launch measurements, and exact resource path. For GPU profiles it additionally requires all configured GPU appraisals, distinct identities and favorable trust vectors. The binding comes dynamically from evidence; there is no per-vault measurement list. For example, the final path conditions are:
 
 ```rego
-# SNP: binding_id is canonical HOSTDATA translated to base64url without padding.
+# SNP: binding_id is the canonical lowercase-hex HOSTDATA.
 data.plugin == "resource"
 data["resource-path"] == ["keys", "<SNP_BUILD_ID>", binding_id]
 
@@ -374,6 +374,8 @@ These are excerpts; install the complete generated resource policy, including fr
 **Appraisal policy is a required artifact.** The KBS admin installs the profile’s reviewed AS CPU policy and its RVPS reference set before authorizing vaults. These references describe generic boot measurements and approved CPU security configurations; they do not enumerate vault bindings. The AS returns `executables=3`, `hardware=2`, `configuration=2` only when all required checks pass: approved boot measurements; SNP debug and migration-agent permissions disabled plus approved TCB/configuration; or TDX debug disabled, approved module/TCB/XFAM, acceptable DCAP status and unexpired collateral. TDX direct boot also requires a replay-verified CCEL consistent with the pinned boot profile. Missing reference values or claims fail the appraisal. The AS exposes the verified instance field for the KBS's dynamic comparison. Broad fallback branches from sample policies are not part of this production policy.
 
 The upstream `kbs-client` uses the `default` AS policy selector. Install the approved policy as `default_cpu.rego` (and `default_gpu.rego` for GPU profiles), with policy content digests and the profile version recorded in the bundle and deployment receipt. Separate security profiles use separate configured policy/reference storage with the same upstream Trustee distribution. Read-only mounts and upstream role ACLs prevent policy replacement; the policy name alone never establishes approval. KBS verifies signer trust before applying the resource policy. Unfavorable, missing, stale, differently appraised or incorrectly typed claims deny release. AS Rego uses `query_reference_value()` and emits `trust_claims`; a companion RVPS reference carries per-value expiry deadlines, checked by Rego because v0.22 RVPS returns stored values without enforcing metadata expiry.
+
+The reference Trustee configuration explicitly sets `attestation_service.verifier_config.dcap_verifier.tcb_update_type` to `standard`. Upstream v0.22.0 otherwise defaults to `early` and fetches collateral independently of the host's QCNL configuration. Intel's standard channel includes a mitigation deployment grace period; early applies newer TCB recovery requirements. The deployment operator records the selected channel alongside policy and reference approvals. TDX appraisal requires `UpToDate` and unexpired collateral under that channel; there is no fallback that accepts `OutOfDate`. Deployments selecting early must qualify their firmware against that baseline. See [TRUSTEE_GUIDE.md](TRUSTEE_GUIDE.md#4-configure-upstream-kbs).
 
 Production operation requires working HOSTDATA/MRCONFIGID and guest binding verification. Unsupported QEMU/firmware/attester combinations are rejected. A command-line-only binding would require a separately specified per-vault measurement mode; there is no silent fallback that violates G1.
 
@@ -490,7 +492,7 @@ This removes the previously proposed per-vault inventory and policy publisher. I
 ### 8.1 AMD SEV-SNP
 
 - QEMU: `-object sev-snp-guest,id=sev0,cbitpos=…,reduced-phys-bits=1,policy=0x30000,kernel-hashes=on,host-data=<b64>` + `-bios OVMF.amdsev.fd -kernel -initrd -append`. Unchanged from today apart from `host-data`.
-- Guest evidence: `/dev/sev-guest` via the selected `snp` attester. Trustee verifies against AMD endorsements; EAR exposes `snp.measurement`, top-level `init_data` (base64 HOSTDATA), `snp.policy_debug_allowed`, `snp.policy_migrate_ma` and TCB/configuration claims. The guest locally checks HOSTDATA before requesting a key; KBS enforces the appraisal as well as measurement and binding.
+- Guest evidence: `/dev/sev-guest` via the selected `snp` attester. Trustee verifies against AMD endorsements; EAR exposes `snp.measurement`, top-level `init_data` (lowercase-hex HOSTDATA), `snp.policy_debug_allowed`, `snp.policy_migrate_ma` and TCB/configuration claims. The guest locally checks HOSTDATA before requesting a key; KBS enforces the appraisal as well as measurement and binding.
 - **VCEK availability.** Use CoCo Trustee's upstream SNP collateral handling, including its documented offline certificate store when KDS outage tolerance is required. Do not assume the removed CVM-specific cache or its timeout constants. Qualify initial and periodic appraisal on the selected deployment, including KDS loss and changed chip/TCB values; freshness and bounded guest shutdown remain required.
 - For a GPU profile, `launch_cvm.sh` detects exactly `gpu_count` assignable NVIDIA display GPUs, binds every function in each isolated PCI slot to `vfio-pci`, and passes each slot through a dedicated QEMU PCIe root port. Each port reserves a 256 GiB 64-bit prefetchable MMIO window so a device with a 128 GiB BAR, including the validated H800, can be assigned. The measured GPU-profile command line includes `pci=realloc,nocrs` so Linux allocates the devices' large BARs. TDX connects every device to a shared IOMMUFD backend; legacy VFIO attempts to map private TDX RAM and can exhaust the host DMA-mapping limit. The measured guest verifies the visible count, configures `nvidia-container-runtime`, appraises all GPUs, and starts the application container with `docker run --gpus all`. Repeat `--gpu PCI_ADDRESS` exactly `gpu_count` times for explicit placement. TEE-device mapping into the container remains a separate application opt-in.
 
@@ -683,7 +685,7 @@ These are implementation acceptance criteria, not claims of completed hardware v
 | Bootstrap starting application services (§5/§10) | `READY=1` precedes a synchronous start of `cvm_app.service` and generated app units; no activation deadlock and no workload before every gate succeeds |
 | Reordered SCSI targets and asynchronous disk probing | Stable disk serials select the verified root, encrypted vault and each clear directional sidecar correctly; generic measurements and workload behavior remain unchanged |
 | Integrity monitor active before the first authenticated scan (§5/§6.4) | `cvm_integrity.service` is started synchronously (no `Requires=cvm_bootstrap.service`) and signals readiness before the full-device scan begins; no scan read occurs before the monitor is watching |
-| SNP base64 and TDX 96-character hex claim fixtures | Correct canonical claims and derived paths accepted; SNP `+`/`/`/`=` conversion verified. Wrong lengths/types, noncanonical base64, uppercase/short/base64 TDX values, nonzero padding and wrong measurements fail closed |
+| SNP 64-character and TDX 96-character hex binding fixtures | Correct canonical claims and derived paths accepted; SNP 96-character hex launch measurement verified. Wrong lengths/types, uppercase/short/base64 binding values, nonzero padding and wrong measurements fail closed |
 | Debug enabled, migration-agent permitted, unapproved TCB, bad/expired DCAP collateral, missing/bad TDX event log | AS does not yield the required affirmative appraisal; KBS denies even when measurement/binding match |
 | Signed negative EAR, wrong policy id, missing/incorrect trust-vector fields, expired token or stale evidence | Denied; no key released |
 | Guest clock unavailable, unsynchronized or outside the configured correction/skew bounds | `bootstrap clock gate` fails before first CPU/GPU appraisal and before workload startup. A periodic clock-gate failure stops the workload and powers off. A synchronized clock is recorded in hardware evidence. |

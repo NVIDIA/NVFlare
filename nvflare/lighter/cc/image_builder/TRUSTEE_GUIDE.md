@@ -129,6 +129,37 @@ KBS resources. The separate `cvm-resources` role permits native resource POST an
 issuing deployment-specific credentials. It cannot publish policy. This upstream
 ACL is endpoint-based: do not describe its resource token as create-only.
 
+The reference configuration explicitly selects Intel's `standard` TCB update
+channel for DCAP verification:
+
+```json
+"verifier_config": {
+  "dcap_verifier": {
+    "collateral_service": "https://api.trustedservices.intel.com/sgx/certification/v4/",
+    "use_secure_cert": true,
+    "tcb_update_type": "standard"
+  }
+}
+```
+
+Trustee v0.22.0 defaults to `early` when this setting is omitted. It fetches
+collateral itself, so setting the host's `/etc/sgx_default_qcnl.conf` alone does
+not configure this verifier. `standard` retains Intel's mitigation deployment
+grace period; `early` applies newer TCB recovery requirements. The same signed
+quote can therefore pass under `standard` and report `OutOfDate` under `early`.
+See [Intel's TCB recovery guidance](https://www.intel.com/content/www/us/en/developer/articles/technical/software-security-guidance/best-practices/trusted-computing-base-recovery.html).
+
+Select and record the channel as part of the deployment's security policy.
+Deployments requiring the early baseline should set `tcb_update_type` to
+`early` and update platform firmware accordingly. The CPU appraisal policy
+requires upstream's `UpToDate` status and unexpired collateral under the selected
+channel; it does not accept `OutOfDate` as a fallback.
+
+For diagnosis and verified recovery steps, see
+[Intel TDX troubleshooting](TDX_TROUBLESHOOTING.md#tcb-channel-selection),
+including the distinction between QGS quote-generation failures and a valid
+quote appraised against a newer TCB baseline.
+
 The upstream `kbs-client` CLI uses the `default` AS policy. Set
 `attestation_policy_id: default` and
 `token_issuer: CoCo-Attestation-Service` in the CVM profile. Install the reviewed
@@ -171,10 +202,16 @@ Kubernetes init container. Upstream's built-in fallback resource policy is not
 the CVM authorization policy and must not be used when a policy volume is missing.
 
 For a GPU profile replace `default_gpu.rego` with that bundle's generated GPU
-policy. Add the following object under `attestation_service` in `kbs.json`:
+policy. Add `nvidia_verifier` to the existing `verifier_config` object under
+`attestation_service` in `kbs.json`, preserving the DCAP settings:
 
 ```json
 "verifier_config": {
+  "dcap_verifier": {
+    "collateral_service": "https://api.trustedservices.intel.com/sgx/certification/v4/",
+    "use_secure_cert": true,
+    "tcb_update_type": "standard"
+  },
   "nvidia_verifier": {
     "type": "Remote",
     "verifier_url": "https://nras.attestation.nvidia.com/v4/attest"

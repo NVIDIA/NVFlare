@@ -14,7 +14,6 @@
 
 """Parse and validate TDX and SNP measurement formats."""
 
-import base64
 import re
 import struct
 
@@ -36,8 +35,6 @@ def parse_tdx_report(report, nonce):
 
 
 def measurements(platform, report):
-    import base64
-
     if platform == "intel_tdx":
         require(len(report) == 1024, "Invalid TDREPORT")
         return {
@@ -47,7 +44,7 @@ def measurements(platform, report):
             "rtmr_2": report[816:864].hex(),
         }
     require(platform == "amd_sev_snp" and len(report) == 1184, "Invalid SNP report")
-    return {"snp.measurement": base64.b64encode(report[144:192]).decode()}
+    return {"snp.measurement": report[144:192].hex()}
 
 
 def validate_measurements(platform, values):
@@ -55,10 +52,7 @@ def validate_measurements(platform, values):
     if platform == "amd_sev_snp":
         require(set(values) == {"snp.measurement"}, "SNP requires exactly its launch measurement")
         value = values["snp.measurement"]
-        require(
-            isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9+/]{64}", value), "Invalid SNP measurement encoding"
-        )
-        require(len(base64.b64decode(value, validate=True)) == 48, "Invalid SNP measurement size")
+        require(isinstance(value, str) and re.fullmatch(r"[0-9a-f]{96}", value), "Invalid SNP measurement encoding")
     else:
         require(
             set(values) == {"mr_td", "rtmr_0", "rtmr_1", "rtmr_2"},

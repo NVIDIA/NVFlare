@@ -37,7 +37,7 @@ class ResourcePolicyTests(unittest.TestCase):
     def fixture(self, platform):
         digest = bytes.fromhex("fbff" * 16)
         measurements = (
-            {"snp.measurement": base64.b64encode(bytes(48)).decode()}
+            {"snp.measurement": bytes(48).hex()}
             if platform == "amd_sev_snp"
             else {"mr_td": "1" * 96, "rtmr_0": "0" * 96, "rtmr_1": "2" * 96, "rtmr_2": "3" * 96}
         )
@@ -47,9 +47,7 @@ class ResourcePolicyTests(unittest.TestCase):
             "measurements": measurements,
             "attestation_policy_id": "cvm-test",
         }
-        evidence = {
-            "init_data": base64.b64encode(digest).decode() if platform == "amd_sev_snp" else (digest + bytes(16)).hex()
-        }
+        evidence = {"init_data": digest.hex() if platform == "amd_sev_snp" else (digest + bytes(16)).hex()}
         if platform == "amd_sev_snp":
             evidence["snp"] = {
                 "measurement": measurements["snp.measurement"],
@@ -179,9 +177,10 @@ class ResourcePolicyTests(unittest.TestCase):
                 [],
                 init[:-1],
                 init + "=",
-                init.upper() if platform == "intel_tdx" else init.replace("/", "_"),
+                init.upper(),
+                base64.b64encode(bytes.fromhex(init)).decode(),
             ]
-            invalid.append(init[:-1] + ("1" if platform == "intel_tdx" else "A"))
+            invalid.append(init[:-1] + "1")
             for value in invalid:
                 claims = copy.deepcopy(original)
                 claims["submods"]["cpu0"]["ear.veraison.annotated-evidence"]["init_data"] = value

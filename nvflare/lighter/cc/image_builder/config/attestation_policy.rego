@@ -47,7 +47,7 @@ hardware := 2 if {
     input.tdx.quote.header.tee_type == "81000000"
     input.tdx.quote.body.mr_seam in reference("mr_seam")
     input.tdx.quote.body.tcb_svn in reference("tcb_svn")
-    input.tdx.tcb_status == "OK"
+    input.tdx.tcb_status == "UpToDate"
     input.tdx.collateral_expiration_status == "0"
     every advisory in input.tdx.advisory_ids {
         advisory in reference("allowed_advisory_ids")

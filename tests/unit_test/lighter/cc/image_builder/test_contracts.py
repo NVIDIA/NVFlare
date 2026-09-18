@@ -45,6 +45,7 @@ from cvm.common.errors import BuildError
 from cvm.common.evidence import serial_evidence, serial_frames
 from cvm.common.io import canonical
 from cvm.common.linux import memory_file, validate_core_policy
+from cvm.common.measurements import measurements, validate_measurements
 from cvm.common.services import validate_service
 from cvm.common.validation import runtime_config
 from cvm.host import platforms
@@ -78,6 +79,15 @@ class BindingTests(unittest.TestCase):
         self.assertIsNone(serial_evidence("boot noise\n" + "\n".join(frames)[:-1]))
         self.assertEqual(serial_evidence("boot noise\n" + "\n".join(frames) + "\n"), evidence)
 
+    def test_reference_survives_journal_console_prefix(self):
+        evidence = {"ccel": base64.b64encode(os.urandom(4096)).decode()}
+        frames = serial_frames(evidence)
+        output = "boot noise\r\n" + "\r\n".join(f"[   14.977856] python3[741]: {frame}" for frame in frames)
+        self.assertIsNone(serial_evidence(output))
+        self.assertEqual(serial_evidence(output + "\r\n"), evidence)
+        with self.assertRaises(BuildError):
+            serial_evidence(output + "\r\n[   15.021668] python3[741]: CVM_REFERENCE_V2 1/99 AAAA\r\n")
+
     def test_domain_and_entire_header(self):
         header = bytes(HEADER_BYTES)
         self.assertEqual(binding(header), hashlib.sha256(b"nvflare-vault-v2\0" + header).digest())
@@ -93,7 +103,7 @@ class BindingTests(unittest.TestCase):
 
     def test_canonical_platform_encodings(self):
         value = bytes.fromhex("fbff" * 16)
-        self.assertEqual(len(binding_id("amd_sev_snp", value)), 43)
+        self.assertEqual(binding_id("amd_sev_snp", value), value.hex())
         self.assertNotIn("/", binding_id("amd_sev_snp", value))
         self.assertEqual(binding_id("intel_tdx", value), value.hex() + "0" * 32)
         self.assertEqual(base64.b64decode(qemu_binding("intel_tdx", value)), value + bytes(16))
@@ -106,6 +116,7 @@ class BindingTests(unittest.TestCase):
             "keys/../" + snp,
             "resource/keys/a/" + snp,
             "keys/a/" + snp + "=",
+            "keys/a/" + base64.urlsafe_b64encode(bytes(32)).decode().rstrip("="),
             "keys/a/" + snp[:-1] + "B",
             "keys/a/" + "a" * 96,
             "keys/a/" + "A" * 64 + "0" * 32,
@@ -113,6 +124,17 @@ class BindingTests(unittest.TestCase):
         ):
             with self.subTest(path=value), self.assertRaises(BuildError):
                 validate_resource(value)
+
+    def test_snp_measurement_matches_upstream_hex_claim(self):
+        report = bytearray(1184)
+        launch = bytes.fromhex("fbff" * 24)
+        report[144:192] = launch
+        expected = {"snp.measurement": launch.hex()}
+        self.assertEqual(measurements("amd_sev_snp", report), expected)
+        validate_measurements("amd_sev_snp", expected)
+        for value in (launch.hex().upper(), launch.hex()[:-1], base64.b64encode(launch).decode()):
+            with self.subTest(value=value), self.assertRaises(BuildError):
+                validate_measurements("amd_sev_snp", {"snp.measurement": value})
 
     def test_frozen_memfd_cannot_change(self):
         with memory_file(b"verified header", sealed=True) as fd:
@@ -600,6 +622,18 @@ class TokenTests(unittest.TestCase):
 
     def test_positive_signed_appraisal(self):
         validate_token(self.token(), self.config, bytes(32), now=1001)
+
+    def test_upstream_snp_hex_binding_and_legacy_encoding_rejected(self):
+        digest = bytes.fromhex("fbff" * 16)
+        self.config["platform"] = "amd_sev_snp"
+        evidence = self.claims["submods"]["cpu0"]["ear.veraison.annotated-evidence"]
+        evidence.clear()
+        evidence.update(init_data=digest.hex(), snp={"policy_debug_allowed": False, "policy_migrate_ma": False})
+        validate_token(self.token(), self.config, digest, now=1001)
+        for value in (digest.hex().upper(), digest.hex()[:-1], base64.b64encode(digest).decode()):
+            with self.subTest(value=value), self.assertRaises(BuildError):
+                evidence["init_data"] = value
+                validate_token(self.token(), self.config, digest, now=1001)
 
     def test_negative_policy_and_trust_vector_denied(self):
         cpu = self.claims["submods"]["cpu0"]

@@ -80,6 +80,11 @@ that check is omitted. It does not fabricate evidence or silently approve TCB
 values. On failure, inspect `journalctl -u qgsd`, collateral-service access and
 platform registration. Resolve these prerequisites before building/sealing.
 
+For a previously working host that stops producing quotes, or a verified quote
+that is appraised as `OutOfDate`, follow
+[Intel TDX troubleshooting](TDX_TROUBLESHOOTING.md). It covers QGS cache-expiry
+recovery and the separate Trustee `standard`/`early` collateral setting.
+
 For the plain construction VM and SNP, verify the packaged firmware paths:
 
 ```sh

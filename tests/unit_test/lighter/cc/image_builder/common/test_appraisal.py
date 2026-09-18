@@ -68,7 +68,7 @@ class AppraisalTests(unittest.TestCase):
         tdx = {
             "quote": {"header": {"tee_type": "81000000"}, "body": body},
             "uefi_event_logs": {"kernel": "measured"},
-            "tcb_status": "OK",
+            "tcb_status": "UpToDate",
             "collateral_expiration_status": "0",
             "advisory_ids": [],
             "td_attributes": {"debug": False},
@@ -80,7 +80,14 @@ class AppraisalTests(unittest.TestCase):
             self.assertFalse(self.evaluate({"tdx": tdx}, {}, dimension))
         for key, value, dimension in (
             ("uefi_event_logs", {}, "executables"),
+            ("tcb_status", "OK", "hardware"),
             ("tcb_status", "OutOfDate", "hardware"),
+            ("tcb_status", "ConfigurationNeeded", "hardware"),
+            ("tcb_status", "OutOfDateConfigurationNeeded", "hardware"),
+            ("tcb_status", "SWHardeningNeeded", "hardware"),
+            ("tcb_status", "ConfigurationAndSWHardeningNeeded", "hardware"),
+            ("tcb_status", "TDRelaunchAdvised", "hardware"),
+            ("tcb_status", "TDRelaunchAdvisedConfigurationNeeded", "hardware"),
             ("collateral_expiration_status", "1", "hardware"),
             ("advisory_ids", ["UNAPPROVED"], "hardware"),
             ("td_attributes", {"debug": True}, "configuration"),
