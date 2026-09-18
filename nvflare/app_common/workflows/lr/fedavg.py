@@ -136,6 +136,7 @@ class FedAvgLR(BaseFedAvg):
 
             # Save global model.
             self.save_model(model)
+            self.event(AppEventType.ROUND_DONE)
 
         self.info("Finished FedAvg.")
 

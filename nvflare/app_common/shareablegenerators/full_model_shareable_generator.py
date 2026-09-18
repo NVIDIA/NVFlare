@@ -63,8 +63,10 @@ class FullModelShareableGenerator(ShareableGenerator):
             weights = base_model[ModelLearnableKey.WEIGHTS]
             if dxo.data is not None:
                 model_diff = dxo.data
+                updated_weights = {}
                 for v_name, v_value in model_diff.items():
-                    weights[v_name] = weights[v_name] + v_value
+                    updated_weights[v_name] = weights[v_name] + v_value
+                weights.update(updated_weights)
         elif dxo.data_kind == DataKind.WEIGHTS:
             if not base_model:
                 base_model = ModelLearnable()

@@ -60,7 +60,10 @@ class TestFedAvgLRInit:
         ):
             controller.run()
 
-        event.assert_called_once_with(AppEventType.ROUND_STARTED)
+        assert [call.args[0] for call in event.call_args_list] == [
+            AppEventType.ROUND_STARTED,
+            AppEventType.ROUND_DONE,
+        ]
         assert controller.fl_ctx.get_prop(AppConstants.CURRENT_ROUND) == 0
         assert controller.fl_ctx.get_prop(AppConstants.NUM_ROUNDS) == 1
 

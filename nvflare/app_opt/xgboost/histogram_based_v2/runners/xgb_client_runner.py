@@ -149,10 +149,7 @@ class XGBClientRunner(AppRunner, FLComponent):
         # Specify validations set to watch performance
         watchlist = [(val_data, "eval"), (train_data, "train")]
 
-        callbacks = [
-            callback.EvaluationMonitor(rank=self._rank),
-            _ProgressCallback(self.logger, self._rank, num_rounds),
-        ]
+        callbacks = [_ProgressCallback(self.logger, self._rank, num_rounds)]
         if self._metrics_writer:
             callbacks.append(MetricsCallback(self._metrics_writer))
 

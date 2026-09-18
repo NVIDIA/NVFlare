@@ -149,6 +149,7 @@ class TestStatisticsController:
 
     def test_control_flow_reports_statistics_phases(self):
         controller = StatisticsController(statistic_configs={SC.STATS_COUNT: {}}, writer_id="writer", min_clients=2)
+        controller._participating_client_count = 3
         controller.pre_run_task_flow = MagicMock()
         controller.statistics_task_flow = MagicMock()
         controller.post_fn = MagicMock(return_value=True)
@@ -160,7 +161,7 @@ class TestStatisticsController:
             controller.control_flow(Signal(), FLContext())
 
         messages = [call.args[1] for call in progress.call_args_list]
-        assert "Federated statistics · 2 clients" in messages[0]
+        assert "Federated statistics · 3 clients" in messages[0]
         assert messages[1:] == [
             "  Computing first-pass statistics…",
             "  Computing derived statistics…",

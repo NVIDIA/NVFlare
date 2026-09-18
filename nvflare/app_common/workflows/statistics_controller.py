@@ -144,6 +144,7 @@ class StatisticsController(Controller):
         self.min_clients = min_clients
         self.result_cb_status = {}
         self.client_handshake_ok = {}
+        self._participating_client_count = None
 
         self.enable_pre_run_task = enable_pre_run_task
 
@@ -168,16 +169,20 @@ class StatisticsController(Controller):
             )
         self.fl_ctx = fl_ctx
         clients = fl_ctx.get_engine().get_clients()
+        self._participating_client_count = len(clients)
         if not self.min_clients:
             self.min_clients = len(clients)
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
 
         self.log_info(fl_ctx, f"{self.task_name} control flow started.")
+        client_count = self._participating_client_count
+        if client_count is None:
+            client_count = self.min_clients
         log_progress(
             self.logger,
-            f"\n  Federated statistics · {self.min_clients} "
-            f"client{'s' if self.min_clients != 1 else ''}\n\n  Preparing client datasets…",
+            f"\n  Federated statistics · {client_count} "
+            f"client{'s' if client_count != 1 else ''}\n\n  Preparing client datasets…",
         )
 
         if abort_signal.triggered:

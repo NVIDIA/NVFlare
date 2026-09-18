@@ -19,7 +19,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from nvflare.apis.client import Client
-from nvflare.apis.controller_spec import ClientTask, Task
+from nvflare.apis.controller_spec import ClientTask, Task, TaskCompletionStatus
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
@@ -94,7 +94,12 @@ class TestCyclicController:
 
     def test_control_flow_call_relay_and_wait(self):
 
-        with patch("nvflare.app_common.workflows.cyclic_ctl.CyclicController.relay_and_wait") as mock_method:
+        def complete_relay(task, **kwargs):
+            task.completion_status = TaskCompletionStatus.OK
+
+        with patch(
+            "nvflare.app_common.workflows.cyclic_ctl.CyclicController.relay_and_wait", side_effect=complete_relay
+        ) as mock_method:
             ctl = CyclicController(persist_every_n_rounds=0, snapshot_every_n_rounds=0, num_rounds=1)
             ctl.shareable_generator = Mock()
             ctl._participating_clients = [
@@ -119,6 +124,25 @@ class TestCyclicController:
                 mock_method.assert_called_once()
                 assert fire_event.call_args_list[0].args[0] == AppEventType.ROUND_STARTED
                 assert fire_event.call_args_list[-1].args[0] == AppEventType.ROUND_DONE
+
+    def test_control_flow_does_not_publish_round_done_after_timeout(self):
+        ctl = CyclicController(persist_every_n_rounds=0, snapshot_every_n_rounds=0, num_rounds=1)
+        ctl.shareable_generator = Mock()
+        ctl.shareable_generator.learnable_to_shareable.return_value = Shareable()
+        ctl._participating_clients = [Client("site-1", SITE_1_ID), Client("site-2", SITE_2_ID)]
+
+        def timeout_relay(task, **kwargs):
+            task.completion_status = TaskCompletionStatus.TIMEOUT
+
+        with (
+            patch.object(ctl, "relay_and_wait", side_effect=timeout_relay),
+            patch.object(ctl, "fire_event") as fire_event,
+        ):
+            ctl.control_flow(Signal(), FLContext())
+
+        events = [call.args[0] for call in fire_event.call_args_list]
+        assert AppEventType.ROUND_STARTED in events
+        assert AppEventType.ROUND_DONE not in events
 
     @pytest.mark.parametrize("return_result", PROCESS_RESULT_TEST_CASES)
     def test_process_result(self, return_result):

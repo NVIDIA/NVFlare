@@ -958,8 +958,9 @@ def test_round_done_completes_non_aggregation_workflow(tmp_path, caplog):
     with caplog.at_level("INFO"):
         writer.handle_event(EventType.START_RUN, fl_ctx)
         writer.handle_event(AppEventType.ROUND_STARTED, fl_ctx)
-        _record_contribution(writer, fl_ctx, 0, "site-1", {"auc": 0.8})
+        _record_contribution(writer, fl_ctx, 0, "site-1", {"auc": 0.8, "loss": 0.2, "samples": 10})
         writer.handle_event(AppEventType.ROUND_DONE, fl_ctx)
+        writer.handle_event(EventType.END_RUN, fl_ctx)
 
     output = "\n".join(
         record.message
@@ -968,7 +969,34 @@ def test_round_done_completes_non_aggregation_workflow(tmp_path, caplog):
     )
     assert "ROUND 1 / 2" in output
     assert "site-1" in output and "auc" in output and "0.8" in output
+    assert "Additional metric results are available in the saved metrics artifacts." in output
     assert "Processed 1 client update" in output
+    rounds = _read_rounds(tmp_path)
+    assert len(rounds) == 1
+    assert rounds[0]["round"] == 0
+    assert rounds[0]["aggregated_metrics"] == []
+    assert _metrics_to_dict(rounds[0]["sites"][0]["metrics"]) == {"auc": 0.8, "loss": 0.2, "samples": 10}
+    summary = _read_summary(tmp_path)
+    assert summary["status"] == "metrics_reported"
+    assert summary["final_round"] == 0
+    assert summary["final_aggregated_metrics"] == []
+
+
+def test_progress_only_writer_does_not_publish_partial_artifacts(tmp_path, caplog):
+    writer = MetricsArtifactWriter(write_artifacts=False)
+    fl_ctx = _make_fl_ctx(tmp_path)
+    fl_ctx.set_prop(AppConstants.CURRENT_ROUND, 0, private=True, sticky=False)
+
+    with caplog.at_level("INFO"):
+        writer.handle_event(EventType.START_RUN, fl_ctx)
+        _record_contribution(writer, fl_ctx, 0, "site-1", {"auc": 0.8, "loss": 0.2, "samples": 10})
+        writer.handle_event(AppEventType.ROUND_DONE, fl_ctx)
+        writer.handle_event(EventType.END_RUN, fl_ctx)
+
+    output = "\n".join(record.message for record in caplog.records)
+    assert "Additional metric results were omitted from the progress display." in output
+    assert "saved metrics artifacts" not in output
+    assert not (tmp_path / _METRICS_DIR).exists()
 
 
 def test_scaffold_aggregation_resets_contribution_count_without_round_started(tmp_path, caplog):

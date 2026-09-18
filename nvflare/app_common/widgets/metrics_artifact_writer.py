@@ -55,11 +55,13 @@ class MetricsArtifactWriter(Widget):
         summary_file_name: str = "metrics_summary.json",
         round_file_name: str = "round_metrics.jsonl",
         limits: Optional[Dict[str, int]] = None,
+        write_artifacts: bool = True,
     ):
         super().__init__()
         self.results_dir = results_dir
         self.summary_file_name = summary_file_name
         self.round_file_name = round_file_name
+        self.write_artifacts = write_artifacts
 
         limits = limits or {}
         self.max_metric_name_length = limits.get("max_metric_name_length", 256)
@@ -179,8 +181,15 @@ class MetricsArtifactWriter(Widget):
         if self._progress_client_rows < MAX_PROGRESS_CLIENT_ROWS:
             self._log_progress_metrics(label, metrics)
         elif self._progress_client_rows == MAX_PROGRESS_CLIENT_ROWS:
-            log_progress(_logger, "  Additional client results are available in the saved metrics artifacts.")
+            self._log_additional_results("client")
         self._progress_client_rows += 1
+
+    def _log_additional_results(self, result_type):
+        if self.write_artifacts:
+            message = f"Additional {result_type} results are available in the saved metrics artifacts."
+        else:
+            message = f"Additional {result_type} results were omitted from the progress display."
+        log_progress(_logger, f"  {message}")
 
     def _handle_after_aggregation(self, fl_ctx: FLContext):
         aggr_result = fl_ctx.get_prop(AppConstants.AGGREGATION_RESULT, None)
@@ -218,7 +227,7 @@ class MetricsArtifactWriter(Widget):
             log_progress(_logger, "  " + "─" * 66)
             self._log_progress_metrics("Aggregated", aggregated_metrics)
         if self._progress_metrics_omitted:
-            log_progress(_logger, "  Additional metric results are available in the saved metrics artifacts.")
+            self._log_additional_results("metric")
         if has_aggregation_details or self._round_contribution_count:
             duration = ""
             if self._round_started_at is not None:
@@ -261,11 +270,11 @@ class MetricsArtifactWriter(Widget):
         if not self._round_contribution_count:
             return
         current_round = self._safe_round(fl_ctx.get_prop(AppConstants.CURRENT_ROUND, None))
-        self._round_sites.pop(current_round, None)
-        self._round_skipped.pop(current_round, None)
+        sites = self._round_sites.pop(current_round, [])
+        skipped = self._round_skipped.pop(current_round, [])
         self._round_site_metric_counts.pop(current_round, None)
         if self._progress_metrics_omitted:
-            log_progress(_logger, "  Additional metric results are available in the saved metrics artifacts.")
+            self._log_additional_results("metric")
         duration = ""
         if self._round_started_at is not None:
             duration = f"{time.monotonic() - self._round_started_at:.1f}s"
@@ -274,6 +283,20 @@ class MetricsArtifactWriter(Widget):
             completion += "s"
         log_progress(_logger, "\n" + f"  {completion}".ljust(64) + duration)
         self._reset_progress()
+
+        if sites or skipped:
+            self._append_round_record(
+                fl_ctx,
+                {
+                    "round": current_round,
+                    "aggregated_metrics": [],
+                    "sites": sites,
+                    "skipped_metrics": skipped,
+                },
+            )
+            self._has_metrics = True
+            self._final_round = current_round
+            self._final_aggregated_metrics = []
 
     @staticmethod
     def _to_fl_model(value):
@@ -530,6 +553,8 @@ class MetricsArtifactWriter(Widget):
         return result
 
     def _append_round_record(self, fl_ctx, record):
+        if not self.write_artifacts:
+            return
         self._ensure_paths(fl_ctx)
         os.makedirs(os.path.dirname(self._round_file_path), exist_ok=True)
         record = self._fit_round_record(record)
@@ -548,6 +573,8 @@ class MetricsArtifactWriter(Widget):
             f.write(line + "\n")
 
     def _write_summary_if_needed(self, fl_ctx):
+        if not self.write_artifacts:
+            return
         if self._custom_aggregator_no_metric_rounds:
             missing_rounds = self._custom_aggregator_no_metric_rounds
             if len(missing_rounds) <= 10:

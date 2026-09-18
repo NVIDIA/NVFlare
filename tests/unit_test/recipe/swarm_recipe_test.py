@@ -133,6 +133,7 @@ class TestSwarmLearningRecipe:
         assert selector.negate_key_metric is negate_key_metric
         assert isinstance(persistor, PTFileModelPersistor)
         assert isinstance(metrics_writer, MetricsArtifactWriter)
+        assert metrics_writer.write_artifacts is False
         assert persistor.best_global_model_file_name == DefaultCheckpointFileName.BEST_GLOBAL_MODEL
         assert "model_selector" not in recipe._job._deploy_map[SERVER_SITE_NAME].app_config.components
 

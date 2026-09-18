@@ -146,6 +146,7 @@ class Scaffold(BaseFedAvg):
 
             # Memory cleanup at end of round (if configured)
             self._maybe_cleanup_memory()
+            self.event(AppEventType.ROUND_DONE)
 
         self.info("Finished Scaffold.")
 

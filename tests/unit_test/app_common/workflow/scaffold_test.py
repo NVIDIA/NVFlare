@@ -46,6 +46,6 @@ def test_scaffold_publishes_standard_round_start_before_client_work():
     ):
         controller._run_rounds()
 
-    assert calls[:2] == [AppEventType.ROUND_STARTED, "send"]
+    assert calls == [AppEventType.ROUND_STARTED, "send", AppEventType.ROUND_DONE]
     assert controller.fl_ctx.get_prop(AppConstants.CURRENT_ROUND) == 0
     assert controller.fl_ctx.get_prop(AppConstants.NUM_ROUNDS) == 1

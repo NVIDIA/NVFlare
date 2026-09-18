@@ -258,7 +258,10 @@ class CCWFJob(FedJob):
             min_clients=server_config.min_clients,
         )
         self.to_server(controller)
-        self.to_clients(MetricsArtifactWriter(), id="swarm_metrics_artifact_writer")
+        # Aggregation ownership can rotate between clients, so no single client has
+        # an authoritative complete metric history. Use the writer for presentation
+        # only rather than publishing partial per-client artifacts as a run summary.
+        self.to_clients(MetricsArtifactWriter(write_artifacts=False), id="swarm_metrics_artifact_writer")
 
         metric_comparator_id = None
         if client_config.metric_comparator:

@@ -16,7 +16,7 @@ import random
 from typing import List, Union
 
 from nvflare.apis.client import Client
-from nvflare.apis.controller_spec import ClientTask, Task
+from nvflare.apis.controller_spec import ClientTask, Task, TaskCompletionStatus
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import Controller
@@ -303,7 +303,11 @@ class CyclicController(Controller):
                     # Call the self._engine to persist the snapshot of all the FLComponents
                     self._engine.persist_components(fl_ctx, completed=False)
 
-                if not self._is_done and not abort_signal.triggered:
+                if (
+                    task.completion_status == TaskCompletionStatus.OK
+                    and not self._is_done
+                    and not abort_signal.triggered
+                ):
                     self.fire_event(AppEventType.ROUND_DONE, fl_ctx)
                 self.log_debug(fl_ctx, "Ending current round={}.".format(self._current_round))
 
