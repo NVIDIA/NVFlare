@@ -16,10 +16,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from nvflare.apis.client import Client
-from nvflare.apis.controller_spec import ClientTask, Task
+from nvflare.apis.controller_spec import ClientTask, Task, TaskCompletionStatus
 from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.fl_constant import ReservedKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.impl.wf_comm_server import _TASK_KEY_MANAGER, WFCommServer
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import PSIConst
@@ -86,6 +87,31 @@ class TestDhPSIWorkflow:
         assert message == f"{PSIConst.TASK_PREPARE} received 2 participant responses"
         assert "private-site" not in message
         assert "91001" not in message
+
+    def test_prepare_rejects_all_empty_participants_with_value_free_error(self):
+        wf = DhPSIWorkFlow()
+        wf.fl_ctx = FLContext()
+        wf.fl_ctx.get_engine = MagicMock()
+        wf.fl_ctx.get_engine.return_value.get_clients.return_value = ["private-site-alpha", "private-site-beta"]
+        wf.controller = MagicMock()
+        wf.log_info = MagicMock()
+        abort_signal = Signal()
+        results = {
+            "private-site-alpha": DXO(data_kind=DataKind.PSI, data={PSIConst.ITEMS_SIZE: 0}),
+            "private-site-beta": DXO(data_kind=DataKind.PSI, data={PSIConst.ITEMS_SIZE: 0}),
+        }
+
+        with (
+            patch("nvflare.app_common.psi.dh_psi.dh_psi_workflow.BroadcastAndWait") as broadcast_and_wait,
+            pytest.raises(RuntimeError) as error,
+        ):
+            broadcast_and_wait.return_value.broadcast_and_wait.return_value = results
+            wf.prepare_sites(abort_signal)
+
+        message = str(error.value)
+        assert abort_signal.triggered
+        assert "no item" in message.lower()
+        assert "private-site" not in message
 
     def test_prepare_rejects_partial_results_without_identifying_missing_participant(self):
         wf = DhPSIWorkFlow()
@@ -199,6 +225,30 @@ class TestDhPSIWorkflow:
         assert "private-site-alpha" not in message
         assert "91001" not in message
 
+    def test_partial_nested_response_map_raises_before_intersection(self):
+        wf = DhPSIWorkFlow()
+        wf.abort_signal = Signal()
+        operator = MagicMock()
+        operator.broadcast_and_wait.return_value = {
+            "private-intersection-holder": DXO(
+                data_kind=DataKind.PSI,
+                data={PSIConst.RESPONSE_MSG: {"private-site-alpha": "encrypted-response"}},
+            )
+        }
+        wf._new_broadcast_operator = MagicMock(return_value=operator)
+        request_msgs = {
+            "private-site-alpha": "encrypted-request-a",
+            "private-site-beta": "encrypted-request-b",
+        }
+
+        with pytest.raises(RuntimeError) as error:
+            wf.process_requests(SiteSize("private-intersection-holder", 50001), request_msgs)
+
+        message = str(error.value)
+        assert "incomplete" in message
+        assert "private-site" not in message
+        assert "50001" not in message
+
     def test_malformed_result_map_raises_value_free_error(self):
         wf = DhPSIWorkFlow()
         wf.abort_signal = Signal()
@@ -275,6 +325,39 @@ class TestDhPSIWorkflow:
         assert "private-site-alpha" not in combined
         assert "a PSI participant" in combined
         assert callback_ctx.get_peer_context() is peer_ctx
+
+    @pytest.mark.parametrize("task_mode", ["broadcast", "multicast"])
+    @pytest.mark.parametrize("log_client_names", [False, True])
+    def test_workflow_communicator_callback_error_logging_respects_identity_policy(
+        self, task_mode, log_client_names, caplog
+    ):
+        controller = PSIController(psi_workflow_id="psi_workflow")
+        bop = BroadcastAndWait(FLContext(), controller, log_client_names=log_client_names)
+        client = Client("private-site-alpha", "token")
+        if task_mode == "broadcast":
+            controller.broadcast_and_wait = MagicMock()
+            bop.broadcast_and_wait(PSIConst.TASK, Shareable(), FLContext(), targets=[client])
+            task = controller.broadcast_and_wait.call_args.args[0]
+        else:
+            task = bop.get_tasks(PSIConst.TASK, {client.name: Shareable()})[client.name]
+        task.props[_TASK_KEY_MANAGER] = MagicMock()
+        client_task = ClientTask(client, task)
+        communicator = WFCommServer()
+        communicator._client_task_map[client_task.id] = client_task
+        callback_ctx = self._callback_context()
+
+        with caplog.at_level("ERROR"):
+            communicator.process_submission(
+                client=client,
+                task_name=PSIConst.TASK,
+                task_id=client_task.id,
+                result=make_reply(ReturnCode.EXECUTION_RESULT_ERROR),
+                fl_ctx=callback_ctx,
+            )
+
+        assert task.completion_status == TaskCompletionStatus.ERROR
+        assert ("private-site-alpha" in caplog.text) is log_client_names
+        assert "a PSI participant" in caplog.text
 
     @staticmethod
     def _callback_context():

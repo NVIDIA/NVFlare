@@ -309,7 +309,8 @@ class DhPSIWorkFlow(PSIWorkflow):
         )
 
         response_msgs = self._response_values(results, [s.name], PSIConst.RESPONSE_MSG, "PSI request processing")
-        return next(iter(response_msgs.values()))
+        response_msg = next(iter(response_msgs.values()))
+        return self._required_values(response_msg, request_msgs, "PSI request processing")
 
     def create_requests(self, site_setup_msgs) -> Dict[str, str]:
         task_inputs = {}
@@ -365,6 +366,9 @@ class DhPSIWorkFlow(PSIWorkflow):
             self.ordered_sites = sorted(
                 (SiteSize(site_name, size) for site_name, size in sizes.items() if size > 0), key=lambda site: site.size
             )
+            if not self.ordered_sites:
+                abort_signal.trigger("no items to perform PSI")
+                raise RuntimeError("There is no item to perform PSI calculation")
 
     def prepare_setup_messages(self, s: SiteSize, other_site_sizes: Set[int]) -> Dict[str, str]:
         inputs = Shareable()

@@ -17,7 +17,7 @@ import time
 from typing import Dict, List, Optional, Union
 
 from nvflare.apis.client import Client
-from nvflare.apis.controller_spec import ClientTask, Task
+from nvflare.apis.controller_spec import ClientTask, Task, TaskPropKey
 from nvflare.apis.dxo import DXO, from_shareable
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import ReservedKey, ReturnCode
@@ -50,6 +50,7 @@ class BroadcastAndWait(FLComponent):
         abort_signal: Signal = None,
     ) -> Dict[str, DXO]:
         task = Task(name=task_name, data=task_input, result_received_cb=self.results_cb, props=task_props)
+        task.set_prop(TaskPropKey.RESULT_CB_LOG_CLIENT_NAMES, self.log_client_names)
         self.controller.broadcast_and_wait(task, fl_ctx, targets, min_responses, 0, abort_signal)
         return self.results
 
@@ -79,6 +80,7 @@ class BroadcastAndWait(FLComponent):
         tasks = {}
         for client_name in task_inputs:
             task = Task(name=task_name, data=task_inputs[client_name], result_received_cb=self.results_cb)
+            task.set_prop(TaskPropKey.RESULT_CB_LOG_CLIENT_NAMES, self.log_client_names)
             tasks[client_name] = task
         return tasks
 
