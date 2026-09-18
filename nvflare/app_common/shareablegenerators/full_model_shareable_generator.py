@@ -63,8 +63,9 @@ class FullModelShareableGenerator(ShareableGenerator):
             weights = base_model[ModelLearnableKey.WEIGHTS]
             if dxo.data is not None:
                 model_diff = dxo.data
-                # Validate every update before mutating the model, but discard each
-                # validation result immediately to keep peak memory bounded for large models.
+                # Addition is intentionally evaluated twice: the first pass makes the
+                # operation failure-atomic, while discarding each result avoids retaining
+                # a third full model before the second pass applies the validated diff.
                 for v_name, v_value in model_diff.items():
                     validated_value = weights[v_name] + v_value
                     del validated_value

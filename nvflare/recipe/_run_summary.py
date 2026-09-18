@@ -143,7 +143,7 @@ def result_summary(result):
                                 if isinstance(metric, dict) and "name" in metric and "value" in metric
                             }
                             if site_values:
-                                site_rows.append((_text(site.get("name", "unknown")), site_values))
+                                site_rows.append((label, _text(site.get("name", "unknown")), site_values))
                     except (ValueError, TypeError, KeyError):
                         continue
                 if aggregate_rows:
@@ -153,7 +153,12 @@ def result_summary(result):
                 if site_rows:
                     heading = f"  {site_title} · client metrics"
                     lines.extend(["", heading + (" (last 10 rounds)" if truncated else ""), ""])
-                    lines.append(format_metric_table(site_rows, label="Client"))
+                    multiple_rounds = len({round_label for round_label, _, _ in site_rows}) > 1
+                    rows = [
+                        (f"{round_label} / {site}" if multiple_rounds else site, values)
+                        for round_label, site, values in site_rows
+                    ]
+                    lines.append(format_metric_table(rows, label="Round / client" if multiple_rounds else "Client"))
             except (OSError, ValueError, TypeError, KeyError):
                 lines.append("Training details: see the saved metrics artifacts.")
             artifacts.append(f"  Metrics   {summary_path.parent.relative_to(root)}/")

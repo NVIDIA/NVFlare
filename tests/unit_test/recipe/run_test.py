@@ -433,6 +433,36 @@ def test_summary_limits_rounds_and_tolerates_corrupt_evaluation(tmp_path):
     assert "cross_val_results.json" in output
 
 
+def test_summary_keeps_round_identity_for_site_only_metrics(tmp_path):
+    import json
+
+    from nvflare.recipe._run_summary import result_summary
+
+    metrics = tmp_path / "metrics"
+    metrics.mkdir()
+    (metrics / "metrics_summary.json").write_text("{}")
+    (metrics / "round_metrics.jsonl").write_text(
+        "\n".join(
+            json.dumps(
+                {
+                    "round": round_num,
+                    "progress_title": "Cyclic training",
+                    "aggregated_metrics": [],
+                    "sites": [{"name": "site-1", "metrics": [{"name": "loss", "value": loss}]}],
+                }
+            )
+            for round_num, loss in enumerate((0.5, 0.4))
+        )
+    )
+
+    output = result_summary(tmp_path)
+
+    assert "Cyclic training · client metrics" in output
+    assert "Round / client" in output
+    assert "1 / site-1" in output
+    assert "2 / site-1" in output
+
+
 @pytest.mark.parametrize(
     "relative_path",
     [
