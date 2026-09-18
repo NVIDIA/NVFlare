@@ -20,6 +20,7 @@ import tenseal as ts
 
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.workflows.model_controller import ModelController
+from nvflare.fuel.utils.log_utils import log_progress
 
 # Controller Workflow
 
@@ -33,11 +34,20 @@ class KM_HE(ModelController):
         self.num_rounds = 3
 
     def run(self):
+        log_progress(self.logger, "\n  Federated Kaplan-Meier survival analysis · homomorphic encryption")
+        log_progress(self.logger, "\n  Collecting histogram bounds…")
         max_idx_results = self.start_fl_collect_max_idx()
         global_res = self.aggr_max_idx(max_idx_results)
+        log_progress(self.logger, "  Collecting encrypted survival histograms…")
         enc_hist_results = self.distribute_max_idx_collect_enc_stats(global_res)
+        log_progress(self.logger, "  Aggregating encrypted histograms…")
         hist_obs_global, hist_cen_global = self.aggr_he_hist(enc_hist_results)
-        _ = self.distribute_global_hist(hist_obs_global, hist_cen_global)
+        log_progress(self.logger, "  Distributing the encrypted global survival curve…")
+        targets = self.sample_clients()
+        results = self.distribute_global_hist(hist_obs_global, hist_cen_global, targets)
+        aborted = bool(getattr(getattr(self, "abort_signal", None), "triggered", False))
+        if results and len(results) == len(targets) and not aborted:
+            log_progress(self.logger, "\n  ✓ Encrypted survival analysis completed")
 
     def read_data(self, file_name: str):
         # Handle both absolute and relative paths
@@ -136,7 +146,7 @@ class KM_HE(ModelController):
         hist_cen_global_serial = hist_cen_global.serialize()
         return hist_obs_global_serial, hist_cen_global_serial
 
-    def distribute_global_hist(self, hist_obs_global_serial, hist_cen_global_serial):
+    def distribute_global_hist(self, hist_obs_global_serial, hist_cen_global_serial, targets=None):
         self.logger.info("send global accumulated histograms (ciphertext) to all sites \n")
 
         model = FLModel(
@@ -147,5 +157,5 @@ class KM_HE(ModelController):
             total_rounds=self.num_rounds,
         )
 
-        results = self.send_model_and_wait(data=model)
+        results = self.send_model_and_wait(data=model, targets=targets)
         return results

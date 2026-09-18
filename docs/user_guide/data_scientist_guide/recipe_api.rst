@@ -552,7 +552,7 @@ The simulator continues to use ``concise`` logging by default, preserving the
 existing timestamped application-log view. Select ``progress`` for focused
 training rounds and metrics in deep-learning, traditional-ML, Swarm, cyclic,
 and XGBoost jobs, evaluation progress, or workflow phases for federated
-statistics and PSI. Warnings and errors remain visible:
+statistics, PSI, and survival analysis. Warnings and errors remain visible:
 
 .. code-block:: bash
 
