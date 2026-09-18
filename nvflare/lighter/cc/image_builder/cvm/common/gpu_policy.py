@@ -18,6 +18,7 @@ import json
 
 from .errors import require
 from .gpu_claims import NRAS_CLAIMS, VECTOR
+from .references import REFERENCE_REGO
 
 
 def resource_conditions(count, policy):
@@ -42,7 +43,6 @@ def resource_conditions(count, policy):
 
 def render(policy):
     """Only a completely matching, backend-verified NVIDIA claim set affirms."""
-    from .references import REFERENCE_REGO
 
     lines = [
         "# Generated from the profile's strict gpu_policy.json. Do not edit.",

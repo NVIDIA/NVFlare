@@ -55,7 +55,7 @@ class GpuReadinessTests(unittest.TestCase):
                 runtime, "read_json", side_effect=lambda path: cfg if path == runtime.CONFIG else {"digest": "00" * 32}
             ),
             patch.object(runtime, "authorized_key", side_effect=authorize) as authorization,
-            patch.object(gpu, "readiness", side_effect=lambda *args: events.append("ready")),
+            patch.object(runtime, "readiness", side_effect=lambda *args: events.append("ready")),
         ):
             runtime.periodic()
             self.assertEqual(events, ["authorized", "ready"])

@@ -172,7 +172,8 @@ def invoke_vault_builder(builder_dir, config_file, output_dir, log_file, project
     if output_dir.exists():
         raise FileExistsError(f"Vault output already exists: {output_dir}")
     argv = [
-        str(builder_dir / "vault_build.sh"),
+        str(builder_dir / "cvmctl"),
+        "vault",
         str(config_file),
         "--project-config",
         str(project_config),
@@ -283,10 +284,8 @@ class VaultAdapter:
         project_workspace = self.workspace_root / project.name
         self.previous_production_dirs = {path.resolve() for path in project_workspace.glob("prod_*")}
         self.builder_dir = self._path(settings.get("cvm_builder_dir"), directory=True)
-        wrapper = self.builder_dir / "vault_build.sh"
-        _require(
-            wrapper.is_file() and os.access(wrapper, os.X_OK), "cvm_builder_dir must contain executable vault_build.sh"
-        )
+        wrapper = self.builder_dir / "cvmctl"
+        _require(wrapper.is_file() and os.access(wrapper, os.X_OK), "cvm_builder_dir must contain executable cvmctl")
         self.output_root = self._path(settings["output_root"], must_exist=False) if "output_root" in settings else None
         if self.output_root is not None:
             _require(

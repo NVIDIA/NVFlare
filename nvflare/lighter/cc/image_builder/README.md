@@ -1,5 +1,11 @@
 # CVM Builder
 
+All builder and administration commands use `./cvmctl <command>` (or
+`python3 -m cvm` from this directory). Run `./cvmctl --help` for the command list
+and `./cvmctl <command> --help` for options. The wrapper selects
+`CVM_BUILDER_PYTHON`, the local `.venv/bin/python`, or `python3`, in that order.
+The delivered `launch_cvm.sh` and `shutdown_cvm.sh` remain standalone host commands.
+
 Build a reusable, application-free Ubuntu 26.04 confidential VM and a separate
 authenticated vault for each application release and site. Docker workloads are
 generic: the image's entrypoint and command are preserved by default. NVFlare is
@@ -11,12 +17,12 @@ Production delivery requires an approved generic bundle; `--candidate` is limite
 to explicitly named `test-` profiles and never creates production approval.
 Both reusable CVM bundles and final CVM-plus-vault deliveries are emitted as OCI
 image-layout tar files. They can be moved offline or published to a registry.
-Use `scripts/cvm_publish` for registry publication and `scripts/cvm_pull` to
+Use `./cvmctl publish` for registry publication and `./cvmctl pull` to
 materialize either a local OCI tar or an immutable registry digest.
 
 This builder is part of NVFlare at `nvflare/lighter/cc/image_builder`.
 Run the commands below from this directory in a source checkout. NVFlare
-provisioning invokes `vault_build.sh` through its `cvm_vault` configuration; see
+provisioning invokes `cvmctl vault` through its `cvm_vault` configuration; see
 the [provisioning example](../../../../examples/advanced/cc_provision/cvm_builder/README.md).
 
 For operational instructions, see:
@@ -65,18 +71,18 @@ container tags.
 Use [config/cvm_profile.yml](config/cvm_profile.yml) and
 [config/vault_build.yml](config/vault_build.yml) as configuration templates.
 They provide concrete Ubuntu 26.04 defaults, conventional locations, and sample
-values. A bare `sudo ./cvm_build.sh` reads that profile and auto-detects the one
+values. A bare `sudo ./cvmctl build` reads that profile and auto-detects the one
 local target platform; no platform argument is required.
 
 ## Stage 1: build once per platform and profile version
 
 ```sh
 # One target: construct, finalize, run acceptance, and approve in one call.
-sudo ./cvm_build.sh
+sudo ./cvmctl build
 
 # Advanced: construct for another platform and finalize there.
-sudo ./cvm_build.sh config/cvm_profile.yml -p amd_sev_snp --defer-measurements
-sudo scripts/cvm_finalize target/cvm_cpu-2026.09-r4/amd_sev_snp
+sudo ./cvmctl build config/cvm_profile.yml -p amd_sev_snp --defer-measurements
+sudo ./cvmctl finalize target/cvm_cpu-2026.09-r4/amd_sev_snp
 ```
 
 The builder sends a fixed, source-hashed payload to a plain construction VM. A
@@ -121,7 +127,7 @@ evidence for every check returned by `cvm.artifacts.bundle.required_acceptance_c
 for that platform and CPU/GPU profile:
 
 ```sh
-sudo scripts/admin_approve /path/to/bundle /path/to/acceptance-report.json
+sudo ./cvmctl admin approve /path/to/bundle /path/to/acceptance-report.json
 ```
 
 Keep approval receipts and bundle artifacts under trusted administrative control.
@@ -137,7 +143,7 @@ Use the same upstream distribution and image digest as your CoCo deployment.
 [TRUSTEE_GUIDE.md](TRUSTEE_GUIDE.md) contains the complete setup, including the
 upstream [kbs.json](trustee/kbs.json) configuration, immutable default CPU/GPU
 policies, RVPS references and expiry, role-based administrative ACLs, and native
-resource uploads. `scripts/trustee_provenance` records a clean
+resource uploads. `./cvmctl provenance` records a clean
 release checkout and binary digest. The upstream client uses the `default` AS
 policy; policy content digests and profile versions identify approved revisions.
 
@@ -155,8 +161,8 @@ content hashes, approved reference values and deployment acceptance before
 publishing bundle resource rules:
 
 ```sh
-sudo scripts/admin_install admin.json /path/to/approved/bundle
-sudo scripts/admin_retire admin.json cvm-BUNDLE_ID
+sudo ./cvmctl admin install admin.json /path/to/approved/bundle
+sudo ./cvmctl admin retire admin.json cvm-BUNDLE_ID
 ```
 
 There is no per-vault measurement history. Reference values and keys live in
@@ -176,7 +182,7 @@ staged elsewhere. Per-build `trustee` fields are rejected:
 ```sh
 docker image inspect --format '{{.Id}}' my-application:release
 docker save my-application:release -o application.tar
-sudo ./vault_build.sh config/vault_build.yml
+sudo ./cvmctl vault config/vault_build.yml
 ```
 
 Application content is populated inside authenticated storage once, then copied
@@ -213,7 +219,7 @@ CVM layer plus a deployment-specific vault/runtime layer. Digests are recorded i
 and Python bytecode caches.
 
 ```sh
-# Use the staging folder printed by vault_build.sh.
+# Use the staging folder printed by cvmctl vault.
 cd target/vault_0123456789ab4def8123456789abcdef/intel_tdx
 sudo ./launch_cvm.sh
 # From another shell:
@@ -335,6 +341,18 @@ python3 -m unittest discover -s tests/unit_test/lighter/cc/image_builder -v
 sudo env PYTHONPATH="$PYTHONPATH" CVM_STORAGE_TESTS=1 \
   python3 -m unittest discover -s tests/integration_test/lighter/cc/image_builder -p test_storage.py -v
 ```
+
+To check release packaging on Linux or macOS, install the build dependencies in
+`pyproject.toml`, then run:
+
+```sh
+CVM_DISTRIBUTION_TESTS=1 python3 -m unittest discover \
+  -s tests/integration_test/lighter/cc/image_builder -p test_distribution.py -v
+```
+
+This builds an sdist and a wheel from that sdist in a temporary directory,
+compares the packaged builder assets with the source, and runs the CLI and GPU
+input validation against the wheel's contents, including the NVAT patch.
 
 `tests/integration_test/lighter/cc/image_builder/prepare_lab.py` and `tests/integration_test/lighter/cc/image_builder/lab_kbs.py` create an isolated test deployment
 with disposable PKI and explicit loopback ports. Its HTTPS tests require

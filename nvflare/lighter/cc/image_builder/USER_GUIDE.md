@@ -26,7 +26,7 @@ registry; local OCI tar materialization uses Python alone.
 
 ## 2. Materialize the delivery artifact
 
-Use `scripts/cvm_pull` to validate every OCI descriptor and layer digest and
+Use `./cvmctl pull` to validate every OCI descriptor and layer digest and
 materialize a private directory. Its platform directory contains both manifests
 and everything needed to launch:
 
@@ -53,7 +53,7 @@ an operator-selected local name and can remain readable.
 
 ```sh
 sha256sum vault_0123456789ab4def8123456789abcdef_intel_tdx.oci.tar
-sudo scripts/cvm_pull vault_0123456789ab4def8123456789abcdef_intel_tdx.oci.tar \
+sudo ./cvmctl pull vault_0123456789ab4def8123456789abcdef_intel_tdx.oci.tar \
   --output /srv/cvm/vault_my-app-site1
 ```
 
@@ -63,18 +63,18 @@ its payload layers are already compressed.
 
 ### From an OCI registry URL
 
-Use the manifest digest printed by `scripts/cvm_publish`. A digest is required;
+Use the manifest digest printed by `./cvmctl publish`. A digest is required;
 the pull wrapper refuses a mutable tag.
 
 ```sh
 artifact=registry.example.org/cvm/my-app-site1@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-sudo scripts/cvm_pull "$artifact" --output /srv/cvm/vault_my-app-site1
+sudo ./cvmctl pull "$artifact" --output /srv/cvm/vault_my-app-site1
 ```
 
 For an isolated lab registry that deliberately uses HTTP, opt in explicitly:
 
 ```sh
-sudo scripts/cvm_pull \
+sudo ./cvmctl pull \
   registry.example.org:5000/cvm/my-app-site1@sha256:OCI_MANIFEST_DIGEST \
   --plain-http --output /srv/cvm/vault_my-app-site1
 ```
@@ -113,7 +113,8 @@ sudo ./launch_cvm.sh --gpu 0000:41:00.0 --gpu 0000:43:00.0
 ```
 
 Advanced operators may override the embedded bundle with a separately managed
-shared bundle directory:
+shared bundle directory. If the embedded bundle is absent, this explicit path is
+required; the launcher does not search sibling folders or local build caches:
 
 ```sh
 sudo ./launch_cvm.sh \

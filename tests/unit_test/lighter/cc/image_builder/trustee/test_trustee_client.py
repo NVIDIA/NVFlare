@@ -24,7 +24,7 @@ from cvm.common.contracts import resource_path
 from cvm.common.errors import BuildError
 from cvm.common.io import canonical, write_json
 from cvm.common.policy import compose
-from cvm.trustee.admin import install, retire
+from cvm.trustee.admin import retire
 from cvm.trustee.client import NoRedirect, api, delete_resource, encode, upload_resource
 
 
@@ -123,12 +123,3 @@ class TrusteeClientTests(unittest.TestCase):
         ):
             retire(config, "bundle-1")
         request.assert_called_once_with(config, "POST", "resource-policy", canonical({"policy": encode(policy)}))
-
-    def test_legacy_retirement_state_requires_explicit_migration(self):
-        config = {"state": str(self.root), "key_service_state": str(self.root / "legacy")}
-        with patch("cvm.trustee.admin.api") as request:
-            with self.assertRaisesRegex(BuildError, "Migrate legacy"):
-                install(config, self.root)
-            with self.assertRaisesRegex(BuildError, "Migrate legacy"):
-                retire(config, "bundle-1")
-            request.assert_not_called()

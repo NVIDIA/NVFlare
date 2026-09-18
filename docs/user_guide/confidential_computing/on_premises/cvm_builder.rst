@@ -12,7 +12,7 @@ Projects without ``cvm_vault`` retain their usual provisioning behavior.
 
 CVM Builder is included in this repository at
 ``nvflare/lighter/cc/image_builder``. Point ``cvm_builder_dir`` at that directory
-in your NVFlare source checkout. NVFlare invokes its ``vault_build.sh`` interface
+in your NVFlare source checkout. NVFlare invokes its ``cvmctl vault`` interface
 as a separate process. Do not combine ``cvm_vault`` with a ``packager`` or edge
 provisioning.
 
@@ -35,7 +35,7 @@ For a source checkout at ``/opt/NVFlare``, prepare the builder environment with:
    python3 -m venv .venv
    .venv/bin/python -m pip install -r requirements.txt
 
-``vault_build.sh`` selects ``CVM_BUILDER_PYTHON``, its own ``.venv/bin/python``, or
+``cvmctl vault`` selects ``CVM_BUILDER_PYTHON``, its own ``.venv/bin/python``, or
 ``python3``, in that order. If provisioning is unprivileged, the adapter uses
 ``sudo -n`` for construction and, when necessary, public output metadata collection
 using the provisioning Python interpreter. Configure that worker boundary in
@@ -122,10 +122,10 @@ are rejected. ``cvm_image`` points to the reusable generic CVM, not a completed
 participant vault delivery. For a local image, supply the containing directory
 rather than the ``profile_set.json`` file itself.
 
-Registry references are passed intact to ``vault_build.sh``. The builder retrieves
+Registry references are passed intact to ``cvmctl vault``. The builder retrieves
 and verifies the generic CVM, includes it in the completed delivery, and removes
 its temporary download afterward. To reuse an offline copy, materialize it with
-``scripts/cvm_pull`` and set ``cvm_image`` to the resulting folder. For registry
+``cvmctl pull`` and set ``cvm_image`` to the resulting folder. For registry
 sources, include all profile bootstrap ports in ``allowed_out_ports``; local
 images also allow NVFlare to read and add those ports before construction.
 
@@ -133,7 +133,7 @@ Omit ``platforms`` to use the platforms supplied by ``cvm_image``. For an image
 containing multiple platforms, an optional ``platforms`` list selects a subset;
 every requested platform must be present in that image. A single-platform TDX or
 AMD image therefore needs no separate platform setting. To combine separately
-published platform bundles, use ``scripts/cvm_pull`` with ``--merge`` and point
+published platform bundles, use ``cvmctl pull`` with ``--merge`` and point
 ``cvm_image`` at the combined directory. Participant overrides can also select
 different registry images or pulled directories.
 
@@ -232,7 +232,7 @@ Outputs and failure recovery
 
 Run ``nvflare provision -p project.yml -w /srv/nvflare/provisioning`` on the worker.
 The adapter calls
-``vault_build.sh <absolute-config> --project-config <absolute-project-config> --output <fresh-output>``
+``cvmctl vault <absolute-config> --project-config <absolute-project-config> --output <fresh-output>``
 once per participant, without ``--candidate`` or ``--dev``. Generated
 ``vault_build.yml`` contains ``cvm_image`` and the automatically derived
 ``image_id``. It never contains ``deployment_id``, ``cvm_profile`` or
@@ -270,7 +270,7 @@ messages to locate deliveries or includes credentials in result metadata.
 
 Distribute the platform ``.oci.tar`` and its checksum through an authenticated
 channel. Keep input staging and administrative records private. Use the builder's
-``scripts/cvm_publish`` for registry publication or ``scripts/cvm_pull`` to
+``cvmctl publish`` for registry publication or ``cvmctl pull`` to
 materialize a local archive or immutable registry digest. Then run the delivered
 ``launch_cvm.sh``/``shutdown_cvm.sh`` on the appropriate runtime host, following
 ``USER_GUIDE.md``. Provisioning does not publish or launch the delivery.

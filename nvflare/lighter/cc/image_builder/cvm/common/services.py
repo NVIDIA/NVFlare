@@ -17,9 +17,11 @@
 import configparser
 import re
 import shlex
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
 from .errors import require
+
+WRITABLE_APPLICATION_DIRS = ("/vault/application/runtime", "/vault/application/data")
 
 
 def validate_service(name, text):
@@ -47,23 +49,14 @@ def validate_service(name, text):
     require(parser["Service"].get("Type", "simple") in ("simple", "exec"), "Application service must be supervised")
     command = shlex.split(parser["Service"].get("ExecStart", ""))
     require(command, "Missing service executable")
-    executable = PurePosixPath(command[0])
+    executable = Path(command[0])
     require(
         executable.is_absolute()
         and ".." not in executable.parts
         and executable.is_relative_to("/vault/application")
-        and executable != PurePosixPath("/vault/application")
-        and not any(
-            executable.is_relative_to(path) for path in ("/vault/application/runtime", "/vault/application/data")
-        )
+        and executable != Path("/vault/application")
+        and not any(executable.is_relative_to(path) for path in WRITABLE_APPLICATION_DIRS)
         and not any(char in command[0] for char in ("%", "$", "\\")),
         "Service executable must be in authenticated application payload without traversal or expansion",
     )
-    return text
-
-
-def service_executable(text):
-    parser = configparser.ConfigParser(interpolation=None, strict=True)
-    parser.optionxform = str
-    parser.read_string(text)
-    return Path(shlex.split(parser["Service"]["ExecStart"])[0])
+    return executable

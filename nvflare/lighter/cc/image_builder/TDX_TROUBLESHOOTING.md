@@ -75,7 +75,7 @@ See [QGS context initialization and retry handling](https://github.com/intel/con
    From the builder directory, a site-provided probe can be invoked through:
 
    ```sh
-   sudo scripts/tdx_preflight --firmware inputs/OVMF.inteltdx.fd \
+   sudo ./cvmctl preflight host --firmware inputs/OVMF.inteltdx.fd \
      --quote-probe /usr/local/sbin/site_tdx_quote_probe
    ```
 

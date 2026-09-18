@@ -14,12 +14,10 @@
 
 """Record a clean CoCo Trustee v0.22.0 source revision and its built binary."""
 
-import argparse
 import subprocess
-from pathlib import Path
 
 from ..common.errors import require
-from ..common.io import digest_file, write_json
+from ..common.io import digest_file
 from ..common.versions import TRUSTEE_COMMIT
 
 
@@ -31,16 +29,3 @@ def provenance(source, binary):
     )
     require(not status, "Trustee source must be an unmodified upstream checkout")
     return {"trustee_commit": commit, "source_clean": True, "binary_sha256": digest_file(binary)}
-
-
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("source", type=Path)
-    parser.add_argument("binary", type=Path)
-    parser.add_argument("output", type=Path)
-    args = parser.parse_args()
-    write_json(args.output, provenance(args.source, args.binary))
-
-
-if __name__ == "__main__":
-    main()

@@ -14,6 +14,8 @@
 
 """Shared approved-reference schemas and expiry-policy definitions."""
 
+import re
+
 from .errors import require
 
 SNP_LISTS = {"snp_bootloader", "snp_microcode", "snp_snp_svn", "snp_tee_svn"}
@@ -52,7 +54,6 @@ REFERENCE_REGO = """reference(name) := value if {
 
 
 def validate_references(values, platforms=(), *, finalized=False, gpu=False):
-    import re
 
     require(isinstance(values, dict), "Approved TCB references must be a JSON object")
     allowed = TCB_NAMES | (MEASUREMENT_NAMES if finalized else set())

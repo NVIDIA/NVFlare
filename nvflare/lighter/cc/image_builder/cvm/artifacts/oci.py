@@ -14,7 +14,6 @@
 
 """Create, validate, publish and pull OCI artifacts."""
 
-import argparse
 import gzip
 import hashlib
 import json
@@ -26,7 +25,7 @@ from pathlib import Path, PurePosixPath
 
 from ..common.contracts import PLATFORMS
 from ..common.errors import BuildError, require
-from ..common.io import canonical, digest_file, read_json, write_json
+from ..common.io import canonical, digest_file, is_sha256, read_json, write_json
 from ..common.linux import lock, run
 
 OCI_LAYOUT_VERSION = "1.0.0"
@@ -137,14 +136,8 @@ def _archive_layout(layout, destination):
     with temporary.open("xb") as output:
         os.fchmod(output.fileno(), 0o600)
         with tarfile.open(fileobj=output, mode="w", format=tarfile.PAX_FORMAT) as archive:
-            for source in sorted(layout.rglob("*"), key=lambda item: item.relative_to(layout).as_posix()):
-                name = source.relative_to(layout).as_posix()
-                info = _tar_info(archive, source, name)
-                if info.isdir():
-                    archive.addfile(info)
-                else:
-                    with source.open("rb") as content:
-                        archive.addfile(info, content)
+            for source in sorted(layout.iterdir()):
+                _add_path(archive, source, source.name)
         output.flush()
         os.fsync(output.fileno())
     os.replace(temporary, destination)
@@ -205,8 +198,7 @@ def _archive_to_layout(source, layout):
             allowed = name in {"oci-layout", "index.json"} or (
                 len(PurePosixPath(name).parts) == 3
                 and PurePosixPath(name).parts[:2] == ("blobs", "sha256")
-                and len(PurePosixPath(name).name) == 64
-                and all(character in "0123456789abcdef" for character in PurePosixPath(name).name)
+                and is_sha256(PurePosixPath(name).name)
             )
             if member.isdir():
                 require(name in {"blobs", "blobs/sha256"}, "Unexpected OCI layout directory")
@@ -234,9 +226,7 @@ def _validated_blob(layout, descriptor, expected_media_type=None, limit=None):
     require(isinstance(descriptor, dict), "Invalid OCI descriptor")
     digest = descriptor.get("digest", "")
     require(
-        digest.startswith("sha256:")
-        and len(digest) == 71
-        and all(character in "0123456789abcdef" for character in digest[7:]),
+        isinstance(digest, str) and digest.startswith("sha256:") and is_sha256(digest[7:]),
         "Invalid OCI descriptor digest",
     )
     if expected_media_type:
@@ -400,9 +390,7 @@ def materialize(source, output=None, merge=False, plain_http=False):
         if source_path.is_file():
             _archive_to_layout(source_path, layout)
         else:
-            reference = str(source)
-            if reference.startswith("oci://"):
-                reference = reference[6:]
+            reference = str(source).removeprefix("oci://")
             require("@sha256:" in reference, "Registry delivery must use an immutable digest reference")
             command = ["oras", "cp", "--to-oci-layout"]
             if plain_http:
@@ -433,9 +421,7 @@ def publish(source, destination, plain_http=False):
         layout = Path(temporary) / "layout"
         _archive_to_layout(source, layout)
         descriptor, _, _ = inspect_layout(layout)
-        reference = str(destination)
-        if reference.startswith("oci://"):
-            reference = reference[6:]
+        reference = str(destination).removeprefix("oci://")
         command = ["oras", "cp", "--from-oci-layout"]
         if plain_http:
             command.append("--to-plain-http")
@@ -445,32 +431,3 @@ def publish(source, destination, plain_http=False):
     if ":" in repository[last_slash + 1 :]:
         repository = repository[: repository.rfind(":")]
     return repository + "@" + descriptor["digest"]
-
-
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    actions = parser.add_subparsers(dest="action", required=True)
-    pull = actions.add_parser("pull", help="materialize a local OCI tar or immutable registry artifact")
-    pull.add_argument("source")
-    pull.add_argument("--output")
-    pull.add_argument("--merge", action="store_true", help="add a finalized CVM platform to an existing profile")
-    pull.add_argument("--plain-http", action="store_true", help="allow an unencrypted test registry connection")
-    push = actions.add_parser("publish", help="copy a local OCI-layout tar to a registry")
-    push.add_argument("source")
-    push.add_argument("destination")
-    push.add_argument("--plain-http", action="store_true", help="allow an unencrypted test registry connection")
-    args = parser.parse_args()
-    try:
-        if args.action == "pull":
-            output, descriptor, config = materialize(args.source, args.output, args.merge, args.plain_http)
-            print(f"Materialized {descriptor['artifactType']} {descriptor['digest']} at {output}")
-            if config.get("launch_directory"):
-                print(f"Launch: cd {output / config['launch_directory']} && sudo ./launch_cvm.sh")
-        else:
-            print(f"Published: {publish(args.source, args.destination, args.plain_http)}")
-    except (BuildError, OSError, ValueError, KeyError, tarfile.TarError) as exc:
-        parser.exit(1, f"OCI operation failed: {exc}\n")
-
-
-if __name__ == "__main__":
-    main()

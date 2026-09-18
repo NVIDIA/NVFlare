@@ -19,6 +19,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from cvm.build.config import public_sidecar
 from cvm.build.storage import create_image, format_vault, mounted, nbd, opened_vault, sidecar
 from cvm.common.contracts import binding
 from cvm.common.errors import BuildError
@@ -34,7 +35,7 @@ class AuthenticatedStorageTests(unittest.TestCase):
             source.mkdir()
             (source / "training.csv").write_text("feature,label\n1,2\n")
             image = Path(directory) / "user_data.qcow2"
-            sidecar(image, 1, source, public_input=True, nfs_input=True)
+            sidecar(image, 1, source, verify=public_sidecar, nfs_input=True)
             with nbd(image, readonly=True) as device, mounted(device, readonly=True) as root:
                 self.assertEqual((root / "training.csv").read_text(), "feature,label\n1,2\n")
                 self.assertTrue((root / "mnt").is_dir())
@@ -47,7 +48,7 @@ class AuthenticatedStorageTests(unittest.TestCase):
             # model an input file swapped while the image is being copied.
             (source / "renamed.txt").write_text("-----BEGIN PRIVATE KEY-----\nopaque\n")
             with self.assertRaises(BuildError):
-                sidecar(Path(directory) / "user_data.qcow2", 1, source, public_input=True)
+                sidecar(Path(directory) / "user_data.qcow2", 1, source, verify=public_sidecar)
 
     def test_payload_corruption_is_eio_with_unchanged_header(self):
         with tempfile.TemporaryDirectory(prefix="cvm-corruption-test-") as directory:

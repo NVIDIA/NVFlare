@@ -37,7 +37,7 @@ and Rust toolchain. Leave Cargo.toml, Cargo.lock, and guest-components unchanged
 git clone --branch v0.22.0 https://github.com/confidential-containers/trustee.git /tmp/trustee
 cargo build --locked --release --manifest-path /tmp/trustee/Cargo.toml   -p kbs --bin kbs --no-default-features --features coco-as-builtin
 cargo build --locked --release --manifest-path /tmp/trustee/Cargo.toml   -p kbs-client --bin kbs-client --features tdx-attester,snp-attester
-scripts/trustee_provenance /tmp/trustee   /tmp/trustee/target/release/kbs /tmp/trustee_build.json
+./cvmctl provenance /tmp/trustee   /tmp/trustee/target/release/kbs /tmp/trustee_build.json
 ```
 
 Keep the client's default crypto features. In this release, `native-tls` selects
@@ -279,7 +279,7 @@ references. Import a finalized bundle's reviewed values with an operator-chosen
 expiry:
 
 ```sh
-sudo -u cvm-trustee scripts/trustee_references /path/to/bundle   --store /var/lib/cvm-trustee/storage/reference_value   --state /var/lib/cvm-trustee/admin --expires 2026-12-01T00:00:00Z
+sudo -u cvm-trustee ./cvmctl references /path/to/bundle   --store /var/lib/cvm-trustee/storage/reference_value   --state /var/lib/cvm-trustee/admin --expires 2026-12-01T00:00:00Z
 ```
 
 The import uses upstream RVPS record files and a `cvm_reference_expiry` companion
@@ -289,7 +289,7 @@ approvals cannot be silently broadened or renewed by this importer. Missing or
 expired approvals deny appraisal. Measurements remain in Trustee property storage.
 
 Apply configuration through CoCo's normal deployment mechanism. Run
-`scripts/trustee_preflight` on the trusted deployment host and confirm the
+`./cvmctl preflight trustee` on the trusted deployment host and confirm the
 initial deny-all resource policy exists before accepting traffic. The repository
 contains no Trustee systemd services to install or enable.
 
@@ -344,7 +344,7 @@ emit and accept the expected default CPU/GPU policy. Complete the bundle's
 hardware acceptance before production approval.
 
 ```sh
-sudo scripts/admin_install admin.json /path/to/approved/bundle
+sudo ./cvmctl admin install admin.json /path/to/approved/bundle
 ```
 
 `GET /kbs/v0/resource-policy` now returns policy IDs, not encoded policy bytes.
@@ -362,36 +362,20 @@ First stop or fence builds targeting the resource. With a resource-role config
 containing `url`, `ca` and `admin_token_file`, revoke a vault through native KBS:
 
 ```sh
-python3 -m cvm.trustee.admin revoke resources.json keys/BUILD_ID/BINDING_ID
+python3 -m cvm admin revoke resources.json keys/BUILD_ID/BINDING_ID
 ```
 
 This sends `DELETE /kbs/v0/resource/keys/<build_id>/<binding_id>`. It prevents
 future retrieval while the resource is absent; an authorized POST can recreate
 it. Token revocation/expiry and backup recovery belong to the CoCo operator.
 
-Retire a generic bundle with `scripts/admin_retire admin.json <build_id>`.
+Retire a generic bundle with `./cvmctl admin retire admin.json <build_id>`.
 This removes its reusable resource rule and records retirement in the publisher's
 administrative state. Keys may remain stored, but the retired rule no longer
 permits release. Preserve the current policy and retirement state during restore;
 verify denials before reopening traffic. An unsuccessful policy update is not a
 completed retirement: retry the command and verify readback. Deletion and policy
 changes cannot retract secrets already released to a running guest.
-
-## 9. Migrate an earlier CVM-managed backend
-
-Fence builds and stop key release during the transition. Apply all outstanding
-revocations from the old adapter state, and retain them in the CoCo operator's
-recovery records. Copy the old state's `retired/` directory into the publisher's
-configured `state/retired/`, preserving its bundle IDs and the current resource
-policy. Remove `key_service_state` and `resources` from the publisher config only
-after that migration; the publisher rejects legacy `key_service_state` to avoid
-silently ignoring retired bundles.
-
-Replace `cvm_project.yml` with the `trustee` mapping above. Update the existing
-CoCo deployment's ACLs and repository write access, verify positive and negative
-resource operations, and remove the old CVM-managed unit definitions from the
-deployment. Preserve current deletions and retirement rules through future
-restores. No existing deployment is changed automatically by updating this repo.
 
 ## Upstream contracts
 

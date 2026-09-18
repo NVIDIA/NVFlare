@@ -14,8 +14,9 @@
 
 """Seal application vaults and assemble standalone deliveries."""
 
-import argparse
 import contextlib
+import hashlib
+import json
 import os
 import shutil
 import tarfile
@@ -28,7 +29,7 @@ from ..artifacts.oci import CVM_ARTIFACT_TYPE, materialize
 from ..artifacts.packaging import package_deliveries
 from ..common.contracts import HEADER_BYTES, STORAGE_PROFILE, binding, resource_path
 from ..common.errors import BuildError, require
-from ..common.io import read_json, write_json
+from ..common.io import is_sha256, write_json
 from ..common.linux import memory_file, protect_process, run
 from ..common.luks import scan, snapshot_header
 from ..common.validation import runtime_config
@@ -56,8 +57,6 @@ def populate(root, app):
 
 def validate_archive(path, image_id):
     # Only inspect manifest/config members, never unpack layers on the build host.
-    import hashlib
-    import json
 
     with tarfile.open(path, "r:*") as archive:
         member = archive.getmember("manifest.json")
@@ -84,7 +83,7 @@ def validate_archive(path, image_id):
         for _ in range(8):
             algorithm, digest = current.split(":", 1)
             require(
-                algorithm == "sha256" and len(digest) == 64 and all(c in "0123456789abcdef" for c in digest),
+                algorithm == "sha256" and is_sha256(digest),
                 "Invalid OCI descriptor digest",
             )
             member = archive.getmember("blobs/sha256/" + digest)
@@ -176,7 +175,7 @@ def create_sidecars(directory, app):
             directory / f"{name}.qcow2",
             app[f"{name}_drive_size"],
             app.get(name),
-            public_input=name in ("user_config", "user_data"),
+            verify=config.public_sidecar if name in ("user_config", "user_data") else None,
             nfs_input=name == "user_data",
         )
 
@@ -382,31 +381,3 @@ def build_with_profile(app, profiles, output=None, candidate=False, dev=False):
     )
     package_deliveries(output, app["deployment_id"], published)
     return output
-
-
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("config")
-    parser.add_argument("--output")
-    parser.add_argument(
-        "--project-config", help="Project YAML; default: nearest cvm_project.yml above the build YAML directory"
-    )
-    parser.add_argument("--plain-http", action="store_true", help="Allow an unencrypted CVM test registry connection")
-    parser.add_argument(
-        "--candidate", action="store_true", help="Test-only profile; does not grant production approval"
-    )
-    parser.add_argument("--dev", action="store_true", help="Plain ext4 for a separately measured dev- profile; no KBS")
-    args = parser.parse_args()
-    try:
-        result = build(args.config, args.output, args.candidate, args.dev, args.plain_http, args.project_config)
-        print(f"Vault staging: {result}")
-        for name in sorted(read_json(result / "oci_artifacts.json")["artifacts"]):
-            print(f"OCI artifact: {result / name}")
-    except (BuildError, OSError, ValueError, KeyError, tarfile.TarError):
-        parser.exit(
-            1, "Vault build failed; retain any build_failure.json and resolve uncertain key uploads before retrying\n"
-        )
-
-
-if __name__ == "__main__":
-    main()

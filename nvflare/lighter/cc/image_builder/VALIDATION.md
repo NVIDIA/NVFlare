@@ -6,6 +6,57 @@ services and operator guides are maintained together with the provisioning adapt
 in this repository. Repository formatting and license headers change source
 fingerprints; build and approve new generic CVMs for this source snapshot.
 
+## CLI refactor and distribution packaging — 2026-09-18
+
+A fresh candidate-mode end-to-end run passed with an Intel TDX server, an AMD
+SEV-SNP client and an NVIDIA H800 PCIe. Both generic images were built from a
+clean Ubuntu 26.04 cloud image, finalized on their target hardware, published as
+OCI artifacts, combined with separately encrypted NVFlare application vaults,
+pulled by digest and launched using the delivered host scripts. Secure admin
+access and client registration succeeded.
+
+- The three-round CUDA job completed in **16.29 seconds**. It executed GPU
+  kernels without a CPU fallback and checked every returned value and request
+  nonce; the final sum was **529,920**.
+- Scheduled re-attestation passed on both participants, with observed gaps of
+  **301.84 seconds** (TDX) and **301.80 seconds**
+  (SNP/GPU). A second three-round CUDA job then passed in **16.28 seconds**.
+- The backend used unchanged upstream Trustee v0.22.0, with Intel's standard
+  collateral channel and NVIDIA's remote NRAS verifier. An initial test-harness
+  configuration omitted the NRAS verifier and correctly failed closed; after
+  correcting that configuration, the same images passed. No attestation policy
+  or approved measurement was relaxed.
+- **178 Linux unit/policy tests**, **116 adapter/supervisor tests**, **24 native
+  Trustee HTTPS cases** (12 per backend), and **4 real storage tests** passed.
+  The macOS Linux-only wrapper was skipped; its underlying suite ran on Linux.
+- Release packaging now includes the complete builder source and assets,
+  including the NVAT compatibility patch. The distribution regression test
+  builds an sdist and a wheel from it, compares all builder files byte-for-byte,
+  checks executable metadata, and runs the CLI and GPU input tests from the
+  extracted wheel. This test and scoped repository style checks passed.
+
+| Stage | Intel TDX server | AMD SNP/H800 client |
+|---|---:|---:|
+| Generic construction | 324.36 s | 358.91 s |
+| Hardware finalization | 103.03 s | 122.85 s |
+| Application vault and delivery | 309.66 s | 317.90 s |
+| Delivery registry publication | 43.14 s | 46.45 s |
+| Delivery pull and unpack | 55.40 s | 55.17 s |
+| Launch to accepted attestation | 64.86 s | 124.21 s |
+| Launch to observed application readiness | 74.70 s | 150.18 s |
+
+
+The shared NVFlare application image built in **41.56 seconds** and exported in
+**4.61 seconds**. Timings are observed wall-clock values; stages overlap. Registry
+pull timings are from the fresh pulls; launch/readiness timings are from the
+successful retry with the corrected Trustee configuration. Readiness is the
+observed secure-admin connection or client registration time.
+
+This run used isolated candidate profiles, an isolated test registry and native
+Trustee with the delivered CVM launchers. It did not qualify Kubernetes CoCo
+orchestration or the complete destructive hardware acceptance suite. The test
+CVMs and isolated backends were stopped afterward, and the GPU was released.
+
 ## PR review verification — 2026-09-18
 
 - **171 Linux unit/policy tests passed**, including the pinned Regorus engine,

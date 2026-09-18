@@ -17,6 +17,7 @@
 import hashlib
 import re
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from ..common.contracts import PLATFORMS, identifier
 from ..common.errors import require
@@ -182,7 +183,6 @@ def approve_bundle(directory, report):
     )
     receipt = dict(report, status="approved", build_id=manifest["build_id"])
     # Validate with the same rules before publishing an approval file.
-    from tempfile import TemporaryDirectory
 
     with TemporaryDirectory() as temporary:
         temporary = Path(temporary)

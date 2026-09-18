@@ -17,12 +17,18 @@
 import hashlib
 import json
 import os
+import re
 import tempfile
 from pathlib import Path
 
 
 def canonical(value):
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
+
+
+def is_sha256(value):
+    """Whether a value is a canonical lowercase SHA256 hex digest."""
+    return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) is not None
 
 
 def digest_file(path):

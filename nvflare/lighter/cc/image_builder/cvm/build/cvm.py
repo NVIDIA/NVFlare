@@ -14,10 +14,8 @@
 
 """Build and finalize generic CVM images on a construction host."""
 
-import argparse
 import contextlib
 import hashlib
-import json
 import os
 import shutil
 import socket
@@ -28,11 +26,14 @@ import time
 import uuid
 from pathlib import Path
 
+import yaml
+
 from ..artifacts.bundle import approve_bundle, verify_bundle
 from ..artifacts.packaging import package_bundle
 from ..common.errors import BuildError, require
 from ..common.evidence import serial_evidence, verify_reference
 from ..common.firewall import firewall_rules
+from ..common.gpu_policy import render
 from ..common.io import digest_file, read_json, write_json
 from ..common.linux import lock, run
 from ..common.policy import compose
@@ -42,14 +43,20 @@ from . import config
 from .payload import GUEST_MODULES, SOURCE_DIRECTORIES, copy_modules
 from .storage import build_verity, linux_root, sidecar
 
-SOURCE = Path(__file__).resolve().parents[2]
+RUNTIME_KEYS = (
+    "gpu",
+    "gpu_count",
+    "bootstrap_egress",
+    "kbs_url",
+    "token_algorithm",
+    "token_issuer",
+    "attestation_policy_id",
+)
 
 
-def contract(profile, source=SOURCE):
-    keys = (
+def contract(profile, source=config.SOURCE):
+    keys = RUNTIME_KEYS + (
         "guest_release",
-        "gpu",
-        "gpu_count",
         "kernel_version",
         "python_version",
         "docker_version",
@@ -57,14 +64,9 @@ def contract(profile, source=SOURCE):
         "cryptsetup_version",
         "root_overlay_max_mib",
         "required_system_packages",
-        "bootstrap_egress",
         "vault_header_bytes",
         "vault_storage_profile",
         "trustee_commit",
-        "attestation_policy_id",
-        "kbs_url",
-        "token_algorithm",
-        "token_issuer",
     )
     value = {key: profile[key] for key in keys}
     for key in ("base_image", "build_firmware", "kbs_cert", "as_public_key", "attestation_policy", "reference_values"):
@@ -149,7 +151,7 @@ def provisioning_payload(profile, platform, build_id, job, source, runtime):
         {
             "build_id": build_id,
             "build_user": profile["build_user"],
-            "dev_mode": dev_mode(profile),
+            "dev_mode": profile.get("dev_mode", False),
             "gpu": profile["gpu"],
             "guest_release": profile["guest_release"],
             "kernel_version": profile["kernel_version"],
@@ -169,10 +171,6 @@ def provisioning_payload(profile, platform, build_id, job, source, runtime):
     return archive
 
 
-def dev_mode(profile):
-    return bool(profile.get("dev_mode", False))
-
-
 def ssh_process(argv, *, stdin=None, stdout=None, stderr=None, timeout=3600):
     try:
         return subprocess.run(argv, stdin=stdin, stdout=stdout, stderr=stderr, timeout=timeout).returncode
@@ -180,7 +178,9 @@ def ssh_process(argv, *, stdin=None, stdout=None, stderr=None, timeout=3600):
         raise BuildError(f"Construction guest command could not complete ({type(exc).__name__})") from None
 
 
-def plain_build(profile, platform, build_id, job, *, dev=False, source=SOURCE):
+@contextlib.contextmanager
+def construction_vm(profile, build_id, job):
+    """Own one construction VM, its temporary SSH access and clean shutdown."""
     image = job / "construction.qcow2"
     # Full copy: no writable backing image or shared overlay to clean up.
     run(["qemu-img", "convert", "-f", "qcow2", "-O", "qcow2", profile["base_image"], image])
@@ -199,7 +199,6 @@ def plain_build(profile, platform, build_id, job, *, dev=False, source=SOURCE):
         "ssh_pwauth": False,
         "disable_root": True,
     }
-    import yaml
 
     (job / "user-data").write_text("#cloud-config\n" + yaml.safe_dump(user_data))
     (job / "meta-data").write_text("instance-id: " + build_id + "\nlocal-hostname: cvm-build\n")
@@ -263,96 +262,88 @@ def plain_build(profile, platform, build_id, job, *, dev=False, source=SOURCE):
             time.sleep(2)
         else:
             raise BuildError("Construction VM did not become reachable")
-        runtime = {
-            key: profile[key]
-            for key in (
-                "profile_version",
-                "gpu",
-                "gpu_count",
-                "bootstrap_egress",
-                "kbs_url",
-                "token_algorithm",
-                "token_issuer",
-                "attestation_policy_id",
-            )
-        }
-        runtime.update(
-            build_id=build_id,
-            platform=platform,
-            kbs_client="/usr/lib/cvm/bin/kbs-client",
-            kbs_cert="/etc/cvm/kbs-ca.pem",
-            as_public_key="/etc/cvm/as-public.pem",
-        )
-        if dev:
-            runtime["platform"] = "none"
-        if profile["gpu"] == "nvidia_cc":
-            runtime.update(gpu_attestation_url=profile["gpu_attestation_url"])
-        write_json(job / "runtime.json", runtime)
-        archive = provisioning_payload(profile, platform, build_id, job, source, job / "runtime.json")
-        destination = profile["build_user"] + "@127.0.0.1"
-        # No application secrets are ever supplied to Stage 1. Its log is useful
-        # for dependency errors and cannot contain a vault key or application env.
-        with (job / "provision.log").open("wb") as output, archive.open("rb") as content:
-            status = ssh_process(
-                [
-                    "ssh",
-                    *ssh_options,
-                    destination,
-                    "install -d -m 0700 /tmp/cvm-provision && tar -xzf - -C /tmp/cvm-provision",
-                ],
-                stdin=content,
-                stdout=output,
-                stderr=subprocess.STDOUT,
-                timeout=120,
-            )
-            require(status == 0, "Could not transfer the construction payload; inspect provision.log")
-            status = ssh_process(
-                [
-                    "ssh",
-                    *ssh_options,
-                    destination,
-                    "sudo /usr/bin/python3 /tmp/cvm-provision/provision_guest.py install "
-                    "/tmp/cvm-provision/config.json",
-                ],
-                stdout=output,
-                stderr=subprocess.STDOUT,
-            )
-            require(status == 0, "Generic provisioning failed; inspect provision.log")
-            for name in ("vmlinuz", "initrd.img", "artifacts.json"):
-                mode = "wb"
-                with (job / name).open(mode) as artifact:
-                    status = ssh_process(
-                        ["ssh", *ssh_options, destination, f"cat /tmp/cvm-provision/out/{name}"],
-                        stdout=artifact,
-                        stderr=output,
-                        timeout=120,
-                    )
-                require(status == 0, "Could not retrieve boot artifacts; inspect provision.log")
-            expected = read_json(job / "artifacts.json")
-            require(
-                set(expected) == {"vmlinuz", "initrd.img"}
-                and all(digest_file(job / name) == expected[name] for name in expected),
-                "Construction boot artifact verification failed",
-            )
-            status = ssh_process(
-                [
-                    "ssh",
-                    *ssh_options,
-                    destination,
-                    "sudo /usr/bin/python3 /tmp/cvm-provision/provision_guest.py finalize "
-                    "/tmp/cvm-provision/config.json",
-                ],
-                stdout=output,
-                stderr=subprocess.STDOUT,
-                timeout=120,
-            )
-            require(status == 0, "Construction hardening failed; inspect provision.log")
+
+        def ssh(argv, **kwargs):
+            return ssh_process(["ssh", *ssh_options, profile["build_user"] + "@127.0.0.1", *argv], **kwargs)
+
+        yield ssh
         # The provisioner removed build access and scheduled a clean shutdown.
         try:
             process.wait(timeout=90)
         except subprocess.TimeoutExpired:
             raise BuildError("Construction VM did not shut down cleanly") from None
-    return image
+
+
+def provision(ssh, profile, platform, build_id, job, *, dev=False, source=config.SOURCE):
+    """Install the measured runtime, retrieve verified artifacts, then seal the guest."""
+    runtime = {key: profile[key] for key in RUNTIME_KEYS}
+    runtime.update(
+        profile_version=profile["profile_version"],
+        build_id=build_id,
+        platform=platform,
+        kbs_client="/usr/lib/cvm/bin/kbs-client",
+        kbs_cert="/etc/cvm/kbs-ca.pem",
+        as_public_key="/etc/cvm/as-public.pem",
+    )
+    if dev:
+        runtime["platform"] = "none"
+    if profile["gpu"] == "nvidia_cc":
+        runtime.update(gpu_attestation_url=profile["gpu_attestation_url"])
+    write_json(job / "runtime.json", runtime)
+    archive = provisioning_payload(profile, platform, build_id, job, source, job / "runtime.json")
+    # No application secrets are ever supplied to Stage 1. Its log is useful
+    # for dependency errors and cannot contain a vault key or application env.
+    with (job / "provision.log").open("wb") as output, archive.open("rb") as content:
+        status = ssh(
+            [
+                "install -d -m 0700 /tmp/cvm-provision && tar -xzf - -C /tmp/cvm-provision",
+            ],
+            stdin=content,
+            stdout=output,
+            stderr=subprocess.STDOUT,
+            timeout=120,
+        )
+        require(status == 0, "Could not transfer the construction payload; inspect provision.log")
+        status = ssh(
+            [
+                "sudo /usr/bin/python3 /tmp/cvm-provision/provision_guest.py install "
+                "/tmp/cvm-provision/config.json",
+            ],
+            stdout=output,
+            stderr=subprocess.STDOUT,
+        )
+        require(status == 0, "Generic provisioning failed; inspect provision.log")
+        for name in ("vmlinuz", "initrd.img", "artifacts.json"):
+            with (job / name).open("wb") as artifact:
+                status = ssh(
+                    [f"cat /tmp/cvm-provision/out/{name}"],
+                    stdout=artifact,
+                    stderr=output,
+                    timeout=120,
+                )
+            require(status == 0, "Could not retrieve boot artifacts; inspect provision.log")
+        expected = read_json(job / "artifacts.json")
+        require(
+            set(expected) == {"vmlinuz", "initrd.img"}
+            and all(digest_file(job / name) == expected[name] for name in expected),
+            "Construction boot artifact verification failed",
+        )
+        status = ssh(
+            [
+                "sudo /usr/bin/python3 /tmp/cvm-provision/provision_guest.py finalize "
+                "/tmp/cvm-provision/config.json",
+            ],
+            stdout=output,
+            stderr=subprocess.STDOUT,
+            timeout=120,
+        )
+        require(status == 0, "Construction hardening failed; inspect provision.log")
+
+
+def plain_build(profile, platform, build_id, job, *, dev=False, source=config.SOURCE):
+    with construction_vm(profile, build_id, job) as ssh:
+        provision(ssh, profile, platform, build_id, job, dev=dev, source=source)
+    return job / "construction.qcow2"
 
 
 @contextlib.contextmanager
@@ -417,15 +408,6 @@ def collect_reference(manifest, directory, *, gpu=None, timeout=300):
                         verify_reference(platform, evidence)
                         write_json(directory / "reference-evidence.json", evidence)
                         return evidence["measurements"]
-                    for line in text.splitlines():
-                        if "CVM_REFERENCE=" in line:
-                            try:
-                                evidence = json.loads(line.split("CVM_REFERENCE=", 1)[1])
-                            except json.JSONDecodeError:
-                                continue
-                            verify_reference(platform, evidence)
-                            write_json(directory / "reference-evidence.json", evidence)
-                            return evidence["measurements"]
                     require(process.poll() is None, "Reference VM exited; inspect reference-boot.log")
                     time.sleep(1)
         raise BuildError("Timed out collecting reference evidence; inspect reference-boot.log")
@@ -439,6 +421,11 @@ def finalize(directory, evidence=None, gpu=None, *, package=True):
         if package:
             package_bundle(result)
         return result
+
+
+def check_profile_set(profiles, profile_version, contract):
+    require(profiles["profile_version"] == profile_version, "Profile version differs from existing bundles")
+    require(profiles["contract"] == contract, "Profile changes require a new profile_version")
 
 
 def finalize_locked(directory, evidence=None, gpu=None):
@@ -476,11 +463,7 @@ def finalize_locked(directory, evidence=None, gpu=None):
     with lock(directory.parent / ".profile.lock"):
         if profiles_path.exists():
             profiles = read_json(profiles_path)
-            require(
-                profiles["profile_version"] == manifest["profile_version"],
-                "Profile version differs from existing bundles",
-            )
-            require(profiles["contract"] == manifest["contract"], "Profile contract differs from existing bundles")
+            check_profile_set(profiles, manifest["profile_version"], manifest["contract"])
         else:
             profiles = {
                 "schema_version": 2,
@@ -544,20 +527,13 @@ def build(path, explicit=None, output=None, *, defer_measurements=False, gpu=Non
     job = Path(tempfile.mkdtemp(prefix="construction-", dir=root))
     source = job / "source"
     for name in SOURCE_DIRECTORIES:
-        shutil.copytree(SOURCE / name, source / name, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+        shutil.copytree(config.SOURCE / name, source / name, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
     shared = contract(profile, source)
     directory = root / platform
     with lock(root / ".profile.lock"):
         if (root / "profile_set.json").exists():
             profiles = read_json(root / "profile_set.json")
-            require(
-                profiles["profile_version"] == profile["profile_version"],
-                "Profile version differs from existing bundles",
-            )
-            require(
-                profiles["contract"] == shared,
-                "Profile changes require a new profile_version",
-            )
+            check_profile_set(profiles, profile["profile_version"], shared)
         require(not directory.exists(), "Bundle already exists; reuse it or choose a new profile version")
         directory.mkdir(mode=0o755)
     build_id = "cvm-" + uuid.uuid4().hex
@@ -591,7 +567,6 @@ def build(path, explicit=None, output=None, *, defer_measurements=False, gpu=Non
             "shutdown_cvm.sh.tmpl",
         ]
         if profile["gpu"] == "nvidia_cc":
-            from ..common.gpu_policy import render
 
             (directory / "gpu_attestation_policy.rego").write_text(render(read_json(profile["gpu_policy"])))
             artifacts.append("gpu_attestation_policy.rego")
@@ -626,57 +601,3 @@ def build(path, explicit=None, output=None, *, defer_measurements=False, gpu=Non
     except Exception:
         print(f"Generic build retained for diagnosis: {job}", flush=True)
         raise
-
-
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("config", nargs="?", default=str(SOURCE / "config/cvm_profile.yml"))
-    parser.add_argument("-p", "--platform", choices=("amd_sev_snp", "intel_tdx"))
-    parser.add_argument("--output")
-    parser.add_argument(
-        "--defer-measurements", action="store_true", help="Construct now; collect references on the target host later"
-    )
-    parser.add_argument("--dev", action="store_true", help="Separate dev- profile with no TEE or KBS authorization")
-    parser.add_argument("--finalize", metavar="BUNDLE", help="Finalize a previously constructed bundle")
-    parser.add_argument(
-        "--reference-evidence", help="Private reference report captured from this bundle on a trusted target host"
-    )
-    parser.add_argument("--gpu", action="append", help="Repeat once per explicit NVIDIA GPU PCI address")
-    parser.add_argument(
-        "--acceptance-runner",
-        help="Trusted executable called as RUNNER BUNDLE REPORT after finalization; a valid report approves the bundle",
-    )
-    args = parser.parse_args()
-    try:
-        result = (
-            finalize(args.finalize, args.reference_evidence, args.gpu)
-            if args.finalize
-            else build(
-                args.config,
-                args.platform,
-                args.output,
-                defer_measurements=args.defer_measurements,
-                gpu=args.gpu,
-                dev=args.dev,
-                acceptance_runner=args.acceptance_runner,
-            )
-        )
-        print(f"Generic bundle: {result}")
-        manifest_name = (
-            "cvm_manifest.json" if (Path(result) / "cvm_manifest.json").is_file() else "cvm_manifest.pending.json"
-        )
-        manifest = read_json(Path(result) / manifest_name)
-        print(
-            "OCI artifact: "
-            + str(Path(result).parent / f"cvm_{manifest['profile_version']}_{manifest['platform']}.oci.tar")
-        )
-        if (Path(result) / "approval.json").is_file():
-            print("The exact finalized bundle passed the acceptance runner and is approved.")
-        elif not args.defer_measurements and not args.dev:
-            print("Production approval remains pending; use scripts/admin_approve after acceptance testing.")
-    except (BuildError, OSError, ValueError, KeyError, tarfile.TarError) as exc:
-        parser.exit(1, f"CVM build failed: {exc}\n")
-
-
-if __name__ == "__main__":
-    main()

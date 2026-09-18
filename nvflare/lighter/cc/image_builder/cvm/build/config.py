@@ -16,6 +16,7 @@
 
 import copy
 import ipaddress
+import json
 import os
 import re
 from pathlib import Path, PurePosixPath
@@ -23,9 +24,11 @@ from urllib.parse import urlparse
 
 import yaml
 
-from ..common.contracts import HEADER_BYTES, PLATFORMS, STORAGE_PROFILE, identifier
+from ..common.contracts import HEADER_BYTES, PLATFORMS, STORAGE_PROFILE
 from ..common.errors import BuildError, require
 from ..common.io import canonical, digest_file, read_json
+from ..common.references import validate_references
+from ..common.services import validate_service
 from ..common.validation import ports, validate_nfs_mount
 from ..common.versions import NVAT_COMMIT, TRUSTEE_COMMIT
 from .provisioning import validate_apt_repositories
@@ -249,7 +252,6 @@ def validate_gpu_policy(path):
     cannot weaken appraisal by omitting a claim.
     See config/gpu_policy.json for a conforming policy.
     """
-    import json
 
     try:
         policy = json.loads(Path(path).read_text())
@@ -313,6 +315,16 @@ def gpu_inputs(path, value):
 
 def profile(path):
     value = load_yaml(path)
+    allowed = set(PROFILE_DEFAULTS) | {
+        "acceptance_runner",
+        "gpu_policy",
+        "gpu_packages",
+        "gpu_attestation_url",
+        "gpu_apt_repositories",
+        "root_overlay_max_mib",
+    }
+    unknown = set(value) - allowed
+    require(not unknown, "Unknown profile fields: " + ", ".join(sorted(map(str, unknown))))
     supplied_platforms = value.pop("platforms", None)
     defaults = copy.deepcopy(PROFILE_DEFAULTS)
     defaults.update(value)
@@ -335,9 +347,6 @@ def profile(path):
     require(value.get("vault_storage_profile") == STORAGE_PROFILE, "Unsupported authenticated storage profile")
     require(value.get("guest_release") == "26.04", "This implementation targets an Ubuntu 26.04 guest")
     require(re.fullmatch(r"[a-f0-9]{40}", value.get("trustee_commit", "")), "Pin trustee_commit to a full revision")
-    require("trustee_patch_digest" not in value, "Use unmodified CoCo Trustee; remove trustee_patch_digest")
-    require("gpu_attestation_binary" not in value, "Upstream NVIDIA attestation uses libnvat, not a custom collector")
-    identifier(value.get("attestation_policy_id"))
     require(value["attestation_policy_id"] == "default", "The upstream kbs-client uses the default AS policy")
     require(urlparse(value.get("kbs_url", "")).scheme == "https", "KBS requires HTTPS")
     require(value.get("token_algorithm") in ("RS256", "ES256", "EdDSA"), "Pin the AS token algorithm")
@@ -384,17 +393,17 @@ def profile(path):
         require(settings.get("cpu_model") and re.fullmatch(r"[A-Za-z0-9_.-]+", settings["cpu_model"]), "Pin CPU model")
     for key in ("base_image", "build_firmware", "kbs_cert", "as_public_key", "attestation_policy", "reference_values"):
         value[key] = local_path(path, value.get(key))
-    from ..common.references import validate_references
 
     validate_references(
-        read_json(value["reference_values"]), [p for p, v in value["platforms"].items() if v.get("enabled", True)]
+        read_json(value["reference_values"]),
+        [p for p, v in value["platforms"].items() if v.get("enabled", True)],
+        gpu=value["gpu"] == "nvidia_cc",
     )
     if value["gpu"] == "nvidia_cc":
         for key in ("gpu_policy", "gpu_attestation_library", "gpu_attestation_provenance"):
             value[key] = local_path(path, value.get(key))
         gpu_inputs(path, value)
         validate_gpu_policy(value["gpu_policy"])
-        validate_references(read_json(value["reference_values"]), gpu=True)
         require(urlparse(value.get("gpu_attestation_url", "")).scheme == "https", "GPU attestation requires HTTPS")
         gpu_packages = value.get("gpu_packages")
         require(isinstance(gpu_packages, list) and gpu_packages, "Pin GPU driver/toolkit and NVAT packages")
@@ -415,7 +424,6 @@ def profile(path):
         if "/" in value["acceptance_runner"]:
             value["acceptance_runner"] = local_path(path, value["acceptance_runner"])
             require(os.access(value["acceptance_runner"], os.X_OK), "acceptance_runner must be executable")
-    value.setdefault("build_user", "ubuntu")
     require(re.fullmatch(r"[a-z_][a-z0-9_-]*", value["build_user"]), "Invalid build user")
     return value
 
@@ -609,7 +617,6 @@ def application(path):
         ),
         "Launch configuration must obtain TEE settings from the generic runtime",
     )
-    from ..common.services import validate_service
 
     require(isinstance(value.setdefault("services", []), list), "services must be a list of unit file paths")
     value["services"] = [local_path(path, item) for item in value["services"]]

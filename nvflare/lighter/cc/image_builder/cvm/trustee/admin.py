@@ -14,20 +14,20 @@
 
 """Register, approve and retire bundles; revoke resources through CoCo Trustee."""
 
-import argparse
 import hashlib
 import json
-import tarfile
 import time
 from pathlib import Path
 
-from ..artifacts.bundle import approve_bundle, verify_approval, verify_bundle
+from ..artifacts.bundle import verify_approval, verify_bundle
 from ..common.contracts import identifier
-from ..common.errors import BuildError, require
+from ..common.errors import require
 from ..common.io import canonical, digest_file, read_json, write_json
 from ..common.linux import lock
 from ..common.policy import compose
-from .client import api, delete_resource, encode
+from ..common.references import EXPIRY_REFERENCE, TCB_NAMES
+from .client import api, encode
+from .references import check_profile, profile_identity
 
 
 def read_resource_policy(config):
@@ -45,15 +45,7 @@ def verify_readback(expected, returned):
     require(returned == expected, "KBS policy readback differs from published bytes")
 
 
-def check_migration(config):
-    require(
-        "key_service_state" not in config,
-        "Migrate legacy revocations and bundle retirements before removing key_service_state; see TRUSTEE_GUIDE.md",
-    )
-
-
 def install(config, directory, candidate=False):
-    check_migration(config)
     manifest = verify_bundle(directory) if candidate else verify_approval(directory)
     require(
         not candidate or manifest["profile_version"].startswith("test-"),
@@ -90,8 +82,6 @@ def install(config, directory, candidate=False):
         )
     expected_refs = read_json(Path(directory) / "reference_values.json")
     refs = {name: json.loads(api(config, "GET", "reference-value/" + name)) for name in expected_refs}
-    from ..common.references import EXPIRY_REFERENCE, TCB_NAMES
-    from .references import check_profile, profile_identity
 
     expirations = json.loads(api(config, "GET", "reference-value/" + EXPIRY_REFERENCE))
     require(
@@ -102,20 +92,19 @@ def install(config, directory, candidate=False):
         "RVPS approvals are expired or lack an expiry",
     )
 
-    for name in TCB_NAMES & expected_refs.keys():
-        require(refs.get(name) == expected_refs[name], "RVPS TCB approval differs from this profile: " + name)
-    require(
-        all(
-            key in refs
-            and (
-                set(value) <= set(refs[key])
-                if isinstance(value, list) and isinstance(refs[key], list)
-                else refs[key] == value
+    for name, expected in expected_refs.items():
+        actual = refs[name]
+        if name in TCB_NAMES:
+            require(actual == expected, "RVPS TCB approval differs from this profile: " + name)
+        else:
+            require(
+                (
+                    set(expected) <= set(actual)
+                    if isinstance(expected, list) and isinstance(actual, list)
+                    else actual == expected
+                ),
+                "RVPS lacks the approved bundle reference values: " + name,
             )
-            for key, value in expected_refs.items()
-        ),
-        "RVPS lacks the approved bundle/TCB reference values",
-    )
     with lock(state / "publisher.lock"):
         profile_path = state / "security_profile.json"
         if profile_path.exists():
@@ -147,7 +136,6 @@ def install(config, directory, candidate=False):
 
 
 def retire(config, build_id):
-    check_migration(config)
     identifier(build_id)
     state = Path(config["state"])
     state.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -162,40 +150,3 @@ def retire(config, build_id):
         policy = compose(active).encode()
         api(config, "POST", "resource-policy", canonical({"policy": encode(policy)}))
         verify_readback(policy, read_resource_policy(config))
-
-
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    sub = parser.add_subparsers(dest="action", required=True)
-    approval = sub.add_parser("approve")
-    approval.add_argument("bundle")
-    approval.add_argument("evidence")
-    add = sub.add_parser("install")
-    add.add_argument("config")
-    add.add_argument("bundle")
-    add.add_argument("--candidate", action="store_true")
-    remove = sub.add_parser("retire")
-    remove.add_argument("config")
-    remove.add_argument("build_id")
-    revoke = sub.add_parser("revoke")
-    revoke.add_argument("config")
-    revoke.add_argument("resource")
-    args = parser.parse_args()
-    try:
-        if args.action == "approve":
-            approve_bundle(args.bundle, read_json(args.evidence))
-            from ..artifacts.packaging import package_bundle
-
-            package_bundle(args.bundle)
-        elif args.action == "install":
-            install(read_json(args.config), args.bundle, args.candidate)
-        elif args.action == "revoke":
-            delete_resource(read_json(args.config), args.resource)
-        else:
-            retire(read_json(args.config), args.build_id)
-    except (BuildError, OSError, ValueError, KeyError, tarfile.TarError) as exc:
-        parser.exit(1, f"Bundle administration failed: {exc}\n")
-
-
-if __name__ == "__main__":
-    main()

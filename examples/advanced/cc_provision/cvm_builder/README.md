@@ -23,7 +23,7 @@ image ID; no `image_id` or `release_id` setting is required. `platforms` default
 to all platforms supplied by each `cvm_image`.
 
 To use a registry image, replace its folder with the immutable reference printed
-by `scripts/cvm_publish`, for example:
+by `cvmctl publish`, for example:
 
 ```yaml
 cvm_image: registry.example.org/cvm/tdx-cpu@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef

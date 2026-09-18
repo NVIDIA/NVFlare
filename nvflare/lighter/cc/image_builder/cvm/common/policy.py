@@ -18,6 +18,7 @@ import json
 
 from .contracts import identifier
 from .errors import require
+from .gpu_policy import resource_conditions
 from .measurements import validate_measurements
 
 PRELUDE = """package policy
@@ -59,7 +60,6 @@ def bundle_rule(manifest):
     if contract.get("token_issuer"):
         lines.append(f'    input.iss == {json.dumps(contract["token_issuer"])}')
     if contract.get("gpu") == "nvidia_cc":
-        from .gpu_policy import resource_conditions
 
         lines += resource_conditions(contract["gpu_count"], policy)
     if platform == "amd_sev_snp":

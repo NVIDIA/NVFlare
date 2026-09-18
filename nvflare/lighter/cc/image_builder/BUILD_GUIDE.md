@@ -70,7 +70,7 @@ For TDX, complete these steps before a full build:
    A successful local TDREPORT is not proof that QGS can generate a signed quote.
 
 ```sh
-sudo scripts/tdx_preflight --firmware inputs/OVMF.inteltdx.fd \
+sudo ./cvmctl preflight host --firmware inputs/OVMF.inteltdx.fd \
   --quote-probe /usr/local/sbin/site_tdx_quote_probe
 ```
 
@@ -187,7 +187,7 @@ into the CVM contract and manifest.
 target SNP or TDX host:
 
 ```sh
-sudo ./cvm_build.sh
+sudo ./cvmctl build
 ```
 
 No command-line parameters are required. The builder reads the default profile,
@@ -266,7 +266,7 @@ construction machine is different from the target TEE host. Select a platform
 and defer its measurements:
 
 ```sh
-sudo ./cvm_build.sh config/cvm_profile.yml \
+sudo ./cvmctl build config/cvm_profile.yml \
   -p amd_sev_snp --defer-measurements
 ```
 
@@ -274,9 +274,9 @@ The deferred call emits a pending CVM OCI artifact. Copy that `.oci.tar` to its
 matching target host, verify and materialize it, then finalize it:
 
 ```sh
-sudo scripts/cvm_pull cvm_cpu-2026.09-r4_amd_sev_snp.oci.tar \
+sudo ./cvmctl pull cvm_cpu-2026.09-r4_amd_sev_snp.oci.tar \
   --output /srv/cvm/cvm_cpu-2026.09-r4
-sudo scripts/cvm_finalize \
+sudo ./cvmctl finalize \
   /srv/cvm/cvm_cpu-2026.09-r4/amd_sev_snp
 ```
 
@@ -284,11 +284,11 @@ Run the site's acceptance matrix there. Then approve its exact report and instal
 the bundle's reference values and reusable resource policy:
 
 ```sh
-sudo scripts/admin_approve \
+sudo ./cvmctl admin approve \
   /srv/cvm/cvm_cpu-2026.09-r4/amd_sev_snp \
   /srv/cvm/acceptance-report.json
 
-sudo scripts/admin_install \
+sudo ./cvmctl admin install \
   /srv/trustee/admin.json \
   /srv/cvm/cvm_cpu-2026.09-r4/amd_sev_snp
 ```
@@ -297,7 +297,7 @@ Finalization and approval regenerate the OCI artifact so it includes the final
 manifest, profile set, evidence, resource policy and approval receipt. Repeat
 construction and finalization once for each platform in the profile. Every
 platform bundle must have the same generic contract. Use
-`scripts/admin_retire ADMIN_JSON BUILD_ID` to retire a bundle.
+`./cvmctl admin retire ADMIN_JSON BUILD_ID` to retire a bundle.
 
 When the finalized platform artifacts return to the central Vault Build site,
 materialize the first one and merge each additional platform. Merge verifies the
@@ -305,9 +305,9 @@ profile version, shared contract, platform entry and manifest digest before it
 updates the combined `profile_set.json`:
 
 ```sh
-scripts/cvm_pull cvm_cpu-2026.09-r4_intel_tdx.oci.tar \
+./cvmctl pull cvm_cpu-2026.09-r4_intel_tdx.oci.tar \
   --output target/final_cvm_cpu-2026.09-r4
-scripts/cvm_pull cvm_cpu-2026.09-r4_amd_sev_snp.oci.tar \
+./cvmctl pull cvm_cpu-2026.09-r4_amd_sev_snp.oci.tar \
   --output target/final_cvm_cpu-2026.09-r4 --merge
 ```
 
@@ -337,7 +337,7 @@ Do not put `trustee` in `vault_build.yml`; per-build overrides are rejected.
 For generated YAML outside the project, select the shared file explicitly:
 
 ```sh
-sudo ./vault_build.sh /tmp/site-inputs/vault_build.yml \
+sudo ./cvmctl vault /tmp/site-inputs/vault_build.yml \
   --project-config /srv/project/cvm_project.yml
 ```
 
@@ -397,12 +397,12 @@ cvm_image: registry.example.org/cvm/cpu-2026.09-r4@sha256:0123456789abcdef012345
 ```
 
 `oci://` and `https://` prefixes are also accepted. Use the actual digest printed
-by `scripts/cvm_publish`. Registry retrieval requires ORAS and uses HTTPS by
+by `./cvmctl publish`. Registry retrieval requires ORAS and uses HTTPS by
 default. The builder downloads and verifies the generic CVM, requires its
 approval receipt, and keeps the retrieved files until they have been copied into
 the delivery. A registry artifact contains one platform; a local folder may
 contain several merged platform bundles. For offline use, materialize the CVM
-`.oci.tar` with `scripts/cvm_pull` first and use its output folder.
+`.oci.tar` with `./cvmctl pull` first and use its output folder.
 
 `deployment_id` is generated automatically for every invocation; do not put it
 in the YAML. The builder prints the ID and resulting artifact paths, and records
@@ -422,14 +422,14 @@ operator must read without a KBS key. Put secrets and confidential logs in
 Build a fresh vault for this application release and site:
 
 ```sh
-sudo ./vault_build.sh config/vault_build.yml
+sudo ./cvmctl vault config/vault_build.yml
 ```
 
 For the isolated HTTP lab registry, use a digest reference such as
 `registry.example.org:5000/cvm/cpu@sha256:<manifest-digest>` and explicitly opt in:
 
 ```sh
-sudo ./vault_build.sh config/vault_build.yml --plain-http
+sudo ./cvmctl vault config/vault_build.yml --plain-http
 ```
 
 ### Use a GPU inside the container
@@ -537,7 +537,7 @@ sha256sum target/vault_0123456789ab4def8123456789abcdef/vault_0123456789ab4def81
 For a registry delivery, publish the exact OCI layout with ORAS:
 
 ```sh
-scripts/cvm_publish \
+./cvmctl publish \
   target/vault_0123456789ab4def8123456789abcdef/vault_0123456789ab4def8123456789abcdef_intel_tdx.oci.tar \
   registry.example.org/cvm/my-app-site1:intel-tdx-1.0
 ```
@@ -545,7 +545,7 @@ scripts/cvm_publish \
 An isolated HTTP test registry requires an explicit opt-in:
 
 ```sh
-scripts/cvm_publish \
+./cvmctl publish \
   target/vault_0123456789ab4def8123456789abcdef/vault_0123456789ab4def8123456789abcdef_intel_tdx.oci.tar \
   registry.example.org:5000/cvm/my-app-site1:intel-tdx-1.0 --plain-http
 ```
@@ -559,7 +559,7 @@ cosign sign --key /secure/release-signing.key \
   registry.example.org/cvm/my-app-site1@sha256:OCI_MANIFEST_DIGEST
 ```
 
-The same `scripts/cvm_publish` command can publish a Stage 1 CVM `.oci.tar` when
+The same `./cvmctl publish` command can publish a Stage 1 CVM `.oci.tar` when
 another build site needs that reusable bundle.
 
 Rebuild the vault when the application image, application files, site, or

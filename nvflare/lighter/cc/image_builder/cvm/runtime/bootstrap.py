@@ -18,17 +18,21 @@ import argparse
 import base64
 import json
 import os
-import subprocess
 from pathlib import Path
 
 from ..common.contracts import HEADER_BYTES, STORAGE_PROFILE, binding
 from ..common.errors import BuildError, require
+from ..common.evidence import serial_frames
 from ..common.firewall import firewall_rules
 from ..common.io import read_json, write_json
 from ..common.linux import memory_file, protect_process, run
 from ..common.luks import inspect_header, scan, snapshot_header, validate_mapping
 from ..common.measurements import measurements
+from ..common.services import WRITABLE_APPLICATION_DIRS, validate_service
+from ..common.validation import validate_nfs_mount
 from .attestation import authorized_key
+from .audit import emit
+from .gpu import readiness
 from .platforms import guest_platform, local_report, verify_local_binding
 from .storage import disk_device
 from .supervisor import supervise
@@ -48,16 +52,23 @@ CLOCK_MAX_SKEW_PPM = 1000
 MOUNT_POINTS = {"vault": "/vault", "applog": "/applog", "user-config": "/user_config", "user-data": "/user_data"}
 
 
+MOUNT_OPTIONS = {
+    "vault": "nosuid,nodev",
+    "applog": "nosuid,nodev",
+    "user-config": "ro,noload,nosuid,nodev,noexec",
+    "user-data": "ro,noload,nosuid,nodev,noexec",
+}
+
+
+def mount_roles(devices):
+    for role, device in devices.items():
+        run(["mount", "-o", MOUNT_OPTIONS[role], device, MOUNT_POINTS[role]])
+
+
 def firewall(inbound, outbound, mappings=()):
     rules = firewall_rules(inbound, outbound, mappings)
-    # Replacing our own table is atomic in one nft transaction.
-    existing = (
-        subprocess.run(
-            ["nft", "list", "table", "inet", "cvm"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-        ).returncode
-        == 0
-    )
-    run(["nft", "-f", "-"], input=(("delete table inet cvm\n" if existing else "") + rules).encode())
+    # Replacing our own table is atomic whether or not it already exists.
+    run(["nft", "-f", "-"], input=("table inet cvm {}\ndelete table inet cvm\n" + rules).encode())
 
 
 def reference():
@@ -84,7 +95,6 @@ def reference():
     # These frames must never be forwarded to public logs or OCI artifacts.
     # CCEL can exceed journald's record limit. Use bounded serial frames with
     # compression, so console forwarding cannot silently drop the reference.
-    from ..common.evidence import serial_frames
 
     for frame in serial_frames(value):
         print(frame, flush=True)
@@ -140,9 +150,7 @@ def mount_vault(config, dev=False):
             not Path("/dev/sev-guest").exists() and not Path("/dev/tdx_guest").exists(),
             "Dev root must not run as a TEE",
         )
-        for role in ("vault", "applog", "user-config", "user-data"):
-            options = "nosuid,nodev" if role in ("vault", "applog") else "ro,noload,nosuid,nodev,noexec"
-            run(["mount", "-o", options, devices[role], MOUNT_POINTS[role]])
+        mount_roles(devices)
         manifest = read_json("/vault/vault_manifest.json")
         require(
             manifest.get("dev_mode") is True and manifest["cvm_build_id"] == config["build_id"],
@@ -192,7 +200,7 @@ def mount_vault(config, dev=False):
         run(["systemctl", "is-active", "cvm_integrity.service"]).strip() == b"active",
         "Integrity monitor stopped during scan",
     )
-    run(["mount", "-o", "nosuid,nodev", "/dev/mapper/vault", "/vault"])
+    mount_roles({"vault": "/dev/mapper/vault"})
     manifest = read_json("/vault/vault_manifest.json")
     require(
         manifest["platform"] == platform and manifest["cvm_build_id"] == config["build_id"],
@@ -205,9 +213,7 @@ def mount_vault(config, dev=False):
         "Vault contract mismatch",
     )
     require(manifest.get("luks_uuid") == actual_uuid, "Vault UUID mismatch")
-    for role in ("applog", "user-config", "user-data"):
-        options = "nosuid,nodev" if role == "applog" else "ro,noload,nosuid,nodev,noexec"
-        run(["mount", "-o", options, devices[role], MOUNT_POINTS[role]])
+    mount_roles({role: device for role, device in devices.items() if role != "vault"})
     write_json(
         STATE / "binding.json",
         {
@@ -242,7 +248,6 @@ def finish_bootstrap(config, dev=False):
 
 
 def install_services():
-    from ..common.services import validate_service
 
     destination = Path("/run/systemd/system")
     destination.mkdir(exist_ok=True)
@@ -251,18 +256,12 @@ def install_services():
     if source.exists():
         for item in sorted(source.iterdir()):
             text = item.read_text()
-            validate_service(item.name, text)
-            from ..common.services import service_executable
-
-            executable = service_executable(text)
+            executable = validate_service(item.name, text)
             require(
                 executable.resolve().is_relative_to("/vault/application"), "Service executable symlink escapes payload"
             )
             require(
-                not any(
-                    executable.resolve().is_relative_to(p)
-                    for p in ("/vault/application/runtime", "/vault/application/data")
-                ),
+                not any(executable.resolve().is_relative_to(p) for p in WRITABLE_APPLICATION_DIRS),
                 "Service executable cannot reside in writable application data",
             )
             deps = "cvm_bootstrap.service"
@@ -290,7 +289,6 @@ def periodic():
     # authorization; a valid signature or a cached EAR is insufficient.
     with authorized_key(config, digest):
         pass
-    from .gpu import readiness
 
     readiness(config, True)
 
@@ -368,7 +366,6 @@ def application():
         run(["sync", "-f", "/vault/docker"])
     config = read_json(CONFIG)
     if app["requires_gpu"]:
-        from .gpu import readiness
 
         readiness(config, True)
     device = {"intel_tdx": "/dev/tdx_guest", "amd_sev_snp": "/dev/sev-guest"}.get(config["platform"])
@@ -391,7 +388,6 @@ def mount_user_data():
     settings = read_json("/vault/config/application.json").get("nfs_mount")
     if settings is None:
         return
-    from ..common.validation import validate_nfs_mount
 
     validate_nfs_mount(settings)
     run(
@@ -416,12 +412,10 @@ def main():
     try:
         globals()[args.action]()
         if args.action == "periodic":
-            from .audit import emit
 
             emit("allow")
     except Exception:
         if audited:
-            from .audit import emit
 
             emit("deny")
         # A traceback could include untrusted app data or token content.

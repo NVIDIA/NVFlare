@@ -12,4 +12,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Standalone CVM cvm package; no NVFlare imports."""
+"""Standalone CVM package; no NVFlare imports."""

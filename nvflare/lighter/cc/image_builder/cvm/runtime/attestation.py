@@ -28,6 +28,7 @@ from cryptography.hazmat.primitives.asymmetric import ec, ed25519, padding, rsa,
 from ..common.contracts import resource_path
 from ..common.errors import BuildError, require
 from ..common.linux import memory_file, run
+from .gpu_claims import validate_submods
 
 ATTESTATION_BUDGET_SECONDS = 60
 
@@ -100,7 +101,6 @@ def validate_token(token, config, digest, *, now=None):
                 "SNP debug or migration is enabled",
             )
         if config.get("gpu") == "nvidia_cc":
-            from .gpu_claims import validate_submods
 
             validate_submods(claims["submods"], config["gpu_count"], config["attestation_policy_id"])
         return claims

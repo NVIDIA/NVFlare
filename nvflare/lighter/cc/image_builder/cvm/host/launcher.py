@@ -16,6 +16,7 @@
 
 import argparse
 import contextlib
+import fcntl
 import hashlib
 import json
 import os
@@ -166,42 +167,14 @@ def vfio_gpus(explicit=None, expected_count=None, sysfs=SYSFS_PCI):
 
 
 def find_bundle(directory, delivery, explicit=None):
-    """Resolve the matching reusable bundle from the standard deployment layout."""
-    if explicit:
-        candidates = [Path(explicit).resolve()]
-    else:
-        # A delivery's embedded bundle is authoritative. Do not make a local
-        # build cache with the same build ID turn a self-contained launch into
-        # an ambiguity. The caller verifies all artifact hashes before launch.
-        embedded = directory / "cvm_bundle"
-        if embedded.exists():
-            require(
-                read_json(embedded / "cvm_manifest.json").get("build_id") == delivery["cvm_build_id"],
-                "Embedded CVM bundle identity mismatch",
-            )
-            return embedded.resolve()
-        root = directory.parent.parent
-        name = "cvm_" + delivery["profile_version"]
-        platform = delivery["platform"]
-        candidates = [
-            directory,
-            directory / "cvm_bundle",
-            root / name / platform,
-            root / "bundles" / name / platform,
-        ]
-    matches = []
-    for candidate in candidates:
-        manifest_path = candidate / "cvm_manifest.json"
-        if not manifest_path.is_file():
-            continue
-        try:
-            if read_json(manifest_path).get("build_id") == delivery["cvm_build_id"]:
-                matches.append(candidate.resolve())
-        except (OSError, ValueError, KeyError):
-            continue
-    require(matches, "Matching CVM bundle was not found in the standard layout; use --cvm-bundle")
-    require(len(set(matches)) == 1, "Multiple matching CVM bundles were found; use --cvm-bundle")
-    return matches[0]
+    """Use an explicit override or the delivery's embedded bundle, never a build cache."""
+    bundle = Path(explicit).resolve() if explicit else directory / "cvm_bundle"
+    require((bundle / "cvm_manifest.json").is_file(), "CVM bundle is missing; use --cvm-bundle")
+    require(
+        read_json(bundle / "cvm_manifest.json").get("build_id") == delivery["cvm_build_id"],
+        "CVM bundle identity mismatch",
+    )
+    return bundle.resolve()
 
 
 def _process_start(pid):
@@ -438,7 +411,6 @@ def launch(directory, bundle=None, gpu=None):
     # Locks the actual inode, so alternate names/symlinks do not bypass ownership.
     # QEMU file-node locking remains on, including after a launcher crash.
     with gpu_context as selected_gpus, open(disks[-1], "r+b") as vault:
-        import fcntl
 
         try:
             fcntl.flock(vault, fcntl.LOCK_EX | fcntl.LOCK_NB)

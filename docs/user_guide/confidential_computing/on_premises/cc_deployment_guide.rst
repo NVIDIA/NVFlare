@@ -70,15 +70,15 @@ Run provisioning on the prepared Linux worker:
    cd examples/advanced/cc_provision/cvm_builder
    nvflare provision -p project.yml -w ./workspace
 
-The ``cvm_vault`` adapter invokes ``vault_build.sh`` after startup-kit generation
+The ``cvm_vault`` adapter invokes ``cvmctl vault`` after startup-kit generation
 and signing finish. Deliveries default to
 ``workspace/cvm_project/prod_NN/<participant>/``. The administrator's ordinary
 startup kit remains in the same production directory. Private build inputs,
 logs and recovery records are retained separately.
 
 Read the returned OCI archive paths and digests. Transfer the complete archives
-offline or publish them using the included ``scripts/cvm_publish``. Recipients
-use ``scripts/cvm_pull`` to verify and materialize a delivery from its archive or
+offline or publish them using the included ``cvmctl publish``. Recipients
+use ``cvmctl pull`` to verify and materialize a delivery from its archive or
 immutable registry reference. Follow ``USER_GUIDE.md`` for the exact commands.
 
 Launch and run a job

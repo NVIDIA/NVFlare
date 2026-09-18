@@ -17,7 +17,9 @@
 import contextlib
 import hashlib
 import os
+import re
 import stat
+import subprocess
 import tempfile
 import time
 import uuid
@@ -156,7 +158,6 @@ def opened_vault(device, key_fd, *, header_fd=None, mapper=None):
 
 def copy_tree(source, destination):
     """Preserve ownership, mode, xattrs and hardlinks inside authenticated storage."""
-    import subprocess
 
     args = ["tar", "--numeric-owner", "--xattrs", "--xattrs-include=*", "--acls", "--sparse"]
     first = subprocess.Popen(
@@ -210,7 +211,7 @@ def content_digest(root):
     return result.hexdigest()
 
 
-def sidecar(path, size_gib, source=None, public_input=False, nfs_input=False):
+def sidecar(path, size_gib, source=None, *, verify=None, nfs_input=False):
     """Create a clear ext4 sidecar; input sidecars are rescanned after copying."""
     create_image(path, size_gib * 1024**3)
     with nbd(path) as device:
@@ -220,13 +221,11 @@ def sidecar(path, size_gib, source=None, public_input=False, nfs_input=False):
                 copy_tree(source, root)
             if nfs_input:
                 (root / "mnt").mkdir(exist_ok=True)
-            if public_input:
+            if verify:
                 # Re-scan the completed image so an input changed between
                 # configuration validation and copying cannot smuggle a key
                 # or symbolic link onto a clear-text sidecar.
-                from .config import public_sidecar
-
-                public_sidecar(root)
+                verify(root)
 
 
 def build_verity(source, output, data_gib):
@@ -249,7 +248,6 @@ def build_verity(source, output, data_gib):
                 f"--hash-offset={data_size}",
             ]
         )
-        import re
 
         match = re.search(rb"Root hash:\s*([0-9a-f]{64})", result)
         require(match, "Missing dm-verity root hash")

@@ -28,6 +28,32 @@ from cvm.common.io import digest_file, read_json, write_json
 
 
 class ProfileTests(unittest.TestCase):
+    def test_gpu_profile_options_are_accepted_and_references_checked_once(self):
+        settings = {
+            "gpu": "nvidia_cc",
+            "gpu_policy": "policy.json",
+            "gpu_packages": ["nvidia-driver-580-open=version", "nvidia-container-toolkit=version"],
+            "gpu_attestation_url": "https://nras.example.org",
+            "gpu_attestation_library": "libnvat.so.1",
+            "gpu_attestation_provenance": "nvat_build.json",
+            "gpu_apt_repositories": [{"url": "https://packages.example.org"}],
+            "acceptance_runner": "site_acceptance",
+            "root_overlay_max_mib": 4096,
+        }
+        with (
+            patch.object(config, "load_yaml", return_value=settings),
+            patch.object(config, "local_path", side_effect=lambda path, value: value),
+            patch.object(config, "read_json", return_value={}) as read,
+            patch.object(config, "validate_references") as validate,
+            patch.object(config, "gpu_inputs") as gpu_inputs,
+            patch.object(config, "validate_gpu_policy"),
+        ):
+            profile = config.profile("profile.yml")
+        self.assertEqual(profile["gpu_attestation_provenance"], "nvat_build.json")
+        read.assert_called_once_with(profile["reference_values"])
+        validate.assert_called_once_with({}, ["amd_sev_snp", "intel_tdx"], gpu=True)
+        gpu_inputs.assert_called_once()
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)

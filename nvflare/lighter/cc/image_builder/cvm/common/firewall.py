@@ -15,10 +15,10 @@
 """Render measured bootstrap and authenticated application nftables rules."""
 
 from .errors import require
+from .validation import ports
 
 
 def firewall_rules(inbound, outbound, mappings=()):
-    from .validation import ports
 
     ports(inbound)
     ports(outbound)

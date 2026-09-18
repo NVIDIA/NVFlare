@@ -23,11 +23,33 @@ from pathlib import Path
 from unittest.mock import patch
 
 from cvm.artifacts.oci import CVM_ARTIFACT_TYPE, DELIVERY_ARTIFACT_TYPE
-from cvm.build import vault
+from cvm.build import config, storage, vault
 from cvm.common.errors import BuildError
 
 
 class VaultInputTests(unittest.TestCase):
+    def test_public_sidecars_rescan_copied_bytes(self):
+        source = self.root / "public"
+        source.mkdir()
+        (source / "input.txt").write_text("public data")
+        config.public_sidecar(source)
+        mounted = self.root / "mounted"
+        mounted.mkdir()
+
+        def changed_during_copy(source, destination):
+            (destination / "input.txt").write_text("-----BEGIN PRIVATE KEY-----\nsecret\n")
+
+        app = dict(applog_drive_size=1, user_config_drive_size=1, user_data_drive_size=1, user_config=source)
+        with (
+            patch.object(storage, "create_image"),
+            patch.object(storage, "nbd", side_effect=lambda *a: contextlib.nullcontext("device")),
+            patch.object(storage, "mounted", side_effect=lambda *a: contextlib.nullcontext(mounted)),
+            patch.object(storage, "run"),
+            patch.object(storage, "copy_tree", side_effect=changed_during_copy),
+            self.assertRaisesRegex(BuildError, "Private-key"),
+        ):
+            vault.create_sidecars(self.root, app)
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)

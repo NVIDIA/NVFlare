@@ -47,7 +47,7 @@ class LauncherTests(unittest.TestCase):
             write_json(bundle / "cvm_manifest.json", {"build_id": "cvm-example"})
             self.assertEqual(find_bundle(delivery, metadata), bundle.resolve())
 
-    def test_standard_layout_finds_exact_matching_bundle(self):
+    def test_build_cache_requires_explicit_override(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             delivery = root / "vault_app" / "intel_tdx"
@@ -60,7 +60,14 @@ class LauncherTests(unittest.TestCase):
                 "cvm_build_id": "cvm-example",
             }
             write_json(bundle / "cvm_manifest.json", {"build_id": "cvm-example"})
-            self.assertEqual(find_bundle(delivery, metadata), bundle.resolve())
+            with self.assertRaisesRegex(BuildError, "use --cvm-bundle"):
+                find_bundle(delivery, metadata)
+            self.assertEqual(find_bundle(delivery, metadata, bundle), bundle.resolve())
+            # The documented explicit override takes precedence over an embedded bundle.
+            embedded = delivery / "cvm_bundle"
+            embedded.mkdir()
+            write_json(embedded / "cvm_manifest.json", {"build_id": "stale"})
+            self.assertEqual(find_bundle(delivery, metadata, bundle), bundle.resolve())
 
     def test_wrong_bundle_is_not_selected(self):
         with tempfile.TemporaryDirectory() as temporary:

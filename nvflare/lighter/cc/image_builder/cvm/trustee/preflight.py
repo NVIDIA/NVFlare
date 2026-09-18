@@ -16,17 +16,10 @@
 
 from pathlib import Path
 
-from ..common.errors import BuildError, require
+from ..common.errors import require
 from ..common.linux import validate_core_policy
 
 
-def main():
-    try:
-        validate_core_policy()
-        require(len(Path("/proc/swaps").read_text().splitlines()) == 1, "Disable Trustee host swap")
-    except (BuildError, OSError):
-        raise SystemExit("Trustee requires swap disabled and no piped core collector") from None
-
-
-if __name__ == "__main__":
-    main()
+def check_trustee():
+    validate_core_policy()
+    require(len(Path("/proc/swaps").read_text().splitlines()) == 1, "Disable Trustee host swap")

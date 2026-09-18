@@ -219,6 +219,14 @@ class PlatformTests(unittest.TestCase):
 
 
 class ProfileTests(unittest.TestCase):
+    def test_profile_rejects_typos_and_removed_options(self):
+        path = Path(self.temp_directory()) / "profile.yml"
+        for name in ("gpu_cont", "trustee_patch_digest", "gpu_attestation_binary"):
+            with self.subTest(name=name):
+                path.write_text(name + ": invalid\n")
+                with self.assertRaisesRegex(BuildError, "Unknown profile fields: " + name):
+                    config.profile(path)
+
     def test_root_overlay_defaults_to_half_of_guest_ram(self):
         profile = {"memory_gib": 8}
         self.assertEqual(config.resolve_root_overlay_max_mib(profile), 4096)
@@ -686,10 +694,10 @@ class TokenTests(unittest.TestCase):
 class RuntimeContractTests(unittest.TestCase):
     def test_clock_service_can_rekey_nts_before_and_after_unlock(self):
         for inbound, outbound in (([], [443, 8443]), ([8080], [443, 8443])):
-            with patch.object(runtime.subprocess, "run") as probe, patch.object(runtime, "run") as apply:
-                probe.return_value.returncode = 1
+            with patch.object(runtime, "run") as apply:
                 runtime.firewall(inbound, outbound)
             rules = apply.call_args.kwargs["input"].decode()
+            self.assertTrue(rules.startswith("table inet cvm {}\ndelete table inet cvm\n"))
             output = rules.split("chain output", 1)[1].split("chain forward", 1)[0]
             self.assertIn("tcp dport { 53,4460 } accept", output)
             self.assertIn("udp dport { 53,67,123,547 } accept", output)

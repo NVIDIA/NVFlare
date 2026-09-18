@@ -123,7 +123,7 @@ class ReviewRegressionTests(unittest.TestCase):
             manifest = {"profile_version": "test-r1", "platform": "intel_tdx", "cvm_build_id": "same"}
             self.assertEqual(find_bundle(delivery, manifest), embedded.resolve())
             write_json(embedded / "cvm_manifest.json", {"build_id": "wrong"})
-            with self.assertRaisesRegex(BuildError, "Embedded"):
+            with self.assertRaisesRegex(BuildError, "identity mismatch"):
                 find_bundle(delivery, manifest)
 
     def test_nfs_requires_vault_config_and_authenticated_transport(self):

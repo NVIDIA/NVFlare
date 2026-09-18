@@ -94,11 +94,8 @@ def write_profile(directory, gpu="none"):
 def configuration(tmp_path):
     builder = tmp_path / "external builder"
     builder.mkdir()
-    (builder / "vault_build.sh").write_text("#!/bin/sh\nexit 1\n")
-    (builder / "vault_build.sh").chmod(0o755)
-    (builder / "scripts").mkdir()
-    (builder / "scripts/cvm_pull").write_text("#!/bin/sh\nexit 1\n")
-    (builder / "scripts/cvm_pull").chmod(0o755)
+    (builder / "cvmctl").write_text("#!/bin/sh\nexit 1\n")
+    (builder / "cvmctl").chmod(0o755)
     profile_dir = tmp_path / "profile"
     profile_dir.mkdir()
     write_profile(profile_dir)
@@ -483,7 +480,8 @@ def test_invoke_uses_array_noninteractive_sudo_and_private_log(tmp_path, monkeyp
     assert argv == [
         "sudo",
         "-n",
-        str(tmp_path / "vault_build.sh"),
+        str(tmp_path / "cvmctl"),
+        "vault",
         str(tmp_path / "vault config.yml"),
         "--project-config",
         str(tmp_path / "cvm_project.yml"),
