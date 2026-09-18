@@ -18,7 +18,7 @@ import pytest
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, Task
 from nvflare.apis.dxo import DXO, DataKind
-from nvflare.apis.fl_constant import ReturnCode
+from nvflare.apis.fl_constant import ReservedKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
@@ -108,7 +108,7 @@ class TestDhPSIWorkflow:
         assert "50002" not in message
 
     @pytest.mark.parametrize("log_client_names", [False, True])
-    def test_result_callback_participant_identity_logging(self, log_client_names):
+    def test_result_callback_participant_identity_logging(self, log_client_names, caplog):
         wf = DhPSIWorkFlow()
         wf.fl_ctx = FLContext()
         wf.controller = MagicMock()
@@ -116,50 +116,61 @@ class TestDhPSIWorkflow:
             bop = BroadcastAndWait(wf.fl_ctx, wf.controller)
         else:
             bop = wf._new_broadcast_operator()
-        bop.log_info = MagicMock()
+
+        callback_ctx = self._callback_context()
+        peer_ctx = callback_ctx.get_peer_context()
 
         task = Task(name=PSIConst.TASK, data=Shareable())
         client_task = ClientTask(Client("private-site-alpha", "token"), task)
         client_task.result = DXO(data_kind=DataKind.PSI, data={PSIConst.ITEMS_SIZE: 91001}).to_shareable()
 
-        bop.results_cb(client_task, wf.fl_ctx)
+        with caplog.at_level("INFO"):
+            bop.results_cb(client_task, callback_ctx)
 
-        messages = "\n".join(call.args[1] for call in bop.log_info.call_args_list)
+        messages = caplog.text
         assert ("private-site-alpha" in messages) is log_client_names
         assert "91001" not in messages
         assert f"Processing {PSIConst.TASK}" in messages
         assert "Received result" in messages
         assert "private-site-alpha" in bop.results
+        assert callback_ctx.get_peer_context() is peer_ctx
 
     @pytest.mark.parametrize(
         "return_code,raises",
         [(ReturnCode.EXECUTION_EXCEPTION, False), (ReturnCode.EXECUTION_RESULT_ERROR, True)],
     )
-    def test_psi_error_callback_does_not_log_participant_identity(self, return_code, raises):
+    def test_psi_error_callback_does_not_log_participant_identity(self, return_code, raises, caplog):
         wf = DhPSIWorkFlow()
         wf.fl_ctx = FLContext()
         wf.controller = PSIController(psi_workflow_id="psi_workflow")
-        wf.controller.log_error = MagicMock()
-        wf.controller.system_panic = MagicMock()
         bop = wf._new_broadcast_operator()
-        bop.log_info = MagicMock()
+        callback_ctx = self._callback_context()
+        peer_ctx = callback_ctx.get_peer_context()
 
         task = Task(name=PSIConst.TASK, data=Shareable())
         client_task = ClientTask(Client("private-site-alpha", "token"), task)
         client_task.result = make_reply(return_code)
 
-        if raises:
-            with pytest.raises(ValueError) as error:
-                bop.results_cb(client_task, wf.fl_ctx)
-            exception_message = str(error.value)
-        else:
-            bop.results_cb(client_task, wf.fl_ctx)
-            exception_message = ""
+        with caplog.at_level("INFO"):
+            if raises:
+                with pytest.raises(ValueError) as error:
+                    bop.results_cb(client_task, callback_ctx)
+                exception_message = str(error.value)
+            else:
+                bop.results_cb(client_task, callback_ctx)
+                exception_message = ""
 
-        messages = [call.args[1] for call in bop.log_info.call_args_list]
-        messages.extend(call.args[1] for call in wf.controller.log_error.call_args_list)
-        messages.extend(call.args[0] for call in wf.controller.system_panic.call_args_list)
-        messages.append(exception_message)
-        combined = "\n".join(messages)
+        combined = f"{caplog.text}\n{exception_message}"
         assert "private-site-alpha" not in combined
         assert "a PSI participant" in combined
+        assert callback_ctx.get_peer_context() is peer_ctx
+
+    @staticmethod
+    def _callback_context():
+        fl_ctx = FLContext()
+        fl_ctx.put(ReservedKey.IDENTITY_NAME, "server", private=False, sticky=False)
+        fl_ctx.put(ReservedKey.ENGINE, MagicMock(), private=True, sticky=False)
+        peer_ctx = FLContext()
+        peer_ctx.put(ReservedKey.IDENTITY_NAME, "private-site-alpha", private=False, sticky=False)
+        fl_ctx.set_peer_context(peer_ctx)
+        return fl_ctx
