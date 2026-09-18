@@ -192,10 +192,11 @@ def test_download_authenticates_only_the_github_api_request(monkeypatch, tmp_pat
 
     examples_cli._download_example(REVISION, SOURCE_PATH, tmp_path / "example")
 
-    assert session.request_kwargs[0]["headers"] == {
-        "Authorization": "Bearer github-token",
-        "X-GitHub-Api-Version": "2022-11-28",
-    }
+    prepared = requests.PreparedRequest()
+    prepared.prepare(method="GET", url=session.requested[0], auth=session.request_kwargs[0]["auth"])
+    assert prepared.headers["Authorization"] == "Bearer github-token"
+    assert session.request_kwargs[0]["headers"] == {"X-GitHub-Api-Version": "2022-11-28"}
+    assert "auth" not in session.request_kwargs[1]
     assert "headers" not in session.request_kwargs[1]
 
 
@@ -203,10 +204,26 @@ def test_malformed_github_token_uses_valid_fallback(monkeypatch):
     monkeypatch.setenv("GITHUB_TOKEN", "github\ntoken")
     monkeypatch.setenv("GH_TOKEN", "fallback-token")
 
-    assert examples_cli._github_api_headers() == {
-        "Authorization": "Bearer fallback-token",
-        "X-GitHub-Api-Version": "2022-11-28",
-    }
+    request = requests.Request("GET", "https://api.github.com", auth=examples_cli._github_api_auth())
+    prepared = requests.Session().prepare_request(request)
+
+    assert prepared.headers["Authorization"] == "Bearer fallback-token"
+
+
+def test_github_api_auth_overrides_netrc(monkeypatch, tmp_path):
+    token = "ghp_FAKE_TOKEN_FOR_TESTING_ONLY"
+    netrc = tmp_path / "netrc"
+    netrc.write_text("machine api.github.com login old-user password old-token\n")
+    netrc.chmod(0o600)
+    monkeypatch.setenv("NETRC", str(netrc))
+    monkeypatch.setenv("GITHUB_TOKEN", token)
+
+    request = requests.Request(
+        "GET", "https://api.github.com/repos/NVIDIA/NVFlare", auth=examples_cli._github_api_auth()
+    )
+    prepared = requests.Session().prepare_request(request)
+
+    assert prepared.headers["Authorization"] == f"Bearer {token}"
 
 
 def test_invalid_header_error_does_not_expose_token(monkeypatch, tmp_path):
@@ -219,6 +236,20 @@ def test_invalid_header_error_does_not_expose_token(monkeypatch, tmp_path):
     assert error.value.code == "EXAMPLE_NETWORK_ERROR"
     assert "HTTP header is invalid" in str(error.value)
     assert token not in str(error.value)
+
+
+def test_tree_redirect_is_rejected_without_following(monkeypatch, tmp_path):
+    session = _mock_session(monkeypatch, _Response(status_code=301))
+    destination = tmp_path / "example"
+
+    with pytest.raises(examples_cli.ExampleError) as error:
+        examples_cli._download_example(REVISION, SOURCE_PATH, destination)
+
+    assert error.value.code == "EXAMPLE_NETWORK_ERROR"
+    assert "redirected" in str(error.value)
+    assert session.request_kwargs[0]["allow_redirects"] is False
+    assert len(session.requested) == 1
+    assert not destination.exists()
 
 
 def test_download_preserves_catalog_destination_path(monkeypatch, tmp_path):
