@@ -213,7 +213,7 @@ class ProfileTests(unittest.TestCase):
     def test_root_overlay_limit_is_in_the_measured_command_line(self):
         command = kernel_command_line("ab" * 32, 1024, 3072)
         self.assertIn("cvm.root_overlay_max_mib=3072", command.split())
-        script = Path(__file__).parent.parent / "initramfs/scripts/local-bottom/overlay_root"
+        script = config.SOURCE / "initramfs/scripts/local-bottom/overlay_root"
         source = script.read_text()
         self.assertIn("cvm.root_overlay_max_mib=*", source)
         self.assertIn("size=${root_overlay_max_mib}M", source)
@@ -229,7 +229,7 @@ class ProfileTests(unittest.TestCase):
             config.profile(path)
 
     def shipped_gpu_policy(self):
-        return json.loads((Path(__file__).parent.parent / "config/gpu_policy.json").read_text())
+        return json.loads((config.SOURCE / "config/gpu_policy.json").read_text())
 
     def write_gpu_policy(self, value):
         path = Path(tempfile.mkdtemp(dir=self.temp_directory())) / "gpu_policy.json"

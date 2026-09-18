@@ -30,8 +30,6 @@ from builder.launcher import find_bundle
 from builder.references import check_profile, merge_records, validate_references
 from builder.services import validate_service
 
-ROOT = Path(__file__).resolve().parent.parent
-
 
 class ReviewRegressionTests(unittest.TestCase):
     def test_gpu_receipt_requires_both_immutable_policy_digests(self):

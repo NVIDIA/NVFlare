@@ -22,16 +22,14 @@ from pathlib import Path
 import pytest
 
 BUILDER = Path(__file__).resolve().parents[3] / "nvflare/lighter/cc/image_builder"
+TESTS = Path(__file__).resolve().parents[3] / "tests/unit_test/lighter/cc/image_builder"
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="CVM Builder requires Linux memfd and /proc interfaces")
 def test_cvm_builder_contracts():
     env = dict(os.environ, PYTHONPATH=str(BUILDER))
-    # Hardware, storage, and live key-service tests have separate explicit runners.
-    for option in ("CVM_HARDWARE_TESTS", "CVM_STORAGE_TESTS", "CVM_HTTP_TESTS"):
-        env[option] = "0"
     result = subprocess.run(
-        [sys.executable, "-m", "unittest", "discover", "-s", "tests", "-p", "test_*.py", "-v"],
+        [sys.executable, "-m", "unittest", "discover", "-s", str(TESTS), "-p", "test_*.py", "-v"],
         cwd=BUILDER,
         env=env,
         capture_output=True,

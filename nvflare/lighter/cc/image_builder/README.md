@@ -277,17 +277,17 @@ Run the builder contracts on Linux with Python unittest. NVFlare's regular unit
 suite also runs these contracts through
 [`cvm_builder_test.py`](../../../../tests/unit_test/lighter/cvm_builder_test.py).
 Use an isolated Linux test host and key service for storage, HTTPS and hardware
-acceptance; these tests are opt-in:
+acceptance; these tests are opt-in. Run these commands from the repository root:
 
 ```sh
-python3 -m unittest discover -s tests -v
-cargo build --locked --release --manifest-path tests/policy_engine/Cargo.toml
-sudo env CVM_STORAGE_TESTS=1 \
-  CVM_POLICY_EVAL=tests/policy_engine/target/release/cvm-policy-eval \
-  python3 -m unittest discover -s tests -v
+export PYTHONPATH="$PWD/nvflare/lighter/cc/image_builder:$PWD/tests/unit_test/lighter/cc/image_builder${PYTHONPATH:+:$PYTHONPATH}"
+cargo build --locked --release --manifest-path tests/unit_test/lighter/cc/image_builder/policy_engine/Cargo.toml
+python3 -m unittest discover -s tests/unit_test/lighter/cc/image_builder -v
+sudo env PYTHONPATH="$PYTHONPATH" CVM_STORAGE_TESTS=1 \
+  python3 -m unittest discover -s tests/integration_test/lighter/cc/image_builder -p test_storage.py -v
 ```
 
-`tests/prepare_lab.py` and `tests/lab_kbs.py` create an isolated test deployment
+`tests/integration_test/lighter/cc/image_builder/prepare_lab.py` and `tests/integration_test/lighter/cc/image_builder/lab_kbs.py` create an isolated test deployment
 with disposable PKI and explicit loopback ports. Its HTTPS tests require
 `CVM_HTTP_TESTS=1` and exercise actual Trustee encryption and policy evaluation
 using signed fixtures. Such fixtures are protocol tests, not hardware acceptance.

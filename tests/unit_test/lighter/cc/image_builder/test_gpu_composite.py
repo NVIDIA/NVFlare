@@ -26,10 +26,11 @@ from pathlib import Path
 import test_contracts
 from builder.attestation import validate_token
 from builder.common import BuildError
+from builder.config import SOURCE
 from builder.gpu_policy import render
 
-ROOT = Path(__file__).resolve().parent.parent
-ENGINE = Path(os.environ.get("CVM_POLICY_EVAL", str(ROOT / "tests/policy_engine/target/release/cvm-policy-eval")))
+TESTS = Path(__file__).resolve().parent
+ENGINE = Path(os.environ.get("CVM_POLICY_EVAL", str(TESTS / "policy_engine/target/release/cvm-policy-eval")))
 
 
 def gpu_submod(policy, index=0):
@@ -95,9 +96,9 @@ class CompositeGuestTests(unittest.TestCase):
 @unittest.skipUnless(ENGINE.is_file(), "Build the pinned Rego engine first")
 class GpuAppraisalTests(unittest.TestCase):
     def setUp(self):
-        self.policy = json.loads((ROOT / "config/gpu_policy.json").read_text())
+        self.policy = json.loads((SOURCE / "config/gpu_policy.json").read_text())
         # Keep the NRAS wire fixture independent of the policy being tested.
-        self.nvidia = json.loads((ROOT / "tests/fixtures/nras_gpu_v3.json").read_text())
+        self.nvidia = json.loads((TESTS / "fixtures/nras_gpu_v3.json").read_text())
         self.nvidia.update(
             {
                 "x-nvidia-overall-att-result": True,

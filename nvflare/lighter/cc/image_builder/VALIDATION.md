@@ -120,31 +120,32 @@ Rust policy evaluator has been built or `CVM_POLICY_EVAL` points to that binary.
 
 ## Reproducing tests
 
-Run from the builder directory on the Linux test host. Populate the configuration
+Run from the repository root on the Linux test host. Populate the configuration
 templates and use isolated lab credentials, resources and ports.
 
 ```sh
-cargo build --locked --release --manifest-path tests/policy_engine/Cargo.toml
-sudo env CVM_STORAGE_TESTS=1 \
-  CVM_POLICY_EVAL="$PWD/tests/policy_engine/target/release/cvm-policy-eval" \
-  python3 -m unittest discover -s tests -v
+export PYTHONPATH="$PWD/nvflare/lighter/cc/image_builder:$PWD/tests/unit_test/lighter/cc/image_builder${PYTHONPATH:+:$PYTHONPATH}"
+cargo build --locked --release --manifest-path tests/unit_test/lighter/cc/image_builder/policy_engine/Cargo.toml
+python3 -m unittest discover -s tests/unit_test/lighter/cc/image_builder -v
+sudo env PYTHONPATH="$PYTHONPATH" CVM_STORAGE_TESTS=1 \
+  python3 -m unittest discover -s tests/integration_test/lighter/cc/image_builder -p test_storage.py -v
 
 env CVM_HTTP_TESTS=1 CVM_LAB_DIRECTORY=/path/to/isolated-lab \
-  python3 -m unittest discover -s tests -p test_http.py -v
+  python3 -m unittest discover -s tests/integration_test/lighter/cc/image_builder -p test_http.py -v
 
-sudo env CVM_HARDWARE_TESTS=1 CVM_EXTENDED_AGENT=1 \
+sudo env PYTHONPATH="$PYTHONPATH" CVM_HARDWARE_TESTS=1 CVM_EXTENDED_AGENT=1 \
   CVM_NETWORK_FAULTS=1 \
   CVM_BUNDLE=/path/to/test-bundle CVM_VAULT=/path/to/test-delivery \
   CVM_OTHER_RESOURCE=keys/TESTED_BUILD_ID/OTHER_EXISTING_BINDING \
   CVM_HARDWARE_OUTPUT=/path/to/new-evidence-directory \
-  python3 -m unittest discover -s tests -p test_hardware.py -v
+  python3 -m unittest discover -s tests/integration_test/lighter/cc/image_builder -p test_hardware.py -v
 ```
 
 Add `CVM_GPU_HARDWARE_TESTS=1` only on a configured NVIDIA CC GPU host; it
 enables the mandatory NRAS failure/poweroff acceptance case for GPU profiles.
 
-For the hardware fault tests, explicitly include `tests/lab_guest_agent.py` as
-executable application payload and `tests/app_acceptance.service` as a service,
+For the hardware fault tests, explicitly include `tests/integration_test/lighter/cc/image_builder/lab_guest_agent.py` as
+executable application payload and `tests/integration_test/lighter/cc/image_builder/app_acceptance.service` as a service,
 with ports 18080/18081 and the generic HTTP fixture. The agent refuses non-test
 profiles and is never installed by Stage 1. `CVM_OTHER_RESOURCE` must identify an
 existing different key under the same tested bundle. Tests mutate independent
@@ -153,11 +154,11 @@ fixture accepts the deliberately stopped container's termination status while
 preparing its fault; integrity supervision stays active and reboot restores the
 normal measured application exit policy.
 
-`tests/boot_http.py` separately checks arbitrary generic HTTP test images without
+`tests/integration_test/lighter/cc/image_builder/boot_http.py` separately checks arbitrary generic HTTP test images without
 the fault-injection payload. It launches a disposable delivery copy and preserves
 the boot log, exact bundle digest and result.
 
-`tests/periodic_hardware.py` coordinates the two periodic-denial checks: wait for
+`tests/integration_test/lighter/cc/image_builder/periodic_hardware.py` coordinates the two periodic-denial checks: wait for
 its `ready.json`, complete and verify the isolated backend change, then create
 `proceed` in that evidence directory. Restore reference values before subsequent
 tests. A revoked identity must be replaced with a newly built vault.
@@ -273,11 +274,11 @@ ES384 keys, verifies it using the shipped Rust verifier, and passes the resultin
 claims to the generated policy using the pinned Rego engine. It checks a positive
 decision and denial for missing secure-boot, driver/VBIOS, RIM, report-signature
 and OCSP-freshness claims. Run it after applying the current Trustee patch and
-building `tests/policy_engine`:
+building `tests/unit_test/lighter/cc/image_builder/policy_engine`:
 
 ```sh
 python3 tests/run_nras_policy_test.py /path/to/patched-trustee \
-  --policy-eval "$PWD/tests/policy_engine/target/release/cvm-policy-eval"
+  --policy-eval "$PWD/tests/unit_test/lighter/cc/image_builder/policy_engine/target/release/cvm-policy-eval"
 ```
 
 Both standard verifier tests and this additional verifier-to-policy test passed

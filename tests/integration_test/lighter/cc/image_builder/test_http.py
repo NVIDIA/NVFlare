@@ -27,6 +27,7 @@ from pathlib import Path
 from builder.admin import api, encode, read_resource_policy, verify_readback
 from builder.attestation import unb64url, validate_token
 from builder.common import BuildError, canonical, memory_file, read_json, resource_path, run, write_json
+from builder.config import SOURCE
 from builder.key_service import ResourceStore, request
 from builder.policy import compose
 from cryptography import x509
@@ -38,7 +39,7 @@ from cryptography.hazmat.primitives.asymmetric import ec, rsa, utils
 class HttpTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.directory = Path(os.environ.get("CVM_LAB_DIRECTORY", Path(__file__).resolve().parent.parent)).resolve()
+        cls.directory = Path(os.environ.get("CVM_LAB_DIRECTORY", SOURCE)).resolve()
         cls.pki = Path(read_json(cls.directory / "lab-state.json")["pki"])
         cls.admin = read_json(cls.directory / "lab-kbs/admin.json")
         cls.store = ResourceStore(cls.admin["resources"], cls.admin["key_service_state"])

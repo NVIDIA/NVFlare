@@ -32,7 +32,7 @@ ENGINE = Path(
 )
 
 
-@unittest.skipUnless(ENGINE.is_file(), "Build tests/policy_engine with Cargo first")
+@unittest.skipUnless(ENGINE.is_file(), "Build tests/unit_test/lighter/cc/image_builder/policy_engine with Cargo first")
 class ResourcePolicyTests(unittest.TestCase):
     def fixture(self, platform):
         digest = bytes.fromhex("fbff" * 16)

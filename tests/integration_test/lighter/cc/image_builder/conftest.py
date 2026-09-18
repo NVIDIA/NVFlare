@@ -12,10 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""The NVFlare unit suite runs these standalone contracts in a Linux subprocess.
+"""Keep opt-in Linux lab acceptance out of automatic pytest collection.
 
-Keep root pytest discovery from importing the builder's isolated module namespace.
-Direct unittest discovery from the builder directory is unaffected.
+Run these tests explicitly with unittest and the builder directory on PYTHONPATH.
 """
 
 collect_ignore_glob = ["test_*.py"]

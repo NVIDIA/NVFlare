@@ -23,10 +23,12 @@ import time
 import unittest
 from pathlib import Path
 
+from builder.config import SOURCE
+
 ENGINE = Path(
     os.environ.get("CVM_POLICY_EVAL", str(Path(__file__).parent / "policy_engine/target/release/cvm-policy-eval"))
 )
-POLICY = Path(__file__).resolve().parent.parent / "config/attestation_policy.rego"
+POLICY = SOURCE / "config/attestation_policy.rego"
 
 
 @unittest.skipUnless(ENGINE.is_file(), "Build the pinned policy engine first")
