@@ -205,6 +205,23 @@ def test_strict_adapter_validation_rejects_partial_unexpected_shape_duplicate_an
             {**reference, "base_model.model.layer.lora_A.weight": torch.full((2, 2), float("nan"))},
             reference,
         )
+    with pytest.raises(ValueError, match="non-finite"):
+        adapter_checkpoint.match_adapter_state_to_reference(
+            {**reference, "base_model.model.layer.lora_A.weight": torch.full((2, 2), float("nan"))},
+            reference,
+        )
+
+
+@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required for adapter hash tests")
+def test_adapter_state_hash_supports_scalar_tensors():
+    adapter_checkpoint = _load_example_module("adapter_checkpoint")
+    import torch
+
+    state = {"layer.lora_magnitude": torch.tensor(1.5)}
+
+    assert adapter_checkpoint.state_hash(state) == adapter_checkpoint.state_hash(
+        {"layer.lora_magnitude": state["layer.lora_magnitude"].clone()}
+    )
 
 
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required for adapter manifest tests")
@@ -218,6 +235,12 @@ def test_adapter_manifest_rejects_hash_and_profile_conflicts():
         identity=_adapter_identity(),
     )
     adapter_checkpoint.validate_adapter_manifest(manifest, state, {"model_profile": "lightning35"})
+    manifest_with_wrong_specs = {
+        **manifest,
+        "expected_tensors": {"layer.lora_A.weight": {"shape": [2, 2], "dtype": "bfloat16"}},
+    }
+    with pytest.raises(ValueError, match="names, shapes, or dtypes"):
+        adapter_checkpoint.validate_adapter_manifest(manifest_with_wrong_specs, state)
     with pytest.raises(ValueError, match="hash"):
         adapter_checkpoint.validate_adapter_manifest(manifest, {"layer.lora_A.weight": torch.zeros((2, 2))})
     with pytest.raises(ValueError, match="conflict"):
@@ -244,6 +267,12 @@ def test_adapter_contract_rejects_partial_and_stale_inputs():
         state,
         {"model_profile": "lightning35", "base_model_revision": "abc"},
     )
+    state_with_wrong_dtype = {
+        "layer.lora_A.weight": state["layer.lora_A.weight"].bfloat16(),
+        "layer.lora_B.weight": state["layer.lora_B.weight"],
+    }
+    with pytest.raises(ValueError, match="names, shapes, or dtypes"):
+        adapter_checkpoint.validate_adapter_contract(contract, state_with_wrong_dtype)
     with pytest.raises(ValueError, match="tensor count"):
         adapter_checkpoint.validate_adapter_contract(contract, {"layer.lora_A.weight": state["layer.lora_A.weight"]})
     with pytest.raises(ValueError, match="conflict"):
@@ -337,7 +366,7 @@ def test_fl_model_serializes_lora_tensors_with_nvflare_fobs():
 
 
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required for adapter loader tests")
-def test_automodel_adapter_loader_keeps_matching_tensors_on_target_dtype_and_device():
+def test_automodel_adapter_loader_requires_complete_state_on_target_dtype_and_device():
     import torch
 
     automodel_adapter_loader = _load_example_module("automodel_adapter_loader")
@@ -348,11 +377,23 @@ def test_automodel_adapter_loader_keeps_matching_tensors_on_target_dtype_and_dev
     }
     adapter_state = {
         "base_model.model.layer.lora_A.weight": torch.ones((2, 2), dtype=torch.float32),
-        "extra.lora_A.weight": torch.ones((2, 2), dtype=torch.float32),
+        "base_model.model.layer.lora_B.weight": torch.ones((2, 2), dtype=torch.bfloat16),
     }
 
     compatible = automodel_adapter_loader._compatible_adapter_state(model_state, adapter_state)
 
-    assert list(compatible) == ["layer.lora_A.weight"]
+    assert list(compatible) == ["layer.lora_A.weight", "layer.lora_B.weight"]
     assert compatible["layer.lora_A.weight"].dtype == torch.bfloat16
     assert compatible["layer.lora_A.weight"].device == model_state["layer.lora_A.weight"].device
+    assert compatible["layer.lora_B.weight"].dtype == torch.float32
+
+    with pytest.raises(ValueError, match="missing=1"):
+        automodel_adapter_loader._compatible_adapter_state(
+            model_state,
+            {"base_model.model.layer.lora_A.weight": adapter_state["base_model.model.layer.lora_A.weight"]},
+        )
+    with pytest.raises(ValueError, match="unexpected=1"):
+        automodel_adapter_loader._compatible_adapter_state(
+            model_state,
+            {**adapter_state, "extra.lora_A.weight": torch.ones((2, 2))},
+        )

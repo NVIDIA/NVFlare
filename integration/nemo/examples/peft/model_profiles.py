@@ -19,6 +19,7 @@ from copy import deepcopy
 
 NANO_PROFILE = "nano"
 LIGHTNING35_PROFILE = "lightning35"
+LIGHTNING35_REVISION = "a9904d24bcc1d289a1950fa9d2b978c47cf903b9"
 
 PROFILES = {
     NANO_PROFILE: {
@@ -40,7 +41,9 @@ PROFILES = {
     },
     LIGHTNING35_PROFILE: {
         "model_name_or_path": "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16",
+        "model_revision": LIGHTNING35_REVISION,
         "tokenizer_name_or_path": None,
+        "tokenizer_revision": LIGHTNING35_REVISION,
         "initial_adapter_ckpt": "./models/nemotron35_lightning_lora_init.pt",
         "workspace": "/tmp/nvflare/nemotron35_lightning_peft",
         "learning_rate": 5e-5,

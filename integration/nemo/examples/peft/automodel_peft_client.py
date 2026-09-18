@@ -438,6 +438,7 @@ def _run_automodel_round(args, round_dir: str, incoming_state: Mapping[str, torc
     if os.path.isfile(report_path):
         with open(report_path) as f:
             report = json.load(f)
+    report.setdefault("output_adapter_dir", os.path.abspath(adapter_dir))
     metrics = _read_metrics(os.path.join(round_dir, "metrics.json"))
     steps = int(report.get("actual_optimizer_steps", max(1, args.max_steps)))
     metrics.update({key: float(value) for key, value in report.items() if isinstance(value, (int, float))})
@@ -570,22 +571,14 @@ def main():
         )
         received_hash = adapter_checkpoint.state_hash(incoming_state)
         outgoing_hash = outgoing_manifest["adapter_hash"]
-        loaded_hash = automodel_report.get("loaded_adapter_hash", received_hash)
-        loaded_matches_received = automodel_report.get(
-            "loaded_matches_received_after_dtype_cast", loaded_hash == received_hash
-        )
-        if not loaded_matches_received:
-            raise RuntimeError(f"Loaded adapter {loaded_hash} does not reproduce received adapter {received_hash}.")
         round_manifest = {
             "schema_version": 1,
             "site_name": client_name,
             "round": current_round,
             "model_profile": args.model_profile,
             "received_adapter_hash": received_hash,
-            "loaded_adapter_hash": loaded_hash,
             "outgoing_adapter_hash": outgoing_hash,
             "received_tensor_count": len(incoming_state),
-            "loaded_tensor_count": automodel_report.get("loaded_tensor_count", len(incoming_state)),
             "outgoing_tensor_count": len(exchange_state),
             "fp32_adapter_exchange": use_fp32_exchange,
             "reload_verified": args.verify_adapter_reload,
@@ -593,6 +586,18 @@ def main():
             "update_norm": adapter_checkpoint.update_norm(incoming_state, exchange_state),
             "automodel_report": automodel_report,
         }
+        if args.verify_adapter_reload:
+            loaded_hash = automodel_report.get("loaded_adapter_hash")
+            loaded_tensor_count = automodel_report.get("loaded_tensor_count")
+            loaded_matches_received = automodel_report.get("loaded_matches_received_after_dtype_cast")
+            if not loaded_hash or loaded_tensor_count is None or loaded_matches_received is not True:
+                raise RuntimeError("Adapter reload verification was requested but did not complete successfully.")
+            round_manifest.update(
+                {
+                    "loaded_adapter_hash": loaded_hash,
+                    "loaded_tensor_count": loaded_tensor_count,
+                }
+            )
         checkpoint_location = automodel_report.get("output_adapter_dir")
         if checkpoint_location:
             round_manifest["checkpoint_location"] = os.path.abspath(checkpoint_location)

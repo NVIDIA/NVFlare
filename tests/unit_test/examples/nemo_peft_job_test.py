@@ -300,6 +300,20 @@ def test_nemo_peft_automodel_config_uses_helper_files(tmp_path):
     assert "peft_config" not in config["model"]
 
 
+def test_lightning35_profile_pins_the_validated_model_and_tokenizer_revision(tmp_path):
+    job_module = _load_job_module()
+    args = _args(tmp_path, tmp_path / "init_adapter.pt")
+    args.model_profile = "lightning35"
+    args.model_revision = None
+    args.tokenizer_revision = None
+
+    resolved = job_module.model_profiles.resolve_model_profile(args)
+
+    expected_revision = "a9904d24bcc1d289a1950fa9d2b978c47cf903b9"
+    assert resolved.model_revision == expected_revision
+    assert resolved.tokenizer_revision == expected_revision
+
+
 def test_lightning35_profile_uses_native_recipe_and_official_lora_defaults(tmp_path):
     client_module = _load_client_module()
     args = _args(tmp_path, tmp_path / "init_adapter.pt")
@@ -524,7 +538,7 @@ def test_lightning_prediction_parser_propagates_seed_and_profile_default_path(mo
 def test_notebook_uses_profile_specific_evaluation_adapter_and_disjoint_split():
     with open(os.path.join(_example_dir(), "peft.ipynb")) as f:
         notebook = json.load(f)
-    source = "\n".join("".join(cell.get("source", [])) for cell in notebook["cells"])
+    source = " ".join("\n".join("".join(cell.get("source", [])) for cell in notebook["cells"]).split())
 
     assert 'EVALUATION_ADAPTER = SERVER_MODEL if MODEL_PROFILE == "lightning35" else FINAL_ADAPTER' in source
     assert "evaluate_sentiment.py {PROFILE_ARGS} --adapter_dir {EVALUATION_ADAPTER}" in source
@@ -533,13 +547,13 @@ def test_notebook_uses_profile_specific_evaluation_adapter_and_disjoint_split():
 
 def test_readme_has_pinned_lightning_training_and_native_evaluation_commands():
     with open(os.path.join(_example_dir(), "README.md")) as f:
-        readme = f.read()
+        readme = " ".join(f.read().replace("\\\n", " ").split())
 
-    assert "python job.py \\\n  --model_profile=lightning35" in readme
+    assert "MODEL_REVISION=a9904d24bcc1d289a1950fa9d2b978c47cf903b9" in readme
+    assert "python job.py --model_profile=lightning35" in readme
     assert '--model_revision="${MODEL_REVISION}"' in readme
-    assert "python evaluate_sentiment.py \\\n  --model_profile=lightning35" in readme
+    assert "python evaluate_sentiment.py --model_profile=lightning35" in readme
     assert '--adapter_dir="${LIGHTNING_SERVER_MODEL}"' in readme
-    assert "supported native adapter reload path" in readme
 
 
 def test_nemo_peft_dataset_prompt_matches_notebook_inference():

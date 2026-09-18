@@ -106,6 +106,9 @@ def partition_data(
     N = len(train_labels)
     site_idx = {}
     train_labels = np.asarray(train_labels)
+    unsupported_labels = sorted(set(train_labels.tolist()) - set(label_names))
+    if unsupported_labels:
+        raise ValueError(f"Unsupported training labels: {unsupported_labels}; expected one of {list(label_names)}.")
     if num_sites < 1:
         raise ValueError(f"num_sites must be positive, got {num_sites}.")
     if min_site_size < 1:
@@ -245,6 +248,11 @@ def split_data(
         site: [row_idx for group_idx in group_indices for row_idx in group_rows[group_idx]]
         for site, group_indices in group_site_idx.items()
     }
+    assigned_rows = sorted(row_idx for row_indices in site_idx.values() for row_idx in row_indices)
+    if assigned_rows != list(range(len(train_data))):
+        raise RuntimeError(
+            f"Partition row mismatch: assigned {len(assigned_rows)} rows from {len(train_data)} prepared rows."
+        )
     class_sum = get_site_class_summary(np.asarray(train_labels), site_idx)
     write_class_summary(os.path.join(out_dir, f"summary_alpha{alpha}.txt"), num_clients, alpha, class_sum)
     print(f"After split Dirichlet sampling with alpha={alpha}")

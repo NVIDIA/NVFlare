@@ -114,10 +114,11 @@ This conversion command applies to the Nano path. Lightning initialization and r
 model factory and checkpoint implementation; Hugging Face PEFT interoperability is not a supported deliverable unless
 the adapter is separately converted and tested.
 
-For Lightning, resolve one Hugging Face revision and use it for both model and tokenizer:
+The Lightning profile pins the validated model and tokenizer revision by default. Set the same literal revision when
+overriding it explicitly:
 
 ```bash
-MODEL_REVISION=$(python -c "from huggingface_hub import HfApi; print(HfApi().model_info('nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16').sha)")
+MODEL_REVISION=a9904d24bcc1d289a1950fa9d2b978c47cf903b9
 python prepare_initial_adapter.py \
   --model_profile=lightning35 \
   --model_revision="${MODEL_REVISION}" \

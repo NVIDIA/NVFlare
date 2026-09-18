@@ -154,6 +154,18 @@ def test_financial_phrase_split_rejects_too_few_sentence_groups(tmp_path):
         module.split_data(str(train), str(tmp_path / "split"), 3, "site-", 0, 10.0)
 
 
+def test_financial_phrase_split_rejects_unsupported_labels_instead_of_dropping_rows(tmp_path):
+    module = _load_split_module()
+    labels = (" negative", " neutral", " positive")
+    train = tmp_path / "train.jsonl"
+    rows = [{"sentence": f"sentence {index}", "label": labels[index % len(labels)]} for index in range(30)]
+    rows.append({"sentence": "invalid label sentence", "label": "positive"})
+    _write_rows(train, rows)
+
+    with pytest.raises(ValueError, match="Unsupported training labels"):
+        module.split_data(str(train), str(tmp_path / "split"), 3, "site-", 0, 10.0)
+
+
 def test_partition_data_bounds_unsuccessful_sampling(monkeypatch):
     module = _load_split_module()
     labels = [label for label in (" negative", " neutral", " positive") for _ in range(10)]

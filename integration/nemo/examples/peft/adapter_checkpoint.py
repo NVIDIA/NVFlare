@@ -290,7 +290,7 @@ def tensor_specs(state_dict: Mapping[str, torch.Tensor]) -> dict[str, dict[str, 
 
 
 def state_hash(state_dict: Mapping[str, torch.Tensor]) -> str:
-    """Hash tensors in sorted key order after conversion to canonical little-endian bytes."""
+    """Hash tensors in sorted key order using dtype, shape, and contiguous CPU storage bytes."""
     digest = hashlib.sha256()
     for key in sorted(state_dict):
         value = state_dict[key].detach().cpu().contiguous()
@@ -300,7 +300,7 @@ def state_hash(state_dict: Mapping[str, torch.Tensor]) -> str:
         digest.update(b"\0")
         digest.update(json.dumps(list(value.shape), separators=(",", ":")).encode("ascii"))
         digest.update(b"\0")
-        digest.update(value.view(torch.uint8).numpy().tobytes())
+        digest.update(value.reshape(-1).view(torch.uint8).numpy().tobytes())
     return digest.hexdigest()
 
 

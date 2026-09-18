@@ -35,16 +35,18 @@ def _has_adapter_weights(adapter_dir: str | None) -> bool:
 def _compatible_adapter_state(
     model_state: Mapping[str, torch.Tensor], adapter_state: Mapping[str, torch.Tensor]
 ) -> OrderedDict[str, torch.Tensor]:
-    compatible = OrderedDict()
-    adapter_by_canonical_key = {
-        adapter_checkpoint.canonical_adapter_key(key): value for key, value in adapter_state.items()
-    }
-    for key, target in model_state.items():
-        value = adapter_by_canonical_key.get(adapter_checkpoint.canonical_adapter_key(key))
-        if not isinstance(value, torch.Tensor) or not isinstance(target, torch.Tensor):
-            continue
-        compatible[key] = value.detach().to(device=target.device, dtype=target.dtype)
-    return compatible
+    model_adapter_state = OrderedDict(
+        (key, value) for key, value in model_state.items() if isinstance(value, torch.Tensor) and "lora_" in key
+    )
+    aligned = adapter_checkpoint.align_adapter_state_strict(
+        adapter_state,
+        model_adapter_state,
+        normalize_peft_prefixes=True,
+    )
+    return OrderedDict(
+        (key, aligned[key].to(device=target.device, dtype=target.dtype))
+        for key, target in model_adapter_state.items()
+    )
 
 
 def _patch_lora_loader_once(incoming_adapter_dir: str | None) -> None:
