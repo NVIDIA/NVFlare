@@ -30,14 +30,20 @@ class KM(ModelController):
     def run(self):
         log_progress(self.logger, "\n  Federated Kaplan-Meier survival analysis\n\n  Collecting local histograms…")
         hist_local = self.start_fl_collect_hist()
+        if self._is_aborted():
+            return
         log_progress(self.logger, "  Aggregating survival histograms…")
         hist_obs_global, hist_cen_global = self.aggr_hist(hist_local)
+        if self._is_aborted():
+            return
         log_progress(self.logger, "  Distributing the global survival curve…")
         targets = self.sample_clients()
         results = self.distribute_global_hist(hist_obs_global, hist_cen_global, targets)
-        aborted = bool(getattr(getattr(self, "abort_signal", None), "triggered", False))
-        if results and len(results) == len(targets) and not aborted:
+        if results and len(results) == len(targets) and not self._is_aborted():
             log_progress(self.logger, "\n  ✓ Survival analysis completed")
+
+    def _is_aborted(self):
+        return bool(getattr(getattr(self, "abort_signal", None), "triggered", False))
 
     def start_fl_collect_hist(self):
         self.logger.info("send initial message to all sites to start FL \n")

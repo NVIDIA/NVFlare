@@ -37,17 +37,27 @@ class KM_HE(ModelController):
         log_progress(self.logger, "\n  Federated Kaplan-Meier survival analysis · homomorphic encryption")
         log_progress(self.logger, "\n  Collecting histogram bounds…")
         max_idx_results = self.start_fl_collect_max_idx()
+        if self._is_aborted():
+            return
         global_res = self.aggr_max_idx(max_idx_results)
+        if self._is_aborted():
+            return
         log_progress(self.logger, "  Collecting encrypted survival histograms…")
         enc_hist_results = self.distribute_max_idx_collect_enc_stats(global_res)
+        if self._is_aborted():
+            return
         log_progress(self.logger, "  Aggregating encrypted histograms…")
         hist_obs_global, hist_cen_global = self.aggr_he_hist(enc_hist_results)
+        if self._is_aborted():
+            return
         log_progress(self.logger, "  Distributing the encrypted global survival curve…")
         targets = self.sample_clients()
         results = self.distribute_global_hist(hist_obs_global, hist_cen_global, targets)
-        aborted = bool(getattr(getattr(self, "abort_signal", None), "triggered", False))
-        if results and len(results) == len(targets) and not aborted:
+        if results and len(results) == len(targets) and not self._is_aborted():
             log_progress(self.logger, "\n  ✓ Encrypted survival analysis completed")
+
+    def _is_aborted(self):
+        return bool(getattr(getattr(self, "abort_signal", None), "triggered", False))
 
     def read_data(self, file_name: str):
         # Handle both absolute and relative paths
