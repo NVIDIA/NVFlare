@@ -180,26 +180,27 @@ class FedXGBTreeExecutor(Executor):
         return params
 
     def _local_boost_bagging(self, fl_ctx: FLContext):
-        incoming_auc = self._evaluate_model(self.bst, fl_ctx)
+        incoming_metric_name, incoming_metric = self._evaluate_model(self.bst, fl_ctx)
         for i in range(self.num_local_round):
             self.bst.update(self.train_data, self.bst.num_boosted_rounds())
 
-        updated_auc = self._evaluate_model(self.bst, fl_ctx)
-        self._last_metrics = {self.eval_metric: incoming_auc}
-        self._progress_metrics = {self.eval_metric: updated_auc}
+        updated_metric_name, updated_metric = self._evaluate_model(self.bst, fl_ctx)
+        self._last_metrics = {incoming_metric_name: incoming_metric}
+        self._progress_metrics = {updated_metric_name: updated_metric}
 
         # extract newly added self.num_local_round using xgboost slicing api
         bst = self.bst[self.bst.num_boosted_rounds() - self.num_local_round : self.bst.num_boosted_rounds()]
 
         self.log_info(
             fl_ctx,
-            f"Global AUC {incoming_auc}; local AUC after training {updated_auc}",
+            f"Global {incoming_metric_name} {incoming_metric}; "
+            f"local {updated_metric_name} after training {updated_metric}",
         )
         if self.writer:
-            # note: writing auc before current training step, for passed in global model
+            # Write the metric for the incoming global model before the current training step.
             self.writer.add_scalar(
                 "train_metrics",
-                incoming_auc,
+                incoming_metric,
                 int((self.bst.num_boosted_rounds() - self.num_local_round - 1) / self.num_client_bagging),
             )
         return bst
@@ -210,21 +211,29 @@ class FedXGBTreeExecutor(Executor):
         )
         self.log_info(fl_ctx, eval_results)
         # XGBoost returns: [iteration]\ttrain-<metric>:<value>\tvalid-<metric>:<value>.
-        return float(eval_results.split("\t")[2].split(":")[1])
+        metric_name, metric_value = eval_results.split("\t")[2].removeprefix("valid-").rsplit(":", 1)
+        return metric_name, float(metric_value)
+
+    def _resolve_eval_metric(self, evaluation_metrics):
+        if self.eval_metric in evaluation_metrics:
+            return self.eval_metric, evaluation_metrics[self.eval_metric]
+
+        normalized_name = self.eval_metric.split("@", 1)[0]
+        return normalized_name, evaluation_metrics.get(normalized_name, [])
 
     def _local_boost_cyclic(self, fl_ctx: FLContext):
         # Cyclic mode
         # starting from global model
         # return the whole boosting tree series
         self.bst.update(self.train_data, self.bst.num_boosted_rounds())
-        updated_auc = self._evaluate_model(self.bst, fl_ctx)
-        self._progress_metrics = {self.eval_metric: updated_auc}
+        updated_metric_name, updated_metric = self._evaluate_model(self.bst, fl_ctx)
+        self._progress_metrics = {updated_metric_name: updated_metric}
         self.log_info(
             fl_ctx,
-            f"Client {self.client_id} AUC after training: {updated_auc}",
+            f"Client {self.client_id} {updated_metric_name} after training: {updated_metric}",
         )
         if self.writer:
-            self.writer.add_scalar("train_metrics", updated_auc, self.bst.num_boosted_rounds() - 1)
+            self.writer.add_scalar("train_metrics", updated_metric, self.bst.num_boosted_rounds() - 1)
         return self.bst
 
     def train(
@@ -259,6 +268,7 @@ class FedXGBTreeExecutor(Executor):
                 f"Client {self.client_id} initial training from scratch",
             )
             evals_result = {}
+            incoming_metric = None
             if not model_update:
                 bst = xgb.train(
                     params,
@@ -282,11 +292,11 @@ class FedXGBTreeExecutor(Executor):
                     evals_result=evals_result,
                 )
             validation_metrics = evals_result.get("validate", {})
-            metric_values = validation_metrics.get(self.eval_metric, [])
+            metric_name, metric_values = self._resolve_eval_metric(validation_metrics)
             if model_update and self.training_mode == "bagging":
-                self._last_metrics = {self.eval_metric: incoming_metric}
+                self._last_metrics = {incoming_metric[0]: incoming_metric[1]}
             if metric_values:
-                self._progress_metrics = {self.eval_metric: metric_values[-1]}
+                self._progress_metrics = {metric_name: metric_values[-1]}
             self.config = bst.save_config()
             self.bst = bst
         else:

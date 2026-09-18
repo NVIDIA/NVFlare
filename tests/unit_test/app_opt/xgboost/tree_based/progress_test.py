@@ -14,6 +14,8 @@
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.signal import Signal
@@ -56,15 +58,19 @@ def test_bagging_xgboost_records_metric_after_local_training():
     assert executor._progress_metrics == {"auc": 0.85}
 
 
-def test_first_bagging_invocation_evaluates_received_model_before_training():
-    executor = FedXGBTreeExecutor(training_mode="bagging", lr_scale=1.0, data_loader_id="data")
+@pytest.mark.parametrize(
+    "eval_metric,returned_metric",
+    [("auc", "auc"), ("error@0.5", "error")],
+)
+def test_first_bagging_invocation_evaluates_received_model_before_training(eval_metric, returned_metric):
+    executor = FedXGBTreeExecutor(training_mode="bagging", lr_scale=1.0, data_loader_id="data", eval_metric=eval_metric)
     executor.client_id = "site-1"
     executor.train_data = MagicMock()
     executor.val_data = MagicMock()
 
     incoming_bst = MagicMock()
     incoming_bst.num_boosted_rounds.return_value = 2
-    incoming_bst.eval_set.return_value = "[1]\ttrain-auc:0.90000\tvalid-auc:0.80000"
+    incoming_bst.eval_set.return_value = f"[1]\ttrain-{returned_metric}:0.90000\tvalid-{returned_metric}:0.80000"
 
     trained_bst = MagicMock()
     trained_bst.num_boosted_rounds.return_value = 3
@@ -72,7 +78,7 @@ def test_first_bagging_invocation_evaluates_received_model_before_training():
     trained_bst.save_raw.return_value = b"{}"
 
     def train_with_metrics(*_args, evals_result, **_kwargs):
-        evals_result["validate"] = {"auc": [0.85]}
+        evals_result["validate"] = {returned_metric: [0.85]}
         return trained_bst
 
     model_data = b"existing model"
@@ -86,8 +92,8 @@ def test_first_bagging_invocation_evaluates_received_model_before_training():
 
     incoming_bst.load_model.assert_called_once_with(bytearray(model_data))
     result_dxo = from_shareable(result)
-    assert result_dxo.get_meta_prop(MetaKey.INITIAL_METRICS) == {"auc": 0.8}
-    assert result_dxo.get_meta_prop(AppConstants.PROGRESS_METRICS) == {"auc": 0.85}
+    assert result_dxo.get_meta_prop(MetaKey.INITIAL_METRICS) == {returned_metric: 0.8}
+    assert result_dxo.get_meta_prop(AppConstants.PROGRESS_METRICS) == {returned_metric: 0.85}
 
 
 def test_first_cyclic_invocation_reports_only_post_training_progress_metric():
