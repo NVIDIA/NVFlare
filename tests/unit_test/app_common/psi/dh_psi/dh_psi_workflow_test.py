@@ -11,9 +11,15 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from unittest.mock import MagicMock, patch
+
+import pytest
+
 from nvflare.apis.dxo import DXO, DataKind
+from nvflare.apis.fl_context import FLContext
+from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import PSIConst
-from nvflare.app_common.psi.dh_psi.dh_psi_workflow import DhPSIWorkFlow
+from nvflare.app_common.psi.dh_psi.dh_psi_workflow import DhPSIWorkFlow, SiteSize
 
 
 class TestDhPSIWorkflow:
@@ -30,3 +36,67 @@ class TestDhPSIWorkflow:
 
         assert ordered_sites[0].size <= ordered_sites[1].size
         assert ordered_sites[1].size <= ordered_sites[2].size
+
+    def test_prepare_log_keeps_response_count_without_site_sizes(self):
+        wf = DhPSIWorkFlow()
+        wf.fl_ctx = FLContext()
+        wf.fl_ctx.get_engine = MagicMock()
+        wf.fl_ctx.get_engine.return_value.get_clients.return_value = ["client-1", "client-2"]
+        wf.controller = MagicMock()
+        wf.log_info = MagicMock()
+        results = {
+            "private-site-alpha": DXO(data_kind=DataKind.PSI, data={PSIConst.ITEMS_SIZE: 91001}),
+            "private-site-beta": DXO(data_kind=DataKind.PSI, data={PSIConst.ITEMS_SIZE: 92002}),
+        }
+
+        with patch("nvflare.app_common.psi.dh_psi.dh_psi_workflow.BroadcastAndWait") as broadcast_and_wait:
+            broadcast_and_wait.return_value.broadcast_and_wait.return_value = results
+            wf.prepare_sites(Signal())
+
+        message = wf.log_info.call_args.args[1]
+        assert message == f"{PSIConst.TASK_PREPARE} received 2 participant responses"
+        assert "private-site" not in message
+        assert "91001" not in message
+        assert "92002" not in message
+
+    def test_run_logs_phase_counts_without_site_sizes(self):
+        wf = DhPSIWorkFlow()
+        wf.fl_ctx = FLContext()
+        wf.log_info = MagicMock()
+        wf.ordered_sites = [SiteSize("private-site-alpha", 91001), SiteSize("private-site-beta", 92002)]
+        wf.forward_pass = MagicMock(return_value=SiteSize("private-site-beta", 50001))
+        wf.forward_processed = {"private-site-beta": 50001}
+        wf.backward_pass = MagicMock(return_value={"private-site-alpha": 50001})
+        wf.check_processed_sites = MagicMock()
+        wf.check_final_intersection_sizes = MagicMock()
+        wf.log_pass_time_taken = MagicMock()
+
+        wf.run(Signal())
+
+        messages = "\n".join(call.args[1] for call in wf.log_info.call_args_list)
+        assert "ordered 2 PSI participants" in messages
+        assert "forward pass processed 1 participants" in messages
+        assert "backward pass processed 1 participants" in messages
+        assert "private-site" not in messages
+        assert "91001" not in messages
+        assert "92002" not in messages
+        assert "50001" not in messages
+
+    @pytest.mark.parametrize("check_name", ["check_processed_sites", "check_final_intersection_sizes"])
+    def test_validation_errors_do_not_include_site_sizes(self, check_name):
+        wf = DhPSIWorkFlow()
+        wf.ordered_sites = [SiteSize("private-site-alpha", 91001), SiteSize("private-site-beta", 92002)]
+        wf.backward_processed = {"private-site-alpha": 50001, "private-site-beta": 50002}
+
+        with pytest.raises(RuntimeError) as error:
+            if check_name == "check_processed_sites":
+                wf.check_processed_sites(SiteSize("private-site-beta", 50001), {"private-site-alpha": 1})
+            else:
+                wf.check_final_intersection_sizes(SiteSize("private-site-beta", 50001))
+
+        message = str(error.value)
+        assert "private-site" not in message
+        assert "91001" not in message
+        assert "92002" not in message
+        assert "50001" not in message
+        assert "50002" not in message

@@ -61,15 +61,14 @@ class DhPSIWorkFlow(PSIWorkflow):
             return False
 
         self.abort_signal = abort_signal
-        self.log_info(self.fl_ctx, f"order sites = {self.ordered_sites}")
+        self.log_info(self.fl_ctx, f"ordered {len(self.ordered_sites)} PSI participants for processing")
 
         intersect_site = self.forward_pass(self.ordered_sites, self.forward_processed)
 
         self.log_info(
             self.fl_ctx,
-            f"forward_processed sites {self.forward_processed}\n,"
-            f"intersect_sites={intersect_site}\n"
-            f"ordered sites = {self.ordered_sites}\n",
+            f"forward pass processed {len(self.forward_processed)} participants; "
+            "selected the encrypted intersection holder",
         )
 
         self.check_processed_sites(intersect_site, self.forward_processed)
@@ -78,9 +77,7 @@ class DhPSIWorkFlow(PSIWorkflow):
 
         self.log_info(
             self.fl_ctx,
-            f"backward_processed sites {self.backward_processed}\n,"
-            f"intersect_sites={intersect_site}\n"
-            f"ordered sites = {self.ordered_sites}\n",
+            f"backward pass processed {len(self.backward_processed)} participants",
         )
 
         self.check_final_intersection_sizes(intersect_site)
@@ -91,20 +88,16 @@ class DhPSIWorkFlow(PSIWorkflow):
         valid = all(value >= last_site.size for value in processed_sites.values())
         if not valid:
             raise RuntimeError(
-                f"Intersection calculation failed:\n"
-                f"processed sites :{processed_sites},\n"
-                f"last_site  ={last_site} \n"
-                f"ordered sites = {self.ordered_sites} \n"
+                "Intersection calculation failed: one or more forward-pass counts are smaller "
+                f"than the candidate intersection ({len(processed_sites)} responses received)."
             )
 
     def check_final_intersection_sizes(self, intersect_site: SiteSize):
         all_equal = all(value == intersect_site.size for value in self.backward_processed.values())
         if not all_equal:
             raise RuntimeError(
-                f"Intersection calculation failed: the intersection sizes from all sites must be equal.\n"
-                f"backward processed sites:{self.backward_processed},\n"
-                f"intersect sites ={intersect_site} \n"
-                f"ordered sites = {self.ordered_sites} \n"
+                "Intersection calculation failed: the intersection sizes from all sites must be equal "
+                f"({len(self.backward_processed)} responses received)."
             )
         else:
             self.log_info(self.fl_ctx, "Intersection calculation succeed")
@@ -222,7 +215,7 @@ class DhPSIWorkFlow(PSIWorkflow):
         return {site_name: results[site_name].data[PSIConst.ITEMS_SIZE] for site_name in results}
 
     def parallel_forward_pass(self, target_sites, processed: dict):
-        self.log_info(self.fl_ctx, f"target_sites: {target_sites}")
+        self.log_info(self.fl_ctx, f"forward pass targets {len(target_sites)} participants")
         total_sites = len(target_sites)
         if total_sites < 2:
             final_site = target_sites[0]
@@ -286,7 +279,7 @@ class DhPSIWorkFlow(PSIWorkflow):
         )
 
         intersects = {client_name: results[client_name].data[PSIConst.ITEMS_SIZE] for client_name in results}
-        self.log_info(self.fl_ctx, f"received intersections : {intersects} ")
+        self.log_info(self.fl_ctx, f"received encrypted intersection results from {len(intersects)} participants")
         return intersects
 
     def process_requests(self, s: SiteSize, request_msgs: Dict[str, str]) -> Dict[str, str]:
@@ -347,7 +340,8 @@ class DhPSIWorkFlow(PSIWorkflow):
             min_responses=min_responses,
             abort_signal=abort_signal,
         )
-        self.log_info(self.fl_ctx, f"{PSIConst.TASK_PREPARE} results = {results}")
+        response_count = len(results) if isinstance(results, dict) else 0
+        self.log_info(self.fl_ctx, f"{PSIConst.TASK_PREPARE} received {response_count} participant responses")
         if not results:
             abort_signal.trigger("no items to perform PSI")
             raise RuntimeError("There is no item to perform PSI calculation")
