@@ -22,6 +22,7 @@ import numpy as np
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
 from nvflare.app_common.app_constant import AppConstants
+from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.np.constants import NPConstants
 from nvflare.app_common.np.np_model_persistor import NPModelPersistor
 from nvflare.app_common.workflows.base_fedavg import (
@@ -94,6 +95,7 @@ class FedAvgLR(BaseFedAvg):
 
         model.start_round = self.start_round
         model.total_rounds = self.num_rounds
+        self.fl_ctx.set_prop(AppConstants.NUM_ROUNDS, self.num_rounds, private=True, sticky=False)
 
         self.info("Server side model loader: {}".format(model))
 
@@ -104,6 +106,8 @@ class FedAvgLR(BaseFedAvg):
             clients = self.sample_clients(self.num_clients)
 
             model.current_round = self.current_round
+            self.fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self.current_round, private=True, sticky=False)
+            self.event(AppEventType.ROUND_STARTED)
 
             # Send training task and current global model to clients.
             #

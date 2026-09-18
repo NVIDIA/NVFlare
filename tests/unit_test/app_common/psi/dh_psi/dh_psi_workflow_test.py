@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2023-2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -147,6 +147,14 @@ class TestDhPSIWorkflow:
         wf.forward_pass = MagicMock(return_value=SiteSize("private-site-beta", 50001))
         wf.forward_processed = {"private-site-beta": 50001}
         wf.backward_pass = MagicMock(return_value={"private-site-alpha": 50001})
+
+    def test_run_reports_privacy_safe_protocol_progress(self):
+        wf = DhPSIWorkFlow()
+        wf.abort_signal = Signal()
+        wf.ordered_sites = [SiteSize("site-1", 10), SiteSize("site-2", 20), SiteSize("site-3", 30)]
+        intersect_site = SiteSize("site-3", 5)
+        wf.forward_pass = MagicMock(return_value=intersect_site)
+        wf.backward_pass = MagicMock(return_value={"site-1": 5, "site-2": 5})
         wf.check_processed_sites = MagicMock()
         wf.check_final_intersection_sizes = MagicMock()
         wf.log_pass_time_taken = MagicMock()
@@ -368,3 +376,31 @@ class TestDhPSIWorkflow:
         peer_ctx.put(ReservedKey.IDENTITY_NAME, "private-site-alpha", private=False, sticky=False)
         fl_ctx.set_peer_context(peer_ctx)
         return fl_ctx
+        with patch("nvflare.app_common.psi.dh_psi.dh_psi_workflow.log_progress") as progress:
+            wf.run(wf.abort_signal)
+
+        assert [call.args[1] for call in progress.call_args_list] == [
+            "  Distributing encrypted intersection…",
+            "  Verifying intersection agreement…",
+        ]
+
+    def test_forward_reduction_reports_each_pass_without_private_values(self):
+        wf = DhPSIWorkFlow()
+        wf.abort_signal = Signal()
+        wf._forward_passes = 2
+        sites = [SiteSize("site-1", 10), SiteSize("site-2", 20), SiteSize("site-3", 30)]
+        wf.pairwise_setup = MagicMock(return_value={"site-1": "setup"})
+        wf.pairwise_requests = MagicMock(return_value={"site-2": "request"})
+        wf.pairwise_responses = MagicMock(return_value={"site-1": "response"})
+        wf.pairwise_intersect = MagicMock(side_effect=[{"site-2": 8}, {"site-3": 5}])
+
+        with patch("nvflare.app_common.psi.dh_psi.dh_psi_workflow.log_progress") as progress:
+            wf.parallel_forward_pass(sites, {})
+
+        messages = [call.args[1] for call in progress.call_args_list]
+        assert messages == [
+            "  Reducing encrypted inputs · pass 1/2",
+            "  Reducing encrypted inputs · pass 2/2",
+        ]
+        assert all("site" not in message.lower() for message in messages)
+        assert all(private_value not in " ".join(messages) for private_value in ("10", "20", "30"))

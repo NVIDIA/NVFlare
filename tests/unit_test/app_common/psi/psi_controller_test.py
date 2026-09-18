@@ -33,6 +33,7 @@ def test_psi_controller_reports_privacy_safe_phases():
     messages = [call.args[1] for call in progress.call_args_list]
     assert "Private set intersection · 3 clients" in messages[0]
     assert messages[1:] == [
+        "  ✓ Private inputs prepared",
         "  Computing encrypted intersection…",
         "\n  ✓ Private set intersection completed",
     ]

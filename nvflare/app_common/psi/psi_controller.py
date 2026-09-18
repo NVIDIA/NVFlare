@@ -51,6 +51,7 @@ class PSIController(ErrorHandlingController):
         if abort_signal.triggered:
             return False
 
+        log_progress(self.logger, "  ✓ Private inputs prepared")
         self.log_info(fl_ctx, "start workflow")
         log_progress(self.logger, "  Computing encrypted intersection…")
         self.psi_workflow.run(abort_signal)

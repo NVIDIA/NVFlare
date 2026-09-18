@@ -332,8 +332,8 @@ This argument can be any of the following:
     - ``concise`` (default for simulator mode): all non-NVFlare logs plus selected NVFlare application logs, with
       simplified log attributes. This preserves the existing NVFlare 2.9 behavior.
     - ``progress``: training rounds and metrics for deep-learning, traditional-ML, Swarm, cyclic,
-      and XGBoost jobs, evaluation progress, and workflow phases for federated statistics and PSI,
-      plus warnings and errors. INFO progress is formatted as messages only; WARNING,
+      and XGBoost jobs, evaluation progress, and workflow phases for federated statistics, PSI, and
+      survival analysis, plus warnings and errors. INFO progress is formatted as messages only; WARNING,
       ERROR, and CRITICAL records keep a textual severity label as well as terminal
       color. Detailed records remain in
       ``log.txt`` and ``log.json``. ``log_fl.txt`` retains its existing application-log

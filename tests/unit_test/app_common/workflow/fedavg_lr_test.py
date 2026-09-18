@@ -12,13 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from unittest.mock import patch
+
 import numpy as np
 import pytest
 
 from nvflare.apis.fl_constant import FLMetaKey
+from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
 from nvflare.app_common.app_constant import AppConstants
+from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.np.constants import NPConstants
 from nvflare.app_common.workflows.lr.fedavg import FedAvgLR
 
@@ -38,6 +42,27 @@ class TestFedAvgLRInit:
         assert isinstance(controller.aggregator, WeightedAggregationHelper)
         assert controller.persistor is None
         assert controller._default_persistor is not None
+
+    def test_run_publishes_standard_round_start(self):
+        controller = FedAvgLR(damping_factor=0.8, num_clients=2, num_rounds=1)
+        controller.fl_ctx = FLContext()
+        model = FLModel(params={NPConstants.NUMPY_KEY: np.zeros((14, 1))})
+
+        with (
+            patch.object(controller, "info"),
+            patch.object(controller, "event") as event,
+            patch.object(controller, "load_model", return_value=model),
+            patch.object(controller, "sample_clients", return_value=["site-1", "site-2"]),
+            patch.object(controller, "send_model_and_wait", return_value=[]),
+            patch.object(controller, "aggregate", return_value=FLModel(params={})),
+            patch.object(controller, "update_model"),
+            patch.object(controller, "save_model"),
+        ):
+            controller.run()
+
+        event.assert_called_once_with(AppEventType.ROUND_STARTED)
+        assert controller.fl_ctx.get_prop(AppConstants.CURRENT_ROUND) == 0
+        assert controller.fl_ctx.get_prop(AppConstants.NUM_ROUNDS) == 1
 
     def test_custom_initialization(self):
         """Test FedAvgLR with custom parameters."""

@@ -22,6 +22,7 @@ from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import PSIConst
 from nvflare.app_common.psi.psi_workflow_spec import PSIWorkflow
 from nvflare.app_common.workflows.broadcast_operator import BroadcastAndWait
+from nvflare.fuel.utils.log_utils import log_progress
 from nvflare.utils.decorators import measure_time
 
 
@@ -42,6 +43,8 @@ class DhPSIWorkFlow(PSIWorkflow):
         self.ordered_sites: List[SiteSize] = []
         self.forward_processed: Dict[str, int] = {}
         self.backward_processed: Dict[str, int] = {}
+        self._forward_pass = 0
+        self._forward_passes = 0
 
     def initialize(self, fl_ctx: FLContext, **kwargs):
         self.fl_ctx = fl_ctx
@@ -63,6 +66,8 @@ class DhPSIWorkFlow(PSIWorkflow):
 
         self.abort_signal = abort_signal
         self.log_info(self.fl_ctx, f"ordered {len(self.ordered_sites)} PSI participants for processing")
+        self._forward_pass = 0
+        self._forward_passes = (len(self.ordered_sites) - 1).bit_length()
 
         intersect_site = self.forward_pass(self.ordered_sites, self.forward_processed)
 
@@ -74,6 +79,7 @@ class DhPSIWorkFlow(PSIWorkflow):
 
         self.check_processed_sites(intersect_site, self.forward_processed)
 
+        log_progress(self.logger, "  Distributing encrypted intersection…")
         self.backward_processed.update(self.backward_pass(self.ordered_sites, intersect_site))
 
         self.log_info(
@@ -81,6 +87,7 @@ class DhPSIWorkFlow(PSIWorkflow):
             f"backward pass processed {len(self.backward_processed)} participants",
         )
 
+        log_progress(self.logger, "  Verifying intersection agreement…")
         self.check_final_intersection_sizes(intersect_site)
 
         self.log_pass_time_taken()
@@ -232,6 +239,11 @@ class DhPSIWorkFlow(PSIWorkflow):
             processed.update({final_site.name: final_site.size})
             return final_site
         else:
+            self._forward_pass += 1
+            log_progress(
+                self.logger,
+                f"  Reducing encrypted inputs · pass {self._forward_pass}/{self._forward_passes}",
+            )
             setup_msgs = self.pairwise_setup(target_sites)
             request_msgs = self.pairwise_requests(target_sites, setup_msgs)
             response_msgs = self.pairwise_responses(target_sites, request_msgs)
