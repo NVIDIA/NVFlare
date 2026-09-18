@@ -7,7 +7,7 @@ Migration Guide
 This guide covers API and configuration changes when upgrading between FLARE releases.
 
 Upgrading from 2.9 to 2.10
-=========================
+==========================
 
 Copy each existing client kit to a **separate workspace** and start it in a
 2.10 environment, keeping the 2.9 client running. Shared workspaces conflict

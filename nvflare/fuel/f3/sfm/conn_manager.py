@@ -285,6 +285,7 @@ class ConnManager(ConnMonitor):
             starter = connector.driver.listen
 
         wait = INIT_WAIT
+        quiet_reconnect = connector.params.get(DriverParams.QUIET_RECONNECT.value, False)
         while not connector.stopped.is_set():
             start_time = time.time()
             try:
@@ -293,7 +294,7 @@ class ConnManager(ConnMonitor):
                 fail_msg = (
                     f"Connector {connector} failed with exception {type(ex).__name__}: {secure_format_exception(ex)}"
                 )
-                if wait < SILENT_RECONNECT_TIME:
+                if quiet_reconnect or wait < SILENT_RECONNECT_TIME:
                     log.debug(fail_msg)
                 else:
                     log.error(fail_msg)
@@ -310,7 +311,7 @@ class ConnManager(ConnMonitor):
 
             reconnect_msg = f"Retrying {connector} in {wait} seconds"
             # First few retries may happen in normal shutdown, show it as debug
-            if wait < SILENT_RECONNECT_TIME:
+            if quiet_reconnect or wait < SILENT_RECONNECT_TIME:
                 log.debug(reconnect_msg)
             else:
                 log.info(reconnect_msg)
@@ -381,7 +382,8 @@ class ConnManager(ConnMonitor):
                 # No action is needed for PONG. The last_activity is already updated
             elif prefix.type == Types.DATA:
                 if sfm_conn.sfm_endpoint is None:
-                    sfm_conn.conn.close()
+                    # READY may arrive before the concurrent handshake task finishes attaching the endpoint.
+                    log.debug("Ignoring DATA before endpoint attachment")
                     return
                 if prefix.length > PREFIX_LEN + prefix.header_len:
                     payload = frame[PREFIX_LEN + prefix.header_len :]

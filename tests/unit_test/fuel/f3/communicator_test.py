@@ -22,10 +22,12 @@ import pytest
 
 from nvflare.fuel.f3.communicator import Communicator
 from nvflare.fuel.f3.connection import Connection
-from nvflare.fuel.f3.drivers.connector_info import Mode
+from nvflare.fuel.f3.drivers.connector_info import ConnectorInfo, Mode
+from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.drivers.net_utils import parse_url
 from nvflare.fuel.f3.endpoint import Endpoint, EndpointMonitor, EndpointState
 from nvflare.fuel.f3.message import Message, MessageReceiver
+from nvflare.fuel.f3.sfm.conn_manager import ConnManager
 from nvflare.fuel.f3.sfm.constants import FLARE_PROTOCOL_VERSION, HandshakeKeys, Types
 from nvflare.fuel.f3.sfm.sfm_conn import SfmConnection
 
@@ -89,6 +91,62 @@ def get_comm_b(comm_state):
 
 
 class TestCommunicator:
+    def test_data_during_handshake_does_not_close_connection(self, monkeypatch):
+        comm = Communicator(Endpoint("server"))
+        peer = MagicMock(connector=SimpleNamespace(params={}))
+        peer.get_conn_properties.return_value = {}
+        sender = SfmConnection(peer, Endpoint("site-1"))
+        incoming = SfmConnection(peer, comm.local_endpoint)
+        receiver = MagicMock()
+        comm.register_message_receiver(APP_ID, receiver)
+        sender.send_data(APP_ID, 1, {}, b"first request")
+        data = peer.send_frame.call_args.args[0]
+        original_update = comm.conn_manager.update_endpoint
+
+        def delayed_update(*args):
+            # READY has been sent, but attachment has not finished on its frame worker.
+            comm.conn_manager.frame_mgr_executor.submit(comm.conn_manager.process_frame_task, incoming, data).result(
+                timeout=2
+            )
+            peer.close.assert_not_called()
+            receiver.process_message.assert_not_called()
+            original_update(*args)
+
+        monkeypatch.setattr(comm.conn_manager, "update_endpoint", delayed_update)
+        try:
+            sender.send_handshake(Types.HELLO)
+            comm.conn_manager.process_frame_task(incoming, peer.send_frame.call_args.args[0])
+            assert incoming.sfm_endpoint is not None
+            comm.conn_manager.process_frame_task(incoming, data)
+            receiver.process_message.assert_called_once()
+            peer.close.assert_not_called()
+        finally:
+            comm.stop()
+
+    @pytest.mark.parametrize("quiet", [False, True])
+    def test_connector_retry_logging(self, caplog, quiet):
+        stopped = Event()
+        driver = MagicMock()
+        driver.connect.side_effect = ConnectionRefusedError("server unavailable")
+        params = {DriverParams.URL.value: "tcp://localhost:8002"}
+        if quiet:
+            params[DriverParams.QUIET_RECONNECT.value] = True
+        connector = ConnectorInfo("test", driver, params, Mode.ACTIVE, 0, 0, False, stopped)
+        waits = []
+
+        def wait(delay):
+            waits.append(delay)
+            if len(waits) == 4:
+                stopped.set()
+
+        stopped.wait = wait
+        with caplog.at_level(logging.DEBUG, logger="nvflare.fuel.f3.sfm.conn_manager"):
+            ConnManager.start_connector_task(connector)
+        assert waits == [1, 2, 4, 8]
+        records = [r for r in caplog.records if "failed with exception" in r.message or "Retrying" in r.message]
+        assert len(records) == 8
+        assert max(r.levelno for r in records) == (logging.DEBUG if quiet else logging.ERROR)
+
     @pytest.mark.parametrize("frame_type", [Types.HELLO, Types.READY])
     @pytest.mark.parametrize("version", [None, 3, "2", 2.0])
     def test_protocol_gate_preserves_existing_connection(self, frame_type, version):

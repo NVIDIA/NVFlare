@@ -77,6 +77,7 @@ def test_upgrade_probe_retries_and_cleans_up(monkeypatch, initial_state, cancel)
     assert factory.call_count == 2
     for call, probe in zip(factory.call_args_list, probes):
         assert call.args[0].name == "site-1.upgrade-probe"
+        assert probe.add_connector.call_args.kwargs["resources"][DriverParams.QUIET_RECONNECT.value] is True
         probe.stop.assert_called_once()
         probe.send.assert_not_called()
         probe.register_message_receiver.assert_not_called()

@@ -71,7 +71,11 @@ def wait_for_server(
     )
     if conn_security:
         secure = conn_security != ConnectionSecurity.CLEAR
-    resources = {**(resources or {}), DriverParams.CONNECT_TIMEOUT: timeout}
+    resources = {
+        **(resources or {}),
+        DriverParams.CONNECT_TIMEOUT.value: timeout,
+        DriverParams.QUIET_RECONNECT.value: True,
+    }
 
     def cancelled():
         return abort_signal.triggered or MainProcessMonitor.is_stopping()
