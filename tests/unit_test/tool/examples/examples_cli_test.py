@@ -177,7 +177,7 @@ def test_download_fetches_path_scoped_tree(monkeypatch, tmp_path):
 
 
 def test_download_authenticates_only_the_github_api_request(monkeypatch, tmp_path):
-    monkeypatch.setenv("GITHUB_TOKEN", "github-token")
+    monkeypatch.setenv("GITHUB_TOKEN", "github-token\n")
     monkeypatch.setenv("GH_TOKEN", "fallback-token")
     session = _mock_session(
         monkeypatch,
@@ -197,6 +197,24 @@ def test_download_authenticates_only_the_github_api_request(monkeypatch, tmp_pat
         "X-GitHub-Api-Version": "2022-11-28",
     }
     assert "headers" not in session.request_kwargs[1]
+
+
+def test_malformed_github_token_is_not_used(monkeypatch):
+    monkeypatch.setenv("GITHUB_TOKEN", "github\ntoken")
+
+    assert examples_cli._github_api_headers() is None
+
+
+def test_invalid_header_error_does_not_expose_token(monkeypatch, tmp_path):
+    token = "ghp_FAKESECRET_NOT_REAL_123"
+    _mock_session(monkeypatch, requests.exceptions.InvalidHeader(f"invalid Bearer {token}"))
+
+    with pytest.raises(examples_cli.ExampleError) as error:
+        examples_cli._download_example(REVISION, SOURCE_PATH, tmp_path / "example")
+
+    assert error.value.code == "EXAMPLE_NETWORK_ERROR"
+    assert "HTTP header is invalid" in str(error.value)
+    assert token not in str(error.value)
 
 
 def test_download_preserves_catalog_destination_path(monkeypatch, tmp_path):
@@ -279,6 +297,80 @@ def test_get_reuses_matching_downloaded_dependencies(monkeypatch, tmp_path):
 
     assert downloads == []
     assert all(component["reused"] for component in result["components"])
+
+
+@pytest.mark.parametrize("write_provenance", [False, True])
+def test_get_rejects_incomplete_dependency(monkeypatch, tmp_path, write_provenance):
+    root = tmp_path / "hello-pt-environments"
+    dependency = root / "hello-world/hello-pt"
+    dependency.mkdir(parents=True)
+    if write_provenance:
+        provenance = examples_cli._provenance(VERSION, REVISION, "hello-pt", CATALOG["hello-pt"])
+        (dependency / examples_cli.PROVENANCE_FILE).write_text(json.dumps(provenance))
+    monkeypatch.setattr(examples_cli, "_download_example", lambda *args, **kwargs: pytest.fail("downloaded"))
+
+    with pytest.raises(examples_cli.ExampleError) as error:
+        examples_cli.get_example(VERSION, CATALOG, name="hello-pt-environments", destination=root)
+
+    assert error.value.code == "EXAMPLE_DEPENDENCY_CONFLICT"
+    assert "incomplete" in str(error.value)
+    assert f"Remove the incomplete component at {dependency}" in error.value.hint
+
+
+def test_component_reuse_requires_matching_destination_path(tmp_path):
+    component = tmp_path / "component"
+    component.mkdir()
+    (component / "README.md").write_text("# Example\n")
+    expected = examples_cli._provenance(VERSION, REVISION, "hello-pt", CATALOG["hello-pt"])
+    (component / examples_cli.PROVENANCE_FILE).write_text(json.dumps({**expected, "destination_path": "other"}))
+
+    assert examples_cli._component_reuse_status(component, expected) == "conflict"
+
+
+def test_get_rejects_reused_dependency_through_symlinked_ancestor(monkeypatch, tmp_path):
+    root = tmp_path / "hello-pt-environments"
+    root.mkdir()
+    outside = tmp_path / "outside"
+    dependency = outside / "hello-pt"
+    dependency.mkdir(parents=True)
+    (dependency / examples_cli.PROVENANCE_FILE).write_text(
+        json.dumps(
+            {
+                "repository": examples_cli.REPOSITORY,
+                "revision": REVISION,
+                "example": "hello-pt",
+                "source_path": "examples/hello-world/hello-pt",
+            }
+        )
+    )
+    (root / "hello-world").symlink_to(outside, target_is_directory=True)
+    monkeypatch.setattr(examples_cli, "_download_example", lambda *args, **kwargs: pytest.fail("downloaded"))
+
+    with pytest.raises(examples_cli.ExampleError) as error:
+        examples_cli.get_example(VERSION, CATALOG, name="hello-pt-environments", destination=root)
+
+    assert error.value.code == "EXAMPLE_DEPENDENCY_CONFLICT"
+    assert str(root / "hello-world") in str(error.value)
+
+
+@pytest.mark.parametrize("kind", ["file", "symlink"])
+def test_get_rejects_non_directory_dependency_component(monkeypatch, tmp_path, kind):
+    root = tmp_path / "hello-pt-environments"
+    component = root / "hello-world/hello-pt"
+    component.parent.mkdir(parents=True)
+    if kind == "file":
+        component.write_text("not a directory")
+    else:
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        component.symlink_to(outside, target_is_directory=True)
+    monkeypatch.setattr(examples_cli, "_download_example", lambda *args, **kwargs: pytest.fail("downloaded"))
+
+    with pytest.raises(examples_cli.ExampleError) as error:
+        examples_cli.get_example(VERSION, CATALOG, name="hello-pt-environments", destination=root)
+
+    assert error.value.code == "EXAMPLE_DEPENDENCY_CONFLICT"
+    assert str(component) in str(error.value)
 
 
 def test_get_rejects_mismatched_downloaded_dependency(monkeypatch, tmp_path):
@@ -756,6 +848,38 @@ def test_cli_failure_is_structured(monkeypatch, capsys, failure, code, exit_code
     assert result["error_code"] == code
     if code in {"EXAMPLE_INTERRUPTED", "EXAMPLE_IO_ERROR"}:
         assert str(Path.cwd() / "hello-pt") in result["hint"]
+
+
+@pytest.mark.parametrize("failure", [KeyboardInterrupt(), OSError("disk full")])
+def test_cli_failure_preserves_preexisting_dependency_root(monkeypatch, tmp_path, capsys, failure):
+    from nvflare import cli
+
+    destination = tmp_path / "existing"
+    destination.mkdir()
+    unrelated = destination / "keep.txt"
+    unrelated.write_text("keep")
+    monkeypatch.setattr(examples_cli, "get_example", lambda *args, **kwargs: (_ for _ in ()).throw(failure))
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "nvflare",
+            "examples",
+            "get",
+            "hello-pt-environments",
+            "--dest",
+            str(destination),
+            "--format",
+            "json",
+        ],
+    )
+
+    with pytest.raises(SystemExit):
+        cli.run("nvflare")
+
+    result = json.loads(capsys.readouterr().out)
+    assert f"Preserve the pre-existing destination at {destination}" in result["hint"]
+    assert "Remove only any incomplete example component" in result["hint"]
+    assert unrelated.read_text() == "keep"
 
 
 @pytest.mark.parametrize(

@@ -191,12 +191,14 @@ Schema discovery does not download the example:
    nvflare examples get --schema
 
 ``nvflare examples list`` and the ``--schema`` commands use the installed
-catalog and do not contact GitHub. Each ``nvflare examples get`` invocation
-makes one GitHub REST API request to locate the selected subtree, then
-downloads its files from ``raw.githubusercontent.com``. The request is
-anonymous by default. When ``GITHUB_TOKEN`` or ``GH_TOKEN`` is set, the command
-uses that token for the API request; ``GITHUB_TOKEN`` takes precedence when
-both are set.
+catalog and do not contact GitHub. ``nvflare examples get`` makes one GitHub
+REST API request for each missing example component, then downloads that
+component's files from ``raw.githubusercontent.com``. A standalone example
+therefore makes one API request, a fresh example with one dependency makes two,
+and a fully reused dependency download makes none. Requests are anonymous by
+default. When ``GITHUB_TOKEN`` or ``GH_TOKEN`` is set, the command uses that
+token for the API requests; ``GITHUB_TOKEN`` takes precedence when both are
+set.
 
 GitHub currently limits unauthenticated REST API traffic to 60 requests per
 hour per originating IP address. This allowance can be shared by machines

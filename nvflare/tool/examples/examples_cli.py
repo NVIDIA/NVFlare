@@ -133,6 +133,9 @@ def _github_api_headers():
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
     if not token:
         return None
+    token = token.strip()
+    if not re.fullmatch(r"[\x21-\x7e]+", token):
+        return None
     return {"Authorization": f"Bearer {token}", "X-GitHub-Api-Version": "2022-11-28"}
 
 
@@ -248,6 +251,12 @@ def _download_example(revision, source_path, destination, destination_path=None)
                             target_file.write(chunk)
                 if str(entry.get("mode")) == "100755":
                     target.chmod(0o755)
+    except requests.exceptions.InvalidHeader:
+        raise ExampleError(
+            "EXAMPLE_NETWORK_ERROR",
+            "Could not send the GitHub request because an HTTP header is invalid.",
+            "Check the GitHub token environment variables and retry.",
+        ) from None
     except requests.RequestException as error:
         hint = "Check GitHub access and your network settings, then retry."
         if destination_created:
@@ -280,12 +289,24 @@ def _write_provenance(directory, provenance):
     (directory / PROVENANCE_FILE).write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
 
 
-def _has_matching_provenance(directory, expected):
+def _component_reuse_status(directory, expected):
     try:
         existing = json.loads((directory / PROVENANCE_FILE).read_text(encoding="utf-8"))
-    except (OSError, ValueError, AttributeError):
-        return False
-    return all(existing.get(key) == expected[key] for key in ("repository", "revision", "example", "source_path"))
+    except FileNotFoundError:
+        return "incomplete"
+    except (OSError, ValueError):
+        return "conflict"
+    if not isinstance(existing, dict):
+        return "conflict"
+    identity_matches = all(
+        existing.get(key) == expected.get(key)
+        for key in ("repository", "revision", "example", "source_path", "destination_path")
+    )
+    if not identity_matches:
+        return "conflict"
+    if not any(path.name != PROVENANCE_FILE for path in directory.iterdir()):
+        return "incomplete"
+    return "matching"
 
 
 def _dependency_order(catalog, name):
@@ -317,6 +338,15 @@ def _dependency_conflict(name, directory):
     )
 
 
+def _dependency_incomplete(name, directory):
+    raise ExampleError(
+        "EXAMPLE_DEPENDENCY_CONFLICT",
+        f"Example component is incomplete for {name}: {directory}",
+        f"Remove the incomplete component at {directory}, then retry. If it contains unrelated files, move it "
+        "or choose another --dest instead.",
+    )
+
+
 def _prepare_dependency_parent(root, directory):
     relative = directory.relative_to(root)
     current = root
@@ -325,6 +355,15 @@ def _prepare_dependency_parent(root, directory):
         if current.is_symlink() or (current.exists() and not current.is_dir()):
             _dependency_conflict(relative.as_posix(), current)
         current.mkdir(exist_ok=True)
+
+
+def _incomplete_download_hint(destination, destination_existed, action):
+    if destination_existed:
+        return (
+            f"Preserve the pre-existing destination at {destination}. Remove only any incomplete example component "
+            f"created inside it, then {action}."
+        )
+    return f"Remove any incomplete destination at {destination}, then {action}."
 
 
 def _get_example_with_dependencies(version_info, revision, catalog, name, destination):
@@ -340,16 +379,17 @@ def _get_example_with_dependencies(version_info, revision, catalog, name, destin
         component_directory = _dependency_destination(destination, entry)
         provenance = _provenance(version_info, revision, component_name, entry)
         reused = False
+        _prepare_dependency_parent(destination, component_directory)
         if component_directory.exists() or component_directory.is_symlink():
-            if (
-                component_directory.is_symlink()
-                or not component_directory.is_dir()
-                or not _has_matching_provenance(component_directory, provenance)
-            ):
+            if component_directory.is_symlink() or not component_directory.is_dir():
+                _dependency_conflict(component_name, component_directory)
+            reuse_status = _component_reuse_status(component_directory, provenance)
+            if reuse_status == "incomplete":
+                _dependency_incomplete(component_name, component_directory)
+            if reuse_status != "matching":
                 _dependency_conflict(component_name, component_directory)
             reused = True
         else:
-            _prepare_dependency_parent(destination, component_directory)
             _download_example(revision, entry["source_path"], component_directory)
             _write_provenance(component_directory, provenance)
         components.append({"name": component_name, "directory": str(component_directory), "reused": reused})
@@ -456,6 +496,8 @@ def handle_examples_cmd(args):
     if key == "get":
         get_validated_connect_timeout()
 
+    destination = None
+    destination_existed = False
     try:
         if key == "revision":
             result = _example_revision(args.dir)
@@ -493,6 +535,8 @@ def handle_examples_cmd(args):
 
         from nvflare import _version
 
+        destination = Path(args.dest or args.name).expanduser().absolute()
+        destination_existed = destination.exists() or destination.is_symlink()
         result = get_example(_version.get_versions(), catalog, name=args.name, destination=args.dest)
         if is_json_mode():
             output_ok(result)
@@ -511,9 +555,8 @@ def handle_examples_cmd(args):
         output_error_message(error.code, str(error), error.hint, exit_code=1)
     except KeyboardInterrupt:
         hint = "Retry the command."
-        if key == "get":
-            destination = Path(args.dest or args.name).expanduser().absolute()
-            hint = f"Remove any incomplete destination at {destination}, then retry the command."
+        if destination is not None:
+            hint = _incomplete_download_hint(destination, destination_existed, "retry the command")
         output_error_message(
             "EXAMPLE_INTERRUPTED",
             "Example download interrupted.",
@@ -522,11 +565,11 @@ def handle_examples_cmd(args):
         )
     except (OSError, RuntimeError) as error:
         hint = "Check the path, permissions, free space, and installation, then retry."
-        if key == "get":
-            destination = Path(args.dest or args.name).expanduser().absolute()
-            hint = (
-                f"Remove any incomplete destination at {destination}; check the path, permissions, free space, "
-                "and installation; then retry."
+        if destination is not None:
+            hint = _incomplete_download_hint(
+                destination,
+                destination_existed,
+                "check the path, permissions, free space, and installation, then retry",
             )
         output_error_message(
             "EXAMPLE_IO_ERROR",

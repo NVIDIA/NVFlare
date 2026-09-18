@@ -131,11 +131,15 @@ def load_catalog(path=None):
                     f"catalog dependency group for {name!r} cannot include destination_path on {component!r}"
                 )
         component_paths = {
-            component: PurePosixPath(catalog[component]["source_path"]).parts for component in components
+            component: tuple(
+                unicodedata.normalize("NFC", part.casefold())
+                for part in PurePosixPath(catalog[component]["source_path"]).parts
+            )
+            for component in components
         }
         for component, parts in component_paths.items():
             for other, other_parts in component_paths.items():
-                if component != other and len(parts) < len(other_parts) and other_parts[: len(parts)] == parts:
+                if component != other and len(parts) <= len(other_parts) and other_parts[: len(parts)] == parts:
                     raise ValueError(
                         f"catalog dependency group for {name!r} contains overlapping source paths for "
                         f"{component!r} and {other!r}"

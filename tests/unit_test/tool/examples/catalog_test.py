@@ -244,6 +244,17 @@ def test_catalog_dependencies_are_validated(tmp_path):
         ),
         (
             {
+                "base": {"category": "test", "source_path": "examples/Group/Example"},
+                "child": {
+                    "category": "test",
+                    "source_path": "examples/group/example",
+                    "dependencies": ["base"],
+                },
+            },
+            "contains overlapping source paths",
+        ),
+        (
+            {
                 "base": {"category": "test", "source_path": "examples/group/base"},
                 "sibling": {"category": "test", "source_path": "examples/group/sibling"},
                 "child": {
