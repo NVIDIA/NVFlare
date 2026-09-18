@@ -238,6 +238,20 @@ def test_invalid_header_error_does_not_expose_token(monkeypatch, tmp_path):
     assert token not in str(error.value)
 
 
+def test_tree_redirect_is_rejected_without_following(monkeypatch, tmp_path):
+    session = _mock_session(monkeypatch, _Response(status_code=301))
+    destination = tmp_path / "example"
+
+    with pytest.raises(examples_cli.ExampleError) as error:
+        examples_cli._download_example(REVISION, SOURCE_PATH, destination)
+
+    assert error.value.code == "EXAMPLE_NETWORK_ERROR"
+    assert "redirected" in str(error.value)
+    assert session.request_kwargs[0]["allow_redirects"] is False
+    assert len(session.requested) == 1
+    assert not destination.exists()
+
+
 def test_download_preserves_catalog_destination_path(monkeypatch, tmp_path):
     tree = {
         "truncated": False,

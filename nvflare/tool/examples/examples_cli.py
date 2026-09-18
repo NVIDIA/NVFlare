@@ -225,6 +225,7 @@ def _download_example(revision, source_path, destination, destination_path=None)
                 tree_url,
                 headers={"X-GitHub-Api-Version": "2022-11-28"},
                 auth=_github_api_auth(),
+                allow_redirects=False,
                 timeout=timeout,
             ) as response:
                 if response.status_code == 404:
@@ -234,6 +235,12 @@ def _download_example(revision, source_path, destination, destination_path=None)
                         f"{revision}:{source_path}",
                         "For an editable install, push the commit or check out a revision available on GitHub; "
                         "otherwise reinstall NVFlare.",
+                    )
+                if 300 <= response.status_code < 400:
+                    raise ExampleError(
+                        "EXAMPLE_NETWORK_ERROR",
+                        f"GitHub redirected the example metadata request (HTTP {response.status_code}).",
+                        "Retry or use the example directly from GitHub.",
                     )
                 response.raise_for_status()
                 try:
