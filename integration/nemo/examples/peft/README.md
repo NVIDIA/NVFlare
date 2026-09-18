@@ -125,9 +125,10 @@ python prepare_initial_adapter.py \
   --seed=42
 ```
 
-Keep `MODEL_REVISION` set for Lightning initialization, training, and evaluation. Omitting revision arguments uses the
-model repository's current revision and prevents the adapter manifest from enforcing one immutable model/tokenizer
-snapshot.
+Keep `MODEL_REVISION` set for Lightning initialization, training, and evaluation. An adapter initialized with pinned
+revisions requires the same revisions in later commands; omitting or changing either revision is rejected. If every
+command omits revision arguments, the model repository's current revision is used and the adapter manifest cannot
+enforce one immutable model/tokenizer snapshot.
 
 ## Run
 

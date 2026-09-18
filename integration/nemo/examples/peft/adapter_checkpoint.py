@@ -355,7 +355,7 @@ def validate_adapter_manifest(
     if manifest.get("expected_tensors") != tensor_specs(state_dict):
         raise ValueError("Adapter manifest tensor names, shapes, or dtypes do not match the adapter tensors.")
     for key, value in (expected or {}).items():
-        if value is not None and manifest.get(key) != value:
+        if manifest.get(key) != value:
             raise ValueError(f"Adapter manifest conflict for {key}: got {manifest.get(key)!r}, expected {value!r}.")
 
 
@@ -375,7 +375,7 @@ def validate_adapter_contract(
     if contract.get("expected_tensors") != tensor_specs(state_dict):
         raise ValueError("Adapter contract tensor names, shapes, or dtypes do not match the adapter tensors.")
     for key, value in (expected or {}).items():
-        if value is not None and contract.get(key) != value:
+        if contract.get(key) != value:
             raise ValueError(f"Adapter contract conflict for {key}: got {contract.get(key)!r}, expected {value!r}.")
 
 

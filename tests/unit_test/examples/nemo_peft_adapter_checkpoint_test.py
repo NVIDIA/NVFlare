@@ -222,6 +222,8 @@ def test_adapter_manifest_rejects_hash_and_profile_conflicts():
         adapter_checkpoint.validate_adapter_manifest(manifest, {"layer.lora_A.weight": torch.zeros((2, 2))})
     with pytest.raises(ValueError, match="conflict"):
         adapter_checkpoint.validate_adapter_manifest(manifest, state, {"model_profile": "nano"})
+    with pytest.raises(ValueError, match="base_model_revision"):
+        adapter_checkpoint.validate_adapter_manifest(manifest, state, {"base_model_revision": None})
 
 
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required for adapter contract tests")
@@ -250,6 +252,8 @@ def test_adapter_contract_rejects_partial_and_stale_inputs():
             state,
             {"model_profile": "lightning35", "base_model_revision": "stale-revision"},
         )
+    with pytest.raises(ValueError, match="tokenizer_revision"):
+        adapter_checkpoint.validate_adapter_contract(contract, state, {"tokenizer_revision": None})
 
 
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required for adapter manifest tests")

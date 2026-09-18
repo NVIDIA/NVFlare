@@ -139,3 +139,31 @@ def test_financial_phrase_split_groups_duplicates_and_removes_only_train_overlap
         "removed_rows": 1,
         "removed_unique_sentences": 1,
     }
+
+
+def test_financial_phrase_split_rejects_too_few_sentence_groups(tmp_path):
+    module = _load_split_module()
+    labels = (" negative", " neutral", " positive")
+    train = tmp_path / "train.jsonl"
+    _write_rows(
+        train,
+        [{"sentence": f"sentence {index}", "label": labels[index % len(labels)]} for index in range(29)],
+    )
+
+    with pytest.raises(ValueError, match="at least 30 groups are required"):
+        module.split_data(str(train), str(tmp_path / "split"), 3, "site-", 0, 10.0)
+
+
+def test_partition_data_bounds_unsuccessful_sampling(monkeypatch):
+    module = _load_split_module()
+    labels = [label for label in (" negative", " neutral", " positive") for _ in range(10)]
+    monkeypatch.setattr(module.np.random, "dirichlet", lambda _alpha: module.np.array([0.45, 0.45, 0.1]))
+
+    with pytest.raises(RuntimeError, match="after 2 attempts"):
+        module.partition_data(
+            labels,
+            [" negative", " neutral", " positive"],
+            3,
+            alpha=10.0,
+            max_attempts=2,
+        )

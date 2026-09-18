@@ -93,14 +93,34 @@ def write_class_summary(path, num_clients, alpha, class_sum):
         sum_file.write(json.dumps(class_sum))
 
 
-def partition_data(train_labels, label_names, num_sites, alpha, sum_file_name: str = None):
+def partition_data(
+    train_labels,
+    label_names,
+    num_sites,
+    alpha,
+    sum_file_name: str = None,
+    min_site_size: int = 10,
+    max_attempts: int = 1000,
+):
     min_size = 0
     N = len(train_labels)
     site_idx = {}
     train_labels = np.asarray(train_labels)
+    if num_sites < 1:
+        raise ValueError(f"num_sites must be positive, got {num_sites}.")
+    if min_site_size < 1:
+        raise ValueError(f"min_site_size must be positive, got {min_site_size}.")
+    if max_attempts < 1:
+        raise ValueError(f"max_attempts must be positive, got {max_attempts}.")
+    required_groups = min_site_size * num_sites
+    if N < required_groups:
+        raise ValueError(
+            f"Cannot partition {N} sentence groups across {num_sites} sites with at least "
+            f"{min_site_size} groups per site; at least {required_groups} groups are required."
+        )
 
     # split
-    while min_size < 10:
+    for _attempt in range(max_attempts):
         idx_batch = [[] for _ in range(num_sites)]
         # for each class in the dataset
         for k in label_names:
@@ -113,6 +133,13 @@ def partition_data(train_labels, label_names, num_sites, alpha, sum_file_name: s
             proportions = (np.cumsum(proportions) * len(idx_k)).astype(int)[:-1]
             idx_batch = [idx_j + idx.tolist() for idx_j, idx in zip(idx_batch, np.split(idx_k, proportions))]
             min_size = min([len(idx_j) for idx_j in idx_batch])
+        if min_size >= min_site_size:
+            break
+    else:
+        raise RuntimeError(
+            f"Could not create a partition with at least {min_site_size} groups per site "
+            f"after {max_attempts} attempts."
+        )
 
     # shuffle
     for j in range(num_sites):
