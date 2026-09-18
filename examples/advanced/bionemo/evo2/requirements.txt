@@ -1,0 +1,8 @@
+# Install these packages inside the pinned BioNeMo Recipes container.
+# PyTorch, Transformer Engine, BioNeMo Evo2, and Megatron Bridge are supplied by that image.
+nvflare[PT]>=2.10.0rc0,<2.11
+datasets==5.0.1
+matplotlib==3.11.1
+scikit-learn==1.9.0
+tensorboard==2.21.0
+jupyterlab==4.7.0a1
