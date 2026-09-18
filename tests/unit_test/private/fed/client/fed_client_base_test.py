@@ -15,7 +15,7 @@
 import socket
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import nullcontext
+from contextlib import nullcontext, suppress
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -26,6 +26,8 @@ from nvflare.apis.signal import Signal
 from nvflare.fuel.f3.cellnet.identity import CellIdentityResolver
 from nvflare.fuel.f3.communicator import Communicator
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
+from nvflare.fuel.f3.drivers.net_utils import get_ssl_context
+from nvflare.fuel.f3.drivers.tcp_driver import TcpDriver
 from nvflare.fuel.f3.endpoint import Endpoint, EndpointState
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys, serialize_cert, serialize_pri_key
 from nvflare.private.fed.client import fed_client_base, upgrade
@@ -46,7 +48,8 @@ _JOB_ARGS = {
 
 @pytest.mark.parametrize("cancel", [False, True])
 @pytest.mark.parametrize("initial_state", [EndpointState.ERROR, None])
-def test_upgrade_probe_retries_and_cleans_up(monkeypatch, initial_state, cancel):
+@pytest.mark.parametrize("scheme, probe_scheme", [("tcp", "tcp"), ("atcp", "tcp"), ("satcp", "stcp")])
+def test_upgrade_probe_retries_and_cleans_up(monkeypatch, initial_state, cancel, scheme, probe_scheme):
     signal = Signal()
     probes = [MagicMock(), MagicMock()]
     factory = MagicMock(side_effect=probes)
@@ -65,7 +68,7 @@ def test_upgrade_probe_retries_and_cleans_up(monkeypatch, initial_state, cancel)
         upgrade.wait_for_server(
             "site-1",
             "server",
-            "tcp://localhost:8002",
+            f"{scheme}://localhost:8002",
             False,
             {},
             None,
@@ -77,6 +80,7 @@ def test_upgrade_probe_retries_and_cleans_up(monkeypatch, initial_state, cancel)
     assert factory.call_count == 2
     for call, probe in zip(factory.call_args_list, probes):
         assert call.args[0].name == "site-1.upgrade-probe"
+        assert probe.add_connector.call_args.args[0] == f"{probe_scheme}://localhost:8002"
         assert probe.add_connector.call_args.kwargs["resources"][DriverParams.QUIET_RECONNECT.value] is True
         probe.stop.assert_called_once()
         probe.send.assert_not_called()
@@ -178,9 +182,19 @@ def probe_credentials(tmp_path, monkeypatch):
 
 
 @pytest.mark.timeout(15)
-def test_upgrade_probe_cancels_stalled_tls(probe_credentials):
-    _, credentials = probe_credentials
+@pytest.mark.parametrize("scheme", ["stcp", "satcp"])
+@pytest.mark.parametrize("finish_tls", [False, True])
+def test_upgrade_probe_cancels_stalled_tls(monkeypatch, probe_credentials, scheme, finish_tls):
+    server_credentials, credentials = probe_credentials
     signal = Signal()
+    stopped = threading.Event()
+    shutdown = TcpDriver.shutdown
+
+    def record_shutdown(driver):
+        shutdown(driver)
+        stopped.set()
+
+    monkeypatch.setattr(TcpDriver, "shutdown", record_shutdown)
     with socket.socket() as listener, ThreadPoolExecutor(1) as executor:
         listener.bind(("127.0.0.1", 0))
         listener.listen()
@@ -189,40 +203,60 @@ def test_upgrade_probe_cancels_stalled_tls(probe_credentials):
             upgrade.wait_for_server,
             "site-1",
             "server",
-            f"stcp://127.0.0.1:{listener.getsockname()[1]}",
+            f"{scheme}://127.0.0.1:{listener.getsockname()[1]}",
             True,
             credentials,
             None,
             {},
             signal,
             60,
-            0.3,
+            3 if finish_tls else 0.3,
         )
+        connection = None
         try:
             connection, _ = listener.accept()
+            signal.trigger(True)
+            if finish_tls:
+                # Complete TLS only after shutdown has scanned the empty connection set.
+                assert stopped.wait(2)
+                context = get_ssl_context({**server_credentials, "scheme": "stcp"}, ssl_server=True)
+                connection.settimeout(3)
+                connection = context.wrap_socket(connection, server_side=True)
             with connection:
-                # Leave TCP open without answering TLS: stop() must not wait forever.
-                signal.trigger(True)
+                # Cancellation must finish even while the remote socket stays open.
                 with pytest.raises(RuntimeError, match="cancelled"):
                     future.result(timeout=3)
                 connection.settimeout(1)
-                while connection.recv(4096):
-                    pass  # Consume ClientHello and verify the probe closed its socket.
+                with suppress(ConnectionResetError):
+                    while connection.recv(4096):
+                        pass  # EOF or a reset confirms the probe closed its socket.
         finally:
             signal.trigger(True)
+            if connection:
+                connection.close()
 
 
 @pytest.mark.timeout(15)
 @pytest.mark.parametrize("security", [ConnectionSecurity.MTLS, ConnectionSecurity.CLEAR])
-def test_upgrade_probe_through_relay(monkeypatch, probe_credentials, security):
+@pytest.mark.parametrize("use_aio", [False, True])
+def test_upgrade_probe_through_relay(monkeypatch, probe_credentials, security, use_aio):
     server_credentials, client_credentials = probe_credentials
     server_credentials[DriverParams.CONNECTION_SECURITY] = security
     relay = Communicator(Endpoint("relay-a", conn_props=server_credentials), CellIdentityResolver("relay-a"))
+    connections = []
     try:
-        _, url, _ = relay.start_listener(
-            "stcp" if security == ConnectionSecurity.MTLS else "tcp", {"host": "127.0.0.1"}
-        )
-        relay.start()
+        scheme = "atcp" if use_aio else "tcp"
+        if security == ConnectionSecurity.MTLS:
+            scheme = "s" + scheme
+        handle, url, _ = relay.start_listener(scheme, {"host": "127.0.0.1"})
+        driver = relay.conn_manager.connectors[handle].driver
+        add_connection = driver.add_connection
+
+        def track_connection(connection):
+            connections.append(connection)
+            add_connection(connection)
+
+        monkeypatch.setattr(driver, "add_connection", track_connection)
         captured = _create_cell_credentials(
             monkeypatch,
             None,
@@ -246,6 +280,7 @@ def test_upgrade_probe_through_relay(monkeypatch, probe_credentials, security):
             },
         )
         assert captured["root_url"] is None
+        assert captured["parent_url"] == url  # The real cell keeps its configured transport.
         probe_args = captured["probe"]
         signal = probe_args["abort_signal"]
         with ThreadPoolExecutor(1) as executor:
@@ -256,6 +291,9 @@ def test_upgrade_probe_through_relay(monkeypatch, probe_credentials, security):
         assert relay.find_endpoint("relay-a.site-1.upgrade-probe") is not None
         assert relay.find_endpoint("relay-a.site-1") is None
     finally:
+        # Async listener teardown also needs writers already removed from the connection registry.
+        for connection in connections:
+            connection.close()
         relay.stop()
 
 

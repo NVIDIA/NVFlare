@@ -64,6 +64,10 @@ def wait_for_server(
     if not math.isfinite(retry_interval) or retry_interval <= 0:
         raise ValueError("upgrade_probe_interval must be positive and finite")
 
+    # Use the wire-compatible TCP driver with bounded connect and shutdown for short-lived probes.
+    scheme, separator, address = url.partition("://")
+    probe_url = {"atcp": "tcp", "satcp": "stcp"}.get(scheme, scheme) + separator + address
+
     credentials = dict(credentials)
     enhance_credential_info(credentials)
     conn_security = (resources or {}).get(
@@ -91,7 +95,7 @@ def wait_for_server(
         )
         probe.register_monitor(monitor)
         try:
-            probe.add_connector(url, Mode.ACTIVE, secure=secure, resources=resources)
+            probe.add_connector(probe_url, Mode.ACTIVE, secure=secure, resources=resources)
             probe.start()
             while not cancelled() and time.monotonic() - attempt_start < timeout:
                 if monitor.done.wait(0.1):
