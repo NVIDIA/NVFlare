@@ -28,11 +28,12 @@ from nvflare.app_common.workflows.error_handling_controller import ErrorHandling
 
 
 class BroadcastAndWait(FLComponent):
-    def __init__(self, fl_ctx: FLContext, controller: ErrorHandlingController):
+    def __init__(self, fl_ctx: FLContext, controller: ErrorHandlingController, log_client_names: bool = True):
         super().__init__()
         self.lock = threading.Lock()
         self.fl_ctx = fl_ctx
         self.controller = controller
+        self.log_client_names = log_client_names
         self.task = None
 
         # [target, DXO]
@@ -94,11 +95,13 @@ class BroadcastAndWait(FLComponent):
         client_name = client_task.client.name
         task_name = client_task.task.name
         print("task_name", task_name)
-        self.log_info(fl_ctx, f"Processing {task_name}, {self.task} result from client {client_name}")
+        processing_client_detail = f" from client {client_name}" if self.log_client_names else ""
+        self.log_info(fl_ctx, f"Processing {task_name}, {self.task} result{processing_client_detail}")
         result = client_task.result
         rc = result.get_return_code()
         if rc == ReturnCode.OK:
-            self.log_info(fl_ctx, f"Received result from client:{client_name} for task {task_name} ")
+            received_client_detail = f" from client:{client_name}" if self.log_client_names else ""
+            self.log_info(fl_ctx, f"Received result{received_client_detail} for task {task_name} ")
             dxo = from_shareable(result)
             self.update_result(client_name, dxo)
         else:

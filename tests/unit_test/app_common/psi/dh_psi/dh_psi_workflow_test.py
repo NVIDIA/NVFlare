@@ -15,11 +15,15 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nvflare.apis.client import Client
+from nvflare.apis.controller_spec import ClientTask, Task
 from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import PSIConst
 from nvflare.app_common.psi.dh_psi.dh_psi_workflow import DhPSIWorkFlow, SiteSize
+from nvflare.app_common.workflows.broadcast_operator import BroadcastAndWait
 
 
 class TestDhPSIWorkflow:
@@ -75,7 +79,7 @@ class TestDhPSIWorkflow:
 
         messages = "\n".join(call.args[1] for call in wf.log_info.call_args_list)
         assert "ordered 2 PSI participants" in messages
-        assert "forward pass processed 1 participants" in messages
+        assert "forward pass retained 1 intermediate-result holders" in messages
         assert "backward pass processed 1 participants" in messages
         assert "private-site" not in messages
         assert "91001" not in messages
@@ -100,3 +104,27 @@ class TestDhPSIWorkflow:
         assert "92002" not in message
         assert "50001" not in message
         assert "50002" not in message
+
+    @pytest.mark.parametrize("log_client_names", [False, True])
+    def test_result_callback_participant_identity_logging(self, log_client_names):
+        wf = DhPSIWorkFlow()
+        wf.fl_ctx = FLContext()
+        wf.controller = MagicMock()
+        if log_client_names:
+            bop = BroadcastAndWait(wf.fl_ctx, wf.controller)
+        else:
+            bop = wf._new_broadcast_operator()
+        bop.log_info = MagicMock()
+
+        task = Task(name=PSIConst.TASK, data=Shareable())
+        client_task = ClientTask(Client("private-site-alpha", "token"), task)
+        client_task.result = DXO(data_kind=DataKind.PSI, data={PSIConst.ITEMS_SIZE: 91001}).to_shareable()
+
+        bop.results_cb(client_task, wf.fl_ctx)
+
+        messages = "\n".join(call.args[1] for call in bop.log_info.call_args_list)
+        assert ("private-site-alpha" in messages) is log_client_names
+        assert "91001" not in messages
+        assert f"Processing {PSIConst.TASK}" in messages
+        assert "Received result" in messages
+        assert "private-site-alpha" in bop.results

@@ -67,7 +67,7 @@ class DhPSIWorkFlow(PSIWorkflow):
 
         self.log_info(
             self.fl_ctx,
-            f"forward pass processed {len(self.forward_processed)} participants; "
+            f"forward pass retained {len(self.forward_processed)} intermediate-result holders; "
             "selected the encrypted intersection holder",
         )
 
@@ -154,7 +154,7 @@ class DhPSIWorkFlow(PSIWorkflow):
             inputs[PSIConst.ITEMS_SIZE] = c.size
             task_inputs[s.name] = inputs
 
-        bop = BroadcastAndWait(self.fl_ctx, self.controller)
+        bop = self._new_broadcast_operator()
         results = bop.multicasts_and_wait(
             task_name=self.task_name, task_inputs=task_inputs, fl_ctx=self.fl_ctx, abort_signal=self.abort_signal
         )
@@ -172,7 +172,7 @@ class DhPSIWorkFlow(PSIWorkflow):
             inputs[PSIConst.SETUP_MSG] = setup_msgs[s.name]
             task_inputs[c.name] = inputs
 
-        bop = BroadcastAndWait(self.fl_ctx, self.controller)
+        bop = self._new_broadcast_operator()
         results = bop.multicasts_and_wait(
             task_name=self.task_name, task_inputs=task_inputs, fl_ctx=self.fl_ctx, abort_signal=self.abort_signal
         )
@@ -190,7 +190,7 @@ class DhPSIWorkFlow(PSIWorkflow):
             inputs[PSIConst.REQUEST_MSG] = request_msgs[c.name]
             task_inputs[s.name] = inputs
 
-        bop = BroadcastAndWait(self.fl_ctx, self.controller)
+        bop = self._new_broadcast_operator()
         results = bop.multicasts_and_wait(
             task_name=self.task_name, task_inputs=task_inputs, fl_ctx=self.fl_ctx, abort_signal=self.abort_signal
         )
@@ -208,7 +208,7 @@ class DhPSIWorkFlow(PSIWorkflow):
             inputs[PSIConst.RESPONSE_MSG] = response_msg[s.name]
             task_inputs[c.name] = inputs
 
-        bop = BroadcastAndWait(self.fl_ctx, self.controller)
+        bop = self._new_broadcast_operator()
         results = bop.multicasts_and_wait(
             task_name=self.task_name, task_inputs=task_inputs, fl_ctx=self.fl_ctx, abort_signal=self.abort_signal
         )
@@ -273,7 +273,7 @@ class DhPSIWorkFlow(PSIWorkflow):
             inputs[PSIConst.TASK_KEY] = PSIConst.TASK_INTERSECT
             inputs[PSIConst.RESPONSE_MSG] = response_msg[client_name]
             task_inputs[client_name] = inputs
-        bop = BroadcastAndWait(self.fl_ctx, self.controller)
+        bop = self._new_broadcast_operator()
         results = bop.multicasts_and_wait(
             task_name=self.task_name, task_inputs=task_inputs, fl_ctx=self.fl_ctx, abort_signal=self.abort_signal
         )
@@ -286,7 +286,7 @@ class DhPSIWorkFlow(PSIWorkflow):
         task_inputs = Shareable()
         task_inputs[PSIConst.TASK_KEY] = PSIConst.TASK_RESPONSE
         task_inputs[PSIConst.REQUEST_MSG_SET] = request_msgs
-        bop = BroadcastAndWait(self.fl_ctx, self.controller)
+        bop = self._new_broadcast_operator()
         results = bop.broadcast_and_wait(
             task_name=self.task_name,
             task_input=task_inputs,
@@ -307,7 +307,7 @@ class DhPSIWorkFlow(PSIWorkflow):
             inputs[PSIConst.SETUP_MSG] = site_setup_msgs[client_name]
             task_inputs[client_name] = inputs
 
-        bop = BroadcastAndWait(self.fl_ctx, self.controller)
+        bop = self._new_broadcast_operator()
         results = bop.multicasts_and_wait(
             task_name=self.task_name, task_inputs=task_inputs, fl_ctx=self.fl_ctx, abort_signal=self.abort_signal
         )
@@ -331,7 +331,7 @@ class DhPSIWorkFlow(PSIWorkflow):
         engine = self.fl_ctx.get_engine()
         min_responses = len(engine.get_clients())
 
-        bop = BroadcastAndWait(self.fl_ctx, self.controller)
+        bop = self._new_broadcast_operator()
         results = bop.broadcast_and_wait(
             task_name=self.task_name,
             task_input=inputs,
@@ -352,7 +352,7 @@ class DhPSIWorkFlow(PSIWorkflow):
         inputs = Shareable()
         inputs[PSIConst.TASK_KEY] = PSIConst.TASK_SETUP
         inputs[PSIConst.ITEMS_SIZE_SET] = other_site_sizes
-        bop = BroadcastAndWait(self.fl_ctx, self.controller)
+        bop = self._new_broadcast_operator()
         results = bop.broadcast_and_wait(
             task_name=self.task_name,
             task_input=inputs,
@@ -362,3 +362,6 @@ class DhPSIWorkFlow(PSIWorkflow):
         )
         dxo = results[s.name]
         return dxo.data[PSIConst.SETUP_MSG]
+
+    def _new_broadcast_operator(self):
+        return BroadcastAndWait(self.fl_ctx, self.controller, log_client_names=False)
