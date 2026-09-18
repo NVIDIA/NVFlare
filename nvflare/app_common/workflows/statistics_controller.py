@@ -200,11 +200,15 @@ class StatisticsController(Controller):
 
         log_progress(self.logger, "  Computing derived statistics…")
         self.statistics_task_flow(abort_signal, fl_ctx, StC.STATS_2nd_STATISTICS)
+        if abort_signal.triggered:
+            return False
 
         if not StatisticsController._wait_for_all_results(
             self.logger, self.result_wait_timeout, self.min_clients, self.client_statistics, 1.0, abort_signal
         ):
             self.log_info(fl_ctx, f"task {self.task_name} timeout on wait for all results.")
+            return False
+        if abort_signal.triggered:
             return False
 
         self.log_info(fl_ctx, "start post processing")

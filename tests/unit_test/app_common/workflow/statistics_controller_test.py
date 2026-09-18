@@ -167,3 +167,26 @@ class TestStatisticsController:
             "  Computing derived statistics…",
             "\n  ✓ Federated statistics completed",
         ]
+
+    def test_control_flow_does_not_report_completion_after_second_pass_abort(self):
+        controller = StatisticsController(statistic_configs={SC.STATS_COUNT: {}}, writer_id="writer", min_clients=2)
+        controller.pre_run_task_flow = MagicMock()
+        controller.post_fn = MagicMock(return_value=True)
+        abort_signal = Signal()
+
+        def run_statistics(signal, fl_ctx, task_name):
+            if task_name == SC.STATS_2nd_STATISTICS:
+                signal.trigger("second pass aborted")
+
+        controller.statistics_task_flow = MagicMock(side_effect=run_statistics)
+
+        with (
+            patch.object(StatisticsController, "_wait_for_all_results", return_value=True) as wait_for_results,
+            patch("nvflare.app_common.workflows.statistics_controller.log_progress") as progress,
+        ):
+            result = controller.control_flow(abort_signal, FLContext())
+
+        assert result is False
+        wait_for_results.assert_not_called()
+        controller.post_fn.assert_not_called()
+        assert "✓ Federated statistics completed" not in "\n".join(call.args[1] for call in progress.call_args_list)

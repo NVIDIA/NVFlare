@@ -48,6 +48,9 @@ class EvalController(ModelController):
 
     def run(self):
         model = self.load_model()
+        model.start_round = 0
+        model.current_round = 0
+        model.total_rounds = 1
         self.fl_ctx.set_prop(AppConstants.CURRENT_ROUND, 0, private=True, sticky=False)
         self.fl_ctx.set_prop(AppConstants.NUM_ROUNDS, 1, private=True, sticky=False)
         self.fl_ctx.set_prop(AppConstants.PROGRESS_TITLE, "Model evaluation", private=True, sticky=False)

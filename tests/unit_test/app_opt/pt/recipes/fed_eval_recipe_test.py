@@ -90,11 +90,18 @@ def test_eval_controller_publishes_single_evaluation_round():
     model = FLModel(params={})
     calls = []
 
+    def send_model(**kwargs):
+        sent_model = kwargs["data"]
+        assert sent_model.start_round == 0
+        assert sent_model.current_round == 0
+        assert sent_model.total_rounds == 1
+        return []
+
     with (
         patch.object(controller, "load_model", return_value=model),
         patch.object(controller, "info"),
         patch.object(controller, "event", side_effect=calls.append),
-        patch.object(controller, "send_model_and_wait", return_value=[]),
+        patch.object(controller, "send_model_and_wait", side_effect=send_model),
     ):
         controller.run()
 
