@@ -12,17 +12,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import socket
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import nullcontext
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 
-from nvflare.apis.fl_constant import ConnPropKey, SecureTrainConst
+from nvflare.apis.fl_constant import ConnectionSecurity, ConnPropKey, SecureTrainConst
 from nvflare.apis.signal import Signal
+from nvflare.fuel.f3.cellnet.identity import CellIdentityResolver
+from nvflare.fuel.f3.communicator import Communicator
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.endpoint import Endpoint, EndpointState
+from nvflare.lighter.utils import Identity, generate_cert, generate_keys, serialize_cert, serialize_pri_key
 from nvflare.private.fed.client import fed_client_base, upgrade
 from nvflare.private.fed.client.fed_client_base import FederatedClientBase
 
@@ -90,7 +95,7 @@ def _make_client():
     return client
 
 
-def _create_cell_credentials(monkeypatch, job_id, client_args):
+def _create_cell_credentials(monkeypatch, job_id, client_args, conn_props=None):
     captured = {}
 
     class _FakeCell:
@@ -104,7 +109,8 @@ def _create_cell_credentials(monkeypatch, job_id, client_args):
         def stop(self):
             pass
 
-    conn_props = {ConnPropKey.CP_CONN_PROPS: {ConnPropKey.FQCN: "site-1", ConnPropKey.URL: "tcp://cp:1"}}
+    if conn_props is None:
+        conn_props = {ConnPropKey.CP_CONN_PROPS: {ConnPropKey.FQCN: "site-1", ConnPropKey.URL: "tcp://cp:1"}}
     monkeypatch.setattr(fed_client_base, "Cell", _FakeCell)
     monkeypatch.setattr(fed_client_base, "wait_for_server", lambda **kwargs: captured.update(probe=kwargs))
     monkeypatch.setattr(fed_client_base, "NetAgent", lambda cell: MagicMock())
@@ -117,7 +123,7 @@ def _create_cell_credentials(monkeypatch, job_id, client_args):
     client.secure_train = True
     client.client_args = dict(client_args)
     client.args = SimpleNamespace(job_id=job_id)
-    client.abort_signal = MagicMock()
+    client.abort_signal = Signal()
     client.communicator = MagicMock()
     client.engine_create_timeout = 1.0
     client.cell_check_frequency = 0.001
@@ -151,6 +157,105 @@ def test_cj_cell_uses_job_credential_in_both_tls_roles(monkeypatch):
     assert credentials[DriverParams.CLIENT_KEY.value] == "job.key"
     assert credentials[DriverParams.SERVER_CERT.value] == "job.crt"
     assert credentials[DriverParams.SERVER_KEY.value] == "job.key"
+
+
+@pytest.fixture
+def probe_credentials(tmp_path, monkeypatch):
+    monkeypatch.setattr(upgrade.MainProcessMonitor, "_stopping", False)
+    root_key, root_pub = generate_keys()
+    root = Identity("probe-test-ca")
+    ca_path = tmp_path / "rootCA.pem"
+    ca_path.write_bytes(serialize_cert(generate_cert(root, root, root_key, root_pub, ca=True)))
+    credentials = []
+    for name, role in [("localhost", "server"), ("site-1", "client")]:
+        key, pub = generate_keys()
+        cert_path, key_path = tmp_path / f"{role}.crt", tmp_path / f"{role}.key"
+        cert_path.write_bytes(serialize_cert(generate_cert(Identity(name), root, root_key, pub)))
+        key_path.write_bytes(serialize_pri_key(key))
+        credentials.append({"ca_cert": str(ca_path), f"{role}_cert": str(cert_path), f"{role}_key": str(key_path)})
+    return credentials
+
+
+@pytest.mark.timeout(15)
+def test_upgrade_probe_cancels_stalled_tls(probe_credentials):
+    _, credentials = probe_credentials
+    signal = Signal()
+    with socket.socket() as listener, ThreadPoolExecutor(1) as executor:
+        listener.bind(("127.0.0.1", 0))
+        listener.listen()
+        listener.settimeout(5)
+        future = executor.submit(
+            upgrade.wait_for_server,
+            "site-1",
+            "server",
+            f"stcp://127.0.0.1:{listener.getsockname()[1]}",
+            True,
+            credentials,
+            None,
+            {},
+            signal,
+            60,
+            0.3,
+        )
+        try:
+            connection, _ = listener.accept()
+            with connection:
+                # Leave TCP open without answering TLS: stop() must not wait forever.
+                signal.trigger(True)
+                with pytest.raises(RuntimeError, match="cancelled"):
+                    future.result(timeout=3)
+                connection.settimeout(1)
+                while connection.recv(4096):
+                    pass  # Consume ClientHello and verify the probe closed its socket.
+        finally:
+            signal.trigger(True)
+
+
+@pytest.mark.timeout(15)
+@pytest.mark.parametrize("security", [ConnectionSecurity.MTLS, ConnectionSecurity.CLEAR])
+def test_upgrade_probe_through_relay(monkeypatch, probe_credentials, security):
+    server_credentials, client_credentials = probe_credentials
+    server_credentials[DriverParams.CONNECTION_SECURITY] = security
+    relay = Communicator(Endpoint("relay-a", conn_props=server_credentials), CellIdentityResolver("relay-a"))
+    try:
+        _, url, _ = relay.start_listener(
+            "stcp" if security == ConnectionSecurity.MTLS else "tcp", {"host": "127.0.0.1"}
+        )
+        relay.start()
+        captured = _create_cell_credentials(
+            monkeypatch,
+            None,
+            {
+                SecureTrainConst.SSL_ROOT_CERT: client_credentials["ca_cert"],
+                SecureTrainConst.SSL_CERT: client_credentials["client_cert"],
+                SecureTrainConst.PRIVATE_KEY: client_credentials["client_key"],
+                ConnPropKey.CONNECTION_SECURITY: (
+                    ConnectionSecurity.CLEAR if security == ConnectionSecurity.MTLS else ConnectionSecurity.MTLS
+                ),
+                "upgrade_probe_interval": 0.01,
+            },
+            {
+                ConnPropKey.CP_CONN_PROPS: {ConnPropKey.FQCN: "relay-a.site-1"},
+                ConnPropKey.RELAY_CONN_PROPS: {
+                    ConnPropKey.FQCN: "relay-a",
+                    ConnPropKey.URL: url,
+                    ConnPropKey.AUTH_IDENTITY: "localhost",
+                    ConnPropKey.CONNECTION_SECURITY: security,
+                },
+            },
+        )
+        assert captured["root_url"] is None
+        probe_args = captured["probe"]
+        signal = probe_args["abort_signal"]
+        with ThreadPoolExecutor(1) as executor:
+            try:
+                executor.submit(upgrade.wait_for_server, **probe_args, timeout=1).result(timeout=5)
+            finally:
+                signal.trigger(True)
+        assert relay.find_endpoint("relay-a.site-1.upgrade-probe") is not None
+        assert relay.find_endpoint("relay-a.site-1") is None
+    finally:
+        relay.stop()
 
 
 def test_send_request_before_shutdown_skips_after_close():
