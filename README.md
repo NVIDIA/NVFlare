@@ -35,7 +35,7 @@ such as statistics, model updates, or evaluation metrics.
 their local data. It can enable collaboration where privacy, regulation, data sovereignty, intellectual property,
 data ownership, or the cost of moving data makes central collection impractical.
 
-**NVIDIA FLARE** (**NV**IDIA **F**ederated **L**earning **A**pplication **R**untime **E**nvironment) is an open-source,
+**[NVIDIA FLARE](https://nvidia.github.io/NVFlare)** (**NV**IDIA **F**ederated **L**earning **A**pplication **R**untime **E**nvironment) is an open-source,
 extensible Python SDK for building these applications. Data scientists can adapt existing Python workflows, algorithm
 developers can implement new collaboration patterns, and platform teams can operate the same applications from local
 simulation through provisioned multi-site deployment.
