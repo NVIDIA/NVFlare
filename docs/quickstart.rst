@@ -172,10 +172,19 @@ application from simulation to POC and an already-running production system.
 Discover More Examples
 ======================
 
-Use the `NVIDIA FLARE website <https://nvidia.github.io/NVFlare>`_ to discover
-tutorials, examples, research, webinars, and events. The
-`example catalog <https://nvidia.github.io/NVFlare/catalog/>`_ can be browsed by
-framework, workflow, and use case.
+Use the resource that matches what you want to do:
+
+- :ref:`Feature Tutorials <tutorials>` provide focused notebook walkthroughs
+  of the Simulator, POC, FLARE API, CLI, Recipe, and logging capabilities.
+- The `example catalog <https://nvidia.github.io/NVFlare/catalog/>`_ provides
+  runnable workloads and implementation references that can be browsed by
+  framework, workflow, and use case.
+- :ref:`Self-Paced Training <self_paced_training>` provides a sequential
+  curriculum across FL concepts, system operation, security, algorithms, and
+  industry applications.
+
+The `NVIDIA FLARE website <https://nvidia.github.io/NVFlare>`_ brings these
+learning resources together with research, webinars, and events.
 
 From an installed NVFLARE package, list and retrieve curated examples with:
 
@@ -186,6 +195,8 @@ From an installed NVFLARE package, list and retrieve curated examples with:
 
 The CLI retrieves source matched to the installed package revision. After
 retrieval, follow that example's README for its exact dependencies and commands.
+Feature tutorials and the self-paced course are browsed separately and are not
+part of the ``nvflare examples`` catalog.
 Useful guide-first paths include:
 
 - :doc:`Agent Skills <user_guide/agent_skills/index>` for supported tabular or

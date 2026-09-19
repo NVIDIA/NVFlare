@@ -21,12 +21,25 @@ Tutorial Catalog
 Feature Tutorials
 -----------------
 
-- `POC Tutorials: <https://github.com/NVIDIA/NVFlare/tree/main/examples/tutorials/setup_poc.ipynb>`_
-- `Simulator CLI & Python API <https://github.com/NVIDIA/NVFlare/tree/main/examples/tutorials/flare_simulator.ipynb>`_
-- `FLARE Python API: Job Submission & Monitoring <https://github.com/NVIDIA/NVFlare/tree/main/examples/tutorials/flare_api.ipynb>`_
-- `Logging: Configuration & Customization <https://github.com/NVIDIA/NVFlare/tree/main/examples/tutorials/logging.ipynb>`_
-- `NVFlare CLI: Setup, Jobs, Systems, and Deployment <https://github.com/NVIDIA/NVFlare/tree/main/examples/tutorials/nvflare_cli.ipynb>`_
-- `Job Recipe: Simplified job creation <https://github.com/NVIDIA/NVFlare/tree/main/examples/tutorials/job_recipe.ipynb>`_
+Feature tutorials are focused notebook walkthroughs for learning one NVIDIA
+FLARE capability. Use the
+`example catalog <https://nvidia.github.io/NVFlare/catalog/>`_ for complete
+application examples.
+
+**Build and test applications**
+
+- `Simulator CLI and Python API <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/flare_simulator.ipynb>`_
+- `Job Recipe: simplified job creation <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/job_recipe.ipynb>`_
+
+**Operate and deploy systems**
+
+- `POC mode <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/setup_poc.ipynb>`_
+- `NVFLARE CLI: setup, jobs, systems, and deployment <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/nvflare_cli.ipynb>`_
+- `FLARE Python API: job submission and monitoring <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/flare_api.ipynb>`_
+
+**Observe and troubleshoot runs**
+
+- `Logging configuration and customization <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/logging.ipynb>`_
 
 Self-Paced Learning
 -------------------
