@@ -15,6 +15,7 @@
 import importlib.util
 import os
 import sys
+from collections import OrderedDict
 
 import pytest
 
@@ -40,6 +41,17 @@ def _load_evaluate_module():
         return module
     finally:
         sys.path.remove(example_dir)
+
+
+@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required to import the evaluator")
+def test_evaluate_parser_rejects_explicit_empty_adapter_dir(monkeypatch, capsys):
+    evaluate_sentiment = _load_evaluate_module()
+    monkeypatch.setattr(sys, "argv", ["evaluate_sentiment.py", "--adapter_dir="])
+
+    with pytest.raises(SystemExit, match="2"):
+        evaluate_sentiment.define_parser()
+
+    assert "--adapter_dir must not be empty" in capsys.readouterr().err
 
 
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required to import the evaluator")
@@ -89,3 +101,63 @@ def test_evaluate_sentiment_parse_choice_map_validates_labels():
 
     with pytest.raises(ValueError, match="Unknown label"):
         evaluate_sentiment.parse_choice_map("neutral=neutral,positive=up,other=down")
+
+
+@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required to import the evaluator")
+def test_lightning_adapter_load_creates_temporary_single_process_group(monkeypatch, tmp_path):
+    evaluate_sentiment = _load_evaluate_module()
+    calls = []
+    monkeypatch.setattr(evaluate_sentiment.torch.distributed, "is_available", lambda: True)
+    monkeypatch.setattr(evaluate_sentiment.torch.distributed, "is_initialized", lambda: False)
+    monkeypatch.setattr(
+        evaluate_sentiment.torch.distributed,
+        "init_process_group",
+        lambda **kwargs: calls.append(("init", kwargs)),
+    )
+    monkeypatch.setattr(
+        evaluate_sentiment.torch.distributed,
+        "destroy_process_group",
+        lambda: calls.append(("destroy", None)),
+    )
+
+    with evaluate_sentiment._single_process_group(str(tmp_path)):
+        calls.append(("body", None))
+
+    assert [name for name, _ in calls] == ["init", "body", "destroy"]
+    assert calls[0][1]["backend"] == "nccl"
+    assert calls[0][1]["rank"] == 0
+    assert calls[0][1]["world_size"] == 1
+    assert calls[0][1]["init_method"].startswith("file://")
+
+
+@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required to verify adapter tensors")
+def test_lightning_evaluation_verifies_loaded_adapter_values():
+    import torch
+
+    evaluate_sentiment = _load_evaluate_module()
+    incoming = OrderedDict(
+        {
+            "base_model.model.model.layers.0.lora_A.weight": torch.tensor([[1.0, 2.0]]),
+            "base_model.model.model.layers.0.lora_B.weight": torch.tensor([[3.0], [4.0]]),
+        }
+    )
+    loaded = {
+        key.removeprefix(evaluate_sentiment.adapter_checkpoint.HF_PEFT_BASE_MODEL_PREFIX): value.to(torch.bfloat16)
+        for key, value in incoming.items()
+    }
+
+    class Model:
+        @staticmethod
+        def state_dict():
+            return {
+                **loaded,
+                "layers.0.weight": torch.ones(2, 2),
+            }
+
+    report = evaluate_sentiment._verify_loaded_adapter_state(Model(), incoming)
+
+    assert report["loaded_tensor_count"] == 2
+    assert report["loaded_matches_received_after_dtype_cast"] is True
+    incoming["base_model.model.model.layers.0.lora_B.weight"][0, 0] = 8.0
+    with pytest.raises(RuntimeError, match="reload changed 1 tensors"):
+        evaluate_sentiment._verify_loaded_adapter_state(Model(), incoming)

@@ -1,4 +1,4 @@
-## Federated PEFT with NeMo AutoModel and Nemotron 3 Nano
+## Federated PEFT with NeMo AutoModel and Nemotron 3
 
 This example fine-tunes a Nemotron 3 language model with LoRA adapters in an NVFlare simulation. It uses the modern
 NVFlare API surface:
@@ -6,8 +6,8 @@ NVFlare API surface:
 - `job.py` builds a `FedAvgRecipe` and runs it with `SimEnv`.
 - `automodel_peft_client.py` uses explicit NVFlare Client API calls: `flare.init()`, `flare.receive()`, and
   `flare.send()`.
-- The server uses `PTFileModelPersistor` with an adapter-only PyTorch checkpoint, so it does not instantiate the
-  base language model.
+- The server uses an example-local `PTFileModelPersistor` extension with an adapter-only PyTorch checkpoint, so it
+  does not instantiate the base language model and keeps every round aggregate for inspection.
 
 The default fine-tuning target is `nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16`, the small local "Edge" Nano variant. This
 keeps the example practical on a single high-memory GPU while staying in the Nemotron 3 family. For larger Nano 30B-A3B
@@ -18,13 +18,22 @@ GPU memory to fine-tune the selected Nano model.
 Smaller NVIDIA models such as Llama-Nemotron 8B are useful, but they are not Nemotron 3 family models and are not the
 target of this example.
 
+The optional `--model_profile=lightning35` profile targets
+`nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16`. It starts from NVIDIA's Lightning LoRA recipe: Transformer Engine
+attention, PyTorch linear and expert backends, rank 8, alpha 32, dropout 0, `*.out_proj` exclusion, two repeated MTP
+iterations, MTP loss scale 0.1, and tensor/context/expert parallel sizes of one. Explicit CLI options override profile
+defaults. Omitting the profile preserves the Nano defaults.
+
+The Lightning extension keeps BF16 base weights and one GPU per client. Quantization, full-model SFT, tool-use data,
+serving optimization, and distributed training within a client are outside its scope.
+
 ## Dependencies
 
 Use a current NeMo AutoModel environment with the `automodel` CLI available. The NVIDIA NeMo AutoModel docs recommend
 either `pip install nemo-automodel` or the `nvcr.io/nvidia/nemo-automodel` container. From the NVFlare repository root:
 
 ```bash
-DOCKER_IMAGE="nvcr.io/nvidia/nemo-automodel:26.04"
+DOCKER_IMAGE="nvcr.io/nvidia/nemo-automodel:26.08"
 docker run --gpus all -it --rm --shm-size=16g --ulimit memlock=-1 --ulimit stack=67108864 \
   -v "${PWD}:/nvflare" \
   -w /nvflare/integration/nemo/examples/peft \
@@ -62,9 +71,19 @@ Split the training data into federated site files:
 python data/split_financial_phrase_data.py \
   --alpha=10.0 \
   --data_path=data/FinancialPhraseBank-v1.0/financial_phrase_bank_train.jsonl \
+  --validation_path=data/FinancialPhraseBank-v1.0/financial_phrase_bank_val.jsonl \
+  --test_path=data/FinancialPhraseBank-v1.0/financial_phrase_bank_test.jsonl \
+  --remove_train_overlap \
+  --random_seed=0 \
   --num_clients=3 \
   --out_dir=data/FinancialPhraseBank-v1.0_split
 ```
+
+The splitter groups duplicate training sentences onto one site. With `--remove_train_overlap`, it removes training rows
+whose sentence occurs in validation or test while leaving validation and test unchanged. It writes the prepared training
+file and `split_manifest.json` with source/prepared hashes, removal counts, class counts, and the sentence-disjointness
+check. Create this split once and reuse it for every training seed. Omit `--remove_train_overlap` to reject such input
+overlap instead of resolving it.
 
 ## Initial Adapter
 
@@ -90,6 +109,27 @@ python prepare_initial_adapter.py \
   --from_adapter_dir /path/to/adapter \
   --output models/nemotron3_nano_lora_init.pt
 ```
+
+This conversion command applies to the Nano path. Lightning initialization and reload use NeMo AutoModel's native
+model factory and checkpoint implementation; Hugging Face PEFT interoperability is not a supported deliverable unless
+the adapter is separately converted and tested.
+
+The Lightning profile pins the validated model and tokenizer revision by default. Set the same literal revision when
+overriding it explicitly:
+
+```bash
+MODEL_REVISION=a9904d24bcc1d289a1950fa9d2b978c47cf903b9
+python prepare_initial_adapter.py \
+  --model_profile=lightning35 \
+  --model_revision="${MODEL_REVISION}" \
+  --tokenizer_revision="${MODEL_REVISION}" \
+  --seed=42
+```
+
+Keep `MODEL_REVISION` set for Lightning initialization, training, and evaluation. An adapter initialized with pinned
+revisions requires the same revisions in later commands; omitting or changing either revision is rejected. If every
+command omits revision arguments, the model repository's current revision is used and the adapter manifest cannot
+enforce one immutable model/tokenizer snapshot.
 
 ## Run
 
@@ -123,6 +163,43 @@ python job.py \
   --no-use_chat_template \
   --initial_adapter_ckpt=models/nemotron3_nano_lora_init.pt
 ```
+
+To exercise the Lightning profile directly, run a small pinned one-client smoke. The profile supplies the published
+Lightning LoRA, backend, and optimizer defaults; the command-line values below set the workload size and GPU:
+
+```bash
+python job.py \
+  --model_profile=lightning35 \
+  --model_revision="${MODEL_REVISION}" \
+  --tokenizer_revision="${MODEL_REVISION}" \
+  --seed=42 \
+  --n_clients=1 \
+  --num_rounds=1 \
+  --num_threads=1 \
+  --gpu="[0]" \
+  --max_steps=2 \
+  --seq_length=512 \
+  --initial_adapter_ckpt=models/nemotron35_lightning_lora_init.pt
+```
+
+Evaluate its native final adapter on the validation split:
+
+```bash
+LIGHTNING_SERVER_MODEL=/tmp/nvflare/nemotron35_lightning_peft/nemotron35-lightning-peft/server/simulate_job/app_server/FL_global_model.pt
+test -s "${LIGHTNING_SERVER_MODEL}"
+python evaluate_sentiment.py \
+  --model_profile=lightning35 \
+  --model_revision="${MODEL_REVISION}" \
+  --tokenizer_revision="${MODEL_REVISION}" \
+  --adapter_dir="${LIGHTNING_SERVER_MODEL}" \
+  --validation_file=data/FinancialPhraseBank-v1.0/financial_phrase_bank_val.jsonl \
+  --validation_only \
+  --no-search_validation_bias \
+  --output_dir=models/nemotron35_lightning_exact_eval
+```
+
+This uses the supported native adapter reload path. It does not convert the Lightning adapter into a Hugging Face PEFT
+directory.
 
 To reproduce the 30B H100 result below, prepare the initial adapter from the 30B model, then run three rounds with
 300 local steps per client and a lower learning rate:
@@ -200,6 +277,9 @@ python job.py \
 
 Use `--backend=mock` for a CPU/static smoke of NVFlare adapter exchange only. This does not run NeMo AutoModel.
 
+Nano preserves its native adapter dtype during exchange by default. Add `--fp32_adapter_exchange` to a Nano `job.py`
+run when server-side FP32 accumulation is desired. Lightning exchange is always FP32.
+
 ## Adapter Continuity Across Rounds
 
 This example uses multi-round FedAvg for the federated setting. The external AutoModel process may restart on each
@@ -207,9 +287,19 @@ client task to release GPU memory, but the fine-tuning state does not restart fr
 
 1. The server sends the current global LoRA adapter at the start of every round.
 2. The client saves that adapter as `incoming_adapter`.
-3. AutoModel builds the base model, injects LoRA modules, and warm-starts those modules from `incoming_adapter`.
+3. AutoModel builds the base model and injects LoRA modules. Lightning then loads the complete incoming adapter through
+   AutoModel's native checkpointer before the first local optimizer step; Nano retains its existing loader.
 4. The client sends the full updated adapter.
 5. FedAvg averages the adapter tensors and replaces the global adapter with the aggregate.
+
+The clients validate each incoming adapter against the tensor contract created from the initial checkpoint and reject
+missing, unexpected, duplicate-normalized, shape-incompatible, non-finite, or manifest-conflicting adapters. They
+export only after successful training and record received and outgoing hashes, tensor counts, actual optimizer steps,
+update norm, and checkpoint location. When reload verification is enabled, they also record the loaded adapter hash and
+tensor count. Each local segment creates a fresh optimizer and scheduler.
+
+`--verify_adapter_reload` re-exports and reloads the incoming adapter after native load and asserts bit-equality, for
+debugging checkpointer issues; it is off by default because it doubles adapter disk I/O per round.
 
 Use `--backend=mock` for a CPU/static continuity check of the same Recipe, Client API, and full-adapter path before
 running GPU training.
