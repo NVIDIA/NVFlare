@@ -38,21 +38,23 @@ exchanged between sites or sent to a central server. This can enable collaborati
 sovereignty, intellectual property, data ownership, or the cost of moving data makes central collection impractical.
 
 **[NVIDIA FLARE](https://nvidia.github.io/NVFlare)** (**NV**IDIA **F**ederated **L**earning **A**pplication **R**untime **E**nvironment) is an open-source,
-extensible Python SDK for building these applications. NVIDIA FLARE coordinates approved code, tasks, and model state
-across participating sites while each site retains its raw dataset and controls what results may leave. Data scientists
-can adapt existing Python workflows, algorithm developers can implement new collaboration patterns, and platform teams
-can operate the same applications from local simulation through provisioned multi-site deployment.
+model- and framework-agnostic, extensible Python SDK for building these applications. NVIDIA FLARE coordinates approved
+code, tasks, and model state across participating sites while each site retains its raw dataset and controls what
+results may leave. Data scientists can adapt existing Python workflows, algorithm developers can implement new
+collaboration patterns, and platform teams can operate the same applications from local simulation through provisioned
+multi-site deployment.
 
-> **Data stays at its source.** NVIDIA FLARE moves approved computation to participating sites. Raw datasets do not
-> move to the server or to other sites; only outputs allowed by the collaboration and each site's policies leave the
-> site.
+> **Keep data at its source.** NVIDIA FLARE moves approved computation to participating sites. In a properly designed
+> and governed federation, raw datasets remain at their source and only outputs permitted by the collaboration and
+> each site's policies leave the site. Application owners and site operators define and enforce those policies for
+> their data and threat model.
 
 ## What you can do with NVIDIA FLARE
 
 | Area | Capabilities |
 |---|---|
 | Federated applications | Training and fine-tuning, evaluation and cross-site validation, analytics and statistics, site-local data processing, and custom multi-site computation |
-| Framework integrations | PyTorch, TensorFlow, JAX, scikit-learn, XGBoost, Hugging Face, NeMo, Flower, and other Python workloads |
+| Models and frameworks | Any model type or ML/AI framework through extensible Python APIs, with maintained integrations and examples for PyTorch, TensorFlow, JAX, scikit-learn, XGBoost, Hugging Face, NeMo, and Flower |
 | Algorithms and workflows | FedAvg, FedProx, FedOpt, SCAFFOLD, Ditto, cyclic and swarm learning, horizontal and vertical FL, and custom server- or client-controlled workflows |
 | Privacy, security, and governance | Site-controlled authorization, audit logging, secure provisioning, differential privacy, homomorphic encryption, private set intersection, and confidential computing options |
 | Runtime and operations | Local simulation, proof-of-concept environments, production provisioning, cloud and on-premises deployment, resiliency, monitoring, and experiment tracking |
@@ -75,6 +77,14 @@ FLARE has been applied to:
 
 These references describe particular deployments and studies. The privacy, security, governance, and model-quality
 properties of a new application still depend on its design, policies, data, and validation.
+
+### Solution ecosystem
+
+Independent software vendors (ISVs) and global systems integrators (GSIs) use NVIDIA FLARE to build federated
+platforms, governed data-collaboration solutions, and customer implementations. Public technical sessions include
+Rhino Health's federated computing platform, an Apheris and BioNeMo data-collaboration implementation, and Deloitte's
+FedRAG implementation. Explore these and other ecosystem work in the [NVIDIA FLARE webinar
+series](https://nvidia.github.io/NVFlare/webinars/) and [FLARE Day](https://nvidia.github.io/NVFlare/flareDay/).
 
 ## How NVIDIA FLARE works
 
@@ -140,6 +150,7 @@ Start with the guide for the concept and supported workflow, then use a maintain
 | Federated analytics and statistics | [Agent Skills](https://nvflare.readthedocs.io/en/main/user_guide/agent_skills/index.html) for supported tabular and image datasets, or the [Federated Statistics guide](https://nvflare.readthedocs.io/en/main/examples/federated_statistics_overview.html) for manual and custom workflows | Try the [tabular and image Agent Skills examples](./examples/hello-world/agent-skills/README.md), or use the [runnable statistics examples](https://nvidia.github.io/NVFlare/catalog/) |
 | Research and design custom FL algorithms or workflows | [Researcher Guide](https://nvflare.readthedocs.io/en/main/user_guide/researcher_guide/index.html), then the [Collaboration API guide](https://nvflare.readthedocs.io/en/main/user_guide/data_scientist_guide/collab_api.html) | [Algorithm and workflow examples](https://nvidia.github.io/NVFlare/catalog/) and [research implementations](./research/README.md) |
 | Learn a specific NVIDIA FLARE feature interactively | [Feature Tutorials](https://nvflare.readthedocs.io/en/main/tutorials.html#feature-tutorials) | Open the focused Simulator, POC, FLARE API, CLI, Recipe, or logging notebook |
+| Follow structured NVIDIA FLARE training | [Tutorials and training](https://nvflare.readthedocs.io/en/main/tutorials.html) | Choose the repository's self-paced curriculum or hosted NVIDIA DLI courses |
 | Fine-tune large language models | [Federated LLM guide](https://nvflare.readthedocs.io/en/main/programming_guide/llm_fine_tuning.html) | [Hugging Face and NeMo examples](https://nvidia.github.io/NVFlare/catalog/) |
 | Validate POC and production environments | [Deployment guide](https://nvflare.readthedocs.io/en/main/user_guide/admin_guide/deployment/overview.html) | [Hello PyTorch environment example](./examples/advanced/hello-pt-environments/README.md) |
 | Add privacy and governance controls | [Security overview](https://nvflare.readthedocs.io/en/main/system_architecture/security_overview.html) | [DP, HE, PSI, and confidential-computing examples](https://nvidia.github.io/NVFlare/catalog/) |

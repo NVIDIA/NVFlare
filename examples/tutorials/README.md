@@ -28,3 +28,11 @@ For a complete runnable workload, use the [example catalog](https://nvidia.githu
 
 * [Federated Learning with NVIDIA FLARE](./self-paced-training/README.md)
   * A five-part course covering fundamentals, system architecture, privacy and security, advanced topics, and industry applications.
+
+## NVIDIA DLI courses
+
+- [Introduction to Federated Learning with NVIDIA FLARE](https://learn.nvidia.com/courses/course-detail?course_id=course-v1:DLI+S-FX-28+V1)
+- [Decentralized AI at Scale with NVIDIA FLARE](https://learn.nvidia.com/courses/course-detail?course_id=course-v1:DLI+S-FX-29+V1)
+
+Visit the [NVIDIA FLARE developer portal](https://developer.nvidia.com/flare) for product information, tutorials,
+documentation, and developer resources.
