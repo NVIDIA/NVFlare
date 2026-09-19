@@ -25,17 +25,17 @@ site keeps control of its data and local execution.
 [![downloads](https://static.pepy.tech/badge/nvflare)](https://pepy.tech/project/nvflare)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/NVIDIA/NVFlare)
 
-## Federated computing with NVIDIA FLARE
+## Federated learning and computing with NVIDIA FLARE
 
-**Federated computing** brings computation to data distributed across multiple parties or locations. Raw records stay
-at the site where they are held instead of being collected in a central location. Participating sites run approved
-tasks locally and share only the outputs permitted by the collaboration, such as aggregate statistics, model updates,
-or evaluation metrics.
+**Federated learning** lets sites collaboratively train or evaluate models on their local data. Training and evaluation
+happen where the data resides; the underlying training examples are not exchanged between sites or sent to a central
+server. This can enable collaboration where privacy, regulation, data sovereignty, intellectual property, data
+ownership, or the cost of moving data makes central collection impractical.
 
-**Federated learning** is a form of federated computing in which sites collaboratively train or evaluate models on
-their local data. Training and evaluation happen where the data resides; the underlying training examples are not
-exchanged between sites or sent to a central server. This can enable collaboration where privacy, regulation, data
-sovereignty, intellectual property, data ownership, or the cost of moving data makes central collection impractical.
+**Federated computing** extends this approach beyond model training and evaluation by bringing approved computation to
+data distributed across multiple parties or locations. Participating sites run tasks locally and share only the outputs
+permitted by the collaboration, such as aggregate statistics, model updates, evaluation metrics, or other application
+results.
 
 **[NVIDIA FLARE](https://nvidia.github.io/NVFlare)** (**NV**IDIA **F**ederated **L**earning **A**pplication **R**untime **E**nvironment) is an open-source,
 model- and framework-agnostic, extensible Python SDK for building these applications. NVIDIA FLARE coordinates approved
