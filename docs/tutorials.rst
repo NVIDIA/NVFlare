@@ -44,6 +44,9 @@ application examples.
 Self-Paced Learning
 -------------------
 
+- Structured, self-paced learning is available through curated tutorials and
+  training paths on the `NVIDIA FLARE website
+  <https://nvidia.github.io/NVFlare>`_.
 - Extensive materials for self-paced training with NVIDIA FLARE, including detailed tutorials and resources.
 - For a comprehensive guide, see the :ref:`self_paced_training` documentation.
 - 12-chapter course: in-depth overview of FLARE, covering running federated learning applications, algorithms, system architecture, experimental tracking, system monitoring, and industrial applications.
@@ -53,3 +56,12 @@ Self-Paced Learning
 .. note::
 
    The self-paced training notebooks were developed with NVFlare 2.6. Not all content reflects the latest APIs; some examples may need adjustments for newer versions.
+
+NVIDIA DLI Courses
+------------------
+
+- `Introduction to Federated Learning with NVIDIA FLARE <https://learn.nvidia.com/courses/course-detail?course_id=course-v1:DLI+S-FX-28+V1>`_
+- `Decentralized AI at Scale with NVIDIA FLARE <https://learn.nvidia.com/courses/course-detail?course_id=course-v1:DLI+S-FX-29+V1>`_
+
+Visit the `NVIDIA FLARE developer portal <https://developer.nvidia.com/flare>`_
+for product information, tutorials, documentation, and developer resources.

@@ -197,9 +197,15 @@ Use the resource that matches what you want to do:
 - :ref:`Self-Paced Training <self_paced_training>` provides a sequential
   curriculum across FL concepts, system operation, security, algorithms, and
   industry applications.
+- NVIDIA DLI offers hosted courses for `Introduction to Federated Learning with
+  NVIDIA FLARE <https://learn.nvidia.com/courses/course-detail?course_id=course-v1:DLI+S-FX-28+V1>`_
+  and `Decentralized AI at Scale with NVIDIA FLARE
+  <https://learn.nvidia.com/courses/course-detail?course_id=course-v1:DLI+S-FX-29+V1>`_.
 
 The `NVIDIA FLARE website <https://nvidia.github.io/NVFlare>`_ brings these
-learning resources together with research, webinars, and events.
+learning resources together with research, webinars, and events. Visit the
+`NVIDIA FLARE developer portal <https://developer.nvidia.com/flare>`_ for the
+broader product and developer entry point.
 
 From an installed NVFLARE package, list and retrieve curated examples with:
 
