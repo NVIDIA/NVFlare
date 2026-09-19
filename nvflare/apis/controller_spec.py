@@ -53,6 +53,11 @@ class TaskOperatorKey:
     WAIT_TIME_AFTER_MIN_RESPS = "wait_time_after_min_received"
 
 
+class TaskPropKey:
+
+    RESULT_CB_LOG_CLIENT_NAMES = "result_cb_log_client_names"
+
+
 class OperatorMethod:
 
     BROADCAST = "bcast"

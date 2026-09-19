@@ -15,6 +15,7 @@
 from typing import Optional
 
 from nvflare.apis.client import Client
+from nvflare.apis.controller_spec import ClientTask
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
@@ -66,6 +67,9 @@ class PSIController(ErrorHandlingController):
         self, client: Client, task_name: str, client_task_id: str, result: Shareable, fl_ctx: FLContext
     ):
         pass
+
+    def handle_client_errors(self, rc: str, client_task: ClientTask, fl_ctx: FLContext):
+        super().handle_client_errors(rc, client_task, fl_ctx, client_label="a PSI participant")
 
     def load_psi_workflow(self, fl_ctx: FLContext) -> PSIWorkflow:
         engine = fl_ctx.get_engine()
