@@ -4,15 +4,25 @@
 
 Federate familiar training code. Validate it locally, then deploy the same workload securely across sites.
 
+[Website](https://nvidia.github.io/NVFlare) |
 [Documentation](https://nvflare.readthedocs.io/en/main/) |
 [Quick Start](https://nvflare.readthedocs.io/en/main/quickstart.html) |
 [Examples](https://nvidia.github.io/NVFlare/catalog/) |
 [Discussions](https://github.com/NVIDIA/NVFlare/discussions)
 
+[Paper](https://arxiv.org/abs/2210.13291) |
+[Blogs](https://developer.nvidia.com/blog/tag/federated-learning) |
+[Talks & Papers](https://nvflare.readthedocs.io/en/main/publications_and_talks.html) |
+[Webinars](https://nvidia.github.io/NVFlare/webinars) |
+[Research](./research/README.md)
+
 [![Blossom-CI](https://github.com/NVIDIA/nvflare/workflows/Blossom-CI/badge.svg?branch=main)](https://github.com/NVIDIA/nvflare/actions)
 [![documentation](https://readthedocs.org/projects/nvflare/badge/?version=main)](https://nvflare.readthedocs.io/en/main/?badge=main)
-[![pypi](https://badge.fury.io/py/nvflare.svg)](https://badge.fury.io/py/nvflare)
 [![license](https://img.shields.io/badge/License-Apache%202.0-brightgreen.svg)](./LICENSE)
+[![pypi](https://badge.fury.io/py/nvflare.svg)](https://badge.fury.io/py/nvflare)
+[![pyversion](https://img.shields.io/pypi/pyversions/nvflare.svg)](https://badge.fury.io/py/nvflare)
+[![downloads](https://static.pepy.tech/badge/nvflare)](https://pepy.tech/project/nvflare)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/NVIDIA/NVFlare)
 
 NVIDIA FLARE is an open-source SDK for federated learning and federated compute. It lets data scientists adapt
 PyTorch, TensorFlow, scikit-learn, XGBoost, and other Python workflows while each participating site keeps control of
