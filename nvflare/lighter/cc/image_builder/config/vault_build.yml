@@ -1,0 +1,27 @@
+# Folder containing profile_set.json, or an immutable generic CVM registry reference.
+cvm_image: ../target/cvm_cpu-2026.09
+# cvm_image: registry.example.org/cvm/cpu-2026.09@sha256:<64-hex-manifest-digest>
+docker_archive: ../inputs/application.tar
+image_id: 'sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+# Optional: omit to build for every platform available in cvm_image.
+# platforms: [intel_tdx]
+requires_gpu: false
+vault_drive_size: 8
+applog_drive_size: 1
+user_config_drive_size: 1
+user_data_drive_size: 1
+allowed_ports: [8080]
+allowed_out_ports: [443, 8443]
+# Optional application_files (encrypted) and clear input directories.
+# application_files: ../inputs/application-files
+# user_config: ../inputs/user-config
+# user_data: ../inputs/user-data
+container:
+  # Omit entrypoint and command to preserve the image defaults.
+  ports: [{host: 8080, container: 8080}]
+  env: {}
+  volumes: []
+  tee_device: false
+services: []
+hosts_entries: {}
+# Shared trustee settings belong in the project's cvm_project.yml.

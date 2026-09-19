@@ -1,0 +1,4 @@
+trustee:
+  url: https://trustee.example.org:8443
+  ca: ./credentials/kbs-ca.pem
+  admin_token_file: ./credentials/kbs-resource-token.jwt

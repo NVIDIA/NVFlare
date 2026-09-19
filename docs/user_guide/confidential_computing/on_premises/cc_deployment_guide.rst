@@ -4,705 +4,98 @@
 FLARE Confidential Federated AI Deployment Guide
 ################################################
 
-Overview
-========
+NVFlare uses CVM Builder to deploy a server and clients inside confidential VMs
+on Intel TDX or AMD SEV-SNP hosts. GPU clients additionally require a supported
+NVIDIA confidential-computing GPU and a GPU-enabled CVM profile.
 
-This guide provides step-by-step instructions for deploying NVIDIA FLARE with Confidential Computing (CC) capabilities on-premises using AMD SEV-SNP CPUs and NVIDIA GPUs.
+CVM Builder is included in the NVFlare source tree at
+``nvflare/lighter/cc/image_builder``. The deployment has two stages:
 
-The deployment involves building a Confidential VM (CVM) image that contains the FLARE application, provisioning the system for participants, and launching the CVMs on each site.
+1. Build, validate and approve a reusable generic CVM for each platform and profile.
+2. Provision NVFlare participants and seal each participant's signed startup kit
+   and Docker application into a fresh encrypted vault using those approved CVMs.
 
-Deployment Environment
-======================
+Each participant receives a complete OCI delivery containing the generic CVM,
+application vault, sidecars and launch scripts. Application updates reuse the
+approved generic image and create a new vault.
 
-This guide covers the following deployment configuration:
+Prepare the hosts and key service
+================================
 
-- **Platform**: On-Premise AMD CVM with NVIDIA GPU
-- **CPU**: AMD SEV-SNP (Secure Encrypted Virtualization - Secure Nested Paging)
-- **GPU**: NVIDIA GPU with Confidential Computing support (optional)
-- **Host OS**: Ubuntu 25.04
+Configure a trusted Linux build worker with the builder's host tools and Python
+requirements. Hardware finalization and launch require a host supporting the
+selected TEE. The tested builder environment is Ubuntu 26.04; package, firmware,
+QEMU, driver and attester pins belong to each reviewed profile.
 
-Prerequisites
-=============
-For a complete and thorough setup guide covering Hardware IT, Host OS Administration, and VM Administration, please refer to `NVIDIA's Deployment Guide for SecureAI <https://docs.nvidia.com/cc-deployment-guide-snp.pdf>`_.
+Use these guides in ``nvflare/lighter/cc/image_builder``:
 
-Hardware Requirements
----------------------
+- ``BUILD_GUIDE.md``: build-worker prerequisites, generic CVM construction,
+  hardware finalization, approval and application-vault construction.
+- ``TRUSTEE_GUIDE.md``: the pinned Trustee deployment, immutable appraisal
+  policies, mutual TLS, administrator access and vault-key lifecycle.
+- ``USER_GUIDE.md``: delivery verification, host preparation, launch and shutdown.
+- ``VALIDATION.md``: recorded test results and remaining production acceptance.
 
-**CPU Requirements**
+Build and approve the generic images before provisioning participants. CPU-only
+and GPU-enabled images have distinct profile contracts; select the image whose
+capabilities match the participant. Each approved platform bundle has its own
+measurements and key-resource namespace.
 
-- AMD CPU with SEV-SNP enabled
-- AMD firmware supporting SEV-SNP
+Prepare the application and project
+===================================
 
-**GPU Requirements (Optional)**
+Build a Linux amd64 Docker image containing NVFlare, Bash and the application's
+code and dependencies. Save it with ``docker save``. NVFlare derives the image ID
+from the archive; the archive must contain exactly one distinct image.
 
-- NVIDIA GPU with Confidential Computing support (H100, Blackwell)
+Use the example in ``examples/advanced/cc_provision/cvm_builder``. It configures
+an Intel TDX server and an AMD SEV-SNP GPU client. Update:
 
-**Host System**
+- ``project.yml``: participant names, the builder directory, each participant's
+  approved ``cvm_image``, Docker archive, GPU requirements and network ports.
+- ``cvm_project.yml``: the shared key-service endpoint and existing builder
+  credentials. Relative credential paths resolve against this file.
 
-- Host OS: Ubuntu 25.04
+``cvm_image`` accepts a pulled generic-image folder or an immutable OCI registry
+reference. The selected platforms default to those in the image. See
+:ref:`cvm_builder` for the complete configuration and validation rules.
 
-Software Requirements
----------------------
+Provision and distribute
+========================
 
-**Required Software**
-
-- Ubuntu 25.04
-- QEMU (for virtualization)
-- Docker
-
-**NVFlare Components**
-
-1. **NVFlare Source Code**
-
-   Clone from GitHub:
-
-   .. code-block:: bash
-
-      git clone https://github.com/NVIDIA/NVFlare.git
-
-2. **Image Builder**
-
-   The image builder is the tool that constructs CVM images. It is shipped as part of the NVFlare source
-   tree under ``nvflare/lighter/cc/image_builder/`` and contains the ``cvm_build.sh`` script along with
-   Ansible playbooks and helper scripts.
-
-   - Obtain the image builder code from the NVFlare team
-   - Contact: federatedlearning@nvidia.com
-   - Install location: ``~/cc/image_builder``
-
-   The path to ``cvm_build.sh`` inside this directory is referenced in ``project.yml`` as
-   ``build_image_cmd`` (see Step 2.1 of the Deployment Workflow).
-
-3. **Base Images**
-
-   - Build the Ubuntu base image and firmware following :ref:`base_image_build`
-   - Copy to: ``~/cc/image_builder/base_images``
-
-4. **KBS Client**
-
-   - Build the kbs-client binary following :ref:`base_image_build`
-   - Recommended commit: ``a2570329cc33daf9ca16370a1948b5379bb17fbe``
-   - Copy the kbs-client and credentials to: ``~/cc/image_builder/binaries``
-
-5. **SNPGuest Tool**
-
-   - Build the snpguest binary following :ref:`base_image_build`
-   - Copy snpguest and credentials to: ``~/cc/image_builder/binaries``
-
-**AMD Firmware Installation**
-
-See :ref:`base_image_build` for full instructions on fetching and installing the ``OVMF.amdsev.fd`` firmware.
-
-The firmware will be installed at ``/usr/share/ovmf/OVMF.amdsev.fd``.
-
-**Policy Files Setup**
-
-.. note::
-
-   The current KBS doesn't support updating individual rules. You must update the entire rule file when adding a new CVM.
-
-Create the policy directory and obtain the required files:
+Run provisioning on the prepared Linux worker:
 
 .. code-block:: bash
 
-   mkdir -p /shared/policy
+   cd examples/advanced/cc_provision/cvm_builder
+   nvflare provision -p project.yml -w ./workspace
 
-Place the following files in ``/shared/policy`` (obtain from the NVFlare team):
+The ``cvm_vault`` adapter invokes ``cvmctl vault`` after startup-kit generation
+and signing finish. Deliveries default to
+``workspace/cvm_project/prod_NN/<participant>/``. The administrator's ordinary
+startup kit remains in the same production directory. Private build inputs,
+logs and recovery records are retained separately.
 
-- ``policy.rego`` - Master policy file
-- ``set-policy.sh`` - Policy update script
-- ``private.key`` - Authentication key
+Read the returned OCI archive paths and digests. Transfer the complete archives
+offline or publish them using the included ``cvmctl publish``. Recipients
+use ``cvmctl pull`` to verify and materialize a delivery from its archive or
+immutable registry reference. Follow ``USER_GUIDE.md`` for the exact commands.
 
-Project Admin Requirements
----------------------------
-
-As the project admin, you need to:
-
-1. **Understand Trustee Service**
-
-   - Learn about `Trustee Service <https://www.redhat.com/en/blog/introducing-confidential-containers-trustee-attestation-services-solution-overview-and-use-cases>`_
-   - Review the `Trustee documentation <https://github.com/confidential-containers/trustee?tab=readme-ov-file>`_
-
-2. **Deploy Trustee KBS Server**
-
-   Follow the :ref:`hashicorp_vault_trustee_deployment` guide to deploy the Trustee Key Broker Service with HashiCorp Vault.
-
-Deployment Workflow
+Launch and run a job
 ===================
 
-The deployment consists of five main steps:
-
-1. **Build Docker Image** - Create the application container
-2. **Provision** - Generate CVM images and startup kits
-3. **Distribute** - Send startup kits to each site
-4. **User Data** - Prepare user data, optional
-5. **Launch** - Start CVMs at each site
-
-Step 1: Build Docker Image
----------------------------
-
-The CC image builder supports any generic workload. For NVFlare, create a Docker image with the application pre-installed.
-
-**Example Dockerfile:**
-
-.. code-block:: dockerfile
-
-   ARG BASE_IMAGE=python:3.12
-
-   FROM ${BASE_IMAGE}
-
-   ENV PYTHONDONTWRITEBYTECODE=1
-   ENV PIP_NO_CACHE_DIR=1
-
-   RUN pip install -U pip && \
-       pip install nvflare~=2.7.0rc
-
-   COPY code/ /local/custom
-   COPY requirements.txt .
-   RUN pip install -r requirements.txt
-
-   ENTRYPOINT ["/user_config/nvflare/startup/sub_start.sh", "--verify"]
-
-.. note::
-
-   For CC jobs, custom code at runtime is not allowed. All application code must be included in the Docker image.
-   NVFlare checks the component allow-list before loading any components. If your job uses classes that are
-   included in the CVM image but are not yet allowed, add those class paths to ``class_allow_list`` in the site's
-   ``cc_config``. The provisioner extends the generated ``local/resources.json.default`` for that participant before
-   the startup kit is signed and packaged.
-
-   The ``cc_config.class_allow_list`` value is additive: list only the extra classes or package prefixes needed by
-   your CC image. The provisioner keeps the built-in NVFlare allow-list entries from ``resources.json.default`` and
-   appends the CC config entries that are not already present.
-
-   You can put the list directly in the referenced CC config file:
-
-   .. code-block:: yaml
-
-      compute_env: onprem_cvm
-      cc_cpu_mechanism: amd_sev_snp
-      role: client
-
-      class_allow_list:
-        - hello_cyclic.app.custom.trainer.SimpleTrainer
-        - hello_cyclic.
-
-   Use exact class paths or package prefixes ending with ``.``. For example,
-   ``hello_cyclic.app.custom.trainer.SimpleTrainer`` allows one class, and ``hello_cyclic.`` allows classes under
-   that package prefix.
-
-**Build and save the image:**
-
-.. code-block:: bash
-
-   docker build -t nvflare-site:latest .
-   docker save nvflare-site:latest | gzip > nvflare-site.tar.gz
-
-Step 2: Provision
------------------
-
-Navigate to the example directory:
-
-.. code-block:: bash
-
-   cd NVFlare/examples/advanced/cc_provision
-
-**2.1 Configure Project**
-
-Edit ``project.yml`` and update the ``build_image_cmd`` path:
-
-.. code-block:: yaml
-
-   packager:
-     path: nvflare.lighter.cc_provision.impl.onprem_packager.OnPremPackager
-     args:
-       # Update this path to your image builder location
-       build_image_cmd: ~/nvflare-github/nvflare/lighter/cc/image_builder/cvm_build.sh
-
-**2.2 Configure Server**
-
-Edit ``cc_server1.yml`` and set the ``docker_archive`` path:
-
-.. code-block:: yaml
-
-   docker_archive: ~/NVFlare/examples/advanced/cc_provision/docker/nvflare-site.tar.gz
-
-**2.3 Configure Client**
-
-Edit ``cc_site-1.yml``:
-
-1. Set the ``docker_archive`` path:
-
-   .. code-block:: yaml
-
-      docker_archive: ~/NVFlare/examples/advanced/cc_provision/docker/nvflare-site.tar.gz
-
-2. If the server name is not a public domain, add host entries:
-
-   .. code-block:: yaml
-
-      host_entries:
-        server1: 10.176.4.244
-
-
-**2.4 Run Provision**
-
-Before running provisioning, ensure NBD (Network Block Device) devices are available, as the builder uses
-them to access disk images:
-
-.. code-block:: bash
-
-   sudo modprobe nbd max_part=8
-
-.. code-block:: bash
-
-   nvflare provision -p project.yml
-
-.. note::
-
-   Provisioning takes approximately 1000 seconds to build each CVM image.
-
-**2.5 Output**
-
-Startup packages are generated in:
-
-.. code-block:: text
-
-   ./workspace/example_project/prod_00/
-      server1/server1.tgz
-      site-1/site-1.tgz
-      admin@nvidia.com/
-
-Step 3: Distribute
--------------------
-
-Distribute the generated startup kits to each participant:
-
-- Send ``server1.tgz`` to the server site
-- Send ``site-1.tgz`` to client site-1
-- Admin keeps the admin package locally
-
-CVM Startup Kit Contents
-^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Each startup kit (e.g., ``server1.tgz``) contains:
-
-.. code-block:: bash
-
-   $ tar -zxvf server1.tgz
-   $ ls server1/cvm_885fe8f608b3/
-
-.. list-table::
-   :header-rows: 1
-   :widths: 30 70
-
-   * - File
-     - Description
-   * - ``applog.qcow2``
-     - Application log storage (unencrypted, can be mounted and inspected)
-   * - ``crypt_root.qcow2``
-     - Encrypted root filesystem (requires decryption key)
-   * - ``initrd.img``
-     - Initramfs with InitApp for attestation
-   * - ``launch_vm.sh``
-     - CVM launch script
-   * - ``OVMF.amdsev.fd``
-     - AMD SEV-SNP firmware with kernel-hashes support
-   * - ``README.txt``
-     - Documentation
-   * - ``user_config.qcow2``
-     - User configuration storage containing NVFlare startup kits
-   * - ``user_data.qcow2``
-     - User data storage (placeholder, can be extended)
-   * - ``vmlinuz``
-     - Linux kernel
-
-.. note::
-
-   The ``user_config.qcow2`` and ``user_data.qcow2`` drives are not encrypted. When a provisioned NVFlare startup
-   script is launched from ``/user_config``, runtime artifacts such as model checkpoints are written to a namespaced
-   encrypted workspace under ``/vault/workspace``. Set ``NVFL_WORKSPACE`` before launching the script to choose a
-   different encrypted workspace path.
-
-Step 4: User Data
------------------
-
-This step is optional. It describes how to prepare user data and make it available inside both the CVM and the workload container.
-If your workload does not require user data, you may skip this step.
-
-**4.1 User Data Drive**
-
-The CVM distribution package includes a user-data drive image named user_data.qcow2.
-This image contains a single ext4 filesystem that occupies the entire drive (no partitions).
-
-The drive is not encrypted. You can access it by attaching it to a VM or by using the qemu-nbd command. For example:
-
-.. code-block:: bash
-
-    sudo qemu-nbd --connect=/dev/nbd0 user_data.qcow2
-    sudo mount /dev/nbd0 /mnt
-
-  .. note::
-    
-    Please unmount the drive after usage by running:
-    
-    .. code-block:: bash
-    
-        sudo umount /mnt
-        sudo qemu-nbd --disconnect /dev/nbd0
-
-**4.2 Local Data**
-
-If your data resides on the local host, it can be copied directly into the user_data drive. The data is
-available in CVM and container as ``/user_data``.
-
-For example:
-
-.. code-block:: bash
-
-    cp -r /training_data /mnt
-
-The user_data.qcow2 image included with the package is a placeholder and has a very small capacity (1 GB).
-You can resize the drive and expand the filesystem using the following commands:
-
-.. code-block:: bash
-
-    # Add 20GB to the drive
-    qemu-img resize user_data.qcow2 +20G
-
-    # Extend filesystem
-    sudo qemu-nbd --connect=/dev/nbd0 user_data.qcow2
-    sudo e2fsck -f /dev/nbd0
-    sudo resize2fs /dev/nbd0
-    sudo qemu-nbd --disconnect /dev/nbd0
-
-**4.3 Remote Data using NFS**
-
-If your data is hosted on an NFS server, the CVM can automatically mount it when a file named ``ext_mount.conf``
-is present at the root of the user_data.qcow2 drive.
-
-The mounted data is available in CVM and container as ``/user_data/mnt``.
-
-The file must contain a single line specifying the exported server path, for example:
-
-.. code-block:: bash
-
-    nfs-server.example.com:/training_data
-
-By default, the CVM blocks all outbound network traffic. To allow NFS and port-mapper communication, the following
-outgoing ports must be enabled in the CVM site configuration:
-
-.. code-block:: yaml
-
-    allowed_out_ports: [111, 2049]
-
-This must be done in Step 2.3 of the provisioning process.
-
-Because the CVM cannot control the source port used for NFS connections, secure NFS exports are not supported.
-The server export must therefore be configured as insecure:
-
-.. code-block:: bash
-
-    /training_data *(rw,sync,no_subtree_check,insecure)
-
-For details, please refer to `exports man page <https://manpages.ubuntu.com/manpages/jammy/man5/exports.5.html>`_
-
-Step 5: Launch CVMs
---------------------
-
-**5.1 Launch Server**
-
-On the server machine:
-
-.. code-block:: bash
-
-   tar -zxvf server1.tgz
-   cd server1/cvm_*
-   ./launch_vm.sh
-
-**5.2 Launch Client**
-
-On each client machine:
-
-.. code-block:: bash
-
-   tar -zxvf site-1.tgz
-   cd site-1/cvm_*
-   ./launch_vm.sh
-
-The server and clients will automatically start the NVFlare system inside their respective CVMs.
-
-**5.3 Start Admin Console**
-
-On the admin machine:
-
-.. code-block:: bash
-
-   cd NVFlare/examples/advanced/cc_provision
-
-   # Copy jobs to admin transfer folder
-   cp -r jobs/* ./workspace/example_project/prod_00/admin@nvidia.com/transfer/
-
-.. note::
-
-   If the server name is not a public domain, add an entry in ``/etc/hosts`` on the admin machine.
-
-Start the admin console:
-
-.. code-block:: bash
-
-   ./workspace/example_project/prod_00/admin@nvidia.com/startup/fl_admin.sh
-
-**5.4 Submit Job**
-
-In the admin console:
-
-.. code-block:: bash
-
-   submit_job hello-pt_cifar10_fedavg
-
-Configuration Reference
-=======================
-
-CC Configuration Parameters
----------------------------
-
-.. list-table::
-   :header-rows: 1
-   :widths: 25 25 50
-
-   * - Parameter
-     - Example Value
-     - Description
-   * - ``compute_env``
-     - ``onprem_cvm``
-     - Computation environment type
-   * - ``cc_cpu_mechanism``
-     - ``amd_sev_snp``
-     - CPU confidential computing mechanism
-   * - ``role``
-     - ``server`` / ``client``
-     - Role in the NVFlare system
-   * - ``root_drive_size``
-     - ``45`` (GB)
-     - Size of the root filesystem drive
-   * - ``applog_drive_size``
-     - ``1`` (GB)
-     - Size of the application log drive
-   * - ``user_config_drive_size``
-     - ``1`` (GB)
-     - Size of the user configuration drive
-   * - ``user_data_drive_size``
-     - ``1`` (GB)
-     - Size of the user data drive
-   * - ``docker_archive``
-     - ``~/path/to/app.tar.gz``
-     - Path to Docker image archive (created with ``docker save``)
-   * - ``user_config``
-     - Key-value pairs
-     - Paths mounted in container at ``/user_config/[key]``
-   * - ``allowed_ports``
-     - List of ports
-     - Inbound ports to whitelist
-   * - ``allowed_out_ports``
-     - List of ports
-     - Outbound ports to whitelist
-   * - ``cc_issuers``
-     - List of authorizers
-     - CC attestation token issuers
-   * - ``class_allow_list``
-     - List of class paths
-     - Additive list of extra component classes or package prefixes allowed for non-BYOC CC jobs
-   * - ``token_expiration``
-     - ``100`` (seconds)
-     - Token validity duration (must be < ``check_frequency``)
-   * - ``check_frequency``
-     - ``120`` (seconds)
-     - Attestation check interval
-
-Complete Configuration Examples
---------------------------------
-
-**Project Configuration (project.yml)**
-
-.. code-block:: yaml
-
-   api_version: 3
-   name: example_project
-   description: NVIDIA FLARE sample project yaml file
-
-   participants:
-     - name: server1
-       type: server
-       org: nvidia
-       fed_learn_port: 8002
-       cc_config: cc_server1.yml
-     - name: site-1
-       type: client
-       org: nvidia
-       cc_config: cc_site-1.yml
-     - name: admin@nvidia.com
-       type: admin
-       org: nvidia
-       role: project_admin
-
-   builders:
-     - path: nvflare.lighter.impl.workspace.WorkspaceBuilder
-     - path: nvflare.lighter.impl.static_file.StaticFileBuilder
-       args:
-         config_folder: config
-     - path: nvflare.lighter.impl.cert.CertBuilder
-     - path: nvflare.lighter.cc_provision.impl.cc.CCBuilder
-     - path: nvflare.lighter.impl.signature.SignatureBuilder
-
-   packager:
-     path: nvflare.lighter.cc_provision.impl.onprem_packager.OnPremPackager
-     args:
-       build_image_cmd: ~/nvflare-github/nvflare/lighter/cc/image_builder/cvm_build.sh
-
-**Server Configuration (cc_server1.yml)**
-
-.. code-block:: yaml
-
-   compute_env: onprem_cvm
-   cc_cpu_mechanism: amd_sev_snp
-   role: server
-
-   # All drive sizes are in GB
-   root_drive_size: 45
-   applog_drive_size: 1
-   user_config_drive_size: 1
-   user_data_drive_size: 1
-
-   # Docker image archive saved using:
-   # docker save <image_name> | gzip > app.tar.gz
-   docker_archive: ~/NVFlare/examples/advanced/cc_provision/docker/nvflare-site.tar.gz
-
-   # Will be mounted inside docker at "/user_config/nvflare"
-   user_config:
-     nvflare: /tmp/startup_kits
-
-   # Inbound ports whitelist
-   allowed_ports:
-     - 8002
-
-   # Outbound ports whitelist
-   allowed_out_ports:
-     - 443    # HTTPS
-     - 8002   # NVFlare
-     - 8999   # Trustee KBS
-
-   cc_issuers:
-     - id: snp_authorizer
-       path: nvflare.app_opt.confidential_computing.snp_authorizer.SNPAuthorizer
-       token_expiration: 100  # seconds, must be < check_frequency
-
-   cc_attestation:
-     check_frequency: 120  # seconds
-
-**Client Configuration (cc_site-1.yml)**
-
-.. code-block:: yaml
-
-   compute_env: onprem_cvm
-   cc_cpu_mechanism: amd_sev_snp
-   role: client
-
-   class_allow_list:
-     - hello_cyclic.app.custom.trainer.SimpleTrainer
-     - hello_cyclic.
-
-   # All drive sizes are in GB
-   root_drive_size: 45
-   applog_drive_size: 1
-   user_config_drive_size: 1
-   user_data_drive_size: 1
-
-   # Docker image archive
-   docker_archive: ~/NVFlare/examples/advanced/cc_provision/docker/nvflare-site.tar.gz
-
-   # For non-public domain server names
-   hosts_entries:
-     server1: 10.176.200.152
-
-   # Will be mounted inside docker at "/user_config/nvflare"
-   user_config:
-     nvflare: /tmp/startup_kits
-
-   cc_issuers:
-     - id: snp_authorizer
-       path: nvflare.app_opt.confidential_computing.snp_authorizer.SNPAuthorizer
-       token_expiration: 100  # seconds, must be < check_frequency
-
-   cc_attestation:
-     check_frequency: 120  # seconds
-
-Troubleshooting
-===============
-
-Common Issues
--------------
-
-**Issue: CVM fails to boot**
-
-- Check the ``applog.qcow2`` for boot logs
-- Verify firmware is correctly installed
-- Ensure kernel-hashes is enabled in the firmware
-
-**Issue: Attestation failure**
-
-- Verify Trustee KBS server is accessible
-- Check network connectivity to attestation service
-- Ensure correct ports are whitelisted in ``allowed_out_ports``
-
-**Issue: Server/Client connection fails**
-
-- Verify ``/etc/hosts`` entries if not using public domain
-- Check firewall rules
-- Ensure correct ports are configured in both server and client
-
-Notes on using NVIDIA GPU CC
-============================
-
-1. For any site that supports GPU CC, you can add NVFLARE's `GPUAuthorizer` to the `cc_site.yml` configuration file:
-
-.. code-block:: yaml
-
-    cc_issuers:
-      ...
-      - id: gpu_authorizer
-        path: nvflare.app_opt.confidential_computing.gpu_authorizer.GPUAuthorizer
-        token_expiration: 100 # seconds, needs to be less than check_frequency
-
-2. The NVFlare `GPUAuthorizer` uses NVIDIA's `nv_attestation_sdk`.
-   When building the NVFlare app docker image, make sure to include it in the requirements, for example:
-
-.. code-block:: bash
-
-    torch
-    torchvision
-    tensorboard
-    tensorflow
-    safetensors
-    nv_attestation_sdk
-
-3. To get GPU working in CVM, you need to ensure:
-       - No GPU driver installed on host, otherwise the passthrough will fail.
-       - You need to create VFIO by running the following command:
-
-.. code-block:: bash
-
-    NVIDIA_GPU=$(lspci -d 10de: | awk '/NVIDIA/{print $1}')
-    NVIDIA_PASSTHROUGH=$(lspci -n -s $NVIDIA_GPU | awk -F: '{print $4}' | awk '{print $1}')
-    echo 10de $NVIDIA_PASSTHROUGH > /sys/bus/pci/drivers/vfio-pci/new_id
-
-4. For more details, please refer to `NVIDIA's Deployment Guide for SecureAI <https://docs.nvidia.com/cc-deployment-guide-snp.pdf>`_
-
-Next Steps
-==========
-
-After successfully deploying the system:
-
-- Review the :ref:`NVFlare CC Architecture <cc_architecture>` for understanding the security model
-- Consult :ref:`confidential_computing_attestation` for attestation details
-- Explore advanced configuration options for your specific use case
+On each configured TEE host, enter the materialized participant directory and
+run ``sudo ./launch_cvm.sh``. The launcher discovers the included CVM bundle.
+The verified guest attests, unlocks the vault and starts the NVFlare participant;
+GPU profiles also require successful GPU appraisal before workload execution.
+
+Start the ordinary NVFlare administrator console from its generated kit, verify
+that the server and clients are connected, and submit a job whose code and
+dependencies are present in the application image. Inspect the job results and
+participant logs. ``/applog`` is clear writable output; ``user_config`` and
+``user_data`` are clear, read-only inputs. Put confidential data in the vault.
+
+Stop each delivery with ``sudo ./shutdown_cvm.sh``. For failed builds, retain the
+logs and recovery records and resolve uncertain key uploads before deliberately
+starting another build. Production approval requires the exact bundle's complete
+acceptance evidence; a successful candidate-mode test is not an approval.

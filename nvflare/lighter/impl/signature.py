@@ -59,3 +59,19 @@ class SignatureBuilder(Builder):
                 # else: plain non-CC, non-HE — no signature.json generated.
                 # mTLS is the trust anchor; signature.json adds no security and would
                 # prevent local config customization and break the Manual Workflow.
+
+
+class VaultSignatureBuilder(Builder):
+    """Sign selected vault workspaces after config finalization, before relocation.
+
+    Insert immediately after WorkspaceBuilder: reverse finalization then signs
+    files such as comm_config.json that other builders create in finalize().
+    """
+
+    def finalize(self, project: Project, ctx: ProvisionContext):
+        root_pri_key = ctx.get(CtxKey.ROOT_PRI_KEY)
+        if not root_pri_key:
+            raise RuntimeError(f"missing {CtxKey.ROOT_PRI_KEY} in ProvisionContext")
+        for participant in project.get_all_participants():
+            if participant.get_prop(PropKey.CVM_VAULT):
+                sign_folders(ctx.get_ws_dir(participant), root_pri_key, signature_file=ProvFileName.SIGNATURE_JSON)

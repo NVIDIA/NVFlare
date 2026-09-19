@@ -1,0 +1,6 @@
+# Project-wide settings for the existing CoCo Trustee deployment.
+# The operator issues a scoped bearer JWT; keep it on the trusted build host.
+trustee:
+  url: https://trustee.example.org:8443
+  ca: ./inputs/kbs-ca.pem
+  admin_token_file: ./inputs/kbs-resource-token.jwt

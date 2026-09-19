@@ -1,0 +1,34 @@
+#!/bin/sh
+# initramfs local-top: measured command line -> read-only verified root only.
+set -eu
+case "${1:-}" in prereqs) exit 0;; esac
+. /scripts/functions
+root_hash= hash_offset=
+root_hash_seen=false hash_offset_seen=false
+for word in $(cat /proc/cmdline); do
+    case "$word" in
+        roothash=*)
+            [ "$root_hash_seen" = false ] || panic "Duplicate verity root hash"
+            root_hash_seen=true
+            root_hash=${word#roothash=};;
+        verity_hash_offset=*)
+            [ "$hash_offset_seen" = false ] || panic "Duplicate verity hash offset"
+            hash_offset_seen=true
+            hash_offset=${word#verity_hash_offset=};;
+    esac
+done
+case "$root_hash" in *[!0-9a-f]*|'') panic "Missing verity root hash";; esac
+[ "${#root_hash}" -eq 64 ] || panic "Invalid verity root hash"
+case "$hash_offset" in *[!0-9]*|'') panic "Invalid verity hash offset";; esac
+modprobe dm_verity
+wait_for_udev 20
+count=0
+root_device=/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_cvm-root
+while [ ! -b "$root_device" ]; do
+    count=$((count + 1))
+    [ "$count" -lt 100 ] || panic "Root disk missing"
+    sleep 0.1
+done
+veritysetup open "$root_device" verity_root "$root_device" "$root_hash" \
+    --hash-offset="$hash_offset" --data-block-size=4096 --hash-block-size=4096 \
+    --panic-on-corruption || panic "Verified root activation failed"

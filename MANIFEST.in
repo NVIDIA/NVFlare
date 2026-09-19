@@ -7,3 +7,22 @@ global-exclude *.py[co]
 global-exclude __pycache__
 recursive-include nvflare/lighter/templates *
 recursive-include nvflare/tool/deploy/templates *
+# Ship the standalone builder and its complete source-provenance inputs.
+include nvflare/lighter/cc/image_builder/.gitignore
+include nvflare/lighter/cc/image_builder/cvm/.gitignore
+include nvflare/lighter/cc/image_builder/cvmctl
+include nvflare/lighter/cc/image_builder/requirements.txt
+include nvflare/lighter/cc/image_builder/*.md
+include nvflare/lighter/cc/image_builder/*.yml
+recursive-include nvflare/lighter/cc/image_builder/cvm *.py *.patch
+include nvflare/lighter/cc/image_builder/config/*.yml
+include nvflare/lighter/cc/image_builder/config/*.json
+include nvflare/lighter/cc/image_builder/config/*.rego
+include nvflare/lighter/cc/image_builder/services/*.service
+include nvflare/lighter/cc/image_builder/templates/*.tmpl
+include nvflare/lighter/cc/image_builder/trustee/*.md
+include nvflare/lighter/cc/image_builder/trustee/*.json
+include nvflare/lighter/cc/image_builder/trustee/*.rego
+include nvflare/lighter/cc/image_builder/initramfs/hooks/cvm_verity
+include nvflare/lighter/cc/image_builder/initramfs/scripts/local-top/verity_root
+include nvflare/lighter/cc/image_builder/initramfs/scripts/local-bottom/overlay_root

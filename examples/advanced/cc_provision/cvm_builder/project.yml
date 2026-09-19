@@ -1,0 +1,40 @@
+api_version: 3
+name: cvm_project
+description: TDX server and AMD SEV-SNP GPU client using CVM Builder
+
+participants:
+  - name: server.example.com
+    type: server
+    org: nvidia
+    fed_learn_port: 8002
+    admin_port: 8003
+  - name: site-1
+    type: client
+    org: nvidia
+    capacity:
+      num_of_gpus: 1
+      mem_per_gpu_in_GiB: 4
+  - name: admin@example.com
+    type: admin
+    org: nvidia
+    role: project_admin
+
+builders:
+  - path: nvflare.lighter.impl.workspace.WorkspaceBuilder
+  - path: nvflare.lighter.impl.static_file.StaticFileBuilder
+  - path: nvflare.lighter.impl.cert.CertBuilder
+  - path: nvflare.lighter.impl.signature.SignatureBuilder
+
+cvm_vault:
+  # Relative to this project.yml in the NVFlare source checkout.
+  cvm_builder_dir: ../../../../nvflare/lighter/cc/image_builder
+  cvm_image: /srv/cvm/images/tdx-cpu
+  docker_archive: /srv/nvflare/images/application.tar
+  participants: [server.example.com, site-1]
+  requires_gpu: false
+  vault_drive_size: 16
+  allowed_out_ports: [8443]
+  participant_overrides:
+    site-1:
+      cvm_image: /srv/cvm/images/amd-gpu
+      requires_gpu: true

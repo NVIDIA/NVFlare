@@ -1,0 +1,34 @@
+{
+  "as_policy_sha256": "abf82bede24bae73f9929bedf08e52abcd48195c78ac96cc907126f345450600",
+  "as_public_key": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEBzN4eSqDTGHc4tlQiGVgeKZwCqgp\n1AjhH0nt2o/kmKUSAgdRgN4mmin1IbP8RM1zhHiJ2lV+Q4AheLlavKW4sQ==\n-----END PUBLIC KEY-----\n",
+  "binary_sha256": "fa9a1049571d58f49e2fae197826c6b0af4df6a02c3849d90183d57fd05d0cec",
+  "evidence_sha256": "3c7d1e6a3575beb6b7632e2a08123d45de9c9128a357a0bd3f97630ef4b1ac3d",
+  "evidence_source": "https://github.com/confidential-containers/trustee/blob/512fed65642015b849f38fb13bfdec7806639987/attestation-service/tests/e2e/evidence.json",
+  "issued_at": 1789747428,
+  "references": {
+    "snp_bootloader": [
+      10
+    ],
+    "snp_guest_abi_major": 0,
+    "snp_guest_abi_minor": 0,
+    "snp_launch_measurement": [
+      "6a6519d757e68c2e939c9dbbbc1828498e8de35d2766dd05f1a2cca5059d0cf4ae62a36d75c837974dd50b315506e73e"
+    ],
+    "snp_microcode": [
+      25
+    ],
+    "snp_single_socket": false,
+    "snp_smt_allowed": true,
+    "snp_smt_enabled": true,
+    "snp_snp_svn": [
+      23
+    ],
+    "snp_tee_svn": [
+      0
+    ],
+    "snp_tsme_enabled": false
+  },
+  "source_clean": true,
+  "token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJFUzI1NiIsImp3ayI6eyJhbGciOiJFUzI1NiIsImt0eSI6IkVDIiwiY3J2IjoiUC0yNTYiLCJ4IjoiQnpONGVTcURUR0hjNHRsUWlHVmdlS1p3Q3FncDFBamhIMG50Mm9fa21LVSIsInkiOiJFZ0lIVVlEZUpwb3A5U0d6X0VUTmM0UjRpZHBWZmtPQUlYaTVXcnlsdUxFIn19.eyJlYXRfcHJvZmlsZSI6InRhZzpnaXRodWIuY29tLDIwMjQ6Y29uZmlkZW50aWFsLWNvbnRhaW5lcnMvVHJ1c3RlZSIsImlhdCI6MTc4OTc0NzQyOCwiZWFyLnZlcmlmaWVyLWlkIjp7ImRldmVsb3BlciI6Imh0dHBzOi8vY29uZmlkZW50aWFsY29udGFpbmVycy5vcmciLCJidWlsZCI6ImF0dGVzdGF0aW9uLXNlcnZpY2UgMC4xLjAifSwic3VibW9kcyI6eyJjcHUwIjp7ImVhci5zdGF0dXMiOiJhZmZpcm1pbmciLCJlYXIudHJ1c3R3b3J0aGluZXNzLXZlY3RvciI6eyJjb25maWd1cmF0aW9uIjoyLCJleGVjdXRhYmxlcyI6MywiaGFyZHdhcmUiOjJ9LCJlYXIuYXBwcmFpc2FsLXBvbGljeS1pZCI6ImRlZmF1bHQiLCJlYXIudmVyYWlzb24uYW5ub3RhdGVkLWV2aWRlbmNlIjp7ImluaXRfZGF0YSI6IjAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiLCJpbml0X2RhdGFfY2xhaW1zIjpudWxsLCJyZXBvcnRfZGF0YSI6IjdlNzMyMDg4OTYwMGM3YWMxMzNhZWE3Yjg5NmM1MWY0MTAyNjAwMjk4MjI5MmE3MzY5NTU5Nzk2OTk5YzFiZjkyOWVlZjNmZjIzYzQ2ZTg1OGYwYjE5ODJmOWE5MmIxN2M1MWI1NzhkOTU4Y2RlNmIwYzkyOTc4ZjE1MGNmOWIwIiwicnVudGltZV9kYXRhX2NsYWltcyI6bnVsbCwic25wIjp7ImNoaXBfaWQiOiIzNzFjNTVkNmQxNWNiNTBmMTZkYzMxZDM5YTI0ZTMwMGNhYWFiZmY0NDMxZTg0MTExMTQyOWI3M2VjNDVhZDY3ZWE2ZTY4N2ZmYWU3YmY4NGI1NGE1ZDBlNmQ3OWIzZWY2ZmYwYmQ4YjRjZmY5NGMyMTYzYWY1YzVkZTg3MThlOCIsIm1lYXN1cmVtZW50IjoiNmE2NTE5ZDc1N2U2OGMyZTkzOWM5ZGJiYmMxODI4NDk4ZThkZTM1ZDI3NjZkZDA1ZjFhMmNjYTUwNTlkMGNmNGFlNjJhMzZkNzVjODM3OTc0ZGQ1MGIzMTU1MDZlNzNlIiwicGxhdGZvcm1fc210X2VuYWJsZWQiOnRydWUsInBsYXRmb3JtX3RzbWVfZW5hYmxlZCI6ZmFsc2UsInBvbGljeV9hYmlfbWFqb3IiOjAsInBvbGljeV9hYmlfbWlub3IiOjAsInBvbGljeV9kZWJ1Z19hbGxvd2VkIjpmYWxzZSwicG9saWN5X21pZ3JhdGVfbWEiOmZhbHNlLCJwb2xpY3lfc2luZ2xlX3NvY2tldCI6ZmFsc2UsInBvbGljeV9zbXRfYWxsb3dlZCI6dHJ1ZSwicmVwb3J0ZWRfdGNiX2Jvb3Rsb2FkZXIiOjEwLCJyZXBvcnRlZF90Y2JfbWljcm9jb2RlIjoyNSwicmVwb3J0ZWRfdGNiX3NucCI6MjMsInJlcG9ydGVkX3RjYl90ZWUiOjB9fX19LCJleHAiOjE3ODk3NDc3MjgsImlzcyI6IkNvQ28tQXR0ZXN0YXRpb24tU2VydmljZSJ9.sGuDQyvbJ3XFdIEnDy3lOhuQ-el4nga6_ppKcCNs9-Eo9aQCzu8EMX5z8i4z53SI-4ycXY7xgEy4rg-jZJL5nA",
+  "trustee_commit": "512fed65642015b849f38fb13bfdec7806639987"
+}

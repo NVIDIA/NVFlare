@@ -596,6 +596,9 @@ sub_start_sh: |
       --once)
         doOnce=true
       ;;
+      --foreground)
+        doForeground=true
+      ;;
     esac
     shift
   done
@@ -603,6 +606,12 @@ sub_start_sh: |
   check_daemon() {
     if [[ -f "$WORKSPACE/daemon_pid.fl" ]]; then
       dpid=`cat "$WORKSPACE/daemon_pid.fl"`
+      if [[ "$doForeground" == "true" && "$dpid" == "${BASHPID:-$$}" ]]; then
+        # PID 1 is reused when Docker starts a new container over a persistent
+        # vault. Its old daemon marker does not identify a running supervisor.
+        rm -f "$WORKSPACE/daemon_pid.fl"
+        return
+      fi
       kill -0 ${dpid} 2> /dev/null 1>&2
       if [[ $? -eq 0 ]]; then
         echo "There seems to be one instance, pid=$dpid, running."
@@ -677,6 +686,9 @@ sub_start_sh: |
     if [[ $(($SECONDS - $lst )) -lt 300 && $restart_count -ge 5 ]]; then
       echo "System is in trouble and unable to start the task!!!!!"
       rm -f "$WORKSPACE/pid.fl" "$WORKSPACE/shutdown.fl" "$WORKSPACE/restart.fl" "$WORKSPACE/daemon_pid.fl"
+      if [[ "$doForeground" == "true" ]]; then
+        exit 1
+      fi
       exit
     fi
     lst=$SECONDS
@@ -692,6 +704,19 @@ sub_start_sh: |
       return
     fi
     pid=`cat "$WORKSPACE/pid.fl"`
+    if [[ "$doForeground" == "true" ]]; then
+      kill -TERM "$pid" 2>/dev/null || true
+      # Leave time to kill/reap the child and remove persistent markers before
+      # a container runtime's 10-second stop timeout expires.
+      for ((attempt=0; attempt<5; attempt++)); do
+        kill -0 "$pid" 2>/dev/null || break
+        sleep 1
+      done
+      kill -KILL "$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+      rm -f "$WORKSPACE/pid.fl" "$WORKSPACE/shutdown.fl" "$WORKSPACE/restart.fl"
+      return
+    fi
     sleep 5
     kill -0 ${pid} 2> /dev/null 1>&2
     if [[ $? -ne 0 ]]; then
@@ -712,11 +737,29 @@ sub_start_sh: |
 
   check_daemon
 
-  echo $BASHPID > "$WORKSPACE/daemon_pid.fl"
+  if [[ "$doForeground" == "true" ]]; then
+    rm -f "$WORKSPACE/pid.fl" "$WORKSPACE/shutdown.fl" "$WORKSPACE/restart.fl"
+    # Keep the supervisor as the container's main process. Docker stop must
+    # terminate its child and return, including while the supervisor is waiting.
+    stop_container() {
+      trap '' TERM INT
+      stop_fl
+      rm -f "$WORKSPACE/daemon_pid.fl"
+      exit 0
+    }
+    trap stop_container TERM INT
+  fi
+
+  echo "${BASHPID:-$$}" > "$WORKSPACE/daemon_pid.fl"
 
   while true
   do
-    sleep 5
+    if [[ "$doForeground" == "true" ]]; then
+      sleep 1 &
+      wait $!
+    else
+      sleep 5
+    fi
     if [[ ! -f "$WORKSPACE/pid.fl" ]]; then
       echo "start fl because of no pid.fl"
       start_fl
