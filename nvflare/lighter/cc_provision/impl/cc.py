@@ -18,6 +18,7 @@ from typing import Any, Dict, Optional, Type
 
 from nvflare.app_opt.confidential_computing.cc_manager import CC_ISSUER_ID, TOKEN_EXPIRATION
 from nvflare.lighter import utils
+from nvflare.lighter.cc_provision.utils import resolve_cc_config
 from nvflare.lighter.constants import PropKey, ProvFileName, TemplateSectionKey
 from nvflare.lighter.ctx import ProvisionContext
 from nvflare.lighter.entity import Participant, Project
@@ -25,6 +26,7 @@ from nvflare.lighter.spec import Builder
 
 from ..cc_constants import CC_AUTHORIZERS_KEY, CCConfigKey, CCConfigValue, CCIssuerConfig, CCManagerArgs
 from .azure import AzureSimpleBuilder
+from .coco import CoCoBuilder
 from .onprem_cvm import OnPremCVMBuilder
 
 CC_MGR_PATH = "nvflare.app_opt.confidential_computing.cc_manager.CCManager"
@@ -36,6 +38,7 @@ VALID_COMPUTE_ENVS = [
     CCConfigValue.AZURE_CONFIDENTIAL_CONTAINER,
     CCConfigValue.AZURE_CVM,
     CCConfigValue.MOCK,
+    CCConfigValue.CONFIDENTIAL_CONTAINERS,
 ]
 
 
@@ -44,6 +47,7 @@ BUILDER_CLASSES = {
     CCConfigValue.AZURE_CVM: AzureSimpleBuilder,
     CCConfigValue.AZURE_CONFIDENTIAL_CONTAINER: AzureSimpleBuilder,
     CCConfigValue.MOCK: OnPremCVMBuilder,
+    CCConfigValue.CONFIDENTIAL_CONTAINERS: CoCoBuilder,
 }
 
 
@@ -116,11 +120,15 @@ class CCBuilder(Builder):
             config_path = participant.get_prop(PropKey.CC_CONFIG)
             if config_path:
                 try:
+                    config_path = resolve_cc_config(project, config_path)
                     cc_config = self._load_and_validate_cc_config(config_path)
                     self._enable_participant_for_cc(participant, cc_config, ctx)
                     self._create_builder_for_env(cc_config)
                 except Exception as e:
-                    print(f"CC is not enabled for {participant.name}: {e}")
+                    raise ValueError(f"Invalid CC configuration for {participant.name}: {e}") from e
+
+        if len(self._cc_builders) > 1 and any(builder.is_exclusive for builder in self._cc_builders.values()):
+            raise ValueError("An exclusive CC backend cannot be mixed with other CC compute environments")
 
         # Initialize each builder type once
         for builder in self._cc_builders.values():
@@ -135,6 +143,10 @@ class CCBuilder(Builder):
 
         cc_config = participant.get_prop(PropKey.CC_CONFIG_DICT, {})
         if cc_config == {}:
+            return
+        builder_class = BUILDER_CLASSES[cc_config[CCConfigKey.COMPUTE_ENV]]
+        if builder_class.emits_cc_manager:
+            # The selected backend emits its own participant-specific manager.
             return
 
         cc_issuers = participant.get_prop(PropKey.CC_ISSUERS, [])
@@ -162,6 +174,12 @@ class CCBuilder(Builder):
             e.name if e.type != "server" else "server" for e in self._cc_enabled_sites
         ]
         cc_mgr_args[CCManagerArgs.CC_VERIFIER_IDS] = list(cc_verifier_ids)
+        cc_mgr_args[CCManagerArgs.REQUIRED_SITE_VERIFIER_IDS] = {
+            e.name if e.type != "server" else "server": [
+                issuer[CCIssuerConfig.ID] for issuer in e.get_prop(PropKey.CC_ISSUERS, [])
+            ]
+            for e in self._cc_enabled_sites
+        }
 
         component = {
             "id": self._cc_mgr_id,

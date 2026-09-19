@@ -22,6 +22,7 @@ from pathlib import Path
 
 import yaml
 
+from nvflare.lighter.cc_provision.utils import to_abs_path
 from nvflare.lighter.constants import ProvFileName
 from nvflare.lighter.ctx import ProvisionContext
 from nvflare.lighter.entity import Participant, Project
@@ -44,32 +45,6 @@ def _extract_docker_tar_path(output):
         if match:
             return match.group(1)
     return None
-
-
-def to_abs_path(yaml_path, file_path):
-    """Converts a relative file path to an absolute path based on the directory of the given YAML file.
-
-    Args:
-        yaml_path (str): Path to the YAML file. Must be a non-empty string.
-        file_path (str): Target file path. If relative, it's resolved against the YAML file's directory.
-
-    Returns:
-        str: An absolute file path.
-
-    Raises:
-        RuntimeError: If either input is None or empty.
-    """
-    if not yaml_path or not isinstance(yaml_path, str):
-        raise ValueError("Invalid input: 'yaml_path' must be a non-empty string.")
-    if not file_path or not isinstance(file_path, str):
-        raise ValueError("Invalid input: 'file_path' must be a non-empty string.")
-
-    if os.path.isabs(file_path):
-        return os.path.normpath(file_path)
-
-    yaml_dir = os.path.dirname(os.path.abspath(yaml_path))
-    abs_path = os.path.abspath(os.path.join(yaml_dir, file_path))
-    return os.path.normpath(abs_path)
 
 
 def run_command(command, cwd=None):
