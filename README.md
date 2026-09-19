@@ -43,10 +43,11 @@ provides workflow orchestration, task execution, communication, security, and li
 evaluation, analytics, statistics, and custom distributed applications.
 
 **[NVIDIA FLARE™](https://developer.nvidia.com/flare)** (**NV**IDIA **F**ederated **L**earning **A**pplication **R**untime **E**nvironment) is a
-domain-agnostic, open-source, and extensible SDK for federated learning. It allows researchers and data scientists to
-adapt existing ML/DL workflows to a federated paradigm and enables platform developers to build secure,
-privacy-preserving solutions for distributed multi-party collaboration. NVIDIA FLARE coordinates approved code, tasks,
-and model state across participating sites while each site retains its raw dataset and controls what results may leave.
+domain-agnostic, open-source, and extensible SDK for federated learning and other federated-computing applications. It
+allows researchers and data scientists to adapt existing ML/DL workflows to a federated paradigm and enables platform
+developers to build secure, privacy-preserving solutions for distributed multi-party collaboration. NVIDIA FLARE
+coordinates approved code, tasks, and model state across participating sites while each site retains its raw dataset
+and controls what results may leave.
 
 > **Keep data at its source.** NVIDIA FLARE moves approved computation to participating sites. In a properly designed
 > and governed federation, raw datasets remain at their source and only outputs permitted by the collaboration and
