@@ -267,7 +267,7 @@ class TestCyclicController:
             fire_event.assert_any_call(AppEventType.AFTER_CONTRIBUTION_ACCEPT, fl_ctx)
             assert fl_ctx.get_prop(AppConstants.AGGREGATION_ACCEPTED) is True
 
-    def test_process_result_rejects_unconvertible_disallowed_early_termination(self):
+    def test_process_result_does_not_publish_unconvertible_disallowed_early_termination(self):
         ctl = CyclicController(
             persist_every_n_rounds=0, snapshot_every_n_rounds=0, num_rounds=1, allow_early_termination=False
         )
@@ -289,8 +289,11 @@ class TestCyclicController:
             ctl._process_result(client_task, fl_ctx)
 
         mock_cancel.assert_not_called()
-        fire_event.assert_any_call(AppEventType.AFTER_CONTRIBUTION_ACCEPT, fl_ctx)
-        assert fl_ctx.get_prop(AppConstants.AGGREGATION_ACCEPTED) is False
+        emitted_events = [
+            call.args[0] if call.args else call.kwargs.get("event_type") for call in fire_event.call_args_list
+        ]
+        assert AppEventType.AFTER_CONTRIBUTION_ACCEPT not in emitted_events
+        assert fl_ctx.get_prop(AppConstants.AGGREGATION_ACCEPTED) is None
         assert client_task.task.data is next_shareable
         assert ctl._is_done is False
 

@@ -228,12 +228,14 @@ class CyclicController(Controller):
                         fl_ctx,
                         f"Ignored {rc} from client {client_task.client.name} because early termination is not allowed",
                     )
-            # When early termination is disabled, only the request to stop is ignored.  A
+            # When early termination is disabled, only the request to stop is ignored. A
             # successfully converted payload is still forwarded to the next client and is
-            # therefore a processed update.  A payload that could not be converted is not.
-            fl_ctx.set_prop(AppConstants.TRAINING_RESULT, result, private=True, sticky=False)
-            fl_ctx.set_prop(AppConstants.AGGREGATION_ACCEPTED, converted, private=True, sticky=False)
-            self.fire_event(AppEventType.AFTER_CONTRIBUTION_ACCEPT, fl_ctx)
+            # therefore a processed update. A conversion failure is not published as an
+            # accepted contribution; converter recovery semantics are outside this event.
+            if converted:
+                fl_ctx.set_prop(AppConstants.TRAINING_RESULT, result, private=True, sticky=False)
+                fl_ctx.set_prop(AppConstants.AGGREGATION_ACCEPTED, True, private=True, sticky=False)
+                self.fire_event(AppEventType.AFTER_CONTRIBUTION_ACCEPT, fl_ctx)
         else:
             self._stop_workflow(task)
             self.log_error(

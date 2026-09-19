@@ -63,15 +63,6 @@ class FullModelShareableGenerator(ShareableGenerator):
             weights = base_model[ModelLearnableKey.WEIGHTS]
             if dxo.data is not None:
                 model_diff = dxo.data
-                # Addition is intentionally evaluated twice. The first pass catches missing
-                # keys and deterministic value incompatibilities before any mutation. The
-                # second pass repeats those preflighted operations to update the weights.
-                # Discarding each temporary result avoids retaining a third full model.
-                # Failures arising only in the second pass (for example OOM or a stateful
-                # custom __add__) are outside this preflight guarantee.
-                for v_name, v_value in model_diff.items():
-                    validated_value = weights[v_name] + v_value
-                    del validated_value
                 for v_name, v_value in model_diff.items():
                     weights[v_name] = weights[v_name] + v_value
         elif dxo.data_kind == DataKind.WEIGHTS:
