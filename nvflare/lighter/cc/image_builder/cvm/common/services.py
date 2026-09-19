@@ -19,7 +19,7 @@ import re
 import shlex
 from pathlib import Path
 
-from .errors import require
+from .errors import ConfigurationError, require
 
 WRITABLE_APPLICATION_DIRS = ("/vault/application/runtime", "/vault/application/data")
 
@@ -36,7 +36,11 @@ def validate_service(name, text):
     )
     parser = configparser.ConfigParser(interpolation=None, strict=True)
     parser.optionxform = str
-    parser.read_string(text)
+    try:
+        parser.read_string(text)
+    except configparser.Error:
+        # Parser diagnostics can include confidential source lines and names.
+        raise ConfigurationError("Invalid application service syntax; check the unit file format") from None
     require(not parser.defaults() and set(parser.sections()) <= {"Unit", "Service"}, "Unsupported service section")
     require("Service" in parser, "Missing service configuration")
     require(

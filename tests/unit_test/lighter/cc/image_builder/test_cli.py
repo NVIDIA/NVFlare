@@ -80,6 +80,50 @@ class CliTests(unittest.TestCase):
             self.assertIn("HTTPS URL without credentials", stderr.getvalue())
             self.assertNotIn("secret-token", stderr.getvalue())
 
+    def test_malformed_service_diagnostics_never_echo_service_input(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / "vault_build.yml"
+            service = root / "app_helper.service"
+            (root / "application.tar").touch()
+            path.write_text(
+                json.dumps(
+                    {
+                        "image_id": "sha256:" + "a" * 64,
+                        "docker_archive": "application.tar",
+                        "cvm_image": str(root),
+                        "services": [service.name],
+                    }
+                )
+            )
+            cases = {
+                "missing section header": "secret-service-input\n[Service]\nExecStart=/vault/application/run\n",
+                "malformed line": "[Service]\nExecStart=/vault/application/run\nsecret-service-input\n",
+                "duplicate section": "[secret-service-input]\n[secret-service-input]\n",
+                "duplicate option": "[Service]\nsecret-service-input=first\nsecret-service-input=second\n",
+            }
+            for case, text in cases.items():
+                with self.subTest(case=case):
+                    service.write_text(text)
+                    stdout, stderr = io.StringIO(), io.StringIO()
+                    with (
+                        patch.object(cli.vault.config, "project") as project,
+                        patch.object(cli.vault, "profile_from_image") as profile,
+                        patch.object(cli.vault, "protect_process") as protect,
+                        patch.object(cli.vault, "memory_file") as key,
+                        contextlib.redirect_stdout(stdout),
+                        contextlib.redirect_stderr(stderr),
+                        self.assertRaises(SystemExit) as error,
+                    ):
+                        cli.main(["vault", str(path)])
+                    self.assertEqual(error.exception.code, 1)
+                    self.assertIn("Invalid application service syntax", stderr.getvalue())
+                    self.assertNotIn("secret-service-input", stdout.getvalue() + stderr.getvalue())
+                    self.assertNotIn("Traceback", stdout.getvalue() + stderr.getvalue())
+                    self.assertEqual(stdout.getvalue(), "")
+                    for operation in (project, profile, protect, key):
+                        operation.assert_not_called()
+
     def test_build_and_finalize_are_distinct_commands(self):
         with patch.object(cli.cvm, "build") as build, patch.object(cli, "report_bundle"):
             cli.main(["build", "profile.yml", "-p", "intel_tdx", "--defer-measurements", "--gpu", "0000:01:00.0"])

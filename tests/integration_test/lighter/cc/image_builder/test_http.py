@@ -271,39 +271,61 @@ class HttpTests(unittest.TestCase):
     def test_policy_role_cannot_mutate_resources_or_replace_as(self):
         digest, path, secret = self.create()
         policy_before = read_resource_policy(self.admin)
-        for method, expected in (("POST", 401), ("PUT", 401), ("DELETE", 401)):
-            # Preserve the real HTTP code while using the same signed admin
-            # request and TLS verification as production administration.
-            codes = []
-            original_open = urllib.request.OpenerDirector.open
-
-            def observe(opener, *args, **kwargs):
-                try:
-                    return original_open(opener, *args, **kwargs)
-                except urllib.error.HTTPError as error:
-                    codes.append(error.code)
-                    raise
-
-            from unittest.mock import patch
-
-            with patch.object(urllib.request.OpenerDirector, "open", observe), self.assertRaises(BuildError):
-                api(self.admin, method, "resource/" + path, b"x" * 64)
-            self.assertEqual(codes, [expected])
-            self.assertEqual(self.retrieve(digest, path), secret)
+        # The signing client rejects policy-role resource requests locally. Use a
+        # valid preissued token to exercise Trustee's own authorization boundary.
+        key = serialization.load_pem_private_key(Path(self.admin["admin_private_key"]).read_bytes(), None)
+        now = int(time.time())
+        claims = {
+            "iat": now,
+            "nbf": now - 5,
+            "exp": now + 120,
+            "role": "cvm-policy",
+            "iss": "cvm-builder",
+            "aud": "coco-trustee",
+        }
+        body = encode(canonical({"alg": "EdDSA", "typ": "JWT"})) + "." + encode(canonical(claims))
+        token = body + "." + encode(key.sign(body.encode()))
+        with memory_file(token.encode()) as token_fd:
+            policy_admin = {
+                "url": self.admin["url"],
+                "ca": self.admin["ca"],
+                "admin_token_file": f"/proc/self/fd/{token_fd}",
+            }
+            api(policy_admin, "POST", "resource-policy", canonical({"policy": encode(policy_before)}))
             self.assertEqual(read_resource_policy(self.admin), policy_before)
-        with self.assertRaises(BuildError):
-            api(
-                self.admin,
-                "POST",
-                "attestation-policy",
-                canonical(
-                    {
-                        "policy_id": "default_cpu",
-                        "type": "rego",
-                        "policy": encode(b"package policy\ndefault executables = 3\n"),
-                    }
-                ),
-            )
+            for method, expected in (("POST", 401), ("PUT", 401), ("DELETE", 401)):
+                # Preserve Trustee's real denial code and verify the resource and
+                # policy remain unchanged after every rejected operation.
+                codes = []
+                original_open = urllib.request.OpenerDirector.open
+
+                def observe(opener, *args, **kwargs):
+                    try:
+                        return original_open(opener, *args, **kwargs)
+                    except urllib.error.HTTPError as error:
+                        codes.append(error.code)
+                        raise
+
+                from unittest.mock import patch
+
+                with patch.object(urllib.request.OpenerDirector, "open", observe), self.assertRaises(BuildError):
+                    api(policy_admin, method, "resource/" + path, b"x" * 64)
+                self.assertEqual(codes, [expected])
+                self.assertEqual(self.retrieve(digest, path), secret)
+                self.assertEqual(read_resource_policy(self.admin), policy_before)
+            with self.assertRaises(BuildError):
+                api(
+                    policy_admin,
+                    "POST",
+                    "attestation-policy",
+                    canonical(
+                        {
+                            "policy_id": "default_cpu",
+                            "type": "rego",
+                            "policy": encode(b"package policy\ndefault executables = 3\n"),
+                        }
+                    ),
+                )
 
 
 if __name__ == "__main__":

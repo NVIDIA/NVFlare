@@ -6,6 +6,70 @@ services and operator guides are maintained together with the provisioning adapt
 in this repository. Repository formatting and license headers change source
 fingerprints; build and approve new generic CVMs for this source snapshot.
 
+## Service parser diagnostic review fix — 2026-09-19
+
+Malformed application service files now produce a fixed configuration diagnostic
+instead of exposing parser source lines, section names or option names. Regression
+coverage exercises missing headers, malformed lines, duplicate sections and
+duplicate options through the vault CLI and checks that rejection occurs before
+profile, key or Trustee operations.
+
+**8 CLI tests and 196 Linux unit/policy tests passed, with no skips.** Scoped
+repository style checks passed for the builder, unit tests and integration tests.
+This follow-up changes the shared service parser's error handling; the hardware
+run below tested the preceding `e7b96f385` source, not rebuilt images containing
+this fix.
+
+## Hardware end-to-end after review fixes — 2026-09-19
+
+A candidate-mode run passed with the runtime and build sources from commit
+`e7b96f3851895428186dcafd75d1bb182ba8a4df`: an Intel TDX server without GPU and
+an AMD SEV-SNP client with an NVIDIA H800 PCIe. The generic images were built on
+September 18; the run resumed on September 19 after lab access and GPU availability
+returned. Both application vaults were provisioned, published as OCI artifacts,
+pulled by immutable digest and started with their delivered launchers.
+
+- Both three-round CUDA jobs completed successfully: **14.25 seconds** before
+  scheduled re-attestation and **16.29 seconds** after both participants re-attested.
+  Every round executed H800 CUDA kernels without a CPU fallback and verified all
+  1,024 returned values and the fresh request nonce. The final sum was **529,920**.
+- Periodic attestation passed with observed gaps of **301.47 seconds** for TDX and
+  **301.64 seconds** for SNP/GPU. No guest bootstrap or attestation failure was
+  recorded in the completed deployment.
+- **24 native Trustee HTTPS tests passed**, 12 per backend. The role-boundary
+  integration test now uses a valid preissued policy token so requests reach
+  Trustee's ACL, while the signing client's new local role guard remains intact.
+  The test confirms resource POST/PUT/DELETE return 401 and leave both the resource
+  and policy unchanged. Scoped repository style checks passed.
+
+| Stage | Intel TDX server | AMD SNP/H800 client |
+|---|---:|---:|
+| Generic image construction | 313.81 s | 372.03 s |
+| Hardware finalization | 107.84 s | 122.86 s |
+| Application vault and delivery | 307.58 s | 324.59 s |
+| Delivery registry publication | 42.45 s | 46.06 s |
+| Delivery pull and unpack | 54.17 s | 56.66 s |
+| Launch to accepted attestation | 121.77 s | 125.87 s |
+| Launch to observed application readiness | 193.73 s | 155.41 s |
+
+The shared application image built in **38.29 seconds** and exported in
+**3.77 seconds**. Timings exclude pauses for lab access and GPU availability;
+stages can overlap. Readiness is the first observed secure-admin connection or
+client registration, so the server value includes delay while diagnosing the
+client's first registry pull.
+
+That initial pull failed when the AMD host's shared temporary filesystem had only
+2.34 GiB free for a roughly 10 GiB delivery. Setting `TMPDIR` to a private directory
+on the workspace disk allowed the same digest to be pulled successfully. No shared
+temporary files were deleted, and no runtime source, delivery or attestation policy
+was changed for the retry.
+
+The run used unchanged upstream Trustee v0.22.0, Intel standard collateral,
+NVIDIA's remote NRAS verifier, isolated candidate profiles and a lab registry.
+It did not qualify Kubernetes CoCo orchestration, production approval or the full
+destructive acceptance suite. Both test CVMs and isolated backends were stopped
+afterward, and the GPU was released.
+
 ## Resource-role and boot review follow-up — 2026-09-18
 
 **195 Linux unit/policy tests passed with no skips**, including the pinned Regorus
