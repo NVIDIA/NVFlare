@@ -35,8 +35,14 @@ def main():
     # Derive the authoritative parameter schema and dtypes from the
     # server-side model. Dtypes are stored as strings because the
     # recipe configuration must be JSON serializable.
-    expected_schema = {name: tuple(value.shape) for name, value in model.state_dict().items()}
-    expected_dtypes = {name: str(value.dtype).replace("torch.", "") for name, value in model.state_dict().items()}
+    expected_schema = {
+        name: tuple(value.shape)
+        for name, value in model.state_dict().items()
+    }
+    expected_dtypes = {
+        name: str(value.dtype).replace("torch.", "")
+        for name, value in model.state_dict().items()
+    }
 
     # Defense-in-depth bound for received client DIFF updates.
     # This is separate from the published FedSCS scoring formulation.
@@ -59,6 +65,7 @@ def main():
         train_args=f"--data_dir {data_dir}",
         aggregator=aggregator,
         params_transfer_type=TransferType.DIFF,
+        key_metric="global_accuracy",
     )
 
     recipe.execute(SimEnv(num_clients=5))

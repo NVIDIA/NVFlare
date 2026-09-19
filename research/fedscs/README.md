@@ -112,7 +112,11 @@ python job.py
 
 The example runs a simulated federated learning experiment using the standard NVIDIA FLARE Recipe workflow and the custom `FedSCSAggregator`.
 
-During training, the FedSCS aggregator reports the per-round client scores, Stable Cosine Similarity (SCS) values, and normalized aggregation weights in the NVIDIA FLARE log. Inspect these values across rounds to see how FedSCS adapts the contribution of each client.
+During training, the FedSCS aggregator reports the per-round client scores,
+Stable Cosine Similarity (SCS) values, and normalized aggregation weights.
+In simulator runs, these per-client `score`, `scs`, and `weight` INFO messages
+are written to `<workspace>/server/log.txt`. Inspect these values across
+rounds to see how FedSCS adapts the contribution of each client.
 
 In particular, compare the aggregation weight assigned to `site-5` with the weights of the other clients. Because `site-5` contains intentionally noisy training data, its FedSCS weight reflects its similarity and stability relative to the other participating clients.
 
