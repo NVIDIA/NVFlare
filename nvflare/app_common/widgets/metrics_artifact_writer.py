@@ -102,6 +102,7 @@ class MetricsArtifactWriter(Widget):
         self._round_contribution_count = 0
         self._progress_client_rows = 0
         self._progress_metrics_omitted = False
+        self._has_distinct_progress_metrics = False
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
@@ -187,6 +188,19 @@ class MetricsArtifactWriter(Widget):
             message = f"Additional {result_type} results were omitted from the progress display."
         log_progress(_logger, f"  {message}")
 
+    def _log_site_metric_phase(self, title, sites, metric_key):
+        phase_sites = [site for site in sites if site.get(metric_key)]
+        if not phase_sites:
+            return
+
+        log_progress(_logger, f"\n  {title}")
+        self._progress_columns = None
+        for index, site in enumerate(phase_sites):
+            if index < MAX_PROGRESS_CLIENT_ROWS:
+                self._log_progress_metrics(site["name"], site[metric_key])
+            elif index == MAX_PROGRESS_CLIENT_ROWS:
+                self._log_additional_results("client")
+
     def _handle_after_aggregation(self, fl_ctx: FLContext):
         aggr_result = fl_ctx.get_prop(AppConstants.AGGREGATION_RESULT, None)
         aggr_result = self._to_fl_model(aggr_result)
@@ -222,6 +236,8 @@ class MetricsArtifactWriter(Widget):
         elif aggregated_metrics:
             log_progress(_logger, "  " + "─" * 66)
             self._log_progress_metrics("Aggregated", aggregated_metrics)
+        if self._has_distinct_progress_metrics:
+            self._log_site_metric_phase("Post-training client metrics", fallback_sites, "progress_metrics")
         if self._progress_metrics_omitted:
             self._log_additional_results("metric")
         if has_aggregation_details or self._round_contribution_count:
@@ -270,6 +286,8 @@ class MetricsArtifactWriter(Widget):
         sites = self._round_sites.pop(current_round, [])
         skipped = self._round_skipped.pop(current_round, [])
         self._round_site_metric_counts.pop(current_round, None)
+        if self._has_distinct_progress_metrics:
+            self._log_site_metric_phase("Post-training client metrics", sites, "progress_metrics")
         if self._progress_metrics_omitted:
             self._log_additional_results("metric")
         duration = ""
@@ -379,7 +397,13 @@ class MetricsArtifactWriter(Widget):
             site["weight"] = weight
             site["weight_key"] = FLMetaKey.NUM_STEPS_CURRENT_ROUND
         sites.append(site)
-        self._log_contribution_progress(site["name"], normalized_progress_metrics or metrics)
+        if metrics and normalized_progress_metrics:
+            if not self._has_distinct_progress_metrics:
+                log_progress(_logger, "\n  Incoming-model client metrics")
+            self._has_distinct_progress_metrics = True
+            self._log_contribution_progress(site["name"], metrics)
+        else:
+            self._log_contribution_progress(site["name"], normalized_progress_metrics or metrics)
 
     def _normalize_sites(self, sites, skipped):
         if not isinstance(sites, list):

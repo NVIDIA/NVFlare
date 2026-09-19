@@ -217,26 +217,49 @@ def _collect_metric_names(value):
 
 
 class TestMetricsArtifactWriterAggregationEvents:
-    def test_progress_metrics_do_not_replace_model_selection_metrics(self, tmp_path):
+    def test_progress_metrics_do_not_replace_or_look_aggregated_with_model_selection_metrics(self, tmp_path, caplog):
         writer = MetricsArtifactWriter()
         run_dir = tmp_path / "run"
         fl_ctx = _make_fl_ctx(run_dir)
 
-        writer.handle_event(EventType.START_RUN, fl_ctx)
-        _record_contribution(
-            writer,
-            fl_ctx,
-            1,
-            "site-1",
-            metrics={"auc": 0.8},
-            progress_metrics={"auc": 0.85},
-        )
-        _record_round(writer, fl_ctx, 1, {"auc": 0.3})
+        with caplog.at_level("INFO"):
+            writer.handle_event(EventType.START_RUN, fl_ctx)
+            _record_contribution(
+                writer,
+                fl_ctx,
+                1,
+                "site-1",
+                metrics={"accuracy": 0.2},
+                progress_metrics={"accuracy": 0.8},
+            )
+            _record_contribution(
+                writer,
+                fl_ctx,
+                1,
+                "site-2",
+                metrics={"accuracy": 0.4},
+                progress_metrics={"accuracy": 0.9},
+            )
+            _record_round(writer, fl_ctx, 1, {"accuracy": 0.3})
 
         rounds = _read_rounds(run_dir)
-        assert _metrics_to_dict(rounds[0]["aggregated_metrics"]) == {"auc": 0.3}
-        assert _metrics_to_dict(rounds[0]["sites"][0]["metrics"]) == {"auc": 0.8}
-        assert _metrics_to_dict(rounds[0]["sites"][0]["progress_metrics"]) == {"auc": 0.85}
+        assert _metrics_to_dict(rounds[0]["aggregated_metrics"]) == {"accuracy": 0.3}
+        assert _metrics_to_dict(rounds[0]["sites"][0]["metrics"]) == {"accuracy": 0.2}
+        assert _metrics_to_dict(rounds[0]["sites"][0]["progress_metrics"]) == {"accuracy": 0.8}
+
+        output = "\n".join(
+            record.message
+            for record in caplog.records
+            if record.name == "nvflare.app_common.widgets.metrics_artifact_writer"
+        )
+        incoming, post_training = output.split("Post-training client metrics")
+        incoming = incoming.split("Incoming-model client metrics", maxsplit=1)[1]
+        assert "0.2" in incoming and "0.4" in incoming
+        assert "Aggregated" in incoming and "0.3" in incoming
+        assert "0.8" not in incoming and "0.9" not in incoming
+        post_training = post_training.split("✓ Aggregated", maxsplit=1)[0]
+        assert "0.8" in post_training and "0.9" in post_training
+        assert "Aggregated" not in post_training
 
     def test_writes_summary_and_jsonl_from_aggregation_events(self, tmp_path):
         writer = MetricsArtifactWriter()
