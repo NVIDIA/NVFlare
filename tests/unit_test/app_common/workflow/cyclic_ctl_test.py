@@ -267,7 +267,7 @@ class TestCyclicController:
             fire_event.assert_any_call(AppEventType.AFTER_CONTRIBUTION_ACCEPT, fl_ctx)
             assert fl_ctx.get_prop(AppConstants.AGGREGATION_ACCEPTED) is True
 
-    def test_process_result_does_not_publish_unconvertible_disallowed_early_termination(self):
+    def test_process_result_stops_on_unconvertible_disallowed_early_termination(self):
         ctl = CyclicController(
             persist_every_n_rounds=0, snapshot_every_n_rounds=0, num_rounds=1, allow_early_termination=False
         )
@@ -282,20 +282,23 @@ class TestCyclicController:
 
         with (
             patch.object(ctl, "cancel_task") as mock_cancel,
-            patch.object(ctl.shareable_generator, "learnable_to_shareable", return_value=next_shareable),
+            patch.object(
+                ctl.shareable_generator, "learnable_to_shareable", return_value=next_shareable
+            ) as mock_to_shareable,
             patch.object(ctl.shareable_generator, "shareable_to_learnable", side_effect=ValueError("bad result")),
             patch.object(ctl, "fire_event") as fire_event,
         ):
             ctl._process_result(client_task, fl_ctx)
 
-        mock_cancel.assert_not_called()
+        mock_cancel.assert_called_once_with(client_task.task)
+        mock_to_shareable.assert_not_called()
         emitted_events = [
             call.args[0] if call.args else call.kwargs.get("event_type") for call in fire_event.call_args_list
         ]
         assert AppEventType.AFTER_CONTRIBUTION_ACCEPT not in emitted_events
         assert fl_ctx.get_prop(AppConstants.AGGREGATION_ACCEPTED) is None
-        assert client_task.task.data is next_shareable
-        assert ctl._is_done is False
+        assert client_task.task.data is not next_shareable
+        assert ctl._is_done is True
 
     def test_process_result_converts_ok_result(self):
         ctl = CyclicController(persist_every_n_rounds=0, snapshot_every_n_rounds=0, num_rounds=1)

@@ -202,20 +202,12 @@ class CyclicController(Controller):
                 self.log_error(fl_ctx, f"Stopping workflow due to {rc} from client {client_task.client.name}")
                 return
 
-            converted = False
             try:
                 self._last_learnable = self.shareable_generator.shareable_to_learnable(result, fl_ctx)
-                converted = True
             except Exception as ex:
-                if rc != ReturnCode.EARLY_TERMINATION:
-                    self._stop_workflow(task)
-                    self.log_error(fl_ctx, f"exception {secure_format_exception(ex)} from shareable_to_learnable")
-                    return
-                else:
-                    self.log_warning(
-                        fl_ctx,
-                        f"ignored {secure_format_exception(ex)} from shareable_to_learnable in early termination",
-                    )
+                self._stop_workflow(task)
+                self.log_error(fl_ctx, f"exception {secure_format_exception(ex)} from shareable_to_learnable")
+                return
 
             if rc == ReturnCode.EARLY_TERMINATION:
                 if self._allow_early_termination:
@@ -230,12 +222,11 @@ class CyclicController(Controller):
                     )
             # When early termination is disabled, only the request to stop is ignored. A
             # successfully converted payload is still forwarded to the next client and is
-            # therefore a processed update. A conversion failure is not published as an
-            # accepted contribution; converter recovery semantics are outside this event.
-            if converted:
-                fl_ctx.set_prop(AppConstants.TRAINING_RESULT, result, private=True, sticky=False)
-                fl_ctx.set_prop(AppConstants.AGGREGATION_ACCEPTED, True, private=True, sticky=False)
-                self.fire_event(AppEventType.AFTER_CONTRIBUTION_ACCEPT, fl_ctx)
+            # therefore a processed update. Conversion failures stop the workflow above so
+            # a potentially partial model can never be forwarded.
+            fl_ctx.set_prop(AppConstants.TRAINING_RESULT, result, private=True, sticky=False)
+            fl_ctx.set_prop(AppConstants.AGGREGATION_ACCEPTED, True, private=True, sticky=False)
+            self.fire_event(AppEventType.AFTER_CONTRIBUTION_ACCEPT, fl_ctx)
         else:
             self._stop_workflow(task)
             self.log_error(
