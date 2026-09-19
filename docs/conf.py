@@ -99,8 +99,8 @@ autoclass_content = "both"
 add_module_names = False
 autosectionlabel_prefix_document = True
 llms_txt_description = (
-    "NVIDIA FLARE is an open-source SDK for federated learning, with tools for simulation, job authoring, "
-    "deployment, security, and production federated ML workflows."
+    "NVIDIA FLARE is a domain-agnostic, open-source, extensible SDK for federated learning and other "
+    "federated-computing applications, from local development through production deployment."
 )
 llms_txt_full_build = False
 llms_txt_build_parallel = False

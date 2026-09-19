@@ -1,29 +1,45 @@
 # NVIDIA FLARE
 
-> NVIDIA FLARE is an open-source SDK for federated learning, with tools for simulation, job authoring, deployment, security, and production federated ML workflows.
+> NVIDIA FLARE is a domain-agnostic, open-source, extensible SDK for federated learning and other federated-computing applications, from local development through production deployment.
+
+## Overview
+
+- [Welcome](welcome.md): Understand federated learning, federated computing, NVIDIA FLARE, data locality, and the development-to-production lifecycle.
+- [What's New](whats_new.md): Review current release features and changes.
+- [Industry Use Cases](industry_use_cases.md): Explore applications and supporting material across industries.
 
 ## Get Started
 
+- [Quick Start](quickstart.md): Run and understand a complete two-client federation, then choose the next path.
 - [Installation](installation.md): Install NVIDIA FLARE and set up development or runtime environments.
-- [Quick Start](quickstart.md): Run a first federated learning example and learn the basic workflow.
 - [Migration Guide](migration_guide.md): Upgrade between NVIDIA FLARE versions and understand behavior changes.
 
-## User Workflows
+## Adapt And Build
 
-- [Choose an API Path](user_guide/data_scientist_guide/api_selection.md): Choose Collaboration API for research experiments or Client API plus Job Recipe for production-oriented applications.
+- [Agent Skills](user_guide/agent_skills/index.md): Use maintained coding-agent workflows for supported training projects, federated statistics, optimization, and diagnosis.
+- [Choose an API Path](user_guide/data_scientist_guide/api_selection.md): Select the Client API, Recipe, Collaboration API, or lower-level components for a manual or custom integration.
 - [Client API](user_guide/data_scientist_guide/client_api_usage.md): Use the high-level API for federated training scripts.
-- [HuggingFace Client API](user_guide/data_scientist_guide/hf_client_api.md): Patch HuggingFace Trainer or TRL SFTTrainer scripts for federated training.
-- [Job Recipe API](user_guide/data_scientist_guide/job_recipe.md): Create jobs with pre-built recipes for common federated learning workflows.
+- [Job Recipe](user_guide/data_scientist_guide/job_recipe.md): Define and run federated jobs through maintained workflow builders.
+- [Recipe API](user_guide/data_scientist_guide/recipe_api.md): Build and extend recipes for common federated workflows.
 - [Available Recipes](user_guide/data_scientist_guide/available_recipes.md): Browse bundled job recipes and supported patterns.
+- [Collaboration API](user_guide/data_scientist_guide/collab_api.md): Design custom server-controlled or peer-to-peer algorithms and workflows.
 - [FLARE API](user_guide/data_scientist_guide/flare_api.md): Use runtime APIs to submit, monitor, and manage jobs.
 - [CLI Tools](user_guide/nvflare_cli/nvflare_cli.md): Use NVFlare command-line tools for local and deployed systems.
 
-## Examples And Tutorials
+## Capabilities
 
-- [Example Applications And Algorithms](example_applications_algorithms.md): Find example applications, algorithms, and reference implementations.
-- [Tutorials](tutorials.md): Learn from tutorials and notebook-based walkthroughs.
-- [Federated LLM Fine-Tuning](programming_guide/llm_fine_tuning.md): Fine-tune large language models with NVIDIA FLARE.
+- [Federated Statistics](examples/federated_statistics_overview.md): Compute aggregate statistics while source records remain at participating sites.
+- [Federated LLM Fine-Tuning](programming_guide/llm_fine_tuning.md): Fine-tune and evaluate large models across sites.
+- [Hugging Face Client API](user_guide/data_scientist_guide/hf_client_api.md): Adapt Transformers Trainer or TRL SFTTrainer scripts for federated training.
 - [Federated XGBoost](user_guide/data_scientist_guide/federated_xgboost/federated_xgboost.md): Train XGBoost models in federated settings.
+- [Mobile Training](user_guide/edge_development/mobile_training.md): Build mobile and hierarchical federated-learning applications.
+
+## Examples, Tutorials, And Research
+
+- [Example Applications](example_applications_algorithms.md): Find runnable applications, algorithms, and reference implementations.
+- [Tutorials](tutorials.md): Learn from tutorials and notebook-based walkthroughs.
+- [Self-Paced Training](self-paced-training/index.md): Follow the versioned multi-part training curriculum.
+- [Research Papers](user_guide/researcher_guide/index.md): Browse published research and reference implementations.
 
 ## Deployment And Operations
 
