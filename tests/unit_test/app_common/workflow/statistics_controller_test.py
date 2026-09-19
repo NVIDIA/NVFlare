@@ -13,8 +13,10 @@
 # limitations under the License.
 
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
+from nvflare.apis.fl_context import FLContext
+from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.statistics_spec import StatisticConfig
 from nvflare.app_common.app_constant import StatisticsConstants as SC
 from nvflare.app_common.workflows.statistics_controller import StatisticsController
@@ -144,3 +146,77 @@ class TestStatisticsController:
         # empty too, and must not vacuously pass as "ok to proceed" either.
         client_statistics = {"count": {"site-1": {}}}
         assert not self.stats_controller._validate_min_clients(1, client_statistics)
+
+    def test_control_flow_reports_statistics_phases(self):
+        controller = StatisticsController(statistic_configs={SC.STATS_COUNT: {}}, writer_id="writer", min_clients=2)
+        controller._participating_client_count = 3
+        controller.pre_run_task_flow = MagicMock()
+        controller.statistics_task_flow = MagicMock()
+        controller.post_fn = MagicMock(return_value=None)
+
+        with (
+            patch.object(StatisticsController, "_wait_for_all_results", return_value=True),
+            patch.object(controller, "_validate_min_clients", return_value=True),
+            patch("nvflare.app_common.workflows.statistics_controller.log_progress") as progress,
+        ):
+            controller.control_flow(Signal(), FLContext())
+
+        messages = [call.args[1] for call in progress.call_args_list]
+        assert "Federated statistics · 3 clients" in messages[0]
+        assert messages[1:] == [
+            "  Computing first-pass statistics…",
+            "  Computing derived statistics…",
+            "\n  ✓ Federated statistics completed",
+        ]
+
+    def test_control_flow_respects_explicit_post_processing_failure(self):
+        controller = StatisticsController(statistic_configs={SC.STATS_COUNT: {}}, writer_id="writer", min_clients=2)
+        controller.pre_run_task_flow = MagicMock()
+        controller.statistics_task_flow = MagicMock()
+        controller.post_fn = MagicMock(return_value=False)
+
+        with (
+            patch.object(StatisticsController, "_wait_for_all_results", return_value=True),
+            patch("nvflare.app_common.workflows.statistics_controller.log_progress") as progress,
+        ):
+            controller.control_flow(Signal(), FLContext())
+
+        assert "✓ Federated statistics completed" not in "\n".join(call.args[1] for call in progress.call_args_list)
+
+    def test_control_flow_omits_preparation_phase_when_disabled(self):
+        controller = StatisticsController(
+            statistic_configs={SC.STATS_COUNT: {}}, writer_id="writer", min_clients=2, enable_pre_run_task=False
+        )
+        controller.statistics_task_flow = MagicMock()
+        controller.post_fn = MagicMock(return_value=True)
+
+        with (
+            patch.object(StatisticsController, "_wait_for_all_results", return_value=True),
+            patch("nvflare.app_common.workflows.statistics_controller.log_progress") as progress,
+        ):
+            controller.control_flow(Signal(), FLContext())
+
+        assert "Preparing client datasets" not in "\n".join(call.args[1] for call in progress.call_args_list)
+
+    def test_control_flow_does_not_report_completion_after_second_pass_abort(self):
+        controller = StatisticsController(statistic_configs={SC.STATS_COUNT: {}}, writer_id="writer", min_clients=2)
+        controller.pre_run_task_flow = MagicMock()
+        controller.post_fn = MagicMock(return_value=True)
+        abort_signal = Signal()
+
+        def run_statistics(signal, fl_ctx, task_name):
+            if task_name == SC.STATS_2nd_STATISTICS:
+                signal.trigger("second pass aborted")
+
+        controller.statistics_task_flow = MagicMock(side_effect=run_statistics)
+
+        with (
+            patch.object(StatisticsController, "_wait_for_all_results", return_value=True) as wait_for_results,
+            patch("nvflare.app_common.workflows.statistics_controller.log_progress") as progress,
+        ):
+            result = controller.control_flow(abort_signal, FLContext())
+
+        assert result is False
+        wait_for_results.assert_not_called()
+        controller.post_fn.assert_not_called()
+        assert "✓ Federated statistics completed" not in "\n".join(call.args[1] for call in progress.call_args_list)

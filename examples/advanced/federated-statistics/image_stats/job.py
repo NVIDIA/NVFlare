@@ -50,7 +50,8 @@ def main():
     )
 
     env = SimEnv(clients=sites, num_threads=n_clients)
-    recipe.execute(env=env)
+    run = recipe.execute(env=env)
+    run.get_result()
 
 
 if __name__ == "__main__":

@@ -549,9 +549,10 @@ the resolved client count; POC and production print status changes while the job
 runs.
 
 The simulator continues to use ``concise`` logging by default, preserving the
-existing timestamped application-log view. Select ``progress`` for the focused
-round headings, client and aggregated metrics, evaluation progress, warnings,
-and errors introduced by this reporting feature:
+existing timestamped application-log view. Select ``progress`` for focused
+training rounds and metrics in deep-learning, traditional-ML, Swarm, cyclic,
+and XGBoost jobs, evaluation progress, or workflow phases for federated
+statistics, PSI, and survival analysis. Warnings and errors remain visible:
 
 .. code-block:: bash
 
@@ -563,6 +564,12 @@ diagnostics on the console, run:
 .. code-block:: bash
 
    python job.py --log_config full
+
+For custom workflows using ``MetricsArtifactWriter``, client contributions can place a current post-training metric
+mapping, such as ``{"auc": 0.85}``, in ``AppConstants.PROGRESS_METRICS``. The writer uses that mapping for progress
+display and records it separately as per-site ``progress_metrics`` in metric artifacts. The per-site ``metrics`` values
+retain their aggregation or evaluation phase, without changing the incoming-model meaning of ``INITIAL_METRICS`` used by
+model-selection components.
 
 Recipe consumes ``--log_config`` as a system argument before the script's own
 argument parser. The ``concise``, ``progress``, ``msg_only``, ``full``, and
@@ -590,7 +597,7 @@ prints a ``RUN SUMMARY`` containing:
 * the completed, failed, or not-scheduled status and elapsed time;
 * up to ten recorded rounds of aggregated training metrics;
 * cross-site model-evaluation results when present; and
-* locations of model, metric, evaluation, and log artifacts.
+* locations of model, statistics, metric, evaluation, and log artifacts.
 
 The summary reads existing artifacts and does not load model weights or change
 metric values. Missing, malformed, oversized, or custom-layout artifacts do not

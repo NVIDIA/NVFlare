@@ -20,6 +20,7 @@ import numpy as np
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
 from nvflare.app_common.app_constant import AlgorithmConstants, AppConstants
+from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.utils.tensor_disk_offload_context import cleanup_tensor_disk_offload, setup_tensor_disk_offload
 
 from .base_fedavg import (
@@ -112,10 +113,13 @@ class Scaffold(BaseFedAvg):
 
     def _run_rounds(self) -> None:
         self.info("Start Scaffold.")
+        self.fl_ctx.set_prop(AppConstants.NUM_ROUNDS, self.num_rounds, private=True, sticky=False)
 
         for self.current_round in range(self.start_round, self.start_round + self.num_rounds):
             self.info(f"Round {self.current_round} started.")
             self.model.current_round = self.current_round
+            self.fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self.current_round, private=True, sticky=False)
+            self.event(AppEventType.ROUND_STARTED)
 
             clients = self.sample_clients(self.num_clients)
 
@@ -124,6 +128,9 @@ class Scaffold(BaseFedAvg):
             global_model.meta[AlgorithmConstants.SCAFFOLD_CTRL_GLOBAL] = self._global_ctrl_weights
 
             results = self.send_model_and_wait(targets=clients, data=global_model)
+            if self.abort_signal and self.abort_signal.triggered:
+                self.info("Scaffold aborted while waiting for client results.")
+                return
 
             aggregate_results = self.aggregate(results, aggregate_fn=scaffold_aggregate_fn)
 
@@ -142,6 +149,7 @@ class Scaffold(BaseFedAvg):
 
             # Memory cleanup at end of round (if configured)
             self._maybe_cleanup_memory()
+            self.event(AppEventType.ROUND_DONE)
 
         self.info("Finished Scaffold.")
 

@@ -18,6 +18,7 @@ from pydantic import BaseModel, conint
 
 from nvflare import FedJob
 from nvflare.app_common.shareablegenerators import FullModelShareableGenerator
+from nvflare.app_common.widgets.metrics_artifact_writer import MetricsArtifactWriter
 from nvflare.app_common.workflows.cyclic_ctl import CyclicController
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.fuel.utils.constants import FrameworkType
@@ -234,6 +235,7 @@ class CyclicRecipe(Recipe):
         check_positive_number("task_check_period", server_config.get("task_check_period"))
         controller = CyclicController(**server_config)
         job.to(controller, "server")
+        job.to_server(MetricsArtifactWriter(), id="metrics_artifact_writer")
 
         shareable_generator = FullModelShareableGenerator()
         job.to_server(shareable_generator, id="shareable_generator")

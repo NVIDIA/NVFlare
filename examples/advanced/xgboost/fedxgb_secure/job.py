@@ -116,7 +116,8 @@ def main():
         print("Please see README for next steps.")
         print("=" * 80 + "\n")
     else:
-        recipe.execute(env)
+        run = recipe.execute(env)
+        run.get_result()
         print("\n" + "=" * 80)
         print("Training Complete!")
         print("=" * 80 + "\n")

@@ -1062,6 +1062,20 @@ class SwarmClientController(ClientSideController):
 
         fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, global_weights, private=True, sticky=True)
         fl_ctx.set_prop(AppConstants.CURRENT_ROUND, current_round, private=True, sticky=True)
+        fl_ctx.set_prop(
+            AppConstants.START_ROUND,
+            self.get_config_prop(Constant.START_ROUND, 0),
+            private=True,
+            sticky=True,
+        )
+        fl_ctx.set_prop(
+            AppConstants.NUM_ROUNDS,
+            self.get_config_prop(AppConstants.NUM_ROUNDS),
+            private=True,
+            sticky=True,
+        )
+        fl_ctx.set_prop(AppConstants.PROGRESS_OWNER, aggr, private=True, sticky=True)
+        fl_ctx.set_prop(AppConstants.PROGRESS_TITLE, "Swarm learning", private=True, sticky=True)
         self.fire_event(AppEventType.ROUND_STARTED, fl_ctx)
 
         if self.me == aggr:
