@@ -2,7 +2,8 @@
 
 # NVIDIA FLARE
 
-Federate familiar training code. Validate it locally, then deploy the same workload securely across sites.
+Build federated computing applications that collaborate across organizational and geographic boundaries while each
+site keeps control of its data and local execution.
 
 [Website](https://nvidia.github.io/NVFlare) |
 [Documentation](https://nvflare.readthedocs.io/en/main/) |
@@ -24,15 +25,90 @@ Federate familiar training code. Validate it locally, then deploy the same workl
 [![downloads](https://static.pepy.tech/badge/nvflare)](https://pepy.tech/project/nvflare)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/NVIDIA/NVFlare)
 
-NVIDIA FLARE is an open-source SDK for federated learning and federated compute. It lets data scientists adapt
-PyTorch, TensorFlow, scikit-learn, XGBoost, and other Python workflows while each participating site keeps control of
-its data and local execution. The same application can move from laptop simulation to a provisioned multi-site
-deployment.
+## Federated computing with NVIDIA FLARE
 
-## Run a meaningful two-client federation
+**Federated computing** coordinates computation across multiple parties or locations without first centralizing their
+raw data. Participating sites run approved tasks locally and share only the results permitted by the collaboration,
+such as statistics, model updates, or evaluation metrics.
 
-Install NVFLARE with its PyTorch dependencies, retrieve the example that matches the installed package revision, and
-run it with focused progress output:
+**Federated learning** is a form of federated computing in which sites collaboratively train or evaluate models on
+their local data. It can enable collaboration where privacy, regulation, data sovereignty, intellectual property,
+data ownership, or the cost of moving data makes central collection impractical.
+
+**NVIDIA FLARE** (**NV**IDIA **F**ederated **L**earning **A**pplication **R**untime **E**nvironment) is an open-source,
+extensible Python SDK for building these applications. Data scientists can adapt existing Python workflows, algorithm
+developers can implement new collaboration patterns, and platform teams can operate the same applications from local
+simulation through provisioned multi-site deployment.
+
+## What you can do with NVIDIA FLARE
+
+| Area | Capabilities |
+|---|---|
+| Federated applications | Training and fine-tuning, evaluation and cross-site validation, analytics and statistics, site-local data processing, and custom multi-site computation |
+| Framework integrations | PyTorch, TensorFlow, JAX, scikit-learn, XGBoost, Hugging Face, NeMo, Flower, and other Python workloads |
+| Algorithms and workflows | FedAvg, FedProx, FedOpt, SCAFFOLD, Ditto, cyclic and swarm learning, horizontal and vertical FL, and custom server- or client-controlled workflows |
+| Privacy, security, and governance | Site-controlled authorization, audit logging, secure provisioning, differential privacy, homomorphic encryption, private set intersection, and confidential computing options |
+| Runtime and operations | Local simulation, proof-of-concept environments, production provisioning, cloud and on-premises deployment, resiliency, monitoring, and experiment tracking |
+
+FLARE's component and event architecture lets applications replace or extend controllers, aggregators, executors,
+filters, persistence, communication, and deployment behavior without rewriting the entire system.
+
+## Industry use cases
+
+Federated computing is useful when organizations need a shared result but cannot freely pool the source data. NVIDIA
+FLARE has been applied to:
+
+| Industry | Representative problems and evidence |
+|---|---|
+| Healthcare and oncology | Multi-institution medical imaging, tumor segmentation, survival analysis, and collaborative cancer research. See the [industry use cases](https://nvflare.readthedocs.io/en/main/industry_use_cases.html) and [healthcare research implementations](./research/README.md). |
+| Life sciences and drug discovery | Collaborative protein-property prediction, molecular modeling, and model fine-tuning while organizations retain proprietary research data. See the [life-sciences case studies](https://nvflare.readthedocs.io/en/main/industry_use_cases.html#healthcare-life-sciences). |
+| Financial services | Cross-institution fraud detection, risk analysis, and federated statistics over transaction data. See the [federated fraud-detection research workflow](./research/fsi-fraud-detection/README.md). |
+| Automotive, edge, and industrial systems | Learning from distributed vehicles, devices, sensors, and facilities without centralizing every raw stream. See the [FLARE Day deployments and talks](https://developer.nvidia.com/flare-day-2025). |
+| Government and scientific computing | Collaboration across facilities where sovereignty, classification, scale, or data movement constrains centralization. See the [industry use cases](https://nvflare.readthedocs.io/en/main/industry_use_cases.html#government-national-security). |
+
+These references describe particular deployments and studies. The privacy, security, governance, and model-quality
+properties of a new application still depend on its design, policies, data, and validation.
+
+## How NVIDIA FLARE works
+
+```text
+                         Federated job
+                workflow · tasks · policies
+                              │
+                    NVIDIA FLARE runtime
+             orchestration · transport · aggregation
+                  ┌───────────┼───────────┐
+                  │           │           │
+               Site A      Site B      Site C
+             local data   local data   local data
+             local task   local task   local task
+                  │           │           │
+                  └── permitted results ──┘
+```
+
+A **job** packages the application logic and configuration. A **workflow** coordinates tasks across participating
+sites. Each site executes its task against local resources, and policies determine what can run and what may leave the
+site. Depending on the application, the shared result can be an aggregate model, evaluation, statistic, intersection,
+or another collaboration artifact.
+
+## From local development to production
+
+The application stays consistent while its execution environment changes:
+
+| Stage | Purpose |
+|---|---|
+| Simulator (`SimEnv`) | Run server and client logic on one system for fast development and validation. |
+| Proof of Concept (`PocEnv`) | Simulate a production deployment on one local host using separate server and client processes and locally generated startup kits. |
+| Production (`ProdEnv`) | Run across provisioned sites with production identities, authorization, networking, policies, and operations. |
+
+See the [run modes](https://nvflare.readthedocs.io/en/main/run_mode.html) and
+[deployment guide](https://nvflare.readthedocs.io/en/main/user_guide/admin_guide/deployment/overview.html) for the
+differences and operational requirements.
+
+## Try NVIDIA FLARE locally
+
+This four-command path installs the PyTorch integration, retrieves the Hello PyTorch example that matches the installed
+NVFLARE revision, and runs a two-client federation with focused progress output:
 
 ```bash
 python -m pip install "nvflare[PT]"
@@ -41,136 +117,32 @@ cd hello-pt
 python job.py --log_config progress
 ```
 
-The example needs no dataset download or GPU. Two simulated clients train independently on deterministic,
-site-specific synthetic images for three federated rounds. The persisted final global model is then evaluated on
-separate client evaluation data.
+The default example runs on CPU, downloads no dataset, and uses deterministic site-local synthetic data. Continue with
+the [Quick Start](https://nvflare.readthedocs.io/en/main/quickstart.html) to understand the run, inspect its artifacts,
+adapt training code, and choose a deployment mode. The
+[Hello PyTorch README](./examples/hello-world/hello-pt/README.md) remains the authoritative reference for dependencies,
+options, artifacts, and troubleshooting.
 
-A validated run produced this result; elapsed time varies by machine, and these values demonstrate the example
-rather than benchmark NVFLARE:
+## Choose your path
 
-```text
-============================= RUN SUMMARY ==============================
+Start with the guide for the concept and supported workflow, then use a maintained example as the runnable reference.
 
-  NVIDIA FLARE · hello-pt
-  Simulation · 2 clients
-
-  ✓ Completed                                                   30.6s
-
-  Training · aggregated client metrics
-
-  Round        accuracy  accuracy_after_local_training
-  1                   1                             20
-  2                  30                             55
-  3                  70                             65
-
-  Model evaluation · accuracy
-
-  Client  SRV_FL_global_model.pt  SRV_best_FL_global_model.pt
-  site-1                      75                           70
-  site-2                      77                           70
-
-  Models    server/simulate_job/app_server/
-  Metrics   server/simulate_job/metrics/
-  Evaluation server/simulate_job/cross_site_val/cross_val_results.json
-  Logs      server/log.txt · site-1/log.txt · site-2/log.txt
-  Results   /tmp/nvflare/simulation/hello-pt
-```
-
-See the [Hello PyTorch guide](./examples/hello-world/hello-pt/README.md) for the complete output, deterministic data
-design, artifact semantics, command options, CIFAR-10 continuation, and troubleshooting.
-
-## Understand what happened
-
-1. Two client tasks trained the same model on distinct local datasets.
-2. Raw samples stayed in the client processes; clients returned model parameters, metrics, and aggregation weights.
-3. FedAvg combined the client updates and persisted a new global model after each round.
-4. Both clients evaluated the final persisted global model on data excluded from their training partitions.
-
-The simulator runs the federation locally, but it exercises the same Recipe and client application structure used by
-the POC and production environments.
-
-## Adapt existing training code
-
-Most of the example client remains ordinary PyTorch. The federated integration surrounds its existing model,
-training, and evaluation code with the Client API exchange loop. This is a shortened excerpt; review
-[`client.py`](./examples/hello-world/hello-pt/client.py) for the complete runnable implementation, including metrics
-and aggregation-weight metadata.
-
-```diff
-+ import nvflare.client as flare
-
-+ flare.init()
-+ while flare.is_running():
-+     input_model = flare.receive()
-+     model.load_state_dict(input_model.params)
-
-      # Existing local evaluation and training loop
-
-+     last_params = {
-+         name: param.detach().cpu().clone()
-+         for name, param in model.state_dict().items()
-+     }
-+     output_model = flare.FLModel(
-+         params=last_params,
-+         metrics={"accuracy": accuracy_before_training},
-+         meta={"NUM_STEPS_CURRENT_ROUND": steps},
-+     )
-+     flare.send(output_model)
-```
-
-For a guided manual conversion, start with the
-[Client API guide](https://nvflare.readthedocs.io/en/main/user_guide/data_scientist_guide/client_api_usage.html) and
-[Job Recipe guide](https://nvflare.readthedocs.io/en/main/user_guide/data_scientist_guide/job_recipe.html).
-
-You can also use the maintained Agent Skills workflow from an existing PyTorch project in Codex or Claude Code:
-
-```text
-I have an existing PyTorch training project in ./source. Convert it to
-federated learning using FedAvg and validate it locally with 2 clients and 2
-rounds of training. You may download any required public model artifacts,
-including tokenizer and configuration files, if they are not already cached.
-Proceed without asking for additional confirmation.
-```
-
-The validated workflow produces reviewable Client API and Recipe code, runs the generated two-client simulation,
-and reports its metrics and artifacts. You remain responsible for reviewing the generated code and its data and
-model assumptions. See the [Agent Skills guide](https://nvflare.readthedocs.io/en/main/user_guide/agent_skills/index.html)
-for installation, supported conversion workflows, validation, and limitations.
-
-## Move from simulation to a real federation
-
-The application remains the workload as its execution environment changes:
-
-| Stage | Execution environment | What changes |
+| Goal | Read first | Then run or adapt |
 |---|---|---|
-| Local validation | `SimEnv` | Server and clients run locally for fast iteration. |
-| Process-level proof | `PocEnv` | Separate local services exercise deployment-like boundaries. |
-| Deployed federation | `ProdEnv` | Provisioned identities, startup kits, networks, policies, and real sites participate. |
+| Adapt existing training code | [Quick Start](https://nvflare.readthedocs.io/en/main/quickstart.html), then [API selection](https://nvflare.readthedocs.io/en/main/user_guide/data_scientist_guide/api_selection.html) | [Client API and Recipe examples](https://nvidia.github.io/NVFlare/catalog/) or optional [Agent Skills](https://nvflare.readthedocs.io/en/main/user_guide/agent_skills/index.html) |
+| Federated analytics and statistics | [Federated Statistics guide](https://nvflare.readthedocs.io/en/main/examples/federated_statistics_overview.html) | [Runnable statistics examples](https://nvidia.github.io/NVFlare/catalog/) |
+| Design a custom algorithm or workflow | [Collaboration API guide](https://nvflare.readthedocs.io/en/main/user_guide/data_scientist_guide/collab_api.html) | [Algorithm and workflow examples](https://nvidia.github.io/NVFlare/catalog/) |
+| Fine-tune large language models | [Federated LLM guide](https://nvflare.readthedocs.io/en/main/programming_guide/llm_fine_tuning.html) | [Hugging Face and NeMo examples](https://nvidia.github.io/NVFlare/catalog/) |
+| Validate POC and production environments | [Deployment guide](https://nvflare.readthedocs.io/en/main/user_guide/admin_guide/deployment/overview.html) | [Hello PyTorch environment example](./examples/advanced/hello-pt-environments/README.md) |
+| Add privacy and governance controls | [Security overview](https://nvflare.readthedocs.io/en/main/system_architecture/security_overview.html) | [DP, HE, PSI, and confidential-computing examples](https://nvidia.github.io/NVFlare/catalog/) |
+| Reproduce or extend published work | [Research overview](./research/README.md) | [Research implementations](https://nvidia.github.io/NVFlare/research/) |
 
-Continue with the tested
-[Hello PyTorch environment guide](./examples/advanced/hello-pt-environments/README.md) to run the same model, data,
-client code, and Recipe in POC or connect it to an already-running production system. Provisioning, identity,
-authorization, networking, and site operations are covered by the
-[deployment guide](https://nvflare.readthedocs.io/en/main/user_guide/admin_guide/deployment/overview.html).
+Use the [NVIDIA FLARE website](https://nvidia.github.io/NVFlare) to discover tutorials, examples, research, webinars,
+and events. The [documentation](https://nvflare.readthedocs.io/en/main/) provides the authoritative guides. After
+installing NVFLARE, `nvflare examples list` shows the curated catalog and `nvflare examples get <name>` retrieves an
+example matched to that installation's source revision. Each example README then owns its exact setup and run steps.
 
-## Choose your next path
-
-After the first successful run:
-
-1. **Adapt this example:** replace the model and data ownership points in
-   [`client.py`](./examples/hello-world/hello-pt/client.py), then validate the changed job locally.
-2. **Adapt existing code:** [choose an API](https://nvflare.readthedocs.io/en/main/user_guide/data_scientist_guide/api_selection.html),
-   then use the manual Client API route or the optional Agent Skills workflow.
-3. **Move to a real federation:** follow the
-   [environment guide](./examples/advanced/hello-pt-environments/README.md), then continue to provisioned deployment.
-
-Other maintained paths include the [example catalog](https://nvidia.github.io/NVFlare/catalog/),
-[Collaboration API](https://nvflare.readthedocs.io/en/main/user_guide/data_scientist_guide/collab_api.html),
-[federated LLM guide](https://nvflare.readthedocs.io/en/main/programming_guide/llm_fine_tuning.html),
-[research implementations](./research/README.md), and
-[security overview](https://nvflare.readthedocs.io/en/main/system_architecture/security_overview.html).
-
-Project and community resources:
+## Project and community
 
 - Read [What's New](https://nvflare.readthedocs.io/en/main/whats_new.html) and the
   [talks and publications](https://nvflare.readthedocs.io/en/main/publications_and_talks.html).
