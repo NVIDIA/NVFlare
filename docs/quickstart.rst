@@ -95,6 +95,21 @@ The generated code and validation results remain reviewable project artifacts.
 See :doc:`Agent Skills <user_guide/agent_skills/index>` for installation,
 supported workflows, validation, and limitations.
 
+Before applying a skill to your own project, try one of the
+:github_nvflare_link:`Agent Skills runnable examples
+<examples/hello-world/agent-skills>`. They provide standalone PyTorch,
+Lightning, Hugging Face, tabular-statistics, and image-statistics starting
+projects with synthetic inputs, exact prompts, and local validation paths. For
+example:
+
+.. code-block:: bash
+
+   nvflare examples get skill-pytorch-conversion
+
+Follow the downloaded README to install the matching skills and run the prompt
+with your coding agent. Other entries in the ``AGENT SKILLS`` group from
+``nvflare examples list`` cover the remaining supported workflows.
+
 Manual Adaptation
 -----------------
 
