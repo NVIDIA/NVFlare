@@ -21,6 +21,7 @@ import pytest
 import torch.nn as nn
 
 from nvflare.apis.job_def import ALL_SITES
+from nvflare.app_common.widgets.metrics_artifact_writer import MetricsArtifactWriter
 from nvflare.app_opt.pt.job_config.model import PTModel
 from nvflare.fuel.utils.constants import FrameworkType
 from nvflare.fuel.utils.secret_utils import PotentialSecretWarning, UnsupportedSecretRefWarning
@@ -186,6 +187,17 @@ class TestBaseCyclicRecipeAttributes:
             **base_recipe_params,
         )
         assert recipe.min_clients == base_recipe_params["min_clients"]
+
+    def test_installs_progress_writer(self, mock_file_system, base_recipe_params, simple_model):
+        recipe = BaseCyclicRecipe(
+            name="test_progress_writer",
+            model=PTModel(model=simple_model),
+            framework=FrameworkType.PYTORCH,
+            **base_recipe_params,
+        )
+
+        writer = recipe._job._deploy_map["server"].app_config.components["metrics_artifact_writer"]
+        assert isinstance(writer, MetricsArtifactWriter)
 
 
 class TestCyclicRecipeControllerConfig:

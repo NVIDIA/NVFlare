@@ -18,10 +18,10 @@ from threading import Lock
 from typing import List, Optional, Tuple, Union
 
 from nvflare.apis.client import Client
-from nvflare.apis.controller_spec import ClientTask, SendOrder, Task, TaskCompletionStatus
+from nvflare.apis.controller_spec import ClientTask, SendOrder, Task, TaskCompletionStatus, TaskPropKey
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import ConfigVarName, FLContextKey, SystemConfigs
+from nvflare.apis.fl_constant import ConfigVarName, FLContextKey, ReservedKey, SystemConfigs
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import job_from_meta
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_copy
@@ -507,8 +507,12 @@ class WFCommServer(FLComponent, WFCommSpec):
                     task.result_received_cb(client_task=client_task, fl_ctx=fl_ctx)
                 except Exception as e:
                     # this task cannot proceed anymore
+                    error_log_ctx = fl_ctx
+                    if task.get_prop(TaskPropKey.RESULT_CB_LOG_CLIENT_NAMES) is False:
+                        error_log_ctx = fl_ctx.clone()
+                        error_log_ctx.remove_prop(ReservedKey.PEER_CTX, force_removal=True)
                     self.log_exception(
-                        fl_ctx,
+                        error_log_ctx,
                         "processing error in result_received_cb on task {}({}): {}".format(
                             task_name, task_id, secure_format_exception(e)
                         ),

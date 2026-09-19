@@ -23,6 +23,7 @@ from nvflare.apis.dxo import DataKind
 from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME
 from nvflare.app_common.app_constant import DefaultCheckpointFileName
 from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
+from nvflare.app_common.widgets.metrics_artifact_writer import MetricsArtifactWriter
 from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
 from nvflare.client.config import ExchangeFormat
 from nvflare.fuel.utils.secret_utils import PotentialSecretWarning
@@ -125,11 +126,14 @@ class TestSwarmLearningRecipe:
         client_components = recipe._job._deploy_map[ALL_SITES].app_config.components
         selector = client_components["model_selector"]
         persistor = client_components["persistor"]
+        metrics_writer = client_components["swarm_metrics_artifact_writer"]
 
         assert isinstance(selector, IntimeModelSelector)
         assert selector.key_metric == key_metric
         assert selector.negate_key_metric is negate_key_metric
         assert isinstance(persistor, PTFileModelPersistor)
+        assert isinstance(metrics_writer, MetricsArtifactWriter)
+        assert metrics_writer.write_artifacts is False
         assert persistor.best_global_model_file_name == DefaultCheckpointFileName.BEST_GLOBAL_MODEL
         assert "model_selector" not in recipe._job._deploy_map[SERVER_SITE_NAME].app_config.components
 

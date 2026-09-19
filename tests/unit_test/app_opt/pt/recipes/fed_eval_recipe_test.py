@@ -19,8 +19,13 @@ import pytest
 import torch.nn as nn
 from pydantic import ValidationError
 
+from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import ALL_SITES
-from nvflare.app_opt.pt.recipes.fedeval import FedEvalRecipe
+from nvflare.apis.signal import Signal
+from nvflare.app_common.abstract.fl_model import FLModel
+from nvflare.app_common.app_constant import AppConstants
+from nvflare.app_common.app_event_type import AppEventType
+from nvflare.app_opt.pt.recipes.fedeval import EvalController, FedEvalRecipe
 from nvflare.client.config import ExchangeFormat
 from nvflare.fuel.utils.secret_utils import PotentialSecretWarning, UnsupportedSecretRefWarning
 from nvflare.recipe import set_per_site_config
@@ -78,6 +83,57 @@ def assert_recipe_basics(recipe, expected_name, expected_params):
 
 def get_client_executor(recipe, site_name):
     return recipe._job._deploy_map[site_name].app_config.executors[0].executor
+
+
+def test_eval_controller_publishes_single_evaluation_round():
+    controller = EvalController(persistor_id="", timeout=10)
+    controller.fl_ctx = FLContext()
+    controller.abort_signal = Signal()
+    model = FLModel(params={})
+    calls = []
+
+    def send_model(**kwargs):
+        sent_model = kwargs["data"]
+        assert sent_model.start_round == 0
+        assert sent_model.current_round == 0
+        assert sent_model.total_rounds == 1
+        return []
+
+    with (
+        patch.object(controller, "load_model", return_value=model),
+        patch.object(controller, "info"),
+        patch.object(controller, "event", side_effect=calls.append),
+        patch.object(controller, "send_model_and_wait", side_effect=send_model),
+    ):
+        controller.run()
+
+    assert calls == [AppEventType.ROUND_STARTED, AppEventType.ROUND_DONE]
+    assert controller.fl_ctx.get_prop(AppConstants.CURRENT_ROUND) == 0
+    assert controller.fl_ctx.get_prop(AppConstants.NUM_ROUNDS) == 1
+    assert controller.fl_ctx.get_prop(AppConstants.PROGRESS_TITLE) == "Model evaluation"
+
+
+def test_eval_controller_does_not_complete_aborted_round():
+    controller = EvalController(persistor_id="", timeout=10)
+    controller.fl_ctx = FLContext()
+    controller.abort_signal = Signal()
+    model = FLModel(params={})
+    calls = []
+
+    def send_model(**kwargs):
+        controller.abort_signal.trigger("stopped")
+        return [FLModel(metrics={"accuracy": 0.8})]
+
+    with (
+        patch.object(controller, "load_model", return_value=model),
+        patch.object(controller, "info") as info,
+        patch.object(controller, "event", side_effect=calls.append),
+        patch.object(controller, "send_model_and_wait", side_effect=send_model),
+    ):
+        controller.run()
+
+    assert calls == [AppEventType.ROUND_STARTED]
+    assert all("Got" not in call.args[0] and "Metrics" not in call.args[0] for call in info.call_args_list)
 
 
 class TestFedEvalRecipe:
