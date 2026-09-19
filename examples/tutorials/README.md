@@ -4,20 +4,25 @@ We will introduce NVFlare features through JupyterLab.
 
 Please make sure you set up a virtual environment and install and configure JupyterLab following the [example root readme](../README.md).
 
-## Tutorial notebooks
+## Feature tutorials
 
-* [Intro to the FL Simulator](./flare_simulator.ipynb)
-  * Shows how to use the FLARE Simulator to run a local simulation.
-* [Hello FLARE API](./flare_api.ipynb)
-  * Goes through the different commands of the FLARE API.
-* [NVFLARE in POC Mode](./setup_poc.ipynb)
-  * Shows how to use POC mode.
-* [NVFlare CLI](./nvflare_cli.ipynb)
-  * Shows how to use the current `nvflare` command groups.
-* [Job Recipe](./job_recipe.ipynb)
-  * Introduces Job Recipes to simplify federated learning job creation and execution with a high-level API.
-* [FLARE Logging](./logging.ipynb)
-  * Covers how to configure logging in FLARE for different use cases and modes.
+Use these focused notebooks when you want to learn one NVIDIA FLARE capability.
+For a complete runnable workload, use the [example catalog](https://nvidia.github.io/NVFlare/catalog/) instead.
+
+### Build and test applications
+
+- [Intro to the FL Simulator](./flare_simulator.ipynb) — Run a local simulation.
+- [Job Recipe](./job_recipe.ipynb) — Create and execute federated jobs with a high-level API.
+
+### Operate and deploy systems
+
+- [NVFLARE in POC Mode](./setup_poc.ipynb) — Run a production-like deployment on one local host.
+- [NVFlare CLI](./nvflare_cli.ipynb) — Use the current `nvflare` command groups.
+- [Hello FLARE API](./flare_api.ipynb) — Submit and monitor jobs programmatically.
+
+### Observe and troubleshoot runs
+
+- [FLARE Logging](./logging.ipynb) — Configure logging for different use cases and modes.
 
 ## Self-paced course
 
