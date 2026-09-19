@@ -42,14 +42,9 @@ class FedSCSAggregator(ModelAggregator):
             raise ValueError("expected_dtypes must not be empty.")
 
         if set(expected_schema) != set(expected_dtypes):
-            raise ValueError(
-                "expected_schema and expected_dtypes must contain "
-                "the same parameters."
-            )
+            raise ValueError("expected_schema and expected_dtypes must contain " "the same parameters.")
 
-        self.expected_schema = {
-            name: tuple(shape) for name, shape in expected_schema.items()
-        }
+        self.expected_schema = {name: tuple(shape) for name, shape in expected_schema.items()}
 
         # Store dtypes as strings because the aggregator configuration is
         # serialized to JSON by FedAvgRecipe. Do not store np.dtype objects
@@ -59,8 +54,7 @@ class FedSCSAggregator(ModelAggregator):
         for name, dtype in expected_dtypes.items():
             if not isinstance(dtype, str):
                 raise ValueError(
-                    f"Expected dtype for parameter '{name}' must be "
-                    f"a string; got {type(dtype).__name__}."
+                    f"Expected dtype for parameter '{name}' must be " f"a string; got {type(dtype).__name__}."
                 )
 
             dtype_name = dtype.replace("torch.", "")
@@ -68,30 +62,21 @@ class FedSCSAggregator(ModelAggregator):
             try:
                 numpy_dtype = np.dtype(dtype_name)
             except TypeError as e:
-                raise ValueError(
-                    f"Unsupported dtype '{dtype}' for parameter '{name}'."
-                ) from e
+                raise ValueError(f"Unsupported dtype '{dtype}' for parameter '{name}'.") from e
 
             if not np.issubdtype(numpy_dtype, np.number):
-                raise ValueError(
-                    f"Expected dtype for parameter '{name}' must be "
-                    f"numeric; got {dtype}."
-                )
+                raise ValueError(f"Expected dtype for parameter '{name}' must be " f"numeric; got {dtype}.")
 
             # Store the original string, not np.dtype.
             self.expected_dtypes[name] = dtype_name
 
-        if max_update_norm is not None and (
-            not np.isfinite(max_update_norm) or max_update_norm <= 0.0
-        ):
+        if max_update_norm is not None and (not np.isfinite(max_update_norm) or max_update_norm <= 0.0):
             raise ValueError("max_update_norm must be positive and finite.")
 
         if not np.isfinite(eps) or eps <= 0.0:
             raise ValueError("eps must be positive and finite.")
 
-        self.max_update_norm = (
-            float(max_update_norm) if max_update_norm is not None else None
-        )
+        self.max_update_norm = float(max_update_norm) if max_update_norm is not None else None
         self.eps = float(eps)
 
         self.client_updates: Dict[str, Dict[str, np.ndarray]] = {}
@@ -115,9 +100,7 @@ class FedSCSAggregator(ModelAggregator):
         try:
             return np.dtype(dtype_name)
         except TypeError as e:
-            raise ValueError(
-                f"Unsupported parameter dtype '{dtype_name}'."
-            ) from e
+            raise ValueError(f"Unsupported parameter dtype '{dtype_name}'.") from e
 
     @staticmethod
     def _flatten_update(
@@ -140,14 +123,11 @@ class FedSCSAggregator(ModelAggregator):
                 )
         except (FloatingPointError, TypeError, ValueError) as e:
             raise ValueError(
-                "Non-finite or overflowing value encountered while "
-                "flattening the client update."
+                "Non-finite or overflowing value encountered while " "flattening the client update."
             ) from e
 
         if not np.all(np.isfinite(flattened)):
-            raise ValueError(
-                "Client update contains non-finite values after flattening."
-            )
+            raise ValueError("Client update contains non-finite values after flattening.")
 
         return flattened
 
@@ -158,38 +138,28 @@ class FedSCSAggregator(ModelAggregator):
     ) -> None:
         """Validate parameter values received from a client."""
         if not update:
-            raise ValueError(
-                f"Client '{client_name}' provided an empty update."
-            )
+            raise ValueError(f"Client '{client_name}' provided an empty update.")
 
         for name, value in update.items():
             try:
                 array = np.asarray(value)
             except Exception as e:
                 raise ValueError(
-                    f"Unable to convert client '{client_name}' parameter "
-                    f"'{name}' to a NumPy array."
+                    f"Unable to convert client '{client_name}' parameter " f"'{name}' to a NumPy array."
                 ) from e
 
             if not np.issubdtype(array.dtype, np.number):
-                raise ValueError(
-                    f"Client '{client_name}' parameter '{name}' "
-                    "must have a numeric dtype."
-                )
+                raise ValueError(f"Client '{client_name}' parameter '{name}' " "must have a numeric dtype.")
 
             try:
                 finite = np.isfinite(array).all()
             except TypeError as e:
                 raise ValueError(
-                    f"Unable to validate client '{client_name}' parameter "
-                    f"'{name}' for finite values."
+                    f"Unable to validate client '{client_name}' parameter " f"'{name}' for finite values."
                 ) from e
 
             if not finite:
-                raise ValueError(
-                    f"Client '{client_name}' parameter '{name}' "
-                    "contains non-finite values."
-                )
+                raise ValueError(f"Client '{client_name}' parameter '{name}' " "contains non-finite values.")
 
     def _validate_schema(
         self,
@@ -202,11 +172,10 @@ class FedSCSAggregator(ModelAggregator):
 
         if received_keys != expected_keys:
             missing = sorted(expected_keys - received_keys)
-            extra = sorted(expected_keys - received_keys)
+            extra = sorted(received_keys - expected_keys)
 
             raise ValueError(
-                f"Parameter schema mismatch for client '{client_name}'. "
-                f"Missing: {missing}; Extra: {extra}."
+                f"Parameter schema mismatch for client '{client_name}'. " f"Missing: {missing}; Extra: {extra}."
             )
 
         for name, expected_shape in self.expected_schema.items():
@@ -247,10 +216,7 @@ class FedSCSAggregator(ModelAggregator):
         preserves cosine similarity.
         """
         if self.max_update_norm is None:
-            return {
-                name: np.asarray(value).copy()
-                for name, value in update.items()
-            }
+            return {name: np.asarray(value).copy() for name, value in update.items()}
 
         vector = self._flatten_update(update)
 
@@ -258,29 +224,18 @@ class FedSCSAggregator(ModelAggregator):
             with np.errstate(over="raise", invalid="raise"):
                 update_norm = np.linalg.norm(vector)
         except FloatingPointError as e:
-            raise ValueError(
-                f"Overflow while computing update norm for client "
-                f"'{client_name}'."
-            ) from e
+            raise ValueError(f"Overflow while computing update norm for client " f"'{client_name}'.") from e
 
         if not np.isfinite(update_norm):
-            raise ValueError(
-                f"Client '{client_name}' update norm is non-finite."
-            )
+            raise ValueError(f"Client '{client_name}' update norm is non-finite.")
 
         if update_norm <= self.max_update_norm:
-            return {
-                name: np.asarray(value).copy()
-                for name, value in update.items()
-            }
+            return {name: np.asarray(value).copy() for name, value in update.items()}
 
         scale = self.max_update_norm / update_norm
 
         if not np.isfinite(scale) or scale <= 0.0:
-            raise ValueError(
-                f"Invalid update scaling factor for client "
-                f"'{client_name}'."
-            )
+            raise ValueError(f"Invalid update scaling factor for client " f"'{client_name}'.")
 
         bounded_update = {}
 
@@ -289,9 +244,7 @@ class FedSCSAggregator(ModelAggregator):
 
             # Preserve the server-authoritative dtype after clipping.
             # NumPy 2 can promote float32 * float64 -> float64.
-            expected_dtype = self._get_numpy_dtype(
-                self.expected_dtypes[name]
-            )
+            expected_dtype = self._get_numpy_dtype(self.expected_dtypes[name])
 
             try:
                 with np.errstate(
@@ -312,8 +265,7 @@ class FedSCSAggregator(ModelAggregator):
 
             if not np.all(np.isfinite(bounded_value)):
                 raise ValueError(
-                    f"Bounded parameter '{name}' for client "
-                    f"'{client_name}' contains non-finite values."
+                    f"Bounded parameter '{name}' for client " f"'{client_name}' contains non-finite values."
                 )
 
             bounded_update[name] = bounded_value
@@ -334,16 +286,10 @@ class FedSCSAggregator(ModelAggregator):
                 update_norm = np.linalg.norm(update_vector)
                 peer_norm = np.linalg.norm(peer_vector)
         except FloatingPointError as e:
-            raise ValueError(
-                "Overflow or invalid arithmetic while computing "
-                "cosine-similarity norms."
-            ) from e
+            raise ValueError("Overflow or invalid arithmetic while computing " "cosine-similarity norms.") from e
 
         if not np.isfinite(update_norm) or not np.isfinite(peer_norm):
-            raise ValueError(
-                "Non-finite norm encountered while computing "
-                "cosine similarity."
-            )
+            raise ValueError("Non-finite norm encountered while computing " "cosine similarity.")
 
         if update_norm <= self.eps or peer_norm <= self.eps:
             return 0.0
@@ -358,27 +304,16 @@ class FedSCSAggregator(ModelAggregator):
                 denominator = update_norm * peer_norm
                 cosine = dot_product / denominator
         except FloatingPointError as e:
-            raise ValueError(
-                "Overflow or non-finite value encountered while "
-                "computing cosine similarity."
-            ) from e
+            raise ValueError("Overflow or non-finite value encountered while " "computing cosine similarity.") from e
 
         if not np.isfinite(dot_product):
-            raise ValueError(
-                "Cosine similarity dot product is non-finite."
-            )
+            raise ValueError("Cosine similarity dot product is non-finite.")
 
         if not np.isfinite(denominator) or denominator <= 0.0:
-            raise ValueError(
-                "Cosine similarity denominator is non-finite "
-                "or non-positive."
-            )
+            raise ValueError("Cosine similarity denominator is non-finite " "or non-positive.")
 
         if not np.isfinite(cosine):
-            raise ValueError(
-                "Cosine similarity computation produced "
-                "a non-finite value."
-            )
+            raise ValueError("Cosine similarity computation produced " "a non-finite value.")
 
         # rho_i^(t) = max(cosine, 0).
         return float(max(cosine, 0.0))
@@ -391,30 +326,21 @@ class FedSCSAggregator(ModelAggregator):
             raise RuntimeError("No client updates received.")
 
         if len(client_names) < 2:
-            raise RuntimeError(
-                "FedSCS requires at least two participating clients."
-            )
+            raise RuntimeError("FedSCS requires at least two participating clients.")
 
         # NVFLARE uses zero-based round numbering internally.
         # FedSCS uses one-based mathematical round numbering.
-        current_round = self.fl_ctx.get_prop(
-            AppConstants.CURRENT_ROUND
-        )
+        current_round = self.fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
 
         if current_round is None:
-            raise RuntimeError(
-                "Current FL round is not available in the aggregator context."
-            )
+            raise RuntimeError("Current FL round is not available in the aggregator context.")
 
         self.round_number = int(current_round) + 1
         t = self.round_number
 
         # The expected schema comes from the server-side model
         # architecture, not from any client submission.
-        total_update = {
-            name: np.zeros(shape, dtype=np.float64)
-            for name, shape in self.expected_schema.items()
-        }
+        total_update = {name: np.zeros(shape, dtype=np.float64) for name, shape in self.expected_schema.items()}
 
         # Compute sum_j Delta w_j^(t).
         for client_name in client_names:
@@ -434,15 +360,10 @@ class FedSCSAggregator(ModelAggregator):
                             dtype=np.float64,
                         )
                 except FloatingPointError as e:
-                    raise ValueError(
-                        f"Overflow or invalid arithmetic while "
-                        f"aggregating parameter '{name}'."
-                    ) from e
+                    raise ValueError(f"Overflow or invalid arithmetic while " f"aggregating parameter '{name}'.") from e
 
                 if not np.all(np.isfinite(total_update[name])):
-                    raise ValueError(
-                        f"Aggregated parameter '{name}' became non-finite."
-                    )
+                    raise ValueError(f"Aggregated parameter '{name}' became non-finite.")
 
         current_scores = {}
         current_scs = {}
@@ -465,16 +386,11 @@ class FedSCSAggregator(ModelAggregator):
                         )
                 except FloatingPointError as e:
                     raise ValueError(
-                        f"Overflow or invalid arithmetic while "
-                        f"computing peer consensus for parameter "
-                        f"'{name}'."
+                        f"Overflow or invalid arithmetic while " f"computing peer consensus for parameter " f"'{name}'."
                     ) from e
 
                 if not np.all(np.isfinite(peer_sum[name])):
-                    raise ValueError(
-                        f"Peer consensus for parameter '{name}' "
-                        "became non-finite."
-                    )
+                    raise ValueError(f"Peer consensus for parameter '{name}' " "became non-finite.")
 
             rho = self._compute_cosine_similarity(
                 update,
@@ -488,10 +404,7 @@ class FedSCSAggregator(ModelAggregator):
             )
 
             if not np.isfinite(previous):
-                raise ValueError(
-                    f"Previous FedSCS score for client "
-                    f"'{client_name}' is non-finite."
-                )
+                raise ValueError(f"Previous FedSCS score for client " f"'{client_name}' is non-finite.")
 
             # s_i^(t) =
             # ((t-1)/t) s_i^(t-1) + (1/t) rho_i^(t).
@@ -500,21 +413,12 @@ class FedSCSAggregator(ModelAggregator):
                     over="raise",
                     invalid="raise",
                 ):
-                    score = (
-                        ((t - 1.0) / t) * previous
-                        + (1.0 / t) * rho
-                    )
+                    score = ((t - 1.0) / t) * previous + (1.0 / t) * rho
             except FloatingPointError as e:
-                raise ValueError(
-                    f"Overflow while computing FedSCS score for "
-                    f"client '{client_name}'."
-                ) from e
+                raise ValueError(f"Overflow while computing FedSCS score for " f"client '{client_name}'.") from e
 
             if not np.isfinite(score):
-                raise ValueError(
-                    f"FedSCS score for client '{client_name}' "
-                    "is non-finite."
-                )
+                raise ValueError(f"FedSCS score for client '{client_name}' " "is non-finite.")
 
             # nu_i^(t) =
             # |(s_i^(t)-s_i^(t-1))/(s_i^(t-1)+epsilon)|.
@@ -524,10 +428,7 @@ class FedSCSAggregator(ModelAggregator):
                     invalid="raise",
                     divide="raise",
                 ):
-                    volatility = abs(
-                        (score - previous)
-                        / (previous + self.eps)
-                    )
+                    volatility = abs((score - previous) / (previous + self.eps))
             except FloatingPointError as e:
                 raise ValueError(
                     f"Overflow or invalid arithmetic while "
@@ -536,10 +437,7 @@ class FedSCSAggregator(ModelAggregator):
                 ) from e
 
             if not np.isfinite(volatility):
-                raise ValueError(
-                    f"FedSCS volatility for client "
-                    f"'{client_name}' is non-finite."
-                )
+                raise ValueError(f"FedSCS volatility for client " f"'{client_name}' is non-finite.")
 
             # c_i^(t) = s_i^(t)/(1 + nu_i^(t)).
             try:
@@ -551,16 +449,11 @@ class FedSCSAggregator(ModelAggregator):
                     scs = score / (1.0 + volatility)
             except FloatingPointError as e:
                 raise ValueError(
-                    f"Overflow or invalid arithmetic while "
-                    f"computing FedSCS score for "
-                    f"client '{client_name}'."
+                    f"Overflow or invalid arithmetic while " f"computing FedSCS score for " f"client '{client_name}'."
                 ) from e
 
             if not np.isfinite(scs):
-                raise ValueError(
-                    f"Stable Cosine Similarity for client "
-                    f"'{client_name}' is non-finite."
-                )
+                raise ValueError(f"Stable Cosine Similarity for client " f"'{client_name}' is non-finite.")
 
             current_scores[client_name] = float(score)
             current_scs[client_name] = float(scs)
@@ -568,9 +461,7 @@ class FedSCSAggregator(ModelAggregator):
         total_scs = float(sum(current_scs.values()))
 
         if not np.isfinite(total_scs):
-            raise RuntimeError(
-                "FedSCS produced a non-finite total trust score."
-            )
+            raise RuntimeError("FedSCS produced a non-finite total trust score.")
 
         self.current_scores = current_scores
         self.current_scs = current_scs
@@ -578,30 +469,16 @@ class FedSCSAggregator(ModelAggregator):
         # If every client has zero trust, use uniform weights rather
         # than aborting the entire FL job.
         if total_scs <= self.eps:
-            self.warning(
-                "FedSCS produced zero total trust score; "
-                "falling back to uniform aggregation weights."
-            )
+            self.warning("FedSCS produced zero total trust score; " "falling back to uniform aggregation weights.")
 
             uniform_weight = 1.0 / len(client_names)
 
-            self.current_weights = {
-                client_name: uniform_weight
-                for client_name in client_names
-            }
+            self.current_weights = {client_name: uniform_weight for client_name in client_names}
         else:
-            self.current_weights = {
-                client_name: scs / total_scs
-                for client_name, scs in current_scs.items()
-            }
+            self.current_weights = {client_name: scs / total_scs for client_name, scs in current_scs.items()}
 
-        if not all(
-            np.isfinite(weight)
-            for weight in self.current_weights.values()
-        ):
-            raise RuntimeError(
-                "FedSCS produced non-finite aggregation weights."
-            )
+        if not all(np.isfinite(weight) for weight in self.current_weights.values()):
+            raise RuntimeError("FedSCS produced non-finite aggregation weights.")
 
         self.info(
             f"FedSCS Round {self.round_number}: "
@@ -629,15 +506,10 @@ class FedSCSAggregator(ModelAggregator):
             raise ValueError("Received client model has no parameters.")
 
         if model.params_type != ParamsType.DIFF:
-            raise ValueError(
-                "FedSCSAggregator expects ParamsType.DIFF updates, "
-                f"got {model.params_type}."
-            )
+            raise ValueError("FedSCSAggregator expects ParamsType.DIFF updates, " f"got {model.params_type}.")
 
         if not isinstance(model.params, dict):
-            raise TypeError(
-                "Client parameters must be provided as a dictionary."
-            )
+            raise TypeError("Client parameters must be provided as a dictionary.")
 
         client_name = None
 
@@ -648,10 +520,7 @@ class FedSCSAggregator(ModelAggregator):
                 client_name = model.meta.get("client_id")
 
         if not client_name:
-            raise ValueError(
-                "Client model metadata must contain "
-                "'client_name' or 'client_id'."
-            )
+            raise ValueError("Client model metadata must contain " "'client_name' or 'client_id'.")
 
         client_name = str(client_name)
 
@@ -677,9 +546,7 @@ class FedSCSAggregator(ModelAggregator):
         if self._params_type is None:
             self._params_type = model.params_type
         elif model.params_type != self._params_type:
-            raise ValueError(
-                "All client updates must use ParamsType.DIFF."
-            )
+            raise ValueError("All client updates must use ParamsType.DIFF.")
 
         # Apply a defense-in-depth magnitude bound before storing
         # the update. Positive scalar rescaling preserves cosine
@@ -717,15 +584,13 @@ class FedSCSAggregator(ModelAggregator):
             update = self.client_updates[client_name]
 
             if not np.isfinite(weight):
-                raise RuntimeError(
-                    f"Non-finite aggregation weight for client "
-                    f"'{client_name}'."
-                )
+                raise RuntimeError(f"Non-finite aggregation weight for client " f"'{client_name}'.")
 
             self._validate_schema(
                 update,
                 client_name,
             )
+
             self._validate_dtypes(
                 update,
                 client_name,
@@ -743,23 +608,16 @@ class FedSCSAggregator(ModelAggregator):
                         )
                 except FloatingPointError as e:
                     raise ValueError(
-                        f"Overflow or invalid arithmetic while "
-                        f"computing aggregated parameter '{name}'."
+                        f"Overflow or invalid arithmetic while " f"computing aggregated parameter '{name}'."
                     ) from e
 
                 if not np.all(np.isfinite(aggregated_delta[name])):
-                    raise ValueError(
-                        f"Final aggregated parameter '{name}' "
-                        "is non-finite."
-                    )
+                    raise ValueError(f"Final aggregated parameter '{name}' " "is non-finite.")
 
         # Final defense-in-depth validation before returning the DIFF.
         for name, value in aggregated_delta.items():
             if not np.all(np.isfinite(value)):
-                raise RuntimeError(
-                    f"Final aggregated DIFF parameter '{name}' "
-                    "contains non-finite values."
-                )
+                raise RuntimeError(f"Final aggregated DIFF parameter '{name}' " "contains non-finite values.")
 
         # Restore the authoritative server-side parameter dtype.
         # Aggregation remains float64 internally, but the returned DIFF
@@ -775,15 +633,11 @@ class FedSCSAggregator(ModelAggregator):
                 )
             except (TypeError, ValueError) as e:
                 raise RuntimeError(
-                    f"Unable to cast aggregated parameter '{name}' "
-                    f"to expected dtype {expected_dtype}."
+                    f"Unable to cast aggregated parameter '{name}' " f"to expected dtype {expected_dtype}."
                 ) from e
 
             if not np.all(np.isfinite(aggregated_delta[name])):
-                raise RuntimeError(
-                    f"Aggregated parameter '{name}' became non-finite "
-                    "after dtype conversion."
-                )
+                raise RuntimeError(f"Aggregated parameter '{name}' became non-finite " "after dtype conversion.")
 
         return FLModel(
             params=aggregated_delta,
