@@ -22,6 +22,7 @@ import shutil
 import subprocess
 import tarfile
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
@@ -223,29 +224,110 @@ def signing_keys(tmp_path_factory):
     keys = []
     try:
         for name in ("approved", "unapproved"):
-            subprocess.run(
-                base
-                + [
-                    "--pinentry-mode",
-                    "loopback",
-                    "--passphrase",
-                    "",
-                    "--quick-generate-key",
-                    name,
-                    "ed25519",
-                    "sign",
-                    "1d",
-                ],
-                check=True,
-                capture_output=True,
-            )
+            try:
+                result = subprocess.run(
+                    base
+                    + [
+                        "--pinentry-mode",
+                        "loopback",
+                        "--passphrase",
+                        "",
+                        "--quick-generate-key",
+                        name,
+                        "ed25519",
+                        "sign",
+                        "1d",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                    env={**os.environ, "LC_ALL": "C"},
+                )
+            except subprocess.TimeoutExpired:
+                pytest.skip("GnuPG fixture key generation timed out after 30 seconds")
+            if result.returncode:
+                diagnostic = result.stderr.strip() or f"exit status {result.returncode}"
+                unavailable = (
+                    "no agent running",
+                    "can't connect to the agent",
+                    "failed to start agent",
+                    "invalid algorithm",
+                    "unsupported algorithm",
+                    "unknown elliptic curve",
+                    "invalid elliptic curve",
+                )
+                message = diagnostic.lower()
+                unsupported_option = "invalid option" in message and any(
+                    option in message for option in ("--pinentry-mode", "--quick-generate-key")
+                )
+                if unsupported_option or any(reason in message for reason in unavailable):
+                    pytest.skip(f"GnuPG cannot generate the required Ed25519 fixture key: {diagnostic}")
+                pytest.fail(f"Unexpected GnuPG fixture key generation failure: {diagnostic}")
             listing = subprocess.check_output(base + ["--with-colons", "--list-keys", name], text=True)
             fingerprint = next(line.split(":")[9] for line in listing.splitlines() if line.startswith("fpr:"))
             public = subprocess.check_output(base + ["--armor", "--export", fingerprint])
             keys.append((fingerprint, public))
         yield keys
     finally:
-        subprocess.run(["gpgconf", "--homedir", str(home), "--kill", "gpg-agent"], check=True)
+        # Best-effort teardown must not replace a prerequisite skip with an agent error.
+        try:
+            subprocess.run(["gpgconf", "--homedir", str(home), "--kill", "gpg-agent"], capture_output=True, timeout=10)
+        except subprocess.TimeoutExpired:
+            pass
+
+
+@pytest.mark.parametrize(
+    "outcome,expected,reason",
+    [
+        ("gpg: No agent running", pytest.skip.Exception, "No agent running"),
+        ('gpg: invalid option "--quick-generate-key"', pytest.skip.Exception, "invalid option"),
+        ("gpg: Invalid algorithm", pytest.skip.Exception, "Invalid algorithm"),
+        (subprocess.TimeoutExpired("gpg", 30), pytest.skip.Exception, "timed out after 30 seconds"),
+        ("gpg: Invalid user ID", pytest.fail.Exception, "Unexpected GnuPG.*Invalid user ID"),
+    ],
+    ids=["agent", "option", "algorithm", "timeout", "unexpected-error"],
+)
+def test_signing_key_fixture_capability_failures(tmp_path_factory, monkeypatch, outcome, expected, reason):
+    if isinstance(outcome, str):
+        outcome = subprocess.CompletedProcess(["gpg"], 2, "", outcome)
+    # Failed cleanup must preserve the diagnostic skip/failure from key generation.
+    run = Mock(side_effect=[outcome, subprocess.CompletedProcess(["gpgconf"], 1)])
+    monkeypatch.setattr(shutil, "which", lambda _: "/fixture/tool")
+    monkeypatch.setattr(subprocess, "run", run)
+    with pytest.raises(expected, match=reason):
+        next(signing_keys.__wrapped__(tmp_path_factory))
+    assert run.call_count == 2
+    assert run.call_args_list[0].kwargs["timeout"] == 30
+    assert run.call_args_list[0].kwargs["env"]["LC_ALL"] == "C"
+    assert run.call_args.args[0][0] == "gpgconf"
+    assert run.call_args.args[0][-2:] == ["--kill", "gpg-agent"]
+    assert run.call_args.kwargs["timeout"] == 10
+
+
+@pytest.mark.parametrize("export_fails", [False, True])
+def test_signing_key_fixture_retains_success_and_export_errors(tmp_path_factory, monkeypatch, export_fails):
+    fingerprint = "A" * 40
+    listing = f"fpr:::::::::{fingerprint}:\n"
+    outputs = (
+        [listing, subprocess.CalledProcessError(2, ["gpg", "--export"])]
+        if export_fails
+        else [listing, b"approved", listing, b"unapproved"]
+    )
+    run = Mock(return_value=subprocess.CompletedProcess(["gpg"], 0, "", ""))
+    monkeypatch.setattr(shutil, "which", lambda _: "/fixture/tool")
+    monkeypatch.setattr(subprocess, "run", run)
+    monkeypatch.setattr(subprocess, "check_output", Mock(side_effect=outputs))
+    keys = signing_keys.__wrapped__(tmp_path_factory)
+    if export_fails:
+        with pytest.raises(subprocess.CalledProcessError):
+            next(keys)
+    else:
+        try:
+            assert next(keys) == [(fingerprint, b"approved"), (fingerprint, b"unapproved")]
+        finally:
+            keys.close()
+    assert run.call_args.args[0][0] == "gpgconf"
+    assert run.call_args.args[0][-2:] == ["--kill", "gpg-agent"]
 
 
 @pytest.mark.parametrize("kind", ["valid", "lowercase_pin", "wrong_key", "extra_key", "malformed", "wrong_pin"])

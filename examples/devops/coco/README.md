@@ -11,10 +11,12 @@ commands, transfer boundaries and execution order. Read
 
 ## Roles and guides
 
-For NVFlare clients, see [project.yaml-based provisioning](provision/README.md).
-The provisioning-node packager protects clients; the server keeps its ordinary kit.
-The [CoCoAuthorizer guide](provision/CCMANAGER.md) covers client-side proof
-generation, local verification on an ordinary server, trusted AS public-key
+For NVFlare clients and an optional protected server, see
+[project.yaml-based provisioning](provision/README.md). The provisioning-node
+packager creates a separate encrypted image and Pod handoff for each protected
+participant. An ordinary server remains supported as a verifier-only participant.
+The [CoCoAuthorizer guide](provision/CCMANAGER.md) covers protected-participant proof
+generation, local verification, trusted AS public-key
 distribution, and the [live cross-node test's scope](provision/CCMANAGER.md#verification-status).
 
 - [Secure services](service/README.md): TLS registry, Trustee/KBS, AS, RVPS and resource authorization.
@@ -46,7 +48,7 @@ not included. No separate NVFlare clone is required by the cluster installer.
 
 ## Package capabilities, not live state
 
-For protected NVFlare clients, use the [token-API runtime profile](RUNTIME-PROFILE.md).
+For protected NVFlare servers and clients, use the [token-API runtime profile](RUNTIME-PROFILE.md).
 It requires a new trusted rehearsal and v3 admin contract; old measurements and
 contracts are not silently reused.
 The [approved security context](admin/APPROVED-LAUNCH-PROFILE.md#approved-application-security-context-v3)

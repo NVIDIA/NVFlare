@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Package signed client kits using the trusted provisioning-node CoCo workflow."""
+"""Package signed server/client kits using the trusted provisioning-node CoCo workflow."""
 
 import json
 import os
@@ -66,16 +66,16 @@ class CoCoPackager(Packager):
             config_path = Path(resolve_cc_config(project, cc_path))
             config = load_yaml(config_path)
             validate_coco_config(config)
-            if participant.type != "client":
-                raise ValueError("CoCoPackager supports clients only")
+            if participant.type not in ("client", "server") or config["role"] != participant.type:
+                raise ValueError("CoCo role must match participant type (client or server)")
             if not participant.get_prop(PropKey.CC_ENABLED) or participant.get_prop(PropKey.CC_CONFIG_DICT) != config:
-                raise ValueError("CoCo client was not configured by CCBuilder, or configuration changed")
+                raise ValueError("CoCo participant was not configured by CCBuilder, or configuration changed")
             selected.append((participant, config_path, config))
         if not selected:
-            raise ValueError("CoCoPackager requires at least one CoCo client")
+            raise ValueError("CoCoPackager requires at least one CoCo participant")
 
         # Keep every selected plaintext kit outside prod before any external
-        # build starts. On failure no selected client's directory can be
+        # build starts. On failure no selected participant's directory can be
         # mistaken for a handoff. Never delete a kit as the CVM packager does.
         private_root = Path(ctx.get_state_dir()) / "coco-private"
         private_root.mkdir(mode=0o700, exist_ok=True)
@@ -92,7 +92,7 @@ class CoCoPackager(Packager):
             private.rename(retained)
             ctx.info(f"Previous CoCo private stage retained at {retained}. Do not distribute state/.")
         private.mkdir(mode=0o700)
-        # The aggregate launcher assumes every client is a plaintext kit.
+        # The aggregate launcher assumes every participant is a plaintext kit.
         aggregate = result / ProvFileName.START_ALL_SH
         if aggregate.exists():
             aggregate.rename(private / ProvFileName.START_ALL_SH)
@@ -145,10 +145,11 @@ class CoCoPackager(Packager):
         if not runner.is_file() or not os.access(runner, os.X_OK):
             raise ValueError(f"Build command is not executable: {runner}")
         kit = owner / "startup-kit"
-        for name in ("startup/sub_start.sh", "startup/rootCA.pem", "startup/client.key", "signature.json"):
+        key_name = {"client": "client.key", "server": "server.key"}[config["role"]]
+        for name in ("startup/sub_start.sh", "startup/rootCA.pem", f"startup/{key_name}", "signature.json"):
             if not (kit / name).is_file():
                 raise ValueError(
-                    f"Missing signed client kit input: {name}; order CertBuilder/SignatureBuilder correctly"
+                    f"Missing signed {config['role']} kit input: {name}; order CertBuilder/SignatureBuilder correctly"
                 )
         for name in (".nvflare-kit", "Dockerfile.coco", "Dockerfile.coco.dockerignore"):
             if (context / name).exists():

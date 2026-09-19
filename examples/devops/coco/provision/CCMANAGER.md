@@ -1,18 +1,19 @@
-# CoCo clients with an ordinary NVFlare server
+# CoCo client and server attestation
 
 There are two separate enforcement points. KBS releases an image key only when
-its resource policy permits it. NVFlare's CCManager on every participant then
+its resource policy permits it. Each generated NVFlare CCManager then
 periodically verifies tokens from all protected participants. CCManager cannot replace
 KBS policy, genpolicy, image signing/encryption, or approved platform references.
 
-The server can verify a CoCo client's proof on an ordinary host or in an ordinary
-container. Verification requires the trusted AS public key and project audience,
+The server can run as a protected CoCo participant or verify CoCo client proofs
+on an ordinary host or in an ordinary container. Verification requires the
+trusted AS public key and project audience,
 not a CoCo Pod, Kata runtime, confidential GPU, guest Attestation Agent, or a
 network connection to Trustee. Token generation has different prerequisites:
 
 | Operation | Where it runs | What it accesses |
 | --- | --- | --- |
-| `generate()` | Protected client inside the CoCo guest | Guest-local AA token API; AA contacts Trustee/KBS when a new attestation token is needed |
+| `generate()` | Protected server or client inside its CoCo guest | Guest-local AA token API; AA contacts Trustee/KBS when a new attestation token is needed |
 | `verify_for_site(token, authenticated_site)` | Ordinary server or another participant | Local pinned AS public key, signed subject matching the authenticated peer, token claims, and in-memory replay cache; no Trustee/RVPS query |
 
 ### Required attestation coverage
@@ -21,9 +22,14 @@ network connection to Trustee. Token generation has different prerequisites:
 peer can override. If it includes `server`, registration requires an envelope
 containing exactly NVFlare's authenticated logical root-server identity `server`
 and verifies its token against that identity. This logical name is not the
-certificate DNS name. Secure FL authentication must remain enabled. Generated
-CoCo client-only deployments intentionally omit `server` from this set, so their
-ordinary server still does not need a TEE or a generated token.
+certificate DNS name. Secure FL authentication must remain enabled. Adding
+`cc_config: cc_server.yml` to the server participant includes `server` in every
+generated required set; the protected server's authorizer uses
+`site_name: server`. Clients reject a missing, wrong-identity, or invalid server
+proof during registration. Ordinary clients receive verifier-only components
+when the server is protected, so they enforce the same server requirement.
+Without a server `cc_config`, generated CoCo client-only deployments omit `server`
+from this set, and the ordinary server needs no TEE or generated token.
 
 Periodic and pre-job validation require verified tokens covering every locally
 configured protected participant. Server discovery supplies routes only: missing
@@ -50,22 +56,24 @@ verifier components. The received namespace set must match that site's set
 exactly, and every proof must verify; missing, duplicate, extra or unknown
 namespaces fail closed. Server identity is `server`, not its certificate DNS name.
 
-For example, a non-CoCo CPU-only SNP server and an SNP+GPU client share both
-verifiers but have different requirements:
+For example, a CoCo server and one CoCo client require the combined CoCo
+authorizer namespace for each participant:
 
 ```json
-"cc_verifier_ids": ["snp_authorizer", "gpu_authorizer"],
+"cc_verifier_ids": ["coco_authorizer"],
 "cc_enabled_sites": ["server", "site-1"],
 "required_site_verifier_ids": {
-  "server": ["snp_authorizer"],
-  "site-1": ["snp_authorizer", "gpu_authorizer"]
+  "server": ["coco_authorizer"],
+  "site-1": ["coco_authorizer"]
 }
 ```
 
-The ordinary server in this client-only CoCo example is not a protected site;
-both its kit and the clients' kits map each protected client to
-`["coco_authorizer"]`. CPU/GPU appraisal inside that combined proof is still
-enforced by CoCoAuthorizer. No extra GPU token namespace is required.
+With an ordinary server, the required map instead contains only protected
+clients. CPU/GPU appraisal inside each combined proof is still enforced by
+CoCoAuthorizer. No extra GPU token namespace is required. The protected server
+uses the same AMD SEV-SNP and NVIDIA confidential-GPU runtime/profile as the
+clients; CPU-only CoCo provisioning and mixed CC compute environments are not
+supported by this example.
 
 Re-run provisioning and distribute the regenerated kits to fix heterogeneous
 deployments. Existing hand-written/previously generated configurations without
@@ -108,7 +116,7 @@ Use `sudo` for key-file access if required. If there is no persistent configured
 signer, stop: configure and retain a P-256 AS signer using the reviewed Trustee
 configuration procedure first. An ephemeral signer changes after restart and
 cannot provide a stable pin. Never copy its private key to the provisioning
-node, client image, or CoCo IT. Authentically deliver the public PEM and confirm
+node, workload image, or CoCo IT. Authentically deliver the public PEM and confirm
 its SHA-256 through an independently authenticated channel with the provisioning
 owner. Put it at `provision/trustee-as-public.pem` (not in the public example).
 Changing this key requires reprovisioning clients/server, new images and
@@ -149,24 +157,29 @@ the guest or print its private-key-bearing response.
 
 ## Provisioning and generated configuration
 
-Use [cc_site-1.yml](cc_site-1.yml) and run:
+Use [cc_site-1.yml](cc_site-1.yml), optionally enable the server's
+[cc_server.yml](cc_server.yml) reference in [project.yaml](project.yaml), and run:
 
 ```bash
 nvflare provision -p project.yaml
 ```
 
-The signed, encrypted client kit contains these additional files:
+Each signed kit receives the configuration appropriate to its role. Protected
+participants' kits are packaged separately into encrypted images:
 
-| File under `local/` | Client configuration | Ordinary server configuration |
-| --- | --- | --- |
-| `coco_authorizer__p_resources.json` | Pinned public key, project audience, site name, loopback API, EAR age limit | Same pinned public key, audience, and EAR age limit |
-| `cc_manager__p_resources.json` | `coco_authorizer` is both issuer and verifier; protected client list | No issuers; verifier `coco_authorizer`; protected client list |
+| File under `local/` | Protected client | Protected server | Ordinary verifier participant |
+| --- | --- | --- | --- |
+| `coco_authorizer__p_resources.json` | Pinned public key, audience, client site name, loopback API, EAR age limit | Same trust, audience and limits; site name `server`; guest loopback API | Same trust, audience and limits; no issuing site name |
+| `cc_manager__p_resources.json` | `coco_authorizer` is issuer and verifier; required protected-site set | `coco_authorizer` is issuer and verifier; same required set | No issuers; verifier `coco_authorizer`; same required set |
 
 NVFlare loads these component fragments alongside `resources.json.default`.
-The ordinary server is not marked CC-enabled and does not request a guest token.
+An ordinary server is not marked CC-enabled and does not request a guest token.
 It continues authenticating with the usual FL certificates. Ordinary clients
-can coexist; all configured protected participants generate proofs and verify
-one another, while the ordinary server verifies every protected client.
+can coexist. When the server is protected, they receive the verifier-only
+configuration above and do not request guest tokens; when the server is ordinary,
+their existing configuration is preserved. All protected participants generate
+proofs and verify one another; each generated verifier checks the required
+protected-site set, including the server when enabled.
 
 `token_expiration` is the maximum accepted EAR age (1–300 seconds), not a
 request to change AS token lifetime. `check_frequency` must be positive and
@@ -192,7 +205,7 @@ Signature, required integer timestamps, `exp > iat`, CPU/GPU appraisals, and
 outer-proof checks remain enforced. No leeway is added to the outer proof decode.
 
 Generated kits use this default when running the updated authorizer; rebuild the
-client image and update ordinary-server code to deploy the change. This is not
+protected images and update ordinary participants' code to deploy the change. This is not
 clock synchronization; the leeway itself adds no retries. Clock lag above the allowance, shorter
 outer-proof lifetimes than the lag, and transient attestation failures can still
 prevent registration. Retry behavior is described below; the shutdown policy is unchanged.
@@ -231,8 +244,9 @@ retain their existing single-attempt implementation and are not given CoCo's
 bounded worker or retry classification.
 
 Set the authorizer retry options under `cc_issuers[].args` and the CCManager
-timeouts under `cc_attestation` in the client's `cc_config` YAML referenced by
-`project.yaml` (see `cc_site-1.yml`). For example, these optional fields explicitly
+timeouts under `cc_attestation` in each protected participant's `cc_config` YAML
+referenced by `project.yaml` (see `cc_site-1.yml` and `cc_server.yml`). For example,
+these optional fields explicitly
 select a 30-second refresh budget; omit it to use the derived default:
 
 ```yaml
@@ -256,8 +270,8 @@ cc_attestation:
 ```
 
 Run `nvflare provision -p project.yaml` again. Provisioning writes the authorizer
-settings into each protected client's resources and the manager timeouts into
-both client and ordinary-server resources. All CoCo clients in the project must
+settings into each protected participant's resources and the manager timeouts
+into every generated manager. All CoCo participants in the project must
 share the manager timeouts; their authorizer backoff settings may differ.
 The same names are constructor arguments when configuring components directly.
 
@@ -270,8 +284,8 @@ be an integer from 1 through 100. Invalid settings fail before kit publication.
 
 Each peer's `get_token_request_timeout` must exceed the remote
 peer's `refresh_token_timeout`, with room for network transit (the constructor
-also checks this against its own refresh budget). Rebuild client images and
-deploy updated ordinary-server code. Omitting the optional settings retains
+also checks this against its own refresh budget). Rebuild protected images and
+deploy updated ordinary participants' code. Omitting the optional settings retains
 the defaults.
 Existing resource configurations that set the old 10-second peer timeout but
 omit `refresh_token_timeout` now receive a 5-second refresh budget and can start
@@ -299,7 +313,7 @@ a timeout in seconds and a `threading.Event` for cancellation.
 ## Direct client/server API
 
 The constructor does **not** accept `expected_workloads`. Use `generate()` on
-the client and `verify_for_site(token, authenticated_site)` at a participant
+each protected server or client and `verify_for_site(token, authenticated_site)` at a participant
 authorization boundary. Obtain the expected site from authenticated FL/mTLS
 identity, never from the submitted token or its envelope. Both verification
 methods return `True` or `False`; reject on `False`. The compatible
@@ -326,6 +340,12 @@ proof = client.generate()
 # Send only proof to the server over an authenticated, encrypted connection.
 # Never send the raw AA response or its tee_keypair field.
 ```
+
+For a protected server, construct its issuing authorizer inside its own guest
+with `site_name="server"`. Keep that logical identity even when its TLS
+certificate and project participant name are `server.example.com`. A client
+checking the authenticated root server uses `verify_for_site(proof, "server")`.
+Generated kits set these values automatically.
 
 On the ordinary server, instantiate the verifier once and reuse it across
 requests so its replay cache remains effective:
@@ -414,7 +434,7 @@ configured, every verified subject must have an entry; all configured claims
 must match signed CPU evidence. An entry can pin either or both fields. Obtain
 values from the trusted platform and workload owner, never from the CoCo host.
 An absent/mismatched configured EAR audience or workload claim fails closed.
-The generated client YAML schema does not infer these optional verifier pins:
+The generated CC YAML schema does not infer these optional verifier pins:
 configure them on the ordinary server's verifier after approving the release.
 Do not bake a workload's own final InitData digest into that same image, which
 would create a circular image/policy dependency.
@@ -423,7 +443,7 @@ Replay IDs are intentionally local to each verifier process. A still-valid proof
 may be accepted by a different verifier or after restart. They do not prove a
 fresh response to a verifier-issued nonce. Deployments requiring that stronger
 property need a separate challenge/response protocol; no such guarantee is made
-here. Keep secure FL authentication, site binding and protected client keys.
+here. Keep secure FL authentication, site binding and protected participant keys.
 
 Generated CoCo managers set `require_site_binding: true`. A custom authorizer
 must declare `supports_site_binding = True` and implement `verify_for_site`;
@@ -441,6 +461,10 @@ name. A different envelope name, missing token, or different signed subject
 rejects registration without shutting down healthy clients. Ordinary clients
 outside `cc_enabled_sites` do not require CC tokens. Periodic responses must
 name the site requested through the FL transport. Keep FL authentication enabled.
+When `server` is required, clients similarly bind the server registration proof
+to the authenticated root-server identity `server` and reject an absent or invalid
+proof before completing registration. The certificate's DNS name still controls
+TLS endpoint authentication; it does not replace that logical attestation identity.
 
 The authorizer still does not compare expected image, command, or InitData
 values. The added peer binding is not workload authorization. Compatibility
@@ -499,9 +523,12 @@ authorization path before deployment. Deployment-specific certificates,
 measurements, node identities and private operational artifacts are not
 included in this public example.
 
-The later peer-binding and mixed-client registration fixes are covered by
-offline regression tests, not that historical live test. Re-run a complete
-protected-client/ordinary-server registration rehearsal before deployment.
+The later peer-binding, mixed-client registration, and protected-server
+provisioning changes are covered by offline regression tests, not that historical
+live test. Re-run a complete registration and periodic-validation rehearsal for
+the selected ordinary-server or protected-server deployment before use. Protected
+server testing must also cover its own encrypted image-key authorization,
+stable network endpoint, and rejection of missing or invalid server proofs.
 
 ### Live bounded-retry check (2026-09-16)
 

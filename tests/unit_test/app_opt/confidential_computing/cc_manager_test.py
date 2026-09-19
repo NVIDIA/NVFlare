@@ -673,6 +673,25 @@ class TestCCManager:
         assert cell.send_request.call_count == 1
         verifier.verify_for_site.assert_not_called()
 
+    @pytest.mark.parametrize("required_server", ["server", "server.example.com"])
+    def test_discovery_cannot_omit_required_server(self, cc_test_env, required_server):
+        manager, _, verifier = cc_test_env
+        manager.site_name = "client1"
+        # A manually configured FQDN remains required, even though provisioning
+        # normally normalizes the protected server identity to "server".
+        manager.cc_enabled_sites = [required_server, "client1"]
+        context = Mock(spec=FLContext)
+        cell = context.get_engine().get_cell()
+        cell.send_request.return_value = new_cell_message(
+            {MessageHeaderKey.RETURN_CODE: F3ReturnCode.OK}, {"sites": [("client1", "client1")]}
+        )
+        with patch.object(manager, "_shutdown_system") as shutdown:
+            assert manager._perform_cross_site_validation(context) is False
+        shutdown.assert_called_once()
+        assert f"Missing required CC participants: ['{required_server}']" in shutdown.call_args.args[0]
+        cell.send_request.assert_called_once()
+        verifier.verify_for_site.assert_not_called()
+
     @pytest.mark.parametrize("server_protected", [False, True])
     def test_complete_periodic_coverage_passes(self, cc_test_env, server_protected):
         manager, _, verifier = cc_test_env

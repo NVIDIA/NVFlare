@@ -15,6 +15,7 @@
 """Offline tests of callable deployment helpers; no external operations."""
 
 import shlex
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -28,6 +29,67 @@ LAUNCH = "coco/50-launch-handoff.sh"
 PREFIX = "set -Eeuo pipefail\n" + f'source {shlex.quote(str(ROOT / "shared/lib/common-base.sh"))}\n'
 
 
+def require_coco_bash():
+    """Check shell prerequisites without skipping the Python/static tests."""
+    bash = shutil.which("bash")
+    if not bash:
+        pytest.skip("CoCo shell tests require bash on PATH")
+    # Lowercase expansion and fractional read timeouts need Bash 4; empty
+    # arrays under nounset also require the Bash 4.4 behavior used by the harness.
+    probe = (
+        "set -eu\n"
+        "printf '%s\\n' \"$BASH_VERSION\"\n"
+        "value=ABC; [[ ${value,,} == abc ]]\n"
+        'items=(); for item in "${items[@]}"; do :; done\n'
+        'read -r -t 0.05 item <<< ready; [[ "$item" == ready ]]\n'
+    )
+    try:
+        result = subprocess.run([bash, "-c", probe], capture_output=True, text=True, timeout=5)
+    except subprocess.TimeoutExpired:
+        pytest.skip("CoCo shell prerequisite probe timed out")
+    if result.returncode:
+        pytest.skip(
+            "CoCo shell tests require lowercase expansion, fractional read timeouts and nounset-safe empty arrays "
+            f"(Bash 4.4+; macOS system Bash 3.2 is insufficient): {result.stdout.strip()} {result.stderr.strip()}"
+        )
+    return bash
+
+
+@pytest.fixture(scope="module")
+def coco_bash():
+    return require_coco_bash()
+
+
+@pytest.mark.parametrize("available,returncode", [(False, 0), (True, 1), (True, 0)])
+def test_shell_prerequisite_detection(monkeypatch, available, returncode):
+    monkeypatch.setattr(shutil, "which", lambda _: "/test/bash" if available else None)
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append(command)
+        assert kwargs["timeout"] == 5
+        return subprocess.CompletedProcess(command, returncode, "test version", "unsupported shell feature")
+
+    monkeypatch.setattr(subprocess, "run", run)
+    if available and returncode == 0:
+        assert require_coco_bash() == "/test/bash"
+    else:
+        with pytest.raises(pytest.skip.Exception, match="CoCo shell tests require"):
+            require_coco_bash()
+    assert len(calls) == int(available)
+
+
+def test_shell_prerequisite_probe_is_bounded(monkeypatch):
+    monkeypatch.setattr(shutil, "which", lambda _: "/test/bash")
+
+    def run(command, **kwargs):
+        raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+
+    monkeypatch.setattr(subprocess, "run", run)
+    with pytest.raises(pytest.skip.Exception, match="prerequisite probe timed out"):
+        require_coco_bash()
+
+
 @pytest.mark.parametrize("quantity", [1, "1"])
 def test_profile_resource_quantities_match_kubernetes(quantity):
     resources = {"limits": {"nvidia.com/pgpu": quantity}}
@@ -35,7 +97,7 @@ def test_profile_resource_quantities_match_kubernetes(quantity):
 
 
 @pytest.mark.parametrize("cached,pull_status", [(True, 0), (False, 0), (False, 1)])
-def test_setup_image_is_available_before_deployment(cached, pull_status):
+def test_setup_image_is_available_before_deployment(cached, pull_status, coco_bash):
     source = 'ensure_setup_image "$SETUP_IMAGE"\n'
     stubs = (
         'SETUP_IMAGE="alpine/openssl@sha256:fixture"\n'
@@ -46,14 +108,16 @@ def test_setup_image_is_available_before_deployment(cached, pull_status):
         + str(pull_status)
         + "; }\n"
     )
-    result = subprocess.run(["bash", "-c", PREFIX + stubs + source + "echo CONTINUE"], capture_output=True, text=True)
+    result = subprocess.run(
+        [coco_bash, "-c", PREFIX + stubs + source + "echo CONTINUE"], capture_output=True, text=True
+    )
     assert ("PULL alpine/openssl@sha256:fixture" in result.stdout) is not cached
     assert (result.returncode == 0) == (cached or pull_status == 0)
     assert ("CONTINUE" in result.stdout) == (result.returncode == 0)
 
 
 @pytest.mark.parametrize("failure", ["none", "hosts.toml", "ca.crt", "curl"])
-def test_registry_preflight_fails_before_launch(failure):
+def test_registry_preflight_fails_before_launch(failure, coco_bash):
     source = 'check_registry_trust "$REGISTRY_HOST"\n'
     stubs = (
         'REGISTRY_HOST="secure.example.invalid:5000"\n'
@@ -62,7 +126,9 @@ def test_registry_preflight_fails_before_launch(failure):
         'need_file() { [[ "$1" != *"/$FAILURE" ]] || die "missing $1"; }\n'
         'curl() { printf "%s\\n" "$@"; [[ "$FAILURE" != curl ]]; }\n'
     )
-    result = subprocess.run(["bash", "-c", PREFIX + stubs + source + "echo CONTINUE"], capture_output=True, text=True)
+    result = subprocess.run(
+        [coco_bash, "-c", PREFIX + stubs + source + "echo CONTINUE"], capture_output=True, text=True
+    )
     assert (result.returncode == 0) == (failure == "none")
     assert ("CONTINUE" in result.stdout) == (failure == "none")
     if failure == "none":
@@ -75,7 +141,7 @@ def test_registry_preflight_fails_before_launch(failure):
 @pytest.mark.parametrize(
     "answer,close_input", [("correct\n", True), ("wrong\n", True), ("", True), ("", False), ("correct", False)]
 )
-def test_bounded_approval_and_safe_key_retention(role, answer, close_input):
+def test_bounded_approval_and_safe_key_retention(role, answer, close_input, coco_bash):
     expected = {"release": "release-v1", "launch": "APPLY", "remove": "REMOVE"}[role]
     call = f'confirm_action {shlex.quote(expected)} "Approve: " 0.05'
     if role == "remove":
@@ -85,7 +151,7 @@ def test_bounded_approval_and_safe_key_retention(role, answer, close_input):
     script = PREFIX + source + "echo CONTINUE"
     answer = answer.replace("correct", expected)
     with subprocess.Popen(
-        ["bash", "-c", script], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+        [coco_bash, "-c", script], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
     ) as process:
         if close_input:
             output, _ = process.communicate(answer, timeout=5)
@@ -107,7 +173,7 @@ def test_bounded_approval_and_safe_key_retention(role, answer, close_input):
 
 
 @pytest.fixture
-def rehearsal_preflight(tmp_path):
+def rehearsal_preflight(tmp_path, coco_bash):
     profile = tmp_path / "profile"
     profile.mkdir()
     base, approval, source = tmp_path / "base.env", profile / "platform-approval.env", tmp_path / "source.yaml"

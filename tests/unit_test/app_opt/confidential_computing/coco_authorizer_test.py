@@ -324,6 +324,41 @@ def test_peer_bound_proof(material):
     assert not verifier.verify_for_site(token, "site-1")
 
 
+@pytest.mark.parametrize("case", ["valid", "hostname", "signature", "ear_signature"])
+def test_server_proof_is_verified_locally_with_logical_identity(material, case):
+    _, client, verifier, _, key = material
+    public = client.trustee_key.public_bytes(
+        serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo
+    ).decode()
+    server = CoCoAuthorizer(public, client.audience, site_name="server")
+    # The fixture signs an EAR locally; no real guest or hardware is involved.
+    with patch.object(server, "_get_guest_token", return_value=guest_reply(material)) as guest:
+        token = server.generate()
+    guest.assert_called_once()
+    proof = jwt.decode(token, options={"verify_signature": False})
+    assert proof["sub"] == "server"
+
+    with (
+        patch.object(verifier, "_get_guest_token") as verifier_guest,
+        patch("nvflare.app_opt.confidential_computing.coco_authorizer.requests.Session") as session,
+    ):
+        assert not verifier.verify_for_site(token, "server.example.com")
+        if case != "valid":
+            if case == "hostname":
+                proof["sub"] = "server.example.com"
+            elif case == "signature":
+                key = ec.generate_private_key(ec.SECP256R1())
+            else:
+                claims = jwt.decode(proof["ear"], options={"verify_signature": False})
+                proof["ear"] = jwt.encode(claims, ec.generate_private_key(ec.SECP256R1()), algorithm="ES256")
+            token = jwt.encode(proof, key, algorithm=CoCoAuthorizer._algorithm(key))
+        assert verifier.verify_for_site(token, "server") is (case == "valid")
+        with pytest.raises(CCTokenGenerateError, match="Verifier-only"):
+            verifier.generate()
+        verifier_guest.assert_not_called()
+        session.assert_not_called()
+
+
 def test_registration_rejects_other_clients_real_signed_proof(material):
     _, _, verifier, generate, _ = material
     token = generate()

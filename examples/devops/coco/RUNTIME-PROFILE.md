@@ -1,6 +1,6 @@
 # NVFlare token-API runtime profile
 
-Protected NVFlare clients need the guest-local `/aa/token` API, in addition to
+Protected NVFlare servers and clients need the guest-local `/aa/token` API, in addition to
 the resource API used for encrypted images. This package derives a reviewed
 configuration with `agent.guest_components_rest_api=all` in
 `hypervisor.qemu.kernel_params`. The upstream Kata image and chart remain
@@ -97,9 +97,12 @@ not trusted evidence: secure services still verifies the guest measurement.
 
 ## Acceptance checks
 
-Run an actual packaged protected NVFlare client, not only the demo workload.
-Verify guest-local proof generation, ordinary-server signature/peer verification,
-successful registration, and encrypted workload resource release. Verify that a
+Run the actual packaged protected NVFlare participants, including the server
+when its protection is enabled. Verify guest-local proof generation, peer
+signature/identity verification, successful registration and periodic validation,
+and encrypted workload resource release for every protected participant. An
+ordinary server remains supported as a verifier without guest token access.
+Verify that a
 configuration without the required API cannot be approved/exported and that an
 unapproved launch is denied by secure services.
 

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Client-only CoCo configuration; attestation is performed by Kata/Trustee."""
+"""Server/client CoCo configuration; attestation is performed by Kata/Trustee."""
 
 import json
 import re
@@ -21,6 +21,7 @@ from pathlib import Path
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
+from nvflare.apis.fl_constant import SiteType
 from nvflare.app_opt.confidential_computing.cc_timeouts import MANAGER_TIMEOUT_DEFAULTS, resolve_token_timeouts
 from nvflare.lighter.cc_provision.cc_constants import CCConfigKey, CCConfigValue
 from nvflare.lighter.cc_provision.utils import resolve_cc_config
@@ -66,10 +67,11 @@ def validate_coco_config(config):
         "compute_env": CCConfigValue.CONFIDENTIAL_CONTAINERS,
         "cc_cpu_mechanism": CCConfigValue.AMD_SEV_SNP,
         CCConfigKey.CC_GPU: "nvidia",
-        "role": "client",
     }.items():
         if config.get(key) != value:
             raise ValueError(f"CoCo requires {key}: {value}")
+    if config.get("role") not in (SiteType.CLIENT, SiteType.SERVER):
+        raise ValueError("CoCo role must be client or server")
     image = config.get("image_build")
     if not isinstance(image, dict) or set(image) != {"context", "dockerfile"}:
         raise ValueError("image_build requires exactly context and dockerfile")
@@ -119,18 +121,20 @@ class CoCoBuilder(Builder):
     def initialize(self, project, ctx):
         packager = project.get_prop("packager", {})
         if packager.get("path") != "nvflare.lighter.cc_provision.impl.coco_packager.CoCoPackager":
-            raise ValueError("CoCo clients require CoCoPackager; plaintext kits must not be released")
+            raise ValueError("CoCo participants require CoCoPackager; plaintext kits must not be released")
+        if any(client.name == SiteType.SERVER for client in project.get_clients()):
+            raise ValueError("CoCo client name 'server' conflicts with the reserved server runtime identity")
         releases = set()
         self.settings = {}
         for participant in project.get_all_participants():
             config = participant.get_prop(PropKey.CC_CONFIG_DICT, {})
             if config.get(CCConfigKey.COMPUTE_ENV) != CCConfigValue.CONFIDENTIAL_CONTAINERS:
                 continue
-            if participant.type != "client":
-                raise ValueError("CoCo provisioning currently supports clients only")
             validate_coco_config(config)
+            if participant.type not in (SiteType.CLIENT, SiteType.SERVER) or config["role"] != participant.type:
+                raise ValueError("CoCo role must match participant type (client or server)")
             if config["release_name"] in releases:
-                raise ValueError("Each CoCo client needs a distinct release_name")
+                raise ValueError("Each CoCo participant needs a distinct release_name")
             releases.add(config["release_name"])
             issuer = config["cc_issuers"][0]
             cc_path = Path(resolve_cc_config(project, participant.get_prop(PropKey.CC_CONFIG)))
@@ -154,61 +158,60 @@ class CoCoBuilder(Builder):
                 **{name: attestation[name] for name in MANAGER_TIMEOUT_DEFAULTS if name in attestation}
             )
             self.settings[participant.name] = (args, url, attestation.get("check_frequency", 120), timeouts)
+        if not self.settings:
+            raise ValueError("CoCoBuilder requires at least one CoCo participant")
         verifier_settings = [
             ({name: value for name, value in s[0].items() if name not in RETRY_ARGUMENTS}, s[2], s[3])
             for s in self.settings.values()
         ]
         if any(s != verifier_settings[0] for s in verifier_settings[1:]):
-            raise ValueError("CoCo clients must share the pinned AS key and attestation timing")
+            raise ValueError("CoCo participants must share the pinned AS key and attestation timing")
 
     def build(self, project, ctx):
-        for client in project.get_clients():
-            config = client.get_prop(PropKey.CC_CONFIG_DICT, {})
-            if config.get(CCConfigKey.COMPUTE_ENV) != CCConfigValue.CONFIDENTIAL_CONTAINERS:
+        server = project.get_server()
+        protected_server = server.name in self.settings
+        participants = [server, *project.get_clients()]
+        # FLContext and CC envelopes use the root server's logical identity,
+        # not its project hostname / certificate identity.
+        enabled_sites = [
+            SiteType.SERVER if participant.type == SiteType.SERVER else participant.name
+            for participant in participants
+            if participant.name in self.settings
+        ]
+        shared_args, _, shared_frequency, shared_timeouts = next(iter(self.settings.values()))
+        for participant in participants:
+            protected = participant.name in self.settings
+            # Preserve client-only provisioning. When the server is protected,
+            # ordinary clients must also verify it, without claiming to attest.
+            if not protected and participant.type != SiteType.SERVER and not protected_server:
                 continue
-            resources = Path(ctx.get_local_dir(client)) / ProvFileName.RESOURCES_JSON_DEFAULT
+            resources = Path(ctx.get_local_dir(participant)) / ProvFileName.RESOURCES_JSON_DEFAULT
             if not resources.is_file():
                 raise RuntimeError("CoCoBuilder requires StaticFileBuilder before CCBuilder")
-            args, url, frequency, timeouts = self.settings[client.name]
-            self._write(
-                ctx, client, "coco_authorizer", AUTHOR_PATH, {**args, "site_name": client.name, "token_url": url}
-            )
+            if protected:
+                args, url, frequency, timeouts = self.settings[participant.name]
+                site = SiteType.SERVER if participant.type == SiteType.SERVER else participant.name
+                authorizer_args = {**args, "site_name": site, "token_url": url}
+                issuers = [{"issuer_id": "coco_authorizer", "token_expiration": args["max_token_age_seconds"]}]
+            else:
+                authorizer_args = {name: value for name, value in shared_args.items() if name not in RETRY_ARGUMENTS}
+                frequency, timeouts, issuers = shared_frequency, shared_timeouts, []
+            self._write(ctx, participant, "coco_authorizer", AUTHOR_PATH, authorizer_args)
             self._write(
                 ctx,
-                client,
+                participant,
                 "cc_manager",
                 MANAGER_PATH,
                 {
-                    "cc_issuers_conf": [
-                        {"issuer_id": "coco_authorizer", "token_expiration": args["max_token_age_seconds"]}
-                    ],
+                    "cc_issuers_conf": issuers,
                     "cc_verifier_ids": ["coco_authorizer"],
-                    "cc_enabled_sites": list(self.settings),
-                    "required_site_verifier_ids": {site: ["coco_authorizer"] for site in self.settings},
+                    "cc_enabled_sites": enabled_sites,
+                    "required_site_verifier_ids": {site: ["coco_authorizer"] for site in enabled_sites},
                     "require_site_binding": True,
                     "verify_frequency": frequency,
                     **timeouts,
                 },
             )
-        args, _, frequency, timeouts = next(iter(self.settings.values()))
-        args = {name: value for name, value in args.items() if name not in RETRY_ARGUMENTS}
-        server = project.get_server()
-        self._write(ctx, server, "coco_authorizer", AUTHOR_PATH, args)
-        self._write(
-            ctx,
-            server,
-            "cc_manager",
-            MANAGER_PATH,
-            {
-                "cc_issuers_conf": [],
-                "cc_verifier_ids": ["coco_authorizer"],
-                "cc_enabled_sites": list(self.settings),
-                "required_site_verifier_ids": {site: ["coco_authorizer"] for site in self.settings},
-                "require_site_binding": True,
-                "verify_frequency": frequency,
-                **timeouts,
-            },
-        )
 
     @staticmethod
     def _write(ctx, participant, component_id, path, args):

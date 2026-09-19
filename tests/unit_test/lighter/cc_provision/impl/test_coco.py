@@ -16,6 +16,7 @@ import base64
 import copy
 import gzip
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -30,13 +31,14 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from nvflare.lighter.cc_provision.impl.cc import CCBuilder
 from nvflare.lighter.cc_provision.impl.coco import CoCoBuilder, resolve_cc_config, validate_coco_config
 from nvflare.lighter.cc_provision.impl.coco_packager import COMMAND, CoCoPackager
-from nvflare.lighter.constants import CtxKey, PropKey
+from nvflare.lighter.constants import CtxKey, PropKey, ProvFileName
 from nvflare.lighter.impl.cert import CertBuilder
 from nvflare.lighter.impl.signature import SignatureBuilder
 from nvflare.lighter.impl.static_file import StaticFileBuilder
 from nvflare.lighter.impl.workspace import WorkspaceBuilder
 from nvflare.lighter.provision import prepare_project
 from nvflare.lighter.provisioner import Provisioner
+from nvflare.lighter.utils import verify_folder_signature
 
 
 def setup_project(tmp_path):
@@ -105,17 +107,17 @@ def test_relative_cc_config_requires_explicit_source(tmp_path, monkeypatch):
     assert resolve_cc_config(project, "cc_site.yml") == str(source.parent / "cc_site.yml")
 
 
-def write_fake_result(request):
+def write_fake_result(request, config=None):
     pytest.importorskip("tomllib", reason="full CoCo Pod packaging requires a Python 3.11+ deployment host")
     from tests.unit_test.lighter.cc_provision.impl.workload_security_context_test import context, policy, policy_data
 
     owner = request.parent
     params = json.loads(request.read_text())
     pod_path = owner / "protected-pod.yaml"
+    config = config or {"registry_repository": "workloads/site-1", "release_name": "site-1-v1"}
+    image = "secure.unit.local:5000/" + config["registry_repository"] + "@sha256:" + "a" * 64
     data = policy_data()
-    data["containers"][0]["OCI"]["Annotations"]["io.kubernetes.cri.image-name"] = (
-        "secure.unit.local:5000/workloads/site-1@sha256:" + "a" * 64
-    )
+    data["containers"][0]["OCI"]["Annotations"]["io.kubernetes.cri.image-name"] = image
     data["containers"][0]["OCI"]["Process"]["Args"] = COMMAND
     initdata = '[data]\n"policy.rego" = ' + "'''\n" + policy(data) + "\n'''\n"
     pod_path.write_text(
@@ -137,7 +139,7 @@ def write_fake_result(request):
                     "restartPolicy": "Never",
                     "containers": [
                         {
-                            "image": "secure.unit.local:5000/workloads/site-1@sha256:" + "a" * 64,
+                            "image": image,
                             "command": COMMAND,
                             "imagePullPolicy": "Always",
                             "securityContext": context(),
@@ -154,11 +156,154 @@ def write_fake_result(request):
         json.dumps(
             {
                 "schema": "nvflare-coco-build-result/v1",
-                "release_name": "site-1-v1",
+                "release_name": config["release_name"],
                 "pod_yaml": str(pod_path),
             }
         )
     )
+
+
+def setup_server_project(tmp_path, with_cc_client=True):
+    project, client_config = setup_project(tmp_path)
+    server_config = copy.deepcopy(client_config)
+    server_config.update(
+        role="server",
+        release_name="server-v1",
+        registry_repository="workloads/server",
+        class_allow_list=["my_app.controller.ReviewedController"],
+    )
+    (tmp_path / "cc_server.yml").write_text(yaml.safe_dump(server_config))
+    project.get_server().set_prop(PropKey.CC_CONFIG, "cc_server.yml")
+    configs = {project.get_server().name: server_config}
+    if with_cc_client:
+        configs["site-1"] = client_config
+    else:
+        project.get_clients()[0].set_prop(PropKey.CC_CONFIG, None)
+    return project, configs
+
+
+@pytest.mark.parametrize("with_cc_client", [False, True])
+def test_provision_server_signed_kit_and_client_verifiers(tmp_path, with_cc_client):
+    project, configs = setup_server_project(tmp_path, with_cc_client)
+    seen = {}
+    root = tmp_path / "workspace/test_project"
+
+    def runner(command, **kwargs):
+        request = Path(command[1])
+        owner = request.parent
+        config = configs[owner.name]
+        if not seen:
+            for name in configs:
+                assert not (root / "prod_00" / name).exists()
+        kit = owner / "build-context/.nvflare-kit"
+        assert (kit / "signature.json").is_file()
+        assert (kit / "startup" / f'{config["role"]}.key').is_file()
+        if config["role"] == "server":
+            assert not (kit / "startup/client.key").exists()
+        seen[owner.name] = owner
+        write_fake_result(request, config)
+
+    with patch("nvflare.lighter.cc_provision.impl.coco_packager.subprocess.run", side_effect=runner):
+        ctx = Provisioner(str(tmp_path / "workspace"), builders(), CoCoPackager("build.sh")).provision(project)
+    assert not ctx.get(CtxKey.BUILD_ERROR), ctx.get_errors()
+    assert set(seen) == set(configs)
+    result = Path(ctx.get_result_location())
+    expected_sites = {"server", "site-1"} if with_cc_client else {"server"}
+    expected_verifiers = {site: ["coco_authorizer"] for site in expected_sites}
+    for participant in project.get_all_participants():
+        protected = participant.name in configs
+        assert bool(participant.get_prop(PropKey.CC_ENABLED)) == protected
+        kit = seen[participant.name] / "startup-kit" if protected else result / participant.name
+        local = kit / "local"
+        manager = json.loads((local / "cc_manager__p_resources.json").read_text())["components"][0]["args"]
+        authorizer = json.loads((local / "coco_authorizer__p_resources.json").read_text())["components"][0]["args"]
+        assert set(manager["cc_enabled_sites"]) == expected_sites
+        assert manager["required_site_verifier_ids"] == expected_verifiers
+        assert manager["cc_verifier_ids"] == ["coco_authorizer"]
+        assert manager["require_site_binding"] is True
+        if protected:
+            assert verify_folder_signature(
+                str(kit),
+                str(kit / "startup/rootCA.pem"),
+                single_signer=True,
+                signature_file=ProvFileName.SIGNATURE_JSON,
+            )
+            logical_site = "server" if participant.type == "server" else participant.name
+            assert authorizer["site_name"] == logical_site
+            assert manager["cc_issuers_conf"] == [{"issuer_id": "coco_authorizer", "token_expiration": 300}]
+            owner = seen[participant.name]
+            key_name = f"startup/{participant.type}.key"
+            assert (kit / key_name).read_bytes() == (owner / "build-context/.nvflare-kit" / key_name).read_bytes()
+            assert owner.stat().st_mode & 0o777 == 0o700
+            assert (owner / "build-request.json").stat().st_mode & 0o777 == 0o600
+            assert json.dumps(COMMAND) in (owner / "build-context/Dockerfile.coco").read_text()
+            handoff = result / participant.name
+            assert [p.name for p in handoff.iterdir()] == [configs[participant.name]["release_name"] + "-pod.yaml"]
+            pod = yaml.safe_load(next(handoff.iterdir()).read_text())
+            assert pod["spec"]["containers"][0]["command"] == COMMAND
+            if participant.type == "server":
+                permissions = json.loads((local / ProvFileName.AUTHORIZATION_JSON_DEFAULT).read_text())["permissions"]
+                assert permissions["org_admin"]["submit_job"] == "none"
+                assert permissions["org_admin"]["shell_commands"] == "none"
+                assert permissions["org_admin"]["byoc"] == "none"
+                resources = json.loads((local / ProvFileName.RESOURCES_JSON_DEFAULT).read_text())
+                assert "my_app.controller.ReviewedController" in resources["class_allow_list"]
+        else:
+            assert manager["cc_issuers_conf"] == []
+            assert "site_name" not in authorizer
+            assert (kit / "startup/client.key").is_file()
+
+
+def test_server_entrypoint_verifies_kit_then_starts_server_module(tmp_path, monkeypatch):
+    project, configs = setup_server_project(tmp_path, with_cc_client=False)
+
+    def runner(command, **kwargs):
+        request = Path(command[1])
+        write_fake_result(request, configs[request.parent.name])
+
+    with patch("nvflare.lighter.cc_provision.impl.coco_packager.subprocess.run", side_effect=runner):
+        ctx = Provisioner(str(tmp_path / "workspace"), builders(), CoCoPackager("build.sh")).provision(project)
+    assert not ctx.get(CtxKey.BUILD_ERROR), ctx.get_errors()
+    kit = tmp_path / "workspace/test_project/state/coco-private/prod_00/server.example.com/build-context/.nvflare-kit"
+    assert verify_folder_signature(
+        str(kit), str(kit / "startup/rootCA.pem"), single_signer=True, signature_file=ProvFileName.SIGNATURE_JSON
+    )
+    binaries = tmp_path / "test-bin"
+    binaries.mkdir()
+    recorder = binaries / "python3"
+    recorder.write_text(
+        f"#!{sys.executable}\nimport json, os, sys\n"
+        "with open(os.environ['COCO_TEST_ARGS_FILE'], 'a') as output:\n"
+        "    output.write(json.dumps(sys.argv[1:]) + '\\n')\n"
+    )
+    recorder.chmod(0o700)
+    recorded = tmp_path / "python-arguments.jsonl"
+    monkeypatch.setenv("PATH", str(binaries) + os.pathsep + os.environ["PATH"])
+    monkeypatch.setenv("NVFL_WORKSPACE", str(kit))
+    monkeypatch.setenv("COCO_TEST_ARGS_FILE", str(recorded))
+    subprocess.run([str(kit / "startup/sub_start.sh"), *COMMAND[1:]], check=True, capture_output=True, timeout=10)
+    verification, startup = [json.loads(line) for line in recorded.read_text().splitlines()]
+    assert verification == [
+        "-m",
+        "nvflare.tool.verify_startup_kits",
+        "-f",
+        str(kit),
+        "-c",
+        str(kit / "startup/rootCA.pem"),
+    ]
+    assert startup == [
+        "-u",
+        "-m",
+        "nvflare.private.fed.app.server.server_train",
+        "-m",
+        str(kit),
+        "-s",
+        "fed_server.json",
+        "--set",
+        "secure_train=true",
+        "org=example",
+        "config_folder=",
+    ]
 
 
 @pytest.mark.parametrize("custom_retry", [False, True, "legacy_timeout"])
@@ -338,6 +483,35 @@ def test_build_failure_preserves_private_kit_without_public_handoff(tmp_path):
     assert (root / "state/coco-private/prod_00/site-1/startup-kit/startup/client.key").is_file()
 
 
+@pytest.mark.parametrize("failure_stage", ["prepare", "build"])
+def test_server_and_client_kits_are_private_before_first_build_failure(tmp_path, failure_stage):
+    project, configs = setup_server_project(tmp_path)
+    root = tmp_path / "workspace/test_project"
+    if failure_stage == "prepare":
+        configs[project.get_server().name]["image_build"]["context"] = "missing-context"
+        (tmp_path / "cc_server.yml").write_text(yaml.safe_dump(configs[project.get_server().name]))
+
+    def runner(command, **kwargs):
+        for name, config in configs.items():
+            assert not (root / "prod_00" / name).exists()
+            kit = root / "state/coco-private/prod_00" / name / "startup-kit"
+            assert (kit / "startup" / f'{config["role"]}.key').is_file()
+        raise subprocess.CalledProcessError(1, command)
+
+    error_type = ValueError if failure_stage == "prepare" else subprocess.CalledProcessError
+    with patch("nvflare.lighter.cc_provision.impl.coco_packager.subprocess.run", side_effect=runner) as build:
+        with pytest.raises(error_type):
+            Provisioner(str(tmp_path / "workspace"), builders(), CoCoPackager("build.sh")).provision(project)
+    if failure_stage == "prepare":
+        build.assert_not_called()
+    else:
+        assert build.call_count == 1
+    for name, config in configs.items():
+        assert not (root / "prod_00" / name).exists()
+        private = root / "state/coco-private/prod_00" / name / "startup-kit"
+        assert (private / "startup" / f'{config["role"]}.key').is_file()
+
+
 @pytest.mark.parametrize("timeout", [None, True, False, 0, -1, 1.5, "60"])
 def test_invalid_build_timeout_rejected(timeout):
     with pytest.raises(ValueError, match="build_timeout"):
@@ -392,11 +566,54 @@ def test_non_coco_regression_and_missing_config_fail_closed(tmp_path):
     assert ctx.get(CtxKey.BUILD_ERROR)
 
 
-def test_coco_on_server_rejected(tmp_path):
-    project, _ = setup_project(tmp_path)
-    project.get_server().set_prop(PropKey.CC_CONFIG, "cc_site-1.yml")
-    ctx = Provisioner(str(tmp_path / "workspace"), builders()).provision(project)
+@pytest.mark.parametrize("participant_type", ["client", "server"])
+def test_config_role_must_match_participant_type(tmp_path, participant_type):
+    project, configs = setup_server_project(tmp_path)
+    participant = project.get_server() if participant_type == "server" else project.get_clients()[0]
+    config = configs[participant.name]
+    config["role"] = "client" if participant_type == "server" else "server"
+    (tmp_path / participant.get_prop(PropKey.CC_CONFIG)).write_text(yaml.safe_dump(config))
+    with patch("nvflare.lighter.cc_provision.impl.coco_packager.subprocess.run") as runner:
+        ctx = Provisioner(str(tmp_path / "workspace"), builders(), CoCoPackager("build.sh")).provision(project)
     assert ctx.get(CtxKey.BUILD_ERROR)
+    assert "role" in " ".join(ctx.get_errors()).lower()
+    runner.assert_not_called()
+    assert not list((tmp_path / "workspace/test_project").glob("prod_*"))
+
+
+@pytest.mark.parametrize("participant_type", ["client", "server"])
+def test_packager_revalidates_participant_role(tmp_path, participant_type):
+    project, configs = setup_server_project(tmp_path)
+    ctx = Provisioner(str(tmp_path / "workspace"), builders()).provision(project)
+    assert not ctx.get(CtxKey.BUILD_ERROR), ctx.get_errors()
+    participant = project.get_server() if participant_type == "server" else project.get_clients()[0]
+    config = configs[participant.name]
+    config["role"] = "client" if participant_type == "server" else "server"
+    participant.set_prop(PropKey.CC_CONFIG_DICT, config)
+    (tmp_path / participant.get_prop(PropKey.CC_CONFIG)).write_text(yaml.safe_dump(config))
+    with patch("nvflare.lighter.cc_provision.impl.coco_packager.subprocess.run") as runner:
+        with pytest.raises(ValueError, match="role must match participant type"):
+            CoCoPackager("build.sh").package(project, ctx)
+    runner.assert_not_called()
+
+
+@pytest.mark.parametrize("role", [None, "", "admin", "relay", True])
+def test_unsupported_coco_roles_are_rejected(tmp_path, role):
+    _, config = setup_project(tmp_path)
+    config["role"] = role
+    with pytest.raises(ValueError, match="role"):
+        validate_coco_config(config)
+
+
+def test_client_name_cannot_shadow_server_runtime_identity(tmp_path):
+    project, _ = setup_server_project(tmp_path)
+    project.add_client("server", "example", {})
+    with patch("nvflare.lighter.cc_provision.impl.coco_packager.subprocess.run") as runner:
+        ctx = Provisioner(str(tmp_path / "workspace"), builders(), CoCoPackager("build.sh")).provision(project)
+    assert ctx.get(CtxKey.BUILD_ERROR)
+    assert "reserved server runtime identity" in " ".join(ctx.get_errors())
+    runner.assert_not_called()
+    assert not list((tmp_path / "workspace/test_project").glob("prod_*"))
 
 
 @pytest.mark.parametrize("first_build_fails", [False, True])
