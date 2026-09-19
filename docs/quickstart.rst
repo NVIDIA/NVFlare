@@ -223,9 +223,10 @@ Useful guide-first paths include:
 - :doc:`Agent Skills <user_guide/agent_skills/index>` for supported tabular or
   image datasets, or :ref:`Federated Statistics <federated_statistics>` for a
   manual or custom workflow, followed by a runnable statistics example.
-- :doc:`Researcher Guide <user_guide/researcher_guide/index>`, then
-  :ref:`Collaboration API <collab_api>`, followed by an algorithm, workflow,
-  or research implementation.
+- :ref:`Collaboration API <collab_api>` for designing custom algorithms and
+  workflows, followed by an algorithm or workflow example. For published work
+  and reference implementations, see :doc:`Research Papers
+  <user_guide/researcher_guide/index>`.
 - :ref:`Federated LLM Fine-Tuning <llm_fine_tuning>`, followed by a Hugging
   Face or NeMo example.
 - :ref:`Security Overview <flare_security_overview>`, followed by differential
