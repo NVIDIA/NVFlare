@@ -96,7 +96,7 @@ series](https://nvidia.github.io/NVFlare/webinars/) and [FLARE Day](https://nvid
 <p align="center">
   <img src="./docs/resources/federated_learning_overview.png"
        alt="Two hospitals train models on private local data and send model updates to a federated server, which aggregates them into a global model."
-       width="900">
+       width="650">
 </p>
 
 The diagram shows one common centralized federated-learning workflow. NVIDIA FLARE also supports decentralized and
