@@ -12,9 +12,10 @@ then points you to the right API and execution environment for your own work.
 Run Your First Federation
 =========================
 
-Create and activate a Python virtual environment. Install NVFLARE with its
-PyTorch integration, retrieve the Hello PyTorch example that matches the
-installed package revision, and run it with focused progress output:
+After creating and activating a Python virtual environment as described in
+:doc:`Installation <installation>`, install NVFLARE with its PyTorch
+integration, retrieve the Hello PyTorch example that matches the installed
+package revision, and run it with focused progress output:
 
 .. code-block:: bash
 
