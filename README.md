@@ -88,20 +88,15 @@ series](https://nvidia.github.io/NVFlare/webinars/) and [FLARE Day](https://nvid
 
 ## How NVIDIA FLARE works
 
-```text
-                         Federated job
-                workflow · tasks · policies
-                              │
-                    NVIDIA FLARE runtime
-             orchestration · transport · aggregation
-                  ┌───────────┼───────────┐
-                  │           │           │
-               Site A      Site B      Site C
-             local data   local data   local data
-             local task   local task   local task
-                  │           │           │
-                  └── permitted results ──┘
-```
+<p align="center">
+  <img src="https://raw.githubusercontent.com/NVIDIA/NVFlare/main/docs/resources/fl_diagram.png"
+       alt="A typical centralized federated-learning workflow: participating sites train local models on private data, send model updates to a federated server for aggregation, and receive an updated global model."
+       width="900">
+</p>
+
+The diagram shows one common centralized federated-learning workflow. NVIDIA FLARE also supports decentralized and
+client-controlled workflows, as well as federated computing applications whose shared result is a statistic,
+evaluation, intersection, or another permitted application result rather than a model.
 
 A **job** packages the application logic and configuration. A **workflow** coordinates tasks across participating
 sites. Each site executes its task against local resources, and policies determine what can run and what may leave the
