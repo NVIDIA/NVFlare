@@ -82,6 +82,8 @@ Choose Your Next Step
 
 - :doc:`Quick Start <quickstart>` -- Run and understand a complete local
   federation.
+- :doc:`Installation <installation>` -- Review supported environments and
+  installation options.
 - :doc:`Agent Skills <user_guide/agent_skills/index>` -- Use maintained
   coding-agent workflows for supported training projects and federated
   statistics.
