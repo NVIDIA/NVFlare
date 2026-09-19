@@ -38,16 +38,16 @@ the broader federated computing paradigm.
 addition to model training and evaluation, it supports analytics, statistics, site-local data processing, and custom
 multi-site computation. Participating sites run tasks locally and share only outputs permitted by the collaboration.
 
-NVIDIA FLARE builds its federated-learning capabilities on top of a general federated-computing core. That core
-provides workflow orchestration, task execution, communication, security, and lifecycle services shared by training,
-evaluation, analytics, statistics, and custom distributed applications.
-
 **[NVIDIA FLARE™](https://developer.nvidia.com/flare)** (**NV**IDIA **F**ederated **L**earning **A**pplication **R**untime **E**nvironment) is a
 domain-agnostic, open-source, and extensible SDK for federated learning and other federated-computing applications. It
 allows researchers and data scientists to adapt existing ML/DL workflows to a federated paradigm and enables platform
 developers to build secure, privacy-preserving solutions for distributed multi-party collaboration. NVIDIA FLARE
 coordinates approved code, tasks, and model state across participating sites while each site retains its raw dataset
 and controls what results may leave.
+
+NVIDIA FLARE builds its federated-learning capabilities on top of a general federated-computing core. That core
+provides workflow orchestration, task execution, communication, security, and lifecycle services shared by training,
+evaluation, analytics, statistics, and custom distributed applications.
 
 > **Keep data at its source.** NVIDIA FLARE moves approved computation to participating sites. In a properly designed
 > and governed federation, raw datasets remain at their source and only outputs permitted by the collaboration and
