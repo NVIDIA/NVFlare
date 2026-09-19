@@ -27,18 +27,25 @@ site keeps control of its data and local execution.
 
 ## Federated computing with NVIDIA FLARE
 
-**Federated computing** coordinates computation across multiple parties or locations without first centralizing their
-raw data. Participating sites run approved tasks locally and share only the results permitted by the collaboration,
-such as statistics, model updates, or evaluation metrics.
+**Federated computing** brings computation to data distributed across multiple parties or locations. Raw records stay
+at the site where they are held instead of being collected in a central location. Participating sites run approved
+tasks locally and share only the outputs permitted by the collaboration, such as aggregate statistics, model updates,
+or evaluation metrics.
 
 **Federated learning** is a form of federated computing in which sites collaboratively train or evaluate models on
-their local data. It can enable collaboration where privacy, regulation, data sovereignty, intellectual property,
-data ownership, or the cost of moving data makes central collection impractical.
+their local data. Training and evaluation happen where the data resides; the underlying training examples are not
+exchanged between sites or sent to a central server. This can enable collaboration where privacy, regulation, data
+sovereignty, intellectual property, data ownership, or the cost of moving data makes central collection impractical.
 
 **[NVIDIA FLARE](https://nvidia.github.io/NVFlare)** (**NV**IDIA **F**ederated **L**earning **A**pplication **R**untime **E**nvironment) is an open-source,
-extensible Python SDK for building these applications. Data scientists can adapt existing Python workflows, algorithm
-developers can implement new collaboration patterns, and platform teams can operate the same applications from local
-simulation through provisioned multi-site deployment.
+extensible Python SDK for building these applications. NVIDIA FLARE coordinates approved code, tasks, and model state
+across participating sites while each site retains its raw dataset and controls what results may leave. Data scientists
+can adapt existing Python workflows, algorithm developers can implement new collaboration patterns, and platform teams
+can operate the same applications from local simulation through provisioned multi-site deployment.
+
+> **Data stays at its source.** NVIDIA FLARE moves approved computation to participating sites. Raw datasets do not
+> move to the server or to other sites; only outputs allowed by the collaboration and each site's policies leave the
+> site.
 
 ## What you can do with NVIDIA FLARE
 
