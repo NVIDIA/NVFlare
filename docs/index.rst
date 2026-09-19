@@ -135,28 +135,56 @@ NVIDIA FLARE
    release_notes/previous
    contributing
 
-NVIDIA FLARE (Federated Learning Application Runtime Environment) is an open-source SDK for
-federated learning. It helps ML practitioners adapt existing training workflows (PyTorch,
-TensorFlow, XGBoost, scikit-learn, NeMo) to a federated setting with minimal code changes,
-and enables platform teams to deploy secure, privacy-preserving multi-party collaboration.
+`NVIDIA FLARE™ <https://developer.nvidia.com/flare>`_ (NVIDIA Federated
+Learning Application Runtime Environment) is a domain-agnostic, open-source,
+and extensible SDK for federated learning and other federated-computing
+applications. It supports collaborative training and evaluation, analytics and
+statistics, site-local data processing, and custom distributed workflows.
+
+NVIDIA FLARE brings approved computation to participating sites. In a properly
+designed and governed federation, raw datasets remain at their source while
+each site controls which tasks may run and which results may leave. Its general
+federated-computing core provides workflow orchestration, task execution,
+communication, security, and lifecycle services from local development through
+production deployment.
 
 Choose Your Path
 ================
 
-New to FLARE (ML Practitioners)
--------------------------------
+Run Your First Federation
+-------------------------
 
-Start here if you want to federate an existing training script.
+Start here if you are new to NVIDIA FLARE or want to adapt an existing
+training or data-processing workflow.
 
-- :doc:`Welcome <welcome>` -- What FLARE is and what it supports
-- :doc:`Installation <installation>` -- Install FLARE and set up your environment
-- :doc:`Quick Start <quickstart>` -- Run a Hello World example and convert your ML code
-- :doc:`Agent Skills <user_guide/agent_skills/index>` -- Optional coding-agent workflows to learn NVFLARE, create federated jobs, optimize with AutoFL, and report results
-- :ref:`Client API <client_api>` -- Recommended high-level API for federated training
-- :ref:`Collaboration API (Technical Preview) <collab_api>` -- Remote Python method calls between server and clients and among peer clients
-- :ref:`Job Recipe API <job_recipe>` -- Pre-built recipes for common FL workflows
-- :doc:`Migration Guide <migration_guide>` -- Upgrade between FLARE versions
-- :ref:`Examples & Tutorials <example_applications>` -- End-to-end examples and tutorials
+- :doc:`Quick Start <quickstart>` -- Run a complete two-client federation,
+  understand its result, and choose the next path.
+- :doc:`Agent Skills <user_guide/agent_skills/index>` -- Use maintained coding-agent
+  workflows for supported training projects, federated statistics, optimization,
+  and diagnosis.
+- :ref:`Choose an API Path <api_selection>` -- Select the Client API, Recipe,
+  Collaboration API, or lower-level components for a manual or custom integration.
+- :doc:`Installation <installation>` -- Review supported environments and
+  alternative installation methods.
+- :ref:`Examples and Tutorials <example_applications>` -- Continue with runnable
+  applications, feature tutorials, and the example catalog.
+
+Research and Design Custom Workflows
+------------------------------------
+
+Start here if you develop federated algorithms, study privacy or scale, or
+reproduce published work.
+
+- :ref:`Collaboration API <collab_api>` -- Build custom server-controlled or
+  peer-to-peer algorithms with remote Python method calls.
+- :ref:`Available Recipes <available_recipes>` -- Review maintained workflow
+  builders and their extension points.
+- :ref:`Examples and Tutorials <example_applications>` -- Find algorithm and
+  workflow implementations.
+- :doc:`Research Papers <user_guide/researcher_guide/index>` -- Browse published
+  research and reference implementations.
+- :ref:`Security Overview <flare_security_overview>` -- Select privacy,
+  governance, authorization, audit, and confidential-computing controls.
 
 Deployment & Security (Production Teams)
 ----------------------------------------
@@ -182,6 +210,13 @@ Start here if you want to extend FLARE or build custom workflows.
 Explore by Use Case
 ===================
 
-- :doc:`Industry Use Cases <industry_use_cases>` -- Real-world deployments across healthcare, finance, government, and more
-- :ref:`Large Models & LLM <llm_fine_tuning>` -- Federated fine-tuning, memory management, and optimization for large models
-- :ref:`Edge & Mobile <mobile_training>` -- Mobile training (iOS/Android) and hierarchical FL for large-scale deployments
+- :ref:`Federated Statistics <federated_statistics>` -- Compute aggregate
+  statistics while source records stay at participating sites.
+- :ref:`Large Models and LLMs <llm_fine_tuning>` -- Fine-tune and evaluate
+  large models across sites.
+- :ref:`Edge and Mobile <mobile_training>` -- Build mobile and hierarchical
+  federated-learning applications.
+- :doc:`Industry Use Cases <industry_use_cases>` -- Explore applications in
+  healthcare, life sciences, financial services, automotive, and other fields.
+- :doc:`Welcome <welcome>` -- Review the concepts, capabilities, and execution
+  environments behind these paths.
