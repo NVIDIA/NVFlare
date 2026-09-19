@@ -30,12 +30,12 @@ site keeps control of its data and local execution.
 **Federated learning** lets sites collaboratively train or evaluate models on their local data. Training and evaluation
 happen where the data resides; the underlying training examples are not exchanged between sites or sent to a central
 server. This can enable collaboration where privacy, regulation, data sovereignty, intellectual property, data
-ownership, or the cost of moving data makes central collection impractical.
+ownership, or the cost of moving data makes central collection impractical. Federated learning is one application of
+the broader federated computing paradigm.
 
-**Federated computing** extends this approach beyond model training and evaluation by bringing approved computation to
-data distributed across multiple parties or locations. Participating sites run tasks locally and share only the outputs
-permitted by the collaboration, such as aggregate statistics, model updates, evaluation metrics, or other application
-results.
+**Federated computing** brings approved computation to data distributed across multiple parties or locations. In
+addition to model training and evaluation, it supports analytics, statistics, site-local data processing, and custom
+multi-site computation. Participating sites run tasks locally and share only outputs permitted by the collaboration.
 
 **[NVIDIA FLARE](https://nvidia.github.io/NVFlare)** (**NV**IDIA **F**ederated **L**earning **A**pplication **R**untime **E**nvironment) is an open-source,
 model- and framework-agnostic, extensible Python SDK for building these applications. NVIDIA FLARE coordinates approved
@@ -89,8 +89,8 @@ series](https://nvidia.github.io/NVFlare/webinars/) and [FLARE Day](https://nvid
 ## How NVIDIA FLARE works
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/NVIDIA/NVFlare/main/docs/resources/fl_diagram.png"
-       alt="A typical centralized federated-learning workflow: participating sites train local models on private data, send model updates to a federated server for aggregation, and receive an updated global model."
+  <img src="./docs/resources/federated_learning_overview.png"
+       alt="Two hospitals train models on private local data and send model updates to a federated server, which aggregates them into a global model."
        width="900">
 </p>
 
