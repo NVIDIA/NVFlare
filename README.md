@@ -6,6 +6,7 @@ Build federated computing applications that collaborate across organizational an
 site keeps control of its data and local execution.
 
 [Website](https://nvidia.github.io/NVFlare) |
+[NVIDIA FLARE Developer Site](https://developer.nvidia.com/flare) |
 [Documentation](https://nvflare.readthedocs.io/en/main/) |
 [Quick Start](https://nvflare.readthedocs.io/en/main/quickstart.html) |
 [Examples](https://nvidia.github.io/NVFlare/catalog/) |
