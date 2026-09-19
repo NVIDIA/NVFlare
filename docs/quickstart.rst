@@ -71,6 +71,34 @@ Metric values depend on the model, data, initialization, and training choices.
 Use the artifacts to verify your run; do not treat the quickstart output as a
 benchmark.
 
+Continue with the Hello World Series
+====================================
+
+The first run above is the starting point for the Hello World series. Review
+:doc:`Hello PyTorch <hello-world/hello-pt/index>` for a walkthrough of its
+model, client code, and Recipe, then choose another example based on what you
+want to learn:
+
+- **Use another training framework:** :doc:`Hello TensorFlow
+  <hello-world/hello-tf/index>`, :doc:`Hello JAX
+  <hello-world/hello-jax/index>`, or :doc:`Hello Lightning
+  <hello-world/hello-lightning/index>`.
+- **Fine-tune a large language model:** :doc:`Hello Hugging Face
+  <hello-world/hello-huggingface/index>`.
+- **Explore other models or integrations:** :doc:`Hello XGBoost
+  <hello-world/hello-xgboost/index>`, :doc:`Hello Logistic Regression
+  <hello-world/hello-lr/index>`, or :doc:`Hello Flower
+  <hello-world/hello-flower/index>`.
+- **Explore another federated capability:** :doc:`Hello Cyclic
+  <hello-world/hello-cyclic/index>`, :doc:`Hello Differential Privacy
+  <hello-world/hello-dp/index>`, or :doc:`Hello Tabular Statistics
+  <hello-world/hello-tabular-stats/index>`.
+
+These guides explain the purpose and structure of each introductory
+application. Follow the linked example README for its exact dependencies and
+run commands. For advanced workloads and additional use cases, use the broader
+example catalog described in `Discover More Examples`_.
+
 Adapt Existing Training Code
 ============================
 
