@@ -74,10 +74,34 @@ benchmark.
 Adapt Existing Training Code
 ============================
 
-Start with :ref:`API Selection <api_selection>` to choose the integration that
-fits your code. For a conventional PyTorch training loop, the Client API adds a
-model-exchange loop around the application's existing model, data loading,
-training, and evaluation code:
+For supported projects, start with the maintained Agent Skills. Use the manual
+API path when the project uses another framework or needs custom integration
+and workflow behavior.
+
+Agent-Assisted Adaptation
+-------------------------
+
+NVFLARE Agent Skills convert existing PyTorch, PyTorch Lightning, and Hugging
+Face training projects and generate federated-statistics jobs. A request can
+state the intended workflow and local validation target, for example:
+
+.. code-block:: text
+
+   I have an existing PyTorch training project in ./source. Convert it to
+   federated learning using FedAvg and validate it locally with 2 clients and 2
+   rounds of training.
+
+The generated code and validation results remain reviewable project artifacts.
+See :doc:`Agent Skills <user_guide/agent_skills/index>` for installation,
+supported workflows, validation, and limitations.
+
+Manual Adaptation
+-----------------
+
+Start with :ref:`API Selection <api_selection>` to choose the manual
+integration that fits your code. For a conventional PyTorch training loop, the
+Client API adds a model-exchange loop around the application's existing model,
+data loading, training, and evaluation code:
 
 .. code-block:: python
 
@@ -89,6 +113,7 @@ training, and evaluation code:
        model.load_state_dict(input_model.params)
 
        # Existing local evaluation and training code
+       # steps = number of optimizer steps completed this round
 
        output_model = flare.FLModel(
            params={
@@ -96,8 +121,13 @@ training, and evaluation code:
                for name, value in model.state_dict().items()
            },
            metrics={"accuracy": accuracy},
+           meta={"NUM_STEPS_CURRENT_ROUND": steps},
        )
        flare.send(output_model)
+
+For FedAvg, ``NUM_STEPS_CURRENT_ROUND`` lets the server weight each update by
+the amount of local work completed. The maintained Hello PyTorch client records
+this value directly from its local training loop.
 
 Define the collaboration with a Recipe and execute it in an environment:
 
@@ -118,24 +148,6 @@ Define the collaboration with a Recipe and execute it in an environment:
 
 Review :ref:`Client API <client_api>` for the exchange lifecycle and
 :ref:`Available Recipes <available_recipes>` for maintained workflow builders.
-
-Agent-Assisted Adaptation
--------------------------
-
-NVFLARE also provides optional Agent Skills for converting existing PyTorch,
-PyTorch Lightning, and Hugging Face training projects and for generating
-federated-statistics jobs. A request can state the intended workflow and local
-validation target, for example:
-
-.. code-block:: text
-
-   I have an existing PyTorch training project in ./source. Convert it to
-   federated learning using FedAvg and validate it locally with 2 clients and 2
-   rounds of training.
-
-The generated code and validation results remain reviewable project artifacts.
-See :doc:`Agent Skills <user_guide/agent_skills/index>` for installation,
-supported workflows, validation, and limitations.
 
 Choose an Execution Environment
 ===============================
@@ -176,10 +188,12 @@ The CLI retrieves source matched to the installed package revision. After
 retrieval, follow that example's README for its exact dependencies and commands.
 Useful guide-first paths include:
 
-- :ref:`Federated Statistics <federated_statistics>`, followed by a runnable
-  tabular or image statistics example.
-- :ref:`Collaboration API <collab_api>`, followed by a custom algorithm or
-  workflow example.
+- :doc:`Agent Skills <user_guide/agent_skills/index>` for supported tabular or
+  image datasets, or :ref:`Federated Statistics <federated_statistics>` for a
+  manual or custom workflow, followed by a runnable statistics example.
+- :doc:`Researcher Guide <user_guide/researcher_guide/index>`, then
+  :ref:`Collaboration API <collab_api>`, followed by an algorithm, workflow,
+  or research implementation.
 - :ref:`Federated LLM Fine-Tuning <llm_fine_tuning>`, followed by a Hugging
   Face or NeMo example.
 - :ref:`Security Overview <flare_security_overview>`, followed by differential
