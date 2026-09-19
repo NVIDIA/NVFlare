@@ -35,8 +35,11 @@ from nvflare.apis.shareable import ReturnCode, Shareable
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
+from nvflare.private.admin_defs import Message, MsgHeader
+from nvflare.private.admin_defs import ReturnCode as AdminReturnCode
 from nvflare.private.aux_runner import AuxMsgTarget
 from nvflare.private.defs import CellChannel
+from nvflare.private.fed.server.message_send import ClientReply
 from nvflare.private.fed.server.server_engine import ServerEngine
 
 
@@ -107,6 +110,54 @@ def test_start_runner_process_requires_deployed_job_metadata(tmp_path):
     engine = ServerEngine.__new__(ServerEngine)
     with pytest.raises(RuntimeError, match="missing deployed job metadata file for server job 'job-1'"):
         engine._start_runner_process(job, {}, None, fl_ctx)
+
+
+def _make_cancel_resource_reply(reply=None):
+    return ClientReply(client_token="client-token", client_name="site-1", req=None, reply=reply)
+
+
+def _make_cancel_resource_engine(replies):
+    engine = ServerEngine.__new__(ServerEngine)
+    engine.get_client_from_name = MagicMock(return_value=SimpleNamespace(token="client-token"))
+    engine._send_admin_requests = MagicMock(return_value=replies)
+    return engine
+
+
+def test_cancel_client_resources_accepts_successful_acknowledgement():
+    reply = Message(topic="reply_cancel_resource", body=Shareable())
+    engine = _make_cancel_resource_engine([_make_cancel_resource_reply(reply)])
+
+    engine.cancel_client_resources(
+        resource_check_results={"site-1": (True, "reservation-token")},
+        resource_reqs={"site-1": {"gpu": 1}},
+        fl_ctx=FLContext(),
+    )
+
+    engine._send_admin_requests.assert_called_once()
+
+
+@pytest.mark.parametrize("failure_mode", ["missing", "timeout", "message-error", "cancellation-error"])
+def test_cancel_client_resources_rejects_missing_or_failed_acknowledgement(failure_mode):
+    if failure_mode == "missing":
+        replies = []
+    elif failure_mode == "timeout":
+        replies = [_make_cancel_resource_reply()]
+    else:
+        body = Shareable()
+        reply = Message(topic="reply_cancel_resource", body=body)
+        if failure_mode == "message-error":
+            reply.set_header(MsgHeader.RETURN_CODE, AdminReturnCode.ERROR)
+        else:
+            body.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
+        replies = [_make_cancel_resource_reply(reply)]
+    engine = _make_cancel_resource_engine(replies)
+
+    with pytest.raises(RuntimeError, match="resource cancellation was not acknowledged.*site-1"):
+        engine.cancel_client_resources(
+            resource_check_results={"site-1": (True, "reservation-token")},
+            resource_reqs={"site-1": {"gpu": 1}},
+            fl_ctx=FLContext(),
+        )
 
 
 class _FakeClientManager:
