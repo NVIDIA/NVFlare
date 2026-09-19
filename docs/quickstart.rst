@@ -41,8 +41,9 @@ The example performs a real federated-learning workflow on one machine:
 
 1. The server sends the current global model to two client tasks.
 2. Each client evaluates and trains that model on its own local dataset.
-3. Clients return model parameters, metrics, and aggregation weights; their raw
-   samples remain in the client processes.
+3. Clients return model parameters, metrics, and the completed optimizer-step
+   count used by the server to derive aggregation weight; their raw samples
+   remain in the client processes.
 4. FedAvg combines the updates into a new global model.
 5. After the last round, both clients evaluate the persisted final global
    model on data excluded from their local training partitions.
