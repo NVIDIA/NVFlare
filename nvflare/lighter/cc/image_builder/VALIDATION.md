@@ -6,6 +6,28 @@ services and operator guides are maintained together with the provisioning adapt
 in this repository. Repository formatting and license headers change source
 fingerprints; build and approve new generic CVMs for this source snapshot.
 
+## Recorded TDX firmware input
+
+The September 19 hardware run used the same direct-boot TDVF recorded in the
+earlier standalone builder's validation record. Its digest was rechecked against
+the retained firmware on the TDX host on September 19:
+
+| Input | Value |
+|---|---|
+| EDK II release | `edk2-stable202605` |
+| Source commit | `b03a21a63e3bd001f52c527e5a57feddb53a690b` |
+| Platform DSC | `OvmfPkg/IntelTdx/IntelTdxX64.dsc` |
+| Architecture / target / toolchain tag | `X64` / `RELEASE` / `GCC` |
+| Build defines | `BUILD_SHELL=FALSE`, `SECURE_BOOT_ENABLE=FALSE` |
+| Input filename | `inputs/OVMF.inteltdx.fd` |
+| SHA-256 | `fb85eb43785820cf6ad50f13788c1f9362c76fa2861de8e3d2c0f2a6fcf7537f` |
+
+These pins identify the tested artifact, not a guarantee that another build
+environment emits identical bytes. Record the digest of the actual firmware in
+the reviewed profile/bundle. This measured direct-boot path relies on TDX launch
+measurements and Trustee approval; a Secure Boot deployment requires a separately
+validated signed kernel/shim chain. No host firmware was flashed for this run.
+
 ## Service parser diagnostic review fix — 2026-09-19
 
 Malformed application service files now produce a fixed configuration diagnostic

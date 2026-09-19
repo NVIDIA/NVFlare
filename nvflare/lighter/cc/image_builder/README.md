@@ -56,6 +56,12 @@ packages from authenticated repositories, the upstream NVIDIA attester’s pinne
 `libnvat` library and provenance, and an approved GPU claim policy.
 See [GPU_BUILD.md](GPU_BUILD.md) for the clean-base package inputs and SDK recipe.
 
+Before the first TDX build, complete the [host prerequisites](BUILD_GUIDE.md#1-prepare-the-build-host):
+kernel/module enablement, explicit QGS vsock configuration, the selected
+PCS/PCCS service's credentials and platform registration, and a signed-quote
+smoke test. Then [discover and approve TCB references](BUILD_GUIDE.md#discover-and-approve-tdx-tcb-references).
+An active QGS service or a local TDREPORT alone does not establish working remote attestation.
+
 Install the builder requirements with pip or uv:
 
 ```sh

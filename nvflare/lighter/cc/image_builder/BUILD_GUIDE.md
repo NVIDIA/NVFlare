@@ -47,7 +47,8 @@ for host enablement and the collateral service selected by your site.
 For TDX, complete these steps before a full build:
 
 1. Enable `nohibernate kvm_intel.tdx=1` in the host kernel command line and reboot.
-   Alternatively configure `options kvm_intel tdx=1` in modprobe configuration.
+   Instead of the `kvm_intel.tdx=1` argument, you may configure
+   `options kvm_intel tdx=1` in modprobe configuration; keep `nohibernate`.
    Verify `/sys/module/kvm_intel/parameters/tdx` is `Y`. TDX module initialization
    may be lazy; absence of an early boot message alone is not a failure.
 2. Install `tdx-qgs` from the supported Intel DCAP repository. In `/etc/qgs.conf`,
@@ -62,7 +63,8 @@ For TDX, complete these steps before a full build:
 4. Supply a reviewed direct-boot TDVF as `inputs/OVMF.inteltdx.fd`. The packaged
    `OVMF.inteltdx.ms.fd` enables Secure Boot and is not the default for an unsigned
    direct-boot kernel. The tested TDVF build uses `SECURE_BOOT_ENABLE=FALSE`; its
-   exact build is recorded in [VALIDATION.md](VALIDATION.md). TDX measurements
+   source, build flags and digest are recorded in
+   [VALIDATION.md](VALIDATION.md#recorded-tdx-firmware-input). TDX measurements
    authenticate this firmware and kernel through the approved launch profile.
    A Secure Boot deployment must separately validate its signed kernel/shim chain;
    `platforms.intel_tdx.shim` supplies the shim to QEMU's `-shim` option.
@@ -178,6 +180,105 @@ and cannot be downloaded from this repository:
 Use reviewed, immutable copies of every input in production. The builder hashes
 the base image, firmware, trust files, policy, runtime source, and final artifacts
 into the CVM contract and manifest.
+
+### Discover and approve TDX TCB references
+
+The first build already requires `approved-tcb-references.json`. Discover its
+candidate values in the temporary TD used for the host quote smoke test above,
+before building a CVM. That TD needs no vault, KBS resource or approved CVM
+references. Use the intended host's firmware/TDX module and the planned QEMU CPU
+configuration; `xfam` describes the TD's enabled CPU state and must match the
+eventual CVM. Do not fill the reference file with placeholder values to get past
+build validation.
+
+Copy the reviewed builder source into that temporary TD and install its Python
+requirements as in §1. Inside the TD, change to its `image_builder` directory and
+capture a local report with the same hardware adapter used by the CVM runtime:
+
+```sh
+sudo install -d -m 0700 /var/lib/cvm-tcb-discovery
+sudo python3 - <<'PY_TCB'
+import base64
+from pathlib import Path
+
+from cvm.common.evidence import verify_reference
+from cvm.common.io import write_json
+from cvm.common.measurements import measurements
+from cvm.runtime.platforms import local_report
+
+report, nonce = local_report("intel_tdx")
+evidence = {
+    "platform": "intel_tdx",
+    "report": base64.b64encode(report).decode(),
+    "nonce": base64.b64encode(nonce).decode(),
+    "ccel": base64.b64encode(Path("/sys/firmware/acpi/tables/data/CCEL").read_bytes()).decode(),
+    "measurements": measurements("intel_tdx", report),
+}
+verify_reference("intel_tdx", evidence)
+write_json("/var/lib/cvm-tcb-discovery/reference-evidence.json", evidence)
+PY_TCB
+sudo ./cvmctl inspect-tcb /var/lib/cvm-tcb-discovery/reference-evidence.json
+```
+
+This uses `/dev/tdx_guest` and the guest's CCEL; run it inside the TD, not on the
+host. The report file is mode 0600. `inspect-tcb` checks report structure, the
+local nonce and measurement consistency, then prints `unapproved_candidate_tcb`:
+
+| Field | TDREPORT bytes (zero-based, end excluded) | Reference encoding |
+|---|---|---|
+| `mr_seam` | `[280:328]` | List of 96-character lowercase hex strings |
+| `tcb_svn` | `[264:280]` | List of 32-character lowercase hex strings |
+| `xfam` | `[520:528]` | List of 16-character lowercase hex strings |
+
+These are report bytes in hex; do not reverse `xfam` into integer notation.
+The inspector does not authenticate a signed quote, replay CCEL, approve a TCB,
+or modify Trustee. Keep reports and verifier results in restricted acceptance
+records, outside OCI deliveries and public logs.
+
+Have the platform administrator verify a fresh signed quote from the same TD
+using the smoke-test workflow in §1 and the intended collateral channel. Check
+signature/endorsements, challenge binding, collateral expiry and TCB status, and
+compare the quote's `mr_seam`, `tcb_svn` and `xfam` with the candidates. With
+Trustee v0.22.0, these fields are under `tdx.quote.body` in
+[verified CPU evidence](https://github.com/confidential-containers/trustee/blob/512fed65642015b849f38fb13bfdec7806639987/deps/verifier/src/tdx/mod.rs);
+`tdx.advisory_ids`, `tdx.tcb_status` and `tdx.collateral_expiration_status` come
+from the verifier. An EAR exposes that evidence under
+`submods.cpu0["ear.veraison.annotated-evidence"]`; validate the EAR's signature,
+issuer, expiry, any configured audience and protocol binding before relying on it.
+Decoding a JWT alone is not verification. See
+[TCB channel selection](TDX_TROUBLESHOOTING.md#tcb-channel-selection).
+
+`allowed_advisory_ids` is a separate administrator-approved list of advisory ID
+strings from that verified appraisal, not a TDREPORT field or an automatically
+accepted list. Use `[]` when no advisories are approved. Adding an advisory does
+not bypass the CPU policy's `UpToDate` and unexpired-collateral requirements.
+Keep KBS resource policy deny-all during discovery; no key release is needed.
+
+After approval, write only `mr_seam`, `tcb_svn`, `xfam` and
+`allowed_advisory_ids` as top-level keys in `inputs/approved-tcb-references.json`
+for a CPU-only TDX profile. Omit the inspector's wrapper and `review_required`
+text. Add the schema's SNP/GPU references only when those profiles are enabled.
+The checked-in profile enables both CPU platforms by default; disable SNP for
+a TDX-only profile. Unknown keys, including `_comment_*`, fail before building;
+keep approval notes in a separate document. The exact schema is
+[`cvm/common/references.py`](cvm/common/references.py).
+
+Then build/finalize the real CVM and collect its own boot measurements. Do not
+pass the temporary TD's evidence to `finalize --reference-evidence`: its
+MRTD/RTMR values describe a different guest. On the trusted build host, inspect
+the real bundle's private report with:
+
+```sh
+sudo ./cvmctl inspect-tcb \
+  target/cvm_cpu-2026.09-r4/intel_tdx/reference-evidence.json
+```
+
+Compare its TCB fields with the approved input and complete signed-quote/CCEL
+and deployment acceptance for that exact bundle before production approval.
+Transfer the discovery records securely and stop the temporary TD afterward.
+Changing approved references, firmware or other contract inputs requires a new
+`profile_version`, fresh construction/finalization and approval, and the isolated
+policy/reference storage described in [TRUSTEE_GUIDE.md](TRUSTEE_GUIDE.md#6-install-references-and-policies).
 
 ## 2. Simple CVM Build
 

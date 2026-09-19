@@ -272,7 +272,37 @@ has no permanent tombstone, so operators must fence uploads before revocation an
 preserve deletions when restoring backups. These are the existing CoCo lifecycle
 responsibilities; no CVM key adapter or reconciliation daemon is required.
 
+### Diagnose resource administration failures
+
+The former `key_service.py`, `ResourceStore` and `approved-bundles.json` are no
+longer in the request path. A native resource upload goes directly to CoCo KBS.
+The builder intentionally omits response bodies, tokens and keys from errors;
+use its failure timestamp and the existing KBS deployment's restricted logs to
+identify the server-side cause.
+
+| Failure | Check |
+|---|---|
+| Authentication or authorization denied | Token signature, issuer/audience, expiry, `cvm-resources` role and the endpoint ACL. A policy-role token must not upload or delete resources. |
+| Backend filesystem/permission error | KBS's actual container UID/GID, volume ownership, parent-directory traversal permissions and writable mounts for `storage/repository` and `storage/kbs`. Keep AS policies and approved references operator-controlled. |
+| TLS, connection or backend availability error | Configured CA/hostname, endpoint reachability and the running KBS container's status/logs. Do not disable TLS verification. |
+
+Inspect the existing CoCo pod's KBS container logs (or the operator-managed
+native process logs), rather than looking for a CVM key-service journal. Keep
+those logs private: upstream diagnostics may contain resource paths or request
+details. Correct ownership/mounts through the deployment configuration; do not
+make storage world-writable or broaden the token's role. After an uncertain
+upload, reconcile that resource through the operator workflow before retrying;
+a new POST can replace it.
+
 ## 6. Install references and policies
+
+Before the first build, follow
+[Discover and approve TDX TCB references](BUILD_GUIDE.md#discover-and-approve-tdx-tcb-references).
+It captures candidate values in a temporary TD without requiring existing CVM
+approvals, explains signed-quote/advisory review, and separates the initial TCB
+input from the real bundle's later boot measurements. Unknown reference keys,
+including JSON `_comment_*` fields, are rejected before construction; keep
+approval notes separately.
 
 Stop the relevant KBS instance while changing its approved AS policies or RVPS
 references. Import a finalized bundle's reviewed values with an operator-chosen
@@ -342,6 +372,18 @@ wrong, stale, cross-vault or incomplete GPU appraisals deny release; key retry,
 revoke and restore behavior remains correct. Verify the measured guest and KBS
 emit and accept the expected default CPU/GPU policy. Complete the bundle's
 hardware acceptance before production approval.
+
+For the pinned v0.22.0 configuration, the live HTTPS role-boundary test uses a
+valid preissued `cvm-policy` token and observes **401** for native resource
+POST, PUT and DELETE. It first confirms that the same token can publish the
+unchanged resource policy, then checks each denied request leaves resource and
+policy bytes unchanged. This exercises the server ACL; the signing client's
+local role guard alone does not establish backend denial. Do not reuse the
+removed backend's POST-403/PUT-DELETE-405 expectations. When qualifying another
+backend revision or proxy, record its actual denial codes and verify the same
+absence of mutation; an arbitrary error response is not proof of authorization.
+The executable check is
+[`test_policy_role_cannot_mutate_resources_or_replace_as`](../../../../tests/integration_test/lighter/cc/image_builder/test_http.py).
 
 ```sh
 sudo ./cvmctl admin install admin.json /path/to/approved/bundle
