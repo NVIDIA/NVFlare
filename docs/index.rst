@@ -10,8 +10,8 @@ NVIDIA FLARE
    :caption: Overview
 
    welcome
+   What's New <whats_new>
    roadmap
-   release_notes/flare_290
    industry_use_cases
 
 .. toctree::
@@ -26,16 +26,16 @@ NVIDIA FLARE
 .. toctree::
    :maxdepth: 1
    :hidden:
-   :caption: User Guide
+   :caption: Adapt & Build
 
    Agent Skills <user_guide/agent_skills/index>
    Choose an API Path <user_guide/data_scientist_guide/api_selection>
-   user_guide/data_scientist_guide/client_api_usage
+   Client API <user_guide/data_scientist_guide/client_api_usage>
+   Job Recipe <user_guide/data_scientist_guide/job_recipe>
+   Recipe API <user_guide/data_scientist_guide/recipe_api>
+   Available Recipes <user_guide/data_scientist_guide/available_recipes>
    Collaboration API (Technical Preview) <user_guide/data_scientist_guide/collab_api>
-   user_guide/data_scientist_guide/job_recipe
-   user_guide/data_scientist_guide/recipe_api
-   user_guide/data_scientist_guide/available_recipes
-   user_guide/data_scientist_guide/flare_api
+   FLARE API <user_guide/data_scientist_guide/flare_api>
    user_guide/data_scientist_guide/flower_integration/flower_integration
    programming_guide/experiment_tracking
    Federated XGBoost <user_guide/data_scientist_guide/federated_xgboost/federated_xgboost>
