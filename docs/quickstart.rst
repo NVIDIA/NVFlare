@@ -247,19 +247,10 @@ The CLI retrieves source matched to the installed package revision. After
 retrieval, follow that example's README for its exact dependencies and commands.
 Feature tutorials and the self-paced course are browsed separately and are not
 part of the ``nvflare examples`` catalog.
-Useful guide-first paths include:
 
-- :doc:`Agent Skills <user_guide/agent_skills/index>` for supported tabular or
-  image datasets, or :ref:`Federated Statistics <federated_statistics>` for a
-  manual or custom workflow, followed by a runnable statistics example.
-- :ref:`Collaboration API (Technical Preview) <collab_api>` for designing
-  custom algorithms and workflows, followed by an algorithm or workflow
-  example. For published work and reference implementations, see :doc:`Research Papers
-  <user_guide/researcher_guide/index>`.
-- :ref:`Federated LLM Fine-Tuning <llm_fine_tuning>`, followed by a Hugging
-  Face or NeMo example.
-- :ref:`Security Overview <flare_security_overview>`, followed by differential
-  privacy, homomorphic encryption, PSI, or confidential-computing examples.
+For guide-based next steps such as Agent Skills, manual API selection, custom
+workflow research, LLMs, deployment, or security, return to the
+:doc:`documentation home <index>` and choose the path that matches your goal.
 
 .. toctree::
    :maxdepth: 1
