@@ -120,6 +120,14 @@ class AdaptiveHeterogeneityModelAggregator(ModelAggregator):
         """Clear current-round results while preserving cross-round telemetry."""
         self._results = {}
 
+    def accept(self, shareable, fl_ctx) -> bool:
+        """Reject malformed client results without aborting the federated round."""
+        try:
+            return super().accept(shareable, fl_ctx)
+        except (TypeError, ValueError) as exc:
+            self.log_error(fl_ctx, f"rejecting invalid adaptive client result: {exc}")
+            return False
+
     @staticmethod
     def _client_name(model: FLModel) -> str:
         value = (model.meta or {}).get("client_name")
