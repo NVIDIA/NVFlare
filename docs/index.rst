@@ -138,15 +138,8 @@ NVIDIA FLARE
 `NVIDIA FLARE™ <https://developer.nvidia.com/flare>`_ (NVIDIA Federated
 Learning Application Runtime Environment) is a domain-agnostic, open-source,
 and extensible SDK for federated learning and other federated-computing
-applications. It supports collaborative training and evaluation, analytics and
-statistics, site-local data processing, and custom distributed workflows.
-
-NVIDIA FLARE brings approved computation to participating sites. In a properly
-designed and governed federation, raw datasets remain at their source while
-each site controls which tasks may run and which results may leave. Its general
-federated-computing core provides workflow orchestration, task execution,
-communication, security, and lifecycle services from local development through
-production deployment.
+applications. Read :doc:`Welcome <welcome>` for the concepts, capabilities, and
+development-to-production model, or choose a path below.
 
 Choose Your Path
 ================
@@ -180,8 +173,6 @@ reproduce published work.
   server-controlled or peer-to-peer algorithms with remote Python method calls.
 - :ref:`Available Recipes <available_recipes>` -- Review maintained workflow
   builders and their extension points.
-- :ref:`Examples and Tutorials <example_applications>` -- Find algorithm and
-  workflow implementations.
 - :doc:`Research Papers <user_guide/researcher_guide/index>` -- Browse published
   research and reference implementations.
 - :ref:`Security Overview <flare_security_overview>` -- Select privacy,

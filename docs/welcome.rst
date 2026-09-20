@@ -77,24 +77,13 @@ and communication components. Researchers can implement new algorithms and
 workflows, data scientists can adapt existing applications, and platform teams
 can provision and operate multi-site systems.
 
-Choose Your Next Step
-=====================
+Continue from Here
+==================
 
-- :doc:`Quick Start <quickstart>` -- Run and understand a complete local
-  federation.
-- :doc:`Installation <installation>` -- Review supported environments and
-  installation options.
-- :doc:`Agent Skills <user_guide/agent_skills/index>` -- Use maintained
-  coding-agent workflows for supported training projects and federated
-  statistics.
-- :ref:`Choose an API Path <api_selection>` -- Select a manual or custom
-  integration approach.
-- :ref:`Collaboration API (Technical Preview) <collab_api>` -- Design custom
-  federated algorithms and workflows.
-- :ref:`Examples and Tutorials <example_applications>` -- Explore runnable
-  applications and focused learning material.
-- :ref:`Deployment Overview <deployment_overview>` and :ref:`Security Overview
-  <flare_security_overview>` -- Plan a governed multi-site deployment.
+Run and understand a complete local federation in :doc:`Quick Start
+<quickstart>`. The :doc:`documentation home <index>` then maps the maintained
+paths for Agent Skills, API selection, examples and tutorials, custom workflow
+research, deployment and security, and project contribution.
 
 For broader product material, visit the `NVIDIA FLARE website
 <https://nvidia.github.io/NVFlare/>`_ and `developer site
