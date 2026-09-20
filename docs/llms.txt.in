@@ -17,12 +17,12 @@
 ## Adapt And Build
 
 - [Agent Skills](user_guide/agent_skills/index.md): Use maintained coding-agent workflows for supported training projects, federated statistics, optimization, and diagnosis.
-- [Choose an API Path](user_guide/data_scientist_guide/api_selection.md): Select the Client API, Recipe, Collaboration API, or lower-level components for a manual or custom integration.
+- [Choose an API Path](user_guide/data_scientist_guide/api_selection.md): Select the Client API, Recipe, Collaboration API (Technical Preview), or lower-level components for a manual or custom integration.
 - [Client API](user_guide/data_scientist_guide/client_api_usage.md): Use the high-level API for federated training scripts.
 - [Job Recipe](user_guide/data_scientist_guide/job_recipe.md): Define and run federated jobs through maintained workflow builders.
 - [Recipe API](user_guide/data_scientist_guide/recipe_api.md): Build and extend recipes for common federated workflows.
 - [Available Recipes](user_guide/data_scientist_guide/available_recipes.md): Browse bundled job recipes and supported patterns.
-- [Collaboration API](user_guide/data_scientist_guide/collab_api.md): Design custom server-controlled or peer-to-peer algorithms and workflows.
+- [Collaboration API (Technical Preview)](user_guide/data_scientist_guide/collab_api.md): Design custom server-controlled or peer-to-peer algorithms and workflows.
 - [FLARE API](user_guide/data_scientist_guide/flare_api.md): Use runtime APIs to submit, monitor, and manage jobs.
 - [CLI Tools](user_guide/nvflare_cli/nvflare_cli.md): Use NVFlare command-line tools for local and deployed systems.
 

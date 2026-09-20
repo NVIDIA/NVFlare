@@ -71,11 +71,11 @@ Applications use the same core programming model across three stages:
 - **Production** runs across provisioned sites with production identities,
   authorization, networking, policies, and operations.
 
-NVIDIA FLARE provides high-level Client, Recipe, and Collaboration APIs as well
-as lower-level controllers, executors, events, filters, and communication
-components. Researchers can implement new algorithms and workflows, data
-scientists can adapt existing applications, and platform teams can provision
-and operate multi-site systems.
+NVIDIA FLARE provides high-level Client and Recipe APIs, the Collaboration API
+(Technical Preview), and lower-level controllers, executors, events, filters,
+and communication components. Researchers can implement new algorithms and
+workflows, data scientists can adapt existing applications, and platform teams
+can provision and operate multi-site systems.
 
 Choose Your Next Step
 =====================
@@ -89,8 +89,8 @@ Choose Your Next Step
   statistics.
 - :ref:`Choose an API Path <api_selection>` -- Select a manual or custom
   integration approach.
-- :ref:`Collaboration API <collab_api>` -- Design custom federated algorithms
-  and workflows.
+- :ref:`Collaboration API (Technical Preview) <collab_api>` -- Design custom
+  federated algorithms and workflows.
 - :ref:`Examples and Tutorials <example_applications>` -- Explore runnable
   applications and focused learning material.
 - :ref:`Deployment Overview <deployment_overview>` and :ref:`Security Overview

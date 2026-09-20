@@ -163,7 +163,8 @@ training or data-processing workflow.
   workflows for supported training projects, federated statistics, optimization,
   and diagnosis.
 - :ref:`Choose an API Path <api_selection>` -- Select the Client API, Recipe,
-  Collaboration API, or lower-level components for a manual or custom integration.
+  Collaboration API (Technical Preview), or lower-level components for a manual
+  or custom integration.
 - :doc:`Installation <installation>` -- Review supported environments and
   alternative installation methods.
 - :ref:`Examples and Tutorials <example_applications>` -- Continue with runnable
@@ -175,8 +176,8 @@ Research and Design Custom Workflows
 Start here if you develop federated algorithms, study privacy or scale, or
 reproduce published work.
 
-- :ref:`Collaboration API <collab_api>` -- Build custom server-controlled or
-  peer-to-peer algorithms with remote Python method calls.
+- :ref:`Collaboration API (Technical Preview) <collab_api>` -- Build custom
+  server-controlled or peer-to-peer algorithms with remote Python method calls.
 - :ref:`Available Recipes <available_recipes>` -- Review maintained workflow
   builders and their extension points.
 - :ref:`Examples and Tutorials <example_applications>` -- Find algorithm and
