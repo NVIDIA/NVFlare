@@ -307,6 +307,17 @@ def test_invalid_native_weights_are_rejected():
         )
 
 
+def test_projection_uses_caller_epsilon_for_feasibility():
+    result = project_bounded_simplex([0.5, 0.5], lower=0.0, upper=0.4999999, epsilon=1e-6)
+    assert np.isclose(result.sum(), 1.0, atol=1e-6)
+
+
+def test_default_nonbinding_projection_is_exact_noop():
+    values = np.asarray([0.7, 0.2, 0.1])
+    result = project_bounded_simplex(values, lower=0.0, upper=1.0)
+    assert np.array_equal(result, values)
+
+
 def test_infeasible_bounds_are_rejected_by_projection_primitive():
     with pytest.raises(ValueError, match="infeasible"):
         project_bounded_simplex([0.5, 0.5], lower=0.0, upper=0.4)
