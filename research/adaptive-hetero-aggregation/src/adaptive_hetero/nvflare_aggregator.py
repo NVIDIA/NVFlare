@@ -21,7 +21,7 @@ import numpy as np
 from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
 from nvflare.apis.fl_constant import ReservedKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import Shareable, make_reply
+from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
 from nvflare.app_common.app_constant import AppConstants
@@ -248,7 +248,7 @@ class AdaptiveHeterogeneityAggregator(Aggregator):
             self.log_warning(fl_ctx, "no valid contributions were accepted for this aggregation round")
             self.last_weights = {}
             self.reset(fl_ctx)
-            return make_reply(ReturnCode.EMPTY_RESULT)
+            return DXO(data_kind=DataKind.WEIGHT_DIFF, data={}).to_shareable()
 
         names = sorted(self._contributions)
         contributions = [self._contributions[name] for name in names]
