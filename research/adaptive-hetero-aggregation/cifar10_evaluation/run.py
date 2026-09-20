@@ -118,7 +118,9 @@ def _build_recipe(args, train_idx_root: str, validation_idx_root: str, round_cli
         )
     if args.method == "fedopt":
         if round_clients != args.n_clients:
-            raise ValueError("FedOpt is included as a full-participation reference; use another method for partial runs")
+            raise ValueError(
+                "FedOpt is included as a full-participation reference; use another method for partial runs"
+            )
         return FedOptRecipe(
             name=name,
             min_clients=args.n_clients,
