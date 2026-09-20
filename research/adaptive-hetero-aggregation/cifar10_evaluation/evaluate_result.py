@@ -67,7 +67,7 @@ def find_server_checkpoint(workspace: str) -> Path:
     server_dir = workspace_path / "server" / "simulate_job" / "app_server"
     # Prefer final-round model for an identical endpoint across methods. Best
     # checkpoints can depend on method-specific client metrics/model selection.
-    for name in ("FL_global_model.pt", "best_FL_global_model.pt"):
+    for name in (DefaultCheckpointFileName.GLOBAL_MODEL, DefaultCheckpointFileName.BEST_GLOBAL_MODEL):
         candidate = server_dir / name
         if candidate.is_file():
             return candidate
@@ -75,11 +75,11 @@ def find_server_checkpoint(workspace: str) -> Path:
     candidates = [
         path
         for path in workspace_path.rglob("*.pt")
-        if "server" in path.parts and path.name in {"FL_global_model.pt", "best_FL_global_model.pt"}
+        if "server" in path.parts and path.name in {DefaultCheckpointFileName.GLOBAL_MODEL, DefaultCheckpointFileName.BEST_GLOBAL_MODEL}
     ]
     if not candidates:
         raise FileNotFoundError(f"no server CIFAR checkpoint found under {workspace_path}")
-    candidates.sort(key=lambda path: (path.name != "FL_global_model.pt", str(path)))
+    candidates.sort(key=lambda path: (path.name != DefaultCheckpointFileName.GLOBAL_MODEL, str(path)))
     return candidates[0]
 
 
