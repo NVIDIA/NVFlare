@@ -110,7 +110,9 @@ def _sigmoid(value: float) -> float:
     return exp_value / (1.0 + exp_value)
 
 
-def project_bounded_simplex(values: Sequence[float], lower: float, upper: float) -> np.ndarray:
+def project_bounded_simplex(
+    values: Sequence[float], lower: float, upper: float, epsilon: float = 1e-12
+) -> np.ndarray:
     """Project values onto ``sum(w)=1`` with element-wise lower/upper bounds."""
 
     values = np.asarray(values, dtype=np.float64)
@@ -121,8 +123,18 @@ def project_bounded_simplex(values: Sequence[float], lower: float, upper: float)
     count = values.size
     if lower < 0.0 or upper <= 0.0 or lower > upper:
         raise ValueError("invalid weight bounds")
-    if lower * count > 1.0 + 1e-12 or upper * count < 1.0 - 1e-12:
+    if epsilon <= 0.0:
+        raise ValueError("epsilon must be positive")
+    if lower * count > 1.0 + epsilon or upper * count < 1.0 - epsilon:
         raise ValueError("weight bounds are infeasible for the number of clients")
+    if (
+        lower <= 0.0
+        and upper >= 1.0
+        and np.all(values >= 0.0)
+        and np.all(values <= 1.0)
+        and math.isclose(float(values.sum()), 1.0, abs_tol=epsilon)
+    ):
+        return values.copy()
 
     lo_tau = float(np.min(values - upper))
     hi_tau = float(np.max(values - lower))
@@ -136,7 +148,7 @@ def project_bounded_simplex(values: Sequence[float], lower: float, upper: float)
 
     projected = np.clip(values - 0.5 * (lo_tau + hi_tau), lower, upper)
     residual = 1.0 - float(projected.sum())
-    tolerance = 1e-12
+    tolerance = epsilon
     if abs(residual) > tolerance:
         room = upper - projected if residual > 0.0 else projected - lower
         direction = 1.0 if residual > 0.0 else -1.0
@@ -277,7 +289,7 @@ class AdaptiveHeterogeneityPolicy:
             and cfg.max_weight * counts.size >= 1.0 - cfg.epsilon
         )
         if bounds_feasible:
-            adaptive_weights = project_bounded_simplex(raw, cfg.min_weight, cfg.max_weight)
+            adaptive_weights = project_bounded_simplex(raw, cfg.min_weight, cfg.max_weight, cfg.epsilon)
             candidate_blend = cfg.max_blend_factor * heterogeneity_gate * performance_gate
         else:
             # User-configured bounds can become infeasible when the cohort size
@@ -303,7 +315,7 @@ class AdaptiveHeterogeneityPolicy:
             weights = native_weights.copy()
         else:
             blended_weights = (1.0 - blend) * native_weights + blend * adaptive_weights
-            weights = project_bounded_simplex(blended_weights, cfg.min_weight, cfg.max_weight)
+            weights = project_bounded_simplex(blended_weights, cfg.min_weight, cfg.max_weight, cfg.epsilon)
 
         return WeightingResult(
             weights=weights,
