@@ -19,7 +19,7 @@ import torch
 from adaptive_hetero.nvflare_aggregator import AdaptiveHeterogeneityAggregator, AdaptiveMetaKey
 
 from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
-from nvflare.apis.fl_constant import ReservedKey, ReturnCode
+from nvflare.apis.fl_constant import ReservedKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_opt.pt.recipes.fedopt import FedOptRecipe
@@ -142,10 +142,12 @@ def test_default_bounds_support_single_client():
     assert np.allclose(result.data["weight"], np.asarray([2.0], dtype=np.float32))
 
 
-def test_empty_round_returns_empty_result_instead_of_raising():
+def test_empty_round_returns_valid_noop_weight_diff():
     aggregator = AdaptiveHeterogeneityAggregator()
     reply = aggregator.aggregate(_context())
-    assert reply.get_return_code() == ReturnCode.EMPTY_RESULT
+    result = from_shareable(reply)
+    assert result.data_kind == DataKind.WEIGHT_DIFF
+    assert result.data == {}
 
 
 def test_rejects_missing_metadata_duplicate_and_wrong_round():
