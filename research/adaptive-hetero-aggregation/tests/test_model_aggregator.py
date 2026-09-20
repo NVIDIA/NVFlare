@@ -21,8 +21,10 @@ from adaptive_hetero.nvflare_aggregator import AdaptiveMetaKey
 
 from nvflare.apis.dxo import DataKind
 from nvflare.apis.fl_constant import FLMetaKey
+from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.client.config import TransferType
 
 
@@ -108,6 +110,14 @@ def test_model_aggregator_native_fallback_is_weighted_by_steps():
     assert result.meta[AdaptiveMetaKey.AGGREGATION_ROUNDS] == 1
     assert result.meta[AdaptiveMetaKey.ACTIVE_ROUNDS] == 0
     assert result.meta[AdaptiveMetaKey.ACTIVATION_RATE] == 0.0
+
+
+def test_accept_rejects_malformed_client_metadata_without_raising():
+    aggregator = AdaptiveHeterogeneityModelAggregator()
+    model = _result("site-1", 1.0, 1, 100, [0.5, 0.5], 1.5)
+    shareable = FLModelUtils.to_shareable(model)
+    assert aggregator.accept(shareable, FLContext()) is False
+    assert aggregator._results == {}
 
 
 def test_model_aggregator_empty_round_is_safe_noop_diff():
