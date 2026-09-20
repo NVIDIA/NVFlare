@@ -248,6 +248,9 @@ retrieval, follow that example's README for its exact dependencies and commands.
 Feature tutorials and the self-paced course are browsed separately and are not
 part of the ``nvflare examples`` catalog.
 
+For a manual or custom statistics workflow, see the
+:ref:`Federated Statistics guide <federated_statistics>`.
+
 For guide-based next steps such as Agent Skills, manual API selection, custom
 workflow research, LLMs, deployment, or security, return to the
 :doc:`documentation home <index>` and choose the path that matches your goal.
