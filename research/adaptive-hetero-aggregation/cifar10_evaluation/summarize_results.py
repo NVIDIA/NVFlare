@@ -341,7 +341,8 @@ def render_markdown(summary: dict) -> str:
         "",
         "Values are means across matched seeds with two-sided 95% Student-t confidence intervals.",
         "Global and worst-client accuracy use the common post-training evaluator.",
-        "Adaptive activation rate is the fraction of valid aggregation rounds with a non-zero blend; a low rate makes conservative fallback behavior explicit.",
+        "Adaptive activation rate is the fraction of valid aggregation rounds with a non-zero blend; "
+        "a low rate makes conservative fallback behavior explicit.",
         "",
     ]
     groups = defaultdict(list)
