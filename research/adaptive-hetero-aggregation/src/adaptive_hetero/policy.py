@@ -159,12 +159,12 @@ def project_bounded_simplex(
             delta = min(remaining, float(room[index]))
             projected[index] += direction * delta
             remaining -= delta
-        if remaining > 1e-10:
+        if remaining > epsilon:
             raise RuntimeError("failed to satisfy bounded-simplex constraints numerically")
 
-    if not np.isclose(projected.sum(), 1.0, atol=1e-10):
+    if not np.isclose(projected.sum(), 1.0, atol=epsilon):
         raise RuntimeError("bounded-simplex projection does not sum to one")
-    if np.any(projected < lower - 1e-10) or np.any(projected > upper + 1e-10):
+    if np.any(projected < lower - epsilon) or np.any(projected > upper + epsilon):
         raise RuntimeError("bounded-simplex projection violated configured bounds")
     return projected
 
