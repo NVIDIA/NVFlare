@@ -35,6 +35,7 @@ DIRECTORIES = (
     "/applog",
     "/user_config",
     "/user_data",
+    "/nfs_data",
     "/rofs",
     "/cow",
     "/etc/docker",
@@ -122,6 +123,9 @@ def copy_file(source, root, path, mode):
     destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(source, destination)
     destination.chmod(mode)
+
+
+DEFAULT_TIME_SERVERS = ("1.ntp.ubuntu.com", "2.ntp.ubuntu.com", "3.ntp.ubuntu.com")
 
 
 def validate_time_servers(servers):
@@ -355,8 +359,12 @@ def install_files(config, payload, root=Path("/")):
 
     if config["dev_mode"]:
         write_file(root, "/etc/cvm/dev_mode", "Development only: no TEE and no KBS authorization.")
-    if config.get("time_servers"):
-        write_file(root, "/etc/chrony/chrony.conf", chrony_configuration(config["time_servers"]))
+    write_file(
+        root, "/etc/chrony/chrony.conf", chrony_configuration(config.get("time_servers", list(DEFAULT_TIME_SERVERS)))
+    )
+    # No sourcedir/include imports DHCP or distribution snippets. Disable the
+    # DHCP hook as well, so it cannot inject runtime chronyc commands.
+    (root / "etc/dhcp/dhclient-exit-hooks.d/chrony").unlink(missing_ok=True)
 
     module = "sev_guest" if config["platform"] == "amd_sev_snp" else "tdx_guest"
     write_file(root, "/etc/modules-load.d/cvm.conf", f"{module}\ndm_crypt\ndm_integrity\n")

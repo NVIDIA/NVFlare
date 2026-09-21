@@ -130,7 +130,8 @@ assert not any(name in sys.modules for name in ("cvm.build", "cvm.trustee"))
             self.assertNotIn("./source/cvm/trustee", members)
             payload = job / "provision-payload"
             self.assertEqual(
-                (payload / "inputs/nftables.conf").read_text(), "flush ruleset\n" + firewall_rules([], [443])
+                (payload / "inputs/nftables.conf").read_text(),
+                "flush ruleset\n" + firewall_rules([], [443], resolvers=None),
             )
             config = json.loads((payload / "config.json").read_text())
             guest = job / "guest"

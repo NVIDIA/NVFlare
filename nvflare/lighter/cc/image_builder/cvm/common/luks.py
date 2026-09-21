@@ -57,6 +57,10 @@ def validate_luks_metadata(metadata):
         all(kdf.get(key) == value for key, value in KEYSLOT_KDF.items()),
         "Vault keyslot must use the pinned deterministic KDF",
     )
+    require(
+        slot.get("af") == {"type": "luks1", "stripes": 4000, "hash": "sha256"},
+        "Vault keyslot must use the pinned anti-forensic splitter",
+    )
     area = slot.get("area", {})
     require(
         int(area.get("offset", 0)) >= 32768

@@ -48,25 +48,38 @@ def _restricted(rules, addresses, selector, match, *, prefix=""):
         rules.append(f"{prefix}ip6 {selector} {_set(v6)} {match} accept")
 
 
+def _dns(rules, resolvers, *, prefix=""):
+    # None is an explicit construction-time discovery allowance. An empty
+    # runtime list denies DNS, including previously established connections and
+    # configurations that also include port 53 in the general TCP allowlist.
+    for protocol in ("udp", "tcp"):
+        if resolvers is None or resolvers:
+            _restricted(rules, resolvers, "daddr", f"{protocol} dport 53", prefix=prefix)
+        rules.append(f"{prefix}{protocol} dport 53 drop")
+
+
 def firewall_rules(inbound, outbound, mappings=(), *, inbound_sources=(), outbound_destinations=(), resolvers=()):
     """Render the guest table.
 
     inbound/outbound are TCP port allowlists. inbound_sources and
     outbound_destinations optionally restrict those ports to CIDR lists.
-    resolvers optionally restricts DNS to the given server addresses; the
-    measured bootstrap rules cannot know them, the runtime rules can.
+    resolvers restricts DNS to the given server addresses; an empty list denies
+    DNS. Only the measured discovery rules use None before DHCP is available.
     """
     ports(inbound)
     ports(outbound)
     cidrs(list(inbound_sources))
     cidrs(list(outbound_destinations))
-    for resolver in resolvers:
+    for resolver in resolvers or ():
         require(isinstance(resolver, str), "Resolver addresses must be strings")
         try:
             address = ipaddress.ip_address(resolver)
         except ValueError:
             require(False, "Invalid resolver address")
-        require(not address.is_loopback and not address.is_unspecified, "Resolver address is not routable")
+        require(
+            not (address.is_loopback or address.is_unspecified or address.is_multicast or address.is_reserved),
+            "Resolver address is not routable",
+        )
     # A dedicated inet table, IPv4 and IPv6. The forward chain applies the same
     # restrictions to Docker's bridge, before Docker's own permissive chains.
     rules = [
@@ -86,11 +99,9 @@ def firewall_rules(inbound, outbound, mappings=(), *, inbound_sources=(), outbou
         "chain output { type filter hook output priority -10; policy drop;",
         'oifname "lo" accept',
         "ct state invalid drop",
-        "ct state established,related accept",
-        "udp dport { 67, 547 } accept",
     ]
-    _restricted(rules, resolvers, "daddr", "udp dport 53")
-    _restricted(rules, resolvers, "daddr", "tcp dport 53")
+    _dns(rules, resolvers)
+    rules += ["ct state established,related accept", "udp dport { 67, 547 } accept"]
     # Ubuntu's chrony defaults use NTS key exchange before NTP traffic.
     # Keep this host time-service allowance through the application rules.
     rules += [
@@ -105,10 +116,9 @@ def firewall_rules(inbound, outbound, mappings=(), *, inbound_sources=(), outbou
         "}",
         "chain forward { type filter hook forward priority -10; policy drop;",
         "ct state invalid drop",
-        "ct state established,related accept",
     ]
-    _restricted(rules, resolvers, "daddr", "udp dport 53", prefix='iifname "docker0" ')
-    _restricted(rules, resolvers, "daddr", "tcp dport 53", prefix='iifname "docker0" ')
+    _dns(rules, resolvers, prefix='iifname "docker0" ')
+    rules.append("ct state established,related accept")
     rules.append('iifname "docker0" udp dport 123 accept')
     if outbound:
         _restricted(

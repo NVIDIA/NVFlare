@@ -26,8 +26,8 @@ vault_storage_profile: luks2-xts-random-hmac-sha256-v1
 # still authenticated and the integrity monitor stays active; very large vaults
 # may set false after site acceptance. The value is part of the measured contract.
 vault_prescan: true
-# Optional NTS-only time sources. When set, the distribution pools and any
-# DHCP-supplied servers are dropped from the measured chrony configuration.
+# NTS-only time sources. Defaults: 1.ntp.ubuntu.com, 2.ntp.ubuntu.com,
+# 3.ntp.ubuntu.com. Distribution/DHCP sources are always excluded.
 # time_servers: [time.cloudflare.com, ptbtime1.ptb.de]
 # Optional Ed25519 private key that signs approval.json when site_acceptance
 # succeeds; --approval-key overrides it. Vault builds trust the matching public

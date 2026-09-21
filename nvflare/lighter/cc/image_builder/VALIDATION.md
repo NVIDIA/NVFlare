@@ -6,6 +6,49 @@ services and operator guides are maintained together with the provisioning adapt
 in this repository. Repository formatting and license headers change source
 fingerprints; build and approve new generic CVMs for this source snapshot.
 
+## PR security review follow-up — 2026-09-21 UTC
+
+This follow-up changes the measured guest runtime after the hardware run below.
+It adds asynchronous bounded audit output and an independent supervisor watchdog,
+guest-owned NFS mounts, container-only environment files, explicit ext4 mounts
+and boot-time output-disk initialization, fail-closed runtime DNS, stricter
+container defaults, fixed anti-forensic splitter parameters, and measured
+NTS-only clock defaults. The build-host requirements now include exact versions,
+transitive dependency hashes and a wheels-only installation policy.
+
+Validation on the updated source:
+
+- **246 Linux unit and policy tests passed, with no skips**, including real
+  Regorus 0.11.0 evaluation. Fault injection stalls audit I/O while checking
+  prompt workload termination and fatal bootstrap exit. Container launch tests
+  confirm that client-control environment values remain confined to the
+  container, and reject environment-file record injection.
+- **Nine Linux integration tests passed**: three new review-boundary checks,
+  five authenticated-storage checks and the existing firewall packet check.
+  The new packet matrix covers IPv4/IPv6, TCP/UDP, guest output and Docker
+  forwarding, empty/discovered resolver lists and previously established DNS
+  flows. A private mount namespace exercises real output reformat/mount behavior
+  and proves a sidecar symlink cannot redirect the guest-owned NFS target.
+  The NFS target test substitutes tmpfs; it does not claim a Kerberos deployment.
+- A disposable PID 1 service with a shortened watchdog deadline terminated a
+  stalled supervisor and its workload cgroup. Its host test explicitly disables
+  power-off actions. A physical CVM block-I/O stall and forced-poweroff acceptance
+  remain untested for this source revision.
+- **12 live HTTPS tests passed** against unmodified Trustee v0.22.0, including
+  actual AS selection of `default_cpu.rego` and the unsuffixed `default` EAR
+  selector. GPU authorization negatives use signed fixtures, not GPU hardware.
+  The isolated backend was stopped afterward.
+- The source-distribution-to-wheel packaging regression, fresh hash-locked
+  dependency installation on macOS, Linux dependency installation, scoped
+  Black/isort/flake8, agent-skill checks and diff whitespace checks passed.
+
+No fresh TDX/SNP workload run, GPU run or production acceptance is claimed for
+these review changes. Rebuild, remeasure and approve generic CVMs before using
+them. Public `/applog` contents are discarded at the next boot; copy them off
+before restarting. Optional NFS input now appears at `/nfs_data`. Containers
+default to no restored capabilities and a read-only root filesystem; document
+any application-specific exceptions in the authenticated configuration.
+
 ## Shutdown warning fix — 2026-09-21 UTC
 
 The shutdown warnings from the preceding CPU run are fixed. Both supervisors

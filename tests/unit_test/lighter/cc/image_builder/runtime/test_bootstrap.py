@@ -359,17 +359,17 @@ class BootstrapTests(unittest.TestCase):
                 "tee_device": False,
             },
         }
-        command = bootstrap.docker_argv(app)
+        command = bootstrap.docker_argv(app, environment_file="/proc/self/fd/17")
         self.assertEqual(command[command.index("--cap-drop") + 1], "ALL")
         self.assertEqual(command[command.index("--security-opt") + 1], "no-new-privileges")
         self.assertEqual(command[command.index("--pids-limit") + 1], "4096")
         added = [command[i + 1] for i, value in enumerate(command) if value == "--cap-add"]
-        self.assertIn("CHOWN", added)
+        self.assertEqual(added, [])
         self.assertNotIn("NET_RAW", added)
         self.assertNotIn("SYS_ADMIN", added)
         self.assertNotIn("value-with-secret", " ".join(command))
         self.assertEqual(
-            [command[i + 1] for i, value in enumerate(command) if value == "--env"], ["APP_SECRET", "type"]
+            [command[i + 1] for i, value in enumerate(command) if value == "--env-file"], ["/proc/self/fd/17"]
         )
         self.assertTrue(
             all(
@@ -379,11 +379,11 @@ class BootstrapTests(unittest.TestCase):
             )
         )
         self.assertNotIn("/host/bin", " ".join(command))
-        self.assertNotIn("--read-only", command)
-        self.assertEqual(bootstrap.docker_environment(app)["APP_SECRET"], "value-with-secret")
+        self.assertIn("--read-only", command)
+        self.assertIn(b"APP_SECRET=value-with-secret\n", bootstrap.docker_environment(app))
 
         app["container"].update(host_bin=True, read_only_rootfs=True, capabilities=["NET_BIND_SERVICE"], pids_limit=64)
-        command = bootstrap.docker_argv(app)
+        command = bootstrap.docker_argv(app, environment_file="/proc/self/fd/17")
         self.assertIn("type=bind,source=/usr/bin,target=/host/bin,readonly", command)
         self.assertIn("--read-only", command)
         self.assertEqual(
@@ -429,10 +429,14 @@ class BootstrapTests(unittest.TestCase):
                     patch.object(bootstrap, "run", return_value=image),
                     patch.object(bootstrap, "readiness"),
                     patch.object(bootstrap.subprocess, "Popen", return_value=process),
+                    patch.object(bootstrap, "memory_file", return_value=contextlib.nullcontext(17)),
                     patch.object(bootstrap.subprocess, "run", side_effect=lambda argv, **k: stops.append(argv)),
                 ):
                     self.assertEqual(bootstrap.application(), expected)
-                self.assertEqual([argv[:2] for argv in stops], [["docker", "stop"]] if requested else [])
+                self.assertEqual(
+                    [argv[:4] for argv in stops],
+                    [["/usr/bin/docker", "--host", "unix:///var/run/docker.sock", "stop"]] if requested else [],
+                )
         finally:
             for sig, handler in handlers.items():
                 signal.signal(sig, handler)
@@ -507,8 +511,9 @@ class BootstrapTests(unittest.TestCase):
         ):
             bootstrap.mount_vault({"build_id": "test"}, dev=True)
             authorize.assert_not_called()
-            self.assertEqual(len(execute.call_args_list), 4)
-            self.assertTrue(all(call.args[0][0] == "mount" for call in execute.call_args_list))
+            self.assertEqual(len(execute.call_args_list), 5)
+            self.assertEqual(execute.call_args_list[0].args[0][0], "mkfs.ext4")
+            self.assertTrue(all(call.args[0][:3] == ["mount", "-t", "ext4"] for call in execute.call_args_list[1:]))
 
     def test_nfs_and_generated_units_are_ready_before_workload_start(self):
         events = []
@@ -584,6 +589,10 @@ class BootstrapTests(unittest.TestCase):
             if name == "cvm_bootstrap.service":
                 self.assertIn("finalrd.service", config["Unit"]["Requires"].split())
                 self.assertIn("finalrd.service", config["Unit"]["After"].split())
+                self.assertEqual(config["Service"]["WatchdogSec"], f"{supervisor.WATCHDOG_SECONDS}s")
+                self.assertEqual(config["Service"]["WatchdogSignal"], "SIGKILL")
+                self.assertEqual(config["Service"]["TimeoutStopSec"], "5s")
+                self.assertEqual(config["Service"]["TimeoutStopFailureMode"], "kill")
             if name == "cvm_integrity.service":
                 self.assertNotIn("Requires", config["Unit"])
                 self.assertNotIn("After", config["Unit"])
@@ -636,6 +645,14 @@ class BootstrapTests(unittest.TestCase):
 
 @unittest.skipUnless(hasattr(signal, "sigtimedwait"), "Linux synchronous signal support")
 class SupervisorTests(unittest.TestCase):
+    def setUp(self):
+        watchdog = patch.object(supervisor, "watchdog")
+        self.watchdog = watchdog.start()
+        self.addCleanup(watchdog.stop)
+        audit = patch.object(supervisor, "emit")
+        audit.start()
+        self.addCleanup(audit.stop)
+
     def test_timed_out_reopen_leaves_no_running_descendant(self):
         spawn = subprocess.Popen
         program = (
@@ -847,20 +864,21 @@ class SupervisorTests(unittest.TestCase):
         self.assertEqual(
             [c[:2] if c[0] != "emit" else c for c in commands],
             [
+                ["systemctl", "stop"],
+                ["systemctl", "stop"],
+                ["revoke"],
+                ["close"],
                 ["emit", "quarantine"],
-                ["systemctl", "stop"],
-                ["systemctl", "stop"],
-                ["revoke"],
-                ["close"],
                 ["reopen"],
                 ["revoke"],
                 ["close"],
                 ["reopen"],
+                ["emit", "allow"],
                 ["systemctl", "start"],
             ],
         )
-        self.assertEqual(commands[1][2:], ["cvm_app.service", "app_x.service"])
-        self.assertEqual(commands[2][2:], ["docker.service", "containerd.service"])
+        self.assertEqual(commands[0][2:], ["cvm_app.service", "app_x.service"])
+        self.assertEqual(commands[1][2:], ["docker.service", "containerd.service"])
         self.assertEqual(commands[-1][2:], ["cvm_app.service", "app_x.service"])
 
     def test_quarantine_window_expiry_fails_closed(self):

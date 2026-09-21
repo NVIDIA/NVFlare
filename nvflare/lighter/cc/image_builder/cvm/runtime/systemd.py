@@ -14,6 +14,7 @@
 
 """Notify PID 1 from the guest supervisor and integrity monitor."""
 
+import math
 import os
 import socket
 
@@ -26,5 +27,12 @@ def notify(message):
     if address.startswith("@"):
         address = "\0" + address[1:]
     with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as connection:
+        connection.settimeout(1)
         connection.connect(address)
         connection.sendall(message.encode())
+
+
+def watchdog(seconds):
+    """Arm PID 1's independent deadline for the next bounded supervisor phase."""
+    require(0 < seconds <= 3600, "Invalid supervisor watchdog deadline")
+    notify(f"WATCHDOG_USEC={math.ceil(seconds * 1000000)}\nWATCHDOG=1")

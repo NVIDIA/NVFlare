@@ -32,7 +32,7 @@ from ..common.references import validate_references
 from ..common.services import validate_service
 from ..common.validation import DEFAULT_CAPABILITIES, DEFAULT_PIDS_LIMIT, capabilities, cidrs, ports, validate_nfs_mount
 from ..common.versions import NVAT_COMMIT, TRUSTEE_COMMIT
-from .provisioning import validate_apt_repositories, validate_time_servers
+from .provisioning import DEFAULT_TIME_SERVERS, validate_apt_repositories, validate_time_servers
 
 PRIVATE_KEY_MARKERS = (
     b"-----BEGIN PRIVATE KEY-----",
@@ -132,7 +132,7 @@ PROFILE_DEFAULTS = {
     "vault_prescan": True,
     # Explicit NTS time sources replace the distribution pools and DHCP-supplied
     # servers. None keeps the packaged chrony configuration.
-    "time_servers": None,
+    "time_servers": list(DEFAULT_TIME_SERVERS),
     "kernel_version": "7.0.0-31-generic",
     "python_version": "3.14.3-0ubuntu2",
     "docker_version": "29.1.3-0ubuntu4.1",
@@ -174,6 +174,7 @@ PROFILE_DEFAULTS = {
 
 
 CONTAINER_OPTIONS = {
+    "user",
     "entrypoint",
     "command",
     "env",
@@ -392,11 +393,10 @@ def profile(path):
     require(value.get("vault_header_bytes") == HEADER_BYTES, "Unsupported header range")
     require(value.get("vault_storage_profile") == STORAGE_PROFILE, "Unsupported authenticated storage profile")
     require(type(value.get("vault_prescan")) is bool, "vault_prescan must be boolean")
-    if value.get("time_servers") is not None:
-        try:
-            validate_time_servers(value["time_servers"])
-        except ValueError as error:
-            raise BuildError(str(error)) from None
+    try:
+        validate_time_servers(value["time_servers"])
+    except ValueError as error:
+        raise BuildError(str(error)) from None
     require(value.get("guest_release") == "26.04", "This implementation targets an Ubuntu 26.04 guest")
     require(re.fullmatch(r"[a-f0-9]{40}", value.get("trustee_commit", "")), "Pin trustee_commit to a full revision")
     require(value["attestation_policy_id"] == "default", "The upstream kbs-client uses the default AS policy")
@@ -638,7 +638,15 @@ def application(path):
                 f"container.{key} must be an argument array",
             )
     for key in ("tee_device", "read_only_rootfs", "host_bin"):
-        require_config(type(container.setdefault(key, False)) is bool, f"{key} must be boolean")
+        require_config(type(container.setdefault(key, key == "read_only_rootfs")) is bool, f"{key} must be boolean")
+    if "user" in container:
+        user = container["user"]
+        require_config(
+            isinstance(user, str)
+            and re.fullmatch(r"[1-9][0-9]{0,9}(?::[1-9][0-9]{0,9})?", user)
+            and all(int(part) < 4294967295 for part in user.split(":")),
+            "container.user must be a non-root numeric UID or UID:GID",
+        )
     capabilities(container.setdefault("capabilities", list(DEFAULT_CAPABILITIES)))
     pids_limit = container.setdefault("pids_limit", DEFAULT_PIDS_LIMIT)
     require_config(type(pids_limit) is int and 1 <= pids_limit <= 1048576, "pids_limit must be a positive integer")
@@ -646,7 +654,9 @@ def application(path):
     require_config(
         isinstance(env, dict)
         and all(
-            re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", k) and isinstance(v, str) and "\x00" not in v
+            re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", k)
+            and isinstance(v, str)
+            and not any(c in v for c in ("\x00", "\n", "\r"))
             for k, v in env.items()
         ),
         "Invalid environment mapping",

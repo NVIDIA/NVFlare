@@ -18,7 +18,6 @@ import argparse
 import base64
 import ipaddress
 import json
-import os
 import signal
 import subprocess
 from pathlib import Path
@@ -39,6 +38,7 @@ from .gpu import readiness
 from .platforms import guest_platform, local_report, verify_local_binding
 from .storage import close_vault, disk_device
 from .supervisor import supervise
+from .systemd import notify
 
 CONFIG = Path("/etc/cvm/runtime.json")
 
@@ -62,12 +62,17 @@ CONTAINER_NAME = "cvm-application"
 CONTAINER_STOP_SECONDS = 15
 
 
+DOCKER = "/usr/bin/docker"
+DOCKER_ENVIRONMENT = {"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "HOME": "/root", "LANG": "C.UTF-8"}
+NFS_MOUNT = Path("/nfs_data")
+
+
 MOUNT_POINTS = {"vault": "/vault", "applog": "/applog", "user-config": "/user_config", "user-data": "/user_data"}
 
 
 MOUNT_OPTIONS = {
     "vault": "nosuid,nodev",
-    "applog": "nosuid,nodev",
+    "applog": "nosuid,nodev,noexec",
     "user-config": "ro,noload,nosuid,nodev,noexec",
     "user-data": "ro,noload,nosuid,nodev,noexec",
 }
@@ -96,7 +101,14 @@ SERVICE_HARDENING = (
 
 def mount_roles(devices):
     for role, device in devices.items():
-        run(["mount", "-o", MOUNT_OPTIONS[role], device, MOUNT_POINTS[role]])
+        if role == "applog":
+            # This is disposable public output. Never replay a host-supplied
+            # journal or trust filesystem metadata left by a previous boot.
+            run(
+                ["mkfs.ext4", "-q", "-F", "-O", "^has_journal", "-E", "lazy_itable_init=0,nodiscard", device],
+                timeout=300,
+            )
+        run(["mount", "-t", "ext4", "-o", MOUNT_OPTIONS[role], device, MOUNT_POINTS[role]])
 
 
 def discovered_resolvers(path=RESOLVED_UPSTREAMS):
@@ -113,7 +125,7 @@ def discovered_resolvers(path=RESOLVED_UPSTREAMS):
                 address = ipaddress.ip_address(parts[1].split("%", 1)[0])
             except ValueError:
                 continue
-            if not address.is_loopback and not address.is_unspecified:
+            if not (address.is_loopback or address.is_unspecified or address.is_multicast or address.is_reserved):
                 resolvers.add(str(address))
     return sorted(resolvers)
 
@@ -415,11 +427,13 @@ def periodic():
     readiness(config, True)
 
 
-def docker_argv(app, *, device=None, defaults=None):
-    """Return the run command; environment values travel through the environment, never argv."""
+def docker_argv(app, *, device=None, defaults=None, environment_file=None):
+    """Return the run command; container environment values use a private file descriptor."""
     cfg = app["container"]
     args = [
-        "docker",
+        DOCKER,
+        "--host",
+        "unix:///var/run/docker.sock",
         "run",
         "--rm",
         "--name",
@@ -439,8 +453,10 @@ def docker_argv(app, *, device=None, defaults=None):
     ]
     for capability in capabilities(list(cfg.get("capabilities", DEFAULT_CAPABILITIES))):
         args += ["--cap-add", capability]
-    if cfg.get("read_only_rootfs"):
+    if cfg.get("read_only_rootfs", True):
         args += ["--read-only", "--tmpfs", "/tmp:rw,nosuid,nodev", "--tmpfs", "/run:rw,nosuid,nodev"]
+    if cfg.get("user"):
+        args += ["--user", cfg["user"]]
     for port in cfg["ports"]:
         args += ["--publish", f'{port["host"]}:{port["container"]}/tcp']
     mounts = [
@@ -454,6 +470,8 @@ def docker_argv(app, *, device=None, defaults=None):
     if cfg.get("host_bin"):
         # Opt-in only: exposes the measured root's tools to the container.
         mounts.append(("/usr/bin", "/host/bin", True))
+    if app.get("nfs_mount") is not None:
+        mounts.append((str(NFS_MOUNT), str(NFS_MOUNT), True))
     for source, target, ro in mounts:
         args += ["--mount", f"type=bind,source={source},target={target}" + (",readonly" if ro else "")]
     for entry in cfg["volumes"]:
@@ -463,8 +481,9 @@ def docker_argv(app, *, device=None, defaults=None):
             f'type=bind,source={entry["source"]},target={entry["target"]}'
             + (",readonly" if entry["read_only"] else ""),
         ]
-    for name in cfg["env"]:
-        args += ["--env", name]
+    if cfg["env"]:
+        require(environment_file is not None, "Container environment requires a private environment file")
+        args += ["--env-file", environment_file]
     if cfg.get("tee_device"):
         require(device in ("/dev/tdx_guest", "/dev/sev-guest"), "Application requested an unavailable TEE device")
         args += ["--device", device]
@@ -487,8 +506,13 @@ def docker_argv(app, *, device=None, defaults=None):
 
 
 def docker_environment(app):
-    """Environment for the docker client; --env NAME reads each value from here."""
-    return dict(app["container"]["env"])
+    """Serialize container-only settings; never expose them to the privileged CLI."""
+    values = app["container"]["env"]
+    require(
+        all(not any(c in value for c in ("\x00", "\n", "\r")) for value in values.values()),
+        "Container environment values must be single-line strings",
+    )
+    return "".join(f"{name}={value}\n" for name, value in values.items()).encode()
 
 
 def application():
@@ -508,12 +532,21 @@ def application():
         # failure that PID 1 would answer with a forced power-off.
         stopping.append(signum)
         subprocess.run(
-            ["docker", "stop", "--time", str(CONTAINER_STOP_SECONDS), CONTAINER_NAME],
+            [
+                DOCKER,
+                "--host",
+                "unix:///var/run/docker.sock",
+                "stop",
+                "--time",
+                str(CONTAINER_STOP_SECONDS),
+                CONTAINER_NAME,
+            ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             check=False,
             timeout=CONTAINER_STOP_SECONDS + 30,
+            env=DOCKER_ENVIRONMENT,
         )
 
     for sig in (signal.SIGTERM, signal.SIGINT):
@@ -523,7 +556,12 @@ def application():
 
     def inspect():
         try:
-            result = json.loads(run(["docker", "image", "inspect", expected]))[0]
+            result = json.loads(
+                run(
+                    [DOCKER, "--host", "unix:///var/run/docker.sock", "image", "inspect", expected],
+                    env=DOCKER_ENVIRONMENT,
+                )
+            )[0]
             require(result["Id"] == expected, "Loaded image ID mismatch")
             return result
         except BuildError:
@@ -531,7 +569,11 @@ def application():
 
     loaded = inspect()
     if not marker.is_file() or read_json(marker).get("image_id") != expected or loaded is None:
-        run(["docker", "load", "--input", "/vault/docker/application.tar"], timeout=1800)
+        run(
+            [DOCKER, "--host", "unix:///var/run/docker.sock", "load", "--input", "/vault/docker/application.tar"],
+            timeout=1800,
+            env=DOCKER_ENVIRONMENT,
+        )
         loaded = inspect()
         require(loaded is not None, "Archive does not contain the expected image")
         write_json(marker, {"image_id": expected})
@@ -543,12 +585,14 @@ def application():
 
         readiness(config, True)
     device = {"intel_tdx": "/dev/tdx_guest", "amd_sev_snp": "/dev/sev-guest"}.get(config["platform"])
-    # Env values are passed through the environment, not visible in process argv.
-    command = docker_argv(app, device=device, defaults=loaded["Config"])
-    environment = dict(os.environ)
-    environment.update(docker_environment(app))
-    process = subprocess.Popen(command, env=environment, stdin=subprocess.DEVNULL)
-    status = process.wait()
+    with memory_file(docker_environment(app), sealed=True) as environment_fd:
+        command = docker_argv(
+            app, device=device, defaults=loaded["Config"], environment_file=f"/proc/self/fd/{environment_fd}"
+        )
+        process = subprocess.Popen(
+            command, env=DOCKER_ENVIRONMENT, pass_fds=(environment_fd,), stdin=subprocess.DEVNULL
+        )
+        status = process.wait()
     if stopping:
         return 0
     return status if status >= 0 else 128 - status
@@ -566,6 +610,9 @@ def mount_user_data():
         return
 
     validate_nfs_mount(settings)
+    # The measured root owns this path. No component or mount target comes from
+    # the clear user-data disk; a hostile mnt symlink is never traversed.
+    require(NFS_MOUNT.is_dir() and not NFS_MOUNT.is_symlink(), "Invalid guest-owned NFS mountpoint")
     run(
         [
             "mount",
@@ -574,7 +621,7 @@ def mount_user_data():
             "-o",
             "ro,nosuid,nodev,noexec,sec=krb5p",
             settings["server"] + ":" + settings["export"],
-            "/user_data/mnt",
+            str(NFS_MOUNT),
         ],
         timeout=90,
     )
@@ -587,10 +634,14 @@ def main():
     audited = args.action in ("bootstrap", "periodic", "reopen")
     try:
         status = globals()[args.action]()
-        if args.action in ("periodic", "reopen"):
-
-            emit("allow")
     except Exception:
+        if args.action == "bootstrap":
+            # Ask PID 1 to enforce failure before any best-effort diagnostics.
+            # It also retains the independent phase deadline if notification fails.
+            try:
+                notify("WATCHDOG=trigger")
+            except Exception:
+                pass
         if audited:
 
             emit("deny")

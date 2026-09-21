@@ -11,6 +11,8 @@ Vault builds upload through HTTPS and need no access to that storage. The offlin
 bundle-policy administration command still reads the policy namespace to verify
 published bytes; other storage backends need an equivalent readback workflow.
 
+Deploy one independently administered Trustee instance and storage/admin state per project or tenant and security profile. The supplied endpoint ACLs and bundle-scoped resource roles are not a multi-tenant isolation boundary for tenants sharing a generic CVM. Resource administrators may replace/delete resources in their allowed scope, and policy administrators replace the global instance policy. All holders must belong to the same trusted administration domain. For mutually untrusted tenants, provision separate instances, credentials and generic profiles. CoCo may use this same Trustee within that shared trust domain.
+
 ## 1. Pin the upstream release
 
 | Component | Pin |
@@ -176,6 +178,8 @@ The upstream `kbs-client` CLI uses the `default` AS policy. Set
 `token_issuer: CoCo-Attestation-Service` in the CVM profile. Install the reviewed
 CPU policy as `storage/attestation_service_policy/default_cpu.rego`; install a GPU
 profile's generated `gpu_attestation_policy.rego` as `default_gpu.rego`.
+
+The filename suffix selects the upstream appraisal type; it is not the EAR policy selector. Trustee v0.22.0 selects `default_cpu.rego` for CPU evidence and `default_gpu.rego` for GPU evidence while emitting `ear.appraisal-policy-id: default` in each corresponding submodule. Consumers also validate the submodule type and its CPU/GPU-specific claim contract; they do not use the selector alone to identify the appraisal. The deployment receipt separately hashes both installed files. `test_upstream_default_cpu_policy_rejects_sample_evidence` obtains a token from the actual AS and asserts the unsuffixed selector and CPU rejection. Composite policy tests reject missing or invalid GPU submodules.
 Policy content hashes and the profile version identify the approved policy
 revision. A policy name by itself is not approval.
 

@@ -26,7 +26,7 @@ from ..common.linux import run
 from .audit import emit
 from .gpu import readiness
 from .storage import close_vault
-from .systemd import notify
+from .systemd import notify, watchdog
 
 PERIODIC_INTERVAL_SECONDS = 300
 PERIODIC_TIMEOUT_SECONDS = 300
@@ -38,6 +38,8 @@ PERIODIC_TIMEOUT_SECONDS = 300
 QUARANTINE_WINDOW_SECONDS = 900
 QUARANTINE_RETRY_SECONDS = 60
 REOPEN_TIMEOUT_SECONDS = 900
+WATCHDOG_SECONDS = 360
+REVOCATION_TIMEOUT_SECONDS = 180
 
 
 def run_reopen(timeout, environment):
@@ -93,6 +95,7 @@ def periodic_tick(config, state, sequence):
         if output:
             print(output.decode(), end="", flush=True)
     except Exception:
+        watchdog(REVOCATION_TIMEOUT_SECONDS)
         record.update(result="failed", finished_at=time.time(), duration_seconds=time.monotonic() - started)
         try:
             readiness(config, False)
@@ -101,6 +104,7 @@ def periodic_tick(config, state, sequence):
         raise
     record.update(result="success", finished_at=time.time(), duration_seconds=time.monotonic() - started)
     write_json(state / "periodic.json", record)
+    emit("allow")
 
 
 def quarantine(config, units, state):
@@ -110,17 +114,21 @@ def quarantine(config, units, state):
     stopped, the vault is unmounted and its mapping closed. A successful reopen
     child re-attests, re-fetches the key and re-mounts before the units restart.
     """
-    emit("quarantine")
+    # PID 1 terminates this guest if stop/unmount or a Python operation stalls.
+    # Logging has a separate bounded queue and cannot defer revocation.
+    watchdog(REVOCATION_TIMEOUT_SECONDS)
     write_json(state / "quarantine.json", {"started_at": time.time(), "units": list(units)})
     run(["systemctl", "stop", *units], timeout=120)
     run(["systemctl", "stop", "docker.service", "containerd.service"], timeout=120)
     revoke_vault(config)
+    emit("quarantine")
     environment = dict(os.environ)
     environment.pop("NOTIFY_SOCKET", None)
     deadline = time.monotonic() + QUARANTINE_WINDOW_SECONDS
     while True:
         remaining = deadline - time.monotonic()
         require(remaining > 0, "Vault quarantine deadline expired")
+        watchdog(min(REOPEN_TIMEOUT_SECONDS, remaining) + 10)
         try:
             output = run_reopen(min(REOPEN_TIMEOUT_SECONDS, remaining), environment)
             require(time.monotonic() < deadline, "Vault quarantine deadline expired")
@@ -132,10 +140,13 @@ def quarantine(config, units, state):
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise
+            watchdog(min(QUARANTINE_RETRY_SECONDS, remaining) + 10)
             time.sleep(min(QUARANTINE_RETRY_SECONDS, remaining))
     if output:
         print(output.decode(), end="", flush=True)
     (state / "quarantine.json").unlink(missing_ok=True)
+    emit("allow")
+    watchdog(WATCHDOG_SECONDS)
     run(["systemctl", "start", *units], timeout=300)
 
 
@@ -150,17 +161,20 @@ def supervise(config, units, state):
         emit("allow")
         deadline = time.monotonic() + PERIODIC_INTERVAL_SECONDS
         notify("READY=1\nSTATUS=Vault authenticated; starting application services")
+        watchdog(WATCHDOG_SECONDS)
         # READY completes our own start job before units depending on us start.
         run(["systemctl", "start", *units], timeout=300)
         print("CVM_WORKLOAD_STARTED", flush=True)
         sequence = 0
         while True:
+            watchdog(WATCHDOG_SECONDS)
             signal.sigtimedwait(signals, max(0, deadline - time.monotonic()))
             # Include the child's runtime in the interval. An explicit request
             # starts a fresh interval; slow startup/ticks never add another full
             # sleep, and the synchronous loop never overlaps children.
             deadline = time.monotonic() + PERIODIC_INTERVAL_SECONDS
             sequence += 1
+            watchdog(WATCHDOG_SECONDS)
             try:
                 periodic_tick(config, state, sequence)
             except BuildError:

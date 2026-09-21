@@ -69,10 +69,10 @@ An active QGS service or a local TDREPORT alone does not establish working remot
 Install the builder requirements with pip or uv:
 
 ```sh
-python3 -m pip install -r requirements.txt
+python3 -m pip install --require-hashes -r requirements.txt
 
 # Or:
-uv pip install -r requirements.txt
+uv pip install --require-hashes -r requirements.txt
 ```
 
 All input paths are relative to their YAML file. Production inputs are supplied
@@ -113,7 +113,7 @@ host-visible console; the provisioner adds matching sysctls that disable kexec,
 SysRq and unprivileged kernel-memory access. `root_overlay_max_mib` caps the
 writable RAM-backed root layer; when omitted, the builder sets it to half of the
 configured guest memory. The limit is part of the measured generic profile, as
-are `vault_prescan` and the optional NTS-only `time_servers`.
+are `vault_prescan` and NTS-only `time_servers` (a non-empty override of the measured Ubuntu NTS defaults).
 
 The output directory contains one workspace subdirectory per platform, a shared
 `profile_set.json`, and one `cvm_<profile>_<platform>.oci.tar` deliverable per
@@ -282,18 +282,19 @@ and filesystem mount; the clear sidecars are mounted afterward with fixed access
 stores live in the vault; first-load completion is recorded only after the expected
 image exists. A failed integrity monitor, failed periodic appraisal, or revoked key
 stops the workload and powers off the guest.
-Bootstrap and periodic appraisal write allowlisted metadata to the journal and
-`/applog/attestation.log`; token, key and application values are never audit fields.
+Bootstrap and periodic appraisal queue allowlisted metadata for an independent, bounded audit writer. Journal, console or `/applog/attestation.log` I/O cannot defer revocation; records may be dropped. PID 1 enforces a phase deadline even if the main supervisor stalls. Token, key and application values are never audit fields. `/applog` is reformatted without a journal at every boot; copy public logs off before restarting.
 
 The container receives `/vault/application` read-only, its `runtime/` and `data/`
 subdirectories writable, `/applog`, `/user_config` (read-only) and `/user_data`
 (read-only); the measured root's `/usr/bin` is mounted at `/host/bin` only when
 `container.host_bin` is true. The container starts with no capabilities and adds
-back only `container.capabilities` (default: Docker's set minus `NET_RAW`,
-`MKNOD`, `SYS_CHROOT`, `AUDIT_WRITE` and `SETFCAP`), runs with
-`no-new-privileges` and a `pids_limit`, and may use `read_only_rootfs`.
+back only explicitly requested `container.capabilities` (default: none), runs with
+`no-new-privileges` and a `pids_limit`, and defaults to a read-only container root
+with writable `/tmp` and `/run`. Set `container.user` to a non-root numeric UID
+or UID:GID for an image prepared for it; otherwise the image's USER is preserved.
+A reviewed application may explicitly set `read_only_rootfs: false` when needed.
 `allowed_in_cidrs` and `allowed_out_cidrs` optionally confine the allowed ports
-to address ranges, and DNS is always limited to the DHCP-learned resolvers.
+to address ranges. Runtime DNS is limited to the DHCP-learned resolvers and denied when discovery returns no usable address.
 Admitted `app_*.service` units receive systemd sandboxing directives. Additional
 mounts and command overrides are optional. TEE-device access is opt-in and
 platform-neutral in the application configuration. `/applog` is a clear output-only channel so an operator can read
@@ -303,7 +304,9 @@ untrusted inputs. QEMU opens both input disks read-only, the guest mounts them
 rejects private-key filenames, containers, PEM content and symlinks in both input
 trees. Put application state and confidential logs in `/vault/application/data`.
 Optional NFS input uses authenticated `nfs_mount` configuration in the encrypted
-application JSON and Kerberos `krb5p`; clear `ext_mount.conf` is rejected. See
+application JSON and Kerberos `krb5p`. Its guest-owned `/nfs_data` mountpoint is
+exposed read-only at the same container path; no NFS mount follows a sidecar
+`mnt` symlink. Clear `ext_mount.conf` is rejected. See
 [BUILD_GUIDE.md](BUILD_GUIDE.md#trusted-nfs-configuration-and-application-write-access).
 
 Each CPU appraisal transaction has one 60-second budget across attestation and

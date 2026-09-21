@@ -129,7 +129,7 @@ def kernel_command_line(roothash, offset, root_overlay_max_mib, gpu="none"):
     gpu_pci = " pci=realloc,nocrs" if gpu == "nvidia_cc" else ""
     return (
         "root=/dev/mapper/verity_root rootfstype=ext4 ro console=ttyS0 "
-        "panic=1 oops=panic systemd.verity=no "
+        "panic=1 oops=panic systemd.verity=no systemd.gpt_auto=0 rd.systemd.gpt_auto=0 "
         f"{HARDENING_PARAMETERS} "
         f"cvm.root_overlay_max_mib={root_overlay_max_mib} "
         f"roothash={roothash} verity_hash_offset={offset}{gpu_pci}"
@@ -156,7 +156,9 @@ def provisioning_payload(profile, platform, build_id, job, source, runtime):
             inputs[f"gpu_apt_{index}.gpg"] = repository["keyring"]
     for name, path in inputs.items():
         shutil.copyfile(path, payload / "inputs" / name)
-    (payload / "inputs/nftables.conf").write_text("flush ruleset\n" + firewall_rules([], profile["bootstrap_egress"]))
+    (payload / "inputs/nftables.conf").write_text(
+        "flush ruleset\n" + firewall_rules([], profile["bootstrap_egress"], resolvers=None)
+    )
     packages = [*profile["required_system_packages"], *profile.get("gpu_packages", [])]
     construction = {
         "build_id": build_id,

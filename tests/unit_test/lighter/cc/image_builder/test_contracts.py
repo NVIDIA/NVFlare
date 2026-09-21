@@ -489,14 +489,14 @@ class GuestProvisioningTests(unittest.TestCase):
         self.assertNotIn("pool ", chrony)
         self.assertNotIn("chrony-dhcp", chrony)
         self.assertEqual(chrony, chrony_configuration(["time.example.org", "nts.example.net"]))
-        # Without explicit servers the packaged chrony configuration is kept.
+        # Without explicit servers the measured default still requires NTS.
         other = self.directory / "other-root"
         vendor = other / "usr/lib/systemd/system"
         vendor.mkdir(parents=True)
         (vendor / "docker.service").write_text((self.root / "usr/lib/systemd/system/docker.service").read_text())
         (vendor / "finalrd.service").write_text((self.root / "usr/lib/systemd/system/finalrd.service").read_text())
         install_files(self.config, self.payload, other)
-        self.assertFalse((other / "etc/chrony/chrony.conf").exists())
+        self.assertIn("server 1.ntp.ubuntu.com iburst nts", (other / "etc/chrony/chrony.conf").read_text())
         for invalid in ([], "time.example.org", ["bad server"], ["a", "a"], [1]):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):
                 validate_time_servers(invalid)
@@ -669,7 +669,7 @@ class ApplicationTests(unittest.TestCase):
         self.assertEqual(container["capabilities"], list(runtime.DEFAULT_CAPABILITIES))
         self.assertEqual(container["pids_limit"], runtime.DEFAULT_PIDS_LIMIT)
         self.assertFalse(container["host_bin"])
-        self.assertFalse(container["read_only_rootfs"])
+        self.assertTrue(container["read_only_rootfs"])
         self.assertNotIn("allowed_out_cidrs", runtime_config(app))
         self.value["allowed_out_cidrs"] = ["10.0.0.0/8"]
         self.value["allowed_in_cidrs"] = ["192.0.2.0/24"]
@@ -695,6 +695,21 @@ class ApplicationTests(unittest.TestCase):
         for invalid in (["10.0.0.1/8"], "10.0.0.0/8", ["10.0.0.0/8", "10.0.0.0/8"]):
             self.value["allowed_out_cidrs"] = invalid
             with self.subTest(cidrs=invalid), self.assertRaises(BuildError):
+                self.load()
+
+    def test_container_environment_rejects_record_injection_and_user_is_explicit(self):
+        for value in ("safe\nINJECTED=bad", "safe\rINJECTED=bad", "safe\x00bad"):
+            self.value["container"]["env"] = {"SETTING": value}
+            with self.subTest(value=value), self.assertRaises(BuildError):
+                self.load()
+        self.value["container"]["env"] = {"DOCKER_HOST": "tcp://app-only", "LD_PRELOAD": "app-only.so"}
+        self.value["container"]["user"] = "10001:10001"
+        app = self.load()
+        command = runtime.docker_argv(app, environment_file="/proc/self/fd/7")
+        self.assertEqual(command[command.index("--user") + 1], "10001:10001")
+        for user in ("root", "0", "1000:0", "1000\n--privileged", 1000, "4294967295"):
+            self.value["container"]["user"] = user
+            with self.subTest(user=user), self.assertRaises(BuildError):
                 self.load()
 
     def test_entrypoint_override_preserves_default_command(self):
@@ -863,7 +878,7 @@ class RuntimeContractTests(unittest.TestCase):
             self.assertIn("tcp dport 4460 accept", output)
             self.assertIn("udp dport 123 accept", output)
             self.assertIn("udp dport { 67, 547 } accept", output)
-            self.assertIn("udp dport 53 accept", output)
+            self.assertIn("udp dport 53 drop", output)
             self.assertNotIn("4460", rules.split("chain forward", 1)[1])
 
     def test_firewall_restricts_dns_and_allowlisted_ports_to_addresses(self):
@@ -899,7 +914,7 @@ class RuntimeContractTests(unittest.TestCase):
         open_rules = firewall_rules([8080], [443])
         self.assertIn("\ntcp dport { 8080 } accept", open_rules)
         self.assertIn("\ntcp dport { 443 } accept", open_rules)
-        self.assertIn("\nudp dport 53 accept", open_rules)
+        self.assertIn("\nudp dport 53 drop", open_rules)
         for invalid in (["10.0.0.1/8"], ["10.0.0.0/8", "10.0.0.0/8"], ["not-a-cidr"], "10.0.0.0/8"):
             with self.subTest(invalid=invalid), self.assertRaises(BuildError):
                 firewall_rules([], [443], outbound_destinations=invalid)
@@ -933,6 +948,8 @@ class RuntimeContractTests(unittest.TestCase):
             "panic=1",
             "oops=panic",
             "systemd.verity=no",
+            "systemd.gpt_auto=0",
+            "rd.systemd.gpt_auto=0",
         ):
             self.assertIn(token, tokens)
         self.assertEqual(tokens.count("roothash=" + "ab" * 32), 1)
@@ -954,11 +971,19 @@ class RuntimeContractTests(unittest.TestCase):
                     "type": "luks2",
                     "key_size": 96,
                     "kdf": {"type": "pbkdf2", "hash": "sha256", "iterations": 1000, "salt": "x"},
+                    "af": {"type": "luks1", "stripes": 4000, "hash": "sha256"},
                     "area": {"offset": "32768", "size": "258048"},
                 }
             },
         }
         validate_luks_metadata(metadata)
+        slot = metadata["keyslots"]["0"]
+        expected_af = slot["af"]
+        for af in ({}, dict(expected_af, stripes=4000000000), dict(expected_af, hash="sha512")):
+            slot["af"] = af
+            with self.subTest(af=af), self.assertRaisesRegex(BuildError, "anti-forensic"):
+                validate_luks_metadata(metadata)
+        slot["af"] = expected_af
         for kdf in (
             {"type": "argon2id", "time": 4, "memory": 1048576, "cpus": 4, "salt": "x"},
             {"type": "pbkdf2", "hash": "sha512", "iterations": 1000, "salt": "x"},

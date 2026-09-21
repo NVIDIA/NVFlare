@@ -20,26 +20,23 @@ from pathlib import PurePosixPath
 
 from .errors import require
 
-# Docker's default capability set minus the ones a confined application never
-# needs: raw sockets, device nodes, chroot, audit writes and file capabilities.
-DEFAULT_CAPABILITIES = (
-    "CHOWN",
-    "DAC_OVERRIDE",
-    "FOWNER",
-    "FSETID",
-    "KILL",
-    "NET_BIND_SERVICE",
-    "SETGID",
-    "SETPCAP",
-    "SETUID",
-)
+# No capabilities are restored unless the authenticated application asks for them.
+DEFAULT_CAPABILITIES = ()
 
 
 # Capabilities an application may request explicitly. Anything that would let the
 # container reach the kernel, devices or other namespaces stays unavailable.
 ALLOWED_CAPABILITIES = frozenset(
-    DEFAULT_CAPABILITIES
-    + (
+    (
+        "CHOWN",
+        "DAC_OVERRIDE",
+        "FOWNER",
+        "FSETID",
+        "KILL",
+        "NET_BIND_SERVICE",
+        "SETGID",
+        "SETPCAP",
+        "SETUID",
         "AUDIT_WRITE",
         "IPC_LOCK",
         "MKNOD",

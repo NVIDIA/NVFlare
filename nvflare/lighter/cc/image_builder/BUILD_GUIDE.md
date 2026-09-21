@@ -13,14 +13,14 @@ used by Vault Build.
 ## 1. Prepare the build host
 
 Run from `nvflare/lighter/cc/image_builder` on an Ubuntu 26.04 SNP or TDX host.
-Python is assumed to be installed. Install the Python requirements with pip or uv:
+Python is assumed to be installed. Use a dedicated build environment and install the exact, hash-locked Python requirements (including transitive dependencies) with pip or uv. Only wheels are admitted, so an unchecked source-build dependency cannot bypass the lock. Review and regenerate the lock when updating dependencies; do not replace it with unconstrained installation on a machine that handles vault secrets:
 
 ```sh
-python3 -m pip install -r requirements.txt
+python3 -m pip install --require-hashes -r requirements.txt
 ```
 
 ```sh
-uv pip install -r requirements.txt
+uv pip install --require-hashes -r requirements.txt
 ```
 
 Install the host tools and the Ubuntu OVMF firmware packages:
@@ -538,15 +538,11 @@ systemd sandboxing (`NoNewPrivileges`, `ProtectSystem=strict` with the
 application `runtime/`, `data/` and `/applog` writable, `PrivateTmp`, kernel
 protections and a reduced capability bounding set).
 
-Optional `container` confinement settings: `capabilities` lists the Linux
-capabilities added back after `--cap-drop ALL` (default: Docker's set without
-`NET_RAW`, `MKNOD`, `SYS_CHROOT`, `AUDIT_WRITE` and `SETFCAP`; `SYS_ADMIN` and
-similar are never accepted), `pids_limit` (default 4096), `read_only_rootfs`
-(adds tmpfs `/tmp` and `/run`), and `host_bin` to mount the measured root's
-`/usr/bin` read-only at `/host/bin` (off by default). `allowed_in_cidrs` and
-`allowed_out_cidrs` optionally confine the allowed inbound and outbound ports to
-canonical CIDR lists; DNS is always limited to the resolvers the guest learned
-from DHCP.
+Optional `container` confinement settings: `capabilities` lists capabilities explicitly added back after `--cap-drop ALL` (default: none; `SYS_ADMIN`, `SYS_MODULE`, `NET_ADMIN` and similar are rejected), `pids_limit` defaults to 4096, and `read_only_rootfs` defaults to true with writable `/tmp` and `/run`. A reviewed application can explicitly select a writable root. `user: "10001:10001"` selects a non-root numeric UID:GID; prepare writable application directories for that identity. Omission preserves the Docker image's USER, which may be root. `host_bin` remains an explicit opt-in.
+
+`container.env` is serialized into a sealed memory-backed environment file. Its values are never merged into the privileged Docker client's environment or command-line arguments. Names such as `DOCKER_HOST`, `PATH` and `LD_PRELOAD` configure only the container. Values cannot contain NUL, CR or LF. The CLI uses an absolute executable and the local Unix socket.
+
+`allowed_in_cidrs` and `allowed_out_cidrs` optionally constrain application ports to address ranges. DNS is limited to the runtime resolver list; no usable discovered resolver means DNS is denied. The initial measured discovery rules are the only unrestricted DNS phase.
 
 `cvm_image` accepts a local folder containing `profile_set.json` and its platform
 subdirectories, or a generic CVM OCI registry reference pinned by manifest digest:
@@ -738,7 +734,7 @@ those pieces itself before relying on it. Configure the input in the encrypted
 "nfs_mount": {"server": "files.example.org", "export": "/datasets", "security": "krb5p"}
 ```
 
-The guest mounts `/user_data/mnt` with `ro,nosuid,nodev,noexec,sec=krb5p`.
+The guest mounts the export at `/nfs_data` with `ro,nosuid,nodev,noexec,sec=krb5p` and exposes `/nfs_data` read-only to the container. Update workloads that previously used `/user_data/mnt`. The new mountpoint is created on the measured root, outside host-replaceable sidecars; a host-supplied `mnt` symlink is never used as a mount target.
 Provision the site's Kerberos configuration and credentials through protected
 vault inputs and reviewed guest services; permit the required KDC/NFS egress.
 There is no unauthenticated fallback. Legacy `/user_data/ext_mount.conf` is
