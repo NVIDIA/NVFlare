@@ -389,7 +389,7 @@ def install_services():
             unit = (
                 text
                 + "\n[Unit]\n"
-                + f"After={deps}\nRequires={deps}\nBindsTo={deps}\n"
+                + f"After={deps} cvm_integrity.service\nRequires={deps}\nBindsTo={deps}\n"
                 + "FailureAction=poweroff-force\n"
                 + "[Service]\nEnvironmentFile=/run/cvm/platform.env\n"
                 + "".join(line + "\n" for line in SERVICE_HARDENING)

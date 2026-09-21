@@ -1,6 +1,8 @@
 [Unit]
 Description=Supervise authenticated vault reads
 # Deliberately no Requires/After=cvm_bootstrap: bootstrap waits for READY.
+# Reverse stop ordering keeps the monitor alive until vault users have stopped.
+Before=docker.service containerd.service
 FailureAction=poweroff-force
 SuccessAction=poweroff-force
 

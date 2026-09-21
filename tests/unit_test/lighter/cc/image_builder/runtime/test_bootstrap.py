@@ -564,7 +564,7 @@ class BootstrapTests(unittest.TestCase):
         ):
             self.assertIn(directive, unit)
         self.assertNotIn("PartOf=", unit)
-        self.assertNotIn("cvm_integrity.service", unit)
+        self.assertIn("After=cvm_bootstrap.service cvm_integrity.service", unit)
 
     def test_exactly_three_units_with_pid1_failure_actions(self):
         names = {p.name for p in (SOURCE / "services").iterdir()}
@@ -578,11 +578,18 @@ class BootstrapTests(unittest.TestCase):
             if name != "cvm_app.service":
                 self.assertEqual(config["Unit"]["SuccessAction"], "poweroff-force")
                 self.assertEqual(config["Service"]["Type"], "notify")
+                # Stop ordering is the reverse of start ordering. Both
+                # supervisors must outlive Docker and containerd on shutdown.
+                self.assertEqual(set(config["Unit"]["Before"].split()), {"docker.service", "containerd.service"})
+            if name == "cvm_bootstrap.service":
+                self.assertIn("finalrd.service", config["Unit"]["Requires"].split())
+                self.assertIn("finalrd.service", config["Unit"]["After"].split())
             if name == "cvm_integrity.service":
                 self.assertNotIn("Requires", config["Unit"])
                 self.assertNotIn("After", config["Unit"])
                 self.assertEqual(config["Service"]["WatchdogSec"], "15")
             if name == "cvm_app.service":
+                self.assertIn("cvm_integrity.service", config["Unit"]["After"].split())
                 # The wrapper stops the container on SIGTERM; a stop job must not
                 # look like a workload failure and trigger the forced power-off.
                 self.assertEqual(config["Service"]["KillMode"], "mixed")

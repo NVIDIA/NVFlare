@@ -24,5 +24,6 @@ include nvflare/lighter/cc/image_builder/trustee/*.md
 include nvflare/lighter/cc/image_builder/trustee/*.json
 include nvflare/lighter/cc/image_builder/trustee/*.rego
 include nvflare/lighter/cc/image_builder/initramfs/hooks/cvm_verity
+include nvflare/lighter/cc/image_builder/initramfs/finalrd/cvm_shutdown.finalrd
 include nvflare/lighter/cc/image_builder/initramfs/scripts/local-top/verity_root
 include nvflare/lighter/cc/image_builder/initramfs/scripts/local-bottom/overlay_root

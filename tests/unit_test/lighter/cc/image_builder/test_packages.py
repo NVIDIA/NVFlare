@@ -139,6 +139,9 @@ assert not any(name in sys.modules for name in ("cvm.build", "cvm.trustee"))
             (vendor / "docker.service").write_text(
                 "[Unit]\nRequires=docker.socket\n[Service]\nExecStart=/usr/bin/dockerd -H fd://\n"
             )
+            (vendor / "finalrd.service").write_text(
+                "[Service]\nType=oneshot\nExecStart=/bin/true\nExecStop=/usr/bin/finalrd\n"
+            )
             install_files(config, payload, guest)
             installed = guest / "usr/lib/cvm"
             self.isolated_imports(installed, GUEST_MODULES)

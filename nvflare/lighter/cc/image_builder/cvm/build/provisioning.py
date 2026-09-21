@@ -284,6 +284,27 @@ def configure_docker_service(root):
     path.write_text(text)
 
 
+def configure_shutdown(root):
+    """Prepare finalrd before attestation, including systemd's dlopen libraries.
+
+    A security power-off can skip ExecStop entirely. The immutable guest must
+    already have a complete RAM-backed shutdown environment so PID 1 can leave
+    the overlay root and release its underlying dm-verity device.
+    """
+    path = target(root, "/usr/lib/systemd/system/finalrd.service")
+    text = path.read_text()
+    checks = "".join(
+        f"ExecStartPost=/usr/bin/test -r /run/initramfs/usr/lib/x86_64-linux-gnu/{library}\n"
+        for library in ("libmount.so.1", "libblkid.so.1")
+    )
+    if "ExecStart=/bin/true\n" in text and "ExecStop=/usr/bin/finalrd\n" in text:
+        text = text.replace("ExecStart=/bin/true\n", "ExecStart=/usr/bin/finalrd\n")
+        text = text.replace("ExecStop=/usr/bin/finalrd\n", checks)
+    elif "ExecStart=/usr/bin/finalrd\n" not in text or checks not in text:
+        raise ValueError("Unsupported finalrd service configuration")
+    path.write_text(text)
+
+
 def install_files(config, payload, root=Path("/")):
     payload = Path(payload)
     root = Path(root)
@@ -327,6 +348,10 @@ def install_files(config, payload, root=Path("/")):
     )
     for path in ("hooks/cvm_verity", "scripts/local-top/verity_root", "scripts/local-bottom/overlay_root"):
         copy_file(payload / "source/initramfs" / path, root, "/etc/initramfs-tools/" + path, 0o755)
+    copy_file(
+        payload / "source/initramfs/finalrd/cvm_shutdown.finalrd", root, "/etc/finalrd/cvm_shutdown.finalrd", 0o755
+    )
+    configure_shutdown(root)
 
     if config["dev_mode"]:
         write_file(root, "/etc/cvm/dev_mode", "Development only: no TEE and no KBS authorization.")

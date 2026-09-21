@@ -373,7 +373,16 @@ class GuestProvisioningTests(unittest.TestCase):
             "[Unit]\nRequires=docker.socket\nAfter=network-online.target docker.socket\n"
             "[Service]\nExecStart=/usr/bin/dockerd -H fd:// --containerd=/run/containerd/containerd.sock\n"
         )
-        for path in ("hooks/cvm_verity", "scripts/local-top/verity_root", "scripts/local-bottom/overlay_root"):
+        (vendor / "finalrd.service").write_text(
+            "[Unit]\nDefaultDependencies=no\n[Service]\nType=oneshot\nRemainAfterExit=yes\n"
+            "ExecStart=/bin/true\nExecStop=/usr/bin/finalrd\n"
+        )
+        for path in (
+            "hooks/cvm_verity",
+            "scripts/local-top/verity_root",
+            "scripts/local-bottom/overlay_root",
+            "finalrd/cvm_shutdown.finalrd",
+        ):
             location = self.payload / "source/initramfs" / path
             location.parent.mkdir(parents=True, exist_ok=True)
             location.write_text("#!/bin/sh\n")
@@ -424,6 +433,25 @@ class GuestProvisioningTests(unittest.TestCase):
         self.assertNotIn("docker.socket", docker)
         self.assertFalse((self.root / "etc/systemd/system/docker.service.d").exists())
 
+    def test_shutdown_environment_is_prepared_and_checked_before_attestation(self):
+        install_files(self.config, self.payload, self.root)
+        path = self.root / "usr/lib/systemd/system/finalrd.service"
+        unit = path.read_text()
+        self.assertIn("ExecStart=/usr/bin/finalrd\n", unit)
+        self.assertNotIn("ExecStop=", unit)
+        for name in ("libmount.so.1", "libblkid.so.1"):
+            self.assertIn(f"ExecStartPost=/usr/bin/test -r /run/initramfs/usr/lib/x86_64-linux-gnu/{name}\n", unit)
+        hook = self.root / "etc/finalrd/cvm_shutdown.finalrd"
+        self.assertEqual(
+            hook.read_bytes(), (self.payload / "source/initramfs/finalrd/cvm_shutdown.finalrd").read_bytes()
+        )
+        self.assertTrue(hook.stat().st_mode & stat.S_IXUSR)
+        install_files(self.config, self.payload, self.root)
+        self.assertEqual(path.read_text(), unit)
+        path.write_text(unit.replace("ExecStart=/usr/bin/finalrd", "ExecStart=/unsupported"))
+        with self.assertRaisesRegex(ValueError, "Unsupported finalrd"):
+            install_files(self.config, self.payload, self.root)
+
     def test_development_layout_keeps_identical_three_unit_files(self):
         self.config["dev_mode"] = True
         install_files(self.config, self.payload, self.root)
@@ -466,6 +494,7 @@ class GuestProvisioningTests(unittest.TestCase):
         vendor = other / "usr/lib/systemd/system"
         vendor.mkdir(parents=True)
         (vendor / "docker.service").write_text((self.root / "usr/lib/systemd/system/docker.service").read_text())
+        (vendor / "finalrd.service").write_text((self.root / "usr/lib/systemd/system/finalrd.service").read_text())
         install_files(self.config, self.payload, other)
         self.assertFalse((other / "etc/chrony/chrony.conf").exists())
         for invalid in ([], "time.example.org", ["bad server"], ["a", "a"], [1]):

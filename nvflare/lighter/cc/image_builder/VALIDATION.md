@@ -6,6 +6,53 @@ services and operator guides are maintained together with the provisioning adapt
 in this repository. Repository formatting and license headers change source
 fingerprints; build and approve new generic CVMs for this source snapshot.
 
+## Shutdown warning fix — 2026-09-21 UTC
+
+The shutdown warnings from the preceding CPU run are fixed. Both supervisors
+now stop after application services, Docker and containerd. Their PID 1
+failure/success power-off actions remain in place. The distro finalrd service
+prepares its RAM-backed shutdown image at boot, before attestation, and the
+measured hook includes the dynamically loaded `libmount` and `libblkid`
+libraries and their dependencies. Startup checks reject missing libraries.
+
+Fresh Intel TDX and AMD SEV-SNP CPU-only builds passed end-to-end testing:
+
+- Both guests logged successful stops for `cvm_app.service`, `docker.service`
+  and `containerd.service` before their supervisor stopped, then reached
+  `Power down`. Neither shutdown contained the previous device-mapper busy,
+  mount parsing, unmount, swap cleanup or waiting-for-process warnings.
+- Three-round CPU jobs passed before and after periodic re-attestation in
+  **8.20 seconds** and **8.18 seconds**, verifying all returned values and fresh
+  request nonces. Both final sums were **529,920**.
+- Initial and periodic hardware attestation passed, with periodic gaps of
+  **301.88 seconds** for TDX and **300.74 seconds** for SNP. All **24 live
+  Trustee HTTPS tests passed** against unmodified upstream Trustee v0.22.0.
+- **240 Linux unit/policy tests passed without skips**. The new isolated
+  finalrd integration test and the source-distribution-to-wheel packaging test
+  passed. Scoped Black, isort, flake8, shell syntax and whitespace checks passed.
+- No test processes, mounts or listening ports remained. The pre-existing AMD
+  GPU VM retained its devices throughout the CPU-only run.
+
+Both finalized manifests recorded runtime source SHA-256
+`8fd810711cae8210e6e4681b4b0cfb8440ea06c9e6190fb8309a76cdc6f879fd`.
+Generic construction took **323.53 / 324.06 seconds** (TDX / SNP), and vault
+construction took **294.65 / 296.01 seconds**. Launch to observed secure-admin
+readiness or client registration took **149.33 / 150.91 seconds**.
+
+This candidate-mode run used native CVMs and SHA-256-verified OCI archives.
+GPU operation, registry transfer, production approval, Kubernetes CoCo
+orchestration and destructive security-failure acceptance were not repeated.
+Generic images must be rebuilt, remeasured and reapproved for this change.
+
+The shutdown-image integration test runs on an Ubuntu host with finalrd and
+initramfs-tools installed. It uses a disposable mount namespace and chroot;
+it does not invoke a power-off command or change the host's `/run` or `/etc`:
+
+```bash
+sudo env CVM_SHUTDOWN_TESTS=1 python3 -m unittest discover \
+  -s tests/integration_test/lighter/cc/image_builder -p test_shutdown.py -v
+```
+
 ## CPU hardware end-to-end after hardening — 2026-09-20
 
 Fresh builds from commit `30d393340edacecd2df053764b0739c9415ec8f9` passed the
@@ -45,8 +92,8 @@ job timing runs from submission through observed completion. Stages overlap.
 Both delivered launchers shut down their CVMs, and both guest consoles reached
 `Power down`. However, shutdown was **not warning-free**: both guests reported
 that `/dev/dm-0` was busy during final device-mapper teardown; AMD also reported
-mount/swap cleanup errors from its shutdown environment. These observations need
-follow-up and do not establish clean guest filesystem teardown. Host cleanup
+mount/swap cleanup errors from its shutdown environment. These observations
+prompted the shutdown fix and fresh hardware verification recorded above. Host cleanup
 checks found no remaining test processes, mounts or listening ports. The existing
 AMD GPU VM retained its GPU assignment.
 

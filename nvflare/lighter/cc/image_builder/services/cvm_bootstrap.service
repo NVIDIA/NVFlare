@@ -1,8 +1,9 @@
 [Unit]
 Description=Attest, unlock and supervise the application vault
-After=network-online.target chrony.service nftables.service local-fs.target systemd-modules-load.service
+After=network-online.target chrony.service nftables.service local-fs.target systemd-modules-load.service finalrd.service
+Before=docker.service containerd.service
 Wants=network-online.target
-Requires=chrony.service nftables.service
+Requires=chrony.service nftables.service finalrd.service
 FailureAction=poweroff-force
 SuccessAction=poweroff-force
 
