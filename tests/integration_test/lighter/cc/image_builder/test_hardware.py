@@ -101,7 +101,7 @@ class HardwareTests(unittest.TestCase):
             # presenting the five disks at different SCSI target addresses.
             entry = [
                 "-c",
-                "import re; from builder import launcher; original=launcher.qemu_command; "
+                "import re; from cvm.host import launcher; original=launcher.qemu_command; "
                 "launcher.qemu_command=lambda *a,**k: ["
                 "re.sub(r'scsi-id=(\\d)', lambda m: 'scsi-id='+str(4-int(m[1])), x) "
                 "if x.startswith('scsi-hd,') else x for x in original(*a,**k)]; launcher.main()",
@@ -180,6 +180,13 @@ class HardwareTests(unittest.TestCase):
                 logs={p.name: digest_file(p) for p in self.logs},
             ),
         )
+
+    def assert_powered_off(self):
+        log = self.logs[-1].read_text(errors="replace")
+        # A panic also exits QEMU with -no-reboot, but does not demonstrate
+        # integrity-monitor supervision. Retain the serial evidence separately.
+        self.assertFalse("Kernel panic" in log, "Guest kernel panic; storage acceptance failed (see boot log)")
+        self.assertTrue("Power down" in log, "Guest poweroff was not confirmed (see boot log)")
 
     @contextlib.contextmanager
     def drop_egress(self, port, addresses=()):
@@ -406,9 +413,9 @@ class HardwareTests(unittest.TestCase):
 
     def test_reboot_after_writes_and_journal_interruption(self):
         self.boot()
-        self.ready()
-        self.request("/write", "POST")
-        self.request("/write-loop", "POST")
+        before = self.ready()
+        self.assertEqual(json.loads(self.request("/write", "POST")), {"written": True})
+        self.assertEqual(json.loads(self.request("/write-loop", "POST")), {"writing": True})
         time.sleep(0.2)
         os.kill(self.qemu_pid(), signal.SIGKILL)
         self.process.wait(timeout=30)
@@ -416,7 +423,7 @@ class HardwareTests(unittest.TestCase):
         state = self.ready()
         self.assertTrue(state["persisted"])
         self.stop()
-        self.result(persistent_write_survived=True, journal_interruption_recovered=True)
+        self.result(persistent_write_survived=True, journal_interruption_recovered=True, before=before, after=state)
 
     def test_reordered_scsi_targets_preserve_disk_roles(self):
         self.boot(reverse_scsi=True)
@@ -428,12 +435,14 @@ class HardwareTests(unittest.TestCase):
 
     def test_integrity_monitor_crash_powers_off(self):
         self.boot()
-        self.ready()
-        self.request("/kill-monitor", "POST")
+        state = self.ready()
+        started = time.monotonic()
+        self.assertEqual(json.loads(self.request("/kill-monitor", "POST")), {"injected_monitor_crash": True})
         self.process.wait(timeout=60)
-        log = self.logs[-1].read_text(errors="replace")
-        self.assertIn("Power down", log)
-        self.result(monitor_crash_powered_off=True)
+        self.assert_powered_off()
+        self.result(
+            monitor_crash_powered_off=True, fail_closed_seconds=round(time.monotonic() - started, 3), state=state
+        )
 
     def test_exec_child_cannot_dump_core(self):
         self.boot()
@@ -458,7 +467,7 @@ class HardwareTests(unittest.TestCase):
         if os.environ.get("CVM_EXTENDED_AGENT") != "1":
             self.skipTest("Use the current extended acceptance payload")
         self.boot()
-        self.ready()
+        before = self.ready()
         self.assertEqual(
             json.loads(self.request("/prepare-interrupted-load", "POST")), {"load_in_progress": True, "marker": False}
         )
@@ -467,15 +476,15 @@ class HardwareTests(unittest.TestCase):
         os.kill(self.qemu_pid(), signal.SIGKILL)
         self.process.wait(timeout=30)
         self.boot()
-        self.ready()
+        after = self.ready()
         self.stop()
-        self.result(interrupted_docker_load_retried=True)
+        self.result(interrupted_docker_load_retried=True, before=before, after=after)
 
     def test_corruption_after_scan_stops_workload(self):
         if os.environ.get("CVM_EXTENDED_AGENT") != "1":
             self.skipTest("Use the current extended acceptance payload")
         self.boot()
-        self.ready()
+        state = self.ready()
         # Fault injection by the untrusted host: change an existing data cluster
         # without changing qcow2 metadata, LUKS headers, or another VM's files.
         image = self.vault / "vault.qcow2"
@@ -489,10 +498,13 @@ class HardwareTests(unittest.TestCase):
             stream.seek(block["offset"] + address - block["start"])
             stream.write(bytes(x ^ 0x55 for x in data))
             os.fsync(stream.fileno())
-        self.request("/scan", "POST")
+        started = time.monotonic()
+        self.assertEqual(json.loads(self.request("/scan", "POST")), {"requested_authenticated_scan": True})
         self.process.wait(timeout=60)
-        self.assertIn("Power down", self.logs[-1].read_text(errors="replace"))
-        self.result(post_scan_corruption_powered_off=True)
+        self.assert_powered_off()
+        self.result(
+            post_scan_corruption_powered_off=True, fail_closed_seconds=round(time.monotonic() - started, 3), state=state
+        )
 
     def test_wrong_header_binding_prevents_startup(self):
         path = self.vault / "vault_manifest.json"
@@ -508,18 +520,45 @@ class HardwareTests(unittest.TestCase):
         self.result(wrong_binding_prevented_startup=True)
 
     def test_payload_corruption_prevents_startup(self):
-        with nbd(self.vault / "vault.qcow2") as device:
-            header = snapshot_header(device)
-            with open(device, "r+b", buffering=0) as stream:
-                stream.seek(64 * 1024**2)
-                original = stream.read(4096)
-                stream.seek(64 * 1024**2)
-                stream.write(bytes(x ^ 0x55 for x in original))
-                os.fsync(stream.fileno())
-            self.assertEqual(snapshot_header(device), header)
+        if not self.manifest["contract"]["vault_prescan"]:
+            self.skipTest("Pre-startup detection requires the measured prescan-enabled profile")
+        self.corrupt_payload()
         self.boot()
         self.process.wait(timeout=180)
         log = self.logs[-1].read_text(errors="replace")
-        self.assertIn("Power down", log)
+        self.assert_powered_off()
         self.assertNotIn("CVM_WORKLOAD_STARTED", log)
         self.result(payload_corruption_prevented_startup=True, unchanged_header=True)
+
+    def corrupt_payload(self):
+        with nbd(self.vault / "vault.qcow2") as device:
+            header = snapshot_header(device)
+            with open(device, "r+b", buffering=0) as stream:
+                # Initialized, unused payload near the end permits startup with
+                # prescan disabled, then fails when the explicit read reaches it.
+                stream.seek(-64 * 1024**2, os.SEEK_END)
+                address = stream.tell()
+                original = stream.read(4096)
+                self.assertEqual(len(original), 4096)
+                stream.seek(address)
+                stream.write(bytes(x ^ 0x55 for x in original))
+                os.fsync(stream.fileno())
+            self.assertEqual(snapshot_header(device), header)
+
+    def test_prescan_disabled_corruption_powers_off_on_read(self):
+        if self.manifest["contract"]["vault_prescan"]:
+            self.skipTest("Requires a separately built and measured vault_prescan:false profile")
+        self.corrupt_payload()
+        self.boot()
+        state = self.ready()
+        started = time.monotonic()
+        self.assertEqual(json.loads(self.request("/scan", "POST")), {"requested_authenticated_scan": True})
+        self.process.wait(timeout=60)
+        self.assert_powered_off()
+        self.result(
+            prescan_disabled=True,
+            preexisting_corruption_powered_off_on_read=True,
+            unchanged_header=True,
+            fail_closed_seconds=round(time.monotonic() - started, 3),
+            state=state,
+        )

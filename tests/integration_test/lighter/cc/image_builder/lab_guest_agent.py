@@ -42,6 +42,7 @@ from cvm.runtime.attestation import validate_token
 from cvm.runtime.storage import disk_device
 
 CONFIG = None
+RUNTIME = Path("/vault/application/runtime")
 
 
 def firewall_state():
@@ -67,6 +68,10 @@ def state():
         "binding": binding.hex(),
         "platform": CONFIG["platform"],
         "marker": Path("/vault/docker/image-loaded.json").exists(),
+        "kernel_release": os.uname().release,
+        "cryptsetup_version": run(["cryptsetup", "--version"]).decode().strip(),
+        "cryptsetup_package": run(["dpkg-query", "-W", "-f=${Version}", "cryptsetup-bin"]).decode().strip(),
+        "vault_prescan": CONFIG["vault_prescan"],
     }
     result["core_dumps_disabled"] = (
         Path("/proc/sys/kernel/core_pattern").read_text().strip() == "/dev/null"
@@ -128,7 +133,7 @@ def state():
         ).returncode
         == 0
     )
-    p = Path("/vault/acceptance-state")
+    p = RUNTIME / "acceptance-state"
     result["persisted"] = p.is_file() and p.read_bytes() == b"CVM_PERSISTENT_WRITE\n"
     return result
 
@@ -179,12 +184,13 @@ def cross_vault(path):
     return {"cross_vault_denied": False}
 
 
-def write_loop():
-    with open("/vault/acceptance-journal-load", "wb", buffering=0) as stream:
+def write_loop(ready):
+    with (RUNTIME / "acceptance-journal-load").open("wb", buffering=0) as stream:
         while True:
             stream.seek(0)
             stream.write(os.urandom(1024 * 1024))
             os.fsync(stream.fileno())
+            ready.set()
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -235,13 +241,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def inject(self):
         url = urllib.parse.urlparse(self.path)
         if url.path == "/write":
-            with open("/vault/acceptance-state", "wb") as stream:
+            with (RUNTIME / "acceptance-state").open("wb") as stream:
                 stream.write(b"CVM_PERSISTENT_WRITE\n")
                 stream.flush()
                 os.fsync(stream.fileno())
             self.respond({"written": True})
         elif url.path == "/write-loop":
-            threading.Thread(target=write_loop, daemon=True).start()
+            ready = threading.Event()
+            threading.Thread(target=write_loop, args=(ready,), daemon=True).start()
+            require(ready.wait(5), "Journal fault writer did not complete its first write")
             self.respond({"writing": True})
         elif url.path == "/kill-monitor":
             pid = int(run(["systemctl", "show", "cvm_integrity.service", "--property=MainPID", "--value"]))
@@ -268,51 +276,36 @@ class Handler(http.server.BaseHTTPRequestHandler):
             run(["systemctl", "kill", "--kill-whom=main", "--signal=SIGUSR1", "cvm_bootstrap.service"])
         elif url.path == "/scan":
             self.respond({"requested_authenticated_scan": True})
-            run(["sync"])
-            Path("/proc/sys/vm/drop_caches").write_text("3\n")
+            # Discard cached plaintext, then use the same buffered scanner as
+            # bootstrap. O_DIRECT against this authenticated target is not a
+            # valid proxy: the pinned kernel panics on clean direct reads.
+            with open("/dev/mapper/vault", "rb", buffering=0) as stream:
+                os.posix_fadvise(stream.fileno(), 0, 0, os.POSIX_FADV_DONTNEED)
             from cvm.common.luks import scan
 
             scan("/dev/mapper/vault")
         elif url.path == "/prepare-interrupted-load":
-            # The test deliberately terminates a running container. Accept its
-            # expected termination statuses only during fault preparation. All
-            # integrity and attestation failure handlers remain active.
-            override = Path("/run/systemd/system/cvm_app.service.d/acceptance.conf")
-            self.phase = "prepare-unit-override"
-            override.parent.mkdir(exist_ok=True)
-            override.write_text("[Service]\nSuccessExitStatus=137 143\n")
-            run(["systemctl", "daemon-reload"])
-            self.phase = "stop-application"
-            run(["systemctl", "stop", "cvm_app.service"], timeout=45)
-            # Docker's attached CLI can report exit 137 after the stop job
-            # completes. Keep this test override until the simulated power loss;
-            # the next boot automatically restores the measured exit policy.
-            self.phase = "remove-image"
-            image = read_json("/vault/config/application.json")["image_id"]
-            run(["docker", "image", "rm", "--force", image])
-            self.phase = "reset-marker"
-            Path("/vault/docker/image-loaded.json").unlink(missing_ok=True)
-            run(["sync", "-f", "/vault"])
-            self.phase = "start-loader"
-            loader = subprocess.Popen(
-                ["docker", "load"], stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            # Fixed test-only PID 1 helper prepares the crash outside the
+            # application's read-only mount namespace. Production confinement
+            # and integrity/attestation supervision remain unchanged.
+            receipt = RUNTIME / "load-fault.json"
+            receipt.unlink(missing_ok=True)
+            run(
+                [
+                    "systemd-run",
+                    "--quiet",
+                    "--collect",
+                    "--unit=app_acceptance_fault",
+                    sys.executable,
+                    str(Path(__file__).resolve()),
+                    "--prepare-interrupted-load",
+                ]
             )
-
-            def feed_archive():
-                try:
-                    with open("/vault/docker/application.tar", "rb") as archive:
-                        while block := archive.read(4096):
-                            loader.stdin.write(block)
-                            loader.stdin.flush()
-                            time.sleep(0.05)
-                    loader.stdin.close()
-                    loader.wait()
-                except (BrokenPipeError, OSError):
-                    pass
-
-            threading.Thread(target=feed_archive, daemon=True).start()
-            require(loader.poll() is None, "Docker load did not start")
-            self.respond({"load_in_progress": True, "marker": False})
+            deadline = time.monotonic() + 90
+            while not receipt.exists() and time.monotonic() < deadline:
+                time.sleep(0.2)
+            require(receipt.exists(), "Load fault preparation timed out")
+            self.respond(read_json(receipt))
         elif url.path == "/poweroff":
             self.respond({"requested_poweroff": True})
             run(["systemctl", "poweroff", "--no-block"])
@@ -330,8 +323,47 @@ def main():
     CONFIG = read_json("/etc/cvm/runtime.json")
     require(CONFIG["profile_version"].startswith("test-"), "Acceptance payload requires a test profile")
     protect_process()
+    if sys.argv[1:] == ["--prepare-interrupted-load"]:
+        prepare_interrupted_load()
+        return
+    require(not sys.argv[1:], "Unknown acceptance helper action")
     with http.server.HTTPServer(("0.0.0.0", 18081), Handler) as server:
         server.serve_forever()
+
+
+def prepare_interrupted_load():
+    from cvm.common.io import write_json
+
+    # This transient unit and its override disappear at the simulated power
+    # loss. No persistent generic-root or production service change is made.
+    receipt = RUNTIME / "load-fault.json"
+    try:
+        override = Path("/run/systemd/system/cvm_app.service.d/acceptance.conf")
+        override.parent.mkdir(exist_ok=True)
+        override.write_text("[Service]\nSuccessExitStatus=137 143\n")
+        run(["systemctl", "daemon-reload"])
+        run(["systemctl", "stop", "cvm_app.service"], timeout=45)
+        image = read_json("/vault/config/application.json")["image_id"]
+        run(["docker", "image", "rm", "--force", image])
+        Path("/vault/docker/image-loaded.json").unlink(missing_ok=True)
+        run(["sync", "-f", "/vault"])
+        with (
+            subprocess.Popen(
+                ["docker", "load"], stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            ) as loader,
+            open("/vault/docker/application.tar", "rb") as archive,
+        ):
+            require(loader.poll() is None, "Docker load did not start")
+            write_json(receipt, {"load_in_progress": True, "marker": False})
+            while block := archive.read(4096):
+                loader.stdin.write(block)
+                loader.stdin.flush()
+                time.sleep(0.05)
+            loader.stdin.close()
+            require(loader.wait() == 0, "Fault fixture Docker load failed")
+    except Exception:
+        write_json(receipt, {"fault_preparation_failed": True})
+        raise
 
 
 if __name__ == "__main__":

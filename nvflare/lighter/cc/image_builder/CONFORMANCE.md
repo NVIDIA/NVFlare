@@ -1,6 +1,10 @@
 > Current implementation targets unmodified CoCo v0.23.0 / Trustee v0.22.0.
-> Earlier hardware results below describe previous profiles. Repeat the complete
-> hardware acceptance matrix for the new upstream profile before production approval.
+> A September 21 native-CVM run at `95bf53889` passed with a TDX server,
+> an SNP/H800 client, upstream Trustee and periodic CPU/GPU appraisal; see
+> [VALIDATION.md](VALIDATION.md). Subsequent token-freshness changes require new
+> measured artifacts. Positive workload results do not complete the destructive
+> storage, GPU-denial or full deployment acceptance matrix. Production approval
+> remains gated on the complete matrix for the exact released profile.
 
 # NVIDIA Confidential Computing Reference Architecture Conformance
 
@@ -58,8 +62,10 @@ The CPU-only NVFlare profile does not have a GPU conformance gap; it follows the
 CPU-CVM trust path and is outside the cited RA's GPU-inference scope.
 
 The GPU-enabled profile now gates vault keys on a composite CPU/GPU EAR at
-Trustee. Its implementation is covered by policy, signed-token and HTTPS tests;
-physical acceptance of the new composite path remains pending. Full conformance
+Trustee. Its implementation is covered by policy, signed-token and HTTPS tests,
+plus positive SNP/H800 workload and periodic-appraisal evidence at `95bf53889`.
+Physical negative-case acceptance and acceptance of subsequent source changes
+remain pending. Full conformance
 also depends on the exact production hardware/BOM and remaining deployment
 requirements below.
 
@@ -98,7 +104,7 @@ and
 | RA capability | CPU-only profile | GPU-enabled profile | Implementation evidence and remaining work |
 |---|---|---|---|
 | Launch the workload in a measured CVM | Meets | Evidence pending | SNP and TDX launch assets and shape are pinned in `cvm/host/launcher.py`; reference evidence is collected in `cvm/build/cvm.py` and acceptance receipts are verified in `cvm/artifacts/bundle.py`. Current source changes require fresh hardware acceptance before production approval. |
-| Collect fresh evidence for the CPU TEE, guest image, launch configuration, firmware, and applicable GPU | Meets | Conditional | `cvm/runtime/attestation.py` obtains a fresh KBS challenge, binds it to an ephemeral key, validates the signed EAR, and checks the selected CPU profile. The upstream CoCo client collects NVIDIA evidence bound to RCAR runtime data; Trustee verifies NRAS signatures and applies the generated GPU policy. GPU appraisal has not been demonstrated in the complete current CVM flow. |
+| Collect fresh evidence for the CPU TEE, guest image, launch configuration, firmware, and applicable GPU | Meets | Conditional | `cvm/runtime/attestation.py` obtains a fresh KBS challenge, binds it to an ephemeral key, validates the signed EAR, and checks the selected CPU profile. The upstream CoCo client collects NVIDIA evidence bound to RCAR runtime data; Trustee verifies NRAS signatures and applies the generated GPU policy. Positive GPU appraisal and CUDA jobs passed at `95bf53889`; later source changes require a fresh GPU run and physical negative acceptance remains pending. |
 | Release a protected key only after fresh evidence matches policy | Meets | **Evidence pending** | `authorized_key()` uses a composite RCAR transaction. The CPU quote covers GPU evidence; KBS requires the configured NVIDIA GPU submods before releasing a GPU vault key. CPU-only rules are unchanged. Physical negative acceptance remains pending. |
 | Keep keys out of host-visible storage and normal VM-management paths | Meets | Meets | KBS response decryption uses an ephemeral private key; plaintext keys are held in sealed memory file descriptors and passed to `cryptsetup` through `/proc/self/fd`. No plaintext key is written to a disk or command line. |
 | Keep confidential model artifacts encrypted outside the CVM | Conditional | Conditional | The vault is LUKS2-encrypted and authenticated. `/user_config`, `/user_data`, and `/applog` are intentionally clear sidecars. Confidential model weights, credentials, and proprietary application material must be placed in the vault rather than those sidecars. The builder rejects obvious private keys in public inputs but cannot infer the confidentiality of arbitrary data. |
@@ -116,7 +122,7 @@ and
 | Guest administrative access | Conditional | SSH, console getty, emergency/rescue login, cloud-init state, unlocked passwords, the construction account's sudo rule, swap, and core dumps are removed or disabled; the measured kernel runs with lockdown, module signature enforcement, kexec disabled and SysRq off. QEMU uses `-nodefaults` with no VGA and no terminal monitor. The acceptance suite does not yet demonstrate every Appendix E host/admin path, including QMP access, host-side attach, and memory-dump attempts. |
 | Inbound and outbound network policy | Conditional | Guest nftables has default-drop input/output/forward chains and port allowlists; DNS is confined to the DHCP-learned resolvers and the vault build may confine allowed ports with `allowed_in_cidrs`/`allowed_out_cidrs`. Without those allowlists an allowed port reaches any destination or accepts any source. The RA limits traffic to approved callers and approved verifier, KBS, and artifact endpoints; configure the allowlists or an external gateway and include them in site acceptance. |
 | TLS and service authentication | Conditional | KBS and GPU appraisal URLs require HTTPS, and KBS trust is pinned. The generic application container is responsible for its own HTTPS listener, peer authentication, and authorization. A production RA deployment must document those controls. |
-| Encrypted storage and binding | Meets | The vault uses detached LUKS2 metadata, AES-XTS data encryption, HMAC-SHA256 authentication, a frozen inspected header, exact device/mapping validation, and a full authenticated scan before workload startup. The unencrypted measured root contains generic software and public policy rather than application secrets. |
+| Encrypted storage and binding | Meets | The vault uses detached LUKS2 metadata, AES-XTS data encryption, HMAC-SHA256 authentication, a frozen inspected header and exact device/mapping validation. The default profile scans the full authenticated mapping before startup; measured `vault_prescan: false` profiles detect corruption on read and require separate monitor/poweroff acceptance. The unencrypted measured root contains generic software and public policy rather than application secrets. |
 | Clear sidecars | Conditional | `/user_config` and `/user_data` are operator-supplied, unencrypted, and read-only in QEMU, the guest, and the container. `/applog` is intentionally unencrypted and writable for operator-readable output. They conform only when their contents are classified as nonconfidential and logs contain no secrets, proprietary payloads, or sensitive evidence. |
 | Artifact identity and integrity | Conditional | OCI materialization verifies content digests and registry pulls require digest references. `cvmctl pull` now authenticates the publisher through `--archive-sha256` or `--cosign-key` and requires an explicit `--allow-unverified` to skip it; generic bundle approvals are Ed25519-signed by the acceptance authority. A production release process must still control who holds those keys and record the verified digest with the approval. |
 | Image and key lifecycle | Conditional | The generic CVM build and application vault are independently versioned. Approval receipts, KBS resource installation, retirement/revocation, OCI digests, and rebuild/update procedures implement the RA lifecycle model. Current measured artifacts must be rebuilt and reapproved after source changes. |
@@ -171,7 +177,9 @@ to **Meets** requires exact-profile hardware evidence for
 `gpu_negative_key_denial`, `gpu_positive_key_release`, `gpu_policy_selection`,
 `cross_class_denial` and `periodic_gpu_denial`, including CC-disabled, tampered,
 replayed and missing-device cases. Verify no allow record or vault mapper before
-key denial and bounded poweroff. Existing hardware evidence predates this change.
+key denial and bounded poweroff. The September 21 positive hardware run at
+`95bf53889` exercises this composite path, but does not establish those negative
+cases or qualify the subsequent token-freshness changes.
 
 ### C2 — Bind approval to an exact production profile and BOM
 

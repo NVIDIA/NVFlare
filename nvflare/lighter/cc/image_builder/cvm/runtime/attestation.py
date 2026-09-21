@@ -73,11 +73,14 @@ def validate_token(token, config, digest, *, now=None):
             raise BuildError("Unsupported token algorithm")
         claims = json.loads(unb64url(payload64))
         now = time.time() if now is None else now
+        # Match the resource policy's fresh_token gate before requesting a key.
         require(type(claims.get("exp")) in (int, float) and now < claims["exp"], "Expired appraisal")
         require(
-            type(claims.get("iat")) in (int, float) and now - 300 <= claims["iat"] <= now + 30, "Appraisal is not fresh"
+            type(claims.get("iat")) in (int, float) and now - 300 <= claims["iat"] <= now + 5, "Appraisal is not fresh"
         )
-        require(claims.get("nbf", 0) <= now + 30, "Appraisal is not yet valid")
+        require(0 < claims["exp"] - claims["iat"] <= 300, "Invalid appraisal lifetime")
+        nbf = claims.get("nbf", 0)
+        require(type(nbf) in (int, float) and -float("inf") < nbf <= now + 5, "Appraisal is not yet valid")
         require(claims.get("iss") == config["token_issuer"], "Wrong appraisal issuer")
         cpu = claims["submods"]["cpu0"]
         require(cpu["ear.appraisal-policy-id"] == config["attestation_policy_id"], "Wrong appraisal policy")

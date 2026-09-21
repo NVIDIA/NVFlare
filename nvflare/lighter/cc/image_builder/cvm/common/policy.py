@@ -36,7 +36,9 @@ fresh_token if {
     input.exp > now
     input.exp > input.iat
     input.exp - input.iat <= 300
-    object.get(input, "nbf", 0) <= now + 5
+    nbf := object.get(input, "nbf", 0)
+    is_number(nbf)
+    nbf <= now + 5
 }
 approved_cpu(policy_id) if {
     fresh_token

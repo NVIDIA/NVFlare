@@ -859,6 +859,34 @@ class TokenTests(unittest.TestCase):
             with self.assertRaises(BuildError):
                 validate_token(self.token(), self.config, bytes(32), now=now)
 
+    def test_freshness_boundaries_match_resource_policy(self):
+        for fields in (
+            {"iat": 1005, "exp": 1305, "nbf": 1005},
+            {"iat": 700.5, "exp": 1000.5},
+            {"iat": 1000, "exp": 1300, "nbf": 0},
+        ):
+            with self.subTest(fields=fields), patch.dict(self.claims, fields):
+                validate_token(self.token(), self.config, bytes(32), now=1000)
+        for fields in (
+            {"iat": 1005.01},
+            {"nbf": 1005.01},
+            {"exp": 1300.01},
+            {"iat": 1005, "exp": 1005},
+            {"iat": 1005, "exp": 1004},
+            {"exp": 1000},
+            {"iat": True},
+            {"exp": True},
+            {"nbf": True},
+            {"nbf": None},
+            {"nbf": "1000"},
+            {"nbf": float("inf")},
+            {"nbf": -float("inf")},
+            {"nbf": float("nan")},
+        ):
+            with self.subTest(fields=fields), patch.dict(self.claims, fields):
+                with self.assertRaises(BuildError):
+                    validate_token(self.token(), self.config, bytes(32), now=1000)
+
     def test_tampered_signature(self):
         token = self.token()
         parts = token.split(b".")

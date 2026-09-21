@@ -326,7 +326,8 @@ def build_with_profile(app, profiles, output=None, candidate=False, dev=False):
     require(not output.exists(), "Output already exists; choose a new deployment output")
     output.mkdir(parents=True, mode=0o700)
     published = []
-    # First copy remains mounted as the authenticated source for later copies.
+    # Keep the first authenticated mapping/mount open as the source until all
+    # platforms are copied. Its key FD closes after open; the kernel holds the key.
     with contextlib.ExitStack() as source_stack:
         source_root = None
         expected_content = None

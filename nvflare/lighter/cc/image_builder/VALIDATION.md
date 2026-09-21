@@ -6,6 +6,106 @@ services and operator guides are maintained together with the provisioning adapt
 in this repository. Repository formatting and license headers change source
 fingerprints; build and approve new generic CVMs for this source snapshot.
 
+## Design review and pinned storage acceptance — 2026-09-21 UTC
+
+**Production gate: FAILED.** The review fixes were applied and tested, but the
+pinned guest kernel panicked in both runtime corruption-read cases below.
+A VM exit after a kernel panic is not a passing integrity-monitor poweroff
+result. Do not approve this kernel/storage combination for production or treat
+`vault_prescan: false` as qualified. A corrected kernel/profile needs the same
+acceptance run before promotion; no weaker storage fallback was enabled.
+
+The source is `95bf53889a04b5ba639bd46ec67651a406f94572` plus the review fixes:
+matching guest/Rego timestamp bounds, numeric `nbf`, and the source-mapping
+lifetime comment. Both newly built, hardware-finalized Intel TDX profiles
+recorded runtime source SHA-256
+`96b88101394c76343ef8e15e44a20fcc2f523b58f15369942300b5f9f894c056`.
+The default profile enables prescan; a separate measured profile disables it.
+Both use Ubuntu 26.04, kernel **`7.0.0-31-generic` / `7.0.0-31.31`**,
+cryptsetup **`2:2.8.4-1ubuntu4`**, 4 vCPUs, 8 GiB RAM and an 8 GiB vault.
+Running guests confirmed the kernel, cryptsetup package and prescan setting.
+The Trustee backends were isolated, unmodified v0.22.0 deployments.
+
+| Hardware check | Result | Test wall time |
+|---|---|---:|
+| Preexisting payload corruption, default full prescan, unchanged header | PASS: workload never starts; integrity service forces poweroff | 83.126 s |
+| Reboot after synced writes and a forced cut during a confirmed active write loop | PASS: journal recovery, sentinel retained, workload ready again | 172.603 s |
+| Integrity monitor killed while the workload is running | PASS: confirmed VM exit within 41.108 s of injection | 117.051 s |
+| Power cut during a deliberately slowed Docker load | PASS: next boot retries, records a completed image load and starts the workload | 214.087 s |
+| Host corruption after the initial scan, followed by an uncached buffered scan | **FAIL: kernel panic**, not the required monitor-controlled poweroff | 152.196 s |
+| Prescan disabled, corruption present before boot, then an uncached buffered scan | **FAIL: startup succeeds, then kernel panic** on the read | 74.601 s |
+
+Each case used a separate writable copy. Wall times include fixture copying,
+launch checks, boots and cleanup, not just fault response. The two final failed
+cases evicted cached plaintext with `POSIX_FADV_DONTNEED`, then used the same
+buffered `cvm.common.luks.scan` implementation as bootstrap. Both serial logs reported
+`kernel BUG at drivers/md/dm-integrity.c:2174`, followed by
+`Kernel panic - not syncing: Fatal exception`. In the exact Ubuntu source
+package, that line asserts
+`journal_entry_get_sector(je) != logical_sector` while copying a journal entry.
+This identifies the failing assertion, not a confirmed root cause or an
+upstream fix. The source package SHA-256 is
+`c61df8233257695a485172e80d3b5a95cd8a6845ce95515ad2b999cfa6acf73b`.
+An additional uncorrupted-vault diagnostic using a raw direct read also panicked
+at that assertion. It is not counted as corruption evidence, but reinforces that
+the pinned storage profile is not qualified.
+
+The prescan-enabled manifest SHA-256 is
+`d91435038c17c479ecd164ab6a3dec0320109cf7471422b1fd74d9233ccdb397`.
+Generic construction took **284.263 / 285.665 s** (prescan enabled / disabled),
+hardware finalization **95.192 / 92.383 s**, and vault construction/delivery
+packaging **275.287 / 277.162 s**. The recovered default-profile vault reported
+**7,552,806,912 usable filesystem bytes**; initial application readiness in the
+write/reboot case was **59.803 s**, and readiness after the power cut was
+**58.401 s**.
+
+Other validation passed:
+
+- **257 Linux unit/policy tests**, including real Regorus 0.11 evaluation and
+  signed-token freshness boundaries, incorrect timestamp types and nonfinite
+  `nbf` rejection. Neither packaging test needed a product workaround.
+- **24 live Trustee HTTPS tests**, 12 per isolated backend.
+- **Five Linux storage integration tests**. These ran on host kernel
+  `7.0.0-30-generic`, so they do not replace the guest-kernel hardware results.
+- **TDX/SNP ioctl ABI check** against the exact `7.0.0-31.31` local-report
+  headers, using GCC 15.2.0 and host `linux-libc-dev 7.0.0-30.30` for fundamental
+  UAPI types. Header package SHA-256:
+  `807c61bf89ce28afdd56f20e528313b035ee396174bbc4df63d09ed972477a21`.
+
+This run does not complete all §12.1 checks, qualify SNP/GPU hardware after the
+freshness change, or produce a production approval receipt. Separate tag/IV and
+integrity-metadata fault patterns, broader crash timing, and the remaining
+platform/deployment acceptance still need qualification on a passing profile.
+
+## TDX server and SNP GPU client — 2026-09-21 UTC
+
+Commit `95bf53889a04b5ba639bd46ec67651a406f94572` passed a fresh native-CVM
+end-to-end run with an Intel TDX CPU-only server and an AMD SEV-SNP client
+using an H800 GPU. Both finalized manifests recorded runtime source SHA-256
+`6e5eaf5cac884fba6875f39c9bd4c1ebfcd2a43d422f5605c0b5529a6b1a5536`.
+Unmodified Trustee v0.22.0 accepted initial and periodic CPU/GPU appraisal.
+Three-round CUDA jobs passed before and after periodic re-attestation in
+**18.316 s / 16.303 s**, checking all 1,024 returned values and fresh nonces;
+the final sum was **529,920**. All **24 live HTTPS tests passed**.
+Periodic attestation gaps were **301.965 s (TDX) / 301.318 s (SNP/GPU)**.
+Both guests shut down without the earlier warnings, and test resources were
+released afterward.
+
+| Stage | TDX server | SNP GPU client |
+|---|---:|---:|
+| Generic image construction | 276.595 s | 333.009 s |
+| Hardware finalization | 90.557 s | 108.208 s |
+| Application vault construction | 280.535 s | 280.925 s |
+| Delivery verification and unpack | 55.986 s | 75.768 s |
+| Launch to accepted attestation | 125.127 s | 67.797 s |
+| Launch to application readiness | 151.490 s | 137.219 s |
+
+This positive run used candidate profiles and SHA-256-verified OCI archives.
+It does not establish destructive storage/crash acceptance, GPU negative-case
+acceptance, registry transfer, Kubernetes CoCo orchestration or production
+approval. The subsequent token-freshness review changes the measured runtime;
+these results must not be attributed to that newer source.
+
 ## PR security review follow-up — 2026-09-21 UTC
 
 This follow-up changes the measured guest runtime after the hardware run below.
@@ -562,6 +662,52 @@ vault file copies and keep serial logs and result hashes. The interrupted-load
 fixture accepts the deliberately stopped container's termination status while
 preparing its fault; integrity supervision stays active and reboot restores the
 normal measured application exit policy.
+
+The fault agent writes its sentinels under `/vault/application/runtime`, within
+the production application's writable paths. Before its corruption scan it uses
+`POSIX_FADV_DONTNEED` to evict cached plaintext, then runs the production buffered
+scanner without changing protected kernel tunables.
+Interrupted Docker-load preparation uses a fixed, test-only transient PID 1
+helper to reset Docker state outside the application's read-only mount namespace;
+it leaves attestation/integrity supervision active. Never ship this fault agent
+or service in an application vault. Result files record the running guest kernel,
+cryptsetup package and measured prescan setting for storage recovery cases.
+
+Run `test_prescan_disabled_corruption_powers_off_on_read` separately with a
+freshly built and measured `test-` profile containing `vault_prescan: false`.
+It changes the same unused payload sector as the default prescan corruption
+test, verifies the LUKS header is unchanged, starts the application, then forces
+an uncached read and requires poweroff within 60 seconds. This demonstrates
+lazy authenticated-read failure and monitor response, not proactive detection
+before startup. The default pre-startup test skips this profile; the opt-out
+test skips a prescan-enabled profile.
+
+### Local-report ioctl ABI cross-check
+
+For each pinned kernel update, compile the standalone UAPI check against that
+kernel's local-report UAPI headers on Linux x86-64. Record the header package
+version and SHA-256, compiler version and result with acceptance evidence.
+Using the build host's default headers alone does not qualify a different guest
+kernel. This check requires no TEE device and installs nothing in the guest:
+
+```bash
+mkdir -p /tmp/cvm_uapi/linux
+cp /path/to/pinned-kernel/include/uapi/linux/tdx-guest.h \
+  /path/to/pinned-kernel/include/uapi/linux/sev-guest.h /tmp/cvm_uapi/linux/
+cc -std=c11 -Wall -Wextra -Werror \
+  -I/tmp/cvm_uapi \
+  tests/integration_test/lighter/cc/image_builder/check_uapi.c \
+  -o /tmp/cvm_check_uapi
+/tmp/cvm_check_uapi
+```
+
+`check_uapi.c` asserts the TDX/SNP ioctl numbers, request/response buffer sizes
+and field offsets consumed by `cvm/runtime/platforms.py`. The overlay uses the
+pinned report headers with the host's installed userspace `linux-libc-dev`
+fundamental types/ioctl definitions; record that package version too. Any compile failure
+requires investigation before approving the new kernel; do not merely replace
+the expected numbers. Also repeat local nonce/binding verification on both
+hardware platforms, since a header check alone does not test driver behavior.
 
 The agent's `/state` endpoint reads `/run/cvm/firewall.json`, which measured
 bootstrap publishes read-only after applying and verifying the actual nftables
