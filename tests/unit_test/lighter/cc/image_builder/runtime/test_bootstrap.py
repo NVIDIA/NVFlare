@@ -674,13 +674,16 @@ class SupervisorTests(unittest.TestCase):
             pid = int(pidfile.read_text())
             try:
                 status = Path(f"/proc/{pid}/stat").read_text().split(")", 1)[1].split()[0]
-            except FileNotFoundError:
+            except (FileNotFoundError, ProcessLookupError):
+                # Reaping can remove the proc entry before open (ENOENT) or
+                # after open but before read (ESRCH). Both mean it is gone.
                 status = "gone"
             try:
                 self.assertIn(status, ("gone", "Z", "X"))
             finally:
                 if status not in ("gone", "Z", "X"):
-                    os.kill(pid, signal.SIGKILL)
+                    with contextlib.suppress(ProcessLookupError):
+                        os.kill(pid, signal.SIGKILL)
 
     def test_ready_precedes_synchronous_start_and_pending_signal_runs_a_tick(self):
         events = []
