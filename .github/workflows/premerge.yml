@@ -27,6 +27,42 @@ on:
   workflow_dispatch:
 
 jobs:
+  full-ci-selection:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      run-full-ci: ${{ steps.select.outputs.run-full-ci }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: select
+        name: Select full CI for code changes
+        env:
+          BASE_SHA: ${{ github.event.merge_group.base_sha || github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.merge_group.head_sha || github.event.pull_request.head.sha || github.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          # Pushes, tags, and manual runs retain the full validation suite. Pull
+          # requests and merge groups may use the lightweight required-check
+          # path only when every changed file is documentation.
+          if [ "$EVENT_NAME" != "pull_request" ] && [ "$EVENT_NAME" != "merge_group" ]; then
+            echo "run-full-ci=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ -z "$BASE_SHA" ] || [ -z "$HEAD_SHA" ] || \
+            [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            echo "run-full-ci=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Disable rename detection so a code file moved into a documentation
+          # path is represented as a code deletion plus a documentation add.
+          selection="$(git diff --name-only --no-renames "$BASE_SHA" "$HEAD_SHA" | bash ci/should_run_full_ci.sh)"
+          echo "run-full-ci=${selection}" >> "$GITHUB_OUTPUT"
+
   skill-validation-selection:
     runs-on: ubuntu-24.04
     permissions:
@@ -63,18 +99,25 @@ jobs:
         run: python3 ci/check_license_header.py
 
   style-check:
+    needs: full-ci-selection
     runs-on: ubuntu-24.04
     steps:
+      - name: Skip full CI for documentation-only changes
+        if: needs.full-ci-selection.outputs.run-full-ci != 'true'
+        run: echo "Python style checks are not required for documentation-only changes."
       - uses: actions/checkout@v4
+        if: needs.full-ci-selection.outputs.run-full-ci == 'true'
       - name: Set up Python 3.14
+        if: needs.full-ci-selection.outputs.run-full-ci == 'true'
         uses: actions/setup-python@v6
         with:
           python-version: "3.14"
       - name: Run style checks
+        if: needs.full-ci-selection.outputs.run-full-ci == 'true'
         run: ./runtest.sh --torch-backend=cpu -s
 
   unit-tests:
-    needs: skill-validation-selection
+    needs: [full-ci-selection, skill-validation-selection]
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
@@ -84,16 +127,23 @@ jobs:
         os: [ ubuntu-22.04, ubuntu-24.04 ]
         python-version: [ "3.10", "3.11", "3.12", "3.13", "3.14" ]
     steps:
+      - name: Skip full CI for documentation-only changes
+        if: needs.full-ci-selection.outputs.run-full-ci != 'true'
+        run: echo "Python unit tests are not required for documentation-only changes."
       - uses: actions/checkout@v4
+        if: needs.full-ci-selection.outputs.run-full-ci == 'true'
       - name: Set up Python ${{ matrix.python-version }}
+        if: needs.full-ci-selection.outputs.run-full-ci == 'true'
         uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install uv
+        if: needs.full-ci-selection.outputs.run-full-ci == 'true'
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           version: "0.11.14"
       - name: Install dependencies
+        if: needs.full-ci-selection.outputs.run-full-ci == 'true'
         run: |
           ./runtest.sh --torch-backend=cpu -p
           uv pip install --system --no-deps "flwr>=1.16,<1.26"
@@ -102,7 +152,7 @@ jobs:
       # Keep every Tier 1 static scanner explicit: a missing scanner must fail the
       # test rather than silently reduce security coverage.
       - name: Install Tier 1 skill security scanners
-        if: ${{ matrix.os == 'ubuntu-24.04' && matrix.python-version == '3.13' && needs.skill-validation-selection.outputs.run-tier1-security == 'true' }}
+        if: ${{ needs.full-ci-selection.outputs.run-full-ci == 'true' && matrix.os == 'ubuntu-24.04' && matrix.python-version == '3.13' && needs.skill-validation-selection.outputs.run-tier1-security == 'true' }}
         run: |
           mkdir -p "$HOME/.local/bin"
           uv tool install --python 3.13 \
@@ -121,19 +171,20 @@ jobs:
           install -m 0755 gitleaks "$HOME/.local/bin/gitleaks"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Run unit test
+        if: needs.full-ci-selection.outputs.run-full-ci == 'true'
         env:
           NVFLARE_RUN_SKILL_TIER1: ${{ needs.skill-validation-selection.outputs.run-tier1-security }}
           NVFLARE_SKILL_TIER1_REQUIRED: ${{ matrix.os == 'ubuntu-24.04' && matrix.python-version == '3.13' && needs.skill-validation-selection.outputs.run-tier1-security == 'true' }}
         run: ./runtest.sh --skip-install --numprocesses=auto -u
       - name: Run Client API external-process lifecycle integration
-        if: ${{ matrix.os == 'ubuntu-24.04' && matrix.python-version == '3.12' }}
+        if: ${{ needs.full-ci-selection.outputs.run-full-ci == 'true' && matrix.os == 'ubuntu-24.04' && matrix.python-version == '3.12' }}
         run: >-
           python3 -m pytest -q
           tests/integration_test/fast/client_api_external_process_lifecycle_test.py
       # Check the zero-argument learning gate and actual client-model submission
       # and evaluation across sites using the shared Hello PyTorch client.
       - name: Run Hello PyTorch learning and evaluation
-        if: ${{ matrix.os == 'ubuntu-24.04' && matrix.python-version == '3.12' }}
+        if: ${{ needs.full-ci-selection.outputs.run-full-ci == 'true' && matrix.os == 'ubuntu-24.04' && matrix.python-version == '3.12' }}
         timeout-minutes: 5
         run: >-
           python3 -m pytest -q
@@ -141,13 +192,15 @@ jobs:
       # The advanced continuation must run the same application through real
       # local POC server/client processes, not only construct a PocEnv object.
       - name: Run Hello PyTorch POC continuation
-        if: ${{ matrix.os == 'ubuntu-24.04' && matrix.python-version == '3.12' }}
+        if: ${{ needs.full-ci-selection.outputs.run-full-ci == 'true' && matrix.os == 'ubuntu-24.04' && matrix.python-version == '3.12' }}
         timeout-minutes: 8
         run: >-
           python3 -m pytest -q
           tests/integration_test/fast/hello_pt_environment_continuity_test.py
 
   hf-client-api-tests:
+    needs: full-ci-selection
+    if: needs.full-ci-selection.outputs.run-full-ci == 'true'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -186,7 +239,8 @@ jobs:
 
   coverage:
     runs-on: ubuntu-24.04
-    needs: unit-tests
+    needs: [full-ci-selection, unit-tests]
+    if: needs.full-ci-selection.outputs.run-full-ci == 'true'
     permissions:
       contents: read
       id-token: write
@@ -269,6 +323,7 @@ jobs:
           PY
 
   wheel-build:
+    needs: full-ci-selection
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -276,23 +331,32 @@ jobs:
         os: [ ubuntu-24.04 ]
         python-version: [ "3.11" ]
     steps:
+      - name: Skip full CI for documentation-only changes
+        if: needs.full-ci-selection.outputs.run-full-ci != 'true'
+        run: echo "Wheel validation is not required for documentation-only changes."
       - uses: actions/checkout@v4
+        if: needs.full-ci-selection.outputs.run-full-ci == 'true'
       - name: Set up Python ${{ matrix.python-version }}
+        if: needs.full-ci-selection.outputs.run-full-ci == 'true'
         uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install uv
+        if: needs.full-ci-selection.outputs.run-full-ci == 'true'
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           version: "0.11.14"
       - name: Install dependencies
+        if: needs.full-ci-selection.outputs.run-full-ci == 'true'
         run: |
           ./runtest.sh --torch-backend=cpu -p
           uv pip install --system --no-deps "flwr>=1.16,<1.26"
           uv pip install --system build twine
       - name: Run wheel build
+        if: needs.full-ci-selection.outputs.run-full-ci == 'true'
         run: python3 -m build --wheel
       - name: Verify bundled example catalog
+        if: needs.full-ci-selection.outputs.run-full-ci == 'true'
         run: |
           python3 - <<'PY'
           import json
