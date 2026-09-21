@@ -17,7 +17,7 @@ import os
 
 import xgboost as xgb
 
-from nvflare.apis.dxo import DXO, DataKind, from_shareable
+from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_constant import FLContextKey, ReturnCode
@@ -101,6 +101,8 @@ class FedXGBTreeExecutor(Executor):
         self.global_model_as_dict = None
         self.config = None
         self.local_model = None
+        self._last_metrics = {}
+        self._progress_metrics = {}
 
         self.data_loader_id = data_loader_id
         self.train_data = None
@@ -178,46 +180,60 @@ class FedXGBTreeExecutor(Executor):
         return params
 
     def _local_boost_bagging(self, fl_ctx: FLContext):
-        eval_results = self.bst.eval_set(
-            evals=[(self.train_data, "train"), (self.val_data, "valid")], iteration=self.bst.num_boosted_rounds() - 1
-        )
-        self.log_info(fl_ctx, eval_results)
-        auc = float(eval_results.split("\t")[2].split(":")[1])
+        incoming_metric_name, incoming_metric = self._evaluate_model(self.bst, fl_ctx)
         for i in range(self.num_local_round):
             self.bst.update(self.train_data, self.bst.num_boosted_rounds())
+
+        updated_metric_name, updated_metric = self._evaluate_model(self.bst, fl_ctx)
+        self._last_metrics = {incoming_metric_name: incoming_metric}
+        self._progress_metrics = {updated_metric_name: updated_metric}
 
         # extract newly added self.num_local_round using xgboost slicing api
         bst = self.bst[self.bst.num_boosted_rounds() - self.num_local_round : self.bst.num_boosted_rounds()]
 
         self.log_info(
             fl_ctx,
-            f"Global AUC {auc}",
+            f"Global {incoming_metric_name} {incoming_metric}; "
+            f"local {updated_metric_name} after training {updated_metric}",
         )
         if self.writer:
-            # note: writing auc before current training step, for passed in global model
+            # Write the metric for the incoming global model before the current training step.
             self.writer.add_scalar(
                 "train_metrics",
-                auc,
+                incoming_metric,
                 int((self.bst.num_boosted_rounds() - self.num_local_round - 1) / self.num_client_bagging),
             )
         return bst
+
+    def _evaluate_model(self, bst, fl_ctx: FLContext):
+        eval_results = bst.eval_set(
+            evals=[(self.train_data, "train"), (self.val_data, "valid")], iteration=bst.num_boosted_rounds() - 1
+        )
+        self.log_info(fl_ctx, eval_results)
+        # XGBoost returns: [iteration]\ttrain-<metric>:<value>\tvalid-<metric>:<value>.
+        metric_name, metric_value = eval_results.split("\t")[2].removeprefix("valid-").rsplit(":", 1)
+        return metric_name, float(metric_value)
+
+    def _resolve_eval_metric(self, evaluation_metrics):
+        if self.eval_metric in evaluation_metrics:
+            return self.eval_metric, evaluation_metrics[self.eval_metric]
+
+        normalized_name = self.eval_metric.split("@", 1)[0]
+        return normalized_name, evaluation_metrics.get(normalized_name, [])
 
     def _local_boost_cyclic(self, fl_ctx: FLContext):
         # Cyclic mode
         # starting from global model
         # return the whole boosting tree series
         self.bst.update(self.train_data, self.bst.num_boosted_rounds())
-        eval_results = self.bst.eval_set(
-            evals=[(self.train_data, "train"), (self.val_data, "valid")], iteration=self.bst.num_boosted_rounds() - 1
-        )
-        self.log_info(fl_ctx, eval_results)
-        auc = float(eval_results.split("\t")[2].split(":")[1])
+        updated_metric_name, updated_metric = self._evaluate_model(self.bst, fl_ctx)
+        self._progress_metrics = {updated_metric_name: updated_metric}
         self.log_info(
             fl_ctx,
-            f"Client {self.client_id} AUC after training: {auc}",
+            f"Client {self.client_id} {updated_metric_name} after training: {updated_metric}",
         )
         if self.writer:
-            self.writer.add_scalar("train_metrics", auc, self.bst.num_boosted_rounds() - 1)
+            self.writer.add_scalar("train_metrics", updated_metric, self.bst.num_boosted_rounds() - 1)
         return self.bst
 
     def train(
@@ -229,6 +245,9 @@ class FedXGBTreeExecutor(Executor):
         if abort_signal.triggered:
             self.finalize(fl_ctx)
             return make_reply(ReturnCode.TASK_ABORTED)
+
+        self._last_metrics = {}
+        self._progress_metrics = {}
 
         # retrieve current global model download from server's shareable
         dxo = from_shareable(shareable)
@@ -248,22 +267,36 @@ class FedXGBTreeExecutor(Executor):
                 fl_ctx,
                 f"Client {self.client_id} initial training from scratch",
             )
+            evals_result = {}
+            incoming_metric = None
             if not model_update:
                 bst = xgb.train(
                     params,
                     self.train_data,
                     num_boost_round=self.num_local_round,
                     evals=[(self.val_data, "validate"), (self.train_data, "train")],
+                    evals_result=evals_result,
                 )
             else:
                 loadable_model = bytearray(model_update["model_data"])
+                if self.training_mode == "bagging":
+                    incoming_bst = xgb.Booster(params=params)
+                    incoming_bst.load_model(loadable_model)
+                    incoming_metric = self._evaluate_model(incoming_bst, fl_ctx)
                 bst = xgb.train(
                     params,
                     self.train_data,
                     num_boost_round=self.num_local_round,
                     xgb_model=loadable_model,
                     evals=[(self.val_data, "validate"), (self.train_data, "train")],
+                    evals_result=evals_result,
                 )
+            validation_metrics = evals_result.get("validate", {})
+            metric_name, metric_values = self._resolve_eval_metric(validation_metrics)
+            if model_update and self.training_mode == "bagging":
+                self._last_metrics = {incoming_metric[0]: incoming_metric[1]}
+            if metric_values:
+                self._progress_metrics = {metric_name: metric_values[-1]}
             self.config = bst.save_config()
             self.bst = bst
         else:
@@ -313,7 +346,16 @@ class FedXGBTreeExecutor(Executor):
         # report updated model in shareable
         # Convert dict back to bytearray for compatibility with downstream code
         self.local_model = bytearray(json.dumps(self.local_model), "utf-8")
-        dxo = DXO(data_kind=DataKind.WEIGHTS, data={"model_data": self.local_model})
+        meta = {}
+        if self._last_metrics:
+            meta[MetaKey.INITIAL_METRICS] = self._last_metrics
+        if self._progress_metrics:
+            meta[AppConstants.PROGRESS_METRICS] = self._progress_metrics
+        dxo = DXO(
+            data_kind=DataKind.WEIGHTS,
+            data={"model_data": self.local_model},
+            meta=meta,
+        )
         self.log_info(fl_ctx, "Local epochs finished. Returning shareable")
         new_shareable = dxo.to_shareable()
 

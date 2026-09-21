@@ -16,7 +16,7 @@ import random
 from typing import List, Union
 
 from nvflare.apis.client import Client
-from nvflare.apis.controller_spec import ClientTask, Task
+from nvflare.apis.controller_spec import ClientTask, Task, TaskCompletionStatus
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import Controller
@@ -205,15 +205,9 @@ class CyclicController(Controller):
             try:
                 self._last_learnable = self.shareable_generator.shareable_to_learnable(result, fl_ctx)
             except Exception as ex:
-                if rc != ReturnCode.EARLY_TERMINATION:
-                    self._stop_workflow(task)
-                    self.log_error(fl_ctx, f"exception {secure_format_exception(ex)} from shareable_to_learnable")
-                    return
-                else:
-                    self.log_warning(
-                        fl_ctx,
-                        f"ignored {secure_format_exception(ex)} from shareable_to_learnable in early termination",
-                    )
+                self._stop_workflow(task)
+                self.log_error(fl_ctx, f"exception {secure_format_exception(ex)} from shareable_to_learnable")
+                return
 
             if rc == ReturnCode.EARLY_TERMINATION:
                 if self._allow_early_termination:
@@ -226,6 +220,13 @@ class CyclicController(Controller):
                         fl_ctx,
                         f"Ignored {rc} from client {client_task.client.name} because early termination is not allowed",
                     )
+            # When early termination is disabled, only the request to stop is ignored. A
+            # successfully converted payload is still forwarded to the next client and is
+            # therefore a processed update. Conversion failures stop the workflow above so
+            # a potentially partial model can never be forwarded.
+            fl_ctx.set_prop(AppConstants.TRAINING_RESULT, result, private=True, sticky=False)
+            fl_ctx.set_prop(AppConstants.AGGREGATION_ACCEPTED, True, private=True, sticky=False)
+            self.fire_event(AppEventType.AFTER_CONTRIBUTION_ACCEPT, fl_ctx)
         else:
             self._stop_workflow(task)
             self.log_error(
@@ -253,7 +254,7 @@ class CyclicController(Controller):
 
                 self.log_debug(fl_ctx, "Starting current round={}.".format(self._current_round))
                 fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self._current_round, private=True, sticky=True)
-
+                self.fire_event(AppEventType.ROUND_STARTED, fl_ctx)
                 # Task for one cyclic
                 targets = self._get_relay_orders(fl_ctx)
                 if targets is None:
@@ -295,6 +296,12 @@ class CyclicController(Controller):
                     # Call the self._engine to persist the snapshot of all the FLComponents
                     self._engine.persist_components(fl_ctx, completed=False)
 
+                if (
+                    task.completion_status == TaskCompletionStatus.OK
+                    and not self._is_done
+                    and not abort_signal.triggered
+                ):
+                    self.fire_event(AppEventType.ROUND_DONE, fl_ctx)
                 self.log_debug(fl_ctx, "Ending current round={}.".format(self._current_round))
 
                 # Memory cleanup at end of round (if configured)

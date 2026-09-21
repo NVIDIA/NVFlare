@@ -16,6 +16,8 @@ from typing import Any, Dict, Optional, Union
 
 from pydantic import BaseModel, field_validator
 
+from nvflare.app_common.app_constant import AppConstants
+from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.workflows.model_controller import ModelController
 from nvflare.client.config import ExchangeFormat
 from nvflare.job_config.base_fed_job import BaseFedJob
@@ -46,11 +48,21 @@ class EvalController(ModelController):
 
     def run(self):
         model = self.load_model()
+        model.start_round = 0
+        model.current_round = 0
+        model.total_rounds = 1
+        self.fl_ctx.set_prop(AppConstants.CURRENT_ROUND, 0, private=True, sticky=False)
+        self.fl_ctx.set_prop(AppConstants.NUM_ROUNDS, 1, private=True, sticky=False)
+        self.fl_ctx.set_prop(AppConstants.PROGRESS_TITLE, "Model evaluation", private=True, sticky=False)
+        self.event(AppEventType.ROUND_STARTED)
         self.info("Sending model for evaluation")
         results = self.send_model_and_wait(targets=None, data=model, task_name="validate", timeout=self.timeout)
+        if self.abort_signal.triggered:
+            return
         self.info(f"Got {len(results)} results")
         for r in results:
             self.info(f"Metrics: {r.metrics}")
+        self.event(AppEventType.ROUND_DONE)
 
 
 class FedEvalRecipe(Recipe):
