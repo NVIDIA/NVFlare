@@ -30,16 +30,19 @@ from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec, ed25519
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
-from cvm.common.contracts import HEADER_BYTES, STORAGE_PROFILE
+from cvm.common.contracts import HEADER_BYTES, PLATFORMS, STORAGE_PROFILE
 from cvm.common.io import write_json
 
 
-def prepare(directory, *, http_only=False):
+def prepare(directory, *, http_only=False, platforms=None):
+    platforms = list(PLATFORMS if platforms is None else platforms)
+    if not platforms or len(set(platforms)) != len(platforms) or any(p not in PLATFORMS for p in platforms):
+        raise SystemExit("Select distinct supported lab platforms")
     directory = Path(directory).resolve()
     inputs = directory / "inputs"
     inputs.mkdir(exist_ok=True)
     tdx_firmware = Path(os.environ.get("CVM_TDX_FIRMWARE", inputs / "OVMF.inteltdx.fd")).resolve()
-    if not http_only and not tdx_firmware.is_file():
+    if not http_only and "intel_tdx" in platforms and not tdx_firmware.is_file():
         raise SystemExit("Provide the validated TDVF at inputs/OVMF.inteltdx.fd or set CVM_TDX_FIRMWARE")
     # These are KBS deployment keys, not vault build scratch. Keep them in a
     # protected backend directory: logind may remove user-owned /dev/shm files
@@ -218,6 +221,7 @@ def prepare(directory, *, http_only=False):
             },
         },
     }
+    profile["platforms"] = {name: profile["platforms"][name] for name in platforms}
     # Empty TCB references deliberately deny approval until actual evidence is
     # reviewed. Never copy measured guest values into an allow policy blindly.
     write_json(inputs / "test-tcb-references.json", {})
@@ -226,9 +230,16 @@ def prepare(directory, *, http_only=False):
     print("Prepared disposable lab inputs and PKI")
 
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("directory")
     parser.add_argument("--http-only", action="store_true")
+    parser.add_argument(
+        "-p", "--platform", choices=PLATFORMS, action="append", help="Include only this platform; repeat for both"
+    )
     args = parser.parse_args()
-    prepare(args.directory, http_only=args.http_only)
+    prepare(args.directory, http_only=args.http_only, platforms=args.platform)
+
+
+if __name__ == "__main__":
+    main()

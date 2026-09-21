@@ -563,6 +563,16 @@ fixture accepts the deliberately stopped container's termination status while
 preparing its fault; integrity supervision stays active and reboot restores the
 normal measured application exit policy.
 
+The agent's `/state` endpoint reads `/run/cvm/firewall.json`, which measured
+bootstrap publishes read-only after applying and verifying the actual nftables
+table. It reports the last successful installation check and its timestamp,
+not a live query from the application service. The application retains its
+`CAP_NET_ADMIN` exclusion and an explicit read-only view of `/run/cvm`; a failed
+replacement removes the old verification. Missing status or another inspection failure
+returns an HTTP 500 JSON diagnostic, which the hardware runner reports directly.
+Generic exception text is omitted to avoid exposing private data. Testing this
+change in a CVM requires rebuilding and remeasuring its generic image.
+
 `tests/integration_test/lighter/cc/image_builder/boot_http.py` separately checks arbitrary generic HTTP test images without
 the fault-injection payload. It launches a disposable delivery copy and preserves
 the boot log, exact bundle digest and result.

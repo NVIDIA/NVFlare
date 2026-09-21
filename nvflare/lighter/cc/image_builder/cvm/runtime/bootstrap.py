@@ -20,6 +20,7 @@ import ipaddress
 import json
 import signal
 import subprocess
+import time
 from pathlib import Path
 
 from ..common.contracts import HEADER_BYTES, STORAGE_PROFILE, binding
@@ -83,6 +84,7 @@ MOUNT_OPTIONS = {
 SERVICE_HARDENING = (
     "NoNewPrivileges=yes",
     "ProtectSystem=strict",
+    "ReadOnlyPaths=/run/cvm",
     "ReadWritePaths=/vault/application/runtime /vault/application/data /applog",
     "PrivateTmp=yes",
     "ProtectKernelTunables=yes",
@@ -131,6 +133,8 @@ def discovered_resolvers(path=RESOLVED_UPSTREAMS):
 
 
 def firewall(inbound, outbound, mappings=(), inbound_sources=(), outbound_destinations=(), resolvers=()):
+    status = STATE / "firewall.json"
+    status.unlink(missing_ok=True)
     rules = firewall_rules(
         inbound,
         outbound,
@@ -141,6 +145,10 @@ def firewall(inbound, outbound, mappings=(), inbound_sources=(), outbound_destin
     )
     # Replacing our own table is atomic whether or not it already exists.
     run(["nft", "-f", "-"], input=("table inet cvm {}\ndelete table inet cvm\n" + rules).encode())
+    run(["nft", "list", "table", "inet", "cvm"], timeout=5)
+    # Publish only the last successful verification, without exposing rules or
+    # granting application services CAP_NET_ADMIN. Their /run/cvm view is read-only.
+    write_json(status, {"present": True, "verified_at": time.time()}, mode=0o444)
 
 
 def reference():

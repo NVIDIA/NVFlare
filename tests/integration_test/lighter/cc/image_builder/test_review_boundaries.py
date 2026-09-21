@@ -15,8 +15,11 @@
 """Opt-in Linux mount, packet and PID 1 checks; never run guest power-off actions on the host."""
 
 import configparser
+import errno
+import http.client
 import json
 import os
+import select
 import socket
 import subprocess
 import sys
@@ -29,6 +32,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from cvm.common.firewall import firewall_rules
+from cvm.common.io import read_json
 from cvm.runtime import audit, bootstrap
 from cvm.runtime.systemd import notify, watchdog
 
@@ -37,6 +41,47 @@ def command(argv, **kwargs):
     result = subprocess.run(argv, capture_output=True, text=True, timeout=15, **kwargs)
     assert result.returncode == 0, result.stdout + result.stderr
     return result.stdout
+
+
+def firewall_namespace(directory):
+    command(["ip", "link", "set", "lo", "up"])
+    bootstrap.STATE = Path(directory)
+    bootstrap.firewall([], [443])
+    print("ready", flush=True)
+    time.sleep(60)
+
+
+def confined_firewall_agent(directory):
+    import lab_guest_agent as agent
+
+    status = Path(directory) / "firewall.json"
+    # This service is in the namespace where bootstrap installed the real table,
+    # but has the application's capability and filesystem restrictions.
+    denied = subprocess.run(["nft", "list", "table", "inet", "cvm"], capture_output=True, timeout=5)
+    assert denied.returncode != 0 and b"Operation not permitted" in denied.stderr
+    try:
+        status.write_text("tampered")
+    except OSError as error:
+        assert error.errno in (errno.EROFS, errno.EACCES)
+    else:
+        raise AssertionError("Application service could overwrite bootstrap verification")
+    with patch.object(agent, "read_json", side_effect=lambda path: read_json(status)):
+        with patch.object(agent, "state", side_effect=agent.firewall_state):
+            with agent.http.server.HTTPServer(("127.0.0.1", 0), agent.Handler) as server:
+                thread = threading.Thread(target=server.handle_request, daemon=True)
+                thread.start()
+                connection = http.client.HTTPConnection(*server.server_address, timeout=5)
+                try:
+                    connection.request("GET", "/state")
+                    response = connection.getresponse()
+                    assert response.status == 200
+                    report = json.loads(response.read())
+                    assert report["firewall_present"] is True
+                    assert report["firewall_verified_at"] == read_json(status)["verified_at"]
+                finally:
+                    connection.close()
+                    thread.join(timeout=5)
+    print("Confined agent read verified firewall status; nft access and status writes denied.")
 
 
 def mount_probe():
@@ -211,6 +256,59 @@ def stalled_supervisor(pidfile):
     os.environ.get("CVM_REVIEW_TESTS") == "1" and os.geteuid() == 0, "Opt-in root review boundary tests"
 )
 class LinuxReviewBoundaryTests(unittest.TestCase):
+    def test_confined_acceptance_agent_reads_verified_firewall_status(self):
+        source = Path(bootstrap.__file__).resolve().parents[2]
+        unit = "cvm-review-agent-" + uuid.uuid4().hex + ".service"
+        # /run stays visible with PrivateTmp=yes, unlike /tmp. No guest state or
+        # host firewall is changed: the table lives in a disposable namespace.
+        with tempfile.TemporaryDirectory(prefix="cvm-review-", dir="/run") as directory:
+            keeper = subprocess.Popen(
+                ["unshare", "--net", sys.executable, __file__, "--firewall-namespace", directory],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            try:
+                self.assertTrue(select.select([keeper.stdout], [], [], 10)[0], "Namespace setup timed out")
+                self.assertEqual(keeper.stdout.readline().strip(), "ready")
+                properties = [
+                    line.replace("ReadOnlyPaths=/run/cvm", "ReadOnlyPaths=" + directory)
+                    for line in bootstrap.SERVICE_HARDENING
+                    if not line.startswith("ReadWritePaths=")
+                ]
+                properties += [
+                    "NetworkNamespacePath=/proc/" + str(keeper.pid) + "/ns/net",
+                    "RuntimeMaxSec=20s",
+                    "FailureAction=none",
+                    "SuccessAction=none",
+                ]
+                result = subprocess.run(
+                    [
+                        "systemd-run",
+                        "--quiet",
+                        "--wait",
+                        "--pipe",
+                        "--collect",
+                        "--unit=" + unit,
+                        *("--property=" + prop for prop in properties),
+                        "--setenv=PYTHONPATH=" + str(source),
+                        sys.executable,
+                        __file__,
+                        "--confined-firewall-agent",
+                        directory,
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("status writes denied", result.stdout)
+            finally:
+                subprocess.run(["systemctl", "stop", unit], capture_output=True, timeout=10)
+                subprocess.run(["systemctl", "reset-failed", unit], capture_output=True, timeout=10)
+                keeper.terminate()
+                keeper.communicate(timeout=10)
+
     def test_real_ext4_mount_and_hostile_nfs_target(self):
         command(["unshare", "--mount", sys.executable, __file__, "--mount-probe"])
 
@@ -271,7 +369,11 @@ class LinuxReviewBoundaryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     action = sys.argv[1:2]
-    if action == ["--mount-probe"]:
+    if action == ["--firewall-namespace"]:
+        firewall_namespace(sys.argv[2])
+    elif action == ["--confined-firewall-agent"]:
+        confined_firewall_agent(sys.argv[2])
+    elif action == ["--mount-probe"]:
         mount_probe()
     elif action == ["--dns-server"]:
         dns_server(bool(int(sys.argv[2])))

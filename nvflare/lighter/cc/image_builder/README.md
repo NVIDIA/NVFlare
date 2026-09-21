@@ -394,6 +394,23 @@ using signed fixtures. Such fixtures are protocol tests, not hardware acceptance
 Hardware acceptance must additionally exercise the exact sealed guest on each
 platform, including corruption, interruption, binding, revocation and recovery.
 
+Select the lab platforms when generating its profile. For a TDX-only lab, put
+the validated TDVF in the lab's `inputs/OVMF.inteltdx.fd` (or set
+`CVM_TDX_FIRMWARE`), then run from the repository root:
+
+```sh
+PYTHONPATH=nvflare/lighter/cc/image_builder python3 \
+  tests/integration_test/lighter/cc/image_builder/prepare_lab.py \
+  /path/to/isolated-lab --platform intel_tdx
+```
+
+Use `--platform amd_sev_snp` for an SNP-only profile, which does not require TDVF.
+Repeat the option to select both; omitting it preserves the two-platform default.
+The generated TCB reference file is deliberately empty. Populate reviewed,
+approved references for the selected platforms before building. Selecting a
+platform at build time does not exempt other enabled profile platforms from
+reference validation. `--http-only` prepares disposable PKI without guest inputs.
+
 Recorded versions, test results, artifact hashes and remaining production gates
 are in [VALIDATION.md](VALIDATION.md). The checked-in profile is a template, not
 an already approved production configuration.

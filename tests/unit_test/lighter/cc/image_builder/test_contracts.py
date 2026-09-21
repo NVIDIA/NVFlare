@@ -870,9 +870,13 @@ class TokenTests(unittest.TestCase):
 class RuntimeContractTests(unittest.TestCase):
     def test_clock_service_can_rekey_nts_before_and_after_unlock(self):
         for inbound, outbound in (([], [443, 8443]), ([8080], [443, 8443])):
-            with patch.object(runtime, "run") as apply:
+            with (
+                tempfile.TemporaryDirectory() as directory,
+                patch.object(runtime, "STATE", Path(directory)),
+                patch.object(runtime, "run") as apply,
+            ):
                 runtime.firewall(inbound, outbound)
-            rules = apply.call_args.kwargs["input"].decode()
+            rules = apply.call_args_list[0].kwargs["input"].decode()
             self.assertTrue(rules.startswith("table inet cvm {}\ndelete table inet cvm\n"))
             output = rules.split("chain output", 1)[1].split("chain forward", 1)[0]
             self.assertIn("tcp dport 4460 accept", output)

@@ -41,9 +41,18 @@ from cvm.common.linux import memory_file, protect_process, run
 from cvm.runtime.attestation import validate_token
 from cvm.runtime.storage import disk_device
 
-CONFIG = read_json("/etc/cvm/runtime.json")
-require(CONFIG["profile_version"].startswith("test-"), "Acceptance payload requires a test profile")
-protect_process()
+CONFIG = None
+
+
+def firewall_state():
+    # Bootstrap verifies the actual table with its measured privileges after
+    # installing rules. Application services cannot query nftables themselves.
+    try:
+        status = read_json("/run/cvm/firewall.json")
+    except (OSError, ValueError):
+        raise BuildError("Bootstrap firewall verification is unavailable") from None
+    require(status.get("present") is True, "No verified bootstrap firewall status")
+    return {"firewall_present": True, "firewall_verified_at": status["verified_at"]}
 
 
 def state():
@@ -95,7 +104,7 @@ def state():
         run(["systemctl", "show", "docker.socket", "--property=UnitFileState", "--value"]).decode().strip()
     )
     result["nftables_enabled"] = run(["systemctl", "is-enabled", "nftables.service"]).decode().strip()
-    result["firewall_present"] = bool(run(["nft", "list", "table", "inet", "cvm"]))
+    result.update(firewall_state())
     result["ssh_units"] = {
         name: {
             "active": run(["systemctl", "show", name, "--property=ActiveState", "--value"]).decode().strip(),
@@ -182,9 +191,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
 
-    def respond(self, value):
+    def respond(self, value, status=200):
         body = json.dumps(value).encode()
-        self.send_response(200)
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -194,7 +204,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if self.path != "/state":
             self.send_error(404)
             return
-        self.respond(state())
+        try:
+            value = state()
+        except Exception as error:
+            self.respond(
+                {
+                    "state_error": type(error).__name__,
+                    "diagnostic": (
+                        str(error) if isinstance(error, BuildError) else "Test fixture state inspection failed"
+                    ),
+                },
+                status=500,
+            )
+            return
+        self.respond(value)
 
     def do_POST(self):
         self.phase = "dispatch"
@@ -302,4 +325,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_error(404)
 
 
-http.server.HTTPServer(("0.0.0.0", 18081), Handler).serve_forever()
+def main():
+    global CONFIG
+    CONFIG = read_json("/etc/cvm/runtime.json")
+    require(CONFIG["profile_version"].startswith("test-"), "Acceptance payload requires a test profile")
+    protect_process()
+    with http.server.HTTPServer(("0.0.0.0", 18081), Handler) as server:
+        server.serve_forever()
+
+
+if __name__ == "__main__":
+    main()

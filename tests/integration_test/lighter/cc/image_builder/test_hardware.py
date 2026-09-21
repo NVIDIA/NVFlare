@@ -155,6 +155,10 @@ class HardwareTests(unittest.TestCase):
                     )
                     state["readiness_seconds"] = round(time.monotonic() - self.boot_started, 3)
                     return state
+            except urllib.error.HTTPError as error:
+                with error:
+                    diagnostic = error.read(4096).decode(errors="replace")
+                self.fail(f"Acceptance endpoint failed (HTTP {error.code}): {diagnostic}")
             except (OSError, ValueError, urllib.error.URLError):
                 pass
             time.sleep(1)

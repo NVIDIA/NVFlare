@@ -563,6 +563,7 @@ class BootstrapTests(unittest.TestCase):
             "EnvironmentFile=/run/cvm/platform.env",
             "NoNewPrivileges=yes",
             "ProtectSystem=strict",
+            "ReadOnlyPaths=/run/cvm",
             "ReadWritePaths=/vault/application/runtime /vault/application/data /applog",
             "ProtectKernelModules=yes",
             "CapabilityBoundingSet=~CAP_SYS_MODULE",
