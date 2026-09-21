@@ -39,6 +39,7 @@ import pytest
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.recipe import SimEnv
 from nvflare.recipe.utils import add_experiment_tracking
+from tests.integration_test.tools.prepare_cifar10 import prepare_cifar10
 
 INTEGRATION_TEST_ROOT = os.path.dirname(os.path.dirname(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(INTEGRATION_TEST_ROOT))
@@ -46,12 +47,9 @@ REPO_ROOT = os.path.dirname(os.path.dirname(INTEGRATION_TEST_ROOT))
 
 @pytest.fixture(scope="module")
 def cifar10_data_root(tmp_path_factory):
-    """Download CIFAR-10 once so simulated clients do not race on the same download/extract path."""
-    from torchvision.datasets import CIFAR10
-
+    """Prepare CIFAR-10 once so simulated clients do not race on the same download/extract path."""
     data_root = str(tmp_path_factory.mktemp("cifar10_data"))
-    CIFAR10(root=data_root, train=True, download=True)
-    CIFAR10(root=data_root, train=False, download=True)
+    prepare_cifar10(data_root)
     return data_root
 
 

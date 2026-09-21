@@ -17,6 +17,7 @@ import os
 import sys
 import tempfile
 import time
+from subprocess import TimeoutExpired
 from typing import Any
 
 import pytest
@@ -199,7 +200,13 @@ class TestSystem:
             for command in setup:
                 print(f"Running setup command: {command}")
                 process = run_command_in_subprocess(command)
-                process.wait()
+                while True:
+                    try:
+                        process.wait(timeout=60)
+                        break
+                    except TimeoutExpired:
+                        # Dataset downloads can exceed the admin session's idle timeout.
+                        test_driver.super_admin_api.get_system_info()
 
             test_driver.run_event_sequence(event_sequence)
 

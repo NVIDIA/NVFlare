@@ -190,6 +190,7 @@ class NVFTestDriver:
         self.site_launcher = site_launcher
         self.poll_period = poll_period
         self.event_sequence_timeout = _resolve_event_sequence_timeout(event_sequence_timeout)
+        self.event_sequence_deadline = None
 
         self.super_admin_api = None
         self.super_admin_user_name = None
@@ -384,6 +385,7 @@ class NVFTestDriver:
     def run_event_sequence(self, event_sequence):
         run_state = {"job_status": None, "job_terminal": None, "run_finished": None, "workflows": None}
         start_time = time.time()
+        self.event_sequence_deadline = start_time + self.event_sequence_timeout if self.event_sequence_timeout else None
 
         event_idx = 0
         # whether event has been successfully triggered

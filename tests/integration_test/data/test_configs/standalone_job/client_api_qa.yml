@@ -21,7 +21,7 @@ tests:
           "type": "run_state"
           "data": { "run_finished": True }
     setup:
-      - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/data', train=True, download=True)"
+      - python tools/prepare_cifar10.py --root /tmp/nvflare/data
     teardown:
       - rm -rf /tmp/nvflare/data
   - test_name: "run big_model_4g"
@@ -40,7 +40,7 @@ tests:
           "type": "run_state"
           "data": { "run_finished": True }
     setup:
-      - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/data', train=True, download=True)"
+      - python tools/prepare_cifar10.py --root /tmp/nvflare/data
     teardown:
       - rm -rf /tmp/nvflare/data
   - test_name: "run pt_lightning"
@@ -59,7 +59,7 @@ tests:
           "type": "run_state"
           "data": { "run_finished": True }
     setup:
-      - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/data', train=True, download=True)"
+      - python tools/prepare_cifar10.py --root /tmp/nvflare/data
     teardown:
       - rm -rf /tmp/nvflare/data
   - test_name: "run pt_client_api_basic"
@@ -78,6 +78,6 @@ tests:
           "type": "run_state"
           "data": { "run_finished": True }
     setup:
-      - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/data', train=True, download=True)"
+      - python tools/prepare_cifar10.py --root /tmp/nvflare/data
     teardown:
       - rm -rf /tmp/nvflare/data

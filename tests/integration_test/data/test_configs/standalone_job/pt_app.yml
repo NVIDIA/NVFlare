@@ -23,7 +23,7 @@ tests:
     validators:
       - path: tests.integration_test.src.validators.PTModelValidator
     setup:
-      - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/cifar10_data', download=True)"
+      - python tools/prepare_cifar10.py --root /tmp/nvflare/cifar10_data
     teardown:
       - rm -rf /tmp/nvflare/cifar10_data
   - test_name: "run pt_init_client"
@@ -44,7 +44,7 @@ tests:
     validators:
       - path: tests.integration_test.src.validators.PTModelValidator
     setup:
-      - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/cifar10_data', download=True)"
+      - python tools/prepare_cifar10.py --root /tmp/nvflare/cifar10_data
     teardown:
       - rm -rf /tmp/nvflare/cifar10_data
   - test_name: "run tb_streaming"

@@ -34,6 +34,7 @@ tests:
     setup:
       # Install requirements (strip nvflare since we use dev version)
       - python tools/install_requirements.py ../../examples/advanced/cifar10/pt/cifar10-sim/requirements.txt --exclude nvflare --quiet
+      - python tools/prepare_cifar10.py --root /tmp/cifar10
       # Export runs the actual job.py which also prepares data
       - python tools/export_recipe_job.py --recipe_dir ../../examples/advanced/cifar10/pt/cifar10-sim/cifar10_fedavg --output_dir ./data/jobs --recipe_args "--n_clients 2 --num_rounds 2 --name cifar10_fedavg_test"
     teardown:
