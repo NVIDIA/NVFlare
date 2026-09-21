@@ -32,8 +32,13 @@ done
     exit 1
 }
 
-DESTINATION="${HOME}/coco-workload-owner/secrets/registry"
-[[ ! -e "${DESTINATION}/username" && ! -e "${DESTINATION}/password" ]] || {
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# Use the same reviewed configuration and credential paths as stage 20.
+# shellcheck source=lib/platform.sh
+source "${SCRIPT_DIR}/lib/platform.sh"
+DESTINATION="${REGISTRY_SECRET_DIR}"
+[[ ! -e "${DESTINATION}/username" && ! -L "${DESTINATION}/username" && \
+   ! -e "${DESTINATION}/password" && ! -L "${DESTINATION}/password" ]] || {
     printf 'Publisher credential is already installed; refusing to overwrite it.\n' >&2
     exit 1
 }

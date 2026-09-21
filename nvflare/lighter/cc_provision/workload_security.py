@@ -290,7 +290,14 @@ def validate_pause_policy(oci, data):
         type(user.get("UID")) is int and user["UID"] == 65535 and type(user.get("GID")) is int and user["GID"] == 65535,
         "pause UID/GID must match the pinned non-root profile",
     )
-    require(user.get("AdditionalGids", []) == [], "unexpected pause supplementary groups")
+    # Pinned genpolicy repeats the pause image's primary GID as a supplementary
+    # group. This grants no new group identity; do not allow unrelated groups.
+    groups = user.get("AdditionalGids", [])
+    require(
+        isinstance(groups, list)
+        and (groups == [] or (len(groups) == 1 and type(groups[0]) is int and groups[0] == user["GID"])),
+        "unexpected pause supplementary groups",
+    )
     require(oci.get("Root", {}).get("Readonly") is True, "pause rootfs must be read-only")
     require(data.get("common", {}).get("default_caps") == PAUSE_DEFAULT_CAPS, "unapproved default capability expansion")
     caps = process.get("Capabilities", {})

@@ -90,10 +90,13 @@ or in shell history:
 
 The received directory must contain exactly `username` and `password`. The
 installer does not display the password and refuses to overwrite an existing
-credential. Securely remove the received copy after installation.
+credential. It loads the reviewed `platform.env` and installs both files under
+`${WORK_ROOT}/secrets/registry/`, the same location used by stage 20. Set
+`WORK_ROOT` before installation; the default is `$HOME/coco-workload-owner`.
+Securely remove the received copy after installation.
 
 The persistent Cosign signing key is created on first publication under
-`$HOME/coco-workload-owner/secrets/signing/`. Back it up as an owner signing
+`${WORK_ROOT}/secrets/signing/`. Back it up as an owner signing
 identity. Never transfer `cosign.key` or `cosign.password` to `service` or
 `coco`.
 

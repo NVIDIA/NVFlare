@@ -56,6 +56,12 @@ non-root `/pause` sandbox OCI are allowed. Both privilege/capability profiles
 are checked, including the pause capability expansion. A Kata rules upgrade
 requires review and an explicit pin/fixture update, not automatic acceptance.
 
+The pinned pause profile uses UID/GID 65535. Kata 3.29 genpolicy repeats that
+primary GID as `AdditionalGids: [65535]`; this is accepted, as is an empty or
+omitted supplementary list. Unrelated groups, duplicate entries, and non-integer
+values are rejected. The checked-in pause fixture is captured from the
+checksum-verified generator, not a hand-written empty-group approximation.
+
 `lib/common-base.sh` owns shared shell primitives and bounded approval prompts.
 Tests call package functions and source callable shell helpers instead of
 extracting executable substrings from installation scripts. Wiring/entry-point

@@ -169,9 +169,10 @@ def test_pod_level_override_rejected(value):
 
 
 def policy_data(readonly=False):
+    pause = json.loads((Path(__file__).parent / "fixtures/kata-3.29-pause-policy.json").read_text())
     return {
-        "common": {"default_caps": API["PAUSE_DEFAULT_CAPS"]},
-        "cluster_config": {"pause_container_image": API["PAUSE_IMAGE"]},
+        "common": pause["common"],
+        "cluster_config": pause["cluster_config"],
         "request_defaults": {
             "ReadStreamRequest": False,
             "WriteStreamRequest": False,
@@ -190,25 +191,7 @@ def policy_data(readonly=False):
                     "Root": {"Readonly": readonly},
                 },
             },
-            {
-                "exec_commands": [],
-                "OCI": {
-                    "Annotations": {
-                        "io.kubernetes.cri.container-type": "sandbox",
-                        "io.katacontainers.pkg.oci.container_type": "pod_sandbox",
-                    },
-                    "Process": {
-                        "User": {"UID": 65535, "GID": 65535, "AdditionalGids": []},
-                        "Args": ["/pause"],
-                        "NoNewPrivileges": True,
-                        "Capabilities": {
-                            name: ([] if name in ("Ambient", "Inheritable") else ["$(default_caps)"])
-                            for name in API["CAPABILITY_SETS"]
-                        },
-                    },
-                    "Root": {"Readonly": True},
-                },
-            },
+            pause["container"],
         ],
     }
 
@@ -221,6 +204,37 @@ def policy(data):
 @pytest.mark.parametrize("readonly", [False, True])
 def test_generated_policy_matches_context(readonly):
     API["validate_policy"](policy(policy_data(readonly)), IMAGE, context(readonly))
+
+
+def test_pinned_genpolicy_pause_profile():
+    data = policy_data()
+    pause = data["containers"][1]["OCI"]
+    assert pause["Process"]["User"] == {"UID": 65535, "GID": 65535, "AdditionalGids": [65535], "Username": ""}
+    workload_security.validate_pause_policy(pause, data)
+
+
+@pytest.mark.parametrize("groups", [[], [65535]])
+def test_pause_groups_are_empty_or_primary_group_only(groups):
+    data = policy_data()
+    data["containers"][1]["OCI"]["Process"]["User"]["AdditionalGids"] = groups
+    workload_security.validate_policy(policy(data), IMAGE, context())
+
+
+def test_omitted_pause_groups_remain_empty():
+    data = policy_data()
+    del data["containers"][1]["OCI"]["Process"]["User"]["AdditionalGids"]
+    workload_security.validate_policy(policy(data), IMAGE, context())
+
+
+@pytest.mark.parametrize(
+    "groups",
+    [[0], [1000], [65535, 0], [65535, 1000], [65535, 65535], [65535.0], [True], ["65535"], None, "", {}, 65535],
+)
+def test_pause_unrelated_or_malformed_groups_rejected(groups):
+    data = policy_data()
+    data["containers"][1]["OCI"]["Process"]["User"]["AdditionalGids"] = groups
+    with pytest.raises(ValueError, match="unexpected pause supplementary groups"):
+        workload_security.validate_policy(policy(data), IMAGE, context())
 
 
 @pytest.mark.parametrize("request_name", ["ReadStreamRequest", "WriteStreamRequest"])
