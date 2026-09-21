@@ -1,4 +1,4 @@
-# Copyright (c) 2026, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -35,14 +35,8 @@ def main():
     # Derive the authoritative parameter schema and dtypes from the
     # server-side model. Dtypes are stored as strings because the
     # recipe configuration must be JSON serializable.
-    expected_schema = {
-        name: tuple(value.shape)
-        for name, value in model.state_dict().items()
-    }
-    expected_dtypes = {
-        name: str(value.dtype).replace("torch.", "")
-        for name, value in model.state_dict().items()
-    }
+    expected_schema = {name: tuple(value.shape) for name, value in model.state_dict().items()}
+    expected_dtypes = {name: str(value.dtype).replace("torch.", "") for name, value in model.state_dict().items()}
 
     # Defense-in-depth bound for received client DIFF updates.
     # This is separate from the published FedSCS scoring formulation.
