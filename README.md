@@ -94,7 +94,7 @@ series](https://nvidia.github.io/NVFlare/webinars/) and [FLARE Day](https://nvid
 ## How NVIDIA FLARE works
 
 <p align="center">
-  <img src="./docs/resources/federated_learning_overview.png"
+  <img src="https://raw.githubusercontent.com/NVIDIA/NVFlare/f0aac04afdd7f0fab7675e8f5259a5a40cc9592c/docs/resources/federated_learning_overview.png"
        alt="Two hospitals train models on private local data and send model updates to a federated server, which aggregates them into a global model."
        width="650">
 </p>
