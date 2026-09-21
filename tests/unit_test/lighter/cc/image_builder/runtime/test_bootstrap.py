@@ -25,6 +25,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, Mock, mock_open, patch
@@ -673,16 +674,24 @@ class SupervisorTests(unittest.TestCase):
                 with self.assertRaisesRegex(BuildError, "TimeoutExpired"):
                     supervisor.run_reopen(2, dict(os.environ))
             pid = int(pidfile.read_text())
+            terminated = ("gone", "Z", "X")
+            status = None
+            deadline = time.monotonic() + 5
             try:
-                status = Path(f"/proc/{pid}/stat").read_text().split(")", 1)[1].split()[0]
-            except (FileNotFoundError, ProcessLookupError):
-                # Reaping can remove the proc entry before open (ENOENT) or
-                # after open but before read (ESRCH). Both mean it is gone.
-                status = "gone"
-            try:
-                self.assertIn(status, ("gone", "Z", "X"))
+                # SIGKILL is asynchronous: waiting for the direct child does
+                # not mean its descendant has finished exiting on another CPU.
+                while True:
+                    try:
+                        status = Path(f"/proc/{pid}/stat").read_text().split(")", 1)[1].split()[0]
+                    except (FileNotFoundError, ProcessLookupError):
+                        # Disappearance before open (ENOENT) or read (ESRCH).
+                        status = "gone"
+                    if status in terminated or time.monotonic() >= deadline:
+                        break
+                    time.sleep(0.01)
+                self.assertIn(status, terminated, "Descendant survived reopen timeout cleanup")
             finally:
-                if status not in ("gone", "Z", "X"):
+                if status not in terminated:
                     with contextlib.suppress(ProcessLookupError):
                         os.kill(pid, signal.SIGKILL)
 
