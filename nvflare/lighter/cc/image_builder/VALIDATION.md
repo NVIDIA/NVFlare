@@ -6,6 +6,56 @@ services and operator guides are maintained together with the provisioning adapt
 in this repository. Repository formatting and license headers change source
 fingerprints; build and approve new generic CVMs for this source snapshot.
 
+## CPU hardware end-to-end after hardening — 2026-09-20
+
+Fresh builds from commit `30d393340edacecd2df053764b0739c9415ec8f9` passed the
+functional end-to-end test with an Intel TDX server and an AMD SEV-SNP client,
+both without GPU. The AMD GPU was occupied by an existing workload, which was
+left running. Each guest used 4 vCPUs, 8 GiB RAM and kernel `7.0.0-31-generic`.
+The run completed on September 20 local time (September 21 UTC).
+
+- Both three-round CPU jobs completed successfully, in **10.23 seconds** before
+  scheduled re-attestation and **10.21 seconds** afterward. Every round checked
+  all 1,024 returned values and a fresh request nonce; the final sum was
+  **529,920**. The client executor also checked that `/dev/nvidia0` was absent.
+- Initial and periodic hardware attestation passed on both participants. The
+  observed re-attestation gaps were **301.98 seconds** for TDX and **300.69
+  seconds** for SNP.
+- **24 live HTTPS tests passed** against unmodified upstream Trustee v0.22.0,
+  12 per isolated backend, using the current shipped administrative ACLs.
+- Both finalized manifests recorded the expected runtime source digest:
+  `a2779fee424916e40ba7f71123575e2db4da96df92fa4a606f75937c625b846f`.
+
+| Stage | Intel TDX server | AMD SNP CPU client |
+|---|---:|---:|
+| Generic image construction | 301.50 s | 292.06 s |
+| Hardware finalization | 97.24 s | 81.94 s |
+| Application vault and delivery | 292.97 s | 295.59 s |
+| Delivery archive verification and unpack | 55.28 s | 61.74 s |
+| Launch to accepted attestation | 124.95 s | 105.04 s |
+| Launch to observed application readiness | 150.08 s | 153.09 s |
+
+The shared application image built in **44.04 seconds** and exported in
+**5.78 seconds**. The AMD delivery archive transferred in **19.45 seconds**,
+separate from verification/unpack. Importing AMD hardware reference evidence and
+repackaging the builder-side generic bundle took another **57.73 seconds**.
+Readiness means the first observed secure-admin connection or client registration;
+job timing runs from submission through observed completion. Stages overlap.
+
+Both delivered launchers shut down their CVMs, and both guest consoles reached
+`Power down`. However, shutdown was **not warning-free**: both guests reported
+that `/dev/dm-0` was busy during final device-mapper teardown; AMD also reported
+mount/swap cleanup errors from its shutdown environment. These observations need
+follow-up and do not establish clean guest filesystem teardown. Host cleanup
+checks found no remaining test processes, mounts or listening ports. The existing
+AMD GPU VM retained its GPU assignment.
+
+This was a candidate-mode native-CVM run using SHA-256-verified OCI archives and
+the unmodified delivered launchers. It did not test registry publication/pull,
+production approval, Kubernetes CoCo orchestration, GPU functionality, configured
+NTS time sources, or destructive quarantine/reopen acceptance. No policy or
+measurement was relaxed to obtain the successful job results.
+
 ## Architecture and security review fixes — 2026-09-20
 
 This source change set implements the review items recorded as design decisions
@@ -59,12 +109,13 @@ source-distribution-to-wheel test. Those results are separate from guest boot
 validation. The original macOS builder tally was 201 passed, 24 skipped and 4
 platform-related failures out of 229; all four cases pass on Linux.
 
-Not validated here: new guest boot, quarantine/reopen and QMP power-off inside
-a real guest, lockdown compatibility with the pinned NVIDIA modules, chrony NTS
-startup, or finalize hygiene inside a construction VM. The lab-host block tests
-do not establish compatibility with every guest kernel. Every measured root
-must be rebuilt, remeasured and reapproved; earlier hardware records do not cover
-these changes.
+The Linux checks above alone do not validate guest boot or QMP power-off; the
+fresh CPU hardware run and its shutdown warnings are recorded above. Real-guest
+quarantine/reopen, lockdown compatibility with the pinned NVIDIA modules, chrony
+NTS startup and finalize hygiene inside a construction VM remain unvalidated.
+The lab-host block tests do not establish compatibility with every guest kernel.
+Every measured root must be rebuilt, remeasured and reapproved; earlier hardware
+records do not cover these changes.
 
 ## Recorded TDX firmware input
 
