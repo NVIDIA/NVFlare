@@ -14,8 +14,12 @@ channel. Upstream Trustee defaults to `early`; choose the channel as a deploymen
 security policy and keep it explicit. CPU appraisal still requires `UpToDate`
 and unexpired collateral. See the guide for the firmware baseline implications.
 
-Vault builds upload through the native resource API using a scoped bearer token.
-The policy-publisher role is separate from the resource role. KBS writes native
-resources and releases them only after attestation and policy authorization.
-Native uploads permit replacement; deletion has no permanent tombstone.
-The CoCo operator owns upload fencing, credential rotation and backup recovery.
+Vault builds upload through the native resource API using a scoped bearer token
+valid for at most 30 days. The policy-publisher role is separate from the
+resource role, and the sample ACL shows a bundle-scoped `cvm-resources-<build_id>`
+role beside the generic one; print a bundle's entry with `cvmctl admin acl`. KBS
+writes native resources and releases them only after attestation and policy
+authorization. Native uploads permit replacement; deletion has no permanent
+tombstone. The CoCo operator owns upload fencing, credential rotation and backup
+recovery. Bundle installation requires a receipt signed by an acceptance
+authority listed in the administration configuration.

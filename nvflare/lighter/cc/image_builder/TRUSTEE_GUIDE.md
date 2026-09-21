@@ -133,9 +133,12 @@ existing CoCo KBS configuration; adjust listener and certificate paths. This is 
 schema. Its `cvm-policy` role can publish resource policy and query named
 references. It cannot replace AS policies, register references, or mutate native
 KBS resources. The separate `cvm-resources` role permits native resource POST and DELETE under
-`keys/`; restrict its path expression to the approved bundle prefixes when
-issuing deployment-specific credentials. It cannot publish policy. This upstream
-ACL is endpoint-based: do not describe its resource token as create-only.
+canonical `keys/<build_id>/<binding_id>` paths. Because native POST replaces and
+DELETE removes any key the role can reach, prefer one bundle-scoped role per
+approved bundle: `./cvmctl admin acl <build_id>` prints the `cvm-resources-<build_id>`
+ACL entry to merge into `kbs.json`, and the builder accepts that role name for
+signed tokens as well. It cannot publish policy. This upstream ACL is
+endpoint-based: do not describe its resource token as create-only.
 
 The reference configuration explicitly selects Intel's `standard` TCB update
 channel for DCAP verification:
@@ -246,9 +249,11 @@ requires fresh CPU/GPU appraisals, exact device count and distinct GPU identitie
 The trusted token issuer creates a signed JWT accepted by the existing KBS admin
 identity provider. For the example ACL, use `role: cvm-resources`,
 `iss: cvm-builder`, `aud: coco-trustee`, and valid `iat`, `nbf`, and `exp` claims.
-Set its validity to cover the build and rotate it through your existing credential
-workflow. Keep the issuer's signing key off build workers; possession of that key
-would allow minting tokens for other roles.
+Set its validity to cover the build, at most 30 days, and rotate it through your
+existing credential workflow; the builder refuses expired tokens and tokens whose
+`exp` lies more than 30 days after `iat` before contacting Trustee. Keep the
+issuer's signing key off build workers; possession of that key would allow
+minting tokens for other roles.
 
 Configure the build worker's `cvm_project.yml`:
 
@@ -344,11 +349,15 @@ Administration runs beside the same local_fs storage. Configure `admin.json`:
   "state": "/var/lib/cvm-trustee/admin",
   "trustee_binary": "/opt/cvm-trustee/bin/kbs",
   "trustee_build": "/etc/cvm-trustee/trustee_build.json",
-  "deployment_receipt": "/etc/cvm-trustee/deployment_receipt.json"
+  "deployment_receipt": "/etc/cvm-trustee/deployment_receipt.json",
+  "approval_public_keys": ["/etc/cvm-trustee/pki/acceptance-signing.pub"]
 }
 ```
 
-Copy the upstream build provenance to `trustee_build.json`. For image deployments,
+`approval_public_keys` lists the acceptance authorities whose Ed25519 signature
+on a bundle's `approval.json` counts as production approval; `admin install`
+refuses unsigned or foreign-signed receipts. Copy the upstream build provenance
+to `trustee_build.json`. For image deployments,
 retain the registry digest and source-commit provenance alongside the extracted
 binary digest. The deployment receipt contains:
 

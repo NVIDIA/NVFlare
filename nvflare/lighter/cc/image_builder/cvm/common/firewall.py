@@ -14,55 +14,119 @@
 
 """Render measured bootstrap and authenticated application nftables rules."""
 
+import ipaddress
+
 from .errors import require
-from .validation import ports
+from .validation import cidrs, ports
+
+# Only the ICMP types a client needs: reachability probes and path errors.
+ICMP_TYPES = "echo-request, echo-reply, destination-unreachable, time-exceeded, parameter-problem"
 
 
-def firewall_rules(inbound, outbound, mappings=()):
+def _split(values):
+    """Return (ipv4, ipv6) address or prefix lists for nft set literals."""
+    v4, v6 = [], []
+    for value in values:
+        network = ipaddress.ip_network(value, strict=False)
+        (v4 if network.version == 4 else v6).append(str(network))
+    return v4, v6
 
+
+def _set(values):
+    return "{ " + ", ".join(values) + " }"
+
+
+def _restricted(rules, addresses, selector, match, *, prefix=""):
+    """Emit one accept rule per address family; no addresses means any destination."""
+    if not addresses:
+        rules.append(f"{prefix}{match} accept")
+        return
+    v4, v6 = _split(addresses)
+    if v4:
+        rules.append(f"{prefix}ip {selector} {_set(v4)} {match} accept")
+    if v6:
+        rules.append(f"{prefix}ip6 {selector} {_set(v6)} {match} accept")
+
+
+def firewall_rules(inbound, outbound, mappings=(), *, inbound_sources=(), outbound_destinations=(), resolvers=()):
+    """Render the guest table.
+
+    inbound/outbound are TCP port allowlists. inbound_sources and
+    outbound_destinations optionally restrict those ports to CIDR lists.
+    resolvers optionally restricts DNS to the given server addresses; the
+    measured bootstrap rules cannot know them, the runtime rules can.
+    """
     ports(inbound)
     ports(outbound)
+    cidrs(list(inbound_sources))
+    cidrs(list(outbound_destinations))
+    for resolver in resolvers:
+        require(isinstance(resolver, str), "Resolver addresses must be strings")
+        try:
+            address = ipaddress.ip_address(resolver)
+        except ValueError:
+            require(False, "Invalid resolver address")
+        require(not address.is_loopback and not address.is_unspecified, "Resolver address is not routable")
     # A dedicated inet table, IPv4 and IPv6. The forward chain applies the same
     # restrictions to Docker's bridge, before Docker's own permissive chains.
     rules = [
         "table inet cvm {",
         "chain input { type filter hook input priority -10; policy drop;",
         'iifname "lo" accept',
+        "ct state invalid drop",
         "ct state established,related accept",
-        "ip protocol icmp accept",
+        f"icmp type {{ {ICMP_TYPES} }} accept",
         "ip6 nexthdr ipv6-icmp accept",
         "udp sport 67 udp dport 68 accept",
     ]
     if inbound:
-        rules.append("tcp dport { " + ",".join(map(str, inbound)) + " } accept")
+        _restricted(rules, inbound_sources, "saddr", "tcp dport " + _set(map(str, inbound)))
     rules += [
         "}",
         "chain output { type filter hook output priority -10; policy drop;",
         'oifname "lo" accept',
+        "ct state invalid drop",
         "ct state established,related accept",
-        "udp dport { 53,67,123,547 } accept",
-        # Ubuntu's chrony defaults use NTS key exchange before NTP traffic.
-        # Keep this host time-service allowance through the application rules.
-        "tcp dport { 53,4460 } accept",
-        "ip protocol icmp accept",
+        "udp dport { 67, 547 } accept",
+    ]
+    _restricted(rules, resolvers, "daddr", "udp dport 53")
+    _restricted(rules, resolvers, "daddr", "tcp dport 53")
+    # Ubuntu's chrony defaults use NTS key exchange before NTP traffic.
+    # Keep this host time-service allowance through the application rules.
+    rules += [
+        "udp dport 123 accept",
+        "tcp dport 4460 accept",
+        f"icmp type {{ {ICMP_TYPES} }} accept",
         "ip6 nexthdr ipv6-icmp accept",
     ]
     if outbound:
-        rules.append("tcp dport { " + ",".join(map(str, outbound)) + " } accept")
+        _restricted(rules, outbound_destinations, "daddr", "tcp dport " + _set(map(str, outbound)))
     rules += [
         "}",
         "chain forward { type filter hook forward priority -10; policy drop;",
+        "ct state invalid drop",
         "ct state established,related accept",
-        'iifname "docker0" udp dport { 53,123 } accept',
-        'iifname "docker0" tcp dport 53 accept',
     ]
+    _restricted(rules, resolvers, "daddr", "udp dport 53", prefix='iifname "docker0" ')
+    _restricted(rules, resolvers, "daddr", "tcp dport 53", prefix='iifname "docker0" ')
+    rules.append('iifname "docker0" udp dport 123 accept')
     if outbound:
-        rules.append('iifname "docker0" tcp dport { ' + ",".join(map(str, outbound)) + " } accept")
+        _restricted(
+            rules,
+            outbound_destinations,
+            "daddr",
+            "tcp dport " + _set(map(str, outbound)),
+            prefix='iifname "docker0" ',
+        )
     for mapping in mappings:
         require(mapping["host"] in inbound, "Container port is not allowed")
         ports([mapping["container"]])
-        rules.append(
-            f'oifname "docker0" tcp dport {mapping["container"]} ct original proto-dst {mapping["host"]} accept'
+        _restricted(
+            rules,
+            inbound_sources,
+            "saddr",
+            f'tcp dport {mapping["container"]} ct original proto-dst {mapping["host"]}',
+            prefix='oifname "docker0" ',
         )
     rules += ["}", "}"]
     return "\n".join(rules) + "\n"

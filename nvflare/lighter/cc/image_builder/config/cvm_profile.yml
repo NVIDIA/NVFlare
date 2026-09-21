@@ -22,6 +22,17 @@ memory_gib: 8
 root_overlay_max_mib: 4096
 vault_header_bytes: 16777216
 vault_storage_profile: luks2-xts-random-hmac-sha256-v1
+# Read the whole authenticated vault before the first mount. Every later read is
+# still authenticated and the integrity monitor stays active; very large vaults
+# may set false after site acceptance. The value is part of the measured contract.
+vault_prescan: true
+# Optional NTS-only time sources. When set, the distribution pools and any
+# DHCP-supplied servers are dropped from the measured chrony configuration.
+# time_servers: [time.cloudflare.com, ptbtime1.ptb.de]
+# Optional Ed25519 private key that signs approval.json when site_acceptance
+# succeeds; --approval-key overrides it. Vault builds trust the matching public
+# key through cvm_project.yml.
+# approval_signing_key: ../inputs/acceptance-signing.key
 kernel_version: 7.0.0-31-generic
 python_version: 3.14.3-0ubuntu2
 docker_version: 29.1.3-0ubuntu4.1
@@ -61,11 +72,15 @@ platforms:
     attester: snp
     firmware: /usr/share/ovmf/OVMF.amdsev.fd
     kbs_client: ../inputs/kbs-client
+    # Produced by `cvmctl provenance` beside the clean Trustee checkout that built
+    # kbs-client. Production builds require it; the digest alone names no source.
+    kbs_client_provenance: ../inputs/kbs_client_build.json
     cpu_model: EPYC-v4
   intel_tdx:
     enabled: true
     attester: tdx
     firmware: ../inputs/OVMF.inteltdx.fd
     kbs_client: ../inputs/kbs-client
+    kbs_client_provenance: ../inputs/kbs_client_build.json
     cpu_model: host
     quote_generation: {type: vsock, cid: 2, port: 4050}

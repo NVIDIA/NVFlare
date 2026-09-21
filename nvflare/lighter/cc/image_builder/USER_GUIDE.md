@@ -26,9 +26,13 @@ registry; local OCI tar materialization uses Python alone.
 
 ## 2. Materialize the delivery artifact
 
-Use `./cvmctl pull` to validate every OCI descriptor and layer digest and
-materialize a private directory. Its platform directory contains both manifests
-and everything needed to launch:
+Use `./cvmctl pull` to authenticate the publisher, validate every OCI descriptor
+and layer digest, and materialize a private directory. A local tar needs the
+`--archive-sha256` value the publisher sent through an authenticated channel; a
+registry reference needs the `--cosign-key` that signed the digest. Skipping
+publisher authentication requires an explicit `--allow-unverified` and is for
+isolated labs only. Its platform directory contains both manifests and
+everything needed to launch:
 
 ```text
 /srv/cvm/vault_my-app-site1/
@@ -52,14 +56,15 @@ provided by the builder; the ID below is illustrative. The `--output` folder is
 an operator-selected local name and can remain readable.
 
 ```sh
-sha256sum vault_0123456789ab4def8123456789abcdef_intel_tdx.oci.tar
 sudo ./cvmctl pull vault_0123456789ab4def8123456789abcdef_intel_tdx.oci.tar \
+  --archive-sha256 PUBLISHED_ARCHIVE_SHA256 \
   --output /srv/cvm/vault_my-app-site1
 ```
 
-Compare the first digest with `archive_sha256` in the publisher's
-`oci_artifacts.json` before materializing. The tar is a standard OCI image layout;
-its payload layers are already compressed.
+`PUBLISHED_ARCHIVE_SHA256` is the `archive_sha256` value from the publisher's
+`oci_artifacts.json`, received through an authenticated channel; the pull refuses
+an archive whose digest differs. The tar is a standard OCI image layout; its
+payload layers are already compressed.
 
 ### From an OCI registry URL
 
@@ -68,27 +73,23 @@ the pull wrapper refuses a mutable tag.
 
 ```sh
 artifact=registry.example.org/cvm/my-app-site1@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-sudo ./cvmctl pull "$artifact" --output /srv/cvm/vault_my-app-site1
+sudo ./cvmctl pull "$artifact" --cosign-key /etc/cvm/release-signing.pub \
+  --output /srv/cvm/vault_my-app-site1
 ```
 
-For an isolated lab registry that deliberately uses HTTP, opt in explicitly:
+The pull runs `cosign verify` against that key on the immutable reference before
+any bytes are transferred. For an isolated lab registry that deliberately uses
+HTTP and has no signatures, opt out explicitly:
 
 ```sh
 sudo ./cvmctl pull \
   registry.example.org:5000/cvm/my-app-site1@sha256:OCI_MANIFEST_DIGEST \
-  --plain-http --output /srv/cvm/vault_my-app-site1
-```
-
-For production, verify the publisher's signature before materializing, using the
-same immutable reference:
-
-```sh
-cosign verify --key /etc/cvm/release-signing.pub "$artifact"
+  --plain-http --allow-unverified --output /srv/cvm/vault_my-app-site1
 ```
 
 OCI digest validation detects corruption and substitution within a selected
-artifact. The signature or another authenticated release channel establishes
-who selected that digest.
+artifact. The signature or the published archive digest establishes who selected
+that digest.
 
 ## 3. Launch CVM
 
@@ -99,10 +100,13 @@ cd /srv/cvm/vault_my-app-site1/intel_tdx
 sudo ./launch_cvm.sh
 ```
 
-The launcher reads the included `cvm_bundle/` whose manifest has the required
-`cvm_build_id`, checks the local TEE, verifies every generic artifact, checks the
-vault binding, locks the actual vault inode, records runtime state, and starts
-QEMU.
+The wrapper first refuses a delivery directory that is not root-owned or is
+group- or world-writable, because it imports Python from that directory as
+root. The launcher then reads the included `cvm_bundle/` whose manifest has the
+required `cvm_build_id`, checks the local TEE, verifies every generic artifact,
+checks the vault binding, locks the actual vault inode, records runtime state,
+and starts QEMU with an explicit device set: no default devices, no VGA and no
+terminal monitor. The guest console is output-only on the launch terminal.
 
 For a GPU profile, it finds exactly the profile's `gpu_count` NVIDIA display controllers with isolated IOMMU groups, loads `vfio-pci`, binds every function in each GPU slot, and passes all selected slots to the VM. TDX uses one QEMU IOMMUFD backend for these assignments. The guest application
 is started by Docker with `--gpus all`. The
@@ -145,12 +149,18 @@ sample vault:
 curl http://127.0.0.1:8080/
 ```
 
-Forwarded ports listen on all host IPv4 interfaces (`0.0.0.0`), so other machines
-can reach the application. Use the host firewall to restrict permitted interfaces
-and source networks; the launcher does not currently provide a bind-address option.
+Forwarded ports listen on all host IPv4 interfaces by default, so other machines
+can reach the application. Pass `--bind-address ADDRESS` to `launch_cvm.sh` to
+listen on one host address only, and use the host firewall for source networks.
+Inside the guest, `allowed_in_cidrs` and `allowed_out_cidrs` from the vault build
+confine the allowed ports to address ranges when configured.
 
-The application receives `/vault`, `/applog`, `/user_config`, `/user_data`, and
-`/host/bin`. Only `/vault` is encrypted and authenticated at rest. `/applog` is
+The application receives `/vault`, `/applog`, `/user_config` and `/user_data`;
+the measured root's `/usr/bin` appears at `/host/bin` only when the vault was
+built with `container.host_bin: true`. The container starts with a reduced
+capability set, `no-new-privileges` and a process limit; see
+[BUILD_GUIDE.md](BUILD_GUIDE.md#4-vault-build) for the `container` options.
+Only `/vault` is encrypted and authenticated at rest. `/applog` is
 the CVM's clear output-only channel, intended for logs the operator must read
 without a key. `/user_config` and `/user_data` are clear operator inputs enforced
 read-only by QEMU, the guest mount, and the container bind mount. Treat all
@@ -165,9 +175,13 @@ From another shell in the same delivery directory, run:
 sudo ./shutdown_cvm.sh
 ```
 
-The script validates the root-owned runtime record, signals the exact launcher,
-waits for QEMU to exit, and leaves the launcher holding the vault lock until that
-process has stopped. `Ctrl-C` in the launch terminal remains supported.
+The script validates the root-owned runtime record and signals the exact
+launcher. The launcher asks QEMU for an ACPI power-off through its root-only QMP
+socket, so the guest stops the container with its normal grace period, syncs the
+vault and powers off; only after a bounded grace period does the launcher
+terminate QEMU. It keeps holding the vault lock until QEMU has exited. `Ctrl-C`
+in the launch terminal takes the same orderly path because QEMU runs in its own
+session and never sees the terminal signal.
 
 Wait for shutdown to finish before copying, moving, backing up, or inspecting any
 writable disk. If no matching CVM is running, the shutdown command fails without
@@ -207,13 +221,25 @@ every five minutes with a 300-second deadline. Tick status is recorded in
 `/run/cvm/periodic.json`; acceptance tooling can request an immediate check with
 `systemctl kill --kill-whom=main --signal=SIGUSR1 cvm_bootstrap.service`.
 
-The distro `nftables.service` loads measured bootstrap rules before networking.
-Docker socket activation is masked; provisioning configures the Docker daemon to
-open its Unix socket directly. The independent integrity monitor retains its
-watchdog. A security failure, or exit of either supervisor, makes PID 1 force
-poweroff without a Python shutdown handler. This skips application graceful-stop
-hooks on security failure. Development images use the same unit files and omit
-TEE/KBS and integrity-monitor work.
+The distro `nftables.service` loads measured bootstrap rules before networking;
+bootstrap narrows them to the DHCP-learned resolvers before the first KBS
+contact. Docker socket activation is masked; provisioning configures the Docker
+daemon to open its Unix socket directly. The independent integrity monitor
+retains its watchdog.
+
+A failed periodic check no longer powers the guest off at once. The supervisor
+enters quarantine: it stops the application units, Docker and containerd,
+unmounts `/vault` and closes its mapping, which drops the key from the kernel,
+then retries a fresh appraisal and key retrieval once a minute for up to fifteen
+minutes. A successful retry re-verifies the same vault identity, re-mounts the
+vault and restarts the application units; the audit log records `quarantine`
+and then `allow`. If the window expires, or anything in the quarantine sequence
+fails, PID 1 forces power-off as before. A bootstrap failure, an integrity
+failure or exit of either supervisor still forces power-off immediately.
+`cvm_app.service` stops its container itself on SIGTERM, so a requested stop is
+not a workload failure; an unexpected container exit keeps its status and
+triggers the forced power-off. Development images use the same unit files and
+omit TEE/KBS and integrity-monitor work.
 
 Rebuild and reapprove generic CVM bundles after this change. Earlier hardware
 acceptance records do not cover the new boot and shutdown sequence.

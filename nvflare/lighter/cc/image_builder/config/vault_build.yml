@@ -12,6 +12,10 @@ user_config_drive_size: 1
 user_data_drive_size: 1
 allowed_ports: [8080]
 allowed_out_ports: [443, 8443]
+# Optional address allowlists. Without them an allowed port accepts any source
+# or reaches any destination; DNS is always limited to the DHCP-learned resolvers.
+# allowed_in_cidrs: [10.0.0.0/8]
+# allowed_out_cidrs: [10.0.0.0/8, 192.0.2.0/24]
 # Optional application_files (encrypted) and clear input directories.
 # application_files: ../inputs/application-files
 # user_config: ../inputs/user-config
@@ -22,6 +26,13 @@ container:
   env: {}
   volumes: []
   tee_device: false
+  # The container starts with no capabilities and adds back only this list
+  # (default: Docker's set minus NET_RAW, MKNOD, SYS_CHROOT, AUDIT_WRITE, SETFCAP).
+  # capabilities: [CHOWN, DAC_OVERRIDE, FOWNER, FSETID, KILL, NET_BIND_SERVICE, SETGID, SETPCAP, SETUID]
+  # pids_limit: 4096
+  # read_only_rootfs: false
+  # Mount the measured root's /usr/bin read-only at /host/bin (opt-in).
+  # host_bin: false
 services: []
 hosts_entries: {}
 # Shared trustee settings belong in the project's cvm_project.yml.

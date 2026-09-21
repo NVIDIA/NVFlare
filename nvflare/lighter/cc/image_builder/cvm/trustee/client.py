@@ -15,6 +15,8 @@
 """Authenticated native CoCo Trustee administration client."""
 
 import base64
+import json
+import re
 import ssl
 import time
 import urllib.error
@@ -24,9 +26,19 @@ from pathlib import Path
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519
 
-from ..common.contracts import validate_resource
+from ..common.contracts import identifier, validate_resource
 from ..common.errors import BuildError, require
 from ..common.io import canonical
+
+POLICY_ROLE = "cvm-policy"
+
+
+RESOURCE_ROLE = "cvm-resources"
+
+
+# A leaked resource token can replace or delete every key its role may reach.
+# Refuse long-lived tokens so rotation stays a habit rather than an emergency.
+MAX_ADMIN_TOKEN_LIFETIME_SECONDS = 30 * 86400
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -38,22 +50,70 @@ def encode(data):
     return base64.urlsafe_b64encode(data).decode().rstrip("=")
 
 
+def _decode_claims(token):
+    parts = token.split(".")
+    require(len(parts) == 3 and all(re.fullmatch(r"[A-Za-z0-9_-]+", part) for part in parts), "Malformed JWT")
+    payload = parts[1]
+    try:
+        claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+    except (ValueError, UnicodeError):
+        raise BuildError("Invalid Trustee administration token payload") from None
+    require(isinstance(claims, dict), "Invalid Trustee administration token payload")
+    return claims
+
+
+def admin_token(config, now=None):
+    """Read a pre-issued bearer token and refuse expired or long-lived ones locally."""
+    token = Path(config["admin_token_file"]).read_text().strip()
+    require(
+        token and len(token) <= 16384 and token.isascii() and not any(c.isspace() for c in token),
+        "Invalid Trustee administration token",
+    )
+    claims = _decode_claims(token)
+    now = time.time() if now is None else now
+    exp = claims.get("exp")
+    iat = claims.get("iat", now)
+    require(
+        type(exp) in (int, float) and type(iat) in (int, float),
+        "Trustee administration token must carry numeric exp and iat claims",
+    )
+    require(now < exp, "Trustee administration token has expired; issue a fresh short-lived token")
+    require(
+        exp - iat <= MAX_ADMIN_TOKEN_LIFETIME_SECONDS,
+        "Trustee administration token lifetime exceeds 30 days; issue a short-lived token",
+    )
+    return token
+
+
+def resource_build_id(endpoint):
+    """Bundle identifier addressed by a native resource endpoint."""
+    require(endpoint.startswith("resource/"), "Not a resource endpoint")
+    return validate_resource(endpoint[len("resource/") :])[1]
+
+
+def resource_role_acl(build_id):
+    """Upstream regex ACL entry confining one resource role to one bundle's keys."""
+    identifier(build_id)
+    return {
+        "role": f"{RESOURCE_ROLE}-{build_id}",
+        "allowed_endpoints": f"^/kbs/v0/resource/keys/{re.escape(build_id)}/[0-9a-f]{{64}}(0{{32}})?$",
+    }
+
+
 def api(config, method, endpoint, data=None, *, content_type="application/json"):
     require(config["url"].startswith("https://"), "KBS administration requires HTTPS")
     if "admin_token_file" in config:
         require("admin_private_key" not in config, "Select one Trustee administration credential")
-        token = Path(config["admin_token_file"]).read_text().strip()
-        require(
-            token and len(token) <= 16384 and token.isascii() and not any(c.isspace() for c in token),
-            "Invalid Trustee administration token",
-        )
+        token = admin_token(config)
     else:
-        role = config.get("admin_role", "cvm-policy")
+        role = config.get("admin_role", POLICY_ROLE)
         if endpoint.startswith("resource/"):
+            accepted = (RESOURCE_ROLE, f"{RESOURCE_ROLE}-{resource_build_id(endpoint)}")
             require(
-                role == "cvm-resources",
-                "Resource administration requires admin_role=cvm-resources when signing a token; "
-                "or supply a scoped cvm-resources token through admin_token_file",
+                role in accepted,
+                "Resource administration requires admin_role=cvm-resources or the bundle-scoped "
+                "cvm-resources-<build_id> role when signing a token; or supply a scoped token through "
+                "admin_token_file",
             )
         key = serialization.load_pem_private_key(Path(config["admin_private_key"]).read_bytes(), password=None)
         require(isinstance(key, ed25519.Ed25519PrivateKey), "KBS administration requires an Ed25519 key")

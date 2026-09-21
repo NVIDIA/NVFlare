@@ -116,7 +116,7 @@ def _archive_image_id(path, image_id):
         raise BuildError("OCI manifest nesting exceeds the supported limit")
 
 
-def delivery(directory, app, manifest, digest, internal, bundle):
+def delivery(directory, app, manifest, digest, internal, bundle, trusted_keys=()):
     # A delivery is self-contained for one platform/application. These bytes are
     # copied from the already-built generic bundle; Stage 2 never rebuilds them.
     bundle = Path(bundle)
@@ -133,7 +133,7 @@ def delivery(directory, app, manifest, digest, internal, bundle):
     copied_manifest = verify_bundle(delivered_bundle)
     require(copied_manifest["build_id"] == manifest["build_id"], "Copied CVM bundle identity mismatch")
     if (delivered_bundle / "approval.json").is_file():
-        verify_approval(delivered_bundle)
+        verify_approval(delivered_bundle, trusted_keys)
     public = dict(
         internal,
         vault_bind=digest.hex(),
@@ -167,12 +167,14 @@ def delivery(directory, app, manifest, digest, internal, bundle):
         "The complete generic CVM bundle is included in cvm_bundle; no separate download is required.\n"
         "The launcher verifies that included bundle and detects and binds the required NVIDIA GPUs.\n"
         "Repeat --gpu PCI_ADDRESS for explicit GPU placement. Stop with: sudo ./shutdown_cvm.sh\n"
+        "Shutdown requests an orderly guest power-off through QMP before terminating QEMU.\n"
         "One vault file may be attached to only one CVM. Copy only stopped, detached disks.\n"
         "Copies retain the same identity, key authorization and revocation scope.\n"
         "The guest independently validates the vault binding and current KBS authorization.\n"
         "Only vault.qcow2 is encrypted. user_config and user_data are clear, read-only guest inputs.\n"
         "applog is deliberately clear and writable for offline operator access.\n"
         "Do not place secrets in any sidecar; use /vault/application/data for confidential data and logs.\n"
+        "Keep this directory and its cvm/ modules owned by root and not group- or world-writable.\n"
     )
     return public
 
@@ -190,11 +192,11 @@ def create_sidecars(directory, app):
 
 
 @contextlib.contextmanager
-def profile_from_image(image, *, approved=True, plain_http=False):
+def profile_from_image(image, *, approved=True, plain_http=False, trusted_keys=()):
     """Keep a retrieved generic CVM available until vault packaging finishes."""
     path = Path(image)
     if path.is_dir():
-        yield load_profile_set(path / "profile_set.json", approved=approved)
+        yield load_profile_set(path / "profile_set.json", approved=approved, trusted_keys=trusted_keys)
         return
     with tempfile.TemporaryDirectory(prefix="cvm-image-") as temporary:
         directory, descriptor, metadata = materialize(image, Path(temporary) / "cvm", plain_http=plain_http)
@@ -203,7 +205,7 @@ def profile_from_image(image, *, approved=True, plain_http=False):
             metadata.get("kind") == "cvm_bundle" and metadata.get("state") in ("finalized", "approved"),
             "cvm_image must be finalized before building a vault",
         )
-        profiles = load_profile_set(directory / "profile_set.json", approved=approved)
+        profiles = load_profile_set(directory / "profile_set.json", approved=approved, trusted_keys=trusted_keys)
         platform = metadata.get("platform")
         require(
             isinstance(platform, str)
@@ -277,7 +279,9 @@ def build(path, output=None, candidate=False, dev=False, plain_http=False, proje
             )
         else:
             section = "cvm_project.yml"
-            app["trustee"] = config.project(path, project_config)["trustee"]
+            project = config.project(path, project_config)
+            app["trustee"] = project["trustee"]
+            app["approval_keys"] = project["approval"]["public_keys"]
     except ConfigurationError:
         raise
     except (BuildError, OSError, ValueError, KeyError, TypeError):
@@ -286,7 +290,12 @@ def build(path, output=None, candidate=False, dev=False, plain_http=False, proje
         raise ConfigurationError(f"Invalid {section} inputs; check referenced files and field types") from None
     app["deployment_id"] = uuid.uuid4().hex
     print(f"Deployment ID: {app['deployment_id']}", flush=True)
-    with profile_from_image(app["cvm_image"], approved=not (candidate or dev), plain_http=plain_http) as profiles:
+    with profile_from_image(
+        app["cvm_image"],
+        approved=not (candidate or dev),
+        plain_http=plain_http,
+        trusted_keys=tuple(app.get("approval_keys", ())),
+    ) as profiles:
         return build_with_profile(app, profiles, output, candidate, dev)
 
 
@@ -311,6 +320,7 @@ def build_with_profile(app, profiles, output=None, candidate=False, dev=False):
         return build_dev(app, profiles, output)
     platforms = requested_platforms(app, profiles)
     require("trustee" in app, "Trustee administration configuration is required")
+    trusted_keys = tuple(app.get("approval_keys", ()))
     protect_process()
     output = Path(output or Path("target") / ("vault_" + app["deployment_id"])).resolve()
     require(not output.exists(), "Output already exists; choose a new deployment output")
@@ -364,7 +374,13 @@ def build_with_profile(app, profiles, output=None, candidate=False, dev=False):
                     # Read every authenticated sector before publishing this key.
                     scan(mapper)
                     public = delivery(
-                        directory, app, manifest, digest, internal, profiles["bundles"][platform]["directory"]
+                        directory,
+                        app,
+                        manifest,
+                        digest,
+                        internal,
+                        profiles["bundles"][platform]["directory"],
+                        trusted_keys,
                     )
                     resource = public["resource"]
                     require(snapshot_header(device) == header, "Header changed during construction")

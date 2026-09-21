@@ -53,6 +53,7 @@ def test_cvm_builder_contracts():
         "admin install",
         "admin retire",
         "admin revoke",
+        "admin acl",
         "provenance",
         "references",
         "preflight host",

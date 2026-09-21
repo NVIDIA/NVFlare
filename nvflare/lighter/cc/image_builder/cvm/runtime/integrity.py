@@ -25,6 +25,10 @@ from ..common.linux import run
 from ..common.luks import validate_mapping
 from .systemd import notify
 
+# Written by the bootstrap supervisor while it deliberately holds the vault
+# closed. Only then is a missing mapping expected rather than a failure.
+QUARANTINE = Path("/run/cvm/quarantine.json")
+
 
 def healthy_status(status):
     fields = status.split()
@@ -33,19 +37,31 @@ def healthy_status(status):
     require(int(fields[3]) == 0, "Vault authentication failure")
 
 
-def watch():
-    major, minor = validate_mapping("vault").split(":")
+MAPPER = Path("/dev/mapper/vault")
+
+
+def check_vault(target, quarantine=QUARANTINE, mapper=MAPPER):
+    """Check the activated vault; return its dm-integrity device, or None while quarantined.
+
+    A reopened vault receives a new device number, so the target is resolved
+    again after quarantine ends. Outside quarantine a missing mapping is fatal.
+    """
+    if Path(quarantine).exists():
+        return None
+    if target is None:
+        target = validate_mapping("vault").split(":")
+    healthy_status(run(["dmsetup", "status", "-j", target[0], "-m", target[1]], timeout=10).decode())
+    require(Path(mapper).exists(), "Encrypted vault mapping disappeared")
+    return target
+
+
+def watch(quarantine=QUARANTINE):
     fd = os.open("/dev/kmsg", os.O_RDONLY | os.O_NONBLOCK | os.O_CLOEXEC)
     try:
         os.lseek(fd, 0, os.SEEK_END)
         selector = selectors.DefaultSelector()
         selector.register(fd, selectors.EVENT_READ)
-
-        def check():
-            healthy_status(run(["dmsetup", "status", "-j", major, "-m", minor], timeout=10).decode())
-            require(Path("/dev/mapper/vault").exists(), "Encrypted vault mapping disappeared")
-
-        check()
+        target = check_vault(None, quarantine)
         notify("READY=1\nSTATUS=Watching authenticated vault")
         previous = None
         while True:
@@ -74,7 +90,7 @@ def watch():
                         ),
                         "Kernel reported a vault integrity error",
                     )
-            check()
+            target = check_vault(target, quarantine)
             notify("WATCHDOG=1")
     finally:
         os.close(fd)

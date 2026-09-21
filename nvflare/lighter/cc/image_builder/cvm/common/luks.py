@@ -20,6 +20,11 @@ from .contracts import HEADER_BYTES
 from .errors import require
 from .linux import run
 
+# The unlock secret is 512 random bits, so the keyslot KDF adds no security.
+# Pin a cheap deterministic KDF: a benchmarked argon2 cost would make guest
+# unlock time and memory depend on the build host and could exhaust guest RAM.
+KEYSLOT_KDF = {"type": "pbkdf2", "hash": "sha256", "iterations": 1000}
+
 
 def validate_luks_metadata(metadata):
     segments = metadata.get("segments", {})
@@ -47,6 +52,11 @@ def validate_luks_metadata(metadata):
         slot.get("type") == "luks2" and slot.get("key_size") == 96,
         "Expected 512-bit XTS plus 256-bit HMAC key material",
     )
+    kdf = slot.get("kdf", {})
+    require(
+        all(kdf.get(key) == value for key, value in KEYSLOT_KDF.items()),
+        "Vault keyslot must use the pinned deterministic KDF",
+    )
     area = slot.get("area", {})
     require(
         int(area.get("offset", 0)) >= 32768
@@ -60,7 +70,7 @@ def inspect_header(device, header_fd=None):
     args = ["cryptsetup", "luksDump", "--dump-json-metadata", device]
     if header_fd is not None:
         args += ["--header", f"/proc/self/fd/{header_fd}"]
-    metadata = json.loads(run(args, pass_fds=() if header_fd is None else (header_fd,)))
+    metadata = json.loads(run(args, pass_fds=() if header_fd is None else (header_fd,), secret=True))
     validate_luks_metadata(metadata)
     return metadata
 
@@ -77,6 +87,13 @@ def validate_mapping(mapper):
     table = run(["dmsetup", "table", mapper]).decode().split()
     require(len(table) >= 9 and table[2] == "crypt", "Expected dm-crypt target")
     require(table[3] == "capi:authenc(hmac(sha256),xts(aes))-random", "Activated authenticated cipher mismatch")
+    # cryptsetup 2.x loads the LUKS2 volume key as a kernel logon key, which
+    # user space cannot read back. An inline key would be dumpable by root.
+    key = table[4].split(":")
+    require(
+        table[4].startswith(":") and len(key) >= 4 and key[2] == "logon",
+        "Vault volume key must be a kernel logon keyring reference",
+    )
     require("integrity:48:aead" in table[8:], "Missing authenticated IV/HMAC tags")
     require(not any("allow_discards" in x or "recalculate" in x for x in table), "Unsafe dm-crypt options")
     underlying = table[6]

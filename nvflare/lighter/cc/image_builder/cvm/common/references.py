@@ -42,6 +42,15 @@ MEASUREMENT_NAMES = {"snp_launch_measurement", "mr_td", "rtmr_0", "rtmr_1", "rtm
 EXPIRY_REFERENCE = "cvm_reference_expiry"
 
 
+# SEV-SNP guest policy bits (AMD SEV-SNP ABI specification, GUEST_POLICY).
+SNP_POLICY_SMT = 1 << 16
+SNP_POLICY_RESERVED = 1 << 17
+SNP_POLICY_MIGRATE_MA = 1 << 18
+SNP_POLICY_DEBUG = 1 << 19
+SNP_POLICY_SINGLE_SOCKET = 1 << 20
+SNP_POLICY_KNOWN = (1 << 21) - 1
+
+
 # Trustee v0.22 returns reference values without checking their metadata expiry.
 # Keep the deadline in a companion reference and enforce it at every appraisal.
 REFERENCE_REGO = """reference(name) := value if {
@@ -86,3 +95,32 @@ def validate_references(values, platforms=(), *, finalized=False, gpu=False):
             valid = isinstance(value, list) and value and all(isinstance(v, str) for v in value)
         require(valid, "Invalid approved TCB reference: " + name)
     return values
+
+
+def snp_guest_policy(values):
+    """Derive the SEV-SNP launch policy word from the approved configuration references.
+
+    The AS policy compares the guest's reported policy fields with these same
+    references, so the launcher must request exactly the approved values instead
+    of a hard-coded constant. Debug and migration are never enabled.
+    """
+    for name in ("snp_smt_allowed", "snp_single_socket"):
+        require(type(values.get(name)) is bool, "Approved SNP references must state " + name)
+    for name in ("snp_guest_abi_major", "snp_guest_abi_minor"):
+        require(
+            type(values.get(name)) is int and 0 <= values[name] <= 255, "Approved SNP references must state " + name
+        )
+    policy = SNP_POLICY_RESERVED | (values["snp_guest_abi_major"] << 8) | values["snp_guest_abi_minor"]
+    if values["snp_smt_allowed"]:
+        policy |= SNP_POLICY_SMT
+    if values["snp_single_socket"]:
+        policy |= SNP_POLICY_SINGLE_SOCKET
+    return policy
+
+
+def validate_snp_policy(policy):
+    """Accept only a measured launch policy without debug, migration or unknown bits."""
+    require(type(policy) is int and 0 < policy <= SNP_POLICY_KNOWN, "Invalid SNP guest policy")
+    require(policy & SNP_POLICY_RESERVED, "SNP guest policy must set the reserved bit")
+    require(not policy & (SNP_POLICY_DEBUG | SNP_POLICY_MIGRATE_MA), "SNP guest policy enables debug or migration")
+    return policy

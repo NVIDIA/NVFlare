@@ -2,3 +2,7 @@ target/
 scratch/
 base_images/
 binaries/
+# Operator-supplied trust inputs: bearer tokens, CAs, signing keys, client
+# binaries and multi-gigabyte images never belong in version control.
+inputs/
+credentials/

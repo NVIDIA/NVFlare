@@ -19,7 +19,7 @@ import json
 import time
 from pathlib import Path
 
-from ..artifacts.bundle import verify_approval, verify_bundle
+from ..artifacts.bundle import load_public_keys, verify_approval, verify_bundle
 from ..common.contracts import identifier
 from ..common.errors import require
 from ..common.io import canonical, digest_file, read_json, write_json
@@ -55,7 +55,16 @@ def check_migration(config):
 
 def install(config, directory, candidate=False):
     check_migration(config)
-    manifest = verify_bundle(directory) if candidate else verify_approval(directory)
+    if candidate:
+        manifest = verify_bundle(directory)
+    else:
+        # A receipt file alone is not approval: it must carry a signature by an
+        # acceptance authority this deployment trusts.
+        require(
+            "approval_public_keys" in config,
+            "Production installation requires approval_public_keys in the administration configuration",
+        )
+        manifest = verify_approval(directory, load_public_keys(config["approval_public_keys"]))
     require(
         not candidate or manifest["profile_version"].startswith("test-"),
         "Candidate administration requires a test- profile",

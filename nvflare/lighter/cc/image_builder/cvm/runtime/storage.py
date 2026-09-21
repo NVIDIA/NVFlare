@@ -12,13 +12,31 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Locate guest disks by their launch-assigned identities."""
+"""Locate guest disks and release the authenticated vault mapping."""
 
 import time
 from pathlib import Path
 
 from ..common.contracts import DISK_ROLES
 from ..common.errors import require
+from ..common.linux import run
+
+
+def close_vault():
+    """Release a complete or partial unlock; any unconfirmed cleanup is fatal."""
+    mount = Path("/vault")
+
+    def active():
+        # An interrupted cryptsetup can leave a kernel mapping before udev has
+        # created its /dev/mapper link. Inspect kernel state, not that link.
+        names = run(["dmsetup", "info", "--columns", "--noheadings", "--options", "name"], timeout=10)
+        return b"vault" in (name.strip() for name in names.splitlines())
+
+    if mount.is_mount():
+        run(["umount", str(mount)], timeout=60)
+    if active():
+        run(["cryptsetup", "close", "vault"], timeout=60)
+    require(not mount.is_mount() and not active(), "Vault cleanup could not be confirmed")
 
 
 def disk_device(role, *, wait=False):

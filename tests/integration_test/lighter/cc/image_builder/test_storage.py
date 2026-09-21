@@ -17,7 +17,9 @@
 import os
 import tempfile
 import unittest
+import uuid
 from pathlib import Path
+from unittest.mock import patch
 
 from cvm.build.config import public_sidecar
 from cvm.build.storage import create_image, format_vault, mounted, nbd, opened_vault, sidecar
@@ -25,10 +27,59 @@ from cvm.common.contracts import binding
 from cvm.common.errors import BuildError
 from cvm.common.linux import memory_file, run
 from cvm.common.luks import inspect_header, scan, snapshot_header
+from cvm.runtime import storage as guest_storage
 
 
 @unittest.skipUnless(os.environ.get("CVM_STORAGE_TESTS") == "1" and os.geteuid() == 0, "Opt-in root storage tests")
 class AuthenticatedStorageTests(unittest.TestCase):
+    def test_cleanup_releases_partial_unlocks_before_another_attempt(self):
+        with tempfile.TemporaryDirectory(prefix="cvm-reopen-cleanup-test-") as directory:
+            image = Path(directory) / "vault.qcow2"
+            mountpoint = Path(directory) / "mount"
+            mountpoint.mkdir()
+            name = "cvm-cleanup-" + uuid.uuid4().hex
+            mapper = Path("/dev/mapper") / name
+            create_image(image, 256 * 1024**2)
+
+            def path(value):
+                return {"/vault": mountpoint, "/dev/mapper/vault": mapper}[value]
+
+            def execute(argv, **kwargs):
+                # Never use the guest's fixed mapper name on a shared lab host.
+                if argv == ["cryptsetup", "close", "vault"]:
+                    argv = ["cryptsetup", "close", name]
+                if argv[0] == "dmsetup":
+                    names = run(argv, **kwargs).split()
+                    return b"vault\n" if name.encode() in names else b""
+                return run(argv, **kwargs)
+
+            with nbd(image) as device, memory_file(os.urandom(64)) as key:
+                format_vault(device, key)
+                try:
+                    for with_mount in (False, True, True):
+                        run(
+                            ["cryptsetup", "open", "--key-file", f"/proc/self/fd/{key}", device, name],
+                            pass_fds=(key,),
+                            secret=True,
+                        )
+                        if with_mount:
+                            run(["mkfs.ext4", "-q", "-F", mapper])
+                            run(["mount", mapper, mountpoint])
+                        with (
+                            patch.object(guest_storage, "Path", side_effect=path),
+                            patch.object(guest_storage, "run", side_effect=execute),
+                        ):
+                            guest_storage.close_vault()
+                            # Also safe when the child already rolled back.
+                            guest_storage.close_vault()
+                        self.assertFalse(mountpoint.is_mount())
+                        self.assertFalse(mapper.exists())
+                finally:
+                    if mountpoint.is_mount():
+                        run(["umount", mountpoint])
+                    if mapper.exists():
+                        run(["cryptsetup", "close", name])
+
     def test_clear_input_sidecar_preserves_content(self):
         with tempfile.TemporaryDirectory(prefix="cvm-clear-sidecar-test-") as directory:
             source = Path(directory) / "source"

@@ -24,14 +24,15 @@ from urllib.parse import urlparse
 
 import yaml
 
+from ..artifacts.bundle import load_public_keys
 from ..common.contracts import HEADER_BYTES, PLATFORMS, STORAGE_PROFILE
 from ..common.errors import BuildError, ConfigurationError, require, require_config
 from ..common.io import canonical, digest_file, read_json
 from ..common.references import validate_references
 from ..common.services import validate_service
-from ..common.validation import ports, validate_nfs_mount
+from ..common.validation import DEFAULT_CAPABILITIES, DEFAULT_PIDS_LIMIT, capabilities, cidrs, ports, validate_nfs_mount
 from ..common.versions import NVAT_COMMIT, TRUSTEE_COMMIT
-from .provisioning import validate_apt_repositories
+from .provisioning import validate_apt_repositories, validate_time_servers
 
 PRIVATE_KEY_MARKERS = (
     b"-----BEGIN PRIVATE KEY-----",
@@ -126,6 +127,12 @@ PROFILE_DEFAULTS = {
     "memory_gib": 8,
     "vault_header_bytes": HEADER_BYTES,
     "vault_storage_profile": STORAGE_PROFILE,
+    # Read the whole authenticated vault before the first mount. Every later read
+    # is still authenticated; large vaults may disable this measured pre-scan.
+    "vault_prescan": True,
+    # Explicit NTS time sources replace the distribution pools and DHCP-supplied
+    # servers. None keeps the packaged chrony configuration.
+    "time_servers": None,
     "kernel_version": "7.0.0-31-generic",
     "python_version": "3.14.3-0ubuntu2",
     "docker_version": "29.1.3-0ubuntu4.1",
@@ -163,6 +170,20 @@ PROFILE_DEFAULTS = {
             "quote_generation": {"type": "vsock", "cid": 2, "port": 4050},
         },
     },
+}
+
+
+CONTAINER_OPTIONS = {
+    "entrypoint",
+    "command",
+    "env",
+    "volumes",
+    "ports",
+    "tee_device",
+    "capabilities",
+    "pids_limit",
+    "read_only_rootfs",
+    "host_bin",
 }
 
 
@@ -321,10 +342,25 @@ def gpu_inputs(path, value):
     require(provenance.get("build_environment") == "ubuntu-26.04-x86_64", "Build NVAT for the guest environment")
 
 
+def validate_kbs_client_provenance(record, kbs_client, trustee_commit):
+    """Bind the attester binary to a clean upstream Trustee checkout.
+
+    The record is produced by `cvmctl provenance` on the machine that built the
+    client. A measured digest alone does not say which source produced it.
+    """
+    value = read_json(record)
+    require(isinstance(value, dict), "Invalid kbs-client provenance")
+    require(value.get("source_clean") is True, "kbs-client must be built from an unmodified upstream checkout")
+    require(value.get("trustee_commit") == trustee_commit, "kbs-client provenance names another Trustee revision")
+    require(value.get("binary_sha256") == digest_file(kbs_client), "kbs-client digest differs from its provenance")
+    return value
+
+
 def profile(path):
     value = load_yaml(path)
     allowed = set(PROFILE_DEFAULTS) | {
         "acceptance_runner",
+        "approval_signing_key",
         "gpu_policy",
         "gpu_packages",
         "gpu_attestation_url",
@@ -355,6 +391,12 @@ def profile(path):
     )
     require(value.get("vault_header_bytes") == HEADER_BYTES, "Unsupported header range")
     require(value.get("vault_storage_profile") == STORAGE_PROFILE, "Unsupported authenticated storage profile")
+    require(type(value.get("vault_prescan")) is bool, "vault_prescan must be boolean")
+    if value.get("time_servers") is not None:
+        try:
+            validate_time_servers(value["time_servers"])
+        except ValueError as error:
+            raise BuildError(str(error)) from None
     require(value.get("guest_release") == "26.04", "This implementation targets an Ubuntu 26.04 guest")
     require(re.fullmatch(r"[a-f0-9]{40}", value.get("trustee_commit", "")), "Pin trustee_commit to a full revision")
     require(value["attestation_policy_id"] == "default", "The upstream kbs-client uses the default AS policy")
@@ -394,6 +436,11 @@ def profile(path):
         require(type(settings.get("enabled", True)) is bool, "enabled must be boolean")
         for key in ("firmware", "kbs_client"):
             settings[key] = local_path(path, settings.get(key))
+        if settings.get("kbs_client_provenance") is not None:
+            settings["kbs_client_provenance"] = local_path(path, settings["kbs_client_provenance"])
+            validate_kbs_client_provenance(
+                settings["kbs_client_provenance"], settings["kbs_client"], value["trustee_commit"]
+            )
         require(
             not str(settings["firmware"]).endswith(".ms.fd") or settings.get("shim"),
             "Secure Boot firmware requires a reviewed signed shim/kernel path; use inputs/OVMF.inteltdx.fd for measured direct boot",
@@ -404,6 +451,8 @@ def profile(path):
         require(settings.get("cpu_model") and re.fullmatch(r"[A-Za-z0-9_.-]+", settings["cpu_model"]), "Pin CPU model")
     for key in ("base_image", "build_firmware", "kbs_cert", "as_public_key", "attestation_policy", "reference_values"):
         value[key] = local_path(path, value.get(key))
+    if value.get("approval_signing_key") is not None:
+        value["approval_signing_key"] = local_path(path, value["approval_signing_key"])
 
     validate_references(
         read_json(value["reference_values"]),
@@ -455,7 +504,11 @@ def cvm_image(config_path, value):
 
 
 def project(build_config, project_config=None):
-    """Load shared builder settings; credentials are relative to this file."""
+    """Load shared builder settings; credentials are relative to this file.
+
+    The project names the Trustee resource endpoint and the acceptance
+    authorities whose signed approvals may select a production CVM bundle.
+    """
     if project_config is not None:
         path = Path(project_config).expanduser().resolve()
         require_config(path.is_file(), "Project configuration does not exist; check --project-config")
@@ -472,7 +525,9 @@ def project(build_config, project_config=None):
         require_config(path is not None, "No cvm_project.yml found; create it or pass --project-config")
         require_config(path.is_file(), "Project configuration is not a file; check cvm_project.yml")
     value = load_yaml(path)
-    require_config(set(value) == {"trustee"}, "Project configuration must contain only trustee")
+    require_config(
+        set(value) == {"trustee", "approval"}, "Project configuration must contain only trustee and approval"
+    )
     service = value["trustee"]
     require_config(
         isinstance(service, dict) and set(service) == {"url", "ca", "admin_token_file"},
@@ -493,6 +548,18 @@ def project(build_config, project_config=None):
     )
     for key in ("ca", "admin_token_file"):
         service[key] = local_path(path, service[key])
+    approval = value["approval"]
+    require_config(
+        isinstance(approval, dict) and set(approval) == {"public_keys"},
+        "Project approval requires public_keys",
+    )
+    keys = approval["public_keys"]
+    require_config(
+        isinstance(keys, list) and keys and all(isinstance(key, str) and key for key in keys),
+        "approval.public_keys must be a non-empty list of Ed25519 public key paths",
+    )
+    approval["public_keys"] = [local_path(path, key) for key in keys]
+    load_public_keys(approval["public_keys"])
     return value
 
 
@@ -515,6 +582,8 @@ def application(path):
         "vault_drive_size",
         "allowed_ports",
         "allowed_out_ports",
+        "allowed_in_cidrs",
+        "allowed_out_cidrs",
         "requires_gpu",
         "services",
         "nfs_mount",
@@ -555,12 +624,12 @@ def application(path):
     value.setdefault("requires_gpu", False)
     for key in ("allowed_ports", "allowed_out_ports"):
         ports(value.setdefault(key, []))
+    for key in ("allowed_in_cidrs", "allowed_out_cidrs"):
+        if key in value:
+            cidrs(value[key])
     container = value.setdefault("container", {})
     require_config(isinstance(container, dict), "container must be a mapping")
-    require_config(
-        not set(container) - {"entrypoint", "command", "env", "volumes", "ports", "tee_device"},
-        "Unknown container option",
-    )
+    require_config(not set(container) - CONTAINER_OPTIONS, "Unknown container option")
     for key in ("entrypoint", "command"):
         if key in container:
             require_config(
@@ -568,7 +637,11 @@ def application(path):
                 and all(isinstance(x, str) and "\x00" not in x for x in container[key]),
                 f"container.{key} must be an argument array",
             )
-    require_config(type(container.get("tee_device", False)) is bool, "tee_device must be boolean")
+    for key in ("tee_device", "read_only_rootfs", "host_bin"):
+        require_config(type(container.setdefault(key, False)) is bool, f"{key} must be boolean")
+    capabilities(container.setdefault("capabilities", list(DEFAULT_CAPABILITIES)))
+    pids_limit = container.setdefault("pids_limit", DEFAULT_PIDS_LIMIT)
+    require_config(type(pids_limit) is int and 1 <= pids_limit <= 1048576, "pids_limit must be a positive integer")
     env = container.setdefault("env", {})
     require_config(
         isinstance(env, dict)

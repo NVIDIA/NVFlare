@@ -17,7 +17,9 @@
 import base64
 import io
 import json
+import re
 import tempfile
+import time
 import unittest
 import urllib.error
 from pathlib import Path
@@ -30,7 +32,22 @@ from cvm.common.errors import BuildError
 from cvm.common.io import canonical, write_json
 from cvm.common.policy import compose
 from cvm.trustee.admin import install, retire
-from cvm.trustee.client import NoRedirect, api, delete_resource, encode, upload_resource
+from cvm.trustee.client import (
+    MAX_ADMIN_TOKEN_LIFETIME_SECONDS,
+    NoRedirect,
+    api,
+    delete_resource,
+    encode,
+    resource_role_acl,
+    upload_resource,
+)
+
+
+def unsigned_token(**claims):
+    """A syntactically valid JWT; the local client never verifies preissued signatures."""
+    now = int(time.time())
+    payload = {"iat": now, "exp": now + 3600, "role": "cvm-resources", **claims}
+    return encode(canonical({"alg": "EdDSA", "typ": "JWT"})) + "." + encode(canonical(payload)) + "." + encode(b"sig")
 
 
 class TrusteeClientTests(unittest.TestCase):
@@ -91,16 +108,84 @@ class TrusteeClientTests(unittest.TestCase):
         ):
             delete_resource(self.config, self.resource)
         self.assertNotIn("secret-backend-response", str(error.exception))
-        self.assertNotIn("header.payload.signature", str(error.exception))
+        self.assertNotIn(self.token_value, str(error.exception))
 
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
         self.token = self.root / "admin.jwt"
-        self.token.write_text("header.payload.signature\n")
+        self.token_value = unsigned_token()
+        self.token.write_text(self.token_value + "\n")
         self.config = {"url": "https://trustee.test:8443", "ca": "ca.pem", "admin_token_file": str(self.token)}
         self.resource = resource_path("bundle-1", "intel_tdx", bytes(32))
+
+    def test_expired_or_long_lived_preissued_tokens_are_refused_before_any_request(self):
+        now = int(time.time())
+        cases = {
+            "expired": unsigned_token(iat=now - 7200, exp=now - 3600),
+            "long-lived": unsigned_token(iat=now, exp=now + MAX_ADMIN_TOKEN_LIFETIME_SECONDS + 1),
+            "no expiry": encode(canonical({"alg": "EdDSA"}))
+            + "."
+            + encode(canonical({"role": "x"}))
+            + "."
+            + encode(b"s"),
+            "not a jwt": "just-a-string",
+        }
+        for case, token in cases.items():
+            self.token.write_text(token + "\n")
+            with (
+                self.subTest(case=case),
+                patch("cvm.trustee.client.urllib.request.build_opener") as opener,
+                self.assertRaises(BuildError) as error,
+            ):
+                upload_resource(self.config, self.resource, b"a" * 64)
+            opener.assert_not_called()
+            self.assertNotIn(token, str(error.exception))
+        # A token issued for exactly the maximum lifetime remains usable.
+        self.token.write_text(unsigned_token(iat=now, exp=now + MAX_ADMIN_TOKEN_LIFETIME_SECONDS) + "\n")
+        with patch("cvm.trustee.client.api") as request:
+            upload_resource(self.config, self.resource, b"a" * 64)
+        request.assert_called_once()
+
+    def test_bundle_scoped_resource_role_is_accepted_only_for_its_bundle(self):
+        key = ed25519.Ed25519PrivateKey.generate()
+        key_path = self.root / "issuer.key"
+        key_path.write_bytes(
+            key.private_bytes(
+                serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()
+            )
+        )
+        response = Mock()
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=False)
+        response.read.return_value = b""
+        opener = Mock()
+        opener.open.return_value = response
+        config = {"url": self.config["url"], "ca": "ca.pem", "admin_private_key": str(key_path)}
+        with (
+            patch("cvm.trustee.client.ssl.create_default_context"),
+            patch("cvm.trustee.client.urllib.request.build_opener", return_value=opener),
+        ):
+            upload_resource(dict(config, admin_role="cvm-resources-bundle-1"), self.resource, b"a" * 64)
+            with self.assertRaisesRegex(BuildError, "admin_role=cvm-resources"):
+                upload_resource(dict(config, admin_role="cvm-resources-bundle-2"), self.resource, b"a" * 64)
+        opener.open.assert_called_once()
+
+    def test_resource_role_acl_confines_a_role_to_one_bundle(self):
+        entry = resource_role_acl("bundle-1")
+        self.assertEqual(entry["role"], "cvm-resources-bundle-1")
+        pattern = re.compile(entry["allowed_endpoints"])
+        self.assertTrue(pattern.fullmatch("/kbs/v0/resource/" + self.resource))
+        self.assertTrue(pattern.fullmatch("/kbs/v0/resource/" + resource_path("bundle-1", "amd_sev_snp", bytes(32))))
+        for path in (
+            "/kbs/v0/resource/" + resource_path("bundle-2", "intel_tdx", bytes(32)),
+            "/kbs/v0/resource/keys/bundle-1/not-a-binding",
+            "/kbs/v0/resource-policy",
+        ):
+            self.assertIsNone(pattern.fullmatch(path), path)
+        with self.assertRaises(BuildError):
+            resource_role_acl("Bundle/1")
 
     def test_binary_upload_uses_native_post_and_preissued_token(self):
         response = Mock()
@@ -119,7 +204,7 @@ class TrusteeClientTests(unittest.TestCase):
         self.assertEqual(request.method, "POST")
         self.assertEqual(request.data, b"a" * 64)
         self.assertEqual(request.get_header("Content-type"), "application/octet-stream")
-        self.assertEqual(request.get_header("Authorization"), "Bearer header.payload.signature")
+        self.assertEqual(request.get_header("Authorization"), "Bearer " + self.token_value)
         opener.open.assert_called_once()
 
     def test_secret_and_resource_validation_precede_request(self):
@@ -152,7 +237,7 @@ class TrusteeClientTests(unittest.TestCase):
         ):
             upload_resource(self.config, self.resource, b"a" * 64)
         self.assertNotIn("secret backend response", str(error.exception))
-        self.assertNotIn("header.payload.signature", str(error.exception))
+        self.assertNotIn(self.token_value, str(error.exception))
         opener.open.assert_called_once()
 
     def test_redirect_does_not_forward_credentials(self):

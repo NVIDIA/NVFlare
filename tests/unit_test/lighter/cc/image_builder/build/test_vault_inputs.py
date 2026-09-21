@@ -78,9 +78,11 @@ class VaultInputTests(unittest.TestCase):
             patch("cvm.build.vault.load_profile_set", return_value=self.profiles) as load,
             patch("cvm.build.vault.materialize") as pull,
         ):
-            with vault.profile_from_image(str(self.root)) as profiles:
+            with vault.profile_from_image(str(self.root), trusted_keys=("acceptance.pub",)) as profiles:
                 self.assertEqual(profiles, self.profiles)
-            load.assert_called_once_with(self.root / "profile_set.json", approved=True)
+            load.assert_called_once_with(
+                self.root / "profile_set.json", approved=True, trusted_keys=("acceptance.pub",)
+            )
             pull.assert_not_called()
         self.assertTrue(self.root.exists())
 
@@ -92,7 +94,7 @@ class VaultInputTests(unittest.TestCase):
             with vault.profile_from_image(self.reference, plain_http=True) as profiles:
                 self.assertEqual(profiles, self.profiles)
                 self.assertTrue(self.materialized.is_dir())
-                load.assert_called_once_with(self.materialized / "profile_set.json", approved=True)
+                load.assert_called_once_with(self.materialized / "profile_set.json", approved=True, trusted_keys=())
                 pull.assert_called_once_with(self.reference, self.materialized, plain_http=True)
             self.assertFalse(self.materialized.exists())
 
@@ -157,7 +159,10 @@ class VaultInputTests(unittest.TestCase):
 
         with (
             patch("cvm.build.vault.config.application", side_effect=lambda _: {"cvm_image": str(self.root)}),
-            patch("cvm.build.vault.config.project", return_value={"trustee": {}}),
+            patch(
+                "cvm.build.vault.config.project",
+                return_value={"trustee": {}, "approval": {"public_keys": ["acceptance.pub"]}},
+            ),
             patch(
                 "cvm.build.vault.profile_from_image", side_effect=lambda *a, **kw: contextlib.nullcontext(self.profiles)
             ),
@@ -170,17 +175,21 @@ class VaultInputTests(unittest.TestCase):
             self.assertEqual(uuid.UUID(identity).version, 4)
             self.assertEqual(len(identity), 32)
 
-    def test_project_credentials_are_loaded_before_retrieval(self):
+    def test_project_credentials_and_acceptance_keys_are_loaded_before_retrieval(self):
         service = {"url": "https://keys.test"}
+        project_value = {"trustee": service, "approval": {"public_keys": ["/srv/project/acceptance.pub"]}}
         with (
             patch("cvm.build.vault.config.application", return_value={"cvm_image": self.reference}),
-            patch("cvm.build.vault.config.project", return_value={"trustee": service}) as project,
-            patch("cvm.build.vault.profile_from_image", return_value=contextlib.nullcontext(self.profiles)),
+            patch("cvm.build.vault.config.project", return_value=project_value) as project,
+            patch("cvm.build.vault.profile_from_image", return_value=contextlib.nullcontext(self.profiles)) as retrieve,
             patch("cvm.build.vault.build_with_profile") as seal,
         ):
             vault.build("/tmp/build.yml", project_config="/srv/project/cvm_project.yml")
             project.assert_called_once_with("/tmp/build.yml", "/srv/project/cvm_project.yml")
             self.assertEqual(seal.call_args.args[0]["trustee"], service)
+            self.assertEqual(seal.call_args.args[0]["approval_keys"], ["/srv/project/acceptance.pub"])
+            self.assertEqual(retrieve.call_args.kwargs["trusted_keys"], ("/srv/project/acceptance.pub",))
+            self.assertTrue(retrieve.call_args.kwargs["approved"])
 
         with (
             patch("cvm.build.vault.config.application", return_value={"cvm_image": self.reference}),

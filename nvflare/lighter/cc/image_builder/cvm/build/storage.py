@@ -29,7 +29,9 @@ from ..common.contracts import HEADER_BYTES
 from ..common.errors import BuildError, require
 from ..common.io import canonical, digest_file
 from ..common.linux import lock, run
-from ..common.luks import inspect_header, validate_mapping
+from ..common.luks import KEYSLOT_KDF, inspect_header, validate_mapping
+
+LOCK_DIRECTORY = Path("/run/cvm-builder/lock")
 
 
 def linux_root():
@@ -44,13 +46,15 @@ def nbd(image, readonly=False):
     held = contextlib.ExitStack()
     device = None
     try:
-        with lock("/run/lock/cvm-builder/nbd-allocation.lock"):
+        # Root-only directory: /run/lock is world-writable and would let a local
+        # user pre-create lock names or symbolic links for a root process.
+        with lock(LOCK_DIRECTORY / "nbd-allocation.lock"):
             for entry in sorted(Path("/sys/block").glob("nbd*")):
                 if (entry / "pid").exists():
                     continue
                 candidate = "/dev/" + entry.name
                 try:
-                    held.enter_context(lock("/run/lock/cvm-builder/" + entry.name, blocking=False))
+                    held.enter_context(lock(LOCK_DIRECTORY / entry.name, blocking=False))
                 except BuildError:
                     continue
                 run(
@@ -123,8 +127,16 @@ def format_vault(device, key_fd):
             "16384",
             "--luks2-keyslots-size",
             str(HEADER_BYTES - 32768),
+            # Deterministic keyslot KDF: the secret already has 512 bits of entropy.
+            "--pbkdf",
+            KEYSLOT_KDF["type"],
+            "--hash",
+            KEYSLOT_KDF["hash"],
+            "--pbkdf-force-iterations",
+            str(KEYSLOT_KDF["iterations"]),
         ],
         pass_fds=(key_fd,),
+        secret=True,
     )
 
 
@@ -148,7 +160,7 @@ def opened_vault(device, key_fd, *, header_fd=None, mapper=None):
     if header_fd is not None:
         args += ["--header", f"/proc/self/fd/{header_fd}"]
         fds.append(header_fd)
-    run(args, pass_fds=tuple(fds))
+    run(args, pass_fds=tuple(fds), secret=True)
     try:
         validate_mapping(mapper)
         yield "/dev/mapper/" + mapper

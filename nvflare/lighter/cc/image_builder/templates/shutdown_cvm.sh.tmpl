@@ -3,4 +3,8 @@
 # Vault binding: __vault_bind__.
 set -eu
 cd -- "$(dirname -- "$0")"
-exec python3 -m cvm.host.launcher --vault-directory "$PWD" --shutdown
+if [ -n "$(find "$PWD" \( ! -user root -o -perm /022 \) -print -quit)" ]; then
+    echo "Refusing to run: $PWD must be owned by root and not group- or world-writable" >&2
+    exit 1
+fi
+PYTHONSAFEPATH=1 PYTHONPATH="$PWD" exec python3 -m cvm.host.launcher --vault-directory "$PWD" --shutdown

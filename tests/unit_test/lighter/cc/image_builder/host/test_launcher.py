@@ -14,11 +14,15 @@
 
 """Runtime bundle discovery and GPU selection use deterministic local inputs."""
 
+import fcntl
+import json
 import os
 import signal
+import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -26,9 +30,14 @@ from unittest.mock import Mock, patch
 from cvm.common.errors import BuildError
 from cvm.common.io import write_json
 from cvm.host.launcher import (
+    GRACEFUL_SHUTDOWN_SECONDS,
     find_bundle,
     gpu_devices,
+    graceful_stop,
+    launch,
     qemu_command,
+    qmp_powerdown,
+    qmp_socket_path,
     run_vm,
     runtime_state_path,
     select_gpus,
@@ -37,25 +46,164 @@ from cvm.host.launcher import (
 )
 
 
+def launch_manifest(platform="intel_tdx", dev=False, **shape):
+    launch_shape = {
+        "cpu_model": "host",
+        "vcpus": 4,
+        "memory_gib": 8,
+        "quote_generation": {"type": "vsock", "cid": 2, "port": 4050},
+        "snp_policy": 0x30000,
+    }
+    launch_shape.update(shape)
+    return {
+        "platform": platform,
+        "dev_mode": dev,
+        "contract": {"gpu": "none"},
+        "launch_shape": launch_shape,
+        "cmdline": "root=/dev/mapper/verity_root",
+    }
+
+
+DISKS = [f"/disk-{i}" for i in range(5)]
+
+
 class LauncherTests(unittest.TestCase):
+    def test_duplicate_launch_preserves_the_live_qmp_socket(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            bundle = directory / "bundle"
+            bundle.mkdir()
+            for path in [bundle / "verity_root.qcow2"] + [
+                directory / f"{name}.qcow2" for name in ("applog", "user_config", "user_data", "vault")
+            ]:
+                path.touch()
+            manifest = dict(launch_manifest(), build_id="test")
+            write_json(
+                directory / "vault_manifest.json",
+                {"cvm_build_id": "test", "platform": "intel_tdx", "vault_bind": "00" * 32, "allowed_ports": []},
+            )
+            qmp = directory / "live.qmp"
+            with (
+                socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as server,
+                (directory / "vault.qcow2").open("r+b") as owner,
+                patch("cvm.host.launcher.find_bundle", return_value=bundle),
+                patch("cvm.host.launcher.verify_bundle", return_value=manifest),
+                patch("cvm.host.launcher.host_capabilities", return_value=["intel_tdx"]),
+                patch("cvm.host.launcher.qmp_socket_path", return_value=qmp),
+                patch("cvm.host.launcher.run_vm") as run,
+            ):
+                server.bind(str(qmp))
+                server.listen(1)
+                server.settimeout(2)
+                fcntl.flock(owner, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                with self.assertRaisesRegex(BuildError, "Vault is already attached"):
+                    launch(directory)
+                # A pathname check alone is insufficient: the active endpoint
+                # must still be reachable after the rejected launch.
+                with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+                    client.settimeout(2)
+                    client.connect(str(qmp))
+                    connection, _ = server.accept()
+                    connection.close()
+                run.assert_not_called()
+
     def test_all_launch_modes_disable_vmport(self):
         for platform in ("intel_tdx", "amd_sev_snp"):
             for dev in (False, True):
-                manifest = {
-                    "platform": platform,
-                    "dev_mode": dev,
-                    "contract": {"gpu": "none"},
-                    "launch_shape": {
-                        "cpu_model": "host",
-                        "vcpus": 4,
-                        "memory_gib": 8,
-                        "quote_generation": {"type": "vsock", "cid": 2, "port": 4050},
-                    },
-                    "cmdline": "root=/dev/mapper/verity_root",
-                }
+                manifest = launch_manifest(platform, dev)
                 with self.subTest(platform=platform, dev=dev):
-                    command = qemu_command(manifest, "/bundle", [f"/disk-{i}" for i in range(5)], bytes(32), cbit=51)
+                    command = qemu_command(manifest, "/bundle", DISKS, bytes(32), cbit=51)
                     self.assertIn("vmport=off", command[command.index("-machine") + 1].split(","))
+
+    def test_launch_uses_an_explicit_device_set_and_no_terminal_monitor(self):
+        command = qemu_command(launch_manifest(), "/bundle", DISKS, bytes(32), qmp="/run/cvm-builder/x.qmp")
+        self.assertIn("-nodefaults", command)
+        self.assertNotIn("-nographic", command)
+        self.assertEqual(command[command.index("-display") + 1], "none")
+        self.assertEqual(command[command.index("-serial") + 1], "stdio")
+        self.assertEqual(command[command.index("-monitor") + 1], "none")
+        self.assertEqual(command[command.index("-qmp") + 1], "unix:/run/cvm-builder/x.qmp,server=on,wait=off")
+        self.assertNotIn("-qmp", qemu_command(launch_manifest(), "/bundle", DISKS, bytes(32)))
+
+    def test_snp_policy_comes_from_the_measured_launch_shape(self):
+        def policy(**shape):
+            command = qemu_command(launch_manifest("amd_sev_snp", **shape), "/bundle", DISKS, bytes(32), cbit=51)
+            objects = [json.loads(command[i + 1]) for i, value in enumerate(command) if value == "-object"]
+            return next(item for item in objects if item["id"] == "tee0")["policy"]
+
+        self.assertEqual(policy(snp_policy=0x30000), 0x30000)
+        self.assertEqual(policy(snp_policy=0x130000 | 0x0100), 0x130100)
+        for unsafe in (0x30000 | (1 << 19), 0x30000 | (1 << 18), 0x10000, None, "0x30000", 0x2030000):
+            with self.subTest(policy=unsafe), self.assertRaises(BuildError):
+                policy(snp_policy=unsafe)
+
+    def test_forwarded_ports_bind_to_the_requested_host_address(self):
+        def network(**options):
+            command = qemu_command(launch_manifest(), "/bundle", DISKS, bytes(32), host_ports=[8080], **options)
+            return command[command.index("-netdev") + 1]
+
+        self.assertIn("hostfwd=tcp:0.0.0.0:8080-:8080", network())
+        self.assertIn("hostfwd=tcp:127.0.0.1:8080-:8080", network(bind_address="127.0.0.1"))
+        for invalid in ("::1", "localhost", ""):
+            with self.subTest(address=invalid), self.assertRaises(BuildError):
+                network(bind_address=invalid)
+
+    def test_graceful_stop_requests_powerdown_and_waits_before_termination(self):
+        process = Mock(**{"poll.return_value": None})
+        with patch("cvm.host.launcher.qmp_powerdown") as powerdown:
+            graceful_stop(process, "/run/cvm-builder/x.qmp")
+        powerdown.assert_called_once_with("/run/cvm-builder/x.qmp")
+        process.wait.assert_called_once_with(timeout=GRACEFUL_SHUTDOWN_SECONDS)
+        process.terminate.assert_not_called()
+        # A dead control socket falls back to termination without waiting.
+        process = Mock(**{"poll.return_value": None})
+        with patch("cvm.host.launcher.qmp_powerdown", side_effect=OSError("gone")):
+            graceful_stop(process, "/run/cvm-builder/x.qmp")
+        process.wait.assert_not_called()
+        graceful_stop(process, None)
+        process.wait.assert_not_called()
+
+    def test_qmp_powerdown_negotiates_capabilities_then_requests_powerdown(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "qmp.sock"
+            received = []
+            server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            server.bind(str(path))
+            server.listen(1)
+            server.settimeout(5)
+
+            def serve():
+                connection, _ = server.accept()
+                with connection, connection.makefile("rwb", buffering=0) as stream:
+                    stream.write(b'{"QMP": {"version": {}, "capabilities": []}}\n')
+                    received.append(json.loads(stream.readline()))
+                    stream.write(b'{"return": {}}\n')
+                    received.append(json.loads(stream.readline()))
+                    # Events may interleave with command replies.
+                    stream.write(b'{"event": "POWERDOWN", "timestamp": {"seconds": 1}}\n{"return": {}}\n')
+
+            thread = threading.Thread(target=serve)
+            thread.start()
+            try:
+                qmp_powerdown(path)
+            finally:
+                thread.join(timeout=5)
+                server.close()
+            self.assertEqual([item["execute"] for item in received], ["qmp_capabilities", "system_powerdown"])
+
+    def test_qemu_is_detached_from_the_launch_terminal(self):
+        process = Mock(**{"poll.return_value": 0, "wait.return_value": 0})
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch("cvm.host.launcher.subprocess.Popen", return_value=process) as spawn,
+            patch("cvm.host.launcher.runtime_state_path", return_value=Path(directory) / "state.json"),
+            patch("cvm.host.launcher.write_runtime_state"),
+        ):
+            self.assertEqual(run_vm(["qemu"], directory, qmp="/run/x.qmp"), 0)
+        self.assertEqual(spawn.call_args.kwargs, {"stdin": subprocess.DEVNULL, "start_new_session": True})
+        with patch.dict("os.environ", {"CVM_RUNTIME_DIRECTORY": "/run/test"}):
+            self.assertEqual(qmp_socket_path("/srv/cvm/delivery").suffix, ".qmp")
+            self.assertEqual(qmp_socket_path("/srv/cvm/delivery").parent, Path("/run/test"))
 
     def test_startup_signals_stop_qemu_and_restore_handlers(self):
         for sig in (signal.SIGTERM, signal.SIGHUP, signal.SIGQUIT, signal.SIGINT):
@@ -71,7 +219,7 @@ class LauncherTests(unittest.TestCase):
                         handlers[number] = handler
                         return old
 
-                    def spawn(command):
+                    def spawn(command, **kwargs):
                         if window == "spawn":
                             handlers[sig](sig, None)
                         return process

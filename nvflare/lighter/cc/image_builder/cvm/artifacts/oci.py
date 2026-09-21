@@ -89,7 +89,10 @@ def _tar_info(archive, source, name):
     info.uname = "root"
     info.gname = "root"
     info.mtime = 0
-    info.mode &= 0o777
+    # Root-owned deliveries must not be group- or world-writable: the launch
+    # wrappers refuse such trees, and a permissive build-host umask must not
+    # change the layer digest either.
+    info.mode &= 0o755
     info.pax_headers = {}
     return info
 
@@ -382,16 +385,30 @@ def _merge_cvm(incoming, output, config):
         write_json(record_path, current, mode=0o644)
 
 
-def materialize(source, output=None, merge=False, plain_http=False):
-    """Materialize a local OCI-layout tar or an immutable registry reference."""
+def materialize(source, output=None, merge=False, plain_http=False, *, archive_sha256=None, cosign_key=None):
+    """Materialize a local OCI-layout tar or an immutable registry reference.
+
+    Descriptor digests authenticate content relative to the selected top-level
+    digest only. archive_sha256 authenticates an offline tar against a value
+    published through a trusted channel; cosign_key verifies a registry
+    artifact's signature before any bytes are pulled.
+    """
     source_path = Path(source).expanduser()
     with tempfile.TemporaryDirectory(prefix="cvm-oci-") as temporary:
         layout = Path(temporary) / "layout"
         if source_path.is_file():
+            if archive_sha256 is not None:
+                require(is_sha256(archive_sha256), "archive_sha256 must be a lowercase SHA-256 hex digest")
+                require(
+                    digest_file(source_path) == archive_sha256, "OCI archive digest does not match the published value"
+                )
             _archive_to_layout(source_path, layout)
         else:
             reference = str(source).removeprefix("oci://")
             require("@sha256:" in reference, "Registry delivery must use an immutable digest reference")
+            if cosign_key is not None:
+                require(Path(cosign_key).is_file(), "Cosign public key does not exist")
+                run(["cosign", "verify", "--key", str(cosign_key), reference], timeout=600)
             command = ["oras", "cp", "--to-oci-layout"]
             if plain_http:
                 command.append("--from-plain-http")
@@ -415,10 +432,12 @@ def materialize(source, output=None, merge=False, plain_http=False):
     return destination, descriptor, config
 
 
-def publish(source, destination, plain_http=False):
-    """Copy a verified OCI-layout tar into a registry using ORAS."""
+def publish(source, destination, plain_http=False, *, cosign_key=None):
+    """Copy a verified OCI-layout tar into a registry using ORAS, optionally signing it."""
     source = Path(source).expanduser().resolve()
     require(source.is_file(), "OCI artifact tar does not exist")
+    if cosign_key is not None:
+        require(Path(cosign_key).is_file(), "Cosign signing key does not exist")
     with tempfile.TemporaryDirectory(prefix="cvm-oci-") as temporary:
         layout = Path(temporary) / "layout"
         _archive_to_layout(source, layout)
@@ -433,4 +452,9 @@ def publish(source, destination, plain_http=False):
     last_slash = repository.rfind("/")
     if ":" in repository[last_slash + 1 :]:
         repository = repository[: repository.rfind(":")]
-    return repository + "@" + descriptor["digest"]
+    immutable = repository + "@" + descriptor["digest"]
+    if cosign_key is not None:
+        # Sign the immutable digest, never the mutable tag. Key passphrases come
+        # from cosign's own environment handling, not from this command line.
+        run(["cosign", "sign", "--yes", "--key", str(cosign_key), immutable], timeout=600)
+    return immutable

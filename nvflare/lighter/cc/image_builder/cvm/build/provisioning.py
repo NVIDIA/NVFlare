@@ -65,6 +65,43 @@ CRASH_UNITS = (
 LOGIN_UNITS = ("serial-getty@ttyS0.service", "getty@tty1.service", "emergency.service", "rescue.service")
 
 
+# Kernel settings applied by systemd-sysctl at every boot of the measured root.
+# Root in the guest must not be able to load an unmeasured kernel, read kernel
+# memory or dump kernel state to the host-visible console. The command line
+# additionally enables lockdown and module signature enforcement.
+HARDENING_SYSCTL = """# CVM guest hardening; the measured command line sets lockdown and loglevel.
+kernel.core_pattern = /dev/null
+kernel.core_uses_pid = 0
+fs.suid_dumpable = 0
+kernel.kexec_load_disabled = 1
+kernel.sysrq = 0
+kernel.dmesg_restrict = 1
+kernel.kptr_restrict = 2
+kernel.printk = 3 4 1 3
+kernel.unprivileged_bpf_disabled = 1
+kernel.yama.ptrace_scope = 1
+kernel.perf_event_paranoid = 3
+dev.tty.ldisc_autoload = 0
+fs.protected_symlinks = 1
+fs.protected_hardlinks = 1
+fs.protected_fifos = 2
+fs.protected_regular = 2
+vm.unprivileged_userfaultfd = 0
+"""
+
+
+# Construction artifacts that would otherwise give every guest booted from the
+# bundle the same identity, or leak build-host history into the public root.
+IDENTITY_FILES = (
+    "/var/lib/systemd/random-seed",
+    "/var/log/dpkg.log",
+    "/var/log/alternatives.log",
+    "/var/log/cloud-init.log",
+    "/var/log/cloud-init-output.log",
+    "/root/.bash_history",
+)
+
+
 def execute(argv, *, env=None):
     subprocess.run(argv, check=True, env=env)
 
@@ -87,6 +124,39 @@ def copy_file(source, root, path, mode):
     destination.chmod(mode)
 
 
+def validate_time_servers(servers):
+    """Accept a non-empty list of NTS-capable time server host names or addresses."""
+    if not isinstance(servers, list) or not servers:
+        raise ValueError("time_servers must be a non-empty list of NTS server names")
+    for server in servers:
+        if not isinstance(server, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.:-]{0,252}", server):
+            raise ValueError("Invalid time server name")
+    if len(set(servers)) != len(servers):
+        raise ValueError("Duplicate time server")
+    return servers
+
+
+def chrony_configuration(servers):
+    """Render a chrony configuration that trusts only authenticated NTS sources.
+
+    The distribution pools and DHCP-supplied servers are omitted on purpose: the
+    untrusted host controls DHCP and the network, so an unauthenticated source
+    would let it steer the guest clock that gates attestation freshness.
+    """
+    lines = ["# Measured CVM time sources: NTS-authenticated only; no pools, no DHCP servers."]
+    lines += [f"server {server} iburst nts" for server in validate_time_servers(servers)]
+    lines += [
+        "authselectmode require",
+        "driftfile /var/lib/chrony/chrony.drift",
+        "ntsdumpdir /var/lib/chrony",
+        "makestep 1 3",
+        "maxupdateskew 100.0",
+        "rtcsync",
+        "leapsectz right/UTC",
+    ]
+    return "\n".join(lines) + "\n"
+
+
 def load_config(path):
     value = json.loads(Path(path).read_text())
     required = {
@@ -100,7 +170,7 @@ def load_config(path):
         "profile_version",
         "required_system_packages",
     }
-    if not isinstance(value, dict) or set(value) - {"apt_repositories"} != required:
+    if not isinstance(value, dict) or set(value) - {"apt_repositories", "time_servers"} != required:
         raise ValueError("Invalid provisioning configuration fields")
     if not isinstance(value["build_id"], str) or not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", value["build_id"]):
         raise ValueError("Invalid provisioning identity")
@@ -130,6 +200,8 @@ def load_config(path):
     validate_apt_repositories(value.get("apt_repositories", []))
     if value["gpu"] == "nvidia_cc" and not value.get("apt_repositories"):
         raise ValueError("GPU construction requires authenticated package repositories")
+    if "time_servers" in value:
+        validate_time_servers(value["time_servers"])
     return value
 
 
@@ -183,6 +255,8 @@ def docker_configuration(gpu):
         "log-driver": "local",
         "storage-driver": "overlay2",
         "features": {"containerd-snapshotter": False},
+        # Daemon-wide defaults; cvm_app.service repeats them on the run command.
+        "no-new-privileges": True,
     }
     if gpu == "nvidia_cc":
         value["runtimes"] = {"nvidia": {"path": "nvidia-container-runtime", "runtimeArgs": []}}
@@ -256,6 +330,8 @@ def install_files(config, payload, root=Path("/")):
 
     if config["dev_mode"]:
         write_file(root, "/etc/cvm/dev_mode", "Development only: no TEE and no KBS authorization.")
+    if config.get("time_servers"):
+        write_file(root, "/etc/chrony/chrony.conf", chrony_configuration(config["time_servers"]))
 
     module = "sev_guest" if config["platform"] == "amd_sev_snp" else "tdx_guest"
     write_file(root, "/etc/modules-load.d/cvm.conf", f"{module}\ndm_crypt\ndm_integrity\n")
@@ -264,6 +340,7 @@ def install_files(config, payload, root=Path("/")):
         "/etc/fstab",
         "tmpfs /tmp tmpfs defaults,nosuid,nodev,mode=1777 0 0\n",
     )
+    write_file(root, "/etc/sysctl.d/99-cvm-hardening.conf", HARDENING_SYSCTL)
 
 
 @contextlib.contextmanager
@@ -356,6 +433,55 @@ def remove(path):
         path.unlink(missing_ok=True)
 
 
+def sudoers_files_for(user, directory=Path("/etc/sudoers.d")):
+    """Return sudoers drop-ins granting rules to the build user, such as cloud-init's."""
+    result = []
+    directory = Path(directory)
+    if not directory.is_dir():
+        return result
+    for path in sorted(directory.iterdir()):
+        if not path.is_file():
+            continue
+        for line in path.read_text(errors="replace").splitlines():
+            tokens = line.split()
+            if tokens and not tokens[0].startswith("#") and tokens[0] == user:
+                result.append(path)
+                break
+    return result
+
+
+def scrub_identity(root=Path("/")):
+    """Remove per-build identity so guests booted from the public root do not share it."""
+    root = Path(root)
+    # An empty machine-id makes systemd generate a fresh one on the overlay at boot.
+    write_file(root, "/etc/machine-id", "")
+    dbus_id = target(root, "/var/lib/dbus/machine-id")
+    if dbus_id.is_file() and not dbus_id.is_symlink():
+        remove(dbus_id)
+    for path in target(root, "/etc/ssh").glob("ssh_host_*"):
+        remove(path)
+    for path in IDENTITY_FILES:
+        remove(target(root, path))
+    for directory in ("/var/log/journal", "/var/log/apt", "/var/lib/apt/lists"):
+        location = target(root, directory)
+        if location.is_dir():
+            for path in location.iterdir():
+                remove(path)
+    write_file(root, "/etc/hostname", "cvm\n")
+
+
+def remove_build_access(config, root=Path("/")):
+    """Lock, expire and disarm the construction account before deleting it."""
+    user = config["build_user"]
+    for path in sudoers_files_for(user, target(root, "/etc/sudoers.d")):
+        remove(path)
+    execute(["passwd", "-l", "root"])
+    execute(["passwd", "-l", user])
+    execute(["usermod", "--lock", "--expiredate", "1970-01-02", "--shell", "/usr/sbin/nologin", user])
+    for path in ("/root/.ssh", f"/home/{user}/.ssh", f"/home/{user}/.bash_history"):
+        remove(target(root, path))
+
+
 def finalize(config, payload):
     # Each delivered guest negotiates its own time-service state. Build-time
     # NTS cookies must not hide missing key-exchange connectivity at first boot.
@@ -366,26 +492,28 @@ def finalize(config, payload):
     execute(["systemctl", "disable", "docker.service", "docker.socket", "containerd.service"])
     mask(Path("/"), ("ssh.service", "ssh.socket", "docker.socket", *LOGIN_UNITS, *UPDATE_UNITS, *CRASH_UNITS))
     write_file(Path("/"), "/etc/cloud/cloud-init.disabled", "")
-    write_file(
-        Path("/"),
-        "/etc/sysctl.d/99-cvm-no-coredumps.conf",
-        "kernel.core_pattern = /dev/null\nkernel.core_uses_pid = 0\nfs.suid_dumpable = 0\n",
-    )
+    write_file(Path("/"), "/etc/sysctl.d/99-cvm-hardening.conf", HARDENING_SYSCTL)
     execute(["systemctl", "daemon-reload"])
     execute(["systemctl", "enable", "chrony.service", "nftables.service", "cvm_bootstrap.service"])
-    execute(["passwd", "-l", "root"])
-    execute(["passwd", "-l", config["build_user"]])
+    remove_build_access(config)
+    environment = dict(os.environ, DEBIAN_FRONTEND="noninteractive")
+    execute(["apt-get", "clean"], env=environment)
     for path in (
-        "/root/.ssh",
-        f"/home/{config['build_user']}/.ssh",
         "/var/lib/cloud",
         "/var/lib/docker",
         "/var/lib/containerd",
-        "/var/log/cloud-init.log",
-        "/var/log/cloud-init-output.log",
     ):
         remove(path)
+    scrub_identity()
     remove(payload)
+    # Best effort: the account is already locked, expired and without sudo. The
+    # construction SSH session itself runs as this user, so deletion may be refused.
+    subprocess.run(
+        ["userdel", "--force", "--remove", config["build_user"]],
+        check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
     execute(["sync"])
     execute(["systemd-run", "--unit=cvm-construction-poweroff", "--on-active=5s", "/usr/bin/systemctl", "poweroff"])
 

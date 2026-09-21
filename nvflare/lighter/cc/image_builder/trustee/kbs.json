@@ -35,7 +35,11 @@
           },
           {
             "role": "cvm-resources",
-            "allowed_endpoints": "^/kbs/v0/resource/keys/[^/]+/[^/]+$"
+            "allowed_endpoints": "^/kbs/v0/resource/keys/[a-z0-9][a-z0-9_-]{0,63}/[0-9a-f]{64}(0{32})?$"
+          },
+          {
+            "role": "cvm-resources-cvm-EXAMPLE_BUILD_ID",
+            "allowed_endpoints": "^/kbs/v0/resource/keys/cvm-EXAMPLE_BUILD_ID/[0-9a-f]{64}(0{32})?$"
           }
         ]
       }

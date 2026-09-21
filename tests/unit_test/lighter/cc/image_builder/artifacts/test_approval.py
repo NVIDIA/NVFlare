@@ -12,17 +12,39 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Production approval cannot silently accept incomplete or mismatched evidence."""
+"""Production approval needs a trusted acceptance signature and complete, exact evidence."""
 
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from cvm.artifacts.bundle import required_acceptance_checks, verify_approval
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ed25519
+from cvm.artifacts.bundle import (
+    approve_bundle,
+    key_id,
+    load_public_keys,
+    required_acceptance_checks,
+    sign_receipt,
+    verify_approval,
+)
 from cvm.build.cvm import resolve_acceptance_runner, run_acceptance, select_acceptance_runner
 from cvm.common.errors import BuildError
-from cvm.common.io import digest_file, write_json
+from cvm.common.io import digest_file, read_json, write_json
+
+
+def write_key_pair(directory, name):
+    key = ed25519.Ed25519PrivateKey.generate()
+    private = Path(directory) / f"{name}.key"
+    public = Path(directory) / f"{name}.pub"
+    private.write_bytes(
+        key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption())
+    )
+    public.write_bytes(
+        key.public_key().public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo)
+    )
+    return private, public
 
 
 class ApprovalTests(unittest.TestCase):
@@ -38,6 +60,7 @@ class ApprovalTests(unittest.TestCase):
         }
         self.checks = required_acceptance_checks(self.manifest)
         write_json(self.directory / "cvm_manifest.json", self.manifest)
+        self.signing_key, self.public_key = write_key_pair(self.directory, "acceptance")
         self.receipt = {
             "build_id": self.manifest["build_id"],
             "manifest_sha256": digest_file(self.directory / "cvm_manifest.json"),
@@ -45,12 +68,14 @@ class ApprovalTests(unittest.TestCase):
             "checks": {name: {"passed": True, "evidence_sha256": "ab" * 32} for name in self.checks},
         }
 
-    def verify(self):
-        write_json(self.directory / "approval.json", self.receipt)
+    def verify(self, trusted=None, receipt=None):
+        if receipt is None:
+            receipt = sign_receipt(self.receipt, self.signing_key)
+        write_json(self.directory / "approval.json", receipt)
         # Bundle byte verification has separate coverage; isolate the evidence
         # gate here. These temporary fixture digests are never deployment receipts.
         with patch("cvm.artifacts.bundle.verify_bundle", return_value=self.manifest):
-            return verify_approval(self.directory)
+            return verify_approval(self.directory, [self.public_key] if trusted is None else trusted)
 
     def test_complete_evidence_is_required_for_every_check(self):
         self.assertEqual(self.verify(), self.manifest)
@@ -95,14 +120,64 @@ class ApprovalTests(unittest.TestCase):
                 self.verify()
             self.receipt["checks"][required] = item
 
+    def test_unsigned_receipt_is_never_approval(self):
+        with self.assertRaisesRegex(BuildError, "unsigned"):
+            self.verify(receipt=self.receipt)
+        trusted = load_public_keys([self.public_key])[0]
+        forged = dict(self.receipt, signature={"algorithm": "ed25519", "key_id": key_id(trusted)})
+        with self.assertRaisesRegex(BuildError, "unsigned|unsupported"):
+            self.verify(receipt=forged)
+
+    def test_signature_by_an_untrusted_authority_is_denied(self):
+        other_key, other_public = write_key_pair(self.directory, "other")
+        with self.assertRaisesRegex(BuildError, "trusted acceptance authority"):
+            self.verify(receipt=sign_receipt(self.receipt, other_key))
+        # The same receipt is accepted once that authority is trusted as well.
+        self.assertEqual(
+            self.verify(trusted=[self.public_key, other_public], receipt=sign_receipt(self.receipt, other_key)),
+            self.manifest,
+        )
+        with self.assertRaisesRegex(BuildError, "No approval signing keys"):
+            self.verify(trusted=[])
+
+    def test_tampered_signed_receipt_fails_verification(self):
+        signed = sign_receipt(self.receipt, self.signing_key)
+        name = sorted(self.checks)[0]
+        signed["checks"] = dict(signed["checks"], **{name: {"passed": True, "evidence_sha256": "cd" * 32}})
+        with self.assertRaisesRegex(BuildError, "does not match"):
+            self.verify(receipt=signed)
+
+    def test_public_keys_must_be_ed25519_pem(self):
+        with self.assertRaisesRegex(BuildError, "Ed25519"):
+            load_public_keys([str(self.directory / "cvm_manifest.json")])
+        with self.assertRaises(BuildError):
+            load_public_keys([str(self.directory / "absent.pub")])
+        loaded = load_public_keys([str(self.public_key)])[0]
+        self.assertEqual(len(key_id(loaded)), 64)
+        self.assertEqual(sign_receipt(self.receipt, self.signing_key)["signature"]["key_id"], key_id(loaded))
+
+    def test_approve_bundle_publishes_a_signed_receipt_for_the_exact_manifest(self):
+        report = {"manifest_sha256": self.receipt["manifest_sha256"], "checks": self.receipt["checks"]}
+        with patch("cvm.artifacts.bundle.verify_bundle", return_value=self.manifest):
+            approve_bundle(self.directory, report, self.signing_key)
+            receipt = read_json(self.directory / "approval.json")
+            self.assertEqual(receipt["signature"]["key_id"], key_id(load_public_keys([str(self.public_key)])[0]))
+            self.assertEqual(receipt["status"], "approved")
+            self.assertEqual(verify_approval(self.directory, [str(self.public_key)]), self.manifest)
+            _, other_public = write_key_pair(self.directory, "other")
+            with self.assertRaises(BuildError):
+                verify_approval(self.directory, [str(other_public)])
+            with self.assertRaisesRegex(BuildError, "another bundle"):
+                approve_bundle(self.directory, dict(report, manifest_sha256="0" * 64), self.signing_key)
+
     def test_acceptance_runner_approves_its_generated_report(self):
         runner = self.directory / "acceptance-runner"
         runner.write_text('#!/bin/sh\nprintf \'{"runner":"ok"}\\n\' > "$2"\n')
         runner.chmod(0o755)
         approve = Mock()
         with patch("cvm.build.cvm.approve_bundle", approve):
-            run_acceptance(runner, self.directory)
-        approve.assert_called_once_with(self.directory, {"runner": "ok"})
+            run_acceptance(runner, self.directory, str(self.signing_key))
+        approve.assert_called_once_with(self.directory, {"runner": "ok"}, str(self.signing_key))
 
     def test_acceptance_runner_can_be_resolved_from_path(self):
         runner = self.directory / "site_acceptance"
@@ -110,8 +185,8 @@ class ApprovalTests(unittest.TestCase):
         runner.chmod(0o755)
         approve = Mock()
         with patch.dict("os.environ", {"PATH": str(self.directory)}), patch("cvm.build.cvm.approve_bundle", approve):
-            run_acceptance("site_acceptance", self.directory)
-        approve.assert_called_once_with(self.directory, {"runner": "path"})
+            run_acceptance("site_acceptance", self.directory, str(self.signing_key))
+        approve.assert_called_once_with(self.directory, {"runner": "path"}, str(self.signing_key))
 
     def test_missing_acceptance_runner_fails_before_build(self):
         with patch.dict("os.environ", {"PATH": str(self.directory)}), self.assertRaises(BuildError):

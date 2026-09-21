@@ -28,7 +28,7 @@ from pathlib import Path
 
 import yaml
 
-from ..artifacts.bundle import approve_bundle, verify_bundle
+from ..artifacts.bundle import approve_bundle, load_signing_key, verify_bundle
 from ..artifacts.packaging import package_bundle
 from ..common.errors import BuildError, require
 from ..common.evidence import serial_evidence, verify_reference
@@ -37,6 +37,7 @@ from ..common.gpu_policy import render
 from ..common.io import digest_file, read_json, write_json
 from ..common.linux import lock, run
 from ..common.policy import compose
+from ..common.references import snp_guest_policy
 from ..host.launcher import cbit_position, qemu_command, vfio_gpus
 from ..host.platforms import host_capabilities, select_platform
 from . import config
@@ -51,7 +52,16 @@ RUNTIME_KEYS = (
     "token_algorithm",
     "token_issuer",
     "attestation_policy_id",
+    "vault_prescan",
 )
+
+
+# Measured guest kernel hardening. Lockdown and signature enforcement keep root
+# in the guest from replacing the measured kernel or loading unmeasured code
+# while the attested identity persists; the console settings keep register and
+# stack dumps off the host-visible serial port. The sysctl file installed by the
+# provisioner completes this with kexec, SysRq and kernel-memory restrictions.
+HARDENING_PARAMETERS = "lockdown=integrity module.sig_enforce=1 loglevel=3 printk.console_no_auto_verbose=1"
 
 
 def contract(profile, source=config.SOURCE):
@@ -67,6 +77,7 @@ def contract(profile, source=config.SOURCE):
         "vault_header_bytes",
         "vault_storage_profile",
         "trustee_commit",
+        "time_servers",
     )
     value = {key: profile[key] for key in keys}
     for key in ("base_image", "build_firmware", "kbs_cert", "as_public_key", "attestation_policy", "reference_values"):
@@ -119,6 +130,7 @@ def kernel_command_line(roothash, offset, root_overlay_max_mib, gpu="none"):
     return (
         "root=/dev/mapper/verity_root rootfstype=ext4 ro console=ttyS0 "
         "panic=1 oops=panic systemd.verity=no "
+        f"{HARDENING_PARAMETERS} "
         f"cvm.root_overlay_max_mib={root_overlay_max_mib} "
         f"roothash={roothash} verity_hash_offset={offset}{gpu_pci}"
     )
@@ -146,25 +158,24 @@ def provisioning_payload(profile, platform, build_id, job, source, runtime):
         shutil.copyfile(path, payload / "inputs" / name)
     (payload / "inputs/nftables.conf").write_text("flush ruleset\n" + firewall_rules([], profile["bootstrap_egress"]))
     packages = [*profile["required_system_packages"], *profile.get("gpu_packages", [])]
-    write_json(
-        payload / "config.json",
-        {
-            "build_id": build_id,
-            "build_user": profile["build_user"],
-            "dev_mode": profile.get("dev_mode", False),
-            "gpu": profile["gpu"],
-            "guest_release": profile["guest_release"],
-            "kernel_version": profile["kernel_version"],
-            "platform": platform,
-            "profile_version": profile["profile_version"],
-            "required_system_packages": packages,
-            "apt_repositories": [
-                {key: item for key, item in repository.items() if key != "keyring"}
-                for repository in profile.get("gpu_apt_repositories", [])
-            ],
-        },
-        mode=0o644,
-    )
+    construction = {
+        "build_id": build_id,
+        "build_user": profile["build_user"],
+        "dev_mode": profile.get("dev_mode", False),
+        "gpu": profile["gpu"],
+        "guest_release": profile["guest_release"],
+        "kernel_version": profile["kernel_version"],
+        "platform": platform,
+        "profile_version": profile["profile_version"],
+        "required_system_packages": packages,
+        "apt_repositories": [
+            {key: item for key, item in repository.items() if key != "keyring"}
+            for repository in profile.get("gpu_apt_repositories", [])
+        ],
+    }
+    if profile.get("time_servers"):
+        construction["time_servers"] = profile["time_servers"]
+    write_json(payload / "config.json", construction, mode=0o644)
     archive = job / "provision-payload.tar.gz"
     with tarfile.open(archive, "w:gz") as stream:
         stream.add(payload, arcname=".")
@@ -310,8 +321,7 @@ def provision(ssh, profile, platform, build_id, job, *, dev=False, source=config
         require(status == 0, "Could not transfer the construction payload; inspect provision.log")
         status = ssh(
             [
-                "sudo /usr/bin/python3 /tmp/cvm-provision/provision_guest.py install "
-                "/tmp/cvm-provision/config.json",
+                "sudo /usr/bin/python3 /tmp/cvm-provision/provision_guest.py install " "/tmp/cvm-provision/config.json",
             ],
             stdout=output,
             stderr=subprocess.STDOUT,
@@ -499,8 +509,8 @@ def select_acceptance_runner(profile, explicit=None, *, defer_measurements=False
     return resolve_acceptance_runner(runner or "site_acceptance")
 
 
-def run_acceptance(runner, directory):
-    """Run the trusted site acceptance adapter and approve its exact report."""
+def run_acceptance(runner, directory, signing_key):
+    """Run the trusted site acceptance adapter and sign its exact report."""
     resolved = resolve_acceptance_runner(runner)
     with tempfile.TemporaryDirectory(prefix="cvm-acceptance-", dir=directory.parent) as temporary:
         report = Path(temporary) / "acceptance-report.json"
@@ -508,10 +518,20 @@ def run_acceptance(runner, directory):
         # their deadlines; approval still requires its successful exact report.
         run([resolved, str(directory), str(report)], timeout=None)
         require(report.is_file(), "Acceptance runner did not create its requested report")
-        approve_bundle(directory, read_json(report))
+        approve_bundle(directory, read_json(report), signing_key)
 
 
-def build(path, explicit=None, output=None, *, defer_measurements=False, gpu=None, dev=False, acceptance_runner=None):
+def build(
+    path,
+    explicit=None,
+    output=None,
+    *,
+    defer_measurements=False,
+    gpu=None,
+    dev=False,
+    acceptance_runner=None,
+    approval_key=None,
+):
     linux_root()
     profile = config.profile(path)
     acceptance_runner = select_acceptance_runner(
@@ -520,6 +540,11 @@ def build(path, explicit=None, output=None, *, defer_measurements=False, gpu=Non
         defer_measurements=defer_measurements,
         dev=dev,
     )
+    signing_key = None
+    if acceptance_runner:
+        signing_key = approval_key or profile.get("approval_signing_key")
+        require(signing_key, "Approval requires --approval-key or the profile's approval_signing_key")
+        load_signing_key(signing_key)
     require(
         profile["profile_version"].startswith("dev-") == dev,
         "Development builds require --dev and a separate dev- profile version",
@@ -544,6 +569,10 @@ def build(path, explicit=None, output=None, *, defer_measurements=False, gpu=Non
         directory.mkdir(mode=0o755)
     build_id = "cvm-" + uuid.uuid4().hex
     settings = profile["platforms"][platform]
+    require(
+        dev or settings.get("kbs_client_provenance"),
+        "Production builds require kbs_client_provenance for the selected platform; record it with cvmctl provenance",
+    )
     # Keep failed generic build logs for diagnosis; they never contain vault data.
     try:
         image = plain_build(profile, platform, build_id, job, dev=dev, source=source)
@@ -562,6 +591,10 @@ def build(path, explicit=None, output=None, *, defer_measurements=False, gpu=Non
         shape = {"vcpus": profile["vcpus"], "memory_gib": profile["memory_gib"], "cpu_model": settings["cpu_model"]}
         if platform == "intel_tdx":
             shape["quote_generation"] = settings["quote_generation"]
+        if platform == "amd_sev_snp" and not dev:
+            # The launcher requests exactly the approved SNP policy; the AS
+            # compares the reported policy fields with the same references.
+            shape["snp_policy"] = snp_guest_policy(read_json(profile["reference_values"]))
         artifacts = [
             "verity_root.qcow2",
             "OVMF.fd",
@@ -596,11 +629,13 @@ def build(path, explicit=None, output=None, *, defer_measurements=False, gpu=Non
             "kbs_client_sha256": digest_file(settings["kbs_client"]),
             "sha256": {name: digest_file(directory / name) for name in artifacts},
         }
+        if settings.get("kbs_client_provenance"):
+            manifest["kbs_client_provenance"] = read_json(settings["kbs_client_provenance"])
         write_json(directory / "cvm_manifest.pending.json", manifest, mode=0o644)
         if not defer_measurements:
             finalize(directory, gpu=gpu, package=False)
             if acceptance_runner:
-                run_acceptance(acceptance_runner, directory)
+                run_acceptance(acceptance_runner, directory, signing_key)
         package_bundle(directory)
         shutil.rmtree(job)
         return directory

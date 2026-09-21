@@ -70,7 +70,8 @@ class CliTests(unittest.TestCase):
                             "url": "https://user:secret-token@keys.test",
                             "ca": "ca.pem",
                             "admin_token_file": "admin.jwt",
-                        }
+                        },
+                        "approval": {"public_keys": ["acceptance.pub"]},
                     }
                 )
             )
@@ -135,6 +136,7 @@ class CliTests(unittest.TestCase):
             gpu=["0000:01:00.0"],
             dev=False,
             acceptance_runner=None,
+            approval_key=None,
         )
         with patch.object(cli.cvm, "finalize") as finalize, patch.object(cli, "report_bundle"):
             cli.main(["finalize", "bundle", "--reference-evidence", "private.json"])
@@ -168,7 +170,9 @@ class CliTests(unittest.TestCase):
             stderr = io.StringIO()
             with (
                 patch.object(cli.vault.config, "application", return_value=app),
-                patch.object(cli.vault.config, "project", return_value={"trustee": {}}),
+                patch.object(
+                    cli.vault.config, "project", return_value={"trustee": {}, "approval": {"public_keys": ["k"]}}
+                ),
                 patch.object(cli.vault, "profile_from_image", return_value=contextlib.nullcontext(profiles)),
                 patch.object(cli.vault, "protect_process") as protect,
                 patch.object(cli.vault, "memory_file") as key,
@@ -197,14 +201,69 @@ class CliTests(unittest.TestCase):
     def test_approval_repackages_only_after_successful_validation(self):
         with (
             patch.object(cli, "read_json", return_value={}),
-            patch.object(cli, "approve_bundle", side_effect=BuildError("rejected")),
+            patch.object(cli, "approve_bundle", side_effect=BuildError("rejected")) as approve,
             patch.object(cli, "package_bundle") as package,
             contextlib.redirect_stderr(io.StringIO()),
             self.assertRaises(SystemExit) as error,
         ):
-            cli.main(["admin", "approve", "bundle", "evidence.json"])
+            cli.main(["admin", "approve", "bundle", "evidence.json", "--signing-key", "acceptance.key"])
         self.assertEqual(error.exception.code, 1)
+        approve.assert_called_once_with("bundle", {}, "acceptance.key")
         package.assert_not_called()
+        # An acceptance signing key is mandatory; unsigned approval no longer exists.
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as error:
+            cli.main(["admin", "approve", "bundle", "evidence.json"])
+        self.assertEqual(error.exception.code, 2)
+
+    def test_pull_requires_publisher_authentication_or_an_explicit_opt_out(self):
+        with tempfile.TemporaryDirectory() as directory:
+            archive = Path(directory) / "delivery.oci.tar"
+            archive.write_bytes(b"tar")
+            registry = "registry.example.org/cvm/app@sha256:" + "a" * 64
+            result = (Path(directory) / "out", {"artifactType": "t", "digest": "sha256:" + "b" * 64}, {})
+            for argv, message in (
+                (["pull", str(archive)], "--archive-sha256"),
+                (["pull", registry], "--cosign-key"),
+            ):
+                stderr = io.StringIO()
+                with (
+                    self.subTest(argv=argv),
+                    patch.object(cli.oci, "materialize") as materialize,
+                    contextlib.redirect_stderr(stderr),
+                    self.assertRaises(SystemExit) as error,
+                ):
+                    cli.main(argv)
+                self.assertEqual(error.exception.code, 1)
+                self.assertIn(message, stderr.getvalue())
+                materialize.assert_not_called()
+            with (
+                patch.object(cli.oci, "materialize", return_value=result) as materialize,
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                cli.main(["pull", str(archive), "--archive-sha256", "c" * 64])
+                self.assertEqual(materialize.call_args.kwargs, {"archive_sha256": "c" * 64, "cosign_key": None})
+                cli.main(["pull", registry, "--cosign-key", "release.pub", "--output", "out"])
+                self.assertEqual(materialize.call_args.kwargs, {"archive_sha256": None, "cosign_key": "release.pub"})
+                cli.main(["pull", str(archive), "--allow-unverified"])
+                self.assertEqual(materialize.call_args.kwargs, {"archive_sha256": None, "cosign_key": None})
+
+    def test_admin_acl_prints_a_bundle_scoped_resource_role(self):
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            cli.main(["admin", "acl", "cvm-0123abcd"])
+        entry = json.loads(stdout.getvalue())
+        self.assertEqual(entry["role"], "cvm-resources-cvm-0123abcd")
+        self.assertIn("/keys/cvm\\-0123abcd/", entry["allowed_endpoints"])
+
+    def test_diagnostics_directory_is_enabled_before_dispatch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with (
+                patch.object(cli, "enable_diagnostics") as enable,
+                patch.object(cli, "check_trustee") as check,
+            ):
+                cli.main(["--diagnostics", directory, "preflight", "trustee"])
+            enable.assert_called_once_with(directory)
+            check.assert_called_once()
 
     def test_references_dispatches_explicit_store_and_expiry(self):
         with patch.object(cli, "import_references") as publish:

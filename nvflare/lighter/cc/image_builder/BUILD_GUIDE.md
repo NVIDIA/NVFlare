@@ -160,6 +160,24 @@ cargo build --locked --release --manifest-path /tmp/trustee/Cargo.toml   -p kbs-
 install -m 755 /tmp/trustee/target/release/kbs-client inputs/kbs-client
 ```
 
+Record which clean checkout produced the client. Production builds require this
+record for the selected platform (`kbs_client_provenance`), because a measured
+digest alone does not say what source it came from:
+
+```sh
+./cvmctl provenance /tmp/trustee inputs/kbs-client inputs/kbs_client_build.json
+```
+
+Create the acceptance signing key pair that signs `approval.json` after site
+acceptance. Keep the private key with the acceptance authority; vault builders and
+Trustee administrators receive only the public key:
+
+```sh
+umask 077
+openssl genpkey -algorithm Ed25519 -out inputs/acceptance-signing.key
+openssl pkey -in inputs/acceptance-signing.key -pubout -out inputs/acceptance-signing.pub
+```
+
 Keep the default crypto configuration: v0.22.0's optional `native-tls` feature
 selects an OpenSSL RSA decryptor that does not support the RSA-OAEP-256 responses
 used by this builder. Verify encrypted resource retrieval with the exact binary
@@ -175,7 +193,11 @@ and cannot be downloaded from this repository:
 - `inputs/kbs-ca.pem`: CA for the production KBS HTTPS endpoint.
 - `inputs/as-public.pem`: public key used to verify Attestation Service tokens.
 - `inputs/approved-tcb-references.json`: approved platform TCB reference values.
+- `inputs/kbs_client_build.json`: the `cvmctl provenance` record for `kbs-client`.
+- `inputs/acceptance-signing.key` and `.pub`: the acceptance authority's Ed25519 pair.
 - A `site_acceptance` executable in the build host's root `PATH`.
+
+`inputs/` and `credentials/` are ignored by git; never commit their contents.
 
 Use reviewed, immutable copies of every input in production. The builder hashes
 the base image, firmware, trust files, policy, runtime source, and final artifacts
@@ -288,15 +310,17 @@ policy/reference storage described in [TRUSTEE_GUIDE.md](TRUSTEE_GUIDE.md#6-inst
 target SNP or TDX host:
 
 ```sh
-sudo ./cvmctl build
+sudo ./cvmctl build --approval-key inputs/acceptance-signing.key
 ```
 
-No command-line parameters are required. The builder reads the default profile,
-auto-detects the local platform, constructs the application-neutral CVM, boots
-the exact result to collect reference measurements, invokes `site_acceptance`,
-validates its exact-manifest report, and writes `approval.json`. A missing,
-failed, or incomplete site acceptance report leaves the bundle unapproved.
-`--acceptance-runner` is available only when a site uses a different executable.
+The builder reads the default profile, auto-detects the local platform,
+constructs the application-neutral CVM, boots the exact result to collect
+reference measurements, invokes `site_acceptance`, validates its exact-manifest
+report, and writes an `approval.json` signed with the acceptance key. The key can
+also be named by the profile's `approval_signing_key`; without either, the build
+stops before construction. A missing, failed, or incomplete site acceptance
+report leaves the bundle unapproved. `--acceptance-runner` is available only when
+a site uses a different executable.
 
 Construction uses a disposable SSH key and a loopback-only forwarded port on the
 trusted build host. The temporary port reservation is released before QEMU binds
@@ -388,18 +412,21 @@ matching target host, verify and materialize it, then finalize it:
 
 ```sh
 sudo ./cvmctl pull cvm_cpu-2026.09-r4_amd_sev_snp.oci.tar \
+  --archive-sha256 ARCHIVE_SHA256_FROM_THE_BUILD_HOST \
   --output /srv/cvm/cvm_cpu-2026.09-r4
 sudo ./cvmctl finalize \
   /srv/cvm/cvm_cpu-2026.09-r4/amd_sev_snp
 ```
 
-Run the site's acceptance matrix there. Then approve its exact report and install
-the bundle's reference values and reusable resource policy:
+Run the site's acceptance matrix there. Then sign its exact report with the
+acceptance key and install the bundle's reference values and reusable resource
+policy; `admin.json` must list the matching public key in `approval_public_keys`:
 
 ```sh
 sudo ./cvmctl admin approve \
   /srv/cvm/cvm_cpu-2026.09-r4/amd_sev_snp \
-  /srv/cvm/acceptance-report.json
+  /srv/cvm/acceptance-report.json \
+  --signing-key /secure/acceptance-signing.key
 
 sudo ./cvmctl admin install \
   /srv/trustee/admin.json \
@@ -419,9 +446,9 @@ updates the combined `profile_set.json`:
 
 ```sh
 ./cvmctl pull cvm_cpu-2026.09-r4_intel_tdx.oci.tar \
-  --output target/final_cvm_cpu-2026.09-r4
+  --archive-sha256 TDX_ARCHIVE_SHA256 --output target/final_cvm_cpu-2026.09-r4
 ./cvmctl pull cvm_cpu-2026.09-r4_amd_sev_snp.oci.tar \
-  --output target/final_cvm_cpu-2026.09-r4 --merge
+  --archive-sha256 SNP_ARCHIVE_SHA256 --output target/final_cvm_cpu-2026.09-r4 --merge
 ```
 
 Set `cvm_image: ../target/final_cvm_cpu-2026.09-r4` in
@@ -437,10 +464,16 @@ trustee:
   url: https://trustee.example.org:8443
   ca: ./inputs/kbs-ca.pem
   admin_token_file: ./inputs/kbs-resource-token.jwt
+approval:
+  public_keys:
+    - ./inputs/acceptance-signing.pub
 ```
 
 Use your actual HTTPS endpoint and scoped resource-administration token from
 [TRUSTEE_GUIDE.md](TRUSTEE_GUIDE.md#5-use-native-trustee-resource-administration).
+`approval.public_keys` names the acceptance authorities; a generic CVM bundle is
+usable for a production vault only when its `approval.json` is signed by one of
+them.
 Credential paths resolve relative to `cvm_project.yml`. Each vault build searches
 from its build YAML directory upward and uses the nearest `cvm_project.yml`.
 It does not search from the shell's working directory or merge ancestor files.
@@ -500,7 +533,20 @@ hosts_entries: {}
 
 Optional `services` entries point to unit files named `app_<name>.service`,
 using lowercase letters, digits, and underscores, such as `app_helper.service`.
-The builder supplies their bootstrap dependencies and PID 1 failure actions.
+The builder supplies their bootstrap dependencies, PID 1 failure actions and
+systemd sandboxing (`NoNewPrivileges`, `ProtectSystem=strict` with the
+application `runtime/`, `data/` and `/applog` writable, `PrivateTmp`, kernel
+protections and a reduced capability bounding set).
+
+Optional `container` confinement settings: `capabilities` lists the Linux
+capabilities added back after `--cap-drop ALL` (default: Docker's set without
+`NET_RAW`, `MKNOD`, `SYS_CHROOT`, `AUDIT_WRITE` and `SETFCAP`; `SYS_ADMIN` and
+similar are never accepted), `pids_limit` (default 4096), `read_only_rootfs`
+(adds tmpfs `/tmp` and `/run`), and `host_bin` to mount the measured root's
+`/usr/bin` read-only at `/host/bin` (off by default). `allowed_in_cidrs` and
+`allowed_out_cidrs` optionally confine the allowed inbound and outbound ports to
+canonical CIDR lists; DNS is always limited to the resolvers the guest learned
+from DHCP.
 
 `cvm_image` accepts a local folder containing `profile_set.json` and its platform
 subdirectories, or a generic CVM OCI registry reference pinned by manifest digest:
@@ -682,7 +728,11 @@ Continue with [USER_GUIDE.md](USER_GUIDE.md).
 
 ### Trusted NFS configuration and application write access
 
-Configure an NFS input in the encrypted `application.json`, not a clear sidecar:
+The NFS input is experimental. The guest mounts it with Kerberos `krb5p`, but the
+builder does not yet provision `krb5.conf`, a keytab or `rpc.gssd`, and no
+hardware validation of the mount is recorded; a deployment must supply and test
+those pieces itself before relying on it. Configure the input in the encrypted
+`application.json`, not a clear sidecar:
 
 ```json
 "nfs_mount": {"server": "files.example.org", "export": "/datasets", "security": "krb5p"}

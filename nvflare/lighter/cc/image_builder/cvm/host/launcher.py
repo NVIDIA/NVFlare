@@ -18,10 +18,12 @@ import argparse
 import contextlib
 import fcntl
 import hashlib
+import ipaddress
 import json
 import os
 import re
 import signal
+import socket
 import struct
 import subprocess
 import time
@@ -32,6 +34,7 @@ from ..common.contracts import DISK_ROLES, qemu_binding
 from ..common.errors import BuildError, require
 from ..common.io import read_json, write_json
 from ..common.linux import run
+from ..common.references import validate_snp_policy
 from .platforms import host_capabilities
 
 PCI_ADDRESS = re.compile(r"(?:[0-9a-f]{4}:)?[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]")
@@ -47,6 +50,16 @@ RUNTIME_ROOT = Path("/run/cvm-builder")
 # current data-center GPUs. An H800 exposes a 128 GiB BAR, so QEMU's default
 # automatic bridge window is insufficient.
 GPU_PREF64_RESERVE = "256G"
+
+
+# Time the guest gets to power off after an ACPI power-button request before
+# the launcher terminates QEMU. The guest stops the container with its normal
+# grace period and syncs the vault within this window.
+GRACEFUL_SHUTDOWN_SECONDS = 60
+
+
+# shutdown_cvm.sh waits for the graceful window plus QEMU termination.
+SHUTDOWN_WAIT_SECONDS = GRACEFUL_SHUTDOWN_SECONDS + 60
 
 
 def normalize_pci(address):
@@ -188,6 +201,11 @@ def runtime_state_path(directory, runtime_root=None):
     return root / (token + ".json")
 
 
+def qmp_socket_path(directory, runtime_root=None):
+    """QEMU control socket beside the root-only runtime record of this delivery."""
+    return runtime_state_path(directory, runtime_root).with_suffix(".qmp")
+
+
 def write_runtime_state(directory, process):
     path = runtime_state_path(directory)
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -223,7 +241,7 @@ def require_detached(directory):
             ) from None
 
 
-def shutdown(directory, timeout=60):
+def shutdown(directory, timeout=SHUTDOWN_WAIT_SECONDS):
     path = runtime_state_path(directory)
     require(not path.is_symlink(), "Unsafe launcher runtime state")
     if not path.is_file():
@@ -272,7 +290,19 @@ def cbit_position():
     return struct.unpack("<IIII", value)[1] & 63
 
 
-def qemu_command(manifest, bundle, disks, digest, *, gpus=None, host_ports=(), cbit=None, reference=False):
+def qemu_command(
+    manifest,
+    bundle,
+    disks,
+    digest,
+    *,
+    gpus=None,
+    host_ports=(),
+    cbit=None,
+    reference=False,
+    qmp=None,
+    bind_address="0.0.0.0",
+):
     platform = manifest["platform"]
     shape = manifest["launch_shape"]
     require(platform in ("amd_sev_snp", "intel_tdx"), "Unsupported launch platform")
@@ -285,12 +315,22 @@ def qemu_command(manifest, bundle, disks, digest, *, gpus=None, host_ports=(), c
         and shape["memory_gib"] > 0,
         "Invalid measured launch shape",
     )
+    try:
+        bind = ipaddress.IPv4Address(bind_address)
+    except ValueError:
+        raise BuildError("Forwarding bind address must be an IPv4 address") from None
+    # No default devices, no VGA and no stdio monitor: the device set is exactly
+    # what the manifest describes, and a terminal cannot reach the QEMU monitor.
     args = [
         "qemu-system-x86_64",
         "-enable-kvm",
+        "-nodefaults",
         "-no-reboot",
-        "-nographic",
-        "-vga",
+        "-display",
+        "none",
+        "-serial",
+        "stdio",
+        "-monitor",
         "none",
         "-bios",
         str(Path(bundle) / "OVMF.fd"),
@@ -307,6 +347,9 @@ def qemu_command(manifest, bundle, disks, digest, *, gpus=None, host_ports=(), c
         "-m",
         f'{shape["memory_gib"]}G',
     ]
+    if qmp is not None:
+        # Control socket for an orderly ACPI power-off request from the launcher.
+        args += ["-qmp", f"unix:{qmp},server=on,wait=off"]
     if shape.get("shim"):
         require(platform == "intel_tdx", "Unsupported shim boot profile")
         args += ["-shim", str(Path(bundle) / "shim.efi")]
@@ -319,7 +362,7 @@ def qemu_command(manifest, bundle, disks, digest, *, gpus=None, host_ports=(), c
             "id": "tee0",
             "cbitpos": cbit,
             "reduced-phys-bits": 1,
-            "policy": 0x30000,
+            "policy": validate_snp_policy(shape.get("snp_policy")),
             "kernel-hashes": True,
             "host-data": qemu_binding(platform, digest),
         }
@@ -372,7 +415,7 @@ def qemu_command(manifest, bundle, disks, digest, *, gpus=None, host_ports=(), c
             f"scsi-hd,drive=disk{index},bus=scsi0.0,channel=0,scsi-id={index},lun=0,serial=cvm-{DISK_ROLES[index]}",
         ]
     require(all(type(port) is int and 1 <= port <= 65535 for port in host_ports), "Invalid host forwarding port")
-    network = "user,id=vmnic" + "".join(f",hostfwd=tcp::{p}-:{p}" for p in host_ports)
+    network = "user,id=vmnic" + "".join(f",hostfwd=tcp:{bind}:{p}-:{p}" for p in host_ports)
     args += [
         "-netdev",
         network,
@@ -411,7 +454,43 @@ def qemu_command(manifest, bundle, disks, digest, *, gpus=None, host_ports=(), c
     return args
 
 
-def launch(directory, bundle=None, gpu=None):
+def qmp_powerdown(path):
+    """Ask QEMU for an ACPI power-button press through its control socket."""
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+        connection.settimeout(5)
+        connection.connect(str(path))
+        stream = connection.makefile("rwb", buffering=0)
+
+        def exchange(message=None):
+            if message is not None:
+                stream.write(json.dumps(message).encode() + b"\n")
+            while True:
+                line = stream.readline()
+                require(line, "QMP connection closed")
+                reply = json.loads(line)
+                if "event" not in reply:
+                    return reply
+
+        require("QMP" in exchange(), "Unexpected QMP greeting")
+        require("return" in exchange({"execute": "qmp_capabilities"}), "QMP capabilities negotiation failed")
+        require("return" in exchange({"execute": "system_powerdown"}), "QMP system_powerdown rejected")
+
+
+def graceful_stop(process, qmp, timeout=GRACEFUL_SHUTDOWN_SECONDS):
+    """Give the guest a bounded orderly shutdown before QEMU is terminated."""
+    if qmp is None or process.poll() is not None:
+        return
+    try:
+        qmp_powerdown(qmp)
+    except (OSError, ValueError, BuildError):
+        return
+    try:
+        process.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        pass
+
+
+def launch(directory, bundle=None, gpu=None, bind_address="0.0.0.0"):
     directory = Path(directory).resolve()
     delivery = read_json(directory / "vault_manifest.json")
     bundle = find_bundle(directory, delivery, bundle)
@@ -438,6 +517,7 @@ def launch(directory, bundle=None, gpu=None):
         else contextlib.nullcontext(None)
     )
     require(manifest["contract"]["gpu"] == "nvidia_cc" or not gpu, "CPU-only profile cannot add a GPU")
+    qmp = qmp_socket_path(directory)
     # Locks the actual inode, so alternate names/symlinks do not bypass ownership.
     # QEMU file-node locking remains on, including after a launcher crash.
     with gpu_context as selected_gpus, open(disks[-1], "r+b") as vault:
@@ -446,6 +526,12 @@ def launch(directory, bundle=None, gpu=None):
             fcntl.flock(vault, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise BuildError("Vault is already attached; wait for the previous CVM to exit") from None
+        # Only the vault owner may replace its stale control socket. A rejected
+        # duplicate launch must preserve the running guest's shutdown channel.
+        qmp.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        require(not qmp.parent.is_symlink(), "Unsafe runtime-state directory")
+        os.chmod(qmp.parent, 0o700)
+        qmp.unlink(missing_ok=True)
         command = qemu_command(
             manifest,
             bundle,
@@ -454,11 +540,16 @@ def launch(directory, bundle=None, gpu=None):
             gpus=selected_gpus,
             host_ports=delivery["allowed_ports"],
             cbit=cbit_position() if manifest["platform"] == "amd_sev_snp" and not manifest.get("dev_mode") else None,
+            qmp=str(qmp),
+            bind_address=bind_address,
         )
-        return run_vm(command, directory)
+        try:
+            return run_vm(command, directory, qmp=qmp)
+        finally:
+            qmp.unlink(missing_ok=True)
 
 
-def run_vm(command, directory):
+def run_vm(command, directory, *, qmp=None):
     """Own QEMU from spawn through exit, even when interrupted during startup."""
     process = None
     state_path = runtime_state_path(directory)
@@ -479,7 +570,10 @@ def run_vm(command, directory):
             previous[sig] = signal.signal(sig, terminate)
         if stopping is not None:
             return 128 + stopping
-        process = subprocess.Popen(command)
+        # QEMU runs in its own session so a terminal Ctrl-C reaches only the
+        # launcher, which then requests an orderly guest power-off. The guest
+        # console is output-only; login paths on it are masked in the image.
+        process = subprocess.Popen(command, stdin=subprocess.DEVNULL, start_new_session=True)
         if stopping is not None:
             return 128 + stopping
         write_runtime_state(directory, process)
@@ -491,6 +585,8 @@ def run_vm(command, directory):
         cleaning = True
         try:
             # The caller retains disk/GPU ownership until this exact child exits.
+            if process is not None and process.poll() is None:
+                graceful_stop(process, qmp)
             if process is not None and process.poll() is None:
                 process.terminate()
                 try:
@@ -521,6 +617,11 @@ def main():
         action="append",
         help="Override automatic NVIDIA GPU detection; repeat once per required GPU PCI address",
     )
+    parser.add_argument(
+        "--bind-address",
+        default="0.0.0.0",
+        help="Host IPv4 address that forwarded application ports listen on (default: all interfaces)",
+    )
     parser.add_argument("--shutdown", action="store_true", help="Stop the CVM running from this vault directory")
     args = parser.parse_args()
     try:
@@ -528,7 +629,7 @@ def main():
             require(args.cvm_bundle is None and args.gpu is None, "Shutdown does not accept launch overrides")
             shutdown(args.vault_directory)
             return
-        raise SystemExit(launch(args.vault_directory, args.cvm_bundle, args.gpu))
+        raise SystemExit(launch(args.vault_directory, args.cvm_bundle, args.gpu, args.bind_address))
     except (BuildError, ValueError, KeyError, OSError) as exc:
         parser.exit(1, f"CVM launch refused: {exc}\n")
 

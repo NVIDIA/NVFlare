@@ -6,6 +6,66 @@ services and operator guides are maintained together with the provisioning adapt
 in this repository. Repository formatting and license headers change source
 fingerprints; build and approve new generic CVMs for this source snapshot.
 
+## Architecture and security review fixes — 2026-09-20
+
+This source change set implements the review items recorded as design decisions
+D18–D21 (signed approvals and authenticated pulls, quarantine on periodic
+failure, kernel lockdown and console hardening, keyring-only volume keys with a
+deterministic KDF, SNP policy from references, QMP-based orderly shutdown with an
+explicit QEMU device set, container and service confinement, CIDR and resolver
+restrictions, NTS-only time sources, a measured `vault_prescan` switch, finalize
+identity scrubbing, `kbs-client` provenance, token lifetime and bundle-scoped
+resource roles, a root-only lock directory, `--diagnostics`, git-ignored
+`inputs/`, the `nvflare-cvmctl` entry point and ownership-checked wrappers).
+
+New operator inputs: `inputs/kbs_client_build.json` from `cvmctl provenance`,
+an Ed25519 acceptance signing key pair, `approval.public_keys` in
+`cvm_project.yml`, `approval_public_keys` in the administration configuration,
+`--signing-key` for `admin approve`, and `--archive-sha256`/`--cosign-key` (or an
+explicit `--allow-unverified`) for `cvmctl pull`. Existing `approval.json` files
+are unsigned and no longer count as approval.
+
+A follow-up review found and fixed four regressions:
+
+- Docker-published ports now apply the same inbound CIDR restrictions as host
+  input ports, for both IPv4 and IPv6.
+- Duplicate launches acquire the vault lock before touching the QMP socket,
+  preserving the running VM's shutdown channel when a second launch is rejected.
+- Failed reopens unmount and close partial vault activations. The supervisor
+  terminates timed-out reopen process groups, revokes GPU readiness, and confirms
+  cleanup before retrying. Cleanup failure propagates to the power-off path.
+- Every reopen attempt and retry delay is bounded by the remaining 15-minute
+  authorization window. Late success cannot restart the workload.
+
+Linux follow-up verification:
+
+- Builder unit/policy suite: **239 passed, no skips**, with the pinned policy
+  evaluator. Includes a real Unix socket/flock duplicate-launch check, a real
+  subprocess-tree timeout, and controlled failure/deadline regressions.
+- Real block-device integration: **5 passed** on kernel `7.0.0-30-generic` and
+  cryptsetup `2.8.4`, including repeated partial-unlock cleanup, frozen headers,
+  kernel-keyring activation, corruption detection and sidecar validation.
+- Packet integration: **1 test with 4 scenarios passed**, covering IPv4/IPv6
+  host and DNAT paths, allowed/disallowed sources and unrestricted defaults.
+  Routing and nftables changes are confined to disposable network namespaces.
+- NVFlare adapter, CLI, vault supervisor and provisioning-output tests:
+  **144 passed**, including the Linux builder-suite wrapper.
+- Scoped Black, isort and flake8 checks passed, including the four formatting
+  issues found by the review; Python syntax and `git diff --check` passed.
+
+The preceding review run also passed **12 live HTTPS tests against unmodified
+Trustee v0.22.0**, bundle-scoped ACL checks, and the
+source-distribution-to-wheel test. Those results are separate from guest boot
+validation. The original macOS builder tally was 201 passed, 24 skipped and 4
+platform-related failures out of 229; all four cases pass on Linux.
+
+Not validated here: new guest boot, quarantine/reopen and QMP power-off inside
+a real guest, lockdown compatibility with the pinned NVIDIA modules, chrony NTS
+startup, or finalize hygiene inside a construction VM. The lab-host block tests
+do not establish compatibility with every guest kernel. Every measured root
+must be rebuilt, remeasured and reapproved; earlier hardware records do not cover
+these changes.
+
 ## Recorded TDX firmware input
 
 The September 19 hardware run used the same direct-boot TDVF recorded in the
@@ -335,6 +395,8 @@ cargo build --locked --release --manifest-path tests/unit_test/lighter/cc/image_
 python3 -m unittest discover -s tests/unit_test/lighter/cc/image_builder -v
 sudo env PYTHONPATH="$PYTHONPATH" CVM_STORAGE_TESTS=1 \
   python3 -m unittest discover -s tests/integration_test/lighter/cc/image_builder -p test_storage.py -v
+sudo env PYTHONPATH="$PYTHONPATH" CVM_NETWORK_TESTS=1 \
+  python3 -m unittest discover -s tests/integration_test/lighter/cc/image_builder -p test_firewall.py -v
 
 env CVM_HTTP_TESTS=1 CVM_LAB_DIRECTORY=/path/to/isolated-lab \
   python3 -m unittest discover -s tests/integration_test/lighter/cc/image_builder -p test_http.py -v

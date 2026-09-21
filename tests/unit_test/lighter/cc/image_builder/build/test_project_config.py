@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Project configuration discovery and credential path boundaries."""
+"""Project configuration discovery, credential paths and acceptance authorities."""
 
 import tempfile
 import unittest
@@ -20,8 +20,16 @@ from pathlib import Path
 from unittest.mock import patch
 
 import yaml
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ed25519
 from cvm.build import config
 from cvm.common.errors import BuildError
+
+PUBLIC_KEY = (
+    ed25519.Ed25519PrivateKey.generate()
+    .public_key()
+    .public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo)
+)
 
 
 class ProjectConfigTests(unittest.TestCase):
@@ -39,7 +47,8 @@ class ProjectConfigTests(unittest.TestCase):
         credentials.mkdir(exist_ok=True)
         for name in ("ca", "admin_token_file"):
             (credentials / name).write_text("fixture")
-        value = {"trustee": {"url": "https://" + hostname}}
+        (credentials / "acceptance.pub").write_bytes(PUBLIC_KEY)
+        value = {"trustee": {"url": "https://" + hostname}, "approval": {"public_keys": ["credentials/acceptance.pub"]}}
         value["trustee"].update({name: "credentials/" + name for name in ("ca", "admin_token_file")})
         path = directory / "cvm_project.yml"
         path.write_text(yaml.safe_dump(value))
@@ -47,9 +56,11 @@ class ProjectConfigTests(unittest.TestCase):
 
     def test_ancestor_discovery_and_paths_use_project_not_build_directory(self):
         path = self.write_project(self.root / "project")
-        service = config.project(self.build)["trustee"]
+        value = config.project(self.build)
+        service = value["trustee"]
         self.assertEqual(service["admin_token_file"], str(path.parent / "credentials/admin_token_file"))
         self.assertEqual(service["url"], "https://keys.test")
+        self.assertEqual(value["approval"]["public_keys"], [str(path.parent / "credentials/acceptance.pub")])
 
     def test_nearest_project_wins_and_invalid_nearest_does_not_fall_back(self):
         self.write_project(self.root / "project", "outer.test")
@@ -80,12 +91,19 @@ class ProjectConfigTests(unittest.TestCase):
     def test_invalid_project_schema_or_endpoint_is_rejected(self):
         path = self.write_project(self.root / "project")
         valid = yaml.safe_load(path.read_text())
+        approval = valid["approval"]
         for value in (
             {},
-            {"trustee": None},
-            {"trustee": valid["trustee"], "unknown": True},
-            {"trustee": {**valid["trustee"], "token": "unexpected"}},
-            {"trustee": {"url": "https://keys.test"}},
+            {"trustee": None, "approval": approval},
+            {"trustee": valid["trustee"], "approval": approval, "unknown": True},
+            {"trustee": {**valid["trustee"], "token": "unexpected"}, "approval": approval},
+            {"trustee": {"url": "https://keys.test"}, "approval": approval},
+            {"trustee": valid["trustee"]},
+            {"trustee": valid["trustee"], "approval": {}},
+            {"trustee": valid["trustee"], "approval": {"public_keys": []}},
+            {"trustee": valid["trustee"], "approval": {"public_keys": "credentials/acceptance.pub"}},
+            {"trustee": valid["trustee"], "approval": {"public_keys": ["credentials/ca"]}},
+            {"trustee": valid["trustee"], "approval": {"public_keys": ["credentials/missing.pub"]}},
         ):
             path.write_text(yaml.safe_dump(value))
             with self.subTest(value=value), self.assertRaises(BuildError):
@@ -98,7 +116,7 @@ class ProjectConfigTests(unittest.TestCase):
             "https://user:pass@keys.test",
             "https://keys.test?q=1",
         ):
-            value = {"trustee": {**valid["trustee"], "url": url}}
+            value = {"trustee": {**valid["trustee"], "url": url}, "approval": approval}
             path.write_text(yaml.safe_dump(value))
             with self.subTest(url=url), self.assertRaises(BuildError):
                 config.project(self.build)

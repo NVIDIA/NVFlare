@@ -17,8 +17,12 @@ Production delivery requires an approved generic bundle; `--candidate` is limite
 to explicitly named `test-` profiles and never creates production approval.
 Both reusable CVM bundles and final CVM-plus-vault deliveries are emitted as OCI
 image-layout tar files. They can be moved offline or published to a registry.
-Use `./cvmctl publish` for registry publication and `./cvmctl pull` to
-materialize either a local OCI tar or an immutable registry digest.
+Use `./cvmctl publish` for registry publication (optionally signing the digest
+with `--cosign-key`) and `./cvmctl pull` to materialize either a local OCI tar or
+an immutable registry digest. `pull` authenticates the publisher through
+`--archive-sha256` or `--cosign-key`; skipping that check requires an explicit
+`--allow-unverified`. Add `--diagnostics DIR` before any command to retain
+stderr of failed commands that never handle secrets.
 
 This builder is part of NVFlare at `nvflare/lighter/cc/image_builder`.
 Run the commands below from this directory in a source checkout. NVFlare
@@ -73,7 +77,11 @@ uv pip install -r requirements.txt
 
 All input paths are relative to their YAML file. Production inputs are supplied
 explicitly; the builder does not fetch firmware, private keys, or mutable
-container tags.
+container tags. The conventional `inputs/` and `credentials/` directories hold
+bearer tokens, CAs, signing keys and multi-gigabyte images and are ignored by
+git. Production builds also require a `kbs_client_provenance` record for the
+selected platform, produced by `./cvmctl provenance` beside the clean Trustee
+checkout that built `kbs-client`.
 Use [config/cvm_profile.yml](config/cvm_profile.yml) and
 [config/vault_build.yml](config/vault_build.yml) as configuration templates.
 They provide concrete Ubuntu 26.04 defaults, conventional locations, and sample
@@ -83,8 +91,8 @@ local target platform; no platform argument is required.
 ## Stage 1: build once per platform and profile version
 
 ```sh
-# One target: construct, finalize, run acceptance, and approve in one call.
-sudo ./cvmctl build
+# One target: construct, finalize, run acceptance, and sign the approval in one call.
+sudo ./cvmctl build --approval-key inputs/acceptance-signing.key
 
 # Advanced: construct for another platform and finalize there.
 sudo ./cvmctl build config/cvm_profile.yml -p amd_sev_snp --defer-measurements
@@ -99,9 +107,13 @@ builder then seals the generic root with dm-verity and collects public hardware
 reference evidence. Its initramfs only activates verity and a temporary overlay;
 the KBS client and public trust settings reside in the verified root. The measured
 command line disables systemd's separate GPT verity discovery because the
-initramfs has already opened the root mapping. `root_overlay_max_mib` caps the
+initramfs has already opened the root mapping. It also enables kernel lockdown
+and module signature enforcement and keeps register and stack dumps off the
+host-visible console; the provisioner adds matching sysctls that disable kexec,
+SysRq and unprivileged kernel-memory access. `root_overlay_max_mib` caps the
 writable RAM-backed root layer; when omitted, the builder sets it to half of the
-configured guest memory. The limit is part of the measured generic profile.
+configured guest memory. The limit is part of the measured generic profile, as
+are `vault_prescan` and the optional NTS-only `time_servers`.
 
 The output directory contains one workspace subdirectory per platform, a shared
 `profile_set.json`, and one `cvm_<profile>_<platform>.oci.tar` deliverable per
@@ -133,11 +145,16 @@ evidence for every check returned by `cvm.artifacts.bundle.required_acceptance_c
 for that platform and CPU/GPU profile:
 
 ```sh
-sudo ./cvmctl admin approve /path/to/bundle /path/to/acceptance-report.json
+sudo ./cvmctl admin approve /path/to/bundle /path/to/acceptance-report.json \
+  --signing-key /secure/acceptance-signing.key
 ```
 
-Keep approval receipts and bundle artifacts under trusted administrative control.
-The receipt records operator approval; it is not a substitute for those tests.
+`approval.json` carries an Ed25519 signature by the acceptance authority. Vault
+builds and `admin install` accept a bundle only when that signature verifies
+against a public key listed in `cvm_project.yml` or the administration
+configuration; an unsigned or foreign-signed receipt is not approval. Keep the
+signing key and bundle artifacts under trusted administrative control. The
+receipt records operator approval; it is not a substitute for those tests.
 
 ## Trustee administration
 
@@ -169,7 +186,14 @@ publishing bundle resource rules:
 ```sh
 sudo ./cvmctl admin install admin.json /path/to/approved/bundle
 sudo ./cvmctl admin retire admin.json cvm-BUNDLE_ID
+# Print a KBS ACL entry confining a resource role to this bundle's keys.
+./cvmctl admin acl cvm-BUNDLE_ID
 ```
+
+`admin.json` names the trusted acceptance public keys in `approval_public_keys`.
+Prefer one bundle-scoped resource role per approved bundle, so a leaked
+build-worker token cannot replace or delete another bundle's keys, and issue
+tokens for at most 30 days; the builder refuses longer-lived or expired tokens.
 
 There is no per-vault measurement history. Reference values and keys live in
 Trustee storage; bundle retirement records stay in the publisher's admin state. Rebuild and
@@ -179,8 +203,8 @@ reapprove generic bundles when migrating from the earlier backend.
 
 Create a Docker save archive and record the image's immutable ID. Configure
 `docker_archive`, `image_id`, application files, ports, optional mounts/environment,
-and `cvm_image` in `config/vault_build.yml`. Configure the existing Trustee endpoint and scoped
-resource token once in [cvm_project.yml](cvm_project.yml). Vault Build finds
+and `cvm_image` in `config/vault_build.yml`. Configure the existing Trustee endpoint, scoped
+resource token and trusted acceptance public keys once in [cvm_project.yml](cvm_project.yml). Vault Build finds
 the nearest project file above the build YAML; credential paths are relative to
 that project file. Use `--project-config /path/cvm_project.yml` for build inputs
 staged elsewhere. Per-build `trustee` fields are rejected:
@@ -238,6 +262,12 @@ NVIDIA container runtime and starts a GPU application with `docker run --gpus al
 repeat `--gpu PCI_ADDRESS` exactly `gpu_count` times for explicit placement. The launcher pins measured inputs
 and uses exclusive locking on the actual vault file. One runtime vault file belongs to one CVM at a time. File copies may be
 launched independently; a copy retains the original identity and revocation scope.
+QEMU starts with `-nodefaults`, no VGA and no terminal monitor; forwarded
+application ports listen on `--bind-address` (default all IPv4 interfaces).
+`shutdown_cvm.sh` requests an ACPI power-off through a root-only QMP socket and
+terminates QEMU only after a bounded grace period, so the guest stops the
+container and syncs the vault first. The wrappers refuse to run from a delivery
+directory that is not root-owned or is group- or world-writable.
 Shut the CVM down before copying its vault or `applog` disk.
 
 Disk roles use explicit SCSI serials (`cvm-root`, `cvm-applog`, `cvm-user-config`,
@@ -256,10 +286,17 @@ Bootstrap and periodic appraisal write allowlisted metadata to the journal and
 `/applog/attestation.log`; token, key and application values are never audit fields.
 
 The container receives `/vault/application` read-only, its `runtime/` and `data/`
-subdirectories writable, `/applog`, `/user_config` (read-only), `/user_data`
-(read-only), and `/host/bin` (read-only). Additional mounts and command overrides
-are optional. TEE-device access is opt-in and platform-neutral in the application
-configuration. `/applog` is a clear output-only channel so an operator can read
+subdirectories writable, `/applog`, `/user_config` (read-only) and `/user_data`
+(read-only); the measured root's `/usr/bin` is mounted at `/host/bin` only when
+`container.host_bin` is true. The container starts with no capabilities and adds
+back only `container.capabilities` (default: Docker's set minus `NET_RAW`,
+`MKNOD`, `SYS_CHROOT`, `AUDIT_WRITE` and `SETFCAP`), runs with
+`no-new-privileges` and a `pids_limit`, and may use `read_only_rootfs`.
+`allowed_in_cidrs` and `allowed_out_cidrs` optionally confine the allowed ports
+to address ranges, and DNS is always limited to the DHCP-learned resolvers.
+Admitted `app_*.service` units receive systemd sandboxing directives. Additional
+mounts and command overrides are optional. TEE-device access is opt-in and
+platform-neutral in the application configuration. `/applog` is a clear output-only channel so an operator can read
 logs without a KBS key. `/user_config` and `/user_data` are clear, host-readable,
 untrusted inputs. QEMU opens both input disks read-only, the guest mounts them
 `ro,noload,nosuid,nodev,noexec`, and Docker bind-mounts them read-only. The builder
@@ -279,24 +316,11 @@ stops the workload and uses the forced poweroff path.
 
 ## Guest service supervision
 
-The measured root ships three CVM units: `cvm_bootstrap.service`,
-`cvm_integrity.service` and `cvm_app.service`. Bootstrap performs the firewall,
-clock, vault, sidecar and optional NFS gates, then notifies readiness before
-starting the application units. Its supervisor runs fresh re-attestation children
-every five minutes with a 300-second deadline. Tick status is recorded in
-`/run/cvm/periodic.json`; acceptance tooling can request an immediate check with
-`systemctl kill --kill-whom=main --signal=SIGUSR1 cvm_bootstrap.service`.
-
-The distro `nftables.service` loads measured bootstrap rules before networking.
-Docker socket activation is masked; provisioning configures the Docker daemon to
-open its Unix socket directly. The independent integrity monitor retains its
-watchdog. A security failure, or exit of either supervisor, makes PID 1 force
-poweroff without a Python shutdown handler. This skips application graceful-stop
-hooks on security failure. Development images use the same unit files and omit
-TEE/KBS and integrity-monitor work.
-
-Rebuild and reapprove generic CVM bundles after this change. Earlier hardware
-acceptance records do not cover the new boot and shutdown sequence.
+The measured root ships three CVM units; their ordering, the periodic
+re-attestation cadence and the quarantine behavior on a failed periodic check are
+described in [USER_GUIDE.md](USER_GUIDE.md#guest-service-supervision). Rebuild
+and reapprove generic CVM bundles after any change to the guest runtime; earlier
+hardware acceptance records do not cover a changed boot or shutdown sequence.
 
 ## Python package layout
 

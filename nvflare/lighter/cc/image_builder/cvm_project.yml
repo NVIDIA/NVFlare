@@ -1,6 +1,12 @@
 # Project-wide settings for the existing CoCo Trustee deployment.
-# The operator issues a scoped bearer JWT; keep it on the trusted build host.
+# The operator issues a scoped, short-lived bearer JWT (at most 30 days);
+# keep it on the trusted build host. inputs/ is ignored by git.
 trustee:
   url: https://trustee.example.org:8443
   ca: ./inputs/kbs-ca.pem
   admin_token_file: ./inputs/kbs-resource-token.jwt
+# Acceptance authorities. A generic CVM bundle is production-approved only when
+# its approval.json carries an Ed25519 signature by one of these public keys.
+approval:
+  public_keys:
+    - ./inputs/acceptance-signing.pub

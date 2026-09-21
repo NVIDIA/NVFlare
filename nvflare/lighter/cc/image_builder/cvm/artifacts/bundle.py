@@ -12,8 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Validate reusable bundles, profile sets and acceptance receipts."""
+"""Validate reusable bundles, profile sets and signed acceptance receipts."""
 
+import base64
 import hashlib
 import re
 from pathlib import Path
@@ -21,9 +22,11 @@ from tempfile import TemporaryDirectory
 
 from ..common.contracts import PLATFORMS, identifier
 from ..common.errors import require
-from ..common.io import digest_file, read_json, write_json
+from ..common.io import canonical, digest_file, read_json, write_json
 from ..common.measurements import validate_measurements
 from ..common.policy import compose
+
+APPROVAL_SIGNATURE_ALGORITHM = "ed25519"
 
 
 def verify_bundle(directory):
@@ -125,11 +128,100 @@ def required_acceptance_checks(manifest):
     return checks
 
 
-def verify_approval(directory):
+def _ed25519():
+    # Imported lazily: the delivered launcher verifies bundles without needing
+    # the cryptography package on the runtime host.
+    from cryptography.exceptions import InvalidSignature
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+
+    return InvalidSignature, serialization, ed25519
+
+
+def key_id(public_key):
+    """Stable identifier: SHA-256 of the DER SubjectPublicKeyInfo encoding."""
+    _, serialization, _ = _ed25519()
+    der = public_key.public_bytes(serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo)
+    return hashlib.sha256(der).hexdigest()
+
+
+def load_public_keys(values):
+    """Load trusted acceptance authorities from PEM paths; keys already loaded pass through."""
+    _, serialization, ed25519 = _ed25519()
+    keys = []
+    for value in values:
+        if isinstance(value, ed25519.Ed25519PublicKey):
+            keys.append(value)
+            continue
+        try:
+            key = serialization.load_pem_public_key(Path(value).read_bytes())
+        except (OSError, ValueError, TypeError):
+            require(False, "Cannot load an approval public key; supply Ed25519 PEM files")
+        require(isinstance(key, ed25519.Ed25519PublicKey), "Approval signing keys must be Ed25519")
+        keys.append(key)
+    require(keys, "No approval signing keys are trusted")
+    return keys
+
+
+def load_signing_key(path):
+    _, serialization, ed25519 = _ed25519()
+    try:
+        key = serialization.load_pem_private_key(Path(path).read_bytes(), password=None)
+    except (OSError, ValueError, TypeError):
+        require(False, "Cannot load the approval signing key; supply an unencrypted Ed25519 PEM file")
+    require(isinstance(key, ed25519.Ed25519PrivateKey), "Approval signing key must be Ed25519")
+    return key
+
+
+def _signed_body(receipt):
+    return canonical({key: value for key, value in receipt.items() if key != "signature"})
+
+
+def sign_receipt(receipt, signing_key):
+    """Return the receipt with a detached Ed25519 signature over its canonical body."""
+    key = load_signing_key(signing_key)
+    body = {name: value for name, value in receipt.items() if name != "signature"}
+    signature = key.sign(_signed_body(body))
+    return dict(
+        body,
+        signature={
+            "algorithm": APPROVAL_SIGNATURE_ALGORITHM,
+            "key_id": key_id(key.public_key()),
+            "value": base64.b64encode(signature).decode(),
+        },
+    )
+
+
+def verify_receipt_signature(receipt, trusted_keys):
+    """Require a signature by one of the trusted acceptance authorities."""
+    InvalidSignature, _, _ = _ed25519()
+    keys = load_public_keys(trusted_keys)
+    signature = receipt.get("signature")
+    require(
+        isinstance(signature, dict)
+        and signature.get("algorithm") == APPROVAL_SIGNATURE_ALGORITHM
+        and isinstance(signature.get("key_id"), str)
+        and isinstance(signature.get("value"), str),
+        "Approval receipt is unsigned or uses an unsupported signature",
+    )
+    try:
+        value = base64.b64decode(signature["value"], validate=True)
+    except ValueError:
+        require(False, "Approval signature encoding is invalid")
+    signer = next((key for key in keys if key_id(key) == signature["key_id"]), None)
+    require(signer is not None, "Approval is not signed by a trusted acceptance authority")
+    try:
+        signer.verify(value, _signed_body(receipt))
+    except InvalidSignature:
+        require(False, "Approval signature does not match the receipt")
+
+
+def verify_approval(directory, trusted_keys):
     directory = Path(directory)
     manifest = verify_bundle(directory)
     require(not manifest.get("dev_mode"), "Development roots can never receive production approval")
     receipt = read_json(directory / "approval.json")
+    verify_receipt_signature(receipt, trusted_keys)
     require(
         receipt.get("manifest_sha256") == digest_file(directory / "cvm_manifest.json"),
         "Approval does not cover this bundle",
@@ -150,7 +242,7 @@ def verify_approval(directory):
     return manifest
 
 
-def load_profile_set(path, approved=True):
+def load_profile_set(path, approved=True, trusted_keys=()):
     path = Path(path).resolve()
     result = read_json(path)
     require(re.fullmatch(r"[a-z0-9][a-z0-9_.-]{0,63}", result["profile_version"]), "Invalid profile version")
@@ -158,7 +250,7 @@ def load_profile_set(path, approved=True):
     for platform, entry in result["bundles"].items():
         require(platform in PLATFORMS, "Invalid platform bundle name")
         directory = path.parent / platform
-        manifest = verify_approval(directory) if approved else verify_bundle(directory)
+        manifest = verify_approval(directory, trusted_keys) if approved else verify_bundle(directory)
         require(
             manifest["platform"] == platform and manifest["profile_version"] == result["profile_version"],
             "Profile identity mismatch",
@@ -174,21 +266,22 @@ def load_profile_set(path, approved=True):
     return result
 
 
-def approve_bundle(directory, report):
+def approve_bundle(directory, report, signing_key):
+    """Sign and publish an acceptance receipt for the exact finalized bundle."""
     directory = Path(directory)
     manifest = verify_bundle(directory)
     require(
         report.get("manifest_sha256") == digest_file(directory / "cvm_manifest.json"),
         "Acceptance report covers another bundle",
     )
-    receipt = dict(report, status="approved", build_id=manifest["build_id"])
+    receipt = sign_receipt(dict(report, status="approved", build_id=manifest["build_id"]), signing_key)
     # Validate with the same rules before publishing an approval file.
-
+    signer = load_signing_key(signing_key).public_key()
     with TemporaryDirectory() as temporary:
         temporary = Path(temporary)
         for item in directory.iterdir():
             if item.is_file() and item.name != "approval.json":
                 (temporary / item.name).symlink_to(item.resolve())
         write_json(temporary / "approval.json", receipt)
-        verify_approval(temporary)
+        verify_approval(temporary, [signer])
     write_json(directory / "approval.json", receipt, mode=0o644)

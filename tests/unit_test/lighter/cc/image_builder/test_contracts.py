@@ -31,7 +31,18 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec, utils
 from cvm.build import config
 from cvm.build.cvm import kernel_command_line
-from cvm.build.provisioning import docker_configuration, install_files, load_config, mask, suppress_service_starts
+from cvm.build.provisioning import (
+    HARDENING_SYSCTL,
+    chrony_configuration,
+    docker_configuration,
+    install_files,
+    load_config,
+    mask,
+    scrub_identity,
+    sudoers_files_for,
+    suppress_service_starts,
+    validate_time_servers,
+)
 from cvm.common import measurements as report_measurements
 from cvm.common.contracts import (
     DISK_ROLES,
@@ -44,8 +55,10 @@ from cvm.common.contracts import (
 )
 from cvm.common.errors import BuildError
 from cvm.common.evidence import serial_evidence, serial_frames
+from cvm.common.firewall import firewall_rules
 from cvm.common.io import canonical
 from cvm.common.linux import memory_file, validate_core_policy
+from cvm.common.luks import validate_luks_metadata, validate_mapping
 from cvm.common.measurements import measurements, validate_measurements
 from cvm.common.services import validate_service
 from cvm.common.validation import runtime_config
@@ -420,6 +433,7 @@ class GuestProvisioningTests(unittest.TestCase):
 
     def test_gpu_runtime_and_masks_are_explicit(self):
         self.assertNotIn("runtimes", json.loads(docker_configuration("none")))
+        self.assertTrue(json.loads(docker_configuration("none"))["no-new-privileges"])
         self.assertEqual(
             json.loads(docker_configuration("nvidia_cc"))["runtimes"]["nvidia"]["path"],
             "nvidia-container-runtime",
@@ -427,6 +441,67 @@ class GuestProvisioningTests(unittest.TestCase):
         mask(self.root, ("ssh.service", "ssh.socket"))
         for name in ("ssh.service", "ssh.socket"):
             self.assertEqual(os.readlink(self.root / "etc/systemd/system" / name), "/dev/null")
+
+    def test_kernel_hardening_sysctls_and_nts_only_clock_sources_are_installed(self):
+        install_files(dict(self.config, time_servers=["time.example.org", "nts.example.net"]), self.payload, self.root)
+        sysctl = (self.root / "etc/sysctl.d/99-cvm-hardening.conf").read_text()
+        self.assertEqual(sysctl, HARDENING_SYSCTL)
+        for setting in (
+            "kernel.kexec_load_disabled = 1",
+            "kernel.sysrq = 0",
+            "kernel.dmesg_restrict = 1",
+            "kernel.core_pattern = /dev/null",
+            "kernel.unprivileged_bpf_disabled = 1",
+        ):
+            self.assertIn(setting, sysctl)
+        chrony = (self.root / "etc/chrony/chrony.conf").read_text()
+        self.assertIn("server time.example.org iburst nts", chrony)
+        self.assertIn("server nts.example.net iburst nts", chrony)
+        self.assertIn("authselectmode require", chrony)
+        self.assertNotIn("pool ", chrony)
+        self.assertNotIn("chrony-dhcp", chrony)
+        self.assertEqual(chrony, chrony_configuration(["time.example.org", "nts.example.net"]))
+        # Without explicit servers the packaged chrony configuration is kept.
+        other = self.directory / "other-root"
+        vendor = other / "usr/lib/systemd/system"
+        vendor.mkdir(parents=True)
+        (vendor / "docker.service").write_text((self.root / "usr/lib/systemd/system/docker.service").read_text())
+        install_files(self.config, self.payload, other)
+        self.assertFalse((other / "etc/chrony/chrony.conf").exists())
+        for invalid in ([], "time.example.org", ["bad server"], ["a", "a"], [1]):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                validate_time_servers(invalid)
+        path = self.directory / "config.json"
+        path.write_text(json.dumps(dict(self.config, time_servers=["time.example.org"])))
+        self.assertEqual(load_config(path)["time_servers"], ["time.example.org"])
+
+    def test_finalize_removes_build_identity_and_construction_sudo(self):
+        root = self.directory / "final-root"
+        for path in ("etc/sudoers.d", "etc/ssh", "var/log/journal/abc", "var/lib/apt/lists/partial", "var/lib/dbus"):
+            (root / path).mkdir(parents=True)
+        (root / "etc/sudoers.d/90-cloud-init-users").write_text("# cloud-init\nubuntu ALL=(ALL) NOPASSWD:ALL\n")
+        (root / "etc/sudoers.d/README").write_text("# documentation\n")
+        (root / "etc/sudoers.d/operator").write_text("operator ALL=(ALL) ALL\n")
+        (root / "etc/machine-id").write_text("0123456789abcdef0123456789abcdef\n")
+        (root / "var/lib/dbus/machine-id").write_text("0123456789abcdef0123456789abcdef\n")
+        (root / "etc/ssh/ssh_host_ed25519_key").write_text("private")
+        (root / "etc/ssh/ssh_host_ed25519_key.pub").write_text("public")
+        (root / "etc/ssh/sshd_config").write_text("Port 22\n")
+        (root / "var/log/journal/abc/system.journal").write_text("construction log")
+        (root / "var/lib/apt/lists/partial/index").write_text("lists")
+        self.assertEqual(
+            sudoers_files_for("ubuntu", root / "etc/sudoers.d"), [root / "etc/sudoers.d/90-cloud-init-users"]
+        )
+        self.assertEqual(sudoers_files_for("ubuntu", root / "absent"), [])
+        scrub_identity(root)
+        self.assertEqual((root / "etc/machine-id").read_bytes(), b"")
+        self.assertFalse((root / "var/lib/dbus/machine-id").exists())
+        self.assertFalse((root / "etc/ssh/ssh_host_ed25519_key").exists())
+        self.assertFalse((root / "etc/ssh/ssh_host_ed25519_key.pub").exists())
+        self.assertTrue((root / "etc/ssh/sshd_config").exists())
+        self.assertEqual(list((root / "var/log/journal").iterdir()), [])
+        self.assertEqual(list((root / "var/lib/apt/lists").iterdir()), [])
+        self.assertEqual((root / "etc/hostname").read_text(), "cvm\n")
 
     def test_package_service_suppression_restores_existing_policy(self):
         policy = self.directory / "policy-rc.d"
@@ -558,6 +633,40 @@ class ApplicationTests(unittest.TestCase):
         command = runtime.docker_argv(app)
         self.assertNotIn("--entrypoint", command)
         self.assertEqual(command[-1], app["image_id"])
+
+    def test_container_confinement_defaults_and_address_allowlists(self):
+        app = self.load()
+        container = app["container"]
+        self.assertEqual(container["capabilities"], list(runtime.DEFAULT_CAPABILITIES))
+        self.assertEqual(container["pids_limit"], runtime.DEFAULT_PIDS_LIMIT)
+        self.assertFalse(container["host_bin"])
+        self.assertFalse(container["read_only_rootfs"])
+        self.assertNotIn("allowed_out_cidrs", runtime_config(app))
+        self.value["allowed_out_cidrs"] = ["10.0.0.0/8"]
+        self.value["allowed_in_cidrs"] = ["192.0.2.0/24"]
+        self.value["container"].update(capabilities=["NET_BIND_SERVICE"], pids_limit=128, host_bin=True)
+        projected = runtime_config(self.load())
+        self.assertEqual(projected["allowed_out_cidrs"], ["10.0.0.0/8"])
+        self.assertEqual(projected["allowed_in_cidrs"], ["192.0.2.0/24"])
+        self.assertEqual(projected["container"]["capabilities"], ["NET_BIND_SERVICE"])
+        for key, invalid in (
+            ("capabilities", ["SYS_ADMIN"]),
+            ("capabilities", ["CHOWN", "CHOWN"]),
+            ("capabilities", "CHOWN"),
+            ("pids_limit", 0),
+            ("pids_limit", "many"),
+            ("host_bin", "yes"),
+            ("read_only_rootfs", 1),
+        ):
+            original = self.value["container"].get(key)
+            self.value["container"][key] = invalid
+            with self.subTest(key=key, invalid=invalid), self.assertRaises(BuildError):
+                self.load()
+            self.value["container"][key] = original
+        for invalid in (["10.0.0.1/8"], "10.0.0.0/8", ["10.0.0.0/8", "10.0.0.0/8"]):
+            self.value["allowed_out_cidrs"] = invalid
+            with self.subTest(cidrs=invalid), self.assertRaises(BuildError):
+                self.load()
 
     def test_entrypoint_override_preserves_default_command(self):
         self.value["container"]["entrypoint"] = ["/app/run", "--safe"]
@@ -722,9 +831,131 @@ class RuntimeContractTests(unittest.TestCase):
             rules = apply.call_args.kwargs["input"].decode()
             self.assertTrue(rules.startswith("table inet cvm {}\ndelete table inet cvm\n"))
             output = rules.split("chain output", 1)[1].split("chain forward", 1)[0]
-            self.assertIn("tcp dport { 53,4460 } accept", output)
-            self.assertIn("udp dport { 53,67,123,547 } accept", output)
+            self.assertIn("tcp dport 4460 accept", output)
+            self.assertIn("udp dport 123 accept", output)
+            self.assertIn("udp dport { 67, 547 } accept", output)
+            self.assertIn("udp dport 53 accept", output)
             self.assertNotIn("4460", rules.split("chain forward", 1)[1])
+
+    def test_firewall_restricts_dns_and_allowlisted_ports_to_addresses(self):
+        rules = firewall_rules(
+            [8080],
+            [443],
+            [{"host": 8080, "container": 80}],
+            inbound_sources=["10.0.0.0/8"],
+            outbound_destinations=["192.0.2.0/24", "2001:db8::/32"],
+            resolvers=["10.0.0.53", "2001:db8::53"],
+        )
+        chains = {
+            name: rules.split("chain " + name, 1)[1].split("chain", 1)[0] for name in ("input", "output", "forward")
+        }
+        self.assertIn("ip saddr { 10.0.0.0/8 } tcp dport { 8080 } accept", chains["input"])
+        self.assertNotIn("\ntcp dport { 8080 } accept", chains["input"])
+        self.assertIn("ip daddr { 10.0.0.53/32 } udp dport 53 accept", chains["output"])
+        self.assertIn("ip6 daddr { 2001:db8::53/128 } tcp dport 53 accept", chains["output"])
+        self.assertIn("ip daddr { 192.0.2.0/24 } tcp dport { 443 } accept", chains["output"])
+        self.assertIn("ip6 daddr { 2001:db8::/32 } tcp dport { 443 } accept", chains["output"])
+        self.assertIn('iifname "docker0" ip daddr { 192.0.2.0/24 } tcp dport { 443 } accept', chains["forward"])
+        self.assertIn('iifname "docker0" ip daddr { 10.0.0.53/32 } udp dport 53 accept', chains["forward"])
+        self.assertIn(
+            'oifname "docker0" ip saddr { 10.0.0.0/8 } tcp dport 80 ct original proto-dst 8080 accept',
+            chains["forward"],
+        )
+        self.assertNotIn('oifname "docker0" tcp dport', chains["forward"])
+        for chain in chains.values():
+            self.assertIn("ct state invalid drop", chain)
+            self.assertNotIn("ip protocol icmp accept", chain)
+        self.assertIn("icmp type { echo-request, echo-reply", chains["output"])
+        # Without allowlists the ports stay open to any address, as before.
+        open_rules = firewall_rules([8080], [443])
+        self.assertIn("\ntcp dport { 8080 } accept", open_rules)
+        self.assertIn("\ntcp dport { 443 } accept", open_rules)
+        self.assertIn("\nudp dport 53 accept", open_rules)
+        for invalid in (["10.0.0.1/8"], ["10.0.0.0/8", "10.0.0.0/8"], ["not-a-cidr"], "10.0.0.0/8"):
+            with self.subTest(invalid=invalid), self.assertRaises(BuildError):
+                firewall_rules([], [443], outbound_destinations=invalid)
+        for invalid in (["127.0.0.1"], ["0.0.0.0"], ["dns"]):
+            with self.subTest(resolver=invalid), self.assertRaises(BuildError):
+                firewall_rules([], [443], resolvers=invalid)
+
+    def test_published_ports_apply_both_source_address_families(self):
+        for sources in ([], ["10.0.0.0/8"], ["2001:db8::/32"], ["10.0.0.0/8", "2001:db8::/32"]):
+            with self.subTest(sources=sources):
+                rules = firewall_rules([8080], [], [{"host": 8080, "container": 80}], inbound_sources=sources)
+                accepts = [line for line in rules.splitlines() if line.startswith('oifname "docker0"')]
+                expected = []
+                for cidr in sources:
+                    family = "ip6" if ":" in cidr else "ip"
+                    expected.append(
+                        f'oifname "docker0" {family} saddr {{ {cidr} }} '
+                        "tcp dport 80 ct original proto-dst 8080 accept"
+                    )
+                self.assertEqual(
+                    accepts, expected or ['oifname "docker0" tcp dport 80 ct original proto-dst 8080 accept']
+                )
+
+    def test_measured_command_line_locks_down_the_guest_kernel(self):
+        tokens = kernel_command_line("ab" * 32, 1024, 4096).split()
+        for token in (
+            "lockdown=integrity",
+            "module.sig_enforce=1",
+            "loglevel=3",
+            "printk.console_no_auto_verbose=1",
+            "panic=1",
+            "oops=panic",
+            "systemd.verity=no",
+        ):
+            self.assertIn(token, tokens)
+        self.assertEqual(tokens.count("roothash=" + "ab" * 32), 1)
+
+    def test_vault_metadata_requires_the_pinned_deterministic_kdf(self):
+        metadata = {
+            "segments": {
+                "0": {
+                    "type": "crypt",
+                    "encryption": "aes-xts-random",
+                    "offset": str(HEADER_BYTES),
+                    "sector_size": 512,
+                    "integrity": {"type": "hmac(sha256)"},
+                }
+            },
+            "config": {"json_size": "12288", "keyslots_size": str(HEADER_BYTES - 32768)},
+            "keyslots": {
+                "0": {
+                    "type": "luks2",
+                    "key_size": 96,
+                    "kdf": {"type": "pbkdf2", "hash": "sha256", "iterations": 1000, "salt": "x"},
+                    "area": {"offset": "32768", "size": "258048"},
+                }
+            },
+        }
+        validate_luks_metadata(metadata)
+        for kdf in (
+            {"type": "argon2id", "time": 4, "memory": 1048576, "cpus": 4, "salt": "x"},
+            {"type": "pbkdf2", "hash": "sha512", "iterations": 1000, "salt": "x"},
+            {"type": "pbkdf2", "hash": "sha256", "iterations": 999, "salt": "x"},
+            {},
+        ):
+            metadata["keyslots"]["0"]["kdf"] = kdf
+            with self.subTest(kdf=kdf), self.assertRaisesRegex(BuildError, "KDF"):
+                validate_luks_metadata(metadata)
+
+    def test_activated_vault_key_must_live_in_the_kernel_keyring(self):
+        crypt = "0 100 crypt capi:authenc(hmac(sha256),xts(aes))-random {key} 0 253:0 0 1 integrity:48:aead"
+        integrity = "0 100 integrity 253:1 0 48 J 0"
+        for key, accepted in (
+            (":96:logon:cryptsetup:uuid-d0", True),
+            (":96:user:cryptsetup:uuid-d0", False),
+            ("0" * 192, False),
+            ("deadbeef", False),
+        ):
+            outputs = [crypt.format(key=key).encode(), integrity.encode()]
+            with self.subTest(key=key), patch("cvm.common.luks.run", side_effect=outputs):
+                if accepted:
+                    self.assertEqual(validate_mapping("vault"), "253:0")
+                else:
+                    with self.assertRaisesRegex(BuildError, "keyring"):
+                        validate_mapping("vault")
 
     def test_guest_requires_the_measured_gpu_count(self):
         with patch("cvm.runtime.gpu.run", return_value=b"0000:41:00.0\n0000:43:00.0\n"):
@@ -801,6 +1032,7 @@ class RuntimeContractTests(unittest.TestCase):
                     "vcpus": 4,
                     "memory_gib": 8,
                     "quote_generation": {"type": "vsock", "cid": 2, "port": 4050},
+                    "snp_policy": 0x30000,
                 },
                 "cmdline": "immutable cmdline",
                 "contract": {"gpu": "none"},

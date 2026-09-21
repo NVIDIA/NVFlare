@@ -206,12 +206,15 @@ def prepare(directory, *, http_only=False):
                 "cpu_model": "host",
                 "quote_generation": {"type": "vsock", "cid": 2, "port": 4050},
                 "kbs_client": str(inputs / "kbs-client"),
+                # Record with: cvmctl provenance <clean trustee checkout> inputs/kbs-client inputs/kbs_client_build.json
+                "kbs_client_provenance": str(inputs / "kbs_client_build.json"),
             },
             "amd_sev_snp": {
                 "firmware": "/usr/share/ovmf/OVMF.amdsev.fd",
                 "attester": "snp",
                 "cpu_model": "EPYC-v4",
                 "kbs_client": str(inputs / "kbs-client"),
+                "kbs_client_provenance": str(inputs / "kbs_client_build.json"),
             },
         },
     }

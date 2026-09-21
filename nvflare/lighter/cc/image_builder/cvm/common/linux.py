@@ -18,15 +18,53 @@ import contextlib
 import ctypes
 import fcntl
 import os
+import re
 import resource
 import subprocess
+import time
 from pathlib import Path
 
 from .errors import BuildError, require
 
+# Operator-selected directory for failed-command diagnostics. Only commands that
+# never handle secrets write here; each file is created owner-only.
+DIAGNOSTICS = None
 
-def run(argv, *, input=None, pass_fds=(), timeout=3600, cwd=None, env=None, operation=None):
-    """Suppress child arguments/output; operation must be a static, secret-free label."""
+
+DIAGNOSTIC_TAIL_BYTES = 65536
+
+
+def enable_diagnostics(directory):
+    """Retain stderr of failed non-secret commands under a private directory."""
+    global DIAGNOSTICS
+    path = Path(directory).resolve()
+    path.mkdir(parents=True, exist_ok=True, mode=0o700)
+    require(not path.is_symlink() and path.is_dir(), "Diagnostics directory must be a real directory")
+    os.chmod(path, 0o700)
+    DIAGNOSTICS = path
+    return path
+
+
+def _record_diagnostics(label, stderr):
+    if DIAGNOSTICS is None or not stderr:
+        return
+    name = re.sub(r"[^A-Za-z0-9_.-]", "_", label)[:64]
+    path = DIAGNOSTICS / f"{name}-{os.getpid()}-{int(time.time())}.log"
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    except OSError:
+        return
+    with os.fdopen(fd, "wb") as stream:
+        stream.write(stderr[-DIAGNOSTIC_TAIL_BYTES:])
+
+
+def run(argv, *, input=None, pass_fds=(), timeout=3600, cwd=None, env=None, operation=None, secret=False):
+    """Suppress child arguments/output; operation must be a static, secret-free label.
+
+    Failed commands that never touch secrets may leave their stderr in the
+    diagnostics directory when the operator enabled it. Commands marked secret
+    never do, regardless of configuration.
+    """
     label = operation or Path(argv[0]).name
     try:
         result = subprocess.run(
@@ -41,8 +79,13 @@ def run(argv, *, input=None, pass_fds=(), timeout=3600, cwd=None, env=None, oper
             check=False,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
+        if not secret and isinstance(exc, subprocess.TimeoutExpired):
+            _record_diagnostics(label, exc.stderr or b"")
         raise BuildError(f"{label} could not complete ({type(exc).__name__})") from None
-    require(result.returncode == 0, f"{label} failed (exit {result.returncode}); no output logged")
+    if result.returncode != 0 and not secret:
+        _record_diagnostics(label, result.stderr)
+    suffix = "; see the diagnostics directory" if DIAGNOSTICS is not None and not secret else "; no output logged"
+    require(result.returncode == 0, f"{label} failed (exit {result.returncode}){suffix}")
     return result.stdout
 
 

@@ -48,14 +48,22 @@ APPLICATION_SETTINGS = {
     "requires_gpu",
     "allowed_ports",
     "allowed_out_ports",
+    "allowed_in_cidrs",
+    "allowed_out_cidrs",
     "user_config",
     "user_data",
     "hosts_entries",
     "tee_device",
+    "host_bin",
     "workspace_uid",
     "workspace_gid",
     *SIZES,
 }
+
+
+def default_builder_dir():
+    """The builder shipped inside this NVFlare installation."""
+    return Path(__file__).resolve().parent / "image_builder"
 
 
 def _require(condition, message):
@@ -283,7 +291,11 @@ class VaultAdapter:
         self.workspace_root = Path(workspace_root).expanduser().resolve()
         project_workspace = self.workspace_root / project.name
         self.previous_production_dirs = {path.resolve() for path in project_workspace.glob("prod_*")}
-        self.builder_dir = self._path(settings.get("cvm_builder_dir"), directory=True)
+        if "cvm_builder_dir" in settings:
+            self.builder_dir = self._path(settings["cvm_builder_dir"], directory=True)
+        else:
+            self.builder_dir = default_builder_dir()
+            _require(self.builder_dir.is_dir(), "The installed NVFlare package does not include CVM Builder")
         wrapper = self.builder_dir / "cvmctl"
         _require(wrapper.is_file() and os.access(wrapper, os.X_OK), "cvm_builder_dir must contain executable cvmctl")
         self.output_root = self._path(settings["output_root"], must_exist=False) if "output_root" in settings else None
@@ -384,7 +396,25 @@ class VaultAdapter:
         path = path.resolve()
         with path.open() as stream:
             config = yaml.safe_load(stream)
-        _require(isinstance(config, dict) and set(config) == {"trustee"}, "cvm_project.yml must contain only trustee")
+        _require(
+            isinstance(config, dict) and set(config) == {"trustee", "approval"},
+            "cvm_project.yml must contain only trustee and approval",
+        )
+        approval = config["approval"]
+        _require(
+            isinstance(approval, dict) and set(approval) == {"public_keys"},
+            "Project approval requires public_keys",
+        )
+        keys = approval["public_keys"]
+        _require(
+            isinstance(keys, list) and keys and all(isinstance(key, str) and key for key in keys),
+            "approval.public_keys must list at least one acceptance public key path",
+        )
+        for key in keys:
+            credential = Path(key)
+            if not credential.is_absolute():
+                credential = path.parent / credential
+            _require(credential.is_file(), f"Missing approval public key: {credential}")
         service = config["trustee"]
         _require(
             isinstance(service, dict) and set(service) == {"url", "ca", "admin_token_file"},
@@ -435,6 +465,15 @@ class VaultAdapter:
         _require(type(app["requires_gpu"]) is bool, "requires_gpu must be boolean")
         app["allowed_ports"] = sorted(_ports(values.get("allowed_ports", [])))
         app["allowed_out_ports"] = sorted({443} | _ports(values.get("allowed_out_ports", [])))
+        for key in ("allowed_in_cidrs", "allowed_out_cidrs"):
+            if key in values:
+                _require(
+                    isinstance(values[key], list) and all(isinstance(item, str) for item in values[key]),
+                    f"{key} must be a list of CIDR strings",
+                )
+                for item in values[key]:
+                    ipaddress.ip_network(item, strict=True)
+                app[key] = list(values[key])
         for key, default in SIZES.items():
             app[key] = values.get(key, default)
             _require(type(app[key]) is int and app[key] > 0, f"{key} must be a positive integer GiB size")
@@ -459,6 +498,10 @@ class VaultAdapter:
             ipaddress.ip_address(address)
         tee_device = values.get("tee_device", False)
         _require(type(tee_device) is bool, "tee_device must be boolean")
+        # NVFlare's confidential-computing authorizers default to /host/bin tools,
+        # so the mount stays on for kits unless a site turns it off explicitly.
+        host_bin = values.get("host_bin", True)
+        _require(type(host_bin) is bool, "host_bin must be boolean")
         app["container"] = {
             "entrypoint": ["/bin/bash"],
             "command": ["/vault/application/workspace/startup/sub_start.sh", "--verify", "--foreground"],
@@ -466,6 +509,7 @@ class VaultAdapter:
             "volumes": [],
             "ports": [],
             "tee_device": tee_device,
+            "host_bin": host_bin,
         }
         app["services"] = []
         # The builder retrieves and validates registry images itself.

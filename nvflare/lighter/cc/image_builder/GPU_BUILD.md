@@ -159,6 +159,7 @@ sudo ldconfig
 NVAT_USE_SYSTEM_LIB=1 cargo build --locked --release --manifest-path /tmp/trustee/Cargo.toml \
   -p kbs-client --bin kbs-client --features tdx-attester,snp-attester,nvidia-attester
 install -m 755 /tmp/trustee/target/release/kbs-client inputs/kbs-client
+./cvmctl provenance /tmp/trustee inputs/kbs-client inputs/kbs_client_build.json
 ```
 
 The guest receives the pinned library bytes and its runtime dependencies, not the

@@ -13,9 +13,16 @@ update it if you copy `project.yml` elsewhere.
 
 1. Edit `project.yml`: set the reachable server name,
    `cvm_image` folders, Docker archive, and bootstrap egress ports.
-2. Edit `cvm_project.yml` with the project's Trustee endpoint and scoped
-   resource token. Relative credential paths resolve against this file.
+   `cvm_builder_dir` is optional; it defaults to the builder shipped inside the
+   installed NVFlare package.
+2. Edit `cvm_project.yml` with the project's Trustee endpoint, scoped resource
+   token and the acceptance authority's public key that signed the approved CVM
+   bundles. Relative credential paths resolve against this file.
 3. Run `nvflare provision -p project.yml -w ./workspace`.
+
+The kits keep `/host/bin` mounted because NVFlare's confidential-computing
+authorizers look for tools there; set `host_bin: false` per participant to drop
+it. `allowed_in_cidrs` and `allowed_out_cidrs` pass through to the vault build.
 
 The Docker archive must be a `docker save` archive containing one Linux amd64
 image with NVFlare, Bash, and your workload dependencies. NVFlare derives its

@@ -27,9 +27,11 @@ from unittest.mock import Mock
 
 import pytest
 import yaml
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ed25519
 
 from nvflare.lighter.cc import vault_adapter as adapter_module
-from nvflare.lighter.cc.vault_adapter import VaultAdapter, docker_image_id, invoke_vault_builder
+from nvflare.lighter.cc.vault_adapter import VaultAdapter, default_builder_dir, docker_image_id, invoke_vault_builder
 from nvflare.lighter.constants import CtxKey, ProvFileName
 from nvflare.lighter.impl.workspace import WorkspaceBuilder
 from nvflare.lighter.provision import prepare_project, provision
@@ -37,6 +39,11 @@ from nvflare.lighter.spec import Builder
 from nvflare.lighter.utils import verify_folder_signature
 
 REGISTRY_IMAGE = "registry.example.org/cvm/cpu@sha256:" + "d" * 64
+ACCEPTANCE_PUBLIC_KEY = (
+    ed25519.Ed25519PrivateKey.generate()
+    .public_key()
+    .public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo)
+)
 
 
 def write_json(path, data):
@@ -102,6 +109,7 @@ def configuration(tmp_path):
     write_docker_archive(tmp_path / "image.tar")
     for name in ("ca.pem", "builder.jwt"):
         (tmp_path / name).write_text("input")
+    (tmp_path / "acceptance.pub").write_bytes(ACCEPTANCE_PUBLIC_KEY)
     (tmp_path / "cvm_project.yml").write_text(
         yaml.safe_dump(
             {
@@ -109,7 +117,8 @@ def configuration(tmp_path):
                     "url": "https://keys.example.com:9443",
                     "ca": "ca.pem",
                     "admin_token_file": "builder.jwt",
-                }
+                },
+                "approval": {"public_keys": ["acceptance.pub"]},
             }
         )
     )
@@ -270,7 +279,9 @@ def test_inputs_match_included_builder(configuration, tmp_path, monkeypatch, reg
         assert app["image_id"] == docker_image_id(tmp_path / "image.tar")
         assert app["cvm_image"] == (REGISTRY_IMAGE if registry else str(tmp_path / "profile"))
         assert project["trustee"]["admin_token_file"] == str(tmp_path / "builder.jwt")
+        assert project["approval"]["public_keys"] == [str(tmp_path / "acceptance.pub")]
         assert app["container"]["command"][-2:] == ["--verify", "--foreground"]
+        assert app["container"]["host_bin"] is True
         observed.append(app)
         fake_build(builder_dir, config_file, output, log, project_config)
 
@@ -355,6 +366,9 @@ def test_no_new_prod_directory_is_not_success(configuration, tmp_path, monkeypat
         ({"output_root": "workspace/project1/prod_00/vaults"}, "outside the provisioning"),
         ({"release_id": "a.b"}, "Unknown cvm_vault"),
         ({"participant_overrides": {"site-2": {}}}, "selected participants"),
+        ({"host_bin": "yes"}, "host_bin must be boolean"),
+        ({"allowed_in_cidrs": "10.0.0.0/8"}, "list of CIDR"),
+        ({"allowed_out_cidrs": ["10.0.0.1/8"]}, "host bits"),
     ],
 )
 def test_invalid_configuration_fails_before_build(configuration, tmp_path, update, message):
@@ -362,6 +376,35 @@ def test_invalid_configuration_fails_before_build(configuration, tmp_path, updat
     with pytest.raises(ValueError, match=message):
         make_adapter(configuration, tmp_path)
     assert not (tmp_path / "vault-builds").exists()
+
+
+def test_builder_dir_defaults_to_the_installed_package(configuration, tmp_path):
+    del configuration["cvm_vault"]["cvm_builder_dir"]
+    adapter = make_adapter(configuration, tmp_path)
+    assert adapter.builder_dir == default_builder_dir()
+    assert (adapter.builder_dir / "cvmctl").is_file()
+
+
+def test_host_bin_and_address_allowlists_reach_the_builder(configuration, tmp_path, monkeypatch):
+    settings = configuration["cvm_vault"]
+    settings["participants"] = ["site-1", "server.example.com"]
+    settings["allowed_out_cidrs"] = ["10.0.0.0/8"]
+    settings["participant_overrides"] = {
+        "server.example.com": {"host_bin": False, "allowed_in_cidrs": ["192.0.2.0/24"]}
+    }
+    apps = {}
+
+    def build(*args):
+        app = yaml.safe_load(args[1].read_text())
+        apps[app["container"]["host_bin"]] = app
+        fake_build(*args)
+
+    monkeypatch.setattr(adapter_module, "invoke_vault_builder", build)
+    run_provision(configuration, tmp_path)
+    assert set(apps) == {True, False}
+    assert apps[True]["allowed_out_cidrs"] == ["10.0.0.0/8"]
+    assert "allowed_in_cidrs" not in apps[True]
+    assert apps[False]["allowed_in_cidrs"] == ["192.0.2.0/24"]
 
 
 def test_multi_participant_overrides(configuration, tmp_path, monkeypatch):
@@ -784,6 +827,7 @@ def test_explicit_project_config_overrides_invalid_nearest(configuration, tmp_pa
     config = yaml.safe_load((tmp_path / "cvm_project.yml").read_text())
     for key in ("ca", "admin_token_file"):
         config["trustee"][key] = "../" + config["trustee"][key]
+    config["approval"]["public_keys"] = ["../" + key for key in config["approval"]["public_keys"]]
     (other / "selected.yml").write_text(yaml.safe_dump(config))
     (tmp_path / "cvm_project.yml").write_text("invalid: true\n")
     configuration["cvm_vault"]["project_config"] = "other/selected.yml"

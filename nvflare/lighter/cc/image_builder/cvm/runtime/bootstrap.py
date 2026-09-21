@@ -16,8 +16,11 @@
 
 import argparse
 import base64
+import ipaddress
 import json
 import os
+import signal
+import subprocess
 from pathlib import Path
 
 from ..common.contracts import HEADER_BYTES, STORAGE_PROFILE, binding
@@ -29,12 +32,12 @@ from ..common.linux import memory_file, protect_process, run
 from ..common.luks import inspect_header, scan, snapshot_header, validate_mapping
 from ..common.measurements import measurements
 from ..common.services import WRITABLE_APPLICATION_DIRS, validate_service
-from ..common.validation import validate_nfs_mount
+from ..common.validation import DEFAULT_CAPABILITIES, DEFAULT_PIDS_LIMIT, capabilities, validate_nfs_mount
 from .attestation import authorized_key
 from .audit import emit
 from .gpu import readiness
 from .platforms import guest_platform, local_report, verify_local_binding
-from .storage import disk_device
+from .storage import close_vault, disk_device
 from .supervisor import supervise
 
 CONFIG = Path("/etc/cvm/runtime.json")
@@ -43,10 +46,20 @@ CONFIG = Path("/etc/cvm/runtime.json")
 STATE = Path("/run/cvm")
 
 
+# systemd-resolved's upstream list: the DHCP-learned servers this boot may use.
+RESOLVED_UPSTREAMS = Path("/run/systemd/resolve/resolv.conf")
+
+
 CLOCK_MAX_CORRECTION_SECONDS = 0.5
 
 
 CLOCK_MAX_SKEW_PPM = 1000
+
+
+CONTAINER_NAME = "cvm-application"
+
+
+CONTAINER_STOP_SECONDS = 15
 
 
 MOUNT_POINTS = {"vault": "/vault", "applog": "/applog", "user-config": "/user_config", "user-data": "/user_data"}
@@ -60,13 +73,60 @@ MOUNT_OPTIONS = {
 }
 
 
+# Confinement appended to every admitted application unit. Services run as root
+# unless they set User=, so restrict what that root can reach from the unit.
+SERVICE_HARDENING = (
+    "NoNewPrivileges=yes",
+    "ProtectSystem=strict",
+    "ReadWritePaths=/vault/application/runtime /vault/application/data /applog",
+    "PrivateTmp=yes",
+    "ProtectKernelTunables=yes",
+    "ProtectKernelModules=yes",
+    "ProtectKernelLogs=yes",
+    "ProtectControlGroups=yes",
+    "ProtectClock=yes",
+    "RestrictSUIDSGID=yes",
+    "LockPersonality=yes",
+    "RestrictRealtime=yes",
+    "CapabilityBoundingSet=~CAP_SYS_MODULE CAP_SYS_RAWIO CAP_SYS_BOOT CAP_SYS_TIME CAP_SYS_ADMIN CAP_SYS_PTRACE "
+    "CAP_MAC_ADMIN CAP_MAC_OVERRIDE CAP_NET_ADMIN CAP_BPF CAP_PERFMON CAP_SYSLOG CAP_LINUX_IMMUTABLE "
+    "CAP_BLOCK_SUSPEND CAP_WAKE_ALARM CAP_AUDIT_CONTROL CAP_AUDIT_READ",
+)
+
+
 def mount_roles(devices):
     for role, device in devices.items():
         run(["mount", "-o", MOUNT_OPTIONS[role], device, MOUNT_POINTS[role]])
 
 
-def firewall(inbound, outbound, mappings=()):
-    rules = firewall_rules(inbound, outbound, mappings)
+def discovered_resolvers(path=RESOLVED_UPSTREAMS):
+    """Return the routable upstream DNS servers systemd-resolved learned from DHCP."""
+    try:
+        text = Path(path).read_text()
+    except OSError:
+        return []
+    resolvers = set()
+    for line in text.splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and parts[0] == "nameserver":
+            try:
+                address = ipaddress.ip_address(parts[1].split("%", 1)[0])
+            except ValueError:
+                continue
+            if not address.is_loopback and not address.is_unspecified:
+                resolvers.add(str(address))
+    return sorted(resolvers)
+
+
+def firewall(inbound, outbound, mappings=(), inbound_sources=(), outbound_destinations=(), resolvers=()):
+    rules = firewall_rules(
+        inbound,
+        outbound,
+        mappings,
+        inbound_sources=inbound_sources,
+        outbound_destinations=outbound_destinations,
+        resolvers=resolvers,
+    )
     # Replacing our own table is atomic whether or not it already exists.
     run(["nft", "-f", "-"], input=("table inet cvm {}\ndelete table inet cvm\n" + rules).encode())
 
@@ -141,30 +201,17 @@ def bootstrap():
     reference()
     if not dev:
         run(["nft", "list", "table", "inet", "cvm"], timeout=5)
+        # Narrow the measured bootstrap rules to the resolvers this boot learned
+        # before the first KBS contact; the measured file cannot know them.
+        firewall([], config["bootstrap_egress"], resolvers=discovered_resolvers())
         time_sync(max_tries=90, initialize=True)
     mount_vault(config, dev=dev)
     units = finish_bootstrap(config, dev=dev)
     supervise(config, units, STATE)
 
 
-def mount_vault(config, dev=False):
-    devices = {role: disk_device(role, wait=True) for role in ("applog", "user-config", "user-data", "vault")}
-    device = devices["vault"]
-    if dev:
-        require(
-            not Path("/dev/sev-guest").exists() and not Path("/dev/tdx_guest").exists(),
-            "Dev root must not run as a TEE",
-        )
-        mount_roles(devices)
-        manifest = read_json("/vault/vault_manifest.json")
-        require(
-            manifest.get("dev_mode") is True and manifest["cvm_build_id"] == config["build_id"],
-            "Dev vault/bundle mismatch",
-        )
-        return
-    protect_process()
-    platform = guest_platform()
-    require(platform == config["platform"], "Guest TEE does not match its measured root")
+def open_vault(config, platform, device):
+    """Check the attached header against local hardware, authorize, and activate the mapping."""
     header = snapshot_header(device)
     digest = binding(header)
     # No KBS contact can precede this local hardware comparison.
@@ -188,24 +235,32 @@ def mount_vault(config, dev=False):
                     "vault",
                 ],
                 pass_fds=(key, frozen),
+                secret=True,
             )
         actual_uuid = (
             run(
                 ["cryptsetup", "luksUUID", "--header", f"/proc/self/fd/{frozen}", device],
                 pass_fds=(frozen,),
+                secret=True,
             )
             .decode()
             .strip()
         )
     validate_mapping("vault")
-    # Type=notify, no dependency on bootstrap: wait for READY before scan.
-    run(["systemctl", "start", "cvm_integrity.service"], timeout=30)
-    scan("/dev/mapper/vault")
+    return digest, actual_uuid
+
+
+def verify_payload(config):
+    """Read the authenticated payload while the independent monitor watches it."""
+    if config.get("vault_prescan", True):
+        scan("/dev/mapper/vault")
     require(
         run(["systemctl", "is-active", "cvm_integrity.service"]).strip() == b"active",
         "Integrity monitor stopped during scan",
     )
-    mount_roles({"vault": "/dev/mapper/vault"})
+
+
+def check_vault_manifest(config, platform, actual_uuid):
     manifest = read_json("/vault/vault_manifest.json")
     require(
         manifest["platform"] == platform and manifest["cvm_build_id"] == config["build_id"],
@@ -218,6 +273,33 @@ def mount_vault(config, dev=False):
         "Vault contract mismatch",
     )
     require(manifest.get("luks_uuid") == actual_uuid, "Vault UUID mismatch")
+    return manifest
+
+
+def mount_vault(config, dev=False):
+    devices = {role: disk_device(role, wait=True) for role in ("applog", "user-config", "user-data", "vault")}
+    device = devices["vault"]
+    if dev:
+        require(
+            not Path("/dev/sev-guest").exists() and not Path("/dev/tdx_guest").exists(),
+            "Dev root must not run as a TEE",
+        )
+        mount_roles(devices)
+        manifest = read_json("/vault/vault_manifest.json")
+        require(
+            manifest.get("dev_mode") is True and manifest["cvm_build_id"] == config["build_id"],
+            "Dev vault/bundle mismatch",
+        )
+        return
+    protect_process()
+    platform = guest_platform()
+    require(platform == config["platform"], "Guest TEE does not match its measured root")
+    digest, actual_uuid = open_vault(config, platform, device)
+    # Type=notify, no dependency on bootstrap: wait for READY before scan.
+    run(["systemctl", "start", "cvm_integrity.service"], timeout=30)
+    verify_payload(config)
+    mount_roles({"vault": "/dev/mapper/vault"})
+    check_vault_manifest(config, platform, actual_uuid)
     mount_roles({role: device for role, device in devices.items() if role != "vault"})
     write_json(
         STATE / "binding.json",
@@ -233,6 +315,33 @@ def mount_vault(config, dev=False):
     )
 
 
+def reopen():
+    """Regain authorization after quarantine: same vault identity, fresh appraisal and key."""
+    config = read_json(CONFIG)
+    require(not Path("/etc/cvm/dev_mode").exists(), "Development images do not quarantine")
+    protect_process()
+    time_sync(max_tries=5)
+    platform = guest_platform()
+    require(platform == config["platform"], "Guest TEE does not match its measured root")
+    identity = read_json(STATE / "binding.json")
+    device = disk_device("vault", wait=True)
+    try:
+        digest, actual_uuid = open_vault(config, platform, device)
+        require(
+            digest.hex() == identity["digest"] and actual_uuid == identity["luks_uuid"],
+            "Vault identity changed during quarantine",
+        )
+        verify_payload(config)
+        mount_roles({"vault": "/dev/mapper/vault"})
+        check_vault_manifest(config, platform, actual_uuid)
+        readiness(config, True)
+    except BaseException:
+        # The supervisor also cleans up after killing a timed-out child, when
+        # this handler cannot run. Include failures inside open_vault itself.
+        close_vault()
+        raise
+
+
 def finish_bootstrap(config, dev=False):
     app = read_json("/vault/config/application.json")
     require(app["requires_gpu"] == (config["gpu"] == "nvidia_cc"), "Application GPU/profile mismatch")
@@ -240,7 +349,14 @@ def finish_bootstrap(config, dev=False):
         set(config["bootstrap_egress"]) <= set(app["allowed_out_ports"]),
         "Application firewall would disable attestation",
     )
-    firewall(app["allowed_ports"], app["allowed_out_ports"], app["container"]["ports"])
+    firewall(
+        app["allowed_ports"],
+        app["allowed_out_ports"],
+        app["container"]["ports"],
+        inbound_sources=app.get("allowed_in_cidrs", ()),
+        outbound_destinations=app.get("allowed_out_cidrs", ()),
+        resolvers=discovered_resolvers(),
+    )
     with open("/etc/hosts", "a") as hosts:
         for hostname, address in app["hosts_entries"].items():
             hosts.write(f"\n{address} {hostname}\n")
@@ -276,6 +392,7 @@ def install_services():
                 + f"After={deps}\nRequires={deps}\nBindsTo={deps}\n"
                 + "FailureAction=poweroff-force\n"
                 + "[Service]\nEnvironmentFile=/run/cvm/platform.env\n"
+                + "".join(line + "\n" for line in SERVICE_HARDENING)
             )
             (destination / item.name).write_text(unit)
             units.append(item.name)
@@ -299,19 +416,45 @@ def periodic():
 
 
 def docker_argv(app, *, device=None, defaults=None):
+    """Return the run command; environment values travel through the environment, never argv."""
     cfg = app["container"]
-    args = ["docker", "run", "--rm", "--name", "cvm-application", "--network", "bridge", "--log-driver", "local"]
+    args = [
+        "docker",
+        "run",
+        "--rm",
+        "--name",
+        CONTAINER_NAME,
+        "--network",
+        "bridge",
+        "--log-driver",
+        "local",
+        # A container escape is root in the guest and therefore vault plaintext.
+        # Start from no capabilities and add back only the admitted set.
+        "--cap-drop",
+        "ALL",
+        "--security-opt",
+        "no-new-privileges",
+        "--pids-limit",
+        str(cfg.get("pids_limit", DEFAULT_PIDS_LIMIT)),
+    ]
+    for capability in capabilities(list(cfg.get("capabilities", DEFAULT_CAPABILITIES))):
+        args += ["--cap-add", capability]
+    if cfg.get("read_only_rootfs"):
+        args += ["--read-only", "--tmpfs", "/tmp:rw,nosuid,nodev", "--tmpfs", "/run:rw,nosuid,nodev"]
     for port in cfg["ports"]:
         args += ["--publish", f'{port["host"]}:{port["container"]}/tcp']
-    for source, target, ro in [
+    mounts = [
         ("/vault/application", "/vault/application", True),
         ("/vault/application/runtime", "/vault/application/runtime", False),
         ("/vault/application/data", "/vault/application/data", False),
         ("/applog", "/applog", False),
         ("/user_config", "/user_config", True),
         ("/user_data", "/user_data", True),
-        ("/usr/bin", "/host/bin", True),
-    ]:
+    ]
+    if cfg.get("host_bin"):
+        # Opt-in only: exposes the measured root's tools to the container.
+        mounts.append(("/usr/bin", "/host/bin", True))
+    for source, target, ro in mounts:
         args += ["--mount", f"type=bind,source={source},target={target}" + (",readonly" if ro else "")]
     for entry in cfg["volumes"]:
         require("," not in entry["source"] + entry["target"], "Comma is not supported in mount paths")
@@ -320,8 +463,8 @@ def docker_argv(app, *, device=None, defaults=None):
             f'type=bind,source={entry["source"]},target={entry["target"]}'
             + (",readonly" if entry["read_only"] else ""),
         ]
-    for name, value in cfg["env"].items():
-        args += ["--env", f"{name}={value}"]
+    for name in cfg["env"]:
+        args += ["--env", name]
     if cfg.get("tee_device"):
         require(device in ("/dev/tdx_guest", "/dev/sev-guest"), "Application requested an unavailable TEE device")
         args += ["--device", device]
@@ -343,7 +486,13 @@ def docker_argv(app, *, device=None, defaults=None):
     return args
 
 
+def docker_environment(app):
+    """Environment for the docker client; --env NAME reads each value from here."""
+    return dict(app["container"]["env"])
+
+
 def application():
+    """Run the container; a requested stop exits 0, an unexpected exit keeps its status."""
     app = read_json("/vault/config/application.json")
     for name in ("runtime", "data"):
         directory = Path("/vault/application") / name
@@ -351,6 +500,24 @@ def application():
     for volume in app["container"]["volumes"]:
         source = Path(volume["source"])
         require(source.resolve() == source, "Container volume source contains a symlink")
+    stopping = []
+
+    def request_stop(signum, frame):
+        # systemd stops this unit with SIGTERM (KillMode=mixed). Stop the
+        # container ourselves so its exit status is a requested stop, not a
+        # failure that PID 1 would answer with a forced power-off.
+        stopping.append(signum)
+        subprocess.run(
+            ["docker", "stop", "--time", str(CONTAINER_STOP_SECONDS), CONTAINER_NAME],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            timeout=CONTAINER_STOP_SECONDS + 30,
+        )
+
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        signal.signal(sig, request_stop)
     marker = Path("/vault/docker/image-loaded.json")
     expected = app["image_id"]
 
@@ -369,6 +536,8 @@ def application():
         require(loaded is not None, "Archive does not contain the expected image")
         write_json(marker, {"image_id": expected})
         run(["sync", "-f", "/vault/docker"])
+    if stopping:
+        return 0
     config = read_json(CONFIG)
     if app["requires_gpu"]:
 
@@ -377,10 +546,12 @@ def application():
     # Env values are passed through the environment, not visible in process argv.
     command = docker_argv(app, device=device, defaults=loaded["Config"])
     environment = dict(os.environ)
-    for name, value in app["container"]["env"].items():
-        environment[name] = value
-        command[command.index(f"{name}={value}")] = name
-    os.execvpe(command[0], command, environment)
+    environment.update(docker_environment(app))
+    process = subprocess.Popen(command, env=environment, stdin=subprocess.DEVNULL)
+    status = process.wait()
+    if stopping:
+        return 0
+    return status if status >= 0 else 128 - status
 
 
 def mount_user_data():
@@ -411,12 +582,12 @@ def mount_user_data():
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=("bootstrap", "periodic", "application"))
+    parser.add_argument("action", choices=("bootstrap", "periodic", "application", "reopen"))
     args = parser.parse_args()
-    audited = args.action in ("bootstrap", "periodic")
+    audited = args.action in ("bootstrap", "periodic", "reopen")
     try:
-        globals()[args.action]()
-        if args.action == "periodic":
+        status = globals()[args.action]()
+        if args.action in ("periodic", "reopen"):
 
             emit("allow")
     except Exception:
@@ -425,6 +596,8 @@ def main():
             emit("deny")
         # A traceback could include untrusted app data or token content.
         raise SystemExit("CVM " + args.action + " failed; PID 1 will power off") from None
+    if args.action == "application" and status:
+        raise SystemExit(status)
 
 
 if __name__ == "__main__":

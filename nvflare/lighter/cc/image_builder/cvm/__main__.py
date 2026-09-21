@@ -28,9 +28,10 @@ from .build import config, cvm, vault
 from .common.contracts import PLATFORMS
 from .common.errors import BuildError, ConfigurationError
 from .common.io import read_json, write_json
+from .common.linux import enable_diagnostics
 from .host.preflight import check_host
 from .trustee import admin
-from .trustee.client import delete_resource
+from .trustee.client import delete_resource, resource_role_acl
 from .trustee.import_references import import_references
 from .trustee.inspect_tcb import inspect_tcb
 from .trustee.preflight import check_trustee
@@ -59,6 +60,7 @@ def build(args):
             gpu=args.gpu,
             dev=args.dev,
             acceptance_runner=args.acceptance_runner,
+            approval_key=args.approval_key,
         )
     )
 
@@ -71,14 +73,32 @@ def build_vault(args):
 
 
 def pull(args):
-    output, descriptor, config = oci.materialize(args.source, args.output, args.merge, args.plain_http)
+    local = Path(args.source).expanduser().is_file()
+    if local:
+        if args.archive_sha256 is None and not args.allow_unverified:
+            raise BuildError(
+                "Local OCI archives require --archive-sha256 from the publisher's authenticated channel, "
+                "or an explicit --allow-unverified"
+            )
+    elif args.cosign_key is None and not args.allow_unverified:
+        raise BuildError("Registry artifacts require --cosign-key for signature verification, or --allow-unverified")
+    output, descriptor, config = oci.materialize(
+        args.source,
+        args.output,
+        args.merge,
+        args.plain_http,
+        archive_sha256=args.archive_sha256,
+        cosign_key=args.cosign_key,
+    )
     print(f"Materialized {descriptor['artifactType']} {descriptor['digest']} at {output}")
+    if args.allow_unverified and (args.archive_sha256 is None and args.cosign_key is None):
+        print("Publisher authentication was skipped; the digest alone does not identify who selected it.")
     if config.get("launch_directory"):
         print(f"Launch: cd {output / config['launch_directory']} && sudo ./launch_cvm.sh")
 
 
 def approve(args):
-    approve_bundle(args.bundle, read_json(args.evidence))
+    approve_bundle(args.bundle, read_json(args.evidence), args.signing_key)
     package_bundle(args.bundle)
 
 
@@ -94,6 +114,10 @@ def host_preflight(args):
 
 def parser():
     root = argparse.ArgumentParser(description=__doc__)
+    root.add_argument(
+        "--diagnostics",
+        help="private directory that retains stderr of failed commands which never handle secrets",
+    )
     commands = root.add_subparsers(dest="command", required=True)
     stage1 = commands.add_parser("build", help="construct a generic CVM")
     stage1.add_argument("config", nargs="?", default=str(config.SOURCE / "config/cvm_profile.yml"))
@@ -103,6 +127,10 @@ def parser():
     stage1.add_argument("--dev", action="store_true", help="separate dev- profile without TEE or KBS authorization")
     stage1.add_argument("--gpu", action="append", help="repeat for each explicit NVIDIA GPU PCI address")
     stage1.add_argument("--acceptance-runner", help="trusted executable called as RUNNER BUNDLE REPORT")
+    stage1.add_argument(
+        "--approval-key",
+        help="Ed25519 private key that signs approval.json after site acceptance (or profile approval_signing_key)",
+    )
     stage1.set_defaults(handler=build)
 
     finalize = commands.add_parser("finalize", help="measure a previously constructed bundle")
@@ -125,21 +153,34 @@ def parser():
     materialize.add_argument("--output")
     materialize.add_argument("--merge", action="store_true", help="add a finalized platform to an existing profile")
     materialize.add_argument("--plain-http", action="store_true", help="allow an unencrypted test registry connection")
+    materialize.add_argument("--archive-sha256", help="published SHA-256 of a local .oci.tar (authenticated channel)")
+    materialize.add_argument("--cosign-key", help="cosign public key that must have signed the registry digest")
+    materialize.add_argument(
+        "--allow-unverified",
+        action="store_true",
+        help="skip publisher authentication (lab use only; digests alone do not identify the publisher)",
+    )
     materialize.set_defaults(handler=pull)
     publish = commands.add_parser("publish", help="copy a local OCI tar to a registry")
     publish.add_argument("source")
     publish.add_argument("destination")
     publish.add_argument("--plain-http", action="store_true", help="allow an unencrypted test registry connection")
-    publish.set_defaults(handler=lambda a: print(f"Published: {oci.publish(a.source, a.destination, a.plain_http)}"))
+    publish.add_argument("--cosign-key", help="cosign private key used to sign the published immutable digest")
+    publish.set_defaults(
+        handler=lambda a: print(
+            f"Published: {oci.publish(a.source, a.destination, a.plain_http, cosign_key=a.cosign_key)}"
+        )
+    )
 
     administration = commands.add_parser("admin", help="approve, install, retire or revoke")
     actions = administration.add_subparsers(required=True)
     approval = actions.add_parser("approve")
     approval.add_argument("bundle")
     approval.add_argument("evidence")
+    approval.add_argument("--signing-key", required=True, help="Ed25519 private key of the acceptance authority")
     approval.set_defaults(handler=approve)
     install = actions.add_parser("install")
-    install.add_argument("config")
+    install.add_argument("config", help="administration JSON; production requires approval_public_keys")
     install.add_argument("bundle")
     install.add_argument("--candidate", action="store_true")
     install.set_defaults(handler=lambda a: admin.install(read_json(a.config), a.bundle, a.candidate))
@@ -153,6 +194,9 @@ def parser():
     )
     revoke.add_argument("resource")
     revoke.set_defaults(handler=lambda a: delete_resource(read_json(a.config), a.resource))
+    acl = actions.add_parser("acl", help="print the KBS ACL entry confining a resource role to one bundle")
+    acl.add_argument("build_id")
+    acl.set_defaults(handler=lambda a: print(json.dumps(resource_role_acl(a.build_id), indent=2)))
 
     references = commands.add_parser("references", help="import reviewed references into a stopped Trustee")
     references.add_argument("bundle", type=Path)
@@ -160,9 +204,9 @@ def parser():
     references.add_argument("--state", type=Path, required=True)
     references.add_argument("--expires", required=True, help="approved UTC expiry, e.g. 2026-12-01T00:00:00Z")
     references.set_defaults(handler=lambda a: import_references(a.bundle, a.store, a.state, a.expires))
-    record = commands.add_parser("provenance", help="record a clean upstream Trustee revision and binary")
+    record = commands.add_parser("provenance", help="record a clean upstream Trustee revision and a built binary")
     record.add_argument("source", type=Path)
-    record.add_argument("binary", type=Path)
+    record.add_argument("binary", type=Path, help="kbs or kbs-client executable built from that checkout")
     record.add_argument("output", type=Path)
     record.set_defaults(handler=lambda a: write_json(a.output, provenance(a.source, a.binary)))
     inspect = commands.add_parser("inspect-tcb", help="inspect candidate TDX TCB fields without approving them")
@@ -184,6 +228,8 @@ def main(argv=None):
     cli = parser()
     args = cli.parse_args(argv)
     try:
+        if args.diagnostics:
+            enable_diagnostics(args.diagnostics)
         args.handler(args)
     except ConfigurationError as exc:
         cli.exit(1, f"Invalid configuration: {exc}\n")
