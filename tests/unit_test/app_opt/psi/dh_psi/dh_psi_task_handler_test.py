@@ -11,55 +11,65 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import importlib
-import sys
-from unittest.mock import MagicMock
+import logging
+from typing import List
 
 import pytest
 
-from nvflare.security.logging import secure_format_traceback
+# The DH-PSI modules require the optional openmined.psi dependency, which
+# setup.cfg excludes on Python 3.14. Skip there rather than stub the import.
+pytest.importorskip("private_set_intersection")
+
+from nvflare.apis.fl_constant import ReturnCode
+from nvflare.apis.fl_context import FLContext
+from nvflare.apis.shareable import Shareable
+from nvflare.apis.signal import Signal
+from nvflare.app_common.app_constant import PSIConst
+from nvflare.app_common.psi.psi_executor import PSIExecutor
+from nvflare.app_common.psi.psi_spec import PSI
+from nvflare.app_opt.psi.dh_psi.dh_psi_task_handler import DhPSITaskHandler, check_items_uniqueness
 
 DUPLICATE_SENTINEL = "PRIVATE_PATIENT_SENTINEL"
 OTHER_SENTINEL = "PRIVATE_RECORD_SENTINEL"
 
-_STUBBED_MODULES = ("private_set_intersection", "private_set_intersection.python")
+
+class _StaticItemsPSI(PSI):
+    """Local PSI component that returns a fixed item list."""
+
+    def __init__(self, items: List[str]):
+        super().__init__(psi_writer_id="")
+        self._items = items
+
+    def initialize(self, fl_ctx: FLContext):
+        pass
+
+    def finalize(self, fl_ctx: FLContext):
+        pass
+
+    def load_items(self) -> List[str]:
+        return self._items
 
 
-def _load_check_items_uniqueness():
-    """Imports the duplicate check with the optional native dependency stubbed.
-
-    dh_psi_task_handler imports PSIClient and PSIServer, which import the
-    optional private_set_intersection package. That package is not installable
-    in CI, so it is stubbed for the duration of this import only. Every module
-    added to sys.modules by the import is then removed and the stubbed entries
-    are restored, so later tests still observe the real environment.
-    """
-    saved = {name: sys.modules.get(name) for name in _STUBBED_MODULES}
-    for name in _STUBBED_MODULES:
-        sys.modules[name] = MagicMock()
-
-    before = set(sys.modules)
-    try:
-        module = importlib.import_module("nvflare.app_opt.psi.dh_psi.dh_psi_task_handler")
-        return module.check_items_uniqueness
-    finally:
-        for name in set(sys.modules) - before:
-            sys.modules.pop(name, None)
-        for name, original in saved.items():
-            if original is None:
-                sys.modules.pop(name, None)
-            else:
-                sys.modules[name] = original
+def _prepare_shareable() -> Shareable:
+    shareable = Shareable()
+    shareable[PSIConst.TASK_KEY] = PSIConst.TASK_PREPARE
+    shareable[PSIConst.BLOOM_FILTER_FPR] = 1e-9
+    return shareable
 
 
-check_items_uniqueness = _load_check_items_uniqueness()
+def _executor_with_items(items: List[str]) -> PSIExecutor:
+    task_handler = DhPSITaskHandler(local_psi_id="local_psi")
+    task_handler.local_psi_handler = _StaticItemsPSI(items)
+    executor = PSIExecutor(psi_algo_id="psi_algo")
+    executor.task_handler = task_handler
+    return executor
 
 
 class TestCheckItemsUniqueness:
     def test_unique_items_are_accepted(self):
         check_items_uniqueness([DUPLICATE_SENTINEL, OTHER_SENTINEL, "third"])
 
-    def test_duplicates_are_still_rejected(self):
+    def test_duplicates_are_rejected(self):
         with pytest.raises(ValueError):
             check_items_uniqueness([DUPLICATE_SENTINEL, DUPLICATE_SENTINEL])
 
@@ -70,27 +80,28 @@ class TestCheckItemsUniqueness:
         message = str(exc_info.value)
         assert DUPLICATE_SENTINEL not in message
         assert OTHER_SENTINEL not in message
+        assert message == "the items must be unique, found 2 items with duplicates"
 
-    def test_error_message_reports_duplicate_count(self):
-        with pytest.raises(ValueError) as exc_info:
-            check_items_uniqueness([DUPLICATE_SENTINEL, DUPLICATE_SENTINEL, OTHER_SENTINEL, OTHER_SENTINEL])
 
-        assert str(exc_info.value) == "the items must be unique, found 2 items with duplicates"
+class TestPSIExecutorDuplicateInput:
+    """Drives duplicate input through the real executor and task handler."""
 
-    def test_stubbed_dependency_is_not_left_in_sys_modules(self):
-        for name in _STUBBED_MODULES:
-            assert not isinstance(sys.modules.get(name), MagicMock)
+    def test_duplicate_input_is_rejected_without_logging_items(self, caplog):
+        executor = _executor_with_items([DUPLICATE_SENTINEL, DUPLICATE_SENTINEL, OTHER_SENTINEL])
 
-    def test_traceback_excludes_item_values_when_secure_logging_is_off(self, monkeypatch):
         # Secure logging is opt-in, so an unset NVFLARE_SECURE_LOGGING is the
-        # configuration in which log_exception records the full traceback.
-        monkeypatch.delenv("NVFLARE_SECURE_LOGGING", raising=False)
+        # configuration in which the full traceback reaches the log.
+        with caplog.at_level(logging.DEBUG):
+            reply = executor.execute(PSIConst.TASK, _prepare_shareable(), FLContext(), Signal())
 
-        traceback_text = None
-        try:
-            check_items_uniqueness([DUPLICATE_SENTINEL, DUPLICATE_SENTINEL])
-        except ValueError:
-            traceback_text = secure_format_traceback()
+        assert reply.get_return_code() == ReturnCode.EXECUTION_RESULT_ERROR
+        assert DUPLICATE_SENTINEL not in caplog.text
+        assert OTHER_SENTINEL not in caplog.text
 
-        assert traceback_text is not None
-        assert DUPLICATE_SENTINEL not in traceback_text
+    def test_unique_input_is_accepted_by_the_executor(self, caplog):
+        executor = _executor_with_items([DUPLICATE_SENTINEL, OTHER_SENTINEL])
+
+        with caplog.at_level(logging.DEBUG):
+            reply = executor.execute(PSIConst.TASK, _prepare_shareable(), FLContext(), Signal())
+
+        assert reply.get_return_code() == ReturnCode.OK
