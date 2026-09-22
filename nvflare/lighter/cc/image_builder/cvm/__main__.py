@@ -22,6 +22,7 @@ import tarfile
 from pathlib import Path
 
 from .artifacts import oci
+from .artifacts.acceptance import aggregate as aggregate_acceptance
 from .artifacts.bundle import approve_bundle
 from .artifacts.packaging import package_bundle
 from .build import config, cvm, vault
@@ -102,6 +103,12 @@ def approve(args):
     package_bundle(args.bundle)
 
 
+def acceptance_report(args):
+    report = aggregate_acceptance(args.bundle, args.evidence)
+    write_json(args.output, report, mode=0o600)
+    print(f"Acceptance report: {Path(args.output).resolve()}")
+
+
 def host_preflight(args):
     if not check_host(args.firmware, args.quote_probe):
         print(
@@ -144,9 +151,17 @@ def parser():
     stage2.add_argument("--output")
     stage2.add_argument("--project-config", help="default: nearest cvm_project.yml above the build YAML directory")
     stage2.add_argument("--plain-http", action="store_true", help="allow an unencrypted test registry connection")
-    stage2.add_argument("--candidate", action="store_true", help="test-only profile without production approval")
+    stage2.add_argument("--candidate", action="store_true", help="acceptance-only vault for an exact unapproved bundle")
     stage2.add_argument("--dev", action="store_true", help="plain ext4 for a separate dev- profile; no KBS")
     stage2.set_defaults(handler=build_vault)
+
+    acceptance = commands.add_parser(
+        "acceptance-report", help="aggregate exact-manifest site evidence for admin approve"
+    )
+    acceptance.add_argument("bundle")
+    acceptance.add_argument("evidence", nargs="+", help="result.json files or directories containing them")
+    acceptance.add_argument("--output", required=True)
+    acceptance.set_defaults(handler=acceptance_report)
 
     materialize = commands.add_parser("pull", help="materialize a local OCI tar or immutable registry artifact")
     materialize.add_argument("source")
@@ -182,7 +197,7 @@ def parser():
     install = actions.add_parser("install")
     install.add_argument("config", help="administration JSON; production requires approval_public_keys")
     install.add_argument("bundle")
-    install.add_argument("--candidate", action="store_true")
+    install.add_argument("--candidate", action="store_true", help="install an exact unapproved bundle for acceptance")
     install.set_defaults(handler=lambda a: admin.install(read_json(a.config), a.bundle, a.candidate))
     retire = actions.add_parser("retire")
     retire.add_argument("config")

@@ -70,6 +70,10 @@ def verify_bundle(directory):
         (directory / "resource_policy.rego").read_text() == compose([] if manifest.get("dev_mode") else [manifest]),
         "Bundle resource policy mismatch",
     )
+    require(
+        manifest.get("production_ready") == manifest["contract"].get("production_ready"),
+        "Production eligibility differs from the shared profile contract",
+    )
     return manifest
 
 
@@ -101,7 +105,7 @@ ACCEPTANCE_CHECKS = {
     "writable_applog",
     "root_disk_corruption",
     "ssh_service_and_socket_disabled",
-    "attestation_drop_deadline",
+    "attestation_quarantine_recovery",
     "clock_synchronized_before_attestation",
     "root_overlay_capacity",
 }
@@ -220,6 +224,7 @@ def verify_approval(directory, trusted_keys):
     directory = Path(directory)
     manifest = verify_bundle(directory)
     require(not manifest.get("dev_mode"), "Development roots can never receive production approval")
+    require(manifest.get("production_ready") is True, "This profile is not eligible for production approval")
     receipt = read_json(directory / "approval.json")
     verify_receipt_signature(receipt, trusted_keys)
     require(
@@ -270,6 +275,7 @@ def approve_bundle(directory, report, signing_key):
     """Sign and publish an acceptance receipt for the exact finalized bundle."""
     directory = Path(directory)
     manifest = verify_bundle(directory)
+    require(manifest.get("production_ready") is True, "This profile is not eligible for production approval")
     require(
         report.get("manifest_sha256") == digest_file(directory / "cvm_manifest.json"),
         "Acceptance report covers another bundle",

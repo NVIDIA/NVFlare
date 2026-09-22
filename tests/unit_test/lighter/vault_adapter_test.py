@@ -239,6 +239,12 @@ def test_opt_in_finalized_signed_isolated_workspace(configuration, tmp_path, mon
         assert project_config == tmp_path / "cvm_project.yml"
         assert app["image_id"] == docker_image_id(tmp_path / "image.tar")
         assert app["container"]["command"][-2:] == ["--verify", "--foreground"]
+        owner = staged.stat()
+        assert owner.st_uid > 0 and owner.st_gid > 0
+        assert app["container"]["user"] == f"{owner.st_uid}:{owner.st_gid}"
+        assert all(
+            (path.stat().st_uid, path.stat().st_gid) == (owner.st_uid, owner.st_gid) for path in staged.rglob("*")
+        )
         assert app["allowed_ports"] == [9200]
         assert app["allowed_out_ports"] == [443, 8443, 9002, 9003, 9102]
         assert stat.S_IMODE(config_file.stat().st_mode) == 0o600

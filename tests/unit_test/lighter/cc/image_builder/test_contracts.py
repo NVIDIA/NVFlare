@@ -712,6 +712,13 @@ class ApplicationTests(unittest.TestCase):
             with self.subTest(user=user), self.assertRaises(BuildError):
                 self.load()
 
+    def test_container_receives_authenticated_guest_host_entries(self):
+        self.value["hosts_entries"] = {"server.example": "192.0.2.10", "v6.example": "2001:db8::10"}
+        app = self.load()
+        command = runtime.docker_argv(app)
+        entries = [command[index + 1] for index, value in enumerate(command) if value == "--add-host"]
+        self.assertEqual(entries, ["server.example:192.0.2.10", "v6.example:[2001:db8::10]"])
+
     def test_entrypoint_override_preserves_default_command(self):
         self.value["container"]["entrypoint"] = ["/app/run", "--safe"]
         app = self.load()

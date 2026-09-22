@@ -20,6 +20,7 @@ Every mutation is applied to an independent file copy. Requires root and free
 """
 
 import contextlib
+import hashlib
 import json
 import os
 import shutil
@@ -40,6 +41,32 @@ from cvm.common.errors import require
 from cvm.common.io import digest_file, read_json, write_json
 from cvm.common.linux import run
 from cvm.common.luks import snapshot_header
+
+ACCEPTANCE_CHECKS = {
+    "test_generic_app_binding_and_exclusive_attachment": [
+        "boot_measurements",
+        "local_binding",
+        "exclusive_attachment",
+        "generic_container",
+        "read_only_input_disks",
+        "writable_applog",
+        "clock_synchronized_before_attestation",
+        "root_overlay_capacity",
+        "ssh_service_and_socket_disabled",
+    ],
+    "test_clear_sidecars_contain_no_private_keys": ["clear_sidecar_scan"],
+    "test_root_disk_corruption_prevents_startup": ["root_disk_corruption"],
+    "test_attestation_drop_quarantines_and_recovers": ["attestation_quarantine_recovery"],
+    "test_snp_offline_collateral_works_without_kds": ["snp_collateral_availability"],
+    "test_periodic_gpu_denial_powers_off": ["periodic_gpu_denial"],
+    "test_gpu_backend_unavailable_never_opens_vault": ["gpu_negative_key_denial"],
+    "test_reboot_after_writes_and_journal_interruption": ["reboot_after_writes", "interrupted_journal"],
+    "test_integrity_monitor_crash_powers_off": ["integrity_monitor_failure"],
+    "test_cross_vault_with_fresh_hardware_appraisal": ["cross_vault_key_denial"],
+    "test_interrupted_docker_load_retries": ["interrupted_docker_load"],
+    "test_wrong_header_binding_prevents_startup": ["wrong_binding"],
+    "test_payload_corruption_prevents_startup": ["payload_corruption", "header_snapshot"],
+}
 
 
 @unittest.skipUnless(os.environ.get("CVM_HARDWARE_TESTS") == "1", "Opt-in real TEE acceptance")
@@ -175,8 +202,10 @@ class HardwareTests(unittest.TestCase):
             self.directory / "result.json",
             dict(
                 values,
+                schema_version=1,
                 platform=self.manifest["platform"],
                 manifest_sha256=digest_file(self.bundle / "cvm_manifest.json"),
+                checks=ACCEPTANCE_CHECKS.get(self._testMethodName, []),
                 logs={p.name: digest_file(p) for p in self.logs},
             ),
         )
@@ -335,18 +364,43 @@ class HardwareTests(unittest.TestCase):
         self.result(root_disk_corruption_prevented_startup=True, launch_measurements_unchanged=True)
 
     @unittest.skipUnless(os.environ.get("CVM_NETWORK_FAULTS") == "1", "Opt in to isolated host firewall faults")
-    def test_attestation_drop_powers_off_within_deadline(self):
+    def test_attestation_drop_quarantines_and_recovers(self):
         self.boot()
         self.ready()
         kbs = urlparse(self.manifest["contract"]["kbs_url"])
         started = time.monotonic()
         with self.drop_egress(kbs.port or 443):
             self.request("/periodic", "POST")
-            self.process.wait(timeout=110)
+            deadline = time.monotonic() + 330
+            while time.monotonic() < deadline:
+                self.assertIsNone(self.process.poll(), "Guest powered off before its quarantine recovery window")
+                log = self.logs[-1].read_text(errors="replace")
+                if '"decision":"quarantine"' in log.replace(" ", ""):
+                    break
+                time.sleep(1)
+            else:
+                self.fail("Attestation failure did not close the vault and enter quarantine within 330 seconds")
+            quarantined = time.monotonic()
+            with self.assertRaises((OSError, urllib.error.URLError)):
+                self.request()
+            # Stay isolated through at least one retry interval. The workload
+            # must remain stopped while the guest remains alive and eligible to
+            # recover within the configured 900-second window.
+            time.sleep(65)
+            self.assertIsNone(self.process.poll(), "Guest powered off before its quarantine recovery window")
+            with self.assertRaises((OSError, urllib.error.URLError)):
+                self.request()
+        recovered = self.ready()
         elapsed = time.monotonic() - started
-        self.assertLessEqual(elapsed, 105)
-        self.assertIn("Power down", self.logs[-1].read_text(errors="replace"))
-        self.result(attestation_drop_deadline=True, fail_closed_seconds=round(elapsed, 3))
+        self.stop()
+        self.result(
+            attestation_quarantine_recovery=True,
+            quarantine_seconds=round(quarantined - started, 3),
+            recovery_seconds=round(elapsed, 3),
+            workload_denied_while_isolated=True,
+            vault_close_confirmed_by_audit=True,
+            recovered=recovered,
+        )
 
     @unittest.skipUnless(os.environ.get("CVM_NETWORK_FAULTS") == "1", "Opt in to isolated host firewall faults")
     def test_snp_offline_collateral_works_without_kds(self):
@@ -488,22 +542,40 @@ class HardwareTests(unittest.TestCase):
         # Fault injection by the untrusted host: change an existing data cluster
         # without changing qcow2 metadata, LUKS headers, or another VM's files.
         image = self.vault / "vault.qcow2"
+        info = json.loads(run(["qemu-img", "info", "--force-share", "--output=json", image]))
         mapping = json.loads(run(["qemu-img", "map", "--force-share", "--output=json", image]))
-        address = 64 * 1024**2
+        # Match corrupt_payload(): this is the known initialized test region at
+        # 64 MiB from the guest block device's end, expressed as a guest offset.
+        address = info["virtual-size"] - 64 * 1024**2
         block = next(b for b in mapping if b["start"] <= address < b["start"] + b["length"])
         self.assertTrue(block["data"] and block.get("offset") is not None)
+        physical = block["offset"] + address - block["start"]
         with image.open("r+b", buffering=0) as stream:
-            stream.seek(block["offset"] + address - block["start"])
+            stream.seek(physical)
             data = stream.read(4096)
-            stream.seek(block["offset"] + address - block["start"])
-            stream.write(bytes(x ^ 0x55 for x in data))
+            self.assertEqual(len(data), 4096)
+            changed = bytes(x ^ 0x55 for x in data)
+            stream.seek(physical)
+            stream.write(changed)
             os.fsync(stream.fileno())
+            stream.seek(physical)
+            self.assertEqual(stream.read(4096), changed)
         started = time.monotonic()
         self.assertEqual(json.loads(self.request("/scan", "POST")), {"requested_authenticated_scan": True})
         self.process.wait(timeout=60)
         self.assert_powered_off()
         self.result(
-            post_scan_corruption_powered_off=True, fail_closed_seconds=round(time.monotonic() - started, 3), state=state
+            post_scan_corruption_powered_off=True,
+            fail_closed_seconds=round(time.monotonic() - started, 3),
+            corruption={
+                "guest_offset": address,
+                "host_offset": physical,
+                "mapped_data": True,
+                "before_sha256": hashlib.sha256(data).hexdigest(),
+                "after_sha256": hashlib.sha256(changed).hexdigest(),
+                "write_verified": True,
+            },
+            state=state,
         )
 
     def test_wrong_header_binding_prevents_startup(self):

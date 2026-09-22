@@ -14,6 +14,12 @@ A VM exit after a kernel panic is not a passing integrity-monitor poweroff
 result. Do not approve this kernel/storage combination for production or treat
 `vault_prescan: false` as qualified. A corrected kernel/profile needs the same
 acceptance run before promotion; no weaker storage fallback was enabled.
+The checked-in `cpu-2026.09-r4` profile therefore sets
+`production_ready: false`, and both `approve_bundle()` and approval verification
+reject its manifest even if a report or receipt is supplied. Candidate build,
+candidate policy installation, and candidate vault construction remain available
+so a corrected, newly versioned profile can run the exact-manifest matrix before
+approval.
 
 The source is `95bf53889a04b5ba639bd46ec67651a406f94572` plus the review fixes:
 matching guest/Rego timestamp bounds, numeric `nbf`, and the source-mapping

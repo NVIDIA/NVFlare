@@ -78,6 +78,7 @@ def contract(profile, source=config.SOURCE):
         "vault_storage_profile",
         "trustee_commit",
         "time_servers",
+        "production_ready",
     )
     value = {key: profile[key] for key in keys}
     for key in ("base_image", "build_firmware", "kbs_cert", "as_public_key", "attestation_policy", "reference_values"):
@@ -508,7 +509,10 @@ def select_acceptance_runner(profile, explicit=None, *, defer_measurements=False
         require(not explicit, "Acceptance requires local production finalization")
         return None
     runner = explicit or profile.get("acceptance_runner")
-    return resolve_acceptance_runner(runner or "site_acceptance")
+    if runner is None:
+        return None
+    require(profile.get("production_ready") is True, "Acceptance is disabled for this nonproduction profile")
+    return resolve_acceptance_runner(runner)
 
 
 def run_acceptance(runner, directory, signing_key):
@@ -619,6 +623,7 @@ def build(
             "schema_version": 2,
             "build_id": build_id,
             "profile_version": profile["profile_version"],
+            "production_ready": profile["production_ready"],
             "platform": platform,
             "dev_mode": dev,
             "contract": shared,

@@ -197,17 +197,18 @@ class LabStateTests(unittest.TestCase):
             thread.join(timeout=3)
             server.server_close()
 
-    def test_agent_rejects_production_profile_before_starting(self):
+    def test_agent_accepts_the_exact_production_named_candidate_profile(self):
         agent = load_helper("lab_guest_agent")
         with (
             patch.object(agent, "read_json", return_value={"profile_version": "production"}),
             patch.object(agent, "protect_process") as protect,
             patch.object(agent.http.server, "HTTPServer") as server,
+            patch.object(agent.sys, "argv", [agent.__file__]),
         ):
-            with self.assertRaisesRegex(BuildError, "test profile"):
-                agent.main()
-        protect.assert_not_called()
-        server.assert_not_called()
+            agent.main()
+        protect.assert_called_once_with()
+        server.assert_called_once_with(("0.0.0.0", 18081), agent.Handler)
+        server.return_value.__enter__.return_value.serve_forever.assert_called_once_with()
 
     def test_hardware_runner_reports_http_diagnostic_instead_of_readiness_timeout(self):
         hardware = load_helper("test_hardware")

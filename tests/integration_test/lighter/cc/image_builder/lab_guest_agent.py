@@ -321,7 +321,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
 def main():
     global CONFIG
     CONFIG = read_json("/etc/cvm/runtime.json")
-    require(CONFIG["profile_version"].startswith("test-"), "Acceptance payload requires a test profile")
     protect_process()
     if sys.argv[1:] == ["--prepare-interrupted-load"]:
         prepare_interrupted_load()

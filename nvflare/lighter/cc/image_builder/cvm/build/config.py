@@ -116,6 +116,9 @@ DEFAULT_PACKAGES = [
 
 PROFILE_DEFAULTS = {
     "profile_version": "cpu-2026.09-r4",
+    # The checked-in pins are a buildable candidate, not a production claim.
+    # A site sets this only in a newly qualified profile version.
+    "production_ready": False,
     "guest_release": "26.04",
     "gpu": "none",
     "gpu_count": 1,
@@ -385,6 +388,7 @@ def profile(path):
             merged.update(settings)
             value["platforms"][name] = merged
     require(re.fullmatch(r"[a-z0-9][a-z0-9_.-]{0,63}", value.get("profile_version", "")), "Invalid profile version")
+    require(type(value.get("production_ready")) is bool, "production_ready must be boolean")
     require(value.get("gpu") in ("none", "nvidia_cc"), "gpu must be none or nvidia_cc")
     require(
         type(value.get("gpu_count")) is int and 1 <= value["gpu_count"] <= 8,

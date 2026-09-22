@@ -465,6 +465,13 @@ def docker_argv(app, *, device=None, defaults=None, environment_file=None):
         args += ["--read-only", "--tmpfs", "/tmp:rw,nosuid,nodev", "--tmpfs", "/run:rw,nosuid,nodev"]
     if cfg.get("user"):
         args += ["--user", cfg["user"]]
+    for hostname, address in sorted(app.get("hosts_entries", {}).items()):
+        # Docker's bridge network has its own /etc/hosts. Guest entries do not
+        # propagate into the container, so carry the authenticated mapping into
+        # the namespace that actually runs the application.
+        if ":" in address:
+            address = f"[{address}]"
+        args += ["--add-host", f"{hostname}:{address}"]
     for port in cfg["ports"]:
         args += ["--publish", f'{port["host"]}:{port["container"]}/tcp']
     mounts = [

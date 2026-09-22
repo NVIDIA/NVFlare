@@ -65,10 +65,6 @@ def install(config, directory, candidate=False):
             "Production installation requires approval_public_keys in the administration configuration",
         )
         manifest = verify_approval(directory, load_public_keys(config["approval_public_keys"]))
-    require(
-        not candidate or manifest["profile_version"].startswith("test-"),
-        "Candidate administration requires a test- profile",
-    )
     state = Path(config["state"])
     state.mkdir(parents=True, exist_ok=True, mode=0o700)
     # Deployment receipts are per policy/revision, not per vault. The operator

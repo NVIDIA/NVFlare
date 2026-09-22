@@ -195,7 +195,7 @@ and cannot be downloaded from this repository:
 - `inputs/approved-tcb-references.json`: approved platform TCB reference values.
 - `inputs/kbs_client_build.json`: the `cvmctl provenance` record for `kbs-client`.
 - `inputs/acceptance-signing.key` and `.pub`: the acceptance authority's Ed25519 pair.
-- A `site_acceptance` executable in the build host's root `PATH`.
+- A private evidence directory for the acceptance results described in §2.1.
 
 `inputs/` and `credentials/` are ignored by git; never commit their contents.
 
@@ -310,17 +310,16 @@ policy/reference storage described in [TRUSTEE_GUIDE.md](TRUSTEE_GUIDE.md#6-inst
 target SNP or TDX host:
 
 ```sh
-sudo ./cvmctl build --approval-key inputs/acceptance-signing.key
+sudo ./cvmctl build
 ```
 
 The builder reads the default profile, auto-detects the local platform,
 constructs the application-neutral CVM, boots the exact result to collect
-reference measurements, invokes `site_acceptance`, validates its exact-manifest
-report, and writes an `approval.json` signed with the acceptance key. The key can
-also be named by the profile's `approval_signing_key`; without either, the build
-stops before construction. A missing, failed, or incomplete site acceptance
-report leaves the bundle unapproved. `--acceptance-runner` is available only when
-a site uses a different executable.
+reference measurements, and leaves the finalized bundle unapproved. This
+separation is required because the exact manifest must exist before its candidate
+vault and hardware matrix can be run. A site that already has a complete trusted
+adapter may use `--acceptance-runner` and `--approval-key` to automate the same
+post-finalization flow.
 
 Construction uses a disposable SSH key and a loopback-only forwarded port on the
 trusted build host. The temporary port reservation is released before QEMU binds
@@ -331,13 +330,14 @@ bundle's acceptance report.
 
 Registry transfers have no fixed CLI deadline because multi-disk artifacts can
 take hours over slow links. Apply the site's transfer deadline externally when
-needed. The trusted acceptance runner likewise owns the deadlines for its hardware
+needed. An optional trusted acceptance runner owns the deadlines for its hardware
 and soak tests; an unfinished runner never approves a bundle.
 
 The main defaults are:
 
 ```yaml
 profile_version: cpu-2026.09-r4
+production_ready: false
 guest_release: '26.04'
 gpu: none
 base_image: ../inputs/ubuntu-26.04-server-cloudimg-amd64.img
@@ -367,6 +367,73 @@ policy ID, quote-generation socket, and storage profile. Do not put an NVFlare
 startup kit or `cc_params.yml` in this profile. NVFlare provisioning owns them
 and may supply its output later as application content.
 
+`production_ready: false` is deliberate: the checked-in kernel/storage pins
+failed the recorded production gate. Such a manifest can be built and tested,
+but `admin approve` rejects it. After selecting corrected pins, create a new
+profile version and set `production_ready: true` to make that exact manifest
+eligible for acceptance. The signed, complete report remains a separate gate.
+
+### 2.1 Exact-manifest acceptance and approval
+
+Use the finalized platform directory itself throughout this flow. Candidate mode
+skips approval verification only; it does not weaken measurement, attestation,
+vault encryption, or exact-manifest policy selection. Install the unapproved
+manifest into an isolated acceptance Trustee, then build the acceptance vault
+from that same profile set:
+
+```sh
+sudo ./cvmctl admin install acceptance-admin.json \
+  target/cvm_PROFILE/PLATFORM --candidate
+sudo ./cvmctl vault acceptance-vault.yml --candidate \
+  --project-config acceptance-project.yml --output target/acceptance-vault
+```
+
+`acceptance-vault.yml` uses the normal vault schema and an application image that
+runs the test-only `tests/integration_test/lighter/cc/image_builder/lab_guest_agent.py`.
+The checked-in `test_hardware.py` requires `CVM_HARDWARE_TESTS=1`, `CVM_BUNDLE`,
+`CVM_VAULT`, and `CVM_HARDWARE_OUTPUT`; each passing test writes a versioned
+`result.json` containing the exact `manifest_sha256`, platform, claimed checks,
+and hashes of its retained logs. Site-specific tests use the same result schema:
+
+```json
+{
+  "schema_version": 1,
+  "manifest_sha256": "64 lowercase hex digits",
+  "platform": "intel_tdx",
+  "checks": ["policy_selection"]
+}
+```
+
+Every CPU profile requires: `attestation_quarantine_recovery`,
+`boot_measurements`, `clear_sidecar_scan`,
+`clock_synchronized_before_attestation`, `cross_vault_key_denial`,
+`durable_key_retry`, `exclusive_attachment`, `generic_container`,
+`header_snapshot`, `initramfs_no_kbs`, `integrity_monitor_failure`,
+`interrupted_docker_load`, `interrupted_journal`, `key_revocation`,
+`local_binding`, `negative_appraisal`, `payload_corruption`, `policy_readback`,
+`policy_selection`, `read_only_input_disks`, `reboot_after_writes`,
+`rollback_retirement`, `root_disk_corruption`, `root_overlay_capacity`,
+`ssh_service_and_socket_disabled`, `unauthorized_administration`,
+`writable_applog`, and `wrong_binding`. AMD SEV-SNP additionally requires
+`snp_collateral_availability`. An NVIDIA CC GPU profile additionally requires
+`cross_class_denial`, `gpu_negative_key_denial`, `gpu_policy_selection`,
+`gpu_positive_key_release`, and `periodic_gpu_denial`.
+
+Aggregate only results for this exact finalized manifest, then approve it:
+
+```sh
+sudo ./cvmctl acceptance-report target/cvm_PROFILE/PLATFORM \
+  /srv/cvm/acceptance-evidence --output /srv/cvm/acceptance-report.json
+sudo ./cvmctl admin approve target/cvm_PROFILE/PLATFORM \
+  /srv/cvm/acceptance-report.json --signing-key /secure/acceptance-signing.key
+sudo ./cvmctl admin install production-admin.json target/cvm_PROFILE/PLATFORM
+```
+
+The aggregator rejects wrong-platform, wrong-manifest, duplicate, unknown,
+failed, and incomplete evidence. Revoke the acceptance vault's key resource and
+remove the isolated candidate delivery after the run; production vaults must be
+built without `--candidate` from the newly approved artifact.
+
 The reusable Stage 1 staging tree and OCI deliverable are:
 
 ```text
@@ -375,7 +442,7 @@ target/cvm_<profile_version>/
 ├── oci_artifacts.json
 ├── profile_set.json
 └── <platform>/                       # build workspace
-    ├── approval.json
+    ├── approval.json                 # present only after acceptance and approval
     ├── cvm_manifest.json
     ├── verity_root.qcow2
     ├── OVMF.fd

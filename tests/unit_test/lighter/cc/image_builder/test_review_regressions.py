@@ -40,7 +40,7 @@ class ReviewRegressionTests(unittest.TestCase):
             contract = {"gpu": "nvidia_cc", "trustee_commit": "a" * 40}
             manifest = {
                 "build_id": "test-gpu",
-                "profile_version": "test-gpu-r2",
+                "profile_version": "gpu-2026.09-r2",
                 "contract": contract,
                 "attestation_policy_id": "gpu-r2",
                 "sha256": {"attestation_policy.rego": "c" * 64, "gpu_attestation_policy.rego": "d" * 64},

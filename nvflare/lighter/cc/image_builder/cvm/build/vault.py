@@ -300,10 +300,6 @@ def build(path, output=None, candidate=False, dev=False, plain_http=False, proje
 
 
 def build_with_profile(app, profiles, output=None, candidate=False, dev=False):
-    if candidate:
-        require(
-            profiles["profile_version"].startswith("test-"), "Candidate vaults require a separate test- profile version"
-        )
     require(
         app["requires_gpu"] == (profiles["contract"]["gpu"] == "nvidia_cc"),
         "Application GPU capability must match the profile",
@@ -367,6 +363,7 @@ def build_with_profile(app, profiles, output=None, candidate=False, dev=False):
                         "vault_header_bytes": HEADER_BYTES,
                         "luks_uuid": run(["cryptsetup", "luksUUID", device]).decode().strip(),
                         "content_sha256": expected_content,
+                        "candidate": candidate,
                     }
                     write_json(root / "vault_manifest.json", internal)
                     run(["sync", "-f", root])

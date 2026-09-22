@@ -479,8 +479,8 @@ class VaultAdapter:
             _require(type(app[key]) is int and app[key] > 0, f"{key} must be a positive integer GiB size")
         for key in ("workspace_uid", "workspace_gid"):
             _require(
-                key not in values or (type(values[key]) is int and values[key] >= 0),
-                f"{key} must be a nonnegative integer",
+                key not in values or (type(values[key]) is int and 0 < values[key] < 2**32 - 1),
+                f"{key} must be a nonroot UID/GID",
             )
         for key in ("user_config", "user_data"):
             if key in values:
@@ -665,6 +665,15 @@ class VaultAdapter:
                 ),
                 f"Finalized workspace for {plan['participant'].name} has missing or invalid signatures",
             )
+            owner = source.stat()
+            uid = owner.st_uid if plan["uid"] is None else plan["uid"]
+            gid = owner.st_gid if plan["gid"] is None else plan["gid"]
+            _require(
+                0 < uid < 2**32 - 1 and 0 < gid < 2**32 - 1,
+                "The staged workspace owner must be nonroot; set workspace_uid and workspace_gid explicitly",
+            )
+            plan["uid"], plan["gid"] = uid, gid
+            plan["app"]["container"]["user"] = f"{uid}:{gid}"
             self._network(plan, ctx)
             _require(
                 not plan["inputs"].exists() and (plan["output"] is None or not plan["output"].exists()),
@@ -697,8 +706,8 @@ class VaultAdapter:
             for original in [source, *source.rglob("*")]:
                 copied = destination / original.relative_to(source)
                 info = original.stat()
-                uid = info.st_uid if plan["uid"] is None else plan["uid"]
-                gid = info.st_gid if plan["gid"] is None else plan["gid"]
+                uid = plan["uid"]
+                gid = plan["gid"]
                 if (copied.stat().st_uid, copied.stat().st_gid) != (uid, gid):
                     os.chown(copied, uid, gid)
             # Keep runtime files outside the signed source kit. sub_start.sh

@@ -13,8 +13,9 @@ the main use case; its startup kit and `cc_params.yml` belong to NVFlare
 provisioning, which supplies ordinary application files to this builder.
 
 The security contract and acceptance requirements are in [DESIGN.md](DESIGN.md).
-Production delivery requires an approved generic bundle; `--candidate` is limited
-to explicitly named `test-` profiles and never creates production approval.
+Production delivery requires an approved generic bundle. `--candidate` creates
+an acceptance-only vault from the exact unapproved manifest that can later be
+approved; it never creates production approval by itself.
 Both reusable CVM bundles and final CVM-plus-vault deliveries are emitted as OCI
 image-layout tar files. They can be moved offline or published to a registry.
 Use `./cvmctl publish` for registry publication (optionally signing the digest
@@ -133,11 +134,11 @@ CPU model, attester and launch measurements are platform-specific. The provision
 runtime source is snapshotted at build start to prevent edits during a build from
 changing its declared source hash.
 
-The simple workflow invokes `site_acceptance` from `PATH` with the finalized
-bundle directory and the path where it must write the report. A site-specific
-command can be selected with `--acceptance-runner`. This keeps construction,
-finalization, acceptance, and approval in one call while preserving exact-manifest
-evidence binding. Hardware reference collection alone does **not** approve a bundle. A trusted
+The normal build finalizes the bundle and leaves it unapproved. Create its
+acceptance vault with `cvmctl vault --candidate`, run the site matrix, and use
+`cvmctl acceptance-report` to aggregate manifest-bound `result.json` files. A
+trusted site can automate those steps with `--acceptance-runner`. Hardware
+reference collection alone does **not** approve a bundle. A trusted
 operator must validate the signed quote, replay TDX CCEL where applicable, verify
 the TCB references, and complete the design's acceptance matrix. An acceptance
 report must identify the exact manifest hash and contain successful, hashed
@@ -358,8 +359,8 @@ Use a separate `dev-` profile plus `--dev` on both builders for an unencrypted
 development vault and plain VM. Do not provide Trustee administration credentials to a dev
 vault: `--dev` skips project discovery and rejects `--project-config`.
 Dev artifacts cannot receive production approval or be mixed with production
-deliveries. A test build requiring real TEE/KBS behavior instead uses a `test-`
-profile and the explicit `--candidate` flag on Stage 2 and bundle administration.
+deliveries. A test requiring real TEE/KBS behavior uses the exact finalized
+bundle plus the explicit `--candidate` flag on Stage 2 and bundle administration.
 
 Run the builder contracts on Linux with Python unittest. NVFlare's regular unit
 suite also runs these contracts through

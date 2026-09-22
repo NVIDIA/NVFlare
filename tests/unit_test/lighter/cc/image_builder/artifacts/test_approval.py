@@ -21,6 +21,7 @@ from unittest.mock import Mock, patch
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519
+from cvm.artifacts.acceptance import aggregate
 from cvm.artifacts.bundle import (
     approve_bundle,
     key_id,
@@ -55,8 +56,9 @@ class ApprovalTests(unittest.TestCase):
         self.manifest = {
             "build_id": "fixture-bundle",
             "dev_mode": False,
+            "production_ready": True,
             "platform": "intel_tdx",
-            "contract": {"gpu": "none"},
+            "contract": {"gpu": "none", "production_ready": True},
         }
         self.checks = required_acceptance_checks(self.manifest)
         write_json(self.directory / "cvm_manifest.json", self.manifest)
@@ -104,6 +106,18 @@ class ApprovalTests(unittest.TestCase):
         self.manifest["dev_mode"] = True
         with self.assertRaises(BuildError):
             self.verify()
+
+    def test_nonproduction_profile_can_never_be_approved(self):
+        self.manifest["production_ready"] = False
+        self.manifest["contract"]["production_ready"] = False
+        with self.assertRaisesRegex(BuildError, "not eligible"):
+            self.verify()
+        report = {"manifest_sha256": self.receipt["manifest_sha256"], "checks": self.receipt["checks"]}
+        with (
+            patch("cvm.artifacts.bundle.verify_bundle", return_value=self.manifest),
+            self.assertRaisesRegex(BuildError, "not eligible"),
+        ):
+            approve_bundle(self.directory, report, self.signing_key)
 
     def test_platform_and_gpu_specific_evidence(self):
         for platform, gpu, required in (
@@ -192,14 +206,40 @@ class ApprovalTests(unittest.TestCase):
         with patch.dict("os.environ", {"PATH": str(self.directory)}), self.assertRaises(BuildError):
             resolve_acceptance_runner("site_acceptance")
 
-    def test_simple_build_automatically_selects_site_acceptance(self):
+    def test_acceptance_runner_is_explicit_and_requires_a_production_profile(self):
         runner = self.directory / "site_acceptance"
         runner.write_text("#!/bin/sh\nexit 0\n")
         runner.chmod(0o755)
         with patch.dict("os.environ", {"PATH": str(self.directory)}):
-            self.assertEqual(select_acceptance_runner({}), str(runner))
-            profile = {"acceptance_runner": "site_acceptance"}
+            self.assertIsNone(select_acceptance_runner({"production_ready": False}))
+            profile = {"acceptance_runner": "site_acceptance", "production_ready": True}
+            self.assertEqual(select_acceptance_runner(profile), str(runner))
             self.assertIsNone(select_acceptance_runner(profile, defer_measurements=True))
             self.assertIsNone(select_acceptance_runner(profile, dev=True))
             with self.assertRaises(BuildError):
                 select_acceptance_runner({}, "site_acceptance", defer_measurements=True)
+            with self.assertRaisesRegex(BuildError, "nonproduction"):
+                select_acceptance_runner({"production_ready": False}, "site_acceptance")
+
+    def test_acceptance_report_aggregates_only_exact_complete_evidence(self):
+        first = self.directory / "first.json"
+        second = self.directory / "second.json"
+        names = sorted(self.checks)
+        common = {
+            "schema_version": 1,
+            "manifest_sha256": self.receipt["manifest_sha256"],
+            "platform": self.manifest["platform"],
+        }
+        write_json(first, dict(common, checks=names[: len(names) // 2]))
+        write_json(second, dict(common, checks=names[len(names) // 2 :]))
+        with patch("cvm.artifacts.acceptance.verify_bundle", return_value=self.manifest):
+            report = aggregate(self.directory, [first, second])
+            self.assertEqual(set(report["checks"]), self.checks)
+            self.assertEqual(report["checks"][names[0]]["evidence_sha256"], digest_file(first))
+            write_json(second, dict(common, checks=names[len(names) // 2 + 1 :]))
+            with self.assertRaisesRegex(BuildError, "Missing acceptance checks"):
+                aggregate(self.directory, [first, second])
+            write_json(second, dict(common, checks=names[len(names) // 2 :]))
+            write_json(first, dict(common, manifest_sha256="0" * 64, checks=names[: len(names) // 2]))
+            with self.assertRaisesRegex(BuildError, "another finalized manifest"):
+                aggregate(self.directory, [first, second])
