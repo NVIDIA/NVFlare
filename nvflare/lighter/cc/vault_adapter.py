@@ -370,7 +370,7 @@ class VaultAdapter:
                     "gid": values.get("workspace_gid"),
                 }
             )
-        # SignatureBuilder owns signing, before finalization and vault staging.
+        # VaultSignatureBuilder signs selected workspaces during finalization.
         for plan in self.plans:
             plan["participant"].set_prop(PropKey.CVM_VAULT, True)
 
@@ -742,7 +742,6 @@ class VaultAdapter:
             _write_private(config_file, yaml.safe_dump(app, sort_keys=False))
             log_file = inputs / "build.log"
             if self.output_root is None:
-                # Match the previous packager's participant delivery location.
                 # Preserve the original signed kit instead of deleting it.
                 source.rename(inputs / "startup-kit")
             invoke_vault_builder(self.builder_dir, config_file, output, log_file, self.project_config)

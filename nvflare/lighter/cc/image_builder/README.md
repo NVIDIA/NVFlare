@@ -28,7 +28,7 @@ stderr of failed commands that never handle secrets.
 This builder is part of NVFlare at `nvflare/lighter/cc/image_builder`.
 Run the commands below from this directory in a source checkout. NVFlare
 provisioning invokes `cvmctl vault` through its `cvm_vault` configuration; see
-the [provisioning example](../../../../examples/advanced/cc_provision/cvm_builder/README.md).
+the [provisioning example](../../../../examples/advanced/cvm_builder/README.md).
 
 For operational instructions, see:
 

@@ -27,7 +27,7 @@ builders:
 
 cvm_vault:
   # Relative to this project.yml in the NVFlare source checkout.
-  cvm_builder_dir: ../../../../nvflare/lighter/cc/image_builder
+  cvm_builder_dir: ../../../nvflare/lighter/cc/image_builder
   cvm_image: /srv/cvm/images/tdx-cpu
   docker_archive: /srv/nvflare/images/application.tar
   participants: [server.example.com, site-1]

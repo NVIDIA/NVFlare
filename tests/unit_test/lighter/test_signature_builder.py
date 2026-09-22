@@ -17,23 +17,20 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from nvflare.lighter.constants import PropKey, ProvFileName
+from nvflare.lighter.constants import ProvFileName
 from nvflare.lighter.impl.signature import SignatureBuilder
 
 
-def _make_ctx(kit_dir, ws_dir=None, local_dir=None, root_pri_key="fake_key"):
+def _make_ctx(kit_dir, local_dir=None, root_pri_key="fake_key"):
     ctx = MagicMock()
     ctx.get.return_value = root_pri_key
     ctx.get_kit_dir.return_value = kit_dir
-    ctx.get_ws_dir.return_value = ws_dir or kit_dir
     ctx.get_local_dir.return_value = local_dir or os.path.join(kit_dir, "local")
     return ctx
 
 
-def _make_participant(cc_enabled=False):
-    p = MagicMock()
-    p.get_prop.side_effect = lambda key: cc_enabled if key == PropKey.CC_ENABLED else None
-    return p
+def _make_participant():
+    return MagicMock()
 
 
 def _make_project(participants):
@@ -42,32 +39,17 @@ def _make_project(participants):
     return proj
 
 
-def test_plain_noncc_no_signature_json(tmp_path):
-    """Plain non-CC, non-HE kit: sign_folders must NOT be called."""
+def test_plain_non_he_no_signature_json(tmp_path):
+    """Plain non-HE kit: sign_folders must NOT be called."""
     kit_dir = str(tmp_path / "kit")
     os.makedirs(kit_dir)
     ctx = _make_ctx(kit_dir)
-    proj = _make_project([_make_participant(cc_enabled=False)])
+    proj = _make_project([_make_participant()])
     builder = SignatureBuilder()
 
     with patch("nvflare.lighter.impl.signature.sign_folders") as mock_sign:
         builder.build(proj, ctx)
         mock_sign.assert_not_called()
-
-
-def test_cc_enabled_generates_signature_json(tmp_path):
-    """CC kit: sign_folders called for workspace dir."""
-    ws_dir = str(tmp_path / "ws")
-    kit_dir = str(tmp_path / "kit")
-    os.makedirs(ws_dir)
-    os.makedirs(kit_dir)
-    ctx = _make_ctx(kit_dir, ws_dir=ws_dir)
-    proj = _make_project([_make_participant(cc_enabled=True)])
-    builder = SignatureBuilder()
-
-    with patch("nvflare.lighter.impl.signature.sign_folders") as mock_sign:
-        builder.build(proj, ctx)
-        mock_sign.assert_called_once_with(ws_dir, "fake_key", signature_file=ProvFileName.SIGNATURE_JSON)
 
 
 def test_he_server_context_generates_signature_json(tmp_path):
@@ -78,7 +60,7 @@ def test_he_server_context_generates_signature_json(tmp_path):
     os.makedirs(local_dir)
     open(os.path.join(kit_dir, ProvFileName.SERVER_CONTEXT_TENSEAL), "w").close()
     ctx = _make_ctx(kit_dir, local_dir=local_dir)
-    proj = _make_project([_make_participant(cc_enabled=False)])
+    proj = _make_project([_make_participant()])
     builder = SignatureBuilder()
 
     with patch("nvflare.lighter.impl.signature.sign_folders") as mock_sign:
@@ -96,7 +78,7 @@ def test_he_client_context_generates_signature_json(tmp_path):
     os.makedirs(local_dir)
     open(os.path.join(kit_dir, ProvFileName.CLIENT_CONTEXT_TENSEAL), "w").close()
     ctx = _make_ctx(kit_dir, local_dir=local_dir)
-    proj = _make_project([_make_participant(cc_enabled=False)])
+    proj = _make_project([_make_participant()])
     builder = SignatureBuilder()
 
     with patch("nvflare.lighter.impl.signature.sign_folders") as mock_sign:
@@ -105,11 +87,11 @@ def test_he_client_context_generates_signature_json(tmp_path):
 
 
 def test_no_tenseal_files_no_signature_json(tmp_path):
-    """Non-CC kit with no TenSEAL files: sign_folders NOT called."""
+    """Kit with no TenSEAL files: sign_folders is not called."""
     kit_dir = str(tmp_path / "kit")
     os.makedirs(kit_dir)
     ctx = _make_ctx(kit_dir)
-    proj = _make_project([_make_participant(cc_enabled=False)])
+    proj = _make_project([_make_participant()])
     builder = SignatureBuilder()
 
     with patch("nvflare.lighter.impl.signature.sign_folders") as mock_sign:
@@ -137,7 +119,7 @@ def test_he_both_contexts_generates_signature_json(tmp_path):
     open(os.path.join(kit_dir, ProvFileName.SERVER_CONTEXT_TENSEAL), "w").close()
     open(os.path.join(kit_dir, ProvFileName.CLIENT_CONTEXT_TENSEAL), "w").close()
     ctx = _make_ctx(kit_dir, local_dir=local_dir)
-    proj = _make_project([_make_participant(cc_enabled=False)])
+    proj = _make_project([_make_participant()])
     builder = SignatureBuilder()
 
     with patch("nvflare.lighter.impl.signature.sign_folders") as mock_sign:

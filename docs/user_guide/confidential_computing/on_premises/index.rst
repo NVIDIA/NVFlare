@@ -2,21 +2,18 @@
 On-Premises IP Protection
 *************************
 
-The following documents provide detailed information about FLARE's Confidential Federated AI architecture for IP protection:
+The following documents describe FLARE's Confidential Federated AI deployment
+and runtime attestation support:
 
 - :ref:`cvm_builder` - Provision application vaults using reusable, approved CVM Builder bundles
-- :ref:`cc_architecture` - System architecture and component design
 - :ref:`cc_deployment_guide` - Deployment guide for Intel TDX and AMD SEV-SNP CVMs, with optional NVIDIA GPU support
 - :ref:`base_image_build` - Build instructions for Ubuntu base image, firmware, and required binaries
 - :ref:`confidential_computing_attestation` - Attestation mechanisms and trust establishment
-- :ref:`hashicorp_vault_trustee_deployment` - Operational HashiCorp key vault deployment with Trustee
 
 .. toctree::
    :maxdepth: 2
 
    cvm_builder
-   cc_architecture
    cc_deployment_guide
    base_image_build
    attestation
-   hashicorp_vault_trustee_kbs_deployment

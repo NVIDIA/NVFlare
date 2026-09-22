@@ -48,7 +48,7 @@ Build a Linux amd64 Docker image containing NVFlare, Bash and the application's
 code and dependencies. Save it with ``docker save``. NVFlare derives the image ID
 from the archive; the archive must contain exactly one distinct image.
 
-Use the example in ``examples/advanced/cc_provision/cvm_builder``. It configures
+Use the example in ``examples/advanced/cvm_builder``. It configures
 an Intel TDX server and an AMD SEV-SNP GPU client. Update:
 
 - ``project.yml``: participant names, the builder directory, each participant's
@@ -67,7 +67,7 @@ Run provisioning on the prepared Linux worker:
 
 .. code-block:: bash
 
-   cd examples/advanced/cc_provision/cvm_builder
+   cd examples/advanced/cvm_builder
    nvflare provision -p project.yml -w ./workspace
 
 The ``cvm_vault`` adapter invokes ``cvmctl vault`` after startup-kit generation

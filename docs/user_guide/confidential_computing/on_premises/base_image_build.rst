@@ -33,5 +33,4 @@ and other build options. Production use requires approval of the exact bundle.
 Configure the existing CoCo Trustee using ``TRUSTEE_GUIDE.md``. Guest KBS clients
 and Trustee must use the documented matching upstream versions. Build a generic
 bundle once per platform and profile, then reuse it for subsequent application
-vaults. The older Ansible image workflow and its Ubuntu 24.04 guest inputs do not
-apply to this builder.
+vaults.

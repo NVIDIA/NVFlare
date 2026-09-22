@@ -5,11 +5,15 @@ confidential-computing GPU. Configure a trusted Linux worker with CVM Builder,
 approved generic images, and the existing CoCo Trustee before provisioning.
 
 CVM Builder is included at
-[`nvflare/lighter/cc/image_builder`](../../../../nvflare/lighter/cc/image_builder).
-Follow its [build guide](../../../../nvflare/lighter/cc/image_builder/BUILD_GUIDE.md)
-and [Trustee guide](../../../../nvflare/lighter/cc/image_builder/TRUSTEE_GUIDE.md)
+[`nvflare/lighter/cc/image_builder`](../../../nvflare/lighter/cc/image_builder).
+Follow its [build guide](../../../nvflare/lighter/cc/image_builder/BUILD_GUIDE.md)
+and [Trustee guide](../../../nvflare/lighter/cc/image_builder/TRUSTEE_GUIDE.md)
 to prepare the worker. The example's `cvm_builder_dir` points to that source tree;
 update it if you copy `project.yml` elsewhere.
+
+The [Docker example](docker/README.md) builds the application archive referenced
+by `project.yml`. A matching [sample job](jobs/hello-pt_cifar10_fedavg) is also
+included for deployment validation.
 
 1. Edit `project.yml`: set the reachable server name,
    `cvm_image` folders, Docker archive, and bootstrap egress ports.

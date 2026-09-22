@@ -7,7 +7,7 @@ FLARE Confidential Federated AI
 .. admonition:: FLARE Confidential Federated AI
 
    This feature is in **Technical Preview**.
-   Reach out to the NVIDIA FLARE team for CVM build scripts: federatedlearning@nvidia.com
+   CVM Builder is included in the NVIDIA FLARE source tree.
 
 Introduction
 ============
@@ -118,59 +118,25 @@ This comprehensive approach enables organizations to collaborate on federated le
 FLARE Confidential Federated AI Overview
 ========================================
 
-NVIDIA FLARE provides Confidential Federated AI capabilities that enable secure, trustworthy federated learning through hardware-backed security. It includes two deployment options to address different organizational requirements:
+NVIDIA FLARE provides Confidential Federated AI capabilities that enable secure, trustworthy federated learning through hardware-backed security. The supported deployment uses CVM Builder on confidential-computing hosts.
 
 On-Premises IP Protection Deployment
 ------------------------------------
 
 FLARE's on-premises Confidential Federated AI solution provides comprehensive IP protection for organizations that need to protect proprietary models and training code during federated collaboration. This solution leverages confidential virtual machines (CVMs) with:
 
-- **AMD SEV-SNP CPU + NVIDIA GPU** - Confidential VMs running on AMD processors with Secure Encrypted Virtualization, paired with NVIDIA H100 or Blackwell GPUs for GPU-accelerated confidential computing
-
-.. note::
-
-    Intel TDX support will be provided in a future release
+- **Intel TDX** - Confidential VMs running on Intel Trust Domain Extensions
+- **AMD SEV-SNP CPU with optional NVIDIA GPU** - Confidential VMs running on AMD processors with Secure Encrypted Virtualization, optionally paired with a supported NVIDIA confidential-computing GPU
 
 - **End-to-End IP Protection** - Model code, weights, and training algorithms are protected throughout the entire lifecycle, from deployment through execution to result storage
 - **Attestation-Based Trust** - Hardware-backed attestation verifies the integrity of execution environments before model IP is released to client sites
 - **Secure Deployment Pipeline** - Ensures only certified, unmodified training code is deployed to confidential VMs, preventing deployment-time tampering
 - **CVM Lockdown** - Comprehensive access control hardening on both server and client CVMs (primarily on client side) including disabled login, blocked SSH access, and restricted network ports to prevent unauthorized access to the protected environment
 
-This solution is ideal for organizations with high-value proprietary models collaborating with partners who may have different security postures or trust levels.
-
-
-Azure Confidential Computing Deployment
----------------------------------------
-
-For organizations seeking cloud-based confidential federated learning, FLARE supports running Federated learning workload on Azure Confidential Computing infrastructure.
-This deployment option provides:
-
-.. note::
-
-    Support for additional cloud service providers (CSPs) will be added in future releases.
-
-**Trust Establishment Among Participants**
-
-Azure Confidential Computing enables participants to establish explicit trust through:
-
-- **Remote Attestation** - Each participant can verify that the FL server is running in a genuine confidential VM before submitting updates
-- **Hardware Root of Trust** - Azure's confidential computing infrastructure provides cryptographic proof of the execution environment's integrity
-- **Transparent Security Posture** - All participants can independently verify the security properties of the federated learning environment without relying solely on organizational agreements
-
-This deployment model is suitable for organizations that prioritize data privacy and secure aggregation, while training code and model architectures can be shared among trusted participants.
-
-
-Choosing the Right Deployment
-=============================
-
-- Use **On-Premises IP Protection** when model IP is highly valuable and must be protected from all participants
-- Use **Azure Confidential Computing** when the primary concern is data privacy and secure aggregation among trusted collaborators
-- Both options can be combined in hybrid deployments where some sites require IP protection while others focus on secure aggregation
+This solution is intended for organizations with high-value proprietary models collaborating with partners who may have different security postures or trust levels.
 
 
 .. toctree::
    :maxdepth: 2
 
    on_premises/index
-   azure/index
-

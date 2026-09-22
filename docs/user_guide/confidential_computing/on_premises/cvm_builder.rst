@@ -140,8 +140,8 @@ different registry images or pulled directories.
 Relative input paths resolve against ``project.yml``. Generated builder input
 paths are absolute. ``output_root`` is optional: by default, each selected
 participant's delivery goes into ``workspace/<project>/prod_NN/<participant>/``,
-the same participant folder used by the previous packager. Its original signed
-startup kit is retained in private staging under
+alongside the administrator's ordinary startup kit. The participant's original
+signed startup kit is retained in private staging under
 ``workspace/<project>/.cvm-vault-builds/<run-id>-inputs/startup-kit/``.
 
 An explicit ``output_root`` places each build in a fresh subdirectory there and
@@ -184,7 +184,7 @@ CPU-only profiles use ``requires_gpu: false``. GPU passthrough and the guest GPU
 gate remain the builder's responsibility. ``tee_device`` defaults to false; enable
 it only when the application's own attestation requires a CPU TEE device.
 The runtime chooses the device for the selected platform. Existing NVFlare
-``CCBuilder``/authorizer configuration remains separate from the CVM boot gate.
+runtime authorizer configuration remains separate from the CVM boot gate.
 
 Network and filesystem behavior
 -------------------------------
