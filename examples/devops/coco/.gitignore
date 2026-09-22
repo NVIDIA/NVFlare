@@ -45,8 +45,9 @@ platform-tools/
 operations/
 recovery/
 coco-app
-# Design slides are maintained only as Markdown.
+# Design slides remain Markdown-only; allow the reviewed interactive sequence diagram.
 docs/*.html
+!docs/coco-four-party-sequence.html
 docs/*.pdf
 docs/*.pptx
 # Shared implementations remain reviewable despite repository-wide lib ignores.

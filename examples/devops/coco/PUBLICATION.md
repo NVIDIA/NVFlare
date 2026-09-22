@@ -30,8 +30,8 @@ The `.gitignore` excludes commonly generated configuration, credentials,
 certificates, release/evidence directories and archives. It is defense in depth,
 not a secret scanner or authorization to publish ignored material. Review the
 tracked changes before committing, and the output before sharing. Never add
-live configuration or generated artifacts to Git merely to include them in a kit.
-Keep the source checkout separate from deployment working directories.
+live configuration or generated deployment artifacts to Git merely to include
+them in a kit. Keep the source checkout separate from deployment working directories.
 
 To export the committed source package from the NVFlare repository root, use
 Git rather than archiving a working directory:
@@ -60,9 +60,16 @@ source wrappers without their shared tree or edit generated implementation copie
 Regeneration refuses to overwrite existing output. Runtime configuration remains
 private and is supplied separately after transfer.
 
-The [design slides](docs/coco-security-design-3-slides.md) are provided only as
-Markdown. No slide exporter or generated HTML/PDF/PPTX is included. The validator
-rejects other files in `docs/` and duplicated role `CURRENT-STATE.md` summaries.
+The reviewed public documentation in `docs/` is limited to these three files:
+
+- [Design slides (Markdown)](docs/coco-security-design-3-slides.md).
+- [Four-party sequence diagram (Mermaid source)](docs/coco-four-party-sequence.mmd).
+- [Four-party sequence diagram (offline interactive HTML)](docs/coco-four-party-sequence.html).
+
+The HTML is the approved rendered sequence diagram, including script-name
+tooltips; it is not a slide export. PDF/PPTX exports, slide exporters and other
+files in `docs/` remain excluded. The validator rejects other `docs/` files and
+duplicated role `CURRENT-STATE.md` summaries.
 
 ## Offline static checks
 
