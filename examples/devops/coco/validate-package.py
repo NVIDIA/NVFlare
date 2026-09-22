@@ -24,6 +24,11 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
+PUBLIC_DOCS = {
+    "docs/coco-security-design-3-slides.md",
+    "docs/coco-four-party-sequence.mmd",
+    "docs/coco-four-party-sequence.html",
+}
 
 
 def main():
@@ -48,8 +53,8 @@ def main():
     shell_count = python_count = embedded_count = 0
     for name in names:
         path = ROOT / name
-        if name.startswith("docs/") and name != "docs/coco-security-design-3-slides.md":
-            raise SystemExit(f"Keep only the Markdown design slides in docs/: {name}")
+        if name.startswith("docs/") and name not in PUBLIC_DOCS:
+            raise SystemExit(f"Unapproved public document in docs/: {name}")
         if path.suffix in (".pptx", ".pdf"):
             raise SystemExit(f"Generated slide exports are not part of this package: {name}")
         if path.name == "CURRENT-STATE.md":
