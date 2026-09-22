@@ -35,6 +35,7 @@ SELECTOR = REPO_ROOT / "ci" / "should_run_full_ci.sh"
         ),
         (["docs/llms.txt.in", "docs/_static/custom.css"], "false"),
         (["CONTRIBUTING.md", "CITATION.cff", "LICENSE"], "false"),
+        (["docs/resources/step_ca_admin.tpl"], "true"),
         (["docs/conf.py"], "true"),
         (["nvflare/apis/fl_context.py"], "true"),
         (["pyproject.toml"], "true"),

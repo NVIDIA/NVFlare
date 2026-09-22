@@ -32,7 +32,7 @@ while IFS= read -r changed_path || [ -n "$changed_path" ]; do
             ;;
         docs/*.css | docs/*.gif | docs/*.html | docs/*.ico | docs/*.in | \
             docs/*.jpeg | docs/*.jpg | docs/*.json | docs/*.png | docs/*.svg | \
-            docs/*.tpl | docs/*.txt | docs/*.webp | docs/Makefile)
+            docs/*.txt | docs/*.webp | docs/Makefile)
             ;;
         CODE_OF_CONDUCT.md | CONTRIBUTING.md | CITATION.cff | LICENSE)
             ;;
