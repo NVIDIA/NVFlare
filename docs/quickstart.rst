@@ -12,6 +12,9 @@ then points you to the right API and execution environment for your own work.
 Run Your First Federation
 =========================
 
+This quickstart requires **NVFLARE 2.10.0 or later** for the ``nvflare examples``
+CLI and the workflow below.
+
 After creating and activating a Python virtual environment as described in
 :doc:`Installation <installation>`, install NVFLARE with its PyTorch
 integration, retrieve the Hello PyTorch example that matches the installed
@@ -19,7 +22,7 @@ package revision, and run it with focused progress output:
 
 .. code-block:: bash
 
-   python -m pip install "nvflare[PT]"
+   python -m pip install "nvflare[PT]>=2.10.0"
    nvflare examples get hello-pt
    cd hello-pt
    python job.py --log_config progress
@@ -236,7 +239,7 @@ learning resources together with research, webinars, and events. Visit the
 `NVIDIA FLARE developer portal <https://developer.nvidia.com/flare>`_ for the
 broader product and developer entry point.
 
-From an installed NVFLARE package, list and retrieve curated examples with:
+With NVFLARE 2.10.0 or later installed, list and retrieve curated examples with:
 
 .. code-block:: bash
 
