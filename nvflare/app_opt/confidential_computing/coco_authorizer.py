@@ -64,6 +64,7 @@ class CoCoAuthorizer(CCAuthorizer):
         retry_jitter_ratio=0.5,
         ear_audience=None,
         workload_constraints=None,
+        proof_iat_leeway_seconds=180,
     ):
         """Configure EAR freshness and the generated/accepted outer proof lifetime separately.
 
@@ -71,8 +72,10 @@ class CoCoAuthorizer(CCAuthorizer):
         older than this limit or with a declared lifetime exceeding it. EAR expiry
         and max_token_age_seconds are enforced independently.
         ear_leeway_seconds (0..180) applies PyJWT clock-skew tolerance to EAR
-        iat, exp and nbf checks. The maximum EAR age and outer proof checks
-        remain independent of this allowance.
+        iat, exp and nbf checks. The maximum EAR age remains unchanged.
+        proof_iat_leeway_seconds (0..180) separately tolerates an outer proof
+        issued ahead of the verifier's clock. Outer exp and nbf checks remain
+        strict; proof age/lifetime limits and replay retention are unchanged.
         retry_max_attempts (1..100) includes the first attempt and is used only
         by generate_with_retry(), never by single-attempt generate().
         Retry delays are in seconds. Each wait is sampled between
@@ -96,6 +99,8 @@ class CoCoAuthorizer(CCAuthorizer):
             raise ValueError("proof_lifetime_seconds must be a positive integer")
         if type(ear_leeway_seconds) is not int or not 0 <= ear_leeway_seconds <= 180:
             raise ValueError("ear_leeway_seconds must be 0..180")
+        if type(proof_iat_leeway_seconds) is not int or not 0 <= proof_iat_leeway_seconds <= 180:
+            raise ValueError("proof_iat_leeway_seconds must be 0..180")
         if type(retry_max_attempts) is not int or not 1 <= retry_max_attempts <= 100:
             raise ValueError("retry_max_attempts must be 1..100")
         for name, value in (
@@ -150,6 +155,7 @@ class CoCoAuthorizer(CCAuthorizer):
         self.max_age = max_token_age_seconds
         self.proof_lifetime_seconds = proof_lifetime_seconds
         self.ear_leeway_seconds = ear_leeway_seconds
+        self.proof_iat_leeway_seconds = proof_iat_leeway_seconds
         self.seen = {}
         self.lock = threading.Lock()
         self.retry_max_attempts = retry_max_attempts
@@ -179,7 +185,7 @@ class CoCoAuthorizer(CCAuthorizer):
         # Never trust jku/x5u/x5c from the JWT header, nor the service TLS cert
         # as a substitute for the independently authenticated AS signing key.
         # Match the tested EAR clock-skew allowance for iat, exp and nbf.
-        # This leeway is not applied to the outer proof's decode.
+        # The outer proof has its own future-iat-only allowance.
         claims = jwt.decode(
             token,
             self.trustee_key,
@@ -376,12 +382,15 @@ class CoCoAuthorizer(CCAuthorizer):
                 return False
             untrusted = jwt.decode(token, options={"verify_signature": False})
             ear, public = self._ear(untrusted["ear"])
+            # Handle iat below to allow only bounded future issuance. Generic
+            # JWT leeway would also relax exp/nbf and outlive replay retention.
             proof = jwt.decode(
                 token,
                 public,
                 algorithms=[self._algorithm(public)],
                 audience=self.audience,
-                options={"require": ["sub", "iat", "exp", "jti", "aud"]},
+                options={"require": ["sub", "iat", "exp", "jti", "aud"], "verify_iat": False},
+                leeway=0,
             )
             now = time.time()
             if (
@@ -390,7 +399,7 @@ class CoCoAuthorizer(CCAuthorizer):
                 or (expected_site is not None and proof["sub"] != expected_site)
                 or type(proof["iat"]) is not int
                 or type(proof["exp"]) is not int
-                or not 0 <= now - proof["iat"] <= self.proof_lifetime_seconds
+                or not -self.proof_iat_leeway_seconds <= now - proof["iat"] <= self.proof_lifetime_seconds
                 or not 0 < proof["exp"] - proof["iat"] <= self.proof_lifetime_seconds
                 or not isinstance(proof["jti"], str)
                 or len(proof["jti"]) != 48

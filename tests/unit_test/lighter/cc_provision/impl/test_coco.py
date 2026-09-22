@@ -29,7 +29,12 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
 from nvflare.lighter.cc_provision.impl.cc import CCBuilder
-from nvflare.lighter.cc_provision.impl.coco import CoCoBuilder, resolve_cc_config, validate_coco_config
+from nvflare.lighter.cc_provision.impl.coco import (
+    COCO_STARTUP_PROLOGUE,
+    CoCoBuilder,
+    resolve_cc_config,
+    validate_coco_config,
+)
 from nvflare.lighter.cc_provision.impl.coco_packager import COMMAND, CoCoPackager
 from nvflare.lighter.constants import CtxKey, PropKey, ProvFileName
 from nvflare.lighter.impl.cert import CertBuilder
@@ -183,8 +188,15 @@ def setup_server_project(tmp_path, with_cc_client=True):
 
 
 @pytest.mark.parametrize("with_cc_client", [False, True])
-def test_provision_server_signed_kit_and_client_verifiers(tmp_path, with_cc_client):
+@pytest.mark.parametrize("proof_iat_leeway", [None, 30])
+def test_provision_server_signed_kit_and_client_verifiers(tmp_path, with_cc_client, proof_iat_leeway):
     project, configs = setup_server_project(tmp_path, with_cc_client)
+    if proof_iat_leeway is not None:
+        for participant in project.get_all_participants():
+            if participant.name in configs:
+                config = configs[participant.name]
+                config["cc_issuers"][0]["args"]["proof_iat_leeway_seconds"] = proof_iat_leeway
+                (tmp_path / participant.get_prop(PropKey.CC_CONFIG)).write_text(yaml.safe_dump(config))
     seen = {}
     root = tmp_path / "workspace/test_project"
 
@@ -221,7 +233,12 @@ def test_provision_server_signed_kit_and_client_verifiers(tmp_path, with_cc_clie
         assert manager["required_site_verifier_ids"] == expected_verifiers
         assert manager["cc_verifier_ids"] == ["coco_authorizer"]
         assert manager["require_site_binding"] is True
+        if proof_iat_leeway is None:
+            assert "proof_iat_leeway_seconds" not in authorizer
+        else:
+            assert authorizer["proof_iat_leeway_seconds"] == proof_iat_leeway
         if protected:
+            assert (kit / "startup/sub_start.sh").read_text().startswith(COCO_STARTUP_PROLOGUE)
             assert verify_folder_signature(
                 str(kit),
                 str(kit / "startup/rootCA.pem"),
@@ -249,13 +266,24 @@ def test_provision_server_signed_kit_and_client_verifiers(tmp_path, with_cc_clie
                 resources = json.loads((local / ProvFileName.RESOURCES_JSON_DEFAULT).read_text())
                 assert "my_app.controller.ReviewedController" in resources["class_allow_list"]
         else:
+            assert not (kit / "startup/sub_start.sh").read_text().startswith(COCO_STARTUP_PROLOGUE)
             assert manager["cc_issuers_conf"] == []
             assert "site_name" not in authorizer
             assert (kit / "startup/client.key").is_file()
 
 
-def test_server_entrypoint_verifies_kit_then_starts_server_module(tmp_path, monkeypatch):
-    project, configs = setup_server_project(tmp_path, with_cc_client=False)
+@pytest.mark.parametrize("role", ["client", "server"])
+@pytest.mark.parametrize("verification_fails", [False, True])
+def test_protected_entrypoint_is_silent_and_verifies_kit_before_starting(
+    tmp_path, monkeypatch, role, verification_fails
+):
+    if role == "server":
+        project, configs = setup_server_project(tmp_path, with_cc_client=False)
+        participant = project.get_server().name
+    else:
+        project, config = setup_project(tmp_path)
+        participant = "site-1"
+        configs = {participant: config}
 
     def runner(command, **kwargs):
         request = Path(command[1])
@@ -264,7 +292,7 @@ def test_server_entrypoint_verifies_kit_then_starts_server_module(tmp_path, monk
     with patch("nvflare.lighter.cc_provision.impl.coco_packager.subprocess.run", side_effect=runner):
         ctx = Provisioner(str(tmp_path / "workspace"), builders(), CoCoPackager("build.sh")).provision(project)
     assert not ctx.get(CtxKey.BUILD_ERROR), ctx.get_errors()
-    kit = tmp_path / "workspace/test_project/state/coco-private/prod_00/server.example.com/build-context/.nvflare-kit"
+    kit = tmp_path / "workspace/test_project/state/coco-private/prod_00" / participant / "build-context/.nvflare-kit"
     assert verify_folder_signature(
         str(kit), str(kit / "startup/rootCA.pem"), single_signer=True, signature_file=ProvFileName.SIGNATURE_JSON
     )
@@ -272,17 +300,33 @@ def test_server_entrypoint_verifies_kit_then_starts_server_module(tmp_path, monk
     binaries.mkdir()
     recorder = binaries / "python3"
     recorder.write_text(
-        f"#!{sys.executable}\nimport json, os, sys\n"
+        f"#!{sys.executable}\nimport json, logging, os, subprocess, sys\n"
         "with open(os.environ['COCO_TEST_ARGS_FILE'], 'a') as output:\n"
         "    output.write(json.dumps(sys.argv[1:]) + '\\n')\n"
+        "print('verifier or NVFlare stdout')\n"
+        "print('verifier or NVFlare stderr', file=sys.stderr)\n"
+        "logging.basicConfig(level=logging.INFO)\n"
+        "logging.warning('console logger output')\n"
+        "subprocess.run([sys.executable, '-c', \"import logging; print('child stdout'); "
+        "logging.warning('child stderr')\"], check=True)\n"
+        "if 'nvflare.tool.verify_startup_kits' in sys.argv:\n"
+        "    sys.exit(int(os.environ['COCO_TEST_VERIFY_STATUS']))\n"
+        "handler = logging.FileHandler(os.environ['COCO_TEST_GUEST_LOG'])\n"
+        "logging.getLogger().addHandler(handler)\n"
+        "logging.info('guest-local file logger still works')\n"
     )
     recorder.chmod(0o700)
     recorded = tmp_path / "python-arguments.jsonl"
     monkeypatch.setenv("PATH", str(binaries) + os.pathsep + os.environ["PATH"])
     monkeypatch.setenv("NVFL_WORKSPACE", str(kit))
     monkeypatch.setenv("COCO_TEST_ARGS_FILE", str(recorded))
-    subprocess.run([str(kit / "startup/sub_start.sh"), *COMMAND[1:]], check=True, capture_output=True, timeout=10)
-    verification, startup = [json.loads(line) for line in recorded.read_text().splitlines()]
+    monkeypatch.setenv("COCO_TEST_VERIFY_STATUS", "1" if verification_fails else "0")
+    guest_log = kit / "log.txt"
+    monkeypatch.setenv("COCO_TEST_GUEST_LOG", str(guest_log))
+    result = subprocess.run([str(kit / "startup/sub_start.sh"), *COMMAND[1:]], capture_output=True, timeout=10)
+    assert result.stdout == result.stderr == b""
+    calls = [json.loads(line) for line in recorded.read_text().splitlines()]
+    verification = calls[0]
     assert verification == [
         "-m",
         "nvflare.tool.verify_startup_kits",
@@ -291,16 +335,25 @@ def test_server_entrypoint_verifies_kit_then_starts_server_module(tmp_path, monk
         "-c",
         str(kit / "startup/rootCA.pem"),
     ]
-    assert startup == [
+    if verification_fails:
+        assert result.returncode != 0
+        assert len(calls) == 1
+        assert not guest_log.exists()
+        return
+    assert result.returncode == 0
+    assert guest_log.read_text() == "guest-local file logger still works\n"
+    assert len(calls) == 2
+    assert calls[1] == [
         "-u",
         "-m",
-        "nvflare.private.fed.app.server.server_train",
+        f"nvflare.private.fed.app.{role}.{role}_train",
         "-m",
         str(kit),
         "-s",
-        "fed_server.json",
+        f"fed_{role}.json",
         "--set",
         "secure_train=true",
+        *(["uid=site-1"] if role == "client" else []),
         "org=example",
         "config_folder=",
     ]
@@ -325,6 +378,7 @@ def test_provision_real_signed_kit_then_package(tmp_path, custom_retry):
         }
         timeouts = {"registration_token_timeout": 180, "refresh_token_timeout": 40, "get_token_request_timeout": 55}
         config["cc_issuers"][0]["args"].update(retry_options)
+        config["cc_issuers"][0]["args"]["proof_iat_leeway_seconds"] = 30
         config["cc_attestation"].update(timeouts)
         (tmp_path / "cc_site-1.yml").write_text(yaml.safe_dump(config))
     seen = []
@@ -350,6 +404,8 @@ def test_provision_real_signed_kit_then_package(tmp_path, custom_retry):
     assert [p.name for p in (result / "site-1").iterdir()] == ["site-1-v1-pod.yaml"]
     assert (result / "plain-client/startup/client.key").is_file()
     assert (result / "server.example.com/startup/server.key").is_file()
+    for name in ("plain-client", "server.example.com"):
+        assert not (result / name / "startup/sub_start.sh").read_text().startswith(COCO_STARTUP_PROLOGUE)
     assert not project.get_server().get_prop(PropKey.CC_ENABLED)
     local = result / "server.example.com/local"
     manager = json.loads((local / "cc_manager__p_resources.json").read_text())["components"][0]["args"]
@@ -365,7 +421,13 @@ def test_provision_real_signed_kit_then_package(tmp_path, custom_retry):
         == {"site-1": ["coco_authorizer"]}
     )
     client_auth = json.loads((client_local / "coco_authorizer__p_resources.json").read_text())["components"][0]["args"]
+    server_auth = json.loads((local / "coco_authorizer__p_resources.json").read_text())["components"][0]["args"]
     assert client_auth["site_name"] == "site-1"
+    if custom_retry is True:
+        assert client_auth["proof_iat_leeway_seconds"] == server_auth["proof_iat_leeway_seconds"] == 30
+    else:
+        assert "proof_iat_leeway_seconds" not in client_auth
+        assert "proof_iat_leeway_seconds" not in server_auth
     for name, value in retry_options.items():
         assert client_auth[name] == value
     for name, value in timeouts.items():
@@ -431,6 +493,52 @@ def test_invalid_backoff_fails_before_packaging(tmp_path):
     assert not list((tmp_path / "workspace/test_project").glob("prod_*"))
 
 
+@pytest.mark.parametrize("value", [-1, 181, True, 1.5, "30", None])
+def test_invalid_proof_iat_leeway_fails_before_packaging(tmp_path, value):
+    project, config = setup_project(tmp_path)
+    config["cc_issuers"][0]["args"]["proof_iat_leeway_seconds"] = value
+    (tmp_path / "cc_site-1.yml").write_text(yaml.safe_dump(config))
+    with patch("nvflare.lighter.cc_provision.impl.coco_packager.subprocess.run") as runner:
+        ctx = Provisioner(str(tmp_path / "workspace"), builders(), CoCoPackager("build.sh")).provision(project)
+    assert ctx.get(CtxKey.BUILD_ERROR)
+    assert "proof_iat_leeway_seconds" in str(ctx.get_errors())
+    runner.assert_not_called()
+    assert not list((tmp_path / "workspace/test_project").glob("prod_*"))
+
+
+@pytest.mark.parametrize("value", [0, 180])
+def test_provisioning_accepts_proof_iat_leeway_bounds(tmp_path, value):
+    project, config = setup_project(tmp_path)
+    config["cc_issuers"][0]["args"]["proof_iat_leeway_seconds"] = value
+    project.get_clients()[0].set_prop(PropKey.CC_CONFIG_DICT, config)
+    builder = CoCoBuilder()
+    builder.initialize(project, None)
+    assert builder.settings["site-1"][0]["proof_iat_leeway_seconds"] == value
+
+
+def test_protected_server_and_client_must_share_proof_iat_leeway(tmp_path):
+    project, configs = setup_server_project(tmp_path)
+    for participant in project.get_all_participants():
+        if participant.name in configs:
+            config = configs[participant.name]
+            config["cc_issuers"][0]["args"]["proof_iat_leeway_seconds"] = 30 if participant.type == "server" else 60
+            participant.set_prop(PropKey.CC_CONFIG_DICT, config)
+    with pytest.raises(ValueError, match="attestation timing"):
+        CoCoBuilder().initialize(project, None)
+
+
+def test_explicit_default_proof_iat_leeway_matches_omitted_default(tmp_path):
+    project, configs = setup_server_project(tmp_path)
+    configs[project.get_server().name]["cc_issuers"][0]["args"]["proof_iat_leeway_seconds"] = 180
+    for participant in project.get_all_participants():
+        if participant.name in configs:
+            participant.set_prop(PropKey.CC_CONFIG_DICT, configs[participant.name])
+    builder = CoCoBuilder()
+    builder.initialize(project, None)
+    assert builder.settings[project.get_server().name][0]["proof_iat_leeway_seconds"] == 180
+    assert "proof_iat_leeway_seconds" not in builder.settings["site-1"][0]
+
+
 @pytest.mark.parametrize("different_timeout", [False, True])
 def test_clients_may_vary_backoff_but_must_share_manager_timeouts(tmp_path, different_timeout):
     project, config = setup_project(tmp_path)
@@ -468,6 +576,46 @@ def test_missing_packager_rejected_before_plaintext_release(tmp_path):
     project.set_prop("packager", {})
     ctx = Provisioner(str(tmp_path / "workspace"), builders()).provision(project)
     assert ctx.get(CtxKey.BUILD_ERROR)
+
+
+def test_silent_startup_must_be_generated_before_signature_builder(tmp_path):
+    project, _ = setup_project(tmp_path)
+    pipeline = [WorkspaceBuilder(), StaticFileBuilder(), CertBuilder(), SignatureBuilder(), CCBuilder()]
+    with patch("nvflare.lighter.cc_provision.impl.coco_packager.subprocess.run") as runner:
+        ctx = Provisioner(str(tmp_path / "workspace"), pipeline, CoCoPackager("build.sh")).provision(project)
+    assert ctx.get(CtxKey.BUILD_ERROR)
+    assert "CoCoBuilder must run before SignatureBuilder" in str(ctx.get_errors())
+    runner.assert_not_called()
+
+
+@pytest.mark.parametrize("role", ["client", "server"])
+@pytest.mark.parametrize("remove_redirection", [False, True])
+def test_packager_rejects_changed_signed_startup_before_build(tmp_path, role, remove_redirection):
+    if role == "server":
+        project, _ = setup_server_project(tmp_path, with_cc_client=False)
+        participant = project.get_server()
+    else:
+        project, _ = setup_project(tmp_path)
+        participant = project.get_clients()[0]
+
+    class ChangedSignatureBuilder(SignatureBuilder):
+        def build(self, project, ctx):
+            super().build(project, ctx)
+            script = Path(ctx.get_kit_dir(participant)) / "sub_start.sh"
+            content = script.read_text()
+            if remove_redirection:
+                content = content.replace(COCO_STARTUP_PROLOGUE, "#!/usr/bin/env bash\n", 1)
+            else:
+                content += "\necho changed-after-signing\n"
+            script.write_text(content)
+
+    pipeline = [WorkspaceBuilder(), StaticFileBuilder(), CertBuilder(), CCBuilder(), ChangedSignatureBuilder()]
+    error = "discard host-visible output" if remove_redirection else "signature verification failed"
+    with patch("nvflare.lighter.cc_provision.impl.coco_packager.subprocess.run") as runner:
+        with pytest.raises(ValueError, match=error):
+            Provisioner(str(tmp_path / "workspace"), pipeline, CoCoPackager("build.sh")).provision(project)
+    runner.assert_not_called()
+    assert not (tmp_path / "workspace/test_project/prod_00" / participant.name).exists()
 
 
 def test_build_failure_preserves_private_kit_without_public_handoff(tmp_path):

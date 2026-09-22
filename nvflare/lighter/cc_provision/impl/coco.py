@@ -30,6 +30,7 @@ from nvflare.lighter.spec import Builder
 
 AUTHOR_PATH = "nvflare.app_opt.confidential_computing.coco_authorizer.CoCoAuthorizer"
 MANAGER_PATH = "nvflare.app_opt.confidential_computing.cc_manager.CCManager"
+COCO_STARTUP_PROLOGUE = "#!/usr/bin/env bash\nexec >/dev/null 2>&1\n"
 RETRY_ARGUMENTS = {
     "retry_max_attempts",
     "retry_initial_delay",
@@ -37,6 +38,7 @@ RETRY_ARGUMENTS = {
     "retry_backoff_multiplier",
     "retry_jitter_ratio",
 }
+VERIFIER_ARGUMENTS = {"proof_iat_leeway_seconds"}
 
 
 def validate_coco_config(config):
@@ -96,7 +98,9 @@ def validate_coco_config(config):
     ):
         raise ValueError("CoCo requires the coco_authorizer CoCoAuthorizer component")
     args = issuer["args"]
-    if not isinstance(args, dict) or set(args) - ({"trustee_public_key_file", "token_url"} | RETRY_ARGUMENTS):
+    if not isinstance(args, dict) or set(args) - (
+        {"trustee_public_key_file", "token_url"} | RETRY_ARGUMENTS | VERIFIER_ARGUMENTS
+    ):
         raise ValueError("Unsupported CoCo authorizer arguments")
     if not isinstance(args.get("trustee_public_key_file"), str) or not args["trustee_public_key_file"]:
         raise ValueError("trustee_public_key_file is required")
@@ -126,6 +130,7 @@ class CoCoBuilder(Builder):
             raise ValueError("CoCo client name 'server' conflicts with the reserved server runtime identity")
         releases = set()
         self.settings = {}
+        verifier_settings = []
         for participant in project.get_all_participants():
             config = participant.get_prop(PropKey.CC_CONFIG_DICT, {})
             if config.get(CCConfigKey.COMPUTE_ENV) != CCConfigValue.CONFIDENTIAL_CONTAINERS:
@@ -146,24 +151,36 @@ class CoCoBuilder(Builder):
                 "trustee_public_key": pem,
                 "audience": "nvflare-coco:" + project.name,
                 "max_token_age_seconds": issuer["token_expiration"],
-                **{name: value for name, value in issuer["args"].items() if name in RETRY_ARGUMENTS},
+                **{
+                    name: value
+                    for name, value in issuer["args"].items()
+                    if name in RETRY_ARGUMENTS | VERIFIER_ARGUMENTS
+                },
             }
             # Validate endpoint and arguments before any signed kit is released.
             from nvflare.app_opt.confidential_computing.coco_authorizer import CoCoAuthorizer
 
             url = issuer["args"].get("token_url", "http://127.0.0.1:8006/aa/token")
-            CoCoAuthorizer(**args, token_url=url)
+            authorizer = CoCoAuthorizer(**args, token_url=url)
             attestation = config.get("cc_attestation", {})
             timeouts = resolve_token_timeouts(
                 **{name: attestation[name] for name in MANAGER_TIMEOUT_DEFAULTS if name in attestation}
             )
             self.settings[participant.name] = (args, url, attestation.get("check_frequency", 120), timeouts)
+            # Compare effective verifier security settings, so an omitted
+            # default and an explicitly configured default remain equivalent.
+            verifier_settings.append(
+                (
+                    {
+                        **{name: value for name, value in args.items() if name not in RETRY_ARGUMENTS},
+                        "proof_iat_leeway_seconds": authorizer.proof_iat_leeway_seconds,
+                    },
+                    attestation.get("check_frequency", 120),
+                    timeouts,
+                )
+            )
         if not self.settings:
             raise ValueError("CoCoBuilder requires at least one CoCo participant")
-        verifier_settings = [
-            ({name: value for name, value in s[0].items() if name not in RETRY_ARGUMENTS}, s[2], s[3])
-            for s in self.settings.values()
-        ]
         if any(s != verifier_settings[0] for s in verifier_settings[1:]):
             raise ValueError("CoCo participants must share the pinned AS key and attestation timing")
 
@@ -189,6 +206,7 @@ class CoCoBuilder(Builder):
             if not resources.is_file():
                 raise RuntimeError("CoCoBuilder requires StaticFileBuilder before CCBuilder")
             if protected:
+                self._silence_startup(ctx, participant)
                 args, url, frequency, timeouts = self.settings[participant.name]
                 site = SiteType.SERVER if participant.type == SiteType.SERVER else participant.name
                 authorizer_args = {**args, "site_name": site, "token_url": url}
@@ -212,6 +230,22 @@ class CoCoBuilder(Builder):
                     **timeouts,
                 },
             )
+
+    @staticmethod
+    def _silence_startup(ctx, participant):
+        """Discard host-visible startup/process output before signing the kit."""
+        kit = Path(ctx.get_ws_dir(participant))
+        if (kit / ProvFileName.SIGNATURE_JSON).exists():
+            raise RuntimeError("CoCoBuilder must run before SignatureBuilder")
+        startup = kit / "startup/sub_start.sh"
+        text = startup.read_text()
+        shebang = "#!/usr/bin/env bash\n"
+        if not text.startswith(shebang):
+            raise RuntimeError("CoCoBuilder requires the standard Bash startup script")
+        if not text.startswith(COCO_STARTUP_PROLOGUE):
+            # Keep no duplicate of the original stdout/stderr descriptors. All
+            # children inherit /dev/null; guest-local NVFlare file logs remain.
+            startup.write_text(COCO_STARTUP_PROLOGUE + text[len(shebang) :])
 
     @staticmethod
     def _write(ctx, participant, component_id, path, args):

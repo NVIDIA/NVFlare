@@ -25,20 +25,41 @@ command vector, init-data digest, CPU/GPU claims, and resource paths.
 `70-verify-running-workload.sh` re-checks the live Pod against the same
 authenticated manifest: runtime class, image digest, command, and init-data
 annotation must match; the Pod must be `Ready`/`Running` with zero restarts;
-no log bytes may have leaked; and `kubectl exec` must be denied by the guest
-policy. Do not consider the release launched until this step passes.
+the intentionally silent workload must expose no log bytes (or log access must
+be denied by the guest's `ReadStreamRequest` policy); and `kubectl exec` must be
+denied by the guest policy. Other log-access errors do not count as a pass.
+The log check samples at most one byte and never prints application output.
+
+The demo is silent by construction. For NVFlare, the provisioning builder
+redirects startup stdout/stderr to `/dev/null` **before kit signing**, and the
+packager enforces this setting before publication. Standard startup messages and
+the inherited console logger therefore remain off the host-visible stream.
+Guest-local file logs may still exist in the confidential VM; IT must not retrieve
+them. An older noisy image needs a newly built, signed, encrypted and authorized
+release, not a skipped check or an edited Pod command. Arbitrary images not
+prepared with this silent logging contract are unsupported by this verifier.
+
+Passing stage 70 is a cluster-side prerequisite, not proof of application success
+or attestation: CoCo IT controls Kubernetes and its reported status. Before
+accepting the deployment, the trusted federation operator must separately follow
+[NVFlare registration, attestation and readiness verification](../provision/VERIFY-RUNNING-FEDERATION.md)
+over authenticated owner-controlled channels. CoCo IT receives no admin kit.
 
 Allowed operational commands are deliberately limited:
 
 ```bash
 kubectl get pod -n default RELEASE -o wide
 kubectl describe pod -n default RELEASE
-kubectl logs -n default RELEASE
 kubectl delete pod -n default RELEASE
 ```
 
-Logs are visible only if the application writes them; secrets must never be
-logged. Do not use `kubectl exec`, `attach`, `cp`, debug containers,
+Use stage 70's bounded, non-displaying probe for log verification rather than
+printing or collecting application logs. If any application output is visible,
+stop verification and notify the workload
+owner without copying its contents into tickets or support bundles. A zero-byte
+sample is not proof that no earlier or future leak exists; guest stream-policy
+rules do not retroactively erase emitted data. Secrets must never be logged.
+Except for stage 70's expected-denial test, do not use `kubectl exec`, `attach`, `cp`, debug containers,
 `port-forward`, node shell tooling, memory inspection, or guest-agent policy
 replacement. The generated Kata policy is designed to reject interactive guest
 operations, but the operational prohibition remains part of the release

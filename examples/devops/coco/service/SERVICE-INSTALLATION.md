@@ -195,6 +195,18 @@ Outputs live under `/home/service_operator/trustee-main-338610f/`:
 
 ## 5. Start Trustee and create its TLS identity
 
+This is the fresh-install sequence. **Rerunning stage 05 on an existing service
+overwrites its active KBS resource policy with default-deny and removes all
+previous workload authorizations**, before Compose starts. It is not a
+policy-preserving restart. Back up and review the current private policy/resource
+state first, coordinate exclusive maintenance, and follow
+[the policy-reset recovery procedure](README.md#rerunning-stage-05-resets-workload-authorization)
+to restore approved releases afterward. Stages 09–11 do not restore those rules.
+New resource requests are denied after KBS loads the reset policy; keys already
+released to running guests are not retroactively revoked. For an exposed KBS
+administrator token, use the dedicated
+[credential-security procedure](TRUSTEE-ADMIN-CREDENTIAL-SECURITY.md) instead.
+
 ```bash
 cd /home/service_operator/coco-service-admin
 bash ./05-deploy-trustee.sh

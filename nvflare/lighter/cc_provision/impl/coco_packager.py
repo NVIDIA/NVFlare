@@ -23,12 +23,12 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from nvflare.lighter.cc_provision.impl.coco import validate_coco_config
+from nvflare.lighter.cc_provision.impl.coco import COCO_STARTUP_PROLOGUE, validate_coco_config
 from nvflare.lighter.cc_provision.utils import resolve_cc_config
 from nvflare.lighter.cc_provision.workload_security import read_pod, validate_workload_pod
 from nvflare.lighter.constants import PropKey, ProvFileName
 from nvflare.lighter.spec import Packager
-from nvflare.lighter.utils import load_yaml
+from nvflare.lighter.utils import load_yaml, verify_folder_signature
 
 COMMAND = ["/opt/nvflare/startup/sub_start.sh", "--once", "--verify"]
 
@@ -151,6 +151,12 @@ class CoCoPackager(Packager):
                 raise ValueError(
                     f"Missing signed {config['role']} kit input: {name}; order CertBuilder/SignatureBuilder correctly"
                 )
+        if not (kit / "startup/sub_start.sh").read_text().startswith(COCO_STARTUP_PROLOGUE):
+            raise ValueError("CoCo startup must discard host-visible output before startup-kit signing")
+        if not verify_folder_signature(
+            str(kit), str(kit / "startup/rootCA.pem"), single_signer=True, signature_file=ProvFileName.SIGNATURE_JSON
+        ):
+            raise ValueError("CoCo startup kit signature verification failed; do not modify kits after signing")
         for name in (".nvflare-kit", "Dockerfile.coco", "Dockerfile.coco.dockerignore"):
             if (context / name).exists():
                 raise ValueError(f"Reserved CoCo build-context name: {name}")

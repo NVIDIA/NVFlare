@@ -25,9 +25,10 @@ ACTUAL_SHA256="$(sha256sum "${POD_FILE}" | awk '{print $1}')"
 EXPECTED_JSON="$(mktemp)"
 LIVE_JSON="$(mktemp)"
 LOG_OUTPUT="$(mktemp)"
+LOG_ERROR="$(mktemp)"
 EXEC_OUTPUT="$(mktemp)"
 cleanup() {
-    rm -f -- "${EXPECTED_JSON}" "${LIVE_JSON}" "${LOG_OUTPUT}" "${EXEC_OUTPUT}"
+    rm -f -- "${EXPECTED_JSON}" "${LIVE_JSON}" "${LOG_OUTPUT}" "${LOG_ERROR}" "${EXEC_OUTPUT}"
 }
 trap cleanup EXIT
 
@@ -79,11 +80,24 @@ if live.get("status", {}).get("phase") != "Running":
 print("Live Pod matches authenticated image, command, init-data, and runtime")
 PY
 
-kctl logs "${POD_NAME}" -n "${NAMESPACE}" > "${LOG_OUTPUT}"
+# Both the demo and provisioned NVFlare images are intentionally silent. The
+# provisioning builder redirects NVFlare startup before signing the private kit.
+# A single visible byte is enough to reject a release; never print its content.
+set +e
+kctl logs "${POD_NAME}" -n "${NAMESPACE}" --limit-bytes=1 --request-timeout=30s \
+    > "${LOG_OUTPUT}" 2> "${LOG_ERROR}"
+LOG_STATUS=$?
+set -e
 LOG_BYTES="$(wc -c < "${LOG_OUTPUT}")"
 [[ "${LOG_BYTES}" -eq 0 ]] \
-    || die "application emitted ${LOG_BYTES} log bytes visible to CoCo"
-printf 'Application log bytes visible to CoCo: 0\n'
+    || die 'silent workload emitted output visible to CoCo; owner must rebuild and authorize a new release'
+if [[ "${LOG_STATUS}" -eq 0 ]]; then
+    printf 'Silent workload: no application output observed through kubectl logs.\n'
+else
+    grep -Fq 'ReadStreamRequest is blocked by policy' "${LOG_ERROR}" \
+        || die 'could not verify silent workload logs; Kubernetes access/transport errors are not a policy denial'
+    printf 'Application log access denied by guest ReadStreamRequest policy.\n'
+fi
 
 set +e
 kctl exec "${POD_NAME}" -n "${NAMESPACE}" -- /coco-app \
@@ -96,5 +110,7 @@ grep -Fq 'ExecProcessRequest is blocked by policy' "${EXEC_OUTPUT}" \
 printf 'kubectl exec: PermissionDenied (ExecProcessRequest is blocked by policy)\n'
 
 kctl get pod "${POD_NAME}" -n "${NAMESPACE}" -o wide
-printf 'Running-workload verification passed for authenticated Pod %s.\n' \
+printf 'Cluster-side checks passed for authenticated Pod %s.\n' \
     "${ACTUAL_SHA256}"
+printf 'These checks do not establish NVFlare registration, peer attestation, or application readiness.\n'
+printf 'The trusted federation operator must complete provision/VERIFY-RUNNING-FEDERATION.md.\n'

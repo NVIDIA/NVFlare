@@ -189,10 +189,12 @@ configured separately by the authorizer constructor argument `proof_lifetime_sec
 verification limits both proof age and declared lifetime to its locally configured
 value. Configure matching values on the issuer and verifiers; a stricter verifier
 rejects longer-lived proofs. Existing generated kits use the 300-second default.
-This option does not extend EAR validity or add clock-skew tolerance or retries.
+This lifetime option does not extend EAR validity or add clock-skew tolerance or retries.
 AA may return a cached EAR; a new NVFlare proof does not imply
 a new hardware attestation at every poll. EAR older than the maximum age or
 expired beyond the clock-skew allowance fails closed.
+
+### Separate EAR and outer-proof clock-skew checks
 
 The separate `ear_leeway_seconds` constructor argument defaults to 180 seconds
 and accepts integers from 0 to 180. It is passed as PyJWT's `leeway` to the EAR
@@ -202,13 +204,57 @@ ahead of the local clock, and accepts expiration less than that many seconds in
 the past. Set it to 0 for strict time checks. The maximum EAR age is not increased:
 an EAR older than `max_token_age_seconds` still fails even within expiration leeway.
 Signature, required integer timestamps, `exp > iat`, CPU/GPU appraisals, and
-outer-proof checks remain enforced. No leeway is added to the outer proof decode.
+outer-proof checks remain enforced.
 
-Generated kits use this default when running the updated authorizer; rebuild the
-protected images and update ordinary participants' code to deploy the change. This is not
-clock synchronization; the leeway itself adds no retries. Clock lag above the allowance, shorter
-outer-proof lifetimes than the lag, and transient attestation failures can still
-prevent registration. Retry behavior is described below; the shutdown policy is unchanged.
+The outer peer proof has a distinct `proof_iat_leeway_seconds` constructor
+argument, also an integer from 0 to 180 with default 180. It permits the signed
+proof's `iat` to be at most that many seconds ahead of the verifier's clock.
+After verifying the JWT signature, the authorizer explicitly checks
+`-proof_iat_leeway_seconds <= now - iat <= proof_lifetime_seconds`.
+Set it to 0 to reject future-issued proofs. Unlike EAR leeway, this is **not**
+generic JWT leeway: outer `exp` and optional `nbf` remain strict. The maximum
+proof age and declared lifetime remain limited by `proof_lifetime_seconds`;
+signature, audience, authenticated peer binding, and CPU/GPU checks are unchanged.
+An accepted proof's identifier remains in the replay cache until its strict
+expiration; no expired-proof acceptance window is introduced.
+
+For example, a protected server with a clock 90 seconds ahead of a lagging
+client can issue a proof that the client now accepts under the default
+future-`iat` allowance, provided every other check passes. In the reverse
+direction, the lagging client's proof appears 90 seconds old to the server;
+it must still be unexpired and within the normal proof-age/lifetime limits.
+This change does not extend those limits. Increasing the proof lifetime alone
+would not fix rejection of a future-issued proof.
+
+Configure the new option under `cc_issuers[].args` in every protected
+participant's `cc_config` YAML:
+
+```yaml
+cc_issuers:
+  - id: coco_authorizer
+    path: nvflare.app_opt.confidential_computing.coco_authorizer.CoCoAuthorizer
+    token_expiration: 300
+    args:
+      trustee_public_key_file: ./trustee-as-public.pem
+      token_url: http://127.0.0.1:8006/aa/token
+      proof_iat_leeway_seconds: 180
+```
+
+Use the same value on all protected participants in the project. Provisioning
+checks this agreement and also writes the value into ordinary participants'
+generated verifier configurations. Omitting it selects 180. This provisioning
+option controls only the outer proof's future issue-time allowance, not the
+EAR leeway or proof lifetime described above.
+
+To deploy the updated authorizer or change the allowance, update the trusted
+provisioning inputs, run `nvflare provision -p project.yaml`, and rebuild, sign,
+encrypt and publish new protected workload images and their approved handoffs.
+Deploy the regenerated ordinary participants' kits with the updated NVFlare
+code as well. Do not edit signed startup kits or an already approved Pod YAML
+to change these settings. This is not clock synchronization; the allowances add
+no retries. Clock lag above the allowance, shorter outer-proof lifetimes than
+the lag, and transient attestation failures can still prevent registration.
+Retry behavior is described below; the shutdown policy is unchanged.
 
 ## Bounded token-generation retries
 
@@ -335,6 +381,7 @@ client = CoCoAuthorizer(
     site_name="site-1",
     proof_lifetime_seconds=300,
     ear_leeway_seconds=180,
+    proof_iat_leeway_seconds=180,
 )
 proof = client.generate()
 # Send only proof to the server over an authenticated, encrypted connection.
@@ -360,6 +407,7 @@ verifier = CoCoAuthorizer(
     audience="nvflare-coco:example-project",
     proof_lifetime_seconds=300,
     ear_leeway_seconds=180,
+    proof_iat_leeway_seconds=180,
 )
 
 def accept_attestation(received_proof: str, authenticated_site: str) -> bool:

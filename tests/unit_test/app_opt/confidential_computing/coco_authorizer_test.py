@@ -191,6 +191,132 @@ def test_cold_guest_generates_proof_verified_by_synchronized_server(material, la
         assert not verifier.verify_for_site(token, "site-1")
 
 
+@pytest.mark.parametrize("lag", [0, 2, 90, 180])
+def test_protected_server_proof_verified_by_lagging_client(material, lag):
+    claims, client, verifier, _, _ = material
+    now = int(time.time())
+    claims.update(iat=now, exp=now + 300)
+    public = client.trustee_key.public_bytes(
+        serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo
+    ).decode()
+    server = CoCoAuthorizer(public, client.audience, site_name="server")
+    # Both signatures are real; only the guest API and the two peer clocks are mocked.
+    with clock_at(now), patch.object(server, "_get_guest_token", return_value=guest_reply(material)):
+        token = server.generate()
+    with clock_at(now - lag):
+        assert verifier.proof_iat_leeway_seconds == 180
+        assert verifier.verify_for_site(token, "server")
+        assert not verifier.verify_for_site(token, "server")
+
+
+@pytest.mark.parametrize("leeway", [0, 30, 180])
+def test_proof_iat_leeway_boundary(material, leeway):
+    claims, client, _, generate, _ = material
+    now = int(time.time())
+    claims.update(iat=now, exp=now + 300)
+    public = client.trustee_key.public_bytes(
+        serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo
+    ).decode()
+    verifier = CoCoAuthorizer(public, client.audience, proof_iat_leeway_seconds=leeway)
+    with clock_at(now + leeway):
+        token = generate()
+    with clock_at(now):
+        assert verifier.verify_for_site(token, "site-1")
+    with clock_at(now + leeway + 1):
+        outside_window = generate()
+    with clock_at(now):
+        assert not verifier.verify_for_site(outside_window, "site-1")
+
+
+@pytest.mark.parametrize(
+    "future_claim,ear_leeway,proof_leeway,accepted",
+    [("proof", 0, 180, True), ("proof", 180, 0, False), ("ear", 180, 0, True), ("ear", 0, 180, False)],
+)
+def test_ear_and_proof_clock_skew_allowances_are_independent(
+    material, future_claim, ear_leeway, proof_leeway, accepted
+):
+    claims, client, _, generate, _ = material
+    now = int(time.time())
+    claims.update(iat=now + (90 if future_claim == "ear" else 0), exp=now + 300)
+    public = client.trustee_key.public_bytes(
+        serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo
+    ).decode()
+    verifier = CoCoAuthorizer(
+        public, client.audience, ear_leeway_seconds=ear_leeway, proof_iat_leeway_seconds=proof_leeway
+    )
+    with clock_at(now + (90 if future_claim == "proof" else 0)):
+        token = generate()
+    with clock_at(now):
+        assert verifier.verify_for_site(token, "site-1") is accepted
+
+
+@pytest.mark.parametrize("leeway", [-1, 181, True, False, 1.5, "180", None])
+def test_invalid_proof_iat_leeway_rejected(material, leeway):
+    _, _, _, generate, _ = material
+    with pytest.raises(ValueError, match="proof_iat_leeway_seconds must be 0..180"):
+        generate(proof_iat_leeway_seconds=leeway)
+
+
+@pytest.mark.parametrize("kind", ["missing", "null", "true", "false", "string", "float", "list", "object"])
+def test_proof_iat_requires_an_integer_with_skew_tolerance(material, kind):
+    _, _, verifier, generate, key = material
+    proof = jwt.decode(generate(), options={"verify_signature": False})
+    valid_iat = proof.pop("iat")
+    if kind != "missing":
+        proof["iat"] = {
+            "null": None,
+            "true": True,
+            "false": False,
+            "string": str(valid_iat),
+            "float": float(valid_iat),
+            "list": [],
+            "object": {},
+        }[kind]
+    token = jwt.encode(proof, key, algorithm=CoCoAuthorizer._algorithm(key))
+    assert not verifier.verify(token)
+
+
+@pytest.mark.parametrize(
+    "claim,offset,accepted",
+    [("exp", -1, False), ("exp", 0, False), ("exp", 1, True), ("nbf", 1, False), ("nbf", 0, True)],
+)
+def test_proof_iat_leeway_does_not_relax_expiry_or_not_before(material, claim, offset, accepted):
+    claims, _, verifier, generate, key = material
+    now = int(time.time())
+    claims.update(iat=now, exp=now + 300)
+    with clock_at(now):
+        proof = jwt.decode(generate(), options={"verify_signature": False})
+        # Keep the signed lifetime and EAR valid so only the target claim decides.
+        proof["iat"] = now - 10
+        proof[claim] = now + offset
+        if claim == "nbf":
+            proof["exp"] = now + 290
+        token = jwt.encode(proof, key, algorithm=CoCoAuthorizer._algorithm(key))
+        assert verifier.verify(token) is accepted
+
+
+def test_future_dated_proof_replay_stays_blocked_until_strict_expiry(material):
+    claims, _, verifier, generate, _ = material
+    now = int(time.time())
+    claims.update(iat=now, exp=now + 600)
+    with clock_at(now + 90):
+        token = generate(proof_lifetime_seconds=60)
+    proof = jwt.decode(token, options={"verify_signature": False})
+    cache_key = (proof["sub"], proof["jti"])
+    with clock_at(now):
+        assert verifier.verify(token)
+        assert verifier.seen[cache_key] == now + 150
+    for offset in (0, 89, 90, 149):
+        with clock_at(now + offset):
+            assert not verifier.verify(token)
+            assert verifier.seen[cache_key] == now + 150
+    with clock_at(now + 150):
+        assert not verifier.verify(token)
+        # Even losing replay state must not make an exactly expired proof valid.
+        verifier.seen.clear()
+        assert not verifier.verify(token)
+
+
 @pytest.mark.parametrize("leeway", [0, 30, 180])
 def test_ear_iat_leeway_boundary(material, leeway):
     claims, _, verifier, generate, _ = material
@@ -302,8 +428,8 @@ def test_configured_verifier_preserves_time_checks(material, failure):
         proof["iat"] -= 61
         proof["exp"] -= 61
     else:
-        proof["iat"] += 30
-        proof["exp"] += 30
+        proof["iat"] += verifier.proof_iat_leeway_seconds + 1
+        proof["exp"] += verifier.proof_iat_leeway_seconds + 1
     token = jwt.encode(proof, key, algorithm=CoCoAuthorizer._algorithm(key))
     assert not verifier.verify(token)
 

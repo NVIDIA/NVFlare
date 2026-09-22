@@ -179,9 +179,16 @@ Record only nonsecret status:
 
 The verifier compares the live image, command, init-data, and runtime with the
 authenticated handoff; requires Running, Ready, and zero restarts; requires
-zero application log bytes for this silent example; and performs a negative
+zero application log bytes for the silent demo or silent provisioned NVFlare
+startup (an explicit guest `ReadStreamRequest` denial also passes); and performs a negative
 `kubectl exec` test that must return `PermissionDenied` with
 `ExecProcessRequest is blocked by policy`.
+
+NVFlare startup is redirected before kit signing on the trusted provisioning
+node. Do not work around visible output by skipping this check or changing the
+approved command. Rebuild and authorize a fresh release for older noisy kits.
+The verifier never prints application logs and does not mistake an unrelated
+Kubernetes log-access error for policy enforcement.
 
 Do not use SSH, attach, copy, debug containers, host mounts, or altered YAML as
 a success path. The operator can delete or withhold the Pod and observe
@@ -192,7 +199,9 @@ attestation or guest policy and receive no KBS resources.
 
 The service administrator, not CoCo IT, confirms CPU/GPU appraisal and KBS
 resource release. The workload owner confirms application success over its own
-mTLS channel.
+mTLS channel using the [trusted federation verification procedure](../provision/VERIFY-RUNNING-FEDERATION.md).
+CoCo-controlled Pod status and the stage-70 result alone do not establish
+NVFlare registration, peer attestation, or application readiness.
 
 ## 10. Maintenance
 

@@ -11,6 +11,10 @@ require_sudo
 for command in docker git python3 ss; do need_cmd "${command}"; done
 [[ "$(git -C "${TRUSTEE_ROOT}" rev-parse HEAD)" == "${TRUSTEE_COMMIT}" ]] || \
     die 'Trustee source is not the pinned post-v0.21 commit'
+# The setup container has its own shell options and umask: harden the actual
+# mounted script before Compose can create or read any administrator secret.
+python3 "${SCRIPT_DIR}/lib/harden-trustee-setup.py" \
+    "${TRUSTEE_ROOT}/kbs/config/docker-compose/setup.sh"
 need_file "${TRUSTEE_ROOT}/built-image-ids.txt"
 need_file "${KBS_CLIENT}"
 for image in "${KBS_IMAGE}" "${AS_IMAGE}" "${RVPS_IMAGE}"; do

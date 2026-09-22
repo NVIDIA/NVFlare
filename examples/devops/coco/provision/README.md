@@ -177,12 +177,47 @@ The CC builder configures proof issuance and verification before signing using
 the shared pinned Trustee key, project-specific audience, and required protected
 participant identities. The server contributes logical identity `server` to
 that required set only when its own `cc_config` enables protection.
+It also places `exec >/dev/null 2>&1` immediately after the Bash shebang in each
+protected participant's `startup/sub_start.sh`. This must happen before
+`SignatureBuilder`; the packager requires that silent startup prologue and
+verifies the kit's signatures before invoking the image builder. Ordinary
+participants' startup scripts are unchanged. The approved Pod command remains
+`/opt/nvflare/startup/sub_start.sh --once --verify`.
 
 The runner receives one JSON file with schema `nvflare-coco-build-request/v1`
 and absolute `workload_env`, `admin_dir`, `result_file` paths. Success writes a
 `nvflare-coco-build-result/v1` receipt with `release_name`, `pod_yaml`, and
 `trusted_service` paths. A custom runner is trusted code and must preserve the
 same checks; a generated YAML alone is not proof of encryption.
+
+## Protected workload output and diagnostics
+
+Kata policy alone must not be treated as a way to hide previously emitted
+stdout/stderr from the adversarial cluster owner. Normal NVFlare startup prints
+workspace information and console log messages. Provisioning therefore discards
+both output descriptors before startup-kit verification, shell diagnostics,
+NVFlare logging, or child processes run. No copy of the original descriptors is
+retained. This also discards startup failure messages, while preserving failure
+exit codes. NVFlare file handlers still write to guest-local ephemeral storage;
+they are not exported as Kubernetes logs or host volumes.
+
+Keep stage 70's strict zero-output test: a protected NVFlare Pod must not return
+any log bytes to CoCo IT, even if they look harmless. Empty or denied logs are a
+confidentiality check, not proof that NVFlare started successfully. Separately
+confirm registration and periodic attestation from an independently trusted
+server or management endpoint using
+[trusted federation verification](VERIFY-RUNNING-FEDERATION.md), and check Pod
+termination/exit status. Do not
+enable exec, attach, log streaming, host mounts, or a plaintext debug image on
+the adversarial cluster to diagnose a protected workload. Rehearse failures on
+trusted infrastructure instead. Reviewed workload code must not deliberately
+reopen host-facing output or send secrets through other network channels; the
+startup redirect is not a general network-egress policy.
+
+Existing published images do not acquire this change automatically. Re-run
+provisioning on the trusted provisioning node, then sign, encrypt, publish, and
+approve the new workload release as usual. Do not patch startup scripts after
+signing or edit the delivered Pod command to add a shell redirection.
 
 ## Writable runtime state
 
@@ -196,7 +231,9 @@ inside that guest-local writable storage. This is ephemeral state, not persisten
 encrypted storage. The workload can
 modify its own runtime files; the cluster owner still must not substitute the
 agent policy or inject exec requests. CoCo IT can stop the Pod and observe its
-exposed logs/output. Never log secrets to stdout/stderr. Rehearse the actual
+lifecycle and network traffic, but the generated protected startup discards
+stdout/stderr as described above. Never deliberately expose secrets through
+other output channels. Rehearse the actual
 NVFlare workload against the approved runtime/profile before deployment.
 
 ## Handoffs

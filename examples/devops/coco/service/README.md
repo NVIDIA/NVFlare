@@ -54,6 +54,126 @@ certificates and publisher credentials to their intended recipients.
 Do not execute every shell file with a wildcard: steps 12/13 need a separate
 workload handoff. Host-specific teardown scripts are not included.
 
+### Rerunning stage 05 resets workload authorization
+
+`05-deploy-trustee.sh` is a deployment/bootstrap operation, not a policy-preserving
+service restart. **Every run overwrites
+`$TRUSTEE_ROOT/kbs/data/kbs-policy/resource-policy.rego` with the kit's
+default-deny policy**, discarding all previously approved workload release rules.
+The overwrite happens before Compose starts, so a later deployment failure does
+not restore the old policy. Stage 05 does not make a recovery backup for you.
+
+After KBS loads/reloads this policy, new requests for protected resources,
+including image decryption keys, are denied even if CPU/GPU attestation succeeds.
+Existing resource files are not authorization: keeping the image keys in KBS
+storage does not keep their release rules. This also **does not revoke keys
+already released to running guests** or erase a running guest's plaintext.
+Stages 09–11 configure/check platform appraisal and health; they do not restore
+workload release rules. Updating the scripts alone does not reset policy.
+
+For a reference-only update, use 02 → 10 → 11 below, not stage 05. For an exposed
+administrator credential, follow
+[TRUSTEE-ADMIN-CREDENTIAL-SECURITY.md](TRUSTEE-ADMIN-CREDENTIAL-SECURITY.md),
+not a blanket deployment rerun.
+
+If intentionally rerunning stage 05, first pause new workload launches and
+coordinate an exclusive maintenance window: no concurrent deployment, reference
+update, or stage-12 installer. Stage 05 itself does not acquire the shared policy
+update lock. Keep the following backup on secure services only; it contains
+decryption keys and must never be handed to CoCo IT:
+
+```bash
+cd "$HOME/coco-service-admin"
+BACKUP_DIR="$(mktemp -d "$HOME/trustee-policy-backup.XXXXXXXX")"
+(
+  source ./lib/common.sh
+  lock_platform_reference_update
+  install -m 0600 "$KBS_POLICY_DIR/resource-policy.rego" \
+    "$BACKUP_DIR/resource-policy.rego"
+  sudo cp -a "$KBS_STORAGE_DIR" "$BACKUP_DIR/kbs-storage"
+  opa check --strict "$BACKUP_DIR/resource-policy.rego"
+)
+printf 'Private policy/resource backup: %s\n' "$BACKUP_DIR"
+```
+
+Do not continue if the backup fails. Record its exact directory, review the
+policy and the releases it authorizes, and retain the authenticated handoffs and
+their independently obtained manifest digests. A backup is not proof that the
+policy was trustworthy. Keep maintenance exclusive until authorization is
+restored; the backup lock alone does not cover subsequent commands.
+
+When running stage 05 during this maintenance, wrap it in the same lock so it
+cannot race the cooperating reference/workload installers:
+
+```bash
+(
+  source ./lib/common.sh
+  lock_platform_reference_update
+  bash ./05-deploy-trustee.sh
+)
+```
+
+After completing the required service maintenance and platform/health checks,
+restore authorization by **one** of these methods:
+
+1. **Reinstall each approved workload handoff (preferred).** Receive or retain the
+   exact six-file handoff, including its 32-byte `image_key`, through a confidential
+   authenticated channel. Reconfirm its manifest digest with the workload owner.
+   If stage 12 previously removed the staging key, request the complete handoff
+   again; do not synthesize a new key for an existing encrypted image. Follow
+   [TRUSTED-HANDOFF-RUNBOOK.md](TRUSTED-HANDOFF-RUNBOOK.md), then repeat for each
+   release. Stage 12 reviews and merges the policy, uploads/verifies all three
+   resources, and commits the policy last. It does not reconstruct all releases
+   automatically:
+
+   ```bash
+   EXPECTED_MANIFEST_SHA256='<independently authenticated SHA-256 of SHA256SUMS>'
+   bash ./12-install-trusted-service-handoff.sh \
+     "$HOME/incoming/RELEASE" "$EXPECTED_MANIFEST_SHA256"
+   ```
+
+2. **Restore the complete, still-approved policy from the private backup.** Use
+   this only when the service administrator has reviewed the whole policy, all
+   its releases remain approved, and the corresponding persisted resources are
+   unchanged. The following comparison deliberately refuses restoration if the
+   resource repository differs. Resolve any mismatch through authenticated
+   handoff reinstallation instead of bypassing the check. Set `BACKUP_DIR` to
+   the exact directory recorded above, then run:
+
+   ```bash
+   (
+     source ./lib/common.sh
+     lock_platform_reference_update
+     opa check --strict "$BACKUP_DIR/resource-policy.rego"
+     sudo diff --brief --recursive "$BACKUP_DIR/kbs-storage" "$KBS_STORAGE_DIR"
+     kbs_admin set-resource-policy \
+       --policy-file "$BACKUP_DIR/resource-policy.rego" >/dev/null
+     cmp --silent "$BACKUP_DIR/resource-policy.rego" \
+       "$KBS_POLICY_DIR/resource-policy.rego"
+   )
+   ```
+
+   `set-resource-policy` replaces the entire global policy; it does not merge.
+   Do not use this after adding new approvals during maintenance, since it would
+   discard them. OPA syntax validation and byte comparison are not a security
+   review and do not establish that the saved rules should still be trusted.
+
+Finally, check service health, have CoCo IT launch a fresh authorized Pod, and
+verify the new CPU/GPU appraisal and all three resource releases:
+
+```bash
+bash ./11-verify-service.sh
+# After CoCo IT launches a fresh Pod for the restored release:
+bash ./13-verify-workload-release.sh RELEASE 5m
+```
+
+Choose a log window containing that fresh launch, not an earlier successful run;
+repeat the release check for each restored workload. Existing running Pods and a
+passing health check alone do not prove that new key requests are authorized.
+If maintenance changed public certificates, AS signing keys, platform references,
+or workload inputs, update the dependent trust/configuration and regenerate any
+affected handoffs before trying to reuse old Pod YAML.
+
 ### Later reference-only updates
 
 The measurement field accepts one string or a list of 1–64 approved measurements.
