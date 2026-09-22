@@ -16,6 +16,7 @@ import copy
 import hashlib
 import io
 import json
+import os
 import re
 import shutil
 import stat
@@ -58,8 +59,12 @@ def write_tar(path, members, mode="w"):
             archive.addfile(member, io.BytesIO(raw))
 
 
-def write_docker_archive(path, *, modern=False, extra=None, mode="w", os_name="linux", architecture="amd64"):
-    config = json.dumps({"os": os_name, "architecture": architecture, "config": {"Env": ["TEST=1"]}}).encode()
+def write_docker_archive(path, *, modern=False, extra=None, mode="w", os_name="linux", architecture="amd64", user=None):
+    if user is None:
+        user = f"{os.getuid() or 10001}:{os.getgid() or 10001}"
+    config = json.dumps(
+        {"os": os_name, "architecture": architecture, "config": {"Env": ["TEST=1"], "User": user}}
+    ).encode()
     digest = hashlib.sha256(config).hexdigest()
     name = "blobs/sha256/" + digest if modern else digest + ".json"
     entries = [{"Config": name, "RepoTags": ["test:latest"], "Layers": []}]
@@ -240,11 +245,13 @@ def test_opt_in_finalized_signed_isolated_workspace(configuration, tmp_path, mon
         assert app["image_id"] == docker_image_id(tmp_path / "image.tar")
         assert app["container"]["command"][-2:] == ["--verify", "--foreground"]
         owner = staged.stat()
-        assert owner.st_uid > 0 and owner.st_gid > 0
-        assert app["container"]["user"] == f"{owner.st_uid}:{owner.st_gid}"
+        expected_uid = os.getuid() or 10001
+        expected_gid = os.getgid() or 10001
+        assert "user" not in app["container"]
         assert all(
-            (path.stat().st_uid, path.stat().st_gid) == (owner.st_uid, owner.st_gid) for path in staged.rglob("*")
+            (path.stat().st_uid, path.stat().st_gid) == (expected_uid, expected_gid) for path in staged.rglob("*")
         )
+        assert (owner.st_uid, owner.st_gid) == (expected_uid, expected_gid)
         assert app["allowed_ports"] == [9200]
         assert app["allowed_out_ports"] == [443, 8443, 9002, 9003, 9102]
         assert stat.S_IMODE(config_file.stat().st_mode) == 0o600
@@ -375,6 +382,9 @@ def test_no_new_prod_directory_is_not_success(configuration, tmp_path, monkeypat
         ({"host_bin": "yes"}, "host_bin must be boolean"),
         ({"allowed_in_cidrs": "10.0.0.0/8"}, "list of CIDR"),
         ({"allowed_out_cidrs": ["10.0.0.1/8"]}, "host bits"),
+        ({"workspace_uid": 0}, "workspace_uid and workspace_gid must be set together"),
+        ({"workspace_gid": 0}, "workspace_uid and workspace_gid must be set together"),
+        ({"workspace_uid": 2**32 - 1, "workspace_gid": 2**32 - 1}, "workspace_uid must match"),
     ],
 )
 def test_invalid_configuration_fails_before_build(configuration, tmp_path, update, message):
@@ -389,6 +399,24 @@ def test_builder_dir_defaults_to_the_installed_package(configuration, tmp_path):
     adapter = make_adapter(configuration, tmp_path)
     assert adapter.builder_dir == default_builder_dir()
     assert (adapter.builder_dir / "cvmctl").is_file()
+
+
+@pytest.mark.parametrize(
+    "image_user, expected",
+    [("", (0, 0)), ("root", (0, 0)), ("0:0", (0, 0)), ("12001", (12001, 12001)), ("12001:12002", (12001, 12002))],
+)
+def test_image_user_is_preserved_and_drives_workspace_owner(configuration, tmp_path, image_user, expected):
+    write_docker_archive(tmp_path / "image.tar", user=image_user)
+    adapter = make_adapter(configuration, tmp_path)
+    plan = adapter.plans[0]
+    assert "user" not in plan["app"]["container"]
+    assert (plan["uid"], plan["gid"]) == expected
+
+
+def test_named_image_user_is_rejected_without_a_verifiable_numeric_owner(configuration, tmp_path):
+    write_docker_archive(tmp_path / "image.tar", user="nvflare")
+    with pytest.raises(ValueError, match=r"numeric UID\[:GID\] or root"):
+        make_adapter(configuration, tmp_path)
 
 
 def test_host_bin_and_address_allowlists_reach_the_builder(configuration, tmp_path, monkeypatch):

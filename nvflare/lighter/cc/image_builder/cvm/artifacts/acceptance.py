@@ -18,7 +18,7 @@ from pathlib import Path
 
 from ..common.errors import require
 from ..common.io import digest_file, read_json
-from .bundle import required_acceptance_checks, verify_bundle
+from .bundle import load_public_keys, required_acceptance_checks, verify_bundle, verify_receipt_signature
 
 
 def evidence_files(paths):
@@ -36,7 +36,7 @@ def evidence_files(paths):
     return files
 
 
-def aggregate(directory, paths):
+def aggregate(directory, paths, trusted_keys):
     """Build the exact report consumed by ``cvmctl admin approve``.
 
     Each result is intentionally small and portable. It names the finalized
@@ -48,27 +48,31 @@ def aggregate(directory, paths):
     manifest = verify_bundle(directory)
     manifest_sha256 = digest_file(directory / "cvm_manifest.json")
     required = required_acceptance_checks(manifest)
+    trusted_keys = load_public_keys(trusted_keys)
     checks = {}
     for path in evidence_files(paths):
         result = read_json(path)
+        verify_receipt_signature(result, trusted_keys)
         require(
             result.get("schema_version") == 1
             and result.get("manifest_sha256") == manifest_sha256
             and result.get("platform") == manifest["platform"],
             "Acceptance result covers another finalized manifest or platform",
         )
-        names = result.get("checks")
+        outcomes = result.get("checks")
         require(
-            isinstance(names, list)
-            and all(isinstance(name, str) for name in names)
-            and len(set(names)) == len(names)
-            and set(names) <= required,
+            isinstance(outcomes, dict)
+            and set(outcomes) <= required
+            and all(
+                isinstance(name, str) and isinstance(item, dict) and set(item) == {"passed"} and item["passed"] is True
+                for name, item in outcomes.items()
+            ),
             "Acceptance result contains invalid or inapplicable checks",
         )
-        if not names:
+        if not outcomes:
             continue
         evidence_sha256 = digest_file(path)
-        for name in names:
+        for name in outcomes:
             require(name not in checks, "Acceptance check is claimed by more than one result")
             checks[name] = {"passed": True, "evidence_sha256": evidence_sha256}
     missing = required - set(checks)

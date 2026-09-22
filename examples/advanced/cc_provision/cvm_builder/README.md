@@ -26,8 +26,12 @@ it. `allowed_in_cidrs` and `allowed_out_cidrs` pass through to the vault build.
 
 The Docker archive must be a `docker save` archive containing one Linux amd64
 image with NVFlare, Bash, and your workload dependencies. NVFlare derives its
-image ID; no `image_id` or `release_id` setting is required. `platforms` defaults
-to all platforms supplied by each `cvm_image`.
+image ID; no `image_id` or `release_id` setting is required. The adapter preserves
+the image's `USER` and derives ownership of the mode-0700 signed workspace and
+runtime directories from it. Use a numeric `USER UID[:GID]` for a non-root image;
+the empty/default and `root` forms resolve to `0:0`. Optional `workspace_uid` and
+`workspace_gid` assertions must be supplied together and match that image
+identity. `platforms` defaults to all platforms supplied by each `cvm_image`.
 
 To use a registry image, replace its folder with the immutable reference printed
 by `cvmctl publish`, for example:

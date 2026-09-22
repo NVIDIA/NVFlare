@@ -14,9 +14,10 @@
 
 """Opt-in acceptance on real TEE hardware with a test vault containing the lab agent.
 
-Set CVM_HARDWARE_TESTS=1, CVM_BUNDLE and CVM_VAULT to detached test artifacts.
-Every mutation is applied to an independent file copy. Requires root and free
-18080/18081 ports. Evidence logs are retained in CVM_HARDWARE_OUTPUT.
+Set CVM_HARDWARE_TESTS=1, CVM_BUNDLE and CVM_VAULT to detached candidate
+artifacts, and CVM_ACCEPTANCE_RESULT_KEY to the site evidence signing key. Every
+mutation is applied to an independent file copy. Requires root and free 18080/18081
+ports. Signed evidence and logs are retained in CVM_HARDWARE_OUTPUT.
 """
 
 import contextlib
@@ -34,7 +35,7 @@ import urllib.request
 from pathlib import Path
 from urllib.parse import urlparse
 
-from cvm.artifacts.bundle import verify_bundle
+from cvm.artifacts.bundle import sign_receipt, verify_bundle
 from cvm.build.config import contains_private_key
 from cvm.build.storage import mounted, nbd
 from cvm.common.errors import require
@@ -198,15 +199,21 @@ class HardwareTests(unittest.TestCase):
         return found[0]
 
     def result(self, **values):
+        signing_key = os.environ.get("CVM_ACCEPTANCE_RESULT_KEY")
+        require(signing_key, "CVM_ACCEPTANCE_RESULT_KEY must name the site evidence signing key")
+        checks = {name: {"passed": True} for name in ACCEPTANCE_CHECKS.get(self._testMethodName, [])}
         write_json(
             self.directory / "result.json",
-            dict(
-                values,
-                schema_version=1,
-                platform=self.manifest["platform"],
-                manifest_sha256=digest_file(self.bundle / "cvm_manifest.json"),
-                checks=ACCEPTANCE_CHECKS.get(self._testMethodName, []),
-                logs={p.name: digest_file(p) for p in self.logs},
+            sign_receipt(
+                dict(
+                    values,
+                    schema_version=1,
+                    platform=self.manifest["platform"],
+                    manifest_sha256=digest_file(self.bundle / "cvm_manifest.json"),
+                    checks=checks,
+                    logs={p.name: digest_file(p) for p in self.logs},
+                ),
+                signing_key,
             ),
         )
 

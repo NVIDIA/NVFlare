@@ -104,7 +104,7 @@ def approve(args):
 
 
 def acceptance_report(args):
-    report = aggregate_acceptance(args.bundle, args.evidence)
+    report = aggregate_acceptance(args.bundle, args.evidence, args.evidence_key)
     write_json(args.output, report, mode=0o600)
     print(f"Acceptance report: {Path(args.output).resolve()}")
 
@@ -160,6 +160,12 @@ def parser():
     )
     acceptance.add_argument("bundle")
     acceptance.add_argument("evidence", nargs="+", help="result.json files or directories containing them")
+    acceptance.add_argument(
+        "--evidence-key",
+        action="append",
+        required=True,
+        help="trusted Ed25519 public key for acceptance result producers; repeat to rotate keys",
+    )
     acceptance.add_argument("--output", required=True)
     acceptance.set_defaults(handler=acceptance_report)
 

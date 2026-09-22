@@ -230,16 +230,49 @@ class ApprovalTests(unittest.TestCase):
             "manifest_sha256": self.receipt["manifest_sha256"],
             "platform": self.manifest["platform"],
         }
-        write_json(first, dict(common, checks=names[: len(names) // 2]))
-        write_json(second, dict(common, checks=names[len(names) // 2 :]))
+
+        def signed(selected, **changes):
+            value = dict(common, checks={name: {"passed": True} for name in selected}, **changes)
+            return sign_receipt(value, self.signing_key)
+
+        write_json(first, signed(names[: len(names) // 2]))
+        write_json(second, signed(names[len(names) // 2 :]))
         with patch("cvm.artifacts.acceptance.verify_bundle", return_value=self.manifest):
-            report = aggregate(self.directory, [first, second])
+            report = aggregate(self.directory, [first, second], [self.public_key])
             self.assertEqual(set(report["checks"]), self.checks)
             self.assertEqual(report["checks"][names[0]]["evidence_sha256"], digest_file(first))
-            write_json(second, dict(common, checks=names[len(names) // 2 + 1 :]))
+            write_json(second, signed(names[len(names) // 2 + 1 :]))
             with self.assertRaisesRegex(BuildError, "Missing acceptance checks"):
-                aggregate(self.directory, [first, second])
-            write_json(second, dict(common, checks=names[len(names) // 2 :]))
-            write_json(first, dict(common, manifest_sha256="0" * 64, checks=names[: len(names) // 2]))
+                aggregate(self.directory, [first, second], [self.public_key])
+            write_json(second, signed(names[len(names) // 2 :]))
+            write_json(first, signed(names[: len(names) // 2], manifest_sha256="0" * 64))
             with self.assertRaisesRegex(BuildError, "another finalized manifest"):
-                aggregate(self.directory, [first, second])
+                aggregate(self.directory, [first, second], [self.public_key])
+
+    def test_acceptance_report_requires_signed_explicit_success(self):
+        path = self.directory / "result.json"
+        name = sorted(self.checks)[0]
+        common = {
+            "schema_version": 1,
+            "manifest_sha256": self.receipt["manifest_sha256"],
+            "platform": self.manifest["platform"],
+        }
+        with patch("cvm.artifacts.acceptance.verify_bundle", return_value=self.manifest):
+            write_json(path, dict(common, checks={name: {"passed": True}}))
+            with self.assertRaisesRegex(BuildError, "unsigned"):
+                aggregate(self.directory, [path], [self.public_key])
+            foreign_key, _ = write_key_pair(self.directory, "foreign-evidence")
+            write_json(path, sign_receipt(dict(common, checks={name: {"passed": True}}), foreign_key))
+            with self.assertRaisesRegex(BuildError, "trusted acceptance authority"):
+                aggregate(self.directory, [path], [self.public_key])
+            write_json(path, sign_receipt(dict(common, checks={name: {"passed": False}}), self.signing_key))
+            with self.assertRaisesRegex(BuildError, "invalid or inapplicable"):
+                aggregate(self.directory, [path], [self.public_key])
+            write_json(path, sign_receipt(dict(common, checks={name: {"passed": 1}}), self.signing_key))
+            with self.assertRaisesRegex(BuildError, "invalid or inapplicable"):
+                aggregate(self.directory, [path], [self.public_key])
+            signed = sign_receipt(dict(common, checks={name: {"passed": True}}), self.signing_key)
+            signed["checks"][name]["passed"] = False
+            write_json(path, signed)
+            with self.assertRaisesRegex(BuildError, "does not match"):
+                aggregate(self.directory, [path], [self.public_key])

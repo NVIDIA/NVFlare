@@ -112,7 +112,7 @@ def _tar_json(archive, name, limit=16 * 1024 * 1024):
     return json.loads(raw), "sha256:" + hashlib.sha256(raw).hexdigest()
 
 
-def docker_image_id(path):
+def _docker_image_metadata(path):
     """Read Docker save metadata without extracting files or using a Docker daemon."""
     try:
         with tarfile.open(path, "r:*") as archive:
@@ -126,11 +126,20 @@ def docker_image_id(path):
                     isinstance(config, dict) and config.get("os") == "linux" and config.get("architecture") == "amd64",
                     "Docker archive must contain a Linux amd64 image",
                 )
-                images.add(digest)
+                container = config.get("config", {})
+                _require(isinstance(container, dict), "Docker archive contains invalid container configuration")
+                user = container.get("User", "")
+                _require(isinstance(user, str), "Docker archive contains an invalid image USER")
+                images.add((digest, user))
             _require(len(images) == 1, "Docker archive must contain exactly one image; save each image separately")
             return images.pop()
     except (OSError, tarfile.TarError, ValueError, KeyError) as exc:
         raise ValueError(f"Invalid docker_archive {path}: {exc}") from exc
+
+
+def docker_image_id(path):
+    """Return the image digest from Docker save metadata."""
+    return _docker_image_metadata(path)[0]
 
 
 def _delivery_config(archive_path, manifest_digest):
@@ -312,7 +321,7 @@ class VaultAdapter:
             "project_config must be a non-empty path when supplied",
         )
         self.project_config = self._project_config(settings.get("project_config"))
-        self.archive_ids = {}
+        self.archive_metadata = {}
         names = settings.get("participants")
         _require(
             isinstance(names, list)
@@ -448,9 +457,9 @@ class VaultAdapter:
         app["cvm_image"] = str(image)
         app["docker_archive"] = str(self._path(values.get("docker_archive")))
         archive = app["docker_archive"]
-        if archive not in self.archive_ids:
-            self.archive_ids[archive] = docker_image_id(archive)
-        app["image_id"] = self.archive_ids[archive]
+        if archive not in self.archive_metadata:
+            self.archive_metadata[archive] = _docker_image_metadata(archive)
+        app["image_id"], image_user = self.archive_metadata[archive]
         if "platforms" in values:
             app["platforms"] = values["platforms"]
             _require(
@@ -477,11 +486,27 @@ class VaultAdapter:
         for key, default in SIZES.items():
             app[key] = values.get(key, default)
             _require(type(app[key]) is int and app[key] > 0, f"{key} must be a positive integer GiB size")
-        for key in ("workspace_uid", "workspace_gid"):
+        # Preserve the image's USER rather than passing Docker --user. A numeric
+        # identity lets the adapter give the private workspace the same owner.
+        match = re.fullmatch(r"([0-9]+)(?::([0-9]+))?", image_user) if image_user else None
+        if match:
+            image_uid = int(match.group(1))
+            image_gid = int(match.group(2) or match.group(1))
+        else:
+            _require(image_user in ("", "root", "root:root"), "Docker image USER must be a numeric UID[:GID] or root")
+            image_uid = image_gid = 0
+        _require(image_uid < 2**32 - 1 and image_gid < 2**32 - 1, "Docker image USER is outside the UID/GID range")
+        configured_identity = "workspace_uid" in values or "workspace_gid" in values
+        _require(
+            not configured_identity or ("workspace_uid" in values and "workspace_gid" in values),
+            "workspace_uid and workspace_gid must be set together",
+        )
+        for key, expected in (("workspace_uid", image_uid), ("workspace_gid", image_gid)):
             _require(
-                key not in values or (type(values[key]) is int and 0 < values[key] < 2**32 - 1),
-                f"{key} must be a nonroot UID/GID",
+                key not in values or (type(values[key]) is int and values[key] == expected),
+                f"{key} must match the docker_archive image USER",
             )
+            values[key] = expected
         for key in ("user_config", "user_data"):
             if key in values:
                 path = self._path(values[key], directory=True)
@@ -665,15 +690,6 @@ class VaultAdapter:
                 ),
                 f"Finalized workspace for {plan['participant'].name} has missing or invalid signatures",
             )
-            owner = source.stat()
-            uid = owner.st_uid if plan["uid"] is None else plan["uid"]
-            gid = owner.st_gid if plan["gid"] is None else plan["gid"]
-            _require(
-                0 < uid < 2**32 - 1 and 0 < gid < 2**32 - 1,
-                "The staged workspace owner must be nonroot; set workspace_uid and workspace_gid explicitly",
-            )
-            plan["uid"], plan["gid"] = uid, gid
-            plan["app"]["container"]["user"] = f"{uid}:{gid}"
             self._network(plan, ctx)
             _require(
                 not plan["inputs"].exists() and (plan["output"] is None or not plan["output"].exists()),

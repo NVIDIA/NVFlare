@@ -652,6 +652,7 @@ sudo env PYTHONPATH="$PYTHONPATH" CVM_HARDWARE_TESTS=1 CVM_EXTENDED_AGENT=1 \
   CVM_NETWORK_FAULTS=1 \
   CVM_BUNDLE=/path/to/test-bundle CVM_VAULT=/path/to/test-delivery \
   CVM_OTHER_RESOURCE=keys/TESTED_BUILD_ID/OTHER_EXISTING_BINDING \
+  CVM_ACCEPTANCE_RESULT_KEY=/secure/evidence-signing.key \
   CVM_HARDWARE_OUTPUT=/path/to/new-evidence-directory \
   python3 -m unittest discover -s tests/integration_test/lighter/cc/image_builder -p test_hardware.py -v
 ```
@@ -661,8 +662,9 @@ enables the mandatory NRAS failure/poweroff acceptance case for GPU profiles.
 
 For the hardware fault tests, explicitly include `tests/integration_test/lighter/cc/image_builder/lab_guest_agent.py` as
 executable application payload and `tests/integration_test/lighter/cc/image_builder/app_acceptance.service` as a service,
-with ports 18080/18081 and the generic HTTP fixture. The agent refuses non-test
-profiles and is never installed by Stage 1. `CVM_OTHER_RESOURCE` must identify an
+with ports 18080/18081 and the generic HTTP fixture. The agent is admitted only
+through an explicit candidate vault and is never installed by Stage 1.
+`CVM_OTHER_RESOURCE` must identify an
 existing different key under the same tested bundle. Tests mutate independent
 vault file copies and keep serial logs and result hashes. The interrupted-load
 fixture accepts the deliberately stopped container's termination status while

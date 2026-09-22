@@ -136,7 +136,8 @@ changing its declared source hash.
 
 The normal build finalizes the bundle and leaves it unapproved. Create its
 acceptance vault with `cvmctl vault --candidate`, run the site matrix, and use
-`cvmctl acceptance-report` to aggregate manifest-bound `result.json` files. A
+`cvmctl acceptance-report` to verify and aggregate signed, manifest-bound
+`result.json` files from trusted evidence authorities. A
 trusted site can automate those steps with `--acceptance-runner`. Hardware
 reference collection alone does **not** approve a bundle. A trusted
 operator must validate the signed quote, replay TDX CCEL where applicable, verify

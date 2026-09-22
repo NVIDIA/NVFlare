@@ -168,15 +168,21 @@ digest alone does not say what source it came from:
 ./cvmctl provenance /tmp/trustee inputs/kbs-client inputs/kbs_client_build.json
 ```
 
-Create the acceptance signing key pair that signs `approval.json` after site
-acceptance. Keep the private key with the acceptance authority; vault builders and
-Trustee administrators receive only the public key:
+Create separate Ed25519 key pairs for the authority that signs `approval.json`
+and the isolated test runner that signs individual evidence results. Vault
+builders and Trustee administrators receive only the approval public key:
 
 ```sh
 umask 077
 openssl genpkey -algorithm Ed25519 -out inputs/acceptance-signing.key
 openssl pkey -in inputs/acceptance-signing.key -pubout -out inputs/acceptance-signing.pub
+openssl genpkey -algorithm Ed25519 -out inputs/evidence-signing.key
+openssl pkey -in inputs/evidence-signing.key -pubout -out inputs/evidence-signing.pub
 ```
+
+Keep `acceptance-signing.key` with the approval authority. Install only the
+separate `evidence-signing.key` on the isolated site test runner and configure
+`CVM_ACCEPTANCE_RESULT_KEY` with its path.
 
 Keep the default crypto configuration: v0.22.0's optional `native-tls` feature
 selects an OpenSSL RSA decryptor that does not support the RSA-OAEP-256 responses
@@ -195,6 +201,7 @@ and cannot be downloaded from this repository:
 - `inputs/approved-tcb-references.json`: approved platform TCB reference values.
 - `inputs/kbs_client_build.json`: the `cvmctl provenance` record for `kbs-client`.
 - `inputs/acceptance-signing.key` and `.pub`: the acceptance authority's Ed25519 pair.
+- `inputs/evidence-signing.key` and `.pub`: the site test-result authority's separate Ed25519 pair.
 - A private evidence directory for the acceptance results described in §2.1.
 
 `inputs/` and `credentials/` are ignored by git; never commit their contents.
@@ -391,16 +398,23 @@ sudo ./cvmctl vault acceptance-vault.yml --candidate \
 `acceptance-vault.yml` uses the normal vault schema and an application image that
 runs the test-only `tests/integration_test/lighter/cc/image_builder/lab_guest_agent.py`.
 The checked-in `test_hardware.py` requires `CVM_HARDWARE_TESTS=1`, `CVM_BUNDLE`,
-`CVM_VAULT`, and `CVM_HARDWARE_OUTPUT`; each passing test writes a versioned
-`result.json` containing the exact `manifest_sha256`, platform, claimed checks,
-and hashes of its retained logs. Site-specific tests use the same result schema:
+`CVM_VAULT`, `CVM_HARDWARE_OUTPUT`, and `CVM_ACCEPTANCE_RESULT_KEY`; each passing
+test writes a versioned, Ed25519-signed `result.json` containing the exact
+`manifest_sha256`, platform, explicit successful outcomes, and hashes of its
+retained logs. Use a dedicated site evidence key, separate from the offline
+approval key. Site-specific tests use the same signed result schema:
 
 ```json
 {
   "schema_version": 1,
   "manifest_sha256": "64 lowercase hex digits",
   "platform": "intel_tdx",
-  "checks": ["policy_selection"]
+  "checks": {"policy_selection": {"passed": true}},
+  "signature": {
+    "algorithm": "ed25519",
+    "key_id": "SHA-256 of the signer public key",
+    "value": "base64 signature over the canonical result body"
+  }
 }
 ```
 
@@ -423,16 +437,20 @@ Aggregate only results for this exact finalized manifest, then approve it:
 
 ```sh
 sudo ./cvmctl acceptance-report target/cvm_PROFILE/PLATFORM \
-  /srv/cvm/acceptance-evidence --output /srv/cvm/acceptance-report.json
+  /srv/cvm/acceptance-evidence \
+  --evidence-key /secure/evidence-signing.pub \
+  --output /srv/cvm/acceptance-report.json
 sudo ./cvmctl admin approve target/cvm_PROFILE/PLATFORM \
   /srv/cvm/acceptance-report.json --signing-key /secure/acceptance-signing.key
 sudo ./cvmctl admin install production-admin.json target/cvm_PROFILE/PLATFORM
 ```
 
-The aggregator rejects wrong-platform, wrong-manifest, duplicate, unknown,
-failed, and incomplete evidence. Revoke the acceptance vault's key resource and
-remove the isolated candidate delivery after the run; production vaults must be
-built without `--candidate` from the newly approved artifact.
+The aggregator verifies every result against the configured evidence authority
+before converting an explicit `passed: true` outcome into a report check. It
+rejects unsigned, foreign-signed, wrong-platform, wrong-manifest, duplicate,
+unknown, failed, and incomplete evidence. Revoke the acceptance vault's key
+resource and remove the isolated candidate delivery after the run; production
+vaults must be built without `--candidate` from the newly approved artifact.
 
 The reusable Stage 1 staging tree and OCI deliverable are:
 
