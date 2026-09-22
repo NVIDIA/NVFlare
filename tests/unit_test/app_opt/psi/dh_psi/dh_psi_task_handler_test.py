@@ -86,11 +86,14 @@ class TestCheckItemsUniqueness:
 class TestPSIExecutorDuplicateInput:
     """Drives duplicate input through the real executor and task handler."""
 
-    def test_duplicate_input_is_rejected_without_logging_items(self, caplog):
+    def test_duplicate_input_is_rejected_without_logging_items(self, caplog, monkeypatch):
+        # Secure logging is opt-in. Force it off so the full traceback reaches
+        # the log; with it enabled the traceback is sanitized and this test
+        # would pass even if the item values were reintroduced.
+        monkeypatch.delenv("NVFLARE_SECURE_LOGGING", raising=False)
+
         executor = _executor_with_items([DUPLICATE_SENTINEL, DUPLICATE_SENTINEL, OTHER_SENTINEL])
 
-        # Secure logging is opt-in, so an unset NVFLARE_SECURE_LOGGING is the
-        # configuration in which the full traceback reaches the log.
         with caplog.at_level(logging.DEBUG):
             reply = executor.execute(PSIConst.TASK, _prepare_shareable(), FLContext(), Signal())
 
@@ -98,7 +101,9 @@ class TestPSIExecutorDuplicateInput:
         assert DUPLICATE_SENTINEL not in caplog.text
         assert OTHER_SENTINEL not in caplog.text
 
-    def test_unique_input_is_accepted_by_the_executor(self, caplog):
+    def test_unique_input_is_accepted_by_the_executor(self, caplog, monkeypatch):
+        monkeypatch.delenv("NVFLARE_SECURE_LOGGING", raising=False)
+
         executor = _executor_with_items([DUPLICATE_SENTINEL, OTHER_SENTINEL])
 
         with caplog.at_level(logging.DEBUG):
