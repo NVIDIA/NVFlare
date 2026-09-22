@@ -1151,6 +1151,7 @@ truth and can preserve the original identity.
 | **Participant info required upfront** | All participants before any kit is generated | Each participant joins independently, on demand |
 | **Adding a new site** | Dynamic provisioning with existing root CA | Same workflow; no impact on existing sites |
 | **Endpoint changes** | Rebuild or edit kit configuration | Coordinated participant configuration update. Re-package only if existing certificate identities remain valid; otherwise re-request/re-approve affected certificates. |
+| **Azure CC deployments** | Supported through `CCBuilder` | Not supported |
 | **CVM vault deliveries** | Supported through `cvm_vault` | Not supported |
 | **HE deployments** | Supported | Not supported (future) |
 | **Trust required in Project Admin** | Must trust Project Admin with your private key | Project Admin never sees private keys |
@@ -1161,7 +1162,7 @@ truth and can preserve the original identity.
 
 ### Trust Model
 
-This document covers standard PKI deployments assembled without a CVM application vault.
+This document covers standard PKI deployments assembled without Azure CC or a CVM application vault.
 
 - **Certificate chain and configured connection security are the trust boundary.** In mTLS
   mode, a participant is authorized if and only if its certificate chains to the project
@@ -1177,8 +1178,8 @@ This document covers standard PKI deployments assembled without a CVM applicatio
 
 ### Non-Goals
 
-- **CVM vault construction** - the distributed package flow does not invoke CVM Builder;
-  see [CVM Vault Deployments: Out of Scope](#cvm-vault-deployments-out-of-scope).
+- **Confidential Computing** - the distributed package flow does not configure Azure CC or invoke
+  CVM Builder; see [CC Deployments: Out of Scope](#cc-deployments-out-of-scope).
 - **HE with distributed provisioning** - current HE requires a shared symmetric key
   generated centrally; per-site asymmetric HE is a future release item; see
   [HE Deployments](#he-deployments).
@@ -1203,20 +1204,21 @@ integrity metadata is present and startup-kit immutability is part of the deploy
 security model.
 
 `signature.json` is not the normal identity or authentication boundary for standard
-non-HE PKI deployments. In those deployments, the participant identity is
+non-CC, non-HE PKI deployments. In those deployments, the participant identity is
 protected by mTLS and the certificate chain. Site operators may need to customize
 `startup/` scripts and `local/` resources. Those local operational changes should not be
 treated as runtime tampering unless the changed files are intentionally covered by startup
 integrity metadata and checked by the runtime.
 
 **Decision:** standard signed-zip distributed provisioning does not generate a
-rootCA-signed `signature.json`, and standard non-HE kits do not require one. If a
+rootCA-signed `signature.json`, and standard non-CC, non-HE kits do not require one. If a
 startup kit does contain valid startup integrity metadata, the existing runtime integrity
 checks enforce it according to the runtime's secure-startup rules. If metadata is absent,
 standard PKI deployments proceed with the configured connection security as the trust boundary.
 
 `signature.json` is still required and enforced for:
 
+- **Azure CC deployments** - protects the complete centrally provisioned workspace
 - **CVM vault workspaces** - `VaultSignatureBuilder` signs selected, finalized
   workspaces before application-vault construction
 - **HE deployments** - protects the shared TenSEAL context files
@@ -1254,7 +1256,7 @@ public CLI workflow is `request` / `approve` / `package`.
 
 | # | File | Change |
 |---|------|--------|
-| 1 | `lighter/impl/signature.py` | Do not require `signature.json` for standard non-HE signed-zip/distributed kits. `SignatureBuilder` generates it for HE kits, while `VaultSignatureBuilder` signs selected CVM vault workspaces after finalization. |
+| 1 | `lighter/impl/signature.py` | Do not require `signature.json` for standard non-CC, non-HE signed-zip/distributed kits. `SignatureBuilder` generates it for Azure CC and HE kits, while `VaultSignatureBuilder` signs selected CVM vault workspaces after finalization. |
 | 2 | `fed_utils.py` (`security_init`, `security_init_for_job`) | Do not treat absent startup integrity metadata as a failure for standard PKI kits. In secure runtime paths, run startup integrity checks only when valid startup integrity metadata exists. `secure_train` remains the PKI/mTLS switch and secure-startup trigger. |
 | 3 | `file_transfer.py` (`push_folder`) | Guard `load_private_key_file` on key file existence before loading. Prevents crash in simulator (no key file); PKI runtime behavior unchanged. |
 | 4 | `job_runner.py`, `training_cmds.py` | Replace `secure_train` gate on job sig verification with: verify if `__nvfl_sig.json` present; reject if absent and the site's local `require_signed_jobs=true`. |
@@ -1286,7 +1288,8 @@ existing deployments intact:
 
 | Deployment | Behavior after changes |
 |------------|----------------------|
-| Centralized provisioning (standard, non-HE) | `nvflare provision` remains the centralized provisioning workflow. Standard PKI kits may omit `signature.json`; runtime behavior is unchanged because the certificate-based connection security was already the trust anchor. |
+| Centralized provisioning (standard, non-CC, non-HE) | `nvflare provision` remains the centralized provisioning workflow. Standard PKI kits may omit `signature.json`; runtime behavior is unchanged because the certificate-based connection security was already the trust anchor. |
+| Centralized Azure CC provisioning | `CCBuilder` configures Azure attestation authorizers and `SignatureBuilder` signs the complete workspace. |
 | Centralized CVM vault provisioning | `VaultSignatureBuilder` signs each selected finalized workspace before CVM Builder constructs the application vault. |
 | Centralized provisioning (HE) | `signature.json` still generated for TenSEAL context files. No change. |
 | Distributed provisioning | Standard signed-zip packaging does not generate `signature.json`; startup integrity checks are skipped when metadata is absent. If valid metadata is present, existing runtime enforcement rules apply. |
@@ -1544,7 +1547,11 @@ mismatch is a hard error. Deploy version `00` maps to `prod_00`, `01` maps to
 
 ---
 
-## CVM Vault Deployments: Out of Scope
+## CC Deployments: Out of Scope
+
+Azure CC and CVM vault deployments require centralized provisioning. Azure CC uses per-participant
+`cc_config` files to configure attestation authorizers and startup integrity. CVM vault construction
+requires the project administrator to approve the generic image and build the application vault.
 
 The distributed `request` / `approve` / `package` flow assembles an ordinary startup kit
 from the requester's private key and the Project Admin's signed response. It does not run

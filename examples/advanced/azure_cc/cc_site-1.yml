@@ -1,0 +1,11 @@
+compute_env: azure_cvm
+cc_cpu_mechanism: amd_sev_snp
+role: client
+
+cc_issuers:
+  - id: az_cvm_authorizer
+    path: nvflare.app_opt.confidential_computing.az_cvm_authorizer.AZCVMAuthorizer
+    token_expiration: 100
+
+cc_attestation:
+  check_frequency: 120

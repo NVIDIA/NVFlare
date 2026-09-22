@@ -118,7 +118,7 @@ This comprehensive approach enables organizations to collaborate on federated le
 FLARE Confidential Federated AI Overview
 ========================================
 
-NVIDIA FLARE provides Confidential Federated AI capabilities that enable secure, trustworthy federated learning through hardware-backed security. The supported deployment uses CVM Builder on confidential-computing hosts.
+NVIDIA FLARE provides Confidential Federated AI capabilities that enable secure, trustworthy federated learning through hardware-backed security. It supports CVM Builder deployments on confidential-computing hosts and Azure Confidential Computing deployments.
 
 On-Premises IP Protection Deployment
 ------------------------------------
@@ -136,7 +136,31 @@ FLARE's on-premises Confidential Federated AI solution provides comprehensive IP
 This solution is intended for organizations with high-value proprietary models collaborating with partners who may have different security postures or trust levels.
 
 
+Azure Confidential Computing Deployment
+---------------------------------------
+
+For organizations seeking cloud-based confidential federated learning, FLARE supports running federated learning workloads on Azure Confidential Computing infrastructure. This deployment option provides:
+
+**Trust Establishment Among Participants**
+
+Azure Confidential Computing enables participants to establish explicit trust through:
+
+- **Remote Attestation** - Each participant can verify that the FL server is running in a genuine confidential environment before submitting updates
+- **Hardware Root of Trust** - Azure's confidential computing infrastructure provides cryptographic proof of the execution environment's integrity
+- **Transparent Security Posture** - Participants can independently verify the security properties of the federated learning environment
+
+This deployment model is suitable for organizations that prioritize data privacy and secure aggregation while training code and model architectures can be shared among trusted participants.
+
+
+Choosing the Right Deployment
+=============================
+
+- Use **On-Premises IP Protection** when model IP must be protected from participants
+- Use **Azure Confidential Computing** when the primary concern is data privacy and secure aggregation among trusted collaborators
+
+
 .. toctree::
    :maxdepth: 2
 
    on_premises/index
+   azure/index

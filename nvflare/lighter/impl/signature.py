@@ -26,13 +26,14 @@ class SignatureBuilder(Builder):
     can be cryptographically verified to ensure any tampering is detected. This builder writes the
     signature.json file.
 
-    signature.json is generated for HE (Homomorphic Encryption) kits: startup + local dirs are
-    signed to protect the shared TenSEAL context. CVM vault workspaces are signed separately by
-    :class:`VaultSignatureBuilder` after provisioning finalization.
+    signature.json is generated for:
+    - Azure Confidential Computing kits: the full workspace is signed for startup integrity.
+    - HE (Homomorphic Encryption) kits: startup + local dirs are signed to protect the shared
+      TenSEAL context.
 
-    Plain non-HE kits do not receive signature.json. mTLS is the trust anchor for those deployments.
-    Absence of signature.json is the correct and expected state for centrally provisioned standard
-    kits and for kits assembled via the Manual Workflow (nvflare package).
+    CVM vault workspaces are signed separately by :class:`VaultSignatureBuilder` after provisioning
+    finalization. Plain non-CC, non-HE kits do not receive signature.json. mTLS is the trust anchor
+    for those deployments.
     """
 
     def build(self, project: Project, ctx: ProvisionContext):
@@ -41,16 +42,18 @@ class SignatureBuilder(Builder):
             raise RuntimeError(f"missing {CtxKey.ROOT_PRI_KEY} in ProvisionContext")
 
         for p in project.get_all_participants():
-            kit_dir = ctx.get_kit_dir(p)
-            he_present = os.path.exists(os.path.join(kit_dir, ProvFileName.SERVER_CONTEXT_TENSEAL)) or os.path.exists(
-                os.path.join(kit_dir, ProvFileName.CLIENT_CONTEXT_TENSEAL)
-            )
-            if he_present:
-                # HE mode: sign startup and local to protect the shared TenSEAL context.
-                # load_tenseal_context_from_workspace requires LoadResult.OK in secure mode.
-                sign_folders(kit_dir, root_pri_key, signature_file=ProvFileName.SIGNATURE_JSON)
-                sign_folders(ctx.get_local_dir(p), root_pri_key, signature_file=ProvFileName.SIGNATURE_JSON)
-            # Plain non-HE kits are not signed here. CVM vault kits are signed after finalization.
+            if p.get_prop(PropKey.CC_ENABLED):
+                sign_folders(ctx.get_ws_dir(p), root_pri_key, signature_file=ProvFileName.SIGNATURE_JSON)
+            else:
+                kit_dir = ctx.get_kit_dir(p)
+                he_present = os.path.exists(
+                    os.path.join(kit_dir, ProvFileName.SERVER_CONTEXT_TENSEAL)
+                ) or os.path.exists(os.path.join(kit_dir, ProvFileName.CLIENT_CONTEXT_TENSEAL))
+                if he_present:
+                    # HE mode: sign startup and local to protect the shared TenSEAL context.
+                    # load_tenseal_context_from_workspace requires LoadResult.OK in secure mode.
+                    sign_folders(kit_dir, root_pri_key, signature_file=ProvFileName.SIGNATURE_JSON)
+                    sign_folders(ctx.get_local_dir(p), root_pri_key, signature_file=ProvFileName.SIGNATURE_JSON)
 
 
 class VaultSignatureBuilder(Builder):

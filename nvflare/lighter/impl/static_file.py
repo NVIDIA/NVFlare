@@ -303,9 +303,9 @@ class StaticFileBuilder(Builder):
             dest_dir, TemplateSectionKey.SAMPLE_PRIVACY, ProvFileName.PRIVACY_JSON_SAMPLE, exe=False
         )
 
-        ctx.build_from_template(
-            dest_dir, TemplateSectionKey.DEFAULT_AUTHZ, ProvFileName.AUTHORIZATION_JSON_DEFAULT, exe=False
-        )
+        # A builder can select a stricter authorization policy during initialization.
+        authz_section_key = server.get_prop(PropKey.AUTHZ_SECTION_KEY, TemplateSectionKey.DEFAULT_AUTHZ)
+        ctx.build_from_template(dest_dir, authz_section_key, ProvFileName.AUTHORIZATION_JSON_DEFAULT, exe=False)
 
         studies = project.get_prop("studies")
         if studies:
@@ -464,7 +464,9 @@ class StaticFileBuilder(Builder):
             ProvFileName.PRIVACY_JSON_SAMPLE,
         )
 
-        ctx.build_from_template(dest_dir, TemplateSectionKey.DEFAULT_AUTHZ, ProvFileName.AUTHORIZATION_JSON_DEFAULT)
+        # A builder can select a stricter authorization policy during initialization.
+        authz_section_key = client.get_prop(PropKey.AUTHZ_SECTION_KEY, TemplateSectionKey.DEFAULT_AUTHZ)
+        ctx.build_from_template(dest_dir, authz_section_key, ProvFileName.AUTHORIZATION_JSON_DEFAULT)
 
         # build relay__resources if relay is used by this client
         ct = client.get_connect_to()

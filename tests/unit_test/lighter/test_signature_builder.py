@@ -17,20 +17,23 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from nvflare.lighter.constants import ProvFileName
+from nvflare.lighter.constants import PropKey, ProvFileName
 from nvflare.lighter.impl.signature import SignatureBuilder
 
 
-def _make_ctx(kit_dir, local_dir=None, root_pri_key="fake_key"):
+def _make_ctx(kit_dir, ws_dir=None, local_dir=None, root_pri_key="fake_key"):
     ctx = MagicMock()
     ctx.get.return_value = root_pri_key
     ctx.get_kit_dir.return_value = kit_dir
+    ctx.get_ws_dir.return_value = ws_dir or kit_dir
     ctx.get_local_dir.return_value = local_dir or os.path.join(kit_dir, "local")
     return ctx
 
 
-def _make_participant():
-    return MagicMock()
+def _make_participant(cc_enabled=False):
+    participant = MagicMock()
+    participant.get_prop.side_effect = lambda key: cc_enabled if key == PropKey.CC_ENABLED else None
+    return participant
 
 
 def _make_project(participants):
@@ -50,6 +53,21 @@ def test_plain_non_he_no_signature_json(tmp_path):
     with patch("nvflare.lighter.impl.signature.sign_folders") as mock_sign:
         builder.build(proj, ctx)
         mock_sign.assert_not_called()
+
+
+def test_azure_cc_enabled_generates_signature_json(tmp_path):
+    """Azure CC kit: sign_folders is called for the complete workspace."""
+    ws_dir = str(tmp_path / "ws")
+    kit_dir = str(tmp_path / "kit")
+    os.makedirs(ws_dir)
+    os.makedirs(kit_dir)
+    ctx = _make_ctx(kit_dir, ws_dir=ws_dir)
+    proj = _make_project([_make_participant(cc_enabled=True)])
+    builder = SignatureBuilder()
+
+    with patch("nvflare.lighter.impl.signature.sign_folders") as mock_sign:
+        builder.build(proj, ctx)
+        mock_sign.assert_called_once_with(ws_dir, "fake_key", signature_file=ProvFileName.SIGNATURE_JSON)
 
 
 def test_he_server_context_generates_signature_json(tmp_path):

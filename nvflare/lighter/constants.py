@@ -66,8 +66,12 @@ class PropKey:
     NUM_GPUS = "num_of_gpus"
     GPU_MEM = "mem_per_gpu_in_GiB"
     EDGE_SERVICE_PORT = "edge_service_port"
+    CC_CONFIG = "cc_config"
+    CC_CONFIG_DICT = "cc_config_dict"
+    CC_ENABLED = "cc_enabled"
     CVM_VAULT = "cvm_vault"
     USE_AIO = "use_aio"
+    CC_ISSUERS = "cc_issuers"
 
     # the following are internal properties added by builders during provision
     PARENT = "parent"
@@ -75,6 +79,7 @@ class PropKey:
     FQSN = "__fqsn__"
     IS_LEAF = "__is_leaf__"
     COMM_CONFIG_ARGS = "__comm_config_args__"
+    AUTHZ_SECTION_KEY = "__authz_section_key__"
 
 
 class CtxKey(WorkDir, PropKey):
@@ -135,6 +140,7 @@ class TemplateSectionKey:
     LOCAL_CLIENT_RESOURCES = "local_client_resources"
     SAMPLE_PRIVACY = "sample_privacy"
     DEFAULT_AUTHZ = "default_authz"
+    CC_AUTHZ = "cc_authz"
     SERVER_README = "readme_fs"
     CLIENT_README = "readme_fc"
     ADMIN_README = "readme_am"
