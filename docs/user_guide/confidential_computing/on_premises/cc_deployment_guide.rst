@@ -19,18 +19,6 @@ Each participant receives a complete OCI delivery containing the generic CVM,
 application vault, sidecars and launch scripts. Application updates reuse the
 approved generic image and create a new vault.
 
-.. note::
-
-   This flow replaces the previous on-premises HashiCorp Vault plus Trustee KBS
-   deployment. CVM Builder now stores binding-addressed vault keys directly in
-   Trustee resource storage. Existing HashiCorp Vault secrets, measurements and
-   deliveries are not imported. Deploy the supported upstream Trustee, publish the
-   approved generic CVM references and policies, and build fresh application vaults
-   before switching a project to ``cvm_vault``. See the
-   :github_nvflare_link:`Trustee deployment guide
-   <nvflare/lighter/cc/image_builder/TRUSTEE_GUIDE.md>` for the current backend and
-   migration boundary.
-
 Prepare the hosts and key service
 =================================
 
