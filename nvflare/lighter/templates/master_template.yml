@@ -707,9 +707,10 @@ sub_start_sh: |
       kill -TERM "$pid" 2>/dev/null || true
       # Leave time to kill/reap the child and remove persistent markers before
       # a container runtime's 10-second stop timeout expires.
-      for ((attempt=0; attempt<5; attempt++)); do
+      stop_deadline=$((SECONDS + 5))
+      while ((SECONDS < stop_deadline)); do
         kill -0 "$pid" 2>/dev/null || break
-        sleep 1
+        sleep 0.2
       done
       kill -KILL "$pid" 2>/dev/null || true
       wait "$pid" 2>/dev/null || true

@@ -245,8 +245,8 @@ def test_opt_in_finalized_signed_isolated_workspace(configuration, tmp_path, mon
         assert app["image_id"] == docker_image_id(tmp_path / "image.tar")
         assert app["container"]["command"][-2:] == ["--verify", "--foreground"]
         owner = staged.stat()
-        expected_uid = os.getuid() or 10001
-        expected_gid = os.getgid() or 10001
+        expected_uid = os.getuid()
+        expected_gid = os.getgid()
         assert "user" not in app["container"]
         assert all(
             (path.stat().st_uid, path.stat().st_gid) == (expected_uid, expected_gid) for path in staged.rglob("*")
