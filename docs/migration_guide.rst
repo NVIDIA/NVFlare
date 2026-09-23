@@ -6,6 +6,34 @@ Migration Guide
 
 This guide covers API and configuration changes when upgrading between FLARE releases.
 
+Upgrading from 2.8.0 to 2.9.0
+=============================
+
+On-Premises Confidential Computing Key Backend
+----------------------------------------------
+
+In FLARE 2.9.0, the on-premises Confidential Federated AI deployment uses CVM
+Builder and the ``cvm_vault`` provisioning section. This replaces the previous
+on-premises HashiCorp Vault plus Trustee KBS deployment. CVM Builder stores
+binding-addressed vault keys directly in Trustee resource storage, so HashiCorp
+Vault is no longer part of the key path.
+
+Impact:
+
+- Existing HashiCorp Vault secrets, measurements and deliveries are not imported.
+  There is no in-place upgrade of an existing deployment.
+- Before switching a project to ``cvm_vault``, deploy the supported upstream
+  Trustee, publish the approved generic CVM references and policies, and build
+  fresh application vaults.
+- Previously delivered CVMs keep working against their existing backend until you
+  rebuild them; the two key backends are not interchangeable for one delivery.
+
+See :ref:`cvm_builder` for the provisioning configuration, :ref:`cc_architecture`
+for the resulting trust model, and the
+:github_nvflare_link:`Trustee deployment guide
+<nvflare/lighter/cc/image_builder/TRUSTEE_GUIDE.md>` for the current backend and
+the migration boundary.
+
 Upgrading from 2.7.2 to 2.8.0
 =============================
 
@@ -240,31 +268,6 @@ Impact:
 
 The default-start behavior is a documentation/help clarification. Preserving
 repeated participant options is new CLI behavior on ``main``.
-
-On-Premises Confidential Computing Key Backend
-----------------------------------------------
-
-On the current ``main`` branch, the on-premises Confidential Federated AI
-deployment uses CVM Builder and the ``cvm_vault`` provisioning section. This
-replaces the previous on-premises HashiCorp Vault plus Trustee KBS deployment.
-CVM Builder stores binding-addressed vault keys directly in Trustee resource
-storage, so HashiCorp Vault is no longer part of the key path.
-
-Impact:
-
-- Existing HashiCorp Vault secrets, measurements and deliveries are not imported.
-  There is no in-place upgrade of an existing deployment.
-- Before switching a project to ``cvm_vault``, deploy the supported upstream
-  Trustee, publish the approved generic CVM references and policies, and build
-  fresh application vaults.
-- Previously delivered CVMs keep working against their existing backend until you
-  rebuild them; the two key backends are not interchangeable for one delivery.
-
-See :ref:`cvm_builder` for the provisioning configuration, :ref:`cc_architecture`
-for the resulting trust model, and the
-:github_nvflare_link:`Trustee deployment guide
-<nvflare/lighter/cc/image_builder/TRUSTEE_GUIDE.md>` for the current backend and
-the migration boundary.
 
 Upgrading from 2.7.0/2.7.1 to 2.7.2
 ======================================
