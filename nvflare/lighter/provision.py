@@ -431,20 +431,23 @@ def provision(
             raise SystemExit(5)
         return None
 
-    project = prepare_project(project_dict, add_user_full_path, add_client_full_path)
+    project = prepare_project(project_dict, add_user_full_path, add_client_full_path, project_file=project_full_path)
     builders = prepare_builders(project_dict)
     packager = prepare_packager(project_dict)
     provisioner = Provisioner(workspace_full_path, builders, packager)
     return provisioner.provision(project)
 
 
-def prepare_project(project_dict, add_user_file_path=None, add_client_file_path=None):
+def prepare_project(project_dict, add_user_file_path=None, add_client_file_path=None, project_file=None):
     api_version = project_dict.get(PropKey.API_VERSION)
     if api_version not in [3, 4]:
         raise ValueError(f"API version expected 3 or 4 but found {api_version}")
     project_name = _normalize_project_name(project_dict)
     project_description = project_dict.get(PropKey.DESCRIPTION, "")
     project = Project(name=project_name, description=project_description, props=project_dict)
+    project_file = project_dict.get(PropKey.PROJECT_FILE, project_file)
+    if project_file is not None:
+        project.set_prop(PropKey.PROJECT_FILE, os.path.abspath(project_file))
     participant_defs = project_dict.get("participants")
     if not isinstance(participant_defs, list):
         raise ValueError("missing 'participants' in project config")
