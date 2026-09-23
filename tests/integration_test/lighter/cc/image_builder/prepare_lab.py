@@ -30,11 +30,69 @@ from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec, ed25519
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
+from cvm.build.config import PROFILE_DEFAULTS
 from cvm.common.contracts import HEADER_BYTES, PLATFORMS, STORAGE_PROFILE
 from cvm.common.io import write_json
 
 
-def prepare(directory, *, http_only=False, platforms=None):
+def package_pins(package_profile=None, from_host=False):
+    """Resolve the exact apt pins Stage 1 installs into the guest base image.
+
+    The pins must describe the guest repository, not the build host. Stage 1 installs them inside
+    the Ubuntu base image, so a host mirror that lags the guest repository yields an older
+    candidate, and apt refuses the resulting downgrade rather than silently rolling a package back.
+    The validated checked-in profile is therefore the default source.
+
+    ``from_host`` restores the old build-host derivation for a host that is deliberately kept in
+    step with the guest repository, and fails loudly when the two sources disagree.
+    """
+    if package_profile:
+        value = yaml.safe_load(Path(package_profile).read_text())
+        packages = value.get("required_system_packages") if isinstance(value, dict) else None
+        if not isinstance(packages, list) or not packages:
+            raise SystemExit(f"{package_profile} must define a non-empty required_system_packages list")
+    else:
+        packages = list(PROFILE_DEFAULTS["required_system_packages"])
+    pins = {}
+    for item in packages:
+        name, _, version = str(item).partition("=")
+        if not name or not version:
+            raise SystemExit(f"Package pin must be name=version: {item}")
+        if name in pins:
+            raise SystemExit(f"Duplicate package pin: {name}")
+        pins[name] = version
+    if from_host:
+        drift = {}
+        for name, pinned in pins.items():
+            text = subprocess.check_output(["apt-cache", "policy", name], text=True)
+            candidate = next(
+                (line.split(":", 1)[1].strip() for line in text.splitlines() if line.strip().startswith("Candidate:")),
+                "(none)",
+            )
+            if candidate != pinned:
+                drift[name] = candidate
+        if drift:
+            detail = "\n".join(f"  {name}: profile {pins[name]}, build host {drift[name]}" for name in sorted(drift))
+            raise SystemExit(
+                "Build host candidates disagree with the selected package profile. Stage 1 installs these pins "
+                "inside the guest base image, so a stale host mirror would force an apt downgrade and fail the "
+                "build:\n" + detail + "\nRefresh the host mirror, or omit --pins-from-host to use the profile pins."
+            )
+    return pins
+
+
+def kernel_version(pins):
+    """Return the pinned kernel release, so the profile cannot name a different one."""
+    versions = sorted(name[len("linux-image-") :] for name in pins if name.startswith("linux-image-"))
+    if len(versions) != 1:
+        raise SystemExit("Package pins must contain exactly one linux-image-<release> package")
+    release = versions[0]
+    if "linux-modules-" + release not in pins:
+        raise SystemExit(f"Package pins must also contain linux-modules-{release}")
+    return release
+
+
+def prepare(directory, *, http_only=False, platforms=None, package_profile=None, pins_from_host=False):
     platforms = list(PLATFORMS if platforms is None else platforms)
     if not platforms or len(set(platforms)) != len(platforms) or any(p not in PLATFORMS for p in platforms):
         raise SystemExit("Select distinct supported lab platforms")
@@ -149,31 +207,7 @@ def prepare(directory, *, http_only=False, platforms=None):
         write_json(directory / "lab-state.json", {"pki": str(pki)})
         print("Prepared disposable HTTPS test PKI")
         return
-    names = [
-        "python3",
-        "python3-yaml",
-        "python3-cryptography",
-        "initramfs-tools",
-        "cryptsetup-bin",
-        "nfs-common",
-        "nftables",
-        "e2fsprogs",
-        "dmsetup",
-        "iproute2",
-        "chrony",
-        "docker.io",
-        "containerd",
-        "linux-image-7.0.0-31-generic",
-        "linux-modules-7.0.0-31-generic",
-    ]
-    pins = {}
-    for name in names:
-        text = subprocess.check_output(["apt-cache", "policy", name], text=True)
-        version = next(
-            line.split(":", 1)[1].strip() for line in text.splitlines() if line.strip().startswith("Candidate:")
-        )
-        assert version != "(none)", name
-        pins[name] = version
+    pins = package_pins(package_profile, pins_from_host)
     profile = {
         "profile_version": "test-cpu-2026.09",
         "gpu": "none",
@@ -194,7 +228,7 @@ def prepare(directory, *, http_only=False, platforms=None):
         "attestation_policy_id": "default",
         "vault_header_bytes": HEADER_BYTES,
         "vault_storage_profile": STORAGE_PROFILE,
-        "kernel_version": "7.0.0-31-generic",
+        "kernel_version": kernel_version(pins),
         "python_version": pins["python3"],
         "docker_version": pins["docker.io"],
         "containerd_version": pins["containerd"],
@@ -237,8 +271,23 @@ def main():
     parser.add_argument(
         "-p", "--platform", choices=PLATFORMS, action="append", help="Include only this platform; repeat for both"
     )
+    parser.add_argument(
+        "--package-profile",
+        help="YAML supplying required_system_packages; default: the validated checked-in profile pins",
+    )
+    parser.add_argument(
+        "--pins-from-host",
+        action="store_true",
+        help="derive pins from the build host apt cache and fail if they differ from the package profile",
+    )
     args = parser.parse_args()
-    prepare(args.directory, http_only=args.http_only, platforms=args.platform)
+    prepare(
+        args.directory,
+        http_only=args.http_only,
+        platforms=args.platform,
+        package_profile=args.package_profile,
+        pins_from_host=args.pins_from_host,
+    )
 
 
 if __name__ == "__main__":

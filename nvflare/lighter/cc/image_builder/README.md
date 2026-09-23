@@ -390,7 +390,12 @@ compares the packaged builder assets with the source, and runs the CLI and GPU
 input validation against the wheel's contents, including the NVAT patch.
 
 `tests/integration_test/lighter/cc/image_builder/prepare_lab.py` and `tests/integration_test/lighter/cc/image_builder/lab_kbs.py` create an isolated test deployment
-with disposable PKI and explicit loopback ports. Its HTTPS tests require
+with disposable PKI and explicit loopback ports. Its generated profile takes the
+apt pins from the validated checked-in profile, because Stage 1 installs them
+inside the guest base image and a build host whose mirror lags the guest
+repository would force an apt downgrade. Use `--package-profile` to supply a
+different pinned set, or `--pins-from-host` to derive them from the build host
+and fail when the two sources disagree. Its HTTPS tests require
 `CVM_HTTP_TESTS=1` and exercise actual Trustee encryption and policy evaluation
 using signed fixtures. Such fixtures are protocol tests, not hardware acceptance.
 Hardware acceptance must additionally exercise the exact sealed guest on each
