@@ -1,0 +1,4 @@
+# Install this file in an equivalent BioNeMo environment.
+# The Docker image installs requirements-runtime.txt and start_evo2.sh installs the mounted NVFlare checkout.
+nvflare[PT]>=2.9.0
+-r requirements-runtime.txt
