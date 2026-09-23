@@ -2,104 +2,279 @@
 .. _get_started:
 .. _getting_started:
 
-###################
-Quick Start Series
-###################
+###########
+Quick Start
+###########
 
-Welcome to the NVIDIA FLARE Quick Start Series! This guide provides a set of hello-world examples to help you quickly learn how to build federated learning programs using NVIDIA FLARE.
+This guide runs a small but complete federation, explains what happened, and
+then points you to the right API and execution environment for your own work.
 
-Make sure you have completed the :ref:`installation` steps before proceeding.
+Run Your First Federation
+=========================
 
-Run Modes
-=========
+The ``nvflare examples`` command used below is available in NVFLARE 2.10.0 and
+later, or in development builds from ``main``. Create and activate a fresh Python
+virtual environment as described in :doc:`Installation <installation>`, then
+choose **one** installation option with the PyTorch integration:
 
-FLARE supports three modes for different stages of your workflow:
+**Released package (NVFLARE 2.10.0 or later):**
 
-- **Simulator** (:ref:`fl_simulator`) -- Runs jobs on a single system for fast testing and algorithm development.
-- **POC** (:ref:`poc_command`) -- Simulates deployment on one host with separate processes for clients and server.
-- **Production** (:ref:`provisioned_setup`) -- Distributed deployment using startup kits from provisioning.
+.. code-block:: bash
 
-Start with the **Simulator** for development, then validate with **POC** before going to **Production**.
+   python -m pip install "nvflare[PT]>=2.10.0"
 
+**Development only (unstable main branch):** To develop or test unreleased
+features, install from source instead. This option requires Git:
 
-Convert Your ML Code to Federated
-==================================
+.. code-block:: bash
 
-Converting existing training code to federated learning requires just 3 changes:
+   git clone --branch main https://github.com/NVIDIA/NVFlare.git
+   python -m pip install -e "./NVFlare[PT]"
 
-**Step 1: Add FLARE imports to your training script**
+Keep the checkout unchanged while retrieving examples: the CLI uses its Git
+revision to select matching source and rejects uncommitted tracked changes.
+Do not install both options in the same environment.
+
+After either installation, retrieve the Hello PyTorch example that matches the
+installed package revision and run it with focused progress output:
+
+.. code-block:: bash
+
+   nvflare examples get hello-pt
+   cd hello-pt
+   python job.py --log_config progress
+
+The default run uses two simulated clients and three federated rounds. It runs
+on CPU, downloads no dataset, and uses deterministic synthetic images generated
+independently at each client. The progress view keeps warnings and errors visible
+while focusing normal output on rounds, client metrics, completion, and result
+locations.
+
+The :github_nvflare_link:`Hello PyTorch README
+<examples/hello-world/hello-pt/README.md>` is the authoritative reference for
+the example's dependencies, options, data design, artifacts, and
+troubleshooting.
+
+Understand the Run
+==================
+
+The example performs a real federated-learning workflow on one machine:
+
+1. The server sends the current global model to two client tasks.
+2. Each client evaluates and trains that model on its own local dataset.
+3. Clients return model parameters, metrics, and the completed optimizer-step
+   count used by the server to derive aggregation weight; their raw samples
+   remain in the client processes.
+4. FedAvg combines the updates into a new global model.
+5. After the last round, both clients evaluate the persisted final global
+   model on data excluded from their local training partitions.
+
+The simulator provides fast local validation, but the example uses the same
+Recipe and client application structure that can run in POC and production
+environments.
+
+Inspect the Result
+==================
+
+The command prints the result directory. For the default simulation it is
+``/tmp/nvflare/simulation/hello-pt``. The primary artifacts are:
+
+- ``server/simulate_job/app_server/FL_global_model.pt`` -- the persisted final
+  global model.
+- ``server/simulate_job/metrics/metrics_summary.json`` -- aggregated
+  training-round metrics and available best-model metadata.
+- ``server/simulate_job/cross_site_val/cross_val_results.json`` -- the final
+  model's evaluation by site.
+- ``server/log.txt``, ``site-1/log.txt``, and ``site-2/log.txt`` -- detailed
+  diagnostic logs.
+
+Metric values depend on the model, data, initialization, and training choices.
+Use the artifacts to verify your run; do not treat the quickstart output as a
+benchmark.
+
+Continue with the Hello World Series
+====================================
+
+The first run above is the starting point for the Hello World series. Review
+:doc:`Hello PyTorch <hello-world/hello-pt/index>` for a walkthrough of its
+model, client code, and Recipe, then choose another example based on what you
+want to learn:
+
+- **Use another training framework:** :doc:`Hello TensorFlow
+  <hello-world/hello-tf/index>`, :doc:`Hello JAX
+  <hello-world/hello-jax/index>`, or :doc:`Hello Lightning
+  <hello-world/hello-lightning/index>`.
+- **Fine-tune a large language model:** :doc:`Hello Hugging Face
+  <hello-world/hello-huggingface/index>`.
+- **Explore other models or integrations:** :doc:`Hello XGBoost
+  <hello-world/hello-xgboost/index>`, :doc:`Hello Logistic Regression
+  <hello-world/hello-lr/index>`, or :doc:`Hello Flower
+  <hello-world/hello-flower/index>`.
+- **Explore another federated capability:** :doc:`Hello Cyclic
+  <hello-world/hello-cyclic/index>`, :doc:`Hello Differential Privacy
+  <hello-world/hello-dp/index>`, or :doc:`Hello Tabular Statistics
+  <hello-world/hello-tabular-stats/index>`.
+
+These guides explain the purpose and structure of each introductory
+application. Follow the linked example README for its exact dependencies and
+run commands. For advanced workloads and additional use cases, use the broader
+example catalog described in `Discover More Examples`_.
+
+Adapt Existing Training Code
+============================
+
+For supported projects, start with the maintained Agent Skills. Use the manual
+API path when the project uses another framework or needs custom integration
+and workflow behavior.
+
+Agent-Assisted Adaptation
+-------------------------
+
+NVFLARE Agent Skills convert existing PyTorch, PyTorch Lightning, and Hugging
+Face training projects and generate federated-statistics jobs. A request can
+state the intended workflow and local validation target, for example:
+
+.. code-block:: text
+
+   I have an existing PyTorch training project in ./source. Convert it to
+   federated learning using FedAvg and validate it locally with 2 clients and 2
+   rounds of training.
+
+The generated code and validation results remain reviewable project artifacts.
+See :doc:`Agent Skills <user_guide/agent_skills/index>` for installation,
+supported workflows, validation, and limitations.
+
+Before applying a skill to your own project, try one of the
+:github_nvflare_link:`Agent Skills runnable examples
+<examples/hello-world/agent-skills>`. They provide standalone PyTorch,
+Lightning, Hugging Face, tabular-statistics, and image-statistics starting
+projects with synthetic inputs, exact prompts, and local validation paths. For
+example:
+
+.. code-block:: bash
+
+   nvflare examples get skill-pytorch-conversion
+
+Follow the downloaded README to install the matching skills and run the prompt
+with your coding agent. Other entries in the ``AGENT SKILLS`` group from
+``nvflare examples list`` cover the remaining supported workflows.
+
+Manual Adaptation
+-----------------
+
+Start with :ref:`API Selection <api_selection>` to choose the manual
+integration that fits your code. For a conventional PyTorch training loop, the
+Client API adds a model-exchange loop around the application's existing model,
+data loading, training, and evaluation code:
 
 .. code-block:: python
 
-    import nvflare.client as flare
+   import nvflare.client as flare
 
-**Step 2: Initialize FLARE and wrap your training loop**
+   flare.init()
+   while flare.is_running():
+       input_model = flare.receive()
+       model.load_state_dict(input_model.params)
+
+       # Existing local evaluation and training code
+       # steps = number of optimizer steps completed this round
+
+       output_model = flare.FLModel(
+           params={
+               name: value.detach().cpu().clone()
+               for name, value in model.state_dict().items()
+           },
+           metrics={"accuracy": accuracy},
+           meta={"NUM_STEPS_CURRENT_ROUND": steps},
+       )
+       flare.send(output_model)
+
+For FedAvg, ``NUM_STEPS_CURRENT_ROUND`` lets the server weight each update by
+the amount of local work completed. The maintained Hello PyTorch client records
+this value directly from its local training loop.
+
+Define the collaboration with a Recipe and execute it in an environment:
 
 .. code-block:: python
 
-    flare.init()
+   from nvflare.app_opt.pt.recipes import FedAvgRecipe
+   from nvflare.recipe import SimEnv
 
-    while flare.is_running():
-        input_model = flare.receive()           # receive global model
-        model.load_state_dict(input_model.params)
+   recipe = FedAvgRecipe(
+       name="my-fedavg-job",
+       min_clients=2,
+       num_rounds=5,
+       model=MyModel(),
+       train_script="train.py",
+   )
+   run = recipe.execute(SimEnv(num_clients=2))
+   result = run.get_result()
 
-        # ... your existing training code here ...
+Review :ref:`Client API <client_api>` for the exchange lifecycle and
+:ref:`Available Recipes <available_recipes>` for maintained workflow builders.
 
-        output_model = flare.FLModel(
-            params=model.cpu().state_dict(),
-            metrics={"accuracy": accuracy},
-        )
-        flare.send(output_model)                # send updated model back
+Choose an Execution Environment
+===============================
 
-**Step 3: Create a job recipe to define the FL workflow**
+FLARE supports three stages that share the same application structure:
 
-.. code-block:: python
+- **Simulator** (:ref:`fl_simulator`) -- Runs a local job directly to test
+  application code and algorithms, without first starting and administering a
+  FLARE deployment.
+- **Proof of Concept (POC)** (:ref:`poc_command`) -- Starts a local FLARE
+  deployment to practice job submission, administration, and deployment behavior
+  before moving to provisioned sites.
+- **Production** (:ref:`provisioned_setup`) -- Runs across provisioned sites
+  with production identities, authorization, networking, policies, and
+  operations.
 
-    from model import MyModel
-    from nvflare.app_opt.pt.recipes import FedAvgRecipe
-    from nvflare.recipe import SimEnv
+Start with the Simulator, validate deployment behavior in POC, and then follow
+the :ref:`Deployment Overview <deployment_overview>` for a real multi-site
+environment. The :github_nvflare_link:`Hello PyTorch environment example
+<examples/advanced/hello-pt-environments/README.md>` carries the same learning
+application from simulation to POC and an already-running production system.
 
-    recipe = FedAvgRecipe(
-        name="my-fedavg-job",
-        min_clients=2,
-        num_rounds=5,
-        model=MyModel(),
-        train_script="train.py",
-    )
-    env = SimEnv(num_clients=2)
-    run = recipe.execute(env)
+Discover More Examples
+======================
 
-That's it. Your training logic stays the same -- FLARE handles the communication, aggregation, and orchestration.
-For the full Client API reference, see :ref:`Client API <client_api>`. For pre-built recipes, see :ref:`Available Recipes <available_recipes>`.
+Use the resource that matches what you want to do:
 
-Hello-world Examples
-====================
+- :ref:`Feature Tutorials <tutorials>` provide focused notebook walkthroughs
+  of the Simulator, POC, FLARE API, CLI, Recipe, and logging capabilities.
+- The `example catalog <https://nvidia.github.io/NVFlare/catalog/>`_ provides
+  runnable workloads and implementation references that can be browsed by
+  framework, workflow, and use case.
+- :ref:`Self-Paced Training <self_paced_training>` provides a sequential
+  curriculum across FL concepts, system operation, security, algorithms, and
+  industry applications.
+- NVIDIA DLI offers hosted courses for `Introduction to Federated Learning with
+  NVIDIA FLARE <https://learn.nvidia.com/courses/course-detail?course_id=course-v1:DLI+S-FX-28+V1>`_
+  and `Decentralized AI at Scale with NVIDIA FLARE
+  <https://learn.nvidia.com/courses/course-detail?course_id=course-v1:DLI+S-FX-29+V1>`_.
 
-The following hello-world examples demonstrate different federated learning algorithms and workflows. Each example includes instructions and code to help you get started.
+The `NVIDIA FLARE website <https://nvidia.github.io/NVFlare>`_ brings these
+learning resources together with research, webinars, and events. Visit the
+`NVIDIA FLARE developer portal <https://developer.nvidia.com/flare>`_ for the
+broader product and developer entry point.
 
-1. **Hello PyTorch** - Federated averaging with PyTorch models and training loops. :doc:`hello-world/hello-pt/index`
+With NVFLARE 2.10.0 or later installed, list and retrieve curated examples with:
 
-2. **Hello Lightning** - Example using PyTorch Lightning for streamlined model training. :doc:`hello-world/hello-lightning/index`
+.. code-block:: bash
 
-3. **Hello Differential Privacy** - `Federated learning with differential privacy using PyTorch and Opacus for privacy-preserving training. <hello-world/hello-dp/index.html>`_
+   nvflare examples list
+   nvflare examples get <example-name>
 
-4. **Hello TensorFlow** - `Federated averaging using TensorFlow models. <hello-world/hello-tf/index.html>`_
+The CLI retrieves source matched to the installed package revision. After
+retrieval, follow that example's README for its exact dependencies and commands.
+Feature tutorials and the self-paced course are browsed separately and are not
+part of the ``nvflare examples`` catalog.
 
-5. **Hello JAX** - `Federated averaging using JAX, Flax, and Optax on MNIST. <hello-world/hello-jax/index.html>`_
+For a manual or custom statistics workflow, see the
+:ref:`Federated Statistics guide <federated_statistics>`.
 
-6. **Hello HuggingFace** - `Federated Qwen SFT/PEFT using HuggingFace Trainer and TRL. <hello-world/hello-huggingface/index.html>`_
-
-7. **Hello Logistic Regression** - `Federated logistic regression example using scikit-learn. <hello-world/hello-lr/index.html>`_
-
-8. **Hello Cyclic** - `Cyclic federated learning workflow example. <hello-world/hello-cyclic/index.html>`_
-
-9. **Hello Tabular Statistics** - `Federated statistics computation example. <hello-world/hello-tabular-stats/index.html>`_
-
-10. **Hello Flower** - `Running Flower apps in FLARE. <hello-world/hello-flower/index.html>`_
-
-11. **Hello XGBoost** - `Federated XGBoost example demonstrating gradient boosting for tabular data in a federated setting. <hello-world/hello-xgboost/index.html>`_
-
-Let's start with Hello PyTorch: :doc:`hello-world/hello-pt/index`
+For guide-based next steps such as Agent Skills, manual API selection, custom
+workflow research, LLMs, deployment, or security, return to the
+:doc:`documentation home <index>` and choose the path that matches your goal.
 
 .. toctree::
    :maxdepth: 1
