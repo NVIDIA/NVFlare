@@ -30,18 +30,18 @@ import os
 import runpy
 import sys
 
-faulthandler.dump_traceback_later(float(sys.argv[1]) * 0.75)
+faulthandler.dump_traceback_later(float(sys.argv[1]), repeat=True)
 sys.argv = sys.argv[2:]
 sys.path[0] = os.path.dirname(os.path.abspath(sys.argv[0]))
 runpy.run_path(sys.argv[0], run_name="__main__")
 """
 
 
-def run_hello_pt_export(command, *, cwd, env, timeout=120):
+def run_hello_pt_export(command, *, cwd, env, timeout=120, traceback_delay=90):
     """Allow cold framework imports in CI and expose diagnostics on failure."""
     try:
         return subprocess.run(
-            [command[0], "-u", "-c", _EXPORT_BOOTSTRAP, str(timeout), *command[1:]],
+            [command[0], "-u", "-c", _EXPORT_BOOTSTRAP, str(traceback_delay), *command[1:]],
             cwd=cwd,
             env=env,
             capture_output=True,

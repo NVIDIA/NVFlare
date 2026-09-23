@@ -47,8 +47,16 @@ def test_export_timeout_reports_child_stack_and_captured_output(tmp_path, capsys
         "import sys, time\nprint('export started')\nprint('before stall', file=sys.stderr)\ntime.sleep(60)\n"
     )
 
+    # Give the child ample time to emit diagnostics under parallel CI load.
+    # Repeated dumps also cover a watchdog firing before the script has started.
     with pytest.raises(subprocess.TimeoutExpired):
-        run_hello_pt_export([sys.executable, str(script)], cwd=tmp_path, env=os.environ.copy(), timeout=4)
+        run_hello_pt_export(
+            [sys.executable, str(script)],
+            cwd=tmp_path,
+            env=os.environ.copy(),
+            timeout=20,
+            traceback_delay=1,
+        )
 
     diagnostics = capsys.readouterr().err
     assert "export started" in diagnostics
