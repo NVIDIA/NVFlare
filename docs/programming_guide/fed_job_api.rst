@@ -140,6 +140,56 @@ Development mode — abort immediately when any client dies:
 
   job = FedJob(name="dev_job", min_clients=2, fail_fast=True)
 
+Passing job-scoped parameters
+-----------------------------
+
+Use the ``custom_props`` object in ``meta.json`` for application-specific,
+job-scoped parameters. With ``FedJob``, supply it through ``meta_props`` using
+:attr:`JobMetaKey.CUSTOM_PROPS<nvflare.apis.job_def.JobMetaKey.CUSTOM_PROPS>`:
+
+.. code-block:: python
+
+  from nvflare.apis.job_def import JobMetaKey
+  from nvflare.job_config.api import FedJob
+
+  job = FedJob(
+      name="customized_job",
+      meta_props={
+          JobMetaKey.CUSTOM_PROPS.value: {
+              "learning_rate": 0.01,
+              "dataset_version": "2026-09",
+          }
+      },
+  )
+
+The exported ``meta.json`` contains:
+
+.. code-block:: json
+
+  {
+    "custom_props": {
+      "learning_rate": 0.01,
+      "dataset_version": "2026-09"
+    }
+  }
+
+At runtime, NVFlare loads the complete ``meta.json`` object into each per-job
+:class:`FLContext<nvflare.apis.fl_context.FLContext>` as
+:attr:`FLContextKey.JOB_META<nvflare.apis.fl_constant.FLContextKey.JOB_META>`. Components
+can read a custom value with :func:`get_custom_prop<nvflare.apis.job_def.get_custom_prop>`:
+
+.. code-block:: python
+
+  from nvflare.apis.fl_constant import FLContextKey
+  from nvflare.apis.job_def import get_custom_prop
+
+  job_meta = fl_ctx.get_prop(FLContextKey.JOB_META, {})
+  learning_rate = get_custom_prop(job_meta, "learning_rate", default=0.001)
+
+Treat job metadata as read-only. Values must be JSON-serializable, and
+``custom_props`` must not contain secrets because job metadata is stored with
+the exported and submitted job.
+
 Assigning objects with :func:`to<nvflare.job_config.api.FedJob.to>`
 =====================================================================
 
@@ -153,9 +203,32 @@ These functions have the following parameters which are used depending on the ty
 * ``target`` (str): (For :func:`to<nvflare.job_config.api.FedJob.to>`) The target location of the object. Can be “server” or a client name, e.g. “site-1”.
 * ``**kwargs``: if the object implements the ``add_to_fed_job`` method, ``kwargs`` are additional args to be passed to this function. See the specific object's section for more details.
 
-.. warning::
+Component constructor serialization
+-----------------------------------
 
-    Important: in order for the FedJob to use the values of arguments passed into the ``obj``, the arguments must be set as instance variables of the same name (or prefixed with "_") in the constructor.
+FedJob serializes a component by inspecting its constructor parameters. Each
+parameter that must appear in the exported configuration must be stored on the
+instance under the same name or with an underscore prefix. For example, the
+constructor parameter ``timeout`` must be available as ``self.timeout`` or
+``self._timeout``.
+
+For subclasses, FedJob discovers parameters declared by base classes only when
+the subclass constructor declares and forwards both ``*args`` and ``**kwargs``
+using those exact names:
+
+.. code-block:: python
+
+  class TunedComponent(BaseComponent):
+      def __init__(self, label="custom", *args, **kwargs):
+          super().__init__(*args, **kwargs)
+          self.label = label
+
+Using only ``**kwargs``, only ``*args``, or differently named variadic
+parameters does not trigger base-class parameter discovery. Inherited
+parameters can then be silently omitted from the exported configuration. As an
+alternative to ``*args, **kwargs``, explicitly declare every configurable
+inherited parameter in the subclass constructor, forward it to ``super()``,
+and store it under the same or underscore-prefixed name.
 
 Below we cover in-depth how different types of objects are handled when using :func:`to<nvflare.job_config.api.FedJob.to>`:
 
