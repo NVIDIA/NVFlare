@@ -50,12 +50,7 @@ class AioTcpDriver(BaseDriver):
         self._run(connector, Mode.ACTIVE)
 
     def shutdown(self):
-        self.close_all()
-
-        if self.server:
-            self.server.close()
-            # This will wake up the event loop to end the server
-            self.aio_ctx.run_coro(asyncio.sleep(0))
+        self.aio_ctx.get_event_loop().call_soon_threadsafe(self._shutdown_on_loop)
 
     @staticmethod
     def get_urls(scheme: str, resources: dict) -> (str, str):
@@ -85,6 +80,15 @@ class AioTcpDriver(BaseDriver):
             coroutine = self._tcp_listen(host, port)
 
         await coroutine
+
+    def _shutdown_on_loop(self):
+        server = self.server
+        self.server = None
+        self.close_all()
+        if server:
+            # close() cancels serve_forever(), which then waits for active transports.
+            # Do not wait here: connection callbacks need the ConnManager lock held by the caller.
+            server.close()
 
     async def _tcp_connect(self, host, port):
         self.ssl_context = get_ssl_context(self.connector.params, ssl_server=False)
