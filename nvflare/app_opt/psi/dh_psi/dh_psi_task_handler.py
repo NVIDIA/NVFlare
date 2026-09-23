@@ -28,9 +28,9 @@ from nvflare.app_opt.psi.dh_psi.dh_psi_server import PSIServer
 
 
 def check_items_uniqueness(items):
-    duplicates = {item: count for item, count in collections.Counter(items).items() if count > 1}
-    if duplicates:
-        raise ValueError(f"the items must be unique, the following items with duplicates {duplicates}")
+    duplicate_count = sum(1 for count in collections.Counter(items).values() if count > 1)
+    if duplicate_count:
+        raise ValueError(f"the items must be unique, found {duplicate_count} items with duplicates")
 
 
 class DhPSITaskHandler(TaskHandler):
