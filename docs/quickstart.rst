@@ -12,23 +12,31 @@ then points you to the right API and execution environment for your own work.
 Run Your First Federation
 =========================
 
-After creating and activating a Python virtual environment as described in
-:doc:`Installation <installation>`, install the latest stable NVFLARE release
-with its PyTorch integration:
+The ``nvflare examples`` command used below is available in NVFLARE 2.10.0 and
+later, or in development builds from ``main``. Create and activate a fresh Python
+virtual environment as described in :doc:`Installation <installation>`, then
+choose **one** installation option with the PyTorch integration:
+
+**Released package (NVFLARE 2.10.0 or later):**
 
 .. code-block:: bash
 
-   python -m pip install "nvflare[PT]"
+   python -m pip install "nvflare[PT]>=2.10.0"
 
-.. note::
+**Development only (unstable main branch):** To develop or test unreleased
+features, install from source instead. This option requires Git:
 
-   The ``nvflare examples`` command is available in NVFLARE 2.10.0 and later.
-   If your installed release is older, use its Quick Start by selecting that
-   version in the documentation. For the latest published release, follow the
-   `stable Quick Start <https://nvflare.readthedocs.io/en/stable/quickstart.html>`_.
+.. code-block:: bash
 
-Retrieve the Hello PyTorch example that matches the installed package revision
-and run it with focused progress output:
+   git clone --branch main https://github.com/NVIDIA/NVFlare.git
+   python -m pip install -e "./NVFlare[PT]"
+
+Keep the checkout unchanged while retrieving examples: the CLI uses its Git
+revision to select matching source and rejects uncommitted tracked changes.
+Do not install both options in the same environment.
+
+After either installation, retrieve the Hello PyTorch example that matches the
+installed package revision and run it with focused progress output:
 
 .. code-block:: bash
 
@@ -210,11 +218,12 @@ Choose an Execution Environment
 
 FLARE supports three stages that share the same application structure:
 
-- **Simulator** (:ref:`fl_simulator`) -- Runs server and client logic on one
-  system for fast application development and validation.
-- **Proof of Concept (POC)** (:ref:`poc_command`) -- Simulates a production
-  deployment on one local host using separate server and client processes and
-  locally generated startup kits.
+- **Simulator** (:ref:`fl_simulator`) -- Runs a local job directly to test
+  application code and algorithms, without first starting and administering a
+  FLARE deployment.
+- **Proof of Concept (POC)** (:ref:`poc_command`) -- Starts a local FLARE
+  deployment to practice job submission, administration, and deployment behavior
+  before moving to provisioned sites.
 - **Production** (:ref:`provisioned_setup`) -- Runs across provisioned sites
   with production identities, authorization, networking, policies, and
   operations.
