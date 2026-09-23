@@ -162,15 +162,18 @@ class _ShellCommandHandler(_CmdHandler):
 
 class _CheckJobHandler(_CmdHandler):
     def handle(self, command_args: list, admin_controller: NVFTestDriver, admin_api: Session):
-        timeout = 1
+        # Job metadata can finish before server/client cleanup. Keep polling within the sequence's remaining budget.
+        deadline = admin_controller.event_sequence_deadline
         if command_args:
-            timeout = float(command_args[0])
-        start_time = time.time()
-        result = False
+            action_deadline = time.time() + float(command_args[0])
+            deadline = min(deadline, action_deadline) if deadline is not None else action_deadline
         if admin_controller.job_id:
-            while time.time() - start_time < timeout:
-                result = check_job_done(job_id=admin_controller.job_id, admin_api=admin_controller.super_admin_api)
-                if result:
-                    break
-                time.sleep(0.5)
-        admin_controller.test_done = result
+            while deadline is None or time.time() < deadline:
+                if check_job_done(job_id=admin_controller.job_id, admin_api=admin_controller.super_admin_api):
+                    admin_controller.test_done = True
+                    return
+                sleep_time = 0.5 if deadline is None else min(0.5, max(0, deadline - time.time()))
+                time.sleep(sleep_time)
+        raise TimeoutError(
+            f"Timed out waiting for job {admin_controller.job_id!r} and server/client cleanup to finish."
+        )

@@ -5,7 +5,7 @@
         "app": ["site-1", "server", "site-2"]
     },
     "launcher_spec": {
-        "server": {
+        "default": {
             "docker": {"image": "nvflare-job:latest"}
         },
         "site-1": {
