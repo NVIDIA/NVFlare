@@ -31,12 +31,21 @@ class SignatureBuilder(Builder):
     - HE (Homomorphic Encryption) kits: startup + local dirs are signed to protect the shared
       TenSEAL context.
 
-    CVM vault workspaces are signed separately by :class:`VaultSignatureBuilder` after provisioning
-    finalization. Plain non-CC, non-HE kits do not receive signature.json. mTLS is the trust anchor
-    for those deployments.
+    Signing runs in ``finalize()``, not ``build()``. Other builders create files while finalizing,
+    notably ``local/comm_config.json`` from StaticFileBuilder, and verification rejects any file
+    that has no signature entry. Signing during ``build()`` therefore left a freshly provisioned
+    kit unable to pass its own startup integrity check.
+
+    Builders finalize in reverse order, so :func:`order_builders_for_signing` places this builder
+    immediately after WorkspaceBuilder: late enough to follow every other builder's ``finalize()``,
+    early enough to precede the workspace relocation WorkspaceBuilder performs.
+
+    CVM vault workspaces are signed separately by :class:`VaultSignatureBuilder`, which already ran
+    after finalization. Plain non-CC, non-HE kits do not receive signature.json. mTLS is the trust
+    anchor for those deployments.
     """
 
-    def build(self, project: Project, ctx: ProvisionContext):
+    def finalize(self, project: Project, ctx: ProvisionContext):
         root_pri_key = ctx.get(CtxKey.ROOT_PRI_KEY)
         if not root_pri_key:
             raise RuntimeError(f"missing {CtxKey.ROOT_PRI_KEY} in ProvisionContext")
@@ -70,3 +79,23 @@ class VaultSignatureBuilder(Builder):
         for participant in project.get_all_participants():
             if participant.get_prop(PropKey.CVM_VAULT):
                 sign_folders(ctx.get_ws_dir(participant), root_pri_key, signature_file=ProvFileName.SIGNATURE_JSON)
+
+
+def order_builders_for_signing(builders):
+    """Return the builder list with signature builders positioned to finalize last.
+
+    Finalization runs in reverse builder order and WorkspaceBuilder.finalize() relocates the
+    workspace out of the work-in-progress directory. A signature builder must therefore sit
+    immediately after WorkspaceBuilder so it signs once every other builder has finalized and
+    while the workspace is still in place. Lists that do not start with WorkspaceBuilder are
+    returned unchanged, because there is no safe position to move to.
+    """
+    from nvflare.lighter.impl.workspace import WorkspaceBuilder
+
+    if not builders or not isinstance(builders[0], WorkspaceBuilder):
+        return builders
+    signers = [b for b in builders if isinstance(b, SignatureBuilder)]
+    if not signers:
+        return builders
+    others = [b for b in builders if not isinstance(b, SignatureBuilder)]
+    return others[:1] + signers + others[1:]

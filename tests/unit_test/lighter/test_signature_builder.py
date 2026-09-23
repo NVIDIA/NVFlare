@@ -18,7 +18,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from nvflare.lighter.constants import PropKey, ProvFileName
-from nvflare.lighter.impl.signature import SignatureBuilder
+from nvflare.lighter.impl.cert import CertBuilder
+from nvflare.lighter.impl.signature import SignatureBuilder, order_builders_for_signing
+from nvflare.lighter.impl.static_file import StaticFileBuilder
+from nvflare.lighter.impl.workspace import WorkspaceBuilder
 
 
 def _make_ctx(kit_dir, ws_dir=None, local_dir=None, root_pri_key="fake_key"):
@@ -51,7 +54,7 @@ def test_plain_non_he_no_signature_json(tmp_path):
     builder = SignatureBuilder()
 
     with patch("nvflare.lighter.impl.signature.sign_folders") as mock_sign:
-        builder.build(proj, ctx)
+        builder.finalize(proj, ctx)
         mock_sign.assert_not_called()
 
 
@@ -66,8 +69,22 @@ def test_azure_cc_enabled_generates_signature_json(tmp_path):
     builder = SignatureBuilder()
 
     with patch("nvflare.lighter.impl.signature.sign_folders") as mock_sign:
-        builder.build(proj, ctx)
+        builder.finalize(proj, ctx)
         mock_sign.assert_called_once_with(ws_dir, "fake_key", signature_file=ProvFileName.SIGNATURE_JSON)
+
+
+def test_signing_never_runs_during_build(tmp_path):
+    """build() must not sign: files created during finalization would be left unsigned."""
+    ws_dir = str(tmp_path / "ws")
+    kit_dir = str(tmp_path / "kit")
+    os.makedirs(ws_dir)
+    os.makedirs(kit_dir)
+    ctx = _make_ctx(kit_dir, ws_dir=ws_dir)
+    proj = _make_project([_make_participant(cc_enabled=True)])
+
+    with patch("nvflare.lighter.impl.signature.sign_folders") as mock_sign:
+        SignatureBuilder().build(proj, ctx)
+        mock_sign.assert_not_called()
 
 
 def test_he_server_context_generates_signature_json(tmp_path):
@@ -82,7 +99,7 @@ def test_he_server_context_generates_signature_json(tmp_path):
     builder = SignatureBuilder()
 
     with patch("nvflare.lighter.impl.signature.sign_folders") as mock_sign:
-        builder.build(proj, ctx)
+        builder.finalize(proj, ctx)
         assert mock_sign.call_count == 2
         mock_sign.assert_any_call(kit_dir, "fake_key", signature_file=ProvFileName.SIGNATURE_JSON)
         mock_sign.assert_any_call(local_dir, "fake_key", signature_file=ProvFileName.SIGNATURE_JSON)
@@ -100,7 +117,7 @@ def test_he_client_context_generates_signature_json(tmp_path):
     builder = SignatureBuilder()
 
     with patch("nvflare.lighter.impl.signature.sign_folders") as mock_sign:
-        builder.build(proj, ctx)
+        builder.finalize(proj, ctx)
         assert mock_sign.call_count == 2
 
 
@@ -113,7 +130,7 @@ def test_no_tenseal_files_no_signature_json(tmp_path):
     builder = SignatureBuilder()
 
     with patch("nvflare.lighter.impl.signature.sign_folders") as mock_sign:
-        builder.build(proj, ctx)
+        builder.finalize(proj, ctx)
         mock_sign.assert_not_called()
 
 
@@ -125,7 +142,7 @@ def test_missing_root_pri_key_raises(tmp_path):
     builder = SignatureBuilder()
 
     with pytest.raises(RuntimeError, match="missing"):
-        builder.build(proj, ctx)
+        builder.finalize(proj, ctx)
 
 
 def test_he_both_contexts_generates_signature_json(tmp_path):
@@ -141,5 +158,23 @@ def test_he_both_contexts_generates_signature_json(tmp_path):
     builder = SignatureBuilder()
 
     with patch("nvflare.lighter.impl.signature.sign_folders") as mock_sign:
-        builder.build(proj, ctx)
+        builder.finalize(proj, ctx)
         assert mock_sign.call_count == 2
+
+
+def test_signature_builder_is_moved_after_workspace_builder():
+    """Reverse finalization must reach the signer after every other builder."""
+    workspace, static, cert, signer = WorkspaceBuilder(), StaticFileBuilder(), CertBuilder(), SignatureBuilder()
+    ordered = order_builders_for_signing([workspace, static, cert, signer])
+    assert ordered == [workspace, signer, static, cert]
+    # Reverse order is what the provisioner uses; the signer must precede only
+    # WorkspaceBuilder, which relocates the workspace out of the WIP directory.
+    assert ordered[::-1].index(signer) == len(ordered) - 2
+
+
+def test_builder_ordering_is_left_alone_when_it_cannot_be_made_safe():
+    static, cert, signer = StaticFileBuilder(), CertBuilder(), SignatureBuilder()
+    assert order_builders_for_signing([static, signer, cert]) == [static, signer, cert]
+    assert order_builders_for_signing([]) == []
+    workspace = WorkspaceBuilder()
+    assert order_builders_for_signing([workspace, static]) == [workspace, static]

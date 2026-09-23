@@ -57,6 +57,9 @@ def _get_provisioner(prop_mgr: PropertyManager, root_dir: str, scheme, docker_im
     scheme = prop_mgr.get_project_prop("scheme", scheme)
     builders = [
         WorkspaceBuilder(),
+        # Immediately after WorkspaceBuilder: reverse finalization then signs
+        # files such as comm_config.json that later builders create in finalize().
+        SignatureBuilder(),
         StaticFileBuilder(
             config_folder="config",
             scheme=scheme,
@@ -65,7 +68,6 @@ def _get_provisioner(prop_mgr: PropertyManager, root_dir: str, scheme, docker_im
         AWSBuilder(),
         AzureBuilder(),
         CertBuilder(),
-        SignatureBuilder(),
     ]
 
     # TBD: need to add Packager object to the provisioner!
