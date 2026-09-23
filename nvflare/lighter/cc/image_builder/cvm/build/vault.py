@@ -18,6 +18,7 @@ import contextlib
 import hashlib
 import json
 import os
+import re
 import shutil
 import tarfile
 import tempfile
@@ -36,7 +37,17 @@ from ..common.validation import runtime_config
 from ..trustee import client as trustee_client
 from . import config
 from .payload import HOST_MODULES, copy_modules
-from .storage import content_digest, copy_tree, create_image, format_vault, mounted, nbd, opened_vault, sidecar
+from .storage import (
+    content_digest,
+    copy_tree,
+    create_image,
+    format_vault,
+    mounted,
+    nbd,
+    opened_vault,
+    set_tree_owner,
+    sidecar,
+)
 
 
 def populate(root, app):
@@ -51,20 +62,43 @@ def populate(root, app):
         path = root / "application" / name
         require(not path.is_symlink(), "Writable application directory cannot be a symlink")
         path.mkdir(exist_ok=True)
+    uid, gid = app["_application_owner"]
+    set_tree_owner(root / "application", uid, gid)
     for service in app["services"]:
         shutil.copyfile(service, root / "services" / Path(service).name)
 
 
-def validate_archive(path, image_id):
+def _numeric_owner(user):
+    match = re.fullmatch(r"([0-9]+)(?::([0-9]+))?", user) if user else None
+    if match:
+        uid = int(match.group(1))
+        gid = int(match.group(2) or match.group(1))
+    else:
+        require(user in ("", "root", "root:root"), "Docker image USER must be numeric UID[:GID] or root")
+        uid = gid = 0
+    require(uid < 2**32 - 1 and gid < 2**32 - 1, "Docker image USER is outside the UID/GID range")
+    return uid, gid
+
+
+def validated_image(path, image_id):
     try:
-        return _archive_image_id(path, image_id)
+        normalized, image = _archive_image(path, image_id)
+        container = image.get("config") or {}
+        require(isinstance(container, dict), "Invalid Docker image configuration")
+        user = container.get("User", "")
+        require(isinstance(user, str), "Invalid Docker image USER")
+        return normalized, _numeric_owner(user)
     except (BuildError, OSError, ValueError, KeyError, TypeError, AttributeError, EOFError, tarfile.TarError):
         # Archives can embed private paths, image metadata or credentials. Do not
         # expose parser exceptions, even though this check precedes key creation.
         raise ConfigurationError("Invalid docker_archive; regenerate it with docker save and verify image_id") from None
 
 
-def _archive_image_id(path, image_id):
+def validate_archive(path, image_id):
+    return validated_image(path, image_id)[0]
+
+
+def _archive_image(path, image_id):
     # Only inspect manifest/config members, never unpack layers on the build host.
 
     with tarfile.open(path, "r:*") as archive:
@@ -72,7 +106,7 @@ def _archive_image_id(path, image_id):
         require(member.isfile() and member.size < 1024**2, "Invalid Docker save manifest")
         entries = json.load(archive.extractfile(member))
         require(isinstance(entries, list) and entries, "Empty Docker save archive")
-        configurations = set()
+        configurations = {}
         for entry in entries:
             filename = entry["Config"]
             require(
@@ -82,9 +116,10 @@ def _archive_image_id(path, image_id):
             member = archive.getmember(filename)
             require(member.isfile() and member.size < 16 * 1024**2, "Invalid Docker image configuration")
             data = archive.extractfile(member).read()
-            configurations.add("sha256:" + hashlib.sha256(data).hexdigest())
+            digest = "sha256:" + hashlib.sha256(data).hexdigest()
+            configurations[digest] = json.loads(data)
         if image_id in configurations:
-            return image_id
+            return image_id, configurations[image_id]
         # Docker's containerd store reports an OCI manifest/index digest as Id;
         # the guest's classic store reports the image configuration digest.
         # Authenticate that graph before normalizing to the guest's identity.
@@ -112,7 +147,7 @@ def _archive_image_id(path, image_id):
             else:
                 image = value["config"]["digest"]
                 require(image in configurations, "OCI image is absent from Docker save manifest")
-                return image
+                return image, configurations[image]
         raise BuildError("OCI manifest nesting exceeds the supported limit")
 
 
@@ -308,7 +343,8 @@ def build_with_profile(app, profiles, output=None, candidate=False, dev=False):
         set(profiles["contract"]["bootstrap_egress"]) <= set(app["allowed_out_ports"]),
         "Application must preserve bootstrap egress",
     )
-    app["image_id"] = validate_archive(app["docker_archive"], app["image_id"])
+    app["image_id"], owner = validated_image(app["docker_archive"], app["image_id"])
+    app["_application_owner"] = _numeric_owner(app["container"].get("user")) if app["container"].get("user") else owner
     if dev:
         require(
             not candidate and profiles["profile_version"].startswith("dev-"), "Dev mode requires its own dev- profile"

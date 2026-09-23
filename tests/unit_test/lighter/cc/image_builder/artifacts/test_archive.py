@@ -35,7 +35,7 @@ from cvm.artifacts.oci import (
     publish,
 )
 from cvm.artifacts.packaging import package_bundle, package_deliveries
-from cvm.build.vault import delivery, validate_archive
+from cvm.build.vault import delivery, validate_archive, validated_image
 from cvm.common.errors import BuildError, ConfigurationError
 from cvm.common.io import canonical, digest_file, read_json, write_json
 from cvm.host.launcher import find_bundle
@@ -254,8 +254,8 @@ class ArchiveTests(unittest.TestCase):
             with self.assertRaises(BuildError):
                 materialize("registry.example.org/cvm/example:latest", root / "mutable")
 
-    def archive(self, directory, *, tamper=False, ambiguous=False):
-        config = canonical({"architecture": "amd64", "os": "linux", "config": {"Cmd": ["serve"]}})
+    def archive(self, directory, *, tamper=False, ambiguous=False, user=""):
+        config = canonical({"architecture": "amd64", "os": "linux", "config": {"Cmd": ["serve"], "User": user}})
         config_id = "sha256:" + hashlib.sha256(config).hexdigest()
         manifest = canonical({"config": {"digest": config_id}})
         manifest_id = "sha256:" + hashlib.sha256(manifest).hexdigest()
@@ -281,6 +281,27 @@ class ArchiveTests(unittest.TestCase):
             path, config_id, index_id = self.archive(directory)
             self.assertEqual(validate_archive(path, config_id), config_id)
             self.assertEqual(validate_archive(path, index_id), config_id)
+
+    def test_runtime_owner_comes_from_authenticated_image_config(self):
+        cases = (
+            ("", (0, 0)),
+            ("root", (0, 0)),
+            ("root:root", (0, 0)),
+            ("0:0", (0, 0)),
+            ("12001", (12001, 12001)),
+            ("12001:12002", (12001, 12002)),
+        )
+        for user, expected in cases:
+            with self.subTest(user=user), tempfile.TemporaryDirectory() as directory:
+                path, config_id, index_id = self.archive(directory, user=user)
+                self.assertEqual(validated_image(path, config_id), (config_id, expected))
+                self.assertEqual(validated_image(path, index_id), (config_id, expected))
+
+        for user in ("nvflare", "1000:users", str(2**32 - 1), "1:4294967295"):
+            with self.subTest(user=user), tempfile.TemporaryDirectory() as directory:
+                path, config_id, _ = self.archive(directory, user=user)
+                with self.assertRaisesRegex(ConfigurationError, "Invalid docker_archive"):
+                    validated_image(path, config_id)
 
     def test_corrupt_docker_archives_have_fixed_secret_free_configuration_errors(self):
         secret = "secret-archive-metadata"

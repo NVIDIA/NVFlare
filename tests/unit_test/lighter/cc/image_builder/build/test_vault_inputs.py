@@ -16,6 +16,7 @@
 
 import contextlib
 import copy
+import shutil
 import tempfile
 import unittest
 import uuid
@@ -28,6 +29,56 @@ from cvm.common.errors import BuildError
 
 
 class VaultInputTests(unittest.TestCase):
+    def test_population_applies_image_owner_inside_vault(self):
+        source = self.root / "source"
+        source.mkdir()
+        (source / "workspace").mkdir()
+        (source / "workspace" / "startup.sh").write_text("#!/bin/sh\n")
+        docker_archive = self.root / "application.tar"
+        docker_archive.write_bytes(b"docker archive")
+        mounted = self.root / "mounted"
+        mounted.mkdir()
+        app = {
+            "docker_archive": str(docker_archive),
+            "image_id": "sha256:" + "a" * 64,
+            "container": {},
+            "hosts_entries": {},
+            "requires_gpu": False,
+            "allowed_ports": [],
+            "allowed_out_ports": [443],
+            "application_files": str(source),
+            "services": [],
+            "_application_owner": (12001, 12002),
+        }
+
+        def set_owner(root, uid, gid):
+            self.assertEqual(root, mounted / "application")
+            self.assertEqual((uid, gid), (12001, 12002))
+            self.assertTrue((root / "workspace" / "startup.sh").is_file())
+            self.assertTrue((root / "runtime").is_dir())
+            self.assertTrue((root / "data").is_dir())
+
+        with (
+            patch.object(
+                vault,
+                "copy_tree",
+                side_effect=lambda source, target: shutil.copytree(source, target, dirs_exist_ok=True),
+            ),
+            patch.object(vault, "set_tree_owner", side_effect=set_owner) as owner,
+        ):
+            vault.populate(mounted, app)
+        owner.assert_called_once_with(mounted / "application", 12001, 12002)
+
+    def test_tree_owner_does_not_follow_symlinks(self):
+        tree = self.root / "tree"
+        tree.mkdir()
+        (tree / "file").write_text("payload")
+        (tree / "link").symlink_to(self.root / "outside")
+        with patch.object(storage.os, "chown") as chown:
+            storage.set_tree_owner(tree, 12001, 12002)
+        self.assertEqual({call.args[0] for call in chown.call_args_list}, {tree, tree / "file", tree / "link"})
+        self.assertTrue(all(call.kwargs == {"follow_symlinks": False} for call in chown.call_args_list))
+
     def test_public_sidecars_rescan_copied_bytes(self):
         source = self.root / "public"
         source.mkdir()

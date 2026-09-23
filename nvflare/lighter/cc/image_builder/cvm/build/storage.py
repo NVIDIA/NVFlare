@@ -191,6 +191,13 @@ def copy_tree(source, destination):
             first.wait(timeout=30)
 
 
+def set_tree_owner(root, uid, gid):
+    """Set authenticated payload ownership without following links outside the tree."""
+
+    for path in [Path(root), *Path(root).rglob("*")]:
+        os.chown(path, uid, gid, follow_symlinks=False)
+
+
 def content_digest(root):
     """Deterministic content/metadata digest, excluding identity and filesystem bookkeeping."""
     result = hashlib.sha256()

@@ -405,12 +405,33 @@ def test_builder_dir_defaults_to_the_installed_package(configuration, tmp_path):
     "image_user, expected",
     [("", (0, 0)), ("root", (0, 0)), ("0:0", (0, 0)), ("12001", (12001, 12001)), ("12001:12002", (12001, 12002))],
 )
-def test_image_user_is_preserved_and_drives_workspace_owner(configuration, tmp_path, image_user, expected):
+def test_image_user_is_preserved_and_validates_workspace_owner(configuration, tmp_path, image_user, expected):
     write_docker_archive(tmp_path / "image.tar", user=image_user)
+    configuration["cvm_vault"].update(workspace_uid=expected[0], workspace_gid=expected[1])
     adapter = make_adapter(configuration, tmp_path)
     plan = adapter.plans[0]
     assert "user" not in plan["app"]["container"]
-    assert (plan["uid"], plan["gid"]) == expected
+    assert "uid" not in plan and "gid" not in plan
+
+
+def test_unprivileged_staging_does_not_change_ownership(configuration, tmp_path, monkeypatch):
+    image_uid = 12001 if os.getuid() != 12001 else 12002
+    image_gid = 12003 if os.getgid() != 12003 else 12004
+    write_docker_archive(tmp_path / "image.tar", user=f"{image_uid}:{image_gid}")
+    configuration["cvm_vault"].update(workspace_uid=image_uid, workspace_gid=image_gid)
+    chown = Mock(side_effect=AssertionError("unprivileged adapter attempted chown"))
+
+    def build(builder, config_file, output, log, project_config):
+        app = yaml.safe_load(config_file.read_text())
+        staged = Path(app["application_files"])
+        assert all(path.stat().st_uid == os.getuid() for path in [staged, *staged.rglob("*")])
+        fake_build(builder, config_file, output, log, project_config)
+
+    monkeypatch.setattr(adapter_module.os, "chown", chown)
+    monkeypatch.setattr(adapter_module, "invoke_vault_builder", build)
+    ctx = run_provision(configuration, tmp_path)
+    assert ctx[CtxKey.PROVISION_SUCCESS]
+    chown.assert_not_called()
 
 
 def test_named_image_user_is_rejected_without_a_verifiable_numeric_owner(configuration, tmp_path):

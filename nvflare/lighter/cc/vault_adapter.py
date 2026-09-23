@@ -366,8 +366,6 @@ class VaultAdapter:
                     "image": image,
                     "inputs": inputs,
                     "output": output,
-                    "uid": values.get("workspace_uid"),
-                    "gid": values.get("workspace_gid"),
                 }
             )
         # VaultSignatureBuilder signs selected workspaces during finalization.
@@ -486,8 +484,9 @@ class VaultAdapter:
         for key, default in SIZES.items():
             app[key] = values.get(key, default)
             _require(type(app[key]) is int and app[key] > 0, f"{key} must be a positive integer GiB size")
-        # Preserve the image's USER rather than passing Docker --user. A numeric
-        # identity lets the adapter give the private workspace the same owner.
+        # Preserve the image's USER rather than passing Docker --user. Validate
+        # optional ownership assertions here; the privileged builder derives the
+        # identity again from the authenticated archive before populating /vault.
         match = re.fullmatch(r"([0-9]+)(?::([0-9]+))?", image_user) if image_user else None
         if match:
             image_uid = int(match.group(1))
@@ -719,22 +718,14 @@ class VaultAdapter:
                 ),
                 "Staged workspace signature verification failed; no vault was built",
             )
-            for original in [source, *source.rglob("*")]:
-                copied = destination / original.relative_to(source)
-                info = original.stat()
-                uid = plan["uid"]
-                gid = plan["gid"]
-                if (copied.stat().st_uid, copied.stat().st_gid) != (uid, gid):
-                    os.chown(copied, uid, gid)
             # Keep runtime files outside the signed source kit. sub_start.sh
             # refreshes a verified working copy on each container start.
             runtime = application / "runtime"
             runtime.mkdir(mode=0o700)
-            owner = destination.stat()
-            if (runtime.stat().st_uid, runtime.stat().st_gid) != (owner.st_uid, owner.st_gid):
-                os.chown(runtime, owner.st_uid, owner.st_gid)
             # The application parent must be traversable by the image's runtime UID.
             # The enclosing input directory remains private to the build operator.
+            # The privileged builder derives the runtime UID/GID again from the
+            # authenticated Docker archive and applies it inside the vault.
             application.chmod(0o755)
             app = plan["app"]
             app["application_files"] = str(application)

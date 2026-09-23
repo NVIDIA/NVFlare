@@ -217,10 +217,12 @@ container start. The supervisor remains in the foreground, handles TERM/INT,
 honors NVFlare restart/shutdown markers, and exits nonzero on repeated startup
 failure. It does not use the backgrounding ``start.sh`` wrapper.
 
-Staging preserves file modes and ownership. For an image with a non-root runtime
-UID, set ``workspace_uid`` and ``workspace_gid`` to that UID/GID using a worker
-permitted to set ownership. Both the source workspace and runtime directory use
-that ownership. The image must allow the runtime user to traverse ``/vault``.
+Unprivileged staging preserves file modes and remains owned by the provisioning
+worker. The privileged CVM Builder verifies the Docker archive, derives the
+numeric UID/GID from its image ``USER``, and applies that ownership to the
+application tree only inside the encrypted vault. Optional ``workspace_uid`` and
+``workspace_gid`` assertions must be supplied together and match the image
+identity. The image must allow the runtime user to traverse ``/vault``.
 
 ``user_config`` and ``user_data`` are optional clear, read-only input directories.
 Private-key files/PEM content and symlinks are rejected. Never place a startup kit
