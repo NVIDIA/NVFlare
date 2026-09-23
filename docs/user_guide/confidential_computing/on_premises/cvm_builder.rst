@@ -20,9 +20,11 @@ Prepare the worker
 ------------------
 
 Run provisioning and vault construction on a trusted Linux worker configured for
-CVM Builder (the tested builder environment is Ubuntu 26.04). Follow the
-builder's ``nvflare/lighter/cc/image_builder/BUILD_GUIDE.md`` and
-``TRUSTEE_GUIDE.md`` for disk tools, disabled swap,
+CVM Builder (the tested builder environment is Ubuntu 26.04). Follow the builder's
+:github_nvflare_link:`build guide
+<nvflare/lighter/cc/image_builder/BUILD_GUIDE.md>` and
+:github_nvflare_link:`Trustee guide
+<nvflare/lighter/cc/image_builder/TRUSTEE_GUIDE.md>` for disk tools, disabled swap,
 core-dump policy, locked memory, approved bundles, and Trustee administration configuration.
 Provisioning does not change those host settings or launch a CVM.
 
@@ -273,7 +275,9 @@ channel. Keep input staging and administrative records private. Use the builder'
 ``cvmctl publish`` for registry publication or ``cvmctl pull`` to
 materialize a local archive or immutable registry digest. Then run the delivered
 ``launch_cvm.sh``/``shutdown_cvm.sh`` on the appropriate runtime host, following
-``USER_GUIDE.md``. Provisioning does not publish or launch the delivery.
+the :github_nvflare_link:`CVM Builder user guide
+<nvflare/lighter/cc/image_builder/USER_GUIDE.md>`. Provisioning does not publish or
+launch the delivery.
 
 A failed build exits nonzero and retains inputs, logs, outputs and any successful
 platform deliveries. Inspect ``build_failure.json`` when present and each

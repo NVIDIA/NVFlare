@@ -19,6 +19,18 @@ Each participant receives a complete OCI delivery containing the generic CVM,
 application vault, sidecars and launch scripts. Application updates reuse the
 approved generic image and create a new vault.
 
+.. note::
+
+   This flow replaces the previous on-premises HashiCorp Vault plus Trustee KBS
+   deployment. CVM Builder now stores binding-addressed vault keys directly in
+   Trustee resource storage. Existing HashiCorp Vault secrets, measurements and
+   deliveries are not imported. Deploy the supported upstream Trustee, publish the
+   approved generic CVM references and policies, and build fresh application vaults
+   before switching a project to ``cvm_vault``. See the
+   :github_nvflare_link:`Trustee deployment guide
+   <nvflare/lighter/cc/image_builder/TRUSTEE_GUIDE.md>` for the current backend and
+   migration boundary.
+
 Prepare the hosts and key service
 =================================
 
@@ -29,12 +41,16 @@ QEMU, driver and attester pins belong to each reviewed profile.
 
 Use these guides in ``nvflare/lighter/cc/image_builder``:
 
-- ``BUILD_GUIDE.md``: build-worker prerequisites, generic CVM construction,
+- :github_nvflare_link:`BUILD_GUIDE.md
+  <nvflare/lighter/cc/image_builder/BUILD_GUIDE.md>`: build-worker prerequisites, generic CVM construction,
   hardware finalization, approval and application-vault construction.
-- ``TRUSTEE_GUIDE.md``: the pinned Trustee deployment, immutable appraisal
+- :github_nvflare_link:`TRUSTEE_GUIDE.md
+  <nvflare/lighter/cc/image_builder/TRUSTEE_GUIDE.md>`: the pinned Trustee deployment, immutable appraisal
   policies, mutual TLS, administrator access and vault-key lifecycle.
-- ``USER_GUIDE.md``: delivery verification, host preparation, launch and shutdown.
-- ``VALIDATION.md``: recorded test results and remaining production acceptance.
+- :github_nvflare_link:`USER_GUIDE.md
+  <nvflare/lighter/cc/image_builder/USER_GUIDE.md>`: delivery verification, host preparation, launch and shutdown.
+- :github_nvflare_link:`VALIDATION.md
+  <nvflare/lighter/cc/image_builder/VALIDATION.md>`: recorded test results and remaining production acceptance.
 
 Build and approve the generic images before provisioning participants. CPU-only
 and GPU-enabled images have distinct profile contracts; select the image whose
@@ -79,7 +95,8 @@ logs and recovery records are retained separately.
 Read the returned OCI archive paths and digests. Transfer the complete archives
 offline or publish them using the included ``cvmctl publish``. Recipients
 use ``cvmctl pull`` to verify and materialize a delivery from its archive or
-immutable registry reference. Follow ``USER_GUIDE.md`` for the exact commands.
+immutable registry reference. Follow the :github_nvflare_link:`CVM Builder user
+guide <nvflare/lighter/cc/image_builder/USER_GUIDE.md>` for the exact commands.
 
 Launch and run a job
 ====================

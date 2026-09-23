@@ -50,11 +50,19 @@ assumes the following division of trust.
 
 The application and the admitted guest services stay inside the trusted computing
 base. Guest services run as root unless configured otherwise, and executable-path
-validation is not a privilege sandbox. Containers can write only the application
-``runtime/`` and ``data/`` directories, while service definitions, launch
-configuration, application executables and Docker metadata are read-only or
-inaccessible. A compromised workload can still disclose any secret it is
-authorized to use.
+validation is not a privilege sandbox. By default, a container has a read-only root
+filesystem and receives the authenticated application payload read-only, with
+explicit writable mounts for the application ``runtime/`` and ``data/`` directories
+and the clear ``/applog`` output disk. Authenticated configuration may add bind
+mounts from those writable locations to other container paths, including paths
+named ``/vault/services``, ``/vault/config`` or ``/vault/docker``, and may disable
+the read-only container root. Those choices can mask authenticated files inside
+the container's mount namespace, although they do not modify the underlying vault
+content. Guest service definitions, launch configuration, application executables
+and Docker metadata remain protected by the guest's systemd and vault mount
+controls. Operators must review these authenticated application settings rather
+than assume the defaults are still in force. A compromised workload can still
+disclose any secret it is authorized to use.
 
 Attacks in scope
 ----------------
@@ -132,35 +140,40 @@ or payload authentication -- prevents workload startup and halts the guest. An
 integrity or attestation failure detected after startup stops the workload and
 powers off the guest.
 
-Two attestation stages
-======================
+Attestation layers
+==================
 
-Attestation happens twice, with different scope and different frequency. Keeping the
-two separate is deliberate.
+CVM Builder and NVFlare perform separate attestation operations with different
+purposes. Keeping the layers separate is deliberate.
 
-Boot-time attestation
----------------------
+CVM vault authorization
+-----------------------
 
-One-time, CPU-only, and performed by the guest against the Trustee before the
-workload starts. It gates release of the vault key, so it establishes that this
-particular root-and-vault combination is authorized to run at all. It does not
-require GPU evidence for a CPU-only profile. This stage is owned by CVM Builder and
-the Trustee deployment, and is configured through the builder profile rather than
-through NVFlare job configuration.
+The verified guest attests to Trustee before the workload starts. Initial appraisal
+and key release require CPU evidence for a CPU-only profile and composite CPU/GPU
+evidence for a GPU profile. This establishes that the measured CVM, its attached
+vault and, when configured, its GPUs are authorized to run together.
+
+The CVM supervisor repeats the same hardware appraisal and verifies current key
+authorization every five minutes. A periodic failure stops the workload, closes the
+vault so its key leaves the kernel, and retries fresh appraisal and key retrieval
+within a bounded quarantine window. A successful retry reopens the same vault and
+restarts the workload; expiry of the window or a quarantine failure powers off the
+guest. This layer is owned by CVM Builder and the Trustee deployment and is
+configured through the builder profile rather than through NVFlare job
+configuration.
 
 Runtime attestation
 -------------------
 
-Continuous, CPU and GPU, and performed by the application. NVFlare's ``CCManager``
-and its ``CCAuthorizer`` components generate and cross-verify tokens among
-participants for the lifetime of the system, and a site that fails validation is
-removed from the federation. See :ref:`confidential_computing_attestation` for that
-workflow.
+NVFlare's ``CCManager`` and its ``CCAuthorizer`` components provide a separate
+application-level layer. They generate and cross-verify participant tokens for the
+lifetime of the system, and a site that fails validation is removed from the
+federation. See :ref:`confidential_computing_attestation` for that workflow.
 
-The split matters because a successful boot proves only that an approved image was
-launched. Ongoing assurance that every peer is still running in an attested
-environment is an application-level property, and NVFlare provides it separately
-from the CVM boot gate.
+The split matters because CVM-level reauthorization protects local vault access,
+while NVFlare participant attestation decides whether remote peers remain admitted
+to the federation. Neither layer substitutes for the other.
 
 Attestation-bound key release
 =============================
