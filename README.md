@@ -36,7 +36,21 @@ sites, while each site retains its source datasets and controls what results may
 Start with a small federated-learning example on your computer. Then adapt your training code or explore statistics,
 custom workflows, and deployment options.
 
-## Try NVIDIA FLARE locally
+## How it works
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/NVIDIA/NVFlare/f0aac04afdd7f0fab7675e8f5259a5a40cc9592c/docs/resources/federated_learning_overview.png"
+       alt="Two hospitals train models on private local data and send model updates to a federated server, which aggregates them into a global model."
+       width="650">
+</p>
+
+In this federated-learning workflow, the server sends a model to participating clients. Each client trains the model
+on its local data and returns model updates, keeping its source dataset local. The server aggregates the updates into
+a global model and repeats the process across training rounds.
+
+The example below runs this workflow on your computer, with two simulated clients and a server.
+
+## Try it locally
 
 Create and activate a Python virtual environment as described in the
 [installation guide](https://nvflare.readthedocs.io/en/stable/installation.html), then install the latest stable
@@ -76,7 +90,7 @@ installing NVFLARE 2.10.0 or later, `nvflare examples list` shows the curated ca
 retrieves an example matched to that installation's source revision. Each example README then owns its exact setup
 and run steps.
 
-## Federated learning and computing with NVIDIA FLARE
+## Federated learning and computing
 
 **Federated learning** lets sites collaboratively train or evaluate models on their local data. Training and evaluation
 happen where the data resides; the underlying training examples are not exchanged between sites or sent to a central
@@ -92,12 +106,21 @@ NVIDIA FLARE builds its federated-learning capabilities on top of a general fede
 provides workflow orchestration, task execution, communication, security, and lifecycle services shared by training,
 evaluation, analytics, statistics, and custom distributed applications.
 
+A **job** packages the application logic and configuration. A **workflow** coordinates tasks across participating
+sites. Each site executes its task against local resources, and policies determine what can run and what may leave the
+site. Depending on the application, the shared result can be an aggregate model, evaluation, statistic, intersection,
+or another collaboration artifact.
+
+NVIDIA FLARE also supports decentralized and client-controlled workflows, as well as federated computing applications
+whose shared result is a statistic, evaluation, intersection, or another permitted application result rather than a
+model.
+
 > **Keep data at its source.** NVIDIA FLARE moves approved computation to participating sites. In a properly designed
 > and governed federation, raw datasets remain at their source and only outputs permitted by the collaboration and
 > each site's policies leave the site. Application owners and site operators define and enforce those policies for
 > their data and threat model.
 
-## What you can do with NVIDIA FLARE
+## Capabilities
 
 | Area | Capabilities |
 |---|---|
@@ -110,32 +133,15 @@ evaluation, analytics, statistics, and custom distributed applications.
 FLARE's component and event architecture lets applications replace or extend controllers, aggregators, executors,
 filters, persistence, communication, and deployment behavior without rewriting the entire system.
 
-## How NVIDIA FLARE works
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/NVIDIA/NVFlare/f0aac04afdd7f0fab7675e8f5259a5a40cc9592c/docs/resources/federated_learning_overview.png"
-       alt="Two hospitals train models on private local data and send model updates to a federated server, which aggregates them into a global model."
-       width="650">
-</p>
-
-The diagram shows one common centralized federated-learning workflow. NVIDIA FLARE also supports decentralized and
-client-controlled workflows, as well as federated computing applications whose shared result is a statistic,
-evaluation, intersection, or another permitted application result rather than a model.
-
-A **job** packages the application logic and configuration. A **workflow** coordinates tasks across participating
-sites. Each site executes its task against local resources, and policies determine what can run and what may leave the
-site. Depending on the application, the shared result can be an aggregate model, evaluation, statistic, intersection,
-or another collaboration artifact.
-
 ## From local development to production
 
 The application stays consistent while its execution environment changes:
 
 | Stage | Purpose |
 |---|---|
-| Simulator (`SimEnv`) | Run a local job directly to test application code and algorithms, without first starting and administering a FLARE deployment. |
-| Proof of Concept (`PocEnv`) | Start a local FLARE deployment to practice job submission, administration, and deployment behavior before moving to provisioned sites. |
-| Production (`ProdEnv`) | Run across provisioned sites with production identities, authorization, networking, policies, and operations. |
+| [Simulator](https://nvflare.readthedocs.io/en/main/user_guide/nvflare_cli/fl_simulator.html) (`SimEnv`) | Run a local job directly to test application code and algorithms, without first starting and administering a FLARE deployment. |
+| [Proof of Concept (POC)](https://nvflare.readthedocs.io/en/main/user_guide/nvflare_cli/poc_command.html) (`PocEnv`) | Start a local FLARE deployment to practice job submission, administration, and deployment behavior before moving to provisioned sites. |
+| [Production](https://nvflare.readthedocs.io/en/main/user_guide/admin_guide/deployment/overview.html) (`ProdEnv`) | Run across provisioned sites with production identities, authorization, networking, policies, and operations. |
 
 See the [run modes](https://nvflare.readthedocs.io/en/main/run_mode.html) and
 [deployment guide](https://nvflare.readthedocs.io/en/main/user_guide/admin_guide/deployment/overview.html) for the
