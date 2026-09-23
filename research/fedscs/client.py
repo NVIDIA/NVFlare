@@ -1,4 +1,4 @@
-# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2026, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,7 +17,9 @@
 import argparse
 import copy
 import os
+import random
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -29,8 +31,25 @@ from nvflare.app_common.abstract.fl_model import ParamsType
 
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-if torch.cuda.is_available():
-    torch.backends.cudnn.benchmark = True
+
+def set_seed(seed):
+    """Set Python, NumPy, and PyTorch random seeds."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+
+
+def seed_worker(worker_id):
+    """Seed DataLoader workers from the PyTorch worker seed."""
+    worker_seed = torch.initial_seed() % (2**32)
+    np.random.seed(worker_seed)
+    random.seed(worker_seed)
 
 
 def load_client_dataset(data_dir, site_name):
@@ -225,8 +244,15 @@ def main(args):
 
     site_name = flare.get_site_name()
 
+    client_id = int(site_name.split("-")[-1])
+    client_seed = args.seed + client_id * 100
+
+    set_seed(client_seed)
+
     print("=" * 60)
-    print(f"Starting FedSCS client: {site_name}")
+    print(f"Starting FL client: {site_name}")
+    print(f"Experiment seed: {args.seed}")
+    print(f"Client seed: {client_seed}")
     print(f"Device: {DEVICE}")
     print(f"Data directory: {data_dir}")
     print("=" * 60)
@@ -240,12 +266,17 @@ def main(args):
         data_dir,
     )
 
+    train_generator = torch.Generator()
+    train_generator.manual_seed(client_seed)
+
     train_loader = DataLoader(
         train_dataset,
         batch_size=args.batch_size,
         shuffle=True,
         num_workers=args.num_workers,
         pin_memory=torch.cuda.is_available(),
+        worker_init_fn=seed_worker,
+        generator=train_generator,
     )
 
     test_loader = DataLoader(
@@ -330,7 +361,7 @@ def main(args):
             local_epochs=args.local_epochs,
         )
 
-        print(f"{site_name}: " f"Average local loss = {average_loss:.4f}")
+        print(f"{site_name}: Average local loss = {average_loss:.4f}")
 
         # ---------------------------------------------------------------
         # Evaluate locally trained model.
@@ -423,6 +454,13 @@ if __name__ == "__main__":
             "data",
         ),
         help="Directory containing the prepared CIFAR-10 datasets.",
+    )
+
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=1001,
+        help="Experiment seed used to derive the client RNG seed.",
     )
 
     args = parser.parse_args()
