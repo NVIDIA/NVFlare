@@ -109,7 +109,19 @@ class LabProfileTests(unittest.TestCase):
             argv = ["prepare_lab.py", "/lab"] + [arg for platform in selected for arg in ("-p", platform)]
             with self.subTest(platforms=selected), patch("sys.argv", argv), patch.object(prepare, "prepare") as call:
                 prepare.main()
-            call.assert_called_once_with("/lab", http_only=False, platforms=selected)
+            call.assert_called_once_with(
+                "/lab", http_only=False, platforms=selected, package_profile=None, pins_from_host=False
+            )
+
+    def test_cli_forwards_package_pin_overrides(self):
+        """Pins come from the checked-in profile unless the operator opts into another source."""
+        prepare = load_helper("prepare_lab")
+        argv = ["prepare_lab.py", "/lab", "--package-profile", "pins.yml", "--pins-from-host"]
+        with patch("sys.argv", argv), patch.object(prepare, "prepare") as call:
+            prepare.main()
+        call.assert_called_once_with(
+            "/lab", http_only=False, platforms=None, package_profile="pins.yml", pins_from_host=True
+        )
 
     def test_invalid_platform_selection_is_rejected_before_creating_inputs(self):
         prepare = load_helper("prepare_lab")
