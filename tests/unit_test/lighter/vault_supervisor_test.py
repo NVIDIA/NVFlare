@@ -98,6 +98,18 @@ while True:
                 "supervisor",
                 str(source / "startup/sub_start.sh"),
             ]
+        # CI process runners can ignore SIGINT before starting pytest, and that
+        # disposition survives exec. Reset both stop signals before Bash starts
+        # so it can install its traps, as it does when launched as container PID 1.
+        argv = [
+            sys.executable,
+            "-c",
+            "import os, signal, sys; "
+            "signal.signal(signal.SIGTERM, signal.SIG_DFL); "
+            "signal.signal(signal.SIGINT, signal.SIG_DFL); "
+            "os.execvp(sys.argv[1], sys.argv[1:])",
+            *argv,
+        ]
         process = subprocess.Popen(
             argv,
             env=env,
