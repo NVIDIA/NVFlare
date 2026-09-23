@@ -8,7 +8,7 @@ site keeps control of its data and local execution.
 [Website](https://nvidia.github.io/NVFlare) |
 [NVIDIA FLARE Developer Site](https://developer.nvidia.com/flare) |
 [Documentation](https://nvflare.readthedocs.io/en/main/) |
-[Quick Start](https://nvflare.readthedocs.io/en/main/quickstart.html) |
+[Quick Start](https://nvflare.readthedocs.io/en/stable/quickstart.html) |
 [Examples](https://nvidia.github.io/NVFlare/catalog/) |
 [Discussions](https://github.com/NVIDIA/NVFlare/discussions)
 
@@ -124,47 +124,17 @@ differences and operational requirements.
 
 ## Try NVIDIA FLARE locally
 
-The `nvflare examples` command is introduced in **NVFLARE 2.10.0**. To use this command before 2.10.0 is published
-on PyPI, install the development source from `main` as shown below.
-
-Create and activate a fresh virtual environment (Linux/macOS shell):
-
-```bash
-python3 -m venv nvflare-venv
-source nvflare-venv/bin/activate
-```
-
-Choose **one** installation path; do not install both in the same environment.
-
-**Before the 2.10.0 release: install the development source** (requires Git). This uses the unreleased `main` branch
-for local testing:
+Create and activate a Python virtual environment as described in the
+[installation guide](https://nvflare.readthedocs.io/en/stable/installation.html), then install the latest stable
+NVFLARE release with its PyTorch integration:
 
 ```bash
-git clone --branch main https://github.com/NVIDIA/NVFlare.git
-python -m pip install -e "./NVFlare[PT]"
+python -m pip install "nvflare[PT]"
 ```
 
-Keep the cloned checkout unchanged while retrieving examples; the CLI rejects uncommitted tracked changes.
-
-**After 2.10.0 is available on PyPI: install the released package instead:**
-
-```bash
-python -m pip install "nvflare[PT]>=2.10.0"
-```
-
-After either installation, retrieve the Hello PyTorch example matching the installed revision and run it:
-
-```bash
-nvflare examples get hello-pt
-cd hello-pt
-python job.py --log_config progress
-```
-
-The default example runs on CPU, downloads no dataset, and uses deterministic site-local synthetic data. Continue with
-the [Quick Start](https://nvflare.readthedocs.io/en/main/quickstart.html) to understand the run, inspect its artifacts,
-adapt training code, and choose a deployment mode. The
-[Hello PyTorch README](./examples/hello-world/hello-pt/README.md) remains the authoritative reference for dependencies,
-options, artifacts, and troubleshooting.
+Continue with the [Quick Start for the stable release](https://nvflare.readthedocs.io/en/stable/quickstart.html) to
+run your first federation. If you use an older release, select its version in the documentation. Follow the example
+README for that release for dependencies, commands, and troubleshooting.
 
 ## Choose your path
 
@@ -172,7 +142,7 @@ Start with the guide for the concept and supported workflow, then use a maintain
 
 | Goal | Read first | Then run or adapt |
 |---|---|---|
-| Adapt existing training code | [Quick Start](https://nvflare.readthedocs.io/en/main/quickstart.html), then [Agent Skills](https://nvflare.readthedocs.io/en/main/user_guide/agent_skills/index.html) for supported projects or [API selection](https://nvflare.readthedocs.io/en/main/user_guide/data_scientist_guide/api_selection.html) for manual and custom integration | Try the [Agent Skills conversion examples](./examples/hello-world/agent-skills/README.md), or use the [Client API and Recipe examples](https://nvidia.github.io/NVFlare/catalog/) |
+| Adapt existing training code | [Quick Start](https://nvflare.readthedocs.io/en/stable/quickstart.html), then [Agent Skills](https://nvflare.readthedocs.io/en/main/user_guide/agent_skills/index.html) for supported projects or [API selection](https://nvflare.readthedocs.io/en/main/user_guide/data_scientist_guide/api_selection.html) for manual and custom integration | Try the [Agent Skills conversion examples](./examples/hello-world/agent-skills/README.md), or use the [Client API and Recipe examples](https://nvidia.github.io/NVFlare/catalog/) |
 | Fine-tune large language models | [Federated LLM guide](https://nvflare.readthedocs.io/en/main/programming_guide/llm_fine_tuning.html) | [Hugging Face and NeMo examples](https://nvidia.github.io/NVFlare/catalog/) |
 | Federated analytics and statistics | [Agent Skills](https://nvflare.readthedocs.io/en/main/user_guide/agent_skills/index.html) for supported tabular and image datasets, or the [Federated Statistics guide](https://nvflare.readthedocs.io/en/main/examples/federated_statistics_overview.html) for manual and custom workflows | Try the [tabular and image Agent Skills examples](./examples/hello-world/agent-skills/README.md), or use the [runnable statistics examples](https://nvidia.github.io/NVFlare/catalog/) |
 | Research and design custom FL algorithms or workflows | [Collaboration API guide (Technical Preview)](https://nvflare.readthedocs.io/en/main/user_guide/data_scientist_guide/collab_api.html) | [Algorithm and workflow examples](https://nvidia.github.io/NVFlare/catalog/) and [published research and reference implementations](./research/README.md) |

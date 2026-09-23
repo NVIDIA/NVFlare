@@ -12,41 +12,23 @@ then points you to the right API and execution environment for your own work.
 Run Your First Federation
 =========================
 
-The ``nvflare examples`` command is introduced in **NVFLARE 2.10.0**.
-To use this command before 2.10.0 is published on PyPI, install the development
-source from ``main`` as shown below.
-
-First, create and activate a fresh Python virtual environment. The following
-commands use a Linux or macOS shell; see :doc:`Installation <installation>`
-for prerequisites:
+After creating and activating a Python virtual environment as described in
+:doc:`Installation <installation>`, install the latest stable NVFLARE release
+with its PyTorch integration:
 
 .. code-block:: bash
 
-   python3 -m venv nvflare-venv
-   source nvflare-venv/bin/activate
+   python -m pip install "nvflare[PT]"
 
-Choose **one** installation path in this environment; do not install both.
+.. note::
 
-**Before the 2.10.0 release: install the development source.** This requires
-Git and installs the PyTorch integration from ``main``, an unreleased development
-branch intended here for local testing:
+   The ``nvflare examples`` command is available in NVFLARE 2.10.0 and later.
+   If your installed release is older, use its Quick Start by selecting that
+   version in the documentation. For the latest published release, follow the
+   `stable Quick Start <https://nvflare.readthedocs.io/en/stable/quickstart.html>`_.
 
-.. code-block:: bash
-
-   git clone --branch main https://github.com/NVIDIA/NVFlare.git
-   python -m pip install -e "./NVFlare[PT]"
-
-Keep the cloned checkout unchanged while retrieving examples: the CLI uses its
-Git revision to select matching source and rejects uncommitted tracked changes.
-
-**After 2.10.0 is available on PyPI: install the released package instead.**
-
-.. code-block:: bash
-
-   python -m pip install "nvflare[PT]>=2.10.0"
-
-After either installation, run the same commands to retrieve the matching Hello
-PyTorch example and start a two-client federation with focused progress output:
+Retrieve the Hello PyTorch example that matches the installed package revision
+and run it with focused progress output:
 
 .. code-block:: bash
 
