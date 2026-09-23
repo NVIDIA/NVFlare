@@ -4,175 +4,94 @@
 Welcome to NVIDIA FLARE
 ############################
 
-What is Federated Learning?
-===========================
+What is Federated Computing?
+============================
 
-Federated Learning is a distributed learning paradigm where training occurs across multiple clients, each with their own local datasets.
-This enables the creation of common robust models without sharing sensitive local data, helping solve issues of data privacy and security.
+Federated computing coordinates computation across independently controlled
+sites, bringing approved computation to local data instead of collecting the
+underlying datasets in one place. Sites exchange application-defined results
+according to the collaboration's and each site's policies. Applications include
+model training and evaluation, analytics, statistics, site-local data processing,
+and custom multi-site workflows.
 
-The FL server orchestrates the collaboration by sending an initial model to clients. Clients train on their local data and send
-model updates back for aggregation into a global model. After multiple rounds, a robust global model is developed -- all without
-any raw data leaving its source.
+This approach can enable collaboration where privacy, regulation, data
+sovereignty, intellectual property, data ownership, or the cost of moving data
+makes central collection impractical.
 
-.. image:: resources/fl_diagram.png
-    :height: 450px
-
-**Types of Federated Learning:**
-
-- **Horizontal FL** -- Clients hold different data samples over the same features
-- **Vertical FL** -- Clients hold different features over overlapping data samples
-- **Swarm Learning** -- Decentralized FL where clients perform aggregation without a central server
+**Federated learning** is one application of federated computing. It lets
+multiple sites collaboratively train or evaluate models using their local data
+and exchange model updates, metrics, or other approved results. Federated learning
+includes centralized workflows such as federated averaging, decentralized
+workflows such as swarm learning, and horizontal or vertical collaboration
+patterns.
 
 What is NVIDIA FLARE?
 =====================
 
-**NVIDIA FLARE** (NVIDIA Federated Learning Application Runtime Environment) is a domain-agnostic, open-source,
-extensible Python SDK that makes it easy to bring federated learning to your existing ML/DL workflows.
+`NVIDIA FLARE™ <https://developer.nvidia.com/flare>`_ (NVIDIA Federated
+Learning Application Runtime Environment) is a domain-agnostic, open-source,
+and extensible SDK for federated learning and other federated-computing
+applications. It allows researchers and data scientists to adapt existing ML
+and DL workflows to a federated paradigm and enables platform developers to
+build secure, privacy-preserving solutions for distributed multi-party
+collaboration.
 
-**Get started in minutes** -- FLARE is designed so that data scientists can convert their existing training code
-to federated with minimal effort:
+NVIDIA FLARE builds its federated-learning capabilities on a general
+federated-computing core. The core provides workflow orchestration, task
+execution, communication, security, and lifecycle services shared by training,
+evaluation, analytics, statistics, and custom distributed applications.
 
-- Use the **Client API** to add just a few lines to your existing training script
-- Use the **Job Recipe API** to pick a pre-built FL algorithm and run it immediately
-- Use the **FL Simulator** to test everything locally before deploying
+Because applications integrate through extensible Python APIs, NVIDIA FLARE is
+not limited to a fixed model family or framework. Maintained integrations and
+examples include PyTorch, TensorFlow, JAX, scikit-learn, XGBoost, Hugging Face,
+NeMo, and Flower.
 
-Here is a complete federated averaging job in just a few lines:
+Keep Data at Its Source
+=======================
 
-.. code-block:: python
+NVIDIA FLARE moves approved computation to participating sites. In a properly
+designed and governed federation, raw datasets remain at their source and only
+outputs permitted by the collaboration and each site's policies leave the
+site. Application owners and site operators define and enforce those policies
+for their data, regulatory requirements, and threat model.
 
-    from nvflare.app_opt.pt.recipes import FedAvgRecipe
-    from nvflare.recipe import SimEnv
+NVIDIA FLARE supplies controls for identity, authorization, secure
+communication, auditing, privacy-preserving techniques, and confidential
+computing. These controls support a collaboration's security and governance
+design; using NVIDIA FLARE alone does not determine which data or results an
+application is allowed to transmit.
 
-    recipe = FedAvgRecipe(
-        name="my-first-fl-job",
-        min_clients=2,
-        num_rounds=5,
-        model=MyModel(),
-        train_script="train.py",
-    )
-    run = recipe.execute(SimEnv(num_clients=2))
+From Development to Production
+==============================
 
-FLARE supports **PyTorch, TensorFlow, XGBoost, scikit-learn**, and any framework that can run in Python.
-It scales from a single laptop (Simulator) to thousands of distributed sites (Production) to millions of edge
-devices -- all using the same job definition.
+Applications use the same core programming model across three stages:
 
-Why NVIDIA FLARE?
-=================
+- **Simulator** runs server and client logic on one system for rapid
+  application development and validation.
+- **Proof of Concept (POC)** simulates a production deployment on one local
+  host with separate processes and locally generated startup kits.
+- **Production** runs across provisioned sites with production identities,
+  authorization, networking, policies, and operations.
 
-NVIDIA FLARE is built for **real-world production deployments**, not just research prototyping.
+NVIDIA FLARE provides high-level Client and Recipe APIs, the Collaboration API
+(Technical Preview), and lower-level controllers, executors, events, filters,
+and communication components. Researchers can implement new algorithms and
+workflows, data scientists can adapt existing applications, and platform teams
+can provision and operate multi-site systems.
 
-**vs. Research-Only Frameworks:**
-Unlike research-oriented FL frameworks, FLARE provides a complete production stack: secure provisioning with
-PKI certificates, fine-grained authorization policies per site, audit logging, confidential computing with
-hardware TEEs, and deployment tooling for Docker, Kubernetes, and cloud environments. Organizations including
-hospitals, national labs, and financial institutions run FLARE in production today
-(see :ref:`Industry Use Cases <industry_use_cases>`).
+Continue from Here
+==================
 
-**Key Differentiators:**
+Run and understand a complete local federation in :doc:`Quick Start
+<quickstart>`. The :doc:`documentation home <index>` then maps the maintained
+paths for Agent Skills, API selection, examples and tutorials, custom workflow
+research, deployment and security, and project contribution.
 
-- **Minimal code changes** -- The Client API lets you federate existing training scripts by adding a few lines,
-  not rewriting your code
-- **Production security** -- TLS/mTLS, per-site authorization policies, differential privacy, homomorphic
-  encryption, and hardware-backed confidential computing (AMD SEV-SNP, NVIDIA GPU TEEs)
-- **Scale** -- From 2 sites to millions of edge devices with hierarchical architecture
-- **Framework agnostic** -- PyTorch, TensorFlow, XGBoost, scikit-learn, HuggingFace, NeMo, Flower
-- **Proven in production** -- Used by healthcare consortia, national security labs, and financial institutions
-
-Key Features
-============
-
-**Built for Productivity**
-
-- **Client API** -- Convert existing training code to federated with minimal changes
-- **Job Recipe API** -- Pre-built recipes for FedAvg, FedProx, SCAFFOLD, XGBoost, Cyclic, and more
-- **FL Simulator** -- Rapid prototyping on a single machine
-- **POC Mode** -- Multi-process simulation of a federated network on one host
-- **FLARE API** -- Run and monitor jobs from Python code or notebooks
-- **Dashboard** -- Web UI for project setup and deployment artifact distribution
-- **Experiment Tracking** -- MLflow, Weights & Biases, and TensorBoard
-
-**Built for Security & Privacy**
-
-- **Secure Provisioning** -- TLS certificate-based authentication
-- **Authorization Policies** -- Fine-grained, site-controlled authorization
-- **Privacy Preservation** -- Differential privacy, homomorphic encryption, private set intersection
-- **Confidential Computing** -- Hardware-backed TEEs with AMD SEV-SNP and NVIDIA GPU support
-- **Audit Logging** -- Complete audit trail for accountability
-
-**Built for Scale**
-
-- **Framework Agnostic** -- PyTorch, TensorFlow, XGBoost, scikit-learn, and more
-- **Cross-Silo to Edge** -- From a handful of hospital sites to millions of mobile devices
-- **Hierarchical Architecture** -- Multi-region, tiered FL for large-scale deployments
-- **Multi-Job Execution** -- Concurrent job execution with resource management
-- **Client API Attach Mode** -- Attach independently managed trainers without transferring process ownership to NVFLARE
-
-**Built for Customization**
-
-- **Event-Driven Plugin Architecture** -- Every layer of FLARE is customizable through an event system
-  and component plugins. Intercept, modify, or extend any stage of the FL workflow
-- **Specification-Based APIs** -- Build alternative implementations following well-defined specs for
-  controllers, aggregators, filters, executors, and more
-- **Pluggable Components** -- Swap aggregation strategies, privacy filters, model persistors, and
-  communication backends without changing application code
-- **Rich Examples** -- Extensive library of FL algorithms, workflows, and application examples to build from
-
-What is New in 2.9.0
-====================
-
-NVIDIA FLARE 2.9.0's headline changes are Agent Skills for agent-assisted
-federated development, a Python-first Collaboration API, a Slurm job
-launcher, and more reliable large-model training, alongside a broad
-security-hardening pass across the internal transport and admin access.
-
-**Highlights:**
-
-- **Agent Skills**: agent-assisted federated development
-- **Collaboration API**: a Python-first API for research workflows
-- **Slurm job launcher**: a new HPC execution target alongside process,
-  Docker, and Kubernetes
-- **Large-model training**: a hardened model-transfer streaming transport
-  and FedAvg validated to 72 billion parameters
-- **Security hardening**: authenticated CellNet messages, internal mTLS by
-  default, and hardened admin and job-signing paths
-
-See :doc:`release_notes/flare_290` for full release notes.
-See :doc:`release_notes/previous` for previous releases.
-
-Real-World Use Cases & FLARE Day
-================================
-
-See how organizations use NVIDIA FLARE in production across healthcare, autonomous driving, finance, and more:
-
-- `FLARE Day 2025 <https://developer.nvidia.com/flare-day-2025>`_ -- Real-world FL applications in healthcare, finance, autonomous driving, and more
-- `FLARE Day 2024 <https://nvidia.github.io/NVFlare/flareDay>`_ -- Talks and demos featuring real-world FL deployments at NVIDIA, healthcare institutions, and industry partners
-- `Real-World FL Research <https://nvidia.github.io/NVFlare/research>`_ -- Published research and industry applications built with FLARE
-
-Learn More
-==========
-
-- `Tutorial Website <https://nvidia.github.io/NVFlare/>`_ -- Video tutorials, code walkthroughs, and the example catalog
-- `Example Catalog <https://nvidia.github.io/NVFlare/catalog/>`_ -- Browse examples by framework, algorithm, and use case
-- :ref:`Self-Paced Training <self_paced_training>` -- 100+ notebooks and 80 videos for comprehensive self-paced learning
-
-Product Lines
-=============
-
-FLARE consists of three product categories:
-
-**FLARE Core**
-    The full federated learning platform: communication infrastructure, workflows, controllers,
-    Client API, Recipe API, FL Simulator, provisioning, deployment, and management tools.
-
-**FLARE Confidential AI**
-    Confidential Federated AI with hardware-backed security. Leverages Trusted Execution Environments
-    (AMD SEV-SNP, Intel TDX) and NVIDIA GPU confidential computing for end-to-end IP protection.
-    Supports both on-premises and Azure cloud deployments.
-
-**FLARE Edge**
-    Federated learning at the edge, supporting millions of devices with hierarchical architecture,
-    asynchronous aggregation (FedBuff), device simulation, and mobile SDKs for Android and iOS
-    (via ExecuTorch).
+For broader product material, visit the `NVIDIA FLARE website
+<https://nvidia.github.io/NVFlare/>`_ and `developer site
+<https://developer.nvidia.com/flare>`_. See :doc:`Industry Use Cases
+<industry_use_cases>` for applications and supporting material, and
+:doc:`What's New <whats_new>` for current release information.
 
 
 .. toctree::
