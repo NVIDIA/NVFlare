@@ -124,13 +124,37 @@ differences and operational requirements.
 
 ## Try NVIDIA FLARE locally
 
-This quickstart requires **NVFLARE 2.10.0 or later** for the `nvflare examples` CLI and the workflow below.
+The `nvflare examples` command is introduced in **NVFLARE 2.10.0**. To use this command before 2.10.0 is published
+on PyPI, install the development source from `main` as shown below.
 
-This four-command path installs the PyTorch integration, retrieves the Hello PyTorch example that matches the installed
-NVFLARE revision, and runs a two-client federation with focused progress output:
+Create and activate a fresh virtual environment (Linux/macOS shell):
+
+```bash
+python3 -m venv nvflare-venv
+source nvflare-venv/bin/activate
+```
+
+Choose **one** installation path; do not install both in the same environment.
+
+**Before the 2.10.0 release: install the development source** (requires Git). This uses the unreleased `main` branch
+for local testing:
+
+```bash
+git clone --branch main https://github.com/NVIDIA/NVFlare.git
+python -m pip install -e "./NVFlare[PT]"
+```
+
+Keep the cloned checkout unchanged while retrieving examples; the CLI rejects uncommitted tracked changes.
+
+**After 2.10.0 is available on PyPI: install the released package instead:**
 
 ```bash
 python -m pip install "nvflare[PT]>=2.10.0"
+```
+
+After either installation, retrieve the Hello PyTorch example matching the installed revision and run it:
+
+```bash
 nvflare examples get hello-pt
 cd hello-pt
 python job.py --log_config progress
